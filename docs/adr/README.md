@@ -92,6 +92,7 @@ is the table a session reads.
 | [0013](0013-node-content-model.md) | Node content is a closed set of elements in rows, laid out by the engine | the node-content types of `crates/engine` and `crates/engine-wasm`, their generated TypeScript definitions in `packages/comb`, the layout functions of the engine, and the drawing of node content in `packages/comb/src/render/` | 🟡 proposed |
 | [0014](0014-dev-container-toolchain.md) | The Dev Container builds from a Dockerfile that adds Bun, and takes Node.js and Rust as locked Features | `.devcontainer/`, `.vscode/launch.json`, `.vscode/extensions.json`, and the CI job that sets up the toolchain | 🟡 proposed |
 | [0015](0015-no-container-access.md) | The work inside the Dev Container reaches no container engine | `.devcontainer/`, and every test that would need a service or a container | 🟡 proposed |
+| [0016](0016-no-secrets.md) | The repository holds no secrets and relies on GitHub's baseline | the repository, its CI workflows, and the repository settings | 🟡 proposed |
 
 ### Superseded and rejected
 
