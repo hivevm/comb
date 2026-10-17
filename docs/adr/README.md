@@ -93,6 +93,7 @@ is the table a session reads.
 | [0014](0014-dev-container-toolchain.md) | The Dev Container builds from a Dockerfile that adds Bun, and takes Node.js and Rust as locked Features | `.devcontainer/`, `.vscode/launch.json`, `.vscode/extensions.json`, and the CI job that sets up the toolchain | 🟡 proposed |
 | [0015](0015-no-container-access.md) | The work inside the Dev Container reaches no container engine | `.devcontainer/`, and every test that would need a service or a container | 🟡 proposed |
 | [0016](0016-no-secrets.md) | The repository holds no secrets and relies on GitHub's baseline | the repository, its CI workflows, and the repository settings | 🟡 proposed |
+| [0017](0017-actions-pinned-by-sha.md) | Workflows reference actions by full commit SHA, kept current by Dependabot | every `uses:` line under `.github/workflows/`, `.github/dependabot.yml`, `scripts/check-all.sh`, and the `sensors` job of `checks.yml` | 🟡 proposed |
 
 ### Superseded and rejected
 
