@@ -14,14 +14,28 @@ export interface Rect {
   maxY: number;
 }
 
+/** The triangles of the found edges: per vertex its position `x, y`, its distance along its
+ *  path, its colour as RGBA bytes, and its dash pattern `dash, gap` (0, 0 for solid); three
+ *  vertex indices per triangle. */
+export interface EdgeMesh {
+  positions: Float32Array;
+  distances: Float32Array;
+  colors: Uint32Array;
+  dashes: Float32Array;
+  indices: Uint32Array;
+}
+
 /** What a viewport query found: node and edge slots in ascending order, the four control points
- *  of each found edge as `x, y` pairs, and the edge slot and point of each found edge label. */
+ *  of each found edge as `x, y` pairs, the edge slot and point of each found edge label, the
+ *  mesh of the found edges, and the positions buffer, all read after the same call. */
 export interface Visible {
+  positions: Float32Array;
   nodes: Uint32Array;
   edges: Uint32Array;
   edgePoints: Float32Array;
   labels: Uint32Array;
   labelPoints: Float32Array;
+  mesh: EdgeMesh;
 }
 
 export interface Bridge {
@@ -32,9 +46,10 @@ export interface Bridge {
   translate(slots: Uint32Array, dx: number, dy: number): void;
   /** A fresh view on the positions buffer, `x, y` per slot. Do not keep it across calls. */
   positions(): Float32Array;
-  /** The nodes and edges that meet `rect`, and the edge labels whose point lies within
-   *  `labelReach` of it, as fresh views. Do not keep them across calls. */
-  query(rect: Rect, labelReach: number): Visible;
+  /** The nodes and edges that meet `rect`, the edge labels whose point lies within
+   *  `labelReach` of it, and the mesh of the edges, flattened within `tolerance` world units, as
+   *  fresh views. Do not keep them across calls. */
+  query(rect: Rect, labelReach: number, tolerance: number): Visible;
 }
 
 function wrap(memory: WebAssembly.Memory): Bridge {
@@ -45,14 +60,22 @@ function wrap(memory: WebAssembly.Memory): Bridge {
     loadGraph: (batch) => engine.loadGraph(batch),
     translate: (slots, dx, dy) => engine.translate(slots, dx, dy),
     positions: () => f32(engine.positionsPtr(), engine.positionsLen()),
-    query(rect, labelReach) {
-      engine.query(rect.minX, rect.minY, rect.maxX, rect.maxY, labelReach);
+    query(rect, labelReach, tolerance) {
+      engine.query(rect.minX, rect.minY, rect.maxX, rect.maxY, labelReach, tolerance);
       return {
+        positions: f32(engine.positionsPtr(), engine.positionsLen()),
         nodes: u32(engine.visibleNodesPtr(), engine.visibleNodesLen()),
         edges: u32(engine.visibleEdgesPtr(), engine.visibleEdgesLen()),
         edgePoints: f32(engine.edgePointsPtr(), engine.edgePointsLen()),
         labels: u32(engine.visibleLabelsPtr(), engine.visibleLabelsLen()),
         labelPoints: f32(engine.labelPointsPtr(), engine.labelPointsLen()),
+        mesh: {
+          positions: f32(engine.meshPositionsPtr(), engine.meshPositionsLen()),
+          distances: f32(engine.meshDistancesPtr(), engine.meshDistancesLen()),
+          colors: u32(engine.meshColorsPtr(), engine.meshColorsLen()),
+          dashes: f32(engine.meshDashesPtr(), engine.meshDashesLen()),
+          indices: u32(engine.meshIndicesPtr(), engine.meshIndicesLen()),
+        },
       };
     },
   };

@@ -1,5 +1,6 @@
 // The metric tree of the example (G-9): bets lead to epics, epics to input metrics, input metrics
-// to one north-star metric, and that to KPIs. Edges between metrics carry their correlation.
+// to one north-star metric, and that to KPIs. Edges between metrics carry their correlation;
+// every edge ends in an arrowhead at its target.
 import type { EdgeData, GraphData, NodeData } from "comb";
 
 const GREY = 0x9aa1ad;
@@ -68,6 +69,8 @@ function edgesOf(copy: number): EdgeData[] {
       source: `${copy}:${from}`,
       target: `${copy}:${to}`,
       color,
+      // Edges without a correlation, from bets to epics to input metrics, are dashed.
+      dash: correlation === undefined ? ([6, 4] as const) : undefined,
       label:
         correlation === undefined
           ? undefined

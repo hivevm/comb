@@ -3,18 +3,20 @@
 //
 // After every change, the scene asks the engine which nodes, edges, and edge labels meet the
 // viewport and a margin around it, and binds pooled node views and edge-label views to exactly
-// those. The edge mesh and the levels of detail of ADR-0012 are not built yet: the found edges
-// share one Graphics.
+// those; the found edges are drawn as one mesh. The levels of detail of ADR-0012 are not built
+// yet.
 import { Application, BitmapText, Container, Graphics } from "pixi.js";
 import type { Bridge, Rect, Visible } from "../bridge";
+import { EDGE_COLOR, EdgesContainer } from "./edges";
 import type { GraphView, NodeView, Viewport } from "../store";
 
 const NODE_FILL = 0xffffff;
 const NODE_STROKE = 0xd0d4dc;
 const SELECTED_STROKE = 0x3b82f6;
-const EDGE_COLOR = 0x9aa1ad;
 const TEXT_COLOR = 0x1f2430;
 
+/** How far a drawn edge may stray from its path, in screen pixels: half the 0.5 px of Q-4. */
+export const FLATNESS = 0.25;
 /** How far beyond the viewport the scene binds display objects, in screen pixels, so that a
  *  small pan finds them bound. */
 export const CULLING_MARGIN = 128;
@@ -163,49 +165,6 @@ export class NodesContainer extends Container {
   }
 }
 
-type DrawnEdge = { id: string; source: { x: number; y: number }; target: { x: number; y: number } };
-
-/** The edges layer: the path of every edge the query found, drawn into one Graphics. */
-export class EdgesContainer extends Container {
-  private readonly paths = new Graphics();
-  /** What the last sync drew, copied out of the engine's buffers for inspection. */
-  private last = {
-    edges: [] as GraphView["edges"],
-    slots: new Uint32Array(),
-    points: new Float32Array(),
-  };
-
-  constructor() {
-    super();
-    this.addChild(this.paths);
-  }
-
-  sync(state: GraphView, visible: Visible): void {
-    const { edges, edgePoints: p } = visible;
-    this.paths.clear();
-    for (let i = 0, at = 0; i < edges.length; i += 1, at += 8) {
-      const edge = state.edges[edges[i]!];
-      if (!edge) continue;
-      this.paths
-        .moveTo(p[at]!, p[at + 1]!)
-        .bezierCurveTo(p[at + 2]!, p[at + 3]!, p[at + 4]!, p[at + 5]!, p[at + 6]!, p[at + 7]!)
-        .stroke({ color: edge.color ?? EDGE_COLOR, width: 2 });
-    }
-    this.last = { edges: state.edges, slots: edges.slice(), points: p.slice() };
-  }
-
-  /** The edges the last sync drew, with their ends. */
-  drawn(): DrawnEdge[] {
-    const { edges, slots, points } = this.last;
-    return [...slots].flatMap((slot, i) => {
-      const edge = edges[slot];
-      if (!edge) return [];
-      const [x0, y0, , , , , x3, y3] = points.subarray(i * 8, i * 8 + 8);
-      return [{ id: edge.id, source: { x: x0!, y: y0! }, target: { x: x3!, y: y3! } }];
-    });
-  }
-}
-
 type EdgeView = GraphView["edges"][number];
 
 /** One edge label: a pill with its text, centred on its point. A pooled view. */
@@ -268,10 +227,14 @@ export class LabelsContainer extends Container {
 /** What the scene draws at one moment, in world coordinates, for tests and tooling. Its shape
  *  follows the scene and changes with it; it is not part of the stable interface. */
 export interface SceneSnapshot {
+  /** The PixiJS renderer that draws: `"webgl"` where WebGL2 is available. */
+  renderer: string;
   viewport: { x: number; y: number; scale: number };
   nodes: { id: string; x: number; y: number; width: number; height: number }[];
   edges: { id: string; source: { x: number; y: number }; target: { x: number; y: number } }[];
   edgeLabels: { edge: string; x: number; y: number }[];
+  /** How many triangles the edge mesh draws. */
+  edgeTriangles: number;
   /** Every display object under the world, the layers themselves included. */
   displayObjects: number;
   /** How many times the scene has rendered. */
@@ -312,9 +275,10 @@ export class Scene {
 
   render(state: GraphView, bridge: Bridge): void {
     const { width, height } = this.app.screen;
-    const visible = bridge.query(cullingRect(state.viewport, width, height), this.labels.reach);
-    const positions = bridge.positions();
-    this.nodes.sync(state, visible.nodes, positions);
+    const rect = cullingRect(state.viewport, width, height);
+    // Every view of the query is read before the next call into the engine (ADR-0010).
+    const visible = bridge.query(rect, this.labels.reach, FLATNESS / state.viewport.scale);
+    this.nodes.sync(state, visible.nodes, visible.positions);
     this.edges.sync(state, visible);
     this.labels.sync(state, visible);
     this.world.position.set(state.viewport.x, state.viewport.y);
@@ -324,6 +288,7 @@ export class Scene {
 
   inspect(): SceneSnapshot {
     return {
+      renderer: this.app.renderer.name,
       viewport: { x: this.world.x, y: this.world.y, scale: this.world.scale.x },
       nodes: this.nodes.children.map((view) => ({
         id: (view as NodeGraphic).nodeId,
@@ -332,6 +297,7 @@ export class Scene {
         y: view.y,
       })),
       edges: this.edges.drawn(),
+      edgeTriangles: this.edges.triangles(),
       edgeLabels: this.labels.children.map((label) => ({
         edge: label.label,
         x: label.x,

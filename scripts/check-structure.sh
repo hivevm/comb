@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 #
-# Structural test of the shape of the code (ADR-0009). Verifies: ADR-0009
+# Structural test of the shape of the code (ADR-0009) and of how the scene draws (ADR-0012).
+# Verifies: ADR-0009, ADR-0012
 #
 # ADR-0009 builds Comb as a functional core of pure Rust and a TypeScript shell whose only door to
-# the engine is its bridge. This check reads the tree and fails on what would break that shape:
+# the engine is its bridge; ADR-0012 draws every text as BitmapText and the edges as one mesh. This
+# check reads the tree and fails on what would break that shape:
 #
 #   1. Core: the core crate crates/engine depends on no crate that reaches the browser, the clock,
 #      randomness, or I/O — wasm-bindgen, js-sys, web-sys, getrandom, serde-wasm-bindgen. Its
@@ -19,6 +21,9 @@
 #   4. Examples: no file under examples/ imports a path inside the library: only the package's
 #      entries `comb` and `comb/testing`, never another `comb/...`, a path through
 #      node_modules/comb/, or into packages/comb.
+#   5. Drawing: no file of the render layer names PixiJS's Text, HTMLText, or SplitText, which
+#      redraw a canvas and upload a texture on every change; and the edges layer, packages/comb/src/render/edges.ts, which
+#      exists wherever the render layer does, names no Graphics, so no edge is drawn by one.
 #
 # Source files are .ts, .tsx, .mts, .cts, .js, .jsx, .mjs, and .cjs; test files are read like any
 # other. Dependencies (node_modules/) and the library's generated directories
@@ -115,9 +120,21 @@ while IFS= read -r file; do
     "${specifier}comb/testing${quote}"
 done < <(sources examples)
 
+# 5. Drawing
+while IFS= read -r file; do
+  report "$file" '\b(Text|HTMLText|SplitText)\b' \
+    "the render layer draws text as BitmapText, never as Text, HTMLText, or SplitText"
+done < <(sources packages/comb/src/render)
+edges="packages/comb/src/render/edges.ts"
+if [[ -d packages/comb/src/render && ! -f "$edges" ]]; then
+  problems+=("$edges: missing; the edges layer of the render layer lives there")
+elif [[ -f "$edges" ]]; then
+  report "$edges" '\bGraphics\b' "the edges layer draws its edges as one mesh, never by Graphics"
+fi
+
 if ((${#problems[@]})); then
-  echo "Structure check FAILED (ADR-0009):" >&2
+  echo "Structure check FAILED (ADR-0009, ADR-0012):" >&2
   printf '  - %s\n' "${problems[@]}" >&2
   exit 1
 fi
-echo "Structure check passed (core, bridge, render, examples)."
+echo "Structure check passed (core, bridge, render, examples, drawing)."

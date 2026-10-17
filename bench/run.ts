@@ -159,6 +159,9 @@ async function measure(page: Page) {
   console.log(
     `Loaded ${load.nodes} nodes in ${load.firstFrameMs.toFixed(1)} ms to the first frame.`,
   );
+  const renderer = await page.evaluate(() => window.inspect().renderer);
+  if (renderer !== "webgl")
+    throw new Error(`Comb draws with ${renderer}, not WebGL; no number holds`);
   const gpu = await page.evaluate(() => {
     const gl = document.createElement("canvas").getContext("webgl2");
     const info = gl?.getExtension("WEBGL_debug_renderer_info");
@@ -231,7 +234,17 @@ const server = Bun.spawn(
 try {
   for (let i = 0; i < 100 && !(await serving()); i++) await Bun.sleep(100);
   if (!(await serving())) throw new Error("the preview server did not start");
-  const browser = await chromium.launch({ headless: !HEADED });
+  // Headless, a display forwarded into the Dev Container keeps Chromium from starting WebGL, and
+  // PixiJS would fall back to Canvas 2D; the run checks the renderer below.
+  const headlessEnv = Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([name]) => name !== "WAYLAND_DISPLAY" && name !== "DISPLAY",
+    ),
+  );
+  const browser = await chromium.launch({
+    headless: !HEADED,
+    env: HEADED ? process.env : headlessEnv,
+  });
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     const result = await measure(page);

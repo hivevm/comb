@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# Self-test of scripts/check-structure.sh. Verifies: ADR-0009
+# Self-test of scripts/check-structure.sh. Verifies: ADR-0009, ADR-0012
 #
 # Each case builds a fixture tree under a temporary directory — a core crate with its lock, a
 # library with a bridge, a store, and a render layer, and an example — runs the check against it,
 # and asserts the exit code and, for a failing case, the message that names the offence. The
-# baseline passes; every failing case breaks one rule of ADR-0009 in one form, and the passing
-# cases are near misses the check must not mistake for offences.
+# baseline passes; every failing case breaks one rule of ADR-0009 or ADR-0012 in one form, and
+# the passing cases are near misses the check must not mistake for offences.
 #
 # Usage:
 #     scripts/test-check-structure.sh
@@ -50,6 +50,7 @@ version = "0.2.129"
 LOCK
   echo 'import init from "../../wasm/engine.js";' > "$d/packages/comb/src/bridge/index.ts"
   echo 'import type { GraphView } from "../store";' > "$d/packages/comb/src/render/scene.ts"
+  echo 'import { Mesh } from "pixi.js";' > "$d/packages/comb/src/render/edges.ts"
   echo 'export const store = { select() {} };' > "$d/packages/comb/src/store/index.ts"
   echo 'import { createComb } from "comb";' > "$d/examples/demo/src/main.ts"
   echo "$d"
@@ -219,6 +220,31 @@ echo 'import "../wasm/engine.js";' > "$d/packages/comb/dist/index.js"
 echo 'import * as m from "./engine_bg.js";' > "$d/packages/comb/wasm/engine.js"
 echo 'import "comb/inner";' > "$d/examples/demo/node_modules/x/index.js"
 expect pass "generated output and dependencies are not read" "$d"
+
+d="$(fixture render-text)"
+echo 'import { Text } from "pixi.js";' >> "$d/packages/comb/src/render/scene.ts"
+expect fail "the render layer naming Text fails" "$d" "packages/comb/src/render/scene.ts:2"
+
+d="$(fixture render-html-text)"
+echo 'const t = new HTMLText({ text: "x" });' >> "$d/packages/comb/src/render/scene.ts"
+expect fail "the render layer naming HTMLText fails" "$d" "never as Text, HTMLText"
+
+d="$(fixture render-split-text)"
+echo 'import { SplitText } from "pixi.js";' >> "$d/packages/comb/src/render/scene.ts"
+expect fail "the render layer naming SplitText fails" "$d" "never as Text, HTMLText"
+
+d="$(fixture render-bitmap-text)"
+echo 'import { BitmapText, Graphics, SplitBitmapText } from "pixi.js";' \
+  >> "$d/packages/comb/src/render/scene.ts"
+expect pass "BitmapText, and Graphics outside the edges layer, pass" "$d"
+
+d="$(fixture edges-graphics)"
+echo 'import { Graphics } from "pixi.js";' >> "$d/packages/comb/src/render/edges.ts"
+expect fail "the edges layer naming Graphics fails" "$d" "packages/comb/src/render/edges.ts:2"
+
+d="$(fixture edges-missing)"
+rm "$d/packages/comb/src/render/edges.ts"
+expect fail "a render layer without its edges layer fails" "$d" "edges.ts: missing"
 
 if ((failed)); then
   echo "Structure check self-test FAILED ($failed of $((passed + failed)) cases)." >&2

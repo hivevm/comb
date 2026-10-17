@@ -20,12 +20,16 @@ export interface EdgeLabelData {
   background?: number;
 }
 
-/** An edge from a connector of one node to a connector of another. */
+/** An edge from a connector of one node to a connector of another, drawn in `color`
+ *  (`0xRRGGBB`), dashed by `dash` (dash and gap lengths in world units; solid without), and
+ *  with an arrowhead at its target unless `arrow` is `"none"` (G-11). */
 export interface EdgeData {
   id: string;
   source: string;
   target: string;
   color?: number;
+  dash?: readonly [number, number];
+  arrow?: "end" | "none";
   label?: EdgeLabelData;
 }
 

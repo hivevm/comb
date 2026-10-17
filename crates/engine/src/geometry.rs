@@ -170,6 +170,30 @@ impl EdgePath {
         bounds
     }
 
+    /// The two halves of the path, split at `t = 0.5` (de Casteljau).
+    pub fn split(&self) -> (Self, Self) {
+        let ab = self.source.lerp(self.control_source, 0.5);
+        let bc = self.control_source.lerp(self.control_target, 0.5);
+        let cd = self.control_target.lerp(self.target, 0.5);
+        let abc = ab.lerp(bc, 0.5);
+        let bcd = bc.lerp(cd, 0.5);
+        let mid = abc.lerp(bcd, 0.5);
+        (
+            Self {
+                source: self.source,
+                control_source: ab,
+                control_target: abc,
+                target: mid,
+            },
+            Self {
+                source: mid,
+                control_source: bcd,
+                control_target: cd,
+                target: self.target,
+            },
+        )
+    }
+
     /// The point at path parameter `t`, clamped to 0.0..=1.0.
     pub fn point_at(&self, t: f64) -> Point {
         let t = t.clamp(0.0, 1.0);
@@ -306,6 +330,17 @@ mod tests {
         let path = EdgePath::between(&source, &target);
         assert!(close(path.source, Point::new(220.0, 32.0)));
         assert!(close(path.target, Point::new(300.0, 132.0)));
+    }
+
+    #[test]
+    fn the_halves_of_a_split_path_trace_the_path() {
+        let path = EdgePath::horizontal(Point::new(10.0, 20.0), Point::new(300.0, 140.0), 40.0);
+        let (left, right) = path.split();
+        for i in 0..=10 {
+            let t = f64::from(i) / 10.0;
+            assert!(close(left.point_at(t), path.point_at(t / 2.0)));
+            assert!(close(right.point_at(t), path.point_at(0.5 + t / 2.0)));
+        }
     }
 
     #[test]

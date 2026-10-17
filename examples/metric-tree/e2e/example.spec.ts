@@ -39,6 +39,8 @@ test("the example draws the metric tree on a canvas beside its sidebar", async (
   await open(page);
   await expect(page.locator("#canvas canvas")).toBeVisible();
   await expect(page.locator("#count")).toHaveText("15 nodes, 15 edges");
+  // WebGL2, not PixiJS's Canvas 2D fallback, which draws no edge mesh.
+  expect(await page.evaluate(() => window.inspect().renderer)).toBe("webgl");
   expect(errors).toEqual([]);
 });
 
@@ -121,6 +123,24 @@ async function setViewport(page: Page, viewport: { x: number; y: number; scale: 
     await window.comb.whenRendered();
   }, viewport);
 }
+
+test("the edges show their colours, dashes, and arrowheads", async ({ page }) => {
+  // Verifies: G-11, ADR-0012
+  await open(page);
+  expect((await page.evaluate(() => window.inspect())).edgeTriangles).toBeGreaterThan(0);
+  // The reference image, approved by eye, holds the edges alone, without the text of nodes and
+  // labels, whose fonts differ between machines: grey dashed edges from bets to epics to input
+  // metrics, green and red edges into and out of the north-star metric, every edge ending in an
+  // arrowhead at its target.
+  await page.evaluate(async () => {
+    window.showLayers({ nodes: false, edgeLabels: false });
+    await window.comb.whenRendered();
+  });
+  // Three pixels of tolerance: a single missing arrowhead differs by eight.
+  await expect(page.locator("#canvas canvas")).toHaveScreenshot("metric-tree-edges.png", {
+    maxDiffPixels: 3,
+  });
+});
 
 test("what lies entirely outside the viewport is not bound to a display object", async ({
   page,

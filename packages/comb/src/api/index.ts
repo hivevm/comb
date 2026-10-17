@@ -3,6 +3,7 @@ import { Application } from "pixi.js";
 import { createBridge, type BridgeError, type GraphBatch } from "../bridge";
 import { attachInteraction } from "../interaction";
 import { clampScale, fitViewport, type Bounds } from "../interaction/viewport";
+import { EDGE_COLOR } from "../render/edges";
 import { Scene } from "../render/scene";
 import { createFrames } from "./frames";
 import { scenes } from "./scenes";
@@ -64,15 +65,19 @@ function boundsOf(nodes: readonly NodeView[], positions: Float32Array): Bounds |
   return bounds;
 }
 
-/** The graph data the engine needs: identifiers, positions, sizes, ends, label placements. */
+/** The graph data the engine needs: identifiers, positions, sizes, ends, label placements, and
+ *  edge styles with their defaults. */
 function batchOf(graph: GraphData): GraphBatch {
   return {
     nodes: graph.nodes.map(({ id, x, y, width, height }) => ({ id, x, y, width, height })),
-    edges: graph.edges.map(({ id, source, target, label }) => ({
+    edges: graph.edges.map(({ id, source, target, label, color, dash, arrow }) => ({
       id,
       source,
       target,
       label: label && { t: label.t, offset: label.offset },
+      color: color ?? EDGE_COLOR,
+      dash: dash && [dash[0], dash[1]],
+      arrow: arrow ?? "end",
     })),
   };
 }

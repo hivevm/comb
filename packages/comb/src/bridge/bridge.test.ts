@@ -9,15 +9,20 @@ beforeAll(async () => {
 });
 
 const node = (id: string, x: number, y: number) => ({ id, x, y, width: 100, height: 50 });
+const edge = (id: string, source: string, target: string) => ({
+  id,
+  source,
+  target,
+  color: 0x22a55b,
+  arrow: "none" as const,
+});
 const graph = (nodes: GraphBatch["nodes"], edges: GraphBatch["edges"] = []) => ({ nodes, edges });
 const everywhere = { minX: -1e6, minY: -1e6, maxX: 1e6, maxY: 1e6 };
 
 /** A row of `count` nodes 200 apart, each linked to the next. */
 function row(count: number): GraphBatch {
   const nodes = Array.from({ length: count }, (_, i) => node(`n${i}`, i * 200, 0));
-  const edges = nodes
-    .slice(1)
-    .map((_, i) => ({ id: `e${i}`, source: `n${i}`, target: `n${i + 1}` }));
+  const edges = nodes.slice(1).map((_, i) => edge(`e${i}`, `n${i}`, `n${i + 1}`));
   return graph(nodes, edges);
 }
 
@@ -45,8 +50,12 @@ describe("bridge", () => {
     expect(() => bridge.loadGraph(graph([node("a", Number.NaN, 0)]))).toThrow();
     const errors = [
       graph([node("a", 0, 0), node("a", 1, 1)]),
-      graph([node("a", 0, 0)], [{ id: "e", source: "a", target: "z" }]),
+      graph([node("a", 0, 0)], [edge("e", "a", "z")]),
       graph([{ ...node("a", 0, 0), width: -1 }]),
+      graph(
+        [node("a", 0, 0), node("b", 1, 1)],
+        [{ ...edge("e", "a", "b"), arrow: "start" as "end" }],
+      ),
     ].map((batch) => {
       try {
         bridge.loadGraph(batch);
@@ -58,6 +67,7 @@ describe("bridge", () => {
       { kind: "duplicateNode", node: "a" },
       { kind: "missingNode", edge: "e", node: "z" },
       { kind: "invalidSize", node: "a" },
+      expect.objectContaining({ kind: "malformed" }),
     ]);
   });
 });
@@ -65,7 +75,7 @@ describe("bridge", () => {
 describe("bridge query", () => {
   test("a query reads the slots in a rectangle", () => {
     bridge.loadGraph(row(5));
-    const visible = bridge.query({ minX: 350, minY: 0, maxX: 450, maxY: 50 }, 0);
+    const visible = bridge.query({ minX: 350, minY: 0, maxX: 450, maxY: 50 }, 0, 1);
     // n2 spans 400..500; of its edges, n1→n2 runs over 300..400 and meets 350..450, n2→n3 runs
     // over 500..600 and does not.
     expect([...visible.nodes]).toEqual([2]);
@@ -76,11 +86,11 @@ describe("bridge query", () => {
 
   test("a query read after memory grew holds the current slots", () => {
     bridge.loadGraph(row(3));
-    expect([...bridge.query(everywhere, 0).nodes]).toEqual([0, 1, 2]);
+    expect([...bridge.query(everywhere, 0, 1).nodes]).toEqual([0, 1, 2]);
     bridge.loadGraph(row(200_000));
-    bridge.query(everywhere, 0);
+    bridge.query(everywhere, 0, 1);
     bridge.loadGraph(row(4));
-    const visible = bridge.query({ minX: 590, minY: 0, maxX: 2000, maxY: 50 }, 0);
+    const visible = bridge.query({ minX: 590, minY: 0, maxX: 2000, maxY: 50 }, 0, 1);
     expect([...visible.nodes]).toEqual([3]);
     expect([...visible.edges]).toEqual([2]);
   });
@@ -88,7 +98,7 @@ describe("bridge query", () => {
   test("a query after a move finds the node at its new place", () => {
     bridge.loadGraph(row(3));
     bridge.translate(new Uint32Array([0]), 0, 5000);
-    const visible = bridge.query({ minX: -10, minY: 4990, maxX: 10, maxY: 5010 }, 0);
+    const visible = bridge.query({ minX: -10, minY: 4990, maxX: 10, maxY: 5010 }, 0, 1);
     expect([...visible.nodes]).toEqual([0]);
   });
 
@@ -96,14 +106,36 @@ describe("bridge query", () => {
     bridge.loadGraph(
       graph(
         [node("a", 0, 0), node("b", 200, 0)],
-        [{ id: "e", source: "a", target: "b", label: { t: 0.5, offset: 12 } }],
+        [{ ...edge("e", "a", "b"), label: { t: 0.5, offset: 12 } }],
       ),
     );
     // The edge runs level from (100, 25) to (200, 25); its label sits at (150, 13).
-    const near = bridge.query({ minX: 140, minY: -100, maxX: 160, maxY: 0 }, 13);
+    const near = bridge.query({ minX: 140, minY: -100, maxX: 160, maxY: 0 }, 13, 1);
     expect([...near.labels]).toEqual([0]);
     expect(near.labelPoints[0]).toBeCloseTo(150, 4);
     expect(near.labelPoints[1]).toBeCloseTo(13, 4);
-    expect([...bridge.query({ minX: 140, minY: -100, maxX: 160, maxY: 0 }, 12).labels]).toEqual([]);
+    expect([...bridge.query({ minX: 140, minY: -100, maxX: 160, maxY: 0 }, 12, 1).labels]).toEqual(
+      [],
+    );
+  });
+
+  test("a query builds the mesh of the edges it found, in their colours", () => {
+    bridge.loadGraph(
+      graph(
+        [node("a", 0, 0), node("b", 200, 0)],
+        [{ ...edge("e", "a", "b"), dash: [6, 4], arrow: "end" }],
+      ),
+    );
+    const { mesh } = bridge.query(everywhere, 0, 0.25);
+    const vertices = mesh.distances.length;
+    expect(vertices).toBeGreaterThan(3);
+    expect(mesh.positions.length).toBe(2 * vertices);
+    expect(mesh.dashes.length).toBe(2 * vertices);
+    expect(mesh.indices.length % 3).toBe(0);
+    expect(Math.max(...mesh.indices)).toBe(vertices - 1);
+    const rgba = new Uint8Array(mesh.colors.buffer, mesh.colors.byteOffset, 4);
+    expect([...rgba]).toEqual([0x22, 0xa5, 0x5b, 0xff]);
+    // The arrowhead comes first, its tip at the target's left middle.
+    expect([...mesh.positions.slice(0, 2)]).toEqual([200, 25]);
   });
 });

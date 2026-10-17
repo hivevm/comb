@@ -8,13 +8,16 @@
 use crate::geometry::{EdgePath, Point, Rect};
 use crate::positions::{self, PositionError};
 use crate::spatial::Grid;
+use crate::stroke::{EdgeStyle, Mesh};
 
-/// An edge between two node slots, with the path parameter and label offset of its edge label.
+/// An edge between two node slots, with the path parameter and label offset of its edge label
+/// and the style it is drawn with.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EdgeSpec {
     pub source: u32,
     pub target: u32,
     pub label: Option<LabelPlacement>,
+    pub style: EdgeStyle,
 }
 
 /// Where an edge label sits on its edge: path parameter `t` and label offset (G-6).
@@ -33,8 +36,8 @@ pub enum GraphError {
     EdgeEndOutOfRange { edge: u32 },
 }
 
-/// What a query found: slots in ascending order, and per found edge its four control points as
-/// `x, y` pairs, per found label its point.
+/// What a query found: slots in ascending order, per found edge its four control points as
+/// `x, y` pairs, per found label its point, and the mesh of the found edges.
 #[derive(Debug, Default)]
 pub struct Visible {
     pub nodes: Vec<u32>,
@@ -42,6 +45,7 @@ pub struct Visible {
     pub edge_points: Vec<f32>,
     pub labels: Vec<u32>,
     pub label_points: Vec<f32>,
+    pub mesh: Mesh,
 }
 
 /// The loaded graph and its spatial index.
@@ -58,6 +62,7 @@ pub struct Graph {
     node_grid: Grid,
     edge_grid: Grid,
     scratch: Vec<u32>,
+    points: Vec<Point>,
 }
 
 fn slots(len: usize) -> impl Iterator<Item = u32> {
@@ -251,9 +256,9 @@ impl Graph {
         Ok(())
     }
 
-    /// Writes into `out` the nodes and edges whose bounds meet `rect`, and the labels whose point
-    /// lies within `label_reach` of it.
-    pub fn query(&mut self, rect: &Rect, label_reach: f64, out: &mut Visible) {
+    /// Writes into `out` the nodes and edges whose bounds meet `rect`, the labels whose point
+    /// lies within `label_reach` of it, and the mesh of the edges, flattened within `tolerance`.
+    pub fn query(&mut self, rect: &Rect, label_reach: f64, tolerance: f64, out: &mut Visible) {
         let label_rect = rect.grown(label_reach.max(0.0));
         self.node_grid.candidates(rect, &mut self.scratch);
         out.nodes.clear();
@@ -270,10 +275,14 @@ impl Graph {
         out.edge_points.clear();
         out.labels.clear();
         out.label_points.clear();
+        out.mesh.clear();
         for &slot in &self.scratch {
             let path = self.paths[slot as usize];
             if path.bounds().meets(rect) {
                 out.edges.push(slot);
+                let style = self.edges[slot as usize].style;
+                out.mesh
+                    .add_edge(&path, &style, tolerance, &mut self.points);
                 for p in [
                     path.source,
                     path.control_source,
@@ -334,6 +343,10 @@ mod tests {
                     t: rng.range(-0.2, 1.2),
                     offset: rng.range(-40.0, 40.0),
                 }),
+                style: EdgeStyle {
+                    arrow: rng.next() < 0.5,
+                    ..EdgeStyle::default()
+                },
             })
             .collect();
         Graph::new(positions, sizes, specs).unwrap()
@@ -381,7 +394,7 @@ mod tests {
         for _ in 0..50 {
             let rect = random_rect(rng);
             let reach = rng.range(0.0, 100.0);
-            graph.query(&rect, reach, &mut out);
+            graph.query(&rect, reach, 1.0, &mut out);
             let (nodes, edges, labels) = brute_force(graph, &rect, reach);
             assert_eq!(out.nodes, nodes, "nodes in {rect:?}");
             assert_eq!(out.edges, edges, "edges in {rect:?}");
@@ -418,10 +431,11 @@ mod tests {
             source: 0,
             target: 1,
             label: Some(label),
+            style: EdgeStyle::default(),
         }];
         let mut graph = Graph::new(positions, sizes, edges).unwrap();
         let mut out = Visible::default();
-        graph.query(&Rect::new(0.0, 0.0, 600.0, 200.0), 0.0, &mut out);
+        graph.query(&Rect::new(0.0, 0.0, 600.0, 200.0), 0.0, 1.0, &mut out);
         assert_eq!(out.nodes, [0, 1]);
         assert_eq!(out.edges, [0]);
         let path = graph.edge_path(0);
@@ -441,11 +455,13 @@ mod tests {
                     source: 0,
                     target: 1,
                     label: None,
+                    style: EdgeStyle::default(),
                 },
                 EdgeSpec {
                     source: 1,
                     target: 2,
                     label: None,
+                    style: EdgeStyle::default(),
                 },
             ],
         )
@@ -454,7 +470,7 @@ mod tests {
         assert_eq!(graph.edge_path(0).target, Point::new(300.0, 5025.0));
         assert_eq!(graph.edge_path(1).source, Point::new(400.0, 5025.0));
         let mut out = Visible::default();
-        graph.query(&Rect::new(250.0, 4900.0, 450.0, 5100.0), 0.0, &mut out);
+        graph.query(&Rect::new(250.0, 4900.0, 450.0, 5100.0), 0.0, 1.0, &mut out);
         assert_eq!(out.nodes, [1]);
         assert_eq!(out.edges, [0, 1]);
     }
@@ -468,7 +484,12 @@ mod tests {
         graph.translate(&far, 1e6, 1e6).unwrap();
         assert_eq!(graph.node_grid.beyond_extent(), 0);
         let mut out = Visible::default();
-        graph.query(&Rect::new(1e6, 1e6, 1e6 + 300.0, 1e6 + 10.0), 0.0, &mut out);
+        graph.query(
+            &Rect::new(1e6, 1e6, 1e6 + 300.0, 1e6 + 10.0),
+            0.0,
+            1.0,
+            &mut out,
+        );
         assert_eq!(out.nodes, far);
     }
 
@@ -478,6 +499,7 @@ mod tests {
             source: 0,
             target: 1,
             label: None,
+            style: EdgeStyle::default(),
         }];
         let result = Graph::new(vec![0.0, 0.0], vec![1.0, 1.0], edges);
         assert_eq!(

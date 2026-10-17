@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use comb_engine::geometry::Rect;
 use comb_engine::graph::{EdgeSpec, Graph, GraphError, LabelPlacement, Visible};
 use comb_engine::positions::PositionError;
+use comb_engine::stroke::EdgeStyle;
 use serde::{Deserialize, Serialize};
 use tsify::{Ts, Tsify};
 use wasm_bindgen::prelude::*;
@@ -32,7 +33,17 @@ pub struct LabelInput {
     pub offset: f64,
 }
 
-/// An edge between two nodes, named by their identifiers.
+/// Whether an arrowhead marks the end of an edge.
+#[derive(Tsify, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum Arrow {
+    End,
+    None,
+}
+
+/// An edge between two nodes, named by their identifiers, with the style it is drawn with: its
+/// colour as `0xRRGGBB`, its dash pattern as dash and gap lengths in world units (none for a
+/// solid line), and whether an arrowhead marks its end (G-11).
 #[derive(Tsify, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EdgeInput {
@@ -42,6 +53,11 @@ pub struct EdgeInput {
     #[tsify(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<LabelInput>,
+    pub color: u32,
+    #[tsify(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dash: Option<[f64; 2]>,
+    pub arrow: Arrow,
 }
 
 /// The nodes and edges of one load, each in slot order.
@@ -73,6 +89,12 @@ pub enum BridgeError {
     /// An edge label's path parameter or label offset is NaN or infinite.
     #[serde(rename_all = "camelCase")]
     NonFiniteLabel { edge: String },
+    /// An edge's colour lies beyond `0xFFFFFF`.
+    #[serde(rename_all = "camelCase")]
+    InvalidColor { edge: String },
+    /// An edge's dash is not positive or its gap negative, or either is not finite.
+    #[serde(rename_all = "camelCase")]
+    InvalidDash { edge: String },
     /// A slot beyond the loaded nodes.
     #[serde(rename_all = "camelCase")]
     SlotOutOfRange { slot: u32 },
@@ -144,6 +166,35 @@ fn nodes_of(batch: &GraphBatch) -> Result<Nodes<'_>, BridgeError> {
     })
 }
 
+/// The label placement and style of an edge, or why they were refused.
+fn placement_of(edge: &EdgeInput) -> Result<(Option<LabelPlacement>, EdgeStyle), BridgeError> {
+    let id = || edge.id.clone();
+    let label = match edge.label {
+        Some(l) if !(l.t.is_finite() && l.offset.is_finite()) => {
+            return Err(BridgeError::NonFiniteLabel { edge: id() });
+        }
+        label => label.map(|l| LabelPlacement {
+            t: l.t,
+            offset: l.offset,
+        }),
+    };
+    if edge.color > 0xff_ffff {
+        return Err(BridgeError::InvalidColor { edge: id() });
+    }
+    let dash = match edge.dash {
+        Some([dash, gap]) if !(dash.is_finite() && gap.is_finite() && dash > 0.0 && gap >= 0.0) => {
+            return Err(BridgeError::InvalidDash { edge: id() });
+        }
+        dash => dash.map(|[dash, gap]| (dash as f32, gap as f32)),
+    };
+    let style = EdgeStyle {
+        color: edge.color,
+        dash,
+        arrow: edge.arrow == Arrow::End,
+    };
+    Ok((label, style))
+}
+
 /// Resolves every edge's ends to node slots, or names the first offending edge.
 fn edges_of(batch: &GraphBatch, slots: &HashMap<&str, u32>) -> Result<Vec<EdgeSpec>, BridgeError> {
     let end = |edge: &EdgeInput, node: &String| {
@@ -161,21 +212,12 @@ fn edges_of(batch: &GraphBatch, slots: &HashMap<&str, u32>) -> Result<Vec<EdgeSp
         .map(|edge| {
             let source = end(edge, &edge.source)?;
             let target = end(edge, &edge.target)?;
-            let label = match edge.label {
-                Some(l) if !(l.t.is_finite() && l.offset.is_finite()) => {
-                    return Err(BridgeError::NonFiniteLabel {
-                        edge: edge.id.clone(),
-                    });
-                }
-                label => label.map(|l| LabelPlacement {
-                    t: l.t,
-                    offset: l.offset,
-                }),
-            };
+            let (label, style) = placement_of(edge)?;
             Ok(EdgeSpec {
                 source,
                 target,
                 label,
+                style,
             })
         })
         .collect()
@@ -226,10 +268,20 @@ impl Engine {
     }
 
     /// Finds the nodes and edges that meet the rectangle and the edge labels within
-    /// `label_reach` of it; the results are read through the `visible…` buffers.
-    pub fn query(&mut self, min_x: f64, min_y: f64, max_x: f64, max_y: f64, label_reach: f64) {
+    /// `label_reach` of it, and builds the mesh of the edges, flattened within `tolerance`; the
+    /// results are read through the `visible…` and `mesh…` buffers.
+    pub fn query(
+        &mut self,
+        min_x: f64,
+        min_y: f64,
+        max_x: f64,
+        max_y: f64,
+        label_reach: f64,
+        tolerance: f64,
+    ) {
         let rect = Rect::new(min_x, min_y, max_x, max_y);
-        self.graph.query(&rect, label_reach, &mut self.visible);
+        self.graph
+            .query(&rect, label_reach, tolerance, &mut self.visible);
     }
 }
 
@@ -307,6 +359,65 @@ impl Engine {
     pub fn label_points_len(&self) -> usize {
         self.visible.label_points.len()
     }
+    /// Where the mesh's vertex positions, `x, y` each starts.
+    #[wasm_bindgen(js_name = meshPositionsPtr)]
+    pub fn mesh_positions_ptr(&self) -> *const f32 {
+        self.visible.mesh.positions.as_ptr()
+    }
+
+    /// How many values the mesh's vertex positions holds.
+    #[wasm_bindgen(js_name = meshPositionsLen)]
+    pub fn mesh_positions_len(&self) -> usize {
+        self.visible.mesh.positions.len()
+    }
+
+    /// Where the mesh's distance along its path per vertex starts.
+    #[wasm_bindgen(js_name = meshDistancesPtr)]
+    pub fn mesh_distances_ptr(&self) -> *const f32 {
+        self.visible.mesh.distances.as_ptr()
+    }
+
+    /// How many values the mesh's distance along its path per vertex holds.
+    #[wasm_bindgen(js_name = meshDistancesLen)]
+    pub fn mesh_distances_len(&self) -> usize {
+        self.visible.mesh.distances.len()
+    }
+
+    /// Where the mesh's colour per vertex, as RGBA bytes starts.
+    #[wasm_bindgen(js_name = meshColorsPtr)]
+    pub fn mesh_colors_ptr(&self) -> *const u32 {
+        self.visible.mesh.colors.as_ptr()
+    }
+
+    /// How many values the mesh's colour per vertex holds.
+    #[wasm_bindgen(js_name = meshColorsLen)]
+    pub fn mesh_colors_len(&self) -> usize {
+        self.visible.mesh.colors.len()
+    }
+
+    /// Where the mesh's dash pattern per vertex, `dash, gap` starts.
+    #[wasm_bindgen(js_name = meshDashesPtr)]
+    pub fn mesh_dashes_ptr(&self) -> *const f32 {
+        self.visible.mesh.dashes.as_ptr()
+    }
+
+    /// How many values the mesh's dash pattern per vertex holds.
+    #[wasm_bindgen(js_name = meshDashesLen)]
+    pub fn mesh_dashes_len(&self) -> usize {
+        self.visible.mesh.dashes.len()
+    }
+
+    /// Where the mesh's vertex indices, three per triangle starts.
+    #[wasm_bindgen(js_name = meshIndicesPtr)]
+    pub fn mesh_indices_ptr(&self) -> *const u32 {
+        self.visible.mesh.indices.as_ptr()
+    }
+
+    /// How many values the mesh's vertex indices holds.
+    #[wasm_bindgen(js_name = meshIndicesLen)]
+    pub fn mesh_indices_len(&self) -> usize {
+        self.visible.mesh.indices.len()
+    }
 }
 
 #[cfg(test)]
@@ -332,6 +443,9 @@ mod tests {
                     source: source.into(),
                     target: target.into(),
                     label: None,
+                    color: 0x9a_a1ad,
+                    dash: None,
+                    arrow: Arrow::End,
                 })
                 .collect(),
         }
@@ -389,6 +503,30 @@ mod tests {
         });
         let error = graph_of(&data).unwrap_err();
         assert_eq!(error, BridgeError::NonFiniteLabel { edge: "e".into() });
+    }
+
+    #[test]
+    fn a_colour_beyond_rgb_or_a_bad_dash_names_its_edge() {
+        let two = [("a", 0.0, 0.0), ("b", 300.0, 0.0)];
+        let mut data = batch(&two, &[("e", "a", "b")]);
+        data.edges[0].color = 0x100_0000;
+        assert_eq!(
+            graph_of(&data).unwrap_err(),
+            BridgeError::InvalidColor { edge: "e".into() }
+        );
+        for dash in [
+            [0.0, 4.0],
+            [6.0, -1.0],
+            [f64::NAN, 4.0],
+            [6.0, f64::INFINITY],
+        ] {
+            let mut data = batch(&two, &[("e", "a", "b")]);
+            data.edges[0].dash = Some(dash);
+            assert_eq!(
+                graph_of(&data).unwrap_err(),
+                BridgeError::InvalidDash { edge: "e".into() }
+            );
+        }
     }
 
     #[test]

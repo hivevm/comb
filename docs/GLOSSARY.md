@@ -9,6 +9,7 @@ sentences, and list under _Avoid:_ the synonyms it displaces, where there are an
 specification, an ADR, or the code uses without an entry here is a gap to close, not a convention
 to invent.
 
+- **Arrowhead** — the triangle that marks where an edge ends, its tip at the target connector.
 - **Bridge** — the boundary across which TypeScript and the engine exchange data.
 - **Canvas** — the WebGL2 surface on which Comb draws, and on which the user manipulates nodes,
   edges, and edge labels.
@@ -18,8 +19,12 @@ to invent.
   _Avoid:_ frustum culling, outside the wording of the constraint that requires it.
 - **Culling margin** — the band around the viewport, in screen pixels, within which display
   objects are bound already, so that a small pan finds them drawn.
+- **Dash pattern** — the lengths of the dashes and the gaps between them along an edge, in world
+  units; an edge without one is solid.
 - **Edge** — a connection drawn from a connector of one node to a connector of another.
   _Avoid:_ link, wire, connection.
+- **Edge mesh** — the triangles of all edges in the viewport and its culling margin, which the
+  engine computes and the canvas draws in one call.
 - **Edge label** — text attached to an edge, placed by a path parameter and a label offset.
 - **Engine** — the Rust code compiled to WebAssembly that computes geometry and runs graph
   algorithms.
