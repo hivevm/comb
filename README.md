@@ -50,7 +50,9 @@ statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), th
 
 Inside the Dev Container, which provides Bun, Rust, wasm-pack, and Chromium
 ([ADR-0008](docs/adr/0008-toolchain.md), [ADR-0014](docs/adr/0014-dev-container-toolchain.md)).
-[`scripts/check-code.sh`](scripts/check-code.sh) runs the first three in order.
+[`scripts/check-code.sh`](scripts/check-code.sh) runs the first three in order, then the
+structural test of [ADR-0009](docs/adr/0009-functional-core-imperative-shell.md) and the bundle
+budget of Q-3 (`bun run build:lib`, at most 300 kB gzipped without PixiJS).
 
 - **Build:** `bun run build` — the engine with wasm-pack, the type check, and the example
 - **Test:** `bun run test` — `cargo test`, `bun test`, and the Playwright browser tests

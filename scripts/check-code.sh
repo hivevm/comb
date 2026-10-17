@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 #
-# Builds, tests, and lints Comb: the commands of the README's "Build, Test & Run" (ADR-0008).
+# Builds, tests, and lints Comb: the commands of the README's "Build, Test & Run" (ADR-0008),
+# with the shape of the code (scripts/check-structure.sh, ADR-0009) first, since it needs no
+# toolchain and a red test must not hide it, and the bundle budget (scripts/check-bundle.sh, Q-3)
+# last, each after its self-test.
 #
 # Needs Bun, Rust with the wasm32-unknown-unknown target, and Chromium for Playwright, as the Dev
 # Container provides them (ADR-0014). Where Bun or Cargo is missing it fails and says so: a gate
@@ -8,12 +11,16 @@
 #
 # Usage:
 #     scripts/check-code.sh
-# Exit code 0 when the build, the tests, and the lint pass, non-zero otherwise.
+# Exit code 0 when the structure, the build, the lint, the tests, and the bundle budget pass,
+# non-zero at the first that fails.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+
+bash scripts/test-check-structure.sh
+bash scripts/check-structure.sh
 
 missing=()
 for tool in bun cargo; do
@@ -28,4 +35,6 @@ bun install --frozen-lockfile
 bun run build
 bun run lint
 bun run test
-echo "Build, test, and lint passed."
+bash scripts/test-check-bundle.sh
+bash scripts/check-bundle.sh
+echo "Structure, build, lint, tests, and bundle budget passed."

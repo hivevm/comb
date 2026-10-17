@@ -43,7 +43,8 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   ([ADR-0010](adr/0010-bridge-data-format.md)).
 - **Store** (`packages/comb/src/store`) — a vanilla Zustand store with the graph's structure, the
   selection, the viewport, and a counter for moved positions; no coordinates
-  ([ADR-0011](adr/0011-store.md)).
+  ([ADR-0011](adr/0011-store.md)). `GraphView` is its state without the actions, the type the
+  render layer reads.
 - **Interaction** (`packages/comb/src/interaction`) — pointer and wheel input into store actions
   and engine moves: drag a node, pan, zoom around the pointer.
 - **Render** (`packages/comb/src/render`) — the PixiJS scene: a `world` render group with the
@@ -71,4 +72,12 @@ control points of every edge and the position of every edge label, so both follo
 
 **Building.** `bun run build:engine` compiles `crates/engine-wasm` with wasm-pack into
 `packages/comb/wasm/` (generated, not tracked); the library imports it from there, and Vite serves
-the example from source.
+the example from source. `bun run build:lib` bundles the library without PixiJS into
+`packages/comb/dist/`, with the WebAssembly inlined; that bundle is what the budget of Q-3
+measures.
+
+**Holding the shape.** `scripts/check-structure.sh` fails when the engine's core names or, through
+`Cargo.lock`, reaches a crate that touches the browser, when a module other than the bridge
+imports the WebAssembly package, when the render layer reaches the store instead of the action-free
+`GraphView`, or when an example imports past the library's entry (ADR-0009). The type checker
+does the rest for the render layer: `GraphView` has no action to call.

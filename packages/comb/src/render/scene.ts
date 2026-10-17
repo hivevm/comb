@@ -5,7 +5,7 @@
 // ADR-0012 are not built yet: every node has a view and all edges share one Graphics.
 import { Application, BitmapText, Container, Graphics } from "pixi.js";
 import type { Bridge } from "../bridge";
-import type { EdgeData, GraphState, NodeView } from "../store";
+import type { EdgeData, GraphView, NodeView } from "../store";
 
 const NODE_FILL = 0xffffff;
 const NODE_STROKE = 0xd0d4dc;
@@ -44,7 +44,7 @@ export class NodesContainer extends Container {
   private readonly views = new Map<string, NodeGraphic>();
 
   /** Creates a view for every node and drops the views of nodes that are gone. */
-  syncNodes(state: GraphState): void {
+  syncNodes(state: GraphView): void {
     for (const [id, view] of this.views) {
       if (!state.slots.has(id)) {
         view.destroy({ children: true });
@@ -63,7 +63,7 @@ export class NodesContainer extends Container {
   }
 
   /** Places every view at its node's position in the engine's buffer. */
-  syncPositions(state: GraphState, positions: Float32Array): void {
+  syncPositions(state: GraphView, positions: Float32Array): void {
     for (const [id, view] of this.views) {
       const slot = state.slots.get(id);
       if (slot !== undefined) view.position.set(positions[slot * 2], positions[slot * 2 + 1]);
@@ -77,7 +77,7 @@ interface Anchors {
 }
 
 /** Where an edge leaves its source and enters its target: right and left middle. */
-function anchors(edge: EdgeData, state: GraphState, positions: Float32Array): Anchors | null {
+function anchors(edge: EdgeData, state: GraphView, positions: Float32Array): Anchors | null {
   const s = state.slots.get(edge.source);
   const t = state.slots.get(edge.target);
   const sn = s === undefined ? undefined : state.nodes[s];
@@ -98,7 +98,7 @@ export class EdgesContainer extends Container {
     this.addChild(this.paths);
   }
 
-  sync(state: GraphState, positions: Float32Array, bridge: Bridge): void {
+  sync(state: GraphView, positions: Float32Array, bridge: Bridge): void {
     this.paths.clear();
     for (const edge of state.edges) {
       const at = anchors(edge, state, positions);
@@ -114,7 +114,7 @@ export class EdgesContainer extends Container {
 
 /** The edge-labels layer: a pill per label at its path parameter and label offset (G-6). */
 export class LabelsContainer extends Container {
-  sync(state: GraphState, positions: Float32Array, bridge: Bridge): void {
+  sync(state: GraphView, positions: Float32Array, bridge: Bridge): void {
     this.removeChildren().forEach((child) => child.destroy({ children: true }));
     for (const edge of state.edges) {
       const at = edge.label && anchors(edge, state, positions);
@@ -148,7 +148,7 @@ export class Scene {
     app.stage.addChild(this.world, this.overlay);
   }
 
-  render(state: GraphState, bridge: Bridge): void {
+  render(state: GraphView, bridge: Bridge): void {
     const positions = bridge.positions();
     this.nodes.syncNodes(state);
     this.nodes.syncPositions(state, positions);

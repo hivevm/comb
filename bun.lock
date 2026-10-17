@@ -31,6 +31,9 @@
         "pixi.js": "8.22.0",
         "zustand": "5.0.15",
       },
+      "devDependencies": {
+        "vite": "8.3.4",
+      },
     },
   },
   "trustedDependencies": [
