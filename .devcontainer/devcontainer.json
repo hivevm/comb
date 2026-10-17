@@ -49,7 +49,7 @@
     // (AGENTS.md, section 6).
     "ghcr.io/devcontainers/features/github-cli:1": {},
     // Node.js — only the fallback runtime for Playwright while Bun runs it (ADR-0008, ADR-0014).
-    "ghcr.io/devcontainers/features/node:1": {
+    "ghcr.io/devcontainers/features/node:2": {
       "version": "24",
       "pnpmVersion": "none"
     },
