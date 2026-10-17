@@ -1,10 +1,9 @@
-# NUC — an Agentic, Specification-Oriented Starter Template
+# Comb
 
-[![Checks](https://github.com/hivevm/nuc/actions/workflows/checks.yml/badge.svg)](https://github.com/hivevm/nuc/actions/workflows/checks.yml)
+[![Checks](https://github.com/hivevm/comb/actions/workflows/checks.yml/badge.svg)](https://github.com/hivevm/comb/actions/workflows/checks.yml)
 
-**NUC** is named after the small *nucleus colony* a full hive grows from in beekeeping. It is a
-starting point for building software **with coding agents** inside a ready-to-use Dev Container.
-The work is driven by a written **specification**
+**Comb** is a high-performance, interactive node-editor framework for the browser, built to stay
+responsive with tens of thousands of nodes. The work is driven by a written **specification**
 ([`docs/SPECIFICATION.md`](docs/SPECIFICATION.md)) and **Architecture Decision Records**
 ([`docs/adr/`](docs/adr/)), so intent and the reasoning behind every structural choice stay
 explicit and reviewable.
