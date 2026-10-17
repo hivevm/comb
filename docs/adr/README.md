@@ -86,6 +86,7 @@ is the table a session reads.
 | [0007](0007-harness.md) | One agent implements, a fresh session reviews, and the protected parts stay with the maintainer | every change and every agent session in this repository, `docs/adr/`, `docs/SPECIFICATION.md`, `.github/CODEOWNERS`, and the tickets under `docs/plan/` | 🟡 proposed |
 | [0008](0008-toolchain.md) | TypeScript with Bun, Vite, Playwright, ESLint, and Prettier; Rust with wasm-pack, cargo test, clippy, and rustfmt | `package.json`, `bun.lock`, `Cargo.toml`, the lint and formatter configurations, `scripts/check-code.sh`, `scripts/check-all.sh`, `.github/workflows/`, and the **Build, Test & Run** section of `README.md` | 🟡 proposed |
 | [0009](0009-functional-core-imperative-shell.md) | A pure Rust engine as functional core, and a TypeScript shell around it | the directory layout, `crates/`, `packages/`, `examples/`, and every import between their modules | 🟡 proposed |
+| [0010](0010-bridge-data-format.md) | Structured data crosses the bridge through serde-wasm-bindgen with generated types, coordinate streams through typed-array views on engine-owned buffers | `crates/engine-wasm/`, `packages/comb/src/bridge/`, and every value that crosses between them | 🟡 proposed |
 
 ### Superseded and rejected
 
