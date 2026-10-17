@@ -1,9 +1,27 @@
-# Keeps the GitHub Actions under .github/workflows/ current: within a major, the version tag
-# picks up new releases by itself; Dependabot raises a pull request when an action publishes a
-# new major.
+# Keeps the dependencies current with pull requests to review:
+# - the GitHub Actions under .github/workflows/: within a major, the version tag picks up new
+#   releases by itself; Dependabot raises a pull request when an action publishes a new major;
+# - the JavaScript dependencies pinned by bun.lock, and the Rust crates pinned by Cargo.lock;
+# - the images the Dev Container's Dockerfile pins by digest, and its Features (ADR-0014).
 version: 2
 updates:
   - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: monthly
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: monthly
+  - package-ecosystem: docker
+    directory: /.devcontainer
+    schedule:
+      interval: monthly
+  - package-ecosystem: devcontainers
     directory: /
     schedule:
       interval: monthly

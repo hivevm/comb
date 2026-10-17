@@ -1,0 +1,21 @@
+{
+  // "Example: metric tree" builds the engine, serves the example, and opens it in the host's
+  // browser once Vite reports its address (G-9, ADR-0014).
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Example: metric tree",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "bun run example",
+      "cwd": "${workspaceFolder}",
+      // Vite prints the port in bold; without colours the pattern below sees plain digits.
+      "env": { "NO_COLOR": "1" },
+      "serverReadyAction": {
+        "pattern": "localhost:([0-9]+)",
+        "uriFormat": "http://localhost:%s",
+        "action": "openExternally"
+      }
+    }
+  ]
+}

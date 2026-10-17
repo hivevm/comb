@@ -1,0 +1,110 @@
+// The public interface of Comb and the validation of graph data (ADR-0009).
+import { Application } from "pixi.js";
+import { createBridge, type BridgeError } from "../bridge";
+import { attachInteraction } from "../interaction";
+import { fitViewport, type Bounds } from "../interaction/viewport";
+import { Scene } from "../render/scene";
+import { createGraphStore, type GraphData, type NodeView, type Selection } from "../store";
+
+export interface CombOptions {
+  /** The canvas background. */
+  background?: number;
+}
+
+export interface Comb {
+  /** Replaces the graph. Throws a `GraphDataError` on malformed graph data (Q-7). */
+  load(graph: GraphData): void;
+  /** Changes attributes of a node; the canvas shows the change (G-5). */
+  updateNode(id: string, patch: Partial<Pick<NodeView, "title">>): void;
+  /** Pans and zooms so the whole graph is in view. */
+  fitView(): void;
+  /** Calls `listener` whenever the selection changes (G-5); returns the unsubscribe function. */
+  onSelectionChange(listener: (selection: Selection) => void): () => void;
+  destroy(): void;
+}
+
+export type GraphDataProblem = BridgeError | { kind: "missingNode"; edge: string; node: string };
+
+/** Graph data Comb refused, with what was wrong and where. */
+export class GraphDataError extends Error {
+  constructor(readonly problem: GraphDataProblem) {
+    super(`comb: malformed graph data (${problem.kind})`);
+  }
+}
+
+/** The world rectangle the nodes cover, or null for an empty graph. */
+function boundsOf(nodes: readonly NodeView[], positions: Float32Array): Bounds | null {
+  if (nodes.length === 0) return null;
+  const bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  nodes.forEach((node, slot) => {
+    const x = positions[slot * 2]!;
+    const y = positions[slot * 2 + 1]!;
+    bounds.minX = Math.min(bounds.minX, x);
+    bounds.minY = Math.min(bounds.minY, y);
+    bounds.maxX = Math.max(bounds.maxX, x + node.width);
+    bounds.maxY = Math.max(bounds.maxY, y + node.height);
+  });
+  return bounds;
+}
+
+function checkEdges(graph: GraphData): void {
+  const ids = new Set(graph.nodes.map((node) => node.id));
+  for (const edge of graph.edges) {
+    for (const end of [edge.source, edge.target]) {
+      if (!ids.has(end))
+        throw new GraphDataError({ kind: "missingNode", edge: edge.id, node: end });
+    }
+  }
+}
+
+/** Creates a Comb canvas that fills `host`. */
+export async function createComb(host: HTMLElement, options: CombOptions = {}): Promise<Comb> {
+  const bridge = await createBridge();
+  const app = new Application();
+  await app.init({
+    resizeTo: host,
+    background: options.background ?? 0xf7f8fa,
+    antialias: true,
+    preference: "webgl",
+  });
+  host.appendChild(app.canvas);
+
+  const store = createGraphStore();
+  const scene = new Scene(app);
+  let frame = 0;
+  const unsubscribe = store.subscribe(() => {
+    frame ||= requestAnimationFrame(() => {
+      frame = 0;
+      scene.render(store.getState(), bridge);
+    });
+  });
+  const detach = attachInteraction(app, store, bridge);
+
+  return {
+    load(graph) {
+      checkEdges(graph);
+      try {
+        bridge.loadNodes({ nodes: graph.nodes.map(({ id, x, y }) => ({ id, x, y })) });
+      } catch (error) {
+        throw new GraphDataError(error as BridgeError);
+      }
+      store.getState().load(graph);
+    },
+    updateNode: (id, patch) => store.getState().updateNode(id, patch),
+    fitView() {
+      const bounds = boundsOf(store.getState().nodes, bridge.positions());
+      if (bounds)
+        store.getState().setViewport(fitViewport(bounds, app.screen.width, app.screen.height));
+    },
+    onSelectionChange: (listener) =>
+      store.subscribe((state, previous) => {
+        if (state.selection !== previous.selection) listener(state.selection);
+      }),
+    destroy() {
+      cancelAnimationFrame(frame);
+      unsubscribe();
+      detach();
+      app.destroy(true, { children: true });
+    },
+  };
+}
