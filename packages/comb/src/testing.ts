@@ -3,7 +3,7 @@
 // Its shape follows the scene and changes with it, outside the stable interface of `comb`.
 import type { Comb } from "./api";
 import { scenes } from "./api/scenes";
-import type { SceneSnapshot } from "./render/scene";
+import { FAR_SCALE, NEAR_SCALE, type SceneSnapshot } from "./render/scene";
 
 export type { SceneSnapshot };
 
@@ -33,6 +33,12 @@ export function renderCount(comb: Comb): number {
  *  alone, without the text of the others, whose fonts differ between machines. */
 export function showLayers(comb: Comb, layers: { nodes?: boolean; edgeLabels?: boolean }): void {
   const scene = sceneOf(comb);
-  if (layers.nodes !== undefined) scene.nodes.visible = layers.nodes;
+  if (layers.nodes !== undefined) scene.nodes.visible = scene.particles.visible = layers.nodes;
   if (layers.edgeLabels !== undefined) scene.labels.visible = layers.edgeLabels;
+}
+
+/** The scales at which the levels of detail begin: near from `near`, middle from `far`, far
+ *  below it; the benchmark measures at each. */
+export function levelScales(): { near: number; far: number } {
+  return { near: NEAR_SCALE, far: FAR_SCALE };
 }

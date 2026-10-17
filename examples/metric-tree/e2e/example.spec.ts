@@ -83,12 +83,56 @@ test("picking the largest copies option shows at least 50,000 nodes and edges", 
   expect(report.nodes).toBeGreaterThanOrEqual(50_000);
   expect(report.edges).toBeGreaterThanOrEqual(50_000);
   await expect(page.locator("#count")).toHaveText(`${report.nodes} nodes, ${report.edges} edges`);
-  // Shown, not only loaded: the canvas draws every node and edge, since all are in view.
+  // Shown, not only loaded: the canvas draws every node and edge, since all are in view, at the
+  // far level: nodes as particles, no text, and a number of display objects that does not grow
+  // with the graph, apart from the one particle container.
   const drawn = await page.evaluate(() => {
     const snapshot = window.inspect();
-    return { nodes: snapshot.nodes.length, edges: snapshot.edges.length };
+    return {
+      level: snapshot.level,
+      nodes: snapshot.nodes.length,
+      particles: snapshot.particles,
+      edges: snapshot.edges.length,
+      texts: snapshot.texts,
+    };
   });
-  expect(drawn).toEqual({ nodes: report.nodes, edges: report.edges });
+  expect(drawn).toEqual({
+    level: "far",
+    nodes: report.nodes,
+    particles: report.nodes,
+    edges: report.edges,
+    texts: 0,
+  });
+  // Verifies: ADR-0012
+  // The world, the edges layer and its mesh, the particle container, and the empty layers of
+  // node views and labels.
+  expect(await page.evaluate(() => window.inspect().displayObjects)).toBe(6);
+});
+
+test("zooming through each threshold switches the level of detail", async ({ page }) => {
+  // Verifies: ADR-0012
+  await open(page);
+  const { width, height } = await canvasSize(page);
+  // Centred on the north-star metric, at (900 + 110, 32) in world units.
+  const at = async (scale: number) => {
+    await setViewport(page, { x: width / 2 - 1010 * scale, y: height / 2 - 32 * scale, scale });
+    return page.evaluate(() => {
+      const { level, texts, particles, nodes, edgeLabels } = window.inspect();
+      return { level, texts, particles, nodes: nodes.length, labels: edgeLabels.length };
+    });
+  };
+  const near = await at(0.6);
+  expect(near.level).toBe("near");
+  expect(near.labels).toBeGreaterThan(0);
+  expect(near.texts).toBe(near.nodes + near.labels);
+  const middle = await at(0.599);
+  expect(middle).toMatchObject({ level: "middle", labels: 0, particles: 0 });
+  expect(middle.texts).toBe(middle.nodes);
+  expect((await at(0.3)).level).toBe("middle");
+  const far = await at(0.299);
+  expect(far).toMatchObject({ level: "far", texts: 0, labels: 0 });
+  expect(far.particles).toBe(far.nodes);
+  expect(far.nodes).toBeGreaterThan(0);
 });
 
 test("dragging a node moves it with its edges and edge labels, and a click shows it in the sidebar", async ({
@@ -182,6 +226,86 @@ test("what lies entirely outside the viewport is not bound to a display object",
   expect(snapshot.edgeLabels).toEqual([]);
 });
 
+/** What is drawn although it lies entirely outside the viewport grown by `margin` screen pixels:
+ *  nodes by their box, edges by the box of their ends grown by the pull of their control points,
+ *  which holds the whole path, and labels by their point grown by the label reach. */
+async function drawnBeyond(page: Page, margin: number): Promise<string[]> {
+  return page.evaluate((margin) => {
+    const { viewport, nodes, edges, edgeLabels } = window.inspect();
+    const canvas = document.querySelector("#canvas canvas")!.getBoundingClientRect();
+    const { x, y, scale } = viewport;
+    const m = margin / scale;
+    const view = {
+      minX: -x / scale - m,
+      minY: -y / scale - m,
+      maxX: (canvas.width - x) / scale + m,
+      maxY: (canvas.height - y) / scale + m,
+    };
+    const meets = (minX: number, minY: number, maxX: number, maxY: number) =>
+      minX <= view.maxX && view.minX <= maxX && minY <= view.maxY && view.minY <= maxY;
+    const pull = 40 + 1;
+    const reach = 120;
+    return [
+      ...nodes
+        .filter((n) => !meets(n.x, n.y, n.x + n.width, n.y + n.height))
+        .map((n) => `node ${n.id}`),
+      ...edges
+        .filter(({ source: s, target: t }) => {
+          const [minX, maxX] = [Math.min(s.x, t.x) - pull, Math.max(s.x, t.x) + pull];
+          const [minY, maxY] = [Math.min(s.y, t.y) - pull, Math.max(s.y, t.y) + pull];
+          return !meets(minX, minY, maxX, maxY);
+        })
+        .map((e) => `edge ${e.id}`),
+      ...edgeLabels
+        .filter((l) => !meets(l.x - reach, l.y - reach, l.x + reach, l.y + reach))
+        .map((l) => `label ${l.edge}`),
+    ];
+  }, margin);
+}
+
+test("at every level, nothing entirely outside the viewport and its margin is drawn", async ({
+  page,
+}) => {
+  // Verifies: G-7, ADR-0012
+  test.setTimeout(60_000);
+  await open(page, "?copies=100");
+  const { width, height } = await canvasSize(page);
+  // Centred on world (7000, 3000), well inside the grid of copies.
+  const centred = (scale: number) => ({
+    x: width / 2 - 7000 * scale,
+    y: height / 2 - 3000 * scale,
+    scale,
+  });
+  for (const [scale, level] of [
+    [1, "near"],
+    [0.45, "middle"],
+    [0.2, "far"],
+  ] as const) {
+    await setViewport(page, { ...centred(scale), x: centred(scale).x + 5000 });
+    await setViewport(page, centred(scale));
+    const { level: drawnAt, nodes } = await page.evaluate(() => window.inspect());
+    expect(drawnAt).toBe(level);
+    expect(nodes.length).toBeGreaterThan(0);
+    expect(await drawnBeyond(page, 128)).toEqual([]);
+    // Moved without a query, zoomed in by a tenth and panned: what is bound reaches at most
+    // twice the margin beyond the viewport.
+    const queries = await page.evaluate(() => window.inspect().queries);
+    const zoomed = centred(scale * 1.1);
+    await setViewport(page, zoomed);
+    await setViewport(page, { ...zoomed, x: zoomed.x + 30, y: zoomed.y - 20 });
+    expect(await page.evaluate(() => window.inspect().queries)).toBe(queries);
+    expect(await drawnBeyond(page, 256)).toEqual([]);
+    // Zoomed in by almost a quarter from a fresh query: within the rescale the scene allows, but
+    // the last query would reach about 280 px beyond the viewport, so the scene queries again.
+    await setViewport(page, { ...centred(scale), x: centred(scale).x + 5000 });
+    await setViewport(page, centred(scale));
+    const fresh = await page.evaluate(() => window.inspect().queries);
+    await setViewport(page, centred(scale * 1.24));
+    expect(await page.evaluate(() => window.inspect().queries)).toBe(fresh + 1);
+    expect(await drawnBeyond(page, 256)).toEqual([]);
+  }
+});
+
 test("node views draw in slot order after their nodes left the viewport and came back", async ({
   page,
 }) => {
@@ -197,6 +321,48 @@ test("node views draw in slot order after their nodes left the viewport and came
     await window.comb.whenRendered();
   });
   expect(await order()).toEqual(loaded);
+});
+
+test("at the far level, a click selects the node under it and the canvas shows it", async ({
+  page,
+}) => {
+  await open(page);
+  const { width, height } = await canvasSize(page);
+  await setViewport(page, { x: width / 2, y: height / 2, scale: 0.2 });
+  expect(await page.evaluate(() => window.inspect().level)).toBe("far");
+  const centre = await screenCentre(page, "0:0.0");
+  // Hovering over the node offers to grab it.
+  await page.mouse.move(centre.x, centre.y);
+  expect(
+    await page.evaluate(
+      () => document.querySelector<HTMLCanvasElement>("#canvas canvas")!.style.cursor,
+    ),
+  ).toBe("grab");
+  await page.mouse.click(centre.x, centre.y);
+  await page.evaluate(() => window.comb.whenRendered());
+  await expect(page.locator("#title")).toHaveValue("Launch push notifications");
+  expect(await page.evaluate(() => window.inspect().highlighted)).toBe("0:0.0");
+});
+
+test("a pan within the culling margin moves the world without a query", async ({ page }) => {
+  await open(page);
+  const queries = () => page.evaluate(() => window.inspect().queries);
+  const start = await page.evaluate(() => window.comb.viewport());
+  const before = await queries();
+  await setViewport(page, { ...start, x: start.x + 60 });
+  expect(await queries()).toBe(before);
+  await setViewport(page, { ...start, scale: start.scale * 1.1 });
+  expect(await queries()).toBe(before);
+  await setViewport(page, { ...start, x: start.x + 600 });
+  expect(await queries()).toBe(before + 1);
+  // A selection and a move change what is drawn: the renders query, wherever the viewport is.
+  const centre = await screenCentre(page, "0:0.0");
+  await page.mouse.move(centre.x, centre.y);
+  await page.mouse.down();
+  await page.mouse.move(centre.x, centre.y + 5);
+  await page.mouse.up();
+  await page.evaluate(() => window.comb.whenRendered());
+  expect(await queries()).toBeGreaterThanOrEqual(before + 2);
 });
 
 test("the same area binds as many display objects at 1 and at 1,000 copies", async ({ page }) => {

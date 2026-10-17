@@ -1,7 +1,8 @@
 // The benchmark of Q-1 and Q-2 (ADR-0008): the example at 50,000 nodes and 50,000 edges, served
 // from its production build. It measures the time from handing the graph to Comb until its first
 // frame is drawn, and the p95 frame time while a node on screen is dragged, the viewport panned,
-// and zoomed in and out. Only frames in which Comb rendered count; each action is checked for its
+// and zoomed in and out, and while the viewport is panned at the scale where the near and the
+// middle level of detail begin. Only frames in which Comb rendered count; each action is checked for its
 // effect, so a gesture that missed fails the run instead of measuring idle frames. The numbers go
 // to bench-results/latest.json and are printed beside the targets.
 //
@@ -148,6 +149,56 @@ function expectEffect(ok: boolean, what: string): void {
   if (!ok) throw new Error(`the ${what} had no effect; the measurement would be of idle frames`);
 }
 
+/** Pans at the scale where a level of detail begins, the least scale it draws at and so the most
+ *  it binds, centred in the graph; the pan leaves the culling margin, so the scene queries. */
+async function panAt(page: Page, scale: number): Promise<Measure> {
+  const box = (await page.locator("#canvas canvas").boundingBox())!;
+  await page.evaluate(
+    async ({ scale, width, height }) => {
+      const nodes = window.inspect().nodes;
+      const xs = nodes.map((node) => node.x);
+      const ys = nodes.map((node) => node.y);
+      const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+      const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+      window.comb.setViewport({ x: width / 2 - cx * scale, y: height / 2 - cy * scale, scale });
+      await window.comb.whenRendered();
+    },
+    { scale, width: box.width, height: box.height },
+  );
+  const start = await emptyPoint(page);
+  const from = await viewport(page);
+  const pan = await frameTimes(page, () => drag(page, start, 400, 200));
+  const to = await viewport(page);
+  expectEffect(to.x !== from.x || to.y !== from.y, `pan at scale ${scale}`);
+  return pan;
+}
+
+/** A point on the canvas, near its top left, over no drawn node, where a press pans. */
+async function emptyPoint(page: Page): Promise<Point> {
+  return page.evaluate(() => {
+    const { nodes, viewport } = window.inspect();
+    const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();
+    const { x, y, scale } = viewport;
+    const over = (px: number, py: number) =>
+      nodes.some((node) => {
+        const left = x + node.x * scale;
+        const top = y + node.y * scale;
+        return (
+          px >= left &&
+          px <= left + node.width * scale &&
+          py >= top &&
+          py <= top + node.height * scale
+        );
+      });
+    for (let py = 4; py < rect.height / 2; py += 3) {
+      for (let px = 4; px < rect.width / 2; px += 3) {
+        if (!over(px, py)) return { x: rect.left + px, y: rect.top + py };
+      }
+    }
+    throw new Error("no empty point to pan from");
+  });
+}
+
 async function measure(page: Page) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -191,8 +242,17 @@ async function measure(page: Page) {
     scales.some((scale) => scale !== zoomFrom.scale),
     "zoom",
   );
+  console.log(`zoom: ${zoomed.frames} frames, p95 ${zoomed.p95.toFixed(1)} ms`);
+
+  const begins = await page.evaluate(() => window.levelScales());
+  const near = await panAt(page, begins.near);
+  const middle = await panAt(page, begins.far);
   if (errors.length) throw new Error(`the example failed: ${errors.join("; ")}`);
-  return { load, gpu, node: node.id, drag: dragged, pan, zoom: zoomed };
+  const levels = {
+    near: { scale: begins.near, pan: near },
+    middle: { scale: begins.far, pan: middle },
+  };
+  return { load, gpu, node: node.id, drag: dragged, pan, zoom: zoomed, levels };
 }
 
 /** Compared at the precision printed, so that a frame of 16.67 ms at 60 Hz meets 16.7. */
@@ -207,6 +267,18 @@ function report(result: Awaited<ReturnType<typeof measure>>): void {
     ["drag p95 (ms)", result.drag.p95, TARGET_FRAME_MS, result.drag],
     ["pan p95 (ms)", result.pan.p95, TARGET_FRAME_MS, result.pan],
     ["zoom p95 (ms)", result.zoom.p95, TARGET_FRAME_MS, result.zoom],
+    [
+      `pan p95 near ${result.levels.near.scale} (ms)`,
+      result.levels.near.pan.p95,
+      TARGET_FRAME_MS,
+      result.levels.near.pan,
+    ],
+    [
+      `pan p95 middle ${result.levels.middle.scale} (ms)`,
+      result.levels.middle.pan.p95,
+      TARGET_FRAME_MS,
+      result.levels.middle.pan,
+    ],
   ];
   console.log(`${result.load.nodes} nodes, ${result.load.edges} edges — GPU: ${result.gpu}`);
   for (const [name, value, target, m] of rows) {
@@ -214,7 +286,7 @@ function report(result: Awaited<ReturnType<typeof measure>>): void {
       ? `  (truncated: ${m.steps} of ${STEPS} steps, ${m.frames} frames)`
       : "";
     console.log(
-      `${name.padEnd(18)} ${value.toFixed(1).padStart(9)}  target ${target}  ${verdict(value, target)}${note}`,
+      `${name.padEnd(26)} ${value.toFixed(1).padStart(9)}  target ${target}  ${verdict(value, target)}${note}`,
     );
   }
 }

@@ -1,6 +1,13 @@
 // The example host application: Comb on the canvas, the attribute form in the HTML sidebar.
 import { createComb, type Comb, type GraphData, type Selection } from "comb";
-import { inspect, renderCount, showLayers, viewport, type SceneSnapshot } from "comb/testing";
+import {
+  inspect,
+  levelScales,
+  renderCount,
+  showLayers,
+  viewport,
+  type SceneSnapshot,
+} from "comb/testing";
 import { metricTree } from "./graph";
 
 /** How the last load went: what the benchmark and the browser tests read. */
@@ -21,6 +28,7 @@ declare global {
     renderCount: () => number;
     viewport: () => SceneSnapshot["viewport"];
     showLayers: (layers: Parameters<typeof showLayers>[1]) => void;
+    levelScales: typeof levelScales;
   }
 }
 
@@ -90,4 +98,5 @@ window.inspect = () => inspect(comb);
 window.renderCount = () => renderCount(comb);
 window.viewport = () => viewport(comb);
 window.showLayers = (layers) => showLayers(comb, layers);
+window.levelScales = levelScales;
 window.loadReport = load();

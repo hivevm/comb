@@ -38,6 +38,14 @@ export interface Visible {
   mesh: EdgeMesh;
 }
 
+/** How a query strokes the edges it finds: flattened within `tolerance` and `width` wide, in
+ *  world units, as thin lines alone without dash patterns or arrowheads where `plain`. */
+export interface Stroke {
+  tolerance: number;
+  width: number;
+  plain: boolean;
+}
+
 export interface Bridge {
   /** Replaces the graph; node slot `i` is the batch's node `i`, edge slot `i` its edge `i`.
    *  Throws a `BridgeError`. */
@@ -47,9 +55,11 @@ export interface Bridge {
   /** A fresh view on the positions buffer, `x, y` per slot. Do not keep it across calls. */
   positions(): Float32Array;
   /** The nodes and edges that meet `rect`, the edge labels whose point lies within
-   *  `labelReach` of it, and the mesh of the edges, flattened within `tolerance` world units, as
-   *  fresh views. Do not keep them across calls. */
-  query(rect: Rect, labelReach: number, tolerance: number): Visible;
+   *  `labelReach` of it, and the mesh of the edges, stroked as `stroke` says, as fresh views. Do
+   *  not keep them across calls. */
+  query(rect: Rect, labelReach: number, stroke: Stroke): Visible;
+  /** The slot of the node drawn on top at the world point `(x, y)`, if any. */
+  hit(x: number, y: number): number | undefined;
 }
 
 function wrap(memory: WebAssembly.Memory): Bridge {
@@ -60,8 +70,10 @@ function wrap(memory: WebAssembly.Memory): Bridge {
     loadGraph: (batch) => engine.loadGraph(batch),
     translate: (slots, dx, dy) => engine.translate(slots, dx, dy),
     positions: () => f32(engine.positionsPtr(), engine.positionsLen()),
-    query(rect, labelReach, tolerance) {
-      engine.query(rect.minX, rect.minY, rect.maxX, rect.maxY, labelReach, tolerance);
+    hit: (x, y) => engine.hit(x, y),
+    query(rect, labelReach, { tolerance, width, plain }) {
+      const { minX, minY, maxX, maxY } = rect;
+      engine.query(minX, minY, maxX, maxY, labelReach, tolerance, width, plain);
       return {
         positions: f32(engine.positionsPtr(), engine.positionsLen()),
         nodes: u32(engine.visibleNodesPtr(), engine.visibleNodesLen()),

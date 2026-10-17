@@ -18,7 +18,8 @@ to invent.
 - **Culling** — leaving out of the draw everything that lies entirely outside the viewport.
   _Avoid:_ frustum culling, outside the wording of the constraint that requires it.
 - **Culling margin** — the band around the viewport, in screen pixels, within which display
-  objects are bound already, so that a small pan finds them drawn.
+  objects are bound already, so that a small pan finds them drawn; between two queries of the
+  engine, what is bound may reach up to twice as far.
 - **Dash pattern** — the lengths of the dashes and the gaps between them along an edge, in world
   units; an edge without one is solid.
 - **Edge** — a connection drawn from a connector of one node to a connector of another.
@@ -36,6 +37,9 @@ to invent.
   _Avoid:_ client, consumer.
 - **Label offset** — the distance in pixels of an edge label from its path point, along the edge's
   normal there.
+- **Level of detail** — how much of the graph the canvas draws at the current zoom: near draws
+  nodes with their titles and edge labels, middle nodes with their titles, far nodes as plain
+  boxes and edges as thin lines, without text.
 - **Node** — a box on the canvas that stands for one element of the host application's graph.
   _Avoid:_ vertex, block.
 - **Node content** — the host application's description of what a node shows, as a list of

@@ -29,8 +29,29 @@ impl Default for EdgeStyle {
     }
 }
 
-/// The width of a stroke, in world units.
+/// The width of a stroke at full detail, in world units.
 pub const STROKE_WIDTH: f64 = 2.0;
+
+/// How a query strokes its edges: flattened within `tolerance` and `width` wide, in world units;
+/// `plain` draws thin lines alone, without dash patterns or arrowheads, as the far level of
+/// detail does (ADR-0012).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Stroke {
+    pub tolerance: f64,
+    pub width: f64,
+    pub plain: bool,
+}
+
+impl Stroke {
+    /// Full detail: the stroke width, dash patterns, and arrowheads, within `tolerance`.
+    pub const fn full(tolerance: f64) -> Self {
+        Self {
+            tolerance,
+            width: STROKE_WIDTH,
+            plain: false,
+        }
+    }
+}
 /// The length and half the base of an arrowhead, in world units.
 pub const ARROW_LENGTH: f64 = 10.0;
 pub const ARROW_HALF_WIDTH: f64 = 5.0;
@@ -69,16 +90,20 @@ impl Mesh {
         self.dashes.extend([dash.0, dash.1]);
     }
 
-    /// Strokes `path` with `style` into the mesh, flattened within `tolerance`.
+    /// Strokes `path` with `style` into the mesh as `stroke` says.
     pub fn add_edge(
         &mut self,
         path: &EdgePath,
         style: &EdgeStyle,
-        tolerance: f64,
+        stroke: &Stroke,
         scratch: &mut Vec<Point>,
     ) {
-        flatten(path, tolerance, scratch);
+        flatten(path, stroke.tolerance, scratch);
         let color = rgba(style.color);
+        if stroke.plain {
+            self.polyline(scratch, color, (0.0, 0.0), stroke.width);
+            return;
+        }
         if style.arrow {
             let tip = path.target;
             let back = path.tangent_at(1.0);
@@ -86,7 +111,12 @@ impl Mesh {
             trim_end(scratch, base);
             self.arrowhead(tip, base, back, color);
         }
-        self.polyline(scratch, color, style.dash.unwrap_or((0.0, 0.0)));
+        self.polyline(
+            scratch,
+            color,
+            style.dash.unwrap_or((0.0, 0.0)),
+            stroke.width,
+        );
     }
 
     fn arrowhead(&mut self, tip: Point, base: Point, direction: Point, color: u32) {
@@ -101,13 +131,13 @@ impl Mesh {
         self.indices.extend([first, first + 1, first + 2]);
     }
 
-    /// Two vertices per point, half the stroke width either side along the averaged normal, and
+    /// Two vertices per point, half of `width` either side along the averaged normal, and
     /// two triangles per segment.
-    fn polyline(&mut self, points: &[Point], color: u32, dash: (f32, f32)) {
+    fn polyline(&mut self, points: &[Point], color: u32, dash: (f32, f32), width: f64) {
         if points.len() < 2 {
             return;
         }
-        let half = STROKE_WIDTH / 2.0;
+        let half = width / 2.0;
         let mut distance = 0.0;
         for (i, &point) in points.iter().enumerate() {
             if i > 0 {
@@ -335,7 +365,7 @@ mod tests {
             dash: Some((6.0, 4.0)),
             arrow: false,
         };
-        mesh.add_edge(&path, &style, 0.25, &mut points);
+        mesh.add_edge(&path, &style, &Stroke::full(0.25), &mut points);
         let n = points.len();
         assert_eq!(mesh.distances.len(), 2 * n);
         assert_eq!(mesh.indices.len(), 6 * (n - 1));
@@ -359,7 +389,12 @@ mod tests {
         let path = paths()[0];
         let mut points = Vec::new();
         let mut mesh = Mesh::default();
-        mesh.add_edge(&path, &EdgeStyle::default(), 0.25, &mut points);
+        mesh.add_edge(
+            &path,
+            &EdgeStyle::default(),
+            &Stroke::full(0.25),
+            &mut points,
+        );
         let tip = Point::new(f64::from(mesh.positions[0]), f64::from(mesh.positions[1]));
         assert!((tip.x - path.target.x).abs() < 1e-3 && (tip.y - path.target.y).abs() < 1e-3);
         assert_eq!(&mesh.indices[..3], [0, 1, 2]);
@@ -370,11 +405,38 @@ mod tests {
     }
 
     #[test]
+    fn a_plain_stroke_is_thin_and_has_neither_dashes_nor_arrowhead() {
+        let path = paths()[0];
+        let mut points = Vec::new();
+        let mut mesh = Mesh::default();
+        let style = EdgeStyle {
+            dash: Some((6.0, 4.0)),
+            ..EdgeStyle::default()
+        };
+        let stroke = Stroke {
+            tolerance: 5.0,
+            width: 40.0,
+            plain: true,
+        };
+        mesh.add_edge(&path, &style, &stroke, &mut points);
+        assert_eq!(mesh.distances.len(), 2 * points.len());
+        assert!(mesh.dashes.iter().all(|&d| d == 0.0));
+        let p = &mesh.positions;
+        assert!(((p[2] - p[0]).hypot(p[3] - p[1]) - 40.0).abs() < 1e-3);
+        assert_eq!(*points.last().unwrap(), path.target);
+    }
+
+    #[test]
     fn an_edge_shorter_than_its_arrowhead_draws_only_the_arrowhead() {
         let path = EdgePath::horizontal(Point::new(0.0, 0.0), Point::new(4.0, 0.0), 0.0);
         let mut points = Vec::new();
         let mut mesh = Mesh::default();
-        mesh.add_edge(&path, &EdgeStyle::default(), 0.25, &mut points);
+        mesh.add_edge(
+            &path,
+            &EdgeStyle::default(),
+            &Stroke::full(0.25),
+            &mut points,
+        );
         assert_eq!(mesh.indices.len(), 3);
         assert!(mesh.positions.chunks(2).all(|p| p[0] <= 4.0));
     }
@@ -390,7 +452,12 @@ mod tests {
         };
         let mut points = Vec::new();
         let mut mesh = Mesh::default();
-        mesh.add_edge(&path, &EdgeStyle::default(), f64::NAN, &mut points);
+        mesh.add_edge(
+            &path,
+            &EdgeStyle::default(),
+            &Stroke::full(f64::NAN),
+            &mut points,
+        );
         assert!(mesh.positions.iter().all(|v| v.is_finite()));
     }
 }

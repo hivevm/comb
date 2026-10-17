@@ -6,10 +6,11 @@
 
 use std::collections::HashMap;
 
+use comb_engine::geometry::Point;
 use comb_engine::geometry::Rect;
 use comb_engine::graph::{EdgeSpec, Graph, GraphError, LabelPlacement, Visible};
 use comb_engine::positions::PositionError;
-use comb_engine::stroke::EdgeStyle;
+use comb_engine::stroke::{EdgeStyle, Stroke};
 use serde::{Deserialize, Serialize};
 use tsify::{Ts, Tsify};
 use wasm_bindgen::prelude::*;
@@ -268,8 +269,10 @@ impl Engine {
     }
 
     /// Finds the nodes and edges that meet the rectangle and the edge labels within
-    /// `label_reach` of it, and builds the mesh of the edges, flattened within `tolerance`; the
-    /// results are read through the `visible…` and `mesh…` buffers.
+    /// `label_reach` of it, and builds the mesh of the edges, flattened within `tolerance` and
+    /// `width` wide, as thin lines alone where `plain`; the results are read through the
+    /// `visible…` and `mesh…` buffers.
+    #[allow(clippy::too_many_arguments)]
     pub fn query(
         &mut self,
         min_x: f64,
@@ -278,10 +281,22 @@ impl Engine {
         max_y: f64,
         label_reach: f64,
         tolerance: f64,
+        width: f64,
+        plain: bool,
     ) {
         let rect = Rect::new(min_x, min_y, max_x, max_y);
+        let stroke = Stroke {
+            tolerance,
+            width,
+            plain,
+        };
         self.graph
-            .query(&rect, label_reach, tolerance, &mut self.visible);
+            .query(&rect, label_reach, &stroke, &mut self.visible);
+    }
+
+    /// The slot of the node drawn on top at the world point `(x, y)`, if any.
+    pub fn hit(&mut self, x: f64, y: f64) -> Option<u32> {
+        self.graph.hit(Point::new(x, y))
     }
 }
 

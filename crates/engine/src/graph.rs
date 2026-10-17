@@ -8,7 +8,7 @@
 use crate::geometry::{EdgePath, Point, Rect};
 use crate::positions::{self, PositionError};
 use crate::spatial::Grid;
-use crate::stroke::{EdgeStyle, Mesh};
+use crate::stroke::{EdgeStyle, Mesh, Stroke};
 
 /// An edge between two node slots, with the path parameter and label offset of its edge label
 /// and the style it is drawn with.
@@ -225,6 +225,18 @@ impl Graph {
         self.reindex_edge(slot);
     }
 
+    /// The node at `point`: of the nodes whose bounds hold it, the one drawn on top, which is the
+    /// one in the highest slot.
+    pub fn hit(&mut self, point: Point) -> Option<u32> {
+        self.node_grid
+            .candidates(&Rect::at(point), &mut self.scratch);
+        self.scratch
+            .iter()
+            .copied()
+            .filter(|&slot| self.node_bounds(slot).contains(point))
+            .max()
+    }
+
     /// Moves the nodes in `slots` by `(dx, dy)` and their edges with them. A refused move changes
     /// nothing. Once more than an eighth of the nodes or edges, and at least 16, reach beyond the
     /// extent the index was built for, the index is built again over the current extent.
@@ -257,8 +269,8 @@ impl Graph {
     }
 
     /// Writes into `out` the nodes and edges whose bounds meet `rect`, the labels whose point
-    /// lies within `label_reach` of it, and the mesh of the edges, flattened within `tolerance`.
-    pub fn query(&mut self, rect: &Rect, label_reach: f64, tolerance: f64, out: &mut Visible) {
+    /// lies within `label_reach` of it, and the mesh of the edges, stroked as `stroke` says.
+    pub fn query(&mut self, rect: &Rect, label_reach: f64, stroke: &Stroke, out: &mut Visible) {
         let label_rect = rect.grown(label_reach.max(0.0));
         self.node_grid.candidates(rect, &mut self.scratch);
         out.nodes.clear();
@@ -281,8 +293,7 @@ impl Graph {
             if path.bounds().meets(rect) {
                 out.edges.push(slot);
                 let style = self.edges[slot as usize].style;
-                out.mesh
-                    .add_edge(&path, &style, tolerance, &mut self.points);
+                out.mesh.add_edge(&path, &style, stroke, &mut self.points);
                 for p in [
                     path.source,
                     path.control_source,
@@ -394,7 +405,7 @@ mod tests {
         for _ in 0..50 {
             let rect = random_rect(rng);
             let reach = rng.range(0.0, 100.0);
-            graph.query(&rect, reach, 1.0, &mut out);
+            graph.query(&rect, reach, &Stroke::full(1.0), &mut out);
             let (nodes, edges, labels) = brute_force(graph, &rect, reach);
             assert_eq!(out.nodes, nodes, "nodes in {rect:?}");
             assert_eq!(out.edges, edges, "edges in {rect:?}");
@@ -435,7 +446,12 @@ mod tests {
         }];
         let mut graph = Graph::new(positions, sizes, edges).unwrap();
         let mut out = Visible::default();
-        graph.query(&Rect::new(0.0, 0.0, 600.0, 200.0), 0.0, 1.0, &mut out);
+        graph.query(
+            &Rect::new(0.0, 0.0, 600.0, 200.0),
+            0.0,
+            &Stroke::full(1.0),
+            &mut out,
+        );
         assert_eq!(out.nodes, [0, 1]);
         assert_eq!(out.edges, [0]);
         let path = graph.edge_path(0);
@@ -470,9 +486,44 @@ mod tests {
         assert_eq!(graph.edge_path(0).target, Point::new(300.0, 5025.0));
         assert_eq!(graph.edge_path(1).source, Point::new(400.0, 5025.0));
         let mut out = Visible::default();
-        graph.query(&Rect::new(250.0, 4900.0, 450.0, 5100.0), 0.0, 1.0, &mut out);
+        graph.query(
+            &Rect::new(250.0, 4900.0, 450.0, 5100.0),
+            0.0,
+            &Stroke::full(1.0),
+            &mut out,
+        );
         assert_eq!(out.nodes, [1]);
         assert_eq!(out.edges, [0, 1]);
+    }
+
+    #[test]
+    fn a_hit_finds_the_topmost_node_a_scan_finds_before_and_after_moves() {
+        let mut rng = Lcg(7);
+        let mut graph = random_graph(&mut rng, 300, 0);
+        let scan = |graph: &Graph, p: Point| {
+            slots(graph.node_count())
+                .filter(|&s| graph.node_bounds(s).contains(p))
+                .max()
+        };
+        for round in 0..2 {
+            for _ in 0..500 {
+                let p = Point::new(rng.range(-2500.0, 2500.0), rng.range(-2500.0, 2500.0));
+                assert_eq!(graph.hit(p), scan(&graph, p), "{p:?} in round {round}");
+            }
+            for _ in 0..40 {
+                let moved = [rng.below(300)];
+                let (dx, dy) = (rng.range(-3000.0, 3000.0), rng.range(-3000.0, 3000.0));
+                graph.translate(&moved, dx as f32, dy as f32).unwrap();
+            }
+        }
+        // Every hit lies inside a node, so random points find some.
+        let found = (0..500)
+            .filter(|_| {
+                let p = Point::new(rng.range(-2000.0, 2000.0), rng.range(-2000.0, 2000.0));
+                graph.hit(p).is_some()
+            })
+            .count();
+        assert!(found > 0);
     }
 
     #[test]
@@ -487,7 +538,7 @@ mod tests {
         graph.query(
             &Rect::new(1e6, 1e6, 1e6 + 300.0, 1e6 + 10.0),
             0.0,
-            1.0,
+            &Stroke::full(1.0),
             &mut out,
         );
         assert_eq!(out.nodes, far);
