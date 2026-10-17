@@ -2,7 +2,8 @@
 //!
 //! An edge is a cubic Bézier curve from its source connector to its target connector. An edge
 //! label sits at the point of the path parameter `t` and is moved by the label offset along the
-//! path's normal there (G-6).
+//! path's normal there (G-6). An edge leaves its source node at the middle of its right side and
+//! enters its target node at the middle of its left side.
 
 /// A point in world coordinates.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -22,6 +23,103 @@ impl Point {
             self.y + (other.y - self.y) * t,
         )
     }
+}
+
+/// A rectangle in world coordinates, its edges included.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Rect {
+    pub min_x: f64,
+    pub min_y: f64,
+    pub max_x: f64,
+    pub max_y: f64,
+}
+
+impl Rect {
+    pub const fn new(min_x: f64, min_y: f64, max_x: f64, max_y: f64) -> Self {
+        Self {
+            min_x,
+            min_y,
+            max_x,
+            max_y,
+        }
+    }
+
+    /// The rectangle of a node at `(x, y)`, its top-left corner, of `width` × `height`.
+    pub fn of_node(x: f64, y: f64, width: f64, height: f64) -> Self {
+        Self::new(x, y, x + width, y + height)
+    }
+
+    /// Whether the two rectangles share at least one point; touching counts.
+    pub fn meets(&self, other: &Self) -> bool {
+        self.min_x <= other.max_x
+            && other.min_x <= self.max_x
+            && self.min_y <= other.max_y
+            && other.min_y <= self.max_y
+    }
+
+    /// Whether `point` lies inside the rectangle or on its edges.
+    pub fn contains(&self, point: Point) -> bool {
+        self.min_x <= point.x
+            && point.x <= self.max_x
+            && self.min_y <= point.y
+            && point.y <= self.max_y
+    }
+
+    /// Whether `other` lies wholly inside the rectangle, edges included.
+    pub fn contains_rect(&self, other: &Self) -> bool {
+        self.min_x <= other.min_x
+            && other.max_x <= self.max_x
+            && self.min_y <= other.min_y
+            && other.max_y <= self.max_y
+    }
+
+    /// The rectangle grown by `by` on every side.
+    pub fn grown(&self, by: f64) -> Self {
+        Self::new(
+            self.min_x - by,
+            self.min_y - by,
+            self.max_x + by,
+            self.max_y + by,
+        )
+    }
+
+    /// The smallest rectangle that holds both.
+    pub fn union(&self, other: &Self) -> Self {
+        Self::new(
+            self.min_x.min(other.min_x),
+            self.min_y.min(other.min_y),
+            self.max_x.max(other.max_x),
+            self.max_y.max(other.max_y),
+        )
+    }
+
+    /// The rectangle of a single point.
+    pub const fn at(point: Point) -> Self {
+        Self::new(point.x, point.y, point.x, point.y)
+    }
+}
+
+/// How far an edge's control points pull out of its connectors at least, in pixels.
+pub const MIN_PULL: f64 = 40.0;
+
+/// The values of `t` in (0, 1) where one coordinate of a cubic Bézier curve has an extremum: the
+/// roots of its derivative, a quadratic.
+fn extrema(p0: f64, p1: f64, p2: f64, p3: f64) -> impl Iterator<Item = f64> {
+    let a = -p0 + 3.0 * p1 - 3.0 * p2 + p3;
+    let b = 2.0 * (p0 - 2.0 * p1 + p2);
+    let c = p1 - p0;
+    let roots = if a.abs() < 1e-12 {
+        [(b.abs() >= 1e-12).then(|| -c / b), None]
+    } else {
+        let discriminant = b * b - 4.0 * a * c;
+        if discriminant < 0.0 {
+            [None, None]
+        } else {
+            let root = discriminant.sqrt();
+            [Some((-b + root) / (2.0 * a)), Some((-b - root) / (2.0 * a))]
+        }
+    };
+    roots.into_iter().flatten().filter(|t| *t > 0.0 && *t < 1.0)
 }
 
 /// The four control points of an edge's cubic Bézier path.
@@ -45,6 +143,31 @@ impl EdgePath {
             control_target: Point::new(target.x - pull, target.y),
             target,
         }
+    }
+
+    /// The path from the middle of the right side of `source` to the middle of the left side of
+    /// `target`.
+    pub fn between(source: &Rect, target: &Rect) -> Self {
+        Self::horizontal(
+            Point::new(source.max_x, (source.min_y + source.max_y) / 2.0),
+            Point::new(target.min_x, (target.min_y + target.max_y) / 2.0),
+            MIN_PULL,
+        )
+    }
+
+    /// The smallest rectangle that holds the whole path: its ends and the points where it turns.
+    pub fn bounds(&self) -> Rect {
+        let (p0, p1, p2, p3) = (
+            self.source,
+            self.control_source,
+            self.control_target,
+            self.target,
+        );
+        let mut bounds = Rect::at(p0).union(&Rect::at(p3));
+        for t in extrema(p0.x, p1.x, p2.x, p3.x).chain(extrema(p0.y, p1.y, p2.y, p3.y)) {
+            bounds = bounds.union(&Rect::at(self.point_at(t)));
+        }
+        bounds
     }
 
     /// The point at path parameter `t`, clamped to 0.0..=1.0.
@@ -139,6 +262,59 @@ mod tests {
         let moved = after.label_position(0.5, 0.0);
         assert!(close(moved, after.point_at(0.5)));
         assert!((moved.y - 40.0).abs() < EPS);
+    }
+
+    /// The bounds by dense sampling, for comparison.
+    fn sampled_bounds(path: &EdgePath) -> Rect {
+        (0..=10_000).fold(Rect::at(path.source), |bounds, i| {
+            bounds.union(&Rect::at(path.point_at(f64::from(i) / 10_000.0)))
+        })
+    }
+
+    #[test]
+    fn the_bounds_hold_the_whole_path_and_no_more() {
+        let paths = [
+            straight(),
+            EdgePath::horizontal(Point::new(10.0, 20.0), Point::new(300.0, 140.0), 40.0),
+            // Backwards: the control points pull out beyond both ends.
+            EdgePath::horizontal(Point::new(300.0, 0.0), Point::new(0.0, 90.0), 40.0),
+            EdgePath {
+                source: Point::new(0.0, 0.0),
+                control_source: Point::new(100.0, -80.0),
+                control_target: Point::new(-50.0, 120.0),
+                target: Point::new(60.0, 10.0),
+            },
+        ];
+        for path in paths {
+            let exact = path.bounds();
+            let sampled = sampled_bounds(&path);
+            for (a, b) in [
+                (exact.min_x, sampled.min_x),
+                (exact.min_y, sampled.min_y),
+                (exact.max_x, sampled.max_x),
+                (exact.max_y, sampled.max_y),
+            ] {
+                assert!((a - b).abs() < 1e-3, "{exact:?} against {sampled:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn an_edge_runs_from_the_right_middle_to_the_left_middle() {
+        let source = Rect::of_node(0.0, 0.0, 220.0, 64.0);
+        let target = Rect::of_node(300.0, 100.0, 220.0, 64.0);
+        let path = EdgePath::between(&source, &target);
+        assert!(close(path.source, Point::new(220.0, 32.0)));
+        assert!(close(path.target, Point::new(300.0, 132.0)));
+    }
+
+    #[test]
+    fn rectangles_that_touch_meet() {
+        let a = Rect::new(0.0, 0.0, 10.0, 10.0);
+        assert!(a.meets(&Rect::new(10.0, 10.0, 20.0, 20.0)));
+        assert!(!a.meets(&Rect::new(10.5, 0.0, 20.0, 10.0)));
+        assert!(a.contains(Point::new(10.0, 0.0)));
+        assert!(!a.contains(Point::new(-0.1, 5.0)));
     }
 
     #[test]

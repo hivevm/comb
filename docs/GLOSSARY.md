@@ -16,6 +16,8 @@ to invent.
   _Avoid:_ port, handle, socket, pin.
 - **Culling** — leaving out of the draw everything that lies entirely outside the viewport.
   _Avoid:_ frustum culling, outside the wording of the constraint that requires it.
+- **Culling margin** — the band around the viewport, in screen pixels, within which display
+  objects are bound already, so that a small pan finds them drawn.
 - **Edge** — a connection drawn from a connector of one node to a connector of another.
   _Avoid:_ link, wire, connection.
 - **Edge label** — text attached to an edge, placed by a path parameter and a label offset.
@@ -42,4 +44,9 @@ to invent.
   its source connector to its target connector.
 - **Sidebar** — the host application's HTML panel, outside the canvas, in which the attributes of
   the selection are edited.
+- **Slot** — the index of a node or an edge in the engine's buffers, the same on both sides of the
+  bridge; a load gives node `i` and edge `i` of the graph data slot `i`.
+  _Avoid:_ handle.
+- **Spatial index** — the engine's uniform grid over the bounds of nodes and edges, which answers
+  which slots a rectangle meets.
 - **Viewport** — the part of the world that the canvas currently shows, given by pan and zoom.

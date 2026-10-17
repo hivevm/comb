@@ -1,40 +1,54 @@
 //! The bridge between the shell and the engine (ADR-0010).
 //!
 //! Structured data crosses through serde-wasm-bindgen as `Ts<T>`, with TypeScript types tsify
-//! generates; node positions cross as a buffer the engine owns, which the shell reads as a
-//! `Float32Array` view created anew after every call.
+//! generates; node positions and the results of a viewport query cross as buffers the engine
+//! owns, which the shell reads as typed-array views created anew after every call.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
-use comb_engine::geometry::{EdgePath, Point};
-use comb_engine::positions::{self, PositionError};
+use comb_engine::geometry::Rect;
+use comb_engine::graph::{EdgeSpec, Graph, GraphError, LabelPlacement, Visible};
+use comb_engine::positions::PositionError;
 use serde::{Deserialize, Serialize};
 use tsify::{Ts, Tsify};
 use wasm_bindgen::prelude::*;
 
-/// How far an edge's control points pull out of its connectors at least, in pixels.
-const MIN_PULL: f64 = 40.0;
-
-/// A node as the host application hands it over.
+/// A node as the host application hands it over: its identifier, the position of its top-left
+/// corner, and its size.
 #[derive(Tsify, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeInput {
     pub id: String,
     pub x: f64,
     pub y: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
-/// The nodes of one load, in slot order.
+/// Where an edge label sits: path parameter `t` and label offset in pixels (G-6).
+#[derive(Tsify, Serialize, Deserialize, Clone, Copy)]
+pub struct LabelInput {
+    pub t: f64,
+    pub offset: f64,
+}
+
+/// An edge between two nodes, named by their identifiers.
 #[derive(Tsify, Serialize, Deserialize)]
-pub struct NodeBatch {
+#[serde(rename_all = "camelCase")]
+pub struct EdgeInput {
+    pub id: String,
+    pub source: String,
+    pub target: String,
+    #[tsify(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<LabelInput>,
+}
+
+/// The nodes and edges of one load, each in slot order.
+#[derive(Tsify, Serialize, Deserialize)]
+pub struct GraphBatch {
     pub nodes: Vec<NodeInput>,
-}
-
-/// A point in world coordinates.
-#[derive(Tsify, Serialize, Deserialize)]
-pub struct Vec2 {
-    pub x: f64,
-    pub y: f64,
+    pub edges: Vec<EdgeInput>,
 }
 
 /// Why the engine refused graph data (Q-7).
@@ -47,9 +61,18 @@ pub enum BridgeError {
     /// A node's coordinate is NaN or infinite.
     #[serde(rename_all = "camelCase")]
     NonFiniteCoordinate { node: String },
+    /// A node's width or height is negative, NaN, or infinite.
+    #[serde(rename_all = "camelCase")]
+    InvalidSize { node: String },
     /// Two nodes share an identifier.
     #[serde(rename_all = "camelCase")]
     DuplicateNode { node: String },
+    /// An edge names a node that is not in the batch.
+    #[serde(rename_all = "camelCase")]
+    MissingNode { edge: String, node: String },
+    /// An edge label's path parameter or label offset is NaN or infinite.
+    #[serde(rename_all = "camelCase")]
+    NonFiniteLabel { edge: String },
     /// A slot beyond the loaded nodes.
     #[serde(rename_all = "camelCase")]
     SlotOutOfRange { slot: u32 },
@@ -80,31 +103,101 @@ fn malformed(error: impl std::fmt::Display) -> BridgeError {
     }
 }
 
-/// Checks a batch and flattens it into `x, y` per slot, or names the first offending node.
-fn positions_of(batch: &NodeBatch) -> Result<Vec<f32>, BridgeError> {
-    let mut seen = HashSet::with_capacity(batch.nodes.len());
-    let mut positions = Vec::with_capacity(batch.nodes.len() * 2);
-    for node in &batch.nodes {
-        if !node.x.is_finite() || !node.y.is_finite() {
-            return Err(BridgeError::NonFiniteCoordinate {
-                node: node.id.clone(),
-            });
-        }
-        if !seen.insert(node.id.as_str()) {
-            return Err(BridgeError::DuplicateNode {
-                node: node.id.clone(),
-            });
-        }
-        positions.extend([node.x as f32, node.y as f32]);
-    }
-    Ok(positions)
+fn slot(index: usize) -> Result<u32, BridgeError> {
+    u32::try_from(index).map_err(malformed)
 }
 
-/// The engine's state as the shell sees it: the node positions it owns.
+/// The nodes of a batch as the engine takes them: positions and sizes, `x, y` and `width, height`
+/// per slot, and the map from identifier to slot.
+struct Nodes<'a> {
+    positions: Vec<f32>,
+    sizes: Vec<f32>,
+    slots: HashMap<&'a str, u32>,
+}
+
+/// Checks the nodes and flattens them, or names the first offending node.
+fn nodes_of(batch: &GraphBatch) -> Result<Nodes<'_>, BridgeError> {
+    let mut slots = HashMap::with_capacity(batch.nodes.len());
+    let mut positions = Vec::with_capacity(batch.nodes.len() * 2);
+    let mut sizes = Vec::with_capacity(batch.nodes.len() * 2);
+    for (index, node) in batch.nodes.iter().enumerate() {
+        let named = || node.id.clone();
+        if !node.x.is_finite() || !node.y.is_finite() {
+            return Err(BridgeError::NonFiniteCoordinate { node: named() });
+        }
+        if !(node.width.is_finite() && node.height.is_finite())
+            || node.width < 0.0
+            || node.height < 0.0
+        {
+            return Err(BridgeError::InvalidSize { node: named() });
+        }
+        if slots.insert(node.id.as_str(), slot(index)?).is_some() {
+            return Err(BridgeError::DuplicateNode { node: named() });
+        }
+        positions.extend([node.x as f32, node.y as f32]);
+        sizes.extend([node.width as f32, node.height as f32]);
+    }
+    Ok(Nodes {
+        positions,
+        sizes,
+        slots,
+    })
+}
+
+/// Resolves every edge's ends to node slots, or names the first offending edge.
+fn edges_of(batch: &GraphBatch, slots: &HashMap<&str, u32>) -> Result<Vec<EdgeSpec>, BridgeError> {
+    let end = |edge: &EdgeInput, node: &String| {
+        slots
+            .get(node.as_str())
+            .copied()
+            .ok_or_else(|| BridgeError::MissingNode {
+                edge: edge.id.clone(),
+                node: node.clone(),
+            })
+    };
+    batch
+        .edges
+        .iter()
+        .map(|edge| {
+            let source = end(edge, &edge.source)?;
+            let target = end(edge, &edge.target)?;
+            let label = match edge.label {
+                Some(l) if !(l.t.is_finite() && l.offset.is_finite()) => {
+                    return Err(BridgeError::NonFiniteLabel {
+                        edge: edge.id.clone(),
+                    });
+                }
+                label => label.map(|l| LabelPlacement {
+                    t: l.t,
+                    offset: l.offset,
+                }),
+            };
+            Ok(EdgeSpec {
+                source,
+                target,
+                label,
+            })
+        })
+        .collect()
+}
+
+/// Checks a batch and builds the engine's graph from it.
+fn graph_of(batch: &GraphBatch) -> Result<Graph, BridgeError> {
+    let nodes = nodes_of(batch)?;
+    let edges = edges_of(batch, &nodes.slots)?;
+    Graph::new(nodes.positions, nodes.sizes, edges).map_err(|error| match error {
+        GraphError::SlotCountMismatch | GraphError::EdgeEndOutOfRange { .. } => {
+            malformed(format!("{error:?}"))
+        }
+    })
+}
+
+/// The engine's state as the shell sees it: the loaded graph, and what the last query found.
 #[wasm_bindgen]
 #[derive(Default)]
 pub struct Engine {
-    positions: Vec<f32>,
+    graph: Graph,
+    visible: Visible,
 }
 
 #[wasm_bindgen]
@@ -114,87 +207,131 @@ impl Engine {
         Self::default()
     }
 
-    /// Replaces every node with the batch, slot `i` for the batch's node `i`, and returns the
-    /// number of slots. A refused batch leaves the loaded nodes as they were.
-    #[wasm_bindgen(js_name = loadNodes)]
-    pub fn load_nodes(&mut self, batch: Ts<NodeBatch>) -> Result<u32, BridgeError> {
+    /// Replaces the graph with the batch, node slot `i` for the batch's node `i` and edge slot
+    /// `i` for its edge `i`, and returns the number of node slots. A refused batch leaves the
+    /// loaded graph as it was.
+    #[wasm_bindgen(js_name = loadGraph)]
+    pub fn load_graph(&mut self, batch: Ts<GraphBatch>) -> Result<u32, BridgeError> {
         let batch = batch.to_rust().map_err(malformed)?;
-        self.positions = positions_of(&batch)?;
-        u32::try_from(batch.nodes.len()).map_err(malformed)
+        self.graph = graph_of(&batch)?;
+        self.visible = Visible::default();
+        slot(batch.nodes.len())
     }
 
-    /// Moves the nodes in `slots` by `(dx, dy)`.
+    /// Moves the nodes in `slots` by `(dx, dy)`, their edges with them.
     pub fn translate(&mut self, slots: &[u32], dx: f32, dy: f32) -> Result<(), BridgeError> {
-        positions::translate(&mut self.positions, slots, dx, dy).map_err(BridgeError::from)
+        self.graph
+            .translate(slots, dx, dy)
+            .map_err(BridgeError::from)
     }
 
-    /// Where the positions buffer starts in WebAssembly memory.
+    /// Finds the nodes and edges that meet the rectangle and the edge labels within
+    /// `label_reach` of it; the results are read through the `visible…` buffers.
+    pub fn query(&mut self, min_x: f64, min_y: f64, max_x: f64, max_y: f64, label_reach: f64) {
+        let rect = Rect::new(min_x, min_y, max_x, max_y);
+        self.graph.query(&rect, label_reach, &mut self.visible);
+    }
+}
+
+/// The buffers the shell reads, each as a pointer into WebAssembly memory and a length in values.
+#[wasm_bindgen]
+impl Engine {
+    /// Where the positions buffer, `x, y` per node slot starts.
     #[wasm_bindgen(js_name = positionsPtr)]
     pub fn positions_ptr(&self) -> *const f32 {
-        self.positions.as_ptr()
+        self.graph.positions().as_ptr()
     }
 
-    /// How many `f32` values the positions buffer holds: two per slot.
+    /// How many values the positions buffer holds.
     #[wasm_bindgen(js_name = positionsLen)]
     pub fn positions_len(&self) -> usize {
-        self.positions.len()
+        self.graph.positions().len()
     }
-}
 
-fn edge_path(source: &Ts<Vec2>, target: &Ts<Vec2>) -> Result<EdgePath, BridgeError> {
-    let source = source.to_rust().map_err(malformed)?;
-    let target = target.to_rust().map_err(malformed)?;
-    Ok(EdgePath::horizontal(
-        Point::new(source.x, source.y),
-        Point::new(target.x, target.y),
-        MIN_PULL,
-    ))
-}
-
-/// The four control points of the edge from `source` to `target`, as `x, y` pairs.
-#[wasm_bindgen(js_name = edgeControlPoints)]
-pub fn edge_control_points(source: Ts<Vec2>, target: Ts<Vec2>) -> Result<Vec<f32>, BridgeError> {
-    let path = edge_path(&source, &target)?;
-    Ok([
-        path.source,
-        path.control_source,
-        path.control_target,
-        path.target,
-    ]
-    .iter()
-    .flat_map(|p| [p.x as f32, p.y as f32])
-    .collect())
-}
-
-/// Where an edge label with path parameter `t` and label offset `offset` sits (G-6).
-#[wasm_bindgen(js_name = labelPosition)]
-pub fn label_position(
-    source: Ts<Vec2>,
-    target: Ts<Vec2>,
-    t: f64,
-    offset: f64,
-) -> Result<Ts<Vec2>, BridgeError> {
-    let point = edge_path(&source, &target)?.label_position(t, offset);
-    Vec2 {
-        x: point.x,
-        y: point.y,
+    /// Where the node slots the last query found starts.
+    #[wasm_bindgen(js_name = visibleNodesPtr)]
+    pub fn visible_nodes_ptr(&self) -> *const u32 {
+        self.visible.nodes.as_ptr()
     }
-    .into_ts()
-    .map_err(malformed)
+
+    /// How many values the node slots the last query found holds.
+    #[wasm_bindgen(js_name = visibleNodesLen)]
+    pub fn visible_nodes_len(&self) -> usize {
+        self.visible.nodes.len()
+    }
+
+    /// Where the edge slots the last query found starts.
+    #[wasm_bindgen(js_name = visibleEdgesPtr)]
+    pub fn visible_edges_ptr(&self) -> *const u32 {
+        self.visible.edges.as_ptr()
+    }
+
+    /// How many values the edge slots the last query found holds.
+    #[wasm_bindgen(js_name = visibleEdgesLen)]
+    pub fn visible_edges_len(&self) -> usize {
+        self.visible.edges.len()
+    }
+
+    /// Where the four control points of each edge the last query found, `x, y` each starts.
+    #[wasm_bindgen(js_name = edgePointsPtr)]
+    pub fn edge_points_ptr(&self) -> *const f32 {
+        self.visible.edge_points.as_ptr()
+    }
+
+    /// How many values the four control points of each edge the last query found holds.
+    #[wasm_bindgen(js_name = edgePointsLen)]
+    pub fn edge_points_len(&self) -> usize {
+        self.visible.edge_points.len()
+    }
+
+    /// Where the edge slots of the labels the last query found starts.
+    #[wasm_bindgen(js_name = visibleLabelsPtr)]
+    pub fn visible_labels_ptr(&self) -> *const u32 {
+        self.visible.labels.as_ptr()
+    }
+
+    /// How many values the edge slots of the labels the last query found holds.
+    #[wasm_bindgen(js_name = visibleLabelsLen)]
+    pub fn visible_labels_len(&self) -> usize {
+        self.visible.labels.len()
+    }
+
+    /// Where the point of each label the last query found, `x, y` starts.
+    #[wasm_bindgen(js_name = labelPointsPtr)]
+    pub fn label_points_ptr(&self) -> *const f32 {
+        self.visible.label_points.as_ptr()
+    }
+
+    /// How many values the point of each label the last query found holds.
+    #[wasm_bindgen(js_name = labelPointsLen)]
+    pub fn label_points_len(&self) -> usize {
+        self.visible.label_points.len()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn batch(nodes: &[(&str, f64, f64)]) -> NodeBatch {
-        NodeBatch {
+    fn batch(nodes: &[(&str, f64, f64)], edges: &[(&str, &str, &str)]) -> GraphBatch {
+        GraphBatch {
             nodes: nodes
                 .iter()
                 .map(|&(id, x, y)| NodeInput {
                     id: id.into(),
                     x,
                     y,
+                    width: 100.0,
+                    height: 50.0,
+                })
+                .collect(),
+            edges: edges
+                .iter()
+                .map(|&(id, source, target)| EdgeInput {
+                    id: id.into(),
+                    source: source.into(),
+                    target: target.into(),
+                    label: None,
                 })
                 .collect(),
         }
@@ -202,19 +339,65 @@ mod tests {
 
     #[test]
     fn a_batch_flattens_into_slot_order() {
-        let positions = positions_of(&batch(&[("a", 1.0, 2.0), ("b", 3.0, 4.0)])).unwrap();
-        assert_eq!(positions, [1.0, 2.0, 3.0, 4.0]);
+        let data = batch(&[("a", 1.0, 2.0), ("b", 3.0, 4.0)], &[]);
+        let nodes = nodes_of(&data).unwrap();
+        assert_eq!(nodes.positions, [1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(nodes.sizes, [100.0, 50.0, 100.0, 50.0]);
     }
 
     #[test]
     fn a_non_finite_coordinate_names_its_node() {
-        let error = positions_of(&batch(&[("a", 0.0, 0.0), ("b", f64::NAN, 0.0)])).unwrap_err();
+        let error = graph_of(&batch(&[("a", 0.0, 0.0), ("b", f64::NAN, 0.0)], &[])).unwrap_err();
         assert_eq!(error, BridgeError::NonFiniteCoordinate { node: "b".into() });
     }
 
     #[test]
+    fn a_size_that_is_negative_or_not_finite_names_its_node() {
+        for (width, height) in [(-1.0, 10.0), (10.0, f64::INFINITY), (f64::NAN, 10.0)] {
+            let mut data = batch(&[("a", 0.0, 0.0)], &[]);
+            data.nodes[0].width = width;
+            data.nodes[0].height = height;
+            let error = graph_of(&data).unwrap_err();
+            assert_eq!(error, BridgeError::InvalidSize { node: "a".into() });
+        }
+    }
+
+    #[test]
     fn a_duplicate_identifier_names_its_node() {
-        let error = positions_of(&batch(&[("a", 0.0, 0.0), ("a", 1.0, 1.0)])).unwrap_err();
+        let error = graph_of(&batch(&[("a", 0.0, 0.0), ("a", 1.0, 1.0)], &[])).unwrap_err();
         assert_eq!(error, BridgeError::DuplicateNode { node: "a".into() });
+    }
+
+    #[test]
+    fn an_edge_to_a_missing_node_names_the_edge_and_the_node() {
+        let error = graph_of(&batch(&[("a", 0.0, 0.0)], &[("e", "a", "z")])).unwrap_err();
+        assert_eq!(
+            error,
+            BridgeError::MissingNode {
+                edge: "e".into(),
+                node: "z".into()
+            }
+        );
+    }
+
+    #[test]
+    fn a_non_finite_label_names_its_edge() {
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[("e", "a", "b")]);
+        data.edges[0].label = Some(LabelInput {
+            t: f64::NAN,
+            offset: 0.0,
+        });
+        let error = graph_of(&data).unwrap_err();
+        assert_eq!(error, BridgeError::NonFiniteLabel { edge: "e".into() });
+    }
+
+    #[test]
+    fn edges_resolve_to_the_slots_of_their_nodes() {
+        let data = batch(
+            &[("a", 0.0, 0.0), ("b", 300.0, 0.0), ("c", 600.0, 0.0)],
+            &[("e", "c", "a")],
+        );
+        let edges = edges_of(&data, &nodes_of(&data).unwrap().slots).unwrap();
+        assert_eq!((edges[0].source, edges[0].target), (2, 0));
     }
 }

@@ -1,12 +1,18 @@
 // The public interface of Comb and the validation of graph data (ADR-0009).
 import { Application } from "pixi.js";
-import { createBridge, type BridgeError } from "../bridge";
+import { createBridge, type BridgeError, type GraphBatch } from "../bridge";
 import { attachInteraction } from "../interaction";
-import { fitViewport, type Bounds } from "../interaction/viewport";
+import { clampScale, fitViewport, type Bounds } from "../interaction/viewport";
 import { Scene } from "../render/scene";
 import { createFrames } from "./frames";
 import { scenes } from "./scenes";
-import { createGraphStore, type GraphData, type NodeView, type Selection } from "../store";
+import {
+  createGraphStore,
+  type GraphData,
+  type NodeView,
+  type Selection,
+  type Viewport,
+} from "../store";
 
 export interface CombOptions {
   /** The canvas background. */
@@ -20,6 +26,11 @@ export interface Comb {
   updateNode(id: string, patch: Partial<Pick<NodeView, "title">>): void;
   /** Pans and zooms so the whole graph is in view. */
   fitView(): void;
+  /** Pans and zooms to `viewport`: the screen position of the world origin and the scale, which
+   *  is clamped to the zoom range. Throws a `RangeError` on a value that is not finite. */
+  setViewport(viewport: Viewport): void;
+  /** The current viewport. */
+  viewport(): Viewport;
   /** Calls `listener` whenever the selection changes (G-5); returns the unsubscribe function. */
   onSelectionChange(listener: (selection: Selection) => void): () => void;
   /** Resolves once the canvas has drawn every change made before the call, at most one frame
@@ -29,7 +40,7 @@ export interface Comb {
   destroy(): void;
 }
 
-export type GraphDataProblem = BridgeError | { kind: "missingNode"; edge: string; node: string };
+export type GraphDataProblem = BridgeError;
 
 /** Graph data Comb refused, with what was wrong and where. */
 export class GraphDataError extends Error {
@@ -53,14 +64,17 @@ function boundsOf(nodes: readonly NodeView[], positions: Float32Array): Bounds |
   return bounds;
 }
 
-function checkEdges(graph: GraphData): void {
-  const ids = new Set(graph.nodes.map((node) => node.id));
-  for (const edge of graph.edges) {
-    for (const end of [edge.source, edge.target]) {
-      if (!ids.has(end))
-        throw new GraphDataError({ kind: "missingNode", edge: edge.id, node: end });
-    }
-  }
+/** The graph data the engine needs: identifiers, positions, sizes, ends, label placements. */
+function batchOf(graph: GraphData): GraphBatch {
+  return {
+    nodes: graph.nodes.map(({ id, x, y, width, height }) => ({ id, x, y, width, height })),
+    edges: graph.edges.map(({ id, source, target, label }) => ({
+      id,
+      source,
+      target,
+      label: label && { t: label.t, offset: label.offset },
+    })),
+  };
 }
 
 /** Creates a Comb canvas that fills `host`. */
@@ -79,13 +93,14 @@ export async function createComb(host: HTMLElement, options: CombOptions = {}): 
   const scene = new Scene(app);
   const frames = createFrames(() => scene.render(store.getState(), bridge));
   const unsubscribe = store.subscribe(frames.schedule);
+  // A larger canvas shows more of the world, so what is culled changes with its size.
+  app.renderer.on("resize", frames.schedule);
   const detach = attachInteraction(app, store, bridge);
 
   const comb: Comb = {
     load(graph) {
-      checkEdges(graph);
       try {
-        bridge.loadNodes({ nodes: graph.nodes.map(({ id, x, y }) => ({ id, x, y })) });
+        bridge.loadGraph(batchOf(graph));
       } catch (error) {
         throw new GraphDataError(error as BridgeError);
       }
@@ -97,6 +112,11 @@ export async function createComb(host: HTMLElement, options: CombOptions = {}): 
       if (bounds)
         store.getState().setViewport(fitViewport(bounds, app.screen.width, app.screen.height));
     },
+    setViewport({ x, y, scale }) {
+      if (![x, y, scale].every(Number.isFinite)) throw new RangeError("comb: viewport not finite");
+      store.getState().setViewport({ x, y, scale: clampScale(scale) });
+    },
+    viewport: () => ({ ...store.getState().viewport }),
     onSelectionChange: (listener) =>
       store.subscribe((state, previous) => {
         if (state.selection !== previous.selection) listener(state.selection);
@@ -105,6 +125,7 @@ export async function createComb(host: HTMLElement, options: CombOptions = {}): 
     destroy() {
       frames.stop();
       unsubscribe();
+      app.renderer.off("resize", frames.schedule);
       detach();
       app.destroy(true, { children: true });
     },

@@ -105,3 +105,89 @@ test("dragging a node moves it with its edges and edge labels, and a click shows
   await expect(page.locator("#selection")).toBeVisible();
   await expect(page.locator("#title")).toHaveValue("Time spent listening to music by subscribers");
 });
+
+/** The size of the canvas on the page. */
+async function canvasSize(page: Page): Promise<{ width: number; height: number }> {
+  return page.evaluate(() => {
+    const { width, height } = document.querySelector("#canvas canvas")!.getBoundingClientRect();
+    return { width, height };
+  });
+}
+
+/** Sets the viewport through Comb's interface and waits until it is drawn. */
+async function setViewport(page: Page, viewport: { x: number; y: number; scale: number }) {
+  await page.evaluate(async (viewport) => {
+    window.comb.setViewport(viewport);
+    await window.comb.whenRendered();
+  }, viewport);
+}
+
+test("what lies entirely outside the viewport is not bound to a display object", async ({
+  page,
+}) => {
+  // Verifies: G-7, ADR-0012
+  await open(page);
+  expect((await page.evaluate(() => window.inspect())).edgeLabels).toHaveLength(7);
+
+  // World x = 450 at the right border of the canvas: with the margin of 128 px at scale 1, the
+  // query reaches x = 578, and label points 120 beyond it. Columns 0 and 1 (x < 520) are bound;
+  // columns 2 to 4 (x ≥ 600), the edges into and out of the north-star metric (x ≥ 820), and
+  // their labels (x ≥ 860) are not.
+  const { width, height } = await canvasSize(page);
+  await setViewport(page, { x: width - 450, y: height / 2, scale: 1 });
+  const snapshot = await page.evaluate(() => window.inspect());
+  const columns = new Set(snapshot.nodes.map((node) => node.id.split(":")[1]!.split(".")[0]));
+  expect([...columns].sort()).toEqual(["0", "1"]);
+  expect(snapshot.edges.map((edge) => edge.id).filter((id) => /-(3|4)\./.test(id))).toEqual([]);
+  expect(snapshot.edges.length).toBeGreaterThan(0);
+  expect(snapshot.edgeLabels).toEqual([]);
+});
+
+test("node views draw in slot order after their nodes left the viewport and came back", async ({
+  page,
+}) => {
+  await open(page);
+  const order = async () => page.evaluate(() => window.inspect().nodes.map((node) => node.id));
+  const loaded = await order();
+  // World x = 700 at the left border: with the margin, columns 0 and 1 (x ≤ 520) are culled.
+  const { height } = await canvasSize(page);
+  await setViewport(page, { x: -700, y: height / 2, scale: 1 });
+  expect((await order()).some((id) => id.startsWith("0:0."))).toBe(false);
+  await page.evaluate(async () => {
+    window.comb.fitView();
+    await window.comb.whenRendered();
+  });
+  expect(await order()).toEqual(loaded);
+});
+
+test("the same area binds as many display objects at 1 and at 1,000 copies", async ({ page }) => {
+  // Verifies: ADR-0012
+  test.setTimeout(120_000);
+  // Inside the first copy: the next copy to the right starts at x = 1500 and the one below at
+  // y = 550, both beyond the canvas and its margin of 128 px at scale 1.
+  const bound = async (query: string) => {
+    await open(page, query);
+    const { width, height } = await canvasSize(page);
+    expect(width + 128).toBeLessThan(1500);
+    expect(height / 2 + 128).toBeLessThan(550);
+    await setViewport(page, { x: 0, y: height / 2, scale: 1 });
+    return page.evaluate(() => window.inspect().displayObjects);
+  };
+  const one = await bound("?copies=1");
+  expect(await bound("?copies=1000")).toBe(one);
+});
+
+test("a viewport that is not finite is refused, and the scale is clamped", async ({ page }) => {
+  await open(page);
+  const refused = await page.evaluate(() => {
+    try {
+      window.comb.setViewport({ x: Number.NaN, y: 0, scale: 1 });
+      return null;
+    } catch (error) {
+      return (error as Error).name;
+    }
+  });
+  expect(refused).toBe("RangeError");
+  await setViewport(page, { x: 10, y: 20, scale: 1e6 });
+  expect(await page.evaluate(() => window.comb.viewport())).toEqual({ x: 10, y: 20, scale: 4 });
+});

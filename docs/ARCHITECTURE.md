@@ -23,23 +23,30 @@
  └──────────────────────────────────────────────────┼──────┘
                                                     ▼
  ┌──────── crates/engine-wasm → crates/engine (Rust, WebAssembly) ┐
- │ node positions buffer, edge paths, edge-label placement         │
+ │ node positions and sizes, edges, spatial index, edge paths      │
  └────────────────────────────────────────────────────────────────┘
 ```
 
-Graph data from the host application is untrusted: `api` checks that every edge names existing
-nodes, and the engine refuses non-finite coordinates and duplicate identifiers with a typed error.
+Graph data from the host application is untrusted: the engine refuses non-finite coordinates,
+invalid sizes, duplicate identifiers, edges to missing nodes, and non-finite label placements with
+a typed error.
 
 ## Building blocks
 
 The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imperative-shell.md).
 
-- **Engine** (`crates/engine`) — pure geometry: edge paths as cubic Bézier curves, the point and
-  normal at a path parameter, edge-label placement, and moves on the positions buffer. It depends
-  on no crate that reaches the browser.
-- **Bridge** — `crates/engine-wasm` holds every WebAssembly export and the engine's positions
-  buffer; `packages/comb/src/bridge` is the one module that imports the WebAssembly package and
-  reads the buffer through a fresh `Float32Array` view per read
+- **Engine** (`crates/engine`) — pure geometry: edge paths as cubic Bézier curves from the right
+  middle of one node to the left middle of another, their exact bounds, the point and normal at a
+  path parameter, and edge-label placement. `graph` keeps the loaded graph, node positions and
+  sizes per slot and edges per slot, and a spatial index (`spatial`, a uniform grid each for nodes
+  and edges, with an overflow list for items that cover many cells) that loads and moves keep
+  current and that is built again once many items have moved beyond its extent; its query
+  returns the slots a rectangle meets. It depends on no crate that reaches the browser.
+- **Bridge** — `crates/engine-wasm` holds every WebAssembly export: `loadGraph` checks graph data
+  and resolves edge ends to slots, `translate` moves nodes, and `query` writes the found node
+  slots, edge slots, edge control points, and edge-label points into buffers the engine owns;
+  `packages/comb/src/bridge` is the one module that imports the WebAssembly package and reads
+  those buffers through fresh typed-array views per read
   ([ADR-0010](adr/0010-bridge-data-format.md)).
 - **Store** (`packages/comb/src/store`) — a vanilla Zustand store with the graph's structure, the
   selection, the viewport, and a counter for moved positions; no coordinates
@@ -49,13 +56,15 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   and engine moves: drag a node, pan, zoom around the pointer.
 - **Render** (`packages/comb/src/render`) — the PixiJS scene: a `world` render group with the
   `EdgesContainer`, `NodesContainer`, and `LabelsContainer` layers, and an `overlay`
-  ([ADR-0012](adr/0012-virtualized-scene-graph.md)). Not built yet: pooling, culling by the
-  engine's spatial index, the edge mesh, levels of detail, and the node content of
-  [ADR-0013](adr/0013-node-content-model.md); every node has a view and all edges share one
-  `Graphics`.
-- **API** (`packages/comb/src/api`) — `createComb`, the validation of graph data, and the events
-  to the host application; `whenRendered` resolves once a change is drawn, with one render per
-  animation frame scheduled by `frames`.
+  ([ADR-0012](adr/0012-virtualized-scene-graph.md)). Each render queries the engine for the
+  viewport grown by the culling margin and binds pooled node views and edge-label views to
+  exactly the slots it found, drawn in slot order; the found edges share one `Graphics`. Not
+  built yet: the edge mesh, levels of detail, and the node content of
+  [ADR-0013](adr/0013-node-content-model.md).
+- **API** (`packages/comb/src/api`) — `createComb`, the graph data handed to the engine, the
+  viewport (`fitView`, `setViewport`, `viewport`), and the events to the host application;
+  `whenRendered` resolves once a change is drawn, with one render per animation frame scheduled
+  by `frames`.
 - **Testing entry** (`comb/testing`, `packages/comb/src/testing.ts`) — `inspect` returns what the
   scene draws; `viewport` and `renderCount`, cheap enough for every frame, return its transform and
   how often it rendered; for tests, the benchmark, and tooling. Its shape follows the scene and is
@@ -75,10 +84,16 @@ through `comb/testing` rather than pixels.
 ## How it runs
 
 **Dragging a node.** `interaction` turns the pointer delta into world units and calls
-`bridge.translate`, which moves the slot in the engine's positions buffer; it then bumps the
-store's `positionsVersion`. The store notifies the scene, which renders once per animation frame:
-it reads a fresh view on the positions buffer, places the node views, and asks the engine for the
-control points of every edge and the position of every edge label, so both follow the node.
+`bridge.translate`, which moves the slot in the engine's positions buffer and recomputes the
+node's edges and their place in the spatial index; it then bumps the store's `positionsVersion`.
+The store notifies the scene, which renders once per animation frame: it queries the engine for
+the viewport grown by the culling margin, binds node views and edge-label views to the slots
+found, and draws the found edges from the control points the query returned, so edges and labels
+follow the node.
+
+**Panning and zooming.** `interaction` sets the store's viewport; the scene renders as above, so
+what leaves the viewport and its margin returns its views to the pools and what enters takes them
+from there. A resize of the canvas renders too.
 
 **Building.** `bun run build:engine` compiles `crates/engine-wasm` with wasm-pack into
 `packages/comb/wasm/` (generated, not tracked); the library imports it from there, and Vite serves
