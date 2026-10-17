@@ -54,13 +54,23 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   [ADR-0013](adr/0013-node-content-model.md); every node has a view and all edges share one
   `Graphics`.
 - **API** (`packages/comb/src/api`) — `createComb`, the validation of graph data, and the events
-  to the host application.
+  to the host application; `whenRendered` resolves once a change is drawn, with one render per
+  animation frame scheduled by `frames`.
+- **Testing entry** (`comb/testing`, `packages/comb/src/testing.ts`) — `inspect` returns what the
+  scene draws; `viewport` and `renderCount`, cheap enough for every frame, return its transform and
+  how often it rendered; for tests, the benchmark, and tooling. Its shape follows the scene and is
+  outside the stable interface of `comb`.
 - **Example** (`examples/metric-tree`) — a host application with a metric tree and an HTML
-  sidebar (G-9).
+  sidebar (G-9); `?copies=` sets its size, the copies lie in a grid about as wide as tall, and it
+  reports its load time as `window.loadReport`.
+- **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, measuring the time to
+  the first frame and p95 frame times of drag, pan, and zoom over the frames Comb rendered, each
+  gesture checked for its effect (Q-1, Q-2).
 
 **Test pattern:** Rust unit tests beside the code they test (`#[cfg(test)]`); Bun tests beside
 their module as `*.test.ts`, the bridge's against the built WebAssembly module; browser tests
-under `examples/*/e2e`, run by Playwright on Bun against the example.
+under `examples/*/e2e`, run by Playwright on Bun against the example, reading what is drawn
+through `comb/testing` rather than pixels.
 
 ## How it runs
 

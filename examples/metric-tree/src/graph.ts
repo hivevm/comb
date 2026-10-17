@@ -76,12 +76,20 @@ function edgesOf(copy: number): EdgeData[] {
   });
 }
 
-/** The tree `copies` times, stacked vertically. */
+/** The tree `copies` times, in a grid about as wide as it is tall, so that fitting the view
+ *  shows all of them. */
 export function metricTree(copies: number): GraphData {
-  const height = 6 * ROW;
+  const width = columns.length * COLUMN;
+  const height = 7 * ROW;
+  const perRow = Math.ceil(Math.sqrt((copies * height) / width));
   const trees = Array.from({ length: copies }, (_, copy) => copy);
   return {
-    nodes: trees.flatMap((copy) => nodesOf(copy, copy * height)),
+    nodes: trees.flatMap((copy) =>
+      nodesOf(copy, Math.floor(copy / perRow) * height).map((node) => ({
+        ...node,
+        x: node.x + (copy % perRow) * width,
+      })),
+    ),
     edges: trees.flatMap((copy) => edgesOf(copy)),
   };
 }

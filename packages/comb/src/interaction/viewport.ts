@@ -1,6 +1,6 @@
 import type { Viewport } from "../store";
 
-const MIN_SCALE = 0.05;
+const MIN_SCALE = 0.005;
 const MAX_SCALE = 4;
 
 /** The viewport zoomed by `factor` so that the world point under screen point (px, py) stays

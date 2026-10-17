@@ -4,6 +4,8 @@ import { createBridge, type BridgeError } from "../bridge";
 import { attachInteraction } from "../interaction";
 import { fitViewport, type Bounds } from "../interaction/viewport";
 import { Scene } from "../render/scene";
+import { createFrames } from "./frames";
+import { scenes } from "./scenes";
 import { createGraphStore, type GraphData, type NodeView, type Selection } from "../store";
 
 export interface CombOptions {
@@ -20,6 +22,10 @@ export interface Comb {
   fitView(): void;
   /** Calls `listener` whenever the selection changes (G-5); returns the unsubscribe function. */
   onSelectionChange(listener: (selection: Selection) => void): () => void;
+  /** Resolves once the canvas has drawn every change made before the call, at most one frame
+   *  after the drawing. */
+  whenRendered(): Promise<void>;
+  /** Removes the canvas; pending `whenRendered` calls resolve, later ones reject. */
   destroy(): void;
 }
 
@@ -71,16 +77,11 @@ export async function createComb(host: HTMLElement, options: CombOptions = {}): 
 
   const store = createGraphStore();
   const scene = new Scene(app);
-  let frame = 0;
-  const unsubscribe = store.subscribe(() => {
-    frame ||= requestAnimationFrame(() => {
-      frame = 0;
-      scene.render(store.getState(), bridge);
-    });
-  });
+  const frames = createFrames(() => scene.render(store.getState(), bridge));
+  const unsubscribe = store.subscribe(frames.schedule);
   const detach = attachInteraction(app, store, bridge);
 
-  return {
+  const comb: Comb = {
     load(graph) {
       checkEdges(graph);
       try {
@@ -100,11 +101,14 @@ export async function createComb(host: HTMLElement, options: CombOptions = {}): 
       store.subscribe((state, previous) => {
         if (state.selection !== previous.selection) listener(state.selection);
       }),
+    whenRendered: frames.whenRendered,
     destroy() {
-      cancelAnimationFrame(frame);
+      frames.stop();
       unsubscribe();
       detach();
       app.destroy(true, { children: true });
     },
   };
+  scenes.set(comb, scene);
+  return comb;
 }

@@ -20,7 +20,7 @@ describe("viewport", () => {
 
   test("the scale stays within its bounds", () => {
     expect(zoomAt({ x: 0, y: 0, scale: 1 }, 0, 0, 1000).scale).toBe(4);
-    expect(zoomAt({ x: 0, y: 0, scale: 1 }, 0, 0, 0.0001).scale).toBe(0.05);
+    expect(zoomAt({ x: 0, y: 0, scale: 1 }, 0, 0, 0.0001).scale).toBe(0.005);
   });
 
   test("fitting centres the bounds and never zooms in beyond 1", () => {

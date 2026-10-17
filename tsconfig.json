@@ -14,5 +14,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["packages/*/src", "examples/*/src", "examples/*/e2e", "*.ts"]
+  "include": ["packages/*/src", "examples/*/src", "examples/*/e2e", "bench", "*.ts"]
 }

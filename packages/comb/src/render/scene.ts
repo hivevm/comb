@@ -29,7 +29,11 @@ export class NodeGraphic extends Container {
     this.cursor = "grab";
   }
 
+  /** The size the node was last drawn at. */
+  size = { width: 0, height: 0 };
+
   update(node: NodeView, selected: boolean): void {
+    this.size = { width: node.width, height: node.height };
     this.box
       .clear()
       .roundRect(0, 0, node.width, node.height, 6)
@@ -92,6 +96,8 @@ function anchors(edge: EdgeData, state: GraphView, positions: Float32Array): Anc
 /** The edges layer: every edge's path, computed by the engine, drawn into one Graphics. */
 export class EdgesContainer extends Container {
   private readonly paths = new Graphics();
+  /** The edges the last sync drew, with their ends, for inspection. */
+  drawn: { id: string; source: { x: number; y: number }; target: { x: number; y: number } }[] = [];
 
   constructor() {
     super();
@@ -100,9 +106,11 @@ export class EdgesContainer extends Container {
 
   sync(state: GraphView, positions: Float32Array, bridge: Bridge): void {
     this.paths.clear();
+    this.drawn = [];
     for (const edge of state.edges) {
       const at = anchors(edge, state, positions);
       if (!at) continue;
+      this.drawn.push({ id: edge.id, ...at });
       const [x0, y0, x1, y1, x2, y2, x3, y3] = bridge.controlPoints(at.source, at.target);
       this.paths
         .moveTo(x0!, y0!)
@@ -128,15 +136,34 @@ export class LabelsContainer extends Container {
         .roundRect(-text.width / 2 - 8, -11, text.width + 16, 22, 11)
         .fill({ color: edge.label.background ?? edge.color ?? EDGE_COLOR });
       text.position.set(-text.width / 2, -text.height / 2);
-      const label = new Container({ children: [pill, text] });
+      const label = new Container({ children: [pill, text], label: edge.id });
       label.position.set(point.x, point.y);
       this.addChild(label);
     }
   }
 }
 
+/** What the scene draws at one moment, in world coordinates, for tests and tooling. Its shape
+ *  follows the scene and changes with it; it is not part of the stable interface. */
+export interface SceneSnapshot {
+  viewport: { x: number; y: number; scale: number };
+  nodes: { id: string; x: number; y: number; width: number; height: number }[];
+  edges: { id: string; source: { x: number; y: number }; target: { x: number; y: number } }[];
+  edgeLabels: { edge: string; x: number; y: number }[];
+  /** Every display object under the world, the layers themselves included. */
+  displayObjects: number;
+  /** How many times the scene has rendered. */
+  renders: number;
+}
+
+function countDisplayObjects(container: Container): number {
+  return container.children.reduce((sum, child) => sum + countDisplayObjects(child), 1);
+}
+
 /** The scene: layers in drawing order inside one render group that pans and zooms. */
 export class Scene {
+  /** How many times the scene has rendered; cheap to read on every frame. */
+  renders = 0;
   readonly world = new Container({ isRenderGroup: true });
   readonly edges = new EdgesContainer();
   readonly nodes = new NodesContainer();
@@ -156,5 +183,26 @@ export class Scene {
     this.labels.sync(state, positions, bridge);
     this.world.position.set(state.viewport.x, state.viewport.y);
     this.world.scale.set(state.viewport.scale);
+    this.renders += 1;
+  }
+
+  inspect(): SceneSnapshot {
+    return {
+      viewport: { x: this.world.x, y: this.world.y, scale: this.world.scale.x },
+      nodes: this.nodes.children.map((view) => ({
+        id: (view as NodeGraphic).nodeId,
+        ...(view as NodeGraphic).size,
+        x: view.x,
+        y: view.y,
+      })),
+      edges: this.edges.drawn,
+      edgeLabels: this.labels.children.map((label) => ({
+        edge: label.label,
+        x: label.x,
+        y: label.y,
+      })),
+      displayObjects: countDisplayObjects(this.world),
+      renders: this.renders,
+    };
   }
 }

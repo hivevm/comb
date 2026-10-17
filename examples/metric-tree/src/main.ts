@@ -1,6 +1,27 @@
 // The example host application: Comb on the canvas, the attribute form in the HTML sidebar.
-import { createComb, type GraphData, type Selection } from "comb";
+import { createComb, type Comb, type GraphData, type Selection } from "comb";
+import { inspect, renderCount, viewport, type SceneSnapshot } from "comb/testing";
 import { metricTree } from "./graph";
+
+/** How the last load went: what the benchmark and the browser tests read. */
+export interface LoadReport {
+  copies: number;
+  nodes: number;
+  edges: number;
+  /** Milliseconds from handing the graph to Comb until its first frame was drawn. */
+  firstFrameMs: number;
+}
+
+declare global {
+  interface Window {
+    comb: Comb;
+    loadReport: Promise<LoadReport>;
+    /** What the canvas draws, from comb/testing, for the browser tests and the benchmark. */
+    inspect: () => SceneSnapshot;
+    renderCount: () => number;
+    viewport: () => SceneSnapshot["viewport"];
+  }
+}
 
 function element<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -18,11 +39,30 @@ const title = element<HTMLInputElement>("title");
 let graph: GraphData = metricTree(1);
 let selected: string | null = null;
 
-function load(): void {
+/** Selects the copies the query string asks for, adding the option where it is missing. */
+function copiesFromQuery(): void {
+  const asked = Number(new URLSearchParams(location.search).get("copies"));
+  if (!Number.isInteger(asked) || asked < 1) return;
+  if (![...copies.options].some((option) => option.value === String(asked))) {
+    copies.add(new Option(String(asked), String(asked)));
+  }
+  copies.value = String(asked);
+}
+
+async function load(): Promise<LoadReport> {
   graph = metricTree(Number(copies.value));
+  count.textContent = `${graph.nodes.length} nodes, ${graph.edges.length} edges`;
+  const start = performance.now();
   comb.load(graph);
   comb.fitView();
-  count.textContent = `${graph.nodes.length} nodes, ${graph.edges.length} edges`;
+  await comb.whenRendered();
+  const firstFrameMs = performance.now() - start;
+  return {
+    copies: Number(copies.value),
+    nodes: graph.nodes.length,
+    edges: graph.edges.length,
+    firstFrameMs,
+  };
 }
 
 function show(next: Selection): void {
@@ -34,11 +74,18 @@ function show(next: Selection): void {
 }
 
 comb.onSelectionChange(show);
-copies.addEventListener("change", load);
+copies.addEventListener("change", () => {
+  window.loadReport = load();
+});
 title.addEventListener("input", () => {
   const node = graph.nodes.find((candidate) => candidate.id === selected);
   if (!node) return;
   node.title = title.value;
   comb.updateNode(node.id, { title: title.value });
 });
-load();
+copiesFromQuery();
+window.comb = comb;
+window.inspect = () => inspect(comb);
+window.renderCount = () => renderCount(comb);
+window.viewport = () => viewport(comb);
+window.loadReport = load();
