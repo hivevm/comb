@@ -48,6 +48,11 @@
     // credential helper. A push and every gh action wait for a human instruction
     // (AGENTS.md, section 6).
     "ghcr.io/devcontainers/features/github-cli:1": {},
+    // Node.js — only the fallback runtime for Playwright while Bun runs it (ADR-0008, ADR-0014).
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "24",
+      "pnpmVersion": "none"
+    },
     // Rust stable with the WebAssembly target for the engine (ADR-0014).
     "ghcr.io/devcontainers/features/rust:1": {
       "version": "stable",
