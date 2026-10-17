@@ -85,6 +85,7 @@ is the table a session reads.
 | [0006](0006-feature-layer.md) | Work larger than one session is planned in the tree as a feature spec cut into tracer-bullet tickets, files deleted when their work lands, and the design is revised when a spec closes or after a number of changes | every change larger than one agent session, `docs/plan/`, the spec and ticket templates of the `plan-feature` skill, the pull request template, the `Last design revision` line of `docs/ARCHITECTURE.md`, `scripts/sensor-revision-due.sh`, `scripts/sensor-plan-frontier.sh`, and the claim script `.agents/skills/work-tickets/claim.sh` | 🟢 accepted |
 | [0007](0007-harness.md) | One agent implements, a fresh session reviews, and the protected parts stay with the maintainer | every change and every agent session in this repository, `docs/adr/`, `docs/SPECIFICATION.md`, `.github/CODEOWNERS`, and the tickets under `docs/plan/` | 🟡 proposed |
 | [0008](0008-toolchain.md) | TypeScript with Bun, Vite, Playwright, ESLint, and Prettier; Rust with wasm-pack, cargo test, clippy, and rustfmt | `package.json`, `bun.lock`, `Cargo.toml`, the lint and formatter configurations, `scripts/check-code.sh`, `scripts/check-all.sh`, `.github/workflows/`, and the **Build, Test & Run** section of `README.md` | 🟡 proposed |
+| [0009](0009-functional-core-imperative-shell.md) | A pure Rust engine as functional core, and a TypeScript shell around it | the directory layout, `crates/`, `packages/`, `examples/`, and every import between their modules | 🟡 proposed |
 
 ### Superseded and rejected
 
