@@ -90,6 +90,7 @@ is the table a session reads.
 | [0011](0011-store.md) | The graph's structure lives in a vanilla Zustand store, its coordinates in the engine's buffers | `packages/comb/src/store/`, and every module that reads or writes the state of the graph or the viewport | 🟡 proposed |
 | [0012](0012-virtualized-scene-graph.md) | A virtualized scene graph with culling by the engine and three levels of detail | `packages/comb/src/render/`, and the exports of `crates/engine` and `crates/engine-wasm` that answer spatial queries and compute edge geometry | 🟡 proposed |
 | [0013](0013-node-content-model.md) | Node content is a closed set of elements in rows, laid out by the engine | the node-content types of `crates/engine` and `crates/engine-wasm`, their generated TypeScript definitions in `packages/comb`, the layout functions of the engine, and the drawing of node content in `packages/comb/src/render/` | 🟡 proposed |
+| [0014](0014-dev-container-toolchain.md) | The Dev Container builds from a Dockerfile that adds Bun, and takes Node.js and Rust as locked Features | `.devcontainer/`, `.vscode/launch.json`, `.vscode/extensions.json`, and the CI job that sets up the toolchain | 🟡 proposed |
 
 ### Superseded and rejected
 
