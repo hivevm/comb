@@ -15,10 +15,9 @@ name: Checks
 #   once a project runs that sensor with --require. The job checks out the full history because
 #   three sensors read it.
 # - Shell lint: scripts/check-shell.sh, after the self-test of the git hooks.
-# - Build, test, lint: absent until the project has a toolchain. The catalogue entry Toolchain of
-#   the propose-adr skill says how the job is added; it is the one job of this workflow that
-#   installs something, with a timeout that fits the real build and 'submodules: recursive' on
-#   the checkout where the project uses submodules.
+# - Build, test, lint: scripts/check-code.sh (ADR-0008), after Bun, Rust with the WebAssembly
+#   target, and Chromium are set up. It is the one job of this workflow that installs something;
+#   its actions outside actions/* are pinned by commit SHA (ADR-0017).
 #
 # Every job is bounded by a timeout — a hung step would otherwise occupy a runner until the
 # platform's own six-hour limit — and every checkout runs with 'persist-credentials: false': the
@@ -145,3 +144,25 @@ jobs:
         run: bash scripts/test-check-shell.sh
       - name: Lint shell scripts with ShellCheck
         run: bash scripts/check-shell.sh
+
+  code:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.3
+      # The runner image ships rustup; the toolchain is the one the Dev Container installs.
+      - name: Set up Rust stable with the WebAssembly target
+        run: |
+          rustup toolchain install stable --profile minimal -c clippy,rustfmt -t wasm32-unknown-unknown
+          rustup default stable
+      - name: Install dependencies and Chromium
+        run: |
+          bun install --frozen-lockfile
+          bunx --bun playwright install --with-deps chromium
+      - name: Build, test, and lint
+        run: bash scripts/check-code.sh

@@ -19,8 +19,11 @@ explicit and reviewable.
 
 ## Overview
 
-Describe what this project does, who it is for, and its main goals. The full problem statement and
-goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), the vocabulary in
+Comb draws nodes, edges, connectors, and edge labels on a WebGL2 canvas with PixiJS and lets the
+user create, connect, move, and delete them directly; every form for their attributes stays in the
+host application's HTML. Geometry runs in a Rust engine compiled to WebAssembly. It is built for
+developers whose web applications edit graphs of tens of thousands of nodes. The full problem
+statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), the vocabulary in
 [`docs/GLOSSARY.md`](docs/GLOSSARY.md).
 
 ## Prerequisites
@@ -45,14 +48,15 @@ goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), the vocabulary i
 
 ## Build, Test & Run
 
-<!-- Fill in once the toolchain is chosen. This section is the single source for
-     build/test/lint/run commands; both humans and agents rely on it, and the rule file names
-     it. -->
+Inside the Dev Container, which provides Bun, Rust, wasm-pack, and Chromium
+([ADR-0008](docs/adr/0008-toolchain.md), [ADR-0014](docs/adr/0014-dev-container-toolchain.md)).
+[`scripts/check-code.sh`](scripts/check-code.sh) runs the first three in order.
 
-- **Build:** TODO <!-- e.g. `make build` -->
-- **Test:** TODO <!-- e.g. `make test` -->
-- **Lint:** TODO <!-- e.g. `make lint` -->
-- **Run:** TODO <!-- e.g. `make run` -->
+- **Build:** `bun run build` — the engine with wasm-pack, the type check, and the example
+- **Test:** `bun run test` — `cargo test`, `bun test`, and the Playwright browser tests
+- **Lint:** `bun run lint` — rustfmt, clippy, ESLint, and Prettier
+- **Run:** `bun run example`, or the launch configuration **Example: metric tree** in VS Code,
+  which opens the example in the host's browser
 
 ## Usage
 
@@ -60,7 +64,32 @@ goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), the vocabulary i
      API, a minimal example, and the expected output. Keep build/test/run mechanics in the section
      above; this section is about using the result, not producing it. -->
 
-TODO — show a minimal example of using the project.
+A host application gives Comb an element to fill, hands it the graph, and keeps the forms:
+
+```ts
+import { createComb } from "comb";
+
+const comb = await createComb(document.getElementById("canvas")!);
+comb.load({
+  nodes: [
+    { id: "a", title: "Premium trial users", x: 0, y: 0, width: 220, height: 64 },
+    { id: "b", title: "Time spent listening", x: 320, y: 0, width: 220, height: 64 },
+  ],
+  edges: [
+    {
+      id: "a-b",
+      source: "a",
+      target: "b",
+      color: 0x22a55b,
+      label: { text: "0.998", t: 0.5, offset: 0 },
+    },
+  ],
+});
+comb.fitView();
+comb.onSelectionChange((selection) => console.log(selection)); // fill the sidebar from here
+```
+
+[`examples/metric-tree/`](examples/metric-tree/) is a complete host application with a sidebar.
 
 ## Project Layout
 
@@ -73,10 +102,14 @@ docs/GLOSSARY.md      # the vocabulary everyone uses, kept current inline
 docs/CONVENTIONS.md   # how this project writes what no check decides, kept current inline
 docs/ARCHITECTURE.md  # the system as it currently stands
 docs/adr/             # Architecture Decision Records (+ template)
+crates/engine/        # the engine's pure Rust core: geometry over values and buffers (ADR-0009)
+crates/engine-wasm/   # the bridge's Rust side: every WebAssembly export (ADR-0010)
+packages/comb/        # the library: api, store, interaction, render, bridge
+examples/metric-tree/ # the example host application, with its browser tests (G-9)
 scripts/              # consistency checks and sensors (check-all.sh runs them all), run in CI
 .githooks/            # git hooks: refuse a commit on main and a push while the checks are red
 .github/              # CI workflows, Dependabot, issue & pull request templates, code owners
-.devcontainer/        # Dev Container definition (base image + Features)
+.devcontainer/        # Dev Container definition (Dockerfile + Features)
 .vscode/              # shared editor settings
 .editorconfig         # editor-neutral formatting baseline
 .gitattributes        # line-ending normalization (LF everywhere)
@@ -147,7 +180,7 @@ configured once by a maintainer and worth re-checking after a repository move or
 
 - a **ruleset on `main`** that requires pull requests, requires the
   <!-- required-checks begin — compared with the workflow's jobs by scripts/check-docs.sh -->
-  `docs`, `traceability`, `devcontainer`, `sensors`, and `shell`
+  `docs`, `traceability`, `devcontainer`, `sensors`, `shell`, and `code`
   <!-- required-checks end -->
   jobs of the **Checks** workflow as required status checks (rulesets list checks by their job
   name) and a branch up to date with `main` before it merges, so that the checks see what the

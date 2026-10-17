@@ -1,0 +1,31 @@
+{
+  "name": "comb-workspace",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "build:engine": "bunx --bun wasm-pack build crates/engine-wasm --release --target web --out-dir ../../packages/comb/wasm --out-name engine --no-pack",
+    "build": "bun run build:engine && bun run typecheck && bun run --cwd examples/metric-tree build",
+    "typecheck": "bunx --bun tsc -p tsconfig.json",
+    "test": "cargo test --workspace && bun test packages/comb/src && bunx --bun playwright test",
+    "lint": "cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && bunx --bun eslint . && bunx --bun prettier --check .",
+    "dev": "bun run --cwd examples/metric-tree dev",
+    "example": "bun run build:engine && bun run dev"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.64.1",
+    "@types/bun": "1.4.3",
+    "eslint": "10.13.0",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.2",
+    "wasm-pack": "0.15.0"
+  },
+  "trustedDependencies": [
+    "wasm-pack"
+  ]
+}

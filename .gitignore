@@ -16,3 +16,11 @@ Thumbs.db
 
 # Session artifacts — plans, handoff notes, scratch files (AGENTS.md, section 4)
 .scratch/
+
+# Build output and dependencies
+node_modules/
+target/
+dist/
+packages/comb/wasm/
+test-results/
+playwright-report/

@@ -1,0 +1,50 @@
+html,
+body {
+  height: 100%;
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  color: #1f2430;
+}
+
+body {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+}
+
+#canvas {
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+}
+
+#sidebar {
+  border-left: 1px solid #d0d4dc;
+  padding: 16px;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#sidebar h1 {
+  font-size: 18px;
+  margin: 0;
+}
+
+#sidebar h2 {
+  font-size: 14px;
+  margin: 0 0 8px;
+}
+
+#sidebar label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+#sidebar input,
+#sidebar select {
+  font: inherit;
+  padding: 6px 8px;
+}

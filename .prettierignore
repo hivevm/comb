@@ -1,0 +1,15 @@
+# Prettier formats the TypeScript, HTML, CSS, and JSON of the workspace; the documents, scripts,
+# workflows, and generated files keep their own form.
+*.md
+.agents/
+.claude/
+.devcontainer/
+.github/
+.vscode/
+docs/
+scripts/
+target/
+packages/comb/wasm/
+test-results/
+playwright-report/
+bun.lock

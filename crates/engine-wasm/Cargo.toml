@@ -1,0 +1,22 @@
+# The bridge (ADR-0009, ADR-0010): every #[wasm_bindgen] export, no geometry of its own.
+[package]
+name = "comb-engine-wasm"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+comb-engine = { path = "../engine" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde-wasm-bindgen = "0.6.5"
+# The `js` feature converts through serde-wasm-bindgen; the default `json` feature would pass JSON
+# strings, which the specification forbids (ADR-0010).
+tsify = { version = "0.5.8", default-features = false, features = ["js"] }
+wasm-bindgen = "0.2.129"
+
+[lints]
+workspace = true

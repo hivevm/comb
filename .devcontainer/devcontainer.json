@@ -1,7 +1,9 @@
 {
   "name": "Comb DevContainer",
 
-  "image": "mcr.microsoft.com/devcontainers/base:debian",
+  // Built from the Dockerfile beside this file: the base image and Bun, pinned by digest
+  // (ADR-0014).
+  "build": { "dockerfile": "Dockerfile" },
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
 
@@ -30,33 +32,56 @@
   // repository keeps them under .githooks/ and this points git at them: pre-commit refuses a
   // commit on main (AGENTS.md, section 6), pre-push runs the checks first (AGENTS.md, section 5).
   // Outside the container, run the same command once per clone (README → "Getting Started").
-  // ShellCheck comes from the base image's signed Debian archive, so the pre-push hook runs the
-  // shell lint CI runs; without it the lint skips itself locally.
+  // The dependencies come from bun.lock; Playwright's installer adds Chromium and its system
+  // libraries for the browser tests (ADR-0008).
   "postCreateCommand": {
     "hooks": "git config core.hooksPath .githooks",
-    "shellcheck": "sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck"
+    "deps": "bun install --frozen-lockfile && bunx --bun playwright install --with-deps chromium"
   },
 
-  // DevContainer Features layered on top of the base image. The container intentionally has NO
-  // access to the host Docker daemon (no socket mount) — see ADR-0004. Manage the host's containers
-  // from a host-side VS Code extension instead (README → "Host container management").
+  // DevContainer Features layered on top of the image. The container intentionally has NO access
+  // to any container engine (no socket mount, no engine inside) — see ADR-0004 and ADR-0015.
+  // Manage the host's containers from a host-side VS Code extension instead (README → "Host
+  // container management").
   "features": {
     // GitHub CLI (`gh`) — used by the coding agent for GitHub operations and as the git
     // credential helper. A push and every gh action wait for a human instruction
     // (AGENTS.md, section 6).
-    "ghcr.io/devcontainers/features/github-cli:1": {}
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    // Node.js — only the fallback runtime for Playwright while Bun runs it (ADR-0008, ADR-0014).
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "24",
+      "pnpmVersion": "none"
+    },
+    // Rust stable with the WebAssembly target for the engine (ADR-0014).
+    "ghcr.io/devcontainers/features/rust:1": {
+      "version": "stable",
+      "targets": "wasm32-unknown-unknown",
+      "components": "rust-analyzer,rust-src,rustfmt,clippy"
+    }
   },
 
   "customizations": {
     // VS Code extensions installed inside the container
     "vscode": {
       "extensions": [
-        "anthropic.claude-code"
+        "anthropic.claude-code",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "ms-playwright.playwright",
+        "oven.bun-vscode"
       ]
     }
   },
 
-  "forwardPorts": [],
+  // The example's development server (G-9); the launch configuration opens it in the host's
+  // browser.
+  "forwardPorts": [5173],
+  "portsAttributes": {
+    "5173": { "label": "Comb example", "onAutoForward": "silent" }
+  },
 
   "hostRequirements": {
     "cpus": 2,
