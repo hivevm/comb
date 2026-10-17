@@ -64,7 +64,8 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   exactly the slots it found, drawn in slot order. `EdgesContainer` (`render/edges.ts`) draws
   the edge mesh with a shader that leaves out the gaps of dash patterns. Not built yet: levels of
   detail and the node content of [ADR-0013](adr/0013-node-content-model.md).
-- **API** (`packages/comb/src/api`) — `createComb`, the graph data handed to the engine, the
+- **API** (`packages/comb/src/api`) — `createComb`, which refuses with a
+  `RendererUnavailableError` where PixiJS finds no WebGL2, the graph data handed to the engine, the
   viewport (`fitView`, `setViewport`, `viewport`), and the events to the host application;
   `whenRendered` resolves once a change is drawn, with one render per animation frame scheduled
   by `frames`.

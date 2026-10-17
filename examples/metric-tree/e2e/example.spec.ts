@@ -44,6 +44,25 @@ test("the example draws the metric tree on a canvas beside its sidebar", async (
   expect(errors).toEqual([]);
 });
 
+test("without WebGL, Comb refuses instead of drawing without edges", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(`${error.name}: ${error.message}`));
+  // A browser without WebGL: every WebGL context is refused, as where no GPU process starts.
+  await page.addInitScript(() => {
+    const getContext = HTMLCanvasElement.prototype.getContext;
+    Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
+      value(this: HTMLCanvasElement, id: string, options?: unknown) {
+        return id.startsWith("webgl") ? null : Reflect.apply(getContext, this, [id, options]);
+      },
+    });
+  });
+  await page.goto("/");
+  await expect
+    .poll(() => errors)
+    .toContainEqual(expect.stringContaining("RendererUnavailableError"));
+  await expect(page.locator("#canvas canvas")).toHaveCount(0);
+});
+
 test("the copies query parameter sets the size without the control", async ({ page }) => {
   await open(page, "?copies=10");
   await expect(page.locator("#copies")).toHaveValue("10");

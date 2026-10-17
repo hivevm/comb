@@ -43,6 +43,15 @@ export interface Comb {
 
 export type GraphDataProblem = BridgeError;
 
+/** Comb found no WebGL2 to draw with, only `renderer`, PixiJS's fallback, which cannot draw the
+ *  edge mesh. */
+export class RendererUnavailableError extends Error {
+  constructor(readonly renderer: string) {
+    super(`comb: WebGL2 is not available (PixiJS offers ${renderer})`);
+    this.name = "RendererUnavailableError";
+  }
+}
+
 /** Graph data Comb refused, with what was wrong and where. */
 export class GraphDataError extends Error {
   constructor(readonly problem: GraphDataProblem) {
@@ -82,7 +91,8 @@ function batchOf(graph: GraphData): GraphBatch {
   };
 }
 
-/** Creates a Comb canvas that fills `host`. */
+/** Creates a Comb canvas that fills `host`. Throws a `RendererUnavailableError` where the
+ *  browser offers no WebGL2. */
 export async function createComb(host: HTMLElement, options: CombOptions = {}): Promise<Comb> {
   const bridge = await createBridge();
   const app = new Application();
@@ -92,6 +102,11 @@ export async function createComb(host: HTMLElement, options: CombOptions = {}): 
     antialias: true,
     preference: "webgl",
   });
+  if (app.renderer.name !== "webgl") {
+    const renderer = app.renderer.name;
+    app.destroy(true);
+    throw new RendererUnavailableError(renderer);
+  }
   host.appendChild(app.canvas);
 
   const store = createGraphStore();
