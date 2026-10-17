@@ -19,8 +19,9 @@ announces that Playwright runs on it, test runner and configuration included; Pl
 system requirements still name only Node.js 22, 24, and 26. A Bun issue that broke Playwright's
 navigation was closed on 2026-09-22, before Bun 1.4.3 (2026-10-10), and other projects report
 both working setups and keeping Node.js for Playwright. `bunx` runs an executable whose shebang
-names `node` with Node.js unless `--bun` is passed, so the same command can run Playwright on
-either runtime.
+names `node` with Node.js unless `--bun` is passed. The project's scaffold ran its whole gate on
+Bun in a container without Node.js on 2026-10-17: wasm-pack, `tsc`, ESLint, Prettier, Vite,
+`bun test`, and `bunx --bun playwright test` with Chromium.
 
 Q-3 caps the bundle at 300 kB, a number a check can hold on every push. Q-1 and Q-2 are defined
 on a reference machine with an integrated GPU, which no CI runner has, so CI can only compare
@@ -43,10 +44,8 @@ run by `scripts/check-code.sh`.
 
 - **Commands** in the README's **Build, Test & Run**: `bun run build`, `bun run test`,
   `bun run lint`, `bun run dev`, `bun run example`, and `bun run bench`.
-- **Runtimes:** every tool runs on Bun through `bunx --bun`, the Playwright test runner included.
-  Node.js is the fallback for Playwright alone: the golden path runs its browser tests with
-  `bunx --bun playwright test`; if they fail there for a reason in Bun, they run through
-  `bunx playwright test` on Node.js, and the golden path records the reason.
+- **Runtimes:** every tool runs on Bun through `bunx --bun`, the Playwright test runner included;
+  no tool of the build, the tests, or the lint runs on Node.js.
 - **Dependencies:** `bun install` with the committed `bun.lock`; `trustedDependencies` lists
   exactly the packages whose install scripts the build needs, wasm-pack among them, and nothing
   else.
@@ -71,10 +70,11 @@ adds when a mistake calls for them; how the code is laid out in directories.
 
 - **Node.js with npm and Vitest** — the widest support, Playwright included, but the maintainer
   chose Bun, and `bun test` makes Vitest one dependency too many.
-- **Playwright on Bun without a fallback** — no Node.js at all, but Playwright itself does not
-  list Bun, and the goals that need a browser would rest on Bun's compatibility alone.
+- **Node.js as Playwright's fallback runtime** — what this ADR first decided, for the case that
+  Playwright failed on Bun; the scaffold ran it on Bun without Node.js, so the second runtime
+  would be kept for a failure nobody has seen.
 - **Playwright on Node.js until Playwright lists Bun** — the supported path, but a second runtime
-  kept for a support statement that Bun's own announcement may already make unnecessary.
+  kept for a support statement Bun's announcement and the scaffold's run already answer.
 - **Vitest run on Bun** — more plugins than `bun test`, but a dependency for what Bun already
   provides.
 - **Biome instead of ESLint and Prettier** — one fast tool, but fewer rules, and its complexity
@@ -116,16 +116,15 @@ adds when a mistake calls for them; how the code is laid out in directories.
 - Positive: every goal that needs a browser has a runner that can decide it, and Q-3 is held on
   every push.
 - Positive: one script runs the same checks locally, in the pre-push hook, and in CI.
-- Negative / trade-offs: Playwright on Bun rests on Bun's claim, not on Playwright's; a regression
-  in either shows as a failing browser test, and the fallback to Node.js stays in reach until the
-  golden path has shown it unnecessary.
+- Positive: one JavaScript runtime in the Dev Container and in CI.
+- Negative / trade-offs: Playwright on Bun rests on Bun's claim and the scaffold's run, not on
+  Playwright's support; a regression in either shows as a failing browser test, and the way back
+  is a revision of this ADR that adds Node.js for Playwright again.
 - Negative / trade-offs: Chromium and the Rust toolchain make the Dev Container and the CI job
   larger and slower to set up.
 - Negative / trade-offs: CI measures performance only relatively; a slow regression that stays
   under the threshold of each comparison is caught only on the reference machine.
-- Follow-ups: removing Node.js from the Dev Container and CI once the golden path runs Playwright
-  on Bun; the threshold for a benchmark
-  regression and where measurements are recorded.
+- Follow-ups: the threshold for a benchmark regression and where measurements are recorded.
 
 ## Enforcement
 
