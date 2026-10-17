@@ -88,6 +88,7 @@ is the table a session reads.
 | [0009](0009-functional-core-imperative-shell.md) | A pure Rust engine as functional core, and a TypeScript shell around it | the directory layout, `crates/`, `packages/`, `examples/`, and every import between their modules | 🟡 proposed |
 | [0010](0010-bridge-data-format.md) | Structured data crosses the bridge through serde-wasm-bindgen with generated types, coordinate streams through typed-array views on engine-owned buffers | `crates/engine-wasm/`, `packages/comb/src/bridge/`, and every value that crosses between them | 🟡 proposed |
 | [0011](0011-store.md) | The graph's structure lives in a vanilla Zustand store, its coordinates in the engine's buffers | `packages/comb/src/store/`, and every module that reads or writes the state of the graph or the viewport | 🟡 proposed |
+| [0012](0012-virtualized-scene-graph.md) | A virtualized scene graph with culling by the engine and three levels of detail | `packages/comb/src/render/`, and the exports of `crates/engine` and `crates/engine-wasm` that answer spatial queries and compute edge geometry | 🟡 proposed |
 
 ### Superseded and rejected
 
