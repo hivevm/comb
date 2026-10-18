@@ -94,6 +94,7 @@ is the table a session reads.
 | [0015](0015-no-container-access.md) | The work inside the Dev Container reaches no container engine | `.devcontainer/`, and every test that would need a service or a container | 🟡 proposed |
 | [0016](0016-no-secrets.md) | The repository holds no secrets and relies on GitHub's baseline | the repository, its CI workflows, and the repository settings | 🟡 proposed |
 | [0017](0017-actions-pinned-by-sha.md) | Workflows reference actions by full commit SHA, kept current by Dependabot | every `uses:` line under `.github/workflows/`, `.github/dependabot.yml`, `scripts/check-all.sh`, and the `sensors` job of `checks.yml` | 🟡 proposed |
+| [0018](0018-webgl2-or-an-opted-in-canvas-fallback.md) | Comb draws with WebGL2, and on Canvas 2D only where the host application opts in | `createComb` and `CombOptions` in `packages/comb/src/api/`, the error types `comb` exports, and the edges layer in `packages/comb/src/render/` | 🟡 proposed |
 
 ### Superseded and rejected
 
