@@ -12,4 +12,17 @@ an ADR. What the golden path already shows needs none. Few entries that hold bea
 skimmed. The design revision drops what prevented nothing
 ([`AGENTS.md` §5](../AGENTS.md#5-quality-bar--definition-of-done)).
 
-- **<Convention>** — what is done, and why.
+- **Break the feature once, and watch its test fail.** Before a test that verifies a criterion
+  lands, the author removes or breaks the behaviour it claims (drops the dashes, skips the
+  rebuild, returns every slot) and sees the test go red; the pull request names the breakage.
+  A test that passes either way verifies nothing, and reading it rarely shows that.
+- **An oracle owes nothing to the code it judges.** A test computes its expected value from the
+  inputs, by brute force or by hand, never from a cache, buffer, or helper of the module under
+  test; an oracle that reads the engine's own state agrees with the engine's mistakes.
+- **A number says where it was taken.** A test or a measurement whose verdict depends on the
+  environment (the renderer, the GPU, the display) asserts that environment before it records
+  anything, and fails rather than measure a fallback: a silent fallback looks like a result.
+- **Geometry is tested on its awkward cases.** A test of paths, bounds, or strokes includes edges
+  that run backwards (target left of source), level edges, and edges shorter than their
+  arrowhead; distances are measured to the segment, not to its line. The easy forward curve hides
+  the errors that matter.
