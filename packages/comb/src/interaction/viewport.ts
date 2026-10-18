@@ -1,3 +1,6 @@
+// The viewport's arithmetic: zoom, fit, pan, and the transform between world and screen, in one
+// place for interaction, the scene, and the testing entry.
+import type { Rect } from "../bridge";
 import type { Viewport } from "../store";
 
 const MIN_SCALE = 0.005;
@@ -12,22 +15,31 @@ export function clampScale(scale: number): number {
  *  under it (G-8). The scale is clamped to what the canvas can still draw legibly or at all. */
 export function zoomAt(viewport: Viewport, px: number, py: number, factor: number): Viewport {
   const scale = clampScale(viewport.scale * factor);
-  const worldX = (px - viewport.x) / viewport.scale;
-  const worldY = (py - viewport.y) / viewport.scale;
-  return { x: px - worldX * scale, y: py - worldY * scale, scale };
+  const world = toWorld(viewport, px, py);
+  return { x: px - world.x * scale, y: py - world.y * scale, scale };
 }
 
-/** A rectangle in world coordinates. */
-export interface Bounds {
-  minX: number;
-  minY: number;
-  maxX: number;
-  maxY: number;
+/** The screen point, relative to the canvas, at which `viewport` shows world point (x, y). */
+export function toScreen(viewport: Viewport, x: number, y: number): { x: number; y: number } {
+  return { x: viewport.x + x * viewport.scale, y: viewport.y + y * viewport.scale };
+}
+
+/** The world point that `viewport` shows at screen point (x, y), relative to the canvas. */
+export function toWorld(viewport: Viewport, x: number, y: number): { x: number; y: number } {
+  return { x: (x - viewport.x) / viewport.scale, y: (y - viewport.y) / viewport.scale };
+}
+
+/** The world rectangle a screen of `width` × `height` shows through `viewport`, grown by
+ *  `margin` screen pixels on every side. */
+export function worldRect(viewport: Viewport, width: number, height: number, margin = 0): Rect {
+  const { x: minX, y: minY } = toWorld(viewport, -margin, -margin);
+  const { x: maxX, y: maxY } = toWorld(viewport, width + margin, height + margin);
+  return { minX, minY, maxX, maxY };
 }
 
 /** The viewport that shows `bounds` whole and centred in a screen of `width` × `height`, with
  *  `margin` pixels around it, never zoomed in beyond 1. */
-export function fitViewport(bounds: Bounds, width: number, height: number, margin = 40): Viewport {
+export function fitViewport(bounds: Rect, width: number, height: number, margin = 40): Viewport {
   const w = Math.max(bounds.maxX - bounds.minX, 1);
   const h = Math.max(bounds.maxY - bounds.minY, 1);
   const fit = Math.min((width - 2 * margin) / w, (height - 2 * margin) / h, 1);

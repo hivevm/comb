@@ -58,10 +58,14 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   render layer reads.
 - **Interaction** (`packages/comb/src/interaction`) — pointer and wheel input into store actions
   and engine moves: drag a node, pan, zoom around the pointer. The engine's `hit` says which node
-  the pointer is on, at every level of detail; node views take no events.
-- **Render** (`packages/comb/src/render`) — the PixiJS scene: a `world` render group with the
-  `EdgesContainer`, `NodeParticles`, `NodesContainer`, and `LabelsContainer` layers, and an
-  `overlay` ([ADR-0012](adr/0012-virtualized-scene-graph.md)). The scale chooses the level of
+  the pointer is on, at every level of detail; node views take no events. `viewport.ts` holds the
+  viewport's arithmetic, the transform between world and screen included, for interaction, the
+  scene, and the testing entry.
+- **Render** (`packages/comb/src/render`) — the PixiJS scene (`scene.ts`): a `world` render
+  group with the layers `EdgesContainer` (`edges.ts`), `NodeParticles` (`particles.ts`),
+  `NodesContainer` (`nodes.ts`), and `LabelsContainer` (`labels.ts`), and an `overlay`
+  ([ADR-0012](adr/0012-virtualized-scene-graph.md)); `bindings.ts` is the pool of views the
+  nodes and labels layers bind to slots. The scale chooses the level of
   detail: near (from 0.6) draws node views and edge labels, middle (from 0.3) node views alone,
   and far nodes as particles of one `ParticleContainer` (`render/particles.ts`) and edges as
   lines one pixel wide. A render queries the engine for the viewport grown by the culling margin
@@ -78,10 +82,10 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   by `frames`.
 - **Testing entry** (`comb/testing`, `packages/comb/src/testing.ts`) — `inspect` returns what the
   scene draws; `viewport` and `renderCount`, cheap enough for every frame, return its transform and
-  how often it rendered; `showLayers` hides layers for a reference image; `levelScales` says where
-  the levels of detail begin; for tests, the
-  benchmark, and tooling. Its shape follows the scene and is outside the stable interface of
-  `comb`.
+  how often it rendered; `screenPoint` and `visibleRect` apply the scene's transform between world
+  and screen; `showLayers` hides layers for a reference image; `levelScales` says where the levels
+  of detail begin; for tests, the benchmark, and tooling. Its shape follows the scene and is
+  outside the stable interface of `comb`.
 - **Example** (`examples/metric-tree`) — a host application with a metric tree and an HTML
   sidebar (G-9); `?copies=` sets its size, the copies lie in a grid about as wide as tall, and it
   reports its load time as `window.loadReport`.

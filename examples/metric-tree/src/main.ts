@@ -4,8 +4,10 @@ import {
   inspect,
   levelScales,
   renderCount,
+  screenPoint,
   showLayers,
   viewport,
+  visibleRect,
   type SceneSnapshot,
 } from "comb/testing";
 import { metricTree } from "./graph";
@@ -29,6 +31,8 @@ declare global {
     viewport: () => SceneSnapshot["viewport"];
     showLayers: (layers: Parameters<typeof showLayers>[1]) => void;
     levelScales: typeof levelScales;
+    screenPoint: (x: number, y: number) => ReturnType<typeof screenPoint>;
+    visibleRect: (margin?: number) => ReturnType<typeof visibleRect>;
   }
 }
 
@@ -99,4 +103,6 @@ window.renderCount = () => renderCount(comb);
 window.viewport = () => viewport(comb);
 window.showLayers = (layers) => showLayers(comb, layers);
 window.levelScales = levelScales;
+window.screenPoint = (x, y) => screenPoint(comb, x, y);
+window.visibleRect = (margin) => visibleRect(comb, margin);
 window.loadReport = load();

@@ -8,6 +8,11 @@ import type { GraphView } from "../store";
 /** The colour of an edge the host application gives none. */
 export const EDGE_COLOR = 0x9aa1ad;
 
+/** The colour an edge is drawn in: its own, or the default. */
+export function edgeColor(edge: { readonly color?: number }): number {
+  return edge.color ?? EDGE_COLOR;
+}
+
 const vertex = `
 in vec2 aPosition;
 in float aDistance;

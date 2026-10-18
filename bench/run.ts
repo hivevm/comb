@@ -117,14 +117,11 @@ async function nodeNearCentre(page: Page): Promise<{ id: string; at: Point }> {
   return page.evaluate(() => {
     const snapshot = window.inspect();
     const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();
-    const { x, y, scale } = snapshot.viewport;
     const centre = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
     let best: { id: string; at: { x: number; y: number }; d: number } | null = null;
     for (const node of snapshot.nodes) {
-      const at = {
-        x: rect.left + x + (node.x + node.width / 2) * scale,
-        y: rect.top + y + (node.y + node.height / 2) * scale,
-      };
+      const local = window.screenPoint(node.x + node.width / 2, node.y + node.height / 2);
+      const at = { x: rect.left + local.x, y: rect.top + local.y };
       const d = Math.hypot(at.x - centre.x, at.y - centre.y);
       if (!best || d < best.d) best = { id: node.id, at, d };
     }
@@ -176,19 +173,13 @@ async function panAt(page: Page, scale: number): Promise<Measure> {
 /** A point on the canvas, near its top left, over no drawn node, where a press pans. */
 async function emptyPoint(page: Page): Promise<Point> {
   return page.evaluate(() => {
-    const { nodes, viewport } = window.inspect();
+    const { nodes } = window.inspect();
     const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();
-    const { x, y, scale } = viewport;
     const over = (px: number, py: number) =>
       nodes.some((node) => {
-        const left = x + node.x * scale;
-        const top = y + node.y * scale;
-        return (
-          px >= left &&
-          px <= left + node.width * scale &&
-          py >= top &&
-          py <= top + node.height * scale
-        );
+        const from = window.screenPoint(node.x, node.y);
+        const to = window.screenPoint(node.x + node.width, node.y + node.height);
+        return px >= from.x && px <= to.x && py >= from.y && py <= to.y;
       });
     for (let py = 4; py < rect.height / 2; py += 3) {
       for (let px = 4; px < rect.width / 2; px += 3) {

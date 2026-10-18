@@ -1,9 +1,9 @@
 // The public interface of Comb and the validation of graph data (ADR-0009).
 import { Application } from "pixi.js";
-import { createBridge, type BridgeError, type GraphBatch } from "../bridge";
+import { createBridge, type BridgeError, type GraphBatch, type Rect } from "../bridge";
 import { attachInteraction } from "../interaction";
-import { clampScale, fitViewport, type Bounds } from "../interaction/viewport";
-import { EDGE_COLOR } from "../render/edges";
+import { clampScale, fitViewport } from "../interaction/viewport";
+import { edgeColor } from "../render/edges";
 import { Scene } from "../render/scene";
 import { createFrames } from "./frames";
 import { scenes } from "./scenes";
@@ -60,7 +60,7 @@ export class GraphDataError extends Error {
 }
 
 /** The world rectangle the nodes cover, or null for an empty graph. */
-function boundsOf(nodes: readonly NodeView[], positions: Float32Array): Bounds | null {
+function boundsOf(nodes: readonly NodeView[], positions: Float32Array): Rect | null {
   if (nodes.length === 0) return null;
   const bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
   nodes.forEach((node, slot) => {
@@ -84,7 +84,7 @@ function batchOf(graph: GraphData): GraphBatch {
       source,
       target,
       label: label && { t: label.t, offset: label.offset },
-      color: color ?? EDGE_COLOR,
+      color: edgeColor({ color }),
       dash: dash && [dash[0], dash[1]],
       arrow: arrow ?? "end",
     })),

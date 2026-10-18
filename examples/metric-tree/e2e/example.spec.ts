@@ -20,14 +20,10 @@ async function drawnNode(page: Page, id: string) {
 async function screenCentre(page: Page, id: string) {
   return page.evaluate(
     ({ id, w, h }) => {
-      const snapshot = window.inspect();
-      const node = snapshot.nodes.find((candidate) => candidate.id === id)!;
+      const node = window.inspect().nodes.find((candidate) => candidate.id === id)!;
       const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();
-      const { x, y, scale } = snapshot.viewport;
-      return {
-        x: rect.left + x + (node.x + w / 2) * scale,
-        y: rect.top + y + (node.y + h / 2) * scale,
-      };
+      const at = window.screenPoint(node.x + w / 2, node.y + h / 2);
+      return { x: rect.left + at.x, y: rect.top + at.y };
     },
     { id, w: NODE_WIDTH, h: NODE_HEIGHT },
   );
@@ -232,16 +228,8 @@ test("what lies entirely outside the viewport is not bound to a display object",
  *  which holds the whole path, and labels by their point grown by the label reach. */
 async function drawnBeyond(page: Page, margin: number): Promise<string[]> {
   return page.evaluate((margin) => {
-    const { viewport, nodes, edges, edgeLabels } = window.inspect();
-    const canvas = document.querySelector("#canvas canvas")!.getBoundingClientRect();
-    const { x, y, scale } = viewport;
-    const m = margin / scale;
-    const view = {
-      minX: -x / scale - m,
-      minY: -y / scale - m,
-      maxX: (canvas.width - x) / scale + m,
-      maxY: (canvas.height - y) / scale + m,
-    };
+    const { nodes, edges, edgeLabels } = window.inspect();
+    const view = window.visibleRect(margin);
     const meets = (minX: number, minY: number, maxX: number, maxY: number) =>
       minX <= view.maxX && view.minX <= maxX && minY <= view.maxY && view.minY <= maxY;
     const pull = 40 + 1;

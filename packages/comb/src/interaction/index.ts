@@ -4,7 +4,7 @@
 import type { Application, FederatedPointerEvent } from "pixi.js";
 import type { Bridge } from "../bridge";
 import type { GraphStore } from "../store";
-import { panBy, zoomAt } from "./viewport";
+import { panBy, toWorld, zoomAt } from "./viewport";
 
 const WHEEL_STEP = 1.0015;
 
@@ -13,8 +13,8 @@ type Drag =
 
 /** The slot of the node under a screen point, from the engine's spatial index. */
 function nodeAt(store: GraphStore, bridge: Bridge, x: number, y: number): number | undefined {
-  const { viewport } = store.getState();
-  return bridge.hit((x - viewport.x) / viewport.scale, (y - viewport.y) / viewport.scale);
+  const world = toWorld(store.getState().viewport, x, y);
+  return bridge.hit(world.x, world.y);
 }
 
 function startDrag(store: GraphStore, bridge: Bridge, event: FederatedPointerEvent): Drag {
