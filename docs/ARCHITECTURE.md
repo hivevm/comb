@@ -106,10 +106,13 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
 - **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, measuring the time to
   the first frame and p95 frame times of drag, pan, and zoom over the frames Comb rendered, and of
   a pan where the near and the middle level begin, each gesture checked for its effect (Q-1, Q-2).
-  `bench/compare.ts` holds the median of several runs against `bench/baseline.json` with a margin
-  of 25 %; the baseline is the median of three runs on a GitHub runner on `main`; the
-  **Benchmark** workflow (`.github/workflows/benchmark.yml`) runs the benchmark three times and
-  compares on a GitHub runner, weekly and on demand.
+  After the first frame and before the gestures it times the reference workload of
+  `bench/reference.ts` in the same page, which uses the browser's JavaScript, WebAssembly, and
+  WebGL2 and none of Comb's code. `bench/compare.ts` refuses a run whose reference differs from
+  the baseline's by more than 25 % in a part, and holds the median of several runs against
+  `bench/baseline.json` with a margin of 25 %; the baseline is the median of three runs
+  on a GitHub runner on `main`; the **Benchmark** workflow (`.github/workflows/benchmark.yml`)
+  runs the benchmark three times and compares on a GitHub runner, weekly and on demand.
 - **Mutation testing** (`.github/workflows/mutation.yml`) — cargo-mutants mutates `crates/engine`
   on a GitHub runner, weekly and on demand; `scripts/check-mutants.sh` compares the surviving
   mutants with `crates/engine/mutants-missed.txt` by file, function, and replacement, and fails

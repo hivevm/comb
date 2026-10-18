@@ -3,8 +3,10 @@
 // frame is drawn, and the p95 frame time while a node on screen is dragged, the viewport panned,
 // and zoomed in and out, and while the viewport is panned at the scale where the near and the
 // middle level of detail begin. Only frames in which Comb rendered count; each action is checked for its
-// effect, so a gesture that missed fails the run instead of measuring idle frames. The numbers go
-// to bench-results/latest.json and are printed beside the targets.
+// effect, so a gesture that missed fails the run instead of measuring idle frames. Before the
+// gestures it times the reference workload of bench/reference.ts in the same page, by which
+// bench/compare.ts tells whether the runner is comparable with the baseline's. The numbers go to
+// bench-results/latest.json and are printed beside the targets.
 //
 //   bun run bench                   headless Chromium, software WebGL
 //   BENCH_HEADED=1 bun run bench    a visible window, which uses the machine's GPU
@@ -16,6 +18,7 @@ import { cpus } from "node:os";
 import type { LoadReport } from "../examples/metric-tree/src/main";
 import { chromiumEnv } from "./chromium";
 import { gestures } from "./compare";
+import { referenceWorkload } from "./reference";
 
 const PORT = 4173;
 const COPIES = Number(process.env.BENCH_COPIES ?? 3334);
@@ -212,6 +215,12 @@ async function measure(page: Page) {
     return info ? String(gl!.getParameter(info.UNMASKED_RENDERER_WEBGL)) : "unknown";
   });
 
+  const reference = await referenceWorkload(page);
+  console.log(
+    `reference: ${reference.ms.toFixed(1)} ms (JavaScript ${reference.js.toFixed(1)}, ` +
+      `WebAssembly ${reference.wasm.toFixed(1)}, WebGL2 ${reference.gpu.toFixed(1)})`,
+  );
+
   const node = await nodeNearCentre(page);
   const before = await drawnNode(page, node.id);
   const dragged = await frameTimes(page, () => drag(page, node.at, 0, 120));
@@ -245,7 +254,7 @@ async function measure(page: Page) {
     near: { scale: begins.near, pan: near },
     middle: { scale: begins.far, pan: middle },
   };
-  return { load, gpu, node: node.id, drag: dragged, pan, zoom: zoomed, levels };
+  return { load, gpu, reference, node: node.id, drag: dragged, pan, zoom: zoomed, levels };
 }
 
 /** Compared at the precision printed, so that a frame of 16.67 ms at 60 Hz meets 16.7. */

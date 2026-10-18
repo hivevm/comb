@@ -1,18 +1,26 @@
 // Compares benchmark runs with a recorded baseline (ADR-0008). Frame times come in steps of a
 // frame and the first frame is a single sample, so one run scatters; the median of each number
-// over several runs is compared instead, and may exceed its baseline by at most MARGIN. Runs of
-// another size, mode, or GPU than the baseline's are refused rather than compared, and so is a
-// run that names no GPU, as one on a fallback renderer would. The median is
-// written as bench-results/median.json, the file a new baseline is taken from: a median of runs on
-// a GitHub runner, recorded as bench/baseline.json in a pull request that says why.
+// over several runs is compared instead, and may exceed its baseline by at most MARGIN. Runners
+// differ in speed, so a runner gate comes first: each part of the reference workload timed in the
+// run (bench/reference.ts) may differ from the baseline's by at most MARGIN, or the run is refused
+// as taken on a runner not comparable with the baseline's. The reference decides only whether to
+// compare, never by how much a number moved. Runs of another size, mode, or GPU than the
+// baseline's are refused as well, and so is a run that names no GPU, as one on a fallback
+// renderer would, and a run without a reference against a baseline with one. Against a baseline
+// without a reference the numbers are compared and the gate is reported as not checked. The
+// median is written as bench-results/median.json, the file a new baseline is taken from: a
+// median of runs on a GitHub runner, recorded as bench/baseline.json in a pull request that
+// says why.
 //
 //   bun bench/compare.ts <baseline> <run>...    e.g. bench/baseline.json bench-results/run-*.json
 //
 // Exit code 0 when no number regressed, or when there is no baseline yet, which it says; 1 when a
-// number regressed, naming each; 2 when the runs cannot be compared.
+// number regressed, naming each; 2 when the runs cannot be compared, the runner gate included.
 import { mkdirSync, writeFileSync } from "node:fs";
+import type { Reference } from "./reference";
 
-/** How much a number may exceed its baseline: a quarter, the maintainer's margin. */
+/** How much a number may exceed its baseline, and a part of the reference differ from the
+ *  baseline's: a quarter, the maintainer's margin. */
 export const MARGIN = 0.25;
 
 interface Gesture {
@@ -26,6 +34,8 @@ export interface Run {
   headed?: boolean;
   /** The renderer WebGL reports, as bench/run.ts reads it. */
   gpu?: string;
+  /** The reference workload of the run, in milliseconds; absent in a run recorded without it. */
+  reference?: Reference;
   load: { nodes: number; firstFrameMs: number };
   drag: Gesture;
   pan: Gesture;
@@ -68,7 +78,10 @@ const kind = (run: Run) =>
 const unnamed = (run: Run) =>
   !run.gpu || run.gpu === "unknown" ? `a run names no GPU (${run.gpu ?? "none"})` : null;
 
+/** The median of `values`, or NaN when one is not finite, so that a broken number is not hidden
+ *  by the others: a NaN number regresses, a NaN part of the reference is unusable. */
 function middle(values: number[]): number {
+  if (!values.every(Number.isFinite)) return Number.NaN;
   const sorted = [...values].sort((a, b) => a - b);
   const half = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[half]! : (sorted[half - 1]! + sorted[half]!) / 2;
@@ -83,6 +96,10 @@ export function median(runs: Run[]): Run | string {
   if (nameless) return nameless;
   const other = runs.find((run) => kind(run) !== kind(first));
   if (other) return `the runs differ: ${kind(first)} and ${kind(other)}`;
+  const referenced = runs.filter((run) => run.reference).length;
+  if (referenced && referenced < runs.length) {
+    return `the runs differ: ${referenced} of ${runs.length} carry a reference`;
+  }
   const of = (pick: (run: Run) => number) => middle(runs.map(pick));
   const gesture = (pick: (run: Run) => Gesture) => ({
     p95: of((run) => pick(run).p95),
@@ -98,6 +115,14 @@ export function median(runs: Run[]): Run | string {
     copies: first.copies,
     headed: first.headed ?? false,
     gpu: first.gpu,
+    ...(referenced && {
+      reference: {
+        ms: of((run) => run.reference!.ms),
+        js: of((run) => run.reference!.js),
+        wasm: of((run) => run.reference!.wasm),
+        gpu: of((run) => run.reference!.gpu),
+      },
+    }),
     load: { nodes: first.load.nodes, firstFrameMs: of((run) => run.load.firstFrameMs) },
     drag: gesture((run) => run.drag),
     pan: gesture((run) => run.pan),
@@ -107,8 +132,37 @@ export function median(runs: Run[]): Run | string {
 }
 
 export type Verdict =
-  | { kind: "incomparable"; reason: string }
-  | { kind: "compared"; regressions: string[]; lines: string[] };
+  | { kind: "incomparable"; reason: string; lines?: string[] }
+  | { kind: "compared"; regressions: string[]; lines: string[]; notice?: string };
+
+/** A reference whose sum and parts are all positive, finite times. */
+export function usable(reference: Reference | undefined): reference is Reference {
+  if (!reference) return false;
+  const times = [reference.ms, reference.js, reference.wasm, reference.gpu];
+  return times.every((ms) => Number.isFinite(ms) && ms > 0);
+}
+
+const PARTS = [
+  ["sum", "ms"],
+  ["JavaScript", "js"],
+  ["WebAssembly", "wasm"],
+  ["WebGL2", "gpu"],
+] as const;
+
+/** The runner gate: each part of the run's reference against the baseline's, as a line for the
+ *  log, and the parts whose ratio differs from 1 by more than `margin`, either way. The sum is
+ *  reported and decides nothing, since a part that moved alone can hide in it. */
+function gate(run: Reference, base: Reference, margin: number) {
+  const judged = PARTS.map(([name, key]) => {
+    const ratio = run[key] / base[key];
+    const line = `reference ${name} (ms): ${run[key].toFixed(1)} against ${base[key].toFixed(1)} (x${ratio.toFixed(2)})`;
+    return { key, line, off: key !== "ms" && Math.abs(ratio - 1) > margin };
+  });
+  return {
+    lines: judged.map((j) => j.line),
+    off: judged.filter((j) => j.off).map((j) => j.line),
+  };
+}
 
 /** One number against its baseline: the line that reports it, and whether it regressed, which
  *  a number does that is not finite or exceeds its baseline by more than `margin`. */
@@ -122,8 +176,31 @@ function judge(name: string, value: number, reference: number | undefined, margi
   return { line, regressed: !Number.isFinite(value) || change > margin };
 }
 
+/** Whether the run's runner can be compared with the baseline's, by their references: the lines
+ *  of the gate, and why not, or the notice that the gate could not be checked. */
+function runner(run: Run, baseline: Run, margin: number) {
+  if (baseline.reference === undefined && run.reference === undefined) {
+    return { lines: [], notice: "no reference in the run or the baseline" };
+  }
+  if (baseline.reference === undefined) {
+    return { lines: [], notice: "no reference in the baseline" };
+  }
+  if (!usable(baseline.reference))
+    return { lines: [], refused: "the baseline's reference is unusable" };
+  if (!usable(run.reference)) return { lines: [], refused: "the run carries no usable reference" };
+  const { lines, off } = gate(run.reference, baseline.reference, margin);
+  return off.length
+    ? {
+        lines,
+        refused: `runner not comparable, its reference differs by more than ${margin * 100} %: ${off.join("; ")}`,
+      }
+    : { lines };
+}
+
 /** Every number of `run` against `baseline`: a regression where it exceeds the baseline by more
- *  than `margin`. A number the baseline lacks is reported and not compared. */
+ *  than `margin`. A number the baseline lacks is reported and not compared. The runner gate
+ *  comes first: a run whose reference differs from the baseline's by more than `margin` in any
+ *  part is refused, since its numbers would judge the runner. */
 export function compare(run: Run, baseline: Run, margin = MARGIN): Verdict {
   const nameless = unnamed(run) ?? unnamed(baseline);
   if (nameless) return { kind: "incomparable", reason: nameless };
@@ -133,6 +210,12 @@ export function compare(run: Run, baseline: Run, margin = MARGIN): Verdict {
       reason: `the run is ${kind(run)}, the baseline ${kind(baseline)}`,
     };
   }
+  const gated: { lines: string[]; refused?: string; notice?: string } = runner(
+    run,
+    baseline,
+    margin,
+  );
+  if (gated.refused) return { kind: "incomparable", reason: gated.refused, lines: gated.lines };
   const base = numbers(baseline);
   const judged = Object.entries(numbers(run)).map(([name, value]) =>
     judge(name, value, base[name], margin),
@@ -144,9 +227,11 @@ export function compare(run: Run, baseline: Run, margin = MARGIN): Verdict {
     kind: "compared",
     regressions: judged.filter((j) => j.regressed).map((j) => j.line),
     lines: [
+      ...gated.lines,
       ...judged.map((j) => j.line),
       ...(truncated.length ? [`truncated by the time budget: ${truncated.join(", ")}`] : []),
     ],
+    ...(gated.notice && { notice: `${gated.notice}; the runner gate is not checked` }),
   };
 }
 
@@ -184,12 +269,14 @@ async function main(baselinePath: string, runPaths: string[]): Promise<number> {
     return 0;
   }
   const verdict = compare(run, await baselineFile.json());
+  console.log(`The median of ${runPaths.length} run(s) against ${baselinePath}:`);
+  for (const line of verdict.lines ?? []) console.log(`  ${line}`);
   if (verdict.kind === "incomparable") {
     say("error", `Not compared: ${verdict.reason}.`);
     return 2;
   }
-  console.log(`The median of ${runPaths.length} run(s) against ${baselinePath}:`);
-  for (const line of verdict.lines) console.log(`  ${line}`);
+  if (verdict.notice)
+    say("notice", `${verdict.notice[0]!.toUpperCase()}${verdict.notice.slice(1)}.`);
   if (verdict.regressions.length === 0) {
     console.log(`No number exceeds its baseline by more than ${MARGIN * 100} %.`);
     return 0;

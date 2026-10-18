@@ -10,24 +10,24 @@ A baseline from a slow runner then hides a real regression of up to the differen
 a fast runner raises false alarms. The workflow compares in a way that the runner's own speed
 does not decide, so that a 25 % margin means a 25 % regression of Comb.
 
-The maintainer chooses between at least these, or another:
-
-- **A baseline over several workflow runs:** the median of five weekly runs on `main`, recorded
-  together, so one runner's speed weighs less; the margin stays absolute.
-- **Numbers relative to the runner:** every run also times a fixed reference workload on the same
-  runner (for example a fixed WebGL draw and a fixed engine query), and the workflow compares
-  each number divided by that reference; the baseline then records ratios.
-- **A wider margin** sized to the observed spread between runners, with the cost that it catches
-  only larger regressions.
+The maintainer chose the **reference as a gate** (ADR-0008, *Benchmark*): every run also times a
+fixed reference workload on the same runner (`bench/reference.ts`), the numbers are compared raw
+with the baseline, and a run whose reference differs from the baseline's by more than the margin
+in any part is refused as taken on a runner not comparable. The gate, the comparison, and their
+tests are in place; what remains is to record a baseline with a reference from a workflow run on
+`main` and to see from runs on `main` whether the gate's margin suits the runners.
 
 ## Acceptance criteria
 
 - [ ] Given two workflow runs on `main` without a change to the code they measure, when both are
       compared with the baseline, then their verdicts agree and neither number differs from the
-      baseline by more than the margin.
+      baseline by more than the margin. Open: it needs runs of the workflow on `main`, after a
+      baseline with a reference is recorded from one, which only the maintainer starts.
 - [ ] Given a change that makes one number slower by more than the margin on the same runner,
-      when the workflow runs, then it fails and names that number (break the feature once).
-- [ ] Given ADR-0008's *Benchmark* clause, when the choice is made, then the clause says how the
+      when the workflow runs, then it fails and names that number (break the feature once). Open:
+      it needs a workflow run on `main`; locally, an 80 ms busy-wait in `Scene.render` made
+      `bench/compare.ts` exit 1 naming the five gestures (+37 to +62 %).
+- [x] Given ADR-0008's *Benchmark* clause, when the choice is made, then the clause says how the
       comparison is made and the README says how the baseline is recorded.
 
 ## Read first

@@ -63,14 +63,21 @@ budget of Q-3 (`bun run build:lib`, at most 300 kB gzipped without PixiJS).
   first frame and p95 frame times of drag, pan, and zoom against Q-1 and Q-2, written to
   `bench-results/latest.json`. `BENCH_HEADED=1` opens a window that uses the machine's GPU, which
   is how the numbers on the reference machine are taken; `BENCH_COPIES` sets another size.
-  The **Benchmark** workflow runs it three times on a GitHub runner, weekly and on demand
-  (*Actions* → *Benchmark* → *Run workflow*), and fails when the median of a number exceeds
-  `bench/baseline.json` by more than 25 %, naming it; the runs and their median are uploaded as the
-  artefact `bench-results` (`bun bench/compare.ts bench/baseline.json <run>...` compares locally).
-  To update the baseline, take `median.json` from the artefact of a run on `main`, save it as
-  `bench/baseline.json`, and open a pull request that says why the numbers moved; a runner's
-  numbers are compared only with a runner's: runs of another size, mode, or GPU than the
-  baseline's, and runs that name no GPU, are refused.
+  After the load and the first frame, before the gestures, each run times a fixed reference
+  workload in the same page (`bench/reference.ts`: a JavaScript loop, a WebAssembly loop, and a
+  WebGL2 draw of a fixed mesh), recorded as `reference` with its parts. The **Benchmark** workflow
+  runs it three times on a GitHub runner, weekly and on demand (*Actions* → *Benchmark* → *Run
+  workflow*), and fails when the median of a number exceeds `bench/baseline.json` by more than
+  25 %, naming it. The reference is a gate: when a part of it differs from the baseline's by more
+  than 25 %, either way, the runner is not comparable and the comparison is refused, naming the
+  parts; every part's ratio to the baseline is in the log. The runs and their median are
+  uploaded as the artefact `bench-results` (`bun bench/compare.ts bench/baseline.json <run>...`
+  compares locally). The maintainer records the baseline: take `median.json` from the artefact
+  of a workflow run on `main`, save it as `bench/baseline.json`, and open a pull request that
+  says why the numbers moved. Until a baseline with a reference is recorded so, the comparison
+  says that the runner gate is not checked and judges the numbers alone. A runner's numbers are
+  compared only with a runner's: runs of another size, mode, or GPU than the baseline's, runs
+  that name no GPU, and runs without a reference against a baseline with one are refused.
 - **Mutation testing:** `cargo mutants -p comb-engine --no-shuffle --timeout 30` mutates
   `crates/engine` and runs its tests against each mutant, in about half an hour, writing
   `mutants.out/`; it needs cargo-mutants 27.1.0
