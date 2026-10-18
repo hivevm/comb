@@ -66,6 +66,11 @@ export class NodeGraphic extends Container {
 export class NodesContainer extends Container {
   private readonly views = new Bindings(this, () => new NodeGraphic());
 
+  /** How many views the layer's pool has made. */
+  get created(): number {
+    return this.views.created;
+  }
+
   sync(state: GraphView, slots: Uint32Array, positions: Float32Array): void {
     const selected = state.selection?.kind === "node" ? state.selection.id : null;
     this.views.begin();

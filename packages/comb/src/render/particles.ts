@@ -12,6 +12,7 @@ export const FAR_SELECTED_COLOR = 0x3b82f6;
 /** The particles layer: a pooled particle for every node slot it is given. */
 export class NodeParticles extends ParticleContainer {
   private readonly pool: Particle[] = [];
+  private madeCount = 0;
   /** The slots the particles stand for, in their order; grown as needed, never shrunk. */
   private slots = new Uint32Array(1024);
   private nodes: GraphView["nodes"] = [];
@@ -44,7 +45,7 @@ export class NodeParticles extends ParticleContainer {
       if (!node) continue;
       const i = particles.length;
       this.slots[i] = slot;
-      const particle = (this.pool[i] ??= new Particle({ texture: Texture.WHITE }));
+      const particle = (this.pool[i] ??= this.made());
       const isSelected = node.id === selected;
       if (isSelected) this.highlighted = node.id;
       particle.tint = isSelected ? FAR_SELECTED_COLOR : FAR_NODE_COLOR;
@@ -56,6 +57,16 @@ export class NodeParticles extends ParticleContainer {
     }
     this.update();
     this.nodes = state.nodes;
+  }
+
+  /** How many particles the pool has made; it makes one only for a slot beyond its size. */
+  get created(): number {
+    return this.madeCount;
+  }
+
+  private made(): Particle {
+    this.madeCount += 1;
+    return new Particle({ texture: Texture.WHITE });
   }
 
   /** The nodes the last sync drew, with their place and size. */

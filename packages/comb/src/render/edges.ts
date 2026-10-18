@@ -103,6 +103,11 @@ class MeshBuffers {
     return from === "colors" ? new Uint8Array(array.buffer) : array;
   }
 
+  /** How many vertices and indices the arrays hold room for. */
+  capacity(): { vertices: number; indices: number } {
+    return { vertices: this.arrays.distances.length, indices: this.arrays.indices.length };
+  }
+
   /** Copies `mesh` out of the engine's memory, which the next engine call may move, and marks
    *  the used part of every buffer for upload. */
   set(mesh: EdgeMesh): void {
@@ -126,7 +131,8 @@ class MeshBuffers {
 
 /** The edges layer: one mesh for every edge the query found. */
 export class EdgesContainer extends Container {
-  private readonly geometry = new Geometry({
+  /** The mesh's geometry; the testing entry watches its buffers. */
+  readonly geometry = new Geometry({
     attributes: Object.fromEntries(
       ATTRIBUTES.map(({ name, format }) => [name, { buffer: new Float32Array(0), format }]),
     ),
@@ -145,6 +151,12 @@ export class EdgesContainer extends Container {
   sync(visible: Visible): void {
     this.buffers.set(visible.mesh);
     this.mesh.visible = this.buffers.indices > 0;
+  }
+
+  /** What the mesh drew last, and the room its arrays hold before they reallocate. */
+  size(): { vertices: number; indices: number; capacity: { vertices: number; indices: number } } {
+    const { vertices, indices } = this.buffers;
+    return { vertices, indices, capacity: this.buffers.capacity() };
   }
 
   /** How many triangles the mesh drew last. */

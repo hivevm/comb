@@ -56,6 +56,9 @@ export interface SceneSnapshot {
   edgeLabels: { edge: string; x: number; y: number }[];
   /** How many triangles the edge mesh draws. */
   edgeTriangles: number;
+  /** How many vertices and indices the edge mesh draws, and how many its buffers hold before they
+   *  grow. */
+  edgeMesh: ReturnType<EdgesContainer["size"]>;
   /** Every display object under the world, the layers themselves included. */
   displayObjects: number;
   /** How many times the scene has rendered. */
@@ -197,6 +200,7 @@ export class Scene {
         null,
       edges: this.drawnEdges(),
       edgeTriangles: this.edges.triangles(),
+      edgeMesh: this.edges.size(),
       edgeLabels: this.labels.children.map((label) => ({
         edge: label.label,
         x: label.x,

@@ -27,6 +27,7 @@ export class Bindings<V extends Pooled> {
   private highest = -1;
   private disordered = false;
   private render = 0;
+  private madeCount = 0;
 
   constructor(
     private readonly layer: Container,
@@ -44,7 +45,7 @@ export class Bindings<V extends Pooled> {
   bind(slot: number): V {
     let view = this.bound.get(slot);
     if (!view) {
-      view = this.free.pop() ?? this.make();
+      view = this.free.pop() ?? this.made();
       this.bound.set(slot, view);
       if (slot < this.highest) this.disordered = true;
       else this.layer.addChild(view);
@@ -53,6 +54,16 @@ export class Bindings<V extends Pooled> {
     view.slot = slot;
     this.order.push(view);
     return view;
+  }
+
+  private made(): V {
+    this.madeCount += 1;
+    return this.make();
+  }
+
+  /** How many views the pool has made; it makes one only when it holds none free. */
+  get created(): number {
+    return this.madeCount;
   }
 
   /** Returns every view this render did not bind to the pool, and puts the layer's children in

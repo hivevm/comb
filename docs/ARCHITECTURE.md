@@ -90,8 +90,11 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   how often it rendered; `screenPoint` and `visibleRect` apply the scene's transform between world
   and screen; `showLayers` hides layers for a reference image; `sceneNumbers` gives the numbers
   the scene draws by (where the levels of detail begin, the culling margin, the label reach, the
-  rescale); for tests, the benchmark, and tooling. Its shape follows the scene and is
-  outside the stable interface of `comb`.
+  rescale); `work` counts what the canvas did: GPU buffers created and allocated, bytes
+  uploaded, those of the edge mesh among them, and texture uploads, counted at the WebGL context
+  from its first call, resizes of the edge mesh's buffers, and views the pools made, and refuses
+  where the canvas draws without WebGL; for tests, the benchmark, and tooling. Its shape follows
+  the scene and is outside the stable interface of `comb`.
 - **Example** (`examples/metric-tree`) — a host application with a metric tree and an HTML
   sidebar (G-9); `?copies=` sets its size, the copies lie in a grid about as wide as tall, and it
   reports its load time as `window.loadReport`.

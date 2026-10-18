@@ -53,6 +53,12 @@ class LabelView extends Container {
 /** The edge-labels layer: a pooled pill for every edge label the query found (G-6). */
 export class LabelsContainer extends Container {
   private readonly views = new Bindings(this, () => new LabelView());
+
+  /** How many views the layer's pool has made. */
+  get created(): number {
+    return this.views.created;
+  }
+
   /** How far the widest pill drawn so far reaches from its point, and at least `LABEL_REACH`:
    *  the reach the next query uses for labels. */
   reach = LABEL_REACH;
