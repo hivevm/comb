@@ -1,40 +1,95 @@
 // The one module that imports the WebAssembly package (ADR-0009). Structured data crosses as
-// generated types through serde-wasm-bindgen; node positions are read through a view on the
-// engine's buffer, created anew on every read because growing memory detaches older views
-// (ADR-0010).
-import init, {
-  Engine,
-  edgeControlPoints,
-  initSync,
-  labelPosition,
-  type BridgeError,
-  type NodeBatch,
-  type Vec2,
-} from "../../wasm/engine.js";
+// generated types through serde-wasm-bindgen; node positions and the results of a viewport query
+// are read through views on the engine's buffers, created anew on every read because growing
+// memory detaches older views (ADR-0010).
+import init, { Engine, initSync, type BridgeError, type GraphBatch } from "../../wasm/engine.js";
 
-export type { BridgeError, NodeBatch, Vec2 };
+export type { BridgeError, GraphBatch };
+
+/** A rectangle in world coordinates. */
+export interface Rect {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+/** The triangles of the found edges: per vertex its position `x, y`, its distance along its
+ *  path, its colour as RGBA bytes, and its dash pattern `dash, gap` (0, 0 for solid); three
+ *  vertex indices per triangle. */
+export interface EdgeMesh {
+  positions: Float32Array;
+  distances: Float32Array;
+  colors: Uint32Array;
+  dashes: Float32Array;
+  indices: Uint32Array;
+}
+
+/** What a viewport query found: node and edge slots in ascending order, the four control points
+ *  of each found edge as `x, y` pairs, the edge slot and point of each found edge label, the
+ *  mesh of the found edges, and the positions buffer, all read after the same call. */
+export interface Visible {
+  positions: Float32Array;
+  nodes: Uint32Array;
+  edges: Uint32Array;
+  edgePoints: Float32Array;
+  labels: Uint32Array;
+  labelPoints: Float32Array;
+  mesh: EdgeMesh;
+}
+
+/** How a query strokes the edges it finds: flattened within `tolerance` and `width` wide, in
+ *  world units, as thin lines alone without dash patterns or arrowheads where `plain`. */
+export interface Stroke {
+  tolerance: number;
+  width: number;
+  plain: boolean;
+}
 
 export interface Bridge {
-  /** Replaces every node; slot `i` is the batch's node `i`. Throws a `BridgeError`. */
-  loadNodes(batch: NodeBatch): number;
-  /** Moves the nodes in `slots`. Throws a `BridgeError`. */
+  /** Replaces the graph; node slot `i` is the batch's node `i`, edge slot `i` its edge `i`.
+   *  Throws a `BridgeError`. */
+  loadGraph(batch: GraphBatch): number;
+  /** Moves the nodes in `slots`, their edges with them. Throws a `BridgeError`. */
   translate(slots: Uint32Array, dx: number, dy: number): void;
   /** A fresh view on the positions buffer, `x, y` per slot. Do not keep it across calls. */
   positions(): Float32Array;
-  /** The four control points of an edge's path, as `x, y` pairs. */
-  controlPoints(source: Vec2, target: Vec2): Float32Array;
-  /** Where an edge label sits (G-6). */
-  labelPosition(source: Vec2, target: Vec2, t: number, offset: number): Vec2;
+  /** The nodes and edges that meet `rect`, the edge labels whose point lies within
+   *  `labelReach` of it, and the mesh of the edges, stroked as `stroke` says, as fresh views. Do
+   *  not keep them across calls. */
+  query(rect: Rect, labelReach: number, stroke: Stroke): Visible;
+  /** The slot of the node drawn on top at the world point `(x, y)`, if any. */
+  hit(x: number, y: number): number | undefined;
 }
 
 function wrap(memory: WebAssembly.Memory): Bridge {
   const engine = new Engine();
+  const u32 = (ptr: number, len: number) => new Uint32Array(memory.buffer, ptr, len);
+  const f32 = (ptr: number, len: number) => new Float32Array(memory.buffer, ptr, len);
   return {
-    loadNodes: (batch) => engine.loadNodes(batch),
+    loadGraph: (batch) => engine.loadGraph(batch),
     translate: (slots, dx, dy) => engine.translate(slots, dx, dy),
-    positions: () => new Float32Array(memory.buffer, engine.positionsPtr(), engine.positionsLen()),
-    controlPoints: (source, target) => edgeControlPoints(source, target),
-    labelPosition: (source, target, t, offset) => labelPosition(source, target, t, offset),
+    positions: () => f32(engine.positionsPtr(), engine.positionsLen()),
+    hit: (x, y) => engine.hit(x, y),
+    query(rect, labelReach, { tolerance, width, plain }) {
+      const { minX, minY, maxX, maxY } = rect;
+      engine.query(minX, minY, maxX, maxY, labelReach, tolerance, width, plain);
+      return {
+        positions: f32(engine.positionsPtr(), engine.positionsLen()),
+        nodes: u32(engine.visibleNodesPtr(), engine.visibleNodesLen()),
+        edges: u32(engine.visibleEdgesPtr(), engine.visibleEdgesLen()),
+        edgePoints: f32(engine.edgePointsPtr(), engine.edgePointsLen()),
+        labels: u32(engine.visibleLabelsPtr(), engine.visibleLabelsLen()),
+        labelPoints: f32(engine.labelPointsPtr(), engine.labelPointsLen()),
+        mesh: {
+          positions: f32(engine.meshPositionsPtr(), engine.meshPositionsLen()),
+          distances: f32(engine.meshDistancesPtr(), engine.meshDistancesLen()),
+          colors: u32(engine.meshColorsPtr(), engine.meshColorsLen()),
+          dashes: f32(engine.meshDashesPtr(), engine.meshDashesLen()),
+          indices: u32(engine.meshIndicesPtr(), engine.meshIndicesLen()),
+        },
+      };
+    },
   };
 }
 

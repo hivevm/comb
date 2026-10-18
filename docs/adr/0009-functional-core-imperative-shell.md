@@ -42,7 +42,9 @@ whose only door to the engine is its `bridge` module.
   store), `render` (the PixiJS scene: nodes, edges, and edge labels in containers of their own),
   and `bridge` (the one module that imports the WebAssembly package).
 - **Direction:** `render` reads the store and never writes it; only `bridge` imports the
-  WebAssembly package; `examples/` import only the public interface of `packages/comb`.
+  WebAssembly package; `examples/` import only the package's two entries: `comb`, the public
+  interface, and `comb/testing`, which reads what the canvas draws for browser tests and the
+  benchmark and is no part of the stable interface.
 
 **Out of scope:** the data format of the bridge, the store library, the structure of the scene
 graph, and the model of node content, each a decision of its own.
@@ -56,6 +58,10 @@ graph, and the model of node content, each a decision of its own.
 - **One Rust crate with the `#[wasm_bindgen]` exports beside the geometry** — one crate fewer, but
   then no check can tell the core from the bridge, and the geometry is no longer testable without
   WebAssembly.
+- **Inspection through the public interface** — one entry fewer, but every probe a test or the
+  benchmark needs would become part of the stable interface a host builds on.
+- **Examples read the scene through a path inside `packages/comb`** — no second entry, but then
+  no check can tell an allowed probe from a reach into the library's internals.
 - **A flat layout with `src/`, `engine/`, and `example/` in one package** — simpler at first, but
   the example would import the library's internals, and the library could not be published on its
   own.
@@ -85,5 +91,6 @@ graph, and the model of node content, each a decision of its own.
 A structural test in `scripts/` fails when `crates/engine/Cargo.toml` names a forbidden crate,
 when a file outside `packages/comb/src/bridge/` imports the WebAssembly package, when a file in
 `packages/comb/src/render/` calls a writing action of the store, or when a file in `examples/`
-imports a path inside `packages/comb` other than its package entry. The test cites this ADR with
-`Verifies: ADR-0009`. That a function of the core writes only the buffers it is given is review.
+imports anything of `packages/comb` other than its entries `comb` and `comb/testing`. The test
+cites this ADR with `Verifies: ADR-0009`. That a function of the core writes only the buffers it
+is given is review.

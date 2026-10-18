@@ -50,13 +50,19 @@ statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), th
 
 Inside the Dev Container, which provides Bun, Rust, wasm-pack, and Chromium
 ([ADR-0008](docs/adr/0008-toolchain.md), [ADR-0014](docs/adr/0014-dev-container-toolchain.md)).
-[`scripts/check-code.sh`](scripts/check-code.sh) runs the first three in order.
+[`scripts/check-code.sh`](scripts/check-code.sh) runs the first three in order, then the
+structural test of [ADR-0009](docs/adr/0009-functional-core-imperative-shell.md) and the bundle
+budget of Q-3 (`bun run build:lib`, at most 300 kB gzipped without PixiJS).
 
 - **Build:** `bun run build` — the engine with wasm-pack, the type check, and the example
 - **Test:** `bun run test` — `cargo test`, `bun test`, and the Playwright browser tests
 - **Lint:** `bun run lint` — rustfmt, clippy, ESLint, and Prettier
 - **Run:** `bun run example`, or the launch configuration **Example: metric tree** in VS Code,
-  which opens the example in the host's browser
+  which opens the example in the host's browser; `?copies=3334` opens it with 50,010 nodes
+- **Benchmark:** `bun run bench` — the example at 50,010 nodes and edges in Chromium: time to the
+  first frame and p95 frame times of drag, pan, and zoom against Q-1 and Q-2, written to
+  `bench-results/latest.json`. `BENCH_HEADED=1` opens a window that uses the machine's GPU, which
+  is how the numbers on the reference machine are taken; `BENCH_COPIES` sets another size.
 
 ## Usage
 

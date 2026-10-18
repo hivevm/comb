@@ -1,7 +1,8 @@
 // Input into commands on the store (ADR-0009): drag a node, pan the empty canvas, zoom by wheel.
-import type { Application, Container, FederatedPointerEvent } from "pixi.js";
+// The engine answers which node lies under the pointer from its spatial index, at every level of
+// detail, also where the scene draws nodes as particles (ADR-0012).
+import type { Application, FederatedPointerEvent } from "pixi.js";
 import type { Bridge } from "../bridge";
-import { NodeGraphic } from "../render/scene";
 import type { GraphStore } from "../store";
 import { panBy, zoomAt } from "./viewport";
 
@@ -10,17 +11,19 @@ const WHEEL_STEP = 1.0015;
 type Drag =
   { kind: "node"; slot: number; x: number; y: number } | { kind: "pan"; x: number; y: number };
 
-function nodeUnder(target: Container | null): NodeGraphic | null {
-  for (let at = target; at; at = at.parent) if (at instanceof NodeGraphic) return at;
-  return null;
+/** The slot of the node under a screen point, from the engine's spatial index. */
+function nodeAt(store: GraphStore, bridge: Bridge, x: number, y: number): number | undefined {
+  const { viewport } = store.getState();
+  return bridge.hit((x - viewport.x) / viewport.scale, (y - viewport.y) / viewport.scale);
 }
 
-function startDrag(store: GraphStore, event: FederatedPointerEvent): Drag {
+function startDrag(store: GraphStore, bridge: Bridge, event: FederatedPointerEvent): Drag {
   const { x, y } = event.global;
-  const node = nodeUnder(event.target as Container | null);
-  const slot = node ? store.getState().slots.get(node.nodeId) : undefined;
-  if (node && slot !== undefined) {
-    store.getState().select({ kind: "node", id: node.nodeId });
+  const { nodes } = store.getState();
+  const slot = nodeAt(store, bridge, x, y);
+  const node = slot === undefined ? undefined : nodes[slot];
+  if (slot !== undefined && node) {
+    store.getState().select({ kind: "node", id: node.id });
     return { kind: "node", slot, x, y };
   }
   store.getState().select(null);
@@ -46,9 +49,19 @@ export function attachInteraction(app: Application, store: GraphStore, bridge: B
   let drag: Drag | null = null;
   app.stage.eventMode = "static";
   app.stage.hitArea = app.screen;
-  app.stage.on("pointerdown", (event) => (drag = startDrag(store, event)));
-  app.stage.on("globalpointermove", (event) => drag && continueDrag(store, bridge, drag, event));
-  app.stage.on("pointerup", () => (drag = null));
+  // The cursor shows what a press would do: grab a node, or, over the empty canvas, nothing.
+  const hover = (event: FederatedPointerEvent) => {
+    const over = nodeAt(store, bridge, event.global.x, event.global.y) !== undefined;
+    app.canvas.style.cursor = over ? "grab" : "";
+  };
+  app.stage.on("pointerdown", (event) => {
+    drag = startDrag(store, bridge, event);
+    if (drag.kind === "node") app.canvas.style.cursor = "grabbing";
+  });
+  app.stage.on("globalpointermove", (event) =>
+    drag ? continueDrag(store, bridge, drag, event) : hover(event),
+  );
+  app.stage.on("pointerup", (event) => ((drag = null), hover(event)));
   app.stage.on("pointerupoutside", () => (drag = null));
 
   const onWheel = (event: WheelEvent) => {

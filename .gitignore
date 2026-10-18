@@ -24,3 +24,6 @@ dist/
 packages/comb/wasm/
 test-results/
 playwright-report/
+
+# Benchmark results (bench/run.ts)
+bench-results/

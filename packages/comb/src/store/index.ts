@@ -20,12 +20,16 @@ export interface EdgeLabelData {
   background?: number;
 }
 
-/** An edge from a connector of one node to a connector of another. */
+/** An edge from a connector of one node to a connector of another, drawn in `color`
+ *  (`0xRRGGBB`), dashed by `dash` (dash and gap lengths in world units; solid without), and
+ *  with an arrowhead at its target unless `arrow` is `"none"` (G-11). */
 export interface EdgeData {
   id: string;
   source: string;
   target: string;
   color?: number;
+  dash?: readonly [number, number];
+  arrow?: "end" | "none";
   label?: EdgeLabelData;
 }
 
@@ -45,13 +49,20 @@ export interface Viewport {
 /** A node as the store keeps it: everything but its position. */
 export type NodeView = Omit<NodeData, "x" | "y">;
 
-export interface GraphState {
-  nodes: NodeView[];
-  slots: ReadonlyMap<string, number>;
-  edges: EdgeData[];
-  selection: Selection;
-  viewport: Viewport;
-  positionsVersion: number;
+/** The state without its actions, read-only to its leaves: what the render layer sees, so the
+ *  type checker refuses a write (ADR-0009). */
+export interface GraphView {
+  readonly nodes: readonly Readonly<NodeView>[];
+  readonly slots: ReadonlyMap<string, number>;
+  readonly edges: readonly Readonly<
+    Omit<EdgeData, "label"> & { readonly label?: Readonly<EdgeLabelData> }
+  >[];
+  readonly selection: Readonly<Selection>;
+  readonly viewport: Readonly<Viewport>;
+  readonly positionsVersion: number;
+}
+
+export interface GraphState extends GraphView {
   load(graph: GraphData): void;
   updateNode(id: string, patch: Partial<Pick<NodeView, "title">>): void;
   select(selection: Selection): void;

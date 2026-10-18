@@ -9,11 +9,13 @@
   "scripts": {
     "build:engine": "bunx --bun wasm-pack build crates/engine-wasm --release --target web --out-dir ../../packages/comb/wasm --out-name engine --no-pack",
     "build": "bun run build:engine && bun run typecheck && bun run --cwd examples/metric-tree build",
+    "build:lib": "bun run --cwd packages/comb build",
     "typecheck": "bunx --bun tsc -p tsconfig.json",
     "test": "cargo test --workspace && bun test packages/comb/src && bunx --bun playwright test",
     "lint": "cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && bunx --bun eslint . && bunx --bun prettier --check .",
     "dev": "bun run --cwd examples/metric-tree dev",
-    "example": "bun run build:engine && bun run dev"
+    "example": "bun run build:engine && bun run dev",
+    "bench": "bun run build:engine && bun run --cwd examples/metric-tree build && bun --bun bench/run.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
