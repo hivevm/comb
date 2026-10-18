@@ -25,15 +25,26 @@ Bun in a container without Node.js on 2026-10-17: wasm-pack, `tsc`, ESLint, Pret
 
 Q-3 caps the bundle at 300 kB, a number a check can hold on every push. Q-1 and Q-2 are defined
 on a reference machine with an integrated GPU, which no CI runner has, so CI can only compare
-against earlier measurements.
+against earlier measurements. The runner itself varies between workflow runs: runs 39098695116
+and 39102498247 of the **Benchmark** workflow on `main`, without a change to the code they
+measure, differed in every number by 13 to 42 %, while the three runs within each agreed
+closely. Compared as they are, the numbers judge the runner as much as Comb.
+
+A reference workload timed in the benchmark's page, a JavaScript loop, a WebAssembly loop, and a
+WebGL2 draw of a fixed mesh, does not move with Comb's numbers in proportion. In the Dev
+Container limited to four cores, a GitHub runner's size, its WebGL2 part took five times as long
+as on all 24 cores (58.4 against 303.9 ms), the loops did not move, and Comb's numbers took 1.0
+to 1.83 times as long. Two runs on all 24 cores measured the WebGL2 part at 58.4 and 94.0 ms.
 
 Bun runs the lifecycle scripts of a dependency only when `package.json` lists it under
 `trustedDependencies`, and listing any replaces Bun's default list. The npm package of wasm-pack
 fetches its binary in such a script.
 
 The catalogue offers three forms of sensors: the linter's own rules first, one tool per kind, and
-mutation testing on a schedule. Comb starts with one maintainer and no code, so the first form
-fits; the design revision adds what the mistakes call for.
+mutation testing on a schedule. A test that passes without the behaviour it names is what
+mutation testing finds. cargo-mutants mutates a Rust crate and runs its tests against each
+mutant; on `crates/engine` it tries about 540 mutants in roughly half an hour. For TypeScript on
+Bun, StrykerJS has no runner of its own; the Bun runners are community packages.
 
 ## Decision
 
@@ -59,14 +70,27 @@ run by `scripts/check-code.sh`.
 - **Benchmark:** `bun run bench` measures Q-1 and Q-2 with Playwright. On the reference machine it
   decides against the absolute numbers; in CI it runs as a workflow of its own, weekly and on
   demand, three times on a GitHub runner, and fails when the median of a number exceeds the
-  recorded baseline by more than 25 %. The baseline is the median of a runner's runs on `main`,
-  kept as `bench/baseline.json` and changed only in a pull request that says why.
+  recorded baseline by more than 25 %. Each run also times a fixed reference workload in the
+  same page, after the first frame and before the gestures, which uses the browser's
+  JavaScript, WebAssembly, and WebGL2 raster but none of Comb's code: a JavaScript loop, a
+  WebAssembly loop, and a WebGL2 draw of a fixed mesh. The reference is a gate, not a
+  correction: when a part of the run's reference differs from the baseline's by more than 25 %,
+  either way, the workflow refuses to compare and names the parts, since the run was taken on a
+  runner unlike the baseline's. A run without a reference is refused against a baseline with
+  one; against a baseline without one the numbers are compared and the gate is reported as not
+  checked. The baseline is the median of a runner's runs on `main`, every part of its reference
+  included, kept as `bench/baseline.json` and changed only in a pull request that says why.
+- **Mutation testing:** cargo-mutants, at a pinned version, mutates `crates/engine` in a workflow
+  of its own, weekly and on demand, and fails when a mutant survives that
+  `crates/engine/mutants-missed.txt` does not list. The list shrinks with each change that kills
+  a mutant and grows only in a pull request that says why. TypeScript keeps breaking each
+  feature once by hand (`docs/CONVENTIONS.md`).
 - **Where it runs:** `scripts/check-code.sh` is invoked by `scripts/check-all.sh`, by the
   pre-push hook through it, and by a job of `checks.yml` after the toolchain is set up.
 
 **Out of scope:** the Dev Container that provides the toolchain; dependency-direction,
-duplication, and dead-export tools for TypeScript, and mutation testing, which the design revision
-adds when a mistake calls for them; how the code is laid out in directories.
+duplication, and dead-export tools for TypeScript, and mutation testing of TypeScript, which the
+design revision adds when a mistake calls for them; how the code is laid out in directories.
 
 ## Alternatives considered
 
@@ -87,6 +111,23 @@ adds when a mistake calls for them; how the code is laid out in directories.
   but with no code yet nothing says which of them this project needs.
 - **Benchmark only on the reference machine** — absolute numbers where they count, but nothing
   notices a regression between the maintainer's runs.
+- **A baseline over several workflow runs**, the median of five weekly runs on `main` — one
+  runner's speed weighs less in the baseline, but each comparison is still of one runner's
+  numbers, whose speed decides the verdict as much as Comb does.
+- **A wider margin sized to the spread between runners** — nothing new to measure, but with
+  runners 42 % apart it catches only regressions larger than that.
+- **Normalising every number by the reference's sum** — would cancel a runner's speed if Comb's
+  numbers moved with it, but on four cores the sum rose with the WebGL2 part more than Comb's
+  numbers did, so every ratio fell by 15 to 54 % and a first frame twice as slow would pass.
+- **Normalising by the reference's parts**, the loops alone or a weighted sum — the loops did not
+  move on four cores while Comb's numbers did, so dividing by them raised false alarms of 61 to
+  78 %; a weighting fitted to one machine says nothing about another runner.
+- **Mutation testing that only reports** — never red, but a report nobody is made to read
+  changes nothing.
+- **A threshold on the share of mutants caught** — one number, but a new surviving mutant hides
+  behind one killed elsewhere.
+- **StrykerJS with a community runner for Bun** — would cover TypeScript, but rests on a package
+  outside the Stryker project.
 
 ## Sources / Prior art
 
@@ -110,6 +151,9 @@ adds when a mistake calls for them; how the code is laid out in directories.
 - Playwright — <https://playwright.dev/>; typescript-eslint — <https://typescript-eslint.io/>;
   Prettier — <https://prettier.io/>; Clippy lints —
   <https://rust-lang.github.io/rust-clippy/master/>.
+- cargo-mutants — <https://mutants.rs/>, crate `cargo-mutants` 27.1.0 (checked 2026-10-18).
+- StrykerJS test runners — <https://stryker-mutator.io/docs/stryker-js/>: Jest, Karma, Mocha,
+  Vitest; no runner for `bun test`.
 
 ## Consequences
 
@@ -126,10 +170,19 @@ adds when a mistake calls for them; how the code is laid out in directories.
   larger and slower to set up.
 - Negative / trade-offs: CI measures performance only relatively; a slow regression that stays
   under the threshold of each comparison is caught only on the reference machine.
+- Positive: a verdict of the workflow compares runners alike in the reference, and a run on an
+  unlike runner says so instead of passing or failing on the runner's speed.
+- Negative / trade-offs: the gate turns a varying runner into a refused run, not a verdict; if
+  runners vary as much in the reference as the WebGL2 part did between two runs here, many runs
+  are refused, and the baseline is recorded again or the gate revised. A runner that differs in
+  what Comb uses and the reference does not still passes the gate. The reference adds a few
+  seconds to each run.
 
 ## Enforcement
 
 The golden path's tests cite this ADR with a `Verifies: ADR-0008` marker. Check 9 of
 `scripts/check-docs.sh` holds the build job, `scripts/check-code.sh`, and the required checks of
 the README together. A check fails when `package-lock.json` or `yarn.lock` exists beside
-`bun.lock`.
+`bun.lock`. The tests of `bench/compare.ts` decide how the runner gate and the comparison
+judge given numbers; whether the gate's 25 % suits the real variance of GitHub runners no test
+decides, the workflow's runs on `main` do.
