@@ -1,6 +1,8 @@
 // The edges layer (ADR-0012): every edge the query found, drawn as one mesh from the triangles
 // the engine computes, with each edge's colour, dash pattern, and arrowhead (G-11). A small
-// shader leaves out the gaps of a dash pattern by the distance along the path.
+// shader leaves out the gaps of a dash pattern by the distance along the path. On the Canvas 2D
+// renderer a host application opts into (ADR-0018), which runs no shader, `EdgeFill` in
+// `edges-canvas.ts` draws the layer instead.
 import { Container, Geometry, Mesh, Shader } from "pixi.js";
 import type { EdgeMesh, Visible } from "../bridge";
 
@@ -129,6 +131,13 @@ class MeshBuffers {
   }
 }
 
+/** What the edges layer drew last, and the room its arrays hold before they reallocate. */
+export interface MeshSize {
+  vertices: number;
+  indices: number;
+  capacity: { vertices: number; indices: number };
+}
+
 /** The edges layer: one mesh for every edge the query found. */
 export class EdgesContainer extends Container {
   /** The mesh's geometry; the testing entry watches its buffers. */
@@ -154,7 +163,7 @@ export class EdgesContainer extends Container {
   }
 
   /** What the mesh drew last, and the room its arrays hold before they reallocate. */
-  size(): { vertices: number; indices: number; capacity: { vertices: number; indices: number } } {
+  size(): MeshSize {
     const { vertices, indices } = this.buffers;
     return { vertices, indices, capacity: this.buffers.capacity() };
   }

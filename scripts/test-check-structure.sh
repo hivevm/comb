@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Self-test of scripts/check-structure.sh. Verifies: ADR-0009, ADR-0012
+# Self-test of scripts/check-structure.sh. Verifies: ADR-0009, ADR-0012, ADR-0018
 #
 # Each case builds a fixture tree under a temporary directory — a core crate with its lock, a
 # library with a bridge, a store, and a render layer, and an example — runs the check against it,
@@ -241,6 +241,73 @@ expect pass "BitmapText, and Graphics outside the edges layer, pass" "$d"
 d="$(fixture edges-graphics)"
 echo 'import { Graphics } from "pixi.js";' >> "$d/packages/comb/src/render/edges.ts"
 expect fail "the edges layer naming Graphics fails" "$d" "packages/comb/src/render/edges.ts:2"
+
+# fallback <dir> — the Canvas 2D fallback of the edges layer, one drawing; prints its file.
+fallback() {
+  local f="$1/packages/comb/src/render/edges-canvas.ts"
+  cat > "$f" <<'TS'
+import { Graphics } from "pixi.js";
+export class EdgeFill {
+  readonly drawing = new Graphics();
+  fill(points: number[][]): void {
+    for (const p of points) this.drawing.poly(p).fill(0);
+  }
+}
+TS
+  echo "$f"
+}
+
+d="$(fixture fallback)"
+fallback "$d" > /dev/null
+expect pass "a fallback filling one Graphics field passes" "$d"
+
+d="$(fixture fallback-loop)"
+f="$(fallback "$d")"
+echo 'for (const e of edges) { const g = new Graphics(); }' >> "$f"
+expect fail "a fallback creating a Graphics in a loop fails" "$d" "edges-canvas.ts:8: the Canvas"
+
+d="$(fixture fallback-extends)"
+f="$(fallback "$d")"
+echo 'export class EdgeView extends Graphics {}' >> "$f"
+expect fail "a fallback extending Graphics fails" "$d" "edges-canvas.ts:8: the Canvas"
+
+d="$(fixture fallback-import-line)"
+f="$(fallback "$d")"
+echo 'import { Container } from "pixi.js"; const g = new Graphics();' >> "$f"
+expect fail "an import does not hide a Graphics on its line" "$d" "edges-canvas.ts:8: the Canvas"
+
+d="$(fixture fallback-multi-line-import)"
+f="$(fallback "$d")"
+printf 'import {\n  Container,\n  Graphics,\n} from "pixi.js";\n' > "$d/x.ts"
+cat "$d/x.ts" "$f" > "$d/y.ts" && mv "$d/y.ts" "$f"
+expect pass "a fallback importing Graphics over several lines passes" "$d"
+
+d="$(fixture fallback-alias)"
+f="$(fallback "$d")"
+echo 'import { Graphics as Drawing } from "pixi.js";' >> "$f"
+expect fail "a fallback renaming Graphics on import fails" "$d" "edges-canvas.ts:8: the Canvas"
+
+d="$(fixture fallback-alias-multi-line)"
+f="$(fallback "$d")"
+printf 'import {\n  Graphics as Drawing,\n} from "pixi.js";\n' >> "$f"
+expect fail "a fallback renaming Graphics in a multi-line import fails" "$d" \
+  "edges-canvas.ts:9: the Canvas"
+
+d="$(fixture fallback-after-import)"
+f="$(fallback "$d")"
+printf 'import {\n  Container,\n} from "pixi.js"; const g = new Graphics();\n' >> "$f"
+expect fail "the end of a multi-line import does not hide a Graphics" "$d" \
+  "edges-canvas.ts:10: the Canvas"
+
+d="$(fixture fallback-two-fields)"
+f="$(fallback "$d")"
+echo 'class Second { readonly other = new Graphics(); }' >> "$f"
+printf 'class Third {\n  readonly other = new Graphics();\n}\n' >> "$f"
+expect fail "a fallback with two Graphics fields fails" "$d" "one Graphics field, found 2"
+
+d="$(fixture fallback-no-field)"
+printf 'import { Mesh } from "pixi.js";\n' > "$d/packages/comb/src/render/edges-canvas.ts"
+expect fail "a fallback without its Graphics field fails" "$d" "one Graphics field, found 0"
 
 d="$(fixture edges-missing)"
 rm "$d/packages/comb/src/render/edges.ts"

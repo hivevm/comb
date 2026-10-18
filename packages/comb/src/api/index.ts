@@ -6,6 +6,7 @@ import { clampScale, fitViewport } from "../interaction/viewport";
 import { edgeColor } from "../render/edges";
 import { Scene } from "../render/scene";
 import { createFrames } from "./frames";
+import { drawsWith, preferenceFor } from "./renderers";
 import { scenes } from "./scenes";
 import {
   createGraphStore,
@@ -18,6 +19,10 @@ import {
 export interface CombOptions {
   /** The canvas background. */
   background?: number;
+  /** Draw with PixiJS's Canvas 2D renderer where the browser offers no WebGL2, instead of
+   *  refusing: slower, Q-1 not promised, and dash patterns drawn solid (ADR-0018). Default
+   *  false. */
+  allowCanvasFallback?: boolean;
 }
 
 export interface Comb {
@@ -44,7 +49,8 @@ export interface Comb {
 export type GraphDataProblem = BridgeError;
 
 /** Comb found no WebGL2 to draw with, only `renderer`, PixiJS's fallback, which cannot draw the
- *  edge mesh. */
+ *  edge mesh, and the host application did not allow the Canvas 2D fallback, or PixiJS offered
+ *  another renderer. */
 export class RendererUnavailableError extends Error {
   constructor(readonly renderer: string) {
     super(`comb: WebGL2 is not available (PixiJS offers ${renderer})`);
@@ -92,7 +98,7 @@ function batchOf(graph: GraphData): GraphBatch {
 }
 
 /** Creates a Comb canvas that fills `host`. Throws a `RendererUnavailableError` where the
- *  browser offers no WebGL2. */
+ *  browser offers no WebGL2, unless `allowCanvasFallback` lets it draw on Canvas 2D. */
 export async function createComb(host: HTMLElement, options: CombOptions = {}): Promise<Comb> {
   const bridge = await createBridge();
   const app = new Application();
@@ -100,9 +106,9 @@ export async function createComb(host: HTMLElement, options: CombOptions = {}): 
     resizeTo: host,
     background: options.background ?? 0xf7f8fa,
     antialias: true,
-    preference: "webgl",
+    preference: preferenceFor(options),
   });
-  if (app.renderer.name !== "webgl") {
+  if (!drawsWith(options, app.renderer.name)) {
     const renderer = app.renderer.name;
     app.destroy(true);
     throw new RendererUnavailableError(renderer);

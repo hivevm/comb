@@ -123,6 +123,14 @@ comb.fitView();
 comb.onSelectionChange((selection) => console.log(selection)); // fill the sidebar from here
 ```
 
+`createComb` throws a `RendererUnavailableError` where the browser offers no WebGL2. A host
+application that would rather draw slowly, with dash patterns solid, than draw nothing opts into
+PixiJS's Canvas 2D renderer:
+
+```ts
+const comb = await createComb(host, { allowCanvasFallback: true });
+```
+
 [`examples/metric-tree/`](examples/metric-tree/) is a complete host application with a sidebar.
 
 ## Project Layout

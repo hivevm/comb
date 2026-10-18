@@ -46,7 +46,9 @@ function element<T extends HTMLElement>(id: string): T {
   return found as T;
 }
 
-const comb = await createComb(element("canvas"));
+// `?fallback=canvas` lets Comb draw on Canvas 2D where the browser offers no WebGL2.
+const fallback = new URLSearchParams(location.search).get("fallback") === "canvas";
+const comb = await createComb(element("canvas"), { allowCanvasFallback: fallback });
 const copies = element<HTMLSelectElement>("copies");
 const count = element("count");
 const selection = element("selection");

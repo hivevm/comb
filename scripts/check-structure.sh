@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
-# Structural test of the shape of the code (ADR-0009) and of how the scene draws (ADR-0012).
-# Verifies: ADR-0009, ADR-0012
+# Structural test of the shape of the code (ADR-0009) and of how the scene draws (ADR-0012,
+# ADR-0018).
+# Verifies: ADR-0009, ADR-0012, ADR-0018
 #
 # ADR-0009 builds Comb as a functional core of pure Rust and a TypeScript shell whose only door to
 # the engine is its bridge; ADR-0012 draws every text as BitmapText and the edges as one mesh. This
@@ -22,8 +23,14 @@
 #      entries `comb` and `comb/testing`, never another `comb/...`, a path through
 #      node_modules/comb/, or into packages/comb.
 #   5. Drawing: no file of the render layer names PixiJS's Text, HTMLText, or SplitText, which
-#      redraw a canvas and upload a texture on every change; and the edges layer, packages/comb/src/render/edges.ts, which
-#      exists wherever the render layer does, names no Graphics, so no edge is drawn by one.
+#      redraw a canvas and upload a texture on every change; and the edges layer,
+#      packages/comb/src/render/edges.ts, which exists wherever the render layer does, names no
+#      Graphics, so no edge is drawn by one. Its Canvas 2D fallback (ADR-0018),
+#      packages/comb/src/render/edges-canvas.ts, where it exists, names Graphics only in import
+#      statements, on one line or several, never renamed with `as`, and on exactly one line that
+#      declares a readonly class field `= new Graphics()`: one drawing, made with the layer, never
+#      in a loop over edges or triangles. What text cannot decide is left to review: a class with
+#      that one field created once per edge, or a Graphics made by a factory in another file.
 #
 # Source files are .ts, .tsx, .mts, .cts, .js, .jsx, .mjs, and .cjs; test files are read like any
 # other. Dependencies (node_modules/) and the library's generated directories
@@ -131,9 +138,34 @@ if [[ -d packages/comb/src/render && ! -f "$edges" ]]; then
 elif [[ -f "$edges" ]]; then
   report "$edges" '\bGraphics\b' "the edges layer draws its edges as one mesh, never by Graphics"
 fi
+fill="packages/comb/src/render/edges-canvas.ts"
+if [[ -f "$fill" ]]; then
+  s='[[:space:]]*'
+  field="${s}readonly[[:space:]]+[A-Za-z_][A-Za-z0-9_]*$s=${s}new Graphics[(][)];?$s"
+  import="import[[:space:]][^;]*from$s$quote$inside*$quote;?$s"
+  # Lines naming Graphics outside an import and the field, and imports that rename it; a
+  # multi-line import runs from `import ... {` to the line with its closing brace.
+  lines="$(awk -v field="^$field\$" -v import="^$import\$" -v closing="^[^;]*}${s}from$s$quote$inside*$quote;?$s\$" '
+    { names = $0 ~ /(^|[^A-Za-z0-9_$])Graphics([^A-Za-z0-9_$]|$)/
+      renamed = $0 ~ /(^|[^A-Za-z0-9_$])Graphics[[:space:]]+as([^A-Za-z0-9_$]|$)/ }
+    block && /}/ { block = 0; if (renamed || (names && $0 !~ closing)) print FNR; next }
+    block { if (renamed) print FNR; next }
+    $0 ~ import { if (renamed) print FNR; next }
+    /^import[[:space:]][^}]*\{[^}]*$/ { block = 1; if (renamed) print FNR; next }
+    names && $0 !~ field { print FNR }' "$fill")" \
+    || problems+=("$fill: the check could not read it")
+  while IFS= read -r line; do
+    [[ -n "$line" ]] \
+      && problems+=("$fill:$line: the Canvas 2D fallback names Graphics only in imports and one field")
+  done <<< "$lines"
+  fields="$(grep -cE "^$field$" "$fill")"
+  if [[ "$fields" != 1 ]]; then
+    problems+=("$fill: the Canvas 2D fallback fills all edges into one Graphics field, found $fields")
+  fi
+fi
 
 if ((${#problems[@]})); then
-  echo "Structure check FAILED (ADR-0009, ADR-0012):" >&2
+  echo "Structure check FAILED (ADR-0009, ADR-0012, ADR-0018):" >&2
   printf '  - %s\n' "${problems[@]}" >&2
   exit 1
 fi

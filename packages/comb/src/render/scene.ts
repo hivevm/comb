@@ -10,7 +10,8 @@ import { Application, BitmapText, Container } from "pixi.js";
 import type { Bridge, Level, Rect } from "../bridge";
 import { worldRect } from "../interaction/viewport";
 import type { GraphView } from "../store";
-import { EdgesContainer } from "./edges";
+import { EdgesContainer, type MeshSize } from "./edges";
+import { EdgeFill } from "./edges-canvas";
 import { LabelsContainer } from "./labels";
 import { NodeGraphic, NodesContainer } from "./nodes";
 import { NodeParticles } from "./particles";
@@ -39,7 +40,8 @@ export const CULLING_MARGIN = 128;
 /** What the scene draws at one moment, in world coordinates, for tests and tooling. Its shape
  *  follows the scene and changes with it; it is not part of the stable interface. */
 export interface SceneSnapshot {
-  /** The PixiJS renderer that draws: `"webgl"` where WebGL2 is available. */
+  /** The PixiJS renderer that draws: `"webgl"` where WebGL2 is available, `"canvas"` on the
+   *  Canvas 2D fallback a host application opted into. */
   renderer: string;
   viewport: { x: number; y: number; scale: number };
   /** The level of detail the scene draws at. */
@@ -54,11 +56,11 @@ export interface SceneSnapshot {
   highlighted: string | null;
   edges: { id: string; source: { x: number; y: number }; target: { x: number; y: number } }[];
   edgeLabels: { edge: string; x: number; y: number }[];
-  /** How many triangles the edge mesh draws. */
+  /** How many triangles the edges layer draws: the edge mesh's, or the fill's on Canvas 2D. */
   edgeTriangles: number;
   /** How many vertices and indices the edge mesh draws, and how many its buffers hold before they
    *  grow. */
-  edgeMesh: ReturnType<EdgesContainer["size"]>;
+  edgeMesh: MeshSize;
   /** Every display object under the world, the layers themselves included. */
   displayObjects: number;
   /** How many times the scene has rendered. */
@@ -102,7 +104,8 @@ export class Scene {
   /** How many times the scene has rendered; cheap to read on every frame. */
   renders = 0;
   readonly world = new Container({ isRenderGroup: true });
-  readonly edges = new EdgesContainer();
+  /** The edges layer: the mesh on WebGL2, the fill on Canvas 2D (ADR-0018). */
+  readonly edges: EdgesContainer | EdgeFill;
   readonly particles = new NodeParticles();
   readonly nodes = new NodesContainer();
   readonly labels = new LabelsContainer();
@@ -115,6 +118,7 @@ export class Scene {
   private source: { bridge: Bridge; edges: GraphView["edges"] } | null = null;
 
   constructor(readonly app: Application) {
+    this.edges = app.renderer.name === "canvas" ? new EdgeFill() : new EdgesContainer();
     this.world.addChild(this.edges, this.particles, this.nodes, this.labels);
     app.stage.addChild(this.world, this.overlay);
   }

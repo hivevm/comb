@@ -77,12 +77,17 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   and binds pooled node views and edge-label views to exactly the slots it found, drawn in slot
   order; while the viewport stays within what it last queried, at about its scale, and the graph
   is unchanged, a render moves the world alone. `EdgesContainer` (`render/edges.ts`) draws the
-  edge mesh with a shader that leaves out the gaps of dash patterns. Not built yet: the node
-  content of [ADR-0013](adr/0013-node-content-model.md), and the `grid` and `connectors` layers
-  of [ADR-0012](adr/0012-virtualized-scene-graph.md).
+  edge mesh with a shader that leaves out the gaps of dash patterns; on the Canvas 2D renderer a
+  host application opts into ([ADR-0018](adr/0018-webgl2-or-an-opted-in-canvas-fallback.md)),
+  which runs no shader, `EdgeFill` (`render/edges-canvas.ts`) takes its place, builds no mesh,
+  and fills the same triangles into one `Graphics`, one fill per run of one colour, dash
+  patterns solid. Not built yet: the node content of
+  [ADR-0013](adr/0013-node-content-model.md), and the `grid` and `connectors` layers of
+  [ADR-0012](adr/0012-virtualized-scene-graph.md).
 - **API** (`packages/comb/src/api`) — `createComb`, which refuses with a
-  `RendererUnavailableError` where PixiJS finds no WebGL2, the graph data handed to the engine, the
-  viewport (`fitView`, `setViewport`, `viewport`), and the events to the host application;
+  `RendererUnavailableError` where PixiJS finds no WebGL2 unless `allowCanvasFallback` lets it
+  draw on Canvas 2D, the graph data handed to the engine, the viewport (`fitView`,
+  `setViewport`, `viewport`), and the events to the host application;
   `whenRendered` resolves once a change is drawn, with one render per animation frame scheduled
   by `frames`.
 - **Testing entry** (`comb/testing`, `packages/comb/src/testing.ts`) — `inspect` returns what the
@@ -97,7 +102,7 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   the scene and is outside the stable interface of `comb`.
 - **Example** (`examples/metric-tree`) — a host application with a metric tree and an HTML
   sidebar (G-9); `?copies=` sets its size, the copies lie in a grid about as wide as tall, and it
-  reports its load time as `window.loadReport`.
+  reports its load time as `window.loadReport`; `?fallback=canvas` allows the Canvas 2D fallback.
 - **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, measuring the time to
   the first frame and p95 frame times of drag, pan, and zoom over the frames Comb rendered, and of
   a pan where the near and the middle level begin, each gesture checked for its effect (Q-1, Q-2).
@@ -149,7 +154,8 @@ measures.
 imports the WebAssembly package, when the render layer reaches the store instead of the action-free
 `GraphView`, or when an example imports past the library's entries (ADR-0009), and when the render
 layer names PixiJS's `Text`, `HTMLText`, or `SplitText` or the edges layer a `Graphics`
-(ADR-0012). `scripts/check-bundle.sh` builds the library and fails when its gzipped JavaScript
+(ADR-0012), and when its Canvas 2D fallback names `Graphics` outside its imports and its one
+field (ADR-0018). `scripts/check-bundle.sh` builds the library and fails when its gzipped JavaScript
 and WebAssembly reach the 300 kB of Q-3. `scripts/check-dependencies.sh` fails on a lockfile of
 another package manager beside `bun.lock` (ADR-0008), on tsify's default or `json` features or
 `serde_json` in the bridge crate (ADR-0010), in whatever form the entry takes, and on a listed

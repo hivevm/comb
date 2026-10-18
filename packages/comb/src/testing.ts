@@ -6,6 +6,7 @@ import type { Comb } from "./api";
 import { scenes } from "./api/scenes";
 import { toScreen, worldRect } from "./interaction/viewport";
 import { TEST_MODE, type Rect } from "./bridge";
+import { EdgesContainer } from "./render/edges";
 import { LABEL_REACH } from "./render/labels";
 import { CULLING_MARGIN, FAR_SCALE, NEAR_SCALE, RESCALE, type SceneSnapshot } from "./render/scene";
 
@@ -147,7 +148,10 @@ export function work(comb: Comb): Work {
   let counts = counted.get(comb);
   if (!counts) {
     const { renderer } = scene.app;
-    if (renderer.name !== "webgl") throw new UncountedRendererError(renderer.name);
+    const { edges } = scene;
+    if (renderer.name !== "webgl" || !(edges instanceof EdgesContainer)) {
+      throw new UncountedRendererError(renderer.name);
+    }
     const fresh: Counts = {
       buffersCreated: 0,
       bufferAllocations: 0,
@@ -156,7 +160,7 @@ export function work(comb: Comb): Work {
       meshBytesUploaded: 0,
       textureUploads: 0,
     };
-    const { attributes, indexBuffer } = scene.edges.geometry;
+    const { attributes, indexBuffer } = edges.geometry;
     const mesh = new Set([...Object.values(attributes).map((a) => a.buffer), indexBuffer]);
     countCalls(renderer as WebGLRenderer, mesh, fresh);
     for (const buffer of mesh) buffer.on("change", () => (fresh.bufferResizes += 1));
