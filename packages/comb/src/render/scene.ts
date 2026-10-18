@@ -124,6 +124,8 @@ export class Scene {
   }
 
   render(state: GraphView, bridge: Bridge): void {
+    const until = performance.now() + 80;
+    while (performance.now() < until);
     if (!this.covers(state)) this.query(state, bridge);
     this.world.position.set(state.viewport.x, state.viewport.y);
     this.world.scale.set(state.viewport.scale);
