@@ -36,13 +36,40 @@ pub enum GraphError {
     EdgeEndOutOfRange { edge: u32 },
 }
 
-/// What a query found: slots in ascending order, per found edge its four control points as
-/// `x, y` pairs, per found label its point, and the mesh of the found edges.
+/// The level of detail a query serves (ADR-0012): near draws edge labels, middle does not, and
+/// far draws edges as plain lines one pixel wide.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Level {
+    Near,
+    Middle,
+    Far,
+}
+
+/// How far a drawn edge may stray from its path, in screen pixels: half the 0.5 px of Q-4.
+pub const FLATNESS: f64 = 0.25;
+/// The width of an edge at the far level, in screen pixels.
+pub const FAR_EDGE_WIDTH: f64 = 1.0;
+
+impl Level {
+    /// How edges are stroked at this level, where a screen pixel is `pixel` world units.
+    pub fn stroke(self, pixel: f64) -> Stroke {
+        match self {
+            Self::Far => Stroke {
+                tolerance: FLATNESS * pixel,
+                width: FAR_EDGE_WIDTH * pixel,
+                plain: true,
+            },
+            Self::Near | Self::Middle => Stroke::full(FLATNESS * pixel),
+        }
+    }
+}
+
+/// What a query found: node, edge, and label slots in ascending order, per found label its
+/// point, and the mesh of the found edges.
 #[derive(Debug, Default)]
 pub struct Visible {
     pub nodes: Vec<u32>,
     pub edges: Vec<u32>,
-    pub edge_points: Vec<f32>,
     pub labels: Vec<u32>,
     pub label_points: Vec<f32>,
     pub mesh: Mesh,
@@ -225,6 +252,24 @@ impl Graph {
         self.reindex_edge(slot);
     }
 
+    /// Writes into `out`, after clearing it, the ends of the edges in `slots` as they lie now:
+    /// per edge the point it leaves its source and the point it enters its target, `x, y` each,
+    /// and NaN for a slot beyond the loaded edges, so that the pairs stay in step with `slots`.
+    pub fn edge_ends(&self, slots: &[u32], out: &mut Vec<f32>) {
+        out.clear();
+        for &slot in slots {
+            match self.paths.get(slot as usize) {
+                Some(path) => out.extend([
+                    path.source.x as f32,
+                    path.source.y as f32,
+                    path.target.x as f32,
+                    path.target.y as f32,
+                ]),
+                None => out.extend([f32::NAN; 4]),
+            }
+        }
+    }
+
     /// The node at `point`: of the nodes whose bounds hold it, the one drawn on top, which is the
     /// one in the highest slot.
     pub fn hit(&mut self, point: Point) -> Option<u32> {
@@ -268,10 +313,20 @@ impl Graph {
         Ok(())
     }
 
-    /// Writes into `out` the nodes and edges whose bounds meet `rect`, the labels whose point
-    /// lies within `label_reach` of it, and the mesh of the edges, stroked as `stroke` says.
-    pub fn query(&mut self, rect: &Rect, label_reach: f64, stroke: &Stroke, out: &mut Visible) {
-        let label_rect = rect.grown(label_reach.max(0.0));
+    /// Writes into `out` the nodes and edges whose bounds meet `rect` and the mesh of the edges,
+    /// stroked for `level` where a screen pixel is `pixel` world units; at the near level also the
+    /// labels whose point lies within `label_reach` of it, and at the others no label.
+    pub fn query(
+        &mut self,
+        rect: &Rect,
+        level: Level,
+        pixel: f64,
+        label_reach: f64,
+        out: &mut Visible,
+    ) {
+        let stroke = level.stroke(pixel);
+        let labelled = level == Level::Near;
+        let label_rect = rect.grown(if labelled { label_reach.max(0.0) } else { 0.0 });
         self.node_grid.candidates(rect, &mut self.scratch);
         out.nodes.clear();
         out.nodes.extend(
@@ -284,7 +339,6 @@ impl Graph {
             .candidates(&rect.union(&label_rect), &mut self.scratch);
         self.scratch.sort_unstable();
         out.edges.clear();
-        out.edge_points.clear();
         out.labels.clear();
         out.label_points.clear();
         out.mesh.clear();
@@ -293,15 +347,10 @@ impl Graph {
             if path.bounds().meets(rect) {
                 out.edges.push(slot);
                 let style = self.edges[slot as usize].style;
-                out.mesh.add_edge(&path, &style, stroke, &mut self.points);
-                for p in [
-                    path.source,
-                    path.control_source,
-                    path.control_target,
-                    path.target,
-                ] {
-                    out.edge_points.extend([p.x as f32, p.y as f32]);
-                }
+                out.mesh.add_edge(&path, &style, &stroke, &mut self.points);
+            }
+            if !labelled {
+                continue;
             }
             if let Some(point) = self.labels[slot as usize].filter(|p| label_rect.contains(*p)) {
                 out.labels.push(slot);
@@ -405,12 +454,11 @@ mod tests {
         for _ in 0..50 {
             let rect = random_rect(rng);
             let reach = rng.range(0.0, 100.0);
-            graph.query(&rect, reach, &Stroke::full(1.0), &mut out);
+            graph.query(&rect, Level::Near, 4.0, reach, &mut out);
             let (nodes, edges, labels) = brute_force(graph, &rect, reach);
             assert_eq!(out.nodes, nodes, "nodes in {rect:?}");
             assert_eq!(out.edges, edges, "edges in {rect:?}");
             assert_eq!(out.labels, labels, "labels in {rect:?}");
-            assert_eq!(out.edge_points.len(), out.edges.len() * 8);
             assert_eq!(out.label_points.len(), out.labels.len() * 2);
         }
     }
@@ -448,17 +496,91 @@ mod tests {
         let mut out = Visible::default();
         graph.query(
             &Rect::new(0.0, 0.0, 600.0, 200.0),
+            Level::Near,
+            4.0,
             0.0,
-            &Stroke::full(1.0),
             &mut out,
         );
         assert_eq!(out.nodes, [0, 1]);
         assert_eq!(out.edges, [0]);
         let path = graph.edge_path(0);
-        assert_eq!(&out.edge_points[..2], [220.0, 32.0]);
-        assert_eq!(&out.edge_points[6..], [300.0, 132.0]);
+        let mut ends = Vec::new();
+        graph.edge_ends(&out.edges, &mut ends);
+        assert_eq!(ends, [220.0, 32.0, 300.0, 132.0]);
         let at = path.label_position(0.5, 0.0);
         assert_eq!(out.label_points, [at.x as f32, at.y as f32]);
+    }
+
+    #[test]
+    fn the_stroke_follows_the_level_and_the_size_of_a_screen_pixel() {
+        let pixel = 4.0;
+        let far = Level::Far.stroke(pixel);
+        assert_eq!((far.tolerance, far.width, far.plain), (1.0, 4.0, true));
+        for level in [Level::Near, Level::Middle] {
+            let full = level.stroke(pixel);
+            let expected = (1.0, crate::stroke::STROKE_WIDTH, false);
+            assert_eq!((full.tolerance, full.width, full.plain), expected);
+        }
+    }
+
+    #[test]
+    fn the_ends_of_unknown_slots_keep_their_place() {
+        let edges = vec![EdgeSpec {
+            source: 0,
+            target: 1,
+            label: None,
+            style: EdgeStyle::default(),
+        }];
+        let graph = Graph::new(
+            vec![0.0, 0.0, 300.0, 100.0],
+            vec![220.0, 64.0, 220.0, 64.0],
+            edges,
+        )
+        .unwrap();
+        let mut ends = Vec::new();
+        graph.edge_ends(&[7, 0], &mut ends);
+        assert!(ends[..4].iter().all(|v| v.is_nan()));
+        assert_eq!(&ends[4..], [220.0, 32.0, 300.0, 132.0]);
+    }
+
+    #[test]
+    fn below_the_near_level_a_query_places_no_label_and_strokes_plain_far() {
+        let label = LabelPlacement {
+            t: 0.5,
+            offset: 0.0,
+        };
+        let edges = vec![EdgeSpec {
+            source: 0,
+            target: 1,
+            label: Some(label),
+            style: EdgeStyle {
+                dash: Some((6.0, 4.0)),
+                ..EdgeStyle::default()
+            },
+        }];
+        let mut graph = Graph::new(
+            vec![0.0, 0.0, 300.0, 100.0],
+            vec![220.0, 64.0, 220.0, 64.0],
+            edges,
+        )
+        .unwrap();
+        let rect = Rect::new(0.0, 0.0, 600.0, 200.0);
+        let mut out = Visible::default();
+        graph.query(&rect, Level::Near, 1.0, 50.0, &mut out);
+        assert_eq!(out.labels, [0]);
+        // Near: the arrowhead adds one triangle to the two per segment.
+        assert_eq!(out.mesh.indices.len() % 6, 3);
+        for level in [Level::Middle, Level::Far] {
+            graph.query(&rect, level, 1.0, 50.0, &mut out);
+            assert!(
+                out.labels.is_empty() && out.label_points.is_empty(),
+                "{level:?}"
+            );
+            assert_eq!(out.edges, [0]);
+        }
+        // Far: the dashed edge with an arrowhead draws neither, two triangles per segment alone.
+        assert!(out.mesh.dashes.iter().all(|&d| d == 0.0));
+        assert_eq!(out.mesh.indices.len() % 6, 0);
     }
 
     #[test]
@@ -488,8 +610,9 @@ mod tests {
         let mut out = Visible::default();
         graph.query(
             &Rect::new(250.0, 4900.0, 450.0, 5100.0),
+            Level::Near,
+            4.0,
             0.0,
-            &Stroke::full(1.0),
             &mut out,
         );
         assert_eq!(out.nodes, [1]);
@@ -537,8 +660,9 @@ mod tests {
         let mut out = Visible::default();
         graph.query(
             &Rect::new(1e6, 1e6, 1e6 + 300.0, 1e6 + 10.0),
+            Level::Near,
+            4.0,
             0.0,
-            &Stroke::full(1.0),
             &mut out,
         );
         assert_eq!(out.nodes, far);

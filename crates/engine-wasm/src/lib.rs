@@ -8,9 +8,9 @@ use std::collections::HashMap;
 
 use comb_engine::geometry::Point;
 use comb_engine::geometry::Rect;
-use comb_engine::graph::{EdgeSpec, Graph, GraphError, LabelPlacement, Visible};
+use comb_engine::graph::{EdgeSpec, Graph, GraphError, LabelPlacement, Level, Visible};
 use comb_engine::positions::PositionError;
-use comb_engine::stroke::{EdgeStyle, Stroke};
+use comb_engine::stroke::EdgeStyle;
 use serde::{Deserialize, Serialize};
 use tsify::{Ts, Tsify};
 use wasm_bindgen::prelude::*;
@@ -235,12 +235,42 @@ fn graph_of(batch: &GraphBatch) -> Result<Graph, BridgeError> {
     })
 }
 
+/// A rectangle in world coordinates, as a query asks for it.
+#[derive(Tsify, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RectInput {
+    pub min_x: f64,
+    pub min_y: f64,
+    pub max_x: f64,
+    pub max_y: f64,
+}
+
+/// The level of detail a query serves (ADR-0012).
+#[wasm_bindgen]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DetailLevel {
+    Near,
+    Middle,
+    Far,
+}
+
+impl From<DetailLevel> for Level {
+    fn from(level: DetailLevel) -> Self {
+        match level {
+            DetailLevel::Near => Self::Near,
+            DetailLevel::Middle => Self::Middle,
+            DetailLevel::Far => Self::Far,
+        }
+    }
+}
+
 /// The engine's state as the shell sees it: the loaded graph, and what the last query found.
 #[wasm_bindgen]
 #[derive(Default)]
 pub struct Engine {
     graph: Graph,
     visible: Visible,
+    ends: Vec<f32>,
 }
 
 #[wasm_bindgen]
@@ -268,30 +298,29 @@ impl Engine {
             .map_err(BridgeError::from)
     }
 
-    /// Finds the nodes and edges that meet the rectangle and the edge labels within
-    /// `label_reach` of it, and builds the mesh of the edges, flattened within `tolerance` and
-    /// `width` wide, as thin lines alone where `plain`; the results are read through the
-    /// `visible…` and `mesh…` buffers.
-    #[allow(clippy::too_many_arguments)]
+    /// Finds the nodes and edges that meet the rectangle and builds the mesh of the edges for
+    /// `level`, where a screen pixel is `pixel` world units; at the near level also the edge
+    /// labels within `label_reach` of it. The results are read through the `visible…` and
+    /// `mesh…` buffers.
     pub fn query(
         &mut self,
-        min_x: f64,
-        min_y: f64,
-        max_x: f64,
-        max_y: f64,
+        rect: Ts<RectInput>,
+        level: DetailLevel,
+        pixel: f64,
         label_reach: f64,
-        tolerance: f64,
-        width: f64,
-        plain: bool,
-    ) {
-        let rect = Rect::new(min_x, min_y, max_x, max_y);
-        let stroke = Stroke {
-            tolerance,
-            width,
-            plain,
-        };
+    ) -> Result<(), BridgeError> {
+        let rect = rect.to_rust().map_err(malformed)?;
+        let rect = Rect::new(rect.min_x, rect.min_y, rect.max_x, rect.max_y);
         self.graph
-            .query(&rect, label_reach, &stroke, &mut self.visible);
+            .query(&rect, level.into(), pixel, label_reach, &mut self.visible);
+        Ok(())
+    }
+
+    /// Computes the ends of the edges the last query found, read through the `edgeEnds…` buffer:
+    /// for inspection, not for drawing.
+    #[wasm_bindgen(js_name = drawnEdges)]
+    pub fn drawn_edges(&mut self) {
+        self.graph.edge_ends(&self.visible.edges, &mut self.ends);
     }
 
     /// The slot of the node drawn on top at the world point `(x, y)`, if any.
@@ -339,16 +368,16 @@ impl Engine {
         self.visible.edges.len()
     }
 
-    /// Where the four control points of each edge the last query found, `x, y` each starts.
-    #[wasm_bindgen(js_name = edgePointsPtr)]
-    pub fn edge_points_ptr(&self) -> *const f32 {
-        self.visible.edge_points.as_ptr()
+    /// Where the ends of the edges the last `drawnEdges` computed, `x, y` each starts.
+    #[wasm_bindgen(js_name = edgeEndsPtr)]
+    pub fn edge_ends_ptr(&self) -> *const f32 {
+        self.ends.as_ptr()
     }
 
     /// How many values the four control points of each edge the last query found holds.
-    #[wasm_bindgen(js_name = edgePointsLen)]
-    pub fn edge_points_len(&self) -> usize {
-        self.visible.edge_points.len()
+    #[wasm_bindgen(js_name = edgeEndsLen)]
+    pub fn edge_ends_len(&self) -> usize {
+        self.ends.len()
     }
 
     /// Where the edge slots of the labels the last query found starts.

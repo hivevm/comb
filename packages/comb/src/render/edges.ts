@@ -3,7 +3,6 @@
 // shader leaves out the gaps of a dash pattern by the distance along the path.
 import { Container, Geometry, Mesh, Shader } from "pixi.js";
 import type { EdgeMesh, Visible } from "../bridge";
-import type { GraphView } from "../store";
 
 /** The colour of an edge the host application gives none. */
 export const EDGE_COLOR = 0x9aa1ad;
@@ -42,8 +41,6 @@ void main() {
   if (vDash.x > 0.0 && mod(vDistance, vDash.x + vDash.y) >= vDash.x) discard;
   finalColor = vec4(vColor.rgb * vColor.a, vColor.a);
 }`;
-
-type DrawnEdge = { id: string; source: { x: number; y: number }; target: { x: number; y: number } };
 
 /** The vertex attributes of the mesh: their name in the shader, and per vertex how many values
  *  of which buffer of the engine's mesh. */
@@ -140,43 +137,18 @@ export class EdgesContainer extends Container {
     geometry: this.geometry,
     shader: Shader.from({ gl: { vertex, fragment, name: "comb-edges" }, resources: {} }),
   });
-  /** What the last sync drew, copied out of the engine's buffers for inspection. */
-  private last = {
-    edges: [] as GraphView["edges"],
-    slots: new Uint32Array(),
-    points: new Float32Array(),
-    triangles: 0,
-  };
-
   constructor() {
     super();
     this.addChild(this.mesh);
   }
 
-  sync(state: GraphView, visible: Visible): void {
+  sync(visible: Visible): void {
     this.buffers.set(visible.mesh);
     this.mesh.visible = this.buffers.indices > 0;
-    this.last = {
-      edges: state.edges,
-      slots: visible.edges.slice(),
-      points: visible.edgePoints.slice(),
-      triangles: this.buffers.indices / 3,
-    };
   }
 
   /** How many triangles the mesh drew last. */
   triangles(): number {
-    return this.last.triangles;
-  }
-
-  /** The edges the last sync drew, with their ends. */
-  drawn(): DrawnEdge[] {
-    const { edges, slots, points } = this.last;
-    return [...slots].flatMap((slot, i) => {
-      const edge = edges[slot];
-      if (!edge) return [];
-      const [x0, y0, , , , , x3, y3] = points.subarray(i * 8, i * 8 + 8);
-      return [{ id: edge.id, source: { x: x0!, y: y0! }, target: { x: x3!, y: y3! } }];
-    });
+    return this.buffers.indices / 3;
   }
 }

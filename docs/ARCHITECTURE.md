@@ -46,9 +46,11 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   with each edge's colour, dash pattern, and arrowhead, or as thin lines alone at the far level
   of detail. It depends on no crate that reaches the browser.
 - **Bridge** — `crates/engine-wasm` holds every WebAssembly export: `loadGraph` checks graph data
-  and resolves edge ends to slots, `translate` moves nodes, and `query` writes the found node
-  slots, edge slots, edge control points, edge-label points, and the edge mesh into buffers the
-  engine owns;
+  and resolves edge ends to slots, `translate` moves nodes, `query` takes a rectangle, a level of
+  detail, and the size of a screen pixel and writes the found node slots, the edge-label slots and
+  points (at the near level only), the found edge slots, and the edge mesh into buffers the engine
+  owns, `drawnEdges` computes the ends of the found edges when inspection asks, as they lie then,
+  and `hit` names the node at a point;
   `packages/comb/src/bridge` is the one module that imports the WebAssembly package and reads
   those buffers through fresh typed-array views per read
   ([ADR-0010](adr/0010-bridge-data-format.md)).

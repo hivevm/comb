@@ -7,7 +7,7 @@
 // near draws node boxes, titles, and edge labels; middle draws node boxes and titles; far draws
 // nodes as particles and edges as thin lines, without text.
 import { Application, BitmapText, Container } from "pixi.js";
-import type { Bridge, Rect } from "../bridge";
+import type { Bridge, Level, Rect } from "../bridge";
 import { worldRect } from "../interaction/viewport";
 import type { GraphView } from "../store";
 import { EdgesContainer } from "./edges";
@@ -15,11 +15,8 @@ import { LabelsContainer } from "./labels";
 import { NodeGraphic, NodesContainer } from "./nodes";
 import { NodeParticles } from "./particles";
 
-/** How far a drawn edge may stray from its path, in screen pixels: half the 0.5 px of Q-4. */
-export const FLATNESS = 0.25;
-
-/** The level of detail the scene draws at (ADR-0012). */
-export type Level = "near" | "middle" | "far";
+/** The level of detail the scene draws at (ADR-0012); the engine strokes edges for it. */
+export type { Level };
 /** The scale from which the scene draws near: edge labels, 12 px, are 7 px tall there, the least
  *  that still reads. */
 export const NEAR_SCALE = 0.6;
@@ -33,10 +30,6 @@ export function levelAt(scale: number): Level {
   return scale >= FAR_SCALE ? "middle" : "far";
 }
 
-/** The width of an edge at the far level, in screen pixels. */
-const FAR_EDGE_WIDTH = 1;
-/** The width of an edge at the other levels, in world units. */
-const EDGE_WIDTH = 2;
 const NONE = new Uint32Array(0);
 /** How far beyond the viewport the scene binds display objects, in screen pixels, so that a
  *  small pan finds them bound: at least this far when it queries, and at most twice as far while
@@ -115,6 +108,8 @@ export class Scene {
   /** How many renders queried the engine; the others moved the world alone. */
   queries = 0;
   private drawn: Drawn | null = null;
+  /** The bridge of the last render and the edges it drew, for inspection. */
+  private source: { bridge: Bridge; edges: GraphView["edges"] } | null = null;
 
   constructor(readonly app: Application) {
     this.world.addChild(this.edges, this.particles, this.nodes, this.labels);
@@ -155,21 +150,29 @@ export class Scene {
     const { scale } = state.viewport;
     const level = levelAt(scale);
     const far = level === "far";
-    const stroke = {
-      tolerance: FLATNESS / scale,
-      width: far ? FAR_EDGE_WIDTH / scale : EDGE_WIDTH,
-      plain: far,
-    };
-    // Every view of the query is read before the next call into the engine (ADR-0010).
-    const visible = bridge.query(rect, this.labels.reach, stroke);
+    const visible = bridge.query(rect, level, 1 / scale, this.labels.reach);
     this.nodes.sync(state, far ? NONE : visible.nodes, visible.positions);
     this.particles.sync(state, far ? visible.nodes : NONE, visible.positions);
-    this.edges.sync(state, visible);
+    this.edges.sync(visible);
     this.labels.sync(state, visible, level === "near");
     this.level = level;
     this.queries += 1;
+    this.source = { bridge, edges: state.edges };
     const { nodes, edges, selection, positionsVersion } = state;
     this.drawn = { rect, scale, level, nodes, edges, selection, positionsVersion };
+  }
+
+  /** The edges the last query found, with their ends, asked of the engine now. */
+  private drawnEdges(): SceneSnapshot["edges"] {
+    if (!this.source) return [];
+    const { bridge, edges } = this.source;
+    const { slots, ends } = bridge.drawnEdges();
+    return [...slots].flatMap((slot, i) => {
+      const edge = edges[slot];
+      if (!edge) return [];
+      const [x0, y0, x1, y1] = ends.subarray(i * 4, i * 4 + 4);
+      return [{ id: edge.id, source: { x: x0!, y: y0! }, target: { x: x1!, y: y1! } }];
+    });
   }
 
   inspect(): SceneSnapshot {
@@ -192,7 +195,7 @@ export class Scene {
         this.particles.highlighted ??
         (this.nodes.children as NodeGraphic[]).find((view) => view.selected)?.nodeId ??
         null,
-      edges: this.edges.drawn(),
+      edges: this.drawnEdges(),
       edgeTriangles: this.edges.triangles(),
       edgeLabels: this.labels.children.map((label) => ({
         edge: label.label,
