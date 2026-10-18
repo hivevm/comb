@@ -8,7 +8,9 @@
 # under a listed key, fail and are named; a listed survivor the run no longer misses is reported
 # as now caught, or as timed out when it timed out, and fails nothing; a run that caught nothing
 # fails; within one function, a caught and a new survivor under one key pass, the price of the
-# key; a line the script cannot read, and a missing file, fail rather than pass.
+# key; a reason after an entry is no part of its key, and a list recorded with the list keeps the
+# reason of each survivor; a line the script cannot read, and a missing file, fail rather than
+# pass.
 #
 # Usage:
 #     scripts/test-check-mutants.sh
@@ -73,6 +75,24 @@ lines "# Surviving mutants." "" \
 
 expect "the run the list names passes" 0 "4 survivor(s), every one named by the list" \
   "$recorded" "$list"
+
+reasoned="$work/reasoned.txt"
+lines "$SRC/geometry.rs extrema delete -  # no test can tell it: a reason" \
+  "$SRC/graph.rs Graph::cell_side replace Graph::cell_side -> f64 with 0.0 # only speed" \
+  "$SRC/stroke.rs subdivide replace + with * (x2) # both" > "$reasoned"
+expect "a reason after ' # ' is not part of the entry" 0 \
+  "4 survivor(s), every one named by the list" "$recorded" "$reasoned"
+
+expect "a list recorded with the list keeps the reason of each survivor" 0 \
+  "$SRC/stroke.rs subdivide replace + with * (x2) # both" --record "$recorded" "$reasoned"
+gone="$(run gone "$(lines "$SUB1" "$SUB2")")"
+out="$(bash "$CHECK" --record "$gone" "$reasoned" 2>&1)"
+if [[ "$out" == *"only speed"* || "$out" == *"a reason"* ]]; then
+  failed=$((failed + 1))
+  echo "FAIL: a list recorded with the list drops the entries no longer missed, reasons and all" >&2
+else
+  passed=$((passed + 1))
+fi
 
 expect "the recorded list keys each survivor by file, function, and replacement" 0 \
   "$SRC/stroke.rs subdivide replace + with * (x2)" --record "$recorded"

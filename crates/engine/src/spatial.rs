@@ -104,13 +104,10 @@ impl Grid {
         self.beyond_count
     }
 
+    /// The column or row of `value`: before the first, beyond the last, or not a number, the
+    /// border one, as the cast to `usize` saturates and takes NaN to 0.
     fn index(&self, value: f64, origin: f64, count: usize) -> usize {
-        let at = ((value - origin) / self.cell).floor();
-        if at.is_nan() || at < 0.0 {
-            0
-        } else {
-            (at as usize).min(count - 1)
-        }
+        (((value - origin) / self.cell).floor() as usize).min(count - 1)
     }
 
     fn span(&self, bounds: &Rect) -> Span {
@@ -307,6 +304,46 @@ mod tests {
                 "{items} items over {side} from cells of {cell}"
             );
         }
+    }
+
+    #[test]
+    fn a_grid_away_from_the_origin_counts_its_cells_from_its_corner() {
+        // Enough items that the grid keeps its 10 × 10 cells of side 10.
+        let mut grid = Grid::new(Rect::new(100.0, 200.0, 200.0, 300.0), 10.0, 25);
+        // Columns 1 and 2, rows 3 and 4.
+        grid.set(0, &Rect::new(115.0, 235.0, 125.0, 245.0));
+        let holding: Vec<usize> = (0..grid.cells.len())
+            .filter(|&i| grid.cells[i].contains(&0))
+            .collect();
+        assert_eq!(holding, [31, 32, 41, 42]);
+        // Before the first cell, beyond the last, and not a number: the border cells.
+        assert_eq!(grid.index(-1e9, 100.0, 10), 0);
+        assert_eq!(grid.index(99.0, 100.0, 10), 0);
+        assert_eq!(grid.index(1e300, 100.0, 10), 9);
+        assert_eq!(grid.index(f64::NAN, 100.0, 10), 0);
+        assert_eq!(grid.index(f64::INFINITY, 100.0, 10), 9);
+    }
+
+    #[test]
+    fn an_item_moved_from_a_lower_row_leaves_every_cell_it_was_in() {
+        let mut grid = Grid::new(Rect::new(0.0, 0.0, 100.0, 100.0), 10.0, 25);
+        grid.set(0, &Rect::new(32.0, 52.0, 48.0, 58.0));
+        grid.set(0, &Rect::new(1.0, 1.0, 2.0, 2.0));
+        let holding: Vec<usize> = (0..grid.cells.len())
+            .filter(|&i| grid.cells[i].contains(&0))
+            .collect();
+        assert_eq!(holding, [0]);
+    }
+
+    #[test]
+    fn a_span_counts_its_columns_times_its_rows() {
+        let span = Span {
+            c0: 2,
+            r0: 5,
+            c1: 10,
+            r1: 12,
+        };
+        assert_eq!(span.cells(), 9 * 8);
     }
 
     #[test]

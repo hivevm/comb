@@ -10,7 +10,8 @@
 # body. The line and the column move with every edit above the mutant, so this script keys each
 # mutant by what does not move: '<file> <function> <replacement>', the replacement being the
 # description without its ' in <function>'. Several survivors under one key are one entry with a
-# count, written ' (xN)' after the key. The price of the key: within one function, a listed
+# count, written ' (xN)' after the key. A reason may follow an entry after ' # ', as it does for
+# a mutant no test can tell from the code. The price of the key: within one function, a listed
 # survivor now caught and a new survivor under the same key leave the count as it was, and pass.
 #
 # The run fails when it has more survivors under a key than the list names, and names each such
@@ -22,7 +23,8 @@
 #
 # Pure bash. Usage:
 #     scripts/check-mutants.sh <mutants.out> <list>    compare with the list
-#     scripts/check-mutants.sh --record <mutants.out>  print a list recorded from the run
+#     scripts/check-mutants.sh --record <mutants.out> [<list>]
+#         print a list recorded from the run, with the reason the list gives each survivor
 # The workflow passes mutants.out and crates/engine/mutants-missed.txt.
 # Exit code 0 when no survivor is new, 1 when one is or none was caught, 2 when an input cannot be
 # read.
@@ -30,7 +32,7 @@
 set -uo pipefail
 
 usage() {
-  echo "Usage: scripts/check-mutants.sh <mutants.out> <list> | --record <mutants.out>" >&2
+  echo "Usage: scripts/check-mutants.sh <mutants.out> <list> | --record <mutants.out> [<list>]" >&2
   exit 2
 }
 
@@ -38,7 +40,7 @@ record=0
 if [[ "${1:-}" == "--record" ]]; then
   record=1
   shift
-  (($# == 1)) || usage
+  (($# == 1 || $# == 2)) || usage
 else
   (($# == 2)) || usage
 fi
@@ -49,7 +51,7 @@ for f in missed caught timeout; do
 done
 [[ -n "$list" && ! -f "$list" ]] && { echo "Mutants check: '$list' is not a file." >&2; exit 2; }
 
-declare -A run_count=() run_places=() timeout_count=() list_count=()
+declare -A run_count=() run_places=() timeout_count=() list_count=() list_reason=()
 
 # key_of <description> — the function and replacement of a mutant's description, printed as
 # '<function> <replacement>'; fails when the description has neither form.
@@ -98,28 +100,37 @@ read_outcome "$out/missed.txt" missed
 read_outcome "$out/timeout.txt" timeout
 read_outcome "$out/caught.txt" caught
 
-# entry <key> <count> — a key as the list writes it.
-entry() { if (($2 > 1)); then printf '%s (x%d)\n' "$1" "$2"; else printf '%s\n' "$1"; fi; }
+# entry <key> <count> — a key as the list writes it, with the reason the list gives it.
+entry() {
+  if (($2 > 1)); then printf '%s (x%d)' "$1" "$2"; else printf '%s' "$1"; fi
+  if [[ -n "${list_reason[$1]:-}" ]]; then printf ' # %s\n' "${list_reason[$1]}"; else echo; fi
+}
+
+if [[ -n "$list" ]]; then
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "${line//[[:space:]]/}" || "$line" =~ ^[[:space:]]*# ]] && continue
+    reason=""
+    [[ "$line" == *" # "* ]] && reason="${line#* \# }"
+    line="${line%% \# *}"
+    line="${line%"${line##*[![:space:]]}"}"
+    count=1
+    if [[ "$line" =~ ^(.+)\ \(x([0-9]+)\)$ ]]; then
+      line="${BASH_REMATCH[1]}"
+      count="${BASH_REMATCH[2]}"
+    fi
+    list_count["$line"]=$((${list_count["$line"]:-0} + count))
+    [[ -n "$reason" ]] && list_reason["$line"]="$reason"
+  done < "$list"
+fi
 
 if ((record)); then
   echo "# Surviving mutants of crates/engine that the mutation workflow accepts (ADR-0008)."
-  echo "# One per line as '<file> <function> <replacement>', ' (xN)' when one key covers N mutants."
+  echo "# One per line as '<file> <function> <replacement>', ' (xN)' when one key covers N mutants,"
+  echo "# and for an equivalent mutant its reason after ' # '."
   echo "# Recorded with scripts/check-mutants.sh --record; the README says how the list changes."
   for key in "${!run_count[@]}"; do entry "$key" "${run_count[$key]}"; done | LC_ALL=C sort
   exit 0
 fi
-
-n=0
-while IFS= read -r line || [[ -n "$line" ]]; do
-  n=$((n + 1))
-  [[ -z "${line//[[:space:]]/}" || "$line" =~ ^[[:space:]]*# ]] && continue
-  count=1
-  if [[ "$line" =~ ^(.+)\ \(x([0-9]+)\)$ ]]; then
-    line="${BASH_REMATCH[1]}"
-    count="${BASH_REMATCH[2]}"
-  fi
-  list_count["$line"]=$((${list_count["$line"]:-0} + count))
-done < "$list"
 
 new=() shrink=() timed=()
 for key in "${!run_count[@]}"; do

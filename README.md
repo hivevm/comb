@@ -85,10 +85,12 @@ budget of Q-3 (`bun run build:lib`, at most 300 kB gzipped without PixiJS).
   The **Mutation testing** workflow does both on a GitHub runner, weekly and on demand
   (*Actions* → *Mutation testing* → *Run workflow*), and uploads `mutants.out` as an artefact.
   The list shrinks with each change that kills a mutant: delete its line, or lower its count. It
-  grows only in a pull request that says why each new survivor stays;
-  `bash scripts/check-mutants.sh --record mutants.out` prints the list of a run. The list in the
-  tree is provisional, recorded from a local run: the list recorded from the artefact of the
-  workflow's first run on GitHub replaces it, in a pull request that says so.
+  grows only in a pull request that says why each new survivor stays; a survivor no test can
+  tell from the code, an equivalent mutant, carries its reason in the list after ` # `.
+  `bash scripts/check-mutants.sh --record mutants.out crates/engine/mutants-missed.txt` prints
+  the list of a run, each survivor with the reason the list gives it. The list in the tree is
+  provisional, recorded from a local run: the list recorded from the artefact of the workflow's
+  first run on GitHub replaces it, in a pull request that says so.
 
 ## Usage
 

@@ -352,6 +352,155 @@ mod tests {
         )
     }
 
+    /// The paths of the awkward cases: forward, backward, vertical, looped back, bent into an S.
+    fn awkward_paths() -> [EdgePath; 5] {
+        [
+            EdgePath::horizontal(Point::new(10.0, 20.0), Point::new(300.0, 140.0), 40.0),
+            EdgePath::horizontal(Point::new(300.0, 0.0), Point::new(0.0, 90.0), 40.0),
+            EdgePath::horizontal(Point::new(50.0, 0.0), Point::new(50.0, 200.0), 40.0),
+            EdgePath {
+                source: Point::new(0.0, 0.0),
+                control_source: Point::new(100.0, -80.0),
+                control_target: Point::new(-50.0, 120.0),
+                target: Point::new(60.0, 10.0),
+            },
+            EdgePath {
+                source: Point::new(-20.0, 7.0),
+                control_source: Point::new(-20.0, 300.0),
+                control_target: Point::new(40.0, -300.0),
+                target: Point::new(40.0, 7.0),
+            },
+        ]
+    }
+
+    #[test]
+    fn the_control_points_pull_level_by_half_the_horizontal_distance_and_at_least_the_minimum() {
+        // Forward, 290 apart: the pull is 145.
+        let path = EdgePath::horizontal(Point::new(10.0, 20.0), Point::new(300.0, 140.0), 40.0);
+        assert!(close(path.control_source, Point::new(155.0, 20.0)));
+        assert!(close(path.control_target, Point::new(155.0, 140.0)));
+        // Backward, 300 apart: the pull is 150, out beyond both ends.
+        let path = EdgePath::horizontal(Point::new(300.0, 0.0), Point::new(0.0, 90.0), 40.0);
+        assert!(close(path.control_source, Point::new(450.0, 0.0)));
+        assert!(close(path.control_target, Point::new(-150.0, 90.0)));
+        // 7 apart: the minimum of 40 pulls.
+        let path = EdgePath::horizontal(Point::new(0.0, 0.0), Point::new(7.0, 50.0), 40.0);
+        assert!(close(path.control_source, Point::new(40.0, 0.0)));
+        assert!(close(path.control_target, Point::new(-33.0, 50.0)));
+    }
+
+    #[test]
+    fn a_grown_rectangle_moves_each_side_outward() {
+        let grown = Rect::new(-5.0, 10.0, 20.0, 40.0).grown(3.0);
+        assert_eq!(grown, Rect::new(-8.0, 7.0, 23.0, 43.0));
+    }
+
+    #[test]
+    fn the_tangent_is_the_unit_direction_of_travel() {
+        // Verifies: Q-4
+        let h = 1e-6;
+        for path in awkward_paths() {
+            for i in 0..=20 {
+                let t = f64::from(i) / 20.0;
+                // The direction by a difference of the curve's points around t, one-sided at the
+                // ends.
+                let (a, b) = ((t - h).max(0.0), (t + h).min(1.0));
+                let (p, q) = (bernstein(&path, a), bernstein(&path, b));
+                let length = (q.x - p.x).hypot(q.y - p.y);
+                let expected = Point::new((q.x - p.x) / length, (q.y - p.y) / length);
+                let tangent = path.tangent_at(t);
+                assert!(
+                    (tangent.x - expected.x).abs() < 1e-5 && (tangent.y - expected.y).abs() < 1e-5,
+                    "{tangent:?} against {expected:?} at {t} of {path:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_path_has_a_direction_down_to_a_derivative_of_epsilon() {
+        // The boundary at epsilon is the threshold the code chose, not one of the geometry.
+        // Leaving its source leftwards: the derivative at t = 0 is 3 (control_source - source),
+        // exactly epsilon long.
+        let step = -f64::EPSILON / 3.0;
+        assert_eq!(3.0 * step, -f64::EPSILON);
+        let path = EdgePath {
+            source: Point::new(0.0, 0.0),
+            control_source: Point::new(step, 0.0),
+            control_target: Point::new(step, 0.0),
+            target: Point::new(step, 0.0),
+        };
+        assert!(close(path.tangent_at(0.0), Point::new(-1.0, 0.0)));
+    }
+
+    #[test]
+    fn a_label_sits_left_of_the_direction_of_travel_on_a_slanted_path() {
+        // Verifies: G-6
+        // A straight path from (0, 0) to (300, 400): direction (0.6, 0.8), whose left in screen
+        // coordinates, y down, is (0.8, -0.6); the middle is (150, 200).
+        let path = EdgePath {
+            source: Point::new(0.0, 0.0),
+            control_source: Point::new(100.0, 400.0 / 3.0),
+            control_target: Point::new(200.0, 800.0 / 3.0),
+            target: Point::new(300.0, 400.0),
+        };
+        assert!(close(
+            path.label_position(0.5, 10.0),
+            Point::new(158.0, 194.0)
+        ));
+        assert!(close(
+            path.label_position(0.5, -10.0),
+            Point::new(142.0, 206.0)
+        ));
+    }
+
+    #[test]
+    fn the_bounds_reach_exactly_to_where_the_path_turns() {
+        // Backward from (300, 0) to (0, 90), pulled 150: x runs 300, 450, -150, 0, whose
+        // derivative is 3 (1500 t² - 1500 t + 150), zero at t = (1 ∓ √0.6) / 2.
+        let path = EdgePath::horizontal(Point::new(300.0, 0.0), Point::new(0.0, 90.0), 40.0);
+        let (first, second) = ((1.0 - 0.6_f64.sqrt()) / 2.0, (1.0 + 0.6_f64.sqrt()) / 2.0);
+        let bounds = path.bounds();
+        assert!((bounds.max_x - bernstein(&path, first).x).abs() < EPS);
+        assert!((bounds.min_x - bernstein(&path, second).x).abs() < EPS);
+        assert_eq!((bounds.min_y, bounds.max_y), (0.0, 90.0));
+        // y runs 0, 40, 40, 0, whose derivative is linear (the cubic term vanishes) and zero at
+        // t = 0.5, where y is 30; x runs 0, 30, 60, 90 and turns nowhere.
+        let path = EdgePath {
+            source: Point::new(0.0, 0.0),
+            control_source: Point::new(30.0, 40.0),
+            control_target: Point::new(60.0, 40.0),
+            target: Point::new(90.0, 0.0),
+        };
+        let bounds = path.bounds();
+        assert!(close(
+            Point::new(bounds.min_x, bounds.min_y),
+            Point::new(0.0, 0.0)
+        ));
+        assert!(close(
+            Point::new(bounds.max_x, bounds.max_y),
+            Point::new(90.0, 30.0)
+        ));
+        // Mirrored, y runs 0, -40, -40, 0 and turns at -30.
+        let path = EdgePath {
+            control_source: Point::new(30.0, -40.0),
+            control_target: Point::new(60.0, -40.0),
+            ..path
+        };
+        assert!((path.bounds().min_y + 30.0).abs() < EPS);
+        // An S whose x runs 10, 16, 4, 10, so x - 10 = 18 t (1 - t) (1 - 2 t): the derivative
+        // 3 (36 t² - 36 t + 6) is zero at t = (1 ∓ √(1/3)) / 2, where x is 10 ± √3.
+        let path = EdgePath {
+            source: Point::new(10.0, 5.0),
+            control_source: Point::new(16.0, 5.0),
+            control_target: Point::new(4.0, 5.0),
+            target: Point::new(10.0, 5.0),
+        };
+        let bounds = path.bounds();
+        assert!((bounds.max_x - (10.0 + 3.0_f64.sqrt())).abs() < EPS);
+        assert!((bounds.min_x - (10.0 - 3.0_f64.sqrt())).abs() < EPS);
+    }
+
     /// The greatest value of `f` on 0..=1 where it rises to one peak, by ternary search.
     fn peak(f: impl Fn(f64) -> f64) -> f64 {
         let (mut lo, mut hi) = (0.0, 1.0);
