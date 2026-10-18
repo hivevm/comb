@@ -27,9 +27,14 @@ keep every coordinate out of it, in the engine's buffers, signalled to its reade
 the store increments when they change.
 
 - **Writers:** `api` and `interaction` change the store through its actions; `render` only reads
-  it and subscribes with selectors (ADR-0009).
+  it (ADR-0009).
+- **Rendering:** `api` subscribes to the store and schedules at most one render per animation
+  frame, however many changes it carries; `whenRendered` resolves once every change made before
+  the call is drawn and is part of the public interface. The scene decides itself what changed
+  since it last drew (ADR-0012), so no selector narrows the subscription.
 - **Coordinates:** a drag writes positions into the engine's buffer and increments the counter
-  once per frame; no position is copied into the store.
+  once per pointer move, which a browser delivers at most once a frame; no position is copied
+  into the store.
 - **Events to the host application** (G-5) are derived from store changes in `api`, so the host
   application sees one sequence of events whatever caused them.
 
@@ -43,6 +48,9 @@ into one notification.
   what changed, is what the counter and the engine's buffers already give the hot path.
 - **Coordinates in the store** — one place for all state, but an update per frame of a drag
   through an immutable store contradicts Q-1, and ADR-0010 already moves them through buffers.
+- **`render` subscribing with selectors** — each layer would hear only its slice, but the scene's
+  render cache already compares what it last drew with the store, and selectors per layer would
+  schedule several renders for one change instead of one per frame.
 - **A hand-written observable** — no dependency, but it rewrites what `zustand/vanilla` already
   provides in about the same number of lines Comb would have to test and maintain.
 
