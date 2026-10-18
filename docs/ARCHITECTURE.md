@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([ADR-0001](adr/0001-agent-governance-model.md)).
 >
-> **Last design revision:** 2026-10-04, due after 20 changes. The revision that ran moves the
+> **Last design revision:** 2026-10-18, due after 20 changes. The revision that ran moves the
 > date; the number is this project's to set; a sensor counts the changes outside `docs/` since
 > the commit that set the date and says when the next is due
 > ([ADR-0006](adr/0006-feature-layer.md)).
@@ -69,7 +69,8 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   order; while the viewport stays within what it last queried, at about its scale, and the graph
   is unchanged, a render moves the world alone. `EdgesContainer` (`render/edges.ts`) draws the
   edge mesh with a shader that leaves out the gaps of dash patterns. Not built yet: the node
-  content of [ADR-0013](adr/0013-node-content-model.md).
+  content of [ADR-0013](adr/0013-node-content-model.md), and the `grid` and `connectors` layers
+  of [ADR-0012](adr/0012-virtualized-scene-graph.md).
 - **API** (`packages/comb/src/api`) — `createComb`, which refuses with a
   `RendererUnavailableError` where PixiJS finds no WebGL2, the graph data handed to the engine, the
   viewport (`fitView`, `setViewport`, `viewport`), and the events to the host application;
@@ -88,8 +89,9 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   the first frame and p95 frame times of drag, pan, and zoom over the frames Comb rendered, and of
   a pan where the near and the middle level begin, each gesture checked for its effect (Q-1, Q-2).
   `bench/compare.ts` holds the median of several runs against `bench/baseline.json` with a margin
-  of 25 %; the **Benchmark** workflow (`.github/workflows/benchmark.yml`) runs the benchmark three
-  times and compares on a GitHub runner, weekly and on demand.
+  of 25 %, and passes with a notice while no baseline is recorded, as none is yet; the
+  **Benchmark** workflow (`.github/workflows/benchmark.yml`) runs the benchmark three times and
+  compares on a GitHub runner, weekly and on demand.
 
 **Test pattern:** Rust unit tests beside the code they test (`#[cfg(test)]`); Bun tests beside
 their module as `*.test.ts`, the bridge's against the built WebAssembly module; browser tests
@@ -108,11 +110,12 @@ the viewport grown by the culling margin, binds node views and edge-label views 
 found, and uploads the edge mesh the query built, so edges and labels follow the node in the
 same frame.
 
-**Panning and zooming.** `interaction` sets the store's viewport. A pan within the culling
-margin, and a zoom by less than a quarter, move the world alone; beyond them the scene renders as
-above, so what leaves the viewport and its margin returns its views to the pools and what enters
-takes them from there. The mesh is flattened within a quarter pixel at the current zoom, so
-zoomed out it has fewer points. A resize of the canvas renders too.
+**Panning and zooming.** `interaction` sets the store's viewport. While the viewport stays inside
+the rectangle the scene last queried, at a scale within a factor of 1.25 of the one it queried at,
+the world moves alone; beyond that the scene renders as above, so what leaves the viewport and its
+margin returns its views to the pools and what enters takes them from there. The mesh is flattened
+within a quarter pixel at the current zoom, so zoomed out it has fewer points. A resize of the
+canvas renders too.
 
 **Building.** `bun run build:engine` compiles `crates/engine-wasm` with wasm-pack into
 `packages/comb/wasm/` (generated, not tracked); the library imports it from there, and Vite serves
@@ -123,5 +126,8 @@ measures.
 **Holding the shape.** `scripts/check-structure.sh` fails when the engine's core names or, through
 `Cargo.lock`, reaches a crate that touches the browser, when a module other than the bridge
 imports the WebAssembly package, when the render layer reaches the store instead of the action-free
-`GraphView`, or when an example imports past the library's entry (ADR-0009). The type checker
-does the rest for the render layer: `GraphView` has no action to call.
+`GraphView`, or when an example imports past the library's entries (ADR-0009), and when the render
+layer names PixiJS's `Text`, `HTMLText`, or `SplitText` or the edges layer a `Graphics`
+(ADR-0012). `scripts/check-bundle.sh` builds the library and fails when its gzipped JavaScript
+and WebAssembly reach the 300 kB of Q-3. The type checker does the rest for the render layer:
+`GraphView` has no action to call.
