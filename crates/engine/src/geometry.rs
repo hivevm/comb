@@ -279,15 +279,6 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn a_label_follows_when_a_node_moves() {
-        let before = straight();
-        let after = EdgePath::horizontal(before.source, Point::new(200.0, 80.0), 10.0);
-        let moved = after.label_position(0.5, 0.0);
-        assert!(close(moved, after.point_at(0.5)));
-        assert!((moved.y - 40.0).abs() < EPS);
-    }
-
     /// The bounds by dense sampling, for comparison.
     fn sampled_bounds(path: &EdgePath) -> Rect {
         (0..=10_000).fold(Rect::at(path.source), |bounds, i| {

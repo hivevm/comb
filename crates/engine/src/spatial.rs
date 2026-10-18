@@ -284,4 +284,38 @@ mod tests {
         grid.candidates(&Rect::new(3.0, 3.0, 4.0, 4.0), &mut out);
         assert_eq!(out, [0]);
     }
+
+    #[test]
+    fn a_grid_has_at_most_four_cells_per_item_and_at_least_64() {
+        // (extent side, cell side, items) and the cell side the grid ends with: doubled from
+        // the one asked for until cols · rows <= max(4 · items, 64).
+        let cases = [
+            // 100 × 100 cells of 10 fit 4 · 2500 exactly; for 2499 the side doubles to 20.
+            (1000.0, 10.0, 2500, 10.0, 100),
+            (1000.0, 10.0, 2499, 20.0, 50),
+            // One item may have 64 cells: sides 1, 2, 4, 8 give 64 · 64 = 4096 (100 per side,
+            // capped at 64), 2500, 625, 169 cells, and 16 gives 7 · 7 = 49.
+            (100.0, 1.0, 1, 16.0, 7),
+            // 100 items may have 400 cells: side 8 gives 13 · 13 = 169.
+            (100.0, 1.0, 100, 8.0, 13),
+        ];
+        for (side, cell, items, expected, per_side) in cases {
+            let grid = Grid::new(Rect::new(0.0, 0.0, side, side), cell, items);
+            assert_eq!(
+                (grid.cell, grid.cols, grid.rows),
+                (expected, per_side, per_side),
+                "{items} items over {side} from cells of {cell}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_item_over_more_than_64_cells_goes_to_the_overflow_list() {
+        let mut grid = Grid::new(Rect::new(0.0, 0.0, 1000.0, 1000.0), 10.0, 2500);
+        // Columns 0 to 63 of one row, 64 cells; then columns 0 to 64, 65 cells.
+        grid.set(0, &Rect::new(0.0, 0.0, 635.0, 5.0));
+        assert!(grid.overflow.is_empty());
+        grid.set(0, &Rect::new(0.0, 0.0, 645.0, 5.0));
+        assert_eq!(grid.overflow, [0]);
+    }
 }

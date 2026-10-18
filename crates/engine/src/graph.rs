@@ -181,7 +181,8 @@ impl Graph {
     }
 
     /// The side of a grid cell: about twice the mean node, and large enough that the grid has
-    /// about one cell per node.
+    /// about one cell per node. It affects only how fast a query runs, not which slots it returns:
+    /// the grid is exact for any cell side, as the query test against a brute-force scan holds.
     fn cell_side(&self, extent: &Rect) -> f64 {
         let count = f64::from(self.node_slots.max(1));
         let mean = self
@@ -683,14 +684,25 @@ mod tests {
         assert!(found > 0);
     }
 
+    /// A graph of `count` nodes of side 5 in a row, 10 apart, without edges.
+    fn row(count: usize) -> Graph {
+        let positions = (0..count).flat_map(|i| [i as f32 * 10.0, 0.0]).collect();
+        Graph::new(positions, vec![5.0; count * 2], Vec::new()).unwrap()
+    }
+
     #[test]
     fn nodes_dragged_far_beyond_the_extent_rebuild_the_index() {
-        let count = 200;
-        let positions = (0..count).flat_map(|i| [i as f32 * 10.0, 0.0]).collect();
-        let mut graph = Graph::new(positions, vec![5.0; count * 2], Vec::new()).unwrap();
-        let far: Vec<u32> = (0..30).collect();
+        // 200 nodes: the index is rebuilt once more than 200 / 8 = 25 lie beyond its extent.
+        let mut graph = row(200);
+        let far: Vec<u32> = (0..25).collect();
         graph.translate(&far, 1e6, 1e6).unwrap();
-        assert_eq!(graph.node_grid.beyond_extent(), 0);
+        assert_eq!(
+            graph.node_grid.beyond_extent(),
+            25,
+            "not rebuilt at 25 of 200"
+        );
+        graph.translate(&[25], 1e6, 1e6).unwrap();
+        assert_eq!(graph.node_grid.beyond_extent(), 0, "rebuilt at 26 of 200");
         let mut out = Visible::default();
         graph.query(
             &Rect::new(1e6, 1e6, 1e6 + 300.0, 1e6 + 10.0),
@@ -699,7 +711,66 @@ mod tests {
             0.0,
             &mut out,
         );
-        assert_eq!(out.nodes, far);
+        assert_eq!(out.nodes, (0..26).collect::<Vec<u32>>());
+    }
+
+    #[test]
+    fn in_a_small_graph_the_index_is_rebuilt_once_more_than_16_nodes_leave_it() {
+        // 40 nodes: an eighth is 5, below the floor of 16.
+        let mut graph = row(40);
+        let far: Vec<u32> = (0..16).collect();
+        graph.translate(&far, 1e6, 1e6).unwrap();
+        assert_eq!(
+            graph.node_grid.beyond_extent(),
+            16,
+            "not rebuilt at 16 of 40"
+        );
+        graph.translate(&[16], 1e6, 1e6).unwrap();
+        assert_eq!(graph.node_grid.beyond_extent(), 0, "rebuilt at 17 of 40");
+    }
+
+    #[test]
+    fn a_label_follows_when_a_node_moves() {
+        let label = LabelPlacement {
+            t: 0.5,
+            offset: 0.0,
+        };
+        let edges = vec![EdgeSpec {
+            source: 0,
+            target: 1,
+            label: Some(label),
+            style: EdgeStyle::default(),
+        }];
+        let sizes = vec![220.0, 64.0, 220.0, 64.0];
+        let mut graph = Graph::new(vec![0.0, 0.0, 300.0, 100.0], sizes, edges).unwrap();
+        let rect = Rect::new(-1000.0, -1000.0, 2000.0, 2000.0);
+        let mut out = Visible::default();
+        let mut label_at = |graph: &mut Graph| {
+            graph.query(&rect, Level::Near, 4.0, 0.0, &mut out);
+            let [x, y] = out.label_points[..] else {
+                panic!("one label point, not {:?}", out.label_points);
+            };
+            (f64::from(x), f64::from(y))
+        };
+        // The pull of the two control points is equal and opposite, so the middle of the curve,
+        // (source + 3 control_source + 3 control_target + target) / 8, is the chord's.
+        let middle = |source: (f64, f64), target: (f64, f64)| {
+            ((source.0 + target.0) / 2.0, (source.1 + target.1) / 2.0)
+        };
+        let close = |(x, y): (f64, f64), (ex, ey): (f64, f64)| {
+            assert!((x - ex).abs() < 1e-3 && (y - ey).abs() < 1e-3, "({x}, {y})");
+        };
+        close(label_at(&mut graph), middle((220.0, 32.0), (300.0, 132.0)));
+        // The target moves down 200: the edge enters it at (300, 332).
+        graph.translate(&[1], 0.0, 200.0).unwrap();
+        close(label_at(&mut graph), middle((220.0, 32.0), (300.0, 332.0)));
+        // The source moves left 100: the edge leaves it at (120, 32).
+        graph.translate(&[0], -100.0, 0.0).unwrap();
+        close(label_at(&mut graph), middle((120.0, 32.0), (300.0, 332.0)));
+        // The target moves left 400, past the source: the edge enters it at (-100, 332) and runs
+        // backwards, its control points pulled half the distance, 110, still equal and opposite.
+        graph.translate(&[1], -400.0, 0.0).unwrap();
+        close(label_at(&mut graph), middle((120.0, 32.0), (-100.0, 332.0)));
     }
 
     #[test]

@@ -341,6 +341,16 @@ mod tests {
     }
 
     #[test]
+    fn a_path_is_cut_into_at_most_4096_segments() {
+        // No tolerance stops the subdivision, so it stops at its deepest: 2^12 segments.
+        let mut points = Vec::new();
+        for tolerance in [0.0, f64::NAN] {
+            flatten(&paths()[3], tolerance, &mut points);
+            assert_eq!(points.len(), 4096 + 1, "tolerance {tolerance}");
+        }
+    }
+
+    #[test]
     fn zoomed_out_a_path_needs_fewer_points() {
         let path = paths()[3];
         let mut near = Vec::new();

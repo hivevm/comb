@@ -368,13 +368,22 @@ test("a pan within the culling margin moves the world without a query", async ({
   await setViewport(page, { ...start, x: start.x + 4 * cullingMargin });
   expect(await queries()).toBe(before + 1);
   // A selection and a move change what is drawn: the renders query, wherever the viewport is.
+  // Each step waits for its render, so that none folds into the next.
+  // The counts are exact because no display object uses eventMode "dynamic", whose ticker
+  // pointermove would add moves.
+  const rendered = () => page.evaluate(() => window.comb.whenRendered());
   const centre = await screenCentre(page, "0:0.0");
   await page.mouse.move(centre.x, centre.y);
   await page.mouse.down();
+  await rendered();
+  expect(await queries()).toBe(before + 2);
   await page.mouse.move(centre.x, centre.y + 5);
+  await rendered();
+  expect(await queries()).toBe(before + 3);
+  // Releasing the node changes nothing drawn.
   await page.mouse.up();
-  await page.evaluate(() => window.comb.whenRendered());
-  expect(await queries()).toBeGreaterThanOrEqual(before + 2);
+  await rendered();
+  expect(await queries()).toBe(before + 3);
 });
 
 test("the same area binds as many display objects at 1 and at 1,000 copies", async ({ page }) => {
