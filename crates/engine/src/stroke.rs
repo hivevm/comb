@@ -196,14 +196,15 @@ fn normal_at(points: &[Point], i: usize) -> (f64, f64) {
     }
 }
 
-/// Drops the trailing points within the arrowhead and ends the polyline at its `base`. Where the
-/// whole path lies within the arrowhead, only its first point stays, and no stroke is drawn.
+/// Drops the trailing points within the arrowhead, its base included, and ends the polyline at
+/// its `base`. Where the whole path lies within the arrowhead, only its first point stays, and no
+/// stroke is drawn.
 fn trim_end(points: &mut Vec<Point>, base: Point) {
     let Some(&tip) = points.last() else {
         return;
     };
     let reach = (base.x - tip.x).hypot(base.y - tip.y);
-    let within = |p: &Point| (p.x - tip.x).hypot(p.y - tip.y) < reach;
+    let within = |p: &Point| (p.x - tip.x).hypot(p.y - tip.y) <= reach;
     while points.len() > 1 && within(&points[points.len() - 1]) {
         points.pop();
     }
@@ -449,6 +450,20 @@ mod tests {
         );
         assert_eq!(mesh.indices.len(), 3);
         assert!(mesh.positions.chunks(2).all(|p| p[0] <= 4.0));
+    }
+
+    #[test]
+    fn a_point_exactly_at_the_base_of_the_arrowhead_is_not_repeated() {
+        // Repeated, the base would close a segment of no length, whose last point has no
+        // direction to take its normal from.
+        let p = |x, y| Point::new(x, y);
+        let mut points = vec![p(0.0, 0.0), p(90.0, 0.0), p(100.0, 0.0)];
+        trim_end(&mut points, p(90.0, 0.0));
+        assert_eq!(points, [p(0.0, 0.0), p(90.0, 0.0)]);
+        // A path exactly as long as the arrowhead lies wholly within it: no stroke.
+        let mut points = vec![p(0.0, 0.0), p(10.0, 0.0)];
+        trim_end(&mut points, p(0.0, 0.0));
+        assert_eq!(points, [p(0.0, 0.0)]);
     }
 
     #[test]
