@@ -34,6 +34,14 @@ pub enum GraphError {
     SlotCountMismatch,
     /// An edge names a node slot that does not exist.
     EdgeEndOutOfRange { edge: u32 },
+    /// More nodes or edges than slots numbered in a `u32`.
+    TooManySlots,
+}
+
+/// The slot of the node or edge at `index`, or the count of `index` of them, refused where it
+/// lies beyond `u32`: the one conversion of a count to slots, for the engine and the bridge alike.
+pub fn slot(index: usize) -> Result<u32, GraphError> {
+    u32::try_from(index).map_err(|_| GraphError::TooManySlots)
 }
 
 /// The level of detail a query serves (ADR-0012): near draws edge labels, middle does not, and
@@ -46,13 +54,13 @@ pub enum Level {
 }
 
 /// How far a drawn edge may stray from its path, in screen pixels: half the 0.5 px of Q-4.
-pub const FLATNESS: f64 = 0.25;
+const FLATNESS: f64 = 0.25;
 /// The width of an edge at the far level, in screen pixels.
-pub const FAR_EDGE_WIDTH: f64 = 1.0;
+const FAR_EDGE_WIDTH: f64 = 1.0;
 
 impl Level {
     /// How edges are stroked at this level, where a screen pixel is `pixel` world units.
-    pub fn stroke(self, pixel: f64) -> Stroke {
+    pub(crate) fn stroke(self, pixel: f64) -> Stroke {
         match self {
             Self::Far => Stroke {
                 tolerance: FLATNESS * pixel,
@@ -81,7 +89,11 @@ pub struct Graph {
     positions: Vec<f32>,
     sizes: Vec<f32>,
     edges: Vec<EdgeSpec>,
+    node_slots: u32,
+    edge_slots: u32,
     paths: Vec<EdgePath>,
+    /// The bounds of each path, computed when the path is.
+    bounds: Vec<Rect>,
     labels: Vec<Option<Point>>,
     /// The edge slots at each node slot: `incident[offsets[n]..offsets[n + 1]]`.
     offsets: Vec<u32>,
@@ -90,10 +102,6 @@ pub struct Graph {
     edge_grid: Grid,
     scratch: Vec<u32>,
     points: Vec<Point>,
-}
-
-fn slots(len: usize) -> impl Iterator<Item = u32> {
-    (0..len).map(|i| u32::try_from(i).unwrap_or(u32::MAX))
 }
 
 impl Graph {
@@ -107,10 +115,11 @@ impl Graph {
         if positions.len() != sizes.len() || !positions.len().is_multiple_of(2) {
             return Err(GraphError::SlotCountMismatch);
         }
-        let count = positions.len() / 2;
-        if let Some(edge) = slots(edges.len()).find(|&e| {
+        let node_slots = slot(positions.len() / 2)?;
+        let edge_slots = slot(edges.len())?;
+        if let Some(edge) = (0..edge_slots).find(|&e| {
             let spec = edges[e as usize];
-            spec.source as usize >= count || spec.target as usize >= count
+            spec.source >= node_slots || spec.target >= node_slots
         }) {
             return Err(GraphError::EdgeEndOutOfRange { edge });
         }
@@ -118,6 +127,8 @@ impl Graph {
             positions,
             sizes,
             edges,
+            node_slots,
+            edge_slots,
             ..Self::default()
         };
         graph.link();
@@ -130,12 +141,8 @@ impl Graph {
         &self.positions
     }
 
-    fn node_count(&self) -> usize {
-        self.positions.len() / 2
-    }
-
     /// The rectangle of the node in `slot`.
-    pub fn node_bounds(&self, slot: u32) -> Rect {
+    fn node_bounds(&self, slot: u32) -> Rect {
         let i = slot as usize * 2;
         Rect::of_node(
             f64::from(self.positions[i]),
@@ -145,26 +152,16 @@ impl Graph {
         )
     }
 
-    /// The path of the edge in `slot`, as of the last load or move.
-    pub fn edge_path(&self, slot: u32) -> EdgePath {
-        self.paths[slot as usize]
-    }
-
-    /// The point of the label of the edge in `slot`, if it has one.
-    pub fn label_point(&self, slot: u32) -> Option<Point> {
-        self.labels[slot as usize]
-    }
-
     /// The node slots at the ends of the edge in `slot`, each once.
-    fn ends(&self, slot: usize) -> impl Iterator<Item = u32> {
-        let edge = self.edges[slot];
+    fn ends(&self, slot: u32) -> impl Iterator<Item = u32> {
+        let edge = self.edges[slot as usize];
         std::iter::once(edge.source).chain((edge.target != edge.source).then_some(edge.target))
     }
 
     /// Builds the lists of edges at each node.
     fn link(&mut self) {
-        let mut offsets = vec![0u32; self.node_count() + 1];
-        for slot in 0..self.edges.len() {
+        let mut offsets = vec![0u32; self.node_slots as usize + 1];
+        for slot in 0..self.edge_slots {
             for end in self.ends(slot) {
                 offsets[end as usize + 1] += 1;
             }
@@ -174,8 +171,8 @@ impl Graph {
         }
         let mut next = offsets.clone();
         self.incident = vec![0; offsets[offsets.len() - 1] as usize];
-        for (slot, edge) in slots(self.edges.len()).enumerate() {
-            for end in self.ends(slot).collect::<Vec<_>>() {
+        for edge in 0..self.edge_slots {
+            for end in self.ends(edge).collect::<Vec<_>>() {
                 self.incident[next[end as usize] as usize] = edge;
                 next[end as usize] += 1;
             }
@@ -186,7 +183,7 @@ impl Graph {
     /// The side of a grid cell: about twice the mean node, and large enough that the grid has
     /// about one cell per node.
     fn cell_side(&self, extent: &Rect) -> f64 {
-        let count = self.node_count().max(1) as f64;
+        let count = f64::from(self.node_slots.max(1));
         let mean = self
             .sizes
             .as_chunks::<2>()
@@ -201,9 +198,7 @@ impl Graph {
 
     /// Rebuilds both grids from the current positions.
     fn index(&mut self) {
-        let nodes: Vec<Rect> = slots(self.node_count())
-            .map(|s| self.node_bounds(s))
-            .collect();
+        let nodes: Vec<Rect> = (0..self.node_slots).map(|s| self.node_bounds(s)).collect();
         let extent = nodes
             .iter()
             .copied()
@@ -211,21 +206,22 @@ impl Graph {
             .unwrap_or(Rect::new(0.0, 0.0, 1.0, 1.0));
         let cell = self.cell_side(&extent);
         self.node_grid = Grid::new(extent, cell, nodes.len());
-        for (slot, bounds) in slots(nodes.len()).zip(&nodes) {
+        for (slot, bounds) in (0..self.node_slots).zip(&nodes) {
             self.node_grid.set(slot, bounds);
         }
-        self.edge_grid = Grid::new(extent, cell, self.edges.len());
-        let placed: Vec<_> = (0..self.edges.len()).map(|e| self.placement(e)).collect();
-        self.paths = placed.iter().map(|&(path, _)| path).collect();
-        self.labels = placed.iter().map(|&(_, label)| label).collect();
-        for slot in slots(self.edges.len()) {
+        self.edge_grid = Grid::new(extent, cell, self.edge_slots as usize);
+        let placed: Vec<_> = (0..self.edge_slots).map(|e| self.placement(e)).collect();
+        self.paths = placed.iter().map(|&(path, _, _)| path).collect();
+        self.bounds = placed.iter().map(|&(_, bounds, _)| bounds).collect();
+        self.labels = placed.iter().map(|&(_, _, label)| label).collect();
+        for slot in 0..self.edge_slots {
             self.reindex_edge(slot);
         }
     }
 
-    /// The path and label point of the edge in `slot` from the current positions.
-    fn placement(&self, slot: usize) -> (EdgePath, Option<Point>) {
-        let spec = self.edges[slot];
+    /// The path, its bounds, and the label point of the edge in `slot` from the current positions.
+    fn placement(&self, slot: u32) -> (EdgePath, Rect, Option<Point>) {
+        let spec = self.edges[slot as usize];
         let path = EdgePath::between(
             &self.node_bounds(spec.source),
             &self.node_bounds(spec.target),
@@ -233,21 +229,22 @@ impl Graph {
         let label = spec
             .label
             .map(|label| path.label_position(label.t, label.offset));
-        (path, label)
+        (path, path.bounds(), label)
     }
 
     /// Puts the edge in `slot` into the edge grid under the bounds of its path and its label point
     /// together.
     fn reindex_edge(&mut self, slot: u32) {
-        let path = self.paths[slot as usize].bounds();
+        let path = self.bounds[slot as usize];
         let bounds = self.labels[slot as usize].map_or(path, |p| path.union(&Rect::at(p)));
         self.edge_grid.set(slot, &bounds);
     }
 
     /// Recomputes the path and label of the edge in `slot` and moves it in the edge grid.
     fn place_edge(&mut self, slot: u32) {
-        let (path, label) = self.placement(slot as usize);
+        let (path, bounds, label) = self.placement(slot);
         self.paths[slot as usize] = path;
+        self.bounds[slot as usize] = bounds;
         self.labels[slot as usize] = label;
         self.reindex_edge(slot);
     }
@@ -305,8 +302,8 @@ impl Graph {
         }
         self.scratch = edges;
         let stale = |beyond: usize, items: usize| beyond > (items / 8).max(16);
-        if stale(self.node_grid.beyond_extent(), self.node_count())
-            || stale(self.edge_grid.beyond_extent(), self.edges.len())
+        if stale(self.node_grid.beyond_extent(), self.node_slots as usize)
+            || stale(self.edge_grid.beyond_extent(), self.edge_slots as usize)
         {
             self.index();
         }
@@ -343,11 +340,15 @@ impl Graph {
         out.label_points.clear();
         out.mesh.clear();
         for &slot in &self.scratch {
-            let path = self.paths[slot as usize];
-            if path.bounds().meets(rect) {
+            if self.bounds[slot as usize].meets(rect) {
                 out.edges.push(slot);
                 let style = self.edges[slot as usize].style;
-                out.mesh.add_edge(&path, &style, &stroke, &mut self.points);
+                out.mesh.add_edge(
+                    &self.paths[slot as usize],
+                    &style,
+                    &stroke,
+                    &mut self.points,
+                );
             }
             if !labelled {
                 continue;
@@ -415,10 +416,10 @@ mod tests {
     /// What a query must find, by testing every node and edge.
     fn brute_force(graph: &Graph, rect: &Rect, reach: f64) -> (Vec<u32>, Vec<u32>, Vec<u32>) {
         let label_rect = rect.grown(reach);
-        let nodes = slots(graph.node_count())
+        let nodes = (0..graph.node_slots)
             .filter(|&s| graph.node_bounds(s).meets(rect))
             .collect();
-        let edges = slots(graph.edges.len())
+        let edges = (0..graph.edge_slots)
             .filter(|&e| {
                 let spec = graph.edges[e as usize];
                 EdgePath::between(
@@ -429,7 +430,7 @@ mod tests {
                 .meets(rect)
             })
             .collect();
-        let labels = slots(graph.edges.len())
+        let labels = (0..graph.edge_slots)
             .filter(|&e| {
                 let spec = graph.edges[e as usize];
                 spec.label.is_some_and(|label| {
@@ -479,6 +480,32 @@ mod tests {
     }
 
     #[test]
+    fn the_bounds_kept_per_edge_are_those_of_its_path_after_moves() {
+        let mut rng = Lcg(11);
+        let mut graph = random_graph(&mut rng, 200, 300);
+        for _ in 0..60 {
+            let moved: Vec<u32> = (0..3).map(|_| rng.below(200)).collect();
+            let (dx, dy) = (rng.range(-500.0, 500.0), rng.range(-500.0, 500.0));
+            graph.translate(&moved, dx as f32, dy as f32).unwrap();
+        }
+        for e in 0..graph.edge_slots {
+            let spec = graph.edges[e as usize];
+            let fresh = EdgePath::between(
+                &graph.node_bounds(spec.source),
+                &graph.node_bounds(spec.target),
+            )
+            .bounds();
+            assert_eq!(graph.bounds[e as usize], fresh, "edge {e}");
+        }
+    }
+
+    #[test]
+    fn a_count_beyond_u32_is_refused_and_one_within_kept() {
+        assert_eq!(slot(u32::MAX as usize), Ok(u32::MAX));
+        assert_eq!(slot(u32::MAX as usize + 1), Err(GraphError::TooManySlots));
+    }
+
+    #[test]
     fn a_query_returns_the_control_points_and_label_points_of_what_it_found() {
         let positions = vec![0.0, 0.0, 300.0, 100.0];
         let sizes = vec![220.0, 64.0, 220.0, 64.0];
@@ -503,12 +530,18 @@ mod tests {
         );
         assert_eq!(out.nodes, [0, 1]);
         assert_eq!(out.edges, [0]);
-        let path = graph.edge_path(0);
         let mut ends = Vec::new();
         graph.edge_ends(&out.edges, &mut ends);
         assert_eq!(ends, [220.0, 32.0, 300.0, 132.0]);
-        let at = path.label_position(0.5, 0.0);
-        assert_eq!(out.label_points, [at.x as f32, at.y as f32]);
+        // The edge leaves (220, 32) and enters (300, 132), its control points pulled 40 to the
+        // side, at (260, 32) and (260, 132); the curve's middle is the chord's, (260, 82).
+        let [x, y] = out.label_points[..] else {
+            panic!("one label point, not {:?}", out.label_points);
+        };
+        assert!(
+            (x - 260.0).abs() < 1e-4 && (y - 82.0).abs() < 1e-4,
+            "({x}, {y})"
+        );
     }
 
     #[test]
@@ -605,8 +638,9 @@ mod tests {
         )
         .unwrap();
         graph.translate(&[1], 0.0, 5000.0).unwrap();
-        assert_eq!(graph.edge_path(0).target, Point::new(300.0, 5025.0));
-        assert_eq!(graph.edge_path(1).source, Point::new(400.0, 5025.0));
+        let mut ends = Vec::new();
+        graph.edge_ends(&[0, 1], &mut ends);
+        assert_eq!(&ends[2..6], [300.0, 5025.0, 400.0, 5025.0]);
         let mut out = Visible::default();
         graph.query(
             &Rect::new(250.0, 4900.0, 450.0, 5100.0),
@@ -624,7 +658,7 @@ mod tests {
         let mut rng = Lcg(7);
         let mut graph = random_graph(&mut rng, 300, 0);
         let scan = |graph: &Graph, p: Point| {
-            slots(graph.node_count())
+            (0..graph.node_slots)
                 .filter(|&s| graph.node_bounds(s).contains(p))
                 .max()
         };

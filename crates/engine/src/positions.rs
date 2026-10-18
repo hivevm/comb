@@ -11,7 +11,7 @@ pub enum PositionError {
 
 /// Moves the nodes in `slots` by `(dx, dy)` within `positions`. Nothing is written unless every
 /// slot is in range and the delta is finite, so a refused move leaves the buffer as it was.
-pub fn translate(
+pub(crate) fn translate(
     positions: &mut [f32],
     slots: &[u32],
     dx: f32,

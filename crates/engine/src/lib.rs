@@ -3,5 +3,5 @@
 pub mod geometry;
 pub mod graph;
 pub mod positions;
-pub mod spatial;
+mod spatial;
 pub mod stroke;

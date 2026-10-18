@@ -30,21 +30,21 @@ impl Default for EdgeStyle {
 }
 
 /// The width of a stroke at full detail, in world units.
-pub const STROKE_WIDTH: f64 = 2.0;
+pub(crate) const STROKE_WIDTH: f64 = 2.0;
 
 /// How a query strokes its edges: flattened within `tolerance` and `width` wide, in world units;
 /// `plain` draws thin lines alone, without dash patterns or arrowheads, as the far level of
 /// detail does (ADR-0012).
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Stroke {
-    pub tolerance: f64,
-    pub width: f64,
-    pub plain: bool,
+pub(crate) struct Stroke {
+    pub(crate) tolerance: f64,
+    pub(crate) width: f64,
+    pub(crate) plain: bool,
 }
 
 impl Stroke {
     /// Full detail: the stroke width, dash patterns, and arrowheads, within `tolerance`.
-    pub const fn full(tolerance: f64) -> Self {
+    pub(crate) const fn full(tolerance: f64) -> Self {
         Self {
             tolerance,
             width: STROKE_WIDTH,
@@ -53,8 +53,8 @@ impl Stroke {
     }
 }
 /// The length and half the base of an arrowhead, in world units.
-pub const ARROW_LENGTH: f64 = 10.0;
-pub const ARROW_HALF_WIDTH: f64 = 5.0;
+const ARROW_LENGTH: f64 = 10.0;
+const ARROW_HALF_WIDTH: f64 = 5.0;
 /// How deep a path is subdivided at most: 2^12 segments.
 const MAX_DEPTH: u32 = 12;
 
@@ -71,7 +71,7 @@ pub struct Mesh {
 }
 
 impl Mesh {
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.positions.clear();
         self.distances.clear();
         self.colors.clear();
@@ -91,7 +91,7 @@ impl Mesh {
     }
 
     /// Strokes `path` with `style` into the mesh as `stroke` says.
-    pub fn add_edge(
+    pub(crate) fn add_edge(
         &mut self,
         path: &EdgePath,
         style: &EdgeStyle,
@@ -215,7 +215,7 @@ fn trim_end(points: &mut Vec<Point>, base: Point) {
 /// Writes into `out`, after clearing it, the points of `path` flattened so that no point of the
 /// curve lies farther than `tolerance` from the polyline. A tolerance that is not positive and
 /// finite gives the most points.
-pub fn flatten(path: &EdgePath, tolerance: f64, out: &mut Vec<Point>) {
+fn flatten(path: &EdgePath, tolerance: f64, out: &mut Vec<Point>) {
     out.clear();
     out.push(path.source);
     let tolerance = if tolerance.is_finite() && tolerance > 0.0 {

@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use comb_engine::geometry::Point;
 use comb_engine::geometry::Rect;
-use comb_engine::graph::{EdgeSpec, Graph, GraphError, LabelPlacement, Level, Visible};
+use comb_engine::graph::{self, EdgeSpec, Graph, GraphError, LabelPlacement, Level, Visible};
 use comb_engine::positions::PositionError;
 use comb_engine::stroke::EdgeStyle;
 use serde::{Deserialize, Serialize};
@@ -126,8 +126,21 @@ fn malformed(error: impl std::fmt::Display) -> BridgeError {
     }
 }
 
+/// A graph the engine refuses after the bridge's own checks is malformed data. Each refusal is
+/// named, so that a new one is decided here rather than passed on by default.
+impl From<GraphError> for BridgeError {
+    fn from(error: GraphError) -> Self {
+        match error {
+            GraphError::SlotCountMismatch
+            | GraphError::EdgeEndOutOfRange { .. }
+            | GraphError::TooManySlots => malformed(format!("{error:?}")),
+        }
+    }
+}
+
+/// The engine's conversion of a count to slots, so that both refuse the same counts.
 fn slot(index: usize) -> Result<u32, BridgeError> {
-    u32::try_from(index).map_err(malformed)
+    Ok(graph::slot(index)?)
 }
 
 /// The nodes of a batch as the engine takes them: positions and sizes, `x, y` and `width, height`
@@ -228,11 +241,7 @@ fn edges_of(batch: &GraphBatch, slots: &HashMap<&str, u32>) -> Result<Vec<EdgeSp
 fn graph_of(batch: &GraphBatch) -> Result<Graph, BridgeError> {
     let nodes = nodes_of(batch)?;
     let edges = edges_of(batch, &nodes.slots)?;
-    Graph::new(nodes.positions, nodes.sizes, edges).map_err(|error| match error {
-        GraphError::SlotCountMismatch | GraphError::EdgeEndOutOfRange { .. } => {
-            malformed(format!("{error:?}"))
-        }
-    })
+    Ok(Graph::new(nodes.positions, nodes.sizes, edges)?)
 }
 
 /// A rectangle in world coordinates, as a query asks for it.
@@ -574,6 +583,22 @@ mod tests {
                 BridgeError::InvalidDash { edge: "e".into() }
             );
         }
+    }
+
+    #[test]
+    fn a_count_beyond_u32_is_refused_as_the_engine_refuses_it() {
+        let beyond = u32::MAX as usize + 1;
+        assert_eq!(slot(u32::MAX as usize), Ok(u32::MAX));
+        assert_eq!(
+            slot(beyond),
+            Err(BridgeError::from(graph::slot(beyond).unwrap_err()))
+        );
+        assert_eq!(
+            slot(beyond),
+            Err(BridgeError::Malformed {
+                message: "TooManySlots".into()
+            })
+        );
     }
 
     #[test]

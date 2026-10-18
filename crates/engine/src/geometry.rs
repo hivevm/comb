@@ -45,12 +45,12 @@ impl Rect {
     }
 
     /// The rectangle of a node at `(x, y)`, its top-left corner, of `width` × `height`.
-    pub fn of_node(x: f64, y: f64, width: f64, height: f64) -> Self {
+    pub(crate) fn of_node(x: f64, y: f64, width: f64, height: f64) -> Self {
         Self::new(x, y, x + width, y + height)
     }
 
     /// Whether the two rectangles share at least one point; touching counts.
-    pub fn meets(&self, other: &Self) -> bool {
+    pub(crate) fn meets(&self, other: &Self) -> bool {
         self.min_x <= other.max_x
             && other.min_x <= self.max_x
             && self.min_y <= other.max_y
@@ -58,7 +58,7 @@ impl Rect {
     }
 
     /// Whether `point` lies inside the rectangle or on its edges.
-    pub fn contains(&self, point: Point) -> bool {
+    pub(crate) fn contains(&self, point: Point) -> bool {
         self.min_x <= point.x
             && point.x <= self.max_x
             && self.min_y <= point.y
@@ -66,7 +66,7 @@ impl Rect {
     }
 
     /// Whether `other` lies wholly inside the rectangle, edges included.
-    pub fn contains_rect(&self, other: &Self) -> bool {
+    pub(crate) fn contains_rect(&self, other: &Self) -> bool {
         self.min_x <= other.min_x
             && other.max_x <= self.max_x
             && self.min_y <= other.min_y
@@ -74,7 +74,7 @@ impl Rect {
     }
 
     /// The rectangle grown by `by` on every side.
-    pub fn grown(&self, by: f64) -> Self {
+    pub(crate) fn grown(&self, by: f64) -> Self {
         Self::new(
             self.min_x - by,
             self.min_y - by,
@@ -84,7 +84,7 @@ impl Rect {
     }
 
     /// The smallest rectangle that holds both.
-    pub fn union(&self, other: &Self) -> Self {
+    pub(crate) fn union(&self, other: &Self) -> Self {
         Self::new(
             self.min_x.min(other.min_x),
             self.min_y.min(other.min_y),
@@ -94,13 +94,13 @@ impl Rect {
     }
 
     /// The rectangle of a single point.
-    pub const fn at(point: Point) -> Self {
+    pub(crate) const fn at(point: Point) -> Self {
         Self::new(point.x, point.y, point.x, point.y)
     }
 }
 
 /// How far an edge's control points pull out of its connectors at least, in pixels.
-pub const MIN_PULL: f64 = 40.0;
+const MIN_PULL: f64 = 40.0;
 
 /// The values of `t` in (0, 1) where one coordinate of a cubic Bézier curve has an extremum: the
 /// roots of its derivative, a quadratic.
@@ -124,18 +124,18 @@ fn extrema(p0: f64, p1: f64, p2: f64, p3: f64) -> impl Iterator<Item = f64> {
 
 /// The four control points of an edge's cubic Bézier path.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct EdgePath {
-    pub source: Point,
-    pub control_source: Point,
-    pub control_target: Point,
-    pub target: Point,
+pub(crate) struct EdgePath {
+    pub(crate) source: Point,
+    pub(crate) control_source: Point,
+    pub(crate) control_target: Point,
+    pub(crate) target: Point,
 }
 
 impl EdgePath {
     /// The path from a connector on the right side of a node to one on the left side of
     /// another: the control points pull horizontally, half the horizontal distance and at least
     /// `min_pull`, so an edge leaves and enters its connectors level.
-    pub fn horizontal(source: Point, target: Point, min_pull: f64) -> Self {
+    pub(crate) fn horizontal(source: Point, target: Point, min_pull: f64) -> Self {
         let pull = ((target.x - source.x).abs() / 2.0).max(min_pull);
         Self {
             source,
@@ -147,7 +147,7 @@ impl EdgePath {
 
     /// The path from the middle of the right side of `source` to the middle of the left side of
     /// `target`.
-    pub fn between(source: &Rect, target: &Rect) -> Self {
+    pub(crate) fn between(source: &Rect, target: &Rect) -> Self {
         Self::horizontal(
             Point::new(source.max_x, (source.min_y + source.max_y) / 2.0),
             Point::new(target.min_x, (target.min_y + target.max_y) / 2.0),
@@ -156,7 +156,7 @@ impl EdgePath {
     }
 
     /// The smallest rectangle that holds the whole path: its ends and the points where it turns.
-    pub fn bounds(&self) -> Rect {
+    pub(crate) fn bounds(&self) -> Rect {
         let (p0, p1, p2, p3) = (
             self.source,
             self.control_source,
@@ -171,7 +171,7 @@ impl EdgePath {
     }
 
     /// The two halves of the path, split at `t = 0.5` (de Casteljau).
-    pub fn split(&self) -> (Self, Self) {
+    pub(crate) fn split(&self) -> (Self, Self) {
         let ab = self.source.lerp(self.control_source, 0.5);
         let bc = self.control_source.lerp(self.control_target, 0.5);
         let cd = self.control_target.lerp(self.target, 0.5);
@@ -195,7 +195,7 @@ impl EdgePath {
     }
 
     /// The point at path parameter `t`, clamped to 0.0..=1.0.
-    pub fn point_at(&self, t: f64) -> Point {
+    pub(crate) fn point_at(&self, t: f64) -> Point {
         let t = t.clamp(0.0, 1.0);
         let a = self.source.lerp(self.control_source, t);
         let b = self.control_source.lerp(self.control_target, t);
@@ -204,7 +204,7 @@ impl EdgePath {
     }
 
     /// The unit tangent at path parameter `t`, or (1, 0) where the path has no direction.
-    pub fn tangent_at(&self, t: f64) -> Point {
+    pub(crate) fn tangent_at(&self, t: f64) -> Point {
         let t = t.clamp(0.0, 1.0);
         let u = 1.0 - t;
         let d = |p0: f64, p1: f64, p2: f64, p3: f64| {
@@ -233,7 +233,7 @@ impl EdgePath {
     /// Where an edge label with path parameter `t` and label offset `offset` sits: the path
     /// point at `t`, moved `offset` pixels along the normal, which points left of the direction
     /// of travel.
-    pub fn label_position(&self, t: f64, offset: f64) -> Point {
+    pub(crate) fn label_position(&self, t: f64, offset: f64) -> Point {
         let point = self.point_at(t);
         let tangent = self.tangent_at(t);
         Point::new(point.x + tangent.y * offset, point.y - tangent.x * offset)

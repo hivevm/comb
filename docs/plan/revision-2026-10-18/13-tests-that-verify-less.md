@@ -7,8 +7,6 @@ Tests in the modules of *Large graphs* that would pass with the behaviour they n
 - `a_label_follows_when_a_node_moves` (`crates/engine/src/geometry.rs`) moves no node: it
   builds a fresh path and compares `label_position` with `point_at`. Nothing tests that
   `Graph::translate` recomputes the label points of the moved node's edges.
-- `a_query_returns_the_control_points_and_label_points…` (`graph.rs`) takes its expected label
-  point from `graph.edge_path(0)`, the engine's own cache.
 - `nodes_dragged_far_beyond_the_extent_rebuild_the_index` (`graph.rs`) would pass its query
   check without a rebuild; only `beyond_extent() == 0` shows one, and no test shows that the
   index is *not* rebuilt below the trigger `max(items / 8, 16)`.
