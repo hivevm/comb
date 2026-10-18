@@ -31,22 +31,32 @@ spatial index reports inside the viewport, take them from pools and return them 
 edges of a layer as one mesh from the edge geometry the engine computes, and choose by zoom
 between three levels of detail.
 
-- **Layers:** a `world` container with `isRenderGroup`, holding in drawing order `grid`, `edges`,
-  `nodes`, `labels`, and `connectors`; an `overlay` outside `world` for the drag preview and the
-  selection frame, in screen coordinates.
-- **Culling:** after every change of the viewport or of coordinates, `render` asks the engine for
-  the slots inside the viewport, with a margin, and binds pooled display objects to exactly those.
-  PixiJS's own culling stays off.
-- **Edges:** the engine computes the path points of every edge into a buffer (ADR-0010); `edges`
-  draws them as one mesh per layer, with the dash pattern and arrowheads of G-11 in its geometry
-  or shader, not as a `Graphics` per edge.
+- **Layers:** a `world` container with `isRenderGroup`, holding in drawing order `edges`,
+  `particles`, `nodes`, and `labels`; an `overlay` outside `world` in screen coordinates. A layer
+  joins the list with the change that builds it, such as a grid or the connectors.
+- **Culling:** `render` asks the engine for the slots that meet the viewport grown by a culling
+  margin of 128 screen pixels, and binds pooled display objects to exactly those, in slot order.
+  While the viewport stays inside the rectangle it last queried, that rectangle reaches at most
+  twice the margin beyond the viewport, the scale stays within a factor of 1.25 of the one it
+  queried at, and the graph and the selection are unchanged, a render moves the world alone
+  without a query. PixiJS's own culling stays off.
+- **Edges:** the engine owns the stroke. It flattens every edge it finds within a quarter pixel at
+  the current zoom and tessellates it into the buffers of one mesh (ADR-0010): per vertex its
+  position, its distance along the path, its colour, and its dash pattern, and an arrowhead whose
+  tip is the edge's end. `edges` uploads them into one mesh whose shader only leaves out the gaps
+  of dash patterns, never a `Graphics` per edge. Appearance the host application adds to edges
+  extends the engine's stroke.
 - **Text:** every text on the canvas is `BitmapText`.
 - **Levels of detail:** *near* draws the full node content (G-10) and edge labels; *middle* draws
-  each node's box and title without the rest of its content; *far* draws nodes as particles of one
-  `ParticleContainer` and no text. The thresholds are numbers in the code, set by the benchmark.
+  each node's box and title without the rest of its content; *far* draws nodes as particles of
+  one `ParticleContainer`, edges as plain lines one pixel wide, and no text. The thresholds follow
+  legibility: near from the scale at which edge labels are 7 pixels tall (0.6), far below the
+  scale at which titles fall under 4 pixels (0.3). The benchmark on the reference machine checks
+  that each level holds Q-1, and a threshold moves where one does not.
+- **Hit testing:** the engine answers which node is drawn on top at a point from the same spatial
+  index, at every level; node views take no events.
 
-**Out of scope:** the model of node content and how its elements are laid out; the zoom
-thresholds; hit testing, which the engine answers from the same spatial index.
+**Out of scope:** the model of node content and how its elements are laid out.
 
 ## Alternatives considered
 
@@ -78,7 +88,9 @@ thresholds; hit testing, which the engine answers from the same spatial index.
   to frame; any state kept on it outside the binding is a bug.
 - Negative / trade-offs: a custom edge mesh and its shader are more code than `Graphics`, and
   `BitmapText` renders less crisp text than `Text` at some sizes.
-- Follow-ups: the model of node content; the zoom thresholds; the margin around the viewport.
+- Negative / trade-offs: between queries, bound objects may reach up to twice the culling margin
+  beyond the viewport, which G-7's wording does not yet allow for.
+- Follow-ups: the model of node content.
 
 ## Enforcement
 
