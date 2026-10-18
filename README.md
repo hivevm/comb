@@ -63,6 +63,13 @@ budget of Q-3 (`bun run build:lib`, at most 300 kB gzipped without PixiJS).
   first frame and p95 frame times of drag, pan, and zoom against Q-1 and Q-2, written to
   `bench-results/latest.json`. `BENCH_HEADED=1` opens a window that uses the machine's GPU, which
   is how the numbers on the reference machine are taken; `BENCH_COPIES` sets another size.
+  The **Benchmark** workflow runs it three times on a GitHub runner, weekly and on demand
+  (*Actions* → *Benchmark* → *Run workflow*), and fails when the median of a number exceeds
+  `bench/baseline.json` by more than 25 %, naming it; the runs and their median are uploaded as the
+  artefact `bench-results` (`bun bench/compare.ts bench/baseline.json <run>...` compares locally).
+  To update the baseline, take `median.json` from the artefact of a run on `main`, save it as
+  `bench/baseline.json`, and open a pull request that says why the numbers moved; a runner's
+  numbers are compared only with a runner's.
 
 ## Usage
 

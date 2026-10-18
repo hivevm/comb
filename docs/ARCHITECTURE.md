@@ -87,6 +87,9 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
 - **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, measuring the time to
   the first frame and p95 frame times of drag, pan, and zoom over the frames Comb rendered, and of
   a pan where the near and the middle level begin, each gesture checked for its effect (Q-1, Q-2).
+  `bench/compare.ts` holds the median of several runs against `bench/baseline.json` with a margin
+  of 25 %; the **Benchmark** workflow (`.github/workflows/benchmark.yml`) runs the benchmark three
+  times and compares on a GitHub runner, weekly and on demand.
 
 **Test pattern:** Rust unit tests beside the code they test (`#[cfg(test)]`); Bun tests beside
 their module as `*.test.ts`, the bridge's against the built WebAssembly module; browser tests

@@ -58,7 +58,9 @@ run by `scripts/check-code.sh`.
   library bundle, without PixiJS, reach 300 kB.
 - **Benchmark:** `bun run bench` measures Q-1 and Q-2 with Playwright. On the reference machine it
   decides against the absolute numbers; in CI it runs as a workflow of its own, weekly and on
-  demand, and fails on a regression against the last recorded measurement.
+  demand, three times on a GitHub runner, and fails when the median of a number exceeds the
+  recorded baseline by more than 25 %. The baseline is the median of a runner's runs on `main`,
+  kept as `bench/baseline.json` and changed only in a pull request that says why.
 - **Where it runs:** `scripts/check-code.sh` is invoked by `scripts/check-all.sh`, by the
   pre-push hook through it, and by a job of `checks.yml` after the toolchain is set up.
 
@@ -124,7 +126,6 @@ adds when a mistake calls for them; how the code is laid out in directories.
   larger and slower to set up.
 - Negative / trade-offs: CI measures performance only relatively; a slow regression that stays
   under the threshold of each comparison is caught only on the reference machine.
-- Follow-ups: the threshold for a benchmark regression and where measurements are recorded.
 
 ## Enforcement
 

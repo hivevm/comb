@@ -1,0 +1,66 @@
+name: Benchmark
+
+# The benchmark of Q-1 and Q-2 as a workflow of its own (ADR-0008): bench/run.ts at 50,010 nodes and
+# edges on a GitHub runner, headless Chromium with WebGL2 on SwiftShader. Runner numbers are not the
+# reference machine's: they catch regressions against a baseline recorded on a runner, not the
+# targets. One run scatters, so the benchmark runs three times; bench/compare.ts fails when the
+# median of a number exceeds bench/baseline.json by more than its margin, and names it. Without a
+# baseline it says so and passes. The runs and their median are uploaded as an artefact; the
+# baseline changes only in a pull request that says why, from the median of a run on main.
+#
+# It runs weekly and on demand, not on every pull request: a run takes minutes, and runner numbers
+# scatter too much to gate each change. It needs no secret (ADR-0016); every action it uses is
+# pinned by commit SHA (ADR-0017), and its checkout keeps no credentials.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 5 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.3
+      # The runner image ships rustup; the toolchain is the one the Dev Container installs.
+      - name: Set up Rust stable with the WebAssembly target
+        run: |
+          rustup toolchain install stable --profile minimal -t wasm32-unknown-unknown
+          rustup default stable
+      - name: Install dependencies and Chromium
+        run: |
+          bun install --frozen-lockfile
+          bunx --bun playwright install --with-deps chromium
+      - name: Build the engine and the example
+        run: |
+          bun run build:engine
+          bun run --cwd examples/metric-tree build
+      - name: Run the benchmark three times at 50,010 nodes and edges
+        run: |
+          for i in 1 2 3; do
+            bun --bun bench/run.ts
+            cp bench-results/latest.json "bench-results/run-$i.json"
+          done
+      - name: Compare the median with the recorded baseline
+        run: bun bench/compare.ts bench/baseline.json bench-results/run-*.json
+      # Uploaded whether the comparison passes or not, so a regression can be read and a new
+      # baseline taken from median.json.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: bench-results
+          path: bench-results/
+          if-no-files-found: error
