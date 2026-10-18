@@ -71,6 +71,24 @@ budget of Q-3 (`bun run build:lib`, at most 300 kB gzipped without PixiJS).
   `bench/baseline.json`, and open a pull request that says why the numbers moved; a runner's
   numbers are compared only with a runner's: runs of another size, mode, or GPU than the
   baseline's, and runs that name no GPU, are refused.
+- **Mutation testing:** `cargo mutants -p comb-engine --no-shuffle --timeout 30` mutates
+  `crates/engine` and runs its tests against each mutant, in about half an hour, writing
+  `mutants.out/`; it needs cargo-mutants 27.1.0
+  (`cargo install cargo-mutants --version 27.1.0 --locked`).
+  `bash scripts/check-mutants.sh mutants.out crates/engine/mutants-missed.txt` then compares the
+  survivors with the recorded list by file, function, and replacement, not by line, and fails
+  naming each survivor the list does not, or when the run caught no mutant. It reports each
+  listed survivor now caught, and each listed survivor whose tests timed out as timed out, not
+  caught: a timeout neither fails the run nor shrinks the list. The key does not tell mutants of
+  one function apart, so a listed survivor now caught and a new one under the same key in that
+  function pass unnoticed.
+  The **Mutation testing** workflow does both on a GitHub runner, weekly and on demand
+  (*Actions* → *Mutation testing* → *Run workflow*), and uploads `mutants.out` as an artefact.
+  The list shrinks with each change that kills a mutant: delete its line, or lower its count. It
+  grows only in a pull request that says why each new survivor stays;
+  `bash scripts/check-mutants.sh --record mutants.out` prints the list of a run. The list in the
+  tree is provisional, recorded from a local run: the list recorded from the artefact of the
+  workflow's first run on GitHub replaces it, in a pull request that says so.
 
 ## Usage
 

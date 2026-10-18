@@ -16,8 +16,9 @@ name: Checks
 #   three sensors read it.
 # - Shell lint: scripts/check-shell.sh, after the self-test of the git hooks.
 # - Build, test, lint: scripts/check-code.sh (ADR-0008), after Bun, Rust with the WebAssembly
-#   target, and Chromium are set up. It is the one job of this workflow that installs something;
-#   its actions outside actions/* are pinned by commit SHA (ADR-0017).
+#   target, and Chromium are set up, and after the self-test of scripts/check-mutants.sh, which
+#   the Mutation testing workflow (mutation.yml) runs. It is the one job of this workflow that
+#   installs something; its actions outside actions/* are pinned by commit SHA (ADR-0017).
 #
 # Every job is bounded by a timeout — a hung step would otherwise occupy a runner until the
 # platform's own six-hour limit — and every checkout runs with 'persist-credentials: false': the
@@ -164,5 +165,7 @@ jobs:
         run: |
           bun install --frozen-lockfile
           bunx --bun playwright install --with-deps chromium
+      - name: Self-test the comparison of surviving mutants
+        run: bash scripts/test-check-mutants.sh
       - name: Build, test, and lint
         run: bash scripts/check-code.sh

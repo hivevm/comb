@@ -1,0 +1,63 @@
+name: Mutation testing
+
+# Mutation testing of crates/engine as a workflow of its own (ADR-0008): cargo-mutants, at a
+# pinned version, mutates the engine and runs its tests against each mutant. A mutant no test
+# kills is a survivor, written to mutants.out/missed.txt. scripts/check-mutants.sh compares the
+# survivors with crates/engine/mutants-missed.txt by file, function, and replacement, which no
+# edit above them moves; it fails naming each survivor the list does not, and reports each listed
+# survivor that is now caught. mutants.out is uploaded as an artefact whether the comparison
+# passes or not. The list shrinks with each change that kills a mutant and grows only in a pull
+# request that says why.
+#
+# It runs weekly and on demand, not on every pull request: a run takes the better part of an
+# hour. The test timeout is fixed at 30 seconds rather than set from the runner's baseline, so
+# that a mutant times out on one run as on the next; a listed survivor that times out is reported
+# as timed out, not caught, and a run that catches no mutant fails. It
+# needs no secret (ADR-0016); every action it uses is pinned by commit SHA (ADR-0017), and its
+# checkout keeps no credentials.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mutants:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The runner image ships rustup; the toolchain is the one the Dev Container installs.
+      - name: Set up Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Install cargo-mutants
+        run: cargo install cargo-mutants --version 27.1.0 --locked
+      # Exit code 2 says mutants were missed and 3 that tests timed out: the comparison decides
+      # on both. Every other code is a run that did not work.
+      - name: Mutate the engine and run its tests against each mutant
+        run: |
+          rc=0
+          cargo mutants -p comb-engine --no-shuffle --timeout 30 || rc=$?
+          case "$rc" in
+            0 | 2 | 3) ;;
+            *) exit "$rc" ;;
+          esac
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: mutants.out
+          path: mutants.out/
+          if-no-files-found: error
+      - name: Compare the survivors with the recorded list
+        run: bash scripts/check-mutants.sh mutants.out crates/engine/mutants-missed.txt

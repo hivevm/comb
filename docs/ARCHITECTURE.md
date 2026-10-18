@@ -105,6 +105,10 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   of 25 %; the baseline is the median of three runs on a GitHub runner on `main`; the
   **Benchmark** workflow (`.github/workflows/benchmark.yml`) runs the benchmark three times and
   compares on a GitHub runner, weekly and on demand.
+- **Mutation testing** (`.github/workflows/mutation.yml`) — cargo-mutants mutates `crates/engine`
+  on a GitHub runner, weekly and on demand; `scripts/check-mutants.sh` compares the surviving
+  mutants with `crates/engine/mutants-missed.txt` by file, function, and replacement, and fails
+  on a survivor the list does not name (ADR-0008).
 
 **Test pattern:** Rust unit tests beside the code they test (`#[cfg(test)]`); Bun tests beside
 their module as `*.test.ts`, the bridge's against the built WebAssembly module; browser tests

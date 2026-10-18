@@ -27,3 +27,7 @@ playwright-report/
 
 # Benchmark results (bench/run.ts)
 bench-results/
+
+# Mutation testing output (cargo mutants), and the copy of a previous run
+mutants.out/
+mutants.out.old/

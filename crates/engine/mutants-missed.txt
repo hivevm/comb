@@ -1,0 +1,77 @@
+# Surviving mutants of crates/engine that the mutation workflow accepts (ADR-0008).
+# One per line as '<file> <function> <replacement>', ' (xN)' when one key covers N mutants.
+# Recorded with scripts/check-mutants.sh --record; the README says how the list changes.
+# Provisional: recorded from a local run. The list of the first run of the Mutation testing
+# workflow on GitHub replaces it, from the artefact, in a pull request that says so.
+crates/engine/src/geometry.rs EdgePath::horizontal replace / with %
+crates/engine/src/geometry.rs EdgePath::label_position replace + with -
+crates/engine/src/geometry.rs EdgePath::tangent_at replace * with / (x3)
+crates/engine/src/geometry.rs EdgePath::tangent_at replace + with * (x2)
+crates/engine/src/geometry.rs EdgePath::tangent_at replace + with -
+crates/engine/src/geometry.rs EdgePath::tangent_at replace / with %
+crates/engine/src/geometry.rs EdgePath::tangent_at replace / with *
+crates/engine/src/geometry.rs EdgePath::tangent_at replace < with <=
+crates/engine/src/geometry.rs Rect::grown replace + with - (x2)
+crates/engine/src/geometry.rs Rect::grown replace - with + (x2)
+crates/engine/src/geometry.rs extrema delete -
+crates/engine/src/geometry.rs extrema replace && with ||
+crates/engine/src/geometry.rs extrema replace / with %
+crates/engine/src/geometry.rs extrema replace / with *
+crates/engine/src/geometry.rs extrema replace < with <= (x3)
+crates/engine/src/geometry.rs extrema replace < with == (x2)
+crates/engine/src/geometry.rs extrema replace > with >=
+crates/engine/src/geometry.rs extrema replace >= with <
+crates/engine/src/graph.rs Graph::cell_side replace * with + (x2)
+crates/engine/src/graph.rs Graph::cell_side replace * with / (x2)
+crates/engine/src/graph.rs Graph::cell_side replace - with + (x2)
+crates/engine/src/graph.rs Graph::cell_side replace - with / (x2)
+crates/engine/src/graph.rs Graph::cell_side replace / with % (x2)
+crates/engine/src/graph.rs Graph::cell_side replace / with * (x2)
+crates/engine/src/graph.rs Graph::cell_side replace Graph::cell_side -> f64 with -1.0
+crates/engine/src/graph.rs Graph::cell_side replace Graph::cell_side -> f64 with 0.0
+crates/engine/src/graph.rs Graph::cell_side replace Graph::cell_side -> f64 with 1.0
+crates/engine/src/spatial.rs Grid::candidates replace == with !=
+crates/engine/src/spatial.rs Grid::index replace - with +
+crates/engine/src/spatial.rs Grid::index replace < with <=
+crates/engine/src/spatial.rs Grid::index replace < with ==
+crates/engine/src/spatial.rs Grid::index replace || with &&
+crates/engine/src/spatial.rs Grid::remove replace * with /
+crates/engine/src/spatial.rs Span::cells replace * with /
+crates/engine/src/stroke.rs Mesh::add_edge replace * with /
+crates/engine/src/stroke.rs Mesh::add_edge replace - with +
+crates/engine/src/stroke.rs Mesh::arrowhead delete -
+crates/engine/src/stroke.rs Mesh::arrowhead replace * with + (x2)
+crates/engine/src/stroke.rs Mesh::arrowhead replace * with / (x2)
+crates/engine/src/stroke.rs Mesh::arrowhead replace + with * (x2)
+crates/engine/src/stroke.rs Mesh::arrowhead replace + with - (x2)
+crates/engine/src/stroke.rs Mesh::arrowhead replace - with + (x2)
+crates/engine/src/stroke.rs Mesh::arrowhead replace - with /
+crates/engine/src/stroke.rs Mesh::polyline replace + with *
+crates/engine/src/stroke.rs Mesh::polyline replace + with -
+crates/engine/src/stroke.rs Mesh::polyline replace - with + (x5)
+crates/engine/src/stroke.rs Mesh::polyline replace - with / (x5)
+crates/engine/src/stroke.rs Mesh::polyline replace < with <=
+crates/engine/src/stroke.rs Mesh::polyline replace < with ==
+crates/engine/src/stroke.rs distance_to_segment replace > with >=
+crates/engine/src/stroke.rs flatten replace && with ||
+crates/engine/src/stroke.rs flatten replace > with >=
+crates/engine/src/stroke.rs normal_at delete -
+crates/engine/src/stroke.rs normal_at replace * with + (x4)
+crates/engine/src/stroke.rs normal_at replace * with / (x4)
+crates/engine/src/stroke.rs normal_at replace + with * (x4)
+crates/engine/src/stroke.rs normal_at replace + with - (x3)
+crates/engine/src/stroke.rs normal_at replace - with + (x2)
+crates/engine/src/stroke.rs normal_at replace - with / (x3)
+crates/engine/src/stroke.rs normal_at replace / with %
+crates/engine/src/stroke.rs normal_at replace / with *
+crates/engine/src/stroke.rs normal_at replace > with <
+crates/engine/src/stroke.rs trim_end replace - with /
+crates/engine/src/stroke.rs trim_end replace < with <=
+crates/engine/src/stroke.rs unit replace > with <
+crates/engine/src/stroke.rs unit replace > with ==
+crates/engine/src/stroke.rs unit replace > with >=
+crates/engine/src/stroke.rs unit replace unit -> Option<(f64, f64)> with None
+crates/engine/src/stroke.rs unit replace unit -> Option<(f64, f64)> with Some((-1.0, 0.0))
+crates/engine/src/stroke.rs unit replace unit -> Option<(f64, f64)> with Some((0.0, -1.0))
+crates/engine/src/stroke.rs unit replace unit -> Option<(f64, f64)> with Some((0.0, 1.0))
+crates/engine/src/stroke.rs unit replace unit -> Option<(f64, f64)> with Some((1.0, 0.0))
