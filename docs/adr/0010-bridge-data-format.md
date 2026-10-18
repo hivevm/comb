@@ -40,9 +40,18 @@ reads and writes as typed-array views created anew after every engine call.
   never written by hand.
 - **Errors:** every export that receives graph data returns `Result<_, _>` with a typed error that
   names the offending node, edge, or field; no export panics on malformed input.
-- **Streams:** node positions as `Float32Array` with `x, y` per node slot; edge path points as
-  `Float32Array`; culling results as `Uint32Array` of slot indices. The bridge keeps the map from
-  identifiers to slots on both sides in step.
+- **Streams:** every buffer the shell reads is one of these: node positions as `Float32Array`
+  with `x, y` per node slot; the results of a viewport query, which are the found node slots and
+  edge-label slots as `Uint32Array` and the point of each found label as `Float32Array`; the edge
+  mesh of that query, as vertex positions, distances along the path, and dash patterns in
+  `Float32Array`, colours as RGBA bytes in `Uint32Array`, and triangle indices in `Uint32Array`;
+  and, for inspection, the slots of the edges the query found as `Uint32Array`, with the ends of
+  each as `Float32Array`, computed as they lie when inspection asks. A query takes its rectangle as
+  structured data and its level of detail as an enumeration; the engine derives the stroke from
+  the level and the size of a screen pixel, and places labels only at the near level.
+- **Slots:** the engine knows nodes and edges by slot only. The TypeScript side keeps the map
+  from identifiers to slots; `loadGraph` resolves edge ends from identifiers once, while it loads,
+  and keeps no map. Every later call into the engine names slots.
 - **Views:** `bridge` never keeps a typed-array view across a call into the engine; it creates
   each view from the engine's pointer and length after the call.
 
