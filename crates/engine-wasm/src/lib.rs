@@ -435,6 +435,9 @@ impl Engine {
     }
 }
 
+// The malformed-data tests below verify ADR-0010: every export that receives graph data returns a
+// typed error that names the offender, and none panics.
+// Verifies: ADR-0010
 #[cfg(test)]
 mod tests {
     use super::*;
