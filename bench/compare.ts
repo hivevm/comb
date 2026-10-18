@@ -1,7 +1,8 @@
 // Compares benchmark runs with a recorded baseline (ADR-0008). Frame times come in steps of a
 // frame and the first frame is a single sample, so one run scatters; the median of each number
 // over several runs is compared instead, and may exceed its baseline by at most MARGIN. Runs of
-// another size or mode than the baseline's are refused rather than compared. The median is
+// another size, mode, or GPU than the baseline's are refused rather than compared, and so is a
+// run that names no GPU, as one on a fallback renderer would. The median is
 // written as bench-results/median.json, the file a new baseline is taken from: a median of runs on
 // a GitHub runner, recorded as bench/baseline.json in a pull request that says why.
 //
@@ -23,6 +24,8 @@ interface Gesture {
 export interface Run {
   copies: number;
   headed?: boolean;
+  /** The renderer WebGL reports, as bench/run.ts reads it. */
+  gpu?: string;
   load: { nodes: number; firstFrameMs: number };
   drag: Gesture;
   pan: Gesture;
@@ -43,7 +46,11 @@ function numbers(run: Run): Record<string, number | undefined> {
 }
 
 const kind = (run: Run) =>
-  `${run.load.nodes} nodes (${run.copies} copies), ${run.headed ? "headed" : "headless"}`;
+  `${run.load.nodes} nodes (${run.copies} copies), ${run.headed ? "headed" : "headless"}, on ${run.gpu}`;
+
+/** Why a run cannot be compared at all: it names no GPU it was taken on. */
+const unnamed = (run: Run) =>
+  !run.gpu || run.gpu === "unknown" ? `a run names no GPU (${run.gpu ?? "none"})` : null;
 
 function middle(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
@@ -56,6 +63,8 @@ function middle(values: number[]): number {
 export function median(runs: Run[]): Run | string {
   const [first] = runs;
   if (!first) return "no run";
+  const nameless = runs.map(unnamed).find(Boolean);
+  if (nameless) return nameless;
   const other = runs.find((run) => kind(run) !== kind(first));
   if (other) return `the runs differ: ${kind(first)} and ${kind(other)}`;
   const of = (pick: (run: Run) => number) => middle(runs.map(pick));
@@ -72,6 +81,7 @@ export function median(runs: Run[]): Run | string {
   return {
     copies: first.copies,
     headed: first.headed ?? false,
+    gpu: first.gpu,
     load: { nodes: first.load.nodes, firstFrameMs: of((run) => run.load.firstFrameMs) },
     drag: gesture((run) => run.drag),
     pan: gesture((run) => run.pan),
@@ -99,6 +109,8 @@ function judge(name: string, value: number, reference: number | undefined, margi
 /** Every number of `run` against `baseline`: a regression where it exceeds the baseline by more
  *  than `margin`. A number the baseline lacks is reported and not compared. */
 export function compare(run: Run, baseline: Run, margin = MARGIN): Verdict {
+  const nameless = unnamed(run) ?? unnamed(baseline);
+  if (nameless) return { kind: "incomparable", reason: nameless };
   if (kind(run) !== kind(baseline)) {
     return {
       kind: "incomparable",

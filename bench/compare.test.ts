@@ -1,9 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { compare, MARGIN, median, type Run } from "./compare";
 
+const SWIFTSHADER =
+  "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader driver)";
+
 function run(firstFrameMs: number, p95: number, copies = 3334): Run {
   return {
     copies,
+    gpu: SWIFTSHADER,
     load: { nodes: copies * 15, firstFrameMs },
     drag: { p95 },
     pan: { p95 },
@@ -36,7 +40,8 @@ describe("compare", () => {
     expect(verdict).toEqual({
       kind: "incomparable",
       reason:
-        "the run is 1500 nodes (100 copies), headless, the baseline 50010 nodes (3334 copies), headless",
+        `the run is 1500 nodes (100 copies), headless, on ${SWIFTSHADER}, ` +
+        `the baseline 50010 nodes (3334 copies), headless, on ${SWIFTSHADER}`,
     });
   });
 
@@ -84,5 +89,22 @@ describe("median", () => {
   test("runs of different sizes have no median", () => {
     expect(median([run(200, 100), run(200, 100, 100)])).toContain("the runs differ");
     expect(median([])).toBe("no run");
+  });
+
+  test("runs and baselines of different GPUs are not compared, and both are named", () => {
+    const laptop = { ...run(200, 100), gpu: "ANGLE (Intel, Iris Xe)" };
+    const verdict = compare(laptop, run(200, 100));
+    expect(verdict.kind).toBe("incomparable");
+    if (verdict.kind !== "incomparable") return;
+    expect(verdict.reason).toContain("Iris Xe");
+    expect(verdict.reason).toContain("SwiftShader");
+  });
+
+  test("a run or a baseline that names no GPU is refused", () => {
+    const unknown = { ...run(200, 100), gpu: "unknown" };
+    const none = { ...run(200, 100), gpu: undefined };
+    expect(compare(unknown, run(200, 100))).toMatchObject({ kind: "incomparable" });
+    expect(compare(run(200, 100), none)).toMatchObject({ kind: "incomparable" });
+    expect(median([run(200, 100), unknown])).toBe("a run names no GPU (unknown)");
   });
 });
