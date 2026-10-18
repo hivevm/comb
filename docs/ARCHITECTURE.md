@@ -129,5 +129,8 @@ imports the WebAssembly package, when the render layer reaches the store instead
 `GraphView`, or when an example imports past the library's entries (ADR-0009), and when the render
 layer names PixiJS's `Text`, `HTMLText`, or `SplitText` or the edges layer a `Graphics`
 (ADR-0012). `scripts/check-bundle.sh` builds the library and fails when its gzipped JavaScript
-and WebAssembly reach the 300 kB of Q-3. The type checker does the rest for the render layer:
-`GraphView` has no action to call.
+and WebAssembly reach the 300 kB of Q-3. `scripts/check-dependencies.sh` fails on a lockfile of
+another package manager beside `bun.lock` (ADR-0008), on tsify's default or `json` features or
+`serde_json` in the bridge crate (ADR-0010), in whatever form the entry takes, and on a listed
+state library other than zustand in the library's dependency lists (ADR-0011). The type checker
+does the rest for the render layer: `GraphView` has no action to call.

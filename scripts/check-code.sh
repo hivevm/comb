@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
 # Builds, tests, and lints Comb: the commands of the README's "Build, Test & Run" (ADR-0008),
-# with the shape of the code (scripts/check-structure.sh, ADR-0009) first, since it needs no
-# toolchain and a red test must not hide it, and the bundle budget (scripts/check-bundle.sh, Q-3)
-# last, each after its self-test.
+# with the shape of the code (scripts/check-structure.sh, ADR-0009) and the decided dependencies
+# (scripts/check-dependencies.sh, ADR-0008, ADR-0010, ADR-0011) first, since they need no
+# toolchain and a red test must not hide them, and the bundle budget (scripts/check-bundle.sh,
+# Q-3) last, each after its self-test.
 #
 # Needs Bun, Rust with the wasm32-unknown-unknown target, and Chromium for Playwright, as the Dev
 # Container provides them (ADR-0014). Where Bun or Cargo is missing it fails and says so: a gate
@@ -21,6 +22,8 @@ cd "$ROOT"
 
 bash scripts/test-check-structure.sh
 bash scripts/check-structure.sh
+bash scripts/test-check-dependencies.sh
+bash scripts/check-dependencies.sh
 
 missing=()
 for tool in bun cargo; do

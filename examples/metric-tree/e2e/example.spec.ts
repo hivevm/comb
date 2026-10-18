@@ -34,6 +34,7 @@ async function screenCentre(page: Page, id: string) {
 }
 
 test("the example draws the metric tree on a canvas beside its sidebar", async ({ page }) => {
+  // Verifies: ADR-0008 — the golden path, built, served, and driven by the toolchain it decides.
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -380,6 +381,29 @@ test("the same area binds as many display objects at 1 and at 1,000 copies", asy
   };
   const one = await bound("?copies=1");
   expect(await bound("?copies=1000")).toBe(one);
+});
+
+test("at the middle level, the same area binds as many display objects at 100 and 1,000 copies", async ({
+  page,
+}) => {
+  // Verifies: ADR-0012
+  test.setTimeout(120_000);
+  // Every copy fills the same cell of 1500 × 770 world units, whatever the number of copies; an
+  // area well inside both grids shows the same nodes and edges in both.
+  const bound = async (query: string) => {
+    await open(page, query);
+    const { width, height } = await canvasSize(page);
+    const scale = 0.45;
+    await setViewport(page, { x: width / 2 - 6000 * scale, y: height / 2 - 4000 * scale, scale });
+    return page.evaluate(() => {
+      const { level, displayObjects, nodes } = window.inspect();
+      return { level, displayObjects, nodes: nodes.length };
+    });
+  };
+  const hundred = await bound("?copies=100");
+  expect(hundred.level).toBe("middle");
+  expect(hundred.nodes).toBeGreaterThan(0);
+  expect(await bound("?copies=1000")).toEqual(hundred);
 });
 
 test("a viewport that is not finite is refused, and the scale is clamped", async ({ page }) => {

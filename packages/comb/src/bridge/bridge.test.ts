@@ -40,6 +40,7 @@ describe("bridge", () => {
   });
 
   test("a view read after memory grew still sees the positions", () => {
+    // Verifies: ADR-0010
     bridge.loadGraph(graph([node("a", 7, 8)]));
     const big = Array.from({ length: 200_000 }, (_, i) => node(`n${i}`, i, i));
     bridge.loadGraph(graph(big));
@@ -48,6 +49,7 @@ describe("bridge", () => {
   });
 
   test("malformed graph data comes back as a typed error", () => {
+    // Verifies: ADR-0010
     expect(() => bridge.loadGraph(graph([node("a", Number.NaN, 0)]))).toThrow();
     const errors = [
       graph([node("a", 0, 0), node("a", 1, 1)]),
@@ -86,6 +88,7 @@ describe("bridge query", () => {
   });
 
   test("a query read after memory grew holds the current slots", () => {
+    // Verifies: ADR-0010
     bridge.loadGraph(row(3));
     expect([...bridge.query(everywhere, 0, full(1)).nodes]).toEqual([0, 1, 2]);
     bridge.loadGraph(row(200_000));
