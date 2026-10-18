@@ -58,6 +58,12 @@ mkdir -p "$script"
 echo 'export {};' > "$script/comb.js"
 expect fail "a bundle without WebAssembly fails" "$script" 10000 "no WebAssembly"
 
+testing="$work/test-mode"
+mkdir -p "$testing"
+echo 'export const u = "data:application/wasm;base64,AGFzbQ==";' > "$testing/comb.js"
+echo 'throw new Error("Comb test mode: the engine'"'"'s memory cannot grow further");' >> "$testing/comb.js"
+expect fail "a bundle with the bridge's test mode fails" "$testing" 10000 "test mode"
+
 empty="$work/empty"
 mkdir -p "$empty"
 expect fail "a directory without a bundle fails" "$empty" 10000 "no .js or .wasm"

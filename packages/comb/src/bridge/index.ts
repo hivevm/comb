@@ -79,7 +79,43 @@ export interface Bridge {
   hit(x: number, y: number): number | undefined;
 }
 
+/** Whether the bridge runs in test mode: under `bun test`, and in Vite's `test` mode, which the
+ *  browser tests serve the example in. Code that imports this source, not the built bundle, under
+ *  a tool in mode `test` turns it on; a built bundle settles the mode when it is built, and a
+ *  production build replaces it by `production`, so the bundle carries none of it. */
+export const TEST_MODE = import.meta.env.MODE === "test" || import.meta.env.NODE_ENV === "test";
+
+/** `bridge` with the engine's memory grown by a page before each of its calls, so that a view
+ *  kept across a call is detached and reads empty in tests, not only when memory happens to grow
+ *  (ADR-0010). The message of its error is how scripts/check-bundle.sh tells that a bundle
+ *  carries it. */
+function detaching(bridge: Bridge, memory: WebAssembly.Memory): Bridge {
+  const before =
+    <A extends unknown[], R>(call: (...args: A) => R) =>
+    (...args: A): R => {
+      try {
+        memory.grow(1);
+      } catch (cause) {
+        throw new Error("Comb test mode: the engine's memory cannot grow further", { cause });
+      }
+      return call(...args);
+    };
+  return {
+    loadGraph: before(bridge.loadGraph),
+    translate: before(bridge.translate),
+    positions: before(bridge.positions),
+    query: before(bridge.query),
+    drawnEdges: before(bridge.drawnEdges),
+    hit: before(bridge.hit),
+  };
+}
+
 function wrap(memory: WebAssembly.Memory): Bridge {
+  const bridge = engineBridge(memory);
+  return TEST_MODE ? detaching(bridge, memory) : bridge;
+}
+
+function engineBridge(memory: WebAssembly.Memory): Bridge {
   const engine = new Engine();
   const u32 = (ptr: number, len: number) => new Uint32Array(memory.buffer, ptr, len);
   const f32 = (ptr: number, len: number) => new Float32Array(memory.buffer, ptr, len);

@@ -43,6 +43,8 @@ test("the example draws the metric tree on a canvas beside its sidebar", async (
   await expect(page.locator("#count")).toHaveText("15 nodes, 15 edges");
   // WebGL2, not PixiJS's Canvas 2D fallback, which draws no edge mesh.
   expect(await page.evaluate(() => window.inspect().renderer)).toBe("webgl");
+  // The bridge in test mode, so that a view kept across an engine call fails the suite.
+  expect(await page.evaluate(() => window.testMode())).toBe(true);
   expect(errors).toEqual([]);
 });
 

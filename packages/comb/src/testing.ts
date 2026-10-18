@@ -5,7 +5,7 @@ import type { Buffer, WebGLRenderer } from "pixi.js";
 import type { Comb } from "./api";
 import { scenes } from "./api/scenes";
 import { toScreen, worldRect } from "./interaction/viewport";
-import type { Rect } from "./bridge";
+import { TEST_MODE, type Rect } from "./bridge";
 import { LABEL_REACH } from "./render/labels";
 import { CULLING_MARGIN, FAR_SCALE, NEAR_SCALE, RESCALE, type SceneSnapshot } from "./render/scene";
 
@@ -192,4 +192,10 @@ export function sceneNumbers(): {
     labelReach: LABEL_REACH,
     rescale: RESCALE,
   };
+}
+
+/** Whether the bridge runs in test mode, in which every view kept across an engine call reads
+ *  empty (ADR-0010): what the browser tests assert before they trust that a stale view fails. */
+export function testMode(): boolean {
+  return TEST_MODE;
 }

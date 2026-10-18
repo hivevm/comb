@@ -47,6 +47,28 @@ describe("bridge", () => {
     expect([...bridge.positions()]).toEqual([7, 8]);
   });
 
+  test("in test mode, every call detaches the views taken before it", () => {
+    // Verifies: ADR-0010
+    // Under `bun test` the bridge runs in test mode: it grows the engine's memory before each of
+    // its calls, so a view kept across any call reads empty, not only when memory happens to grow.
+    // Only a grown memory detaches its buffer, so an empty view shows that the call grew it.
+    bridge.loadGraph(graph([node("a", 1, 2), node("b", 3, 4)]));
+    const calls: [string, () => unknown][] = [
+      ["loadGraph", () => bridge.loadGraph(graph([node("a", 1, 2), node("b", 3, 4)]))],
+      ["translate", () => bridge.translate(new Uint32Array([0]), 0, 0)],
+      ["positions", () => bridge.positions()],
+      ["query", () => bridge.query(everywhere, "near", 4, 0)],
+      ["drawnEdges", () => bridge.drawnEdges()],
+      ["hit", () => bridge.hit(0, 0)],
+    ];
+    const after = calls.map(([name, call]) => {
+      const kept = bridge.positions();
+      call();
+      return { name, kept: kept.length };
+    });
+    expect(after).toEqual(calls.map(([name]) => ({ name, kept: 0 })));
+  });
+
   test("malformed graph data comes back as a typed error", () => {
     // Verifies: ADR-0010
     expect(() => bridge.loadGraph(graph([node("a", Number.NaN, 0)]))).toThrow();

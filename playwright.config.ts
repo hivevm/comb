@@ -11,16 +11,19 @@ export default defineConfig({
   testDir: "examples/metric-tree/e2e",
   forbidOnly: !!process.env.CI,
   reporter: "list",
-  use: { baseURL: "http://localhost:5173" },
+  use: { baseURL: "http://localhost:5174" },
   projects: [
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"], launchOptions: { env: chromiumEnv(windowed) } },
     },
   ],
+  // Vite's test mode puts the bridge in test mode, which detaches every view kept across an
+  // engine call (packages/comb/src/bridge). It serves on a port of its own, so that a server it
+  // reuses is one in test mode, never the example a developer runs on 5173.
   webServer: {
-    command: "bun run dev",
-    url: "http://localhost:5173",
+    command: "bun run dev --mode test --port 5174 --strictPort",
+    url: "http://localhost:5174",
     reuseExistingServer: !process.env.CI,
   },
 });

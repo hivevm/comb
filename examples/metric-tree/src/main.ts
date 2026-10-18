@@ -6,6 +6,7 @@ import {
   sceneNumbers,
   screenPoint,
   showLayers,
+  testMode,
   viewport,
   visibleRect,
   work,
@@ -32,6 +33,7 @@ declare global {
     viewport: () => SceneSnapshot["viewport"];
     showLayers: (layers: Parameters<typeof showLayers>[1]) => void;
     sceneNumbers: typeof sceneNumbers;
+    testMode: typeof testMode;
     screenPoint: (x: number, y: number) => ReturnType<typeof screenPoint>;
     visibleRect: (margin?: number) => ReturnType<typeof visibleRect>;
     work: () => ReturnType<typeof work>;
@@ -105,6 +107,7 @@ window.renderCount = () => renderCount(comb);
 window.viewport = () => viewport(comb);
 window.showLayers = (layers) => showLayers(comb, layers);
 window.sceneNumbers = sceneNumbers;
+window.testMode = testMode;
 window.screenPoint = (x, y) => screenPoint(comb, x, y);
 window.visibleRect = (margin) => visibleRect(comb, margin);
 window.work = () => work(comb);

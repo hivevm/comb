@@ -110,6 +110,10 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
 their module as `*.test.ts`, the bridge's against the built WebAssembly module; browser tests
 under `examples/*/e2e`, run by Playwright on Bun against the example, reading what is drawn
 through `comb/testing` rather than pixels, apart from one reference image of the edges alone.
+Both run the bridge in test mode, which grows the engine's memory before each of its calls, so a
+view kept across a call reads empty; the browser tests serve the example in Vite's `test` mode
+for it, on port 5174, and assert it through `testMode()` of `comb/testing`, and the bundle check
+fails a bundle that carries it.
 Playwright and the benchmark start headless Chromium without the displays a Dev Container
 forwards, so WebGL2 runs on SwiftShader instead of PixiJS falling back to Canvas 2D.
 
