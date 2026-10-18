@@ -69,7 +69,8 @@ budget of Q-3 (`bun run build:lib`, at most 300 kB gzipped without PixiJS).
   artefact `bench-results` (`bun bench/compare.ts bench/baseline.json <run>...` compares locally).
   To update the baseline, take `median.json` from the artefact of a run on `main`, save it as
   `bench/baseline.json`, and open a pull request that says why the numbers moved; a runner's
-  numbers are compared only with a runner's.
+  numbers are compared only with a runner's: runs of another size, mode, or GPU than the
+  baseline's, and runs that name no GPU, are refused.
 
 ## Usage
 
