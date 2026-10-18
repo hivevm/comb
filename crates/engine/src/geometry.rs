@@ -102,24 +102,17 @@ impl Rect {
 /// How far an edge's control points pull out of its connectors at least, in pixels.
 const MIN_PULL: f64 = 40.0;
 
-/// The values of `t` in (0, 1) where one coordinate of a cubic Bézier curve has an extremum: the
-/// roots of its derivative, a quadratic.
+/// The values of `t` where one coordinate of a cubic Bézier curve may have an extremum: the roots
+/// of its derivative `a t² + b t + c`, by the form that stays exact where `a` vanishes and the
+/// derivative is linear. Where there is no root, or a root lies outside 0..=1, or `a` and `b`
+/// both vanish, the value is still a point of the curve once `point_at` clamps it, so the bounds
+/// stay as they are; only a value that is not a number is left out.
 fn extrema(p0: f64, p1: f64, p2: f64, p3: f64) -> impl Iterator<Item = f64> {
     let a = -p0 + 3.0 * p1 - 3.0 * p2 + p3;
     let b = 2.0 * (p0 - 2.0 * p1 + p2);
     let c = p1 - p0;
-    let roots = if a.abs() < 1e-12 {
-        [(b.abs() >= 1e-12).then(|| -c / b), None]
-    } else {
-        let discriminant = b * b - 4.0 * a * c;
-        if discriminant < 0.0 {
-            [None, None]
-        } else {
-            let root = discriminant.sqrt();
-            [Some((-b + root) / (2.0 * a)), Some((-b - root) / (2.0 * a))]
-        }
-    };
-    roots.into_iter().flatten().filter(|t| *t > 0.0 && *t < 1.0)
+    let q = -0.5 * (b + b.signum() * (b * b - 4.0 * a * c).max(0.0).sqrt());
+    [q / a, c / q].into_iter().filter(|t| !t.is_nan())
 }
 
 /// The four control points of an edge's cubic Bézier path.
@@ -341,6 +334,65 @@ mod tests {
         assert!(!a.meets(&Rect::new(10.5, 0.0, 20.0, 10.0)));
         assert!(a.contains(Point::new(10.0, 0.0)));
         assert!(!a.contains(Point::new(-0.1, 5.0)));
+    }
+
+    /// The point of the curve at `t` by its Bernstein form, for comparison.
+    fn bernstein(path: &EdgePath, t: f64) -> Point {
+        let u = 1.0 - t;
+        let w = [u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t];
+        let p = [
+            path.source,
+            path.control_source,
+            path.control_target,
+            path.target,
+        ];
+        Point::new(
+            (0..4).map(|i| w[i] * p[i].x).sum(),
+            (0..4).map(|i| w[i] * p[i].y).sum(),
+        )
+    }
+
+    /// The greatest value of `f` on 0..=1 where it rises to one peak, by ternary search.
+    fn peak(f: impl Fn(f64) -> f64) -> f64 {
+        let (mut lo, mut hi) = (0.0, 1.0);
+        for _ in 0..200 {
+            let (a, b) = (lo + (hi - lo) / 3.0, hi - (hi - lo) / 3.0);
+            if f(a) < f(b) {
+                lo = a;
+            } else {
+                hi = b;
+            }
+        }
+        f((lo + hi) / 2.0)
+    }
+
+    #[test]
+    fn the_bounds_hold_a_path_whose_turning_point_is_ill_conditioned_or_tiny() {
+        // Verifies: Q-4
+        // y runs 0, 1, 1, 1e-11: the cubic term of the derivative is 1e-11, so small that the
+        // textbook root (-b - √(b² - 4ac)) / 2a loses most of its digits.
+        let flat = EdgePath {
+            source: Point::new(0.0, 0.0),
+            control_source: Point::new(1.0, 1.0),
+            control_target: Point::new(2.0, 1.0),
+            target: Point::new(3.0, 1e-11),
+        };
+        // Arched and 1e-13 wide, as at a tiny scale: y runs 0, 4e-13, 4e-13, 0 and peaks at 3e-13.
+        let tiny = EdgePath {
+            source: Point::new(0.0, 0.0),
+            control_source: Point::new(1e-13, 4e-13),
+            control_target: Point::new(2e-13, 4e-13),
+            target: Point::new(3e-13, 0.0),
+        };
+        for path in [flat, tiny] {
+            let expected = peak(|t| bernstein(&path, t).y);
+            let max_y = path.bounds().max_y;
+            assert!(
+                (max_y - expected).abs() <= 1e-15 * expected,
+                "{max_y} against {expected} for {path:?}"
+            );
+        }
+        assert!((peak(|t| bernstein(&tiny, t).y) - 3e-13).abs() < 1e-27);
     }
 
     #[test]
