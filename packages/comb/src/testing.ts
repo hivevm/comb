@@ -5,7 +5,8 @@ import type { Comb } from "./api";
 import { scenes } from "./api/scenes";
 import { toScreen, worldRect } from "./interaction/viewport";
 import type { Rect } from "./bridge";
-import { FAR_SCALE, NEAR_SCALE, type SceneSnapshot } from "./render/scene";
+import { LABEL_REACH } from "./render/labels";
+import { CULLING_MARGIN, FAR_SCALE, NEAR_SCALE, RESCALE, type SceneSnapshot } from "./render/scene";
 
 export type { SceneSnapshot };
 
@@ -51,8 +52,22 @@ export function showLayers(comb: Comb, layers: { nodes?: boolean; edgeLabels?: b
   if (layers.edgeLabels !== undefined) scene.labels.visible = layers.edgeLabels;
 }
 
-/** The scales at which the levels of detail begin: near from `near`, middle from `far`, far
- *  below it; the benchmark measures at each. */
-export function levelScales(): { near: number; far: number } {
-  return { near: NEAR_SCALE, far: FAR_SCALE };
+/** The numbers the scene draws by, so that a test or the benchmark reads them instead of
+ *  repeating them: the scales at which the levels of detail begin, near from `near`, middle from
+ *  `far`, far below it; the culling margin in screen pixels; the least reach of an edge label's
+ *  pill in world units; and how far the scale may move before the scene queries again. */
+export function sceneNumbers(): {
+  near: number;
+  far: number;
+  cullingMargin: number;
+  labelReach: number;
+  rescale: number;
+} {
+  return {
+    near: NEAR_SCALE,
+    far: FAR_SCALE,
+    cullingMargin: CULLING_MARGIN,
+    labelReach: LABEL_REACH,
+    rescale: RESCALE,
+  };
 }

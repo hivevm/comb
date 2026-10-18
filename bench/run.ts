@@ -14,6 +14,8 @@ import { chromium, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { cpus } from "node:os";
 import type { LoadReport } from "../examples/metric-tree/src/main";
+import { chromiumEnv } from "./chromium";
+import { gestures } from "./compare";
 
 const PORT = 4173;
 const COPIES = Number(process.env.BENCH_COPIES ?? 3334);
@@ -235,7 +237,7 @@ async function measure(page: Page) {
   );
   console.log(`zoom: ${zoomed.frames} frames, p95 ${zoomed.p95.toFixed(1)} ms`);
 
-  const begins = await page.evaluate(() => window.levelScales());
+  const begins = await page.evaluate(() => window.sceneNumbers());
   const near = await panAt(page, begins.near);
   const middle = await panAt(page, begins.far);
   if (errors.length) throw new Error(`the example failed: ${errors.join("; ")}`);
@@ -255,23 +257,20 @@ function verdict(value: number, target: number): string {
 function report(result: Awaited<ReturnType<typeof measure>>): void {
   const rows: [string, number, number, Measure | null][] = [
     ["first frame (ms)", result.load.firstFrameMs, TARGET_FIRST_FRAME_MS, null],
-    ["drag p95 (ms)", result.drag.p95, TARGET_FRAME_MS, result.drag],
-    ["pan p95 (ms)", result.pan.p95, TARGET_FRAME_MS, result.pan],
-    ["zoom p95 (ms)", result.zoom.p95, TARGET_FRAME_MS, result.zoom],
-    [
-      `pan p95 near ${result.levels.near.scale} (ms)`,
-      result.levels.near.pan.p95,
-      TARGET_FRAME_MS,
-      result.levels.near.pan,
-    ],
-    [
-      `pan p95 middle ${result.levels.middle.scale} (ms)`,
-      result.levels.middle.pan.p95,
-      TARGET_FRAME_MS,
-      result.levels.middle.pan,
-    ],
+    ...gestures(result).map(
+      ([name, gesture]) =>
+        [`${name} p95 (ms)`, gesture.p95, TARGET_FRAME_MS, gesture] as [
+          string,
+          number,
+          number,
+          Measure,
+        ],
+    ),
   ];
   console.log(`${result.load.nodes} nodes, ${result.load.edges} edges — GPU: ${result.gpu}`);
+  console.log(
+    `pan near at scale ${result.levels.near.scale}, pan middle at ${result.levels.middle.scale}`,
+  );
   for (const [name, value, target, m] of rows) {
     const note = m?.truncated
       ? `  (truncated: ${m.steps} of ${STEPS} steps, ${m.frames} frames)`
@@ -297,16 +296,9 @@ const server = Bun.spawn(
 try {
   for (let i = 0; i < 100 && !(await serving()); i++) await Bun.sleep(100);
   if (!(await serving())) throw new Error("the preview server did not start");
-  // Headless, a display forwarded into the Dev Container keeps Chromium from starting WebGL, and
-  // PixiJS would fall back to Canvas 2D; the run checks the renderer below.
-  const headlessEnv = Object.fromEntries(
-    Object.entries(process.env).filter(
-      ([name]) => name !== "WAYLAND_DISPLAY" && name !== "DISPLAY",
-    ),
-  );
   const browser = await chromium.launch({
     headless: !HEADED,
-    env: HEADED ? process.env : headlessEnv,
+    env: chromiumEnv(HEADED),
   });
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });

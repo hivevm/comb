@@ -51,7 +51,7 @@ describe("compare", () => {
     const verdict = compare(run(200, 1000), old);
     if (verdict.kind !== "compared") throw new Error("not compared");
     expect(verdict.regressions).toHaveLength(3);
-    expect(verdict.lines).toContain("pan p95 near (ms): 1000.0, no baseline");
+    expect(verdict.lines).toContain("pan near p95 (ms): 1000.0, no baseline");
   });
 
   test("a number that is not finite is a regression", () => {
@@ -73,6 +73,14 @@ describe("compare", () => {
     const verdict = compare(short, run(200, 100));
     if (verdict.kind !== "compared") throw new Error("not compared");
     expect(verdict.lines).toContain("truncated by the time budget: drag");
+  });
+
+  test("a level pan cut short by the time budget is reported by its name", () => {
+    const short = run(200, 100);
+    short.levels!.near.pan.truncated = true;
+    const verdict = compare(short, run(200, 100));
+    if (verdict.kind !== "compared") throw new Error("not compared");
+    expect(verdict.lines).toContain("truncated by the time budget: pan near");
   });
 });
 

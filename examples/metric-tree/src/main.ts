@@ -2,8 +2,8 @@
 import { createComb, type Comb, type GraphData, type Selection } from "comb";
 import {
   inspect,
-  levelScales,
   renderCount,
+  sceneNumbers,
   screenPoint,
   showLayers,
   viewport,
@@ -30,7 +30,7 @@ declare global {
     renderCount: () => number;
     viewport: () => SceneSnapshot["viewport"];
     showLayers: (layers: Parameters<typeof showLayers>[1]) => void;
-    levelScales: typeof levelScales;
+    sceneNumbers: typeof sceneNumbers;
     screenPoint: (x: number, y: number) => ReturnType<typeof screenPoint>;
     visibleRect: (margin?: number) => ReturnType<typeof visibleRect>;
   }
@@ -102,7 +102,7 @@ window.inspect = () => inspect(comb);
 window.renderCount = () => renderCount(comb);
 window.viewport = () => viewport(comb);
 window.showLayers = (layers) => showLayers(comb, layers);
-window.levelScales = levelScales;
+window.sceneNumbers = sceneNumbers;
 window.screenPoint = (x, y) => screenPoint(comb, x, y);
 window.visibleRect = (margin) => visibleRect(comb, margin);
 window.loadReport = load();

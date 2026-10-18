@@ -33,16 +33,32 @@ export interface Run {
   levels?: { near: { pan: Gesture }; middle: { pan: Gesture } };
 }
 
+/** The gestures of a run, by the names bench/run.ts prints and a comparison reports. */
+export function gestures<G extends Gesture>(run: {
+  drag: G;
+  pan: G;
+  zoom: G;
+  levels?: { near: { pan: G }; middle: { pan: G } };
+}): [string, G][] {
+  return [
+    ["drag", run.drag],
+    ["pan", run.pan],
+    ["zoom", run.zoom],
+    ...(run.levels
+      ? ([
+          ["pan near", run.levels.near.pan],
+          ["pan middle", run.levels.middle.pan],
+        ] as [string, G][])
+      : []),
+  ];
+}
+
 /** The numbers compared, by the name a regression reports. */
-function numbers(run: Run): Record<string, number | undefined> {
-  return {
-    "first frame (ms)": run.load.firstFrameMs,
-    "drag p95 (ms)": run.drag.p95,
-    "pan p95 (ms)": run.pan.p95,
-    "zoom p95 (ms)": run.zoom.p95,
-    "pan p95 near (ms)": run.levels?.near.pan.p95,
-    "pan p95 middle (ms)": run.levels?.middle.pan.p95,
-  };
+function numbers(run: Run): Record<string, number> {
+  return Object.fromEntries([
+    ["first frame (ms)", run.load.firstFrameMs],
+    ...gestures(run).map(([name, gesture]) => [`${name} p95 (ms)`, gesture.p95]),
+  ]);
 }
 
 const kind = (run: Run) =>
@@ -118,10 +134,12 @@ export function compare(run: Run, baseline: Run, margin = MARGIN): Verdict {
     };
   }
   const base = numbers(baseline);
-  const judged = Object.entries(numbers(run)).flatMap(([name, value]) =>
-    value === undefined ? [] : [judge(name, value, base[name], margin)],
+  const judged = Object.entries(numbers(run)).map(([name, value]) =>
+    judge(name, value, base[name], margin),
   );
-  const truncated = (["drag", "pan", "zoom"] as const).filter((g) => run[g].truncated);
+  const truncated = gestures(run)
+    .filter(([, gesture]) => gesture.truncated)
+    .map(([name]) => name);
   return {
     kind: "compared",
     regressions: judged.filter((j) => j.regressed).map((j) => j.line),

@@ -75,7 +75,7 @@ function countTexts(container: Container): number {
 
 /** How far the scale may move from the one the scene last queried at before it queries again:
  *  a mesh flattened within a quarter pixel then strays at most 0.31 px, within Q-4. */
-const RESCALE = 1.25;
+export const RESCALE = 1.25;
 
 /** What the scene last queried for: the graph state and the world rectangle it covers. */
 interface Drawn {

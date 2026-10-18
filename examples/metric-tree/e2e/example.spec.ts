@@ -3,6 +3,11 @@ import { expect, test, type Page } from "@playwright/test";
 const NODE_WIDTH = 220;
 const NODE_HEIGHT = 64;
 
+/** The numbers the scene draws by, from comb/testing. */
+async function sceneNumbers(page: Page) {
+  return page.evaluate(() => window.sceneNumbers());
+}
+
 /** Opens the example and waits until its first load has drawn. */
 async function open(page: Page, query = ""): Promise<void> {
   await page.goto(`/${query}`);
@@ -110,6 +115,8 @@ test("zooming through each threshold switches the level of detail", async ({ pag
   // Verifies: ADR-0012
   await open(page);
   const { width, height } = await canvasSize(page);
+  const { near: nearFrom, far: middleFrom } = await sceneNumbers(page);
+  const below = (scale: number) => scale - 0.001;
   // Centred on the north-star metric, at (900 + 110, 32) in world units.
   const at = async (scale: number) => {
     await setViewport(page, { x: width / 2 - 1010 * scale, y: height / 2 - 32 * scale, scale });
@@ -118,15 +125,15 @@ test("zooming through each threshold switches the level of detail", async ({ pag
       return { level, texts, particles, nodes: nodes.length, labels: edgeLabels.length };
     });
   };
-  const near = await at(0.6);
+  const near = await at(nearFrom);
   expect(near.level).toBe("near");
   expect(near.labels).toBeGreaterThan(0);
   expect(near.texts).toBe(near.nodes + near.labels);
-  const middle = await at(0.599);
+  const middle = await at(below(nearFrom));
   expect(middle).toMatchObject({ level: "middle", labels: 0, particles: 0 });
   expect(middle.texts).toBe(middle.nodes);
-  expect((await at(0.3)).level).toBe("middle");
-  const far = await at(0.299);
+  expect((await at(middleFrom)).level).toBe("middle");
+  const far = await at(below(middleFrom));
   expect(far).toMatchObject({ level: "far", texts: 0, labels: 0 });
   expect(far.particles).toBe(far.nodes);
   expect(far.nodes).toBeGreaterThan(0);
@@ -209,10 +216,13 @@ test("what lies entirely outside the viewport is not bound to a display object",
   await open(page);
   expect((await page.evaluate(() => window.inspect())).edgeLabels).toHaveLength(7);
 
-  // World x = 450 at the right border of the canvas: with the margin of 128 px at scale 1, the
-  // query reaches x = 578, and label points 120 beyond it. Columns 0 and 1 (x < 520) are bound;
-  // columns 2 to 4 (x ≥ 600), the edges into and out of the north-star metric (x ≥ 820), and
-  // their labels (x ≥ 860) are not.
+  // World x = 450 at the right border of the canvas: at scale 1, the query reaches the culling
+  // margin beyond it, and label points the label reach beyond that. Columns 0 and 1 (x < 520) are
+  // bound; columns 2 to 4 (x ≥ 600), the edges into and out of the north-star metric (x ≥ 820),
+  // and their labels (x ≥ 860) are not.
+  const { cullingMargin, labelReach } = await sceneNumbers(page);
+  expect(450 + cullingMargin).toBeLessThan(600);
+  expect(450 + cullingMargin + labelReach).toBeLessThan(860);
   const { width, height } = await canvasSize(page);
   await setViewport(page, { x: width - 450, y: height / 2, scale: 1 });
   const snapshot = await page.evaluate(() => window.inspect());
@@ -225,7 +235,8 @@ test("what lies entirely outside the viewport is not bound to a display object",
 
 /** What is drawn although it lies entirely outside the viewport grown by `margin` screen pixels:
  *  nodes by their box, edges by the box of their ends grown by the pull of their control points,
- *  which holds the whole path, and labels by their point grown by the label reach. */
+ *  which holds the whole path, and labels by their point grown by the label reach. The reach is
+ *  the scene's least: a label wider than any the example draws would be flagged wrongly. */
 async function drawnBeyond(page: Page, margin: number): Promise<string[]> {
   return page.evaluate((margin) => {
     const { nodes, edges, edgeLabels } = window.inspect();
@@ -233,7 +244,7 @@ async function drawnBeyond(page: Page, margin: number): Promise<string[]> {
     const meets = (minX: number, minY: number, maxX: number, maxY: number) =>
       minX <= view.maxX && view.minX <= maxX && minY <= view.maxY && view.minY <= maxY;
     const pull = 40 + 1;
-    const reach = 120;
+    const reach = window.sceneNumbers().labelReach;
     return [
       ...nodes
         .filter((n) => !meets(n.x, n.y, n.x + n.width, n.y + n.height))
@@ -259,6 +270,7 @@ test("at every level, nothing entirely outside the viewport and its margin is dr
   test.setTimeout(60_000);
   await open(page, "?copies=100");
   const { width, height } = await canvasSize(page);
+  const { cullingMargin, rescale } = await sceneNumbers(page);
   // Centred on world (7000, 3000), well inside the grid of copies.
   const centred = (scale: number) => ({
     x: width / 2 - 7000 * scale,
@@ -275,23 +287,31 @@ test("at every level, nothing entirely outside the viewport and its margin is dr
     const { level: drawnAt, nodes } = await page.evaluate(() => window.inspect());
     expect(drawnAt).toBe(level);
     expect(nodes.length).toBeGreaterThan(0);
-    expect(await drawnBeyond(page, 128)).toEqual([]);
+    expect(await drawnBeyond(page, cullingMargin)).toEqual([]);
     // Moved without a query, zoomed in by a tenth and panned: what is bound reaches at most
-    // twice the margin beyond the viewport.
+    // twice the margin beyond the viewport. A tenth stays within the rescale the scene allows.
+    expect(rescale).toBeGreaterThan(1.1);
     const queries = await page.evaluate(() => window.inspect().queries);
     const zoomed = centred(scale * 1.1);
     await setViewport(page, zoomed);
     await setViewport(page, { ...zoomed, x: zoomed.x + 30, y: zoomed.y - 20 });
     expect(await page.evaluate(() => window.inspect().queries)).toBe(queries);
-    expect(await drawnBeyond(page, 256)).toEqual([]);
-    // Zoomed in by almost a quarter from a fresh query: within the rescale the scene allows, but
-    // the last query would reach about 280 px beyond the viewport, so the scene queries again.
+    expect(await drawnBeyond(page, 2 * cullingMargin)).toEqual([]);
+    // Zoomed in by almost the rescale the scene allows from a fresh query: the last query would
+    // reach more than twice the margin beyond the viewport, so the scene queries again.
     await setViewport(page, { ...centred(scale), x: centred(scale).x + 5000 });
     await setViewport(page, centred(scale));
     const fresh = await page.evaluate(() => window.inspect().queries);
-    await setViewport(page, centred(scale * 1.24));
+    // The step only shows the bound where the zoom leaves the last query's reach: the viewport
+    // shrinks by (1 - 1 / zoom) of its width, which with the margin must exceed twice the margin.
+    const zoom = rescale - 0.01;
+    const { width } = await canvasSize(page);
+    expect(((width * (1 - 1 / zoom)) / 2 + cullingMargin) * zoom).toBeGreaterThan(
+      2 * cullingMargin,
+    );
+    await setViewport(page, centred(scale * zoom));
     expect(await page.evaluate(() => window.inspect().queries)).toBe(fresh + 1);
-    expect(await drawnBeyond(page, 256)).toEqual([]);
+    expect(await drawnBeyond(page, 2 * cullingMargin)).toEqual([]);
   }
 });
 
@@ -337,12 +357,13 @@ test("a pan within the culling margin moves the world without a query", async ({
   await open(page);
   const queries = () => page.evaluate(() => window.inspect().queries);
   const start = await page.evaluate(() => window.comb.viewport());
+  const { cullingMargin } = await sceneNumbers(page);
   const before = await queries();
-  await setViewport(page, { ...start, x: start.x + 60 });
+  await setViewport(page, { ...start, x: start.x + cullingMargin / 2 });
   expect(await queries()).toBe(before);
   await setViewport(page, { ...start, scale: start.scale * 1.1 });
   expect(await queries()).toBe(before);
-  await setViewport(page, { ...start, x: start.x + 600 });
+  await setViewport(page, { ...start, x: start.x + 4 * cullingMargin });
   expect(await queries()).toBe(before + 1);
   // A selection and a move change what is drawn: the renders query, wherever the viewport is.
   const centre = await screenCentre(page, "0:0.0");
@@ -358,12 +379,13 @@ test("the same area binds as many display objects at 1 and at 1,000 copies", asy
   // Verifies: ADR-0012
   test.setTimeout(120_000);
   // Inside the first copy: the next copy to the right starts at x = 1500 and the one below at
-  // y = 550, both beyond the canvas and its margin of 128 px at scale 1.
+  // y = 550, both beyond the canvas and its culling margin at scale 1.
   const bound = async (query: string) => {
     await open(page, query);
     const { width, height } = await canvasSize(page);
-    expect(width + 128).toBeLessThan(1500);
-    expect(height / 2 + 128).toBeLessThan(550);
+    const { cullingMargin } = await sceneNumbers(page);
+    expect(width + cullingMargin).toBeLessThan(1500);
+    expect(height / 2 + cullingMargin).toBeLessThan(550);
     await setViewport(page, { x: 0, y: height / 2, scale: 1 });
     return page.evaluate(() => window.inspect().displayObjects);
   };

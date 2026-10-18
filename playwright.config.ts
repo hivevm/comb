@@ -1,20 +1,11 @@
 // Browser tests run against the example, served by Vite (ADR-0008).
 import { defineConfig, devices } from "@playwright/test";
+import { chromiumEnv } from "./bench/chromium";
 
-// Headless Chromium starts its GPU process on the display server it finds; a display forwarded
-// into the Dev Container (Wayland or X11) makes that fail, and PixiJS then falls back to its
-// Canvas 2D renderer without a word. Without them, WebGL2 runs on SwiftShader. A run that opens a
-// window (--headed, --ui, --debug) keeps them.
+// A run that opens a window (--headed, --ui, --debug) keeps the displays (bench/chromium.ts).
 const windowed =
   ["--headed", "--ui", "--debug"].some((flag) => process.argv.includes(flag)) ||
   !!process.env.PWDEBUG;
-const browserEnv = windowed
-  ? process.env
-  : Object.fromEntries(
-      Object.entries(process.env).filter(
-        ([name]) => name !== "WAYLAND_DISPLAY" && name !== "DISPLAY",
-      ),
-    );
 
 export default defineConfig({
   testDir: "examples/metric-tree/e2e",
@@ -24,7 +15,7 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"], launchOptions: { env: browserEnv } },
+      use: { ...devices["Desktop Chrome"], launchOptions: { env: chromiumEnv(windowed) } },
     },
   ],
   webServer: {
