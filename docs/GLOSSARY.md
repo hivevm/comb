@@ -15,7 +15,8 @@ to invent.
   edges, and edge labels.
 - **Connector** — a point on a node where an edge starts or ends.
   _Avoid:_ port, handle, socket, pin.
-- **Culling** — leaving out of the draw everything that lies entirely outside the viewport.
+- **Culling** — leaving out of the draw everything that lies entirely outside the viewport grown
+  by two culling margins.
   _Avoid:_ frustum culling, outside the wording of the constraint that requires it.
 - **Culling margin** — the band around the viewport, in screen pixels, within which display
   objects are bound already, so that a small pan finds them drawn; between two queries of the

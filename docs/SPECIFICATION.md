@@ -58,7 +58,7 @@ Only a normalization renumbers them ([`AGENTS.md` §3](../AGENTS.md#3-adr-rules)
    `t`; when the user drags a label, the system shall set `t` and the offset so that the label
    stays where it was dropped.
 7. **G-7** — When the viewport changes, the system shall not draw any node, edge, or label that
-   lies entirely outside it.
+   lies entirely outside the viewport grown by two culling margins.
 8. **G-8** — When the user drags the empty canvas or scrolls, the system shall pan the viewport,
    or zoom it so that the world point under the pointer stays under the pointer.
 9. **G-9** — When the developer starts the launch configuration *Example: metric tree* in VS Code,
