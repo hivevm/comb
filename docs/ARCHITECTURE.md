@@ -89,7 +89,7 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   the first frame and p95 frame times of drag, pan, and zoom over the frames Comb rendered, and of
   a pan where the near and the middle level begin, each gesture checked for its effect (Q-1, Q-2).
   `bench/compare.ts` holds the median of several runs against `bench/baseline.json` with a margin
-  of 25 %, and passes with a notice while no baseline is recorded, as none is yet; the
+  of 25 %; the baseline is the median of three runs on a GitHub runner on `main`; the
   **Benchmark** workflow (`.github/workflows/benchmark.yml`) runs the benchmark three times and
   compares on a GitHub runner, weekly and on demand.
 
