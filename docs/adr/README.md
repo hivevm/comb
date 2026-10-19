@@ -95,6 +95,7 @@ is the table a session reads.
 | [0016](0016-no-secrets.md) | The repository holds no secrets and relies on GitHub's baseline | the repository, its CI workflows, and the repository settings | 🟡 proposed |
 | [0017](0017-actions-pinned-by-sha.md) | Workflows reference actions by full commit SHA, kept current by Dependabot | every `uses:` line under `.github/workflows/`, `.github/dependabot.yml`, `scripts/check-all.sh`, and the `sensors` job of `checks.yml` | 🟡 proposed |
 | [0018](0018-webgl2-or-an-opted-in-canvas-fallback.md) | Comb draws with WebGL2, and on Canvas 2D only where the host application opts in | `createComb` and `CombOptions` in `packages/comb/src/api/`, the error types `comb` exports, and the edges layer in `packages/comb/src/render/` | 🟡 proposed |
+| [0019](0019-the-host-hands-comb-its-engine.md) | The host application hands Comb the engine's WebAssembly; Comb requests nothing itself | `createComb` and `CombOptions` in `packages/comb/src/api/`, the loading of the engine in `packages/comb/src/bridge/`, the exports of `packages/comb/package.json`, the library build, and `scripts/check-bundle.sh` | 🟡 proposed |
 
 ### Superseded and rejected
 
