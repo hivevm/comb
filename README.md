@@ -95,9 +95,11 @@ budget of Q-3 (`bun run build:lib`, at most 300 kB gzipped without PixiJS).
   grows only in a pull request that says why each new survivor stays; a survivor no test can
   tell from the code, an equivalent mutant, carries its reason in the list after ` # `.
   `bash scripts/check-mutants.sh --record mutants.out crates/engine/mutants-missed.txt` prints
-  the list of a run, each survivor with the reason the list gives it. The list in the tree is
-  provisional, recorded from a local run: the list recorded from the artefact of the workflow's
-  first run on GitHub replaces it, in a pull request that says so.
+  the list of a run, each survivor with the reason the list gives it. The timeouts lie in
+  `Point::lerp`, `distance_to_segment`, and `subdivide`: their mutants keep a path from ever
+  getting flat enough, so edges are subdivided to the deepest level and the suite runs past the
+  timeout. Those tried with a timeout of ten minutes were caught, their suite failing after 38 to
+  110 seconds.
 
 ## Usage
 
