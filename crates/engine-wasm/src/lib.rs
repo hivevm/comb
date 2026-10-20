@@ -4,7 +4,7 @@
 //! generates; node positions and the results of a viewport query cross as buffers the engine
 //! owns, which the shell reads as typed-array views created anew after every call.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use comb_engine::geometry::Point;
 use comb_engine::geometry::Rect;
@@ -84,6 +84,9 @@ pub enum BridgeError {
     /// Two nodes share an identifier.
     #[serde(rename_all = "camelCase")]
     DuplicateNode { node: String },
+    /// Two edges share an identifier.
+    #[serde(rename_all = "camelCase")]
+    DuplicateEdge { edge: String },
     /// An edge names a node that is not in the batch.
     #[serde(rename_all = "camelCase")]
     MissingNode { edge: String, node: String },
@@ -158,20 +161,19 @@ fn nodes_of(batch: &GraphBatch) -> Result<Nodes<'_>, BridgeError> {
     let mut sizes = Vec::with_capacity(batch.nodes.len() * 2);
     for (index, node) in batch.nodes.iter().enumerate() {
         let named = || node.id.clone();
-        if !node.x.is_finite() || !node.y.is_finite() {
+        // Checked as the engine keeps them: a number beyond `f32` is as infinite as infinity.
+        let [x, y, width, height] = [node.x, node.y, node.width, node.height].map(|v| v as f32);
+        if !x.is_finite() || !y.is_finite() {
             return Err(BridgeError::NonFiniteCoordinate { node: named() });
         }
-        if !(node.width.is_finite() && node.height.is_finite())
-            || node.width < 0.0
-            || node.height < 0.0
-        {
+        if !(width.is_finite() && height.is_finite()) || width < 0.0 || height < 0.0 {
             return Err(BridgeError::InvalidSize { node: named() });
         }
         if slots.insert(node.id.as_str(), slot(index)?).is_some() {
             return Err(BridgeError::DuplicateNode { node: named() });
         }
-        positions.extend([node.x as f32, node.y as f32]);
-        sizes.extend([node.width as f32, node.height as f32]);
+        positions.extend([x, y]);
+        sizes.extend([width, height]);
     }
     Ok(Nodes {
         positions,
@@ -195,11 +197,12 @@ fn placement_of(edge: &EdgeInput) -> Result<(Option<LabelPlacement>, EdgeStyle),
     if edge.color > 0xff_ffff {
         return Err(BridgeError::InvalidColor { edge: id() });
     }
-    let dash = match edge.dash {
-        Some([dash, gap]) if !(dash.is_finite() && gap.is_finite() && dash > 0.0 && gap >= 0.0) => {
+    // Checked as the engine keeps it, so that a dash too short for `f32` is refused too.
+    let dash = match edge.dash.map(|[dash, gap]| (dash as f32, gap as f32)) {
+        Some((dash, gap)) if !(dash.is_finite() && gap.is_finite() && dash > 0.0 && gap >= 0.0) => {
             return Err(BridgeError::InvalidDash { edge: id() });
         }
-        dash => dash.map(|[dash, gap]| (dash as f32, gap as f32)),
+        dash => dash,
     };
     let style = EdgeStyle {
         color: edge.color,
@@ -209,8 +212,10 @@ fn placement_of(edge: &EdgeInput) -> Result<(Option<LabelPlacement>, EdgeStyle),
     Ok((label, style))
 }
 
-/// Resolves every edge's ends to node slots, or names the first offending edge.
+/// Resolves every edge's ends to node slots, or names the first offending edge: the second of
+/// two that share an identifier, or one whose ends, label, or style were refused.
 fn edges_of(batch: &GraphBatch, slots: &HashMap<&str, u32>) -> Result<Vec<EdgeSpec>, BridgeError> {
+    let mut seen = HashSet::with_capacity(batch.edges.len());
     let end = |edge: &EdgeInput, node: &String| {
         slots
             .get(node.as_str())
@@ -224,6 +229,11 @@ fn edges_of(batch: &GraphBatch, slots: &HashMap<&str, u32>) -> Result<Vec<EdgeSp
         .edges
         .iter()
         .map(|edge| {
+            if !seen.insert(edge.id.as_str()) {
+                return Err(BridgeError::DuplicateEdge {
+                    edge: edge.id.clone(),
+                });
+            }
             let source = end(edge, &edge.source)?;
             let target = end(edge, &edge.target)?;
             let (label, style) = placement_of(edge)?;
@@ -473,6 +483,9 @@ impl Engine {
     }
 }
 
+#[cfg(test)]
+mod properties;
+
 // The malformed-data tests below verify ADR-0010: every export that receives graph data returns a
 // typed error that names the offender, and none panics.
 // Verifies: ADR-0010
@@ -533,9 +546,35 @@ mod tests {
     }
 
     #[test]
+    fn a_number_beyond_f32_is_refused_as_a_non_finite_one() {
+        let error = graph_of(&batch(&[("a", 1e300, 0.0)], &[])).unwrap_err();
+        assert_eq!(error, BridgeError::NonFiniteCoordinate { node: "a".into() });
+        let mut data = batch(&[("a", 0.0, 0.0)], &[]);
+        data.nodes[0].width = 1e300;
+        assert_eq!(
+            graph_of(&data).unwrap_err(),
+            BridgeError::InvalidSize { node: "a".into() }
+        );
+        let two = [("a", 0.0, 0.0), ("b", 300.0, 0.0)];
+        let mut data = batch(&two, &[("e", "a", "b")]);
+        data.edges[0].dash = Some([1e-300, 1e300]);
+        assert_eq!(
+            graph_of(&data).unwrap_err(),
+            BridgeError::InvalidDash { edge: "e".into() }
+        );
+    }
+
+    #[test]
     fn a_duplicate_identifier_names_its_node() {
         let error = graph_of(&batch(&[("a", 0.0, 0.0), ("a", 1.0, 1.0)], &[])).unwrap_err();
         assert_eq!(error, BridgeError::DuplicateNode { node: "a".into() });
+    }
+
+    #[test]
+    fn a_duplicate_identifier_names_its_edge() {
+        let two = [("a", 0.0, 0.0), ("b", 300.0, 0.0)];
+        let error = graph_of(&batch(&two, &[("e", "a", "b"), ("e", "b", "a")])).unwrap_err();
+        assert_eq!(error, BridgeError::DuplicateEdge { edge: "e".into() });
     }
 
     #[test]

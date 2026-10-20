@@ -24,9 +24,9 @@ these properties, and G-2 and G-8, is cited by a test that fails when it breaks.
   initialiser without an argument; the library build inlines the engine as a `data:` URL. This
   changes: the host hands the engine over (ADR-0019), a breaking change for every caller, the
   example and the benchmark among them.
-- The bridge crate rejects non-finite coordinates and sizes, a duplicate node identifier, an edge
-  to a missing node, and malformed colours, dash patterns, and labels; its tests and the bridge's
-  malformed-data test pin that and must stay.
+- The bridge crate rejects non-finite coordinates and sizes, a duplicate node or edge identifier,
+  an edge to a missing node, and malformed colours, dash patterns, and labels; its tests and the
+  bridge's malformed-data test pin that and must stay.
 - Titles and labels are drawn with PixiJS text and no value of the graph data reaches the DOM.
   Nothing pins it.
 - Drag, pan, and zoom are tested below the canvas (interaction and viewport tests) and in the

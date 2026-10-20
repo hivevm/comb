@@ -28,8 +28,8 @@
 ```
 
 Graph data from the host application is untrusted: the engine refuses non-finite coordinates,
-invalid sizes, duplicate identifiers, edges to missing nodes, and non-finite label placements with
-a typed error.
+invalid sizes, duplicate node or edge identifiers, edges to missing nodes, and non-finite label
+placements with a typed error, and `updateNode` refuses an identifier the graph does not hold.
 
 ## Building blocks
 
