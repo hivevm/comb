@@ -26,9 +26,11 @@ export interface LoadReport {
 declare global {
   interface Window {
     comb: Comb;
+    /** Comb's factory, so that a browser test can watch the document while a second Comb is made. */
+    createComb: typeof createComb;
     loadReport: Promise<LoadReport>;
     /** What the canvas draws, from comb/testing, for the browser tests and the benchmark. */
-    inspect: () => SceneSnapshot;
+    inspect: (other?: Comb) => SceneSnapshot;
     renderCount: () => number;
     viewport: () => SceneSnapshot["viewport"];
     showLayers: (layers: Parameters<typeof showLayers>[1]) => void;
@@ -104,7 +106,8 @@ title.addEventListener("input", () => {
 });
 copiesFromQuery();
 window.comb = comb;
-window.inspect = () => inspect(comb);
+window.createComb = createComb;
+window.inspect = (other = comb) => inspect(other);
 window.renderCount = () => renderCount(comb);
 window.viewport = () => viewport(comb);
 window.showLayers = (layers) => showLayers(comb, layers);

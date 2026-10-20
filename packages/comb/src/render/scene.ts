@@ -12,7 +12,7 @@ import { worldRect } from "../interaction/viewport";
 import type { GraphView } from "../store";
 import { EdgesContainer, type MeshSize } from "./edges";
 import { EdgeFill } from "./edges-canvas";
-import { LabelsContainer } from "./labels";
+import { LabelsContainer, type LabelView } from "./labels";
 import { NodeGraphic, NodesContainer } from "./nodes";
 import { NodeParticles } from "./particles";
 
@@ -46,8 +46,9 @@ export interface SceneSnapshot {
   viewport: { x: number; y: number; scale: number };
   /** The level of detail the scene draws at. */
   level: Level;
-  /** Every node drawn, by a view or, at the far level, as a particle. */
-  nodes: { id: string; x: number; y: number; width: number; height: number }[];
+  /** Every node drawn, by a view or, at the far level, as a particle; `title` is the text a view
+   *  draws, which a particle does not. */
+  nodes: { id: string; x: number; y: number; width: number; height: number; title?: string }[];
   /** How many nodes are drawn as particles. */
   particles: number;
   /** How many text objects are bound. */
@@ -55,7 +56,8 @@ export interface SceneSnapshot {
   /** The node drawn as selected, if one is drawn. */
   highlighted: string | null;
   edges: { id: string; source: { x: number; y: number }; target: { x: number; y: number } }[];
-  edgeLabels: { edge: string; x: number; y: number }[];
+  /** Every edge label drawn, with the text its pill draws. */
+  edgeLabels: { edge: string; x: number; y: number; text: string }[];
   /** How many triangles the edges layer draws: the edge mesh's, or the fill's on Canvas 2D. */
   edgeTriangles: number;
   /** How many vertices and indices the edge mesh draws, and how many its buffers hold before they
@@ -193,6 +195,7 @@ export class Scene {
           ...(view as NodeGraphic).size,
           x: view.x,
           y: view.y,
+          title: (view as NodeGraphic).drawnText,
         })),
         ...this.particles.drawn(),
       ],
@@ -209,6 +212,7 @@ export class Scene {
         edge: label.label,
         x: label.x,
         y: label.y,
+        text: (label as LabelView).drawnText,
       })),
       displayObjects: countDisplayObjects(this.world),
       renders: this.renders,

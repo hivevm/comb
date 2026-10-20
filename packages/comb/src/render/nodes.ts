@@ -37,6 +37,11 @@ export class NodeGraphic extends Container {
     this.eventMode = "none";
   }
 
+  /** The text the view's title draws. */
+  get drawnText(): string {
+    return this.title.text;
+  }
+
   /** The size the node was last drawn at. */
   size = { width: 0, height: 0 };
 

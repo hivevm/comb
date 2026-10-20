@@ -91,18 +91,19 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   `whenRendered` resolves once a change is drawn, with one render per animation frame scheduled
   by `frames`.
 - **Testing entry** (`comb/testing`, `packages/comb/src/testing.ts`) — `inspect` returns what the
-  scene draws; `viewport` and `renderCount`, cheap enough for every frame, return its transform and
-  how often it rendered; `screenPoint` and `visibleRect` apply the scene's transform between world
-  and screen; `showLayers` hides layers for a reference image; `sceneNumbers` gives the numbers
-  the scene draws by (where the levels of detail begin, the culling margin, the label reach, the
-  rescale); `work` counts what the canvas did: GPU buffers created and allocated, bytes
-  uploaded, those of the edge mesh among them, and texture uploads, counted at the WebGL context
-  from its first call, resizes of the edge mesh's buffers, and views the pools made, and refuses
-  where the canvas draws without WebGL; for tests, the benchmark, and tooling. Its shape follows
-  the scene and is outside the stable interface of `comb`.
+  scene draws, the text of the titles and labels drawn included; `viewport` and `renderCount`, cheap
+  enough for every frame, return its transform and how often it rendered; `screenPoint` and
+  `visibleRect` apply the scene's transform between world and screen; `showLayers` hides layers for
+  a reference image; `sceneNumbers` gives the numbers the scene draws by (where the levels of detail
+  begin, the culling margin, the label reach, the rescale); `work` counts what the canvas did: GPU
+  buffers created and allocated, bytes uploaded, those of the edge mesh among them, and texture
+  uploads, counted at the WebGL context from its first call, resizes of the edge mesh's buffers, and
+  views the pools made, and refuses where the canvas draws without WebGL; for tests, the benchmark,
+  and tooling. Its shape follows the scene and is outside the stable interface of `comb`.
 - **Example** (`examples/metric-tree`) — a host application with a metric tree and an HTML
   sidebar (G-9); `?copies=` sets its size, the copies lie in a grid about as wide as tall, and it
-  reports its load time as `window.loadReport`; `?fallback=canvas` allows the Canvas 2D fallback.
+  reports its load time as `window.loadReport`; `?fallback=canvas` allows the Canvas 2D fallback;
+  `window.createComb` lets a browser test make a second Comb in a host element of its own.
 - **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, measuring the time to
   the first frame and p95 frame times of drag, pan, and zoom over the frames Comb rendered, and of
   a pan where the near and the middle level begin, each gesture checked for its effect (Q-1, Q-2).
@@ -119,7 +120,8 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   on a survivor the list does not name (ADR-0008).
 
 **Test pattern:** Rust unit tests beside the code they test (`#[cfg(test)]`); Bun tests beside
-their module as `*.test.ts`, the bridge's against the built WebAssembly module; browser tests
+their module as `*.test.ts`, the bridge's against the built WebAssembly module, and the lint's
+rules for Comb's library sources in `packages/comb/src/lint.test.ts`; browser tests
 under `examples/*/e2e`, run by Playwright on Bun against the example, reading what is drawn
 through `comb/testing` rather than pixels, apart from one reference image of the edges alone.
 Both run the bridge in test mode, which grows the engine's memory before each of its calls, so a
