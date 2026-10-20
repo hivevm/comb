@@ -2,8 +2,6 @@
 # One per line as '<file> <function> <replacement>', ' (xN)' when one key covers N mutants,
 # and for an equivalent mutant its reason after ' # '.
 # Recorded with scripts/check-mutants.sh --record; the README says how the list changes.
-# Provisional: recorded from a local run. The list of the first run of the Mutation testing
-# workflow on GitHub replaces it, from the artefact, in a pull request that says so.
 crates/engine/src/graph.rs Graph::cell_side replace * with + (x2) # equivalent: it affects only how fast a query runs, not which slots it returns
 crates/engine/src/graph.rs Graph::cell_side replace * with / (x2) # equivalent: it affects only how fast a query runs, not which slots it returns
 crates/engine/src/graph.rs Graph::cell_side replace - with + (x2) # equivalent: it affects only how fast a query runs, not which slots it returns
