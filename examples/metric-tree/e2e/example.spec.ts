@@ -646,3 +646,182 @@ test("a drag at the far level updates the GPU buffers in place, never reallocati
     meshBytesUploaded: did.meshBytesUploaded,
   });
 });
+
+/** The canvas's left and top on the page. */
+async function canvasOrigin(page: Page): Promise<{ left: number; top: number }> {
+  return page.evaluate(() => {
+    const { left, top } = document.querySelector("#canvas canvas")!.getBoundingClientRect();
+    return { left, top };
+  });
+}
+
+/** For each screen point, relative to the canvas, whether the canvas shows anything but its
+ *  background within `radius` CSS pixels of it, read off a screenshot of what the browser last
+ *  presented: a WebGL canvas keeps no drawing buffer to read back after its frame. */
+async function inkNear(page: Page, points: { x: number; y: number }[], radius = 2) {
+  const png = await page.locator("#canvas canvas").screenshot();
+  return page.evaluate(
+    async ({ png, points, radius }) => {
+      const blob = await (await fetch(`data:image/png;base64,${png}`)).blob();
+      const image = await createImageBitmap(blob);
+      const ratio = image.width / document.querySelector("#canvas canvas")!.clientWidth;
+      const copy = document.createElement("canvas");
+      copy.width = image.width;
+      copy.height = image.height;
+      const context = copy.getContext("2d")!;
+      context.drawImage(image, 0, 0);
+      // Comb's default background, which createComb clears the canvas to.
+      const background = [0xf7, 0xf8, 0xfa];
+      return points.map(({ x, y }) => {
+        const r = Math.ceil(radius * ratio);
+        const left = Math.round(x * ratio) - r;
+        const top = Math.round(y * ratio) - r;
+        const { data } = context.getImageData(left, top, 2 * r + 1, 2 * r + 1);
+        for (let i = 0; i < data.length; i += 4) {
+          const off = background.map((value, channel) => Math.abs(data[i + channel]! - value));
+          if (Math.max(...off) > 24) return true;
+        }
+        return false;
+      });
+    },
+    { png: png.toString("base64"), points, radius },
+  );
+}
+
+/** Once the pending render is drawn: node `id` and the screen points, relative to the canvas, of
+ *  its centre, its connectors, and the ends of every edge attached to it, with the render count. */
+async function drawnFrame(page: Page, id: string) {
+  return page.evaluate(
+    async ({ id }) => {
+      await window.comb.whenRendered();
+      const { nodes, edges } = window.inspect();
+      const node = nodes.find((candidate) => candidate.id === id)!;
+      const toScreen = (p: { x: number; y: number }) => window.screenPoint(p.x, p.y);
+      const attached = edges.filter((edge) => {
+        const [copy, ends] = edge.id.split(":");
+        return ends!.split("-").some((end) => `${copy}:${end}` === id);
+      });
+      return {
+        renders: window.renderCount(),
+        centre: toScreen({ x: node.x + node.width / 2, y: node.y + node.height / 2 }),
+        // The connectors: edges leave a node at its right side and enter it at its left.
+        out: toScreen({ x: node.x + node.width, y: node.y + node.height / 2 }),
+        in: toScreen({ x: node.x, y: node.y + node.height / 2 }),
+        edges: attached.map((edge) => ({
+          id: edge.id,
+          outgoing: edge.id.split("-")[0] === id,
+          source: toScreen(edge.source),
+          target: toScreen(edge.target),
+        })),
+      };
+    },
+    { id },
+  );
+}
+
+test("a node dragged across frames stays under the pointer, its edges' ends at its connectors in the same frame", async ({
+  page,
+}) => {
+  // Verifies: G-2
+  await open(page);
+  const northStar = "0:3.0";
+  const origin = await canvasOrigin(page);
+  const from = await screenCentre(page, northStar);
+  // The edges layer alone, so that every pixel that is not background belongs to an edge.
+  await page.evaluate(() => window.showLayers({ nodes: false, edgeLabels: false }));
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  // Pressing selects the node, which renders once before the drag.
+  await page.evaluate(() => window.comb.whenRendered());
+
+  const moves = 10;
+  // Straight down, 20 pixels a move.
+  const step = 200 / moves;
+  for (let i = 1; i <= moves; i++) {
+    const pointer = { x: from.x, y: from.y + i * step };
+    const renders = await page.evaluate(() => window.renderCount());
+    await page.mouse.move(pointer.x, pointer.y);
+    // The frame that drew this move, read before any other: one render per move (ADR-0011).
+    const frame = await drawnFrame(page, northStar);
+    expect(frame.renders).toBe(renders + 1);
+    const local = { x: pointer.x - origin.left, y: pointer.y - origin.top };
+    expect(Math.abs(frame.centre.x - local.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(frame.centre.y - local.y)).toBeLessThanOrEqual(1);
+    // Edges into and out of the north-star metric.
+    expect(frame.edges.some((edge) => edge.outgoing)).toBe(true);
+    expect(frame.edges.some((edge) => !edge.outgoing)).toBe(true);
+    for (const edge of frame.edges) {
+      const end = edge.outgoing ? edge.source : edge.target;
+      const connector = edge.outgoing ? frame.out : frame.in;
+      expect(Math.abs(end.x - connector.x), edge.id).toBeLessThanOrEqual(1);
+      expect(Math.abs(end.y - connector.y), edge.id).toBeLessThanOrEqual(1);
+    }
+    // Drawn, not only computed: the canvas shows an edge two pixels out from each connector, and
+    // the background where the connectors were a frame before, where edges drawn a frame late
+    // would still end.
+    const drawn = await inkNear(page, [
+      { x: frame.out.x + 2, y: frame.out.y },
+      { x: frame.in.x - 2, y: frame.in.y },
+      { x: frame.out.x + 2, y: frame.out.y - step },
+      { x: frame.in.x - 2, y: frame.in.y - step },
+    ]);
+    expect(drawn, `move ${i}`).toEqual([true, true, false, false]);
+    // The screenshot showed the render asserted above, not a later one.
+    expect(await page.evaluate(() => window.renderCount())).toBe(renders + 1);
+  }
+  await page.mouse.up();
+});
+
+test("dragging the empty canvas pans the viewport by the pointer's movement", async ({ page }) => {
+  // Verifies: G-8
+  await open(page);
+  const origin = await canvasOrigin(page);
+  const { height } = await canvasSize(page);
+  // Near the bottom-left corner, inside the margin fitView leaves around the tree.
+  const from = { x: origin.left + 10, y: origin.top + height - 10 };
+  await page.mouse.move(from.x, from.y);
+  const before = await page.evaluate(() => window.comb.viewport());
+  await page.mouse.down();
+  await page.mouse.move(from.x + 120, from.y - 80, { steps: 8 });
+  await page.mouse.up();
+  await page.evaluate(() => window.comb.whenRendered());
+  const after = await page.evaluate(() => window.comb.viewport());
+  expect(after.x - before.x).toBeCloseTo(120, 3);
+  expect(after.y - before.y).toBeCloseTo(-80, 3);
+  expect(after.scale).toBe(before.scale);
+  // Drawn so: the canvas shows the world through the panned viewport.
+  expect(await page.evaluate(() => window.inspect().viewport)).toEqual(after);
+});
+
+test("the wheel zooms in and out about the world point under the pointer", async ({ page }) => {
+  // Verifies: G-8
+  await open(page);
+  const origin = await canvasOrigin(page);
+  const { width, height } = await canvasSize(page);
+  // Away from the canvas's centre, so that a zoom about the centre moves the point.
+  const pointer = { x: width * 0.25, y: height * 0.3 };
+  const world = await page.evaluate(({ x, y }) => {
+    const { x: vx, y: vy, scale } = window.comb.viewport();
+    return { x: (x - vx) / scale, y: (y - vy) / scale };
+  }, pointer);
+  await page.mouse.move(origin.left + pointer.x, origin.top + pointer.y);
+  const under = async () =>
+    page.evaluate(async ({ x, y }) => {
+      await window.comb.whenRendered();
+      return { at: window.screenPoint(x, y), scale: window.inspect().viewport.scale };
+    }, world);
+  const start = await under();
+
+  await page.mouse.wheel(0, -200);
+  const zoomedIn = await under();
+  expect(zoomedIn.scale).toBeGreaterThan(start.scale);
+  expect(Math.abs(zoomedIn.at.x - pointer.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(zoomedIn.at.y - pointer.y)).toBeLessThanOrEqual(1);
+
+  await page.mouse.wheel(0, 400);
+  const zoomedOut = await under();
+  expect(zoomedOut.scale).toBeLessThan(zoomedIn.scale);
+  expect(zoomedOut.scale).toBeLessThan(start.scale);
+  expect(Math.abs(zoomedOut.at.x - pointer.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(zoomedOut.at.y - pointer.y)).toBeLessThanOrEqual(1);
+});
