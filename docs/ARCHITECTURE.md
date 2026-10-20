@@ -84,9 +84,12 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   patterns solid. Not built yet: the node content of
   [ADR-0013](adr/0013-node-content-model.md), and the `grid` and `connectors` layers of
   [ADR-0012](adr/0012-virtualized-scene-graph.md).
-- **API** (`packages/comb/src/api`) — `createComb`, which refuses with a
-  `RendererUnavailableError` where PixiJS finds no WebGL2 unless `allowCanvasFallback` lets it
-  draw on Canvas 2D, the graph data handed to the engine, the viewport (`fitView`,
+- **API** (`packages/comb/src/api`) — `createComb`, which takes the engine's WebAssembly from the
+  host application as `engine` and refuses with an `EngineSourceError` where it is missing, a
+  string, `URL`, or `Request`, or none of a `Response`, a module, and the bytes (`api/engine.ts`,
+  [ADR-0019](adr/0019-the-host-hands-comb-its-engine.md)), before it touches the host element,
+  and with a `RendererUnavailableError` where PixiJS finds no WebGL2 unless `allowCanvasFallback`
+  lets it draw on Canvas 2D, the graph data handed to the engine, the viewport (`fitView`,
   `setViewport`, `viewport`), and the events to the host application;
   `whenRendered` resolves once a change is drawn, with one render per animation frame scheduled
   by `frames`.
@@ -103,7 +106,10 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
 - **Example** (`examples/metric-tree`) — a host application with a metric tree and an HTML
   sidebar (G-9); `?copies=` sets its size, the copies lie in a grid about as wide as tall, and it
   reports its load time as `window.loadReport`; `?fallback=canvas` allows the Canvas 2D fallback;
-  `window.createComb` lets a browser test make a second Comb in a host element of its own.
+  it fetches the engine file Vite emits for its `comb/engine.wasm?url` import and hands over the
+  promise of the response, or with `?engine=response`, `module`, `bytes`, or `view` that form;
+  `window.createComb` and `window.engineUrl` let a browser test make a second Comb in a host
+  element of its own.
 - **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, measuring the time to
   the first frame and p95 frame times of drag, pan, and zoom over the frames Comb rendered, and of
   a pan where the near and the middle level begin, each gesture checked for its effect (Q-1, Q-2).
@@ -149,20 +155,31 @@ within a quarter pixel at the current zoom, so zoomed out it has fewer points. A
 canvas renders too.
 
 **Building.** `bun run build:engine` compiles `crates/engine-wasm` with wasm-pack into
-`packages/comb/wasm/` (generated, not tracked); the library imports it from there, and Vite serves
-the example from source. `bun run build:lib` bundles the library without PixiJS into
-`packages/comb/dist/`, with the WebAssembly inlined; that bundle is what the budget of Q-3
-measures.
+`packages/comb/wasm/` (generated, not tracked), with glue that has no default path to the engine
+file (`omit-default-module-path` in its `Cargo.toml`); the library imports the glue from there,
+`comb` exports the file `wasm/engine_bg.wasm` as `comb/engine.wasm`, and Vite serves the example
+from source. `bun run build:lib` bundles the library without PixiJS into `packages/comb/dist/`,
+without the WebAssembly, which the host application hands over (ADR-0019); that bundle and the
+engine file are what the budget of Q-3 measures, and the bundle check fails a bundle that inlines
+the engine.
+
+**Loading the engine.** `createComb` settles the host application's promise, if it handed one
+over, refuses what is missing, would be fetched, or is none of a `Response`, a module, and the
+bytes, and passes the rest to the glue's initialiser, which compiles a `Response` while it streams
+and instantiates a module or bytes. The glue instantiates once per page and returns that instance
+to every later call, so a later `createComb` checks its engine but does not use it. The Bun tests
+create the bridge from the bytes with `createBridgeSync`.
 
 **Holding the shape.** `scripts/check-structure.sh` fails when the engine's core names or, through
 `Cargo.lock`, reaches a crate that touches the browser, when a module other than the bridge
 imports the WebAssembly package, when the render layer reaches the store instead of the action-free
-`GraphView`, or when an example imports past the library's entries (ADR-0009), and when the render
-layer names PixiJS's `Text`, `HTMLText`, or `SplitText` or the edges layer a `Graphics`
-(ADR-0012), and when its Canvas 2D fallback names `Graphics` outside its imports and its one
-field (ADR-0018). `scripts/check-bundle.sh` builds the library and fails when its gzipped JavaScript
-and WebAssembly reach the 300 kB of Q-3. `scripts/check-dependencies.sh` fails on a lockfile of
-another package manager beside `bun.lock` (ADR-0008), on tsify's default or `json` features or
-`serde_json` in the bridge crate (ADR-0010), in whatever form the entry takes, and on a listed
-state library other than zustand in the library's dependency lists (ADR-0011). The type checker
-does the rest for the render layer: `GraphView` has no action to call.
+`GraphView`, or when an example imports past the library's entries and its engine file
+(ADR-0009, ADR-0019), and when the render layer names PixiJS's `Text`, `HTMLText`, or
+`SplitText` or the edges layer a `Graphics` (ADR-0012), and when its Canvas 2D fallback names
+`Graphics` outside its imports and its one field (ADR-0018). `scripts/check-bundle.sh` builds
+the library and fails when its gzipped JavaScript and the engine file reach the 300 kB of Q-3,
+or when the JavaScript inlines the engine (ADR-0019). `scripts/check-dependencies.sh` fails on a
+lockfile of another package manager beside `bun.lock` (ADR-0008), on tsify's default or `json`
+features or `serde_json` in the bridge crate (ADR-0010), in whatever form the entry takes, and on
+a listed state library other than zustand in the library's dependency lists (ADR-0011). The type
+checker does the rest for the render layer: `GraphView` has no action to call.

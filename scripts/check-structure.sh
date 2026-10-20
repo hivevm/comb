@@ -20,7 +20,8 @@
 #      checker refuses a write. Its files name neither GraphState, GraphStore, nor the store's
 #      getState, setState, or subscribe.
 #   4. Examples: no file under examples/ imports a path inside the library: only the package's
-#      entries `comb` and `comb/testing`, never another `comb/...`, a path through
+#      entries `comb` and `comb/testing`, and the engine file it exports as `comb/engine.wasm`,
+#      bare or as a URL with Vite's `?url` (ADR-0019), never another `comb/...`, a path through
 #      node_modules/comb/, or into packages/comb.
 #   5. Drawing: no file of the render layer names PixiJS's Text, HTMLText, or SplitText, which
 #      redraw a canvas and upload a texture on every change; and the edges layer,
@@ -123,8 +124,8 @@ done < <(sources packages/comb/src/render)
 # 4. Examples
 while IFS= read -r file; do
   report "$file" "${specifier}((comb|${inside}*/comb)/${inside}*|${inside}*packages/comb${inside}*)${quote}" \
-    "an example imports only the package entries \"comb\" and \"comb/testing\"" \
-    "${specifier}comb/testing${quote}"
+    "an example imports only the package entries \"comb\", \"comb/testing\", and \"comb/engine.wasm\"" \
+    "${specifier}comb/(testing|engine\.wasm(\?url)?)${quote}"
 done < <(sources examples)
 
 # 5. Drawing

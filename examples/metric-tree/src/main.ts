@@ -1,5 +1,6 @@
 // The example host application: Comb on the canvas, the attribute form in the HTML sidebar.
-import { createComb, type Comb, type GraphData, type Selection } from "comb";
+import { createComb, type Comb, type EngineSource, type GraphData, type Selection } from "comb";
+import engineUrl from "comb/engine.wasm?url";
 import {
   inspect,
   renderCount,
@@ -28,6 +29,9 @@ declare global {
     comb: Comb;
     /** Comb's factory, so that a browser test can watch the document while a second Comb is made. */
     createComb: typeof createComb;
+    /** The URL of the engine file Vite emits, for a browser test that hands a second Comb its
+     *  engine. */
+    engineUrl: string;
     loadReport: Promise<LoadReport>;
     /** What the canvas draws, from comb/testing, for the browser tests and the benchmark. */
     inspect: (other?: Comb) => SceneSnapshot;
@@ -48,9 +52,33 @@ function element<T extends HTMLElement>(id: string): T {
   return found as T;
 }
 
+const query = new URLSearchParams(location.search);
+
+/** The engine in the form `?engine=response`, `module`, `bytes`, or `view` asks for: the response
+ *  to the example's own request for the file Vite emits, the module compiled from it, its bytes,
+ *  or a view on them inside a larger buffer, so that the browser tests cover every form a host
+ *  application may hand over (ADR-0019). */
+async function engineAs(form: string): Promise<EngineSource> {
+  const response = fetch(engineUrl);
+  if (form === "module") return WebAssembly.compileStreaming(response);
+  if (form === "bytes") return (await response).arrayBuffer();
+  if (form === "view") {
+    const bytes = new Uint8Array(await (await response).arrayBuffer());
+    const padded = new Uint8Array(bytes.length + 16);
+    padded.set(bytes, 8);
+    return padded.subarray(8, 8 + bytes.length);
+  }
+  return response;
+}
+
+const form = query.get("engine");
 // `?fallback=canvas` lets Comb draw on Canvas 2D where the browser offers no WebGL2.
-const fallback = new URLSearchParams(location.search).get("fallback") === "canvas";
-const comb = await createComb(element("canvas"), { allowCanvasFallback: fallback });
+const fallback = query.get("fallback") === "canvas";
+// By default the example hands over the promise of its request, as a host application would.
+const comb = await createComb(element("canvas"), {
+  engine: form ? await engineAs(form) : fetch(engineUrl),
+  allowCanvasFallback: fallback,
+});
 const copies = element<HTMLSelectElement>("copies");
 const count = element("count");
 const selection = element("selection");
@@ -62,7 +90,7 @@ let selected: string | null = null;
 
 /** Selects the copies the query string asks for, adding the option where it is missing. */
 function copiesFromQuery(): void {
-  const asked = Number(new URLSearchParams(location.search).get("copies"));
+  const asked = Number(query.get("copies"));
   if (!Number.isInteger(asked) || asked < 1) return;
   if (![...copies.options].some((option) => option.value === String(asked))) {
     copies.add(new Option(String(asked), String(asked)));
@@ -107,6 +135,7 @@ title.addEventListener("input", () => {
 copiesFromQuery();
 window.comb = comb;
 window.createComb = createComb;
+window.engineUrl = engineUrl;
 window.inspect = (other = comb) => inspect(other);
 window.renderCount = () => renderCount(comb);
 window.viewport = () => viewport(comb);
