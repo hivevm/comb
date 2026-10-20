@@ -5,6 +5,7 @@ import { attachInteraction } from "../interaction";
 import { clampScale, fitViewport } from "../interaction/viewport";
 import { edgeColor } from "../render/edges";
 import { Scene } from "../render/scene";
+import { engineOf, type EngineSource } from "./engine";
 import { createFrames } from "./frames";
 import { drawsWith, preferenceFor } from "./renderers";
 import { scenes } from "./scenes";
@@ -16,7 +17,15 @@ import {
   type Viewport,
 } from "../store";
 
+export { EngineSourceError } from "./engine";
+export type { EngineSource } from "./engine";
+
 export interface CombOptions {
+  /** The engine's WebAssembly, the file `comb/engine.wasm`, as the host application loads it:
+   *  the `Response` of its own `fetch`, or a promise of one, a compiled `WebAssembly.Module`, or
+   *  the bytes, an `ArrayBuffer` or a view on one. Required; Comb requests nothing itself
+   *  (ADR-0019). Instantiated once per page: a later Comb's engine is checked, not used. */
+  engine: EngineSource;
   /** The canvas background. */
   background?: number;
   /** Draw with PixiJS's Canvas 2D renderer where the browser offers no WebGL2, instead of
@@ -97,10 +106,16 @@ function batchOf(graph: GraphData): GraphBatch {
   };
 }
 
-/** Creates a Comb canvas that fills `host`. Throws a `RendererUnavailableError` where the
- *  browser offers no WebGL2, unless `allowCanvasFallback` lets it draw on Canvas 2D. */
-export async function createComb(host: HTMLElement, options: CombOptions = {}): Promise<Comb> {
-  const bridge = await createBridge();
+/** Creates a Comb canvas that fills `host`, with the engine `options.engine`. Throws an
+ *  `EngineSourceError` before it touches `host` where the engine is missing, a string, `URL`, or
+ *  `Request`, or none of a `Response`, a `WebAssembly.Module`, and the bytes, and a
+ *  `RendererUnavailableError` where the browser offers no WebGL2, unless `allowCanvasFallback`
+ *  lets it draw on Canvas 2D. The engine is instantiated once per page: a later `createComb`
+ *  checks its engine but reuses the first instance. */
+export async function createComb(host: HTMLElement, options: CombOptions): Promise<Comb> {
+  // A caller without types may leave the options out; that is a missing engine too.
+  options ??= {} as CombOptions;
+  const bridge = await createBridge(await engineOf(options.engine));
   const app = new Application();
   await app.init({
     resizeTo: host,

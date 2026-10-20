@@ -150,9 +150,14 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
   };
 }
 
-/** Loads the engine in a browser, from the module next to this package's build. */
-export async function createBridge(): Promise<Bridge> {
-  const { memory } = await init();
+/** Loads the engine from what the host application handed over: a `Response`, which is compiled
+ *  while it streams, a compiled module, or the bytes (ADR-0019). Never a string, `URL`, or
+ *  `Request`, which the initialiser would fetch itself; the API refuses those before it gets here,
+ *  and the type here keeps them out. */
+export async function createBridge(
+  engine: Response | WebAssembly.Module | BufferSource,
+): Promise<Bridge> {
+  const { memory } = await init({ module_or_path: engine });
   return wrap(memory);
 }
 

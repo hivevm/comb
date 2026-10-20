@@ -192,6 +192,19 @@ d="$(fixture example-testing-deep)"
 echo 'import { scenes } from "comb/testing/scenes";' >> "$d/examples/demo/src/main.ts"
 expect fail "an example importing below the testing entry fails" "$d" "package entries"
 
+d="$(fixture example-engine)"
+echo 'import engineUrl from "comb/engine.wasm?url";' >> "$d/examples/demo/src/main.ts"
+echo 'import engine from "comb/engine.wasm";' >> "$d/examples/demo/src/main.ts"
+expect pass "an example importing the engine file, bare or as a URL, passes" "$d"
+
+d="$(fixture example-engine-other)"
+echo 'import engine from "comb/engine.wasm?init";' >> "$d/examples/demo/src/main.ts"
+echo 'import glue from "comb/wasm/engine_bg.wasm";' >> "$d/examples/demo/src/main.ts"
+expect fail "an example importing the engine file another way fails" "$d" \
+  "examples/demo/src/main.ts:2"
+expect fail "an example importing the engine past its export fails" "$d" \
+  "examples/demo/src/main.ts:3"
+
 d="$(fixture require)"
 mkdir -p "$d/examples/a"
 echo 'const e = require("../../packages/comb/wasm/engine.js");' > "$d/examples/a/r.cjs"

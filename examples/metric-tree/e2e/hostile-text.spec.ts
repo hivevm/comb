@@ -38,7 +38,7 @@ async function drawWatched(hostile: string[]) {
   const all = { childList: true, subtree: true, attributes: true, characterData: true };
   observer.observe(document, all);
 
-  const comb = await window.createComb(host);
+  const comb = await window.createComb(host, { engine: fetch(window.engineUrl) });
   comb.load({
     nodes: hostile.map((title, i) => ({
       id: `n${i}`,

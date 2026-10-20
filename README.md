@@ -107,12 +107,16 @@ budget of Q-3 (`bun run build:lib`, at most 300 kB gzipped without PixiJS).
      API, a minimal example, and the expected output. Keep build/test/run mechanics in the section
      above; this section is about using the result, not producing it. -->
 
-A host application gives Comb an element to fill, hands it the graph, and keeps the forms:
+A host application gives Comb an element to fill and the engine's WebAssembly, hands it the
+graph, and keeps the forms:
 
 ```ts
 import { createComb } from "comb";
+import engineUrl from "comb/engine.wasm?url"; // Vite emits the file and gives its URL
 
-const comb = await createComb(document.getElementById("canvas")!);
+const comb = await createComb(document.getElementById("canvas")!, {
+  engine: fetch(engineUrl),
+});
 comb.load({
   nodes: [
     { id: "a", title: "Premium trial users", x: 0, y: 0, width: 220, height: 64 },
@@ -132,12 +136,21 @@ comb.fitView();
 comb.onSelectionChange((selection) => console.log(selection)); // fill the sidebar from here
 ```
 
+Comb makes no request of its own (Q-6). The host application requests the file `comb/engine.wasm`
+however it serves its assets, so its Content Security Policy governs that request, and hands over
+the `Response`, or a promise of one, a compiled `WebAssembly.Module`, or the bytes (an
+`ArrayBuffer` or a view on one). `createComb` rejects with an `EngineSourceError` before it touches
+the element where `engine`, or what its promise resolves to, is missing (`reason` `"missing"`), a
+string, `URL`, or `Request`, which Comb would have to fetch itself (`"fetchable"`), or anything
+else (`"invalid"`). The engine is instantiated once per page: a later `createComb` checks its
+`engine` but reuses the first instance.
+
 `createComb` throws a `RendererUnavailableError` where the browser offers no WebGL2. A host
 application that would rather draw slowly, with dash patterns solid, than draw nothing opts into
 PixiJS's Canvas 2D renderer:
 
 ```ts
-const comb = await createComb(host, { allowCanvasFallback: true });
+const comb = await createComb(host, { engine: fetch(engineUrl), allowCanvasFallback: true });
 ```
 
 [`examples/metric-tree/`](examples/metric-tree/) is a complete host application with a sidebar.
