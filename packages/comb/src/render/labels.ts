@@ -14,7 +14,7 @@ export const LABEL_REACH = 120;
 type EdgeView = GraphView["edges"][number];
 
 /** One edge label: a pill with its text, centred on its point. A pooled view. */
-class LabelView extends Container {
+export class LabelView extends Container {
   private readonly pill = new Graphics();
   private readonly text = new BitmapText({
     text: "",
@@ -29,6 +29,11 @@ class LabelView extends Container {
   constructor() {
     super();
     this.addChild(this.pill, this.text);
+  }
+
+  /** The text the pill draws. */
+  get drawnText(): string {
+    return this.text.text;
   }
 
   /** Shows the label of `edge`, drawing again only when its text or colour changed; returns
