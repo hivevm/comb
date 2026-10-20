@@ -42,9 +42,11 @@ whose only door to the engine is its `bridge` module.
   store), `render` (the PixiJS scene: nodes, edges, and edge labels in containers of their own),
   and `bridge` (the one module that imports the WebAssembly package).
 - **Direction:** `render` reads the store and never writes it; only `bridge` imports the
-  WebAssembly package; `examples/` import only the package's two entries: `comb`, the public
-  interface, and `comb/testing`, which reads what the canvas draws for browser tests and the
-  benchmark and is no part of the stable interface.
+  WebAssembly package; `examples/` import only the package's entries: `comb`, the public
+  interface; `comb/testing`, which reads what the canvas draws for browser tests and the
+  benchmark and is no part of the stable interface; and `comb/engine.wasm`, the engine's file,
+  which a host application hands to `createComb`
+  ([ADR-0019](0019-the-host-hands-comb-its-engine.md)), bare or as a URL (`?url`).
 
 **Out of scope:** the data format of the bridge, the store library, the structure of the scene
 graph, and the model of node content, each a decision of its own.
@@ -91,6 +93,7 @@ graph, and the model of node content, each a decision of its own.
 A structural test in `scripts/` fails when `crates/engine/Cargo.toml` names a forbidden crate,
 when a file outside `packages/comb/src/bridge/` imports the WebAssembly package, when a file in
 `packages/comb/src/render/` calls a writing action of the store, or when a file in `examples/`
-imports anything of `packages/comb` other than its entries `comb` and `comb/testing`. The test
+imports anything of `packages/comb` other than its entries `comb`, `comb/testing`, and
+`comb/engine.wasm`, the last bare or with `?url` alone. The test
 cites this ADR with `Verifies: ADR-0009`. That a function of the core writes only the buffers it
 is given is review.
