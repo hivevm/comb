@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([ADR-0001](adr/0001-agent-governance-model.md)).
 >
-> **Last design revision:** 2026-10-18, due after 20 changes. The revision that ran moves the
+> **Last design revision:** 2026-10-21, due after 20 changes. The revision that ran moves the
 > date; the number is this project's to set; a sensor counts the changes outside `docs/` since
 > the commit that set the date and says when the next is due
 > ([ADR-0006](adr/0006-feature-layer.md)).
@@ -27,9 +27,13 @@
  └────────────────────────────────────────────────────────────────┘
 ```
 
-Graph data from the host application is untrusted: the engine refuses non-finite coordinates,
-invalid sizes, duplicate node or edge identifiers, edges to missing nodes, and non-finite label
-placements with a typed error, and `updateNode` refuses an identifier the graph does not hold.
+Graph data from the host application is untrusted: the bridge crate refuses a value of the wrong
+shape, coordinates, sizes, and dash patterns that are not finite as the engine keeps them (`f32`),
+negative sizes, a dash that is not positive or a negative gap, duplicate node or edge
+identifiers, edges to missing nodes, non-finite label placements, and colours beyond `0xFFFFFF`
+with a typed error, and `updateNode` refuses an identifier the graph does not hold. Titles, label
+texts, and label backgrounds never reach the engine, and nothing checks them or the patch that
+`updateNode` merges into the store.
 
 ## Building blocks
 
@@ -128,7 +132,9 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   mutants with `crates/engine/mutants-missed.txt` by file, function, and replacement, and fails
   on a survivor the list does not name (ADR-0008).
 
-**Test pattern:** Rust unit tests beside the code they test (`#[cfg(test)]`); Bun tests beside
+**Test pattern:** Rust unit tests beside the code they test (`#[cfg(test)]`), and a property test
+of the bridge crate's validation (`crates/engine-wasm/src/properties.rs`, proptest) that feeds it
+10,000 random batches per run against a brute-force oracle; Bun tests beside
 their module as `*.test.ts`, the bridge's against the built WebAssembly module, and the lint's
 rules for Comb's library sources in `packages/comb/src/lint.test.ts`; browser tests
 under `examples/*/e2e`, run by Playwright on Bun against the example, reading what is drawn
@@ -188,4 +194,6 @@ or when the JavaScript inlines the engine (ADR-0019). `scripts/check-dependencie
 lockfile of another package manager beside `bun.lock` (ADR-0008), on tsify's default or `json`
 features or `serde_json` in the bridge crate (ADR-0010), in whatever form the entry takes, and on
 a listed state library other than zustand in the library's dependency lists (ADR-0011). The type
-checker does the rest for the render layer: `GraphView` has no action to call.
+checker does the rest for the render layer: `GraphView` has no action to call. ESLint forbids
+the DOM markup sinks (Q-5) and `eval`, implied eval, and `new Function` (Q-6) in Comb's library
+sources, outside its tests.

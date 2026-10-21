@@ -26,3 +26,6 @@ skimmed. The design revision drops what prevented nothing
   that run backwards (target left of source), level edges, and edges shorter than their
   arrowhead; distances are measured to the segment, not to its line. The easy forward curve hides
   the errors that matter.
+- **Check a value as the engine keeps it.** Graph data is judged in the type the engine stores it
+  in, not the type it arrived in: `1e300` is a finite `f64` and an infinite `f32`, so a check of
+  the wider type lets through what the engine then holds as infinity. Narrow first, then check.
