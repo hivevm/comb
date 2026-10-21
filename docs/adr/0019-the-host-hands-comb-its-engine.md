@@ -32,8 +32,8 @@ and Comb will never resolve, fetch, or inline that file itself.
 - **Package:** `comb` exports the file as `comb/engine.wasm`, so a bundler can resolve it, for
   example with Vite's `?url` import. The library build no longer inlines it. The bundle check
   measures the JavaScript and that file, as Q-3 counts them.
-- **Tests:** the Bun suite keeps creating the bridge from the bytes. The example hands over the
-  URL its bundler emits.
+- **Tests:** the Bun suite keeps creating the bridge from the bytes. The example fetches the
+  file at the URL its bundler emits and hands over the `Response`, or the promise of it.
 
 **Out of scope:** how a host application caches or preloads the file; a WebAssembly-free build of
 Comb.
@@ -81,9 +81,10 @@ Comb.
 
 A Bun test asserts that `createComb` without `engine`, or with a string, a `URL`, or a `Request`,
 rejects with the typed error and adds no canvas. A browser test serves the example under the
-policy `script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'`, records every request the page
-makes, and asserts that the engine is requested once, by the example, and that nothing else is
-requested on Comb's behalf. `scripts/check-bundle.sh` fails a library bundle that contains a
-`data:application/wasm` URL. The generated glue keeps its `fetch` branch for strings, so no check
-greps for `fetch`; the refusal of the option guards that branch. Each cites this ADR with
-`Verifies: ADR-0019`.
+policy of Q-6, `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'`, whose `default-src`
+governs the page's connections, records every request the page makes, and asserts that the engine
+is requested once, by the example, and that nothing else is requested on Comb's behalf.
+`scripts/check-bundle.sh` fails a library bundle whose JavaScript inlines the engine, as a
+`data:application/wasm` URL or as base64 of the WebAssembly magic number. The generated glue
+keeps its `fetch` branch for strings, so no check greps for `fetch`; the refusal of the option
+guards that branch. Each cites this ADR with `Verifies: ADR-0019`.
