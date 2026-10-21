@@ -1,3 +1,4 @@
+import "pixi.js/unsafe-eval";
 // The public interface of Comb and the validation of graph data (ADR-0009).
 import { Application } from "pixi.js";
 import { createBridge, type BridgeError, type GraphBatch, type Rect } from "../bridge";
