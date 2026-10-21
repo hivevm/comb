@@ -40,6 +40,9 @@ async function recordRequests(page: Page): Promise<Made[]> {
   return made;
 }
 
+/** The policy of Q-6, as the example's Vite configuration sends it. */
+const POLICY = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'";
+
 /** Where Comb's sources are served from, by the example's workspace or by Vite's `/@fs/`. */
 const COMB = "/packages/comb/";
 
@@ -55,15 +58,15 @@ async function recordViolations(page: Page): Promise<() => Promise<string[]>> {
   return () => page.evaluate(() => (window as unknown as { violations: string[] }).violations);
 }
 
-test("under the policy, Comb loads, pans, and zooms without a violation or a request of its own", async ({
-  page,
-}) => {
-  // Verifies: Q-6, ADR-0019, ADR-0020
+/** Loads the example under the policy, then pans the empty canvas by the pointer and zooms by the
+ *  wheel, at a point no node covers, and asserts that no violation and no page error occurred;
+ *  returns the policy the document was served under and every request the page made. */
+async function loadPanZoom(page: Page) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const made = await recordRequests(page);
   const violations = await recordViolations(page);
-  await page.goto("/");
+  const response = await page.goto("/");
   // Until the first load has drawn, or a violation shows why it will not.
   await page.waitForFunction(
     () =>
@@ -74,7 +77,6 @@ test("under the policy, Comb loads, pans, and zooms without a violation or a req
   await page.evaluate(() => window.loadReport);
   expect(await page.evaluate(() => window.inspect().renderer)).toBe("webgl");
 
-  // Pans the empty canvas by the pointer, then zooms by the wheel, at a point no node covers.
   const canvas = (await page.locator("#canvas canvas").boundingBox())!;
   const at = { x: canvas.x + 12, y: canvas.y + 12 };
   const covered = await page.evaluate(
@@ -104,6 +106,15 @@ test("under the policy, Comb loads, pans, and zooms without a violation or a req
 
   expect(await violations()).toEqual([]);
   expect(errors).toEqual([]);
+  return { policy: response?.headers()["content-security-policy"], made };
+}
+
+test("under the policy, Comb loads, pans, and zooms without a violation or a request of its own", async ({
+  page,
+}) => {
+  // Verifies: Q-6, ADR-0019, ADR-0020
+  const { policy, made } = await loadPanZoom(page);
+  expect(policy).toBe(POLICY);
   // No request or socket was made by Comb's code, whatever its kind.
   expect(made.filter((request) => request.by.some((script) => script.includes(COMB)))).toEqual([]);
   // The example's own: its document, the modules and the stylesheet Vite serves from the page's
@@ -122,3 +133,28 @@ test("under the policy, Comb loads, pans, and zooms without a violation or a req
     { type: "WebSocket", origin: ws, path: "/", by: ["/@vite/client"] },
   ]);
 });
+
+test(
+  "the built example, under the policy, loads, pans, and zooms without a violation or a request of Comb's",
+  { tag: "@built" },
+  async ({ page }) => {
+    // Verifies: Q-6, ADR-0019, ADR-0020
+    const { policy, made } = await loadPanZoom(page);
+    expect(policy).toBe(POLICY);
+    // The bundler puts Comb's code in the example's entry chunk, so a script does not tell whose
+    // code made a request; the requests themselves do. Beyond the document, the chunks the page
+    // imports and preloads, and the stylesheet, all from the page's origin, there is the one
+    // request of the engine file, made by the entry chunk.
+    const origin = new URL(page.url()).origin;
+    const entry = new URL(
+      await page.locator("script[type=module]").getAttribute("src").then(String),
+      page.url(),
+    ).pathname;
+    const engine = new URL(await page.evaluate(() => window.engineUrl), page.url()).pathname;
+    expect(made.filter((request) => request.origin !== origin)).toEqual([]);
+    const served = ["Document", "Script", "Stylesheet"];
+    expect(made.filter((request) => !served.includes(request.type))).toEqual([
+      { type: "Fetch", origin, path: engine, by: [entry] },
+    ]);
+  },
+);
