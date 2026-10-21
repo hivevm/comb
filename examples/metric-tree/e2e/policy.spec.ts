@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { POLICY } from "./shared";
 
 /** A request or WebSocket the page made, by its kind, its path, and the scripts on whose call
  *  stack it was made, innermost first, async callers included; none for a module import. */
@@ -39,9 +40,6 @@ async function recordRequests(page: Page): Promise<Made[]> {
   await cdp.send("Network.enable");
   return made;
 }
-
-/** The policy of Q-6, as the example's Vite configuration sends it. */
-const POLICY = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'";
 
 /** Where Comb's sources are served from, by the example's workspace or by Vite's `/@fs/`. */
 const COMB = "/packages/comb/";
