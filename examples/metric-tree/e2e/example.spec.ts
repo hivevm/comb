@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Request } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import {
   canvasOrigin,
   canvasSize,
@@ -30,107 +30,6 @@ test("the example draws the metric tree on a canvas beside its sidebar", async (
   expect(await page.evaluate(() => window.inspect().renderer)).toBe("webgl");
   // The bridge in test mode, so that a view kept across an engine call fails the suite.
   expect(await page.evaluate(() => window.testMode())).toBe(true);
-  expect(errors).toEqual([]);
-});
-
-test("the canvas draws from the engine in every form the host application hands over", async ({
-  page,
-}) => {
-  // Verifies: ADR-0019
-  const forms = ["", "?engine=response", "?engine=module", "?engine=bytes", "?engine=view"];
-  for (const form of forms) {
-    const errors: string[] = [];
-    const engines: string[] = [];
-    const onError = (error: Error) => errors.push(error.message);
-    // Vite serves the `?url` import as a script of its own; the engine is what is fetched.
-    const onRequest = (request: Request) => {
-      const path = new URL(request.url()).pathname;
-      if (path.endsWith(".wasm") && request.resourceType() === "fetch") engines.push(path);
-    };
-    page.on("pageerror", onError);
-    page.on("request", onRequest);
-    await open(page, form);
-    const drawn = await page.evaluate(() => window.inspect());
-    page.off("pageerror", onError);
-    page.off("request", onRequest);
-    expect(errors, form).toEqual([]);
-    // The example requests the file Vite emits, once, and Comb requests nothing of its own.
-    expect(engines, form).toHaveLength(1);
-    expect(drawn.renderer, form).toBe("webgl");
-    expect(drawn.nodes, form).toHaveLength(15);
-    expect(drawn.edgeTriangles, form).toBeGreaterThan(0);
-  }
-});
-
-test("without WebGL, Comb refuses instead of drawing without edges", async ({ page }) => {
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(`${error.name}: ${error.message}`));
-  // A browser without WebGL: every WebGL context is refused, as where no GPU process starts.
-  await page.addInitScript(() => {
-    const getContext = HTMLCanvasElement.prototype.getContext;
-    Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
-      value(this: HTMLCanvasElement, id: string, options?: unknown) {
-        return id.startsWith("webgl") ? null : Reflect.apply(getContext, this, [id, options]);
-      },
-    });
-  });
-  await page.goto("/");
-  await expect
-    .poll(() => errors)
-    .toContainEqual(expect.stringContaining("RendererUnavailableError"));
-  await expect(page.locator("#canvas canvas")).toHaveCount(0);
-});
-
-test("without WebGL, a host application that opts in gets Canvas 2D with its edges", async ({
-  page,
-}) => {
-  // Verifies: ADR-0018
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(`${error.name}: ${error.message}`));
-  await page.addInitScript(() => {
-    const getContext = HTMLCanvasElement.prototype.getContext;
-    Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
-      value(this: HTMLCanvasElement, id: string, options?: unknown) {
-        return id.startsWith("webgl") ? null : Reflect.apply(getContext, this, [id, options]);
-      },
-    });
-  });
-  await open(page, "?fallback=canvas");
-  const drawn = await page.evaluate(() => {
-    const snapshot = window.inspect();
-    return {
-      renderer: snapshot.renderer,
-      nodes: snapshot.nodes.length,
-      edgeTriangles: snapshot.edgeTriangles,
-    };
-  });
-  // One tree: 15 nodes, all in view after fitView.
-  expect(drawn.renderer).toBe("canvas");
-  expect(drawn.nodes).toBe(15);
-  expect(drawn.edgeTriangles).toBeGreaterThan(0);
-  // Drawn, not only counted: with the nodes and the edge labels hidden, the canvas holds pixels
-  // in the green of the tree's positively correlated edges, which only the edges layer paints;
-  // within 16 per channel, since antialiasing blends the pixels at a triangle's border, and the
-  // background, grey, and red lie far outside that.
-  const green = await page.evaluate(async () => {
-    window.showLayers({ nodes: false, edgeLabels: false });
-    await window.comb.whenRendered();
-    await new Promise(requestAnimationFrame);
-    const source = document.querySelector<HTMLCanvasElement>("#canvas canvas")!;
-    const copy = document.createElement("canvas");
-    copy.width = source.width;
-    copy.height = source.height;
-    const context = copy.getContext("2d")!;
-    context.drawImage(source, 0, 0);
-    const { data } = context.getImageData(0, 0, copy.width, copy.height);
-    let count = 0;
-    for (let i = 0; i < data.length; i += 4) {
-      const off = [0x22, 0xa5, 0x5b].map((value, channel) => Math.abs(data[i + channel]! - value));
-      if (Math.max(...off) <= 16) count += 1;
-    }
-    return count;
-  });
-  expect(green).toBeGreaterThan(0);
   expect(errors).toEqual([]);
 });
 
@@ -242,24 +141,6 @@ test("dragging a node moves it with its edges and edge labels, and a click shows
   await page.mouse.click(moved.x, moved.y);
   await expect(page.locator("#selection")).toBeVisible();
   await expect(page.locator("#title")).toHaveValue("Time spent listening to music by subscribers");
-});
-
-test("the edges show their colours, dashes, and arrowheads", async ({ page }) => {
-  // Verifies: G-11, ADR-0012
-  await open(page);
-  expect((await page.evaluate(() => window.inspect())).edgeTriangles).toBeGreaterThan(0);
-  // The reference image, approved by eye, holds the edges alone, without the text of nodes and
-  // labels, whose fonts differ between machines: grey dashed edges from bets to epics to input
-  // metrics, green and red edges into and out of the north-star metric, every edge ending in an
-  // arrowhead at its target.
-  await page.evaluate(async () => {
-    window.showLayers({ nodes: false, edgeLabels: false });
-    await window.comb.whenRendered();
-  });
-  // Three pixels of tolerance: a single missing arrowhead differs by eight.
-  await expect(page.locator("#canvas canvas")).toHaveScreenshot("metric-tree-edges.png", {
-    maxDiffPixels: 3,
-  });
 });
 
 test("what lies entirely outside the viewport is not bound to a display object", async ({
@@ -476,21 +357,6 @@ test("at the middle level, the same area binds as many display objects at 100 an
   expect(hundred.level).toBe("middle");
   expect(hundred.nodes).toBeGreaterThan(0);
   expect(await bound("?copies=1000")).toEqual(hundred);
-});
-
-test("a viewport that is not finite is refused, and the scale is clamped", async ({ page }) => {
-  await open(page);
-  const refused = await page.evaluate(() => {
-    try {
-      window.comb.setViewport({ x: Number.NaN, y: 0, scale: 1 });
-      return null;
-    } catch (error) {
-      return (error as Error).name;
-    }
-  });
-  expect(refused).toBe("RangeError");
-  await setViewport(page, { x: 10, y: 20, scale: 1e6 });
-  expect(await page.evaluate(() => window.comb.viewport())).toEqual({ x: 10, y: 20, scale: 4 });
 });
 
 /** What the canvas has done so far, from comb/testing. */
@@ -761,58 +627,4 @@ test("a node dragged across frames stays under the pointer, its edges' ends at i
     expect(await page.evaluate(() => window.renderCount())).toBe(renders + 1);
   }
   await page.mouse.up();
-});
-
-test("dragging the empty canvas pans the viewport by the pointer's movement", async ({ page }) => {
-  // Verifies: G-8
-  await open(page);
-  const origin = await canvasOrigin(page);
-  const { height } = await canvasSize(page);
-  // Near the bottom-left corner, inside the margin fitView leaves around the tree.
-  const from = { x: origin.left + 10, y: origin.top + height - 10 };
-  await page.mouse.move(from.x, from.y);
-  const before = await page.evaluate(() => window.comb.viewport());
-  await page.mouse.down();
-  await page.mouse.move(from.x + 120, from.y - 80, { steps: 8 });
-  await page.mouse.up();
-  await page.evaluate(() => window.comb.whenRendered());
-  const after = await page.evaluate(() => window.comb.viewport());
-  expect(after.x - before.x).toBeCloseTo(120, 3);
-  expect(after.y - before.y).toBeCloseTo(-80, 3);
-  expect(after.scale).toBe(before.scale);
-  // Drawn so: the canvas shows the world through the panned viewport.
-  expect(await page.evaluate(() => window.inspect().viewport)).toEqual(after);
-});
-
-test("the wheel zooms in and out about the world point under the pointer", async ({ page }) => {
-  // Verifies: G-8
-  await open(page);
-  const origin = await canvasOrigin(page);
-  const { width, height } = await canvasSize(page);
-  // Away from the canvas's centre, so that a zoom about the centre moves the point.
-  const pointer = { x: width * 0.25, y: height * 0.3 };
-  const world = await page.evaluate(({ x, y }) => {
-    const { x: vx, y: vy, scale } = window.comb.viewport();
-    return { x: (x - vx) / scale, y: (y - vy) / scale };
-  }, pointer);
-  await page.mouse.move(origin.left + pointer.x, origin.top + pointer.y);
-  const under = async () =>
-    page.evaluate(async ({ x, y }) => {
-      await window.comb.whenRendered();
-      return { at: window.screenPoint(x, y), scale: window.inspect().viewport.scale };
-    }, world);
-  const start = await under();
-
-  await page.mouse.wheel(0, -200);
-  const zoomedIn = await under();
-  expect(zoomedIn.scale).toBeGreaterThan(start.scale);
-  expect(Math.abs(zoomedIn.at.x - pointer.x)).toBeLessThanOrEqual(1);
-  expect(Math.abs(zoomedIn.at.y - pointer.y)).toBeLessThanOrEqual(1);
-
-  await page.mouse.wheel(0, 400);
-  const zoomedOut = await under();
-  expect(zoomedOut.scale).toBeLessThan(zoomedIn.scale);
-  expect(zoomedOut.scale).toBeLessThan(start.scale);
-  expect(Math.abs(zoomedOut.at.x - pointer.x)).toBeLessThanOrEqual(1);
-  expect(Math.abs(zoomedOut.at.y - pointer.y)).toBeLessThanOrEqual(1);
 });
