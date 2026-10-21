@@ -1,4 +1,4 @@
-// Panning and zooming the viewport (G-8).
+// The viewport, panned and zoomed (G-8).
 import { expect, test } from "@playwright/test";
 import { canvasOrigin, canvasSize, open, setViewport } from "./shared";
 

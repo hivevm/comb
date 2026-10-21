@@ -2,45 +2,6 @@
 import { expect, test } from "@playwright/test";
 import { canvasSize, open, sceneNumbers, screenCentre, setViewport } from "./shared";
 
-test("picking the largest copies option shows at least 50,000 nodes and edges", async ({
-  page,
-}) => {
-  test.setTimeout(120_000);
-  await open(page);
-  const largest = await page
-    .locator("#copies option")
-    .evaluateAll((options) => (options.at(-1) as HTMLOptionElement).value);
-  await page.locator("#copies").selectOption(largest);
-  const report = await page.evaluate(() => window.loadReport);
-  expect(report.nodes).toBeGreaterThanOrEqual(50_000);
-  expect(report.edges).toBeGreaterThanOrEqual(50_000);
-  await expect(page.locator("#count")).toHaveText(`${report.nodes} nodes, ${report.edges} edges`);
-  // Shown, not only loaded: the canvas draws every node and edge, since all are in view, at the
-  // far level: nodes as particles, no text, and a number of display objects that does not grow
-  // with the graph, apart from the one particle container.
-  const drawn = await page.evaluate(() => {
-    const snapshot = window.inspect();
-    return {
-      level: snapshot.level,
-      nodes: snapshot.nodes.length,
-      particles: snapshot.particles,
-      edges: snapshot.edges.length,
-      texts: snapshot.texts,
-    };
-  });
-  expect(drawn).toEqual({
-    level: "far",
-    nodes: report.nodes,
-    particles: report.nodes,
-    edges: report.edges,
-    texts: 0,
-  });
-  // Verifies: ADR-0012
-  // The world, the edges layer and its mesh, the particle container, and the empty layers of
-  // node views and labels.
-  expect(await page.evaluate(() => window.inspect().displayObjects)).toBe(6);
-});
-
 test("zooming through each threshold switches the level of detail", async ({ page }) => {
   // Verifies: ADR-0012
   await open(page);

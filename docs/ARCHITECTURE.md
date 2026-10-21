@@ -139,8 +139,10 @@ of the bridge crate's validation (`crates/engine-wasm/src/properties.rs`, propte
 10,000 random batches per run against a brute-force oracle; Bun tests beside
 their module as `*.test.ts`, the bridge's against the built WebAssembly module, and the lint's
 rules for Comb's library sources in `packages/comb/src/lint.test.ts`; browser tests
-under `examples/*/e2e`, run by Playwright on Bun against the example, reading what is drawn
-through `comb/testing` rather than pixels, apart from one reference image of the edges alone.
+under `examples/*/e2e`, a file for the golden path and one for each concern they verify, sharing
+their helpers through `e2e/shared.ts`, run by Playwright on Bun against the example, reading what
+is drawn through `comb/testing` rather than pixels, apart from one reference image of the edges
+alone.
 Both run the bridge in test mode, which grows the engine's memory before each of its calls, so a
 view kept across a call reads empty; the browser tests serve the example in Vite's `test` mode
 for it, on port 5174, and assert it through `testMode()` of `comb/testing`, and the bundle check
