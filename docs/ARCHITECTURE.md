@@ -48,10 +48,11 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   returns the slots a rectangle meets, and `hit` the node drawn on top at a point. `stroke`
   flattens the found edges within a tolerance and strokes them into the triangles of one mesh,
   with each edge's colour, dash pattern, and arrowhead, or as thin lines alone at the far level
-  of detail. It depends on no crate that reaches the browser. `graph` keeps each edge's path and
-  its bounds as of its last move, so that a query computes no bounds; `graph::slot` is the one
-  conversion of a count to slots, which the bridge uses too. Only what the bridge uses is public;
-  the rest is private to the crate, so that the `dead_code` lint finds what only tests reach.
+  of detail; it decides the stroke of each level. It depends on no crate that reaches the
+  browser. `graph` keeps each edge's path and its bounds as of its last move, so that a query
+  computes no bounds; `graph::slot` is the one conversion of a count to slots, which the bridge
+  uses too. Only what the bridge uses is public; the rest is private to the crate, so that the
+  `dead_code` lint finds what only tests reach.
 - **Bridge** — `crates/engine-wasm` holds every WebAssembly export: `loadGraph` checks graph data
   and resolves edge ends to slots, `translate` moves nodes, `query` takes a rectangle, a level of
   detail, the size of a screen pixel, and how far an edge label's pill reaches from its point,

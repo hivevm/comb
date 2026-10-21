@@ -6,8 +6,13 @@
 //! vertices per polyline point, offset along the averaged normal, and carries the distance along
 //! the path, which a shader compares with the dash pattern. An arrowhead is a triangle whose tip
 //! is the path's end; the stroke stops at its base.
+//!
+//! The stroke of each level of detail is decided here: every level flattens within the same
+//! tolerance in screen pixels; the far level draws plain lines a width in screen pixels wide, the
+//! near and middle levels draw in full, a width in world units wide.
 
 use crate::geometry::{EdgePath, Point};
+use crate::graph::Level;
 
 /// How an edge is drawn: its colour as `0xRRGGBB`, its dash pattern as dash and gap lengths in
 /// world units, or none for a solid line, and whether an arrowhead marks its end, as it does
@@ -29,8 +34,12 @@ impl Default for EdgeStyle {
     }
 }
 
-/// The width of a stroke at full detail, in world units.
-pub(crate) const STROKE_WIDTH: f64 = 2.0;
+/// How far a drawn edge may stray from its path, in screen pixels: half the 0.5 px of Q-4.
+const FLATNESS: f64 = 0.25;
+/// The width of an edge at the far level of detail, in screen pixels.
+const FAR_WIDTH: f64 = 1.0;
+/// The width of an edge at full detail, the near and middle levels, in world units.
+const FULL_WIDTH: f64 = 2.0;
 
 /// How a query strokes its edges: flattened within `tolerance` and `width` wide, in world units;
 /// `plain` draws thin lines alone, without dash patterns or arrowheads, as the far level of
@@ -43,15 +52,29 @@ pub(crate) struct Stroke {
 }
 
 impl Stroke {
-    /// Full detail: the stroke width, dash patterns, and arrowheads, within `tolerance`.
+    /// How edges are stroked at `level`, where a screen pixel is `pixel` world units: within the
+    /// flatness at every level, at the far level the far width and plain, at the others in full.
+    pub(crate) fn at(level: Level, pixel: f64) -> Self {
+        match level {
+            Level::Far => Self {
+                tolerance: FLATNESS * pixel,
+                width: FAR_WIDTH * pixel,
+                plain: true,
+            },
+            Level::Near | Level::Middle => Self::full(FLATNESS * pixel),
+        }
+    }
+
+    /// Full detail: the full width, dash patterns, and arrowheads, within `tolerance`.
     pub(crate) const fn full(tolerance: f64) -> Self {
         Self {
             tolerance,
-            width: STROKE_WIDTH,
+            width: FULL_WIDTH,
             plain: false,
         }
     }
 }
+
 /// The length and half the base of an arrowhead, in world units.
 const ARROW_LENGTH: f64 = 10.0;
 const ARROW_HALF_WIDTH: f64 = 5.0;
@@ -392,7 +415,7 @@ mod tests {
         assert!(*mesh.distances.last().unwrap() > 300.0 - 220.0);
         // The two vertices of a point lie a stroke width apart.
         let p = &mesh.positions;
-        assert!(((p[2] - p[0]).hypot(p[3] - p[1]) - STROKE_WIDTH as f32).abs() < 1e-4);
+        assert!(((p[2] - p[0]).hypot(p[3] - p[1]) - FULL_WIDTH as f32).abs() < 1e-4);
     }
 
     #[test]
@@ -703,5 +726,17 @@ mod tests {
             &mut points,
         );
         assert!(mesh.positions.iter().all(|v| v.is_finite()));
+    }
+
+    #[test]
+    fn the_stroke_follows_the_level_and_the_size_of_a_screen_pixel() {
+        let pixel = 4.0;
+        let far = Stroke::at(Level::Far, pixel);
+        assert_eq!((far.tolerance, far.width, far.plain), (1.0, 4.0, true));
+        for level in [Level::Near, Level::Middle] {
+            let full = Stroke::at(level, pixel);
+            let expected = (1.0, FULL_WIDTH, false);
+            assert_eq!((full.tolerance, full.width, full.plain), expected);
+        }
     }
 }

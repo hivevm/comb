@@ -1,9 +1,9 @@
 //! The loaded graph as the engine keeps it: node positions and sizes per node slot, edges per edge
 //! slot, and a spatial index over both that loads and moves keep current (ADR-0010, ADR-0012).
 //!
-//! A query answers which node slots, edge slots, and edge labels a rectangle meets, and writes the
-//! control points of the edges it found and the points of the labels into buffers the caller
-//! reads.
+//! A query answers which node slots, edge slots, and edge labels a rectangle meets, and writes
+//! those slots, the points of the labels, and the mesh of the edges into buffers the caller reads;
+//! the ends of the edges it found are computed only when inspection asks for them.
 
 use crate::geometry::{EdgePath, Point, Rect};
 use crate::positions::{self, PositionError};
@@ -51,25 +51,6 @@ pub enum Level {
     Near,
     Middle,
     Far,
-}
-
-/// How far a drawn edge may stray from its path, in screen pixels: half the 0.5 px of Q-4.
-const FLATNESS: f64 = 0.25;
-/// The width of an edge at the far level, in screen pixels.
-const FAR_EDGE_WIDTH: f64 = 1.0;
-
-impl Level {
-    /// How edges are stroked at this level, where a screen pixel is `pixel` world units.
-    pub(crate) fn stroke(self, pixel: f64) -> Stroke {
-        match self {
-            Self::Far => Stroke {
-                tolerance: FLATNESS * pixel,
-                width: FAR_EDGE_WIDTH * pixel,
-                plain: true,
-            },
-            Self::Near | Self::Middle => Stroke::full(FLATNESS * pixel),
-        }
-    }
 }
 
 /// What a query found: node, edge, and label slots in ascending order, per found label its
@@ -322,7 +303,7 @@ impl Graph {
         label_reach: f64,
         out: &mut Visible,
     ) {
-        let stroke = level.stroke(pixel);
+        let stroke = Stroke::at(level, pixel);
         let labelled = level == Level::Near;
         let label_rect = rect.grown(if labelled { label_reach.max(0.0) } else { 0.0 });
         self.node_grid.candidates(rect, &mut self.scratch);
@@ -507,7 +488,7 @@ mod tests {
     }
 
     #[test]
-    fn a_query_returns_the_control_points_and_label_points_of_what_it_found() {
+    fn a_query_returns_slots_and_label_points_and_its_edges_have_ends() {
         let positions = vec![0.0, 0.0, 300.0, 100.0];
         let sizes = vec![220.0, 64.0, 220.0, 64.0];
         let label = LabelPlacement {
@@ -543,18 +524,6 @@ mod tests {
             (x - 260.0).abs() < 1e-4 && (y - 82.0).abs() < 1e-4,
             "({x}, {y})"
         );
-    }
-
-    #[test]
-    fn the_stroke_follows_the_level_and_the_size_of_a_screen_pixel() {
-        let pixel = 4.0;
-        let far = Level::Far.stroke(pixel);
-        assert_eq!((far.tolerance, far.width, far.plain), (1.0, 4.0, true));
-        for level in [Level::Near, Level::Middle] {
-            let full = level.stroke(pixel);
-            let expected = (1.0, crate::stroke::STROKE_WIDTH, false);
-            assert_eq!((full.tolerance, full.width, full.plain), expected);
-        }
     }
 
     #[test]

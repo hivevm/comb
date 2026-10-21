@@ -351,132 +351,141 @@ impl Engine {
 /// The buffers the shell reads, each as a pointer into WebAssembly memory and a length in values.
 #[wasm_bindgen]
 impl Engine {
-    /// Where the positions buffer, `x, y` per node slot starts.
+    /// Where the positions buffer starts, which `loadGraph` and `translate` write: `x, y` per node
+    /// slot.
     #[wasm_bindgen(js_name = positionsPtr)]
     pub fn positions_ptr(&self) -> *const f32 {
         self.graph.positions().as_ptr()
     }
 
-    /// How many values the positions buffer holds.
+    /// How many values the positions buffer holds: two per node slot.
     #[wasm_bindgen(js_name = positionsLen)]
     pub fn positions_len(&self) -> usize {
         self.graph.positions().len()
     }
 
-    /// Where the node slots the last query found starts.
+    /// Where the buffer starts that `query` writes the node slots it found into.
     #[wasm_bindgen(js_name = visibleNodesPtr)]
     pub fn visible_nodes_ptr(&self) -> *const u32 {
         self.visible.nodes.as_ptr()
     }
 
-    /// How many values the node slots the last query found holds.
+    /// How many node slots the last `query` wrote.
     #[wasm_bindgen(js_name = visibleNodesLen)]
     pub fn visible_nodes_len(&self) -> usize {
         self.visible.nodes.len()
     }
 
-    /// Where the edge slots the last query found starts.
+    /// Where the buffer starts that `query` writes the edge slots it found into.
     #[wasm_bindgen(js_name = visibleEdgesPtr)]
     pub fn visible_edges_ptr(&self) -> *const u32 {
         self.visible.edges.as_ptr()
     }
 
-    /// How many values the edge slots the last query found holds.
+    /// How many edge slots the last `query` wrote.
     #[wasm_bindgen(js_name = visibleEdgesLen)]
     pub fn visible_edges_len(&self) -> usize {
         self.visible.edges.len()
     }
 
-    /// Where the ends of the edges the last `drawnEdges` computed, `x, y` each starts.
+    /// Where the buffer starts that `drawnEdges` writes into: per edge slot the query before it
+    /// found, `x, y` of its source end, then of its target end.
     #[wasm_bindgen(js_name = edgeEndsPtr)]
     pub fn edge_ends_ptr(&self) -> *const f32 {
         self.ends.as_ptr()
     }
 
-    /// How many values the four control points of each edge the last query found holds.
+    /// How many values the last `drawnEdges` wrote: four per edge, `x, y` of each of its two ends.
     #[wasm_bindgen(js_name = edgeEndsLen)]
     pub fn edge_ends_len(&self) -> usize {
         self.ends.len()
     }
 
-    /// Where the edge slots of the labels the last query found starts.
+    /// Where the buffer starts that `query` writes the edge slots of the labels it found into.
     #[wasm_bindgen(js_name = visibleLabelsPtr)]
     pub fn visible_labels_ptr(&self) -> *const u32 {
         self.visible.labels.as_ptr()
     }
 
-    /// How many values the edge slots of the labels the last query found holds.
+    /// How many label slots the last `query` wrote.
     #[wasm_bindgen(js_name = visibleLabelsLen)]
     pub fn visible_labels_len(&self) -> usize {
         self.visible.labels.len()
     }
 
-    /// Where the point of each label the last query found, `x, y` starts.
+    /// Where the buffer starts that `query` writes the point of each label it found into: `x, y`
+    /// per label slot.
     #[wasm_bindgen(js_name = labelPointsPtr)]
     pub fn label_points_ptr(&self) -> *const f32 {
         self.visible.label_points.as_ptr()
     }
 
-    /// How many values the point of each label the last query found holds.
+    /// How many values of label points the last `query` wrote: two per label slot.
     #[wasm_bindgen(js_name = labelPointsLen)]
     pub fn label_points_len(&self) -> usize {
         self.visible.label_points.len()
     }
-    /// Where the mesh's vertex positions, `x, y` each starts.
+
+    /// Where the buffer starts that `query` writes the mesh's vertex positions into: `x, y` per
+    /// vertex.
     #[wasm_bindgen(js_name = meshPositionsPtr)]
     pub fn mesh_positions_ptr(&self) -> *const f32 {
         self.visible.mesh.positions.as_ptr()
     }
 
-    /// How many values the mesh's vertex positions holds.
+    /// How many values of vertex positions the last `query` wrote: two per vertex.
     #[wasm_bindgen(js_name = meshPositionsLen)]
     pub fn mesh_positions_len(&self) -> usize {
         self.visible.mesh.positions.len()
     }
 
-    /// Where the mesh's distance along its path per vertex starts.
+    /// Where the buffer starts that `query` writes the mesh's distance along its path into: one
+    /// per vertex.
     #[wasm_bindgen(js_name = meshDistancesPtr)]
     pub fn mesh_distances_ptr(&self) -> *const f32 {
         self.visible.mesh.distances.as_ptr()
     }
 
-    /// How many values the mesh's distance along its path per vertex holds.
+    /// How many distances the last `query` wrote: one per vertex.
     #[wasm_bindgen(js_name = meshDistancesLen)]
     pub fn mesh_distances_len(&self) -> usize {
         self.visible.mesh.distances.len()
     }
 
-    /// Where the mesh's colour per vertex, as RGBA bytes starts.
+    /// Where the buffer starts that `query` writes the mesh's colours into: one per vertex, as
+    /// RGBA bytes.
     #[wasm_bindgen(js_name = meshColorsPtr)]
     pub fn mesh_colors_ptr(&self) -> *const u32 {
         self.visible.mesh.colors.as_ptr()
     }
 
-    /// How many values the mesh's colour per vertex holds.
+    /// How many colours the last `query` wrote: one per vertex.
     #[wasm_bindgen(js_name = meshColorsLen)]
     pub fn mesh_colors_len(&self) -> usize {
         self.visible.mesh.colors.len()
     }
 
-    /// Where the mesh's dash pattern per vertex, `dash, gap` starts.
+    /// Where the buffer starts that `query` writes the mesh's dash patterns into: `dash, gap` per
+    /// vertex.
     #[wasm_bindgen(js_name = meshDashesPtr)]
     pub fn mesh_dashes_ptr(&self) -> *const f32 {
         self.visible.mesh.dashes.as_ptr()
     }
 
-    /// How many values the mesh's dash pattern per vertex holds.
+    /// How many values of dash patterns the last `query` wrote: two per vertex.
     #[wasm_bindgen(js_name = meshDashesLen)]
     pub fn mesh_dashes_len(&self) -> usize {
         self.visible.mesh.dashes.len()
     }
 
-    /// Where the mesh's vertex indices, three per triangle starts.
+    /// Where the buffer starts that `query` writes the mesh's vertex indices into: three per
+    /// triangle.
     #[wasm_bindgen(js_name = meshIndicesPtr)]
     pub fn mesh_indices_ptr(&self) -> *const u32 {
         self.visible.mesh.indices.as_ptr()
     }
 
-    /// How many values the mesh's vertex indices holds.
+    /// How many vertex indices the last `query` wrote: three per triangle.
     #[wasm_bindgen(js_name = meshIndicesLen)]
     pub fn mesh_indices_len(&self) -> usize {
         self.visible.mesh.indices.len()
