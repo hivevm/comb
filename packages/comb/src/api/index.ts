@@ -12,6 +12,7 @@ import { scenes } from "./scenes";
 import {
   createGraphStore,
   type GraphData,
+  type GraphStore,
   type NodeView,
   type Selection,
   type Viewport,
@@ -37,7 +38,8 @@ export interface CombOptions {
 export interface Comb {
   /** Replaces the graph. Throws a `GraphDataError` on malformed graph data (Q-7). */
   load(graph: GraphData): void;
-  /** Changes attributes of a node; the canvas shows the change (G-5). */
+  /** Changes attributes of the node `id`; the canvas shows the change (G-5). Throws a
+   *  `GraphDataError` where the graph holds no node `id`, and changes nothing then (Q-7). */
   updateNode(id: string, patch: Partial<Pick<NodeView, "title">>): void;
   /** Pans and zooms so the whole graph is in view. */
   fitView(): void;
@@ -55,7 +57,9 @@ export interface Comb {
   destroy(): void;
 }
 
-export type GraphDataProblem = BridgeError;
+/** What was wrong with graph data: what the engine refused in `load`, or, in `updateNode`, a node
+ *  the graph does not hold. */
+export type GraphDataProblem = BridgeError | { kind: "unknownNode"; node: string };
 
 /** Comb found no WebGL2 to draw with, only `renderer`, PixiJS's fallback, which cannot draw the
  *  edge mesh, and the host application did not allow the Canvas 2D fallback, or PixiJS offered
@@ -71,6 +75,7 @@ export class RendererUnavailableError extends Error {
 export class GraphDataError extends Error {
   constructor(readonly problem: GraphDataProblem) {
     super(`comb: malformed graph data (${problem.kind})`);
+    this.name = "GraphDataError";
   }
 }
 
@@ -103,6 +108,16 @@ function batchOf(graph: GraphData): GraphBatch {
       dash: dash && [dash[0], dash[1]],
       arrow: arrow ?? "end",
     })),
+  };
+}
+
+/** `updateNode` on `store`: refuses a node the graph does not hold before the store sees it, so
+ *  that the store and its subscribers stay as they were (Q-7). */
+function updaterOf(store: GraphStore): Comb["updateNode"] {
+  return (id, patch) => {
+    if (!store.getState().slots.has(id))
+      throw new GraphDataError({ kind: "unknownNode", node: id });
+    store.getState().updateNode(id, patch);
   };
 }
 
@@ -147,7 +162,7 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
       }
       store.getState().load(graph);
     },
-    updateNode: (id, patch) => store.getState().updateNode(id, patch),
+    updateNode: updaterOf(store),
     fitView() {
       const bounds = boundsOf(store.getState().nodes, bridge.positions());
       if (bounds)

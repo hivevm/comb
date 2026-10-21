@@ -17,6 +17,8 @@ const edge = (id: string, source: string, target: string) => ({
   arrow: "none" as const,
 });
 const graph = (nodes: GraphBatch["nodes"], edges: GraphBatch["edges"] = []) => ({ nodes, edges });
+/** Nodes `a` and `b`. */
+const two = () => [node("a", 0, 0), node("b", 1, 1)];
 const everywhere = { minX: -1e6, minY: -1e6, maxX: 1e6, maxY: 1e6 };
 
 /** A row of `count` nodes 200 apart, each linked to the next. */
@@ -75,11 +77,9 @@ describe("bridge", () => {
     const errors = [
       graph([node("a", 0, 0), node("a", 1, 1)]),
       graph([node("a", 0, 0)], [edge("e", "a", "z")]),
+      graph(two(), [edge("e", "a", "b"), edge("e", "b", "a")]),
       graph([{ ...node("a", 0, 0), width: -1 }]),
-      graph(
-        [node("a", 0, 0), node("b", 1, 1)],
-        [{ ...edge("e", "a", "b"), arrow: "start" as "end" }],
-      ),
+      graph(two(), [{ ...edge("e", "a", "b"), arrow: "start" as "end" }]),
     ].map((batch) => {
       try {
         bridge.loadGraph(batch);
@@ -90,6 +90,7 @@ describe("bridge", () => {
     expect(errors).toEqual([
       { kind: "duplicateNode", node: "a" },
       { kind: "missingNode", edge: "e", node: "z" },
+      { kind: "duplicateEdge", edge: "e" },
       { kind: "invalidSize", node: "a" },
       expect.objectContaining({ kind: "malformed" }),
     ]);

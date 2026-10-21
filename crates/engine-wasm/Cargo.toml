@@ -18,6 +18,11 @@ serde-wasm-bindgen = "0.6.5"
 tsify = { version = "0.5.8", default-features = false, features = ["js"] }
 wasm-bindgen = "0.2.129"
 
+# The property test of the bridge's validation (Q-7); a dev-dependency, so it never reaches the
+# WebAssembly build. Without the default `fork` and `timeout`, which run each case in a process.
+[dev-dependencies]
+proptest = { version = "1.11.0", default-features = false, features = ["std"] }
+
 [lints]
 workspace = true
 
