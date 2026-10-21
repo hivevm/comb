@@ -60,3 +60,28 @@ describe("the DOM markup sinks", () => {
     expect(await reported(code, "packages/comb/src/render/labels.ts")).toEqual([]);
   });
 });
+
+const EVALS: [string, string][] = [
+  ["export function f(s: string) { return eval(s); }", "no-eval"],
+  ["export function f(s: string) { return globalThis.eval(s); }", "no-eval"],
+  ['export function f() { setTimeout("f()", 0); }', "no-implied-eval"],
+  ['export function f() { setInterval("f()", 0); }', "no-implied-eval"],
+  ['export function f() { window.setTimeout("f()", 0); }', "no-implied-eval"],
+  ['export function f() { return new Function("a", "return a"); }', "no-new-func"],
+  ['export function f() { return Function("return 1"); }', "no-new-func"],
+];
+
+describe("eval, implied eval, and new Function", () => {
+  // Verifies: Q-6
+  test("are errors in Comb's library sources", async () => {
+    for (const [code, rule] of EVALS) {
+      const rules = await reported(code, "packages/comb/src/bridge/index.ts");
+      expect({ code, rules }).toEqual({ code, rules: [rule] });
+    }
+  });
+
+  test("leave a function passed to a timer alone", async () => {
+    const code = "export function f() { setTimeout(() => f(), 0); }";
+    expect(await reported(code, "packages/comb/src/bridge/index.ts")).toEqual([]);
+  });
+});

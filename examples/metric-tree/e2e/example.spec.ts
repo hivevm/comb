@@ -1,5 +1,8 @@
 import { expect, test, type Page, type Request } from "@playwright/test";
 
+/** The Content Security Policy of Q-6, which the test server sends with every response. */
+const POLICY = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'";
+
 const NODE_WIDTH = 220;
 const NODE_HEIGHT = 64;
 
@@ -38,6 +41,9 @@ test("the example draws the metric tree on a canvas beside its sidebar", async (
   // Verifies: ADR-0008 — the golden path, built, served, and driven by the toolchain it decides.
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  // Verifies: Q-6 — every browser test runs under the policy the test server sends.
+  const response = await page.goto("/");
+  expect(response?.headers()["content-security-policy"]).toBe(POLICY);
   await open(page);
   await expect(page.locator("#canvas canvas")).toBeVisible();
   await expect(page.locator("#count")).toHaveText("15 nodes, 15 edges");
@@ -691,8 +697,9 @@ async function inkNear(page: Page, points: { x: number; y: number }[], radius = 
   const png = await page.locator("#canvas canvas").screenshot();
   return page.evaluate(
     async ({ png, points, radius }) => {
-      const blob = await (await fetch(`data:image/png;base64,${png}`)).blob();
-      const image = await createImageBitmap(blob);
+      // Decoded in the page, not fetched as a `data:` URL, which the policy's connect-src refuses.
+      const bytes = Uint8Array.from(atob(png), (char) => char.charCodeAt(0));
+      const image = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
       const ratio = image.width / document.querySelector("#canvas canvas")!.clientWidth;
       const copy = document.createElement("canvas");
       copy.width = image.width;

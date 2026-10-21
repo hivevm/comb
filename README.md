@@ -145,6 +145,12 @@ string, `URL`, or `Request`, which Comb would have to fetch itself (`"fetchable"
 else (`"invalid"`). The engine is instantiated once per page: a later `createComb` checks its
 `engine` but reuses the first instance.
 
+Comb runs under a Content Security Policy that allows `wasm-unsafe-eval` but not `unsafe-eval`,
+such as `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'` (Q-6). For that it imports
+PixiJS's module `pixi.js/unsafe-eval`, which replaces PixiJS's code generation with code that uses
+no eval (ADR-0020). The module patches PixiJS's classes, so it reaches every PixiJS renderer on the
+host application's page, also one the host application creates itself.
+
 `createComb` throws a `RendererUnavailableError` where the browser offers no WebGL2. A host
 application that would rather draw slowly, with dash patterns solid, than draw nothing opts into
 PixiJS's Canvas 2D renderer:

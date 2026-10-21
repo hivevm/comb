@@ -84,10 +84,13 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   patterns solid. Not built yet: the node content of
   [ADR-0013](adr/0013-node-content-model.md), and the `grid` and `connectors` layers of
   [ADR-0012](adr/0012-virtualized-scene-graph.md).
-- **API** (`packages/comb/src/api`) — `createComb`, which takes the engine's WebAssembly from the
-  host application as `engine` and refuses with an `EngineSourceError` where it is missing, a
-  string, `URL`, or `Request`, or none of a `Response`, a module, and the bytes (`api/engine.ts`,
-  [ADR-0019](adr/0019-the-host-hands-comb-its-engine.md)), before it touches the host element,
+- **API** (`packages/comb/src/api`) — `api/index.ts` imports `pixi.js/unsafe-eval` before
+  PixiJS, so that no PixiJS renderer on the page generates code with eval
+  ([ADR-0020](adr/0020-pixijs-without-eval.md)); `createComb`, which takes the engine's
+  WebAssembly from the host application as `engine` and refuses with an `EngineSourceError`
+  where it is missing, a string, `URL`, or `Request`, or none of a `Response`, a module, and the
+  bytes (`api/engine.ts`, [ADR-0019](adr/0019-the-host-hands-comb-its-engine.md)), before it
+  touches the host element,
   and with a `RendererUnavailableError` where PixiJS finds no WebGL2 unless `allowCanvasFallback`
   lets it draw on Canvas 2D, the graph data handed to the engine, the viewport (`fitView`,
   `setViewport`, `viewport`), and the events to the host application;
@@ -133,7 +136,10 @@ through `comb/testing` rather than pixels, apart from one reference image of the
 Both run the bridge in test mode, which grows the engine's memory before each of its calls, so a
 view kept across a call reads empty; the browser tests serve the example in Vite's `test` mode
 for it, on port 5174, and assert it through `testMode()` of `comb/testing`, and the bundle check
-fails a bundle that carries it.
+fails a bundle that carries it. In test mode the example's Vite configuration sends every response
+with the Content Security Policy of Q-6, `default-src 'self'; script-src 'self'
+'wasm-unsafe-eval'`, so every browser test runs under it; `e2e/policy.spec.ts` records every
+request and `securitypolicyviolation` while the graph loads, is panned, and is zoomed.
 Playwright and the benchmark start headless Chromium without the displays a Dev Container
 forwards, so WebGL2 runs on SwiftShader instead of PixiJS falling back to Canvas 2D.
 

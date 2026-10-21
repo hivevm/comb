@@ -1,6 +1,7 @@
 // Lint for TypeScript (ADR-0008): typescript-eslint's recommended rules, the maintainability
 // sensors `complexity` and `max-lines-per-function` as errors, and in Comb's library sources no
-// DOM markup sink, so that no graph data is ever parsed as HTML (Q-5).
+// DOM markup sink, so that no graph data is ever parsed as HTML (Q-5), and no eval, implied eval,
+// or `new Function`, so that Comb runs under a policy without `unsafe-eval` (Q-6).
 import js from "@eslint/js";
 import { defineConfig } from "eslint/config";
 import tseslint from "typescript-eslint";
@@ -29,6 +30,16 @@ export default defineConfig(
   {
     files: ["packages/comb/src/**/*.ts"],
     ignores: ["**/*.test.ts"],
+    // The browser's globals through which a string runs as code: no-implied-eval reports a call
+    // only on a global it knows.
+    languageOptions: {
+      globals: {
+        window: "readonly",
+        self: "readonly",
+        setTimeout: "readonly",
+        setInterval: "readonly",
+      },
+    },
     rules: {
       "no-restricted-properties": [
         "error",
@@ -51,6 +62,9 @@ export default defineConfig(
         { object: "self", property: "DOMParser", message: MARKUP },
       ],
       "no-restricted-globals": ["error", { name: "DOMParser", message: MARKUP }],
+      "no-eval": "error",
+      "no-implied-eval": "error",
+      "no-new-func": "error",
     },
   },
 );
