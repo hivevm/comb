@@ -74,8 +74,8 @@ budget of Q-3 (`bun run build:lib`, at most 300 kB gzipped without PixiJS).
   uploaded as the artefact `bench-results` (`bun bench/compare.ts bench/baseline.json <run>...`
   compares locally). The maintainer records the baseline: take `median.json` from the artefact
   of a workflow run on `main`, save it as `bench/baseline.json`, and open a pull request that
-  says why the numbers moved. Until a baseline with a reference is recorded so, the comparison
-  says that the runner gate is not checked and judges the numbers alone. A runner's numbers are
+  says why the numbers moved. Against a baseline without a reference, the comparison says that
+  the runner gate is not checked and judges the numbers alone. A runner's numbers are
   compared only with a runner's: runs of another size, mode, or GPU than the baseline's, runs
   that name no GPU, and runs without a reference against a baseline with one are refused.
 - **Mutation testing:** `cargo mutants -p comb-engine --no-shuffle --timeout 30` mutates
