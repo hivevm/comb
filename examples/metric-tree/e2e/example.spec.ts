@@ -1,40 +1,19 @@
 import { expect, test, type Page, type Request } from "@playwright/test";
-
-/** The Content Security Policy of Q-6, which the test server sends with every response. */
-const POLICY = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'";
-
-const NODE_WIDTH = 220;
-const NODE_HEIGHT = 64;
-
-/** The numbers the scene draws by, from comb/testing. */
-async function sceneNumbers(page: Page) {
-  return page.evaluate(() => window.sceneNumbers());
-}
-
-/** Opens the example and waits until its first load has drawn. */
-async function open(page: Page, query = ""): Promise<void> {
-  await page.goto(`/${query}`);
-  // The example sets loadReport after a top-level await, which the load event does not wait for.
-  await page.waitForFunction(() => "loadReport" in window);
-  await page.evaluate(() => window.loadReport);
-}
+import {
+  canvasOrigin,
+  canvasSize,
+  NODE_HEIGHT,
+  NODE_WIDTH,
+  open,
+  POLICY,
+  sceneNumbers,
+  screenCentre,
+  setViewport,
+} from "./shared";
 
 /** A node's position in world coordinates, as the canvas draws it. */
 async function drawnNode(page: Page, id: string) {
   return page.evaluate((id) => window.inspect().nodes.find((node) => node.id === id), id);
-}
-
-/** The screen point at the centre of a drawn node. */
-async function screenCentre(page: Page, id: string) {
-  return page.evaluate(
-    ({ id, w, h }) => {
-      const node = window.inspect().nodes.find((candidate) => candidate.id === id)!;
-      const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();
-      const at = window.screenPoint(node.x + w / 2, node.y + h / 2);
-      return { x: rect.left + at.x, y: rect.top + at.y };
-    },
-    { id, w: NODE_WIDTH, h: NODE_HEIGHT },
-  );
 }
 
 test("the example draws the metric tree on a canvas beside its sidebar", async ({ page }) => {
@@ -264,22 +243,6 @@ test("dragging a node moves it with its edges and edge labels, and a click shows
   await expect(page.locator("#selection")).toBeVisible();
   await expect(page.locator("#title")).toHaveValue("Time spent listening to music by subscribers");
 });
-
-/** The size of the canvas on the page. */
-async function canvasSize(page: Page): Promise<{ width: number; height: number }> {
-  return page.evaluate(() => {
-    const { width, height } = document.querySelector("#canvas canvas")!.getBoundingClientRect();
-    return { width, height };
-  });
-}
-
-/** Sets the viewport through Comb's interface and waits until it is drawn. */
-async function setViewport(page: Page, viewport: { x: number; y: number; scale: number }) {
-  await page.evaluate(async (viewport) => {
-    window.comb.setViewport(viewport);
-    await window.comb.whenRendered();
-  }, viewport);
-}
 
 test("the edges show their colours, dashes, and arrowheads", async ({ page }) => {
   // Verifies: G-11, ADR-0012
@@ -681,14 +644,6 @@ test("a drag at the far level updates the GPU buffers in place, never reallocati
     meshBytesUploaded: did.meshBytesUploaded,
   });
 });
-
-/** The canvas's left and top on the page. */
-async function canvasOrigin(page: Page): Promise<{ left: number; top: number }> {
-  return page.evaluate(() => {
-    const { left, top } = document.querySelector("#canvas canvas")!.getBoundingClientRect();
-    return { left, top };
-  });
-}
 
 /** For each screen point, relative to the canvas, whether the canvas shows anything but its
  *  background within `radius` CSS pixels of it, read off a screenshot of what the browser last

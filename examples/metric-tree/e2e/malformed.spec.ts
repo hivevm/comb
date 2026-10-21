@@ -1,13 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData } from "comb";
-
-/** Opens the example and waits until its first load has drawn. */
-async function open(page: Page): Promise<void> {
-  await page.goto("/");
-  // The example sets loadReport after a top-level await, which the load event does not wait for.
-  await page.waitForFunction(() => "loadReport" in window);
-  await page.evaluate(() => window.loadReport);
-}
+import { open } from "./shared";
 
 /** The identifiers and places of the nodes the canvas draws, and of its edges. */
 async function drawn(page: Page) {

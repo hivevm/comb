@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { open } from "./shared";
 
 /** Titles and labels that a browser would run as script, load, or follow, were they ever parsed
  *  as markup or a URL: each handler records that it ran in `window.hostile`. */
@@ -77,9 +78,7 @@ test("hostile text in titles and labels is drawn as text and adds nothing but th
   // Verifies: Q-5
   const requests: string[] = [];
   page.on("request", (request) => requests.push(new URL(request.url()).pathname));
-  await page.goto("/");
-  await page.waitForFunction(() => "loadReport" in window);
-  await page.evaluate(() => window.loadReport);
+  await open(page);
 
   const drawn = await page.evaluate(drawWatched, HOSTILE);
 
