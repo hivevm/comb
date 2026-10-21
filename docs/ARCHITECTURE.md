@@ -146,8 +146,10 @@ view kept across a call reads empty; the browser tests serve the example in Vite
 for it, on port 5174, and assert it through `testMode()` of `comb/testing`, and the bundle check
 fails a bundle that carries it. In test mode the example's Vite configuration sends every response
 with the Content Security Policy of Q-6, `default-src 'self'; script-src 'self'
-'wasm-unsafe-eval'`, so every browser test runs under it; `e2e/policy.spec.ts` records every
-request and `securitypolicyviolation` while the graph loads, is panned, and is zoomed.
+'wasm-unsafe-eval'`, from the development server and from `vite preview`, so every browser test
+runs under it; `e2e/policy.spec.ts` records every request and `securitypolicyviolation` while the
+graph loads, is panned, and is zoomed, once on the development server and once, tagged `@built`,
+on the example's production build, which `vite preview` serves on port 5175.
 Playwright and the benchmark start headless Chromium without the displays a Dev Container
 forwards, so WebGL2 runs on SwiftShader instead of PixiJS falling back to Canvas 2D.
 
