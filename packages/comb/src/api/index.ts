@@ -1,4 +1,7 @@
 // The public interface of Comb and the validation of graph data (ADR-0009).
+// First, before any PixiJS renderer is created: PixiJS's code generation without eval, so that Comb
+// draws under a Content Security Policy without `unsafe-eval` (Q-6, ADR-0020).
+import "pixi.js/unsafe-eval";
 import { Application } from "pixi.js";
 import { createBridge, type BridgeError, type GraphBatch, type Rect } from "../bridge";
 import { attachInteraction } from "../interaction";
