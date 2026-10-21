@@ -34,6 +34,13 @@ revision is due and that it moves the date. It does not decide a scope that cove
 at once. Whether ADR-0006 needs a revision as well is the maintainer's question. The skill and
 ADR-0006 come from the template, so the change may belong upstream (ADR-0005).
 
+## Decision
+
+The maintainer chose the first way on 2026-10-21: when the count is due as a spec's revision
+runs, the revision takes the counted changes too, and its scope adds the directories the sensor
+lists. The skill and ADR-0006 come from the template, so the change is made upstream in the
+template (ADR-0005) and reaches this project with the template release that carries it.
+
 ## Acceptance criteria
 
 - [ ] Given the options, when the maintainer decides, then the skill, ADR-0006, or the template
