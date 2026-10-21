@@ -544,6 +544,184 @@ mod tests {
         assert!((peak(|t| bernstein(&tiny, t).y) - 3e-13).abs() < 1e-27);
     }
 
+    /// A small generator of numbers with a fixed seed (SplitMix64): the core takes no crate that
+    /// reaches randomness (ADR-0009).
+    struct Numbers(u64);
+
+    impl Numbers {
+        /// The next number, uniform in 0..1.
+        fn unit(&mut self) -> f64 {
+            self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+            let mut z = self.0;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            z ^= z >> 31;
+            // The top 52 bits as the fraction of a number in 1..2.
+            f64::from_bits(0x3FF0_0000_0000_0000 | (z >> 12)) - 1.0
+        }
+
+        /// The next number, uniform in `lo..hi`.
+        fn uniform(&mut self, lo: f64, hi: f64) -> f64 {
+            lo + (hi - lo) * self.unit()
+        }
+
+        /// A scale from 1e-13 to 1e6, uniform in its exponent.
+        fn scale(&mut self) -> f64 {
+            10_f64.powf(self.uniform(-13.0, 6.0))
+        }
+
+        /// A coordinate within `scale` of the origin.
+        fn coordinate(&mut self, scale: f64) -> f64 {
+            self.uniform(-scale, scale)
+        }
+
+        /// A term so small beside `scale` that a derivative's root by it is ill-conditioned:
+        /// from 1e-16 to 1e-6 of `scale`, of either sign.
+        fn sliver(&mut self, scale: f64) -> f64 {
+            let sign = if self.unit() < 0.5 { -1.0 } else { 1.0 };
+            sign * scale * 10_f64.powf(self.uniform(-16.0, -6.0))
+        }
+    }
+
+    /// One path of each kind the test draws, by its index: as `EdgePath::between` builds it
+    /// (forwards, backwards, or level), and of arbitrary control points, some with a cubic or a
+    /// quadratic term of a coordinate's derivative that nearly vanishes.
+    fn drawn_path(numbers: &mut Numbers, index: usize) -> EdgePath {
+        let s = numbers.scale();
+        match index % 6 {
+            // Between two nodes, the target right of, left of, or level with the source.
+            kind @ 0..=2 => {
+                let source = Rect::of_node(
+                    numbers.coordinate(s),
+                    numbers.coordinate(s),
+                    numbers.uniform(0.0, s),
+                    numbers.uniform(0.0, s),
+                );
+                let height = numbers.uniform(0.0, s);
+                let x = match kind {
+                    0 => source.max_x + numbers.uniform(0.0, 2.0 * s),
+                    _ => source.min_x - numbers.uniform(0.0, 2.0 * s),
+                };
+                let y = if kind == 2 {
+                    (source.min_y + source.max_y - height) / 2.0
+                } else {
+                    numbers.coordinate(s)
+                };
+                EdgePath::between(
+                    &source,
+                    &Rect::of_node(x, y, numbers.uniform(0.0, s), height),
+                )
+            }
+            // As between builds it, with the minimum pull at the path's own scale.
+            3 => EdgePath::horizontal(
+                Point::new(numbers.coordinate(s), numbers.coordinate(s)),
+                Point::new(numbers.coordinate(s), numbers.coordinate(s)),
+                numbers.uniform(0.0, s),
+            ),
+            // Arbitrary control points, and the same with a near-vanishing cubic or quadratic
+            // term: a = -p0 + 3 p1 - 3 p2 + p3 and b / 2 = p0 - 2 p1 + p2.
+            kind => {
+                let mut p: [Point; 4] = core::array::from_fn(|_| {
+                    Point::new(numbers.coordinate(s), numbers.coordinate(s))
+                });
+                for axis in [0, 1] {
+                    let mut c = p.map(|q| if axis == 0 { q.x } else { q.y });
+                    if kind == 4 {
+                        c[3] = c[0] - 3.0 * c[1] + 3.0 * c[2] + numbers.sliver(s);
+                    } else if kind == 5 && numbers.unit() < 0.5 {
+                        c[2] = 2.0 * c[1] - c[0] + numbers.sliver(s);
+                    }
+                    for (q, v) in p.iter_mut().zip(c) {
+                        if axis == 0 {
+                            q.x = v;
+                        } else {
+                            q.y = v;
+                        }
+                    }
+                }
+                EdgePath {
+                    source: p[0],
+                    control_source: p[1],
+                    control_target: p[2],
+                    target: p[3],
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_bounds_hold_every_path_drawn_from_a_fixed_seed_and_no_more() {
+        // Verifies: Q-4
+        const PATHS: usize = 6_000;
+        const SAMPLES: u32 = 512;
+        /// How far the bounds may miss a sampled point, or overreach the sampled bounds beyond
+        /// the sampling error, relative to the scale of the path in that coordinate: the
+        /// rounding of two evaluations.
+        const TOLERANCE: f64 = 1e-13;
+        // The weights of `bernstein`, once for every sample rather than per path and point.
+        let weights: Vec<[f64; 4]> = (0..=SAMPLES)
+            .map(|i| {
+                let t = f64::from(i) / f64::from(SAMPLES);
+                let u = 1.0 - t;
+                [u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t]
+            })
+            .collect();
+        let mut numbers = Numbers(0x5EED_C0DE_B0B5_F00D);
+        for index in 0..PATHS {
+            let path = drawn_path(&mut numbers, index);
+            let bounds = path.bounds();
+            let p = [
+                path.source,
+                path.control_source,
+                path.control_target,
+                path.target,
+            ];
+            // Each coordinate rounds by its own magnitudes, so each has its own tolerance.
+            let tx = TOLERANCE * p.iter().fold(0.0_f64, |m, q| m.max(q.x.abs()));
+            let ty = TOLERANCE * p.iter().fold(0.0_f64, |m, q| m.max(q.y.abs()));
+            // The curve by its Bernstein form, sampled at every weight, and the sampled bounds
+            // as min_x, min_y, max_x, max_y.
+            let mut sampled = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
+            for w in &weights {
+                let x: f64 = (0..4).map(|i| w[i] * p[i].x).sum();
+                let y: f64 = (0..4).map(|i| w[i] * p[i].y).sum();
+                assert!(
+                    x >= bounds.min_x - tx
+                        && x <= bounds.max_x + tx
+                        && y >= bounds.min_y - ty
+                        && y <= bounds.max_y + ty,
+                    "path {index}: ({x}, {y}) lies outside {bounds:?} for {path:?}"
+                );
+                sampled = [
+                    sampled[0].min(x),
+                    sampled[1].min(y),
+                    sampled[2].max(x),
+                    sampled[3].max(y),
+                ];
+            }
+            // Between two samples, a coordinate rises past the nearer at most f'' h² / 8, and
+            // |f''| <= 6 max(|p0 - 2 p1 + p2|, |p1 - 2 p2 + p3|).
+            let h = 1.0 / f64::from(SAMPLES);
+            let error = |c: [f64; 4], tolerance: f64| {
+                6.0 * (c[0] - 2.0 * c[1] + c[2])
+                    .abs()
+                    .max((c[1] - 2.0 * c[2] + c[3]).abs())
+                    * h
+                    * h
+                    / 8.0
+                    + tolerance
+            };
+            let (ex, ey) = (error(p.map(|q| q.x), tx), error(p.map(|q| q.y), ty));
+            assert!(
+                bounds.min_x >= sampled[0] - ex
+                    && bounds.min_y >= sampled[1] - ey
+                    && bounds.max_x <= sampled[2] + ex
+                    && bounds.max_y <= sampled[3] + ey,
+                "path {index}: {bounds:?} reaches beyond {sampled:?} for {path:?}"
+            );
+        }
+    }
+
     #[test]
     fn a_degenerate_path_has_a_defined_tangent() {
         let p = Point::new(5.0, 5.0);
