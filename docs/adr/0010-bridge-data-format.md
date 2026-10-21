@@ -48,7 +48,10 @@ reads and writes as typed-array views created anew after every engine call.
   and, for inspection, the slots of the edges the query found as `Uint32Array`, with the ends of
   each as `Float32Array`, computed as they lie when inspection asks. A query takes its rectangle as
   structured data and its level of detail as an enumeration; the engine derives the stroke from
-  the level and the size of a screen pixel, and places labels only at the near level.
+  the level and the size of a screen pixel, and places labels only at the near level. It also
+  takes how far an edge label's pill reaches from its point, which the shell measures from the
+  text it draws and the engine cannot, and finds a label whose point lies within that reach of
+  the rectangle.
 - **Slots:** the engine knows nodes and edges by slot only. The TypeScript side keeps the map
   from identifiers to slots; `loadGraph` resolves edge ends from identifiers once, while it loads,
   and keeps no map. Every later call into the engine names slots.
