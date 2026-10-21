@@ -3,7 +3,7 @@
 - **Status:** 🟡 proposed
 - **Date:** 2026-10-17
 - **Deciders:** Markus Brigl
-- **Applies to:** `package.json`, `bun.lock`, `Cargo.toml`, the lint and formatter configurations, `scripts/check-code.sh`, `scripts/check-all.sh`, `.github/workflows/`, and the **Build, Test & Run** section of `README.md`
+- **Applies to:** `package.json`, `bun.lock`, `Cargo.toml`, the lint and formatter configurations, `scripts/check-code.sh`, `scripts/check-all.sh`, `scripts/check-dependencies.sh`, `scripts/check-mutants.sh`, `crates/engine/mutants-missed.txt`, `bench/`, `playwright.config.ts`, `.github/workflows/`, and the **Build, Test & Run** section of `README.md`
 
 ## Context
 
@@ -182,7 +182,11 @@ design revision adds when a mistake calls for them; how the code is laid out in 
 
 The golden path's tests cite this ADR with a `Verifies: ADR-0008` marker. Check 9 of
 `scripts/check-docs.sh` holds the build job, `scripts/check-code.sh`, and the required checks of
-the README together. A check fails when `package-lock.json` or `yarn.lock` exists beside
-`bun.lock`. The tests of `bench/compare.ts` decide how the runner gate and the comparison
-judge given numbers; whether the gate's 25 % suits the real variance of GitHub runners no test
-decides, the workflow's runs on `main` do.
+the README together. `scripts/check-dependencies.sh` fails when a lockfile of another package
+manager (`package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`, or `pnpm-lock.yaml`) exists
+beside `bun.lock`. `scripts/check-mutants.sh` fails on a surviving mutant that
+`crates/engine/mutants-missed.txt` does not list, and on a run that caught none; the
+**Mutation testing** workflow runs it, and its self-test runs in `scripts/check-all.sh` and
+`checks.yml`. Each script's self-test cites this ADR. The tests of `bench/compare.ts` decide how
+the runner gate and the comparison judge given numbers; whether the gate's 25 % suits the real
+variance of GitHub runners no test decides, the workflow's runs on `main` do.
