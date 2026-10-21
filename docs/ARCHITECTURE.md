@@ -54,7 +54,8 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   the rest is private to the crate, so that the `dead_code` lint finds what only tests reach.
 - **Bridge** — `crates/engine-wasm` holds every WebAssembly export: `loadGraph` checks graph data
   and resolves edge ends to slots, `translate` moves nodes, `query` takes a rectangle, a level of
-  detail, and the size of a screen pixel and writes the found node slots, the edge-label slots and
+  detail, the size of a screen pixel, and how far an edge label's pill reaches from its point,
+  and writes the found node slots, the edge-label slots and
   points (at the near level only), the found edge slots, and the edge mesh into buffers the engine
   owns, `drawnEdges` computes the ends of the found edges when inspection asks, as they lie then,
   and `hit` names the node at a point;
@@ -80,8 +81,9 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   lines one pixel wide. A render queries the engine for the viewport grown by the culling margin
   and binds pooled node views and edge-label views to exactly the slots it found, drawn in slot
   order; while the viewport stays within what it last queried, at about its scale, and the graph
-  is unchanged, a render moves the world alone. `EdgesContainer` (`render/edges.ts`) draws the
-  edge mesh with a shader that leaves out the gaps of dash patterns; on the Canvas 2D renderer a
+  and the selection are unchanged, a render moves the world alone. `EdgesContainer`
+  (`render/edges.ts`) draws the edge mesh with a shader that leaves out the gaps of dash
+  patterns; on the Canvas 2D renderer a
   host application opts into ([ADR-0018](adr/0018-webgl2-or-an-opted-in-canvas-fallback.md)),
   which runs no shader, `EdgeFill` (`render/edges-canvas.ts`) takes its place, builds no mesh,
   and fills the same triangles into one `Graphics`, one fill per run of one colour, dash
