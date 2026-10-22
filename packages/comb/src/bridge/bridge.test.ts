@@ -87,7 +87,6 @@ describe("bridge", () => {
       graph([node("a", 0, 0)], [edge("e", "a", "z")]),
       graph(two(), [edge("e", "a", "b"), edge("e", "b", "a")]),
       graph([{ ...node("a", 0, 0), width: -1 }]),
-      graph(two(), [{ ...edge("e", "a", "b"), arrow: "start" as "end" }]),
     ].map((batch) => {
       try {
         bridge.loadGraph(batch);
@@ -100,10 +99,159 @@ describe("bridge", () => {
       { kind: "missingNode", edge: "e", node: "z" },
       { kind: "duplicateEdge", edge: "e" },
       { kind: "invalidSize", node: "a" },
-      expect.objectContaining({ kind: "malformed" }),
     ]);
   });
 });
+
+/** What a field of a node or an edge expects, as the problem says it: plain words, no Rust type. */
+const NUMBER = "a finite number";
+const SIZE = "a finite number of 0 or more";
+const ID = "a well-formed string of at most 256 code units";
+
+/** One field of node `b` or edge `e` corrupted, with a value of another type or by leaving it out,
+ *  each with the problem the bridge reports for it. A field that may be left out (an edge's label
+ *  and dash, a label's background) is only given a value of another type. */
+const CORRUPTIONS: { field: string; value?: unknown; problem: object }[] = [
+  ...["x", "y", "width", "height"].flatMap((field) => {
+    const expected = field === "x" || field === "y" ? NUMBER : SIZE;
+    const problem = { kind: "invalidField", list: "nodes", index: 1, id: "b", field, expected };
+    return [
+      { field: `node.${field}`, value: "1", problem },
+      { field: `node.${field}`, problem },
+    ];
+  }),
+  ...[{ value: 5 }, {}].map((corruption) => ({
+    field: "node.id",
+    ...corruption,
+    problem: { kind: "invalidField", list: "nodes", index: 1, field: "id", expected: ID },
+  })),
+  ...[{ value: 5 }, {}].map((corruption) => ({
+    field: "node.title",
+    ...corruption,
+    problem: { kind: "invalidTitle", node: "b" },
+  })),
+  ...[
+    ["id", 5, ID],
+    ["source", 5, ID],
+    ["target", null, ID],
+    ["color", "red", "an integer from 0 to 0xFFFFFF"],
+    ["arrow", "start", '"end" or "none"'],
+    ["label.t", "1", NUMBER],
+    ["label.offset", false, NUMBER],
+  ].flatMap(([field, value, expected]) => {
+    const problem = { kind: "invalidField", list: "edges", index: 0, id: "e", field, expected };
+    if (field === "id") delete (problem as { id?: string }).id;
+    return [
+      { field: `edge.${field}`, value, problem },
+      { field: `edge.${field}`, problem },
+    ];
+  }),
+  ...[
+    ["label", 5, "an object, or none"],
+    ["dash", [6, 4, 2], "a list of two finite numbers, or none"],
+    ["dash", ["6", 4], "a list of two finite numbers, or none"],
+  ].map(([field, value, expected]) => ({
+    field: `edge.${field}`,
+    value,
+    problem: { kind: "invalidField", list: "edges", index: 0, id: "e", field, expected },
+  })),
+  ...[{ value: 5 }, {}].map((corruption) => ({
+    field: "edge.label.text",
+    ...corruption,
+    problem: { kind: "invalidLabelText", edge: "e" },
+  })),
+  {
+    field: "edge.label.background",
+    value: "red",
+    problem: { kind: "invalidBackground", edge: "e" },
+  },
+];
+
+/** Nodes `a` and `b` and an edge `e` between them with every field of its own, with `path`
+ *  (`node.…` for `b`, `edge.…` for `e`) set to `value`, or left out where `value` is absent. */
+function corrupted(path: string, corruption: { value?: unknown }): GraphBatch {
+  const b: Record<string, unknown> = node("b", 300, 0);
+  const label: Record<string, unknown> = { text: "x", t: 0.5, offset: 0, background: 0x123456 };
+  const e: Record<string, unknown> = { ...edge("e", "a", "b"), label, dash: [6, 4] };
+  const [item, ...field] = path.split(".");
+  const target = item === "node" ? b : field.length > 1 ? label : e;
+  const name = field[field.length - 1]!;
+  if ("value" in corruption) target[name] = corruption.value;
+  else delete target[name];
+  return graph([node("a", 0, 0), b as never], [e as never]);
+}
+
+describe("bridge refusals of a single field", () => {
+  for (const { field, problem, ...corruption } of CORRUPTIONS) {
+    const how = "value" in corruption ? `holds ${JSON.stringify(corruption.value)}` : "is missing";
+    test(`where ${field} ${how}, the problem names the field and its node or edge`, () => {
+      // Verifies: ADR-0010
+      expect(bridge.loadGraph(corrupted("node.x", { value: 0 }))).toBe(2);
+      let refused: unknown = null;
+      try {
+        bridge.loadGraph(corrupted(field, corruption));
+      } catch (error) {
+        refused = error;
+      }
+      expect(refused).toStrictEqual(problem);
+    });
+  }
+
+  test("a million nodes with every field refused are refused quickly, naming the first", () => {
+    // Verifies: ADR-0010
+    const refused = { id: false, title: false, x: false, y: false, width: false, height: false };
+    const nodes = Array.from({ length: 1_000_000 }, () => ({ ...refused }));
+    const start = performance.now();
+    let problem: unknown = null;
+    try {
+      bridge.loadGraph({ nodes, edges: [] } as never);
+    } catch (error) {
+      problem = error;
+    }
+    const ms = performance.now() - start;
+    expect(problem).toStrictEqual({
+      kind: "invalidField",
+      list: "nodes",
+      index: 0,
+      field: "id",
+      expected: ID,
+    });
+    // Only the first is read: each refused value costs an error of serde-wasm-bindgen, about six
+    // seconds for all six million of them.
+    expect(ms).toBeLessThan(1000);
+  });
+
+  test("a message names no Rust type or crate", () => {
+    // Verifies: ADR-0010
+    const refusals = [
+      ...CORRUPTIONS.map(
+        (corruption) => () => bridge.loadGraph(corrupted(corruption.field, corruption)),
+      ),
+      () => bridge.loadGraph(5 as never),
+      () => bridge.loadGraph({ nodes: [5], edges: [] } as never),
+      () => bridge.loadGraph({ nodes: [], edges: "e" } as never),
+      () => bridge.checkNodePatch("a", 5 as never),
+      () => bridge.checkGraphSize(Number.NaN, 0),
+      () => bridge.checkIdBudget(-1),
+    ];
+    for (const refuse of refusals) {
+      let refused: Record<string, unknown> = {};
+      try {
+        refuse();
+      } catch (error) {
+        refused = error as Record<string, unknown>;
+      }
+      const words = Object.values(refused).filter((value) => typeof value === "string");
+      expect(words.length).toBeGreaterThan(0);
+      for (const word of words) expect(word).not.toMatch(RUST);
+    }
+  });
+});
+
+/** What names a Rust type or crate: a path, a backtick, a primitive or a type of the bridge crate,
+ *  serde, or JsValue. */
+const RUST =
+  /::|`|\b(?:f32|f64|u8|u32|u64|i32|i64|usize|isize|str|String|Vec|Option|JsValue|serde\w*|comb_\w+|GraphBatch|NodeInput|EdgeInput|LabelInput|Arrow|[A-Z][a-z]+[A-Z]\w*)\b/;
 
 describe("bridge fields the engine does not keep", () => {
   test("a title, label text, or label background of the wrong kind comes back as a typed error", () => {

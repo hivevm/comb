@@ -28,13 +28,16 @@
 ```
 
 Graph data from the host application is untrusted, and every field of it crosses the bridge before
-the store keeps any of it: the bridge crate refuses a value of the wrong shape, coordinates, sizes,
-and dash patterns that are not finite as the engine keeps them (`f32`), negative sizes, a dash that
-is not positive or a negative gap, duplicate node or edge identifiers, edges to missing nodes,
-non-finite label placements, colours beyond `0xFFFFFF`, a title or label text that is not a string
-or longer than 1,000 UTF-16 code units, a label background that is not an integer from `0` to
-`0xFFFFFF`, more than 1,000,000 nodes or edges, an identifier, source, or target longer than 256
-UTF-16 code units, and identifiers of one load that hold more than 64,000,000 code units together
+the store keeps any of it: the bridge crate refuses a field that is missing or holds a value of
+another type, naming the node or edge by index, and by identifier where it has one, the field, and
+what the field expects in plain words (`invalidField`); graph data that is no object of node and
+edge lists of objects as malformed; coordinates, sizes, and dash patterns that are not finite as
+the engine keeps them (`f32`), negative sizes, a dash that is not positive or a negative gap,
+duplicate node or edge identifiers, edges to missing nodes, non-finite label placements, a colour
+that is not an integer from `0` to `0xFFFFFF`, a title or label text that is not a string or longer
+than 1,000 UTF-16 code units, a label background that is not an integer from `0` to `0xFFFFFF`,
+more than 1,000,000 nodes or edges, an identifier, source, or target longer than 256 UTF-16 code
+units, and identifiers of one load that hold more than 64,000,000 code units together
 with a typed error. `updateNode` refuses an identifier the graph does not hold, and the bridge crate
 refuses a patch that holds a field other than a title, or a title it would refuse in a load. Titles,
 label texts, and label backgrounds are checked there but not kept by the engine. `api` reads the

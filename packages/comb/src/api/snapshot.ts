@@ -2,12 +2,12 @@
 // JavaScript, into plain data whose every field is a primitive of the type the field expects, so
 // that the bridge checks it and the store keeps it, and no value of the host application, nor any
 // of its code, reaches the engine. A value of another type is replaced by `false`, which the bridge
-// refuses; a title, a label text, and the arrow are handed over no longer than one code unit
-// beyond the bridge's limit for texts, and an identifier no longer than one beyond its limit for
-// identifiers, so that a string of any length costs at most that much to check. The code units of
-// all identifiers are counted while they are read, and reading stops once they exceed the
-// bridge's budget, whose check then refuses the load. What cannot be read at all throws an
-// `UnreadableError`.
+// refuses naming the node or edge and the field; a title, a label text, and the arrow are handed
+// over no longer than one code unit beyond the bridge's limit for texts, and an identifier no
+// longer than one beyond its limit for identifiers, so that a string of any length costs at most
+// that much to check. The code units of all identifiers are counted while they are read, and
+// reading stops once they exceed the bridge's budget, whose check then refuses the load. What
+// cannot be read at all throws an `UnreadableError`.
 import type { GraphBatch, NodePatch } from "../bridge";
 import { edgeColor } from "../render/edges";
 import type { GraphData } from "../store";

@@ -4,6 +4,7 @@
 //! generates; node positions and the results of a viewport query cross as buffers the engine
 //! owns, which the shell reads as typed-array views created anew after every call.
 
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
@@ -54,6 +55,95 @@ fn optional_number<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<
     Ok(Option::<f64>::deserialize(deserializer).unwrap_or(Some(f64::NAN)))
 }
 
+/// A field of a node or an edge as the host application handed it over: its value, or none where
+/// the field is missing or holds a value of another type, which the bridge refuses naming the
+/// node or edge and the field (`invalidField`), not as malformed data. serde-wasm-bindgen gives
+/// each value a deserializer of its own, so the refused one leaves the rest to read; the error
+/// that refused it is dropped unread, and the value never reaches a message. Its TypeScript type
+/// is that of the value, which each field names.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Field<T>(pub Option<T>);
+
+impl<T> Default for Field<T> {
+    fn default() -> Self {
+        Self(None)
+    }
+}
+
+thread_local! {
+    /// Whether a field of the current `reading` was refused.
+    static REFUSED: Cell<bool> = const { Cell::new(false) };
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Field<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = T::deserialize(deserializer).ok();
+        if value.is_none() {
+            REFUSED.set(true);
+        }
+        Ok(Self(value))
+    }
+}
+
+/// What `read` deserializes, a batch, with the nodes and edges after the first with a refused
+/// field left unread: only that field is named, so that a graph of a million refused fields costs
+/// no million errors of serde-wasm-bindgen.
+fn reading<T>(read: impl FnOnce() -> T) -> T {
+    REFUSED.set(false);
+    let value = read();
+    REFUSED.set(false);
+    value
+}
+
+/// The items of a list of graph data, each read in full until one holds a refused field, and the
+/// rest left unread, as items without fields, so that the list keeps its length.
+fn items<'de, D: Deserializer<'de>, T: Deserialize<'de> + Default>(
+    deserializer: D,
+) -> Result<Vec<T>, D::Error> {
+    deserializer.deserialize_seq(Items(std::marker::PhantomData))
+}
+
+struct Items<T>(std::marker::PhantomData<T>);
+
+/// A value left unread.
+struct Unread;
+
+impl<'de> Deserialize<'de> for Unread {
+    fn deserialize<D: Deserializer<'de>>(_deserializer: D) -> Result<Self, D::Error> {
+        Ok(Self)
+    }
+}
+
+impl<'de, T: Deserialize<'de> + Default> Visitor<'de> for Items<T> {
+    type Value = Vec<T>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a list")
+    }
+
+    fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Vec<T>, A::Error> {
+        let mut items = Vec::new();
+        loop {
+            let item = if REFUSED.get() {
+                seq.next_element::<Unread>()?.map(|Unread| T::default())
+            } else {
+                seq.next_element::<T>()?
+            };
+            match item {
+                Some(item) => items.push(item),
+                None => return Ok(items),
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+impl<T> From<T> for Field<T> {
+    fn from(value: T) -> Self {
+        Self(Some(value))
+    }
+}
+
 /// A value of the patch of `updateNode`: the string it holds, or none where it holds a value of
 /// another type.
 pub struct Text(pub Option<String>);
@@ -66,18 +156,23 @@ impl<'de> Deserialize<'de> for Text {
 
 /// A node as the host application hands it over: its identifier, its title, the position of its
 /// top-left corner, and its size.
-#[derive(Tsify, Deserialize)]
+#[derive(Tsify, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeInput {
-    pub id: String,
+    #[tsify(type = "string")]
+    pub id: Field<String>,
     /// Missing, it is refused by name, which makes it optional in the generated type.
     #[tsify(type = "string")]
     #[serde(rename = "title", default, deserialize_with = "text_length")]
     pub title_length: Option<usize>,
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
+    #[tsify(type = "number")]
+    pub x: Field<f64>,
+    #[tsify(type = "number")]
+    pub y: Field<f64>,
+    #[tsify(type = "number")]
+    pub width: Field<f64>,
+    #[tsify(type = "number")]
+    pub height: Field<f64>,
 }
 
 /// An edge label: its text, where it sits by path parameter `t` and label offset in pixels
@@ -87,8 +182,10 @@ pub struct LabelInput {
     #[tsify(type = "string")]
     #[serde(rename = "text", default, deserialize_with = "text_length")]
     pub text_length: Option<usize>,
-    pub t: f64,
-    pub offset: f64,
+    #[tsify(type = "number")]
+    pub t: Field<f64>,
+    #[tsify(type = "number")]
+    pub offset: Field<f64>,
     #[tsify(optional)]
     #[serde(default, deserialize_with = "optional_number")]
     pub background: Option<f64>,
@@ -105,36 +202,96 @@ pub enum Arrow {
 /// An edge between two nodes, named by their identifiers, with the style it is drawn with: its
 /// colour as `0xRRGGBB`, its dash pattern as dash and gap lengths in world units (none for a
 /// solid line), and whether an arrowhead marks its end (G-11).
-#[derive(Tsify, Deserialize)]
+#[derive(Tsify, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct EdgeInput {
-    pub id: String,
-    pub source: String,
-    pub target: String,
-    #[tsify(optional)]
-    #[serde(default)]
-    pub label: Option<LabelInput>,
-    pub color: u32,
-    #[tsify(optional)]
-    #[serde(default)]
-    pub dash: Option<[f64; 2]>,
-    pub arrow: Arrow,
+    #[tsify(type = "string")]
+    pub id: Field<String>,
+    #[tsify(type = "string")]
+    pub source: Field<String>,
+    #[tsify(type = "string")]
+    pub target: Field<String>,
+    #[tsify(type = "LabelInput", optional)]
+    pub label: Field<Option<LabelInput>>,
+    #[tsify(type = "number")]
+    pub color: Field<f64>,
+    #[tsify(type = "[number, number]", optional)]
+    pub dash: Field<Option<Pair>>,
+    #[tsify(type = "Arrow")]
+    pub arrow: Field<Arrow>,
+}
+
+/// A dash pattern: a list of exactly two numbers, the dash and the gap.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Pair(pub [f64; 2]);
+
+impl<'de> Deserialize<'de> for Pair {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_seq(PairVisitor)
+    }
+}
+
+struct PairVisitor;
+
+impl<'de> Visitor<'de> for PairVisitor {
+    type Value = Pair;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a list of two numbers")
+    }
+
+    /// Reads two numbers, and refuses a list that holds a third without reading the rest.
+    fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Pair, A::Error> {
+        let mut next = |read| {
+            seq.next_element()?
+                .ok_or_else(|| de::Error::invalid_length(read, &self))
+        };
+        let pair = [next(0)?, next(1)?];
+        if seq.next_element::<IgnoredAny>()?.is_some() {
+            return Err(de::Error::invalid_length(3, &self));
+        }
+        Ok(Pair(pair))
+    }
 }
 
 /// The nodes and edges of one load, each in slot order.
 #[derive(Tsify, Deserialize)]
 pub struct GraphBatch {
+    #[serde(deserialize_with = "items")]
     pub nodes: Vec<NodeInput>,
+    #[serde(deserialize_with = "items")]
     pub edges: Vec<EdgeInput>,
+}
+
+/// Which list of graph data an item belongs to.
+#[derive(Tsify, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum GraphList {
+    Nodes,
+    Edges,
 }
 
 /// Why the engine refused graph data (Q-7).
 #[derive(Tsify, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum BridgeError {
-    /// The value did not have the shape the export expects.
+    /// The value did not have the shape the export expects: graph data that is no object, a list
+    /// that is no list, a node or an edge that is no object, or a patch that is no plain object.
     #[serde(rename_all = "camelCase")]
     Malformed { message: String },
+    /// A field of the item at `index` of `list`, the node or edge `id` where its identifier was
+    /// read, is missing or holds a value of another type; `field` names it, a label's as
+    /// `label.t`, and `expected` says in words what it holds.
+    #[serde(rename_all = "camelCase")]
+    InvalidField {
+        list: GraphList,
+        index: u32,
+        #[tsify(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+        field: String,
+        expected: String,
+    },
     /// A node's coordinate is NaN or infinite.
     #[serde(rename_all = "camelCase")]
     NonFiniteCoordinate { node: String },
@@ -171,7 +328,7 @@ pub enum BridgeError {
     /// An edge label's background is not an integer from `0` to `0xFFFFFF`.
     #[serde(rename_all = "camelCase")]
     InvalidBackground { edge: String },
-    /// An edge's colour lies beyond `0xFFFFFF`.
+    /// An edge's colour is not an integer from `0` to `0xFFFFFF`.
     #[serde(rename_all = "camelCase")]
     InvalidColor { edge: String },
     /// An edge's dash is not positive or its gap negative, or either is not finite.
@@ -217,14 +374,16 @@ impl From<BridgeError> for JsValue {
 }
 
 /// A value that does not have the shape an export expects. Its message is the bridge's own: the
-/// value is not formatted into it, so that a refused value of any size costs no copy.
+/// error is dropped and the value not formatted into it, so that a refused value of any size
+/// costs no copy and no message names a type of the bridge crate.
 fn unshaped(_error: impl std::fmt::Display) -> BridgeError {
     malformed("the value does not have the shape the bridge expects")
 }
 
-fn malformed(error: impl std::fmt::Display) -> BridgeError {
+/// Malformed data, with a message in plain words that names no type of the bridge crate.
+fn malformed(message: &str) -> BridgeError {
     BridgeError::Malformed {
-        message: error.to_string(),
+        message: message.to_owned(),
     }
 }
 
@@ -232,17 +391,152 @@ fn malformed(error: impl std::fmt::Display) -> BridgeError {
 /// named, so that a new one is decided here rather than passed on by default.
 impl From<GraphError> for BridgeError {
     fn from(error: GraphError) -> Self {
-        match error {
-            GraphError::SlotCountMismatch
-            | GraphError::EdgeEndOutOfRange { .. }
-            | GraphError::TooManySlots => malformed(format!("{error:?}")),
-        }
+        malformed(match error {
+            GraphError::SlotCountMismatch => "the positions and sizes do not match the nodes",
+            GraphError::EdgeEndOutOfRange { .. } => "an edge ends at a node beyond the graph",
+            GraphError::TooManySlots => "the graph holds more items than the engine can number",
+        })
     }
 }
 
 /// The engine's conversion of a count to slots, so that both refuse the same counts.
 fn slot(index: usize) -> Result<u32, BridgeError> {
     Ok(graph::slot(index)?)
+}
+
+/// What a field expects, as `invalidField` says it: plain words, no type of the bridge crate.
+const A_NUMBER: &str = "a finite number";
+const A_SIZE: &str = "a finite number of 0 or more";
+const A_COLOR: &str = "an integer from 0 to 0xFFFFFF";
+const A_LABEL: &str = "an object, or none";
+const A_DASH: &str = "a list of two finite numbers, or none";
+const AN_ARROW: &str = "\"end\" or \"none\"";
+
+/// What an identifier, a source, or a target expects, by `MAX_ID`.
+const AN_ID: &str = "a well-formed string of at most 256 code units";
+
+/// A node with every field read.
+struct Node<'a> {
+    id: &'a str,
+    title_length: Option<usize>,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+/// An edge label with every field read.
+struct Label {
+    text_length: Option<usize>,
+    t: f64,
+    offset: f64,
+    background: Option<f64>,
+}
+
+/// An edge with every field read.
+struct Edge<'a> {
+    id: &'a str,
+    source: &'a str,
+    target: &'a str,
+    label: Option<Label>,
+    color: f64,
+    dash: Option<[f64; 2]>,
+    arrow: Arrow,
+}
+
+/// A batch with every field of every node and edge read.
+struct Batch<'a> {
+    nodes: Vec<Node<'a>>,
+    edges: Vec<Edge<'a>>,
+}
+
+/// The item at `index` of `list` while its fields are read, `id` once its identifier is.
+struct Item<'a> {
+    list: GraphList,
+    index: usize,
+    id: Option<&'a str>,
+}
+
+impl<'a> Item<'a> {
+    fn new(list: GraphList, index: usize) -> Self {
+        Self {
+            list,
+            index,
+            id: None,
+        }
+    }
+
+    /// The value of `field`, or the refusal that names the item and the field.
+    fn read<T>(&self, field: &str, value: Field<T>, expected: &str) -> Result<T, BridgeError> {
+        value.0.ok_or_else(|| BridgeError::InvalidField {
+            list: self.list,
+            // Within `MAX_ITEMS`, which the bridge checked first.
+            index: self.index as u32,
+            id: self.id.map(str::to_owned),
+            field: field.to_owned(),
+            expected: expected.to_owned(),
+        })
+    }
+
+    /// The identifier `field` of the item, read in place.
+    fn id(&self, field: &str, value: &'a Field<String>) -> Result<&'a str, BridgeError> {
+        self.read(field, Field(value.0.as_deref()), AN_ID)
+    }
+}
+
+/// The node at `index` with every field read, or the refusal that names its first missing or
+/// mistyped field.
+fn node_of(index: usize, node: &NodeInput) -> Result<Node<'_>, BridgeError> {
+    let mut item = Item::new(GraphList::Nodes, index);
+    let id = item.id("id", &node.id)?;
+    item.id = Some(id);
+    Ok(Node {
+        id,
+        title_length: node.title_length,
+        x: item.read("x", node.x, A_NUMBER)?,
+        y: item.read("y", node.y, A_NUMBER)?,
+        width: item.read("width", node.width, A_SIZE)?,
+        height: item.read("height", node.height, A_SIZE)?,
+    })
+}
+
+/// The edge at `index` with every field read, or the refusal that names its first missing or
+/// mistyped field.
+fn edge_of(index: usize, edge: &EdgeInput) -> Result<Edge<'_>, BridgeError> {
+    let mut item = Item::new(GraphList::Edges, index);
+    let id = item.id("id", &edge.id)?;
+    item.id = Some(id);
+    let source = item.id("source", &edge.source)?;
+    let target = item.id("target", &edge.target)?;
+    let label = match item.read("label", edge.label, A_LABEL)? {
+        None => None,
+        Some(label) => Some(Label {
+            text_length: label.text_length,
+            t: item.read("label.t", label.t, A_NUMBER)?,
+            offset: item.read("label.offset", label.offset, A_NUMBER)?,
+            background: label.background,
+        }),
+    };
+    Ok(Edge {
+        id,
+        source,
+        target,
+        label,
+        color: item.read("color", edge.color, A_COLOR)?,
+        dash: item.read("dash", edge.dash, A_DASH)?.map(|Pair(pair)| pair),
+        arrow: item.read("arrow", edge.arrow, AN_ARROW)?,
+    })
+}
+
+/// Reads every field of every node and edge of a batch, or names the first that is missing or
+/// holds a value of another type.
+fn batch_of(batch: &GraphBatch) -> Result<Batch<'_>, BridgeError> {
+    let nodes = batch.nodes.iter().enumerate().map(|(i, n)| node_of(i, n));
+    let edges = batch.edges.iter().enumerate().map(|(i, e)| edge_of(i, e));
+    Ok(Batch {
+        nodes: nodes.collect::<Result<_, _>>()?,
+        edges: edges.collect::<Result<_, _>>()?,
+    })
 }
 
 /// The nodes of a batch as the engine takes them: positions and sizes, `x, y` and `width, height`
@@ -254,12 +548,12 @@ struct Nodes<'a> {
 }
 
 /// Checks the nodes and flattens them, or names the first offending node.
-fn nodes_of(batch: &GraphBatch) -> Result<Nodes<'_>, BridgeError> {
+fn nodes_of<'a>(batch: &Batch<'a>) -> Result<Nodes<'a>, BridgeError> {
     let mut slots = HashMap::with_capacity(batch.nodes.len());
     let mut positions = Vec::with_capacity(batch.nodes.len() * 2);
     let mut sizes = Vec::with_capacity(batch.nodes.len() * 2);
     for (index, node) in batch.nodes.iter().enumerate() {
-        let named = || node.id.clone();
+        let named = || node.id.to_owned();
         // Checked as the engine keeps them: a number beyond `f32` is as infinite as infinity.
         let [x, y, width, height] = [node.x, node.y, node.width, node.height].map(|v| v as f32);
         if !x.is_finite() || !y.is_finite() {
@@ -278,7 +572,7 @@ fn nodes_of(batch: &GraphBatch) -> Result<Nodes<'_>, BridgeError> {
             }
             Some(_) => {}
         }
-        if slots.insert(node.id.as_str(), slot(index)?).is_some() {
+        if slots.insert(node.id, slot(index)?).is_some() {
             return Err(BridgeError::DuplicateNode { node: named() });
         }
         positions.extend([x, y]);
@@ -297,9 +591,9 @@ fn rgb(value: f64) -> bool {
 }
 
 /// The label placement and style of an edge, or why they were refused.
-fn placement_of(edge: &EdgeInput) -> Result<(Option<LabelPlacement>, EdgeStyle), BridgeError> {
-    let id = || edge.id.clone();
-    let label = match edge.label {
+fn placement_of(edge: &Edge) -> Result<(Option<LabelPlacement>, EdgeStyle), BridgeError> {
+    let id = || edge.id.to_owned();
+    let label = match &edge.label {
         Some(l) if !(l.t.is_finite() && l.offset.is_finite()) => {
             return Err(BridgeError::NonFiniteLabel { edge: id() });
         }
@@ -312,18 +606,18 @@ fn placement_of(edge: &EdgeInput) -> Result<(Option<LabelPlacement>, EdgeStyle),
                 limit: MAX_TEXT as u32,
             });
         }
-        Some(LabelInput {
+        Some(Label {
             background: Some(b),
             ..
-        }) if !rgb(b) => {
+        }) if !rgb(*b) => {
             return Err(BridgeError::InvalidBackground { edge: id() });
         }
-        label => label.map(|l| LabelPlacement {
+        label => label.as_ref().map(|l| LabelPlacement {
             t: l.t,
             offset: l.offset,
         }),
     };
-    if !rgb(f64::from(edge.color)) {
+    if !rgb(edge.color) {
         return Err(BridgeError::InvalidColor { edge: id() });
     }
     // Checked as the engine keeps it, so that a dash too short for `f32` is refused too.
@@ -334,7 +628,8 @@ fn placement_of(edge: &EdgeInput) -> Result<(Option<LabelPlacement>, EdgeStyle),
         dash => dash,
     };
     let style = EdgeStyle {
-        color: edge.color,
+        // An integer from 0 to 0xFFFFFF, as `rgb` checked.
+        color: edge.color as u32,
         dash,
         arrow: edge.arrow == Arrow::End,
     };
@@ -343,28 +638,28 @@ fn placement_of(edge: &EdgeInput) -> Result<(Option<LabelPlacement>, EdgeStyle),
 
 /// Resolves every edge's ends to node slots, or names the first offending edge: the second of
 /// two that share an identifier, or one whose ends, label, or style were refused.
-fn edges_of(batch: &GraphBatch, slots: &HashMap<&str, u32>) -> Result<Vec<EdgeSpec>, BridgeError> {
+fn edges_of(batch: &Batch, slots: &HashMap<&str, u32>) -> Result<Vec<EdgeSpec>, BridgeError> {
     let mut seen = HashSet::with_capacity(batch.edges.len());
-    let end = |edge: &EdgeInput, node: &String| {
+    let end = |edge: &Edge, node: &str| {
         slots
-            .get(node.as_str())
+            .get(node)
             .copied()
             .ok_or_else(|| BridgeError::MissingNode {
-                edge: edge.id.clone(),
-                node: node.clone(),
+                edge: edge.id.to_owned(),
+                node: node.to_owned(),
             })
     };
     batch
         .edges
         .iter()
         .map(|edge| {
-            if !seen.insert(edge.id.as_str()) {
+            if !seen.insert(edge.id) {
                 return Err(BridgeError::DuplicateEdge {
-                    edge: edge.id.clone(),
+                    edge: edge.id.to_owned(),
                 });
             }
-            let source = end(edge, &edge.source)?;
-            let target = end(edge, &edge.target)?;
+            let source = end(edge, edge.source)?;
+            let target = end(edge, edge.target)?;
             let (label, style) = placement_of(edge)?;
             Ok(EdgeSpec {
                 source,
@@ -376,9 +671,8 @@ fn edges_of(batch: &GraphBatch, slots: &HashMap<&str, u32>) -> Result<Vec<EdgeSp
         .collect()
 }
 
-/// Checks a batch and builds the engine's graph from it.
 /// Checks the length of every identifier of a batch, and of all of them together.
-fn ids_of(batch: &GraphBatch) -> Result<(), BridgeError> {
+fn ids_of(batch: &Batch) -> Result<(), BridgeError> {
     let mut units = 0;
     let mut add = |list: &str, index: usize, field: &str, id: &str| {
         let length = utf16_length(id);
@@ -394,21 +688,24 @@ fn ids_of(batch: &GraphBatch) -> Result<(), BridgeError> {
         Ok(())
     };
     for (index, node) in batch.nodes.iter().enumerate() {
-        add("nodes", index, "id", &node.id)?;
+        add("nodes", index, "id", node.id)?;
     }
     for (index, edge) in batch.edges.iter().enumerate() {
-        add("edges", index, "id", &edge.id)?;
-        add("edges", index, "source", &edge.source)?;
-        add("edges", index, "target", &edge.target)?;
+        add("edges", index, "id", edge.id)?;
+        add("edges", index, "source", edge.source)?;
+        add("edges", index, "target", edge.target)?;
     }
     check_id_budget(units as f64)
 }
 
+/// Checks a batch and builds the engine's graph from it: its size, then every field's type, the
+/// identifiers' lengths, the nodes, and the edges.
 fn graph_of(batch: &GraphBatch) -> Result<Graph, BridgeError> {
     check_graph_size(batch.nodes.len() as f64, batch.edges.len() as f64)?;
-    ids_of(batch)?;
-    let nodes = nodes_of(batch)?;
-    let edges = edges_of(batch, &nodes.slots)?;
+    let batch = batch_of(batch)?;
+    ids_of(&batch)?;
+    let nodes = nodes_of(&batch)?;
+    let edges = edges_of(&batch, &nodes.slots)?;
     Ok(Graph::new(nodes.positions, nodes.sizes, edges)?)
 }
 
@@ -492,7 +789,7 @@ pub fn check_id_budget(units: f64) -> Result<(), BridgeError> {
 pub fn check_graph_size(nodes: f64, edges: f64) -> Result<(), BridgeError> {
     for (list, count) in [("nodes", nodes), ("edges", edges)] {
         if !(count >= 0.0 && count.fract() == 0.0) {
-            return Err(malformed(format!("{list} is not a list")));
+            return Err(malformed(&format!("{list} is not a list")));
         }
         if count > f64::from(MAX_ITEMS) {
             return Err(BridgeError::TooMany {
@@ -542,7 +839,7 @@ fn patch_of(node: &str, patch: NodePatch) -> Result<CheckedPatch, BridgeError> {
 #[wasm_bindgen(js_name = checkNodePatch)]
 pub fn check_node_patch(node: &str, patch: Ts<NodePatch>) -> Result<Ts<CheckedPatch>, BridgeError> {
     let checked = patch_of(node, patch.to_rust().map_err(unshaped)?)?;
-    Ts::from_rust(&checked).map_err(malformed)
+    Ts::from_rust(&checked).map_err(|_| malformed("the checked patch could not be handed back"))
 }
 
 /// A rectangle in world coordinates, as a query asks for it.
@@ -595,7 +892,7 @@ impl Engine {
     /// loaded graph as it was.
     #[wasm_bindgen(js_name = loadGraph)]
     pub fn load_graph(&mut self, batch: Ts<GraphBatch>) -> Result<u32, BridgeError> {
-        let batch = batch.to_rust().map_err(unshaped)?;
+        let batch = reading(|| batch.to_rust()).map_err(unshaped)?;
         self.graph = graph_of(&batch)?;
         self.visible = Visible::default();
         slot(batch.nodes.len())
@@ -798,33 +1095,38 @@ mod tests {
             nodes: nodes
                 .iter()
                 .map(|&(id, x, y)| NodeInput {
-                    id: id.into(),
+                    id: id.to_owned().into(),
                     title_length: Some(1),
-                    x,
-                    y,
-                    width: 100.0,
-                    height: 50.0,
+                    x: x.into(),
+                    y: y.into(),
+                    width: 100.0.into(),
+                    height: 50.0.into(),
                 })
                 .collect(),
             edges: edges
                 .iter()
                 .map(|&(id, source, target)| EdgeInput {
-                    id: id.into(),
-                    source: source.into(),
-                    target: target.into(),
-                    label: None,
-                    color: 0x9a_a1ad,
-                    dash: None,
-                    arrow: Arrow::End,
+                    id: id.to_owned().into(),
+                    source: source.to_owned().into(),
+                    target: target.to_owned().into(),
+                    label: None.into(),
+                    color: f64::from(0x9a_a1ad).into(),
+                    dash: None.into(),
+                    arrow: Arrow::End.into(),
                 })
                 .collect(),
         }
     }
 
     #[test]
+    fn what_an_identifier_expects_names_its_limit() {
+        assert!(AN_ID.contains(&format!(" {MAX_ID} ")));
+    }
+
+    #[test]
     fn a_batch_flattens_into_slot_order() {
         let data = batch(&[("a", 1.0, 2.0), ("b", 3.0, 4.0)], &[]);
-        let nodes = nodes_of(&data).unwrap();
+        let nodes = nodes_of(&batch_of(&data).unwrap()).unwrap();
         assert_eq!(nodes.positions, [1.0, 2.0, 3.0, 4.0]);
         assert_eq!(nodes.sizes, [100.0, 50.0, 100.0, 50.0]);
     }
@@ -839,8 +1141,8 @@ mod tests {
     fn a_size_that_is_negative_or_not_finite_names_its_node() {
         for (width, height) in [(-1.0, 10.0), (10.0, f64::INFINITY), (f64::NAN, 10.0)] {
             let mut data = batch(&[("a", 0.0, 0.0)], &[]);
-            data.nodes[0].width = width;
-            data.nodes[0].height = height;
+            data.nodes[0].width = width.into();
+            data.nodes[0].height = height.into();
             let error = graph_of(&data).unwrap_err();
             assert_eq!(error, BridgeError::InvalidSize { node: "a".into() });
         }
@@ -851,14 +1153,14 @@ mod tests {
         let error = graph_of(&batch(&[("a", 1e300, 0.0)], &[])).unwrap_err();
         assert_eq!(error, BridgeError::NonFiniteCoordinate { node: "a".into() });
         let mut data = batch(&[("a", 0.0, 0.0)], &[]);
-        data.nodes[0].width = 1e300;
+        data.nodes[0].width = 1e300.into();
         assert_eq!(
             graph_of(&data).unwrap_err(),
             BridgeError::InvalidSize { node: "a".into() }
         );
         let two = [("a", 0.0, 0.0), ("b", 300.0, 0.0)];
         let mut data = batch(&two, &[("e", "a", "b")]);
-        data.edges[0].dash = Some([1e-300, 1e300]);
+        data.edges[0].dash = Some(Pair([1e-300, 1e300])).into();
         assert_eq!(
             graph_of(&data).unwrap_err(),
             BridgeError::InvalidDash { edge: "e".into() }
@@ -895,10 +1197,11 @@ mod tests {
         let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[("e", "a", "b")]);
         data.edges[0].label = Some(LabelInput {
             text_length: Some(1),
-            t: f64::NAN,
-            offset: 0.0,
+            t: f64::NAN.into(),
+            offset: 0.0.into(),
             background: None,
-        });
+        })
+        .into();
         let error = graph_of(&data).unwrap_err();
         assert_eq!(error, BridgeError::NonFiniteLabel { edge: "e".into() });
     }
@@ -907,7 +1210,7 @@ mod tests {
     fn a_colour_beyond_rgb_or_a_bad_dash_names_its_edge() {
         let two = [("a", 0.0, 0.0), ("b", 300.0, 0.0)];
         let mut data = batch(&two, &[("e", "a", "b")]);
-        data.edges[0].color = 0x100_0000;
+        data.edges[0].color = f64::from(0x100_0000).into();
         assert_eq!(
             graph_of(&data).unwrap_err(),
             BridgeError::InvalidColor { edge: "e".into() }
@@ -919,7 +1222,7 @@ mod tests {
             [6.0, f64::INFINITY],
         ] {
             let mut data = batch(&two, &[("e", "a", "b")]);
-            data.edges[0].dash = Some(dash);
+            data.edges[0].dash = Some(Pair(dash)).into();
             assert_eq!(
                 graph_of(&data).unwrap_err(),
                 BridgeError::InvalidDash { edge: "e".into() }
@@ -944,10 +1247,11 @@ mod tests {
             let mut data = batch(&two, &[("e", "a", "b")]);
             data.edges[0].label = Some(LabelInput {
                 text_length: text,
-                t: 0.5,
-                offset: 0.0,
+                t: 0.5.into(),
+                offset: 0.0.into(),
                 background,
-            });
+            })
+            .into();
             graph_of(&data)
         };
         assert!(label(Some(1), None).is_ok());
@@ -972,10 +1276,11 @@ mod tests {
         data.nodes[0].title_length = Some(MAX_TEXT);
         data.edges[0].label = Some(LabelInput {
             text_length: Some(MAX_TEXT),
-            t: 0.5,
-            offset: 0.0,
+            t: 0.5.into(),
+            offset: 0.0.into(),
             background: None,
-        });
+        })
+        .into();
         assert!(graph_of(&data).is_ok());
         data.nodes[0].title_length = Some(MAX_TEXT + 1);
         assert_eq!(
@@ -986,7 +1291,7 @@ mod tests {
             }
         );
         data.nodes[0].title_length = Some(MAX_TEXT);
-        if let Some(label) = data.edges[0].label.as_mut() {
+        if let Field(Some(Some(label))) = &mut data.edges[0].label {
             label.text_length = Some(MAX_TEXT + 1);
         }
         assert_eq!(
@@ -1005,10 +1310,10 @@ mod tests {
         let long = "x".repeat(MAX_ID);
         let longer = "x".repeat(MAX_ID + 1);
         let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[("e", "a", "b")]);
-        data.nodes[1].id = long.clone();
-        data.edges[0].target = long;
+        data.nodes[1].id = long.clone().into();
+        data.edges[0].target = long.into();
         assert!(graph_of(&data).is_ok());
-        data.edges[0].source = longer;
+        data.edges[0].source = longer.into();
         assert_eq!(
             graph_of(&data).unwrap_err(),
             BridgeError::IdTooLong {
@@ -1035,20 +1340,21 @@ mod tests {
         let nodes = |count: usize| GraphBatch {
             nodes: (0..count)
                 .map(|i| NodeInput {
-                    id: id(i),
+                    id: id(i).into(),
                     title_length: Some(1),
-                    x: 0.0,
-                    y: 0.0,
-                    width: 1.0,
-                    height: 1.0,
+                    x: 0.0.into(),
+                    y: 0.0.into(),
+                    width: 1.0.into(),
+                    height: 1.0.into(),
                 })
                 .collect(),
             edges: Vec::new(),
         };
         // 250,000 identifiers of 256 code units hold 64,000,000 together.
-        assert_eq!(ids_of(&nodes(250_000)), Ok(()));
+        let ids = |count| ids_of(&batch_of(&nodes(count)).unwrap());
+        assert_eq!(ids(250_000), Ok(()));
         assert_eq!(
-            ids_of(&nodes(250_001)),
+            ids(250_001),
             Err(BridgeError::IdBudgetExceeded { limit: 64_000_000 })
         );
     }
@@ -1119,7 +1425,7 @@ mod tests {
         assert_eq!(
             slot(beyond),
             Err(BridgeError::Malformed {
-                message: "TooManySlots".into()
+                message: "the graph holds more items than the engine can number".into()
             })
         );
     }
@@ -1130,6 +1436,7 @@ mod tests {
             &[("a", 0.0, 0.0), ("b", 300.0, 0.0), ("c", 600.0, 0.0)],
             &[("e", "c", "a")],
         );
+        let data = batch_of(&data).unwrap();
         let edges = edges_of(&data, &nodes_of(&data).unwrap().slots).unwrap();
         assert_eq!((edges[0].source, edges[0].target), (2, 0));
     }

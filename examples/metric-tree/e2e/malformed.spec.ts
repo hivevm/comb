@@ -114,6 +114,85 @@ const MALFORMED: { name: string; graph: GraphData; problem: unknown }[] = [
   })),
 ];
 
+/** What a field expects, as the problem names it. */
+const NUMBER = "a finite number";
+const SIZE = "a finite number of 0 or more";
+const COLOR = "an integer from 0 to 0xFFFFFF";
+const DASH = "a list of two finite numbers, or none";
+const ID = "a well-formed string of at most 256 code units";
+
+/** Nodes `a` and `b` and an edge `e` between them, with `change` made to `b` or to `e`. */
+function changed(item: "b" | "e", change: (fields: Record<string, unknown>) => void): GraphData {
+  const b: Record<string, unknown> = node("b", 300);
+  const e: Record<string, unknown> = {
+    ...edge("e", "a", "b"),
+    label: { text: "e", t: 0.5, offset: 0 },
+  };
+  change(item === "b" ? b : e);
+  return wrong<GraphData>({ nodes: [node("a"), b], edges: [e] });
+}
+
+/** A field of node `b` or edge `e` missing or of another type, with the problem `load` reports
+ *  for it: the node or edge, by index and by identifier where it has one, and the field. */
+const FIELDS: { name: string; graph: GraphData; problem: unknown }[] = [
+  ...[
+    ["a coordinate that is a string", (b: Record<string, unknown>) => (b.x = "1"), "x", NUMBER],
+    ["a missing width", (b: Record<string, unknown>) => delete b.width, "width", SIZE],
+    ["a height that is null", (b: Record<string, unknown>) => (b.height = null), "height", SIZE],
+  ].map(([name, change, field, expected]) => ({
+    name: name as string,
+    graph: changed("b", change as (b: Record<string, unknown>) => void),
+    problem: { kind: "invalidField", list: "nodes", index: 1, id: "b", field, expected },
+  })),
+  {
+    name: "a node identifier that is a number",
+    graph: changed("b", (b) => (b.id = 5)),
+    problem: { kind: "invalidField", list: "nodes", index: 1, field: "id", expected: ID },
+  },
+  ...(
+    [
+      ["an edge source that is an object", (e) => (e.source = { id: "a" }), "source", ID],
+      ["a missing edge target", (e) => delete e.target, "target", ID],
+      ["a colour that is a string", (e) => (e.color = "red"), "color", COLOR],
+      ["an arrow at the start", (e) => (e.arrow = "start"), "arrow", '"end" or "none"'],
+      ["a label that is a string", (e) => (e.label = "e"), "label", "an object, or none"],
+      [
+        "a label without its offset",
+        (e) => delete (e.label as Record<string, unknown>).offset,
+        "label.offset",
+        NUMBER,
+      ],
+      ["a dash of three numbers", (e) => (e.dash = [6, 4, 2]), "dash", DASH],
+    ] as [string, (e: Record<string, unknown>) => void, string, string][]
+  ).map(([name, change, field, expected]) => ({
+    name,
+    graph: changed("e", change),
+    problem: { kind: "invalidField", list: "edges", index: 0, id: "e", field, expected },
+  })),
+];
+
+for (const { name, graph, problem } of FIELDS) {
+  test(`load refuses ${name}, naming the node or edge and the field`, async ({ page }) => {
+    // Verifies: Q-7, ADR-0010
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await open(page);
+    const before = await drawn(page);
+    const refused = await page.evaluate((graph) => {
+      try {
+        window.comb.load(graph);
+        return null;
+      } catch (error) {
+        const { name, problem } = error as Error & { problem: unknown };
+        return { name, problem };
+      }
+    }, graph);
+    expect(errors).toEqual([]);
+    expect(refused).toStrictEqual({ name: "GraphDataError", problem });
+    expect(await drawn(page)).toEqual(before);
+  });
+}
+
 for (const { name, graph, problem } of MALFORMED) {
   test(`load refuses ${name} with a GraphDataError, and the previous graph stays drawn`, async ({
     page,
@@ -297,14 +376,25 @@ async function runCases(cases: number) {
       comb.whenRendered().then(() => "drawn"),
       new Promise((resolve) => setTimeout(() => resolve("hung"), 2000)),
     ]);
+  /** Whether a refusal's message, or what it says a field expects, names a Rust type or crate:
+   *  a path, a backtick, or a primitive of Rust. */
+  const namesRust = (error: unknown) => {
+    const { message, expected } = (error as { problem: { message?: string; expected?: string } })
+      .problem;
+    return [message, expected].some((text) =>
+      /::|`|\b(?:f32|f64|u32|usize|String|JsValue)\b/.test(text ?? ""),
+    );
+  };
   const tally = { refused: 0, drawn: 0, other: [] as string[] };
   for (let i = 0; i < cases; i++) {
     const { graph, patch } = randomCase();
     try {
       comb.load(graph);
     } catch (error) {
-      if ((error as Error).name === "GraphDataError") tally.refused++;
-      else tally.other.push(`load ${i}: ${String(error)}`);
+      if ((error as Error).name !== "GraphDataError")
+        tally.other.push(`load ${i}: ${String(error)}`);
+      else if (namesRust(error)) tally.other.push(`load ${i}: ${JSON.stringify(error)}`);
+      else tally.refused++;
       continue;
     }
     try {
@@ -740,7 +830,14 @@ const REFUSALS: { name: string; kind: RefusalKind; problem: unknown }[] = [
   {
     name: "a coordinate that is a string of 50 million characters",
     kind: "bigX",
-    problem: { kind: "malformed", message: "the value does not have the shape the bridge expects" },
+    problem: {
+      kind: "invalidField",
+      list: "nodes",
+      index: 0,
+      id: "a",
+      field: "x",
+      expected: "a finite number",
+    },
   },
   {
     name: "a title of 50 million characters shared by 10,000 nodes",
@@ -765,7 +862,13 @@ const REFUSALS: { name: string; kind: RefusalKind; problem: unknown }[] = [
   {
     name: "identifiers that differ in a lone surrogate",
     kind: "loneSurrogateId",
-    problem: { kind: "malformed", message: "the value does not have the shape the bridge expects" },
+    problem: {
+      kind: "invalidField",
+      list: "nodes",
+      index: 0,
+      field: "id",
+      expected: "a well-formed string of at most 256 code units",
+    },
   },
   {
     name: "a title with a lone surrogate",

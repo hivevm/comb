@@ -6,7 +6,10 @@
 //!
 //! The data crosses as serde-wasm-bindgen would hand it over, through a value of any shape that
 //! `GraphBatch` is deserialized from, so that values of the wrong type and missing fields reach
-//! the same conversion `loadGraph` makes.
+//! the same conversion `loadGraph` makes. A second oracle, written on that value alone, says which
+//! field of which node or edge is missing or of another type, and whether the value has the shape
+//! of graph data at all: the bridge names such a field (`invalidField`), and refuses as malformed
+//! only what has no such shape, and no message names a Rust type or crate.
 // Verifies: Q-7, ADR-0009, ADR-0010
 
 use proptest::prelude::*;
@@ -14,7 +17,8 @@ use serde::Deserialize;
 use serde::de::value::{MapDeserializer, SeqDeserializer};
 use serde::de::{self, IntoDeserializer, Visitor};
 
-use super::{GraphBatch, NodePatch, graph_of, patch_of, unshaped};
+use super::{BridgeError, EdgeInput, GraphBatch, GraphList, NodeInput, NodePatch};
+use super::{graph_of, patch_of, reading, unshaped};
 
 /// How many random batches one run feeds the bridge: the ticket's floor, which runs in seconds.
 const CASES: u32 = 10_000;
@@ -80,9 +84,25 @@ impl<'de> de::Deserializer<'de> for Value {
         }
     }
 
+    /// A struct is read by its fields' names, as serde-wasm-bindgen reads a JavaScript object: a
+    /// list is an object too, one without the fields.
+    fn deserialize_struct<V: Visitor<'de>>(
+        self,
+        _name: &'static str,
+        _fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Error> {
+        match self {
+            Self::List(_) => visitor.visit_map(MapDeserializer::new(
+                Vec::<(String, Self)>::new().into_iter(),
+            )),
+            other => other.deserialize_any(visitor),
+        }
+    }
+
     serde::forward_to_deserialize_any! {
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes byte_buf unit
-        unit_struct newtype_struct seq tuple tuple_struct map struct identifier ignored_any
+        unit_struct newtype_struct seq tuple tuple_struct map identifier ignored_any
     }
 }
 
@@ -229,6 +249,8 @@ fn field(
     prop_oneof![
         40 => good.prop_map(named),
         1 => anything().prop_map(named),
+        // What the snapshot of `api` hands over in place of a value of another type.
+        1 => Just(named(Value::Bool(false))),
         1 => Just(None),
     ]
     .boxed()
@@ -296,6 +318,16 @@ fn edge(loose: bool, j: usize, nodes: usize) -> impl Strategy<Value = Value> {
     ])
 }
 
+/// A node or an edge that `good` makes; loose, now and then the snapshot's `false` in its place,
+/// which is no object, or a list, which is an object without the fields.
+fn item(good: impl Strategy<Value = Value> + 'static, loose: bool) -> BoxedStrategy<Value> {
+    if !loose {
+        return good.boxed();
+    }
+    let odd = prop::sample::select(vec![Value::Bool(false), Value::List(Vec::new())]);
+    prop_oneof![40 => good, 1 => odd].boxed()
+}
+
 /// Graph data as the host application might hand it over: mostly of the right shape with values
 /// to refuse here and there; loose, with a value of the wrong type or a missing field now and
 /// then; and now and then a value of any shape at all.
@@ -303,10 +335,10 @@ fn graph_data() -> impl Strategy<Value = Value> {
     let batch = |loose| {
         (0..8_usize, 0..8_usize).prop_flat_map(move |(nodes, edges)| {
             let nodes_of = (0..nodes)
-                .map(|i| node(loose, i).boxed())
+                .map(|i| item(node(loose, i), loose))
                 .collect::<Vec<_>>();
             let edges_of = (0..edges)
-                .map(|j| edge(loose, j, nodes).boxed())
+                .map(|j| item(edge(loose, j, nodes), loose))
                 .collect::<Vec<_>>();
             object(vec![
                 field("nodes", nodes_of.prop_map(Value::List), loose),
@@ -328,42 +360,295 @@ fn finite32(v: f64) -> bool {
 
 /// Whether nothing in `batch` is to be refused, by brute force over the batch alone.
 fn acceptable(batch: &GraphBatch) -> bool {
-    let unique = |ids: &[&str]| (0..ids.len()).all(|i| !ids[..i].contains(&ids[i]));
+    accepts(batch).unwrap_or(false)
+}
+
+/// Whether nothing in `batch` is to be refused, or none where a field is missing or of another
+/// type.
+fn accepts(batch: &GraphBatch) -> Option<bool> {
+    let unique = |ids: &[String]| (0..ids.len()).all(|i| !ids[..i].contains(&ids[i]));
     let units = |id: &str| id.chars().map(char::len_utf16).sum::<usize>();
-    let short = |id: &&str| units(id) <= 256;
-    let nodes: Vec<&str> = batch.nodes.iter().map(|n| n.id.as_str()).collect();
-    let edges: Vec<&str> = batch.edges.iter().map(|e| e.id.as_str()).collect();
-    let node_ok = |n: &super::NodeInput| {
-        n.title_length.is_some_and(|l| l <= 1_000)
-            && [n.x, n.y, n.width, n.height].into_iter().all(finite32)
-            && n.width as f32 >= 0.0
-            && n.height as f32 >= 0.0
-    };
-    let edge_ok = |e: &super::EdgeInput| {
-        nodes.contains(&e.source.as_str())
-            && nodes.contains(&e.target.as_str())
-            && e.label.is_none_or(|l| {
-                l.t.is_finite()
-                    && l.offset.is_finite()
-                    && l.text_length.is_some_and(|l| l <= 1_000)
-                    && l.background
-                        .is_none_or(|n| n.floor() == n && (0.0..16_777_216.0).contains(&n))
-            })
-            && e.color <= 0xff_ffff
-            && e.dash.is_none_or(|[d, g]| {
-                finite32(d) && finite32(g) && d as f32 > 0.0 && g as f32 >= 0.0
-            })
-    };
-    let ends = batch
+    let short = |id: &String| units(id) <= 256;
+    let rgb = |n: f64| n.floor() == n && (0.0..16_777_216.0).contains(&n);
+    let id = |field: &'_ super::Field<String>| field.0.clone();
+    let nodes: Vec<String> = batch
+        .nodes
+        .iter()
+        .map(|n| id(&n.id))
+        .collect::<Option<_>>()?;
+    let edges: Vec<String> = batch
         .edges
         .iter()
-        .flat_map(|e| [e.source.as_str(), e.target.as_str()]);
-    nodes.iter().chain(&edges).all(short)
-        && ends.collect::<Vec<_>>().iter().all(short)
-        && unique(&nodes)
-        && unique(&edges)
-        && batch.nodes.iter().all(node_ok)
-        && batch.edges.iter().all(edge_ok)
+        .map(|e| id(&e.id))
+        .collect::<Option<_>>()?;
+    let mut ends = Vec::new();
+    for e in &batch.edges {
+        ends.extend([id(&e.source)?, id(&e.target)?]);
+    }
+    let node_ok = |n: &NodeInput| {
+        let [x, y, width, height] = [n.x.0?, n.y.0?, n.width.0?, n.height.0?];
+        Some(
+            n.title_length.is_some_and(|l| l <= 1_000)
+                && [x, y, width, height].into_iter().all(finite32)
+                && width as f32 >= 0.0
+                && height as f32 >= 0.0,
+        )
+    };
+    let edge_ok = |e: &EdgeInput| {
+        let label_ok = match e.label.0? {
+            None => true,
+            Some(l) => {
+                let (t, offset) = (l.t.0?, l.offset.0?);
+                t.is_finite()
+                    && offset.is_finite()
+                    && l.text_length.is_some_and(|l| l <= 1_000)
+                    && l.background.is_none_or(rgb)
+            }
+        };
+        let dash_ok = e.dash.0?.is_none_or(|super::Pair([d, g])| {
+            finite32(d) && finite32(g) && d as f32 > 0.0 && g as f32 >= 0.0
+        });
+        e.arrow.0?;
+        let named = |end: &Option<String>| end.as_ref().is_some_and(|end| nodes.contains(end));
+        Some(named(&e.source.0) && named(&e.target.0) && label_ok && rgb(e.color.0?) && dash_ok)
+    };
+    let mut all_nodes = true;
+    for n in &batch.nodes {
+        all_nodes &= node_ok(n)?;
+    }
+    let mut all_edges = true;
+    for e in &batch.edges {
+        all_edges &= edge_ok(e)?;
+    }
+    Some(
+        nodes.iter().chain(&edges).chain(&ends).all(short)
+            && unique(&nodes)
+            && unique(&edges)
+            && all_nodes
+            && all_edges,
+    )
+}
+
+type Fields = [(String, Value)];
+
+/// The fields of `value` as JavaScript reads them by name, or none where it is no object: an
+/// object's own, and none of a list's.
+fn fields_of(value: &Value) -> Option<&Fields> {
+    match value {
+        Value::Object(entries) => Some(entries),
+        Value::List(_) => Some(&[]),
+        _ => None,
+    }
+}
+
+fn get<'v>(fields: &'v Fields, name: &str) -> Option<&'v Value> {
+    fields
+        .iter()
+        .find(|(key, _)| key == name)
+        .map(|(_, value)| value)
+}
+
+/// Whether `value` has the shape of graph data: an object whose nodes and edges are lists, of
+/// objects up to the first that holds a field the bridge names, after which the bridge reads none.
+fn shaped(value: &Value) -> bool {
+    let list = |name| match fields_of(value).and_then(|fields| get(fields, name)) {
+        Some(Value::List(items)) => Some(items.as_slice()),
+        _ => None,
+    };
+    let (Some(nodes), Some(edges)) = (list("nodes"), list("edges")) else {
+        return false;
+    };
+    let nodes = nodes.iter().map(|item| (GraphList::Nodes, item));
+    let edges = edges.iter().map(|item| (GraphList::Edges, item));
+    for (list, item) in nodes.chain(edges) {
+        let Some(fields) = fields_of(item) else {
+            return false;
+        };
+        if !mistyped(list, fields).is_empty() {
+            return true;
+        }
+    }
+    true
+}
+
+/// A field the bridge names: the list, the index, the identifier where the item has a string
+/// one, and the field.
+type Named = (GraphList, u32, Option<String>, String);
+
+/// The fields of `item` that are missing or hold a value of another type, by name: of a node,
+/// its identifier and its numbers; of an edge, its identifiers, colour, and arrow, and its label
+/// and dash where they are given, and a given label's placement. A title, a label text, and a
+/// background are refused by kinds of their own.
+fn mistyped(list: GraphList, item: &Fields) -> Vec<&'static str> {
+    let text = |name| matches!(get(item, name), Some(Value::Text(_)));
+    let number = |fields, name| matches!(get(fields, name), Some(Value::Number(_)));
+    let absent = |value: Option<&Value>| matches!(value, None | Some(Value::Null));
+    let mut wrong = Vec::new();
+    let mut check = |name, ok: bool| {
+        if !ok {
+            wrong.push(name);
+        }
+    };
+    match list {
+        GraphList::Nodes => {
+            check("id", text("id"));
+            for name in ["x", "y", "width", "height"] {
+                check(name, number(item, name));
+            }
+        }
+        GraphList::Edges => {
+            for name in ["id", "source", "target"] {
+                check(name, text(name));
+            }
+            let label = get(item, "label");
+            match label.and_then(fields_of) {
+                Some(placed) => {
+                    check("label.t", number(placed, "t"));
+                    check("label.offset", number(placed, "offset"));
+                }
+                None => check("label", absent(label)),
+            }
+            check("color", number(item, "color"));
+            let dash = get(item, "dash");
+            let number = |n: &Value| matches!(n, Value::Number(_));
+            let pair = matches!(dash, Some(Value::List(v)) if v.len() == 2 && v.iter().all(number));
+            check("dash", absent(dash) || pair);
+            let arrow =
+                matches!(get(item, "arrow"), Some(Value::Text(a)) if a == "end" || a == "none");
+            check("arrow", arrow);
+        }
+    }
+    wrong
+}
+
+/// Every field of graph data `value` that the bridge may name, by brute force over the value.
+fn named_fields(value: &Value) -> Vec<Named> {
+    let mut named = Vec::new();
+    for (list, name) in [(GraphList::Nodes, "nodes"), (GraphList::Edges, "edges")] {
+        let items = match fields_of(value).and_then(|fields| get(fields, name)) {
+            Some(Value::List(items)) => items.as_slice(),
+            _ => &[],
+        };
+        for (index, item) in items.iter().enumerate() {
+            let Some(fields) = fields_of(item) else {
+                continue;
+            };
+            let id = match get(fields, "id") {
+                Some(Value::Text(id)) => Some(id.clone()),
+                _ => None,
+            };
+            for field in mistyped(list, fields) {
+                let id = if field == "id" { None } else { id.clone() };
+                named.push((list, index as u32, id, field.to_owned()));
+            }
+        }
+    }
+    named
+}
+
+/// Whether `text` names a Rust type or crate: a path, a backtick, a primitive, a type of the
+/// bridge crate, or a word in camel case.
+fn names_rust(text: &str) -> bool {
+    const RUST: [&str; 18] = [
+        "f32",
+        "f64",
+        "u8",
+        "u32",
+        "u64",
+        "i64",
+        "usize",
+        "str",
+        "String",
+        "Vec",
+        "Option",
+        "JsValue",
+        "GraphBatch",
+        "NodeInput",
+        "EdgeInput",
+        "LabelInput",
+        "Arrow",
+        "Field",
+    ];
+    let camel = |word: &str| {
+        let mut chars = word.chars();
+        chars.next().is_some_and(char::is_uppercase) && chars.any(char::is_uppercase)
+    };
+    text.contains("::")
+        || text.contains('`')
+        || text
+            .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+            .any(|w| RUST.contains(&w) || w.contains('_') || w.starts_with("serde") || camel(w))
+}
+
+/// The texts of `error` the bridge writes itself: a malformed value's message, and what a field
+/// expects.
+fn messages(error: &BridgeError) -> Vec<&str> {
+    match error {
+        BridgeError::Malformed { message } => vec![message],
+        BridgeError::InvalidField { expected, .. } => vec![expected],
+        _ => Vec::new(),
+    }
+}
+
+#[test]
+fn the_items_after_one_with_a_refused_field_are_left_unread() {
+    let node = |x: Value| {
+        let entries = [
+            ("id", Value::Text("a".into())),
+            ("title", Value::Text("A".into())),
+        ];
+        let mut node: Vec<_> = entries
+            .into_iter()
+            .map(|(k, v)| (k.to_owned(), v))
+            .collect();
+        let size = [("y", 0.0), ("width", 1.0), ("height", 1.0)]
+            .map(|(k, v)| (k.to_owned(), Value::Number(v)));
+        node.push(("x".to_owned(), x));
+        node.extend(size);
+        Value::Object(node)
+    };
+    // The second node is no object, which the bridge leaves unread after the first is refused.
+    let nodes = Value::List(vec![node(Value::Bool(false)), Value::Bool(false)]);
+    let value = Value::Object(vec![
+        ("nodes".to_owned(), nodes),
+        ("edges".to_owned(), Value::List(Vec::new())),
+    ]);
+    let batch = reading(|| GraphBatch::deserialize(value)).map_err(unshaped);
+    let batch = batch.unwrap_or_else(|error| panic!("refused as {error:?}"));
+    assert_eq!(batch.nodes.len(), 2);
+    assert!(matches!(
+        graph_of(&batch),
+        Err(BridgeError::InvalidField { index: 0, field, .. }) if field == "x"
+    ));
+    // A reading after it reads every item again.
+    let well = Value::Object(vec![
+        (
+            "nodes".to_owned(),
+            Value::List(vec![node(Value::Number(0.0))]),
+        ),
+        ("edges".to_owned(), Value::List(Vec::new())),
+    ]);
+    let batch = reading(|| GraphBatch::deserialize(well)).map_err(unshaped);
+    assert!(graph_of(&batch.unwrap_or_else(|error| panic!("refused as {error:?}"))).is_ok());
+}
+
+#[test]
+fn the_check_for_rust_names_finds_them() {
+    let message = "Failed to deserialize JsValue into type `comb_engine_wasm::GraphBatch`: \
+                   Error: invalid type: string \"1\", expected f64";
+    assert!(names_rust(message));
+    for named in [
+        "TooManySlots",
+        "expected f64",
+        "a usize",
+        "serde_wasm_bindgen",
+    ] {
+        assert!(names_rust(named), "{named}");
+    }
+    assert!(!names_rust("an integer from 0 to 0xFFFFFF"));
+    assert!(!names_rust(
+        "the value does not have the shape the bridge expects"
+    ));
 }
 
 /// A patch of `updateNode`: mostly a title of any value, now and then another field of a node or
@@ -383,25 +668,46 @@ proptest! {
     #[test]
     fn any_graph_data_ends_in_a_typed_error_or_a_graph(value in graph_data()) {
         // A panic anywhere below fails the case; the runner catches it and shrinks the input.
-        match GraphBatch::deserialize(value).map_err(unshaped) {
-            // A value of the wrong shape is refused before any check of the bridge's own.
-            Err(_) => {}
-            Ok(batch) => match graph_of(&batch) {
-                Ok(graph) => {
-                    prop_assert!(acceptable(&batch));
-                    prop_assert_eq!(graph.positions().len(), 2 * batch.nodes.len());
+        let named = named_fields(&value);
+        match reading(|| GraphBatch::deserialize(value.clone())).map_err(unshaped) {
+            // A value without the shape of graph data is refused before any check of the
+            // bridge's own, as malformed.
+            Err(error) => {
+                prop_assert!(!shaped(&value), "refused {:?}", error);
+                let malformed = matches!(error, BridgeError::Malformed { .. });
+                prop_assert!(malformed);
+                prop_assert!(!messages(&error).into_iter().any(names_rust), "{:?}", error);
+            }
+            Ok(batch) => {
+                prop_assert!(shaped(&value));
+                match graph_of(&batch) {
+                    Ok(graph) => {
+                        prop_assert!(named.is_empty() && acceptable(&batch));
+                        prop_assert_eq!(graph.positions().len(), 2 * batch.nodes.len());
+                    }
+                    Err(error) => {
+                        prop_assert!(!messages(&error).into_iter().any(names_rust), "{:?}", error);
+                        match &error {
+                            // A field missing or of another type is named before any other check.
+                            BridgeError::InvalidField { list, index, id, field, .. } => {
+                                let at = (*list, *index, id.clone(), field.clone());
+                                prop_assert!(named.contains(&at), "refused {:?}", error);
+                            }
+                            _ => {
+                                prop_assert!(named.is_empty(), "refused {:?}, not {:?}", error, named);
+                                prop_assert!(!acceptable(&batch), "refused {:?}", error);
+                            }
+                        }
+                    }
                 }
-                Err(error) => {
-                    prop_assert!(!acceptable(&batch), "refused {:?}", error);
-                }
-            },
+            }
         }
     }
 
     #[test]
     fn any_patch_ends_in_a_typed_error_or_is_accepted(value in patch()) {
         match NodePatch::deserialize(value).map_err(unshaped) {
-            Err(_) => {}
+            Err(error) => prop_assert!(!messages(&error).into_iter().any(names_rust)),
             Ok(patch) => {
                 let units = |t: &str| t.chars().map(char::len_utf16).sum::<usize>();
                 let fine = patch.0.iter().all(|(k, v)| {
@@ -411,7 +717,10 @@ proptest! {
                 match patch_of("n", patch) {
                     // What the store merges is the title it was handed, and nothing else.
                     Ok(checked) => prop_assert!(fine && checked.title == title),
-                    Err(_) => prop_assert!(!fine),
+                    Err(error) => {
+                        prop_assert!(!fine);
+                        prop_assert!(!messages(&error).into_iter().any(names_rust));
+                    }
                 }
             }
         }
