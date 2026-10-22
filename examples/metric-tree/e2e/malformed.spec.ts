@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import type { GraphData } from "comb";
+import type { GraphData, GraphDataProblem } from "comb";
 import { open, setViewport } from "./shared";
 
 /** The identifiers and places of the nodes the canvas draws, and of its edges. */
@@ -962,4 +962,69 @@ test("load takes a million edges whose identifiers hold 63 million code units, a
   });
   // Refused while reading, before the edges cross into the engine.
   expect(beyond.ms).toBeLessThan(within.ms / 2);
+});
+
+/** In the page: provokes each kind of `GraphDataProblem` through `load` or `updateNode`, one call
+ *  each after a valid load, and reports the kind of problem each threw. Its table is typed by the
+ *  kinds, so that a kind the union gains or loses fails the type check. */
+async function everyKind() {
+  const node = (id: string) => ({ id, title: id, x: 0, y: 0, width: 220, height: 64 });
+  const two = [node("a"), node("b")];
+  const edge = { id: "e", source: "a", target: "b" };
+  const label = { text: "e", t: 0.5, offset: 0 };
+  const load = (graph: unknown) => () => window.comb.load(graph as GraphData);
+  const nodes = (fields: object) => load({ nodes: [{ ...node("a"), ...fields }], edges: [] });
+  const edges = (fields: object) => load({ nodes: two, edges: [{ ...edge, ...fields }] });
+  const long = "x".repeat(256);
+  const calls: Record<GraphDataProblem["kind"], () => void> = {
+    malformed: load(null),
+    invalidField: nodes({ x: "1" }),
+    nonFiniteCoordinate: nodes({ x: Number.POSITIVE_INFINITY }),
+    invalidSize: nodes({ width: -1 }),
+    invalidTitle: nodes({ title: 5 }),
+    titleTooLong: nodes({ title: "x".repeat(1001) }),
+    unknownPatchField: () => window.comb.updateNode("a", { id: "b" } as never),
+    duplicateNode: load({ nodes: [node("a"), node("a")], edges: [] }),
+    duplicateEdge: load({ nodes: two, edges: [edge, edge] }),
+    missingNode: edges({ target: "z" }),
+    nonFiniteLabel: edges({ label: { ...label, t: Number.NaN } }),
+    invalidLabelText: edges({ label: { ...label, text: 5 } }),
+    labelTextTooLong: edges({ label: { ...label, text: "x".repeat(1001) } }),
+    invalidBackground: edges({ label: { ...label, background: -5 } }),
+    invalidColor: edges({ color: -1 }),
+    invalidDash: edges({ dash: [0, 4] }),
+    tooMany: load({ nodes: new Array(1_000_001), edges: [] }),
+    idTooLong: nodes({ id: long + "x" }),
+    // 250,001 identifiers of 256 code units hold more than 64,000,000 together.
+    idBudgetExceeded: load({
+      nodes: Array.from({ length: 250_001 }, () => node(long)),
+      edges: [],
+    }),
+    unknownNode: () => window.comb.updateNode("z", { title: "Z" }),
+  };
+  const thrown: Record<string, unknown> = {};
+  for (const [kind, call] of Object.entries(calls)) {
+    window.comb.load({ nodes: [node("a")], edges: [] });
+    try {
+      call();
+      thrown[kind] = "accepted";
+    } catch (error) {
+      thrown[kind] =
+        error instanceof Error && error.name === "GraphDataError"
+          ? (error as Error & { problem: GraphDataProblem }).problem.kind
+          : `untyped ${String(error)}`;
+    }
+  }
+  return thrown;
+}
+
+test("load and updateNode throw every kind of GraphDataProblem", async ({ page }) => {
+  // Verifies: Q-3, Q-7, ADR-0010
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page);
+  const thrown = await page.evaluate(everyKind);
+  expect(errors).toEqual([]);
+  expect(thrown).toEqual(Object.fromEntries(Object.keys(thrown).map((kind) => [kind, kind])));
+  expect(Object.keys(thrown).length).toBe(20);
 });

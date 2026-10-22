@@ -4,7 +4,7 @@
 // draws under a Content Security Policy without `unsafe-eval` (Q-6, ADR-0020).
 import "pixi.js/unsafe-eval";
 import { Application } from "pixi.js";
-import { createBridge, type Bridge, type BridgeError, type Rect } from "../bridge";
+import { createBridge, type Bridge, type GraphDataProblem, type Rect } from "../bridge";
 import { attachInteraction } from "../interaction";
 import { clampScale, fitViewport } from "../interaction/viewport";
 import { Scene } from "../render/scene";
@@ -23,7 +23,8 @@ import {
 } from "../store";
 
 export { EngineSourceError } from "./engine";
-export type { EngineSource } from "./engine";
+export type { EngineSource, EngineSourceProblem } from "./engine";
+export type { GraphDataProblem } from "../bridge";
 
 export interface CombOptions {
   /** The engine's WebAssembly, the file `comb/engine.wasm`, as the host application loads it:
@@ -62,10 +63,6 @@ export interface Comb {
   destroy(): void;
 }
 
-/** What was wrong with graph data: what the bridge refused in `load` or `updateNode`, or, in
- *  `updateNode`, a node the graph does not hold. */
-export type GraphDataProblem = BridgeError | { kind: "unknownNode"; node: string };
-
 /** Comb found no WebGL2 to draw with, only `renderer`, PixiJS's fallback, which cannot draw the
  *  edge mesh, and the host application did not allow the Canvas 2D fallback, or PixiJS offered
  *  another renderer. */
@@ -76,7 +73,8 @@ export class RendererUnavailableError extends Error {
   }
 }
 
-/** Graph data Comb refused, with what was wrong and where. */
+/** Graph data Comb refused in `load` or `updateNode`, with what was wrong and where: `problem`,
+ *  whose `kind` tells which of the generated `GraphDataProblem`s it is. */
 export class GraphDataError extends Error {
   constructor(readonly problem: GraphDataProblem) {
     super(`comb: malformed graph data (${problem.kind})`);
@@ -118,7 +116,7 @@ function limitsOf(bridge: Bridge): Limits {
 }
 
 /** Whether `error` is a problem the bridge produced: a plain object with a `kind`. */
-function isBridgeError(error: unknown): error is BridgeError {
+function isProblem(error: unknown): error is GraphDataProblem {
   return (
     typeof error === "object" &&
     error !== null &&
@@ -133,7 +131,7 @@ function checked<T>(check: () => T): T {
   try {
     return check();
   } catch (error) {
-    if (isBridgeError(error)) throw new GraphDataError(error);
+    if (isProblem(error)) throw new GraphDataError(error);
     throw error instanceof Error ? error : new Error("comb: the engine failed");
   }
 }

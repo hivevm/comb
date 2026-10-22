@@ -271,10 +271,14 @@ pub enum GraphList {
     Edges,
 }
 
-/// Why the engine refused graph data (Q-7).
+/// Why Comb refused graph data in `load` or `updateNode` (Q-7): what the bridge refused, what the
+/// shell could not read, and a node `updateNode` names that the graph does not hold. The shell
+/// builds the last two as values of this type; no kind of it is written by hand in TypeScript.
+/// `query` refuses a rectangle without its shape as malformed too, which no host application
+/// meets.
 #[derive(Tsify, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
-pub enum BridgeError {
+pub enum GraphDataProblem {
     /// The value did not have the shape the export expects: graph data that is no object, a list
     /// that is no list, a node or an edge that is no object, or a patch that is no plain object.
     #[serde(rename_all = "camelCase")]
@@ -349,6 +353,16 @@ pub enum BridgeError {
     /// The identifiers of one load hold more than `limit` UTF-16 code units together.
     #[serde(rename_all = "camelCase")]
     IdBudgetExceeded { limit: u32 },
+    /// `updateNode` names a node the graph does not hold.
+    #[serde(rename_all = "camelCase")]
+    UnknownNode { node: String },
+}
+
+/// Why the engine refused a move of nodes: the shell's own mistake, never one of graph data, so
+/// that a host application never meets it.
+#[derive(Tsify, Serialize, Deserialize, Debug, PartialEq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum TranslateError {
     /// A slot beyond the loaded nodes.
     #[serde(rename_all = "camelCase")]
     SlotOutOfRange { slot: u32 },
@@ -356,7 +370,7 @@ pub enum BridgeError {
     NonFiniteDelta,
 }
 
-impl From<PositionError> for BridgeError {
+impl From<PositionError> for TranslateError {
     fn from(error: PositionError) -> Self {
         match error {
             PositionError::SlotOutOfRange { slot } => Self::SlotOutOfRange { slot },
@@ -365,31 +379,46 @@ impl From<PositionError> for BridgeError {
     }
 }
 
-impl From<BridgeError> for JsValue {
-    fn from(error: BridgeError) -> Self {
-        error
-            .into_ts()
-            .map_or_else(|_| JsValue::from_str("comb: bridge error"), JsValue::from)
+/// An error as the shell receives it: the generated value, or a message where it cannot be
+/// built.
+fn thrown<T: Tsify + Serialize>(error: T) -> JsValue
+where
+    T::JsType: Into<JsValue>,
+{
+    error
+        .into_ts()
+        .map_or_else(|_| JsValue::from_str("comb: bridge error"), Into::into)
+}
+
+impl From<GraphDataProblem> for JsValue {
+    fn from(error: GraphDataProblem) -> Self {
+        thrown(error)
+    }
+}
+
+impl From<TranslateError> for JsValue {
+    fn from(error: TranslateError) -> Self {
+        thrown(error)
     }
 }
 
 /// A value that does not have the shape an export expects. Its message is the bridge's own: the
 /// error is dropped and the value not formatted into it, so that a refused value of any size
 /// costs no copy and no message names a type of the bridge crate.
-fn unshaped(_error: impl std::fmt::Display) -> BridgeError {
+fn unshaped(_error: impl std::fmt::Display) -> GraphDataProblem {
     malformed("the value does not have the shape the bridge expects")
 }
 
 /// Malformed data, with a message in plain words that names no type of the bridge crate.
-fn malformed(message: &str) -> BridgeError {
-    BridgeError::Malformed {
+fn malformed(message: &str) -> GraphDataProblem {
+    GraphDataProblem::Malformed {
         message: message.to_owned(),
     }
 }
 
 /// A graph the engine refuses after the bridge's own checks is malformed data. Each refusal is
 /// named, so that a new one is decided here rather than passed on by default.
-impl From<GraphError> for BridgeError {
+impl From<GraphError> for GraphDataProblem {
     fn from(error: GraphError) -> Self {
         malformed(match error {
             GraphError::SlotCountMismatch => "the positions and sizes do not match the nodes",
@@ -400,7 +429,7 @@ impl From<GraphError> for BridgeError {
 }
 
 /// The engine's conversion of a count to slots, so that both refuse the same counts.
-fn slot(index: usize) -> Result<u32, BridgeError> {
+fn slot(index: usize) -> Result<u32, GraphDataProblem> {
     Ok(graph::slot(index)?)
 }
 
@@ -467,8 +496,8 @@ impl<'a> Item<'a> {
     }
 
     /// The value of `field`, or the refusal that names the item and the field.
-    fn read<T>(&self, field: &str, value: Field<T>, expected: &str) -> Result<T, BridgeError> {
-        value.0.ok_or_else(|| BridgeError::InvalidField {
+    fn read<T>(&self, field: &str, value: Field<T>, expected: &str) -> Result<T, GraphDataProblem> {
+        value.0.ok_or_else(|| GraphDataProblem::InvalidField {
             list: self.list,
             // Within `MAX_ITEMS`, which the bridge checked first.
             index: self.index as u32,
@@ -479,14 +508,14 @@ impl<'a> Item<'a> {
     }
 
     /// The identifier `field` of the item, read in place.
-    fn id(&self, field: &str, value: &'a Field<String>) -> Result<&'a str, BridgeError> {
+    fn id(&self, field: &str, value: &'a Field<String>) -> Result<&'a str, GraphDataProblem> {
         self.read(field, Field(value.0.as_deref()), AN_ID)
     }
 }
 
 /// The node at `index` with every field read, or the refusal that names its first missing or
 /// mistyped field.
-fn node_of(index: usize, node: &NodeInput) -> Result<Node<'_>, BridgeError> {
+fn node_of(index: usize, node: &NodeInput) -> Result<Node<'_>, GraphDataProblem> {
     let mut item = Item::new(GraphList::Nodes, index);
     let id = item.id("id", &node.id)?;
     item.id = Some(id);
@@ -502,7 +531,7 @@ fn node_of(index: usize, node: &NodeInput) -> Result<Node<'_>, BridgeError> {
 
 /// The edge at `index` with every field read, or the refusal that names its first missing or
 /// mistyped field.
-fn edge_of(index: usize, edge: &EdgeInput) -> Result<Edge<'_>, BridgeError> {
+fn edge_of(index: usize, edge: &EdgeInput) -> Result<Edge<'_>, GraphDataProblem> {
     let mut item = Item::new(GraphList::Edges, index);
     let id = item.id("id", &edge.id)?;
     item.id = Some(id);
@@ -530,7 +559,7 @@ fn edge_of(index: usize, edge: &EdgeInput) -> Result<Edge<'_>, BridgeError> {
 
 /// Reads every field of every node and edge of a batch, or names the first that is missing or
 /// holds a value of another type.
-fn batch_of(batch: &GraphBatch) -> Result<Batch<'_>, BridgeError> {
+fn batch_of(batch: &GraphBatch) -> Result<Batch<'_>, GraphDataProblem> {
     let nodes = batch.nodes.iter().enumerate().map(|(i, n)| node_of(i, n));
     let edges = batch.edges.iter().enumerate().map(|(i, e)| edge_of(i, e));
     Ok(Batch {
@@ -548,7 +577,7 @@ struct Nodes<'a> {
 }
 
 /// Checks the nodes and flattens them, or names the first offending node.
-fn nodes_of<'a>(batch: &Batch<'a>) -> Result<Nodes<'a>, BridgeError> {
+fn nodes_of<'a>(batch: &Batch<'a>) -> Result<Nodes<'a>, GraphDataProblem> {
     let mut slots = HashMap::with_capacity(batch.nodes.len());
     let mut positions = Vec::with_capacity(batch.nodes.len() * 2);
     let mut sizes = Vec::with_capacity(batch.nodes.len() * 2);
@@ -557,15 +586,15 @@ fn nodes_of<'a>(batch: &Batch<'a>) -> Result<Nodes<'a>, BridgeError> {
         // Checked as the engine keeps them: a number beyond `f32` is as infinite as infinity.
         let [x, y, width, height] = [node.x, node.y, node.width, node.height].map(|v| v as f32);
         if !x.is_finite() || !y.is_finite() {
-            return Err(BridgeError::NonFiniteCoordinate { node: named() });
+            return Err(GraphDataProblem::NonFiniteCoordinate { node: named() });
         }
         if !(width.is_finite() && height.is_finite()) || width < 0.0 || height < 0.0 {
-            return Err(BridgeError::InvalidSize { node: named() });
+            return Err(GraphDataProblem::InvalidSize { node: named() });
         }
         match node.title_length {
-            None => return Err(BridgeError::InvalidTitle { node: named() }),
+            None => return Err(GraphDataProblem::InvalidTitle { node: named() }),
             Some(length) if length > MAX_TEXT => {
-                return Err(BridgeError::TitleTooLong {
+                return Err(GraphDataProblem::TitleTooLong {
                     node: named(),
                     limit: MAX_TEXT as u32,
                 });
@@ -573,7 +602,7 @@ fn nodes_of<'a>(batch: &Batch<'a>) -> Result<Nodes<'a>, BridgeError> {
             Some(_) => {}
         }
         if slots.insert(node.id, slot(index)?).is_some() {
-            return Err(BridgeError::DuplicateNode { node: named() });
+            return Err(GraphDataProblem::DuplicateNode { node: named() });
         }
         positions.extend([x, y]);
         sizes.extend([width, height]);
@@ -591,17 +620,17 @@ fn rgb(value: f64) -> bool {
 }
 
 /// The label placement and style of an edge, or why they were refused.
-fn placement_of(edge: &Edge) -> Result<(Option<LabelPlacement>, EdgeStyle), BridgeError> {
+fn placement_of(edge: &Edge) -> Result<(Option<LabelPlacement>, EdgeStyle), GraphDataProblem> {
     let id = || edge.id.to_owned();
     let label = match &edge.label {
         Some(l) if !(l.t.is_finite() && l.offset.is_finite()) => {
-            return Err(BridgeError::NonFiniteLabel { edge: id() });
+            return Err(GraphDataProblem::NonFiniteLabel { edge: id() });
         }
         Some(l) if l.text_length.is_none() => {
-            return Err(BridgeError::InvalidLabelText { edge: id() });
+            return Err(GraphDataProblem::InvalidLabelText { edge: id() });
         }
         Some(l) if l.text_length > Some(MAX_TEXT) => {
-            return Err(BridgeError::LabelTextTooLong {
+            return Err(GraphDataProblem::LabelTextTooLong {
                 edge: id(),
                 limit: MAX_TEXT as u32,
             });
@@ -610,7 +639,7 @@ fn placement_of(edge: &Edge) -> Result<(Option<LabelPlacement>, EdgeStyle), Brid
             background: Some(b),
             ..
         }) if !rgb(*b) => {
-            return Err(BridgeError::InvalidBackground { edge: id() });
+            return Err(GraphDataProblem::InvalidBackground { edge: id() });
         }
         label => label.as_ref().map(|l| LabelPlacement {
             t: l.t,
@@ -618,12 +647,12 @@ fn placement_of(edge: &Edge) -> Result<(Option<LabelPlacement>, EdgeStyle), Brid
         }),
     };
     if !rgb(edge.color) {
-        return Err(BridgeError::InvalidColor { edge: id() });
+        return Err(GraphDataProblem::InvalidColor { edge: id() });
     }
     // Checked as the engine keeps it, so that a dash too short for `f32` is refused too.
     let dash = match edge.dash.map(|[dash, gap]| (dash as f32, gap as f32)) {
         Some((dash, gap)) if !(dash.is_finite() && gap.is_finite() && dash > 0.0 && gap >= 0.0) => {
-            return Err(BridgeError::InvalidDash { edge: id() });
+            return Err(GraphDataProblem::InvalidDash { edge: id() });
         }
         dash => dash,
     };
@@ -638,13 +667,13 @@ fn placement_of(edge: &Edge) -> Result<(Option<LabelPlacement>, EdgeStyle), Brid
 
 /// Resolves every edge's ends to node slots, or names the first offending edge: the second of
 /// two that share an identifier, or one whose ends, label, or style were refused.
-fn edges_of(batch: &Batch, slots: &HashMap<&str, u32>) -> Result<Vec<EdgeSpec>, BridgeError> {
+fn edges_of(batch: &Batch, slots: &HashMap<&str, u32>) -> Result<Vec<EdgeSpec>, GraphDataProblem> {
     let mut seen = HashSet::with_capacity(batch.edges.len());
     let end = |edge: &Edge, node: &str| {
         slots
             .get(node)
             .copied()
-            .ok_or_else(|| BridgeError::MissingNode {
+            .ok_or_else(|| GraphDataProblem::MissingNode {
                 edge: edge.id.to_owned(),
                 node: node.to_owned(),
             })
@@ -654,7 +683,7 @@ fn edges_of(batch: &Batch, slots: &HashMap<&str, u32>) -> Result<Vec<EdgeSpec>, 
         .iter()
         .map(|edge| {
             if !seen.insert(edge.id) {
-                return Err(BridgeError::DuplicateEdge {
+                return Err(GraphDataProblem::DuplicateEdge {
                     edge: edge.id.to_owned(),
                 });
             }
@@ -672,12 +701,12 @@ fn edges_of(batch: &Batch, slots: &HashMap<&str, u32>) -> Result<Vec<EdgeSpec>, 
 }
 
 /// Checks the length of every identifier of a batch, and of all of them together.
-fn ids_of(batch: &Batch) -> Result<(), BridgeError> {
+fn ids_of(batch: &Batch) -> Result<(), GraphDataProblem> {
     let mut units = 0;
     let mut add = |list: &str, index: usize, field: &str, id: &str| {
         let length = utf16_length(id);
         if length > MAX_ID {
-            return Err(BridgeError::IdTooLong {
+            return Err(GraphDataProblem::IdTooLong {
                 list: list.to_owned(),
                 index: slot(index)?,
                 field: field.to_owned(),
@@ -700,7 +729,7 @@ fn ids_of(batch: &Batch) -> Result<(), BridgeError> {
 
 /// Checks a batch and builds the engine's graph from it: its size, then every field's type, the
 /// identifiers' lengths, the nodes, and the edges.
-fn graph_of(batch: &GraphBatch) -> Result<Graph, BridgeError> {
+fn graph_of(batch: &GraphBatch) -> Result<Graph, GraphDataProblem> {
     check_graph_size(batch.nodes.len() as f64, batch.edges.len() as f64)?;
     let batch = batch_of(batch)?;
     ids_of(&batch)?;
@@ -771,12 +800,12 @@ pub fn id_budget() -> u32 {
 
 /// Checks how many UTF-16 code units the identifiers of one load hold together.
 #[wasm_bindgen(js_name = checkIdBudget)]
-pub fn check_id_budget(units: f64) -> Result<(), BridgeError> {
+pub fn check_id_budget(units: f64) -> Result<(), GraphDataProblem> {
     if units.is_nan() || units < 0.0 {
         return Err(malformed("the count of identifier code units is no count"));
     }
     if units > f64::from(MAX_ID_UNITS) {
-        return Err(BridgeError::IdBudgetExceeded {
+        return Err(GraphDataProblem::IdBudgetExceeded {
             limit: MAX_ID_UNITS,
         });
     }
@@ -786,13 +815,13 @@ pub fn check_id_budget(units: f64) -> Result<(), BridgeError> {
 /// Checks how many nodes and edges a graph holds, before the shell copies any of them: at most
 /// `MAX_ITEMS` of each. A count that is no whole number from 0 is no list's length.
 #[wasm_bindgen(js_name = checkGraphSize)]
-pub fn check_graph_size(nodes: f64, edges: f64) -> Result<(), BridgeError> {
+pub fn check_graph_size(nodes: f64, edges: f64) -> Result<(), GraphDataProblem> {
     for (list, count) in [("nodes", nodes), ("edges", edges)] {
         if !(count >= 0.0 && count.fract() == 0.0) {
             return Err(malformed(&format!("{list} is not a list")));
         }
         if count > f64::from(MAX_ITEMS) {
-            return Err(BridgeError::TooMany {
+            return Err(GraphDataProblem::TooMany {
                 list: list.to_owned(),
                 limit: MAX_ITEMS,
             });
@@ -811,20 +840,20 @@ pub struct CheckedPatch {
 
 /// Checks a patch of the node `node` and returns the fields it changes, or names its first
 /// offending field.
-fn patch_of(node: &str, patch: NodePatch) -> Result<CheckedPatch, BridgeError> {
+fn patch_of(node: &str, patch: NodePatch) -> Result<CheckedPatch, GraphDataProblem> {
     let mut checked = CheckedPatch::default();
     for (field, Text(value)) in patch.0 {
         if field != "title" {
-            return Err(BridgeError::UnknownPatchField {
+            return Err(GraphDataProblem::UnknownPatchField {
                 node: node.to_owned(),
                 field,
             });
         }
-        let title = value.ok_or_else(|| BridgeError::InvalidTitle {
+        let title = value.ok_or_else(|| GraphDataProblem::InvalidTitle {
             node: node.to_owned(),
         })?;
         if utf16_length(&title) > MAX_TEXT {
-            return Err(BridgeError::TitleTooLong {
+            return Err(GraphDataProblem::TitleTooLong {
                 node: node.to_owned(),
                 limit: MAX_TEXT as u32,
             });
@@ -837,7 +866,10 @@ fn patch_of(node: &str, patch: NodePatch) -> Result<CheckedPatch, BridgeError> {
 /// Checks the patch `updateNode` hands over for the node `node`, reading it once, and returns
 /// the fields it changes, which the store merges in its place; the engine keeps nothing of it.
 #[wasm_bindgen(js_name = checkNodePatch)]
-pub fn check_node_patch(node: &str, patch: Ts<NodePatch>) -> Result<Ts<CheckedPatch>, BridgeError> {
+pub fn check_node_patch(
+    node: &str,
+    patch: Ts<NodePatch>,
+) -> Result<Ts<CheckedPatch>, GraphDataProblem> {
     let checked = patch_of(node, patch.to_rust().map_err(unshaped)?)?;
     Ts::from_rust(&checked).map_err(|_| malformed("the checked patch could not be handed back"))
 }
@@ -891,7 +923,7 @@ impl Engine {
     /// `i` for its edge `i`, and returns the number of node slots. A refused batch leaves the
     /// loaded graph as it was.
     #[wasm_bindgen(js_name = loadGraph)]
-    pub fn load_graph(&mut self, batch: Ts<GraphBatch>) -> Result<u32, BridgeError> {
+    pub fn load_graph(&mut self, batch: Ts<GraphBatch>) -> Result<u32, GraphDataProblem> {
         let batch = reading(|| batch.to_rust()).map_err(unshaped)?;
         self.graph = graph_of(&batch)?;
         self.visible = Visible::default();
@@ -899,10 +931,10 @@ impl Engine {
     }
 
     /// Moves the nodes in `slots` by `(dx, dy)`, their edges with them.
-    pub fn translate(&mut self, slots: &[u32], dx: f32, dy: f32) -> Result<(), BridgeError> {
+    pub fn translate(&mut self, slots: &[u32], dx: f32, dy: f32) -> Result<(), TranslateError> {
         self.graph
             .translate(slots, dx, dy)
-            .map_err(BridgeError::from)
+            .map_err(TranslateError::from)
     }
 
     /// Finds the nodes and edges that meet the rectangle and builds the mesh of the edges for
@@ -915,7 +947,7 @@ impl Engine {
         level: DetailLevel,
         pixel: f64,
         label_reach: f64,
-    ) -> Result<(), BridgeError> {
+    ) -> Result<(), GraphDataProblem> {
         let rect = rect.to_rust().map_err(unshaped)?;
         let rect = Rect::new(rect.min_x, rect.min_y, rect.max_x, rect.max_y);
         self.graph
@@ -1134,7 +1166,10 @@ mod tests {
     #[test]
     fn a_non_finite_coordinate_names_its_node() {
         let error = graph_of(&batch(&[("a", 0.0, 0.0), ("b", f64::NAN, 0.0)], &[])).unwrap_err();
-        assert_eq!(error, BridgeError::NonFiniteCoordinate { node: "b".into() });
+        assert_eq!(
+            error,
+            GraphDataProblem::NonFiniteCoordinate { node: "b".into() }
+        );
     }
 
     #[test]
@@ -1144,40 +1179,43 @@ mod tests {
             data.nodes[0].width = width.into();
             data.nodes[0].height = height.into();
             let error = graph_of(&data).unwrap_err();
-            assert_eq!(error, BridgeError::InvalidSize { node: "a".into() });
+            assert_eq!(error, GraphDataProblem::InvalidSize { node: "a".into() });
         }
     }
 
     #[test]
     fn a_number_beyond_f32_is_refused_as_a_non_finite_one() {
         let error = graph_of(&batch(&[("a", 1e300, 0.0)], &[])).unwrap_err();
-        assert_eq!(error, BridgeError::NonFiniteCoordinate { node: "a".into() });
+        assert_eq!(
+            error,
+            GraphDataProblem::NonFiniteCoordinate { node: "a".into() }
+        );
         let mut data = batch(&[("a", 0.0, 0.0)], &[]);
         data.nodes[0].width = 1e300.into();
         assert_eq!(
             graph_of(&data).unwrap_err(),
-            BridgeError::InvalidSize { node: "a".into() }
+            GraphDataProblem::InvalidSize { node: "a".into() }
         );
         let two = [("a", 0.0, 0.0), ("b", 300.0, 0.0)];
         let mut data = batch(&two, &[("e", "a", "b")]);
         data.edges[0].dash = Some(Pair([1e-300, 1e300])).into();
         assert_eq!(
             graph_of(&data).unwrap_err(),
-            BridgeError::InvalidDash { edge: "e".into() }
+            GraphDataProblem::InvalidDash { edge: "e".into() }
         );
     }
 
     #[test]
     fn a_duplicate_identifier_names_its_node() {
         let error = graph_of(&batch(&[("a", 0.0, 0.0), ("a", 1.0, 1.0)], &[])).unwrap_err();
-        assert_eq!(error, BridgeError::DuplicateNode { node: "a".into() });
+        assert_eq!(error, GraphDataProblem::DuplicateNode { node: "a".into() });
     }
 
     #[test]
     fn a_duplicate_identifier_names_its_edge() {
         let two = [("a", 0.0, 0.0), ("b", 300.0, 0.0)];
         let error = graph_of(&batch(&two, &[("e", "a", "b"), ("e", "b", "a")])).unwrap_err();
-        assert_eq!(error, BridgeError::DuplicateEdge { edge: "e".into() });
+        assert_eq!(error, GraphDataProblem::DuplicateEdge { edge: "e".into() });
     }
 
     #[test]
@@ -1185,7 +1223,7 @@ mod tests {
         let error = graph_of(&batch(&[("a", 0.0, 0.0)], &[("e", "a", "z")])).unwrap_err();
         assert_eq!(
             error,
-            BridgeError::MissingNode {
+            GraphDataProblem::MissingNode {
                 edge: "e".into(),
                 node: "z".into()
             }
@@ -1203,7 +1241,7 @@ mod tests {
         })
         .into();
         let error = graph_of(&data).unwrap_err();
-        assert_eq!(error, BridgeError::NonFiniteLabel { edge: "e".into() });
+        assert_eq!(error, GraphDataProblem::NonFiniteLabel { edge: "e".into() });
     }
 
     #[test]
@@ -1213,7 +1251,7 @@ mod tests {
         data.edges[0].color = f64::from(0x100_0000).into();
         assert_eq!(
             graph_of(&data).unwrap_err(),
-            BridgeError::InvalidColor { edge: "e".into() }
+            GraphDataProblem::InvalidColor { edge: "e".into() }
         );
         for dash in [
             [0.0, 4.0],
@@ -1225,7 +1263,7 @@ mod tests {
             data.edges[0].dash = Some(Pair(dash)).into();
             assert_eq!(
                 graph_of(&data).unwrap_err(),
-                BridgeError::InvalidDash { edge: "e".into() }
+                GraphDataProblem::InvalidDash { edge: "e".into() }
             );
         }
     }
@@ -1236,7 +1274,7 @@ mod tests {
         data.nodes[1].title_length = None;
         assert_eq!(
             graph_of(&data).unwrap_err(),
-            BridgeError::InvalidTitle { node: "b".into() }
+            GraphDataProblem::InvalidTitle { node: "b".into() }
         );
     }
 
@@ -1259,12 +1297,12 @@ mod tests {
         assert!(label(Some(1), Some(f64::from(0xff_ffff))).is_ok());
         assert_eq!(
             label(None, None).unwrap_err(),
-            BridgeError::InvalidLabelText { edge: "e".into() }
+            GraphDataProblem::InvalidLabelText { edge: "e".into() }
         );
         for background in [-5.0, 1.5, f64::NAN, 1e20, f64::from(0x100_0000)] {
             assert_eq!(
                 label(Some(1), Some(background)).unwrap_err(),
-                BridgeError::InvalidBackground { edge: "e".into() }
+                GraphDataProblem::InvalidBackground { edge: "e".into() }
             );
         }
     }
@@ -1285,7 +1323,7 @@ mod tests {
         data.nodes[0].title_length = Some(MAX_TEXT + 1);
         assert_eq!(
             graph_of(&data).unwrap_err(),
-            BridgeError::TitleTooLong {
+            GraphDataProblem::TitleTooLong {
                 node: "a".into(),
                 limit: 1_000
             }
@@ -1296,7 +1334,7 @@ mod tests {
         }
         assert_eq!(
             graph_of(&data).unwrap_err(),
-            BridgeError::LabelTextTooLong {
+            GraphDataProblem::LabelTextTooLong {
                 edge: "e".into(),
                 limit: 1_000
             }
@@ -1316,7 +1354,7 @@ mod tests {
         data.edges[0].source = longer.into();
         assert_eq!(
             graph_of(&data).unwrap_err(),
-            BridgeError::IdTooLong {
+            GraphDataProblem::IdTooLong {
                 list: "edges".into(),
                 index: 0,
                 field: "source".into(),
@@ -1326,11 +1364,11 @@ mod tests {
         assert_eq!(check_id_budget(64e6), Ok(()));
         assert_eq!(
             check_id_budget(64e6 + 1.0),
-            Err(BridgeError::IdBudgetExceeded { limit: 64_000_000 })
+            Err(GraphDataProblem::IdBudgetExceeded { limit: 64_000_000 })
         );
         assert!(matches!(
             check_id_budget(f64::NAN),
-            Err(BridgeError::Malformed { .. })
+            Err(GraphDataProblem::Malformed { .. })
         ));
     }
 
@@ -1355,14 +1393,14 @@ mod tests {
         assert_eq!(ids(250_000), Ok(()));
         assert_eq!(
             ids(250_001),
-            Err(BridgeError::IdBudgetExceeded { limit: 64_000_000 })
+            Err(GraphDataProblem::IdBudgetExceeded { limit: 64_000_000 })
         );
     }
 
     #[test]
     fn a_graph_beyond_a_million_nodes_or_edges_is_refused_naming_the_list() {
         assert_eq!(check_graph_size(1e6, 1e6), Ok(()));
-        let too_many = |list: &str| BridgeError::TooMany {
+        let too_many = |list: &str| GraphDataProblem::TooMany {
             list: list.into(),
             limit: 1_000_000,
         };
@@ -1374,7 +1412,7 @@ mod tests {
         for count in [f64::NAN, -1.0, 0.5] {
             assert!(matches!(
                 check_graph_size(count, 0.0),
-                Err(BridgeError::Malformed { .. })
+                Err(GraphDataProblem::Malformed { .. })
             ));
         }
     }
@@ -1395,7 +1433,7 @@ mod tests {
         );
         assert_eq!(
             patch(&[("title", Some("A")), ("width", None)]),
-            Err(BridgeError::UnknownPatchField {
+            Err(GraphDataProblem::UnknownPatchField {
                 node: "a".into(),
                 field: "width".into()
             })
@@ -1403,14 +1441,14 @@ mod tests {
         let long = "x".repeat(MAX_TEXT + 1);
         assert_eq!(
             patch(&[("title", Some(long.as_str()))]),
-            Err(BridgeError::TitleTooLong {
+            Err(GraphDataProblem::TitleTooLong {
                 node: "a".into(),
                 limit: 1_000
             })
         );
         assert_eq!(
             patch(&[("title", None)]),
-            Err(BridgeError::InvalidTitle { node: "a".into() })
+            Err(GraphDataProblem::InvalidTitle { node: "a".into() })
         );
     }
 
@@ -1420,11 +1458,11 @@ mod tests {
         assert_eq!(slot(u32::MAX as usize), Ok(u32::MAX));
         assert_eq!(
             slot(beyond),
-            Err(BridgeError::from(graph::slot(beyond).unwrap_err()))
+            Err(GraphDataProblem::from(graph::slot(beyond).unwrap_err()))
         );
         assert_eq!(
             slot(beyond),
-            Err(BridgeError::Malformed {
+            Err(GraphDataProblem::Malformed {
                 message: "the graph holds more items than the engine can number".into()
             })
         );

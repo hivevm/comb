@@ -136,14 +136,48 @@ comb.fitView();
 comb.onSelectionChange((selection) => console.log(selection)); // fill the sidebar from here
 ```
 
+`load` throws a `GraphDataError` on graph data it refuses, and `updateNode` one on a node the
+graph does not hold or a patch it refuses; either keeps the graph it had (Q-7). The error's
+`problem` is a `GraphDataProblem`, which `comb` exports, and its `kind` says what was wrong and
+where: `invalidField` for a field missing or of another type, with the list, the index, the
+identifier where the item has one, the field, and what it expects; `unknownNode` for a node
+`updateNode` does not know; `malformed` for graph data that is no object of node and edge lists;
+and a kind of its own for every other refusal, such as `nonFiniteCoordinate` or `missingNode`.
+`problem.kind` narrows the union to the fields of its kind. A `switch` on it without a `default`
+has to handle every kind, so that a kind a later version adds fails the host application's type
+check; the example handles two and leaves the rest to a `default`:
+
+```ts
+import { GraphDataError, type GraphDataProblem } from "comb";
+
+function where(problem: GraphDataProblem): string {
+  switch (problem.kind) {
+    case "invalidField":
+      return `${problem.list}[${problem.index}].${problem.field}: expected ${problem.expected}`;
+    case "unknownNode":
+      return `no node ${problem.node}`;
+    default:
+      return problem.kind;
+  }
+}
+
+try {
+  comb.load(graph);
+} catch (error) {
+  if (!(error instanceof GraphDataError)) throw error;
+  console.warn(where(error.problem));
+}
+```
+
 Comb makes no request of its own (Q-6). The host application requests the file `comb/engine.wasm`
 however it serves its assets, so its Content Security Policy governs that request, and hands over
 the `Response`, or a promise of one, a compiled `WebAssembly.Module`, or the bytes (an
 `ArrayBuffer` or a view on one). `createComb` rejects with an `EngineSourceError` before it touches
 the element where `engine`, or what its promise resolves to, is missing (`reason` `"missing"`), a
 string, `URL`, or `Request`, which Comb would have to fetch itself (`"fetchable"`), or anything
-else (`"invalid"`). The engine is instantiated once per page: a later `createComb` checks its
-`engine` but reuses the first instance.
+else (`"invalid"`); `comb` exports the type of `reason`, `EngineSourceProblem`. The engine is
+instantiated once per page: a later `createComb` checks its `engine` but reuses the first
+instance.
 
 Comb runs under a Content Security Policy that allows `wasm-unsafe-eval` but not `unsafe-eval`,
 such as `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'` (Q-6). For that it imports
