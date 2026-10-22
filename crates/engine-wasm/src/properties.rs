@@ -1,18 +1,20 @@
-//! The property test of the bridge's validation (Q-7): graph data of any shape, well formed or
-//! not, ends in a typed error or a graph, never in a panic, and in a graph exactly when an oracle
-//! written apart from the bridge finds nothing to refuse.
+//! The property test of the bridge's validation (Q-7, ADR-0009): graph data of any shape, well
+//! formed or not, ends in a typed error or a graph, never in a panic, and in a graph exactly when
+//! an oracle written apart from the bridge finds nothing to refuse. Every field crosses, those the
+//! engine does not keep among them: titles, label texts and backgrounds, and the patch of
+//! `updateNode`.
 //!
 //! The data crosses as serde-wasm-bindgen would hand it over, through a value of any shape that
 //! `GraphBatch` is deserialized from, so that values of the wrong type and missing fields reach
 //! the same conversion `loadGraph` makes.
-// Verifies: Q-7, ADR-0010
+// Verifies: Q-7, ADR-0009, ADR-0010
 
 use proptest::prelude::*;
 use serde::Deserialize;
 use serde::de::value::{MapDeserializer, SeqDeserializer};
 use serde::de::{self, IntoDeserializer, Visitor};
 
-use super::{GraphBatch, graph_of, malformed};
+use super::{GraphBatch, NodePatch, graph_of, patch_of, unshaped};
 
 /// How many random batches one run feeds the bridge: the ticket's floor, which runs in seconds.
 const CASES: u32 = 10_000;
@@ -115,16 +117,76 @@ fn color(loose: bool) -> impl Strategy<Value = Value> {
     prop_oneof![20 => colour, 1 => beyond, 1 => any].prop_map(Value::Number)
 }
 
+/// A text, now and then of a JavaScript value of another type; loose, of any value at all.
+fn text(loose: bool) -> BoxedStrategy<Value> {
+    let other = prop_oneof![
+        Just(Value::Null),
+        num(),
+        any::<bool>().prop_map(Value::Bool)
+    ];
+    let wrong = if loose {
+        anything().boxed()
+    } else {
+        other.boxed()
+    };
+    // Around the limit of 1,000 UTF-16 code units, with characters that count once and twice.
+    let long = prop::sample::select(vec![
+        "x".repeat(1_000),
+        "x".repeat(1_001),
+        "\u{1F600}".repeat(500),
+        "\u{1F600}".repeat(500) + "x",
+        "é".repeat(1_001),
+    ]);
+    prop_oneof![
+        20 => id().prop_map(Value::Text),
+        1 => long.prop_map(Value::Text),
+        1 => wrong
+    ]
+    .boxed()
+}
+
+/// Mostly no label background or one that is a colour, now and then one around the largest or
+/// below the smallest, or a fraction; loose, also any number or a value of any shape.
+fn background(loose: bool) -> BoxedStrategy<Value> {
+    let edges = prop::sample::select(vec![-5.0, -1.0, 0.5, 1e20, f64::NAN, f64::INFINITY]);
+    let any = if loose {
+        prop_oneof![num(), anything()].boxed()
+    } else {
+        Just(Value::Null).boxed()
+    };
+    prop_oneof![
+        10 => Just(Value::Null),
+        10 => color(false),
+        1 => edges.prop_map(Value::Number),
+        1 => any,
+    ]
+    .boxed()
+}
+
 /// The identifier of the `i`th node or edge, now and then that of one of the first four, so
 /// that duplicates occur.
 fn nth(prefix: &'static str, i: usize) -> impl Strategy<Value = Value> {
-    prop_oneof![10 => Just(i), 1 => 0..4_usize]
-        .prop_map(move |k| Value::Text(format!("{prefix}{k}")))
+    let id = prop_oneof![10 => Just(i), 1 => 0..4_usize]
+        .prop_map(move |k| Value::Text(format!("{prefix}{k}")));
+    // Now and then an identifier of 256 or 257 UTF-16 code units, characters of one and two.
+    let long = prop::sample::select(vec![256_usize, 257])
+        .prop_map(move |n| Value::Text(long_id(prefix, n)));
+    prop_oneof![40 => id, 1 => long]
 }
 
-/// The end of an edge among `nodes` nodes: mostly one of them, now and then one beyond.
+/// An identifier of `units` UTF-16 code units: `prefix`, then characters of two units and of one.
+fn long_id(prefix: &str, units: usize) -> String {
+    let pairs = 127;
+    let ones = units - prefix.len() - 2 * pairs;
+    format!("{prefix}{}{}", "\u{1F600}".repeat(pairs), "y".repeat(ones))
+}
+
+/// The end of an edge among `nodes` nodes: mostly one of them, now and then one beyond, or one
+/// longer than an identifier may be.
 fn end(nodes: usize) -> impl Strategy<Value = Value> {
-    prop_oneof![20 => 0..nodes.max(1), 1 => Just(nodes)].prop_map(|k| Value::Text(format!("n{k}")))
+    let named = prop_oneof![20 => 0..nodes.max(1), 1 => Just(nodes)]
+        .prop_map(|k| Value::Text(format!("n{k}")));
+    prop_oneof![40 => named, 1 => Just(Value::Text(long_id("n", 257)))]
 }
 
 /// Identifiers from a small pool.
@@ -183,6 +245,7 @@ fn num() -> impl Strategy<Value = Value> {
 fn node(loose: bool, i: usize) -> impl Strategy<Value = Value> {
     object(vec![
         field("id", nth("n", i), loose),
+        field("title", text(loose), loose),
         field("x", num(), loose),
         field("y", num(), loose),
         field("width", size(), loose),
@@ -202,8 +265,10 @@ fn one_of(good: Vec<Value>, bad: Vec<Value>, loose: bool) -> BoxedStrategy<Value
 
 fn edge(loose: bool, j: usize, nodes: usize) -> impl Strategy<Value = Value> {
     let placed = object(vec![
+        field("text", text(loose), loose),
         field("t", num(), loose),
         field("offset", num(), loose),
+        field("background", background(loose), loose),
     ]);
     let label = prop_oneof![
         one_of(vec![Value::Null], vec![Value::Object(Vec::new())], loose),
@@ -264,27 +329,52 @@ fn finite32(v: f64) -> bool {
 /// Whether nothing in `batch` is to be refused, by brute force over the batch alone.
 fn acceptable(batch: &GraphBatch) -> bool {
     let unique = |ids: &[&str]| (0..ids.len()).all(|i| !ids[..i].contains(&ids[i]));
+    let units = |id: &str| id.chars().map(char::len_utf16).sum::<usize>();
+    let short = |id: &&str| units(id) <= 256;
     let nodes: Vec<&str> = batch.nodes.iter().map(|n| n.id.as_str()).collect();
     let edges: Vec<&str> = batch.edges.iter().map(|e| e.id.as_str()).collect();
     let node_ok = |n: &super::NodeInput| {
-        [n.x, n.y, n.width, n.height].into_iter().all(finite32)
+        n.title_length.is_some_and(|l| l <= 1_000)
+            && [n.x, n.y, n.width, n.height].into_iter().all(finite32)
             && n.width as f32 >= 0.0
             && n.height as f32 >= 0.0
     };
     let edge_ok = |e: &super::EdgeInput| {
         nodes.contains(&e.source.as_str())
             && nodes.contains(&e.target.as_str())
-            && e.label
-                .is_none_or(|l| l.t.is_finite() && l.offset.is_finite())
+            && e.label.is_none_or(|l| {
+                l.t.is_finite()
+                    && l.offset.is_finite()
+                    && l.text_length.is_some_and(|l| l <= 1_000)
+                    && l.background
+                        .is_none_or(|n| n.floor() == n && (0.0..16_777_216.0).contains(&n))
+            })
             && e.color <= 0xff_ffff
             && e.dash.is_none_or(|[d, g]| {
                 finite32(d) && finite32(g) && d as f32 > 0.0 && g as f32 >= 0.0
             })
     };
-    unique(&nodes)
+    let ends = batch
+        .edges
+        .iter()
+        .flat_map(|e| [e.source.as_str(), e.target.as_str()]);
+    nodes.iter().chain(&edges).all(short)
+        && ends.collect::<Vec<_>>().iter().all(short)
+        && unique(&nodes)
         && unique(&edges)
         && batch.nodes.iter().all(node_ok)
         && batch.edges.iter().all(edge_ok)
+}
+
+/// A patch of `updateNode`: mostly a title of any value, now and then another field of a node or
+/// none, and now and then a value of any shape at all.
+fn patch() -> impl Strategy<Value = Value> {
+    let key = prop::sample::select(vec!["title", "title", "title", "id", "width", "x", ""]);
+    let entries = prop::collection::vec((key.prop_map(str::to_owned), text(true)), 0..3);
+    prop_oneof![
+        8 => entries.prop_map(Value::Object),
+        1 => anything(),
+    ]
 }
 
 proptest! {
@@ -293,7 +383,7 @@ proptest! {
     #[test]
     fn any_graph_data_ends_in_a_typed_error_or_a_graph(value in graph_data()) {
         // A panic anywhere below fails the case; the runner catches it and shrinks the input.
-        match GraphBatch::deserialize(value).map_err(malformed) {
+        match GraphBatch::deserialize(value).map_err(unshaped) {
             // A value of the wrong shape is refused before any check of the bridge's own.
             Err(_) => {}
             Ok(batch) => match graph_of(&batch) {
@@ -305,6 +395,25 @@ proptest! {
                     prop_assert!(!acceptable(&batch), "refused {:?}", error);
                 }
             },
+        }
+    }
+
+    #[test]
+    fn any_patch_ends_in_a_typed_error_or_is_accepted(value in patch()) {
+        match NodePatch::deserialize(value).map_err(unshaped) {
+            Err(_) => {}
+            Ok(patch) => {
+                let units = |t: &str| t.chars().map(char::len_utf16).sum::<usize>();
+                let fine = patch.0.iter().all(|(k, v)| {
+                    k == "title" && v.0.as_deref().is_some_and(|t| units(t) <= 1_000)
+                });
+                let title = patch.0.iter().rev().find(|(k, _)| k == "title").and_then(|(_, v)| v.0.clone());
+                match patch_of("n", patch) {
+                    // What the store merges is the title it was handed, and nothing else.
+                    Ok(checked) => prop_assert!(fine && checked.title == title),
+                    Err(_) => prop_assert!(!fine),
+                }
+            }
         }
     }
 }

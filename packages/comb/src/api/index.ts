@@ -1,14 +1,15 @@
-// The public interface of Comb and the validation of graph data (ADR-0009).
+// The public interface of Comb, which hands every field of graph data to the bridge before the
+// store keeps any of it, and checks none itself (ADR-0009).
 // First, before any PixiJS renderer is created: PixiJS's code generation without eval, so that Comb
 // draws under a Content Security Policy without `unsafe-eval` (Q-6, ADR-0020).
 import "pixi.js/unsafe-eval";
 import { Application } from "pixi.js";
-import { createBridge, type BridgeError, type GraphBatch, type Rect } from "../bridge";
+import { createBridge, type Bridge, type BridgeError, type Rect } from "../bridge";
 import { attachInteraction } from "../interaction";
 import { clampScale, fitViewport } from "../interaction/viewport";
-import { edgeColor } from "../render/edges";
 import { Scene } from "../render/scene";
 import { engineOf, type EngineSource } from "./engine";
+import { isUnreadable, listsOf, patchOf, snapshotOf, type Limits } from "./snapshot";
 import { createFrames } from "./frames";
 import { drawsWith, preferenceFor } from "./renderers";
 import { scenes } from "./scenes";
@@ -42,7 +43,8 @@ export interface Comb {
   /** Replaces the graph. Throws a `GraphDataError` on malformed graph data (Q-7). */
   load(graph: GraphData): void;
   /** Changes attributes of the node `id`; the canvas shows the change (G-5). Throws a
-   *  `GraphDataError` where the graph holds no node `id`, and changes nothing then (Q-7). */
+   *  `GraphDataError` where the graph holds no node `id`, or the patch holds a field other than
+   *  `title` or a title that is not a string, and changes nothing then (Q-7). */
   updateNode(id: string, patch: Partial<Pick<NodeView, "title">>): void;
   /** Pans and zooms so the whole graph is in view. */
   fitView(): void;
@@ -60,8 +62,8 @@ export interface Comb {
   destroy(): void;
 }
 
-/** What was wrong with graph data: what the engine refused in `load`, or, in `updateNode`, a node
- *  the graph does not hold. */
+/** What was wrong with graph data: what the bridge refused in `load` or `updateNode`, or, in
+ *  `updateNode`, a node the graph does not hold. */
 export type GraphDataProblem = BridgeError | { kind: "unknownNode"; node: string };
 
 /** Comb found no WebGL2 to draw with, only `renderer`, PixiJS's fallback, which cannot draw the
@@ -97,30 +99,58 @@ function boundsOf(nodes: readonly NodeView[], positions: Float32Array): Rect | n
   return bounds;
 }
 
-/** The graph data the engine needs: identifiers, positions, sizes, ends, label placements, and
- *  edge styles with their defaults. */
-function batchOf(graph: GraphData): GraphBatch {
-  return {
-    nodes: graph.nodes.map(({ id, x, y, width, height }) => ({ id, x, y, width, height })),
-    edges: graph.edges.map(({ id, source, target, label, color, dash, arrow }) => ({
-      id,
-      source,
-      target,
-      label: label && { t: label.t, offset: label.offset },
-      color: edgeColor({ color }),
-      dash: dash && [dash[0], dash[1]],
-      arrow: arrow ?? "end",
-    })),
-  };
+/** Reads the host application's value into plain data with `read`, in JavaScript, before the
+ *  bridge sees it; what reading throws (graph data that is not an object, nodes that are not a
+ *  list, a getter that throws) refuses it as malformed. The message is Comb's own: a value the
+ *  host application threw is not read. */
+function readOnce<T>(read: () => T): T {
+  try {
+    return read();
+  } catch (error) {
+    const message = isUnreadable(error) ? error.message : "comb: graph data could not be read";
+    throw new GraphDataError({ kind: "malformed", message });
+  }
 }
 
-/** `updateNode` on `store`: refuses a node the graph does not hold before the store sees it, so
- *  that the store and its subscribers stay as they were (Q-7). */
-function updaterOf(store: GraphStore): Comb["updateNode"] {
+/** The bridge's limits the snapshot cuts strings by. */
+function limitsOf(bridge: Bridge): Limits {
+  return { text: bridge.textLimit(), id: bridge.idLimit(), idBudget: bridge.idBudget() };
+}
+
+/** Whether `error` is a problem the bridge produced: a plain object with a `kind`. */
+function isBridgeError(error: unknown): error is BridgeError {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    Object.getPrototypeOf(error) === Object.prototype &&
+    typeof (error as { kind?: unknown }).kind === "string"
+  );
+}
+
+/** Calls the bridge with plain data; what it refuses becomes a `GraphDataError`, and any other
+ *  error, such as a panic of the engine, no problem of the data, is thrown on as an `Error`. */
+function checked<T>(check: () => T): T {
+  try {
+    return check();
+  } catch (error) {
+    if (isBridgeError(error)) throw new GraphDataError(error);
+    throw error instanceof Error ? error : new Error("comb: the engine failed");
+  }
+}
+
+/** `updateNode` on `store`: refuses a node the graph does not hold, and a patch the bridge
+ *  refuses, before the store sees either. The patch is read once, into plain data, and the store
+ *  merges only the fields the bridge returns as checked, so that it and its subscribers stay as
+ *  they were on a refusal (Q-7). */
+function updaterOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["updateNode"] {
   return (id, patch) => {
     if (!store.getState().slots.has(id))
       throw new GraphDataError({ kind: "unknownNode", node: id });
-    store.getState().updateNode(id, patch);
+    const plain = readOnce(() => patchOf(patch, limits));
+    store.getState().updateNode(
+      id,
+      checked(() => bridge.checkNodePatch(id, plain)),
+    );
   };
 }
 
@@ -134,6 +164,7 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
   // A caller without types may leave the options out; that is a missing engine too.
   options ??= {} as CombOptions;
   const bridge = await createBridge(await engineOf(options.engine));
+  const limits = limitsOf(bridge);
   const app = new Application();
   await app.init({
     resizeTo: host,
@@ -158,14 +189,14 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
 
   const comb: Comb = {
     load(graph) {
-      try {
-        bridge.loadGraph(batchOf(graph));
-      } catch (error) {
-        throw new GraphDataError(error as BridgeError);
-      }
-      store.getState().load(graph);
+      const lists = readOnce(() => listsOf(graph));
+      checked(() => bridge.checkGraphSize(lists.nodeCount, lists.edgeCount));
+      const { snapshot, idUnits } = readOnce(() => snapshotOf(lists, limits));
+      checked(() => bridge.checkIdBudget(idUnits));
+      checked(() => bridge.loadGraph(snapshot));
+      store.getState().load(snapshot);
     },
-    updateNode: updaterOf(store),
+    updateNode: updaterOf(store, bridge, limits),
     fitView() {
       const bounds = boundsOf(store.getState().nodes, bridge.positions());
       if (bounds)

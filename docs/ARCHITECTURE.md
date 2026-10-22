@@ -27,13 +27,31 @@
  └────────────────────────────────────────────────────────────────┘
 ```
 
-Graph data from the host application is untrusted: the bridge crate refuses a value of the wrong
-shape, coordinates, sizes, and dash patterns that are not finite as the engine keeps them (`f32`),
-negative sizes, a dash that is not positive or a negative gap, duplicate node or edge
-identifiers, edges to missing nodes, non-finite label placements, and colours beyond `0xFFFFFF`
-with a typed error, and `updateNode` refuses an identifier the graph does not hold. Titles, label
-texts, and label backgrounds never reach the engine, and nothing checks them or the patch that
-`updateNode` merges into the store.
+Graph data from the host application is untrusted, and every field of it crosses the bridge before
+the store keeps any of it: the bridge crate refuses a value of the wrong shape, coordinates, sizes,
+and dash patterns that are not finite as the engine keeps them (`f32`), negative sizes, a dash that
+is not positive or a negative gap, duplicate node or edge identifiers, edges to missing nodes,
+non-finite label placements, colours beyond `0xFFFFFF`, a title or label text that is not a string
+or longer than 1,000 UTF-16 code units, a label background that is not an integer from `0` to
+`0xFFFFFF`, more than 1,000,000 nodes or edges, an identifier, source, or target longer than 256
+UTF-16 code units, and identifiers of one load that hold more than 64,000,000 code units together
+with a typed error. `updateNode` refuses an identifier the graph does not hold, and the bridge crate
+refuses a patch that holds a field other than a title, or a title it would refuse in a load. Titles,
+label texts, and label backgrounds are checked there but not kept by the engine. `api` reads the
+host's graph data once, in JavaScript, into a snapshot (`api/snapshot.ts`) of plain data whose every
+field is a primitive of the type it expects, any other value replaced by `false`, and whose texts
+and identifiers are cut one code unit beyond the bridge's limits, so that no value of the host
+application and none of its code reaches the engine, and a text of any length costs no more than
+that to check; the bridge checks the counts of nodes and edges before anything is copied, then the
+code units of the identifiers, counted while the snapshot is read and read no further once they
+exceed the budget, then the snapshot, and the store keeps the snapshot. Strings with a lone
+surrogate, which the bridge would read as U+FFFD, are refused. `updateNode` reads its patch the same
+way, every own key of a plain object, and merges only the fields the bridge returns as checked. The
+bridge never formats a refused value into its message. Graph data that cannot be read at all, such
+as nodes that are not a list, a list with a hole, a patch that is no plain object, or a getter that
+throws, is refused as malformed before the bridge sees it. That no code of the host application runs
+in the engine holds while nothing on the page has patched JavaScript's built-ins, such as a setter
+on `Object.prototype` or a `Symbol.hasInstance` of `Uint8Array`, which the generated glue reaches.
 
 ## Building blocks
 
@@ -99,7 +117,8 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   bytes (`api/engine.ts`, [ADR-0019](adr/0019-the-host-hands-comb-its-engine.md)), before it
   touches the host element,
   and with a `RendererUnavailableError` where PixiJS finds no WebGL2 unless `allowCanvasFallback`
-  lets it draw on Canvas 2D, the graph data handed to the engine, the viewport (`fitView`,
+  lets it draw on Canvas 2D, the graph data, read once into a snapshot (`api/snapshot.ts`) and
+  handed to the engine, the viewport (`fitView`,
   `setViewport`, `viewport`), and the events to the host application;
   `whenRendered` resolves once a change is drawn, with one render per animation frame scheduled
   by `frames`.
