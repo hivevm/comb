@@ -9,7 +9,7 @@
 // reading stops once they exceed the bridge's budget, whose check then refuses the load. What
 // cannot be read at all throws an `UnreadableError`.
 import type { GraphBatch, NodePatch } from "../bridge";
-import { edgeColor } from "../render/edges";
+import { EDGE_ARROW, edgeColor } from "../render/edges";
 import type { GraphData } from "../store";
 
 /** The errors this module throws, told from what the host application throws without reading
@@ -173,7 +173,7 @@ function edgeOf(read: Reader, edge: Fields) {
     label: labelOf(read, label),
     color: edgeColor({ color: read.number(color) as number | undefined }),
     dash: dashOf(read, dash),
-    arrow: read.text(arrow) ?? "end",
+    arrow: read.text(arrow) ?? EDGE_ARROW,
   };
 }
 

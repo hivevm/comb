@@ -5,9 +5,13 @@
 // `edges-canvas.ts` draws the layer instead.
 import { Container, Geometry, Mesh, Shader } from "pixi.js";
 import type { EdgeMesh, Visible } from "../bridge";
+import type { EdgeData } from "../store";
 
 /** The colour of an edge the host application gives none. */
 export const EDGE_COLOR = 0x9aa1ad;
+
+/** The arrow of an edge the host application gives none: an arrowhead at its end. */
+export const EDGE_ARROW: NonNullable<EdgeData["arrow"]> = "end";
 
 /** The colour an edge is drawn in: its own, or the default. */
 export function edgeColor(edge: { readonly color?: number }): number {

@@ -24,8 +24,12 @@ pub struct EdgeStyle {
     pub arrow: bool,
 }
 
-impl Default for EdgeStyle {
-    fn default() -> Self {
+#[cfg(test)]
+impl EdgeStyle {
+    /// The style the engine's tests draw an edge in where the host application gives it none:
+    /// solid, with an arrowhead, in the shell's default colour. The crate itself holds no default
+    /// style, since the bridge builds every style from the graph data.
+    pub(crate) const fn unstyled() -> Self {
         Self {
             color: 0x9a_a1ad,
             dash: None,
@@ -425,7 +429,7 @@ mod tests {
         let mut mesh = Mesh::default();
         mesh.add_edge(
             &path,
-            &EdgeStyle::default(),
+            &EdgeStyle::unstyled(),
             &Stroke::full(0.25),
             &mut points,
         );
@@ -445,7 +449,7 @@ mod tests {
         let mut mesh = Mesh::default();
         let style = EdgeStyle {
             dash: Some((6.0, 4.0)),
-            ..EdgeStyle::default()
+            ..EdgeStyle::unstyled()
         };
         let stroke = Stroke {
             tolerance: 5.0,
@@ -467,7 +471,7 @@ mod tests {
         let mut mesh = Mesh::default();
         mesh.add_edge(
             &path,
-            &EdgeStyle::default(),
+            &EdgeStyle::unstyled(),
             &Stroke::full(0.25),
             &mut points,
         );
@@ -604,7 +608,7 @@ mod tests {
         let mut mesh = Mesh::default();
         mesh.add_edge(
             &path,
-            &EdgeStyle::default(),
+            &EdgeStyle::unstyled(),
             &Stroke::full(0.25),
             &mut points,
         );
@@ -630,7 +634,7 @@ mod tests {
         let mut mesh = Mesh::default();
         mesh.add_edge(
             &path,
-            &EdgeStyle::default(),
+            &EdgeStyle::unstyled(),
             &Stroke::full(0.25),
             &mut points,
         );
@@ -721,7 +725,7 @@ mod tests {
         let mut mesh = Mesh::default();
         mesh.add_edge(
             &path,
-            &EdgeStyle::default(),
+            &EdgeStyle::unstyled(),
             &Stroke::full(f64::NAN),
             &mut points,
         );
