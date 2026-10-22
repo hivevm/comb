@@ -63,23 +63,27 @@ vertices per query, and choose by zoom between three levels of detail.
   in the hull of those control points, so neither the chord nor its stroke reaches into the
   rectangle, and each edge in the viewport is drawn within a quarter pixel at the scale queried,
   within Q-4 until the next query. Past a chord, the distance along the path advances by the
-  chord's length.
+  chord's length. Subdivision goes at most 24 levels deep, up to 2^24 segments of an edge, so that
+  an edge from (0, 0) to (-1e8, 3e7) still keeps its quarter pixel in the rectangle; the rectangle
+  and the mesh budget, not the depth, bound what an edge costs, and a pixel that is zero or not
+  finite is refused before any edge is flattened.
 - **Mesh budget:** the mesh of one query holds at most 4,194,304 (2^22) vertices, and so at most
-  three times as many indices. Each edge the query found has a floor: its chord, four vertices, in
-  its colour and dash pattern, without an arrowhead. In slot order, edges are meshed in full while
-  each fits beside the floors of the edges still to come; the flattening of an edge stops once it
-  passes the room left, and from the first edge that does not fit, it and every later edge are
-  drawn as their chords, unflattened. The budget is the floors of a load at the limit of
-  1,000,000 edges (ADR-0009), 4,000,000 vertices, taken to the next power of two, the size the
-  shell's arrays grow to anyway; it is twelve times the largest mesh measured of the benchmark's
-  graph (Sources), which never reaches it. So every edge found is drawn at every viewport while
-  memory lasts, and the budget follows the limit when the limit changes. The mesh's vectors grow
-  by `try_reserve`, never beyond the budget; the floors are reserved before the first edge is
-  meshed, and an allocation that fails ends full meshing as the budget does, or, where it fails
-  for the floors themselves, leaves the mesh without edges. A query returns the detail of its
-  mesh: *complete*, or *coarsened* where an edge was drawn as its chord or left out for the
-  budget or for memory. The shell draws the mesh as it comes and reports the detail through
-  inspection, not to the host application.
+  three times as many indices. Each edge the query found has a floor: the smaller of its chord, four
+  vertices, in its colour and dash pattern, without an arrowhead, and its full mesh. In slot order,
+  edges are meshed in full while each fits beside the floors of the edges still to come; the
+  flattening of an edge stops once it passes the room left, and from the first edge that does not
+  fit, it and every later edge are drawn as their chords, unflattened. The budget is the floors of a
+  load at the limit of 1,000,000 edges (ADR-0009), 4,000,000 vertices, taken to the next power of
+  two, the size the shell's arrays grow to anyway; it is twelve times the largest mesh measured of
+  the benchmark's graph (Sources), which never reaches it. So every edge found is drawn at every
+  viewport while memory lasts, and the budget follows the limit when the limit changes. The mesh's
+  vectors grow by `try_reserve`, never beyond the budget; the floors are reserved before the first
+  edge is meshed, and an allocation that fails ends full meshing as the budget does. Where the
+  floors of the edges found exceed the budget, which takes more than 1,048,576 edges in one query,
+  or cannot be allocated, the mesh holds no edges. A query returns the detail of its mesh:
+  *complete* where every edge it found is meshed in full, or *coarsened* where an edge was drawn as
+  its chord or left out for the budget or for memory. The shell draws the mesh as it comes and
+  reports the detail through inspection, not to the host application.
 - **Q-4:** the rectangle and the mesh budget rest on a drafted change of Q-4, which a ticket under
   `docs/plan/` carries until the maintainer lands it: Q-4 holds for everything the viewport
   shows, wherever the edge mesh is not coarsened. They hold only once that change lands.
@@ -112,9 +116,12 @@ vertices per query, and choose by zoom between three levels of detail.
 - **Coarsen everything uniformly** — raise the tolerance of the whole query until the mesh fits:
   one look for every edge, but once a query passes the budget every visible edge strays beyond
   0.5 px, not only those past it, and the query flattens its edges again for each try.
-- **No budget, the rectangle alone** — the depth of subdivision bounds what one edge costs, about
-  8,200 vertices, and the rectangle what it costs zoomed in, but neither bounds what a query
-  costs: 1,000,000 edges through one viewport still grow the mesh until memory runs out.
+- **No budget, the rectangle alone** — the rectangle bounds what an edge costs zoomed in, but not
+  what a query costs: 1,000,000 edges through one viewport still grow the mesh until memory runs
+  out.
+- **A depth of 12, 2^12 segments of an edge** — it bounds what one edge costs, about 8,200
+  vertices, without the rectangle, but an edge from (0, 0) to (-1e7, 3e6) then strays 2.5 px in a
+  viewport on its curve, and one ten times as long 25 px, while the query reports it complete.
 - **A budget measured from the benchmark, such as 2^20 vertices** — three times the largest mesh
   of the benchmark's graph, and a quarter of the memory, but the floors of more than 262,144
   edges found in one rectangle exceed it, so past that the engine would have to leave edges out
@@ -181,15 +188,16 @@ or a `Graphics` per edge. Each cites this ADR with `Verifies: ADR-0012`, and the
 A property test of the engine generates graphs of long edges and of many edges between few nodes,
 and queries them at random rectangles, scales, and levels, with the budget lowered for the test; it
 asserts that the mesh holds at most the budget's vertices and three times as many indices, that
-every edge found is drawn, that a query whose full mesh fits reports it complete and one whose full
-mesh does not fit reports it coarsened, and that a complete query draws each edge within a quarter
-pixel inside its rectangle; removing the budget turns it red. A test in `crates/engine-wasm` asserts
-that four vertices for each of the most edges a load may hold fit the engine's budget. A Playwright
-test loads the graph of two nodes at (0, 0) and (-1e7, 3e6) with 20,000 edges between them, sets the
-viewport to a scale of 4, and asserts that no page error occurs, that the frame is drawn, that
-inspection reports the mesh complete, and that a valid graph loaded afterwards draws; removing the
-rectangle turns it red with the trap. Each cites `Verifies: ADR-0012, Q-7`, and the property test
-also `Verifies: Q-4`.
+every edge found is drawn, that a query reports complete exactly when every edge it found is meshed
+in full, and that a complete query draws each edge within a quarter pixel inside its rectangle, an
+edge from (0, 0) to (-1e8, 3e7) among them; removing the budget turns it red, and a depth of 12
+turns it red on the long edges. A test in `crates/engine-wasm` asserts that four vertices for each
+of the most edges a load may hold fit the engine's budget. A Playwright test loads the graph of two
+nodes at (0, 0) and (-1e7, 3e6) with 20,000 edges between them, sets the viewport to a scale of 4,
+and asserts that no page error occurs, that the frame is drawn, that inspection reports the mesh
+complete, and that a valid graph loaded afterwards draws; removing the rectangle turns it red, the
+mesh then reported coarsened. Each cites `Verifies: ADR-0012, Q-7`, and the property test also
+`Verifies: Q-4`.
 
 **Not mechanically decidable:** the branches where `try_reserve` fails; provoking them needs an
 allocator that fails on demand, which the engine's tests do not have, so review holds that they
