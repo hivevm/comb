@@ -36,11 +36,19 @@ whose only door to the engine is its `bridge` module.
   or I/O: not `wasm-bindgen`, `js-sys`, `web-sys`, `getrandom`, or `serde-wasm-bindgen`. Its
   functions take values and buffers and return values or write into buffers they are given.
 - **Bridge:** `crates/engine-wasm` holds every `#[wasm_bindgen]` export and converts between the
-  bridge's data and the core's types; it holds no geometry of its own.
-- **Shell:** `packages/comb/src` has the modules `api` (the public interface and the validation
-  of graph data), `store` (graph and viewport state), `interaction` (input into commands on the
-  store), `render` (the PixiJS scene: nodes, edges, and edge labels in containers of their own),
-  and `bridge` (the one module that imports the WebAssembly package).
+  bridge's data and the core's types; it holds no geometry of its own. It is the one place that
+  validates graph data: every field the host application hands over crosses the bridge and is
+  checked there, also a field the engine does not keep, such as a title, a label's text, a
+  label's background, and the patch of `updateNode`. It bounds what a load may hold: at most
+  1,000,000 nodes and 1,000,000 edges, at most 256 UTF-16 code units per identifier (a node's or
+  an edge's, a source, a target), at most 64,000,000 code units of identifiers per load, and at
+  most 1,000 code units per title and per label text.
+- **Shell:** `packages/comb/src` has the modules `api` (the public interface, which only reads:
+  it copies the host application's graph data once into primitives, what it cannot read is
+  malformed, and it hands the copy to the bridge before the store keeps any of it), `store`
+  (graph and viewport state), `interaction` (input into commands on the store), `render` (the
+  PixiJS scene: nodes, edges, and edge labels in containers of their own), and `bridge` (the one
+  module that imports the WebAssembly package).
 - **Direction:** `render` reads the store and never writes it; only `bridge` imports the
   WebAssembly package; `examples/` import only the package's entries: `comb`, the public
   interface; `comb/testing`, which reads what the canvas draws for browser tests and the
@@ -53,6 +61,13 @@ graph, and the model of node content, each a decision of its own.
 
 ## Alternatives considered
 
+- **Validation split by where a field is kept** — the bridge crate checks what the engine keeps,
+  and `api` checks in TypeScript what only the store keeps. No text crosses the bridge, but there
+  are two places of validation, and error kinds written by hand stand beside the generated ones
+  of ADR-0010.
+- **Validation in `api` alone** — the shell checks all graph data in TypeScript before the
+  bridge. The bridge crate would check again in its own types, so every rule would be written
+  twice in two languages.
 - **Ports and adapters** — a seam for swapping the renderer, which the PixiJS constraint rules
   out; every port would have one adapter forever.
 - **Plugin for content elements** — third parties could add elements, but an extension interface
@@ -85,6 +100,8 @@ graph, and the model of node content, each a decision of its own.
   the skeleton needs.
 - Negative / trade-offs: functions over buffers are less obviously pure than functions over
   values; review holds that they write only the buffers they are given.
+- Negative / trade-offs: titles and label texts cross the bridge once more when a graph loads,
+  only to be checked; the benchmark's first frame shows what that costs (Q-2).
 - Follow-ups: the data format of the bridge; the store; the scene graph and its culling; the model
   of node content.
 
@@ -95,5 +112,8 @@ when a file outside `packages/comb/src/bridge/` imports the WebAssembly package,
 `packages/comb/src/render/` calls a writing action of the store, or when a file in `examples/`
 imports anything of `packages/comb` other than its entries `comb`, `comb/testing`, and
 `comb/engine.wasm`, the last bare or with `?url` alone. The test
-cites this ADR with `Verifies: ADR-0009`. That a function of the core writes only the buffers it
-is given is review.
+cites this ADR with `Verifies: ADR-0009`. The property test of the bridge crate generates every
+field of graph data, those the engine does not keep among them, and a browser test refuses a
+malformed title, label text, label background, and patch of `updateNode` through the public
+interface; both cite this ADR. That a function of the core writes only the buffers it is given,
+and that `api` checks no field of graph data itself, is review.
