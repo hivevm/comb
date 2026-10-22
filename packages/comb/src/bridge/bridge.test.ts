@@ -351,7 +351,8 @@ describe("bridge mesh and hit", () => {
         [{ ...edge("e", "a", "b"), dash: [6, 4], arrow: "end" }],
       ),
     );
-    const { mesh } = bridge.query(everywhere, "near", 1, 0);
+    const { mesh, detail } = bridge.query(everywhere, "near", 1, 0);
+    expect(detail).toBe("complete");
     const vertices = mesh.distances.length;
     expect(vertices).toBeGreaterThan(3);
     expect(mesh.positions.length).toBe(2 * vertices);

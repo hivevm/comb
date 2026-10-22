@@ -69,19 +69,26 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   returns the slots a rectangle meets, and `hit` the node drawn on top at a point. `stroke`
   flattens the found edges within a tolerance and strokes them into the triangles of one mesh,
   with each edge's colour, dash pattern, and arrowhead, or as thin lines alone at the far level
-  of detail; it decides the stroke of each level. It depends on no crate that reaches the
-  browser. `graph` keeps each edge's path and its bounds as of its last move, so that a query
-  computes no bounds; `graph::slot` is the one conversion of a count to slots, which the bridge
-  uses too. Only what the bridge uses is public; the rest is private to the crate, so that the
-  `dead_code` lint finds what only tests reach.
+  of detail; it decides the stroke of each level. A part of a path whose control points miss the
+  query's rectangle, grown by the stroke's width, is drawn as its chord, and a path is subdivided
+  at most 24 levels deep; the mesh of one query holds at most the mesh budget, 2^22 vertices: each
+  edge's floor, its chord or its arrowhead alone where that is its full mesh, is reserved first,
+  edges are meshed in full in slot order while each fits beside the floors of those after it, and
+  from the first that does not, every edge is drawn as its floor and the mesh is coarsened; its
+  vectors grow by `try_reserve`, so that memory running short coarsens the mesh instead of
+  trapping. It depends on no crate that reaches the browser. `graph` keeps each edge's path and
+  its bounds as of its last move, so that a query computes no bounds; `graph::slot` is the one
+  conversion of a count to slots, which the bridge uses too. Only what the bridge uses is public;
+  the rest is private to the crate, so that the `dead_code` lint finds what only tests reach.
 - **Bridge** — `crates/engine-wasm` holds every WebAssembly export: `loadGraph` checks graph data
   and resolves edge ends to slots, `translate` moves nodes, `query` takes a rectangle, a level of
   detail, the size of a screen pixel, and how far an edge label's pill reaches from its point,
-  and writes the found node slots, the edge-label slots and
-  points (at the near level only), the found edge slots, and the edge mesh into buffers the engine
-  owns, `drawnEdges` computes the ends of the found edges when inspection asks, as they lie then,
-  and `hit` names the node at a point; it generates the type of every problem of graph data
-  `load` and `updateNode` throw, `GraphDataProblem`, which `comb` exports, and keeps
+  and writes the found node slots, the edge-label slots and points (at the near level only), the
+  found edge slots, and the edge mesh into buffers the engine owns, and returns the mesh's detail,
+  complete or coarsened, and refuses a pixel that is not a finite number above zero as
+  malformed; `drawnEdges` computes the ends of the found edges when inspection asks,
+  as they lie then, and `hit` names the node at a point; it generates the type of every problem
+  of graph data `load` and `updateNode` throw, `GraphDataProblem`, which `comb` exports, and keeps
   `translate`'s refusals, a mistake of the shell's, in a type of their own;
   `packages/comb/src/bridge` is the one module that imports the WebAssembly package and reads
   those buffers through fresh typed-array views per read
@@ -128,7 +135,8 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   `whenRendered` resolves once a change is drawn, with one render per animation frame scheduled
   by `frames`.
 - **Testing entry** (`comb/testing`, `packages/comb/src/testing.ts`) — `inspect` returns what the
-  scene draws, the text of the titles and labels drawn included; `viewport` and `renderCount`, cheap
+  scene draws, the text of the titles and labels drawn included, and the size and detail of the
+  edge mesh, which the host application is not told; `viewport` and `renderCount`, cheap
   enough for every frame, return its transform and how often it rendered; `screenPoint` and
   `visibleRect` apply the scene's transform between world and screen; `showLayers` hides layers for
   a reference image; `sceneNumbers` gives the numbers the scene draws by (where the levels of detail

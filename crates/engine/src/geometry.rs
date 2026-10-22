@@ -163,6 +163,15 @@ impl EdgePath {
         bounds
     }
 
+    /// The smallest rectangle that holds the four control points, and so the whole path, which
+    /// lies in their hull, and its chord.
+    pub(crate) fn hull(&self) -> Rect {
+        Rect::at(self.source)
+            .union(&Rect::at(self.control_source))
+            .union(&Rect::at(self.control_target))
+            .union(&Rect::at(self.target))
+    }
+
     /// The two halves of the path, split at `t = 0.5` (de Casteljau).
     pub(crate) fn split(&self) -> (Self, Self) {
         let ab = self.source.lerp(self.control_source, 0.5);

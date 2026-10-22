@@ -8,7 +8,7 @@
 use crate::geometry::{EdgePath, Point, Rect};
 use crate::positions::{self, PositionError};
 use crate::spatial::Grid;
-use crate::stroke::{EdgeStyle, Mesh, Stroke};
+use crate::stroke::{EdgeStyle, MESH_BUDGET, Mesh, Stroke};
 
 /// An edge between two node slots, with the path parameter and label offset of its edge label
 /// and the style it is drawn with.
@@ -54,7 +54,7 @@ pub enum Level {
 }
 
 /// What a query found: node, edge, and label slots in ascending order, per found label its
-/// point, and the mesh of the found edges.
+/// point, and the mesh of the found edges with its detail.
 #[derive(Debug, Default)]
 pub struct Visible {
     pub nodes: Vec<u32>,
@@ -293,8 +293,9 @@ impl Graph {
     }
 
     /// Writes into `out` the nodes and edges whose bounds meet `rect` and the mesh of the edges,
-    /// stroked for `level` where a screen pixel is `pixel` world units; at the near level also the
-    /// labels whose point lies within `label_reach` of it, and at the others no label.
+    /// stroked for `level` where a screen pixel is `pixel` world units, within the mesh budget
+    /// (ADR-0012); at the near level also the labels whose point lies within `label_reach` of it,
+    /// and at the others no label.
     pub fn query(
         &mut self,
         rect: &Rect,
@@ -303,7 +304,19 @@ impl Graph {
         label_reach: f64,
         out: &mut Visible,
     ) {
-        let stroke = Stroke::at(level, pixel);
+        self.query_within(rect, level, pixel, label_reach, MESH_BUDGET, out);
+    }
+
+    /// `query` with a mesh of at most `budget` vertices.
+    fn query_within(
+        &mut self,
+        rect: &Rect,
+        level: Level,
+        pixel: f64,
+        label_reach: f64,
+        budget: u32,
+        out: &mut Visible,
+    ) {
         let labelled = level == Level::Near;
         let label_rect = rect.grown(if labelled { label_reach.max(0.0) } else { 0.0 });
         self.node_grid.candidates(rect, &mut self.scratch);
@@ -320,17 +333,9 @@ impl Graph {
         out.edges.clear();
         out.labels.clear();
         out.label_points.clear();
-        out.mesh.clear();
         for &slot in &self.scratch {
             if self.bounds[slot as usize].meets(rect) {
                 out.edges.push(slot);
-                let style = self.edges[slot as usize].style;
-                out.mesh.add_edge(
-                    &self.paths[slot as usize],
-                    &style,
-                    &stroke,
-                    &mut self.points,
-                );
             }
             if !labelled {
                 continue;
@@ -340,18 +345,28 @@ impl Graph {
                 out.label_points.extend([point.x as f32, point.y as f32]);
             }
         }
+        let found = out.edges.iter().map(|&slot| {
+            let slot = slot as usize;
+            (&self.paths[slot], &self.edges[slot].style)
+        });
+        let stroke = Stroke::at(level, pixel);
+        out.mesh
+            .build(found, &stroke, rect, budget, &mut self.points);
     }
 }
+
+#[cfg(test)]
+mod budget;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// A small deterministic generator, so that a failure repeats.
-    struct Lcg(u64);
+    pub(super) struct Lcg(pub(super) u64);
 
     impl Lcg {
-        fn next(&mut self) -> f64 {
+        pub(super) fn next(&mut self) -> f64 {
             self.0 = self
                 .0
                 .wrapping_mul(6_364_136_223_846_793_005)
@@ -359,11 +374,11 @@ mod tests {
             (self.0 >> 11) as f64 / (1u64 << 53) as f64
         }
 
-        fn range(&mut self, from: f64, to: f64) -> f64 {
+        pub(super) fn range(&mut self, from: f64, to: f64) -> f64 {
             from + (to - from) * self.next()
         }
 
-        fn below(&mut self, n: usize) -> u32 {
+        pub(super) fn below(&mut self, n: usize) -> u32 {
             ((self.next() * n as f64) as u32).min(n as u32 - 1)
         }
     }
