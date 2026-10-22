@@ -13,43 +13,48 @@ use of an object detected`. Called directly, 10,000 such edges at a pixel of 0.2
 at 3.7 GB, and 2,000 already take 921 MB and 2.3 s. The data stays far below the limits of a load
 (1,000,000 edges) and below Q-2's 50,000.
 
-A query builds a mesh of bounded size: a budget of segments or vertices per query, with
-`try_reserve` where the mesh's vectors grow, so that running short of memory is an outcome of the
-query, not a trap. What the engine does when the visible edges exceed the budget is the decision
-this ticket starts with: coarsen the flattening (against Q-4's 0.5 px), clip the flattening to
-the query's rectangle (which keeps Q-4 inside it), leave edges out, or return a typed outcome
-that the shell draws around. The decision is recorded first, as an ADR, or as a drafted change
-of the specification where it gives up some of Q-4, in a pull request of its own. Q-7 covers
-malformed data; that a valid graph never crashes the page is a criterion the specification does
-not state yet, and that revision says which criterion the tests cite.
+The decision is recorded in ADR-0012 (*The rectangle*, *Mesh budget*) and ADR-0010 (*Streams*),
+both revised and proposed. The tests cite the drafted Q-7's sentence on accepted graph data and
+the drafted Q-4 in docs/plan/revision-2026-10-21/08-q7-spec-change.md (`Verifies: Q-7`,
+`Verifies: Q-4`), and ADR-0012.
 
 ## Acceptance criteria
 
 - [ ] Given the graph above, when the host loads it and sets the viewport to scale 4, then no
-      page error occurs, the frame is drawn or the shell reports a typed outcome, and a valid
-      graph loaded afterwards draws (`Verifies:` the criterion the decision names).
+      page error occurs, the frame is drawn, `inspect()` reports the mesh complete, and a valid
+      graph loaded afterwards draws (`Verifies: Q-7, ADR-0012`).
 - [ ] Given any graph within the limits of a load, when any viewport is queried, then the mesh
-      holds at most the budget's vertices and the query returns without a trap; a property test
-      of the engine generates long and many edges and asserts it.
+      holds at most the budget's vertices and three times as many indices, every edge found is
+      drawn, and the query returns without a trap; a query whose full mesh fits reports it
+      complete and draws each edge within a quarter pixel inside its rectangle. A property test of
+      the engine generates long edges and many edges between few nodes, with the budget lowered
+      for the test, and asserts it (`Verifies: Q-7, Q-4, ADR-0012`).
+- [ ] Given a small graph, and a graph of 1,000,000 curved edges queried whole at the far level,
+      when each is queried through the bridge, then the first reports its mesh complete and the
+      second coarsened (`Verifies: ADR-0010`); and four vertices for each of the most edges a
+      load may hold fit the engine's budget (`Verifies: ADR-0012`).
 - [ ] Given the benchmark's graph, when its first frame and gestures are measured, then Q-1 and
       Q-2 hold as before, and edge paths stay within Q-4's 0.5 px wherever the budget is not
       reached.
-- [ ] Broken once: without the budget, the first criterion's browser test fails with the trap.
+- [ ] Broken once: without the rectangle, the first criterion's browser test fails with the trap;
+      without the budget, the second criterion's property test fails.
 
 ## Read first
 
-- `docs/SPECIFICATION.md` Q-1, Q-2, Q-4, Q-7 (malformed data only); ADR-0012 (the scene and its
-  levels of detail), ADR-0009 (*Core*), ADR-0010 (the bridge's errors), ADR-0007 (protected parts).
+- `docs/SPECIFICATION.md` Q-1, Q-2, Q-4, Q-7, and the drafted Q-7 and Q-4 in
+  docs/plan/revision-2026-10-21/08-q7-spec-change.md; ADR-0012 (*The rectangle*, *Mesh budget*),
+  ADR-0010 (*Streams*), ADR-0009 (*Core*, *Bridge*), ADR-0007 (protected parts).
 - `crates/engine/src/stroke.rs` (`MAX_DEPTH`, the flattening), `crates/engine/src/graph.rs`
   (`query`, `out.mesh.add_edge`), `packages/comb/src/render/edges.ts` (the mesh's buffers).
 - `examples/metric-tree/e2e/malformed.spec.ts`, the golden path of the browser test.
 
 ## Blocked by
 
-- None (can start immediately)
+- The maintainer's review of the revisions of ADR-0012 and ADR-0010, in a pull request of ADRs
+  only, and the maintainer's decision on the drafted changes of Q-7 and Q-4 that ADR-0012 rests
+  on (docs/plan/revision-2026-10-21/08-q7-spec-change.md).
 
 ## Mode
 
-with the human: what the engine gives up past the budget, accuracy (Q-4), edges, or a frame, is
-a decision on the specification's criteria, which only a human lands, and a typed outcome of the
-query changes the data format of the bridge, a protected part of ADR-0007.
+with the human: the query's detail changes the data format of the bridge, a protected part of
+ADR-0007, and the drafted Q-7 and Q-4 that the tests cite land only by the maintainer.
