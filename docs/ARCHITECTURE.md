@@ -80,7 +80,9 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   and writes the found node slots, the edge-label slots and
   points (at the near level only), the found edge slots, and the edge mesh into buffers the engine
   owns, `drawnEdges` computes the ends of the found edges when inspection asks, as they lie then,
-  and `hit` names the node at a point;
+  and `hit` names the node at a point; it generates the type of every problem of graph data
+  `load` and `updateNode` throw, `GraphDataProblem`, which `comb` exports, and keeps
+  `translate`'s refusals, a mistake of the shell's, in a type of their own;
   `packages/comb/src/bridge` is the one module that imports the WebAssembly package and reads
   those buffers through fresh typed-array views per read
   ([ADR-0010](adr/0010-bridge-data-format.md)).

@@ -17,7 +17,7 @@ use serde::Deserialize;
 use serde::de::value::{MapDeserializer, SeqDeserializer};
 use serde::de::{self, IntoDeserializer, Visitor};
 
-use super::{BridgeError, EdgeInput, GraphBatch, GraphList, NodeInput, NodePatch};
+use super::{EdgeInput, GraphBatch, GraphDataProblem, GraphList, NodeInput, NodePatch};
 use super::{graph_of, patch_of, reading, unshaped};
 
 /// How many random batches one run feeds the bridge: the ticket's floor, which runs in seconds.
@@ -582,10 +582,10 @@ fn names_rust(text: &str) -> bool {
 
 /// The texts of `error` the bridge writes itself: a malformed value's message, and what a field
 /// expects.
-fn messages(error: &BridgeError) -> Vec<&str> {
+fn messages(error: &GraphDataProblem) -> Vec<&str> {
     match error {
-        BridgeError::Malformed { message } => vec![message],
-        BridgeError::InvalidField { expected, .. } => vec![expected],
+        GraphDataProblem::Malformed { message } => vec![message],
+        GraphDataProblem::InvalidField { expected, .. } => vec![expected],
         _ => Vec::new(),
     }
 }
@@ -618,7 +618,7 @@ fn the_items_after_one_with_a_refused_field_are_left_unread() {
     assert_eq!(batch.nodes.len(), 2);
     assert!(matches!(
         graph_of(&batch),
-        Err(BridgeError::InvalidField { index: 0, field, .. }) if field == "x"
+        Err(GraphDataProblem::InvalidField { index: 0, field, .. }) if field == "x"
     ));
     // A reading after it reads every item again.
     let well = Value::Object(vec![
@@ -674,7 +674,7 @@ proptest! {
             // bridge's own, as malformed.
             Err(error) => {
                 prop_assert!(!shaped(&value), "refused {:?}", error);
-                let malformed = matches!(error, BridgeError::Malformed { .. });
+                let malformed = matches!(error, GraphDataProblem::Malformed { .. });
                 prop_assert!(malformed);
                 prop_assert!(!messages(&error).into_iter().any(names_rust), "{:?}", error);
             }
@@ -689,7 +689,7 @@ proptest! {
                         prop_assert!(!messages(&error).into_iter().any(names_rust), "{:?}", error);
                         match &error {
                             // A field missing or of another type is named before any other check.
-                            BridgeError::InvalidField { list, index, id, field, .. } => {
+                            GraphDataProblem::InvalidField { list, index, id, field, .. } => {
                                 let at = (*list, *index, id.clone(), field.clone());
                                 prop_assert!(named.contains(&at), "refused {:?}", error);
                             }

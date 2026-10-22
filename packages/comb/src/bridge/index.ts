@@ -12,13 +12,14 @@ import init, {
   textLimit,
   Engine,
   initSync,
-  type BridgeError,
   type CheckedPatch,
   type GraphBatch,
+  type GraphDataProblem,
   type NodePatch,
+  type TranslateError,
 } from "../../wasm/engine.js";
 
-export type { BridgeError, CheckedPatch, GraphBatch, NodePatch };
+export type { CheckedPatch, GraphBatch, GraphDataProblem, NodePatch, TranslateError };
 
 /** A rectangle in world coordinates. */
 export interface Rect {
@@ -69,7 +70,7 @@ export interface DrawnEdges {
 
 export interface Bridge {
   /** Replaces the graph; node slot `i` is the batch's node `i`, edge slot `i` its edge `i`.
-   *  Throws a `BridgeError`. */
+   *  Throws a `GraphDataProblem`. */
   loadGraph(batch: GraphBatch): number;
   /** The most UTF-16 code units of a title or a label text the bridge accepts. */
   textLimit(): number;
@@ -78,15 +79,16 @@ export interface Bridge {
   /** The most UTF-16 code units of all identifiers of one load the bridge accepts. */
   idBudget(): number;
   /** Checks how many UTF-16 code units the identifiers of one load hold. Throws a
-   *  `BridgeError`. */
+   *  `GraphDataProblem`. */
   checkIdBudget(units: number): void;
   /** Checks how many nodes and edges a graph holds, before any is copied. Throws a
-   *  `BridgeError`. */
+   *  `GraphDataProblem`. */
   checkGraphSize(nodes: number, edges: number): void;
   /** Checks the patch `updateNode` hands over for the node `node`, reading it once, and returns
-   *  the fields it changes; the engine keeps nothing of it. Throws a `BridgeError`. */
+   *  the fields it changes; the engine keeps nothing of it. Throws a `GraphDataProblem`. */
   checkNodePatch(node: string, patch: NodePatch): CheckedPatch;
-  /** Moves the nodes in `slots`, their edges with them. Throws a `BridgeError`. */
+  /** Moves the nodes in `slots`, their edges with them. Throws a `TranslateError`, a mistake of
+   *  the shell's, never one of graph data. */
   translate(slots: Uint32Array, dx: number, dy: number): void;
   /** A fresh view on the positions buffer, `x, y` per slot. Do not keep it across calls. */
   positions(): Float32Array;
