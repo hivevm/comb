@@ -8,7 +8,14 @@ beforeAll(async () => {
   bridge = createBridgeSync(bytes);
 });
 
-const node = (id: string, x: number, y: number) => ({ id, x, y, width: 100, height: 50 });
+const node = (id: string, x: number, y: number) => ({
+  id,
+  title: id,
+  x,
+  y,
+  width: 100,
+  height: 50,
+});
 const edge = (id: string, source: string, target: string) => ({
   id,
   source,
@@ -57,6 +64,7 @@ describe("bridge", () => {
     bridge.loadGraph(graph([node("a", 1, 2), node("b", 3, 4)]));
     const calls: [string, () => unknown][] = [
       ["loadGraph", () => bridge.loadGraph(graph([node("a", 1, 2), node("b", 3, 4)]))],
+      ["checkNodePatch", () => bridge.checkNodePatch("a", { title: "A" })],
       ["translate", () => bridge.translate(new Uint32Array([0]), 0, 0)],
       ["positions", () => bridge.positions()],
       ["query", () => bridge.query(everywhere, "near", 4, 0)],
@@ -97,6 +105,46 @@ describe("bridge", () => {
   });
 });
 
+describe("bridge fields the engine does not keep", () => {
+  test("a title, label text, or label background of the wrong kind comes back as a typed error", () => {
+    // Verifies: ADR-0009, ADR-0010
+    const label = (fields: object) => ({ text: "x", t: 0.5, offset: 0, ...fields });
+    const errors = [
+      graph([{ ...node("a", 0, 0), title: 5 as unknown as string }]),
+      graph(two(), [{ ...edge("e", "a", "b"), label: label({ text: null }) as never }]),
+      graph(two(), [{ ...edge("e", "a", "b"), label: label({ background: -5 }) }]),
+    ].map((batch) => {
+      try {
+        bridge.loadGraph(batch);
+      } catch (error) {
+        return error;
+      }
+    });
+    expect(errors).toEqual([
+      { kind: "invalidTitle", node: "a" },
+      { kind: "invalidLabelText", edge: "e" },
+      { kind: "invalidBackground", edge: "e" },
+    ]);
+  });
+
+  test("a patch of a node comes back as a typed error unless it holds only a title", () => {
+    // Verifies: ADR-0009, ADR-0010
+    expect(bridge.checkNodePatch("a", { title: "A" })).toEqual({ title: "A" });
+    expect(bridge.checkNodePatch("a", {})).toEqual({});
+    const errors = [{ id: "b" }, { title: 5 }].map((patch) => {
+      try {
+        bridge.checkNodePatch("a", patch as never);
+      } catch (error) {
+        return error;
+      }
+    });
+    expect(errors).toEqual([
+      { kind: "unknownPatchField", node: "a", field: "id" },
+      { kind: "invalidTitle", node: "a" },
+    ]);
+  });
+});
+
 describe("bridge query", () => {
   test("a query reads the slots in a rectangle", () => {
     bridge.loadGraph(row(5));
@@ -133,7 +181,7 @@ describe("bridge query", () => {
     bridge.loadGraph(
       graph(
         [node("a", 0, 0), node("b", 200, 0)],
-        [{ ...edge("e", "a", "b"), label: { t: 0.5, offset: 12 } }],
+        [{ ...edge("e", "a", "b"), label: { text: "x", t: 0.5, offset: 12 } }],
       ),
     );
     // The edge runs level from (100, 25) to (200, 25); its label sits at (150, 13).
