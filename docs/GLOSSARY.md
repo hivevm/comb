@@ -15,6 +15,8 @@ to invent.
   edges, and edge labels.
 - **Connector** — a point on a node where an edge starts or ends.
   _Avoid:_ port, handle, socket, pin.
+- **Coarsened** — said of an edge mesh in which some edges are drawn less exactly than the
+  flattening asks, or not at all, because the mesh budget or memory ran short.
 - **Culling** — leaving out of the draw everything that lies entirely outside the viewport grown
   by two culling margins.
   _Avoid:_ frustum culling, outside the wording of the constraint that requires it.
@@ -36,11 +38,14 @@ to invent.
 - **Host application** — the web application that embeds Comb and owns the meaning, persistence,
   and forms of the graph.
   _Avoid:_ client, consumer.
+- **Inspection** — what tests and the benchmark read of the drawn scene through the testing entry
+  `comb/testing`, which is no part of the stable public interface.
 - **Label offset** — the distance in pixels of an edge label from its path point, along the edge's
   normal there.
 - **Level of detail** — how much of the graph the canvas draws at the current zoom: near draws
   nodes with their titles and edge labels, middle nodes with their titles, far nodes as plain
   boxes and edges as thin lines, without text.
+- **Mesh budget** — the most vertices the edge mesh of one query may hold.
 - **Node** — a box on the canvas that stands for one element of the host application's graph.
   _Avoid:_ vertex, block.
 - **Node content** — the host application's description of what a node shows, as a list of
