@@ -65,25 +65,26 @@ vertices per query, and choose by zoom between three levels of detail.
   within Q-4 until the next query. Past a chord, the distance along the path advances by the
   chord's length. Subdivision goes at most 24 levels deep, up to 2^24 segments of an edge, so that
   an edge from (0, 0) to (-1e8, 3e7) still keeps its quarter pixel in the rectangle; the rectangle
-  and the mesh budget, not the depth, bound what an edge costs, and a pixel that is zero or not
-  finite is refused before any edge is flattened.
+  and the mesh budget, not the depth, bound what an edge costs, and a pixel that is not a finite
+  number above zero is refused before any edge is flattened.
 - **Mesh budget:** the mesh of one query holds at most 4,194,304 (2^22) vertices, and so at most
   three times as many indices. Each edge the query found has a floor: the smaller of its chord, four
-  vertices, in its colour and dash pattern, without an arrowhead, and its full mesh. In slot order,
-  edges are meshed in full while each fits beside the floors of the edges still to come; the
-  flattening of an edge stops once it passes the room left, and from the first edge that does not
-  fit, it and every later edge are drawn as their chords, unflattened. The budget is the floors of a
-  load at the limit of 1,000,000 edges (ADR-0009), 4,000,000 vertices, taken to the next power of
-  two, the size the shell's arrays grow to anyway; it is twelve times the largest mesh measured of
-  the benchmark's graph (Sources), which never reaches it. So every edge found is drawn at every
-  viewport while memory lasts, and the budget follows the limit when the limit changes. The mesh's
-  vectors grow by `try_reserve`, never beyond the budget; the floors are reserved before the first
-  edge is meshed, and an allocation that fails ends full meshing as the budget does. Where the
-  floors of the edges found exceed the budget, which takes more than 1,048,576 edges in one query,
-  or cannot be allocated, the mesh holds no edges. A query returns the detail of its mesh:
-  *complete* where every edge it found is meshed in full, or *coarsened* where an edge was drawn as
-  its chord or left out for the budget or for memory. The shell draws the mesh as it comes and
-  reports the detail through inspection, not to the host application.
+  vertices, in its colour and dash pattern, without an arrowhead, and its full mesh where that is
+  its arrowhead alone, found within its first 64 flattened points. In slot order, edges are meshed
+  in full while each fits beside the floors of the edges still to come; the flattening of an edge
+  stops once it passes the room left, and from the first edge that does not fit, it and every later
+  edge are drawn as their floors, unflattened. The budget is the floors of a load at the limit of
+  1,000,000 edges (ADR-0009), 4,000,000 vertices, taken to the next power of two, the size the
+  shell's arrays grow to anyway; it is twelve times the largest mesh measured of the benchmark's
+  graph (Sources), which never reaches it. So every edge found is drawn at every viewport while
+  memory lasts, and the budget follows the limit when the limit changes. The mesh's vectors grow by
+  `try_reserve`, never beyond the budget; the floors are reserved before the first edge is meshed,
+  and an allocation that fails ends full meshing as the budget does. Where the floors of the edges
+  found exceed the budget, which takes more than 1,048,576 edges in one query, or cannot be
+  allocated, the mesh holds no edges. A query returns the detail of its mesh: *complete* where every
+  edge it found is meshed in full, or *coarsened* where an edge was drawn as its chord or left out
+  for the budget or for memory. The shell draws the mesh as it comes and reports the detail through
+  inspection, not to the host application.
 - **Q-4:** the rectangle and the mesh budget rest on Q-4 as it reads: 0.5 px for everything the
   viewport shows, and a coarsened edge mesh where the mesh budget or memory runs short.
 - **Text:** every text on the canvas is `BitmapText`.
@@ -160,9 +161,11 @@ vertices per query, and choose by zoom between three levels of detail.
 - Negative / trade-offs: between queries, bound objects may reach up to twice the culling margin
   beyond the viewport, which G-7's wording does not yet allow for.
 - Negative / trade-offs: at the budget, the mesh takes up to 151 MB in the engine, 24 bytes of
-  attributes and up to 12 bytes of indices per vertex, and about as much again in the shell's arrays
-  and the GPU's buffers. Such a frame does not hold Q-1; the budget bounds memory, and with the
-  flattening stopped at the room left, the work of a query, but not to a frame's time.
+  attributes and up to 12 bytes of indices per vertex, and the engine's scratch of flattened points
+  up to about 100 MB more while it grows, kept for the graph's lifetime; the shell's arrays and the
+  GPU's buffers take about as much again as the mesh. Such a frame does not hold Q-1; the budget
+  bounds memory, and with the flattening stopped at the room left, the work of a query, but not
+  to a frame's time.
 - Negative / trade-offs: an edge drawn as its chord for the budget strays beyond 0.5 px and draws
   no arrowhead. Q-4 allows that in a coarsened mesh, which inspection reports.
 - Negative / trade-offs: a chord is shorter than the part it stands for, so where an edge leaves
