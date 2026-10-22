@@ -39,12 +39,16 @@ whose only door to the engine is its `bridge` module.
   bridge's data and the core's types; it holds no geometry of its own. It is the one place that
   validates graph data: every field the host application hands over crosses the bridge and is
   checked there, also a field the engine does not keep, such as a title, a label's text, a
-  label's background, and the patch of `updateNode`.
-- **Shell:** `packages/comb/src` has the modules `api` (the public interface, which hands graph
-  data to the bridge before the store keeps any of it), `store` (graph and viewport state),
-  `interaction` (input into commands on the store), `render` (the PixiJS scene: nodes, edges, and
-  edge labels in containers of their own), and `bridge` (the one module that imports the
-  WebAssembly package).
+  label's background, and the patch of `updateNode`. It bounds what a load may hold: at most
+  1,000,000 nodes and 1,000,000 edges, at most 256 UTF-16 code units per identifier (a node's or
+  an edge's, a source, a target), at most 64,000,000 code units of identifiers per load, and at
+  most 1,000 code units per title and per label text.
+- **Shell:** `packages/comb/src` has the modules `api` (the public interface, which only reads:
+  it copies the host application's graph data once into primitives, what it cannot read is
+  malformed, and it hands the copy to the bridge before the store keeps any of it), `store`
+  (graph and viewport state), `interaction` (input into commands on the store), `render` (the
+  PixiJS scene: nodes, edges, and edge labels in containers of their own), and `bridge` (the one
+  module that imports the WebAssembly package).
 - **Direction:** `render` reads the store and never writes it; only `bridge` imports the
   WebAssembly package; `examples/` import only the package's entries: `comb`, the public
   interface; `comb/testing`, which reads what the canvas draws for browser tests and the
