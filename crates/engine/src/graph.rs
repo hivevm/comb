@@ -388,7 +388,7 @@ mod tests {
                 }),
                 style: EdgeStyle {
                     arrow: rng.next() < 0.5,
-                    ..EdgeStyle::default()
+                    ..EdgeStyle::unstyled()
                 },
             })
             .collect();
@@ -499,7 +499,7 @@ mod tests {
             source: 0,
             target: 1,
             label: Some(label),
-            style: EdgeStyle::default(),
+            style: EdgeStyle::unstyled(),
         }];
         let mut graph = Graph::new(positions, sizes, edges).unwrap();
         let mut out = Visible::default();
@@ -532,7 +532,7 @@ mod tests {
             source: 0,
             target: 1,
             label: None,
-            style: EdgeStyle::default(),
+            style: EdgeStyle::unstyled(),
         }];
         let graph = Graph::new(
             vec![0.0, 0.0, 300.0, 100.0],
@@ -558,7 +558,7 @@ mod tests {
             label: Some(label),
             style: EdgeStyle {
                 dash: Some((6.0, 4.0)),
-                ..EdgeStyle::default()
+                ..EdgeStyle::unstyled()
             },
         }];
         let mut graph = Graph::new(
@@ -596,13 +596,13 @@ mod tests {
                     source: 0,
                     target: 1,
                     label: None,
-                    style: EdgeStyle::default(),
+                    style: EdgeStyle::unstyled(),
                 },
                 EdgeSpec {
                     source: 1,
                     target: 2,
                     label: None,
-                    style: EdgeStyle::default(),
+                    style: EdgeStyle::unstyled(),
                 },
             ],
         )
@@ -708,7 +708,7 @@ mod tests {
             source: 0,
             target: 1,
             label: Some(label),
-            style: EdgeStyle::default(),
+            style: EdgeStyle::unstyled(),
         }];
         let sizes = vec![220.0, 64.0, 220.0, 64.0];
         let mut graph = Graph::new(vec![0.0, 0.0, 300.0, 100.0], sizes, edges).unwrap();
@@ -748,7 +748,7 @@ mod tests {
             source: 0,
             target: 1,
             label: None,
-            style: EdgeStyle::default(),
+            style: EdgeStyle::unstyled(),
         }];
         let result = Graph::new(vec![0.0, 0.0], vec![1.0, 1.0], edges);
         assert_eq!(
