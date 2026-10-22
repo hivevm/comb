@@ -3,14 +3,22 @@
 // are read through views on the engine's buffers, created anew on every read because growing
 // memory detaches older views (ADR-0010).
 import init, {
+  checkGraphSize,
+  checkIdBudget,
+  checkNodePatch,
   DetailLevel,
+  idBudget,
+  idLimit,
+  textLimit,
   Engine,
   initSync,
   type BridgeError,
+  type CheckedPatch,
   type GraphBatch,
+  type NodePatch,
 } from "../../wasm/engine.js";
 
-export type { BridgeError, GraphBatch };
+export type { BridgeError, CheckedPatch, GraphBatch, NodePatch };
 
 /** A rectangle in world coordinates. */
 export interface Rect {
@@ -63,6 +71,21 @@ export interface Bridge {
   /** Replaces the graph; node slot `i` is the batch's node `i`, edge slot `i` its edge `i`.
    *  Throws a `BridgeError`. */
   loadGraph(batch: GraphBatch): number;
+  /** The most UTF-16 code units of a title or a label text the bridge accepts. */
+  textLimit(): number;
+  /** The most UTF-16 code units of an identifier the bridge accepts. */
+  idLimit(): number;
+  /** The most UTF-16 code units of all identifiers of one load the bridge accepts. */
+  idBudget(): number;
+  /** Checks how many UTF-16 code units the identifiers of one load hold. Throws a
+   *  `BridgeError`. */
+  checkIdBudget(units: number): void;
+  /** Checks how many nodes and edges a graph holds, before any is copied. Throws a
+   *  `BridgeError`. */
+  checkGraphSize(nodes: number, edges: number): void;
+  /** Checks the patch `updateNode` hands over for the node `node`, reading it once, and returns
+   *  the fields it changes; the engine keeps nothing of it. Throws a `BridgeError`. */
+  checkNodePatch(node: string, patch: NodePatch): CheckedPatch;
   /** Moves the nodes in `slots`, their edges with them. Throws a `BridgeError`. */
   translate(slots: Uint32Array, dx: number, dy: number): void;
   /** A fresh view on the positions buffer, `x, y` per slot. Do not keep it across calls. */
@@ -102,6 +125,12 @@ function detaching(bridge: Bridge, memory: WebAssembly.Memory): Bridge {
     };
   return {
     loadGraph: before(bridge.loadGraph),
+    textLimit: before(bridge.textLimit),
+    idLimit: before(bridge.idLimit),
+    idBudget: before(bridge.idBudget),
+    checkIdBudget: before(bridge.checkIdBudget),
+    checkGraphSize: before(bridge.checkGraphSize),
+    checkNodePatch: before(bridge.checkNodePatch),
     translate: before(bridge.translate),
     positions: before(bridge.positions),
     query: before(bridge.query),
@@ -121,6 +150,12 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
   const f32 = (ptr: number, len: number) => new Float32Array(memory.buffer, ptr, len);
   return {
     loadGraph: (batch) => engine.loadGraph(batch),
+    textLimit,
+    idLimit,
+    idBudget,
+    checkIdBudget,
+    checkGraphSize,
+    checkNodePatch,
     translate: (slots, dx, dy) => engine.translate(slots, dx, dy),
     positions: () => f32(engine.positionsPtr(), engine.positionsLen()),
     hit: (x, y) => engine.hit(x, y),
