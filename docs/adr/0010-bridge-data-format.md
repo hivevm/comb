@@ -51,7 +51,9 @@ reads and writes as typed-array views created anew after every engine call.
   the level and the size of a screen pixel, and places labels only at the near level. It also
   takes how far an edge label's pill reaches from its point, which the shell measures from the
   text it draws and the engine cannot, and finds a label whose point lies within that reach of
-  the rectangle.
+  the rectangle. It returns the detail of its mesh as an enumeration, complete or coarsened
+  ([ADR-0012](0012-virtualized-scene-graph.md)), the one value a query hands back beside its
+  buffers.
 - **Slots:** the engine knows nodes and edges by slot only. The TypeScript side keeps the map
   from identifiers to slots; `loadGraph` resolves edge ends from identifiers once, while it loads,
   and keeps no map. Every later call into the engine names slots.
@@ -122,5 +124,7 @@ A Rust test in `crates/engine-wasm` sends malformed graph data of each kind Q-7 
 every export that receives graph data and asserts a typed error and no panic. A test in
 `packages/comb` grows the engine's memory between two calls and asserts that the positions read
 afterwards are the ones written. A check fails when `crates/engine-wasm/Cargo.toml` enables
-tsify's default features or depends on `serde_json`. Each cites this ADR with
-`Verifies: ADR-0010`.
+tsify's default features or depends on `serde_json`. A test in `crates/engine-wasm` queries a
+small graph and asserts *complete*, and queries a graph at the limit of a load, 1,000,000 curved
+edges, whole at the far level, where its full mesh passes the budget, and asserts *coarsened*.
+Each cites this ADR with `Verifies: ADR-0010`.
