@@ -12,6 +12,7 @@ import init, {
   textLimit,
   Engine,
   initSync,
+  MeshDetail,
   type CheckedPatch,
   type GraphBatch,
   type GraphDataProblem,
@@ -40,15 +41,25 @@ export interface EdgeMesh {
   indices: Uint32Array;
 }
 
+/** The detail of a query's edge mesh (ADR-0012): complete, or coarsened where an edge was drawn
+ *  as its chord, or left out, for the mesh budget or for memory. */
+export type Detail = "complete" | "coarsened";
+
+const DETAILS: Record<MeshDetail, Detail> = {
+  [MeshDetail.Complete]: "complete",
+  [MeshDetail.Coarsened]: "coarsened",
+};
+
 /** What a viewport query found: node slots in ascending order, the edge slot and point of each
- *  found edge label, the mesh of the found edges, and the positions buffer, all read after the
- *  same call. */
+ *  found edge label, the mesh of the found edges and its detail, and the positions buffer, all
+ *  read after the same call. */
 export interface Visible {
   positions: Float32Array;
   nodes: Uint32Array;
   labels: Uint32Array;
   labelPoints: Float32Array;
   mesh: EdgeMesh;
+  detail: Detail;
 }
 
 /** The level of detail a query serves (ADR-0012): near with edge labels, middle without, far
@@ -93,8 +104,9 @@ export interface Bridge {
   /** A fresh view on the positions buffer, `x, y` per slot. Do not keep it across calls. */
   positions(): Float32Array;
   /** The nodes and edges that meet `rect` and the mesh of the edges for `level`, where a screen
-   *  pixel is `pixel` world units; at the near level also the edge labels whose point lies within
-   *  `labelReach` of it. Fresh views; do not keep them across calls. */
+   *  pixel is `pixel` world units, within the engine's mesh budget, and the mesh's detail; at the
+   *  near level also the edge labels whose point lies within `labelReach` of it. Fresh views; do
+   *  not keep them across calls. */
   query(rect: Rect, level: Level, pixel: number, labelReach: number): Visible;
   /** The edges the last query found, with their ends as they lie now, which after a move and
    *  before the next query are already moved: for inspection, not for drawing. Fresh views; do
@@ -169,7 +181,7 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
       };
     },
     query(rect, level, pixel, labelReach) {
-      engine.query(rect, LEVELS[level], pixel, labelReach);
+      const detail = DETAILS[engine.query(rect, LEVELS[level], pixel, labelReach)];
       return {
         positions: f32(engine.positionsPtr(), engine.positionsLen()),
         nodes: u32(engine.visibleNodesPtr(), engine.visibleNodesLen()),
@@ -182,6 +194,7 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
           dashes: f32(engine.meshDashesPtr(), engine.meshDashesLen()),
           indices: u32(engine.meshIndicesPtr(), engine.meshIndicesLen()),
         },
+        detail,
       };
     },
   };

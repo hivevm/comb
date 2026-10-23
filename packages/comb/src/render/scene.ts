@@ -7,7 +7,7 @@
 // near draws node boxes, titles, and edge labels; middle draws node boxes and titles; far draws
 // nodes as particles and edges as thin lines, without text.
 import { Application, BitmapText, Container } from "pixi.js";
-import type { Bridge, Level, Rect } from "../bridge";
+import type { Bridge, Detail, Level, Rect } from "../bridge";
 import { worldRect } from "../interaction/viewport";
 import type { GraphView } from "../store";
 import { EdgesContainer, type MeshSize } from "./edges";
@@ -60,9 +60,10 @@ export interface SceneSnapshot {
   edgeLabels: { edge: string; x: number; y: number; text: string }[];
   /** How many triangles the edges layer draws: the edge mesh's, or the fill's on Canvas 2D. */
   edgeTriangles: number;
-  /** How many vertices and indices the edge mesh draws, and how many its buffers hold before they
-   *  grow. */
-  edgeMesh: MeshSize;
+  /** How many vertices and indices the edge mesh draws, how many its buffers hold before they
+   *  grow, and its detail: complete, or coarsened where the engine's mesh budget or memory ran
+   *  short (ADR-0012). */
+  edgeMesh: MeshSize & { detail: Detail };
   /** Every display object under the world, the layers themselves included. */
   displayObjects: number;
   /** How many times the scene has rendered. */
@@ -113,6 +114,9 @@ export class Scene {
   readonly labels = new LabelsContainer();
   readonly overlay = new Container();
   level: Level = "near";
+  /** The detail of the edge mesh the last query drew, which inspection reports; the host
+   *  application is not told. */
+  private detail: Detail = "complete";
   /** How many renders queried the engine; the others moved the world alone. */
   queries = 0;
   private drawn: Drawn | null = null;
@@ -163,6 +167,7 @@ export class Scene {
     this.nodes.sync(state, far ? NONE : visible.nodes, visible.positions);
     this.particles.sync(state, far ? visible.nodes : NONE, visible.positions);
     this.edges.sync(visible);
+    this.detail = visible.detail;
     this.labels.sync(state, visible, level === "near");
     this.level = level;
     this.queries += 1;
@@ -207,7 +212,7 @@ export class Scene {
         null,
       edges: this.drawnEdges(),
       edgeTriangles: this.edges.triangles(),
-      edgeMesh: this.edges.size(),
+      edgeMesh: { ...this.edges.size(), detail: this.detail },
       edgeLabels: this.labels.children.map((label) => ({
         edge: label.label,
         x: label.x,

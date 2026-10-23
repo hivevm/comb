@@ -10,9 +10,34 @@
 //! The stroke of each level of detail is decided here: every level flattens within the same
 //! tolerance in screen pixels; the far level draws plain lines a width in screen pixels wide, the
 //! near and middle levels draw in full, a width in world units wide.
+//!
+//! A query's mesh has a budget. A part of a path whose control points miss the query's rectangle,
+//! grown by the stroke's width, is drawn as its chord, unflattened. Each edge's floor, its chord,
+//! or its arrowhead alone where that is its full mesh, is reserved before the first edge is meshed;
+//! in slot order, an edge is meshed in full while it fits beside the floors of the edges still to
+//! come, and from the first that does not, it and every later edge are drawn as their floors, and
+//! the mesh is coarsened. The vectors grow by
+//! `try_reserve`, never beyond the budget, so that a failed allocation coarsens the mesh instead of
+//! trapping.
 
-use crate::geometry::{EdgePath, Point};
+use std::collections::TryReserveError;
+
+use crate::geometry::{EdgePath, Point, Rect};
 use crate::graph::Level;
+
+/// The most vertices the edge mesh of one query holds (ADR-0012): the floors of a load at its
+/// limit of 1,000,000 edges, four vertices each, taken to the next power of two. A mesh holds at
+/// most three times as many indices.
+pub const MESH_BUDGET: u32 = 1 << 22;
+
+/// The detail of a query's edge mesh (ADR-0012): complete, or coarsened where an edge was drawn
+/// as its chord, or left out, for the budget or for memory.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Detail {
+    #[default]
+    Complete,
+    Coarsened,
+}
 
 /// How an edge is drawn: its colour as `0xRRGGBB`, its dash pattern as dash and gap lengths in
 /// world units, or none for a solid line, and whether an arrowhead marks its end, as it does
@@ -82,12 +107,91 @@ impl Stroke {
 /// The length and half the base of an arrowhead, in world units.
 const ARROW_LENGTH: f64 = 10.0;
 const ARROW_HALF_WIDTH: f64 = 5.0;
-/// How deep a path is subdivided at most: 2^12 segments.
-const MAX_DEPTH: u32 = 12;
+/// How deep a path is subdivided at most: 2^24 segments, so that an edge from (0, 0) to
+/// (-1e8, 3e7) keeps its quarter pixel inside the rectangle; the rectangle and the mesh budget,
+/// not the depth, bound what an edge costs.
+const MAX_DEPTH: u32 = 24;
+/// How many points the flattening of an edge may take before its floor is taken to be its chord:
+/// an edge whose flattened points all lie within its arrowhead draws the arrowhead alone, and
+/// finding that out costs no more than this.
+const ARROWHEAD_POINTS: usize = 64;
+
+/// What a part of the mesh takes: vertices, and vertex indices.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Size {
+    vertices: usize,
+    indices: usize,
+}
+
+impl Size {
+    /// An arrowhead: one triangle.
+    const ARROWHEAD: Self = Self {
+        vertices: 3,
+        indices: 3,
+    };
+
+    /// A polyline of `points`: two vertices per point and two triangles per segment; a single
+    /// point draws nothing.
+    const fn polyline(points: usize) -> Self {
+        if points < 2 {
+            return Self {
+                vertices: 0,
+                indices: 0,
+            };
+        }
+        Self {
+            vertices: 2 * points,
+            indices: 6 * (points - 1),
+        }
+    }
+
+    const fn minus(self, other: Self) -> Self {
+        Self {
+            vertices: self.vertices - other.vertices,
+            indices: self.indices - other.indices,
+        }
+    }
+
+    /// Both together, or as much as `usize` holds.
+    const fn plus(self, other: Self) -> Self {
+        Self {
+            vertices: self.vertices.saturating_add(other.vertices),
+            indices: self.indices.saturating_add(other.indices),
+        }
+    }
+}
+
+/// What an edge drawn as its chord takes: a polyline of two points, without an arrowhead.
+const CHORD: Size = Size::polyline(2);
+
+/// The floor of an edge: its chord, or its arrowhead alone where that is its full mesh.
+const fn floor_of(arrowhead: bool) -> Size {
+    if arrowhead { Size::ARROWHEAD } else { CHORD }
+}
+
+/// Grows `values` to hold `additional` more, by doubling where that stays within `most`, through
+/// `try_reserve_exact`, so that a failed allocation is returned, never a trap.
+fn grow<T>(values: &mut Vec<T>, additional: usize, most: usize) -> Result<(), TryReserveError> {
+    let needed = values.len() + additional;
+    if needed <= values.capacity() {
+        return Ok(());
+    }
+    let doubled = values.capacity().saturating_mul(2).min(most);
+    values.try_reserve_exact(needed.max(doubled) - values.len())
+}
+
+/// What one query strokes its edges with: the stroke, the query's rectangle grown by the stroke's
+/// width, outside which a path is drawn as chords, and the budget of vertices.
+struct Within<'a> {
+    stroke: &'a Stroke,
+    area: Rect,
+    budget: usize,
+}
 
 /// The triangles of the edges a query found, as buffers a shader reads: per vertex its position
 /// `x, y`, its distance along its path, its colour as RGBA bytes, and its dash pattern `dash,
-/// gap` (0, 0 for solid); and three vertex indices per triangle.
+/// gap` (0, 0 for solid); and three vertex indices per triangle. `detail` says whether every edge
+/// was meshed in full.
 #[derive(Debug, Default)]
 pub struct Mesh {
     pub positions: Vec<f32>,
@@ -95,6 +199,9 @@ pub struct Mesh {
     pub colors: Vec<u32>,
     pub dashes: Vec<f32>,
     pub indices: Vec<u32>,
+    pub detail: Detail,
+    /// Per edge of the last build, whether its full mesh is its arrowhead alone.
+    arrowheads: Vec<bool>,
 }
 
 impl Mesh {
@@ -104,6 +211,114 @@ impl Mesh {
         self.colors.clear();
         self.dashes.clear();
         self.indices.clear();
+        self.detail = Detail::Complete;
+    }
+
+    /// Strokes `edges`, in slot order, into the mesh after clearing it, as `stroke` says, inside
+    /// `rect` within a quarter pixel and outside it as chords, and within `budget` vertices: the
+    /// floors of all edges are reserved first, and from the first edge whose full mesh does not
+    /// fit beside the floors of the edges after it, or for which memory runs short, every edge is
+    /// drawn as its floor. Where even the floors do not fit, the mesh holds no edge.
+    pub(crate) fn build<'a>(
+        &mut self,
+        edges: impl ExactSizeIterator<Item = (&'a EdgePath, &'a EdgeStyle)> + Clone,
+        stroke: &Stroke,
+        rect: &Rect,
+        budget: u32,
+        scratch: &mut Vec<Point>,
+    ) {
+        self.clear();
+        let within = Within {
+            stroke,
+            area: rect.grown(stroke.width),
+            budget: budget as usize,
+        };
+        let Some(mut later) = self.floors(edges.clone(), &within, scratch) else {
+            self.detail = Detail::Coarsened;
+            return;
+        };
+        for (i, (path, style)) in edges.enumerate() {
+            let arrowhead = self.arrowheads[i];
+            later = later.minus(floor_of(arrowhead));
+            if arrowhead {
+                let (tip, base, back) = arrow_of(path);
+                self.arrowhead(tip, base, back, rgba(style.color));
+                continue;
+            }
+            if self.detail == Detail::Complete {
+                if self.add_within(path, style, &within, later, scratch) {
+                    continue;
+                }
+                self.detail = Detail::Coarsened;
+            }
+            self.chord(path, style, stroke);
+        }
+    }
+
+    /// Finds the floor of each of `edges` and reserves them all; returns what they take, or none
+    /// where that is more than the budget or cannot be allocated.
+    fn floors<'a>(
+        &mut self,
+        edges: impl ExactSizeIterator<Item = (&'a EdgePath, &'a EdgeStyle)>,
+        within: &Within,
+        scratch: &mut Vec<Point>,
+    ) -> Option<Size> {
+        self.arrowheads.clear();
+        self.arrowheads.try_reserve_exact(edges.len()).ok()?;
+        let mut floors = Size::polyline(0);
+        for (path, style) in edges {
+            let arrowhead = arrowhead_alone(path, style, within, scratch);
+            self.arrowheads.push(arrowhead);
+            floors = floors.plus(floor_of(arrowhead));
+        }
+        if floors.vertices > within.budget {
+            return None;
+        }
+        self.reserve(floors, within.budget).ok()?;
+        Some(floors)
+    }
+
+    /// Ensures room for `size` more, each vector within what `budget` vertices take.
+    fn reserve(&mut self, size: Size, budget: usize) -> Result<(), TryReserveError> {
+        grow(&mut self.positions, 2 * size.vertices, 2 * budget)?;
+        grow(&mut self.distances, size.vertices, budget)?;
+        grow(&mut self.colors, size.vertices, budget)?;
+        grow(&mut self.dashes, 2 * size.vertices, 2 * budget)?;
+        grow(&mut self.indices, size.indices, 3 * budget)
+    }
+
+    /// Strokes `path` in full where its mesh fits beside the vertices already meshed and the
+    /// floors `later`, and the vectors grow to hold both; otherwise adds nothing and says so. The
+    /// flattening stops once the path passes the room left.
+    fn add_within(
+        &mut self,
+        path: &EdgePath,
+        style: &EdgeStyle,
+        within: &Within,
+        later: Size,
+        scratch: &mut Vec<Point>,
+    ) -> bool {
+        let room = within.budget - self.distances.len() - later.vertices;
+        let Some(size) = flatten_edge(path, style, within, room, scratch) else {
+            return false;
+        };
+        if self.reserve(size.plus(later), within.budget).is_err() {
+            return false;
+        }
+        self.stroke_flattened(path, style, within.stroke, scratch);
+        true
+    }
+
+    /// Draws `path` as its chord, in its colour and dash pattern, without an arrowhead, into room
+    /// reserved before.
+    fn chord(&mut self, path: &EdgePath, style: &EdgeStyle, stroke: &Stroke) {
+        let dash = if stroke.plain {
+            (0.0, 0.0)
+        } else {
+            style.dash.unwrap_or((0.0, 0.0))
+        };
+        let ends = [path.source, path.target];
+        self.polyline(&ends, rgba(style.color), dash, stroke.width);
     }
 
     fn vertex_count(&self) -> u32 {
@@ -117,29 +332,26 @@ impl Mesh {
         self.dashes.extend([dash.0, dash.1]);
     }
 
-    /// Strokes `path` with `style` into the mesh as `stroke` says.
-    pub(crate) fn add_edge(
+    /// Strokes `path` with `style` into the mesh as `stroke` says, from its flattened `points`,
+    /// which `flatten_edge` ended at the base of its arrowhead where it has one.
+    fn stroke_flattened(
         &mut self,
         path: &EdgePath,
         style: &EdgeStyle,
         stroke: &Stroke,
-        scratch: &mut Vec<Point>,
+        points: &[Point],
     ) {
-        flatten(path, stroke.tolerance, scratch);
         let color = rgba(style.color);
         if stroke.plain {
-            self.polyline(scratch, color, (0.0, 0.0), stroke.width);
+            self.polyline(points, color, (0.0, 0.0), stroke.width);
             return;
         }
         if style.arrow {
-            let tip = path.target;
-            let back = path.tangent_at(1.0);
-            let base = Point::new(tip.x - back.x * ARROW_LENGTH, tip.y - back.y * ARROW_LENGTH);
-            trim_end(scratch, base);
+            let (tip, base, back) = arrow_of(path);
             self.arrowhead(tip, base, back, color);
         }
         self.polyline(
-            scratch,
+            points,
             color,
             style.dash.unwrap_or((0.0, 0.0)),
             stroke.width,
@@ -193,6 +405,58 @@ impl Mesh {
     }
 }
 
+/// The arrowhead of `path`: its tip, the path's end, the middle of its base, and the direction it
+/// points in.
+fn arrow_of(path: &EdgePath) -> (Point, Point, Point) {
+    let tip = path.target;
+    let back = path.tangent_at(1.0);
+    let base = Point::new(tip.x - back.x * ARROW_LENGTH, tip.y - back.y * ARROW_LENGTH);
+    (tip, base, back)
+}
+
+/// Flattens `path` into `points`, as `within` says, and ends it at the base of its arrowhead where
+/// the stroke draws one; returns what its mesh takes, or none once the flattened points pass
+/// `room` vertices, where the flattening stops.
+fn flatten_edge(
+    path: &EdgePath,
+    style: &EdgeStyle,
+    within: &Within,
+    room: usize,
+    points: &mut Vec<Point>,
+) -> Option<Size> {
+    let arrow = !within.stroke.plain && style.arrow;
+    let head = if arrow {
+        Size::ARROWHEAD
+    } else {
+        Size::polyline(0)
+    };
+    let fits = |_: Point, n: usize| head.plus(Size::polyline(n)).vertices <= room;
+    if !flatten(path, within.stroke.tolerance, &within.area, points, fits) {
+        return None;
+    }
+    if arrow {
+        trim_end(points, arrow_of(path).1);
+    }
+    Some(head.plus(Size::polyline(points.len())))
+}
+
+/// Whether the full mesh of `path` is its arrowhead alone: every point of its flattening lies
+/// within the arrowhead, found out within `ARROWHEAD_POINTS` points.
+fn arrowhead_alone(
+    path: &EdgePath,
+    style: &EdgeStyle,
+    within: &Within,
+    points: &mut Vec<Point>,
+) -> bool {
+    if within.stroke.plain || !style.arrow {
+        return false;
+    }
+    let (tip, base, _) = arrow_of(path);
+    let inside = reach(tip, base);
+    let fits = |p: Point, n: usize| inside(&p) && n <= ARROWHEAD_POINTS;
+    inside(&path.source) && flatten(path, within.stroke.tolerance, &within.area, points, fits)
+}
+
 /// `0xRRGGBB` as the bytes R, G, B, 255 in memory order.
 fn rgba(color: u32) -> u32 {
     let [b, g, r, _] = color.to_le_bytes();
@@ -230,8 +494,7 @@ fn trim_end(points: &mut Vec<Point>, base: Point) {
     let Some(&tip) = points.last() else {
         return;
     };
-    let reach = (base.x - tip.x).hypot(base.y - tip.y);
-    let within = |p: &Point| (p.x - tip.x).hypot(p.y - tip.y) <= reach;
+    let within = reach(tip, base);
     while points.len() > 1 && within(&points[points.len() - 1]) {
         points.pop();
     }
@@ -240,10 +503,25 @@ fn trim_end(points: &mut Vec<Point>, base: Point) {
     }
 }
 
+/// Whether a point lies within the arrowhead from `tip` back to `base`: no farther from the tip
+/// than the base.
+fn reach(tip: Point, base: Point) -> impl Fn(&Point) -> bool {
+    let reach = (base.x - tip.x).hypot(base.y - tip.y);
+    move |p: &Point| (p.x - tip.x).hypot(p.y - tip.y) <= reach
+}
+
 /// Writes into `out`, after clearing it, the points of `path` flattened so that no point of the
-/// curve lies farther than `tolerance` from the polyline. A tolerance that is not positive and
-/// finite gives the most points.
-fn flatten(path: &EdgePath, tolerance: f64, out: &mut Vec<Point>) {
+/// curve inside `area` lies farther than `tolerance` from the polyline; a part whose control
+/// points miss `area` is its chord. A tolerance that is not positive and finite gives the most
+/// points. After each point it asks `fits` with that point and how many `out` holds, and stops,
+/// returning false, at the first it refuses, or where `out` cannot grow.
+fn flatten(
+    path: &EdgePath,
+    tolerance: f64,
+    area: &Rect,
+    out: &mut Vec<Point>,
+    fits: impl Fn(Point, usize) -> bool,
+) -> bool {
     out.clear();
     out.push(path.source);
     let tolerance = if tolerance.is_finite() {
@@ -251,11 +529,11 @@ fn flatten(path: &EdgePath, tolerance: f64, out: &mut Vec<Point>) {
     } else {
         0.0
     };
-    subdivide(path, tolerance, 0, out);
+    subdivide(path, tolerance, area, 0, out, &fits)
 }
 
 /// How far `p` lies from the segment `a`–`b`.
-fn distance_to_segment(p: Point, a: Point, b: Point) -> f64 {
+pub(crate) fn distance_to_segment(p: Point, a: Point, b: Point) -> f64 {
     let (dx, dy) = (b.x - a.x, b.y - a.y);
     let length2 = dx * dx + dy * dy;
     let t = if length2 > 0.0 {
@@ -278,20 +556,78 @@ fn flatness(path: &EdgePath) -> f64 {
     ))
 }
 
-fn subdivide(path: &EdgePath, tolerance: f64, depth: u32, out: &mut Vec<Point>) {
-    if depth >= MAX_DEPTH || flatness(path) <= tolerance {
+fn subdivide(
+    path: &EdgePath,
+    tolerance: f64,
+    area: &Rect,
+    depth: u32,
+    out: &mut Vec<Point>,
+    fits: &impl Fn(Point, usize) -> bool,
+) -> bool {
+    if depth >= MAX_DEPTH || flatness(path) <= tolerance || !path.hull().meets(area) {
+        if out.try_reserve(1).is_err() {
+            return false;
+        }
         out.push(path.target);
-        return;
+        return fits(path.target, out.len());
     }
     let (left, right) = path.split();
-    subdivide(&left, tolerance, depth + 1, out);
-    subdivide(&right, tolerance, depth + 1, out);
+    subdivide(&left, tolerance, area, depth + 1, out, fits)
+        && subdivide(&right, tolerance, area, depth + 1, out, fits)
+}
+
+/// The points the mesh of a query in `rect` strokes `path` through with `stroke`, without an
+/// arrowhead and without a budget.
+#[cfg(test)]
+pub(crate) fn flattened(path: &EdgePath, stroke: &Stroke, rect: &Rect) -> Vec<Point> {
+    let mut points = Vec::new();
+    let area = rect.grown(stroke.width);
+    assert!(flatten(
+        path,
+        stroke.tolerance,
+        &area,
+        &mut points,
+        |_, _| true
+    ));
+    points
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geometry::Rect;
+
+    /// A rectangle that holds every point: nothing is drawn as chords for lying outside it.
+    const EVERYWHERE: Rect = Rect::new(
+        f64::NEG_INFINITY,
+        f64::NEG_INFINITY,
+        f64::INFINITY,
+        f64::INFINITY,
+    );
+
+    /// `path` flattened within `tolerance` everywhere, without a limit.
+    fn flatten_all(path: &EdgePath, tolerance: f64, out: &mut Vec<Point>) {
+        assert!(flatten(path, tolerance, &EVERYWHERE, out, |_, _| true));
+    }
+
+    impl Mesh {
+        /// Strokes `path` with `style` into the mesh as `stroke` says, everywhere and without a
+        /// budget, leaving its flattened points in `scratch`.
+        fn add_edge(
+            &mut self,
+            path: &EdgePath,
+            style: &EdgeStyle,
+            stroke: &Stroke,
+            scratch: &mut Vec<Point>,
+        ) {
+            let within = Within {
+                stroke,
+                area: EVERYWHERE,
+                budget: usize::MAX,
+            };
+            assert!(flatten_edge(path, style, &within, usize::MAX, scratch).is_some());
+            self.stroke_flattened(path, style, stroke, scratch);
+        }
+    }
 
     /// The scales the example zooms through, from its least to its most.
     const SCALES: [f64; 6] = [0.005, 0.05, 0.25, 1.0, 2.0, 4.0];
@@ -342,7 +678,7 @@ mod tests {
         for path in paths() {
             for scale in SCALES {
                 // The tolerance the scene asks for at this scale: a quarter pixel on screen.
-                flatten(&path, 0.25 / scale, &mut points);
+                flatten_all(&path, 0.25 / scale, &mut points);
                 assert_eq!(points[0], path.source);
                 assert_eq!(*points.last().unwrap(), path.target);
                 // Every point of the curve lies near the polyline...
@@ -369,13 +705,29 @@ mod tests {
     }
 
     #[test]
-    fn a_path_is_cut_into_at_most_4096_segments() {
-        // No tolerance stops the subdivision, so it stops at its deepest: 2^12 segments.
+    fn a_path_is_subdivided_at_most_24_levels_deep() {
+        // Verifies: ADR-0012
+        // No tolerance stops the subdivision, so it stops at its deepest. Around the source alone,
+        // each level splits off the half beyond it as a chord: the source, the end of the deepest
+        // part, 2^-24 along the path, and one end per level, 24 of them.
+        let path = paths()[3];
+        let around = Rect::at(path.source);
         let mut points = Vec::new();
         for tolerance in [0.0, f64::NAN] {
-            flatten(&paths()[3], tolerance, &mut points);
-            assert_eq!(points.len(), 4096 + 1, "tolerance {tolerance}");
+            assert!(flatten(&path, tolerance, &around, &mut points, |_, _| true));
+            assert_eq!(points.len(), 1 + 1 + 24, "tolerance {tolerance}");
+            let deepest = path.point_at(2f64.powi(-24));
+            assert!((points[1].x - deepest.x).abs() < 1e-9, "{:?}", points[1]);
+            assert!((points[1].y - deepest.y).abs() < 1e-9, "{:?}", points[1]);
+            assert!(points[1] != path.source);
         }
+        // Around the target alone, the same from the other end.
+        let around = Rect::at(path.target);
+        assert!(flatten(&path, 0.0, &around, &mut points, |_, _| true));
+        assert_eq!(points.len(), 1 + 24 + 1);
+        let deepest = path.point_at(1.0 - 2f64.powi(-24));
+        assert!((points[24].x - deepest.x).abs() < 1e-9, "{:?}", points[24]);
+        assert!((points[24].y - deepest.y).abs() < 1e-9, "{:?}", points[24]);
     }
 
     #[test]
@@ -383,8 +735,8 @@ mod tests {
         let path = paths()[3];
         let mut near = Vec::new();
         let mut far = Vec::new();
-        flatten(&path, 0.25 / 4.0, &mut near);
-        flatten(&path, 0.25 / 0.05, &mut far);
+        flatten_all(&path, 0.25 / 4.0, &mut near);
+        flatten_all(&path, 0.25 / 0.05, &mut far);
         assert!(
             far.len() < near.len(),
             "{} against {}",
@@ -680,9 +1032,13 @@ mod tests {
     #[test]
     fn a_tolerance_that_is_not_finite_gives_the_most_points() {
         let mut points = Vec::new();
+        let path = paths()[3];
+        let around = Rect::at(path.source);
+        let mut most = Vec::new();
+        assert!(flatten(&path, 0.0, &around, &mut most, |_, _| true));
         for tolerance in [f64::INFINITY, f64::NEG_INFINITY] {
-            flatten(&paths()[3], tolerance, &mut points);
-            assert_eq!(points.len(), 4096 + 1, "tolerance {tolerance}");
+            assert!(flatten(&path, tolerance, &around, &mut points, |_, _| true));
+            assert_eq!(points, most, "tolerance {tolerance}");
         }
     }
 
@@ -693,7 +1049,7 @@ mod tests {
         let path = EdgePath::horizontal(Point::new(0.0, 0.0), Point::new(100.0, 0.0), 0.0);
         let mut points = Vec::new();
         for tolerance in [0.0, -1.0] {
-            flatten(&path, tolerance, &mut points);
+            flatten_all(&path, tolerance, &mut points);
             assert_eq!(points, [path.source, path.target], "tolerance {tolerance}");
         }
     }
@@ -742,5 +1098,339 @@ mod tests {
             let expected = (1.0, FULL_WIDTH, false);
             assert_eq!((full.tolerance, full.width, full.plain), expected);
         }
+    }
+
+    /// The paths of `paths` as found edges, each in the colour of its index plus one, solid and
+    /// without arrowheads.
+    fn found(paths: &[EdgePath]) -> Vec<(EdgePath, EdgeStyle)> {
+        (0..paths.len())
+            .map(|i| {
+                let style = EdgeStyle {
+                    color: i as u32 + 1,
+                    dash: None,
+                    arrow: false,
+                };
+                (paths[i], style)
+            })
+            .collect()
+    }
+
+    /// The mesh of `edges` at full detail within `budget`.
+    fn built(edges: &[(EdgePath, EdgeStyle)], budget: u32) -> Mesh {
+        let mut mesh = Mesh::default();
+        let mut points = Vec::new();
+        let all = edges.iter().map(|(path, style)| (path, style));
+        mesh.build(all, &Stroke::full(0.05), &EVERYWHERE, budget, &mut points);
+        mesh
+    }
+
+    #[test]
+    fn edges_are_meshed_in_full_while_each_fits_beside_the_floors_after_it() {
+        // Verifies: ADR-0012
+        let edges = found(&paths()[..3]);
+        let sizes: Vec<usize> = (0..3)
+            .map(|i| built(&edges[i..=i], u32::MAX).distances.len())
+            .collect();
+        assert!(sizes.iter().all(|&size| size > 4), "{sizes:?}");
+        let all: u32 = sizes.iter().sum::<usize>().try_into().unwrap();
+        let whole = built(&edges, u32::MAX);
+        let complete = built(&edges, all);
+        assert_eq!(complete.detail, Detail::Complete);
+        assert_eq!(complete.positions, whole.positions);
+        // One vertex short: the last edge is drawn as its chord, four vertices.
+        let short = built(&edges, all - 1);
+        assert_eq!(short.detail, Detail::Coarsened);
+        assert_eq!(short.distances.len(), sizes[0] + sizes[1] + 4);
+        // The second edge does not fit beside the floor of the third: from it on, chords.
+        let budget = u32::try_from(sizes[0] + sizes[1] + 4 - 1).unwrap();
+        let chords = built(&edges, budget);
+        assert_eq!(chords.detail, Detail::Coarsened);
+        assert_eq!(chords.distances.len(), sizes[0] + 8);
+        assert_eq!(
+            &chords.positions[..2 * sizes[0]],
+            &whole.positions[..2 * sizes[0]]
+        );
+        let ends = |i: usize| {
+            let path = paths()[i];
+            [path.source, path.target]
+        };
+        let mut expected = Mesh::default();
+        expected.polyline(&ends(1), rgba(2), (0.0, 0.0), FULL_WIDTH);
+        expected.polyline(&ends(2), rgba(3), (0.0, 0.0), FULL_WIDTH);
+        assert_eq!(&chords.positions[2 * sizes[0]..], expected.positions);
+        assert_eq!(&chords.distances[sizes[0]..], expected.distances);
+        assert_eq!(&chords.colors[sizes[0]..], expected.colors);
+    }
+
+    #[test]
+    fn where_the_floors_do_not_fit_the_mesh_holds_no_edge() {
+        let edges = found(&paths()[..3]);
+        let none = built(&edges, 11);
+        assert_eq!(none.detail, Detail::Coarsened);
+        assert!(none.distances.is_empty() && none.indices.is_empty());
+        let floors = built(&edges, 12);
+        assert_eq!(floors.detail, Detail::Coarsened);
+        assert_eq!((floors.distances.len(), floors.indices.len()), (12, 18));
+        let empty = built(&[], 0);
+        assert_eq!(empty.detail, Detail::Complete);
+        assert!(empty.distances.is_empty());
+    }
+
+    #[test]
+    fn a_chord_keeps_the_dash_pattern_at_full_detail_and_draws_no_arrowhead() {
+        let path = paths()[0];
+        let style = EdgeStyle {
+            color: 0x10_2030,
+            dash: Some((6.0, 4.0)),
+            arrow: true,
+        };
+        let length = (path.target.x - path.source.x).hypot(path.target.y - path.source.y);
+        for (stroke, dash) in [
+            (Stroke::full(0.25), [6.0, 4.0]),
+            (Stroke::at(Level::Far, 1.0), [0.0, 0.0]),
+        ] {
+            let mut mesh = Mesh::default();
+            mesh.chord(&path, &style, &stroke);
+            assert_eq!(mesh.indices, [0, 1, 2, 1, 3, 2]);
+            assert!(mesh.dashes.chunks(2).all(|d| d == dash));
+            assert!(mesh.colors.iter().all(|&c| c == rgba(0x10_2030)));
+            assert_eq!(mesh.distances[..2], [0.0, 0.0]);
+            assert!((f64::from(mesh.distances[3]) - length).abs() < 1e-3);
+            let p = &mesh.positions;
+            let width = f64::from((p[2] - p[0]).hypot(p[3] - p[1]));
+            assert!((width - stroke.width).abs() < 1e-4, "{width}");
+        }
+    }
+
+    #[test]
+    fn a_vector_grows_by_doubling_but_not_beyond_its_most() {
+        let mut values: Vec<u8> = Vec::with_capacity(4);
+        values.extend([1, 2, 3, 4]);
+        grow(&mut values, 0, 100).unwrap();
+        assert_eq!(values.capacity(), 4);
+        grow(&mut values, 1, 100).unwrap();
+        assert_eq!(values.capacity(), 8);
+        grow(&mut values, 4, 100).unwrap();
+        assert_eq!(values.capacity(), 8);
+        let mut values: Vec<u8> = Vec::with_capacity(4);
+        values.extend([1, 2, 3, 4]);
+        grow(&mut values, 1, 6).unwrap();
+        assert_eq!(values.capacity(), 6);
+        // What is needed beyond the most is still reserved: the budget is the caller's.
+        grow(&mut values, 5, 6).unwrap();
+        assert_eq!(values.capacity(), 9);
+        assert_eq!(values, [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn the_flattening_stops_at_the_first_point_it_is_refused() {
+        let mut points = Vec::new();
+        assert!(!flatten(
+            &paths()[3],
+            0.0,
+            &EVERYWHERE,
+            &mut points,
+            |_, n| n < 3
+        ));
+        assert_eq!(points.len(), 3);
+    }
+
+    #[test]
+    fn an_edge_fits_while_its_flattened_points_stay_within_the_room() {
+        // Verifies: ADR-0012
+        // The flattening stops once its points pass the room left, counted before the arrowhead
+        // cuts the end off.
+        let path = paths()[0];
+        let style = EdgeStyle::unstyled();
+        let stroke = Stroke::full(1e-4);
+        let mut untrimmed = Vec::new();
+        flatten_all(&path, stroke.tolerance, &mut untrimmed);
+        let within = |room: usize| Within {
+            stroke: &stroke,
+            area: EVERYWHERE,
+            budget: room,
+        };
+        let room = Size::ARROWHEAD
+            .plus(Size::polyline(untrimmed.len()))
+            .vertices;
+        let mut points = Vec::new();
+        let size = flatten_edge(&path, &style, &within(room), room, &mut points).unwrap();
+        assert!(
+            points.len() < untrimmed.len(),
+            "{} of {}",
+            points.len(),
+            untrimmed.len()
+        );
+        assert_eq!(size, Size::ARROWHEAD.plus(Size::polyline(points.len())));
+        assert_eq!(
+            flatten_edge(&path, &style, &within(room), room - 1, &mut points),
+            None
+        );
+        let plain = EdgeStyle {
+            arrow: false,
+            ..style
+        };
+        let all = 2 * untrimmed.len();
+        let fits = flatten_edge(&path, &plain, &within(all), all, &mut points);
+        assert_eq!(fits, Some(Size::polyline(untrimmed.len())));
+        assert_eq!(
+            flatten_edge(&path, &plain, &within(all), all - 1, &mut points),
+            None
+        );
+    }
+
+    #[test]
+    fn outside_the_rectangle_a_path_is_its_chords() {
+        // Verifies: ADR-0012
+        let path = paths()[3];
+        let mut everywhere = Vec::new();
+        flatten_all(&path, 0.01, &mut everywhere);
+        // A rectangle around the source: far from it, the path is cut into few chords.
+        let near = Rect::at(path.source).grown(20.0);
+        let mut points = Vec::new();
+        assert!(flatten(&path, 0.01, &near, &mut points, |_, _| true));
+        assert!(
+            points.len() * 4 < everywhere.len(),
+            "{} of {}",
+            points.len(),
+            everywhere.len()
+        );
+        assert_eq!(points.first(), Some(&path.source));
+        assert_eq!(points.last(), Some(&path.target));
+        // Inside it, the points are those of the path flattened everywhere.
+        let inside = |p: &&Point| near.contains(**p);
+        let a: Vec<_> = points.iter().filter(inside).collect();
+        let b: Vec<_> = everywhere.iter().filter(inside).collect();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn the_size_of_a_part_is_what_the_mesh_takes_for_it() {
+        let p = |x| Point::new(x, 0.0);
+        for n in 0..6 {
+            let points: Vec<Point> = (0..n).map(|i| p(f64::from(i) * 10.0)).collect();
+            let mut mesh = Mesh::default();
+            mesh.polyline(&points, 1, (0.0, 0.0), 2.0);
+            let size = Size::polyline(n as usize);
+            assert_eq!(
+                (mesh.distances.len(), mesh.indices.len()),
+                (size.vertices, size.indices)
+            );
+        }
+        let mut mesh = Mesh::default();
+        mesh.arrowhead(p(10.0), p(0.0), Point::new(1.0, 0.0), 1);
+        mesh.polyline(&[p(0.0), p(5.0), p(9.0)], 1, (0.0, 0.0), 2.0);
+        let size = Size::ARROWHEAD.plus(Size::polyline(3));
+        assert_eq!(
+            (mesh.distances.len(), mesh.indices.len()),
+            (size.vertices, size.indices)
+        );
+        assert_eq!((CHORD.vertices, CHORD.indices), (4, 6));
+        let most = Size {
+            vertices: usize::MAX,
+            indices: usize::MAX,
+        };
+        assert_eq!(most.plus(CHORD), most);
+        assert_eq!(most.minus(CHORD).plus(CHORD), most);
+    }
+
+    #[test]
+    fn a_reservation_makes_room_in_every_vector_within_what_the_budget_takes() {
+        let mut mesh = Mesh::default();
+        let size = |vertices, indices| Size { vertices, indices };
+        mesh.reserve(size(10, 20), 15).unwrap();
+        let capacities = |mesh: &Mesh| {
+            [
+                mesh.positions.capacity(),
+                mesh.distances.capacity(),
+                mesh.colors.capacity(),
+                mesh.dashes.capacity(),
+                mesh.indices.capacity(),
+            ]
+        };
+        assert_eq!(capacities(&mesh), [20, 10, 10, 20, 20]);
+        // Doubling stops at what 15 vertices take: 30 values of positions, 45 indices.
+        mesh.reserve(size(11, 22), 15).unwrap();
+        assert_eq!(capacities(&mesh), [30, 15, 15, 30, 40]);
+    }
+
+    /// An edge shorter than its arrowhead, at `x`: its full mesh is the arrowhead alone.
+    fn short(x: f64) -> (EdgePath, EdgeStyle) {
+        let path = straight(Point::new(x, 4.0), Point::new(x, 0.0));
+        (path, EdgeStyle::unstyled())
+    }
+
+    #[test]
+    fn an_edge_whose_full_mesh_is_its_arrowhead_has_that_for_its_floor() {
+        // Verifies: ADR-0012
+        let mut edges = found(&paths()[..1]);
+        edges.extend((0..4).map(|i| short(f64::from(i) * 100.0)));
+        let first = built(&edges[..1], u32::MAX).distances.len();
+        let all = u32::try_from(first + 4 * 3).unwrap();
+        // Beside four floors of three, the first edge fits in full: complete.
+        let complete = built(&edges, all);
+        assert_eq!(complete.detail, Detail::Complete);
+        assert_eq!(complete.positions, built(&edges, u32::MAX).positions);
+        // One vertex short, it is drawn as its chord, and the others still as their arrowheads.
+        let short_of = built(&edges, all - 1);
+        assert_eq!(short_of.detail, Detail::Coarsened);
+        assert_eq!(short_of.distances.len(), 4 + 4 * 3);
+        assert_eq!(short_of.indices.len(), 6 + 4 * 3);
+        // The floors alone: 16 vertices fit, 15 do not.
+        assert_eq!(built(&edges, 16).distances.len(), 16);
+        assert!(built(&edges, 15).distances.is_empty());
+    }
+
+    #[test]
+    fn finding_an_arrowhead_alone_stops_at_the_first_point_beyond_it_or_after_64() {
+        let within = |stroke| Within {
+            stroke,
+            area: EVERYWHERE,
+            budget: usize::MAX,
+        };
+        let mut points = Vec::new();
+        let (path, style) = short(0.0);
+        let full = Stroke::full(0.25);
+        assert!(arrowhead_alone(&path, &style, &within(&full), &mut points));
+        let plain = Stroke::at(Level::Far, 1.0);
+        assert!(!arrowhead_alone(
+            &path,
+            &style,
+            &within(&plain),
+            &mut points
+        ));
+        let unarrowed = EdgeStyle {
+            arrow: false,
+            ..style
+        };
+        assert!(!arrowhead_alone(
+            &path,
+            &unarrowed,
+            &within(&full),
+            &mut points
+        ));
+        // A bend within the arrowhead's reach takes more than 64 points at no tolerance.
+        let bend = EdgePath {
+            source: Point::new(0.0, 4.0),
+            control_source: Point::new(3.0, 4.0),
+            control_target: Point::new(-3.0, 0.0),
+            target: Point::new(0.0, 0.0),
+        };
+        let mut all = Vec::new();
+        flatten_all(&bend, 1e-9, &mut all);
+        assert!(all.len() > 65, "{}", all.len());
+        let fine = Stroke::full(1e-9);
+        assert!(!arrowhead_alone(&bend, &style, &within(&fine), &mut points));
+        assert_eq!(points.len(), 64 + 1);
+        let coarse = Stroke::full(5.0);
+        assert!(arrowhead_alone(
+            &bend,
+            &style,
+            &within(&coarse),
+            &mut points
+        ));
+        // A path that leaves the reach is not its arrowhead alone.
+        let long = straight(Point::new(0.0, 40.0), Point::new(0.0, 0.0));
+        assert!(!arrowhead_alone(&long, &style, &within(&full), &mut points));
     }
 }

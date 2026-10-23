@@ -12,7 +12,7 @@ use comb_engine::geometry::Point;
 use comb_engine::geometry::Rect;
 use comb_engine::graph::{self, EdgeSpec, Graph, GraphError, LabelPlacement, Level, Visible};
 use comb_engine::positions::PositionError;
-use comb_engine::stroke::EdgeStyle;
+use comb_engine::stroke::{Detail, EdgeStyle};
 use serde::de::{self, IgnoredAny, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use tsify::{Ts, Tsify};
@@ -903,6 +903,24 @@ impl From<DetailLevel> for Level {
     }
 }
 
+/// The detail of a query's edge mesh (ADR-0012): complete, or coarsened where an edge was drawn
+/// as its chord, or left out, for the mesh budget or for memory.
+#[wasm_bindgen]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MeshDetail {
+    Complete,
+    Coarsened,
+}
+
+impl From<Detail> for MeshDetail {
+    fn from(detail: Detail) -> Self {
+        match detail {
+            Detail::Complete => Self::Complete,
+            Detail::Coarsened => Self::Coarsened,
+        }
+    }
+}
+
 /// The engine's state as the shell sees it: the loaded graph, and what the last query found.
 #[wasm_bindgen]
 #[derive(Default)]
@@ -938,21 +956,19 @@ impl Engine {
     }
 
     /// Finds the nodes and edges that meet the rectangle and builds the mesh of the edges for
-    /// `level`, where a screen pixel is `pixel` world units; at the near level also the edge
-    /// labels within `label_reach` of it. The results are read through the `visible…` and
-    /// `mesh…` buffers.
+    /// `level`, where a screen pixel is `pixel` world units, within the mesh budget; at the near
+    /// level also the edge labels within `label_reach` of it. Returns the detail of the mesh; the
+    /// results are read through the `visible…` and `mesh…` buffers. A pixel that is not a finite
+    /// number above zero is refused as malformed before any edge is flattened.
     pub fn query(
         &mut self,
         rect: Ts<RectInput>,
         level: DetailLevel,
         pixel: f64,
         label_reach: f64,
-    ) -> Result<(), GraphDataProblem> {
+    ) -> Result<MeshDetail, GraphDataProblem> {
         let rect = rect.to_rust().map_err(unshaped)?;
-        let rect = Rect::new(rect.min_x, rect.min_y, rect.max_x, rect.max_y);
-        self.graph
-            .query(&rect, level.into(), pixel, label_reach, &mut self.visible);
-        Ok(())
+        self.query_rect(&rect, level, pixel, label_reach)
     }
 
     /// Computes the ends of the edges the last query found, read through the `edgeEnds…` buffer:
@@ -965,6 +981,27 @@ impl Engine {
     /// The slot of the node drawn on top at the world point `(x, y)`, if any.
     pub fn hit(&mut self, x: f64, y: f64) -> Option<u32> {
         self.graph.hit(Point::new(x, y))
+    }
+}
+
+impl Engine {
+    /// `query` of a rectangle already converted.
+    fn query_rect(
+        &mut self,
+        rect: &RectInput,
+        level: DetailLevel,
+        pixel: f64,
+        label_reach: f64,
+    ) -> Result<MeshDetail, GraphDataProblem> {
+        if !(pixel.is_finite() && pixel > 0.0) {
+            return Err(malformed(
+                "the size of a screen pixel is not a finite number above zero",
+            ));
+        }
+        let rect = Rect::new(rect.min_x, rect.min_y, rect.max_x, rect.max_y);
+        self.graph
+            .query(&rect, level.into(), pixel, label_reach, &mut self.visible);
+        Ok(self.visible.mesh.detail.into())
     }
 }
 
@@ -1121,6 +1158,7 @@ mod properties;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use comb_engine::stroke::MESH_BUDGET;
 
     fn batch(nodes: &[(&str, f64, f64)], edges: &[(&str, &str, &str)]) -> GraphBatch {
         GraphBatch {
@@ -1477,5 +1515,100 @@ mod tests {
         let data = batch_of(&data).unwrap();
         let edges = edges_of(&data, &nodes_of(&data).unwrap().slots).unwrap();
         assert_eq!((edges[0].source, edges[0].target), (2, 0));
+    }
+
+    #[test]
+    fn four_vertices_for_each_of_the_most_edges_a_load_holds_fit_the_budget() {
+        // Verifies: ADR-0012
+        assert!(4 * u64::from(MAX_ITEMS) <= u64::from(MESH_BUDGET));
+        assert_eq!(MESH_BUDGET, (4 * MAX_ITEMS).next_power_of_two());
+    }
+
+    /// Queries the graph of `data` for `rect` at `level`, where a pixel is `pixel` world units.
+    fn detail_of(data: &GraphBatch, rect: [f64; 4], level: DetailLevel, pixel: f64) -> Engine {
+        let mut engine = Engine::new();
+        engine.graph = graph_of(data).unwrap();
+        let [min_x, min_y, max_x, max_y] = rect;
+        let rect = RectInput {
+            min_x,
+            min_y,
+            max_x,
+            max_y,
+        };
+        let detail = engine.query_rect(&rect, level, pixel, 0.0).unwrap();
+        assert_eq!(MeshDetail::from(engine.visible.mesh.detail), detail);
+        engine
+    }
+
+    #[test]
+    fn a_small_graph_queries_complete_and_a_million_curved_edges_whole_far_coarsened() {
+        // Verifies: ADR-0010
+        let small = batch(&[("a", 0.0, 0.0), ("b", 300.0, 100.0)], &[("e", "a", "b")]);
+        let rect = [-100.0, -100.0, 500.0, 300.0];
+        let engine = detail_of(&small, rect, DetailLevel::Near, 1.0);
+        assert_eq!(engine.visible.mesh.detail, Detail::Complete);
+        assert!(engine.mesh_distances_len() > 4);
+        // 1,000 nodes, 40 a row, 400 apart and 300 down; each edge from a node to one in another
+        // row, so that it bends.
+        let ids: Vec<String> = (0..1_000).map(|n| format!("n{n}")).collect();
+        let nodes: Vec<_> = (0..1_000)
+            .map(|n| {
+                (
+                    ids[n].as_str(),
+                    (n % 40) as f64 * 400.0,
+                    (n / 40) as f64 * 300.0,
+                )
+            })
+            .collect();
+        let edge_ids: Vec<String> = (0..MAX_ITEMS).map(|e| format!("e{e}")).collect();
+        let edges: Vec<_> = (0..MAX_ITEMS as usize)
+            .map(|e| {
+                let (source, target) = (e % 1_000, (e * 7 + 41) % 1_000);
+                (
+                    edge_ids[e].as_str(),
+                    ids[source].as_str(),
+                    ids[target].as_str(),
+                )
+            })
+            .collect();
+        let large = batch(&nodes, &edges);
+        // The whole graph, 16,000 by 7,500, on a screen 1,440 pixels wide.
+        let whole = [-1_000.0, -1_000.0, 17_000.0, 8_500.0];
+        let engine = detail_of(&large, whole, DetailLevel::Far, 18_000.0 / 1_440.0);
+        assert_eq!(engine.visible.edges.len(), MAX_ITEMS as usize);
+        assert_eq!(engine.visible.mesh.detail, Detail::Coarsened);
+        assert!(engine.mesh_distances_len() <= MESH_BUDGET as usize);
+        assert!(engine.mesh_indices_len() <= 3 * MESH_BUDGET as usize);
+    }
+
+    #[test]
+    fn a_pixel_that_is_not_a_finite_number_above_zero_is_refused_before_any_edge_is_flattened() {
+        // Verifies: ADR-0012
+        let mut engine = Engine::new();
+        let data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 100.0)], &[("e", "a", "b")]);
+        engine.graph = graph_of(&data).unwrap();
+        let rect = RectInput {
+            min_x: -100.0,
+            min_y: -100.0,
+            max_x: 500.0,
+            max_y: 300.0,
+        };
+        for pixel in [0.0, -0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let refused = engine.query_rect(&rect, DetailLevel::Near, pixel, 0.0);
+            assert_eq!(
+                refused,
+                Err(malformed(
+                    "the size of a screen pixel is not a finite number above zero"
+                )),
+                "{pixel}"
+            );
+            assert!(engine.visible.edges.is_empty(), "{pixel}");
+        }
+        let quarter = engine.query_rect(&rect, DetailLevel::Near, 0.25, 0.0);
+        assert_eq!(quarter, Ok(MeshDetail::Complete));
+        // The least pixel there is: accepted, and the budget bounds what it flattens.
+        let least = engine.query_rect(&rect, DetailLevel::Near, f64::MIN_POSITIVE, 0.0);
+        assert_eq!(least, Ok(MeshDetail::Coarsened));
+        assert!(engine.mesh_distances_len() <= MESH_BUDGET as usize);
     }
 }
