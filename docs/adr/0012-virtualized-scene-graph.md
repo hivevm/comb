@@ -84,9 +84,8 @@ vertices per query, and choose by zoom between three levels of detail.
   *complete* where every edge it found is meshed in full, or *coarsened* where an edge was drawn as
   its chord or left out for the budget or for memory. The shell draws the mesh as it comes and
   reports the detail through inspection, not to the host application.
-- **Q-4:** the rectangle and the mesh budget rest on a drafted change of Q-4, which a ticket under
-  `docs/plan/` carries until the maintainer lands it: Q-4 holds for everything the viewport
-  shows, wherever the edge mesh is not coarsened. They hold only once that change lands.
+- **Q-4:** the rectangle and the mesh budget rest on Q-4 as it reads: 0.5 px for everything the
+  viewport shows, and a coarsened edge mesh where the mesh budget or memory runs short.
 - **Text:** every text on the canvas is `BitmapText`.
 - **Levels of detail:** *near* draws the full node content (G-10) and edge labels; *middle* draws
   each node's box and title without the rest of its content; *far* draws nodes as particles of
@@ -165,9 +164,7 @@ vertices per query, and choose by zoom between three levels of detail.
   and the GPU's buffers. Such a frame does not hold Q-1; the budget bounds memory, and with the
   flattening stopped at the room left, the work of a query, but not to a frame's time.
 - Negative / trade-offs: an edge drawn as its chord for the budget strays beyond 0.5 px and draws
-  no arrowhead. The drafted change of Q-4 allows that in a coarsened mesh, and limits Q-4 to what
-  the viewport shows; until it lands, Q-4 asks for 0.5 px at every zoom level, the specification
-  wins, and this decision conflicts with it.
+  no arrowhead. Q-4 allows that in a coarsened mesh, which inspection reports.
 - Negative / trade-offs: a chord is shorter than the part it stands for, so where an edge leaves
   the rectangle and comes back, its dash pattern inside may shift when a query moves the chord.
 - Negative / trade-offs: which edges keep full detail past the budget follows slot order, not

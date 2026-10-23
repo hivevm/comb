@@ -14,9 +14,8 @@ at 3.7 GB, and 2,000 already take 921 MB and 2.3 s. The data stays far below the
 (1,000,000 edges) and below Q-2's 50,000.
 
 The decision is recorded in ADR-0012 (*The rectangle*, *Mesh budget*) and ADR-0010 (*Streams*),
-both revised and proposed. The tests cite the drafted Q-7's sentence on accepted graph data and
-the drafted Q-4 in docs/plan/revision-2026-10-21/08-q7-spec-change.md (`Verifies: Q-7`,
-`Verifies: Q-4`), and ADR-0012.
+both revised and proposed. The tests cite Q-7's sentence on accepted graph data and Q-4's
+sentence on the mesh budget (`Verifies: Q-7`, `Verifies: Q-4`), and ADR-0012.
 
 ## Acceptance criteria
 
@@ -41,8 +40,7 @@ the drafted Q-4 in docs/plan/revision-2026-10-21/08-q7-spec-change.md (`Verifies
 
 ## Read first
 
-- `docs/SPECIFICATION.md` Q-1, Q-2, Q-4, Q-7, and the drafted Q-7 and Q-4 in
-  docs/plan/revision-2026-10-21/08-q7-spec-change.md; ADR-0012 (*The rectangle*, *Mesh budget*),
+- `docs/SPECIFICATION.md` Q-1, Q-2, Q-4, Q-7; ADR-0012 (*The rectangle*, *Mesh budget*),
   ADR-0010 (*Streams*), ADR-0009 (*Core*, *Bridge*), ADR-0007 (protected parts).
 - `crates/engine/src/stroke.rs` (`MAX_DEPTH`, the flattening), `crates/engine/src/graph.rs`
   (`query`, `out.mesh.add_edge`), `packages/comb/src/render/edges.ts` (the mesh's buffers).
@@ -50,11 +48,9 @@ the drafted Q-4 in docs/plan/revision-2026-10-21/08-q7-spec-change.md (`Verifies
 
 ## Blocked by
 
-- The maintainer's review of the revisions of ADR-0012 and ADR-0010, in a pull request of ADRs
-  only, and the maintainer's decision on the drafted changes of Q-7 and Q-4 that ADR-0012 rests
-  on (docs/plan/revision-2026-10-21/08-q7-spec-change.md).
+- None (can start immediately)
 
 ## Mode
 
 with the human: the query's detail changes the data format of the bridge, a protected part of
-ADR-0007, and the drafted Q-7 and Q-4 that the tests cite land only by the maintainer.
+ADR-0007.

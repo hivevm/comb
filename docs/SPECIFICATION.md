@@ -97,15 +97,22 @@ Intel Iris Xe or AMD Radeon 680M, running the current stable Chrome.
   framework such as React or Vue, its public interface is fully typed in TypeScript, and its
   bundle of JavaScript and WebAssembly, gzipped and without PixiJS, stays under 300 kB.
 - **Q-4** — Geometric accuracy: edge paths and label positions deviate by at most 0.5 px from a
-  reference computation at every zoom level.
+  reference computation at every zoom level, for everything the viewport shows. Where the mesh
+  budget or memory runs short, the edge mesh may be coarsened instead, and its edge paths then
+  deviate further: every edge in the viewport is still drawn while memory lasts, and the system
+  reports the edge mesh as coarsened through inspection.
 - **Q-5** — No injection: the system never interprets graph data as HTML, script, or URL. Labels
   are drawn as text only, and no value of the graph data creates a DOM node.
 - **Q-6** — No dynamic code and no network: the system never uses `eval`, `new Function`, or a
   network request of its own, and it works under a Content Security Policy that allows
   `wasm-unsafe-eval` but not `unsafe-eval`.
-- **Q-7** — Robust input: malformed graph data (non-finite coordinates, an edge referring to a
-  missing node, a duplicate identifier) never crashes or hangs the host page and never causes a
-  WebAssembly panic; the system rejects it with a typed error.
+- **Q-7** — Robust input: malformed graph data (a value of the wrong type, non-finite
+  coordinates, an edge referring to a missing node, a duplicate identifier), and a change through
+  the public interface that names a node the graph does not hold, never crash or hang the host
+  page and never cause a WebAssembly panic; the system rejects each with a typed error that names
+  what it refused, and keeps the graph it had. Accepted graph data within the limits of a load,
+  and every change to it the system accepts, never crash or hang the host page and never cause a
+  WebAssembly panic or trap, at any viewport.
 
 ## Non-Goals
 
@@ -157,7 +164,8 @@ exist for an agent. One a test can decide is restated as a `Q-n`, so that it is 
 - The system shall never interpret graph data as HTML, script, or URL (Q-5).
 - The system shall never execute dynamically created code or make a network request of its own
   (Q-6).
-- The system shall never let malformed graph data crash or hang the host page (Q-7).
+- The system shall never let graph data, malformed or accepted, crash or hang the host page
+  (Q-7).
 - The system shall never store data in the browser, in local storage, IndexedDB, or cookies.
 
 ## Assumptions
