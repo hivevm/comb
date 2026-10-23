@@ -97,6 +97,7 @@ is the table a session reads.
 | [0018](0018-webgl2-or-an-opted-in-canvas-fallback.md) | Comb draws with WebGL2, and on Canvas 2D only where the host application opts in | `createComb` and `CombOptions` in `packages/comb/src/api/`, the error types `comb` exports, and the edges layer in `packages/comb/src/render/` | 🟡 proposed |
 | [0019](0019-the-host-hands-comb-its-engine.md) | The host application hands Comb the engine's WebAssembly; Comb requests nothing itself | `createComb` and `CombOptions` in `packages/comb/src/api/`, the loading of the engine in `packages/comb/src/bridge/`, the exports of `packages/comb/package.json`, the library build, and `scripts/check-bundle.sh` | 🟡 proposed |
 | [0020](0020-pixijs-without-eval.md) | Comb installs PixiJS's code generation without eval before it creates a renderer | `createComb` in `packages/comb/src/api/`, how `packages/comb` imports `pixi.js`, and every host application that embeds Comb | 🟡 proposed |
+| [0021](0021-a-trapped-engine-is-lost-for-the-page.md) | A trapped engine is lost for the page; Comb refuses every later call with a typed error and tells the host application | `packages/comb/src/bridge/`, `createComb` and the `Comb` interface in `packages/comb/src/api/`, the error types `comb` exports, and the render's animation frame | 🟡 proposed |
 
 ### Superseded and rejected
 
