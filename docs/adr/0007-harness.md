@@ -38,12 +38,14 @@ reviews every change to the protected parts, and caps open agent work at two.
   extension.
 - **Protected parts,** never worked unattended however small the ticket, and reviewed by the
   maintainer as well as by the reviewing session: the public TypeScript interface of Comb
-  (`packages/comb/src/index.ts`, `packages/comb/src/api/`, the exports of
-  `packages/comb/package.json`); the data format of the bridge and the validation of graph data
+  (`packages/comb/src/index.ts`, `packages/comb/src/api/`, and `packages/comb/package.json` for
+  its exports, the whole file); the data format of the bridge and the validation of graph data
   that holds Q-5 to Q-7 (`crates/engine-wasm/`, `packages/comb/src/bridge/`); the mesh budget
-  that holds Q-7 for accepted graph data (`crates/engine/src/stroke.rs`,
-  `crates/engine/src/graph.rs`); and the CI and the checks the ADRs rest on (`.github/`,
-  `scripts/check-*.sh`, `scripts/sensor-*.sh`). `.github/CODEOWNERS` names these paths.
+  that holds Q-7 for accepted graph data and its tests (`crates/engine/src/stroke.rs`,
+  `crates/engine/src/graph.rs`, `crates/engine/src/graph/`); and the CI and the checks the ADRs
+  rest on, with their self-tests (`.github/`, `.githooks/`, `scripts/check-*.sh`,
+  `scripts/sensor-*.sh`, `scripts/test-check-*.sh`, `scripts/test-sensor-*.sh`,
+  `scripts/test-git-hooks.sh`). `.github/CODEOWNERS` names these paths.
 - **Unattended work:** a ticket whose *Mode* allows it and that touches no protected part may be
   implemented and reviewed without the maintainer; its pull request still waits for the
   maintainer to merge.
