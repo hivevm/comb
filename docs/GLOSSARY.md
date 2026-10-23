@@ -57,6 +57,8 @@ to invent.
   onto the canvas.
 - **Path parameter** — a number `t` from 0.0 to 1.0 that marks a point along an edge's path, from
   its source connector to its target connector.
+- **Query origin** — the world point near a query's rectangle relative to which the query hands
+  over its vertex positions and label points, and at whose screen point the shell draws the world.
 - **Runner kind** — the CPU model a benchmark run records of the machine it ran on; runs are
   compared only with the baseline of their own kind.
 - **Sidebar** — the host application's HTML panel, outside the canvas, in which the attributes of

@@ -1108,7 +1108,7 @@ impl Engine {
     }
 
     /// Where the buffer starts that `query` writes the point of each label it found into: `x, y`
-    /// per label slot.
+    /// per label slot, relative to the origin.
     #[wasm_bindgen(js_name = labelPointsPtr)]
     pub fn label_points_ptr(&self) -> *const f32 {
         self.visible.label_points.as_ptr()
@@ -1120,8 +1120,22 @@ impl Engine {
         self.visible.label_points.len()
     }
 
+    /// The `x` of the origin the last `query` wrote its vertex positions and label points
+    /// relative to (ADR-0010).
+    #[wasm_bindgen(js_name = originX)]
+    pub fn origin_x(&self) -> f64 {
+        self.visible.origin.x
+    }
+
+    /// The `y` of the origin the last `query` wrote its vertex positions and label points
+    /// relative to (ADR-0010).
+    #[wasm_bindgen(js_name = originY)]
+    pub fn origin_y(&self) -> f64 {
+        self.visible.origin.y
+    }
+
     /// Where the buffer starts that `query` writes the mesh's vertex positions into: `x, y` per
-    /// vertex.
+    /// vertex, relative to the origin.
     #[wasm_bindgen(js_name = meshPositionsPtr)]
     pub fn mesh_positions_ptr(&self) -> *const f32 {
         self.visible.mesh.positions.as_ptr()

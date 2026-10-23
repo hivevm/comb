@@ -54,7 +54,8 @@ pub enum Level {
 }
 
 /// What a query found: node, edge, and label slots in ascending order, per found label its
-/// point, and the mesh of the found edges with its detail.
+/// point, and the mesh of the found edges with its detail; the label points and the mesh's
+/// positions relative to `origin` (ADR-0010).
 #[derive(Debug, Default)]
 pub struct Visible {
     pub nodes: Vec<u32>,
@@ -62,6 +63,23 @@ pub struct Visible {
     pub labels: Vec<u32>,
     pub label_points: Vec<f32>,
     pub mesh: Mesh,
+    pub origin: Point,
+}
+
+/// The origin of a query in `rect` (ADR-0010): its centre snapped to a grid whose side is the
+/// smallest power of two at least the rectangle's larger side, so that it stays across pans
+/// shorter than that, and taken to the nearest `f32`, so that it holds exactly in both; (0, 0)
+/// for a rectangle that is not finite or has no area to snap to.
+pub(crate) fn origin_of(rect: &Rect) -> Point {
+    let side = (rect.max_x - rect.min_x).max(rect.max_y - rect.min_y);
+    let grid = side.log2().ceil().exp2();
+    let snap = |min: f64, max: f64| f64::from((((min + max) / 2.0 / grid).round() * grid) as f32);
+    let origin = Point::new(snap(rect.min_x, rect.max_x), snap(rect.min_y, rect.max_y));
+    if origin.x.is_finite() && origin.y.is_finite() {
+        origin
+    } else {
+        Point::default()
+    }
 }
 
 /// The loaded graph and its spatial index.
@@ -333,6 +351,7 @@ impl Graph {
         out.edges.clear();
         out.labels.clear();
         out.label_points.clear();
+        out.origin = origin_of(rect);
         for &slot in &self.scratch {
             if self.bounds[slot as usize].meets(rect) {
                 out.edges.push(slot);
@@ -342,7 +361,9 @@ impl Graph {
             }
             if let Some(point) = self.labels[slot as usize].filter(|p| label_rect.contains(*p)) {
                 out.labels.push(slot);
-                out.label_points.extend([point.x as f32, point.y as f32]);
+                let Point { x, y } = out.origin;
+                out.label_points
+                    .extend([(point.x - x) as f32, (point.y - y) as f32]);
             }
         }
         let found = out.edges.iter().map(|&slot| {
@@ -351,7 +372,7 @@ impl Graph {
         });
         let stroke = Stroke::at(level, pixel);
         out.mesh
-            .build(found, &stroke, rect, budget, &mut self.points);
+            .build(found, &stroke, rect, out.origin, budget, &mut self.points);
     }
 }
 
@@ -538,6 +559,110 @@ mod tests {
         assert!(
             (x - 260.0).abs() < 1e-4 && (y - 82.0).abs() < 1e-4,
             "({x}, {y})"
+        );
+    }
+
+    #[test]
+    fn a_query_origin_is_its_centre_snapped_to_the_power_of_two_of_its_larger_side() {
+        // Verifies: ADR-0010
+        // 400 by 100 around (5e7 + 100, 100): a grid of 512, and 97,656 of it the nearest in x.
+        let rect = Rect::new(5e7 - 100.0, 50.0, 5e7 + 300.0, 150.0);
+        assert_eq!(origin_of(&rect), Point::new(49_999_872.0, 0.0));
+        // Taller than wide, and below the world's origin: the grid is the larger side's.
+        let rect = Rect::new(-50.0, -3e7 - 600.0, 50.0, -3e7 + 200.0);
+        assert_eq!(origin_of(&rect), Point::new(0.0, -30_000_128.0));
+    }
+
+    #[test]
+    fn a_query_origin_stays_across_a_pan_shorter_than_half_its_grid() {
+        // Verifies: ADR-0010
+        let around = |x: f64| Rect::new(x - 200.0, -200.0, x + 200.0, 200.0);
+        let origin = Point::new(49_999_872.0, 0.0);
+        for pan in [-250.0, -100.0, 0.0, 100.0, 250.0] {
+            assert_eq!(origin_of(&around(origin.x + pan)), origin, "pan {pan}");
+        }
+        assert_eq!(
+            origin_of(&around(origin.x + 300.0)),
+            Point::new(origin.x + 512.0, 0.0)
+        );
+    }
+
+    #[test]
+    fn a_query_origin_holds_in_f32_and_is_the_world_origin_where_nothing_snaps() {
+        // Verifies: ADR-0010
+        // A grid finer than f32 holds at 1e8: the origin is the nearest f32, within its spacing.
+        let origin = origin_of(&Rect::new(1e8 + 0.3, 0.3, 1e8 + 0.301, 0.301));
+        assert_eq!(f64::from(origin.x as f32), origin.x);
+        assert!((origin.x - 1e8).abs() <= 4.0, "{origin:?}");
+        for rect in [
+            Rect::new(f64::NEG_INFINITY, 0.0, f64::INFINITY, 1.0),
+            Rect::new(5e7, 5e7, 5e7, 5e7),
+            Rect::new(f64::NAN, 0.0, 1.0, 1.0),
+            // Beyond f32 in x alone.
+            Rect::new(1e39, 0.0, 1e39, 10.0),
+        ] {
+            assert_eq!(origin_of(&rect), Point::default(), "{rect:?}");
+        }
+    }
+
+    /// The edge from `at` to `at` + (300, 200), labelled at its middle, queried at the near level
+    /// at a scale of 4 around it.
+    fn far_edge_at(at: Point) -> Visible {
+        let label = LabelPlacement {
+            t: 0.5,
+            offset: 0.0,
+        };
+        let edges = vec![EdgeSpec {
+            source: 0,
+            target: 1,
+            label: Some(label),
+            style: EdgeStyle::unstyled(),
+        }];
+        let Point { x, y } = at;
+        let positions = [x, y, x + 300.0, y + 200.0].map(|v| v as f32).to_vec();
+        let mut graph = Graph::new(positions, vec![220.0, 64.0, 220.0, 64.0], edges).unwrap();
+        let mut out = Visible::default();
+        let rect = Rect::new(x + 60.0, y - 80.0, x + 460.0, y + 320.0);
+        graph.query(&rect, Level::Near, 0.25, 0.0, &mut out);
+        out
+    }
+
+    #[test]
+    fn an_edge_far_from_the_world_origin_hands_over_its_mesh_as_precisely_as_near_it() {
+        // Verifies: ADR-0010, Q-4
+        // At 5e7 an f32 holds every fourth number, at 3e7 every second; near the world's origin,
+        // the same edge rounds by under 2^-23 of 512, which stands for the engine's f64 stroke.
+        let at = Point::new(5e7, -3e7);
+        let (far, near) = (far_edge_at(at), far_edge_at(Point::default()));
+        assert_eq!(far.origin, Point::new(50_000_384.0, -30_000_128.0));
+        let world = |out: &Visible, values: &[f32], shift: Point| -> Vec<f64> {
+            let origin = [out.origin.x - shift.x, out.origin.y - shift.y];
+            let at = values.iter().enumerate();
+            at.map(|(i, &v)| f64::from(v) + origin[i % 2]).collect()
+        };
+        let worst = |a: Vec<f64>, b: Vec<f64>| {
+            assert_eq!(a.len(), b.len());
+            a.iter()
+                .zip(&b)
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0, f64::max)
+        };
+        assert!(far.mesh.positions.len() > 12);
+        let none = Point::default();
+        let mesh = worst(
+            world(&far, &far.mesh.positions, at),
+            world(&near, &near.mesh.positions, none),
+        );
+        // A quarter pixel at a scale of 4.
+        assert!(mesh <= 1.0 / 16.0, "the mesh strays {mesh} world units");
+        assert_eq!(far.label_points.len(), 2);
+        let labels = worst(
+            world(&far, &far.label_points, at),
+            world(&near, &near.label_points, none),
+        );
+        assert!(
+            labels <= 1.0 / 16.0,
+            "the label strays {labels} world units"
         );
     }
 

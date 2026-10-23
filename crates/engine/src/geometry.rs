@@ -6,7 +6,7 @@
 //! enters its target node at the middle of its left side.
 
 /// A point in world coordinates.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Point {
     pub x: f64,
     pub y: f64,

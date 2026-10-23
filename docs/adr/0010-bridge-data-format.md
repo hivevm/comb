@@ -28,6 +28,17 @@ never to cause a WebAssembly panic.
 A typed-array view on WebAssembly memory becomes detached when the memory grows. A view kept
 across an engine call that allocates reads nothing, silently.
 
+An `f32` holds 24 significant bits. From 2^25 to 2^26 world units, about 3.4e7 to 6.7e7, it
+holds every fourth number, so a coordinate near ±5e7 rounds by up to 2 world units, 8 px at a
+scale of 4; Q-4 asks for 0.5 px for everything the viewport shows. The engine computes edge paths
+and label points in `f64` and rounds them to `f32` as it writes the stream, so the rounding is
+that of the distance to the world's origin, while the query reports the mesh complete. The engine
+keeps node positions as `f32` itself: a node lies where its `f32` lies, its edges end there, and
+the positions buffer hands over that value without rounding it again. The GPU computes in `f32`
+too: WebGL2 has no `double` attribute or uniform, and PixiJS hands the shader the transform of a
+render group as a `mat3x3<f32>` uniform, so a world at ±5e7 shown at a scale of 4 has a
+translation near 2e8 on the GPU, rounded by up to 8 px whatever the vertices hold.
+
 ## Decision
 
 We will pass structured data as `serde` types converted by serde-wasm-bindgen through tsify's
@@ -45,15 +56,31 @@ reads and writes as typed-array views created anew after every engine call.
   edge-label slots as `Uint32Array` and the point of each found label as `Float32Array`; the edge
   mesh of that query, as vertex positions, distances along the path, and dash patterns in
   `Float32Array`, colours as RGBA bytes in `Uint32Array`, and triangle indices in `Uint32Array`;
-  and, for inspection, the slots of the edges the query found as `Uint32Array`, with the ends of
-  each as `Float32Array`, computed as they lie when inspection asks. A query takes its rectangle as
+  the vertex positions and the label points relative to the query's origin; and, for
+  inspection, the slots of the edges the query found as `Uint32Array`, with the ends of each as
+  `Float32Array`, computed as they lie when inspection asks. A query takes its rectangle as
   structured data and its level of detail as an enumeration; the engine derives the stroke from
   the level and the size of a screen pixel, and places labels only at the near level. It also
   takes how far an edge label's pill reaches from its point, which the shell measures from the
   text it draws and the engine cannot, and finds a label whose point lies within that reach of
   the rectangle. It returns the detail of its mesh as an enumeration, complete or coarsened
-  ([ADR-0012](0012-virtualized-scene-graph.md)), the one value a query hands back beside its
-  buffers.
+  ([ADR-0012](0012-virtualized-scene-graph.md)), and its origin, the values a query hands back
+  beside its buffers.
+- **Origin:** each query chooses a world point near its rectangle, and the vertex positions and
+  label points it writes are their `f64` values less that point, rounded to `f32` only then, so
+  their rounding is that of their distance from the rectangle. The origin is the rectangle's
+  centre snapped to a grid whose side is the smallest power of two at least the rectangle's larger
+  side, then taken to the nearest `f32`, so that it holds exactly in both, and the origin of a
+  rectangle that is not finite is (0, 0). It crosses as two `f64`, read through `originX` and
+  `originY` after the query as its buffers are. Node positions and the ends of inspection cross
+  as the engine keeps them, without an origin.
+- **The shell draws relative to the origin:** the `world` render group (ADR-0012) stands at the
+  screen point of the origin, computed in `f64`; the layers that draw from the query's relative
+  streams stand at (0, 0) in it, and those placed by node positions at minus the origin. The
+  GPU's `f32` then sees only distances from the origin for the edges, the edge labels, and the
+  node views, whose vertices PixiJS computes in `f64` within the world; the particles of the far
+  level, whose shader takes their container's whole transform, keep the rounding they had. A
+  render that moves the world without a query keeps the origin of the query it drew.
 - **Slots:** the engine knows nodes and edges by slot only. The TypeScript side keeps the map
   from identifiers to slots; `loadGraph` resolves edge ends from identifiers once, while it loads,
   and keeps no map. Every later call into the engine names slots.
@@ -80,6 +107,23 @@ compacted after deletions; moving the engine into a worker.
   into buffers in TypeScript at about the cost it saves, the hot paths already cross as typed
   arrays, and `flatc` would join the toolchain with its version tied to two runtime libraries.
   The maintainer rejected it.
+- **Vertices in `f64`** — no origin, but twice the bytes of positions, 32 instead of 24 bytes of
+  attributes per vertex, about 34 MB more at the mesh budget; WebGL2 and PixiJS take `f32`
+  attributes only, so the shell would subtract an origin itself, vertex by vertex in JavaScript,
+  and the GPU's transform rounds as before.
+- **Splitting precision in the shader** — each position as two `f32`, high and low parts, as
+  CesiumJS does for its globe: no origin, but twice the attributes, a custom shader for every
+  layer, nodes and labels among them, and nothing for the Canvas 2D fallback of ADR-0018, which
+  runs no shader.
+- **Leaving it** — nothing to build, but up to 8 px at ±5e7 at a scale of 4, against Q-4, while
+  the query reports the mesh complete.
+- **The rectangle's centre as the origin, unsnapped** — the smallest distances, but the origin
+  moves with every query, and with it the layers placed by it, so every query updates the
+  transform of every bound view; the snapped origin changes only where the centre crosses into
+  another cell of its grid, and its distances stay below twice the rectangle's side, about 2^-23
+  of a viewport.
+- **An origin the shell chooses and passes to the query** — the same arithmetic, but the rule
+  would live in the shell, which holds no geometry (ADR-0009), and outside the engine's tests.
 - **`js_sys::Float32Array::view`** — a view created on the Rust side; it is `unsafe` and still
   detaches on growth, and the pointer and length are simpler to hold in one place.
 
@@ -102,6 +146,13 @@ compacted after deletions; moving the engine into a worker.
 - MDN, `WebAssembly.Memory.prototype.grow()` —
   <https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow>:
   growing detaches the previous `ArrayBuffer`.
+- glTF extension CESIUM_RTC —
+  <https://github.com/KhronosGroup/glTF/blob/main/extensions/1.0/Vendor/CESIUM_RTC/README.md>:
+  positions relative to a centre so that 32-bit floats suffice, and the centre's translation
+  computed on the CPU in double precision into the model-view matrix (checked 2026-10-23).
+- PixiJS 8.22.0, `GlobalUniformSystem` and `MeshPipe`: `uWorldTransformMatrix` and
+  `uTransformMatrix` are `mat3x3<f32>` uniforms, the second a mesh's transform within its render
+  group (read in the installed package, 2026-10-23).
 
 ## Consequences
 
@@ -109,7 +160,21 @@ compacted after deletions; moving the engine into a worker.
 - Positive: dragging moves numbers through shared memory without building JavaScript objects,
   which is where Q-1 is most at risk.
 - Positive: malformed graph data comes back as a typed error the host application can show.
+- Positive: an edge or a label far from the world's origin is drawn as precisely as one near
+  it, on the GPU too, with no more bytes per vertex.
 - Negative / trade-offs: two forms of crossing to learn, and slot bookkeeping in the bridge.
+- Negative / trade-offs: the streams of a query mean nothing without its origin, and the world's
+  translation is no longer the viewport's; inspection adds the origin back and reports the
+  viewport the world is drawn through, its transform less the origin's screen point.
+- Negative / trade-offs: a segment of the mesh that crosses the rectangle keeps the rounding of
+  its ends, which may lie far outside it, such as a straight edge flattened into one segment;
+  the origin bounds the rounding of vertices near the rectangle, not of every vertex the mesh
+  holds. An end at a distance `d` from the origin strays by up to `d` × 2^-24 world units, which
+  at a scale `s` reaches 0.5 px from `d` = 2^23 / `s`, about 2.1e6 at a scale of 4, while the
+  query reports the mesh complete.
+- Negative / trade-offs: the particles of the far level keep the rounding they had, of their
+  container's transform on the GPU, of the order of a pixel at ±5e7 at the far level's largest
+  scale, 0.3; Q-4 does not cover nodes.
 - Negative / trade-offs: serde-wasm-bindgen has had no release since 2024-02, though its
   repository was still maintained in 2025; the specification assumes it stays maintained. If it
   is abandoned, tsify's other backend is JSON, which the constraint forbids; the way out without a
@@ -127,4 +192,13 @@ afterwards are the ones written. A check fails when `crates/engine-wasm/Cargo.to
 tsify's default features or depends on `serde_json`. A test in `crates/engine-wasm` queries a
 small graph and asserts *complete*, and queries a graph at the limit of a load, 1,000,000 curved
 edges, whole at the far level, where its full mesh passes the budget, and asserts *coarsened*.
-Each cites this ADR with `Verifies: ADR-0010`.
+A test in `crates/engine` asserts the origin of a rectangle far from the world's origin, that it
+stays across a pan shorter than its grid, and that the vertex positions and label points of a
+query there, with its origin added back, lie within a sixteenth of a world unit of those of the
+same graph moved near the world's origin. A Playwright test loads an edge from (5e7, 0) to
+(5e7 + 300, 200), shows it at a scale of 4, and asserts that every vertex the edges layer draws,
+on screen as the shader computes it in `f32` from the buffers and transforms PixiJS uploads,
+lies within a quarter pixel of the same edge drawn near the world's origin, the engine's `f64`
+stroke shifted; and again after a pan within the culling margin that moves the world without a
+query. With the origin left at (0, 0) it fails. Each cites this ADR with `Verifies: ADR-0010`,
+and the Playwright test also `Verifies: Q-4`.

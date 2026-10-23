@@ -335,8 +335,9 @@ describe("bridge query", () => {
     // The edge runs level from (100, 25) to (200, 25); its label sits at (150, 13).
     const near = bridge.query({ minX: 140, minY: -100, maxX: 160, maxY: 0 }, "near", 4, 13);
     expect([...near.labels]).toEqual([0]);
-    expect(near.labelPoints[0]).toBeCloseTo(150, 4);
-    expect(near.labelPoints[1]).toBeCloseTo(13, 4);
+    // The point crosses relative to the query's origin (ADR-0010).
+    expect(near.labelPoints[0]! + near.origin.x).toBeCloseTo(150, 4);
+    expect(near.labelPoints[1]! + near.origin.y).toBeCloseTo(13, 4);
     expect([
       ...bridge.query({ minX: 140, minY: -100, maxX: 160, maxY: 0 }, "near", 4, 12).labels,
     ]).toEqual([]);
@@ -363,6 +364,22 @@ describe("bridge mesh and hit", () => {
     expect([...rgba]).toEqual([0x22, 0xa5, 0x5b, 0xff]);
     // The arrowhead comes first, its tip at the target's left middle.
     expect([...mesh.positions.slice(0, 2)]).toEqual([200, 25]);
+  });
+
+  test("a query far from the world's origin hands over its mesh relative to its origin", () => {
+    // Verifies: ADR-0010
+    bridge.loadGraph(
+      graph(
+        [node("a", 5e7, 0), node("b", 5e7 + 200, 0)],
+        [{ ...edge("e", "a", "b"), arrow: "end" }],
+      ),
+    );
+    const rect = { minX: 5e7 - 100, minY: -100, maxX: 5e7 + 300, maxY: 300 };
+    const { mesh, origin } = bridge.query(rect, "near", 0.25, 0);
+    // The centre (5e7 + 100, 100) snapped to the grid of 512 that holds the side of 400.
+    expect(origin).toEqual({ x: 97_656 * 512, y: 0 });
+    // The arrowhead's tip, at the target's left middle (5e7 + 200, 25), less the origin.
+    expect([...mesh.positions.slice(0, 2)]).toEqual([5e7 + 200 - origin.x, 25]);
   });
 
   test("a query at the far level draws thin lines without arrowheads", () => {

@@ -152,7 +152,8 @@ export class EdgesContainer extends Container {
     indexBuffer: new Uint32Array(0),
   });
   private readonly buffers = new MeshBuffers(this.geometry);
-  private readonly mesh = new Mesh({
+  /** The mesh; the testing entry reads the transform PixiJS hands its shader. */
+  readonly mesh = new Mesh({
     geometry: this.geometry,
     shader: Shader.from({ gl: { vertex, fragment, name: "comb-edges" }, resources: {} }),
   });

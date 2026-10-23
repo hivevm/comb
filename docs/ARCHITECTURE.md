@@ -84,7 +84,9 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   and resolves edge ends to slots, `translate` moves nodes, `query` takes a rectangle, a level of
   detail, the size of a screen pixel, and how far an edge label's pill reaches from its point,
   and writes the found node slots, the edge-label slots and points (at the near level only), the
-  found edge slots, and the edge mesh into buffers the engine owns, and returns the mesh's detail,
+  found edge slots, and the edge mesh into buffers the engine owns, the label points and the
+  mesh's positions relative to the query's origin, which `originX` and `originY` read
+  ([ADR-0010](adr/0010-bridge-data-format.md)), and returns the mesh's detail,
   complete or coarsened, and refuses a pixel that is not a finite number above zero as
   malformed; `drawnEdges` computes the ends of the found edges when inspection asks,
   as they lie then, and `hit` names the node at a point; it generates the type of every problem
@@ -112,9 +114,11 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   lines one pixel wide. A render queries the engine for the viewport grown by the culling margin
   and binds pooled node views and edge-label views to exactly the slots it found, drawn in slot
   order; while the viewport stays within what it last queried, at about its scale, and the graph
-  and the selection are unchanged, a render moves the world alone. `EdgesContainer`
-  (`render/edges.ts`) draws the edge mesh with a shader that leaves out the gaps of dash
-  patterns; on the Canvas 2D renderer a
+  and the selection are unchanged, a render moves the world alone. The world stands at the screen
+  point of the last query's origin, the edges and labels at (0, 0) in it, the nodes and particles
+  at minus the origin, so that the GPU sees no far coordinate of edges, labels, and node views.
+  `EdgesContainer` (`render/edges.ts`) draws the edge mesh with a shader that leaves out the gaps
+  of dash patterns; on the Canvas 2D renderer a
   host application opts into ([ADR-0018](adr/0018-webgl2-or-an-opted-in-canvas-fallback.md)),
   which runs no shader, `EdgeFill` (`render/edges-canvas.ts`) takes its place, builds no mesh,
   and fills the same triangles into one `Graphics`, one fill per run of one colour, dash
@@ -143,8 +147,10 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   begin, the culling margin, the label reach, the rescale); `work` counts what the canvas did: GPU
   buffers created and allocated, bytes uploaded, those of the edge mesh among them, and texture
   uploads, counted at the WebGL context from its first call, resizes of the edge mesh's buffers, and
-  views the pools made, and refuses where the canvas draws without WebGL; for tests, the benchmark,
-  and tooling. Its shape follows the scene and is outside the stable interface of `comb`.
+  views the pools made, and refuses where the canvas draws without WebGL; `edgeVertices` gives the
+  screen point of every vertex of the edge mesh as its shader computes it in `f32`; for tests,
+  the benchmark, and tooling. Its shape follows the scene and is outside the stable interface of
+  `comb`.
 - **Example** (`examples/metric-tree`) — a host application with a metric tree and an HTML
   sidebar (G-9); `?copies=` sets its size, the copies lie in a grid about as wide as tall, and it
   reports its load time as `window.loadReport`; `?fallback=canvas` allows the Canvas 2D fallback;
