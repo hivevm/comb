@@ -82,6 +82,18 @@ echo 'throw new Error("Comb test mode: the engine'"'"'s memory cannot grow furth
 head -c 100 /dev/urandom > "$testing/engine_bg.wasm"
 expect fail "a bundle with the bridge's test mode fails" "$testing" 10000 "test mode"
 
+trap="$work/trap"
+mkdir -p "$trap"
+echo 'export {};' > "$trap/comb.js"
+{ head -c 100 /dev/urandom; printf 'comb_test_mode_trap'; } > "$trap/engine_bg.wasm"
+expect fail "an engine with the trap of test mode fails" "$trap" 10000 "trap of test mode"
+
+trapjs="$work/trap-js"
+mkdir -p "$trapjs"
+echo 'export const trap = (e) => e.comb_test_mode_trap();' > "$trapjs/comb.js"
+head -c 100 /dev/urandom > "$trapjs/engine_bg.wasm"
+expect fail "JavaScript that names the trap of test mode fails" "$trapjs" 10000 "trap of test mode"
+
 empty="$work/empty"
 mkdir -p "$empty"
 expect fail "a directory without a bundle fails" "$empty" 10000 "no .js or .wasm"

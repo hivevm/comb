@@ -179,7 +179,13 @@ alone.
 Both run the bridge in test mode, which grows the engine's memory before each of its calls, so a
 view kept across a call reads empty; the browser tests serve the example in Vite's `test` mode
 for it, on port 5174, and assert it through `testMode()` of `comb/testing`, and the bundle check
-fails a bundle that carries it. In test mode the example's Vite configuration sends every response
+fails a bundle that carries it. In test mode the engine traps on demand: `trapNextCall()` of
+`comb/testing` arms an export the bridge crate carries only when built with its feature
+`test-mode`, and the next call of an `Engine` traps. The Bun test of the trap reads that engine
+from `packages/comb/wasm/test-mode/` in a process of its own, since a trap loses the engine for
+the process; the example's Vite configuration hands it over in place of `comb/engine.wasm` on the
+development server in test mode, and the bundle check fails an engine file that carries the
+export. In test mode the example's Vite configuration sends every response
 with the Content Security Policy of Q-6, `default-src 'self'; script-src 'self'
 'wasm-unsafe-eval'`, from the development server and from `vite preview`, so every browser test
 runs under it; `e2e/policy.spec.ts` records every request and `securitypolicyviolation` while the
@@ -209,10 +215,11 @@ canvas renders too.
 `packages/comb/wasm/` (generated, not tracked), with glue that has no default path to the engine
 file (`omit-default-module-path` in its `Cargo.toml`); the library imports the glue from there,
 `comb` exports the file `wasm/engine_bg.wasm` as `comb/engine.wasm`, and Vite serves the example
-from source. `bun run build:lib` bundles the library without PixiJS into `packages/comb/dist/`,
-without the WebAssembly, which the host application hands over (ADR-0019); that bundle and the
-engine file are what the budget of Q-3 measures, and the bundle check fails a bundle that inlines
-the engine.
+from source. It compiles the crate again with the feature `test-mode` into
+`packages/comb/wasm/test-mode/`, for the tests, with the same glue. `bun run build:lib` bundles
+the library without PixiJS into `packages/comb/dist/`, without the WebAssembly, which the host
+application hands over (ADR-0019); that bundle and the engine file are what the budget of Q-3
+measures, and the bundle check fails a bundle that inlines the engine.
 
 **Loading the engine.** `createComb` settles the host application's promise, if it handed one
 over, refuses what is missing, would be fetched, or is none of a `Response`, a module, and the
@@ -220,6 +227,13 @@ bytes, and passes the rest to the glue's initialiser, which compiles a `Response
 and instantiates a module or bytes. The glue instantiates once per page and returns that instance
 to every later call, so a later `createComb` checks its engine but does not use it. The Bun tests
 create the bridge from the bytes with `createBridgeSync`.
+
+**Losing the engine.** The bridge passes every call of the engine through a guard: a
+`WebAssembly.RuntimeError`, or the glue's refusal of an object a trapped call left borrowed, marks
+the engine lost for the page and calls the listeners of `onEngineLost` once; from then on the
+guard, `createComb`, and the calls of `Comb` that need the engine throw an `EngineLostError`
+(ADR-0021). The frame that finds the engine lost stops rendering and resolves its waiters, and
+input handlers do nothing, so no trap escapes as a page error.
 
 **Holding the shape.** `scripts/check-structure.sh` fails when the engine's core names or, through
 `Cargo.lock`, reaches a crate that touches the browser, when a module other than the bridge

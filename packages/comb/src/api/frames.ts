@@ -1,11 +1,15 @@
 // One render per animation frame, however many changes it carries. PixiJS draws the rendered scene
 // on its own ticker within the next animation frame, so the waiters of a render resolve after that
-// frame and never before the pixels are drawn.
+// frame and never before the pixels are drawn. A render that finds the engine lost stops the
+// renders: the canvas keeps its last frame, and no trap escapes the frame (ADR-0021).
+import { EngineLostError } from "../bridge";
 
 export interface Frames {
-  /** Asks for a render in the next animation frame, once however often it is asked. */
+  /** Asks for a render in the next animation frame, once however often it is asked; nothing once
+   *  a render found the engine lost. */
   schedule(): void;
-  /** Resolves once every change scheduled before the call is drawn; rejects after `stop`. */
+  /** Resolves once every change scheduled before the call is drawn, or at the next frame once a
+   *  render found the engine lost; rejects after `stop`. */
   whenRendered(): Promise<void>;
   /** Cancels a pending render and resolves its waiters. */
   stop(): void;
@@ -14,15 +18,19 @@ export interface Frames {
 export function createFrames(render: () => void): Frames {
   let frame = 0;
   let stopped = false;
+  let lost = false;
   let waiting: (() => void)[] = [];
   const schedule = () => {
-    if (stopped) return;
+    if (stopped || lost) return;
     frame ||= requestAnimationFrame(() => {
       frame = 0;
       const done = waiting;
       waiting = [];
       try {
         render();
+      } catch (error) {
+        if (!(error instanceof EngineLostError)) throw error;
+        lost = true;
       } finally {
         if (done.length) requestAnimationFrame(() => done.forEach((resolve) => resolve()));
       }

@@ -20,6 +20,12 @@
 # arguments the check also builds the library in Vite's test mode and fails unless it tells that
 # bundle by the message, so a change to the message turns it red rather than blind.
 #
+# Nor may it carry the trap the bridge crate exports in test mode (ADR-0021): an engine file that
+# names the export `comb_test_mode_trap` fails. Without arguments the check also fails unless it
+# finds that name in the engine built in test mode, packages/comb/wasm/test-mode/engine_bg.wasm,
+# so a renamed export turns it red rather than blind.
+# Verifies: ADR-0021
+#
 # Usage:
 #     scripts/check-bundle.sh [directory [budget in bytes]]
 # Exit code 0 when the bundle is under the budget, 1 otherwise.
@@ -73,6 +79,18 @@ if grep -rqs --include='*.js' 'Comb test mode' "$dir"; then
   echo "Bundle check FAILED: the bundle carries the bridge's test mode (ADR-0010)." >&2
   exit 1
 fi
+# carries_trap <file>... — whether any of the files names the export of the engine's trap.
+carries_trap() {
+  local file
+  for file in "$@"; do
+    grep -qsaF 'comb_test_mode_trap' "$file" && return 0
+  done
+  return 1
+}
+if carries_trap "${files[@]}"; then
+  echo "Bundle check FAILED: the bundle carries the engine's trap of test mode (ADR-0021)." >&2
+  exit 1
+fi
 if ((total >= BUDGET)); then
   echo "Bundle check FAILED: $total bytes gzipped in $count files, budget $BUDGET (Q-3)." >&2
   exit 1
@@ -84,6 +102,10 @@ if (($# == 0)); then
     || { echo "Bundle check: the build in test mode failed." >&2; exit 1; }
   if ! grep -rqs --include='*.js' 'Comb test mode' "$testing"; then
     echo "Bundle check FAILED: it does not recognise the library built in test mode (ADR-0010)." >&2
+    exit 1
+  fi
+  if ! carries_trap "$package/wasm/test-mode/engine_bg.wasm"; then
+    echo "Bundle check FAILED: it does not recognise the engine built in test mode (ADR-0021)." >&2
     exit 1
   fi
 fi

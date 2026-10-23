@@ -64,4 +64,6 @@ to invent.
   _Avoid:_ handle.
 - **Spatial index** — the engine's uniform grid over the bounds of nodes and edges, which answers
   which slots a rectangle meets.
+- **Trap** — WebAssembly aborting a call of the engine, as when its memory runs out; after a trap
+  the engine is lost for the page, and Comb refuses every later call that needs it.
 - **Viewport** — the part of the world that the canvas currently shows, given by pan and zoom.

@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin, type PreviewServer } from "vite";
 
 /** The Content Security Policy of Q-6: scripts, styles, and connections from the page's origin,
@@ -20,11 +21,22 @@ function strictPolicy(): Plugin {
   };
 }
 
+/** In test mode the example hands Comb the engine built with the bridge crate's feature
+ *  `test-mode`, which traps on demand (ADR-0021); its glue is the same as the production engine's.
+ *  The build, which the tests tagged @built and the benchmark run, keeps the production engine. */
+const TEST_ENGINE = {
+  find: /^comb\/engine\.wasm(?=\?|$)/,
+  replacement: fileURLToPath(
+    new URL("../../packages/comb/wasm/test-mode/engine_bg.wasm", import.meta.url),
+  ),
+};
+
 // Port 5173 is the one the Dev Container forwards and the launch configuration opens. The browser
 // tests serve the example in test mode on 5174 and its build on 5175 (playwright.config.ts), both
 // under the policy.
-export default defineConfig(({ mode }) => ({
+export default defineConfig(({ command, mode }) => ({
   plugins: mode === "test" ? [strictPolicy()] : [],
+  resolve: { alias: command === "serve" && mode === "test" ? [TEST_ENGINE] : [] },
   server: { port: 5173, strictPort: true },
   preview: { port: 5173, strictPort: true },
 }));

@@ -5,7 +5,7 @@ import type { Buffer, WebGLRenderer } from "pixi.js";
 import type { Comb } from "./api";
 import { scenes } from "./api/scenes";
 import { toScreen, worldRect } from "./interaction/viewport";
-import { TEST_MODE, type Rect } from "./bridge";
+import { TEST_MODE, trapNextCall, type Rect } from "./bridge";
 import { EdgesContainer } from "./render/edges";
 import { LABEL_REACH } from "./render/labels";
 import { CULLING_MARGIN, FAR_SCALE, NEAR_SCALE, RESCALE, type SceneSnapshot } from "./render/scene";
@@ -203,3 +203,8 @@ export function sceneNumbers(): {
 export function testMode(): boolean {
   return TEST_MODE;
 }
+
+/** Test mode only: the next call of the engine traps, as a trap that slipped past the bridge's
+ *  checks would, so that a test sees the engine lost for the page (ADR-0021). Throws outside test
+ *  mode, and where the engine was built without its trap. */
+export { trapNextCall };

@@ -1,8 +1,9 @@
 // Input into commands on the store (ADR-0009): drag a node, pan the empty canvas, zoom by wheel.
 // The engine answers which node lies under the pointer from its spatial index, at every level of
-// detail, also where the scene draws nodes as particles (ADR-0012).
+// detail, also where the scene draws nodes as particles (ADR-0012). Once the engine is lost, input
+// changes nothing, and no trap escapes a handler (ADR-0021).
 import type { Application, FederatedPointerEvent } from "pixi.js";
-import type { Bridge } from "../bridge";
+import { EngineLostError, refuseIfLost, type Bridge } from "../bridge";
 import type { GraphStore } from "../store";
 import { panBy, toWorld, zoomAt } from "./viewport";
 
@@ -44,33 +45,51 @@ function continueDrag(store: GraphStore, bridge: Bridge, drag: Drag, event: Fede
   }
 }
 
+/** `handler`, doing nothing once the engine is lost. */
+function untilLost<A extends unknown[]>(handler: (...args: A) => void): (...args: A) => void {
+  return (...args) => {
+    try {
+      refuseIfLost();
+      handler(...args);
+    } catch (error) {
+      if (!(error instanceof EngineLostError)) throw error;
+    }
+  };
+}
+
 /** Wires pointer and wheel input on the canvas; returns the function that removes it. */
 export function attachInteraction(app: Application, store: GraphStore, bridge: Bridge): () => void {
   let drag: Drag | null = null;
   app.stage.eventMode = "static";
   app.stage.hitArea = app.screen;
   // The cursor shows what a press would do: grab a node, or, over the empty canvas, nothing.
-  const hover = (event: FederatedPointerEvent) => {
+  const hover = untilLost((event: FederatedPointerEvent) => {
     const over = nodeAt(store, bridge, event.global.x, event.global.y) !== undefined;
     app.canvas.style.cursor = over ? "grab" : "";
-  };
-  app.stage.on("pointerdown", (event) => {
-    drag = startDrag(store, bridge, event);
-    if (drag.kind === "node") app.canvas.style.cursor = "grabbing";
   });
-  app.stage.on("globalpointermove", (event) =>
-    drag ? continueDrag(store, bridge, drag, event) : hover(event),
+  app.stage.on(
+    "pointerdown",
+    untilLost((event: FederatedPointerEvent) => {
+      drag = startDrag(store, bridge, event);
+      if (drag.kind === "node") app.canvas.style.cursor = "grabbing";
+    }),
+  );
+  app.stage.on(
+    "globalpointermove",
+    untilLost((event: FederatedPointerEvent) =>
+      drag ? continueDrag(store, bridge, drag, event) : hover(event),
+    ),
   );
   app.stage.on("pointerup", (event) => ((drag = null), hover(event)));
   app.stage.on("pointerupoutside", () => (drag = null));
 
-  const onWheel = (event: WheelEvent) => {
+  const onWheel = untilLost((event: WheelEvent) => {
     event.preventDefault();
     const rect = app.canvas.getBoundingClientRect();
     const factor = WHEEL_STEP ** -event.deltaY;
     const { viewport, setViewport } = store.getState();
     setViewport(zoomAt(viewport, event.clientX - rect.left, event.clientY - rect.top, factor));
-  };
+  });
   app.canvas.addEventListener("wheel", onWheel, { passive: false });
   return () => {
     app.stage.removeAllListeners();
