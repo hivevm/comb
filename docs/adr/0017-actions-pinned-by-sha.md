@@ -45,12 +45,12 @@ schedule of Dependabot's updates.
 - Positive: every change to the code a workflow runs is a reviewed diff.
 - Negative / trade-offs: fixes within a major arrive as Dependabot pull requests to review, not on
   their own.
-- Follow-ups: converting the template's existing references from major tags to SHAs in the change
-  that implements this ADR.
 
 ## Enforcement
 
 `scripts/sensor-action-refs.sh --require sha` runs in `scripts/check-all.sh` and in the `sensors`
 job of `checks.yml`, beside a comment that cites this ADR with `Verifies: ADR-0017`; it fails on
-any reference that is not a full commit SHA and on a missing `github-actions` entry in
-`.github/dependabot.yml`.
+any reference that is not a full commit SHA.
+
+**Not mechanically decidable:** that `.github/dependabot.yml` keeps its `github-actions` entry and
+that each reference carries its version in a trailing comment; review holds both.
