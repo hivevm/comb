@@ -37,9 +37,13 @@ reviews every change to the protected parts, and caps open agent work at two.
   Dev Container does not install it; inside the container, the agent runs from the VS Code
   extension.
 - **Protected parts,** never worked unattended however small the ticket, and reviewed by the
-  maintainer as well as by the reviewing session: the public TypeScript interface of Comb, the
-  data format of the bridge, the validation of graph data that holds Q-5 to Q-7, and the CI
-  workflows.
+  maintainer as well as by the reviewing session: the public TypeScript interface of Comb
+  (`packages/comb/src/index.ts`, `packages/comb/src/api/`, the exports of
+  `packages/comb/package.json`); the data format of the bridge and the validation of graph data
+  that holds Q-5 to Q-7 (`crates/engine-wasm/`, `packages/comb/src/bridge/`); the mesh budget
+  that holds Q-7 for accepted graph data (`crates/engine/src/stroke.rs`,
+  `crates/engine/src/graph.rs`); and the CI and the checks the ADRs rest on (`.github/`,
+  `scripts/check-*.sh`, `scripts/sensor-*.sh`). `.github/CODEOWNERS` names these paths.
 - **Unattended work:** a ticket whose *Mode* allows it and that touches no protected part may be
   implemented and reviewed without the maintainer; its pull request still waits for the
   maintainer to merge.
@@ -81,8 +85,7 @@ the `review` skill.
 - Negative / trade-offs: no parallel implementation, so throughput is one session at a time.
 - Negative / trade-offs: implementer and reviewer share one model and may share its blind spots;
   the maintainer's review of the protected parts is the counterweight.
-- Follow-ups: the paths of the protected parts, once the code exists, so that `.github/CODEOWNERS`
-  can name them; growing into parallel tickets when the cap holds back reviewable work.
+- Follow-ups: growing into parallel tickets when the cap holds back reviewable work.
 
 ## Enforcement
 
