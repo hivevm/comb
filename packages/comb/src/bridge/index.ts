@@ -53,7 +53,9 @@ const DETAILS: Record<MeshDetail, Detail> = {
 
 /** What a viewport query found: node slots in ascending order, the edge slot and point of each
  *  found edge label, the mesh of the found edges and its detail, and the positions buffer, all
- *  read after the same call. */
+ *  read after the same call. The label points and the mesh's positions are relative to `origin`,
+ *  a world point near the query's rectangle, so that `f32` rounds them by their distance from it
+ *  (ADR-0010); the positions buffer is not. */
 export interface Visible {
   positions: Float32Array;
   nodes: Uint32Array;
@@ -61,6 +63,7 @@ export interface Visible {
   labelPoints: Float32Array;
   mesh: EdgeMesh;
   detail: Detail;
+  origin: { x: number; y: number };
 }
 
 /** The level of detail a query serves (ADR-0012): near with edge labels, middle without, far
@@ -293,6 +296,8 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
     },
     query(rect, level, pixel, labelReach) {
       const detail = DETAILS[engine.query(rect, LEVELS[level], pixel, labelReach)];
+      // Read before the views: each is a call into the engine.
+      const origin = { x: engine.originX(), y: engine.originY() };
       return {
         positions: f32(engine.positionsPtr(), engine.positionsLen()),
         nodes: u32(engine.visibleNodesPtr(), engine.visibleNodesLen()),
@@ -306,6 +311,7 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
           indices: u32(engine.meshIndicesPtr(), engine.meshIndicesLen()),
         },
         detail,
+        origin,
       };
     },
   };

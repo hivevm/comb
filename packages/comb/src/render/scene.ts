@@ -6,6 +6,14 @@
 // those; the found edges are drawn as one mesh. The zoom chooses one of three levels of detail:
 // near draws node boxes, titles, and edge labels; middle draws node boxes and titles; far draws
 // nodes as particles and edges as thin lines, without text.
+//
+// The world is drawn relative to the origin of the last query (ADR-0010): the `world` render
+// group stands at the screen point of the origin, the edges and the edge labels, which the engine
+// hands over relative to it, at (0, 0) in it, and the nodes and particles, placed by the positions
+// buffer, at minus the origin. The GPU, which takes PixiJS's transforms as `f32`, then sees only
+// distances from the origin for the edges, the edge labels, and the node views, however far from
+// the world's origin the viewport lies; the particles, whose shader takes their container's whole
+// transform, keep the rounding they had.
 import { Application, BitmapText, Container } from "pixi.js";
 import type { Bridge, Detail, Level, Rect } from "../bridge";
 import { worldRect } from "../interaction/viewport";
@@ -120,6 +128,8 @@ export class Scene {
   /** How many renders queried the engine; the others moved the world alone. */
   queries = 0;
   private drawn: Drawn | null = null;
+  /** The world point the last query handed its edges and labels over relative to. */
+  private origin = { x: 0, y: 0 };
   /** The bridge of the last render and the edges it drew, for inspection. */
   private source: { bridge: Bridge; edges: GraphView["edges"] } | null = null;
 
@@ -131,8 +141,10 @@ export class Scene {
 
   render(state: GraphView, bridge: Bridge): void {
     if (!this.covers(state)) this.query(state, bridge);
-    this.world.position.set(state.viewport.x, state.viewport.y);
-    this.world.scale.set(state.viewport.scale);
+    const { x, y, scale } = state.viewport;
+    // In f64 here, so that the world's transform on the GPU holds no far coordinate.
+    this.world.position.set(x + this.origin.x * scale, y + this.origin.y * scale);
+    this.world.scale.set(scale);
     this.renders += 1;
   }
 
@@ -164,6 +176,10 @@ export class Scene {
     const level = levelAt(scale);
     const far = level === "far";
     const visible = bridge.query(rect, level, 1 / scale, this.labels.reach);
+    const { origin } = visible;
+    this.origin = origin;
+    this.nodes.position.set(-origin.x, -origin.y);
+    this.particles.position.set(-origin.x, -origin.y);
     this.nodes.sync(state, far ? NONE : visible.nodes, visible.positions);
     this.particles.sync(state, far ? visible.nodes : NONE, visible.positions);
     this.edges.sync(visible);
@@ -189,10 +205,17 @@ export class Scene {
     });
   }
 
+  /** The viewport the world is drawn through: its transform less the origin's screen point. */
+  drawnViewport(): SceneSnapshot["viewport"] {
+    const { x, y } = this.world;
+    const scale = this.world.scale.x;
+    return { x: x - this.origin.x * scale, y: y - this.origin.y * scale, scale };
+  }
+
   inspect(): SceneSnapshot {
     return {
       renderer: this.app.renderer.name,
-      viewport: { x: this.world.x, y: this.world.y, scale: this.world.scale.x },
+      viewport: this.drawnViewport(),
       level: this.level,
       nodes: [
         ...this.nodes.children.map((view) => ({
@@ -215,8 +238,8 @@ export class Scene {
       edgeMesh: { ...this.edges.size(), detail: this.detail },
       edgeLabels: this.labels.children.map((label) => ({
         edge: label.label,
-        x: label.x,
-        y: label.y,
+        x: label.x + this.origin.x,
+        y: label.y + this.origin.y,
         text: (label as LabelView).drawnText,
       })),
       displayObjects: countDisplayObjects(this.world),

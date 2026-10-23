@@ -169,19 +169,23 @@ fn worst_inside(path: &EdgePath, points: &[Point], rect: &Rect, scale: f64) -> f
         .fold(0.0, f64::max)
 }
 
-/// Asserts that the vertices `range` of `mesh`, an edge without an arrowhead, are the stroke of
-/// `points` `width` wide: the middle of each pair of vertices is a point, within what `f32` holds.
-fn assert_stroke_of(mesh: &Mesh, range: std::ops::Range<usize>, points: &[Point], width: f64) {
+/// Asserts that the vertices `range` of the mesh of `out`, an edge without an arrowhead, are the
+/// stroke of `points` `width` wide: the middle of each pair of vertices, its origin added back, is
+/// a point, within what `f32` holds of its distance from the origin (ADR-0010).
+fn assert_stroke_of(out: &Visible, range: std::ops::Range<usize>, points: &[Point], width: f64) {
     assert_eq!(range.len(), 2 * points.len());
+    let mesh = &out.mesh;
+    let origin = [out.origin.x, out.origin.y];
     for (i, point) in range.step_by(2).zip(points) {
         let middle = |axis: usize| {
             let (a, b) = (
                 mesh.positions[2 * i + axis],
                 mesh.positions[2 * i + 2 + axis],
             );
-            (f64::from(a) + f64::from(b)) / 2.0
+            (f64::from(a) + f64::from(b)) / 2.0 + origin[axis]
         };
-        let rounding = (point.x.abs().max(point.y.abs()) + width) * f64::from(f32::EPSILON);
+        let (dx, dy) = (point.x - origin[0], point.y - origin[1]);
+        let rounding = (dx.abs().max(dy.abs()) + width) * f64::from(f32::EPSILON);
         assert!((middle(0) - point.x).abs() <= rounding, "{point:?}");
         assert!((middle(1) - point.y).abs() <= rounding, "{point:?}");
     }
@@ -220,7 +224,7 @@ fn assert_accurate(graph: &Graph, full: &Visible, rect: &Rect, level: Level, sca
     for (&slot, (_, range)) in measured {
         let path = graph.paths[slot as usize];
         let points = flattened(&path, &stroke, rect);
-        assert_stroke_of(&full.mesh, range, &points, stroke.width);
+        assert_stroke_of(full, range, &points, stroke.width);
         let worst = worst_inside(&path, &points, rect, scale);
         assert!(
             worst <= 0.25,

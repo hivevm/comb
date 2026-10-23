@@ -2,6 +2,7 @@
 import { createComb, type Comb, type EngineSource, type GraphData, type Selection } from "comb";
 import engineUrl from "comb/engine.wasm?url";
 import {
+  edgeVertices,
   inspect,
   renderCount,
   sceneNumbers,
@@ -45,6 +46,7 @@ declare global {
     screenPoint: (x: number, y: number) => ReturnType<typeof screenPoint>;
     visibleRect: (margin?: number) => ReturnType<typeof visibleRect>;
     work: () => ReturnType<typeof work>;
+    edgeVertices: () => ReturnType<typeof edgeVertices>;
   }
 }
 
@@ -148,4 +150,5 @@ window.trapNextCall = trapNextCall;
 window.screenPoint = (x, y) => screenPoint(comb, x, y);
 window.visibleRect = (margin) => visibleRect(comb, margin);
 window.work = () => work(comb);
+window.edgeVertices = () => edgeVertices(comb);
 window.loadReport = load();

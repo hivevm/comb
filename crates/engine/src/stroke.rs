@@ -202,6 +202,8 @@ pub struct Mesh {
     pub detail: Detail,
     /// Per edge of the last build, whether its full mesh is its arrowhead alone.
     arrowheads: Vec<bool>,
+    /// The world point the positions of the last build are relative to (ADR-0010).
+    origin: Point,
 }
 
 impl Mesh {
@@ -215,7 +217,8 @@ impl Mesh {
     }
 
     /// Strokes `edges`, in slot order, into the mesh after clearing it, as `stroke` says, inside
-    /// `rect` within a quarter pixel and outside it as chords, and within `budget` vertices: the
+    /// `rect` within a quarter pixel and outside it as chords, with positions relative to
+    /// `origin`, and within `budget` vertices: the
     /// floors of all edges are reserved first, and from the first edge whose full mesh does not
     /// fit beside the floors of the edges after it, or for which memory runs short, every edge is
     /// drawn as its floor. Where even the floors do not fit, the mesh holds no edge.
@@ -224,10 +227,12 @@ impl Mesh {
         edges: impl ExactSizeIterator<Item = (&'a EdgePath, &'a EdgeStyle)> + Clone,
         stroke: &Stroke,
         rect: &Rect,
+        origin: Point,
         budget: u32,
         scratch: &mut Vec<Point>,
     ) {
         self.clear();
+        self.origin = origin;
         let within = Within {
             stroke,
             area: rect.grown(stroke.width),
@@ -325,8 +330,11 @@ impl Mesh {
         u32::try_from(self.distances.len()).unwrap_or(u32::MAX)
     }
 
+    /// Adds a vertex at `at`, its position written relative to the origin and only then rounded.
     fn vertex(&mut self, at: Point, distance: f64, color: u32, dash: (f32, f32)) {
-        self.positions.extend([at.x as f32, at.y as f32]);
+        let Point { x, y } = self.origin;
+        self.positions
+            .extend([(at.x - x) as f32, (at.y - y) as f32]);
         self.distances.push(distance as f32);
         self.colors.push(color);
         self.dashes.extend([dash.0, dash.1]);
@@ -1120,7 +1128,14 @@ mod tests {
         let mut mesh = Mesh::default();
         let mut points = Vec::new();
         let all = edges.iter().map(|(path, style)| (path, style));
-        mesh.build(all, &Stroke::full(0.05), &EVERYWHERE, budget, &mut points);
+        mesh.build(
+            all,
+            &Stroke::full(0.05),
+            &EVERYWHERE,
+            Point::default(),
+            budget,
+            &mut points,
+        );
         mesh
     }
 
