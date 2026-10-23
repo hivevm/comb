@@ -4,7 +4,15 @@
 // draws under a Content Security Policy without `unsafe-eval` (Q-6, ADR-0020).
 import "pixi.js/unsafe-eval";
 import { Application } from "pixi.js";
-import { createBridge, type Bridge, type GraphDataProblem, type Rect } from "../bridge";
+import {
+  createBridge,
+  EngineLostError,
+  onEngineLost,
+  refuseIfLost,
+  type Bridge,
+  type GraphDataProblem,
+  type Rect,
+} from "../bridge";
 import { attachInteraction } from "../interaction";
 import { clampScale, fitViewport } from "../interaction/viewport";
 import { Scene } from "../render/scene";
@@ -22,6 +30,7 @@ import {
   type Viewport,
 } from "../store";
 
+export { EngineLostError } from "../bridge";
 export { EngineSourceError } from "./engine";
 export type { EngineSource, EngineSourceProblem } from "./engine";
 export type { GraphDataProblem } from "../bridge";
@@ -40,26 +49,38 @@ export interface CombOptions {
   allowCanvasFallback?: boolean;
 }
 
+/** Once the engine is lost for the page, `load`, `updateNode`, `fitView`, and `setViewport` of
+ *  every Comb on it throw an `EngineLostError`, and so does `createComb` (ADR-0021). */
 export interface Comb {
-  /** Replaces the graph. Throws a `GraphDataError` on malformed graph data (Q-7). */
+  /** Replaces the graph. Throws a `GraphDataError` on malformed graph data (Q-7), and an
+   *  `EngineLostError` once the engine is lost. */
   load(graph: GraphData): void;
   /** Changes attributes of the node `id`; the canvas shows the change (G-5). Throws a
    *  `GraphDataError` where the graph holds no node `id`, or the patch holds a field other than
-   *  `title` or a title that is not a string, and changes nothing then (Q-7). */
+   *  `title` or a title that is not a string, and changes nothing then (Q-7), and an
+   *  `EngineLostError` once the engine is lost. */
   updateNode(id: string, patch: Partial<Pick<NodeView, "title">>): void;
-  /** Pans and zooms so the whole graph is in view. */
+  /** Pans and zooms so the whole graph is in view. Throws an `EngineLostError` once the engine is
+   *  lost. */
   fitView(): void;
   /** Pans and zooms to `viewport`: the screen position of the world origin and the scale, which
-   *  is clamped to the zoom range. Throws a `RangeError` on a value that is not finite. */
+   *  is clamped to the zoom range. Throws a `RangeError` on a value that is not finite, and an
+   *  `EngineLostError` once the engine is lost. */
   setViewport(viewport: Viewport): void;
   /** The current viewport. */
   viewport(): Viewport;
   /** Calls `listener` whenever the selection changes (G-5); returns the unsubscribe function. */
   onSelectionChange(listener: (selection: Selection) => void): () => void;
+  /** Calls `listener` once, with the `EngineLostError`, when the engine is lost for the page, and
+   *  at once where it is lost already; returns the unsubscribe function. The page recovers only
+   *  by being loaded anew (ADR-0021). */
+  onEngineLost(listener: (error: EngineLostError) => void): () => void;
   /** Resolves once the canvas has drawn every change made before the call, at most one frame
-   *  after the drawing. */
+   *  after the drawing; once the engine is lost, the canvas keeps its last frame and it resolves
+   *  without drawing. */
   whenRendered(): Promise<void>;
-  /** Removes the canvas; pending `whenRendered` calls resolve, later ones reject. */
+  /** Removes the canvas and the listeners of `onEngineLost`; pending `whenRendered` calls
+   *  resolve, later ones reject. */
   destroy(): void;
 }
 
@@ -126,7 +147,8 @@ function isProblem(error: unknown): error is GraphDataProblem {
 }
 
 /** Calls the bridge with plain data; what it refuses becomes a `GraphDataError`, and any other
- *  error, such as a panic of the engine, no problem of the data, is thrown on as an `Error`. */
+ *  error, such as the `EngineLostError` of a trap, no problem of the data, is thrown on as an
+ *  `Error`. */
 function checked<T>(check: () => T): T {
   try {
     return check();
@@ -142,6 +164,7 @@ function checked<T>(check: () => T): T {
  *  they were on a refusal (Q-7). */
 function updaterOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["updateNode"] {
   return (id, patch) => {
+    refuseIfLost();
     if (!store.getState().slots.has(id))
       throw new GraphDataError({ kind: "unknownNode", node: id });
     const plain = readOnce(() => patchOf(patch, limits));
@@ -152,12 +175,46 @@ function updaterOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["upd
   };
 }
 
+/** `load` on `store`: reads the graph data once, has the bridge check it, and hands the store only
+ *  what the engine took (Q-7). */
+function loaderOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["load"] {
+  return (graph) => {
+    refuseIfLost();
+    const lists = readOnce(() => listsOf(graph));
+    checked(() => bridge.checkGraphSize(lists.nodeCount, lists.edgeCount));
+    const { snapshot, idUnits } = readOnce(() => snapshotOf(lists, limits));
+    checked(() => bridge.checkIdBudget(idUnits));
+    checked(() => bridge.loadGraph(snapshot));
+    store.getState().load(snapshot);
+  };
+}
+
+/** `onEngineLost` of one Comb, and the removal of its listeners, which its `destroy` calls. */
+function engineLostOf(): { onEngineLost: Comb["onEngineLost"]; removeAll(): void } {
+  const removers = new Set<() => void>();
+  return {
+    onEngineLost(listener) {
+      const remove = onEngineLost(listener);
+      removers.add(remove);
+      return () => {
+        remove();
+        removers.delete(remove);
+      };
+    },
+    removeAll() {
+      removers.forEach((remove) => remove());
+      removers.clear();
+    },
+  };
+}
+
 /** Creates a Comb canvas that fills `host`, with the engine `options.engine`. Throws an
  *  `EngineSourceError` before it touches `host` where the engine is missing, a string, `URL`, or
  *  `Request`, or none of a `Response`, a `WebAssembly.Module`, and the bytes, and a
  *  `RendererUnavailableError` where the browser offers no WebGL2, unless `allowCanvasFallback`
- *  lets it draw on Canvas 2D. The engine is instantiated once per page: a later `createComb`
- *  checks its engine but reuses the first instance. */
+ *  lets it draw on Canvas 2D, and an `EngineLostError` once the engine is lost for the page. The
+ *  engine is instantiated once per page: a later `createComb` checks its engine but reuses the
+ *  first instance. */
 export async function createComb(host: HTMLElement, options: CombOptions): Promise<Comb> {
   // A caller without types may leave the options out; that is a missing engine too.
   options ??= {} as CombOptions;
@@ -184,16 +241,10 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
   // A larger canvas shows more of the world, so what is culled changes with its size.
   app.renderer.on("resize", frames.schedule);
   const detach = attachInteraction(app, store, bridge);
+  const lost = engineLostOf();
 
   const comb: Comb = {
-    load(graph) {
-      const lists = readOnce(() => listsOf(graph));
-      checked(() => bridge.checkGraphSize(lists.nodeCount, lists.edgeCount));
-      const { snapshot, idUnits } = readOnce(() => snapshotOf(lists, limits));
-      checked(() => bridge.checkIdBudget(idUnits));
-      checked(() => bridge.loadGraph(snapshot));
-      store.getState().load(snapshot);
-    },
+    load: loaderOf(store, bridge, limits),
     updateNode: updaterOf(store, bridge, limits),
     fitView() {
       const bounds = boundsOf(store.getState().nodes, bridge.positions());
@@ -201,6 +252,7 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
         store.getState().setViewport(fitViewport(bounds, app.screen.width, app.screen.height));
     },
     setViewport({ x, y, scale }) {
+      refuseIfLost();
       if (![x, y, scale].every(Number.isFinite)) throw new RangeError("comb: viewport not finite");
       store.getState().setViewport({ x, y, scale: clampScale(scale) });
     },
@@ -209,8 +261,10 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
       store.subscribe((state, previous) => {
         if (state.selection !== previous.selection) listener(state.selection);
       }),
+    onEngineLost: lost.onEngineLost,
     whenRendered: frames.whenRendered,
     destroy() {
+      lost.removeAll();
       frames.stop();
       unsubscribe();
       app.renderer.off("resize", frames.schedule);

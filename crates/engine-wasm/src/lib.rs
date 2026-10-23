@@ -921,6 +921,38 @@ impl From<Detail> for MeshDetail {
     }
 }
 
+/// A trap on demand, in test mode only (ADR-0021), so that the shell's tests provoke the loss of
+/// the engine without depending on a trap the checks may close. The feature `test-mode` builds it
+/// into the engine the tests run; the production build carries none of it, and
+/// scripts/check-bundle.sh fails an engine file that names its export.
+#[cfg(feature = "test-mode")]
+mod trap {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static ARMED: AtomicBool = AtomicBool::new(false);
+
+    /// Arms the trap: the next call of an `Engine` traps while it holds the engine. Exported
+    /// without the glue, so that both builds share one glue.
+    #[unsafe(no_mangle)]
+    pub extern "C" fn comb_test_mode_trap() {
+        ARMED.store(true, Ordering::Relaxed);
+    }
+
+    /// Traps, a WebAssembly `unreachable`, where the trap is armed.
+    pub fn spring() {
+        if ARMED.swap(false, Ordering::Relaxed) {
+            std::process::abort();
+        }
+    }
+}
+
+/// Without the feature `test-mode`, no trap.
+#[cfg(not(feature = "test-mode"))]
+mod trap {
+    #[inline(always)]
+    pub const fn spring() {}
+}
+
 /// The engine's state as the shell sees it: the loaded graph, and what the last query found.
 #[wasm_bindgen]
 #[derive(Default)]
@@ -942,6 +974,7 @@ impl Engine {
     /// loaded graph as it was.
     #[wasm_bindgen(js_name = loadGraph)]
     pub fn load_graph(&mut self, batch: Ts<GraphBatch>) -> Result<u32, GraphDataProblem> {
+        trap::spring();
         let batch = reading(|| batch.to_rust()).map_err(unshaped)?;
         self.graph = graph_of(&batch)?;
         self.visible = Visible::default();
@@ -950,6 +983,7 @@ impl Engine {
 
     /// Moves the nodes in `slots` by `(dx, dy)`, their edges with them.
     pub fn translate(&mut self, slots: &[u32], dx: f32, dy: f32) -> Result<(), TranslateError> {
+        trap::spring();
         self.graph
             .translate(slots, dx, dy)
             .map_err(TranslateError::from)
@@ -967,6 +1001,7 @@ impl Engine {
         pixel: f64,
         label_reach: f64,
     ) -> Result<MeshDetail, GraphDataProblem> {
+        trap::spring();
         let rect = rect.to_rust().map_err(unshaped)?;
         self.query_rect(&rect, level, pixel, label_reach)
     }
@@ -975,11 +1010,13 @@ impl Engine {
     /// for inspection, not for drawing.
     #[wasm_bindgen(js_name = drawnEdges)]
     pub fn drawn_edges(&mut self) {
+        trap::spring();
         self.graph.edge_ends(&self.visible.edges, &mut self.ends);
     }
 
     /// The slot of the node drawn on top at the world point `(x, y)`, if any.
     pub fn hit(&mut self, x: f64, y: f64) -> Option<u32> {
+        trap::spring();
         self.graph.hit(Point::new(x, y))
     }
 }

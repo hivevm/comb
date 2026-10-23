@@ -179,6 +179,18 @@ else (`"invalid"`); `comb` exports the type of `reason`, `EngineSourceProblem`. 
 instantiated once per page: a later `createComb` checks its `engine` but reuses the first
 instance.
 
+Should the engine trap, as WebAssembly does when it runs out of memory, it is lost for the page,
+for every Comb on it (ADR-0021). From then on `load`, `updateNode`, `fitView`, `setViewport`, and
+`createComb` throw an `EngineLostError`, which `comb` exports; `viewport`, `onSelectionChange`, and
+`destroy` keep working, the canvas keeps its last frame, and input on it changes nothing.
+`comb.onEngineLost(listener)` calls `listener` once with the error, at once where the engine is
+lost already, and returns the function that removes it. The only recovery is loading the page
+anew, so a host application tells its user and offers a reload:
+
+```ts
+comb.onEngineLost(() => showBanner("The graph stopped responding. Reload the page."));
+```
+
 Comb runs under a Content Security Policy that allows `wasm-unsafe-eval` but not `unsafe-eval`,
 such as `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'` (Q-6). For that it imports
 PixiJS's module `pixi.js/unsafe-eval`, which replaces PixiJS's code generation with code that uses

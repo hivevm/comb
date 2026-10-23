@@ -18,6 +18,11 @@ serde-wasm-bindgen = "0.6.5"
 tsify = { version = "0.5.8", default-features = false, features = ["js"] }
 wasm-bindgen = "0.2.129"
 
+# Test mode (ADR-0021): an export that traps on demand, for the shell's tests; `bun run
+# build:engine` builds the engine with it into packages/comb/wasm/test-mode/ beside the one without.
+[features]
+test-mode = []
+
 # The property test of the bridge's validation (Q-7); a dev-dependency, so it never reaches the
 # WebAssembly build. Without the default `fork` and `timeout`, which run each case in a process.
 [dev-dependencies]

@@ -384,3 +384,21 @@ describe("bridge mesh and hit", () => {
     expect(bridge.hit(70, 10)).toBe(2);
   });
 });
+
+describe("a trap", () => {
+  test("loses the engine: every later call throws an EngineLostError, and the listeners hear it once", () => {
+    // Verifies: ADR-0021
+    const fixture = new URL("./trap.fixture.ts", import.meta.url).pathname;
+    const run = Bun.spawnSync([process.execPath, "run", fixture], {
+      env: { ...process.env, NODE_ENV: "test" },
+    });
+    expect(run.stderr.toString()).toBe("");
+    const lost = "EngineLostError (RuntimeError)";
+    expect(JSON.parse(run.stdout.toString())).toEqual({
+      before: "ok",
+      trap: lost,
+      after: [lost, lost, lost, lost],
+      told: ["before: EngineLostError", "after: EngineLostError"],
+    });
+  });
+});

@@ -13,6 +13,7 @@ import init, {
   Engine,
   initSync,
   MeshDetail,
+  type InitOutput,
   type CheckedPatch,
   type GraphBatch,
   type GraphDataProblem,
@@ -122,44 +123,154 @@ export interface Bridge {
  *  production build replaces it by `production`, so the bundle carries none of it. */
 export const TEST_MODE = import.meta.env.MODE === "test" || import.meta.env.NODE_ENV === "test";
 
+/** Each call of `bridge` passed through `around`. */
+function each(
+  bridge: Bridge,
+  around: <A extends unknown[], R>(call: (...args: A) => R) => (...args: A) => R,
+): Bridge {
+  const calls = Object.entries(bridge).map(([name, call]) => [name, around(call)]);
+  return Object.fromEntries(calls) as Bridge;
+}
+
 /** `bridge` with the engine's memory grown by a page before each of its calls, so that a view
  *  kept across a call is detached and reads empty in tests, not only when memory happens to grow
  *  (ADR-0010). The message of its error is how scripts/check-bundle.sh tells that a bundle
  *  carries it. */
 function detaching(bridge: Bridge, memory: WebAssembly.Memory): Bridge {
-  const before =
-    <A extends unknown[], R>(call: (...args: A) => R) =>
-    (...args: A): R => {
-      try {
-        memory.grow(1);
-      } catch (cause) {
-        throw new Error("Comb test mode: the engine's memory cannot grow further", { cause });
-      }
-      return call(...args);
-    };
-  return {
-    loadGraph: before(bridge.loadGraph),
-    textLimit: before(bridge.textLimit),
-    idLimit: before(bridge.idLimit),
-    idBudget: before(bridge.idBudget),
-    checkIdBudget: before(bridge.checkIdBudget),
-    checkGraphSize: before(bridge.checkGraphSize),
-    checkNodePatch: before(bridge.checkNodePatch),
-    translate: before(bridge.translate),
-    positions: before(bridge.positions),
-    query: before(bridge.query),
-    drawnEdges: before(bridge.drawnEdges),
-    hit: before(bridge.hit),
-  };
+  return each(bridge, (call) => (...args) => {
+    try {
+      memory.grow(1);
+    } catch (cause) {
+      throw new Error("Comb test mode: the engine's memory cannot grow further", { cause });
+    }
+    return call(...args);
+  });
 }
 
-function wrap(memory: WebAssembly.Memory): Bridge {
+/** The engine trapped, in a call of this Comb or of another on the page, and is lost for the
+ *  page (ADR-0021): Comb refuses every later call that needs it, and only loading the page anew
+ *  brings it back. `cause` is the trap. */
+export class EngineLostError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("comb: the engine trapped and is lost for the page; load the page anew", options);
+    this.name = "EngineLostError";
+  }
+}
+
+/** The trap that lost the engine, once it is lost. The engine is instantiated once per page, so
+ *  one trap loses it for every Comb on the page. */
+let trapped: { cause: unknown } | undefined;
+const lostListeners = new Set<(error: EngineLostError) => void>();
+
+/** Whether `error`, thrown from a call of the engine, is a trap: WebAssembly's own, or the glue's
+ *  refusal of an object a trapped call left borrowed, which only a trap no guard saw leaves. Errors the bridge returns as values are
+ *  plain objects, never traps (ADR-0010). */
+function isTrap(error: unknown): boolean {
+  return (
+    error instanceof WebAssembly.RuntimeError ||
+    (error instanceof Error && error.message.startsWith("recursive use of an object detected"))
+  );
+}
+
+/** Throws an `EngineLostError` once the engine is lost. */
+export function refuseIfLost(): void {
+  if (trapped) throw new EngineLostError(trapped);
+}
+
+/** Marks the engine lost by the trap `cause`, tells the listeners once, and returns the error. */
+function lose(cause: unknown): EngineLostError {
+  if (!trapped) {
+    trapped = { cause };
+    // The glue frees a collected `Engine` through the instance, which is no longer safe to call.
+    kept.push(...engines.flatMap((engine) => engine.deref() ?? []));
+    const error = new EngineLostError(trapped);
+    const listeners = [...lostListeners];
+    lostListeners.clear();
+    listeners.forEach((listener) => tell(listener, error));
+  }
+  return new EngineLostError(trapped);
+}
+
+/** Calls `listener` with `error`; what it throws is reported on its own, so that every listener
+ *  is told and the call that trapped still throws the `EngineLostError`. */
+function tell(listener: (error: EngineLostError) => void, error: EngineLostError): void {
+  try {
+    listener(error);
+  } catch (thrown) {
+    queueMicrotask(() => {
+      throw thrown;
+    });
+  }
+}
+
+/** Every `Engine` the bridges created, held weakly until the engine is lost, and from then on
+ *  strongly, so that none is freed through the trapped instance. */
+const engines: WeakRef<Engine>[] = [];
+const kept: Engine[] = [];
+
+/** A new `Engine`, refused once the engine is lost, and marking it lost on a trap. */
+function newEngine(): Engine {
+  refuseIfLost();
+  try {
+    const engine = new Engine();
+    engines.push(new WeakRef(engine));
+    return engine;
+  } catch (error) {
+    throw isTrap(error) ? lose(error) : error;
+  }
+}
+
+/** Calls `listener` once, with the `EngineLostError`, when the engine is lost, or at once where it
+ *  is lost already; returns the function that removes it. */
+export function onEngineLost(listener: (error: EngineLostError) => void): () => void {
+  if (trapped) {
+    tell(listener, new EngineLostError(trapped));
+    return () => {};
+  }
+  // A registration of its own, so that one listener registered twice is told twice.
+  const registration = (error: EngineLostError) => listener(error);
+  lostListeners.add(registration);
+  return () => lostListeners.delete(registration);
+}
+
+/** `bridge` refusing every call once the engine is lost, and marking it lost on a trap. */
+function guarded(bridge: Bridge): Bridge {
+  return each(bridge, (call) => (...args) => {
+    refuseIfLost();
+    try {
+      return call(...args);
+    } catch (error) {
+      throw isTrap(error) ? lose(error) : error;
+    }
+  });
+}
+
+/** The engine's export that arms its trap, in test mode, where the engine carries it. */
+let trapExport: (() => void) | undefined;
+
+/** Test mode only: the next call of an `Engine` on the page traps (ADR-0021). The engine the
+ *  tests run is built with the feature `test-mode` of the bridge crate, which exports the trap;
+ *  the production engine carries none of it. */
+export function trapNextCall(): void {
+  if (!TEST_MODE) throw new Error("comb: the engine traps on demand in test mode only");
+  if (!trapExport) {
+    throw new Error("Comb test mode: the engine carries no trap; run `bun run build:engine`");
+  }
+  trapExport();
+}
+
+function wrap(exports: InitOutput): Bridge {
+  const { memory } = exports;
+  if (TEST_MODE) {
+    const trap = (exports as unknown as Record<string, unknown>)["comb_test_mode_trap"];
+    trapExport = typeof trap === "function" ? (trap as () => void) : undefined;
+  }
   const bridge = engineBridge(memory);
-  return TEST_MODE ? detaching(bridge, memory) : bridge;
+  return guarded(TEST_MODE ? detaching(bridge, memory) : bridge);
 }
 
 function engineBridge(memory: WebAssembly.Memory): Bridge {
-  const engine = new Engine();
+  const engine = newEngine();
   const u32 = (ptr: number, len: number) => new Uint32Array(memory.buffer, ptr, len);
   const f32 = (ptr: number, len: number) => new Float32Array(memory.buffer, ptr, len);
   return {
@@ -207,12 +318,12 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
 export async function createBridge(
   engine: Response | WebAssembly.Module | BufferSource,
 ): Promise<Bridge> {
-  const { memory } = await init({ module_or_path: engine });
-  return wrap(memory);
+  refuseIfLost();
+  return wrap(await init({ module_or_path: engine }));
 }
 
 /** Loads the engine from its bytes, for tests outside a browser. */
 export function createBridgeSync(module: BufferSource): Bridge {
-  const { memory } = initSync({ module });
-  return wrap(memory);
+  refuseIfLost();
+  return wrap(initSync({ module }));
 }
