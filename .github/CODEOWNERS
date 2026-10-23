@@ -1,7 +1,32 @@
-# Code owners for the two artifacts only a human decides: the specification, and the decision
-# record — an ADR's Status line included. The rules themselves are stated in
-# AGENTS.md, section 3; the review this file drives is a repository setting, listed under
-# "Repository settings" in ../README.md, and until that setting is enabled this file changes
-# nothing.
+# Code owners for what only a human decides, and for the protected parts of ADR-0007, which the
+# maintainer reviews as well as the reviewing session. The rules themselves are stated in
+# AGENTS.md, section 3, and in ADR-0007; the review this file drives is a repository setting,
+# listed under "Repository settings" in ../README.md, and until that setting is enabled this file
+# changes nothing.
+
+# The specification and the decision record, an ADR's Status line included (AGENTS.md, section 3).
 /docs/SPECIFICATION.md @mbrigl
 /docs/adr/ @mbrigl
+
+# The public TypeScript interface of Comb; package.json as a whole, for its exports (ADR-0007).
+/packages/comb/src/index.ts @mbrigl
+/packages/comb/src/api/ @mbrigl
+/packages/comb/package.json @mbrigl
+
+# The data format of the bridge and the validation of graph data that holds Q-5 to Q-7 (ADR-0007).
+/crates/engine-wasm/ @mbrigl
+/packages/comb/src/bridge/ @mbrigl
+
+# The mesh budget that holds Q-7 for accepted graph data, and its tests (ADR-0007, ADR-0012).
+/crates/engine/src/stroke.rs @mbrigl
+/crates/engine/src/graph.rs @mbrigl
+/crates/engine/src/graph/ @mbrigl
+
+# The CI, the git hooks, and the checks the ADRs rest on, with their self-tests (ADR-0007).
+/.github/ @mbrigl
+/.githooks/ @mbrigl
+/scripts/check-*.sh @mbrigl
+/scripts/sensor-*.sh @mbrigl
+/scripts/test-check-*.sh @mbrigl
+/scripts/test-sensor-*.sh @mbrigl
+/scripts/test-git-hooks.sh @mbrigl
