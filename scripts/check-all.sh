@@ -50,7 +50,8 @@ run "Revision-due sensor" scripts/sensor-revision-due.sh
 run "Plan frontier sensor self-test" scripts/test-sensor-plan-frontier.sh
 run "Plan frontier sensor" scripts/sensor-plan-frontier.sh
 run "Action references sensor self-test" scripts/test-sensor-action-refs.sh
-run "Action references sensor" scripts/sensor-action-refs.sh
+# Every action is referenced by its full commit SHA (ADR-0017).
+run "Action references by commit SHA" scripts/sensor-action-refs.sh --require sha
 run "Git hooks self-test" scripts/test-git-hooks.sh
 run "Shell lint self-test" scripts/test-check-shell.sh
 run "Shell lint" scripts/check-shell.sh

@@ -18,7 +18,8 @@ name: Checks
 # - Build, test, lint: scripts/check-code.sh (ADR-0008), after Bun, Rust with the WebAssembly
 #   target, and Chromium are set up, and after the self-test of scripts/check-mutants.sh, which
 #   the Mutation testing workflow (mutation.yml) runs. It is the one job of this workflow that
-#   installs something; its actions outside actions/* are pinned by commit SHA (ADR-0017).
+#   installs something. Every action of every workflow is referenced by its full commit SHA,
+#   with its version in a trailing comment (ADR-0017).
 #
 # Every job is bounded by a timeout — a hung step would otherwise occupy a runner until the
 # platform's own six-hour limit — and every checkout runs with 'persist-credentials: false': the
@@ -55,7 +56,7 @@ jobs:
       # working tree: a documentation link into a submodule would otherwise break in CI while
       # working locally. Their *contents* are never read — check-docs.sh enumerates via
       # `git ls-files`, which lists a submodule as one gitlink entry, not as its files.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           submodules: recursive
@@ -75,7 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       # The check's own tests run first: a check that is wrong passes nothing worth trusting.
@@ -88,7 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       # The check's own tests run first: a check that is wrong passes nothing worth trusting.
@@ -101,7 +102,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -129,14 +130,15 @@ jobs:
         run: bash scripts/sensor-plan-frontier.sh
       - name: Self-test the action references sensor
         run: bash scripts/test-sensor-action-refs.sh
-      - name: Report the forms of the action references the workflows use
-        run: bash scripts/sensor-action-refs.sh
+      # Every action is referenced by its full commit SHA (ADR-0017).
+      - name: Check that every action is referenced by its commit SHA
+        run: bash scripts/sensor-action-refs.sh --require sha
 
   shell:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Self-test the git hooks
@@ -150,7 +152,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
