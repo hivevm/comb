@@ -1,6 +1,6 @@
 # Keeps the dependencies current with pull requests to review:
-# - the GitHub Actions under .github/workflows/: within a major, the version tag picks up new
-#   releases by itself; Dependabot raises a pull request when an action publishes a new major;
+# - the GitHub Actions under .github/workflows/, referenced by commit SHA: Dependabot raises a
+#   pull request for every new release, updating the SHA and its version comment (ADR-0017);
 # - the JavaScript dependencies pinned by bun.lock, and the Rust crates pinned by Cargo.lock;
 # - the images the Dev Container's Dockerfile pins by digest, and its Features (ADR-0014).
 version: 2
