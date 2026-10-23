@@ -65,29 +65,43 @@ vertices per query, and choose by zoom between three levels of detail.
   query's rectangle grown by the stroke's width is drawn as its chord. The curve and the chord lie
   in the hull of those control points, so neither the chord nor its stroke reaches into the
   rectangle, and each edge in the viewport is drawn within a quarter pixel at the scale queried,
-  within Q-4 until the next query. Past a chord, the distance along the path advances by the
-  chord's length. Subdivision goes at most 24 levels deep, up to 2^24 segments of an edge, so that
-  an edge from (0, 0) to (-1e8, 3e7) still keeps its quarter pixel in the rectangle; the rectangle
-  and the mesh budget, not the depth, bound what an edge costs, and a pixel that is not a finite
-  number above zero is refused before any edge is flattened.
+  within Q-4 until the next query. Past a chord, the distance along the path advances by the chord's
+  length. A segment of the flattened path that meets the grown rectangle with an end outside it is
+  split where it enters the grown rectangle and where it leaves it, once the arrowhead has cut the
+  path's end, so that no vertex of a segment that meets the rectangle lies farther from it than the
+  grown rectangle reaches, and what the rectangle shows rounds by its distance from the query's
+  origin (ADR-0010), however far the segment's ends lie. The parts outside are drawn as chords and
+  the edge stays complete; the split points lie on the segment, so the distance along the path runs
+  on through them unbroken. Subdivision goes at most 24 levels deep, up to 2^24 segments of an edge,
+  so that an edge from (0, 0) to (-1e8, 3e7) still keeps its quarter pixel in the rectangle; the
+  rectangle and the mesh budget, not the depth, bound what an edge costs, and a pixel that is not a
+  finite number above zero is refused before any edge is flattened.
 - **Mesh budget:** the mesh of one query holds at most 4,194,304 (2^22) vertices, and so at most
   three times as many indices. Each edge the query found has a floor: the smaller of its chord, four
   vertices, in its colour and dash pattern, without an arrowhead, and its full mesh where that is
   its arrowhead alone, found within its first 64 flattened points. In slot order, edges are meshed
   in full while each fits beside the floors of the edges still to come; the flattening of an edge
   stops once it passes the room left, and from the first edge that does not fit, it and every later
-  edge are drawn as their floors, unflattened. The budget is the floors of a load at the limit of
-  1,000,000 edges (ADR-0009), 4,000,000 vertices, taken to the next power of two, the size the
-  shell's arrays grow to anyway; it is twelve times the largest mesh measured of the benchmark's
-  graph (Sources), which never reaches it. So every edge found is drawn at every viewport while
-  memory lasts, and the budget follows the limit when the limit changes. The mesh's vectors grow by
-  `try_reserve`, never beyond the budget; the floors are reserved before the first edge is meshed,
-  and an allocation that fails ends full meshing as the budget does. Where the floors of the edges
-  found exceed the budget, which takes more than 1,048,576 edges in one query, or cannot be
-  allocated, the mesh holds no edges. A query returns the detail of its mesh: *complete* where every
-  edge it found is meshed in full, or *coarsened* where an edge was drawn as its chord or left out
-  for the budget or for memory. The shell draws the mesh as it comes and reports the detail through
-  inspection, not to the host application.
+  edge are drawn as their floors, unflattened. The split adds points to an edge's full mesh, not to
+  its floor, which stays its chord or its arrowhead unsplit: at most two per segment, and at most
+  sixteen per edge: the flattened points lie on the curve, each split point marks a change of side
+  of one of the four lines that bound the grown rectangle between two of them, the entry and the
+  exit of one segment by different lines, a cubic crosses each line at most three times, and the
+  base of the arrowhead, off the curve, may add one more per line; so at most 32 vertices and 96
+  indices; they count against the room left as every flattened point does, so a rounding that adds
+  more cannot break the budget, and the floors and the budget stay as they are. The budget is the
+  floors of a load at the limit of 1,000,000 edges (ADR-0009), 4,000,000 vertices, taken to the next
+  power of two, the size the shell's arrays grow to anyway; it is twelve times the largest mesh
+  measured of the benchmark's graph (Sources), which never reaches it, nor would with 32 more
+  vertices for each of its edges. So every edge found is drawn at every viewport while memory lasts,
+  and the budget follows the limit when the limit changes. The mesh's vectors grow by `try_reserve`,
+  never beyond the budget; the floors are reserved before the first edge is meshed, and an
+  allocation that fails ends full meshing as the budget does. Where the floors of the edges found
+  exceed the budget, which takes more than 1,048,576 edges in one query, or cannot be allocated, the
+  mesh holds no edges. A query returns the detail of its mesh: *complete* where every edge it found
+  is meshed in full, or *coarsened* where an edge was drawn as its chord or left out for the budget
+  or for memory. The shell draws the mesh as it comes and reports the detail through inspection, not
+  to the host application.
 - **Q-4:** the rectangle and the mesh budget rest on Q-4 as it reads: 0.5 px for everything the
   viewport shows, and a coarsened edge mesh where the mesh budget or memory runs short.
 - **Text:** every text on the canvas is `BitmapText`.
@@ -170,7 +184,12 @@ vertices per query, and choose by zoom between three levels of detail.
   bounds memory, and with the flattening stopped at the room left, the work of a query, but not
   to a frame's time.
 - Negative / trade-offs: an edge drawn as its chord for the budget strays beyond 0.5 px and draws
-  no arrowhead. Q-4 allows that in a coarsened mesh, which inspection reports.
+  no arrowhead. Q-4 allows that in a coarsened mesh, which inspection reports. Its chord is not
+  split, so it also keeps the rounding of its ends, however far they lie.
+- Negative / trade-offs: a chord or a segment that passes outside the grown rectangle is not
+  split and keeps the rounding of its ends; it reaches into the rectangle only where that
+  rounding exceeds its clearance, at least half the stroke's width, which takes ends some 2^23
+  stroke widths from the query's origin.
 - Negative / trade-offs: a chord is shorter than the part it stands for, so where an edge leaves
   the rectangle and comes back, its dash pattern inside may shift when a query moves the chord.
 - Negative / trade-offs: which edges keep full detail past the budget follows slot order, not
@@ -201,6 +220,19 @@ and asserts that no page error occurs, that the frame is drawn, that inspection 
 complete, and that a valid graph loaded afterwards draws; removing the rectangle turns it red, the
 mesh then reported coarsened. Each cites `Verifies: ADR-0012, Q-7`, and the property test also
 `Verifies: Q-4`.
+
+The property test also asserts that no segment of an edge's flattening that meets the rectangle has
+an end beyond the grown rectangle, and engine tests assert that a straight edge from (-1e7, -3e6) to
+(1e7, 3e6) queried at a scale of 4 around its middle is split on the grown rectangle, keeps its
+distance along the path continuous across the split, counts the split points against the room left,
+and is drawn within a quarter pixel there, as is one from (-1e9, -3e8) to (1e9, 3e8), whose ends f32
+rounds by more, and that a path wholly inside the rectangle is meshed as without one; without the
+split, those of the split turn red. A Playwright test draws an edge whose flattening leaves one
+segment some 4e7 long across a viewport at a scale of 4, edges leaving and entering their nodes
+level so that none the graph data describes is straight and slanted, and asserts that inspection
+reports the mesh complete and every point of the edge inside the viewport lies within a quarter
+pixel of half the stroke's width from either side of the stroke the shell draws; without the split
+it turns red. Each cites `Verifies: ADR-0012`, those of accuracy also `Verifies: Q-4`.
 
 **Not mechanically decidable:** the branches where `try_reserve` fails; provoking them needs an
 allocator that fails on demand, which the engine's tests do not have, so review holds that they

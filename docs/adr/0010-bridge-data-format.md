@@ -166,12 +166,13 @@ compacted after deletions; moving the engine into a worker.
 - Negative / trade-offs: the streams of a query mean nothing without its origin, and the world's
   translation is no longer the viewport's; inspection adds the origin back and reports the
   viewport the world is drawn through, its transform less the origin's screen point.
-- Negative / trade-offs: a segment of the mesh that crosses the rectangle keeps the rounding of
-  its ends, which may lie far outside it, such as a straight edge flattened into one segment;
-  the origin bounds the rounding of vertices near the rectangle, not of every vertex the mesh
-  holds. An end at a distance `d` from the origin strays by up to `d` × 2^-24 world units, which
-  at a scale `s` reaches 0.5 px from `d` = 2^23 / `s`, about 2.1e6 at a scale of 4, while the
-  query reports the mesh complete.
+- Negative / trade-offs: the origin bounds the rounding of vertices near the rectangle, not of
+  every vertex the mesh holds. An end at a distance `d` from the origin strays by up to
+  `d` × 2^-24 world units, which at a scale `s` reaches 0.5 px from `d` = 2^23 / `s`, about
+  2.1e6 at a scale of 4. A segment that meets the rectangle is split where it leaves the
+  rectangle grown by the stroke's width (ADR-0012, *The rectangle*), so its ends lie near the
+  rectangle; a chord or segment that passes outside it, and the unsplit chord of an edge
+  coarsened for the budget, keep the rounding of ends far beyond it.
 - Negative / trade-offs: the particles of the far level keep the rounding they had, of their
   container's transform on the GPU, of the order of a pixel at ±5e7 at the far level's largest
   scale, 0.3; Q-4 does not cover nodes.

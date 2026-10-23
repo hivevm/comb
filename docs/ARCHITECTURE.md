@@ -70,8 +70,10 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   flattens the found edges within a tolerance and strokes them into the triangles of one mesh,
   with each edge's colour, dash pattern, and arrowhead, or as thin lines alone at the far level
   of detail; it decides the stroke of each level. A part of a path whose control points miss the
-  query's rectangle, grown by the stroke's width, is drawn as its chord, and a path is subdivided
-  at most 24 levels deep; the mesh of one query holds at most the mesh budget, 2^22 vertices: each
+  query's rectangle, grown by the stroke's width, is drawn as its chord, a segment that meets the
+  grown rectangle with an end outside it is split where it enters and leaves it, so that what the
+  rectangle shows rounds by its distance from the query's origin, and a path is subdivided at most
+  24 levels deep; the mesh of one query holds at most the mesh budget, 2^22 vertices: each
   edge's floor, its chord or its arrowhead alone where that is its full mesh, is reserved first,
   edges are meshed in full in slot order while each fits beside the floors of those after it, and
   from the first that does not, every edge is drawn as its floor and the mesh is coarsened; its
