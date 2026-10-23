@@ -57,6 +57,8 @@ to invent.
   onto the canvas.
 - **Path parameter** — a number `t` from 0.0 to 1.0 that marks a point along an edge's path, from
   its source connector to its target connector.
+- **Runner kind** — the CPU model a benchmark run records of the machine it ran on; runs are
+  compared only with the baseline of their own kind.
 - **Sidebar** — the host application's HTML panel, outside the canvas, in which the attributes of
   the selection are edited.
 - **Slot** — the index of a node or an edge in the engine's buffers, the same on both sides of the
