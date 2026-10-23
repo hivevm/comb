@@ -304,9 +304,10 @@ configured once by a maintainer and worth re-checking after a repository move or
   pushes and branch deletion;
 - enable **require a review from Code Owners** on that ruleset, so the two artifacts only a human
   decides, [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md) and everything under
-  [`docs/adr/`](docs/adr/) ([`AGENTS.md` §3](AGENTS.md#3-adr-rules)), cannot be merged without the
-  owner named in [`.github/CODEOWNERS`](.github/CODEOWNERS), which has to carry a real handle or
-  team for the requirement to mean anything;
+  [`docs/adr/`](docs/adr/) ([`AGENTS.md` §3](AGENTS.md#3-adr-rules)), and the protected parts of
+  [ADR-0007](docs/adr/0007-harness.md) cannot be merged without the owner named in
+  [`.github/CODEOWNERS`](.github/CODEOWNERS), which has to carry a real handle or team for the
+  requirement to mean anything;
 - enable **secret scanning with push protection**, the only mechanical backstop behind the secrets
   rule ([`AGENTS.md` §7](AGENTS.md#7-secrets)), which is otherwise carried by review alone;
 - enable **private vulnerability reporting** (see [`SECURITY.md`](SECURITY.md)).
