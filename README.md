@@ -67,17 +67,21 @@ budget of Q-3 (`bun run build:lib`, at most 300 kB gzipped without PixiJS).
   workload in the same page (`bench/reference.ts`: a JavaScript loop, a WebAssembly loop, and a
   WebGL2 draw of a fixed mesh), recorded as `reference` with its parts. The **Benchmark** workflow
   runs it three times on a GitHub runner, weekly and on demand (*Actions* → *Benchmark* → *Run
-  workflow*), and fails when the median of a number exceeds `bench/baseline.json` by more than
-  25 %, naming it. The reference is a gate: when a part of it differs from the baseline's by more
+  workflow*), and fails when the median of a number exceeds the baseline of the runner's kind,
+  the CPU model the run records, under `bench/baselines/` by more than 25 %, naming it. The
+  reference is a gate within a kind: when a part of it differs from the kind's baseline by more
   than 25 %, either way, the runner is not comparable and the comparison is refused, naming the
   parts; every part's ratio to the baseline is in the log. The runs and their median are
-  uploaded as the artefact `bench-results` (`bun bench/compare.ts bench/baseline.json <run>...`
-  compares locally). The maintainer records the baseline: take `median.json` from the artefact
-  of a workflow run on `main`, save it as `bench/baseline.json`, and open a pull request that
-  says why the numbers moved. Against a baseline without a reference, the comparison says that
-  the runner gate is not checked and judges the numbers alone. A runner's numbers are
-  compared only with a runner's: runs of another size, mode, or GPU than the baseline's, runs
-  that name no GPU, and runs without a reference against a baseline with one are refused.
+  uploaded as the artefact `bench-results` (`bun bench/compare.ts bench/baselines <run>...`
+  compares locally; a run in the Dev Container is refused, since its CPU model has no baseline,
+  unless a baseline recorded on the same CPU model is passed). The maintainer records a kind's
+  baseline: take `median.json` from the artefact of a workflow run on `main` on that kind, save it
+  under the file name the refusal prints, and open a pull request that says why. Against a
+  baseline without a reference, the comparison says that the runner gate is not checked and
+  judges the numbers alone. A runner's numbers are compared only with a runner's of its kind:
+  runs on a kind without a baseline or naming no CPU model, runs of another size, mode, or GPU
+  than the baseline's, runs that name no GPU, and runs without a reference against a baseline
+  with one are refused.
 - **Mutation testing:** `cargo mutants -p comb-engine --no-shuffle --timeout 30` mutates
   `crates/engine` and runs its tests against each mutant, in about half an hour, writing
   `mutants.out/`; it needs cargo-mutants 27.1.0
