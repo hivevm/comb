@@ -4,12 +4,13 @@ name: Benchmark
 # edges on a GitHub runner, headless Chromium with WebGL2 on SwiftShader. Runner numbers are not the
 # reference machine's: they catch regressions against a baseline recorded on a runner, not the
 # targets. One run scatters, so the benchmark runs three times; bench/compare.ts fails when the
-# median of a number exceeds bench/baseline.json by more than its margin, and names it. Runners
-# differ in speed, so each run also times a fixed reference workload, and the comparison is
-# refused when a part of it differs from the baseline's by more than the margin. Without a
-# baseline it says so and passes; with one that has no reference it compares and says the runner
-# gate is not checked. The runs and their median are uploaded as an artefact; the baseline
-# changes only in a pull request that says why, from the median of a run on main.
+# median of a number exceeds the baseline of the runner's kind, its CPU model, under
+# bench/baselines/ by more than its margin, and names it. A run on a kind without a baseline is
+# refused, naming the kind, not passed. Within a kind runners differ in state, so each run also
+# times a fixed reference workload, and the comparison is refused when a part of it differs from
+# the baseline's by more than the margin; against a baseline that has no reference it compares and
+# says the runner gate is not checked. The runs and their median are uploaded as an artefact; a
+# kind's baseline changes only in a pull request that says why, from the median of a run on main.
 #
 # It runs weekly and on demand, not on every pull request: a run takes minutes, and runner numbers
 # scatter too much to gate each change. It needs no secret (ADR-0016); every action it uses is
@@ -57,8 +58,8 @@ jobs:
             bun --bun bench/run.ts
             cp bench-results/latest.json "bench-results/run-$i.json"
           done
-      - name: Compare the median with the recorded baseline
-        run: bun bench/compare.ts bench/baseline.json bench-results/run-*.json
+      - name: Compare the median with the baseline of the runner's kind
+        run: bun bench/compare.ts bench/baselines bench-results/run-*.json
       # Uploaded whether the comparison passes or not, so a regression can be read and a new
       # baseline taken from median.json.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

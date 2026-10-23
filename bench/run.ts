@@ -5,8 +5,10 @@
 // middle level of detail begin. Only frames in which Comb rendered count; each action is checked for its
 // effect, so a gesture that missed fails the run instead of measuring idle frames. Before the
 // gestures it times the reference workload of bench/reference.ts in the same page, by which
-// bench/compare.ts tells whether the runner is comparable with the baseline's. The numbers go to
-// bench-results/latest.json and are printed beside the targets.
+// bench/compare.ts tells whether the runner is in the state its kind's baseline was taken in; the
+// CPU model it records names the runner's kind, and each gesture records the steps it sent and
+// the frames Comb rendered. The numbers go to bench-results/latest.json and are printed beside
+// the targets.
 //
 //   bun run bench                   headless Chromium, software WebGL
 //   BENCH_HEADED=1 bun run bench    a visible window, which uses the machine's GPU

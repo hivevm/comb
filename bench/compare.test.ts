@@ -1,19 +1,36 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { compare, MARGIN, median, usable, type Run } from "./compare";
+import { baselineName, compare, gestures, MARGIN, median, usable, type Run } from "./compare";
 import type { Reference } from "./reference";
 
 const SWIFTSHADER =
   "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader driver)";
 
+// The CPU models GitHub's runners recorded, as bench/run.ts reads them; each names a runner kind.
+const EPYC_7763 = "AMD EPYC 7763 64-Core Processor";
+const XEON_8370C = "Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz";
+/** A CPU model for the Dev Container runs below, that of today's Dev Container; the runs share
+ *  it, and only that they share it decides. */
+const DEV_CONTAINER = "13th Gen Intel(R) Core(TM) i7-13700";
+
+/** The file name of each kind's baseline, as ADR-0008 derives it, written out. */
+const FILE: Record<string, string> = {
+  [EPYC_7763]: "amd-epyc-7763-64-core-processor.json",
+  [XEON_8370C]: "intel-r-xeon-r-platinum-8370c-cpu-2-80ghz.json",
+  [DEV_CONTAINER]: "13th-gen-intel-r-core-tm-i7-13700.json",
+};
+
 /** A reference of 80 ms in each part. */
 const REFERENCE: Reference = { ms: 240, js: 80, wasm: 80, gpu: 80 };
 
+// Every fixture names the CPU model of a 7763, since a run is compared only with a baseline of the
+// same kind; the tests of the kind give it another.
 function run(firstFrameMs: number, p95: number, copies = 3334, reference = REFERENCE): Run {
   return {
     copies,
+    cpu: EPYC_7763,
     gpu: SWIFTSHADER,
     reference,
     load: { nodes: copies * 15, firstFrameMs },
@@ -35,6 +52,7 @@ function bare(run: Run): Run {
 function measured(reference: Reference, [first, drag, pan, zoom, near, middle]: number[]): Run {
   return {
     ...run(first!, drag!, 3334, reference),
+    cpu: DEV_CONTAINER,
     pan: { p95: pan! },
     zoom: { p95: zoom! },
     levels: { near: { pan: { p95: near! } }, middle: { pan: { p95: middle! } } },
@@ -241,36 +259,45 @@ describe("a number that is not finite in one run", () => {
   });
 });
 
-describe("the command", () => {
-  let dir = "";
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+let dir = "";
 
-  /** Runs bench/compare.ts on `baseline` and `runs`, written to a directory of their own. */
-  async function command(baseline: Run, runs: Run[]) {
-    dir = mkdtempSync(join(tmpdir(), "compare-"));
-    writeFileSync(join(dir, "baseline.json"), JSON.stringify(baseline));
-    const paths = runs.map((r, i) => {
-      writeFileSync(join(dir, `run-${i}.json`), JSON.stringify(r));
-      return `run-${i}.json`;
-    });
-    const child = Bun.spawn(
-      ["bun", join(import.meta.dir, "compare.ts"), "baseline.json", ...paths],
-      {
-        cwd: dir,
-        stdout: "pipe",
-        stderr: "pipe",
-        env: { ...process.env, GITHUB_ACTIONS: "" },
-      },
-    );
-    const [out, err] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-    ]);
-    return { code: await child.exited, out, err };
+/** Runs bench/compare.ts in a directory of its own, on `runs` against `args`, with each of
+ *  `baselines` saved under `baselines/` by its kind's file name, and `raw` files saved there as
+ *  they are. */
+async function command(
+  baselines: Run[],
+  runs: Run[],
+  args = ["baselines"],
+  raw: Record<string, string> = {},
+) {
+  dir = mkdtempSync(join(tmpdir(), "compare-"));
+  mkdirSync(join(dir, "baselines"));
+  for (const b of baselines) {
+    writeFileSync(join(dir, "baselines", FILE[b.cpu!]!), JSON.stringify(b));
   }
+  for (const [name, text] of Object.entries(raw)) writeFileSync(join(dir, "baselines", name), text);
+  const paths = runs.map((r, i) => {
+    writeFileSync(join(dir, `run-${i}.json`), JSON.stringify(r));
+    return `run-${i}.json`;
+  });
+  const child = Bun.spawn(["bun", join(import.meta.dir, "compare.ts"), ...args, ...paths], {
+    cwd: dir,
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, GITHUB_ACTIONS: "" },
+  });
+  const [out, err] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
+  return { code: await child.exited, out, err };
+}
 
+afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+describe("the command", () => {
   test("exits 0 with a notice against a baseline without a reference", async () => {
-    const { code, out } = await command(bare(run(200, 100)), [run(210, 110)]);
+    const { code, out } = await command([bare(run(200, 100))], [run(210, 110)]);
     expect(code).toBe(0);
     expect(out).toContain("No reference in the baseline; the runner gate is not checked.");
   });
@@ -278,7 +305,7 @@ describe("the command", () => {
   test("exits 1 on a comparable runner when a number regressed, naming it", async () => {
     const slow = run(200, 100);
     slow.zoom.p95 = 130;
-    const { code, err } = await command(run(200, 100), [slow]);
+    const { code, err } = await command([run(200, 100)], [slow]);
     expect(code).toBe(1);
     expect(err).toContain(
       "Regressed by more than 25 %: zoom p95 (ms): 130.0 against 100.0 (+30 %)",
@@ -286,10 +313,151 @@ describe("the command", () => {
   });
 
   test("exits 2 on a runner not comparable, with every part's ratio in the log", async () => {
-    const { code, out, err } = await command(ALL_CORES, [FOUR_CORES]);
+    const { code, out, err } = await command([ALL_CORES], [FOUR_CORES]);
     expect(code).toBe(2);
     expect(err).toContain("Not compared: runner not comparable");
     expect(out).toContain("reference WebAssembly (ms): 82.4 against 79.1 (x1.04)");
+  });
+
+  test("writes the median with the CPU model and each gesture's p95, steps, and frames", async () => {
+    const counted = (steps: number, frames: number) => {
+      const r = run(200, 100);
+      for (const [, gesture] of gestures(r)) Object.assign(gesture, { steps, frames });
+      return r;
+    };
+    await command([run(200, 100)], [counted(35, 36), counted(40, 41), counted(37, 38)]);
+    const written = JSON.parse(readFileSync(join(dir, "bench-results", "median.json"), "utf8"));
+    expect(written.cpu).toBe(EPYC_7763);
+    expect(written.drag).toEqual({ p95: 100, steps: 37, frames: 38, truncated: false });
+    expect(written.levels.near.pan).toEqual({ p95: 100, steps: 37, frames: 38, truncated: false });
+  });
+});
+
+// Verifies: ADR-0008 — a run is compared only with the baseline of its runner kind, the CPU model
+// it records; a run on a kind without a baseline, or naming no CPU model, is refused.
+describe("the runner kind", () => {
+  test("a run on another CPU model than the baseline's is refused, naming both", () => {
+    const verdict = compare({ ...run(200, 100), cpu: XEON_8370C }, run(200, 100));
+    expect(verdict).toEqual({
+      kind: "incomparable",
+      reason: `the run is on ${XEON_8370C}, the baseline on ${EPYC_7763}`,
+    });
+  });
+
+  test("a run on the baseline's CPU model is compared by its numbers and the reference", () => {
+    expect(compare(run(200, 100), run(200, 100))).toMatchObject({ kind: "compared" });
+    const slower = { ms: 312, js: 104, wasm: 104, gpu: 104 };
+    expect(compare(run(200, 100, 3334, slower), run(200, 100))).toMatchObject({
+      kind: "incomparable",
+      reason: expect.stringContaining("runner not comparable"),
+    });
+  });
+
+  test("a run or a baseline that names no CPU model is refused", () => {
+    const none = { ...run(200, 100), cpu: undefined };
+    expect(compare(none, run(200, 100))).toMatchObject({
+      reason: "the run names no CPU model",
+    });
+    expect(compare(run(200, 100), none)).toMatchObject({
+      reason: "the baseline names no CPU model",
+    });
+  });
+
+  test("runs on different CPU models have no median, and the median keeps the model", () => {
+    expect(median([run(200, 100), { ...run(200, 100), cpu: XEON_8370C }])).toBe(
+      `the runs differ: on ${EPYC_7763} and on ${XEON_8370C}`,
+    );
+    expect(median([run(200, 100), { ...run(200, 100), cpu: undefined }])).toBe(
+      `the runs differ: on ${EPYC_7763} and on no CPU model`,
+    );
+    expect(median([run(200, 100), run(200, 100)])).toMatchObject({ cpu: EPYC_7763 });
+  });
+
+  test("a kind's file name is its CPU model in lower case, hyphens for the rest", () => {
+    expect(baselineName(EPYC_7763)).toBe("amd-epyc-7763-64-core-processor");
+    expect(baselineName(XEON_8370C)).toBe("intel-r-xeon-r-platinum-8370c-cpu-2-80ghz");
+  });
+
+  test("two CPU models of one file name are told apart by the name the baseline records", () => {
+    const lookalike = "AMD EPYC 7763 64 Core Processor";
+    expect(baselineName(lookalike)).toBe(baselineName(EPYC_7763));
+    expect(compare({ ...run(200, 100), cpu: lookalike }, run(200, 100))).toMatchObject({
+      kind: "incomparable",
+      reason: `the run is on ${lookalike}, the baseline on ${EPYC_7763}`,
+    });
+  });
+});
+
+// Verifies: ADR-0008 — the command picks the baseline of the runs' kind from bench/baselines and
+// refuses a kind without one, or runs that name no CPU model, naming the kinds with a baseline.
+describe("the command, by runner kind", () => {
+  test("picks the baseline of the runs' kind from the directory", async () => {
+    const xeon = { ...run(400, 200), cpu: XEON_8370C };
+    const { code, out } = await command(
+      [run(200, 100), xeon],
+      [{ ...run(400, 200), cpu: XEON_8370C }],
+    );
+    expect(code).toBe(0);
+    expect(out).toContain("against baselines/intel-r-xeon-r-platinum-8370c-cpu-2-80ghz.json");
+  });
+
+  test("exits 2 on a kind without a baseline, naming it, the kinds with one, and its file", async () => {
+    const { code, err } = await command([run(200, 100)], [{ ...run(200, 100), cpu: XEON_8370C }]);
+    expect(code).toBe(2);
+    expect(err).toContain(`no baseline of the kind ${XEON_8370C}`);
+    expect(err).toContain(`kinds with a baseline: ${EPYC_7763}`);
+    expect(err).toContain("saved as baselines/intel-r-xeon-r-platinum-8370c-cpu-2-80ghz.json");
+  });
+
+  test("exits 2 on runs that name no CPU model, naming the kinds with a baseline", async () => {
+    const { code, err } = await command([run(200, 100)], [{ ...run(200, 100), cpu: undefined }]);
+    expect(code).toBe(2);
+    expect(err).toContain("the runs name no CPU model");
+    expect(err).toContain(`kinds with a baseline: ${EPYC_7763}`);
+  });
+
+  test("exits 2 when no baseline is at the path given", async () => {
+    const { code, err } = await command([], [run(200, 100)], ["missing"]);
+    expect(code).toBe(2);
+    expect(err).toContain("Not compared: no baseline at missing");
+  });
+
+  test("given one baseline file, compares only a run of the CPU model it names", async () => {
+    const file = ["baselines/amd-epyc-7763-64-core-processor.json"];
+    expect((await command([run(200, 100)], [run(200, 100)], file)).code).toBe(0);
+    rmSync(dir, { recursive: true, force: true });
+    const other = await command([run(200, 100)], [{ ...run(200, 100), cpu: XEON_8370C }], file);
+    expect(other.code).toBe(2);
+    expect(other.err).toContain(`the run is on ${XEON_8370C}, the baseline on ${EPYC_7763}`);
+  });
+
+  test("exits 2 on a baseline in the directory not JSON or not under its kind's name", async () => {
+    const broken = await command([run(200, 100)], [run(200, 100)], ["baselines"], {
+      "x.json": "{",
+    });
+    expect(broken.code).toBe(2);
+    expect(broken.err).toContain("the baseline baselines/x.json is not JSON");
+    const misnamed = await command([], [run(200, 100)], ["baselines"], {
+      "x.json": JSON.stringify(run(200, 100)),
+    });
+    expect(misnamed.code).toBe(2);
+    expect(misnamed.err).toContain(
+      `the baseline baselines/x.json names ${EPYC_7763}, ` +
+        "whose file is amd-epyc-7763-64-core-processor.json",
+    );
+  });
+});
+
+// Verifies: ADR-0008 — each kind's baseline is a file of its own, named by its CPU model.
+describe("bench/baselines", () => {
+  test("each recorded baseline names the CPU model its file name derives from", () => {
+    const recorded = join(import.meta.dir, "baselines");
+    const files = readdirSync(recorded).filter((f) => f.endsWith(".json"));
+    expect(files).toContain("amd-epyc-7763-64-core-processor.json");
+    for (const f of files) {
+      const baseline = JSON.parse(readFileSync(join(recorded, f), "utf8")) as Run;
+      expect(`${baselineName(baseline.cpu ?? "")}.json`).toBe(f);
+    }
   });
 });
 
