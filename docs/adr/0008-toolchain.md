@@ -36,6 +36,25 @@ Container limited to four cores, a GitHub runner's size, its WebGL2 part took fi
 as on all 24 cores (58.4 against 303.9 ms), the loops did not move, and Comb's numbers took 1.0
 to 1.83 times as long. Two runs on all 24 cores measured the WebGL2 part at 58.4 and 94.0 ms.
 
+Each run records the CPU model of its runner, and the CPU model names the runner's kind. The eleven
+runs of the **Benchmark** workflow from 2026-10-18 to 2026-10-21 ran on four kinds: AMD EPYC 7763 in
+six, Intel Xeon Platinum 8370C and AMD EPYC 9V45 in two each, and AMD EPYC 9V74 in one; runs
+39098695116 and 39102498247 ran on a 7763 and a 9V45. Every runner reported the same SwiftShader
+renderer. Within a kind the numbers repeat: the six runs on the 7763 agreed within one frame in the
+median of every gesture, pan near took 8 frames in all eighteen of their files, and each part of the
+median reference of the five that recorded one agreed within 2 %. A first run's WebGL2 part read up
+to 34 % slower in three of the five, and the median of three absorbed it. Between kinds the
+reference passes runners whose numbers it does not predict. Drag and pan follow its WebGL2 part
+(Pearson r = 0.99 over the eight medians with a reference, the run with a deliberate slowdown left
+out); pan near and pan middle do not (0.69 and 0.74, and 0.07 with the JavaScript part). Divided by
+the WebGL2 ratio, pan near and pan middle come to 1.33 and 1.39 on the 8370C (run 39544445534), 1.50
+and 1.32 on the 9V74, and 1.22 and 1.30 on the 9V45. Run 39544445534 on the 8370C, its WebGL2 part
+22 % slower, failed zoom, pan near, and pan middle by 42 to 70 % with a change that measured as
+`main` did on the 7763 (run 39545410268); run 39545986669 on the 9V74, faster in every part,
+measured pan near 25 % slower. Every p95 is a whole number of 60 Hz frames, and every gesture runs
+out of its time before its last step, so a faster runner sends more steps and pans further; within a
+kind neither moved a verdict.
+
 Bun runs the lifecycle scripts of a dependency only when `package.json` lists it under
 `trustedDependencies`, and listing any replaces Bun's default list. The npm package of wasm-pack
 fetches its binary in such a script.
@@ -69,17 +88,26 @@ run by `scripts/check-code.sh`.
   library bundle, without PixiJS, reach 300 kB.
 - **Benchmark:** `bun run bench` measures Q-1 and Q-2 with Playwright. On the reference machine it
   decides against the absolute numbers; in CI it runs as a workflow of its own, weekly and on
-  demand, three times on a GitHub runner, and fails when the median of a number exceeds the
-  recorded baseline by more than 25 %. Each run also times a fixed reference workload in the
-  same page, after the first frame and before the gestures, which uses the browser's
-  JavaScript, WebAssembly, and WebGL2 raster but none of Comb's code: a JavaScript loop, a
-  WebAssembly loop, and a WebGL2 draw of a fixed mesh. The reference is a gate, not a
-  correction: when a part of the run's reference differs from the baseline's by more than 25 %,
-  either way, the workflow refuses to compare and names the parts, since the run was taken on a
-  runner unlike the baseline's. A run without a reference is refused against a baseline with
-  one; against a baseline without one the numbers are compared and the gate is reported as not
-  checked. The baseline is the median of a runner's runs on `main`, every part of its reference
-  included, kept as `bench/baseline.json` and changed only in a pull request that says why.
+  demand, three times on a GitHub runner, and fails when the median of a number exceeds the baseline
+  of the runner's kind by more than 25 %. The kind is the CPU model the run records. Each kind's
+  baseline is a file of its own, `bench/baselines/<kind>.json`, whose name is the CPU model in lower
+  case with every run of characters other than `a`–`z` and `0`–`9` replaced by one hyphen and no
+  hyphen at either end (`amd-epyc-7763-64-core-processor.json`); the baseline names its CPU model,
+  and a run is compared only with a baseline that names the same. A run on a kind without a
+  baseline, or one that names no CPU model, is refused, naming the kind, if any, and the kinds that
+  have a baseline. The GPU is no part of the kind, since every runner reports the same SwiftShader
+  renderer, but a run of another size, mode, or GPU than its kind's baseline is refused as well.
+  Each run also times a fixed reference workload in the same page, after the first frame and before
+  the gestures, which uses the browser's JavaScript, WebAssembly, and WebGL2 raster but none of
+  Comb's code: a JavaScript loop, a WebAssembly loop, and a WebGL2 draw of a fixed mesh. The
+  reference is a gate within a kind, not a correction: when a part of the run's reference differs
+  from its kind's baseline by more than 25 %, either way, the workflow refuses to compare and names
+  the parts, since the runner was not in the state the baseline was taken in. A run without a
+  reference is refused against a baseline with one; against a baseline without one the numbers are
+  compared and the gate is reported as not checked. The median of the runs keeps the CPU model and,
+  for each gesture beside its p95, the median of the steps sent and of the frames rendered, and so
+  does a baseline. A kind's baseline is the median of runs on that kind on `main`, every part of its
+  reference included, and is added or changed only in a pull request that says why.
 - **Mutation testing:** cargo-mutants, at a pinned version, mutates `crates/engine` in a workflow
   of its own, weekly and on demand, and fails when a mutant survives that
   `crates/engine/mutants-missed.txt` does not list. The list shrinks with each change that kills
@@ -122,6 +150,26 @@ design revision adds when a mistake calls for them; how the code is laid out in 
 - **Normalising by the reference's parts**, the loops alone or a weighted sum — the loops did not
   move on four cores while Comb's numbers did, so dividing by them raised false alarms of 61 to
   78 %; a weighting fitted to one machine says nothing about another runner.
+- **A margin of whole frames**, the larger of 25 % and three frames — fits a p95 that comes in
+  whole frames, under which 25 % of pan near is two frames, but it changes no verdict of the
+  eleven runs: on the 8370C pan near took 5 frames and pan middle 7 frames more than the
+  baseline.
+- **Every step of every gesture, no time limit** — the same path on every runner and about 120
+  frames per gesture, but at the rates measured the gestures of three runs take 19.5 minutes on
+  the 7763 and 25 to 28 minutes on the 8370C, past the job's 30, and within a kind the frames
+  rendered did not move the p95: pan near on the 9V74 took 10 frames in runs of 77 and of 64
+  frames.
+- **A gate per gesture**, each gesture divided by the part of the reference it follows — holds
+  drag and pan within 8 %, but no part predicts pan near and pan middle, which stay 22 to 50 %
+  off on the three other kinds.
+- **Telling kinds apart by a tighter reference gate** — the JavaScript part alone differs from the
+  7763's by 7 % on the 8370C and 12 % on the 9V74, and within each of these three kinds by under
+  1 %, but on the 9V45 it spread by 18 % within one workflow run, and a reference that matches does
+  not say which baseline applies; each run records the CPU model, which names the kind exactly.
+- **A tighter gate within a kind**, 5 % — the median references of the 7763 agreed within 2 %, and
+  those of the two runs on the 8370C within 3 %, but the 9V45 and the 9V74 have one run with a
+  reference each, too few to size a tighter gate by, and a first run 34 % slower in its WebGL2 part
+  did not move the median.
 - **Mutation testing that only reports** — never red, but a report nobody is made to read
   changes nothing.
 - **A threshold on the share of mutants caught** — one number, but a new surviving mutant hides
@@ -170,13 +218,15 @@ design revision adds when a mistake calls for them; how the code is laid out in 
   larger and slower to set up.
 - Negative / trade-offs: CI measures performance only relatively; a slow regression that stays
   under the threshold of each comparison is caught only on the reference machine.
-- Positive: a verdict of the workflow compares runners alike in the reference, and a run on an
-  unlike runner says so instead of passing or failing on the runner's speed.
-- Negative / trade-offs: the gate turns a varying runner into a refused run, not a verdict; if
-  runners vary as much in the reference as the WebGL2 part did between two runs here, many runs
-  are refused, and the baseline is recorded again or the gate revised. A runner that differs in
-  what Comb uses and the reference does not still passes the gate. The reference adds a few
-  seconds to each run.
+- Positive: a verdict of the workflow compares a run with the baseline of its own kind, so a
+  runner whose numbers the reference does not predict, as pan near on the 8370C and the 9V74,
+  is not judged by another kind's numbers, and a run in an unusual state says so instead of
+  passing or failing on the runner's speed.
+- Negative / trade-offs: a run on a kind without a baseline is refused, not judged; five of the
+  eleven runs from 2026-10-18 to 2026-10-21 ran on another kind than the 7763. Each kind needs a run
+  on `main` before its first verdict, a kind GitHub adds is refused until then, and every baseline
+  is a file to record and keep. Within a kind, a runner whose reference drifts past 25 % is refused,
+  not judged. The reference adds a few seconds to each run.
 
 ## Enforcement
 
@@ -188,5 +238,7 @@ beside `bun.lock`. `scripts/check-mutants.sh` fails on a surviving mutant that
 `crates/engine/mutants-missed.txt` does not list, and on a run that caught none; the
 **Mutation testing** workflow runs it, and its self-test runs in `scripts/check-all.sh` and
 `checks.yml`. Each script's self-test cites this ADR. The tests of `bench/compare.ts` decide how
-the runner gate and the comparison judge given numbers; whether the gate's 25 % suits the real
-variance of GitHub runners no test decides, the workflow's runs on `main` do.
+the runner gate and the comparison judge given numbers, among them that a run whose CPU model
+differs from the baseline's is refused, naming both kinds, and that a run of the same kind is
+compared. Whether 25 % suits the variance within a kind no test decides; the workflow's runs on
+`main` do. On the 7763 they agreed within one frame in every gesture's median.
