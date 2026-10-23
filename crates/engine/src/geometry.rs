@@ -17,7 +17,7 @@ impl Point {
         Self { x, y }
     }
 
-    fn lerp(self, other: Self, t: f64) -> Self {
+    pub(crate) fn lerp(self, other: Self, t: f64) -> Self {
         Self::new(
             self.x + (other.x - self.x) * t,
             self.y + (other.y - self.y) * t,
