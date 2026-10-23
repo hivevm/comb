@@ -45,7 +45,10 @@ vertices per query, and choose by zoom between three levels of detail.
 
 - **Layers:** a `world` container with `isRenderGroup`, holding in drawing order `edges`,
   `particles`, `nodes`, and `labels`; an `overlay` outside `world` in screen coordinates. A layer
-  joins the list with the change that builds it, such as a grid or the connectors.
+  joins the list with the change that builds it, such as a grid or the connectors. `world` sits at
+  the screen point of the last query's origin (ADR-0010), computed in f64: `edges` and `labels`
+  lie at its (0, 0), `nodes` and `particles` at minus the origin, so that what the engine hands
+  over relative to the origin keeps its precision far from the world's origin.
 - **Culling:** `render` asks the engine for the slots that meet the viewport grown by a culling
   margin of 128 screen pixels, and binds pooled display objects to exactly those, in slot order.
   While the viewport stays inside the rectangle it last queried, that rectangle reaches at most
