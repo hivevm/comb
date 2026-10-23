@@ -8,7 +8,7 @@
 /docs/SPECIFICATION.md @mbrigl
 /docs/adr/ @mbrigl
 
-# The public TypeScript interface of Comb (ADR-0007).
+# The public TypeScript interface of Comb; package.json as a whole, for its exports (ADR-0007).
 /packages/comb/src/index.ts @mbrigl
 /packages/comb/src/api/ @mbrigl
 /packages/comb/package.json @mbrigl
@@ -17,11 +17,16 @@
 /crates/engine-wasm/ @mbrigl
 /packages/comb/src/bridge/ @mbrigl
 
-# The mesh budget that holds Q-7 for accepted graph data (ADR-0007, ADR-0012).
+# The mesh budget that holds Q-7 for accepted graph data, and its tests (ADR-0007, ADR-0012).
 /crates/engine/src/stroke.rs @mbrigl
 /crates/engine/src/graph.rs @mbrigl
+/crates/engine/src/graph/ @mbrigl
 
-# The CI and the checks the ADRs rest on (ADR-0007).
+# The CI, the git hooks, and the checks the ADRs rest on, with their self-tests (ADR-0007).
 /.github/ @mbrigl
+/.githooks/ @mbrigl
 /scripts/check-*.sh @mbrigl
 /scripts/sensor-*.sh @mbrigl
+/scripts/test-check-*.sh @mbrigl
+/scripts/test-sensor-*.sh @mbrigl
+/scripts/test-git-hooks.sh @mbrigl
