@@ -154,44 +154,58 @@ function expectEffect(ok: boolean, what: string): void {
   if (!ok) throw new Error(`the ${what} had no effect; the measurement would be of idle frames`);
 }
 
-/** Edits the graph, one edit a frame: adds a node beside `near` and an edge from `near` to it,
- *  and removes the edge and the node again, as many times over as the steps allow (ADR-0022);
- *  returns how many edits it made. */
-async function edits(page: Page, near: string): Promise<number> {
+/** Installs `benchEdit(i)` in the page: edit `i` of the gesture, one of adding a node beside
+ *  `near`, adding an edge from `near` to it, removing the edge, and removing the node, over and
+ *  over (ADR-0022). Before it edits, it counts in `drawnEdits` whether the canvas drew the edit
+ *  before it, by a probe cheap enough not to weigh on the frame it falls in, as `inspect` would at
+ *  50,000 nodes; `benchEdit(i + 1, false)` checks edit `i` alone. Every edit is counted in `told`
+ *  once it is told. */
+async function installEdits(page: Page, near: string): Promise<void> {
   const at = await drawnNode(page, near);
-  return steps(page, (i) =>
-    page.evaluate(
-      ({ i, near, at }) => {
-        const { comb } = window;
+  await page.evaluate(
+    ({ near, at }) => {
+      const w = window as unknown as BenchEdits;
+      const ofStep = (i: number) => {
         const round = Math.floor((i - 1) / 4);
-        const [node, edge] = [`bench-node-${round}`, `bench-edge-${round}`];
-        switch ((i - 1) % 4) {
-          case 0:
-            comb.addNode({
-              id: node,
-              title: "edit",
-              x: at.x + 40,
-              y: at.y + 90,
-              width: 160,
-              height: 48,
-            });
-            break;
-          case 1: {
-            const w = window as unknown as { drawnAdds: number };
-            if (window.inspect().nodes.some(({ id }) => id === node)) w.drawnAdds += 1;
-            comb.addEdge({ id: edge, source: near, target: node });
-            break;
-          }
-          case 2:
-            comb.removeEdges([edge]);
-            break;
-          default:
-            comb.removeNodes([node]);
-        }
-      },
-      { i, near, at: { x: at.x, y: at.y } },
-    ),
+        return { kind: (i - 1) % 4, node: `bench-node-${round}`, edge: `bench-edge-${round}` };
+      };
+      // Whether the canvas shows what edit `i` made: its node or edge drawn, or no longer drawn.
+      const shows = (i: number) => {
+        const { kind, node, edge } = ofStep(i);
+        const drawn = window.isDrawn(kind % 3 === 0 ? { node } : { edge });
+        return kind < 2 ? drawn : !drawn;
+      };
+      [w.told, w.drawnEdits] = [0, 0];
+      w.stopTelling = window.comb.onChange(() => (w.told += 1));
+      w.benchEdit = (i, edit = true) => {
+        if (i > 1 && shows(i - 1)) w.drawnEdits += 1;
+        if (!edit) return;
+        const { kind, node, edge } = ofStep(i);
+        const { comb } = window;
+        if (kind === 0)
+          comb.addNode({
+            id: node,
+            title: "edit",
+            x: at.x + 40,
+            y: at.y + 90,
+            width: 160,
+            height: 48,
+          });
+        else if (kind === 1) comb.addEdge({ id: edge, source: near, target: node });
+        else if (kind === 2) comb.removeEdges([edge]);
+        else comb.removeNodes([node]);
+      };
+    },
+    { near, at: { x: at.x, y: at.y } },
   );
+}
+
+/** What `installEdits` keeps in the page. */
+interface BenchEdits {
+  told: number;
+  drawnEdits: number;
+  stopTelling: () => void;
+  benchEdit: (i: number, edit?: boolean) => void;
 }
 
 /** The zoom gesture around `at`, checked for having changed the scale. */
@@ -207,25 +221,31 @@ async function zoomGesture(page: Page, at: Point): Promise<Measure> {
   return zoomed;
 }
 
-/** The edit gesture, beside the node nearest the centre of the view: each edit is told, each node
- *  added is drawn before its edge is added, and none is drawn at the end. */
+/** The edit gesture, beside the node nearest the centre of the view: each edit is told and
+ *  drawn. A gesture the time budget cuts short of a whole round leaves its node or edge, which is
+ *  removed after the timed frames; then no edit is left drawn. */
 async function editGesture(page: Page): Promise<Measure> {
-  await page.evaluate(() => {
-    const w = window as unknown as { told: number; drawnAdds: number };
-    [w.told, w.drawnAdds] = [0, 0];
-    window.comb.onChange(() => (w.told += 1));
-  });
   const beside = await nodeNearCentre(page);
-  const edited = await frameTimes(page, () => edits(page, beside.id));
-  const checked = await page.evaluate(async () => {
+  await installEdits(page, beside.id);
+  const edited = await frameTimes(page, () =>
+    steps(page, (i) => page.evaluate((i) => (window as unknown as BenchEdits).benchEdit(i), i)),
+  );
+  const checked = await page.evaluate(async (made) => {
     await window.comb.whenRendered();
-    const w = window as unknown as { told: number; drawnAdds: number };
-    const left = window.inspect().nodes.some(({ id }) => id.startsWith("bench-node-"));
-    return { told: w.told, drawnAdds: w.drawnAdds, left };
-  });
-  const rounds = Math.ceil(edited.steps / 4);
+    const w = window as unknown as BenchEdits;
+    w.benchEdit(made + 1, false);
+    w.stopTelling();
+    const { comb } = window;
+    const ids = (prefix: string, of: { id: string }[]) =>
+      of.map(({ id }) => id).filter((id) => id.startsWith(prefix));
+    comb.removeNodes(ids("bench-node-", window.inspect().nodes));
+    await comb.whenRendered();
+    const { nodes, edges } = window.inspect();
+    const left = ids("bench-node-", nodes).length + ids("bench-edge-", edges).length;
+    return { told: w.told, drawnEdits: w.drawnEdits, left };
+  }, edited.steps);
   expectEffect(
-    checked.told === edited.steps && checked.drawnAdds === rounds && !checked.left,
+    checked.told === edited.steps && checked.drawnEdits === edited.steps && checked.left === 0,
     "edits",
   );
   console.log(`edit: ${edited.frames} frames, p95 ${edited.p95.toFixed(1)} ms`);
@@ -256,8 +276,8 @@ async function panAt(page: Page, scale: number): Promise<Measure> {
   return pan;
 }
 
-/** A point on the canvas, near its top left, where a press hits neither a node nor an edge and
- *  so pans (ADR-0025). */
+/** A point on the canvas, near its top left, where a press hits nothing, no connector, label,
+ *  node or edge, and so pans (ADR-0025). */
 async function emptyPoint(page: Page): Promise<Point> {
   return page.evaluate(() => {
     const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();

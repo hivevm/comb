@@ -34,6 +34,12 @@ export function screenPoint(comb: Comb, x: number, y: number): { x: number; y: n
   return toScreen(viewport(comb), x, y);
 }
 
+/** Whether the canvas of `comb` drew the node or the edge of `id` at its last render; cheap
+ *  enough to ask on every frame, as `inspect` is not at 50,000 nodes. */
+export function isDrawn(comb: Comb, what: { node: string } | { edge: string }): boolean {
+  return sceneOf(comb).draws(what);
+}
+
 /** What a press at the screen point `(x, y)`, relative to the canvas of `comb`, hits: a connector
  *  where `connectors` asks for them, as a Comb with `canConnect` does, a label, a node, an edge,
  *  or nothing (ADR-0025). */

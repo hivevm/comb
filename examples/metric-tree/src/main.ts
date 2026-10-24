@@ -16,6 +16,7 @@ import {
   edgeVertices,
   hitKind,
   inspect,
+  isDrawn,
   renderCount,
   sceneNumbers,
   screenPoint,
@@ -68,6 +69,7 @@ declare global {
     trapNextCall: typeof trapNextCall;
     screenPoint: (x: number, y: number) => ReturnType<typeof screenPoint>;
     hitKind: (x: number, y: number, connectors?: boolean) => ReturnType<typeof hitKind>;
+    isDrawn: (what: Parameters<typeof isDrawn>[1]) => boolean;
     visibleRect: (margin?: number) => ReturnType<typeof visibleRect>;
     work: () => ReturnType<typeof work>;
     edgeVertices: () => ReturnType<typeof edgeVertices>;
@@ -318,6 +320,7 @@ window.testMode = testMode;
 window.trapNextCall = trapNextCall;
 window.screenPoint = (x, y) => screenPoint(comb, x, y);
 window.hitKind = (x, y, connectors) => hitKind(comb, x, y, connectors);
+window.isDrawn = (what) => isDrawn(comb, what);
 window.visibleRect = (margin) => visibleRect(comb, margin);
 window.work = () => work(comb);
 window.edgeVertices = () => edgeVertices(comb);

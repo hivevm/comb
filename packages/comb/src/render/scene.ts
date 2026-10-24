@@ -205,6 +205,20 @@ export class Scene {
     });
   }
 
+  /** Whether the last render drew the node or the edge of `id`: cheap beside `inspect`, which
+   *  builds every drawn view, so that the benchmark can check an edit within its timed frames. */
+  draws(what: { node: string } | { edge: string }): boolean {
+    if ("node" in what) {
+      const { node } = what;
+      const views = this.nodes.children as NodeGraphic[];
+      return views.some((view) => view.nodeId === node) || this.particles.draws(node);
+    }
+    if (!this.source) return false;
+    const { bridge, edges } = this.source;
+    const slot = edges.findIndex((edge) => edge?.id === what.edge);
+    return slot >= 0 && bridge.drawnEdges().slots.includes(slot);
+  }
+
   /** What a press at the screen point `(x, y)` of the canvas hits, as the engine of the last
    *  render answers it at the drawn viewport's scale; nothing before the first render. */
   hitKind(x: number, y: number, connectors = false): Hit["kind"] {
