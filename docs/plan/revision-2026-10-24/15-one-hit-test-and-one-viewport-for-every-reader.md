@@ -38,9 +38,9 @@ connector points from the engine, or pin the shell's copy to the engine's by a t
 
 ## Blocked by
 
-- docs/plan/revision-2026-10-24/18-adr-0025-says-when-connectors-are-hit.md
+- None (can start immediately)
 
 ## Mode
 
-with the human: the hit test's flag is the subject of the ADR revision it waits for, and
-`bench/run.ts` asks the hit test where its pans begin.
+with the human: the hit test's flag is decided by ADR-0025 (*Connector*), and `bench/run.ts`
+asks the hit test where its pans begin.
