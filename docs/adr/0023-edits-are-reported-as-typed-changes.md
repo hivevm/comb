@@ -56,9 +56,9 @@ rule 1).
 
 We will apply every edit to the store and the engine at once, report each change of the graph,
 whoever made it, to the listeners of `Comb.onChange` as one value of a union discriminated by
-`kind`, and let the host application refuse a connection or a deletion the user makes through
-the synchronous callbacks `CombOptions.canConnect` and `CombOptions.canDelete`, which allow it
-only by returning `true`.
+`kind`, and ask the host application synchronously before a connection or a deletion the user
+makes: `CombOptions.canConnect` allows a connection only by returning the new edge's identifier,
+and `CombOptions.canDelete` a deletion only by returning `true`.
 
 - **Changes:** each carries `by`, `"user"` or `"host"`, and is one of:
 
@@ -104,18 +104,26 @@ only by returning `true`.
   identifier the graph holds already (`duplicateNode`, `duplicateEdge`), and an edge to a node it
   does not hold (`missingNode`). Every new kind is a kind of the generated `GraphDataProblem`
   (ADR-0010), never one written in TypeScript.
-- **Vetoes:** `canConnect({ source, sourceSide, target, targetSide })` is called when the user
-  releases a connection over a connector Comb would connect to, and
-  `canDelete({ nodes, edges })` when the user deletes the selection, `edges` holding every edge
-  that would go with the nodes. Comb makes the edit only where the callback returns `true`; where
-  it returns anything else, or throws, Comb makes no edit, ends the gesture, and then throws the
-  error on. A missing callback allows. Neither is called for the host application's own calls.
-  `canDelete` receives identifiers, `readonly string[]`, the edges at the nodes as the engine
-  names them before it removes anything (ADR-0022).
-- **The user's edge:** an edge the user connects is named by Comb, with the first of `edge-1`,
-  `edge-2`, … the graph does not hold, counted on from the last name it gave since the last
-  `load`, and drawn with the defaults of an edge without appearance. The host learns the name
-  from `edgeAdded`.
+- **Vetoes:** both are called synchronously, in the input event that ends the gesture, and
+  neither for the host application's own calls. Where one throws, Comb makes no edit, ends the
+  gesture, and then throws the error on.
+  - `canConnect({ source, sourceSide, target, targetSide })` is called when the user releases a
+    connection over a connector Comb would connect to. It returns the identifier of the new edge
+    as a string, or `false` to refuse. Any other value refuses as `false` does, with no error, so
+    a callback that forgets to return makes no edge. Without `canConnect`, no connection is begun:
+    Comb has no name to give the edge.
+  - `canDelete({ nodes, edges })` is called when the user deletes the selection, `edges` holding
+    every edge that would go with the nodes, as the engine names them before it removes anything
+    (ADR-0022), all as `readonly string[]`. Comb deletes only where it returns `true`. Without
+    `canDelete`, a deletion is allowed.
+- **The user's edge:** the identifier `canConnect` returns is checked as the identifier of an edge
+  `addEdge` receives: read once, refused by the bridge crate where it is too long and by `api`
+  where it holds a lone surrogate or the graph holds an edge of that identifier already. A refused
+  identifier refuses the connection: Comb makes no edge, delivers no change, ends the gesture, and
+  then throws the `GraphDataError` of the generated kind from the input event, as it throws on the
+  error of a callback that threw, so that the host's mistake reaches the page as an error. A
+  connection made is drawn with the defaults of an edge without appearance and delivered as
+  `edgeAdded` with `by: "user"`.
 - **A drop from the palette** is the host application's own `addNode`, so it arrives as
   `by: "host"`; a host that persists only `by: "user"` persists a drop in its own drop handler.
 - **Deleting:** with the canvas focused, Delete or Backspace deletes the selection, a node with
@@ -147,9 +155,13 @@ gesture.
   edit; returning `true` to allow makes it a refusal.
 - **Comb applies and the host undoes** — no veto at all, the host removes what it does not
   allow, but the canvas shows the edge for a frame, and the host hears two changes for none.
-- **The host names the user's edge, through `canConnect` returning an identifier** — the host's
-  names everywhere, but the veto would answer two questions at once, and a host without names of
-  its own at hand would have to make one up there.
+- **Comb names the user's edge**, such as the first free `edge-n` — a boolean veto and no
+  callback needed to connect, but Comb's names would share the host's namespace, a host naming
+  its own edges `edge-n` would meet a `duplicateEdge`, and the host would rename or map every edge
+  the user draws. The maintainer chose the host's names.
+- **The refused identifier reported through `onChange` or a listener of its own** — no error
+  escapes an input event, but a refusal is no change of the graph, and a listener only for the
+  host's own mistake is more interface than throwing the error the method calls throw.
 - **Vetoes as listener methods of `Comb`** — they could change while Comb runs, but each is one
   function, not a list, and a host that needs to change one reads its own state inside it.
 
@@ -175,14 +187,18 @@ gesture.
   what each change holds.
 - Positive: a veto is decided in the same call, so a test asserts it by returning `false` and
   finding no edge.
+- Positive: every edge carries a name of the host's, the user's too, so the host persists it as it
+  comes.
 - Positive: edits never wait on the host, so a drag and an edit cost what they cost in Comb (Q-1).
 - Negative / trade-offs: a host that persists has to filter `by: "host"` out, or it stores its
   own calls twice; what it adds through its own calls, a palette drop among them, it persists
   where it makes the call.
 - Negative / trade-offs: a refusal that needs the host's server cannot be given during the
   gesture.
-- Negative / trade-offs: the names Comb gives user edges, `edge-1` and on, share the host's
-  namespace; a host that names its own edges `edge-n` may meet a `duplicateEdge`.
+- Negative / trade-offs: a host has to give `canConnect` to let the user connect at all, and
+  `canConnect` answers two questions at once, whether and under which name.
+- Negative / trade-offs: a refused identifier surfaces as an error thrown from an input event,
+  which the host sees in its error handling for the page, not at a call of its own.
 - Negative / trade-offs: the public interface grows by seven methods, two options, and the
   change types, each a promise to every host application (Q-3).
 - Follow-ups: the conflict with ADR-0009 above; moving a node from the host application, and
@@ -197,10 +213,13 @@ Each test below cites this ADR with `Verifies: ADR-0023`.
   host application through the public interface and by the user through the canvas where the
   user can, and assert the one change `onChange` delivers, its `kind`, `by`, and fields, and that
   it arrives before the call returns.
-- **Vetoes:** browser tests connect two nodes and delete the selection with `canConnect` and
-  `canDelete` returning `false`, `undefined`, and `true`, and throwing, and assert that only `true`
-  edits, that a refused gesture delivers no change, and that a thrown error reaches the page after
-  the gesture ended.
+- **Vetoes:** browser tests connect two nodes with `canConnect` returning an identifier, `false`,
+  `undefined`, a number, an identifier the graph holds, one past the length limit, and throwing,
+  and delete the selection with `canDelete` returning `true`, `false`, and `undefined`, and
+  throwing; they assert that only an identifier the graph does not hold connects, under that
+  identifier, and only `true` deletes, that a refused gesture delivers no change, and that a
+  thrown error and the `GraphDataError` of a refused identifier reach the page after the gesture
+  ended; without `canConnect`, no connection begins.
 - **Refusals:** browser tests call each new method with an unknown identifier, a duplicate one,
   and a value of the wrong type, and assert a `GraphDataError` of the generated kind and a graph
   as it was; they also `Verifies: Q-7`. A test asserts that every kind `api` builds is one of the

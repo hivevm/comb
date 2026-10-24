@@ -85,5 +85,6 @@ to invent.
 - **Trap** — WebAssembly aborting a call of the engine, as when its memory runs out; after a trap
   the engine is lost for the page, and Comb refuses every later call that needs it.
 - **Veto** — a callback of the host application that Comb asks before it makes a connection or a
-  deletion of the user's, and that allows it only by returning `true`.
+  deletion of the user's, and that allows a deletion only by returning `true`, a connection only by
+  returning the new edge's identifier.
 - **Viewport** — the part of the world that the canvas currently shows, given by pan and zoom.
