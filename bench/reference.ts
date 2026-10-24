@@ -29,10 +29,8 @@ export const PARTS = [
 ] as const satisfies readonly (readonly [string, keyof Reference])[];
 
 /** Every key of `Reference` among `PARTS`: the type checker refuses a part left out of the list. */
-const listed: Record<keyof Reference, true> = Object.fromEntries(
-  PARTS.map(([, key]) => [key, true]),
-) as Record<(typeof PARTS)[number][1], true>;
-void listed;
+type Unlisted = Exclude<keyof Reference, (typeof PARTS)[number][1]>;
+export const EVERY_PART_LISTED: [Unlisted] extends [never] ? true : never = true;
 
 /** Odd, since the in-page timer takes the middle of its sorted times as their median, which
  *  `page.evaluate` keeps it from importing from bench/compare.ts. */
