@@ -16,7 +16,6 @@ const ROW: GraphData = {
   ],
 };
 
-/** What the canvas draws once it has drawn, and what was told since the load. */
 /** Loads ROW at a scale of 0.8, as `loaded` does, and records each selection into `window.told`
  *  as well, as `selection <id or null>`, so that changes and selections are told in one order. */
 async function loadedRow(page: Page): Promise<void> {
@@ -27,6 +26,7 @@ async function loadedRow(page: Page): Promise<void> {
   });
 }
 
+/** What the canvas draws once it has drawn, and what was told since the load. */
 async function state(page: Page) {
   const drawn = await page.evaluate(async () => {
     await window.comb.whenRendered();

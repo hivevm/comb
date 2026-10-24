@@ -182,14 +182,14 @@ test("removing the selected node reports null to onSelectionChange, after its ch
   await loaded(page, STAR, HALF);
   const at = await screenCentre(page, "a");
   await page.mouse.click(at.x, at.y);
-  const told = await page.evaluate(() => {
-    const told: string[] = [];
-    window.comb.onChange((change) => told.push(change.kind));
-    window.comb.onSelectionChange((selection) => told.push(`selection ${String(selection)}`));
+  const heard = await page.evaluate(() => {
+    const heard: string[] = [];
+    window.comb.onChange((change) => heard.push(change.kind));
+    window.comb.onSelectionChange((selection) => heard.push(`selection ${String(selection)}`));
     window.comb.removeNodes(["a"]);
-    return told;
+    return heard;
   });
-  expect(told).toEqual(["nodesRemoved", "selection null"]);
+  expect(heard).toEqual(["nodesRemoved", "selection null"]);
 });
 
 test("fitView fits the nodes a removal kept", async ({ page }) => {
