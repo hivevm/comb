@@ -169,15 +169,15 @@ The functional core and its shell follow
   returns, edge labels in slot order; while the viewport stays within what it last queried, that
   rectangle within the viewport grown by twice the culling margin, at about its scale and the same
   level of detail, and the graph and the selection are unchanged, a render moves the world alone.
-  The world stands at the screen point of the last query's origin, the edges and labels at (0, 0) in
-  it, the nodes and particles at minus the origin, so that the GPU sees no far coordinate of edges,
-  labels, and node views. `EdgesContainer` (`render/edges.ts`) draws the edge mesh with a shader
-  that leaves out the gaps of dash patterns; on the Canvas 2D renderer a host application opts into
+  The world stands at the screen point of the last query's origin, the edges, labels, and connectors
+  at (0, 0) in it, drawn less the origin, the nodes and particles at minus the origin, so that the
+  GPU sees no far coordinate of edges, labels, and node views. `EdgesContainer` (`render/edges.ts`)
+  draws the edge mesh with a shader that leaves out the gaps of dash patterns; on the Canvas 2D
+  renderer a host application opts into
   ([ADR-0018](adr/0018-webgl2-or-an-opted-in-canvas-fallback.md)), which runs no shader, `EdgeFill`
   (`render/edges-canvas.ts`) takes its place, builds no mesh, and fills the same triangles into one
   `Graphics`, one fill per run of one colour, dash patterns solid. Not built yet: the node content
-  of [ADR-0013](adr/0013-node-content-model.md), and the connectors of G-3, a layer that joins the
-  scene with the change that builds it ([ADR-0027](adr/0027-nodes-bound-by-rank.md)).
+  of [ADR-0013](adr/0013-node-content-model.md).
 - **API** (`packages/comb/src/api`) — `api/index.ts` imports `pixi.js/unsafe-eval` before PixiJS, so
   that no PixiJS renderer on the page generates code with eval
   ([ADR-0020](adr/0020-pixijs-without-eval.md)); `createComb`, which takes the engine's WebAssembly

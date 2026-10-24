@@ -450,6 +450,59 @@ mod tests {
     }
 
     #[test]
+    fn a_label_is_placed_at_the_nearest_of_several_near_points_of_a_path_that_turns_back() {
+        // Verifies: G-6
+        // From the right of a node to the left of one behind and below it: the path swings out to
+        // the right, back across, and out to the left, so that a point beside it lies near
+        // several stretches of it, and only the nearest places the label there.
+        let path = EdgePath::between(
+            &Rect::of_node(0.0, 0.0, 220.0, 64.0),
+            &Rect::of_node(-400.0, 140.0, 220.0, 64.0),
+            Sides::default(),
+        );
+        let distance = |t: f64, p: Point| {
+            let q = path.point_at(t);
+            (q.x - p.x).hypot(q.y - p.y)
+        };
+        // A point far beside a path that turns back, whose distance has two minima, so that only a
+        // search near the nearest sample finds the nearer: a search of the whole path misses it.
+        let turning = EdgePath::between(
+            &Rect::of_node(0.0, 0.0, 220.0, 64.0),
+            &Rect::of_node(
+                -161.603_165_735_473_57,
+                0.132_577_549_044_583_52,
+                220.0,
+                64.0,
+            ),
+            Sides::default(),
+        );
+        let far = Point::new(-348.000_619_140_425_56, 412.989_424_779_773_57);
+        let (t, offset) = turning.placement_at(far);
+        let placed = turning.label_position(t, offset);
+        assert!(
+            (placed.x - far.x).hypot(placed.y - far.y) < 0.01,
+            "{placed:?}"
+        );
+        for i in 0..40 {
+            for j in 0..12 {
+                let at = path.label_position(f64::from(i) / 40.0, f64::from(j) * 10.0 - 60.0);
+                // The nearest path point by a dense scan: only one inside the path is a case.
+                let nearest = (0..=20_000)
+                    .map(|k| f64::from(k) / 20_000.0)
+                    .min_by(|a, b| distance(*a, at).total_cmp(&distance(*b, at)))
+                    .unwrap();
+                if !(0.01..=0.99).contains(&nearest) {
+                    continue;
+                }
+                let (placed_t, placed_offset) = path.placement_at(at);
+                let placed = path.label_position(placed_t, placed_offset);
+                let miss = (placed.x - at.x).hypot(placed.y - at.y);
+                assert!(miss < 0.01, "at {at:?}: missed by {miss}");
+            }
+        }
+    }
+
+    #[test]
     fn the_path_runs_from_source_to_target() {
         let path = EdgePath::horizontal(Point::new(10.0, 20.0), Point::new(300.0, 140.0), 40.0);
         assert!(close(path.point_at(0.0), path.source));

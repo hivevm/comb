@@ -34,8 +34,8 @@ export function screenPoint(comb: Comb, x: number, y: number): { x: number; y: n
   return toScreen(viewport(comb), x, y);
 }
 
-/** What a press at the screen point `(x, y)`, relative to the canvas of `comb`, hits: a node, an
- *  edge, or nothing (ADR-0025). */
+/** What a press at the screen point `(x, y)`, relative to the canvas of `comb`, hits, asking for
+ *  no connector: a label, a node, an edge, or nothing (ADR-0025). */
 export function hitKind(comb: Comb, x: number, y: number): Hit["kind"] {
   return sceneOf(comb).hitKind(x, y);
 }

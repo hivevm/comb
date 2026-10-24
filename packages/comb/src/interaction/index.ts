@@ -180,8 +180,10 @@ function hoverAt(
 ): void {
   const hit = targetAt(store, bridge, event.global.x, event.global.y, connecting);
   app.canvas.style.cursor = CURSORS[hit.kind];
-  const shown = connecting && (hit.kind === "connector" || hit.kind === "node") ? hit.slot : null;
-  store.getState().hover(shown);
+  // At the far level no connector is drawn, so none is shown, and hover writes nothing.
+  const far = levelAt(store.getState().viewport.scale) === "far";
+  const over = hit.kind === "connector" || hit.kind === "node";
+  store.getState().hover(connecting && over && !far ? hit.slot : null);
 }
 
 /** Whether the graph of `state` took the node of `drag` from under it: a load, or a removal of
@@ -242,21 +244,24 @@ export function attachInteraction(
   );
   // The drag is over before its change is told, so that it stays over where a listener throws,
   // and also once the engine is lost, when nothing is told.
-  const tellEnd = untilLost((ended: Drag | null) => {
-    if (ended?.kind === "connect" && connect)
-      endConnection(store, store.getState().connection, connect);
-    else endDrag(store, ended);
+  // A connection the user released proposes its edge; one a later press ends, its release never
+  // having come, proposes none.
+  const tellEnd = untilLost((ended: Drag | null, released: boolean) => {
+    if (ended?.kind !== "connect") return endDrag(store, ended);
+    const connection = store.getState().connection;
+    if (released && connect) endConnection(store, connection, connect);
+    else store.getState().connect(null);
   });
-  const release = () => {
+  const release = (released = true) => {
     const ended = drag;
     drag = null;
-    tellEnd(ended);
+    tellEnd(ended, released);
   };
   app.stage.on(
     "pointerdown",
     untilLost((event: FederatedPointerEvent) => {
       // A drag whose release never came ends where the next press begins.
-      release();
+      release(false);
       drag = startDrag(store, bridge, event, !!connect);
       if (drag?.kind === "node") app.canvas.style.cursor = "grabbing";
     }),
@@ -274,7 +279,7 @@ export function attachInteraction(
       hover(event);
     }
   });
-  app.stage.on("pointerupoutside", release);
+  app.stage.on("pointerupoutside", () => release());
   // A load, or a removal of the dragged node, takes the node from under a drag: the drag ends,
   // moves no node that took its slot, and tells nothing of a node the user never moved.
   // A connection from a node the graph no longer holds ends the same way.

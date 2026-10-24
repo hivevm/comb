@@ -200,13 +200,22 @@ function idUnitsOf(graph: GraphData): number {
   return units;
 }
 
-/** What a removal changes of the pointer's state: a removed node shows no connectors, and a
- *  connection from or over it ends. */
+/** What a removal changes of the pointer's state: a removed node shows no connectors, a
+ *  connection from it ends, and one over it is over nothing. */
 function pointerWithout(state: GraphView, nodes: GraphView["nodes"]): Partial<GraphView> {
   const gone = (slot: number | null | undefined) => slot != null && !nodes[slot];
   const { hovered, connection } = state;
-  const ended = connection && (gone(connection.source) || gone(connection.over));
-  return { ...(gone(hovered) ? { hovered: null } : {}), ...(ended ? { connection: null } : {}) };
+  // A connection from a removed node ends; one over a removed node is over nothing until it moves.
+  const after =
+    !connection || gone(connection.source)
+      ? null
+      : gone(connection.over)
+        ? { ...connection, over: null, compatible: false, target: null }
+        : connection;
+  return {
+    ...(gone(hovered) ? { hovered: null } : {}),
+    ...(after === connection ? {} : { connection: after }),
+  };
 }
 
 /** What `load` changes of `state`: the graph replaced, and the selection and the pointer's state
