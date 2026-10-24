@@ -308,6 +308,14 @@ fn edge(loose: bool, j: usize, nodes: usize) -> impl Strategy<Value = Value> {
     ];
     let text = |arrow: &str| Value::Text(arrow.to_owned());
     let arrow = one_of(vec![text("end"), text("none")], vec![text("start")], loose);
+    let sides = ["top", "right", "bottom", "left"].map(text).to_vec();
+    let side = || {
+        one_of(
+            sides.clone(),
+            vec![text("middle"), Value::Number(1.0)],
+            loose,
+        )
+    };
     object(vec![
         field("id", nth("e", j), loose),
         field("source", end(nodes), loose),
@@ -316,6 +324,8 @@ fn edge(loose: bool, j: usize, nodes: usize) -> impl Strategy<Value = Value> {
         field("color", color(loose), loose),
         field("dash", dash, loose),
         field("arrow", arrow, loose),
+        field("sourceSide", side(), loose),
+        field("targetSide", side(), loose),
     ])
 }
 
@@ -517,6 +527,12 @@ fn mistyped(list: GraphList, item: &Fields) -> Vec<&'static str> {
             let arrow =
                 matches!(get(item, "arrow"), Some(Value::Text(a)) if a == "end" || a == "none");
             check("arrow", arrow);
+            for name in ["sourceSide", "targetSide"] {
+                let sides = ["top", "right", "bottom", "left"];
+                let side =
+                    matches!(get(item, name), Some(Value::Text(s)) if sides.contains(&s.as_str()));
+                check(name, side);
+            }
         }
     }
     wrong
@@ -710,6 +726,8 @@ fn base_edge() -> Vec<(String, Value)> {
         ("target".to_owned(), Value::Text("n1".to_owned())),
         ("color".to_owned(), Value::Number(f64::from(0x12_3456))),
         ("arrow".to_owned(), Value::Text("end".to_owned())),
+        ("sourceSide".to_owned(), Value::Text("bottom".to_owned())),
+        ("targetSide".to_owned(), Value::Text("top".to_owned())),
         // A dash and a label too, so that a patch that names neither is seen to keep them.
         (
             "dash".to_owned(),
@@ -725,6 +743,16 @@ fn base_edge() -> Vec<(String, Value)> {
         ),
     ]
 }
+
+/// The fields a patch of `updateEdge` may set.
+const PATCHED: [&str; 6] = [
+    "color",
+    "dash",
+    "arrow",
+    "label",
+    "sourceSide",
+    "targetSide",
+];
 
 /// A patch of `updateEdge`: some of the fields of an edge, of any value, and now and then a field
 /// of another name among them.
@@ -742,9 +770,7 @@ fn edge_patch() -> impl Strategy<Value = Vec<(String, Value)>> {
             let mut patch: Vec<(String, Value)> = fields
                 .into_iter()
                 .filter(|(name, _)| {
-                    let bit = ["color", "dash", "arrow", "label"]
-                        .iter()
-                        .position(|f| f == name);
+                    let bit = PATCHED.iter().position(|f| f == name);
                     bit.is_some_and(|bit| keep & (1 << bit) != 0)
                 })
                 .collect();
@@ -811,7 +837,7 @@ proptest! {
         let before = graph.edge(0);
         let other = patch
             .iter()
-            .find(|(name, _)| !["color", "dash", "arrow", "label"].contains(&name.as_str()))
+            .find(|(name, _)| !PATCHED.contains(&name.as_str()))
             .map(|(name, _)| name.clone());
         let mut merged = base_edge();
         for (name, value) in patch.iter().take_while(|(name, _)| Some(name) != other.as_ref()) {

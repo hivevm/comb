@@ -37,15 +37,18 @@ function doomed(store: GraphStore, bridge: Bridge) {
 }
 
 /** Deletes the selection, where `canDelete` allows it; an error it throws refuses the deletion
- *  and is thrown on once nothing has changed (ADR-0023). */
-function deleteSelection(store: GraphStore, bridge: Bridge, canDelete?: CanDelete): void {
+ *  and is thrown on once nothing has changed (ADR-0023). A veto that changes the graph itself,
+ *  through `Comb`, refuses too: what it was asked about may no longer be what would go. */
+export function deleteSelection(store: GraphStore, bridge: Bridge, canDelete?: CanDelete): void {
   refuseIfLost();
   const found = doomed(store, bridge);
   if (!found) return;
+  const before = store.getState().change;
   if (canDelete && canDelete(found.deletion) !== true) return;
+  if (store.getState().change !== before) return;
   if (found.nodes.length > 0) {
-    bridge.removeNodes(Uint32Array.from(found.nodes));
-    store.getState().removeNodes(found.nodes, found.edges, "user");
+    const edges = bridge.removeNodes(Uint32Array.from(found.nodes));
+    store.getState().removeNodes(found.nodes, [...edges], "user");
   } else {
     bridge.removeEdges(Uint32Array.from(found.edges));
     store.getState().removeEdges(found.edges, "user");
@@ -65,6 +68,8 @@ export function attachDeletion(
   const onKey = (event: KeyboardEvent) => {
     if (!DELETE_KEYS.has(event.key)) return;
     event.preventDefault();
+    // A key held down, or with a modifier, deletes nothing: once is the user's deletion.
+    if (event.repeat || event.ctrlKey || event.altKey || event.metaKey) return;
     try {
       deleteSelection(store, bridge, canDelete);
     } catch (error) {

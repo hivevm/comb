@@ -427,3 +427,32 @@ test("a listener that throws keeps no other listener from being told, and its er
     thrown: "host listener",
   });
 });
+
+test("a getter of updateNode's patch that removes the node refuses the patch as unknownNode", async ({
+  page,
+}) => {
+  // Verifies: Q-7, ADR-0026
+  await open(page);
+  await loaded(page, { nodes: [node("a"), node("b", 300)], edges: [] });
+  const result = await page.evaluate(() => {
+    const told: string[] = [];
+    window.comb.onChange((change) => told.push(change.kind));
+    const patch = {
+      get title() {
+        window.comb.removeNodes(["a"]);
+        return "A";
+      },
+    };
+    let problem = null;
+    try {
+      window.comb.updateNode("a", patch);
+    } catch (error) {
+      problem = (error as Error & { problem: unknown }).problem;
+    }
+    return { problem, told };
+  });
+  expect(result).toEqual({
+    problem: { kind: "unknownNode", node: "a" },
+    told: ["nodesRemoved"],
+  });
+});

@@ -174,13 +174,15 @@ function dashOf(read: Reader, dash: unknown) {
 }
 
 function edgeOf(read: Reader, edge: Fields) {
-  const { id, source, target, label, color, dash, arrow } = edge;
+  const { id, source, target, label, color, dash, arrow, sourceSide, targetSide } = edge;
   return {
     id: read.id(id),
     source: read.id(source),
     target: read.id(target),
     color: edgeColor({ color: read.number(color) as number | undefined }),
     arrow: read.text(arrow) ?? EDGE_ARROW,
+    sourceSide: read.text(sourceSide) ?? "right",
+    targetSide: read.text(targetSide) ?? "left",
     // No key for a label or a dash left out.
     ...optional("label", labelOf(read, label)),
     ...optional("dash", dashOf(read, dash)),
@@ -229,6 +231,8 @@ export function edgeSnapshotOf(edge: unknown, limits: Limits) {
 const EDGE_PATCH: Record<string, (read: Reader, value: unknown) => unknown> = {
   color: (read, value) => read.number(value),
   arrow: (read, value) => read.text(value),
+  sourceSide: (read, value) => read.text(value),
+  targetSide: (read, value) => read.text(value),
   dash: (read, value) => (value === null ? null : dashOf(read, value)),
   label: (read, value) => (value === null ? null : labelOf(read, value)),
 };

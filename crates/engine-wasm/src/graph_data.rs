@@ -7,6 +7,7 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
+use comb_engine::geometry::{self as graph_side, Sides};
 use comb_engine::graph::{self, EdgeSpec, Graph, GraphError, LabelPlacement};
 use comb_engine::stroke::EdgeStyle;
 use serde::de::{self, IgnoredAny, Visitor};
@@ -202,6 +203,27 @@ pub enum Arrow {
     None,
 }
 
+/// A side of a node, at whose middle its connector sits (ADR-0024).
+#[derive(Tsify, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum Side {
+    Top,
+    Right,
+    Bottom,
+    Left,
+}
+
+impl From<Side> for graph_side::Side {
+    fn from(side: Side) -> Self {
+        match side {
+            Side::Top => Self::Top,
+            Side::Right => Self::Right,
+            Side::Bottom => Self::Bottom,
+            Side::Left => Self::Left,
+        }
+    }
+}
+
 /// An edge between two nodes, named by their identifiers, with the style it is drawn with: its
 /// colour as `0xRRGGBB`, its dash pattern as dash and gap lengths in world units (none for a
 /// solid line), and whether an arrowhead marks its end (G-11).
@@ -222,6 +244,12 @@ pub struct EdgeInput {
     pub dash: Field<Option<Pair>>,
     #[tsify(type = "Arrow")]
     pub arrow: Field<Arrow>,
+    /// The side of its source it leaves by; `api` fills in `right` (ADR-0024).
+    #[tsify(type = "Side")]
+    pub source_side: Field<Side>,
+    /// The side of its target it enters by; `api` fills in `left`.
+    #[tsify(type = "Side")]
+    pub target_side: Field<Side>,
 }
 
 /// A dash pattern: a list of exactly two numbers, the dash and the gap.
@@ -370,7 +398,8 @@ pub enum GraphDataProblem {
     /// `addEdge` hands over an edge from a node to itself, which a load accepts (ADR-0024).
     #[serde(rename_all = "camelCase")]
     SelfEdge { edge: String },
-    /// A patch of `updateEdge` holds a field other than `color`, `dash`, `arrow`, and `label`.
+    /// A patch of `updateEdge` holds a field other than `color`, `dash`, `arrow`, `label`,
+    /// `sourceSide`, and `targetSide`.
     #[serde(rename_all = "camelCase")]
     UnknownEdgePatchField { edge: String, field: String },
 }
@@ -413,6 +442,7 @@ const A_COLOR: &str = "an integer from 0 to 0xFFFFFF";
 const A_LABEL: &str = "an object, or none";
 const A_DASH: &str = "a list of two finite numbers, or none";
 const AN_ARROW: &str = "\"end\" or \"none\"";
+const A_SIDE: &str = "\"top\", \"right\", \"bottom\", or \"left\"";
 
 /// What an identifier, a source, or a target expects, by `MAX_ID`.
 const AN_ID: &str = "a well-formed string of at most 256 code units";
@@ -444,6 +474,7 @@ struct Edge<'a> {
     color: f64,
     dash: Option<[f64; 2]>,
     arrow: Arrow,
+    sides: Sides,
 }
 
 /// A batch with every field of every node and edge read.
@@ -531,6 +562,10 @@ fn edge_of(index: usize, edge: &EdgeInput) -> Result<Edge<'_>, GraphDataProblem>
         color: item.read("color", edge.color, A_COLOR)?,
         dash: item.read("dash", edge.dash, A_DASH)?.map(|Pair(pair)| pair),
         arrow: item.read("arrow", edge.arrow, AN_ARROW)?,
+        sides: Sides {
+            source: item.read("sourceSide", edge.source_side, A_SIDE)?.into(),
+            target: item.read("targetSide", edge.target_side, A_SIDE)?.into(),
+        },
     })
 }
 
@@ -703,6 +738,7 @@ fn edges_of(batch: &Batch, slots: &HashMap<&str, u32>) -> Result<Vec<EdgeSpec>, 
             let target = end(edge, edge.target)?;
             let (label, style) = placement_of(edge)?;
             Ok(EdgeSpec {
+                sides: edge.sides,
                 source,
                 target,
                 label,
@@ -797,6 +833,7 @@ pub(crate) fn add_edge_to(
     }
     let (label, style) = placement_of(&edge)?;
     let spec = EdgeSpec {
+        sides: edge.sides,
         source,
         target,
         label,
@@ -814,13 +851,15 @@ pub(crate) fn add_edge_to(
 #[derive(Tsify, Default)]
 #[tsify(
     type = "{ color?: number; dash?: [number, number] | null; arrow?: Arrow; \
-                 label?: LabelInput | null }"
+                 label?: LabelInput | null; sourceSide?: Side; targetSide?: Side }"
 )]
 pub struct EdgePatch {
     color: Option<Field<f64>>,
     dash: Option<Field<Option<Pair>>>,
     arrow: Option<Field<Arrow>>,
     label: Option<Field<Option<LabelInput>>>,
+    source_side: Option<Field<Side>>,
+    target_side: Option<Field<Side>>,
     other: Option<String>,
 }
 
@@ -847,6 +886,8 @@ impl<'de> Visitor<'de> for EdgePatchVisitor {
                 "dash" => patch.dash = Some(map.next_value()?),
                 "arrow" => patch.arrow = Some(map.next_value()?),
                 "label" => patch.label = Some(map.next_value()?),
+                "sourceSide" => patch.source_side = Some(map.next_value()?),
+                "targetSide" => patch.target_side = Some(map.next_value()?),
                 _ => {
                     map.next_value::<IgnoredAny>()?;
                     while map.next_entry::<IgnoredAny, IgnoredAny>()?.is_some() {}
@@ -904,6 +945,14 @@ pub(crate) fn update_edge_in(
         .arrow
         .map(|arrow| item.read("arrow", arrow, AN_ARROW))
         .transpose()?;
+    let source_side = patch
+        .source_side
+        .map(|side| item.read("sourceSide", side, A_SIDE))
+        .transpose()?;
+    let target_side = patch
+        .target_side
+        .map(|side| item.read("targetSide", side, A_SIDE))
+        .transpose()?;
     let label = match label {
         None => current.label,
         Some(label) => label.map(|l| label_placement(id, &l)).transpose()?,
@@ -918,8 +967,12 @@ pub(crate) fn update_edge_in(
     if let Some(arrow) = arrow {
         style.arrow = arrow == Arrow::End;
     }
+    let sides = Sides {
+        source: source_side.map_or(current.sides.source, Into::into),
+        target: target_side.map_or(current.sides.target, Into::into),
+    };
     graph
-        .update_edge(slot, label, style)
+        .update_edge(slot, label, style, sides)
         .map_err(|_| malformed("comb: the slot holds no edge"))
 }
 
@@ -1065,6 +1118,8 @@ pub(crate) mod tests {
                     color: f64::from(0x9a_a1ad).into(),
                     dash: None.into(),
                     arrow: Arrow::End.into(),
+                    source_side: Side::Right.into(),
+                    target_side: Side::Left.into(),
                 })
                 .collect(),
         }

@@ -33,10 +33,10 @@ function fakeApp() {
 }
 
 /** A bridge with one node under every point, which records the moves it is asked for. */
-function fakeBridge() {
+function fakeBridge(hit: { kind: string; slot?: number } = { kind: "node", slot: 0 }) {
   const moves: { slots: number[]; dx: number; dy: number }[] = [];
   const bridge = {
-    hit: () => ({ kind: "node", slot: 0 }),
+    hit: () => hit,
     translate: (slots: Uint32Array, dx: number, dy: number) =>
       moves.push({ slots: [...slots], dx, dy }),
   };
@@ -181,5 +181,45 @@ describe("interaction ends a drag the graph took its node from", () => {
       "nodesRemoved",
       "nodeAdded",
     ]);
+  });
+});
+
+describe("interaction on an edge", () => {
+  test("a press on an edge selects it, pans once the pointer moves beyond 4 pixels, and shows a pointer", () => {
+    // Verifies: ADR-0025
+    const store = createGraphStore();
+    store.getState().load({
+      nodes: [
+        { id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 },
+        { id: "b", title: "B", x: 300, y: 0, width: 100, height: 40 },
+      ],
+      edges: [{ id: "a-b", source: "a", target: "b" }],
+    });
+    const { app, emit } = fakeApp();
+    attachInteraction(app, store, fakeBridge({ kind: "edge", slot: 0 }).bridge);
+    emit("globalpointermove", 200, 20);
+    expect(app.canvas.style.cursor).toBe("pointer");
+    const { viewport } = store.getState();
+    emit("pointerdown", 200, 20);
+    // Within the slop the press stays a selection.
+    emit("globalpointermove", 203, 22);
+    expect(store.getState().viewport).toBe(viewport);
+    // Beyond it, a pan from the press.
+    emit("globalpointermove", 260, 80);
+    emit("pointerup", 260, 80);
+    expect(store.getState().selection).toEqual({ kind: "edge", id: "a-b" });
+    expect(store.getState().viewport).toEqual({ x: 60, y: 60, scale: 1 });
+  });
+
+  test("the cursor over nothing is the default, and a press there pans", () => {
+    // Verifies: ADR-0025
+    const store = createGraphStore();
+    const { app, emit } = fakeApp();
+    attachInteraction(app, store, fakeBridge({ kind: "none" }).bridge);
+    emit("globalpointermove", 200, 20);
+    expect(app.canvas.style.cursor).toBe("");
+    emit("pointerdown", 200, 20);
+    emit("globalpointermove", 260, 80);
+    expect(store.getState().viewport).toEqual({ x: 60, y: 60, scale: 1 });
   });
 });

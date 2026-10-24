@@ -46,7 +46,9 @@ top there: a connector, else an edge label, else a node, else an edge, else none
   draws the cursor from it.
 - **What a press does:** on a connector it begins a connection; on an edge label it selects the
   label's edge and begins a drag of the label; on a node it selects the node and begins a drag of
-  it; on an edge it selects the edge; on none it clears the selection and begins a pan.
+  it; on an edge it selects the edge, and once the pointer has moved more than 4 screen pixels
+  from the press, begins a pan from it, so that a canvas dense with edges still pans by dragging;
+  on none it clears the selection and begins a pan.
 
 **Out of scope:** hitting a content element of a node (G-10, ADR-0013); a selection of more than
 one item; hitting an edge's arrowhead apart from its path.

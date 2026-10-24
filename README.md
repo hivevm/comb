@@ -138,7 +138,9 @@ returns the world point under the drop; Comb handles no drag and drop itself, an
 throws a `RangeError` on a coordinate that is not finite. `removeNodes(ids)` removes those nodes and
 every edge at them, and `removeEdges(ids)` those edges, without a load. `addEdge(edge)` adds an
 edge between two nodes the graph holds, and `updateEdge(id, patch)` changes an edge's `color`,
-`dash`, `arrow`, or `label`, `null` clearing a dash or a label. `onChange` tells every
+`dash`, `arrow`, `label`, `sourceSide`, or `targetSide`, `null` clearing a dash or a label. An
+edge leaves its source by `sourceSide` and enters its target by `targetSide`, each `top`, `right`,
+`bottom`, or `left`, by default `right` and `left`. `onChange` tells every
 change of the graph, a `GraphChange` that `comb` exports, typed by its `kind` and by `by`, `"user"`
 or `"host"`: `loaded` after `load`, `nodeAdded` with the node as Comb took it after `addNode`,
 `nodeUpdated` with the merged patch after `updateNode`, `nodesRemoved` with the nodes and the edges
@@ -233,14 +235,15 @@ PixiJS's Canvas 2D renderer:
 const comb = await createComb(host, { engine: fetch(engineUrl), allowCanvasFallback: true });
 ```
 
-[`examples/metric-tree/`](examples/metric-tree/) is a complete host application with a sidebar and
-a palette, whose kinds the user drags onto the canvas to add a node under the drop. A click on a
-node or an edge selects it, an edge within 4 screen pixels of its path, and the sidebar edits a
-node's title or an edge's colour, line, arrowhead, and label. With the canvas focused, which a
-press on it does, Delete or Backspace deletes the selection, a node with every edge at it, once
-`CombOptions.canDelete` returns `true` for the identifiers of everything that would go; without
-`canDelete` a deletion is allowed, and the host application's own `removeNodes` and `removeEdges`
-never ask it. The deletion is told as `nodesRemoved` or `edgesRemoved` with `by: "user"`.
+[`examples/metric-tree/`](examples/metric-tree/) is a complete host application with a sidebar and a
+palette, whose kinds the user drags onto the canvas to add a node under the drop. A click on a node
+or an edge selects it, an edge within 4 screen pixels of its path, a drag from an edge beyond 4
+pixels pans, and the sidebar edits a node's title or an edge's colour, line, arrowhead, and label.
+With the canvas focused, which a press on it does, Delete or Backspace deletes the selection, a node
+with every edge at it, once `CombOptions.canDelete` returns `true` for the identifiers of everything
+that would go; without `canDelete` a deletion is allowed, and the host application's own
+`removeNodes` and `removeEdges` never ask it. The deletion is told as `nodesRemoved` or
+`edgesRemoved` with `by: "user"`.
 
 ## Project Layout
 

@@ -383,6 +383,11 @@ impl Engine {
         level: DetailLevel,
     ) -> Result<Ts<Hit>, GraphDataProblem> {
         trap::spring();
+        if !(pixel.is_finite() && pixel > 0.0) {
+            return Err(malformed(
+                "the size of a screen pixel is not a finite number above zero",
+            ));
+        }
         let hit = match self.graph.hit_at(Point::new(x, y), pixel, level.into()) {
             Some(Target::Node(slot)) => Hit::Node { slot },
             Some(Target::Edge(slot)) => Hit::Edge { slot },
@@ -671,6 +676,24 @@ mod tests {
         assert_eq!(engine.visible.mesh.detail, Detail::Coarsened);
         assert!(engine.mesh_distances_len() <= MESH_BUDGET as usize);
         assert!(engine.mesh_indices_len() <= 3 * MESH_BUDGET as usize);
+    }
+
+    #[test]
+    fn a_hit_refuses_a_pixel_that_is_not_a_finite_number_above_zero() {
+        // Verifies: ADR-0025
+        let mut engine = Engine::new();
+        engine.graph = graph_of(&batch(
+            &[("a", 0.0, 0.0), ("b", 300.0, 100.0)],
+            &[("e", "a", "b")],
+        ))
+        .unwrap();
+        // Refused before anything is hit, so the native test needs no JavaScript value.
+        for pixel in [0.0, -0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(
+                engine.hit(200.0, 60.0, pixel, DetailLevel::Near).is_err(),
+                "{pixel}"
+            );
+        }
     }
 
     #[test]

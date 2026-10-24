@@ -12,6 +12,7 @@ import {
 import engineUrl from "comb/engine.wasm?url";
 import {
   edgeVertices,
+  hitKind,
   inspect,
   renderCount,
   sceneNumbers,
@@ -61,6 +62,7 @@ declare global {
     testMode: typeof testMode;
     trapNextCall: typeof trapNextCall;
     screenPoint: (x: number, y: number) => ReturnType<typeof screenPoint>;
+    hitKind: (x: number, y: number) => ReturnType<typeof hitKind>;
     visibleRect: (margin?: number) => ReturnType<typeof visibleRect>;
     work: () => ReturnType<typeof work>;
     edgeVertices: () => ReturnType<typeof edgeVertices>;
@@ -113,7 +115,7 @@ const edgeArrow = element<HTMLInputElement>("edge-arrow");
 const edgeLabel = element<HTMLInputElement>("edge-label");
 /** The dash pattern the sidebar gives an edge it makes dashed, as the tree's own dashed edges. */
 const DASH = [6, 4] as const;
-/** Comb's colour for an edge that names none. */
+/** Comb's colour for an edge that names none, which a host application cannot read from it. */
 const EDGE_GREY = 0x9aa1ad;
 
 let graph: GraphData = metricTree(1);
@@ -172,11 +174,14 @@ function showEdge(edge: EdgeData): void {
   edgeLabel.value = edge.label?.text ?? "";
 }
 
-/** Changes the selected edge by `patch`, in the example's graph and through `updateEdge`. */
+/** Changes the selected edge by `patch` through `updateEdge`; the example's graph follows from
+ *  the `edgeUpdated` Comb tells. */
 function changeEdge(patch: EdgePatch): void {
-  const edge = selectedEdge;
-  if (!edge) return;
-  comb.updateEdge(edge.id, patch);
+  if (selectedEdge) comb.updateEdge(selectedEdge.id, patch);
+}
+
+/** `edge` with `patch` merged, as Comb merges it: `null` clears a dash or a label. */
+function patched(edge: EdgeData, patch: EdgePatch): void {
   const { dash, label, ...rest } = patch;
   Object.assign(edge, rest);
   if (dash !== undefined) edge.dash = dash ?? undefined;
@@ -236,10 +241,15 @@ canvas.addEventListener("drop", (event) => {
   drop(event.dataTransfer?.getData(PALETTE_TYPE) ?? "", event.clientX, event.clientY);
 });
 // The example keeps its own copy of the graph for the sidebar, from what Comb tells it: a node
-// dropped from the palette, and what the user or the host removed.
+// dropped from the palette, an edge added or changed, and what the user or the host removed.
 comb.onChange((change) => {
   if (change.kind === "nodeAdded") graph.nodes.push({ ...change.node });
-  else if (change.kind === "nodesRemoved" || change.kind === "edgesRemoved") {
+  else if (change.kind === "edgeAdded") graph.edges.push({ ...change.edge });
+  else if (change.kind === "edgeUpdated") {
+    const edge = graph.edges.find(({ id }) => id === change.id);
+    if (edge) patched(edge, change.patch as EdgePatch);
+    return;
+  } else if (change.kind === "nodesRemoved" || change.kind === "edgesRemoved") {
     const nodes = new Set(change.kind === "nodesRemoved" ? change.nodes : []);
     const edges = new Set(change.edges);
     graph.nodes = graph.nodes.filter(({ id }) => !nodes.has(id));
@@ -284,6 +294,7 @@ window.sceneNumbers = sceneNumbers;
 window.testMode = testMode;
 window.trapNextCall = trapNextCall;
 window.screenPoint = (x, y) => screenPoint(comb, x, y);
+window.hitKind = (x, y) => hitKind(comb, x, y);
 window.visibleRect = (margin) => visibleRect(comb, margin);
 window.work = () => work(comb);
 window.edgeVertices = () => edgeVertices(comb);

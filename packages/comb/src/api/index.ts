@@ -43,6 +43,7 @@ import {
   type NodeData,
   type NodeView,
   type Selection,
+  type Side,
   type StoreChange,
   type Viewport,
 } from "../store";
@@ -58,6 +59,8 @@ export type { Deletion } from "../interaction";
 interface EdgeChangePatch {
   readonly color?: number;
   readonly arrow?: "end" | "none";
+  readonly sourceSide?: Side;
+  readonly targetSide?: Side;
   readonly dash?: readonly [number, number] | null;
   readonly label?: Readonly<EdgeLabelData> | null;
 }
@@ -95,7 +98,9 @@ export type GraphChange =
   | {
       readonly kind: "edgeAdded";
       readonly by: "user" | "host";
-      readonly edge: Readonly<EdgeData & Required<Pick<EdgeData, "color" | "arrow">>>;
+      readonly edge: Readonly<
+        EdgeData & Required<Pick<EdgeData, "color" | "arrow" | "sourceSide" | "targetSide">>
+      >;
     }
   /** `updateEdge` changed the edge `id` by `patch`, as Comb merged it. */
   | {
@@ -464,6 +469,8 @@ function edgeDeliveryOf(
       ...edge,
       color: edge.color!,
       arrow: edge.arrow!,
+      sourceSide: edge.sourceSide!,
+      targetSide: edge.targetSide!,
       ...(dash ? { dash: [dash[0], dash[1]] as const } : {}),
       ...(label ? { label: { ...label } } : {}),
     },

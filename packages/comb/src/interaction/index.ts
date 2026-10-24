@@ -17,7 +17,11 @@ const CURSORS: Record<Hit["kind"], string> = { node: "grab", edge: "pointer", no
 /** A drag in progress: of a node, which records whether it moved it, or of the viewport. */
 type Drag =
   | { kind: "node"; slot: number; id: string; x: number; y: number; moved: boolean }
-  | { kind: "pan"; x: number; y: number };
+  /** A pan; one begun on an edge waits until the pointer has moved beyond `PAN_SLOP`. */
+  | { kind: "pan"; x: number; y: number; waiting: boolean };
+
+/** How far, in screen pixels, the pointer moves after a press on an edge before it pans. */
+const PAN_SLOP = 4;
 
 /** What a press at a screen point hits, from the engine's spatial index, at the level of detail
  *  of the viewport's scale (ADR-0025). */
@@ -28,8 +32,9 @@ function targetAt(store: GraphStore, bridge: Bridge, x: number, y: number): Hit 
 }
 
 /** Begins what a press does where it hits: on a node it selects the node and begins a drag of
- *  it; on an edge it selects the edge; on nothing it clears the selection and begins a pan. */
-function startDrag(store: GraphStore, bridge: Bridge, event: FederatedPointerEvent): Drag | null {
+ *  it; on an edge it selects the edge and begins a pan that waits for the pointer to move beyond
+ *  the slop; on nothing it clears the selection and begins a pan. */
+function startDrag(store: GraphStore, bridge: Bridge, event: FederatedPointerEvent): Drag {
   const { x, y } = event.global;
   const { nodes, edges } = store.getState();
   const hit = targetAt(store, bridge, x, y);
@@ -41,15 +46,20 @@ function startDrag(store: GraphStore, bridge: Bridge, event: FederatedPointerEve
   const edge = hit.kind === "edge" ? edges[hit.slot] : undefined;
   if (edge) {
     store.getState().select({ kind: "edge", id: edge.id });
-    return null;
+    return { kind: "pan", x, y, waiting: true };
   }
   store.getState().select(null);
-  return { kind: "pan", x, y };
+  return { kind: "pan", x, y, waiting: false };
 }
 
 function continueDrag(store: GraphStore, bridge: Bridge, drag: Drag, event: FederatedPointerEvent) {
   const dx = event.global.x - drag.x;
   const dy = event.global.y - drag.y;
+  // A press on an edge selects it; only a move beyond the slop makes it a pan, from the press.
+  if (drag.kind === "pan" && drag.waiting) {
+    if (Math.hypot(dx, dy) <= PAN_SLOP) return;
+    drag.waiting = false;
+  }
   drag.x = event.global.x;
   drag.y = event.global.y;
   const { viewport } = store.getState();

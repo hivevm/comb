@@ -6,7 +6,7 @@
 //! those slots, the points of the labels, and the mesh of the edges into buffers the caller reads;
 //! the ends of the edges it found are computed only when inspection asks for them.
 
-use crate::geometry::{EdgePath, Point, Rect};
+use crate::geometry::{EdgePath, Point, Rect, Sides};
 use crate::positions::{self, PositionError};
 use crate::spatial::Grid;
 use crate::stroke::{EdgeStyle, MESH_BUDGET, Mesh, Stroke, near_path};
@@ -17,6 +17,8 @@ use crate::stroke::{EdgeStyle, MESH_BUDGET, Mesh, Stroke, near_path};
 pub struct EdgeSpec {
     pub source: u32,
     pub target: u32,
+    /// The sides it leaves its source by and enters its target by (ADR-0024).
+    pub sides: Sides,
     pub label: Option<LabelPlacement>,
     pub style: EdgeStyle,
 }
@@ -405,13 +407,14 @@ impl Graph {
         self.holds_edge(slot).then(|| self.edges[slot as usize])
     }
 
-    /// Gives the edge in `slot` the label placement `label` and the style `style`, and places it
-    /// again in place (ADR-0022). A slot that holds no edge refuses the change.
+    /// Gives the edge in `slot` the label placement `label`, the style `style`, and the sides
+    /// `sides`, and places it again in place (ADR-0022, ADR-0024). A slot that holds no edge refuses the change.
     pub fn update_edge(
         &mut self,
         slot: u32,
         label: Option<LabelPlacement>,
         style: EdgeStyle,
+        sides: Sides,
     ) -> Result<(), SlotError> {
         if !self.holds_edge(slot) {
             return Err(SlotError::NoEdge { slot });
@@ -419,6 +422,7 @@ impl Graph {
         let spec = &mut self.edges[slot as usize];
         spec.label = label;
         spec.style = style;
+        spec.sides = sides;
         self.place_edge(slot);
         if stale(self.edge_grid.beyond_extent(), self.edges_in_use() as usize) {
             self.index();
@@ -520,6 +524,7 @@ impl Graph {
         let path = EdgePath::between(
             &self.node_bounds(spec.source),
             &self.node_bounds(spec.target),
+            spec.sides,
         );
         let label = spec
             .label
@@ -719,6 +724,19 @@ mod budget;
 mod tests {
     use super::*;
 
+    /// Sides of an edge, mostly the default, now and then any of the sixteen pairs.
+    pub(super) fn random_sides(rng: &mut Lcg) -> Sides {
+        use crate::geometry::Side;
+        if rng.next() < 0.5 {
+            return Sides::default();
+        }
+        let sides = [Side::Top, Side::Right, Side::Bottom, Side::Left];
+        Sides {
+            source: sides[rng.below(4) as usize],
+            target: sides[rng.below(4) as usize],
+        }
+    }
+
     /// A small deterministic generator, so that a failure repeats.
     pub(super) struct Lcg(pub(super) u64);
 
@@ -752,6 +770,7 @@ mod tests {
         }
         let specs = (0..edges)
             .map(|_| EdgeSpec {
+                sides: random_sides(rng),
                 source: rng.below(nodes),
                 target: rng.below(nodes),
                 label: (rng.next() < 0.5).then(|| LabelPlacement {
@@ -780,6 +799,7 @@ mod tests {
                 EdgePath::between(
                     &graph.node_bounds(spec.source),
                     &graph.node_bounds(spec.target),
+                    spec.sides,
                 )
                 .bounds()
                 .meets(rect)
@@ -793,6 +813,7 @@ mod tests {
                     let path = EdgePath::between(
                         &graph.node_bounds(spec.source),
                         &graph.node_bounds(spec.target),
+                        spec.sides,
                     );
                     label_rect.contains(path.label_position(label.t, label.offset))
                 })
@@ -849,6 +870,7 @@ mod tests {
             let fresh = EdgePath::between(
                 &graph.node_bounds(spec.source),
                 &graph.node_bounds(spec.target),
+                spec.sides,
             )
             .bounds();
             assert_eq!(graph.bounds[e as usize], fresh, "edge {e}");
@@ -870,6 +892,7 @@ mod tests {
             offset: 0.0,
         };
         let edges = vec![EdgeSpec {
+            sides: Sides::default(),
             source: 0,
             target: 1,
             label: Some(label),
@@ -951,6 +974,7 @@ mod tests {
             offset: 0.0,
         };
         let edges = vec![EdgeSpec {
+            sides: Sides::default(),
             source: 0,
             target: 1,
             label: Some(label),
@@ -1007,6 +1031,7 @@ mod tests {
     #[test]
     fn the_ends_of_unknown_slots_keep_their_place() {
         let edges = vec![EdgeSpec {
+            sides: Sides::default(),
             source: 0,
             target: 1,
             label: None,
@@ -1031,6 +1056,7 @@ mod tests {
             offset: 0.0,
         };
         let edges = vec![EdgeSpec {
+            sides: Sides::default(),
             source: 0,
             target: 1,
             label: Some(label),
@@ -1071,12 +1097,14 @@ mod tests {
             vec![100.0, 50.0, 100.0, 50.0, 100.0, 50.0],
             vec![
                 EdgeSpec {
+                    sides: Sides::default(),
                     source: 0,
                     target: 1,
                     label: None,
                     style: EdgeStyle::unstyled(),
                 },
                 EdgeSpec {
+                    sides: Sides::default(),
                     source: 1,
                     target: 2,
                     label: None,
@@ -1183,6 +1211,7 @@ mod tests {
             offset: 0.0,
         };
         let edges = vec![EdgeSpec {
+            sides: Sides::default(),
             source: 0,
             target: 1,
             label: Some(label),
@@ -1223,6 +1252,7 @@ mod tests {
     #[test]
     fn an_edge_to_a_missing_slot_is_refused() {
         let edges = vec![EdgeSpec {
+            sides: Sides::default(),
             source: 0,
             target: 1,
             label: None,
@@ -1335,6 +1365,7 @@ mod tests {
         let pick = |rng: &mut Lcg| drawn.0[rng.below(drawn.0.len()) as usize];
         let source = pick(rng);
         EdgeSpec {
+            sides: random_sides(rng),
             source,
             target: if rng.next() < 0.1 { source } else { pick(rng) },
             label: (rng.next() < 0.5).then(|| LabelPlacement {
@@ -1392,7 +1423,9 @@ mod tests {
                             graph.remove_edges(&[edge]).unwrap();
                         } else {
                             let spec = random_edge(&mut rng, &drawn);
-                            graph.update_edge(edge, spec.label, spec.style).unwrap();
+                            graph
+                                .update_edge(edge, spec.label, spec.style, spec.sides)
+                                .unwrap();
                         }
                     }
                 } else {
@@ -1449,6 +1482,7 @@ mod tests {
         let mut graph = plane(50_000);
         let edges = (0..1_000)
             .map(|i| EdgeSpec {
+                sides: Sides::default(),
                 source: i,
                 target: i + 1,
                 label: None,
@@ -1472,6 +1506,7 @@ mod tests {
         let plane = plane(2_000);
         let specs = (0..edges)
             .map(|i| EdgeSpec {
+                sides: Sides::default(),
                 source: 2 * i,
                 target: 2 * i + 1,
                 label: None,
@@ -1490,6 +1525,7 @@ mod tests {
         let edges = (1..count)
             .flat_map(|i| [(0, i), (i, 0)])
             .map(|(source, target)| EdgeSpec {
+                sides: Sides::default(),
                 source,
                 target,
                 label: None,
@@ -1515,6 +1551,7 @@ mod tests {
         let mut graph = paired(4);
         graph.remove_nodes(&[7]).unwrap();
         let spec = |source, target| EdgeSpec {
+            sides: Sides::default(),
             source,
             target,
             label: None,
@@ -1531,7 +1568,7 @@ mod tests {
         );
         assert_eq!(graph.edge_slots, edges);
         assert_eq!(
-            graph.update_edge(3, None, EdgeStyle::unstyled()),
+            graph.update_edge(3, None, EdgeStyle::unstyled(), Sides::default()),
             Err(SlotError::NoEdge { slot: 3 })
         );
         assert_eq!(graph.edge(3), None);
@@ -1548,6 +1585,7 @@ mod tests {
         for i in 0..100 {
             graph
                 .add_edge(EdgeSpec {
+                    sides: Sides::default(),
                     source: 2 * i + 1,
                     target: 2 * i + 2,
                     label: None,
@@ -1558,6 +1596,7 @@ mod tests {
         assert_eq!(graph.builds, builds);
         graph
             .add_edge(EdgeSpec {
+                sides: Sides::default(),
                 source: 0,
                 target: 3,
                 label: None,
@@ -1567,44 +1606,37 @@ mod tests {
         assert_eq!(graph.builds, builds + 1);
     }
 
-    /// How far `p` lies from the curve of `path`: an oracle apart from the flattening, sampled at
-    /// 513 points and then, around every sample within a step's length of the nearest, by ternary
-    /// search, so that it is exact to far below the smallest reach of the test.
-    fn distance_to_curve(path: &EdgePath, p: Point) -> f64 {
-        let at = |t: f64| {
-            let q = path.point_at(t);
-            (q.x - p.x).hypot(q.y - p.y)
+    /// Bounds on how far `p` lies from the curve of `path`, below and above, apart from the
+    /// flattening: the curve lies in the hull of its control points, so the distance to the hull
+    /// bounds a part's distance below, and the distance to a part's ends bounds it above; parts are
+    /// split until the bounds meet within a thousandth, a part whose lower bound exceeds the best
+    /// upper one dropped.
+    fn distance_to_curve(path: &EdgePath, p: Point) -> (f64, f64) {
+        let to = |q: Point| (q.x - p.x).hypot(q.y - p.y);
+        let below = |part: &EdgePath| {
+            let hull = part.hull();
+            let dx = (hull.min_x - p.x).max(p.x - hull.max_x).max(0.0);
+            let dy = (hull.min_y - p.y).max(p.y - hull.max_y).max(0.0);
+            dx.hypot(dy)
         };
-        // Coarsely, then around each sample that may lie nearest, by bisection of a bracket; the
-        // distance along the curve between samples bounds how much nearer a point between them is.
-        let n = 512;
-        let ts: Vec<f64> = (0..=n).map(|i| f64::from(i) / f64::from(n)).collect();
-        let coarse: Vec<f64> = ts.iter().map(|&t| at(t)).collect();
-        let step = ts
-            .windows(2)
-            .map(|w| {
-                let (a, b) = (path.point_at(w[0]), path.point_at(w[1]));
-                (a.x - b.x).hypot(a.y - b.y)
-            })
-            .fold(0.0, f64::max);
-        let best = coarse.iter().copied().fold(f64::INFINITY, f64::min);
-        let mut nearest = best;
-        for i in 0..=n as usize {
-            if coarse[i] > best + step {
+        let mut upper = to(path.source).min(to(path.target));
+        let mut lower = f64::INFINITY;
+        let mut parts = vec![(*path, 0)];
+        while let Some((part, depth)) = parts.pop() {
+            let floor = below(&part);
+            if floor > upper {
                 continue;
             }
-            let (mut from, mut to) = (ts[i.saturating_sub(1)], ts[(i + 1).min(n as usize)]);
-            for _ in 0..60 {
-                let (m1, m2) = (from + (to - from) / 3.0, to - (to - from) / 3.0);
-                if at(m1) < at(m2) {
-                    to = m2;
-                } else {
-                    from = m1;
-                }
+            upper = upper.min(to(part.source)).min(to(part.target));
+            if depth >= 48 || upper - floor <= 1e-3 {
+                lower = lower.min(floor);
+                continue;
             }
-            nearest = nearest.min(at(from));
+            let (left, right) = part.split();
+            parts.push((left, depth + 1));
+            parts.push((right, depth + 1));
         }
-        nearest
+        (lower.min(upper), upper)
     }
 
     #[test]
@@ -1613,6 +1645,9 @@ mod tests {
         for seed in 1..=4 {
             let mut rng = Lcg(seed);
             let mut graph = random_graph(&mut rng, 30, 40);
+            // A free slot now and then too, which no hit may return; a press near its old path
+            // finds what lies there besides.
+            graph.remove_edges(&[3, 17, 29]).unwrap();
             for _ in 0..300 {
                 let level = [Level::Near, Level::Middle, Level::Far][rng.below(3) as usize];
                 let pixel = [0.25, 1.0, 4.0, 20.0][rng.below(4) as usize];
@@ -1634,18 +1669,18 @@ mod tests {
                 // Within the reach less the flattening's tolerance an edge is surely hit, beyond it
                 // plus the tolerance surely not; between, either is right.
                 let (reach, tolerance) = (EDGE_REACH * pixel, Stroke::at(level, pixel).tolerance);
-                let d: Vec<f64> = (0..graph.edge_slots)
+                let d: Vec<(f64, f64)> = (0..graph.edge_slots)
                     .map(|e| distance_to_curve(&graph.paths[e as usize], p))
                     .collect();
+                // Surely hit by its upper bound, surely too far by its lower one.
                 let sure = (0..graph.edge_slots)
                     .rev()
-                    .find(|&e| d[e as usize] < reach - tolerance);
+                    .filter(|&e| graph.holds_edge(e))
+                    .find(|&e| d[e as usize].1 < reach - tolerance);
                 match hit {
                     Some(Target::Edge(e)) => {
-                        assert!(
-                            d[e as usize] <= reach + tolerance + 1e-9,
-                            "edge {e} too far"
-                        );
+                        assert!(graph.holds_edge(e), "free edge {e}");
+                        assert!(d[e as usize].0 <= reach + tolerance, "edge {e} too far");
                         assert!(sure.is_none_or(|s| e >= s), "edge {e} below {sure:?}");
                     }
                     None => assert_eq!(sure, None, "missed at {p:?}"),

@@ -6,9 +6,9 @@
 //! rectangle where it leaves the rectangle grown by the stroke's width.
 // Verifies: Q-7, Q-4, ADR-0027
 
-use super::tests::Lcg;
+use super::tests::{Lcg, random_sides};
 use super::{EdgeSpec, Graph, Level, Visible};
-use crate::geometry::{EdgePath, Point, Rect};
+use crate::geometry::{EdgePath, Point, Rect, Sides};
 use crate::stroke::{Detail, EdgeStyle, Mesh, Stroke, crossing, distance_to_segment, flattened};
 
 /// How many random queries one run makes.
@@ -31,6 +31,7 @@ fn random_graph(rng: &mut Lcg, nodes: usize, edges: usize, spread: f64) -> Graph
     }
     let specs = (0..edges)
         .map(|i| EdgeSpec {
+            sides: random_sides(rng),
             source: rng.below(nodes),
             target: rng.below(nodes),
             label: None,
@@ -51,6 +52,7 @@ fn farthest(rng: &mut Lcg) -> Graph {
     let edges = 1 + rng.below(40);
     let specs = (0..edges)
         .map(|i| EdgeSpec {
+            sides: random_sides(rng),
             source: rng.below(3),
             target: rng.below(3),
             label: None,
@@ -300,6 +302,7 @@ fn every_query_keeps_its_mesh_within_the_budget_and_draws_every_edge_it_finds() 
 fn far_apart(edges: u32, arrow: bool) -> Graph {
     let specs = (0..edges)
         .map(|i| EdgeSpec {
+            sides: Sides::default(),
             source: 0,
             target: 1,
             label: None,
