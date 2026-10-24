@@ -192,8 +192,9 @@ export function snapshotOf(lists: Lists, limits: Limits) {
 
 /** The patch of `updateNode` as plain data: the own fields of a plain object, enumerable or not,
  *  up to the first other than `title`, each a primitive, a string one as a text cut by
- *  `limits`. A patch that is no plain object, a `Map` or an array among them, or
- *  that has a key that is no string, cannot be read. */
+ *  `limits`, and the name of that other field no longer than one code unit beyond the limit for
+ *  texts. A patch that is no plain object, a `Map` or an array among them, or that has a key that
+ *  is no string, cannot be read. */
 export function patchOf(patch: unknown, limits: Limits): NodePatch {
   const fields = objectOf(patch);
   if (!fields || Object.getPrototypeOf(fields) !== Object.prototype)
@@ -203,9 +204,10 @@ export function patchOf(patch: unknown, limits: Limits): NodePatch {
   for (const key of Reflect.ownKeys(fields)) {
     if (typeof key !== "string") throw new UnreadableError("the patch has a key that is no string");
     if (key !== "title") {
-      // The first other field, which the bridge refuses by name: its name cut like a text, its
-      // value not read, and no field after it.
-      plain[read.text(key) as string] = false;
+      // The first other field, which the bridge refuses by name: its name cut like a text but
+      // otherwise as written, a lone surrogate too, which the bridge names as U+FFFD; its value
+      // not read, and no field after it.
+      plain[key.slice(0, limits.text + 1)] = false;
       break;
     }
     const value = fields[key];

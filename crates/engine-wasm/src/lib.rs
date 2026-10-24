@@ -739,9 +739,11 @@ fn graph_of(batch: &GraphBatch) -> Result<Graph, GraphDataProblem> {
 }
 
 /// The attributes `updateNode` changes on a node, by name: only its title, a string. Read from a
-/// plain object alone: `api` hands over a copy whose values are primitives, and `false` in place
-/// of a patch that is no plain object, a `Map` or an array among them, which is refused as
-/// malformed. No value of the host application, and none of its code, reaches the bridge.
+/// plain object alone: `api` hands over a copy of a plain object's fields up to the first other
+/// than `title`, whose values are primitives; a patch that is no plain object, a `Map` or an array
+/// among them, or that has a key that is no string, `api` cannot read, and refuses as malformed
+/// before it reaches the bridge. No value of the host application, and none of its code, reaches
+/// the bridge.
 #[derive(Tsify)]
 #[tsify(type = "{ title?: string }")]
 pub struct NodePatch(pub Vec<(String, Text)>);

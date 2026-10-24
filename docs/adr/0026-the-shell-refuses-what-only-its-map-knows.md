@@ -54,9 +54,10 @@ whose only door to the engine is its `bridge` module.
   an edge's, a source, a target), at most 64,000,000 code units of identifiers per load, and at
   most 1,000 code units per title and per label text.
 - **What the bridge cannot see:** `api` decides two things itself, each because the bridge cannot.
-  A string that holds a lone surrogate, which serde-wasm-bindgen hands the bridge crate as
-  U+FFFD, so that it would check another string than the store keeps, is handed over as `false`,
-  which the bridge refuses as a value of the wrong type. And `api` checks, against the store's map
+  A string the store keeps that holds a lone surrogate, which serde-wasm-bindgen hands the bridge
+  crate as U+FFFD, so that it would check another string than the store keeps, is handed over as
+  `false`, which the bridge refuses as a value of the wrong type; a patch's key, which the store
+  does not keep, crosses as written and is named with U+FFFD in its place. And `api` checks, against the store's map
   from identifiers to slots, which only the shell keeps (ADR-0010), what only that map knows,
   whichever method of the public interface or gesture asks: an identifier named that the graph
   does not hold (`unknownNode`, `unknownEdge`), as `updateNode`, `removeNodes`, `removeEdges`, and
