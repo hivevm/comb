@@ -3,13 +3,15 @@
 // and must not compile; `tsc` fails on a `@ts-expect-error` that has no error to expect.
 import { expect, test } from "bun:test";
 import type { Bridge } from ".";
-import type { GraphData, NodeData } from "../store";
+import type { EdgeData, EdgePatch, GraphData, NodeData } from "../store";
 
 function handsOver(
   bridge: Bridge,
   graph: GraphData,
   patch: { title?: string },
   node: NodeData,
+  edge: EdgeData,
+  edgePatch: EdgePatch,
 ): void {
   // @ts-expect-error the host application's graph data is no snapshot, and its optional edge
   // colour and arrowhead would refuse it without the mark too, so the next line decides the mark
@@ -22,6 +24,12 @@ function handsOver(
   bridge.checkNodePatch("a", { title: "a" });
   // @ts-expect-error the host application's node is no snapshot of one
   bridge.addNode(node);
+  // @ts-expect-error the host application's edge is no snapshot of one
+  bridge.addEdge(edge, 0, 1);
+  // @ts-expect-error the host application's patch of an edge is no plain patch
+  bridge.updateEdge(0, "e", edgePatch);
+  // @ts-expect-error an object literal is no plain patch of an edge either
+  bridge.updateEdge(0, "e", { color: 0 });
 }
 
 test("the bridge refuses graph data and patches that are no snapshot at compile time", () => {

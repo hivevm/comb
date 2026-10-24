@@ -46,6 +46,15 @@ export interface Viewport {
   scale: number;
 }
 
+/** What `updateEdge` may change of an edge: its colour, dash pattern, arrowhead, or label, a dash
+ *  and a label cleared with `null`. */
+export interface EdgePatch {
+  color?: number;
+  arrow?: "end" | "none";
+  dash?: readonly [number, number] | null;
+  label?: EdgeLabelData | null;
+}
+
 /** A node as the store keeps it: everything but its position. */
 export type NodeView = Omit<NodeData, "x" | "y">;
 
@@ -64,6 +73,13 @@ export type StoreChange =
       readonly edges: readonly string[];
     }
   | { readonly kind: "edgesRemoved"; readonly by: "host"; readonly edges: readonly string[] }
+  | { readonly kind: "edgeAdded"; readonly by: "host"; readonly id: string }
+  | {
+      readonly kind: "edgeUpdated";
+      readonly by: "host";
+      readonly id: string;
+      readonly patch: Readonly<EdgePatch>;
+    }
   | {
       readonly kind: "nodeUpdated";
       readonly by: "host";
@@ -108,6 +124,10 @@ export interface GraphState extends GraphView {
   removeNodes(nodeSlots: readonly number[], edgeSlots: readonly number[]): void;
   /** Forgets the edges in `edgeSlots`, which the engine removed, leaving their slots free. */
   removeEdges(edgeSlots: readonly number[]): void;
+  /** Keeps `edge`, which the engine took into `slot`. */
+  addEdge(edge: EdgeData, slot: number): void;
+  /** Merges `patch` into the edge `id`, which the engine changed. */
+  updateEdge(id: string, patch: EdgePatch): void;
 }
 
 export type GraphStore = ReturnType<typeof createGraphStore>;
@@ -194,6 +214,31 @@ function withoutEdgesOf(state: GraphView, edgeSlots: readonly number[]): Partial
   };
 }
 
+type EdgeView = NonNullable<GraphView["edges"][number]>;
+
+/** `edge` with `patch` merged: a field the patch sets replaces the edge's, and `null` clears a dash
+ *  or a label. */
+function patched(edge: EdgeView, patch: EdgePatch): EdgeView {
+  const { dash, label, ...rest } = { ...edge, ...patch };
+  return {
+    ...rest,
+    ...(dash ? { dash } : {}),
+    ...(label ? { label } : {}),
+  };
+}
+
+/** What `addEdge` changes of `state`: `edge` kept in `slot`, and its identifiers counted. */
+function withEdge(state: GraphView, edge: EdgeData, slot: number): Partial<GraphView> {
+  const edges = state.edges.slice();
+  edges[slot] = edge;
+  return {
+    edges,
+    edgeSlots: new Map(state.edgeSlots).set(edge.id, slot),
+    idUnits: state.idUnits + edge.id.length + edge.source.length + edge.target.length,
+    change: { kind: "edgeAdded", by: "host", id: edge.id },
+  };
+}
+
 export function createGraphStore() {
   return createStore<GraphState>()((set) => ({
     nodes: [],
@@ -241,5 +286,13 @@ export function createGraphStore() {
     removeNodes: (nodeSlots, edgeSlots) =>
       set((state) => withoutNodes(state, nodeSlots, edgeSlots)),
     removeEdges: (edgeSlots) => set((state) => withoutEdgesOf(state, edgeSlots)),
+    addEdge: (edge, slot) => set((state) => withEdge(state, edge, slot)),
+    updateEdge: (id, patch) =>
+      set((state) => {
+        const slot = state.edgeSlots.get(id)!;
+        const edges = state.edges.slice();
+        edges[slot] = patched(edges[slot]!, patch);
+        return { edges, change: { kind: "edgeUpdated", by: "host", id, patch } };
+      }),
   }));
 }

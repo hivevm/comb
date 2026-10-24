@@ -2,7 +2,8 @@
 //! formed or not, ends in a typed error or a graph, never in a panic, and in a graph exactly when
 //! an oracle written apart from the bridge finds nothing to refuse. Every field crosses, those the
 //! engine does not keep among them: titles, label texts and backgrounds, the patch of
-//! `updateNode`, and the node of `addNode`, which is refused exactly as a load of it alone is.
+//! `updateNode`, the node of `addNode` and the edge of `addEdge`, each refused exactly as a load
+//! of it alone is, and the patch of `updateEdge`, refused exactly as a load of the edge it makes.
 //!
 //! The data crosses as serde-wasm-bindgen would hand it over, through a value of any shape that
 //! `GraphBatch` is deserialized from, so that values of the wrong type and missing fields reach
@@ -17,8 +18,8 @@ use serde::Deserialize;
 use serde::de::value::{MapDeserializer, SeqDeserializer};
 use serde::de::{self, IntoDeserializer, Visitor};
 
-use super::{EdgeInput, GraphBatch, GraphDataProblem, GraphList, NodeInput, NodePatch};
-use super::{add_node_to, graph_of, patch_of, reading, unshaped};
+use super::{EdgeInput, EdgePatch, GraphBatch, GraphDataProblem, GraphList, NodeInput, NodePatch};
+use super::{add_edge_to, add_node_to, graph_of, patch_of, reading, unshaped, update_edge_in};
 
 /// How many random batches one run feeds the bridge: the ticket's floor, which runs in seconds.
 const CASES: u32 = 10_000;
@@ -672,8 +673,157 @@ fn added_node() -> impl Strategy<Value = Value> {
     ]
 }
 
+/// Graph data of nodes `n0` and `n1` and the edges `edges`.
+fn two_nodes(edges: Vec<Value>) -> Value {
+    let node = |id: &str| {
+        Value::Object(vec![
+            ("id".to_owned(), Value::Text(id.to_owned())),
+            ("title".to_owned(), Value::Text(id.to_owned())),
+            ("x".to_owned(), Value::Number(0.0)),
+            ("y".to_owned(), Value::Number(0.0)),
+            ("width".to_owned(), Value::Number(1.0)),
+            ("height".to_owned(), Value::Number(1.0)),
+        ])
+    };
+    Value::Object(vec![
+        (
+            "nodes".to_owned(),
+            Value::List(vec![node("n0"), node("n1")]),
+        ),
+        ("edges".to_owned(), Value::List(edges)),
+    ])
+}
+
+/// The graph a load of `data` builds, or why the load was refused.
+fn loaded(data: Value) -> Result<comb_engine::graph::Graph, GraphDataProblem> {
+    reading(|| GraphBatch::deserialize(data))
+        .map_err(unshaped)
+        .and_then(|batch| graph_of(&batch))
+}
+
+/// The edge `e0` from `n0` to `n1`, styled, which a patch of `updateEdge` changes.
+fn base_edge() -> Vec<(String, Value)> {
+    vec![
+        ("id".to_owned(), Value::Text("e0".to_owned())),
+        ("source".to_owned(), Value::Text("n0".to_owned())),
+        ("target".to_owned(), Value::Text("n1".to_owned())),
+        ("color".to_owned(), Value::Number(f64::from(0x12_3456))),
+        ("arrow".to_owned(), Value::Text("end".to_owned())),
+    ]
+}
+
+/// A patch of `updateEdge`: some of the fields of an edge, of any value, and now and then a field
+/// of another name among them.
+fn edge_patch() -> impl Strategy<Value = Vec<(String, Value)>> {
+    let other = prop::sample::select(vec!["id", "source", "width", "", "colour"]);
+    (
+        edge(true, 0, 2),
+        0..16_u32,
+        prop::option::of((0..5_usize, other)),
+    )
+        .prop_map(|(edge, keep, other)| {
+            let Value::Object(fields) = edge else {
+                unreachable!()
+            };
+            let mut patch: Vec<(String, Value)> = fields
+                .into_iter()
+                .filter(|(name, _)| {
+                    let bit = ["color", "dash", "arrow", "label"]
+                        .iter()
+                        .position(|f| f == name);
+                    bit.is_some_and(|bit| keep & (1 << bit) != 0)
+                })
+                .collect();
+            if let Some((at, name)) = other {
+                patch.insert(at.min(patch.len()), (name.to_owned(), Value::Bool(false)));
+            }
+            patch
+        })
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(CASES))]
+
+    #[test]
+    fn an_added_edge_is_refused_exactly_as_a_load_of_it_alone_and_a_self_edge_besides(
+        value in prop_oneof![9 => edge(true, 0, 2), 1 => anything()],
+    ) {
+        // Verifies: ADR-0026, ADR-0024, Q-7
+        let as_load = loaded(two_nodes(vec![value.clone()]));
+        // An end the graph does not hold is `api`'s to refuse, against its map.
+        prop_assume!(!matches!(as_load, Err(GraphDataProblem::MissingNode { .. })));
+        let end = |name: &str| match &value {
+            Value::Object(fields) => fields.iter().find(|(k, _)| k == name).and_then(|(_, v)| match v {
+                Value::Text(t) if t == "n0" || t == "n1" => Some(t.clone()),
+                _ => None,
+            }),
+            _ => None,
+        };
+        let (source, target) = (end("source"), end("target"));
+        let slot_of = |end: &Option<String>| u32::from(end.as_deref() == Some("n1"));
+        let mut graph = loaded(two_nodes(Vec::new())).unwrap();
+        let added = reading(|| EdgeInput::deserialize(value.clone()))
+            .map_err(unshaped)
+            .and_then(|edge| add_edge_to(&mut graph, &edge, slot_of(&source), slot_of(&target)));
+        let typed = matches!(
+            as_load,
+            Err(GraphDataProblem::InvalidField { .. } | GraphDataProblem::IdTooLong { .. }
+                | GraphDataProblem::Malformed { .. })
+        );
+        if source.is_some() && source == target && !typed {
+            prop_assert!(matches!(added, Err(GraphDataProblem::SelfEdge { .. })), "{:?}", added);
+            prop_assert_eq!(graph.edges_in_use(), 0);
+            return Ok(());
+        }
+        match (added, as_load) {
+            (Ok(slot), Ok(expected)) => {
+                prop_assert_eq!(slot, 0);
+                prop_assert_eq!(graph.edge(0), expected.edge(0));
+            }
+            (Err(error), Err(expected)) => {
+                prop_assert_eq!(error, expected);
+                prop_assert_eq!(graph.edges_in_use(), 0);
+            }
+            (added, as_load) => prop_assert!(false, "added {:?}, loaded {:?}", added, as_load.map(|_| ())),
+        }
+    }
+
+    #[test]
+    fn an_edge_patch_is_refused_exactly_as_a_load_of_the_edge_it_makes_and_the_edge_kept(
+        patch in edge_patch(),
+    ) {
+        // Verifies: ADR-0026, ADR-0023, Q-7
+        let mut graph = loaded(two_nodes(vec![Value::Object(base_edge())])).unwrap();
+        let before = graph.edge(0);
+        let other = patch
+            .iter()
+            .find(|(name, _)| !["color", "dash", "arrow", "label"].contains(&name.as_str()))
+            .map(|(name, _)| name.clone());
+        let mut merged = base_edge();
+        for (name, value) in patch.iter().take_while(|(name, _)| Some(name) != other.as_ref()) {
+            merged.retain(|(k, _)| k != name);
+            merged.push((name.clone(), value.clone()));
+        }
+        let updated = reading(|| EdgePatch::deserialize(Value::Object(patch)))
+            .map_err(unshaped)
+            .and_then(|patch| update_edge_in(&mut graph, 0, "e0", patch));
+        if let Some(field) = other {
+            prop_assert_eq!(updated, Err(GraphDataProblem::UnknownEdgePatchField {
+                edge: "e0".to_owned(),
+                field,
+            }));
+            prop_assert_eq!(graph.edge(0), before);
+            return Ok(());
+        }
+        match (updated, loaded(two_nodes(vec![Value::Object(merged)]))) {
+            (Ok(()), Ok(expected)) => prop_assert_eq!(graph.edge(0), expected.edge(0)),
+            (Err(error), Err(expected)) => {
+                prop_assert_eq!(error, expected);
+                prop_assert_eq!(graph.edge(0), before);
+            }
+            (updated, as_load) => prop_assert!(false, "updated {:?}, loaded {:?}", updated, as_load.map(|_| ())),
+        }
+    }
 
     #[test]
     fn an_added_node_is_refused_exactly_as_a_load_of_it_alone_and_the_graph_kept(

@@ -136,11 +136,15 @@ comb.addNode({ id: "c", title: "Churned users", x: 640, y: 0, width: 220, height
 node dropped from the host application's palette, `comb.worldPointAt(event.clientX, event.clientY)`
 returns the world point under the drop; Comb handles no drag and drop itself, and `worldPointAt`
 throws a `RangeError` on a coordinate that is not finite. `removeNodes(ids)` removes those nodes and
-every edge at them, and `removeEdges(ids)` those edges, without a load. `onChange` tells every
+every edge at them, and `removeEdges(ids)` those edges, without a load. `addEdge(edge)` adds an
+edge between two nodes the graph holds, and `updateEdge(id, patch)` changes an edge's `color`,
+`dash`, `arrow`, or `label`, `null` clearing a dash or a label. `onChange` tells every
 change of the graph, a `GraphChange` that `comb` exports, typed by its `kind` and by `by`, `"user"`
 or `"host"`: `loaded` after `load`, `nodeAdded` with the node as Comb took it after `addNode`,
 `nodeUpdated` with the merged patch after `updateNode`, `nodesRemoved` with the nodes and the edges
-that went with them after `removeNodes`, `edgesRemoved` with the edges after `removeEdges`, nothing
+that went with them after `removeNodes`, `edgesRemoved` with the edges after `removeEdges`,
+`edgeAdded` with the edge as Comb keeps it, its colour and arrowhead filled, after `addEdge`,
+`edgeUpdated` with the patch as merged after `updateEdge`, nothing
 for a removal that names none, and `nodeMoved` with where the node lies, once, when the user
 releases a node dragged, not per frame and not for a press that moved nothing. Each arrives before
 the call or input event that made it returns, and before `onSelectionChange` reports a selection the
@@ -154,7 +158,11 @@ graph holds the change all the same.
 not hold or a patch it refuses, and `addNode` one on a node of an identifier the graph holds already
 (`duplicateNode`), a node a load would refuse, or one past the limits of a load, and `removeNodes`
 and `removeEdges` one on an identifier the graph does not hold among those they name (`unknownNode`,
-`unknownEdge`) or identifiers that are no list of strings; each keeps the graph it had and tells
+`unknownEdge`) or identifiers that are no list of strings, `addEdge` one on an edge of an
+identifier the graph holds (`duplicateEdge`), to a node it does not hold (`missingNode`), from a
+node to itself (`selfEdge`, which a load accepts), one a load would refuse, or one past the limits
+of a load, and `updateEdge` one on an edge the graph does not hold, a patch of another field
+(`unknownEdgePatchField`), or a field a load would refuse; each keeps the graph it had and tells
 `onChange` nothing (Q-7). The error's `problem` is a `GraphDataProblem`, which `comb` exports, and
 its `kind` says what was wrong and where: `invalidField` for a field missing or of another type,
 with the list, the index, the identifier where the item has one, the field, and what it expects;
@@ -198,7 +206,8 @@ instantiated once per page: a later `createComb` checks its `engine` but reuses 
 instance.
 
 Should the engine trap, as WebAssembly does when it runs out of memory, it is lost for the page, for
-every Comb on it (ADR-0021). From then on `load`, `updateNode`, `addNode`, `removeNodes`,
+every Comb on it (ADR-0021). From then on `load`, `updateNode`, `addNode`, `addEdge`, `updateEdge`,
+`removeNodes`,
 `removeEdges`, `fitView`, `setViewport`,
 and `createComb` throw an `EngineLostError`, which `comb` exports; `viewport`, `worldPointAt`,
 `onSelectionChange`, `onChange`, and `destroy` keep working, the canvas keeps its last frame, and

@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 5435b5d0aef4d07b4c814d539b0cde0fb64b9fea5f0f2ed2ee7add4740a0ec52 # shrinks to patch = [("color", Number(-5271.206390830487)), ("dash", Null), ("arrow", Text("end"))]
+cc 9c0fd10373d88f3ca2b130bd5135f39e4a8819de079efcbab4bfbbccc1d67e9a # shrinks to value = Object([("id", Text("e0")), ("source", Text("n0")), ("target", Text("n0")), ("label", Null), ("color", Number(0.0)), ("dash", Null), ("arrow", Text("end"))])

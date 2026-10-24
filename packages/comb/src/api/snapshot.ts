@@ -8,7 +8,13 @@
 // that much to check. The code units of all identifiers are counted while they are read, and
 // reading stops once they exceed the bridge's budget, whose check then refuses the load. What
 // cannot be read at all throws an `UnreadableError`.
-import type { GraphSnapshot, NodeSnapshot, PlainPatch } from "../bridge";
+import type {
+  EdgeSnapshot,
+  GraphSnapshot,
+  NodeSnapshot,
+  PlainEdgePatch,
+  PlainPatch,
+} from "../bridge";
 import { EDGE_ARROW, edgeColor } from "../render/edges";
 import type { GraphData } from "../store";
 
@@ -198,6 +204,46 @@ export function nodeSnapshotOf(node: unknown, limits: Limits) {
   const fields = objectOf(node);
   const snapshot = (fields ? nodeOf(read, fields) : false) as NodeSnapshot;
   return { snapshot, idUnits: read.idUnits };
+}
+
+/** The edge of `addEdge` read once into a snapshot, its style's defaults filled, as a load reads
+ *  an edge; and the code units of its identifiers. */
+export function edgeSnapshotOf(edge: unknown, limits: Limits) {
+  const read = readerOf(limits);
+  const fields = objectOf(edge);
+  const snapshot = (fields ? edgeOf(read, fields) : false) as EdgeSnapshot;
+  return { snapshot, idUnits: read.idUnits };
+}
+
+/** The fields a patch of `updateEdge` may set, each read as a load reads it; `null` clears a dash
+ *  or a label. */
+const EDGE_PATCH: Record<string, (read: Reader, value: unknown) => unknown> = {
+  color: (read, value) => read.number(value),
+  arrow: (read, value) => read.text(value),
+  dash: (read, value) => (value === null ? null : dashOf(read, value)),
+  label: (read, value) => (value === null ? null : labelOf(read, value)),
+};
+
+/** The patch of `updateEdge` as plain data, read as `patchOf` reads one of `updateNode`: the own
+ *  fields of a plain object up to the first it does not know, which the bridge refuses by name; a
+ *  field whose value is `undefined` is one the patch does not set. */
+export function edgePatchOf(patch: unknown, limits: Limits): PlainEdgePatch {
+  const fields = objectOf(patch);
+  if (!fields || Object.getPrototypeOf(fields) !== Object.prototype)
+    throw new UnreadableError("the patch is not a plain object");
+  const read = readerOf(limits);
+  const plain: Record<string, unknown> = Object.create(null);
+  for (const key of Reflect.ownKeys(fields)) {
+    if (typeof key !== "string") throw new UnreadableError("the patch has a key that is no string");
+    const field = Object.hasOwn(EDGE_PATCH, key) ? EDGE_PATCH[key] : undefined;
+    if (!field) {
+      plain[key.slice(0, limits.text + 1)] = false;
+      break;
+    }
+    const value = fields[key];
+    if (value !== undefined) plain[key] = field(read, value);
+  }
+  return plain as PlainEdgePatch;
 }
 
 /** The patch of `updateNode` as plain data: the own fields of a plain object, enumerable or not,

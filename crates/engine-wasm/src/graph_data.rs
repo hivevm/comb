@@ -323,7 +323,8 @@ pub enum GraphDataProblem {
     /// Two edges share an identifier.
     #[serde(rename_all = "camelCase")]
     DuplicateEdge { edge: String },
-    /// An edge names a node that is not in the batch.
+    /// An edge names a node that is not in the batch, or, for `addEdge`, one the graph does not
+    /// hold.
     #[serde(rename_all = "camelCase")]
     MissingNode { edge: String, node: String },
     /// An edge label's path parameter or label offset is NaN or infinite.
@@ -363,9 +364,15 @@ pub enum GraphDataProblem {
     /// `updateNode` or `removeNodes` names a node the graph does not hold.
     #[serde(rename_all = "camelCase")]
     UnknownNode { node: String },
-    /// `removeEdges` names an edge the graph does not hold.
+    /// `removeEdges` or `updateEdge` names an edge the graph does not hold.
     #[serde(rename_all = "camelCase")]
     UnknownEdge { edge: String },
+    /// `addEdge` hands over an edge from a node to itself, which a load accepts (ADR-0024).
+    #[serde(rename_all = "camelCase")]
+    SelfEdge { edge: String },
+    /// A patch of `updateEdge` holds a field other than `color`, `dash`, `arrow`, and `label`.
+    #[serde(rename_all = "camelCase")]
+    UnknownEdgePatchField { edge: String, field: String },
 }
 
 /// A value that does not have the shape an export expects. Its message is the bridge's own: the
@@ -600,54 +607,71 @@ fn rgb(value: f64) -> bool {
     value.fract() == 0.0 && (0.0..=f64::from(0xff_ffff)).contains(&value)
 }
 
-/// The label placement and style of an edge, or why they were refused.
-fn placement_of(edge: &Edge) -> Result<(Option<LabelPlacement>, EdgeStyle), GraphDataProblem> {
-    let id = || edge.id.to_owned();
-    let label = match &edge.label {
-        Some(l) if !(l.t.is_finite() && l.offset.is_finite()) => {
-            return Err(GraphDataProblem::NonFiniteLabel { edge: id() });
-        }
-        Some(l) if l.text_length.is_none() => {
-            return Err(GraphDataProblem::InvalidLabelText { edge: id() });
-        }
-        Some(l) if l.text_length > Some(MAX_TEXT) => {
+/// The placement of the label of the edge `id`, or why it was refused.
+fn label_placement(id: &str, label: &Label) -> Result<LabelPlacement, GraphDataProblem> {
+    let edge = || id.to_owned();
+    if !(label.t.is_finite() && label.offset.is_finite()) {
+        return Err(GraphDataProblem::NonFiniteLabel { edge: edge() });
+    }
+    match label.text_length {
+        None => return Err(GraphDataProblem::InvalidLabelText { edge: edge() }),
+        Some(length) if length > MAX_TEXT => {
             return Err(GraphDataProblem::LabelTextTooLong {
-                edge: id(),
+                edge: edge(),
                 limit: TEXT_LIMIT,
             });
         }
-        Some(Label {
-            background: Some(b),
-            ..
-        }) if !rgb(*b) => {
-            return Err(GraphDataProblem::InvalidBackground { edge: id() });
-        }
-        label => label.as_ref().map(|l| LabelPlacement {
-            t: l.t,
-            offset: l.offset,
-        }),
-    };
-    if !rgb(edge.color) {
-        return Err(GraphDataProblem::InvalidColor { edge: id() });
+        Some(_) => {}
     }
-    // Checked as the engine keeps it, so that a dash too short for `f32` is refused too.
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "checked as f32 below, so that what f32 cannot hold is refused"
-    )]
-    let dash = match edge.dash.map(|[dash, gap]| (dash as f32, gap as f32)) {
-        Some((dash, gap)) if !(dash.is_finite() && gap.is_finite() && dash > 0.0 && gap >= 0.0) => {
-            return Err(GraphDataProblem::InvalidDash { edge: id() });
-        }
-        dash => dash,
-    };
+    if label.background.is_some_and(|b| !rgb(b)) {
+        return Err(GraphDataProblem::InvalidBackground { edge: edge() });
+    }
+    Ok(LabelPlacement {
+        t: label.t,
+        offset: label.offset,
+    })
+}
+
+/// The colour of the edge `id` as the engine keeps it, or why it was refused.
+fn color_of(id: &str, color: f64) -> Result<u32, GraphDataProblem> {
+    if !rgb(color) {
+        return Err(GraphDataProblem::InvalidColor {
+            edge: id.to_owned(),
+        });
+    }
     #[expect(
         clippy::cast_possible_truncation,
         reason = "an integer from 0 to 0xFFFFFF, as `rgb` checked above"
     )]
+    Ok(color as u32)
+}
+
+/// The dash pattern of the edge `id` as the engine keeps it, or why it was refused: checked as
+/// the engine keeps it, so that a dash too short for `f32` is refused too.
+fn dash_of(id: &str, dash: [f64; 2]) -> Result<(f32, f32), GraphDataProblem> {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "checked as f32 below, so that what f32 cannot hold is refused"
+    )]
+    let (dash, gap) = (dash[0] as f32, dash[1] as f32);
+    if !(dash.is_finite() && gap.is_finite() && dash > 0.0 && gap >= 0.0) {
+        return Err(GraphDataProblem::InvalidDash {
+            edge: id.to_owned(),
+        });
+    }
+    Ok((dash, gap))
+}
+
+/// The label placement and style of an edge, or why they were refused.
+fn placement_of(edge: &Edge) -> Result<(Option<LabelPlacement>, EdgeStyle), GraphDataProblem> {
+    let label = edge
+        .label
+        .as_ref()
+        .map(|label| label_placement(edge.id, label))
+        .transpose()?;
     let style = EdgeStyle {
-        color: edge.color as u32,
-        dash,
+        color: color_of(edge.id, edge.color)?,
+        dash: edge.dash.map(|dash| dash_of(edge.id, dash)).transpose()?,
         arrow: edge.arrow == Arrow::End,
     };
     Ok((label, style))
@@ -743,6 +767,160 @@ pub(crate) fn add_node_to(graph: &mut Graph, node: &NodeInput) -> Result<u32, Gr
     id_length("nodes", 0, "id", node.id)?;
     let ([x, y], [width, height]) = checked_node(&node)?;
     Ok(graph.add_node(x, y, width, height)?)
+}
+
+/// Checks the edge `addEdge` hands over as a load checks an edge, the only one of its batch at
+/// index 0, and refuses one from a node to itself (ADR-0024) and one past `MAX_ITEMS` edges in
+/// use; adds it to `graph` between the node slots `source` and `target`, which `api` resolved
+/// against the map only it keeps, and returns the slot the engine chose. That the graph holds no
+/// edge of its identifier and holds its ends is `api`'s to check (ADR-0026). A refused edge leaves
+/// the graph as it was.
+pub(crate) fn add_edge_to(
+    graph: &mut Graph,
+    edge: &EdgeInput,
+    source: u32,
+    target: u32,
+) -> Result<u32, GraphDataProblem> {
+    check_graph_size(0.0, f64::from(graph.edges_in_use()) + 1.0)?;
+    let edge = edge_of(0, edge)?;
+    for (field, id) in [
+        ("id", edge.id),
+        ("source", edge.source),
+        ("target", edge.target),
+    ] {
+        id_length("edges", 0, field, id)?;
+    }
+    if edge.source == edge.target {
+        return Err(GraphDataProblem::SelfEdge {
+            edge: edge.id.to_owned(),
+        });
+    }
+    let (label, style) = placement_of(&edge)?;
+    let spec = EdgeSpec {
+        source,
+        target,
+        label,
+        style,
+    };
+    graph
+        .add_edge(spec)
+        .map_err(|_| malformed("comb: an end of the edge names no node"))
+}
+
+/// The fields a patch of `updateEdge` may hold, each as the host application handed it over:
+/// `None` where the patch does not name it, and `dash` and `label` `Some(Field(Some(None)))`
+/// where it clears them with `null`. Read from a plain object alone, as `NodePatch` is; the first
+/// other field is kept by name, and the fields after it are passed over unread.
+#[derive(Tsify, Default)]
+#[tsify(
+    type = "{ color?: number; dash?: [number, number] | null; arrow?: Arrow; \
+                 label?: LabelInput | null }"
+)]
+pub struct EdgePatch {
+    color: Option<Field<f64>>,
+    dash: Option<Field<Option<Pair>>>,
+    arrow: Option<Field<Arrow>>,
+    label: Option<Field<Option<LabelInput>>>,
+    other: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for EdgePatch {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(EdgePatchVisitor)
+    }
+}
+
+struct EdgePatchVisitor;
+
+impl<'de> Visitor<'de> for EdgePatchVisitor {
+    type Value = EdgePatch;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("an object")
+    }
+
+    fn visit_map<A: de::MapAccess<'de>>(self, mut map: A) -> Result<EdgePatch, A::Error> {
+        let mut patch = EdgePatch::default();
+        while let Some(field) = map.next_key::<String>()? {
+            match field.as_str() {
+                "color" => patch.color = Some(map.next_value()?),
+                "dash" => patch.dash = Some(map.next_value()?),
+                "arrow" => patch.arrow = Some(map.next_value()?),
+                "label" => patch.label = Some(map.next_value()?),
+                _ => {
+                    map.next_value::<IgnoredAny>()?;
+                    while map.next_entry::<IgnoredAny, IgnoredAny>()?.is_some() {}
+                    patch.other = Some(field);
+                    break;
+                }
+            }
+        }
+        Ok(patch)
+    }
+}
+
+/// Checks a patch of the edge `id` in `slot` as a load checks those fields, and gives the edge the
+/// patched label placement and style; the store merges the rest, which the engine does not keep.
+/// The first offending field refuses the patch, and nothing changes.
+pub(crate) fn update_edge_in(
+    graph: &mut Graph,
+    slot: u32,
+    id: &str,
+    patch: EdgePatch,
+) -> Result<(), GraphDataProblem> {
+    if let Some(field) = patch.other {
+        return Err(GraphDataProblem::UnknownEdgePatchField {
+            edge: id.to_owned(),
+            field,
+        });
+    }
+    let current = graph
+        .edge(slot)
+        .ok_or_else(|| malformed("comb: the slot holds no edge"))?;
+    // Every field's type first, then their values, in the order a load reads and checks them.
+    let mut item = Item::new(GraphList::Edges, 0);
+    item.id = Some(id);
+    let label = match patch.label {
+        None => None,
+        Some(label) => Some(match item.read("label", label, A_LABEL)? {
+            None => None,
+            Some(input) => Some(Label {
+                text_length: input.text_length,
+                t: item.read("label.t", input.t, A_NUMBER)?,
+                offset: item.read("label.offset", input.offset, A_NUMBER)?,
+                background: input.background,
+            }),
+        }),
+    };
+    let color = patch
+        .color
+        .map(|color| item.read("color", color, A_COLOR))
+        .transpose()?;
+    let dash = patch
+        .dash
+        .map(|dash| item.read("dash", dash, A_DASH))
+        .transpose()?;
+    let arrow = patch
+        .arrow
+        .map(|arrow| item.read("arrow", arrow, AN_ARROW))
+        .transpose()?;
+    let label = match label {
+        None => current.label,
+        Some(label) => label.map(|l| label_placement(id, &l)).transpose()?,
+    };
+    let mut style = current.style;
+    if let Some(color) = color {
+        style.color = color_of(id, color)?;
+    }
+    if let Some(dash) = dash {
+        style.dash = dash.map(|Pair(dash)| dash_of(id, dash)).transpose()?;
+    }
+    if let Some(arrow) = arrow {
+        style.arrow = arrow == Arrow::End;
+    }
+    graph
+        .update_edge(slot, label, style)
+        .map_err(|_| malformed("comb: the slot holds no edge"))
 }
 
 /// The attributes `updateNode` changes on a node, by name: only its title, a string. Read from a

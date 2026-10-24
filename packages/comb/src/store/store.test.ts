@@ -110,3 +110,25 @@ describe("graph store removals", () => {
     expect(store.getState().selection).toBeNull();
   });
 });
+
+describe("graph store edge edits", () => {
+  test("an added edge takes its slot and counts its identifiers; a patch merges, null clears", () => {
+    // Verifies: ADR-0022, ADR-0023
+    const store = createGraphStore();
+    store.getState().load(graph);
+    const { idUnits } = store.getState();
+    const edge = { id: "b-a", source: "b", target: "a", color: 1, arrow: "end" as const };
+    store.getState().addEdge({ ...edge, dash: [4, 4], label: { text: "x", t: 0.5, offset: 0 } }, 1);
+    expect(store.getState().edgeSlots.get("b-a")).toBe(1);
+    expect(store.getState().idUnits).toBe(idUnits + 5);
+    expect(store.getState().change).toEqual({ kind: "edgeAdded", by: "host", id: "b-a" });
+    store.getState().updateEdge("b-a", { color: 2, dash: null, label: null });
+    expect(store.getState().edges[1]).toEqual({ ...edge, color: 2 });
+    expect(store.getState().change).toEqual({
+      kind: "edgeUpdated",
+      by: "host",
+      id: "b-a",
+      patch: { color: 2, dash: null, label: null },
+    });
+  });
+});

@@ -14,4 +14,12 @@ export type {
   GraphChange,
   GraphDataProblem,
 } from "./api";
-export type { EdgeData, EdgeLabelData, GraphData, NodeData, Selection, Viewport } from "./store";
+export type {
+  EdgeData,
+  EdgeLabelData,
+  EdgePatch,
+  GraphData,
+  NodeData,
+  Selection,
+  Viewport,
+} from "./store";

@@ -39,9 +39,9 @@ pub enum GraphError {
     TooManySlots,
 }
 
-/// Why a removal was refused: a slot beyond the slots, or free (ADR-0022).
+/// Why a call that names slots was refused: a slot beyond the slots, or free (ADR-0022).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RemovalError {
+pub enum SlotError {
     /// A slot that holds no node.
     NoNode { slot: u32 },
     /// A slot that holds no edge.
@@ -133,6 +133,8 @@ pub struct Graph {
     edge_free: Vec<bool>,
     /// The node slots in use when the index was last built.
     indexed_nodes: u32,
+    /// The edge slots in use when the index was last built.
+    indexed_edges: u32,
     node_grid: Grid,
     edge_grid: Grid,
     /// How often the index was built, for the tests that count rebuilds.
@@ -192,7 +194,7 @@ impl Graph {
         clippy::cast_possible_truncation,
         reason = "the free slots are slots below `edge_slots`, a u32, and no more of them"
     )]
-    fn edges_in_use(&self) -> u32 {
+    pub fn edges_in_use(&self) -> u32 {
         self.edge_slots - self.free_edges.len() as u32
     }
 
@@ -305,9 +307,9 @@ impl Graph {
     /// in ascending order. Their slots go onto the free lists, the one named last freed last, and
     /// they leave the index; nothing else moves (ADR-0022). A slot that holds no node refuses the
     /// call, which then changes nothing.
-    pub fn remove_nodes(&mut self, slots: &[u32]) -> Result<Vec<u32>, RemovalError> {
+    pub fn remove_nodes(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
         if let Some(&slot) = slots.iter().find(|&&s| !self.holds_node(s)) {
-            return Err(RemovalError::NoNode { slot });
+            return Err(SlotError::NoNode { slot });
         }
         let mut edges: Vec<u32> = slots
             .iter()
@@ -330,12 +332,88 @@ impl Graph {
         Ok(edges)
     }
 
+    /// Adds the edge `spec` and returns its slot: the free slot freed last, or a new one after the
+    /// highest. It goes into the lists of its ends and into the index in place; the index is built
+    /// again only where the edges in use pass twice the count it was built for, or more than an
+    /// eighth of them, and at least 16, lie beyond its extent (ADR-0022). An end that holds no node
+    /// refuses the edge, and nothing changes.
+    pub fn add_edge(&mut self, spec: EdgeSpec) -> Result<u32, SlotError> {
+        if let Some(slot) = [spec.source, spec.target]
+            .into_iter()
+            .find(|&s| !self.holds_node(s))
+        {
+            return Err(SlotError::NoNode { slot });
+        }
+        let slot = if let Some(free) = self.free_edges.pop() {
+            self.edges[free as usize] = spec;
+            self.edge_free[free as usize] = false;
+            free
+        } else {
+            let next = slot(self.edge_slots as usize + 1).map_err(|_| SlotError::NoEdge {
+                slot: self.edge_slots,
+            })?;
+            let new = self.edge_slots;
+            self.edges.push(spec);
+            self.edge_free.push(false);
+            let (path, bounds, label) = self.placement(new);
+            self.paths.push(path);
+            self.bounds.push(bounds);
+            self.labels.push(label);
+            self.edge_slots = next;
+            new
+        };
+        for end in self.ends(slot).collect::<Vec<_>>() {
+            self.incident[end as usize].push(slot);
+        }
+        let in_use = self.edges_in_use();
+        if in_use > self.indexed_edges.saturating_mul(2) {
+            self.index();
+        } else {
+            let (path, bounds, label) = self.placement(slot);
+            self.paths[slot as usize] = path;
+            self.bounds[slot as usize] = bounds;
+            self.labels[slot as usize] = label;
+            let indexed = self.labels[slot as usize].map_or(bounds, |p| bounds.union(&Rect::at(p)));
+            self.edge_grid.add(slot, &indexed);
+            if stale(self.edge_grid.beyond_extent(), in_use as usize) {
+                self.index();
+            }
+        }
+        Ok(slot)
+    }
+
+    /// The edge in `slot`, its ends, label placement, and style, where the slot holds one.
+    pub fn edge(&self, slot: u32) -> Option<EdgeSpec> {
+        self.holds_edge(slot).then(|| self.edges[slot as usize])
+    }
+
+    /// Gives the edge in `slot` the label placement `label` and the style `style`, and places it
+    /// again in place (ADR-0022). A slot that holds no edge refuses the change.
+    pub fn update_edge(
+        &mut self,
+        slot: u32,
+        label: Option<LabelPlacement>,
+        style: EdgeStyle,
+    ) -> Result<(), SlotError> {
+        if !self.holds_edge(slot) {
+            return Err(SlotError::NoEdge { slot });
+        }
+        let spec = &mut self.edges[slot as usize];
+        spec.label = label;
+        spec.style = style;
+        self.place_edge(slot);
+        if stale(self.edge_grid.beyond_extent(), self.edges_in_use() as usize) {
+            self.index();
+        }
+        Ok(())
+    }
+
     /// Removes the edges in `slots`. Their slots go onto the free list, the one named last freed
     /// last, and they leave the index and the lists of edges at their ends (ADR-0022). A slot that
     /// holds no edge refuses the call, which then changes nothing.
-    pub fn remove_edges(&mut self, slots: &[u32]) -> Result<(), RemovalError> {
+    pub fn remove_edges(&mut self, slots: &[u32]) -> Result<(), SlotError> {
         if let Some(&slot) = slots.iter().find(|&&s| !self.holds_edge(s)) {
-            return Err(RemovalError::NoEdge { slot });
+            return Err(SlotError::NoEdge { slot });
         }
         self.free_edges_at(slots);
         Ok(())
@@ -390,6 +468,7 @@ impl Graph {
             self.builds += 1;
         }
         self.indexed_nodes = self.nodes_in_use();
+        self.indexed_edges = self.edges_in_use();
         let nodes: Vec<(u32, Rect)> = self
             .node_slots_in_use()
             .map(|s| (s, self.node_bounds(s)))
@@ -1209,6 +1288,25 @@ mod tests {
         }
     }
 
+    /// A random edge between two nodes in `drawn`, now and then from a node to itself, now and
+    /// then with a label.
+    fn random_edge(rng: &mut Lcg, drawn: &Drawn) -> EdgeSpec {
+        let pick = |rng: &mut Lcg| drawn.0[rng.below(drawn.0.len()) as usize];
+        let source = pick(rng);
+        EdgeSpec {
+            source,
+            target: if rng.next() < 0.1 { source } else { pick(rng) },
+            label: (rng.next() < 0.5).then(|| LabelPlacement {
+                t: rng.range(-0.2, 1.2),
+                offset: rng.range(-40.0, 40.0),
+            }),
+            style: EdgeStyle {
+                arrow: rng.next() < 0.5,
+                ..EdgeStyle::unstyled()
+            },
+        }
+    }
+
     #[test]
     fn queries_hits_and_lists_find_what_a_scan_finds_after_additions_removals_and_moves() {
         // Verifies: ADR-0022
@@ -1242,13 +1340,24 @@ mod tests {
                         .collect();
                     assert_eq!(edges, gone, "edges removed with {removed:?}");
                     drawn.0.retain(|s| !removed[..count].contains(s));
-                } else {
+                } else if step < 0.88 {
                     let used: Vec<u32> = (0..graph.edge_slots)
                         .filter(|&e| graph.holds_edge(e))
                         .collect();
                     if let Some(&edge) = used.get(rng.below(used.len().max(1)) as usize) {
-                        graph.remove_edges(&[edge]).unwrap();
+                        if rng.next() < 0.5 {
+                            graph.remove_edges(&[edge]).unwrap();
+                        } else {
+                            let spec = random_edge(&mut rng, &drawn);
+                            graph.update_edge(edge, spec.label, spec.style).unwrap();
+                        }
                     }
+                } else {
+                    let spec = random_edge(&mut rng, &drawn);
+                    let free = graph.free_edges.last().copied();
+                    let slot = graph.add_edge(spec).unwrap();
+                    assert_eq!(free.unwrap_or(graph.edge_slots - 1), slot);
+                    assert_eq!(graph.edge(slot), Some(spec));
                 }
                 assert_matches_scan(&mut graph, &drawn, &mut rng);
                 assert_edges_match_scan(&mut graph, &mut rng);
@@ -1267,16 +1376,13 @@ mod tests {
         let (free_nodes, free_edges) = (graph.free_nodes.clone(), graph.free_edges.clone());
         assert_eq!(
             graph.remove_nodes(&[0, 3]),
-            Err(RemovalError::NoNode { slot: 3 })
+            Err(SlotError::NoNode { slot: 3 })
         );
-        assert_eq!(
-            graph.remove_nodes(&[9]),
-            Err(RemovalError::NoNode { slot: 9 })
-        );
+        assert_eq!(graph.remove_nodes(&[9]), Err(SlotError::NoNode { slot: 9 }));
         let free_edge = *graph.free_edges.first().unwrap_or(&3);
         assert_eq!(
             graph.remove_edges(&[free_edge]),
-            Err(RemovalError::NoEdge { slot: free_edge })
+            Err(SlotError::NoEdge { slot: free_edge })
         );
         assert_eq!(
             graph.translate(&[0, 3], 1.0, 1.0),
@@ -1358,6 +1464,64 @@ mod tests {
         assert!(graph2.incident.iter().all(Vec::is_empty));
         // Quadratic, the removal would compare some 10^10 pairs; linear, it takes well under this.
         assert!(hub.as_secs_f64() < 5.0, "the hub took {hub:?}");
+    }
+
+    #[test]
+    fn an_edge_to_a_slot_that_holds_no_node_or_a_change_of_a_free_edge_is_refused() {
+        // Verifies: ADR-0022
+        let mut graph = paired(4);
+        graph.remove_nodes(&[7]).unwrap();
+        let spec = |source, target| EdgeSpec {
+            source,
+            target,
+            label: None,
+            style: EdgeStyle::unstyled(),
+        };
+        let edges = graph.edge_slots;
+        assert_eq!(
+            graph.add_edge(spec(0, 7)),
+            Err(SlotError::NoNode { slot: 7 })
+        );
+        assert_eq!(
+            graph.add_edge(spec(5_000, 0)),
+            Err(SlotError::NoNode { slot: 5_000 })
+        );
+        assert_eq!(graph.edge_slots, edges);
+        assert_eq!(
+            graph.update_edge(3, None, EdgeStyle::unstyled()),
+            Err(SlotError::NoEdge { slot: 3 })
+        );
+        assert_eq!(graph.edge(3), None);
+        // The freed edge slot is the next addition's.
+        assert_eq!(graph.add_edge(spec(0, 2)), Ok(3));
+        assert_eq!(graph.add_edge(spec(2, 0)), Ok(4));
+    }
+
+    #[test]
+    fn edges_added_within_the_extent_go_into_the_index_in_place_until_they_double() {
+        // Verifies: ADR-0022
+        let mut graph = paired(100);
+        let builds = graph.builds;
+        for i in 0..100 {
+            graph
+                .add_edge(EdgeSpec {
+                    source: 2 * i + 1,
+                    target: 2 * i + 2,
+                    label: None,
+                    style: EdgeStyle::unstyled(),
+                })
+                .unwrap();
+        }
+        assert_eq!(graph.builds, builds);
+        graph
+            .add_edge(EdgeSpec {
+                source: 0,
+                target: 3,
+                label: None,
+                style: EdgeStyle::unstyled(),
+            })
+            .unwrap();
+        assert_eq!(graph.builds, builds + 1);
     }
 
     #[test]

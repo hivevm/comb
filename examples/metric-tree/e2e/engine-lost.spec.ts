@@ -46,6 +46,19 @@ async function openWithErrors(page: Page): Promise<string[]> {
 
 const LOST = "EngineLostError";
 
+/** The methods of `Comb` that need the engine, which throw once it is lost. */
+const NEEDS_THE_ENGINE = [
+  "load",
+  "updateNode",
+  "addNode",
+  "addEdge",
+  "updateEdge",
+  "removeNodes",
+  "removeEdges",
+  "fitView",
+  "setViewport",
+];
+
 test("after a trap in load, every call that needs the engine throws an EngineLostError", async ({
   page,
 }) => {
@@ -61,6 +74,8 @@ test("after a trap in load, every call that needs the engine throws an EngineLos
       load: outcome(() => comb.load({ ...graph, edges: [] })),
       updateNode: outcome(() => comb.updateNode("n0", { title: "x" })),
       addNode: outcome(() => comb.addNode({ ...graph.nodes[0]!, id: "b" })),
+      addEdge: outcome(() => comb.addEdge({ id: "e", source: "a", target: "b" })),
+      updateEdge: outcome(() => comb.updateEdge("e", { color: 0 })),
       removeNodes: outcome(() => comb.removeNodes(["a"])),
       removeEdges: outcome(() => comb.removeEdges([])),
       fitView: outcome(() => comb.fitView()),
@@ -96,11 +111,7 @@ test("after a trap in load, every call that needs the engine throws an EngineLos
   });
   expect(outcomes).toEqual({
     trap: LOST,
-    later: Object.fromEntries(
-      ["load", "updateNode", "addNode", "removeNodes", "removeEdges", "fitView", "setViewport"].map(
-        (call) => [call, LOST],
-      ),
-    ),
+    later: Object.fromEntries(NEEDS_THE_ENGINE.map((call) => [call, LOST])),
     created: LOST,
     kept: { viewport: "ok", worldPointAt: "ok", onSelectionChange: "ok", unsubscribe: "ok" },
   });
