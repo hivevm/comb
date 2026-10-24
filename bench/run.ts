@@ -177,20 +177,14 @@ async function panAt(page: Page, scale: number): Promise<Measure> {
   return pan;
 }
 
-/** A point on the canvas, near its top left, over no drawn node, where a press pans. */
+/** A point on the canvas, near its top left, where a press hits neither a node nor an edge and
+ *  so pans (ADR-0025). */
 async function emptyPoint(page: Page): Promise<Point> {
   return page.evaluate(() => {
-    const { nodes } = window.inspect();
     const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();
-    const over = (px: number, py: number) =>
-      nodes.some((node) => {
-        const from = window.screenPoint(node.x, node.y);
-        const to = window.screenPoint(node.x + node.width, node.y + node.height);
-        return px >= from.x && px <= to.x && py >= from.y && py <= to.y;
-      });
     for (let py = 4; py < rect.height / 2; py += 3) {
       for (let px = 4; px < rect.width / 2; px += 3) {
-        if (!over(px, py)) return { x: rect.left + px, y: rect.top + py };
+        if (window.hitKind(px, py) === "none") return { x: rect.left + px, y: rect.top + py };
       }
     }
     throw new Error("no empty point to pan from");

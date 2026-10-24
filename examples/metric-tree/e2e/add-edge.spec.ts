@@ -146,6 +146,11 @@ const REFUSED: { name: string; call: [string, unknown[]]; problem: unknown }[] =
     },
   },
   {
+    name: "an edge whose source is longer than an identifier may be, as a load refuses it",
+    call: ["addEdge", [{ id: "x", source: "x".repeat(257), target: "a" }]],
+    problem: { kind: "idTooLong", list: "edges", index: 0, field: "source", limit: 256 },
+  },
+  {
     name: "a patch of an unknown edge",
     call: ["updateEdge", ["z", { color: BLUE }]],
     problem: { kind: "unknownEdge", edge: "z" },

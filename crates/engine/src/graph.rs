@@ -1606,44 +1606,37 @@ mod tests {
         assert_eq!(graph.builds, builds + 1);
     }
 
-    /// How far `p` lies from the curve of `path`: an oracle apart from the flattening, sampled at
-    /// 513 points and then, around every sample within a step's length of the nearest, by ternary
-    /// search, so that it is exact to far below the smallest reach of the test.
-    fn distance_to_curve(path: &EdgePath, p: Point) -> f64 {
-        let at = |t: f64| {
-            let q = path.point_at(t);
-            (q.x - p.x).hypot(q.y - p.y)
+    /// Bounds on how far `p` lies from the curve of `path`, below and above, apart from the
+    /// flattening: the curve lies in the hull of its control points, so the distance to the hull
+    /// bounds a part's distance below, and the distance to a part's ends bounds it above; parts are
+    /// split until the bounds meet within a thousandth, a part whose lower bound exceeds the best
+    /// upper one dropped.
+    fn distance_to_curve(path: &EdgePath, p: Point) -> (f64, f64) {
+        let to = |q: Point| (q.x - p.x).hypot(q.y - p.y);
+        let below = |part: &EdgePath| {
+            let hull = part.hull();
+            let dx = (hull.min_x - p.x).max(p.x - hull.max_x).max(0.0);
+            let dy = (hull.min_y - p.y).max(p.y - hull.max_y).max(0.0);
+            dx.hypot(dy)
         };
-        // Coarsely, then around each sample that may lie nearest, by bisection of a bracket; the
-        // distance along the curve between samples bounds how much nearer a point between them is.
-        let n = 512;
-        let ts: Vec<f64> = (0..=n).map(|i| f64::from(i) / f64::from(n)).collect();
-        let coarse: Vec<f64> = ts.iter().map(|&t| at(t)).collect();
-        let step = ts
-            .windows(2)
-            .map(|w| {
-                let (a, b) = (path.point_at(w[0]), path.point_at(w[1]));
-                (a.x - b.x).hypot(a.y - b.y)
-            })
-            .fold(0.0, f64::max);
-        let best = coarse.iter().copied().fold(f64::INFINITY, f64::min);
-        let mut nearest = best;
-        for i in 0..=n as usize {
-            if coarse[i] > best + step {
+        let mut upper = to(path.source).min(to(path.target));
+        let mut lower = f64::INFINITY;
+        let mut parts = vec![(*path, 0)];
+        while let Some((part, depth)) = parts.pop() {
+            let floor = below(&part);
+            if floor > upper {
                 continue;
             }
-            let (mut from, mut to) = (ts[i.saturating_sub(1)], ts[(i + 1).min(n as usize)]);
-            for _ in 0..60 {
-                let (m1, m2) = (from + (to - from) / 3.0, to - (to - from) / 3.0);
-                if at(m1) < at(m2) {
-                    to = m2;
-                } else {
-                    from = m1;
-                }
+            upper = upper.min(to(part.source)).min(to(part.target));
+            if depth >= 48 || upper - floor <= 1e-3 {
+                lower = lower.min(floor);
+                continue;
             }
-            nearest = nearest.min(at(from));
+            let (left, right) = part.split();
+            parts.push((left, depth + 1));
+            parts.push((right, depth + 1));
         }
-        nearest
+        (lower.min(upper), upper)
     }
 
     #[test]
@@ -1652,6 +1645,9 @@ mod tests {
         for seed in 1..=4 {
             let mut rng = Lcg(seed);
             let mut graph = random_graph(&mut rng, 30, 40);
+            // A free slot now and then too, which no hit may return; a press near its old path
+            // finds what lies there besides.
+            graph.remove_edges(&[3, 17, 29]).unwrap();
             for _ in 0..300 {
                 let level = [Level::Near, Level::Middle, Level::Far][rng.below(3) as usize];
                 let pixel = [0.25, 1.0, 4.0, 20.0][rng.below(4) as usize];
@@ -1673,18 +1669,18 @@ mod tests {
                 // Within the reach less the flattening's tolerance an edge is surely hit, beyond it
                 // plus the tolerance surely not; between, either is right.
                 let (reach, tolerance) = (EDGE_REACH * pixel, Stroke::at(level, pixel).tolerance);
-                let d: Vec<f64> = (0..graph.edge_slots)
+                let d: Vec<(f64, f64)> = (0..graph.edge_slots)
                     .map(|e| distance_to_curve(&graph.paths[e as usize], p))
                     .collect();
+                // Surely hit by its upper bound, surely too far by its lower one.
                 let sure = (0..graph.edge_slots)
                     .rev()
-                    .find(|&e| d[e as usize] < reach - tolerance);
+                    .filter(|&e| graph.holds_edge(e))
+                    .find(|&e| d[e as usize].1 < reach - tolerance);
                 match hit {
                     Some(Target::Edge(e)) => {
-                        assert!(
-                            d[e as usize] <= reach + tolerance + 1e-9,
-                            "edge {e} too far"
-                        );
+                        assert!(graph.holds_edge(e), "free edge {e}");
+                        assert!(d[e as usize].0 <= reach + tolerance, "edge {e} too far");
                         assert!(sure.is_none_or(|s| e >= s), "edge {e} below {sure:?}");
                     }
                     None => assert_eq!(sure, None, "missed at {p:?}"),
