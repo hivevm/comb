@@ -1,8 +1,9 @@
 // The user deletes the selection (G-4, ADR-0023): with the canvas focused, Delete or Backspace
 // removes a selected node with every edge at it, or a selected edge alone, once the host
 // application's `canDelete` returns `true`, and the store records it as the user's.
-import { EngineLostError, refuseIfLost, type Bridge } from "../bridge";
+import { refuseIfLost, type Bridge } from "../bridge";
 import type { GraphStore } from "../store";
+import { untilLost } from "./guard";
 
 /** What a deletion of the user's would remove, as the host application's veto is asked. */
 export interface Deletion {
@@ -65,17 +66,14 @@ export function attachDeletion(
 ): () => void {
   canvas.tabIndex = 0;
   const focus = () => canvas.focus({ preventScroll: true });
+  // Once the engine is lost, a key changes nothing.
+  const remove = untilLost(() => deleteSelection(store, bridge, canDelete));
   const onKey = (event: KeyboardEvent) => {
     if (!DELETE_KEYS.has(event.key)) return;
     event.preventDefault();
     // A key held down, or with a modifier, deletes nothing: once is the user's deletion.
     if (event.repeat || event.ctrlKey || event.altKey || event.metaKey) return;
-    try {
-      deleteSelection(store, bridge, canDelete);
-    } catch (error) {
-      // Once the engine is lost, a key changes nothing.
-      if (!(error instanceof EngineLostError)) throw error;
-    }
+    remove();
   };
   canvas.addEventListener("pointerdown", focus);
   canvas.addEventListener("keydown", onKey);

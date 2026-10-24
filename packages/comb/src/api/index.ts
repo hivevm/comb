@@ -688,6 +688,9 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
   // A larger canvas shows more of the world, so what is culled changes with its size.
   app.renderer.on("resize", frames.schedule);
   const connect = connectorOf(store, bridge, limits, options.canConnect);
+  // Interaction subscribes before the listeners, and the frames read the store only on the next
+  // frame, so that a gesture a change takes, a connection among them, is over before anything
+  // reads the store after that change.
   const detach = attachInteraction(app, store, bridge, connect);
   const detachDeletion = attachDeletion(app.canvas, store, bridge, options.canDelete);
   const lost = engineLostOf();

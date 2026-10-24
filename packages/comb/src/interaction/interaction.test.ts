@@ -262,4 +262,37 @@ describe("interaction connects", () => {
       { source: "a", sourceSide: "right", target: "b", targetSide: "left" },
     ]);
   });
+
+  for (const taken of ["a removal of its source, whose slot a node then takes", "a load"]) {
+    test(`a connection ends at ${taken}, and its release proposes no edge`, () => {
+      // Verifies: ADR-0023
+      const store = createGraphStore();
+      const graph = {
+        nodes: [
+          { id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 },
+          { id: "b", title: "B", x: 300, y: 0, width: 100, height: 40 },
+        ],
+        edges: [],
+      };
+      store.getState().load(graph);
+      const { app, emit } = fakeApp();
+      const hit = (x: number) =>
+        x < 200
+          ? { kind: "connector", slot: 0, side: "right" }
+          : { kind: "connector", slot: 1, side: "left" };
+      const proposals: unknown[] = [];
+      attachInteraction(app, store, fakeBridge(hit).bridge, (proposal) => proposals.push(proposal));
+      emit("pointerdown", 100, 20);
+      emit("globalpointermove", 300, 20);
+      if (taken === "a load") store.getState().load(graph);
+      else {
+        store.getState().removeNodes([0], [], "host");
+        store.getState().addNode({ id: "z", title: "Z", x: 0, y: 0, width: 100, height: 40 }, 0);
+      }
+      expect(store.getState().connection).toBeNull();
+      emit("globalpointermove", 300, 20);
+      emit("pointerup", 300, 20);
+      expect(proposals).toEqual([]);
+    });
+  }
 });

@@ -154,24 +154,29 @@ The functional core and its shell follow
   ([ADR-0011](adr/0011-store.md)). `GraphView` is its state without the actions, the type the
   render layer reads.
 - **Interaction** (`packages/comb/src/interaction`) — pointer, wheel, and key input into store
-  actions and engine moves: select a node on press and drag it, select an edge on press and pan once
-  the pointer has moved more than 4 screen pixels, clear the selection on the empty canvas and pan,
-  zoom around the pointer, and the cursor over what a press would hit; `connect.ts` begins a
-  connection on a press on a connector, where `CombOptions.canConnect` is set, follows the pointer
-  with it, marks compatible the connectors of a node the source does not reach yet, and proposes the
-  edge to the veto on a release over one; `delete.ts` makes the canvas focusable and deletes the
-  selection on Delete or Backspace, a node with the edges the engine names at it (`edgesAt`) before
-  anything is removed, once `CombOptions.canDelete` returns `true` and has not changed the graph
-  itself, recording it as the user's; a key held down or pressed with Control, Alt, or Meta deletes
-  nothing beyond its first press. A press on a label, at the near level, selects its edge and drags
-  the label, held where it was grabbed, which the engine places on every move; its release, or a
-  later press, records `labelMoved` once, and a load, a removal of its edge, or a label the host
-  cleared ends the drag. A drag that moved its node records `nodeMoved` once, when the pointer is
-  released on the canvas or outside it; a load ends a drag. The engine's `hit` says what the pointer
-  is on, at the level of detail of the scale; node views and edges take no events. `viewport.ts`
-  holds the viewport's arithmetic, the transform between world and screen and the level of detail of
-  a scale included, for interaction, the scene, `api`'s `fitView` and `setViewport`, and the testing
-  entry.
+  actions and engine moves. `index.ts` dispatches: a press begins the gesture of what it hits, each
+  a module of its own behind the `Gesture` of `gesture.ts`, which says how it moves, how it ends at
+  a release or at a later press, and whether a change of the graph takes its subject, which ends it
+  without a word; `guard.ts` holds the guard every handler runs under once the engine is lost.
+  `node-drag.ts` selects a node on press and drags it, `pan.ts` selects an edge on press and pans
+  once the pointer has moved more than 4 screen pixels, or clears the selection on the empty canvas
+  and pans; `index.ts` zooms around the pointer and sets the cursor over what a press would hit;
+  `connect.ts` begins a connection on a press on a connector, where `CombOptions.canConnect` is set,
+  follows the pointer with it, marks compatible the connectors of a node the source does not reach
+  yet, and proposes the edge to the veto on a release over one; `delete.ts` makes the canvas
+  focusable and deletes the selection on Delete or Backspace, a node with the edges the engine names
+  at it (`edgesAt`) before anything is removed, once `CombOptions.canDelete` returns `true` and has
+  not changed the graph itself, recording it as the user's; a key held down or pressed with Control,
+  Alt, or Meta deletes nothing beyond its first press. A connection's place is the store's alone,
+  which the render draws; its gesture ends it at a load or a removal of its source. `label-drag.ts`:
+  a press on a label, at the near level, selects its edge and drags the label, held where it was
+  grabbed, which the engine places on every move; its release, or a later press, records
+  `labelMoved` once, and a load, a removal of its edge, or a label the host cleared ends the drag. A
+  drag that moved its node records `nodeMoved` once, when the pointer is released on the canvas or
+  outside it; a load ends a drag. The engine's `hit` says what the pointer is on, at the level of
+  detail of the scale; node views and edges take no events. `viewport.ts` holds the viewport's
+  arithmetic, the transform between world and screen and the level of detail of a scale included,
+  for interaction, the scene, `api`'s `fitView` and `setViewport`, and the testing entry.
 - **Render** (`packages/comb/src/render`) — the PixiJS scene (`scene.ts`): a `world` render group
   with the layers `EdgesContainer` (`edges.ts`), `NodeParticles` (`particles.ts`), `NodesContainer`
   (`nodes.ts`), `LabelsContainer` (`labels.ts`), and `ConnectorsLayer` (`connectors.ts`), with the
