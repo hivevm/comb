@@ -265,7 +265,7 @@ describe("interaction connects", () => {
 
   for (const taken of ["a removal of its source, whose slot a node then takes", "a load"]) {
     test(`a connection ends at ${taken}, and its release proposes no edge`, () => {
-      // Verifies: ADR-0023, ADR-0024
+      // Verifies: ADR-0023
       const store = createGraphStore();
       const graph = {
         nodes: [

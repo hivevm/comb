@@ -132,7 +132,8 @@ export interface GraphView {
   readonly selection: Readonly<Selection>;
   /** The node whose connectors the pointer shows, or none (ADR-0024). */
   readonly hovered: number | null;
-  /** The connection the user drags, or none. */
+  /** The connection the user drags, or none. A load or a removal of its source leaves it, for its
+   *  gesture to end before anything reads the store after the change. */
   readonly connection: Connection | null;
   readonly viewport: Readonly<Viewport>;
   readonly positionsVersion: number;
@@ -202,7 +203,7 @@ function idUnitsOf(graph: GraphData): number {
 
 /** What a removal changes of the pointer's state: a removed node shows no connectors, and a
  *  connection over it is over nothing until it moves. Whether the removal ends a connection from
- *  it is its gesture's to decide (`interaction/connect.ts`). */
+ *  it is its gesture's to decide. */
 function pointerWithout(state: GraphView, nodes: GraphView["nodes"]): Partial<GraphView> {
   const gone = (slot: number | null | undefined) => slot != null && !nodes[slot];
   const { hovered, connection } = state;

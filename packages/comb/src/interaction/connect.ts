@@ -96,7 +96,9 @@ export function connection(
     },
     // A load, or a removal of the source, which a node that took its slot does not make good.
     taken: (state) =>
-      state.change?.kind === "loaded" || state.nodes[state.connection?.source ?? -1]?.id !== id,
+      state.change?.kind === "loaded" ||
+      !state.connection ||
+      state.nodes[state.connection.source]?.id !== id,
     drop: () => store.getState().connect(null),
   };
 }
