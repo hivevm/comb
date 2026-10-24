@@ -5,12 +5,13 @@
 # docs/ARCHITECTURE.md is believed, so a method a host application calls or a probe a test reads
 # that it does not name is a part of the system a reader does not know is there. This check reads
 # the names from the sources: each method and property of the `Comb` interface and each option of
-# `CombOptions` in packages/comb/src/api/index.ts, and each function packages/comb/src/testing.ts
-# exports, by declaration, as a `const`, or by name in `export { … }`, under the name it is
-# exported as; and fails, naming each, where the overview holds no code span that is that name, on
-# its own or after a qualifier (`CombOptions.canDelete`) or before its arguments (`inspect(comb)`).
-# A span may wrap a line; one in a fenced block or an HTML comment does not count. A source it
-# reads no names from fails rather than pass, as one it cannot find does. A stale sentence about a
+# `CombOptions` in packages/comb/src/api/index.ts, and each function or constant
+# packages/comb/src/testing.ts exports, by declaration or by name in `export { … }`, under the
+# name it is exported as; and fails, naming each, where the overview holds no code span that is
+# that name, on its own or after a qualifier (`CombOptions.canDelete`) or before its arguments
+# (`inspect(comb)`). A span may wrap a line; one in a fenced block or an HTML comment does not
+# count. A source it reads no names from fails rather than pass, as one it cannot find does, and
+# so does an export of testing.ts of a shape it does not read. A stale sentence about a
 # name the overview holds is review. The engine's buffer accessors stay out of it: the overview
 # names the buffers, not each accessor.
 #
@@ -61,60 +62,88 @@ members() {
     }' "$API"
 }
 
-# exported — the functions testing.ts exports: `export function`, `export async function`,
-# `export function*`, `export default function <name>`, an `export const <name> =` that holds a
-# function, and each name in `export { … }`, over lines too, by the name after `as`, a `type`
-# specifier and an `export type { … }` left out.
+# exported — the functions and constants testing.ts exports: `export function` (async, `*`,
+# `default`, `declare`), every `export const`, `let`, or `var`, which a probe may be whichever way
+# it is written, and each name in `export { … }`, over lines too, by the name after `as` (by its
+# own where that is `default`), `type` specifiers and comments left out. An `export` line of any
+# other shape than these, a type, an interface, a class, or an enum prints `?` and the line, which
+# fails the check: a shape it does not read is no name it may pass.
 exported() {
   awk -v id="$NAME" '
     { sub(/\r$/, "") }
     list {
-      block = block " " $0
-      if (index($0, "}")) { names(block); list = 0 }
+      line = $0; sub(/\/\/.*$/, "", line); block = block " " line
+      if (index(line, "}")) { names(block); list = 0 }
       next
     }
-    /^export \{/ {
-      block = $0
-      if (index($0, "}")) names(block); else list = 1
+    !/^export([[:space:]]|\{)/ { next }
+    /^export[[:space:]]*\{/ {
+      block = $0; sub(/\/\/.*$/, "", block)
+      if (index(block, "}")) names(block); else list = 1
       next
     }
-    $0 ~ ("^export (default )?(async )?function[*]?[[:space:]]*" id) {
-      line = $0; sub(/^export (default )?(async )?function[*]?[[:space:]]*/, "", line)
+    $0 ~ ("^export (default |declare )?(async )?function[*]?[[:space:]]*" id) {
+      line = $0; sub(/^export (default |declare )?(async )?function[*]?[[:space:]]*/, "", line)
       match(line, id); print substr(line, RSTART, RLENGTH); next
     }
-    $0 ~ ("^export const " id "[[:space:]]*(:[^=]*)?=[[:space:]]*(async[[:space:]]*)?(function|\\(|" id "[[:space:]]*=>)") {
-      line = $0; sub(/^export const /, "", line)
-      match(line, id); print substr(line, RSTART, RLENGTH)
+    $0 ~ ("^export (declare )?(const|let|var) " id) {
+      line = $0; sub(/^export (declare )?(const|let|var) /, "", line)
+      match(line, id); print substr(line, RSTART, RLENGTH); next
     }
-    function names(text,    parts, n, i, spec) {
-      sub(/^export \{/, "", text); sub(/\}.*$/, "", text)
+    /^export (declare )?(type|interface|(abstract )?class|enum|const enum)[[:space:]{]/ { next }
+    { print "?" $0 }
+    function names(text,    parts, n, i, spec, own) {
+      sub(/^export[[:space:]]*\{/, "", text); sub(/\}.*$/, "", text)
       n = split(text, parts, ",")
       for (i = 1; i <= n; i++) {
         spec = parts[i]; gsub(/^[[:space:]]+|[[:space:]]+$/, "", spec)
         if (spec == "" || spec ~ /^type[[:space:]]/) continue
+        own = spec; sub(/[[:space:]].*$/, "", own)
         sub(/^.*[[:space:]]as[[:space:]]+/, "", spec)
-        print spec
+        print (spec == "default" ? own : spec)
       }
     }' "$TESTING"
 }
 
 # named — every name the overview holds as a code span of its own: the span is the name, after a
-# qualifier or before its arguments or both; prose joined by paragraph, so that a span may wrap,
-# and fenced blocks and HTML comments dropped.
+# qualifier or before its arguments or both. Prose is joined by paragraph, a heading, a list item,
+# a quote, or a fence beginning another, so that a span may wrap a line; an escaped backquote is
+# no delimiter; and fenced blocks, closed by their own character at their length or more, and HTML
+# comments, over lines too, count for nothing.
 named() {
   awk -v id="$NAME" '
     { sub(/\r$/, "") }
-    /^[[:space:]]*(```|~~~)/ { fence = !fence; next }
-    fence { next }
-    /^[[:space:]]*$/ { flush(); next }
-    { text = text " " $0 }
+    fence {
+      if (match($0, /^[[:space:]]*(`+|~+)[[:space:]]*$/)) {
+        mark = $0; gsub(/[[:space:]]/, "", mark)
+        if (substr(mark, 1, 1) == substr(fence, 1, 1) && length(mark) >= length(fence)) fence = ""
+      }
+      next
+    }
+    {
+      line = $0
+      while (line != "") {
+        if (comment) {
+          if (!(at = index(line, "-->"))) { line = ""; break }
+          line = substr(line, at + 3); comment = 0
+        }
+        if (!(at = index(line, "<!--"))) break
+        kept = kept substr(line, 1, at - 1); line = substr(line, at + 4); comment = 1
+      }
+      line = kept line; kept = ""
+    }
+    comment && line ~ /^[[:space:]]*$/ { next }
+    line ~ /^[[:space:]]*(```|~~~)/ {
+      flush(); match(line, /(`+|~+)/); fence = substr(line, RSTART, RLENGTH); next
+    }
+    line ~ /^[[:space:]]*$/ { flush(); next }
+    # A heading is a paragraph of its own line.
+    line ~ /^[[:space:]]*#+[[:space:]]/ { flush(); text = line; flush(); next }
+    line ~ /^[[:space:]]*([-*+][[:space:]]|[0-9]+[.)][[:space:]]|>)/ { flush() }
+    { text = text " " line }
     END { flush() }
     function flush(    rest, span, at) {
-      while (match(text, /<!--/)) {
-        rest = substr(text, RSTART)
-        at = index(rest, "-->")
-        text = substr(text, 1, RSTART - 1) (at ? substr(rest, at + 3) : "")
-      }
+      gsub(/\\`/, "", text)
       rest = text
       while ((at = index(rest, "`"))) {
         rest = substr(rest, at + 1)
@@ -139,6 +168,9 @@ check() {
   local what="$1" source="$2" name names
   names="$($source | sort -u)"
   [[ -n "$names" ]] || fail "read no $what from its source; its shape is not one this check knows."
+  if [[ "$names" == *\?* ]]; then
+    fail "$(grep -m1 '^?' <<< "$names" | cut -c2-) is an export of a shape this check does not read."
+  fi
   while IFS= read -r name; do
     counted=$((counted + 1))
     [[ -n "${held[$name]:-}" ]] || missing+=("$what \`$name\`")
@@ -147,7 +179,7 @@ check() {
 
 check "Comb method or property" "members Comb"
 check "CombOptions option" "members CombOptions"
-check "comb/testing function" exported
+check "comb/testing export" exported
 
 if ((${#missing[@]})); then
   echo "Overview check FAILED (ADR-0001): docs/ARCHITECTURE.md names none of these in a code span:" >&2

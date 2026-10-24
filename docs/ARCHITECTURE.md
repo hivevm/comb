@@ -374,8 +374,8 @@ imports past the library's entries and its engine file (ADR-0028, ADR-0019), and
 layer names PixiJS's `Text`, `HTMLText`, or `SplitText` or the edges layer a `Graphics` (ADR-0027),
 and when its Canvas 2D fallback names `Graphics` outside its imports and its one field (ADR-0018).
 `scripts/check-overview.sh` fails, naming each, where this overview holds no code span of its own
-for a method or property of the `Comb` interface, an option of `CombOptions`, or a function
-`comb/testing` exports (ADR-0001), and where it reads no names from one of those sources.
+for a method or property of the `Comb` interface, an option of `CombOptions`, or a function or
+constant `comb/testing` exports (ADR-0001), and where it reads no names from one of those sources.
 `scripts/check-bundle.sh` builds the library and fails when its gzipped JavaScript and the engine
 file reach the 300 kB of Q-3, when no engine file is measured, when the JavaScript inlines the
 engine (ADR-0019), and when the JavaScript carries the bridge's test mode or the engine file the
