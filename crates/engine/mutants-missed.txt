@@ -2,6 +2,7 @@
 # One per line as '<file> <function> <replacement>', ' (xN)' when one key covers N mutants,
 # and for an equivalent mutant its reason after ' # '.
 # Recorded with scripts/check-mutants.sh --record; the README says how the list changes.
+crates/engine/src/geometry.rs EdgePath::placement_at replace < with <= # equivalent: on a tie of the two thirds either one is dropped, and the nearest point lies in what is kept
 crates/engine/src/graph.rs Graph::cell_side replace * with + (x2) # equivalent: it affects only how fast a query runs, not which slots it returns
 crates/engine/src/graph.rs Graph::cell_side replace * with / (x2) # equivalent: it affects only how fast a query runs, not which slots it returns
 crates/engine/src/graph.rs Graph::cell_side replace - with + (x2) # equivalent: it affects only how fast a query runs, not which slots it returns

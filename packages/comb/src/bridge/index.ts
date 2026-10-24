@@ -149,6 +149,17 @@ export interface Bridge {
    *  ascending order (ADR-0022). Throws a `SlotError`, a mistake of the shell's, never one of
    *  graph data, the graph as it was. */
   removeNodes(slots: Uint32Array): Uint32Array;
+  /** Records the half width and half height of the pill of the label of the edge in `slot`, in
+   *  world units, as the labels layer draws it; a label not measured is not hit (ADR-0025).
+   *  Throws a `SlotError`. */
+  setLabelSize(slot: number, halfWidth: number, halfHeight: number): void;
+  /** The world point of the label of the edge in `slot`, or none where it holds no edge with a
+   *  label. */
+  labelPoint(slot: number): { x: number; y: number } | undefined;
+  /** Places the label of the edge in `slot` at the world point `(x, y)`: at the path parameter
+   *  nearest it and its distance along the normal there, which it returns (G-6). Throws a
+   *  `SlotError`. */
+  moveLabel(slot: number, x: number, y: number): { t: number; offset: number };
   /** The slots of the edges at the nodes in `slots`, in ascending order, as a removal of them
    *  would take along, named before anything is removed (ADR-0022). Throws a `SlotError`. */
   edgesAt(slots: Uint32Array): Uint32Array;
@@ -346,6 +357,15 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
     removeNodes: (slots) => engine.removeNodes(slots),
     removeEdges: (slots) => engine.removeEdges(slots),
     edgesAt: (slots) => engine.edgesAt(slots),
+    setLabelSize: (slot, halfWidth, halfHeight) => engine.setLabelSize(slot, halfWidth, halfHeight),
+    labelPoint(slot) {
+      const [x, y] = engine.labelPoint(slot);
+      return x === undefined || y === undefined ? undefined : { x, y };
+    },
+    moveLabel(slot, x, y) {
+      const [t, offset] = engine.moveLabel(slot, x, y);
+      return { t: t!, offset: offset! };
+    },
     translate: (slots, dx, dy) => engine.translate(slots, dx, dy),
     positions: () => f32(engine.positionsPtr(), engine.positionsLen()),
     hit: (x, y, pixel, level, connectors) => engine.hit(x, y, pixel, LEVELS[level], connectors),

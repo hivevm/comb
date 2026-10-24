@@ -200,3 +200,40 @@ test("at the far level no connector is drawn and a press where one would be conn
   expect(midway).toEqual({ connection: null, connectors: [] });
   expect((await after(page)).edges).toEqual(["a-c"]);
 });
+
+test("an edge the other way does not count: c connects to a, which reaches c", async ({ page }) => {
+  // Verifies: ADR-0024
+  await open(page);
+  await loaded(page);
+  await page.evaluate(() => (window.canConnect = () => "c-a"));
+  // From c's bottom connector at (610, 64) to a's bottom one at (110, 64).
+  const midway = await drag(page, [610, 64], A_BOTTOM);
+  expect(midway.connectors.filter(({ node }) => node === "a").every((c) => c.compatible)).toBe(
+    true,
+  );
+  expect((await after(page)).edges).toEqual(["a-c", "c-a"]);
+});
+
+test("a veto that throws ends the gesture first: no connection is drawn after it", async ({
+  page,
+}) => {
+  // Verifies: ADR-0023
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page);
+  await loaded(page);
+  await page.evaluate(() => {
+    window.canConnect = () => {
+      throw new Error("host veto");
+    };
+  });
+  await drag(page, A_BOTTOM, B_TOP);
+  const elsewhere = await pagePoint(page, 300, 200);
+  await page.mouse.move(elsewhere.x, elsewhere.y, { steps: 3 });
+  const state = await page.evaluate(async () => {
+    await window.comb.whenRendered();
+    return { connection: window.inspect().connection, edges: window.inspect().edges.length };
+  });
+  expect(state).toEqual({ connection: null, edges: 1 });
+  expect(errors).toEqual(["host veto"]);
+});

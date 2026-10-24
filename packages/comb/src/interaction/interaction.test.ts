@@ -33,10 +33,17 @@ function fakeApp() {
 }
 
 /** A bridge with one node under every point, which records the moves it is asked for. */
-function fakeBridge(hit: { kind: string; slot?: number } = { kind: "node", slot: 0 }) {
+function fakeBridge(
+  hit: { kind: string; slot?: number; side?: string } | ((x: number) => unknown) = {
+    kind: "node",
+    slot: 0,
+  },
+) {
   const moves: { slots: number[]; dx: number; dy: number }[] = [];
   const bridge = {
-    hit: () => hit,
+    hit: (x: number) => (typeof hit === "function" ? hit(x) : hit),
+    edgesAt: () => new Uint32Array(0),
+    positions: () => new Float32Array(8),
     translate: (slots: Uint32Array, dx: number, dy: number) =>
       moves.push({ slots: [...slots], dx, dy }),
   };
@@ -221,5 +228,38 @@ describe("interaction on an edge", () => {
     emit("pointerdown", 200, 20);
     emit("globalpointermove", 260, 80);
     expect(store.getState().viewport).toEqual({ x: 60, y: 60, scale: 1 });
+  });
+});
+
+describe("interaction connects", () => {
+  test("a connection a later press ends, its release never having come, proposes no edge", () => {
+    // Verifies: ADR-0023, ADR-0024
+    const store = createGraphStore();
+    store.getState().load({
+      nodes: [
+        { id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 },
+        { id: "b", title: "B", x: 300, y: 0, width: 100, height: 40 },
+      ],
+      edges: [],
+    });
+    const { app, emit } = fakeApp();
+    // The press at x = 100 meets a's right connector, the move to x = 300 b's left one.
+    const hit = (x: number) =>
+      x < 200
+        ? { kind: "connector", slot: 0, side: "right" }
+        : { kind: "connector", slot: 1, side: "left" };
+    const proposals: unknown[] = [];
+    attachInteraction(app, store, fakeBridge(hit).bridge, (proposal) => proposals.push(proposal));
+    emit("pointerdown", 100, 20);
+    emit("globalpointermove", 300, 20);
+    expect(store.getState().connection?.target).toEqual({ slot: 1, side: "left" });
+    // The release never comes; the next press ends the connection.
+    emit("pointerdown", 100, 20);
+    expect(proposals).toEqual([]);
+    emit("globalpointermove", 300, 20);
+    emit("pointerup", 300, 20);
+    expect(proposals).toEqual([
+      { source: "a", sourceSide: "right", target: "b", targetSide: "left" },
+    ]);
   });
 });

@@ -303,6 +303,37 @@ impl EdgePath {
         }
     }
 
+    /// The path parameter and label offset that place a label at `p`: the parameter of the path
+    /// point nearest `p`, and how far `p` lies from it along the normal there, so that
+    /// `label_position` of the two is `p` where that nearest point lies inside the path (G-6).
+    pub(crate) fn placement_at(&self, p: Point) -> (f64, f64) {
+        let squared = |t: f64| {
+            let q = self.point_at(t);
+            (q.x - p.x).powi(2) + (q.y - p.y).powi(2)
+        };
+        // Coarsely, then within the bracket of the nearest sample by ternary search; a cubic's
+        // distance has at most a few minima, which samples this close apart do not straddle.
+        let n = 256;
+        let best = (0..=n)
+            .map(|i| f64::from(i) / f64::from(n))
+            .min_by(|a, b| squared(*a).total_cmp(&squared(*b)))
+            .unwrap_or(0.0);
+        let step = 1.0 / f64::from(n);
+        let (mut from, mut to) = ((best - step).max(0.0), (best + step).min(1.0));
+        for _ in 0..100 {
+            let (m1, m2) = (from + (to - from) / 3.0, to - (to - from) / 3.0);
+            if squared(m1) < squared(m2) {
+                to = m2;
+            } else {
+                from = m1;
+            }
+        }
+        let t = (from + to) / 2.0;
+        let (point, tangent) = (self.point_at(t), self.tangent_at(t));
+        let offset = (p.x - point.x) * tangent.y - (p.y - point.y) * tangent.x;
+        (t, offset)
+    }
+
     /// Where an edge label with path parameter `t` and label offset `offset` sits: the path
     /// point at `t`, moved `offset` pixels along the normal, which points left of the direction
     /// of travel.
@@ -415,6 +446,60 @@ mod tests {
                 EdgePath::between(&source, &target, Sides::default()),
                 horizontal
             );
+        }
+    }
+
+    #[test]
+    fn a_label_is_placed_at_the_nearest_of_several_near_points_of_a_path_that_turns_back() {
+        // Verifies: G-6
+        // From the right of a node to the left of one behind and below it: the path swings out to
+        // the right, back across, and out to the left, so that a point beside it lies near
+        // several stretches of it, and the placement has to end at a foot of a perpendicular.
+        let path = EdgePath::between(
+            &Rect::of_node(0.0, 0.0, 220.0, 64.0),
+            &Rect::of_node(-400.0, 140.0, 220.0, 64.0),
+            Sides::default(),
+        );
+        let distance = |t: f64, p: Point| {
+            let q = path.point_at(t);
+            (q.x - p.x).hypot(q.y - p.y)
+        };
+        // A point far beside a path that turns back, whose distance has two minima: a search near
+        // the nearest sample ends at a foot of a perpendicular, where a search of the whole path
+        // ends at a point that is none.
+        let turning = EdgePath::between(
+            &Rect::of_node(0.0, 0.0, 220.0, 64.0),
+            &Rect::of_node(
+                -161.603_165_735_473_57,
+                0.132_577_549_044_583_52,
+                220.0,
+                64.0,
+            ),
+            Sides::default(),
+        );
+        let far = Point::new(-348.000_619_140_425_56, 412.989_424_779_773_57);
+        let (t, offset) = turning.placement_at(far);
+        let placed = turning.label_position(t, offset);
+        assert!(
+            (placed.x - far.x).hypot(placed.y - far.y) < 0.01,
+            "{placed:?}"
+        );
+        for i in 0..40 {
+            for j in 0..12 {
+                let at = path.label_position(f64::from(i) / 40.0, f64::from(j) * 10.0 - 60.0);
+                // The nearest path point by a dense scan: only one inside the path is a case.
+                let nearest = (0..=20_000)
+                    .map(|k| f64::from(k) / 20_000.0)
+                    .min_by(|a, b| distance(*a, at).total_cmp(&distance(*b, at)))
+                    .unwrap();
+                if !(0.01..=0.99).contains(&nearest) {
+                    continue;
+                }
+                let (placed_t, placed_offset) = path.placement_at(at);
+                let placed = path.label_position(placed_t, placed_offset);
+                let miss = (placed.x - at.x).hypot(placed.y - at.y);
+                assert!(miss < 0.01, "at {at:?}: missed by {miss}");
+            }
         }
     }
 

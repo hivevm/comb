@@ -1,0 +1,171 @@
+// The user drags an edge label, and it stays where it was dropped (G-6, ADR-0025): a press inside
+// its pill at the near level grabs it, the engine places it at the path parameter nearest the
+// pointer and its distance along the normal there, and the release tells one `labelMoved`.
+import { expect, test, type Page } from "@playwright/test";
+import type { GraphData } from "comb";
+import { NODE_HEIGHT, NODE_WIDTH, open, screenCentre, setViewport } from "./shared";
+
+const node = (id: string, x = 0, y = 0) => ({
+  id,
+  title: id,
+  x,
+  y,
+  width: NODE_WIDTH,
+  height: NODE_HEIGHT,
+});
+
+/** Nodes `a` and `b` side by side and the edge `a-b` between them, straight along y = 32, its
+ *  label in the middle at (410, 32). */
+const PAIR: GraphData = {
+  nodes: [node("a"), node("b", 600)],
+  edges: [{ id: "a-b", source: "a", target: "b", label: { text: "+0.8", t: 0.5, offset: 0 } }],
+};
+
+async function loaded(page: Page, graph: GraphData, scale = 1): Promise<void> {
+  await page.evaluate(async (graph) => {
+    window.useGraph(graph);
+    const w = window as unknown as { told: unknown[] };
+    w.told = [];
+    window.comb.onChange((change) => w.told.push(change));
+    await window.comb.whenRendered();
+  }, graph);
+  await setViewport(page, { x: 100, y: 100, scale });
+}
+
+async function pagePoint(page: Page, x: number, y: number) {
+  return page.evaluate(
+    ({ x, y }) => {
+      const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();
+      const screen = window.screenPoint(x, y);
+      return { x: rect.left + screen.x, y: rect.top + screen.y };
+    },
+    { x, y },
+  );
+}
+
+async function dragWorld(page: Page, from: [number, number], to: [number, number]) {
+  const [a, b] = [await pagePoint(page, ...from), await pagePoint(page, ...to)];
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move(b.x, b.y, { steps: 8 });
+  await page.mouse.up();
+}
+
+async function labels(page: Page) {
+  return page.evaluate(async () => {
+    await window.comb.whenRendered();
+    return window.inspect().edgeLabels.map(({ edge, x, y }) => ({ edge, x, y }));
+  });
+}
+
+async function told(page: Page): Promise<{ kind: string }[]> {
+  return page.evaluate(() => (window as unknown as { told: { kind: string }[] }).told);
+}
+
+test("a label dragged off its edge is drawn where it was dropped, and tells one labelMoved", async ({
+  page,
+}) => {
+  // Verifies: G-6, ADR-0023, ADR-0025
+  await open(page);
+  await loaded(page, PAIR);
+  // Grabbed 6 to the right of its point, dropped with the point at (410, -60).
+  await dragWorld(page, [416, 32], [416, -60]);
+  const [label] = await labels(page);
+  expect(label!.x).toBeCloseTo(410, 2);
+  expect(label!.y).toBeCloseTo(-60, 2);
+  const changes = await told(page);
+  expect(changes).toHaveLength(1);
+  const moved = changes[0] as unknown as {
+    kind: string;
+    by: string;
+    edge: string;
+    t: number;
+    offset: number;
+  };
+  expect(moved).toMatchObject({ kind: "labelMoved", by: "user", edge: "a-b" });
+  // At the middle of the straight edge, 92 above it: the normal of a rightward edge points up.
+  expect(moved.t).toBeCloseTo(0.5, 6);
+  expect(moved.offset).toBeCloseTo(92, 6);
+  // When a node of the edge moves after, the label keeps its t and offset (G-6).
+  const from = await screenCentre(page, "b");
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x, from.y + 200, { steps: 5 });
+  await page.mouse.up();
+  // From (220, 32) to (600, 232), control points at (410, 32) and (410, 232): at t = 0.5 the path
+  // passes (410, 132) with tangent (285, 300) / 413.79, and 92 along its normal lies the label.
+  const [after] = await labels(page);
+  const [tx, ty] = [285 / Math.hypot(285, 300), 300 / Math.hypot(285, 300)];
+  expect(after!.x).toBeCloseTo(410 + ty * 92, 1);
+  expect(after!.y).toBeCloseTo(132 - tx * 92, 1);
+  expect((await told(page)).map(({ kind }) => kind)).toEqual(["labelMoved", "nodeMoved"]);
+});
+
+test("a press just beside a short label, beyond its pill, grabs neither it nor a long one", async ({
+  page,
+}) => {
+  // Verifies: ADR-0025
+  await open(page);
+  const graph: GraphData = {
+    nodes: [node("a"), node("b", 600), node("c", 0, 200), node("d", 600, 200)],
+    edges: [
+      { id: "short", source: "a", target: "b", label: { text: "1", t: 0.5, offset: 0 } },
+      {
+        id: "long",
+        source: "c",
+        target: "d",
+        label: { text: "a label of many characters", t: 0.5, offset: 0 },
+      },
+    ],
+  };
+  await loaded(page, graph);
+  const before = await labels(page);
+  // The short pill reaches about 11 to each side of (410, 32) and 11 above and below it: press 20
+  // beside it, within its height, where the long label's wider pill would reach.
+  await dragWorld(page, [430, 26], [430, -80]);
+  expect(await labels(page)).toEqual(before);
+  expect((await told(page)).map(({ kind }) => kind)).not.toContain("labelMoved");
+});
+
+test("at the middle level a press where a label's point lies drags no label", async ({ page }) => {
+  // Verifies: ADR-0025
+  await open(page);
+  await loaded(page, PAIR, 0.4);
+  expect((await page.evaluate(() => window.inspect())).level).toBe("middle");
+  await dragWorld(page, [410, 32], [410, -200]);
+  expect((await told(page)).map(({ kind }) => kind)).not.toContain("labelMoved");
+});
+
+test("a label the host clears mid-drag ends the drag: no error, and no labelMoved", async ({
+  page,
+}) => {
+  // Verifies: ADR-0023, Q-7
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page);
+  await loaded(page, PAIR);
+  const [a, b] = [await pagePoint(page, 416, 32), await pagePoint(page, 416, -60)];
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move(a.x, a.y - 20, { steps: 3 });
+  await page.evaluate(() => window.comb.updateEdge("a-b", { label: null }));
+  await page.mouse.move(b.x, b.y, { steps: 4 });
+  await page.mouse.up();
+  expect((await told(page)).map(({ kind }) => kind)).toEqual(["edgeUpdated"]);
+  expect(await labels(page)).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("a label dragged and then retitled in the sidebar stays where it was dropped", async ({
+  page,
+}) => {
+  // Verifies: G-6, G-9
+  await open(page);
+  await loaded(page, PAIR);
+  await dragWorld(page, [416, 32], [416, -60]);
+  await expect(page.locator("#edge-selection")).toBeVisible();
+  await page.locator("#edge-label").fill("+0.9");
+  const [label] = await labels(page);
+  expect(label!.x).toBeCloseTo(410, 2);
+  expect(label!.y).toBeCloseTo(-60, 2);
+});

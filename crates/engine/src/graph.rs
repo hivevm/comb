@@ -112,11 +112,14 @@ fn stale(beyond: usize, items: usize) -> bool {
 /// How near a press has to come to an edge's path to hit it, in screen pixels (ADR-0025).
 const EDGE_REACH: f64 = 4.0;
 
-/// What a press hits (ADR-0025): a node or an edge, by its slot.
+/// What a press hits (ADR-0025): a connector by its node's slot and side, a label by its edge's
+/// slot, a node, or an edge, by its slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
     /// The connector of a side of the node in a slot (ADR-0024).
     Connector(u32, Side),
+    /// The label of the edge in a slot (ADR-0025).
+    Label(u32),
     Node(u32),
     Edge(u32),
 }
@@ -136,6 +139,11 @@ pub struct Graph {
     /// The bounds of each path, computed when the path is.
     bounds: Vec<Rect>,
     labels: Vec<Option<Point>>,
+    /// Half the width and half the height of each edge label's pill in world units, as the shell
+    /// measured it; a label it has not measured is not hit (ADR-0025).
+    pills: Vec<Option<(f64, f64)>>,
+    /// The largest half extent of any pill measured, by which a hit looks for labels around it.
+    widest_pill: f64,
     /// The edge slots at each node slot, one list per node slot (ADR-0022).
     incident: Vec<Vec<u32>>,
     /// The rank of each node slot: the node of the higher rank is drawn and hit above the other
@@ -193,6 +201,7 @@ impl Graph {
             next_rank: u64::from(node_slots),
             node_free: vec![false; node_slots as usize],
             edge_free: vec![false; edge_slots as usize],
+            pills: vec![None; edge_slots as usize],
             ..Self::default()
         };
         graph.link();
@@ -375,6 +384,7 @@ impl Graph {
         let slot = if let Some(free) = self.free_edges.pop() {
             self.edges[free as usize] = spec;
             self.edge_free[free as usize] = false;
+            self.pills[free as usize] = None;
             free
         } else {
             let next = slot(self.edge_slots as usize + 1).map_err(|_| SlotError::NoEdge {
@@ -383,6 +393,7 @@ impl Graph {
             let new = self.edge_slots;
             self.edges.push(spec);
             self.edge_free.push(false);
+            self.pills.push(None);
             let (path, bounds, label) = self.placement(new);
             self.paths.push(path);
             self.bounds.push(bounds);
@@ -460,6 +471,7 @@ impl Graph {
                 continue;
             }
             self.edge_free[i] = true;
+            self.pills[i] = None;
             self.free_edges.push(slot);
             touched.extend(self.ends(slot).filter(|&end| !self.node_free[end as usize]));
         }
@@ -586,10 +598,12 @@ impl Graph {
         }
     }
 
-    /// What a press at `point` hits where a screen pixel is `pixel` world units, at `level`: a node
-    /// whose bounds hold it, the one of the highest rank, else an edge within `EDGE_REACH` screen
-    /// pixels of its path as the stroke of `level` flattens it, the one in the highest slot, else
-    /// nothing (ADR-0025).
+    /// What a press at `point` hits where a screen pixel is `pixel` world units, at `level`: where
+    /// `connectors` asks for them, at the near and middle level, a connector within
+    /// `CONNECTOR_REACH` screen pixels, of the node of the highest rank; else at the near level a
+    /// label whose measured pill holds it, of the highest edge slot; else a node whose bounds hold
+    /// it, the one of the highest rank; else an edge within `EDGE_REACH` screen pixels of its path
+    /// as the stroke of `level` flattens it, the one in the highest slot; else nothing (ADR-0025).
     pub fn hit_at(
         &mut self,
         point: Point,
@@ -602,6 +616,11 @@ impl Graph {
             && let Some((slot, side)) = self.connector_at(point, CONNECTOR_REACH * pixel)
         {
             return Some(Target::Connector(slot, side));
+        }
+        if level == Level::Near
+            && let Some(slot) = self.label_at(point)
+        {
+            return Some(Target::Label(slot));
         }
         if let Some(slot) = self.hit(point) {
             return Some(Target::Node(slot));
@@ -619,6 +638,77 @@ impl Graph {
         });
         self.scratch = candidates;
         found.map(Target::Edge)
+    }
+
+    /// The label whose measured pill holds `point`, of the edge in the highest slot (ADR-0025).
+    fn label_at(&mut self, point: Point) -> Option<u32> {
+        if self.widest_pill <= 0.0 {
+            return None;
+        }
+        self.edge_grid
+            .candidates(&Rect::at(point).grown(self.widest_pill), &mut self.scratch);
+        self.scratch
+            .iter()
+            .copied()
+            .filter(|&slot| {
+                let i = slot as usize;
+                match (self.labels[i], self.pills[i]) {
+                    (Some(at), Some((half_width, half_height))) => {
+                        (point.x - at.x).abs() <= half_width
+                            && (point.y - at.y).abs() <= half_height
+                    }
+                    _ => false,
+                }
+            })
+            .max()
+    }
+
+    /// Records the half width and half height of the pill of the label of the edge in `slot`, in
+    /// world units, as the shell draws it; sizes that are not finite and positive leave it
+    /// unmeasured. A slot that holds no edge refuses it.
+    pub fn set_label_size(
+        &mut self,
+        slot: u32,
+        half_width: f64,
+        half_height: f64,
+    ) -> Result<(), SlotError> {
+        if !self.holds_edge(slot) {
+            return Err(SlotError::NoEdge { slot });
+        }
+        let measured = [half_width, half_height]
+            .iter()
+            .all(|size| size.is_finite() && *size > 0.0);
+        self.pills[slot as usize] = measured.then_some((half_width, half_height));
+        if measured {
+            self.widest_pill = self.widest_pill.max(half_width).max(half_height);
+        }
+        Ok(())
+    }
+
+    /// The point of the label of the edge in `slot`, where it holds an edge with a label.
+    pub fn label_point(&self, slot: u32) -> Option<Point> {
+        self.labels
+            .get(slot as usize)
+            .copied()
+            .flatten()
+            .filter(|_| self.holds_edge(slot))
+    }
+
+    /// Places the label of the edge in `slot` at `point`: at the path parameter nearest it and its
+    /// distance along the normal there, which it returns, and moves it in the index (G-6). A slot
+    /// that holds no edge with a label refuses it.
+    pub fn move_label(&mut self, slot: u32, point: Point) -> Result<LabelPlacement, SlotError> {
+        if self.label_point(slot).is_none() {
+            return Err(SlotError::NoEdge { slot });
+        }
+        let (t, offset) = self.paths[slot as usize].placement_at(point);
+        let placement = LabelPlacement { t, offset };
+        self.edges[slot as usize].label = Some(placement);
+        self.place_edge(slot);
+        if stale(self.edge_grid.beyond_extent(), self.edges_in_use() as usize) {
+            self.index();
+        }
+        Ok(placement)
     }
 
     /// The connector within `reach` of `point`: of the nodes with one there, the one drawn on top,
@@ -1735,7 +1825,7 @@ mod tests {
                         assert!(sure.is_none_or(|s| e >= s), "edge {e} below {sure:?}");
                     }
                     None => assert_eq!(sure, None, "missed at {p:?}"),
-                    Some(Target::Node(_) | Target::Connector(..)) => {
+                    Some(Target::Node(_) | Target::Connector(..) | Target::Label(_)) => {
                         panic!("{hit:?} where a scan finds none")
                     }
                 }
@@ -1791,6 +1881,148 @@ mod tests {
                 assert!(!matches!(without, Some(Target::Connector(..))));
             }
         }
+    }
+
+    #[test]
+    fn a_label_placed_at_a_point_its_nearest_path_point_holds_lies_there_far_from_the_origin_too() {
+        // Verifies: G-6
+        for seed in 1..=6 {
+            let mut rng = Lcg(seed);
+            // Paths of random sides, backwards ones among them, near the origin and far from it.
+            let far = if seed % 2 == 0 { 0.0 } else { 3e6 };
+            let mut graph = random_graph(&mut rng, 30, 60);
+            graph
+                .translate(&(0..30).collect::<Vec<_>>(), far as f32, -far as f32)
+                .unwrap();
+            for edge in 0..graph.edge_slots {
+                let path = graph.paths[edge as usize];
+                for _ in 0..4 {
+                    let at = path.label_position(rng.range(0.0, 1.0), rng.range(-60.0, 60.0));
+                    // The nearest path point by a dense scan apart from the placement: a point
+                    // whose nearest is an end lies beyond the path, and is no case.
+                    let reference = (0..=20_000)
+                        .map(|i| f64::from(i) / 20_000.0)
+                        .min_by(|a, b| {
+                            let d = |t: f64| {
+                                let q = path.point_at(t);
+                                (q.x - at.x).hypot(q.y - at.y)
+                            };
+                            d(*a).total_cmp(&d(*b))
+                        })
+                        .unwrap();
+                    if !(0.01..=0.99).contains(&reference) {
+                        continue;
+                    }
+                    let (t, offset) = path.placement_at(at);
+                    let placed = path.label_position(t, offset);
+                    let miss = (placed.x - at.x).hypot(placed.y - at.y);
+                    assert!(miss < 0.01, "missed by {miss} on edge {edge}, {path:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_hit_at_the_near_level_finds_a_measured_label_inside_its_pill_before_a_node() {
+        // Verifies: ADR-0025
+        let mut rng = Lcg(9);
+        let mut graph = random_graph(&mut rng, 30, 60);
+        let measured: Vec<u32> = (0..graph.edge_slots).filter(|e| e % 3 != 0).collect();
+        for &edge in &measured {
+            graph
+                .set_label_size(edge, 20.0 + f64::from(edge % 5) * 10.0, 11.0)
+                .unwrap();
+        }
+        for _ in 0..2_000 {
+            let p = Point::new(rng.range(-2500.0, 2500.0), rng.range(-2500.0, 2500.0));
+            let p = if rng.next() < 0.7 {
+                let edge = rng.below(graph.edge_slots as usize);
+                match graph.label_point(edge) {
+                    Some(at) => {
+                        Point::new(at.x + rng.range(-70.0, 70.0), at.y + rng.range(-15.0, 15.0))
+                    }
+                    None => p,
+                }
+            } else {
+                p
+            };
+            let scan = measured.iter().copied().rev().find(|&e| {
+                let (Some(at), Some((w, h))) = (graph.label_point(e), graph.pills[e as usize])
+                else {
+                    return false;
+                };
+                (p.x - at.x).abs() <= w && (p.y - at.y).abs() <= h
+            });
+            let near = graph.hit_at(p, 1.0, Level::Near, false);
+            match scan {
+                Some(e) => assert_eq!(near, Some(Target::Label(e)), "at {p:?}"),
+                None => assert!(!matches!(near, Some(Target::Label(_))), "at {p:?}"),
+            }
+            assert!(!matches!(
+                graph.hit_at(p, 1.0, Level::Middle, false),
+                Some(Target::Label(_))
+            ));
+        }
+        // An edge removed takes its label's measure along; a new edge in its slot is unmeasured.
+        let edge = measured[0];
+        graph.remove_edges(&[edge]).unwrap();
+        assert_eq!(graph.pills[edge as usize], None);
+    }
+
+    #[test]
+    fn a_label_measured_with_a_size_that_is_not_finite_and_positive_is_not_hit() {
+        // Verifies: ADR-0025
+        let mut rng = Lcg(11);
+        let mut graph = random_graph(&mut rng, 10, 10);
+        let edge = (0..graph.edge_slots)
+            .find(|&e| graph.label_point(e).is_some())
+            .unwrap();
+        let at = graph.label_point(edge).unwrap();
+        let hit = |graph: &mut Graph| graph.hit_at(at, 1.0, Level::Near, false);
+        assert_ne!(hit(&mut graph), Some(Target::Label(edge)), "unmeasured");
+        for (w, h) in [
+            (0.0, 11.0),
+            (-5.0, 11.0),
+            (f64::NAN, 11.0),
+            (20.0, f64::INFINITY),
+        ] {
+            graph.set_label_size(edge, w, h).unwrap();
+            assert_ne!(hit(&mut graph), Some(Target::Label(edge)), "{w} by {h}");
+        }
+        graph.set_label_size(edge, 20.0, 11.0).unwrap();
+        assert_eq!(hit(&mut graph), Some(Target::Label(edge)));
+        graph.remove_edges(&[edge]).unwrap();
+        assert_eq!(
+            graph.set_label_size(edge, 20.0, 11.0),
+            Err(SlotError::NoEdge { slot: edge })
+        );
+    }
+
+    #[test]
+    fn a_moved_label_keeps_its_parameter_and_offset_when_a_node_of_its_edge_moves() {
+        // Verifies: G-6
+        let mut rng = Lcg(4);
+        let mut graph = random_graph(&mut rng, 10, 10);
+        let edge = (0..graph.edge_slots)
+            .find(|&e| {
+                graph.label_point(e).is_some()
+                    && graph.edges[e as usize].source != graph.edges[e as usize].target
+            })
+            .unwrap();
+        let at = graph.label_point(edge).unwrap();
+        let placement = graph
+            .move_label(edge, Point::new(at.x + 15.0, at.y - 25.0))
+            .unwrap();
+        assert_eq!(graph.edges[edge as usize].label, Some(placement));
+        let source = graph.edges[edge as usize].source;
+        graph.translate(&[source], 120.0, 40.0).unwrap();
+        let moved = graph.label_point(edge).unwrap();
+        let expected = graph.paths[edge as usize].label_position(placement.t, placement.offset);
+        assert_eq!(moved, expected);
+        assert_eq!(
+            graph.move_label(5_000, at),
+            Err(SlotError::NoEdge { slot: 5_000 })
+        );
     }
 
     #[test]

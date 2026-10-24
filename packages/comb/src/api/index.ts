@@ -540,6 +540,10 @@ function deliveryOf(change: StoreChange, state: GraphState, bridge: Bridge): Gra
     case "edgeAdded":
     case "edgeUpdated":
       return edgeDeliveryOf(change, state);
+    case "labelMoved": {
+      const { t, offset } = state.edges[state.edgeSlots.get(change.edge)!]!.label!;
+      return { kind: change.kind, by: change.by, edge: change.edge, t, offset };
+    }
     case "nodeAdded": {
       const slot = state.slots.get(change.id)!;
       const { id, title, width, height } = state.nodes[slot]!;

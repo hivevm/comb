@@ -18,6 +18,7 @@ const WHEEL_STEP = 1.0015;
  *  nothing. */
 const CURSORS: Record<Hit["kind"], string> = {
   connector: "crosshair",
+  label: "grab",
   node: "grab",
   edge: "pointer",
   none: "",
@@ -28,6 +29,15 @@ type Drag =
   | { kind: "node"; slot: number; id: string; x: number; y: number; moved: boolean }
   /** A pan; one begun on an edge waits until the pointer has moved beyond `PAN_SLOP`. */
   | { kind: "pan"; x: number; y: number; waiting: boolean }
+  /** A drag of the label of the edge in slot `slot`, held `grab` world units off its point, and
+   *  where it last placed it (G-6). */
+  | {
+      kind: "label";
+      slot: number;
+      id: string;
+      grab: { x: number; y: number };
+      placed: { t: number; offset: number } | null;
+    }
   /** A connection from the connector `side` of the node in slot `slot` (ADR-0024). */
   | { kind: "connect"; slot: number; id: string; side: Side; x: number; y: number };
 
@@ -61,11 +71,8 @@ function startDrag(
   const { x, y } = event.global;
   const { nodes, edges } = store.getState();
   const hit = targetAt(store, bridge, x, y, connecting);
-  const from = hit.kind === "connector" ? nodes[hit.slot] : undefined;
-  if (hit.kind === "connector" && from) {
-    store.getState().connect(connectionAt(store, bridge, hit.slot, hit.side, x, y, hit));
-    return { kind: "connect", slot: hit.slot, id: from.id, side: hit.side, x, y };
-  }
+  const begun = connectionFrom(store, bridge, hit, x, y) ?? labelDragFrom(store, bridge, hit, x, y);
+  if (begun) return begun;
   const node = hit.kind === "node" ? nodes[hit.slot] : undefined;
   if (hit.kind === "node" && node) {
     store.getState().select({ kind: "node", id: node.id });
@@ -80,7 +87,45 @@ function startDrag(
   return { kind: "pan", x, y, waiting: false };
 }
 
+/** A connection begun on the connector `hit` names, at the screen point `(x, y)`. */
+function connectionFrom(
+  store: GraphStore,
+  bridge: Bridge,
+  hit: Hit,
+  x: number,
+  y: number,
+): Drag | undefined {
+  const from = hit.kind === "connector" ? store.getState().nodes[hit.slot] : undefined;
+  if (hit.kind !== "connector" || !from) return undefined;
+  store.getState().connect(connectionAt(store, bridge, hit.slot, hit.side, x, y, hit));
+  return { kind: "connect", slot: hit.slot, id: from.id, side: hit.side, x, y };
+}
+
+/** A drag of the label `hit` names, held where the press at the screen point `(x, y)` met it;
+ *  the label's edge selected. */
+function labelDragFrom(
+  store: GraphStore,
+  bridge: Bridge,
+  hit: Hit,
+  x: number,
+  y: number,
+): Drag | undefined {
+  const edge = hit.kind === "label" ? store.getState().edges[hit.slot] : undefined;
+  const point = hit.kind === "label" ? bridge.labelPoint(hit.slot) : undefined;
+  if (hit.kind !== "label" || !edge || !point) return undefined;
+  store.getState().select({ kind: "edge", id: edge.id });
+  const at = toWorld(store.getState().viewport, x, y);
+  const grab = { x: at.x - point.x, y: at.y - point.y };
+  return { kind: "label", slot: hit.slot, id: edge.id, grab, placed: null };
+}
+
 function continueDrag(store: GraphStore, bridge: Bridge, drag: Drag, event: FederatedPointerEvent) {
+  if (drag.kind === "label") {
+    const at = toWorld(store.getState().viewport, event.global.x, event.global.y);
+    drag.placed = bridge.moveLabel(drag.slot, at.x - drag.grab.x, at.y - drag.grab.y);
+    store.getState().positionsMoved();
+    return;
+  }
   if (drag.kind === "connect") {
     const { x, y } = event.global;
     const hit = targetAt(store, bridge, x, y, true);
@@ -110,6 +155,7 @@ function continueDrag(store: GraphStore, bridge: Bridge, drag: Drag, event: Fede
 /** Ends `drag` where the pointer was released: a drag that moved its node records, once, where
  *  it left it (ADR-0023), on the canvas or outside it. */
 function endDrag(store: GraphStore, drag: Drag | null): void {
+  if (drag?.kind === "label") return endLabelDrag(store, drag);
   if (drag?.kind !== "node" || !drag.moved) return;
   if (store.getState().nodes[drag.slot]?.id === drag.id) store.getState().nodeMoved(drag.id);
 }
@@ -134,15 +180,27 @@ function hoverAt(
 ): void {
   const hit = targetAt(store, bridge, event.global.x, event.global.y, connecting);
   app.canvas.style.cursor = CURSORS[hit.kind];
-  const shown = connecting && (hit.kind === "connector" || hit.kind === "node") ? hit.slot : null;
-  store.getState().hover(shown);
+  // At the far level no connector is drawn, so none is shown, and hover writes nothing.
+  const far = levelAt(store.getState().viewport.scale) === "far";
+  const over = hit.kind === "connector" || hit.kind === "node";
+  store.getState().hover(connecting && over && !far ? hit.slot : null);
 }
 
 /** Whether the graph of `state` took the node of `drag` from under it: a load, or a removal of
  *  the node, which a node that took its slot does not make good. */
 function takenFrom(state: GraphState, drag: Drag | null): boolean {
-  if (drag?.kind !== "node" && drag?.kind !== "connect") return false;
-  return state.change?.kind === "loaded" || state.nodes[drag.slot]?.id !== drag.id;
+  if (!drag || drag.kind === "pan") return false;
+  const held = drag.kind === "label" ? state.edges[drag.slot] : state.nodes[drag.slot];
+  // A label the host cleared is taken from under its drag as its edge would be.
+  const cleared = drag.kind === "label" && !state.edges[drag.slot]?.label;
+  return state.change?.kind === "loaded" || held?.id !== drag.id || cleared;
+}
+
+/** Ends a drag of a label, which records, once, where it left the label, where it moved it. */
+function endLabelDrag(store: GraphStore, drag: Extract<Drag, { kind: "label" }>): void {
+  const edge = store.getState().edges[drag.slot];
+  if (drag.placed && edge?.id === drag.id && edge.label)
+    store.getState().labelMoved(drag.id, drag.placed.t, drag.placed.offset);
 }
 
 /** `handler`, doing nothing once the engine is lost. */
@@ -189,23 +247,26 @@ export function attachInteraction(
   );
   // The drag is over before its change is told, so that it stays over where a listener throws,
   // and also once the engine is lost, when nothing is told.
-  const tellEnd = untilLost((ended: Drag | null) => {
-    if (ended?.kind === "connect" && connect)
-      endConnection(store, store.getState().connection, connect);
-    else endDrag(store, ended);
+  // A connection the user released proposes its edge; one a later press ends, its release never
+  // having come, proposes none.
+  const tellEnd = untilLost((ended: Drag | null, released: boolean) => {
+    if (ended?.kind !== "connect") return endDrag(store, ended);
+    const connection = store.getState().connection;
+    if (released && connect) endConnection(store, connection, connect);
+    else store.getState().connect(null);
   });
-  const release = () => {
+  const release = (released = true) => {
     const ended = drag;
     drag = null;
-    tellEnd(ended);
+    tellEnd(ended, released);
   };
   app.stage.on(
     "pointerdown",
     untilLost((event: FederatedPointerEvent) => {
       // A drag whose release never came ends where the next press begins.
-      release();
+      release(false);
       drag = startDrag(store, bridge, event, !!connect);
-      if (drag?.kind === "node") app.canvas.style.cursor = "grabbing";
+      if (drag?.kind === "node" || drag?.kind === "label") app.canvas.style.cursor = "grabbing";
     }),
   );
   app.stage.on(
@@ -221,7 +282,7 @@ export function attachInteraction(
       hover(event);
     }
   });
-  app.stage.on("pointerupoutside", release);
+  app.stage.on("pointerupoutside", () => release());
   // A load, or a removal of the dragged node, takes the node from under a drag: the drag ends,
   // moves no node that took its slot, and tells nothing of a node the user never moved.
   // A connection from a node the graph no longer holds ends the same way.

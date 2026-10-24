@@ -57,8 +57,8 @@ export class ConnectorsLayer extends Graphics {
     origin: { x: number; y: number },
     far: boolean,
   ): void {
-    const { connection, hovered, nodes, positionsVersion, viewport } = state;
-    const from = [far, connection, hovered, nodes, positionsVersion, origin.x, origin.y];
+    const { viewport } = state;
+    const from = drawnFrom(state, origin, far);
     if (
       from.every((value, i) => Object.is(value, this.from[i])) &&
       viewport.scale === this.drawnScale
@@ -92,6 +92,24 @@ export class ConnectorsLayer extends Graphics {
       this.drawn.push({ node: node.id, side, compatible });
     }
   }
+}
+
+/** What the drawn connectors depend on: not where the pointer drags a connection to. */
+function drawnFrom(state: GraphView, origin: { x: number; y: number }, far: boolean): unknown[] {
+  const { connection, hovered, nodes, positionsVersion } = state;
+  const { source, side, over, compatible } = connection ?? {};
+  return [
+    far,
+    source,
+    side,
+    over,
+    compatible,
+    hovered,
+    nodes,
+    positionsVersion,
+    origin.x,
+    origin.y,
+  ];
 }
 
 /** The nodes whose connectors `state` shows, each with whether they are drawn compatible: while

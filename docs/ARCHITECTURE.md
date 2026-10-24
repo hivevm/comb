@@ -92,42 +92,46 @@ The functional core and its shell follow
   of the highest rank, else the edge in the highest slot within 4 screen pixels of its path as the
   stroke of the level flattens it, the parts of the path far from the point as chords; where the
   shell asks for connectors, at the near and middle level, a connector within 8 screen pixels, of
-  the node of the highest rank, comes before them all. `stroke` flattens the found edges within a
-  tolerance and strokes them into the triangles of one mesh, with each edge's colour, dash pattern,
-  and arrowhead, or as thin lines alone at the far level of detail; it decides the stroke of each
-  level. A part of a path whose control points miss the query's rectangle, grown by the stroke's
-  width, is drawn as its chord, a segment that meets the grown rectangle with an end outside it is
-  split where it enters and leaves it, so that what the rectangle shows rounds by its distance from
-  the query's origin, and a path is subdivided at most 24 levels deep; the mesh of one query holds
-  at most the mesh budget, 2^22 vertices: each edge's floor, its chord or its arrowhead alone where
-  that is its full mesh, is reserved first, edges are meshed in full in slot order while each fits
-  beside the floors of those after it, and from the first that does not, every edge is drawn as its
-  floor and the mesh is coarsened; its vectors grow by `try_reserve`, so that memory running short
-  coarsens the mesh instead of trapping. It depends on no crate that reaches the browser. `graph`
-  keeps each edge's path and its bounds as of its last move, so that a query computes no bounds;
-  `graph::slot` is the one conversion of a count to slots, which the bridge uses too. Only what the
-  bridge uses is public; the rest is private to the crate, so that the `dead_code` lint finds what
-  only tests reach.
+  the node of the highest rank, comes before them all. At the near level a label whose pill, as the
+  labels layer measures and hands it over (`setLabelSize`), holds the point comes before a node;
+  `move_label` places a dragged label at the path parameter nearest a point and its distance along
+  the normal there. `stroke` flattens the found edges within a tolerance and strokes them into the
+  triangles of one mesh, with each edge's colour, dash pattern, and arrowhead, or as thin lines
+  alone at the far level of detail; it decides the stroke of each level. A part of a path whose
+  control points miss the query's rectangle, grown by the stroke's width, is drawn as its chord, a
+  segment that meets the grown rectangle with an end outside it is split where it enters and leaves
+  it, so that what the rectangle shows rounds by its distance from the query's origin, and a path is
+  subdivided at most 24 levels deep; the mesh of one query holds at most the mesh budget, 2^22
+  vertices: each edge's floor, its chord or its arrowhead alone where that is its full mesh, is
+  reserved first, edges are meshed in full in slot order while each fits beside the floors of those
+  after it, and from the first that does not, every edge is drawn as its floor and the mesh is
+  coarsened; its vectors grow by `try_reserve`, so that memory running short coarsens the mesh
+  instead of trapping. It depends on no crate that reaches the browser. `graph` keeps each edge's
+  path and its bounds as of its last move, so that a query computes no bounds; `graph::slot` is the
+  one conversion of a count to slots, which the bridge uses too. Only what the bridge uses is
+  public; the rest is private to the crate, so that the `dead_code` lint finds what only tests
+  reach.
 - **Bridge** — `crates/engine-wasm` holds every WebAssembly export: `loadGraph` checks graph data
   and resolves edge ends to slots, `addNode` checks one node as a load would and returns the slot
   the engine chose for it, `addEdge` checks one edge as a load would, refuses one from a node to
   itself, and adds it between the node slots `api` resolved, `updateEdge` checks a patch of an
   edge's colour, dash, arrowhead, and label as a load checks those fields and restyles and re-places
   the edge, `edgesAt` names the edges at given nodes without removing anything, `removeNodes`
-  removes nodes and the edges at them and returns those edges' slots,
-  `removeEdges` removes edges, `translate` moves nodes, `query` takes a rectangle, a level of
-  detail, the size of a screen pixel, and how far an edge label's pill reaches from its point, and
-  writes the found node slots, the edge-label slots and points (at the near level only), the found
-  edge slots, and the edge mesh into buffers the engine owns, the label points and the mesh's
-  positions relative to the query's origin, which `originX` and `originY` read
-  ([ADR-0010](adr/0010-bridge-data-format.md)), and returns the mesh's detail, complete or
-  coarsened, and refuses a pixel that is not a finite number above zero as malformed; `drawnEdges`
-  computes the ends of the found edges when inspection asks, as they lie then, and `hit` names what
-  a press at a point hits, a node or an edge by its slot or nothing, as one generated value; it
-  generates the type of every problem of graph data the methods of `Comb` throw, `GraphDataProblem`,
-  which `comb` exports, and keeps the refusals of `translate` and of the removals, a mistake of the
-  shell's, in types of their own. Its crate root holds the exports and their conversions; its module
-  `graph_data` reads and checks graph data, the one place that does
+  removes nodes and the edges at them and returns those edges' slots, `removeEdges` removes edges,
+  `translate` moves nodes, `query` takes a rectangle, a level of detail, the size of a screen pixel,
+  and how far an edge label's pill reaches from its point, and writes the found node slots, the
+  edge-label slots and points (at the near level only), the found edge slots, and the edge mesh into
+  buffers the engine owns, the label points and the mesh's positions relative to the query's origin,
+  which `originX` and `originY` read ([ADR-0010](adr/0010-bridge-data-format.md)), and returns the
+  mesh's detail, complete or coarsened, and refuses a pixel that is not a finite number above zero
+  as malformed; `drawnEdges` computes the ends of the found edges when inspection asks, as they lie
+  then, and `hit` names what a press at a point hits, a connector, a label, a node, or an edge by
+  its slot, or nothing, as one generated value; `setLabelSize` takes the measure of a label's pill,
+  `labelPoint` names where a label lies, and `moveLabel` places a dragged label and returns its path
+  parameter and offset; it generates the type of every problem of graph data the methods of `Comb`
+  throw, `GraphDataProblem`, which `comb` exports, and keeps the refusals of `translate` and of the
+  removals, a mistake of the shell's, in types of their own. Its crate root holds the exports and
+  their conversions; its module `graph_data` reads and checks graph data, the one place that does
   ([ADR-0026](adr/0026-the-shell-refuses-what-only-its-map-knows.md)); `packages/comb/src/bridge` is
   the one module that imports the WebAssembly package and reads those buffers through fresh
   typed-array views per read ([ADR-0010](adr/0010-bridge-data-format.md)).
@@ -146,11 +150,14 @@ The functional core and its shell follow
   yet, and proposes the edge to the veto on a release over one; `delete.ts` makes the canvas
   focusable and deletes the selection on Delete or Backspace, a node with the edges the engine names
   at it (`edgesAt`) before anything is removed, once `CombOptions.canDelete` returns `true`,
-  recording it as the user's. A drag that moved its node records `nodeMoved` once, when the pointer
-  is released on the canvas or outside it; a load ends a drag. The engine's `hit` says what the
-  pointer is on, at the level of detail of the scale; node views and edges take no events.
-  `viewport.ts` holds the viewport's arithmetic, the transform between world and screen included,
-  for interaction, the scene, `api`'s `fitView` and `setViewport`, and the testing entry.
+  recording it as the user's. A press on a label, at the near level, selects its edge and drags the
+  label, held where it was grabbed, which the engine places on every move; its release, or a later
+  press, records `labelMoved` once, and a load, a removal of its edge, or a label the host cleared
+  ends the drag. A drag that moved its node records `nodeMoved` once, when the pointer is released
+  on the canvas or outside it; a load ends a drag. The engine's `hit` says what the pointer is on,
+  at the level of detail of the scale; node views and edges take no events. `viewport.ts` holds the
+  viewport's arithmetic, the transform between world and screen included, for interaction, the
+  scene, `api`'s `fitView` and `setViewport`, and the testing entry.
 - **Render** (`packages/comb/src/render`) — the PixiJS scene (`scene.ts`): a `world` render group
   with the layers `EdgesContainer` (`edges.ts`), `NodeParticles` (`particles.ts`), `NodesContainer`
   (`nodes.ts`), `LabelsContainer` (`labels.ts`), and `ConnectorsLayer` (`connectors.ts`), with the
@@ -166,15 +173,15 @@ The functional core and its shell follow
   returns, edge labels in slot order; while the viewport stays within what it last queried, that
   rectangle within the viewport grown by twice the culling margin, at about its scale and the same
   level of detail, and the graph and the selection are unchanged, a render moves the world alone.
-  The world stands at the screen point of the last query's origin, the edges and labels at (0, 0) in
-  it, the nodes and particles at minus the origin, so that the GPU sees no far coordinate of edges,
-  labels, and node views. `EdgesContainer` (`render/edges.ts`) draws the edge mesh with a shader
-  that leaves out the gaps of dash patterns; on the Canvas 2D renderer a host application opts into
+  The world stands at the screen point of the last query's origin, the edges, labels, and connectors
+  at (0, 0) in it, drawn less the origin, the nodes and particles at minus the origin, so that the
+  GPU sees no far coordinate of edges, labels, and node views. `EdgesContainer` (`render/edges.ts`)
+  draws the edge mesh with a shader that leaves out the gaps of dash patterns; on the Canvas 2D
+  renderer a host application opts into
   ([ADR-0018](adr/0018-webgl2-or-an-opted-in-canvas-fallback.md)), which runs no shader, `EdgeFill`
   (`render/edges-canvas.ts`) takes its place, builds no mesh, and fills the same triangles into one
   `Graphics`, one fill per run of one colour, dash patterns solid. Not built yet: the node content
-  of [ADR-0013](adr/0013-node-content-model.md), and the connectors of G-3, a layer that joins the
-  scene with the change that builds it ([ADR-0027](adr/0027-nodes-bound-by-rank.md)).
+  of [ADR-0013](adr/0013-node-content-model.md).
 - **API** (`packages/comb/src/api`) — `api/index.ts` imports `pixi.js/unsafe-eval` before PixiJS, so
   that no PixiJS renderer on the page generates code with eval
   ([ADR-0020](adr/0020-pixijs-without-eval.md)); `createComb`, which takes the engine's WebAssembly
