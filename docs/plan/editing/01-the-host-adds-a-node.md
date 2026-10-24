@@ -6,7 +6,9 @@ The tracer bullet through every layer the editing spec touches. The host applica
 `addNode` with a node and sees it on the canvas at the given position, without a load, and its
 listener of `onChange` receives one `nodeAdded` with `by: "host"`; a `load` delivers `loaded`.
 Underneath: the engine appends a node slot, or takes a free one where there is one, with the
-free list of ADR-0022 (empty until removals exist), and adds the node to the node grid in place;
+free list of ADR-0022 (empty until removals exist), gives it the next rank so that it is drawn
+and hit above every other node, and adds the node to the node grid in place; queries return node
+slots by rank and the nodes layer and the particles bind in that order;
 the bridge crate checks the node as a load checks one and returns the slot; `api` reads the node
 once into primitives, refuses an identifier the store's map holds already as `duplicateNode` and
 a count past the limit of a load, and the store records the slot, the node, and the change it
@@ -17,6 +19,9 @@ made, from which `api` delivers `onChange`. The change types are exported from `
 - [ ] Given a loaded graph, when the host calls `addNode` with a node at (x, y), then the next
       frame draws it there, inspection names it, and a query in the engine finds it without the
       index being built again.
+- [ ] Given nodes overlapping where a node is added, when the next frame draws, then inspection
+      draws the added node above them and a press there selects it, also where the slot order
+      would put it below; a load still draws nodes in slot order.
 - [ ] Given a listener of `onChange`, when the host calls `addNode`, then the listener has
       received exactly one `{ kind: "nodeAdded", by: "host", node }` before the call returns, and
       when the host calls `load`, exactly one `{ kind: "loaded", by: "host" }`.
@@ -31,7 +36,7 @@ made, from which `api` delivers `onChange`. The change types are exported from `
 
 ## Read first
 
-- ADR-0022, ADR-0023 (proposed; they bind this work), ADR-0009, ADR-0010, ADR-0011, ADR-0021.
+- ADR-0022, ADR-0023 (proposed; they bind this work), ADR-0026, ADR-0010, ADR-0011, ADR-0021.
 - Glossary: slot, free slot, change, graph data.
 - `api/index.ts` (`loaderOf`, `updaterOf`), `api/snapshot.ts`, `store/index.ts`,
   `crates/engine/src/graph.rs` (`Graph::new`, `index`), `crates/engine/src/spatial.rs`

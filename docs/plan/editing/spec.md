@@ -106,20 +106,21 @@ makes before Comb makes it.
 - **Public interface (ADR-0023):** `onChange` with the changes `loaded`, `nodeAdded`,
   `nodeUpdated`, `nodeMoved`, `nodesRemoved`, `edgeAdded`, `edgeUpdated`, `edgesRemoved`, and
   `labelMoved`, each with `by`; the methods `addNode`, `removeNodes`, `addEdge`, `updateEdge`,
-  `removeEdges`, and `worldPointAt`; the options `canConnect` and `canDelete`, synchronous,
-  allowing only on `true`; the types of the sides and of the changes exported beside the existing
+  `removeEdges`, and `worldPointAt`; the options `canConnect`, synchronous, allowing a connection
+  only by returning the new edge's identifier, and `canDelete`, synchronous, allowing only on
+  `true`; the types of the sides and of the changes exported beside the existing
   ones. Each method changes all it names or nothing.
-- **Validation:** every new input is read once into primitives by `api` and checked by the
-  bridge crate as a load would check that node, edge, or field; the limits of a load hold for the
-  graph after each edit. Refusals that need the map from identifiers (unknown node or edge,
-  duplicate identifier, an edge to a missing node) are `api`'s, pending the maintainer's decision
-  on ADR-0009. New problem kinds (`unknownEdge`, a patch field of an edge Comb does not know) are
-  generated from the bridge crate.
+- **Validation:** every new input is read once into primitives by `api` and checked by the bridge
+  crate as a load would check that node, edge, or field; the limits of a load hold for the graph
+  after each edit. Refusals that need the map from identifiers (unknown node or edge, duplicate
+  identifier, an edge to a missing node) are `api`'s (ADR-0026). New problem kinds (`unknownEdge`, a
+  patch field of an edge Comb does not know) are generated from the bridge crate.
 - **Connectors (ADR-0024):** four per node, at the middle of each side; `EdgeData` gains
   `sourceSide` and `targetSide`, defaults `right` and `left`; the path's control points pull along
   each side's outward normal, which for right to left is today's path. A user's connection is
   made only to a connector of another node that the source does not already reach, after
-  `canConnect`; Comb names the new edge `edge-n`. Connectors are drawn for the node under the
+  `canConnect`, under the identifier it returns, checked as any edge's; without `canConnect` no
+  connection begins. Connectors are drawn for the node under the
   pointer and during a connection; the connection being dragged is a line in the overlay.
 - **Hit testing (ADR-0025):** one engine call returns the target on top at a point: a connector
   (8 screen pixels, near and middle level), an edge label (inside its pill, near level, by
@@ -131,8 +132,13 @@ makes before Comb makes it.
   normal there, so that the label sits where it was dropped; where the nearest point is an end of
   the path, the label sits on that end's normal. The store's label and `labelMoved` are updated
   once, at release, as a dragged node's position is reported once (`nodeMoved`).
-- **Self-edges:** `addEdge` refuses an edge from a node to itself, as the specification's
-  assumptions ask (ADR-0024); `load` keeps accepting one until the maintainer decides.
+- **Self-edges:** `addEdge` and a user's connection refuse an edge from a node to itself; `load`
+  keeps accepting one, so the specification's assumption that every edge joins two nodes is not
+  enforced for a load (ADR-0024).
+- **Draw order (ADR-0022):** every node has a rank in the engine, a load ranking by slot and an
+  added node taking the highest, so a new node is drawn on top even in a freed slot; queries
+  return node slots by rank, node views and particles bind in that order, and the hit test takes
+  the node of the highest rank.
 - **Delete:** the canvas becomes focusable and takes focus when pressed; Delete and Backspace
   delete the selection after `canDelete`, and the key's default action is prevented.
 - **Example:** the metric tree gains an HTML palette whose items the user drags onto the canvas,
@@ -158,7 +164,7 @@ makes before Comb makes it.
 
 - Undo and redo, copy and paste, and selecting more than one item.
 - Node content (G-10), its own spec under ADR-0013.
-- Moving a node from the host application, and bringing a node to the front.
+- Moving a node from the host application, and bringing an existing node to the front.
 - Reconnecting an edge by dragging its end; more than one connector per side; typed connectors.
 - A refusal the host application gives later than the gesture.
 - Edge routing around nodes.
@@ -167,26 +173,17 @@ makes before Comb makes it.
 
 Binding: ADR-0002 (every criterion met is cited by a test), ADR-0008 (the benchmark of ticket 11),
 ADR-0007 (every ticket here touches a protected part, so every ticket is worked with the
-maintainer), ADR-0009, ADR-0010, ADR-0011, ADR-0012, ADR-0018 (the edges layer's fallback draws
+maintainer), ADR-0010, ADR-0011, ADR-0012, ADR-0018 (the edges layer's fallback draws
 the new paths unchanged), ADR-0021 (the new methods that need the engine throw
 `EngineLostError`), and ADR-0013 as proposed only where node content is concerned, which this
 spec leaves out.
 
-New, proposed before implementation starts: ADR-0022 (the engine edits its graph in place),
-ADR-0023 (the editing interface: typed changes, vetoes, new methods), ADR-0024 (one connector per
-side), ADR-0025 (the engine answers every hit test).
+New, proposed before implementation starts: ADR-0022 (the engine edits its graph in place and
+draws a node added last on top), ADR-0023 (the editing interface: typed changes, vetoes, new
+methods), ADR-0024 (one connector per side), ADR-0025 (the engine answers every hit test), and
+ADR-0026, which supersedes ADR-0009 and makes `api` refuse what only the store's map of
+identifiers knows.
 
-Before the first ticket starts, the maintainer decides:
-
-- the conflict ADR-0023 records with the letter of ADR-0009 (*What the bridge cannot see*), which
-  names only `updateNode` among the refusals `api` makes against the store's map;
-- whether `onChange` reports the host application's own calls with `by: "host"` (ADR-0023, as
-  ADR-0011's one sequence of events reads), or the user's edits alone;
-- how a user's edge is named: by Comb as the first free `edge-n` (ADR-0023), or by the host
-  application, for example through `canConnect` returning the identifier;
-- what a duplicate edge is for the user's connection: the same source and target whatever the
-  sides (ADR-0024), or the same source, target, and sides;
-- whether `load` refuses an edge from a node to itself, as the specification's assumption that
-  every edge joins two nodes asks, and as `addEdge` does (ADR-0024); today it accepts one;
-- that a node added into a freed slot is drawn beneath the nodes in higher slots (ADR-0022), or
-  that a new node has to come to the front, which needs a draw order apart from slots.
+Before the first ticket starts, the maintainer decides the conflict ADR-0022 records with the
+letter of ADR-0012 (*Culling*: display objects bound "in slot order"), which ranked node views
+and particles no longer follow.

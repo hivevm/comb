@@ -22,8 +22,9 @@ selection of a removed item is cleared.
 - [ ] Given node `a` with three edges, when the host removes `a`, then the canvas draws neither
       `a` nor its edges, and `onChange` delivered one `nodesRemoved` naming `a` and the three
       edges (G-4).
-- [ ] Given a removed node's slot, when the host adds a node, then it takes that slot, and the
-      bridge refuses a free slot wherever an export names one.
+- [ ] Given a removed node's slot, when the host adds a node, then it takes that slot and is drawn
+      and hit above the nodes in higher slots, and the bridge refuses a free slot wherever an
+      export names one.
 - [ ] Given an unknown identifier among several known ones, when the host removes them, then a
       `GraphDataError` of kind `unknownNode` or `unknownEdge` is thrown and nothing is removed
       (Q-7).
@@ -32,7 +33,7 @@ selection of a removed item is cleared.
 
 ## Read first
 
-- ADR-0022, ADR-0023, ADR-0009, ADR-0010 (*Slots*), ADR-0012 (*Culling*, *Hit testing*).
+- ADR-0022, ADR-0023, ADR-0026, ADR-0010 (*Slots*), ADR-0012 (*Culling*, *Hit testing*).
 - Glossary: slot, free slot, change, selection.
 - `crates/engine/src/graph.rs` (`link`, `translate`, the tests against a scan),
   `crates/engine/src/spatial.rs`, `store/index.ts`, `api/index.ts` (`boundsOf` reads every slot).

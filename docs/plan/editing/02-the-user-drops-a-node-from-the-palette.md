@@ -23,7 +23,7 @@ drag and drop.
 
 ## Read first
 
-- ADR-0023, ADR-0009 (*Direction*: the example imports only the package's entries).
+- ADR-0023, ADR-0026 (*Direction*: the example imports only the package's entries).
 - Glossary: palette, host application, viewport.
 - `interaction/viewport.ts` (`toWorld`), `api/index.ts` (`setViewport`), the example's
   `src/main.ts` and `src/style.css`.

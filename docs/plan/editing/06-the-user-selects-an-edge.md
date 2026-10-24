@@ -11,7 +11,8 @@ dash, arrowhead, and label and changes them through `updateEdge`, as it changes 
 ## Acceptance criteria
 
 - [ ] Given random graphs and points, when the engine hits at each level, then it returns the
-      node or edge a brute-force scan finds, a node before an edge, the highest slot on top, and
+      node or edge a brute-force scan finds, a node before an edge, the node of the highest rank
+      and the edge of the highest slot on top, and
       an edge only within 4 screen pixels of its flattened path.
 - [ ] Given an edge between two nodes, when the user clicks on its path, then the edge is
       selected and reported, at the near, middle, and far level (G-5).
@@ -24,7 +25,7 @@ dash, arrowhead, and label and changes them through `updateEdge`, as it changes 
 
 ## Read first
 
-- ADR-0025, ADR-0012 (*Hit testing*, *Layers*), ADR-0010 (*Structured data*), ADR-0009.
+- ADR-0025, ADR-0012 (*Hit testing*, *Layers*), ADR-0010 (*Structured data*), ADR-0026.
 - Glossary: selection, sidebar, level of detail.
 - `crates/engine/src/graph.rs` (`hit`), `crates/engine/src/stroke.rs` (the flattening),
   `interaction/index.ts`, the example's `src/main.ts`, `e2e/drag.spec.ts`.
