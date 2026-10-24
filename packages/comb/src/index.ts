@@ -22,5 +22,6 @@ export type {
   GraphData,
   NodeData,
   Selection,
+  Side,
   Viewport,
 } from "./store";

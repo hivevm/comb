@@ -32,6 +32,8 @@ const edge = (id: string, source: string, target: string) => ({
   target,
   color: 0x22a55b,
   arrow: "none" as const,
+  sourceSide: "right" as const,
+  targetSide: "left" as const,
 });
 // The bridge takes only what `api/snapshot.ts` produces (ADR-0026); its own tests stand in for
 // that module and hand it plain data of their own.
@@ -39,7 +41,8 @@ const graph = (nodes: GraphBatch["nodes"], edges: GraphBatch["edges"] = []) =>
   ({ nodes, edges }) as GraphSnapshot;
 const plain = (patch: NodePatch) => patch as PlainPatch;
 const added = (fields: object) => fields as NodeSnapshot;
-const edgeOf = (fields: object) => ({ color: 0, arrow: "end", ...fields }) as EdgeSnapshot;
+const edgeOf = (fields: object) =>
+  ({ color: 0, arrow: "end", sourceSide: "right", targetSide: "left", ...fields }) as EdgeSnapshot;
 const plainEdge = (patch: object) => patch as PlainEdgePatch;
 /** The slot of the node a press at `(x, y)` hits, at a screen pixel of one world unit. */
 const nodeAt = (x: number, y: number) => {

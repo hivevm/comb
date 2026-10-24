@@ -70,41 +70,42 @@ The functional core and its shell follow
 [ADR-0026](adr/0026-the-shell-refuses-what-only-its-map-knows.md).
 
 - **Engine** (`crates/engine`) — pure geometry: `geometry` holds edge paths as cubic Bézier curves
-  from the right middle of one node to the left middle of another, their exact bounds, the point and
-  normal at a path parameter, and edge-label placement; `positions` the positions buffer and its
-  moves. `graph` keeps the loaded graph, node positions and sizes per slot and edges per slot, a
-  rank per node slot, a list of the edges at each node slot, a list each of free node and edge
-  slots, and a spatial index (`spatial`, a uniform grid each for nodes and edges, with an overflow
-  list for items that cover many cells) that loads, additions, and moves keep current and that is
-  built again once many items have moved or been added beyond its extent, or the nodes in use pass
-  twice the count it was built for ([ADR-0022](adr/0022-the-engine-edits-its-graph-in-place.md));
-  `add_node` takes the free slot freed last, or a new one after the highest, and the next rank, and
-  puts the node into the grid in place; a load ranks node `i` as `i`; `add_edge` takes the edge slot
-  freed last, or a new one, and puts the edge into the lists of its ends and the grid in place, and
-  `update_edge` restyles and re-places one; `remove_nodes` frees the node
-  slots and those of the edges at them, `remove_edges` edge slots, and both take the items out of
-  the grids and the lists at the nodes; a free slot holds nothing, no query or hit returns it, a
-  rebuild covers only the slots in use, and a call that names one refuses it as a slot beyond the
-  graph. Its query returns the slots a rectangle meets, node slots in ascending rank, and `hit_at`
-  what a press at a point hits ([ADR-0025](adr/0025-the-engine-answers-every-hit-test.md)): the
-  node drawn on top there, the one of the highest rank, else the edge in the highest slot within 4
-  screen pixels of its path as the stroke of the level flattens it, the parts of the path far from
-  the point as chords. `stroke` flattens the found edges
-  within a tolerance and strokes them into the triangles of one mesh, with each edge's colour, dash
-  pattern, and arrowhead, or as thin lines alone at the far level of detail; it decides the stroke
-  of each level. A part of a path whose control points miss the query's rectangle, grown by the
-  stroke's width, is drawn as its chord, a segment that meets the grown rectangle with an end
-  outside it is split where it enters and leaves it, so that what the rectangle shows rounds by its
-  distance from the query's origin, and a path is subdivided at most 24 levels deep; the mesh of one
-  query holds at most the mesh budget, 2^22 vertices: each edge's floor, its chord or its arrowhead
-  alone where that is its full mesh, is reserved first, edges are meshed in full in slot order while
-  each fits beside the floors of those after it, and from the first that does not, every edge is
-  drawn as its floor and the mesh is coarsened; its vectors grow by `try_reserve`, so that memory
-  running short coarsens the mesh instead of trapping. It depends on no crate that reaches the
-  browser. `graph` keeps each edge's path and its bounds as of its last move, so that a query
-  computes no bounds; `graph::slot` is the one conversion of a count to slots, which the bridge uses
-  too. Only what the bridge uses is public; the rest is private to the crate, so that the
-  `dead_code` lint finds what only tests reach.
+  from the connector of a side of one node, the middle of its `top`, `right`, `bottom`, or `left`,
+  to that of a side of another, their control points pulled out along each side's outward normal
+  ([ADR-0024](adr/0024-one-connector-per-side.md)), their exact bounds, the point and normal at a
+  path parameter, and edge-label placement; `positions` the positions buffer and its moves. `graph`
+  keeps the loaded graph, node positions and sizes per slot and edges per slot, a rank per node
+  slot, a list of the edges at each node slot, a list each of free node and edge slots, and a
+  spatial index (`spatial`, a uniform grid each for nodes and edges, with an overflow list for items
+  that cover many cells) that loads, additions, and moves keep current and that is built again once
+  many items have moved or been added beyond its extent, or the nodes in use pass twice the count it
+  was built for ([ADR-0022](adr/0022-the-engine-edits-its-graph-in-place.md)); `add_node` takes the
+  free slot freed last, or a new one after the highest, and the next rank, and puts the node into
+  the grid in place; a load ranks node `i` as `i`; `add_edge` takes the edge slot freed last, or a
+  new one, and puts the edge into the lists of its ends and the grid in place, and `update_edge`
+  restyles and re-places one; `remove_nodes` frees the node slots and those of the edges at them,
+  `remove_edges` edge slots, and both take the items out of the grids and the lists at the nodes; a
+  free slot holds nothing, no query or hit returns it, a rebuild covers only the slots in use, and a
+  call that names one refuses it as a slot beyond the graph. Its query returns the slots a rectangle
+  meets, node slots in ascending rank, and `hit_at` what a press at a point hits
+  ([ADR-0025](adr/0025-the-engine-answers-every-hit-test.md)): the node drawn on top there, the one
+  of the highest rank, else the edge in the highest slot within 4 screen pixels of its path as the
+  stroke of the level flattens it, the parts of the path far from the point as chords. `stroke`
+  flattens the found edges within a tolerance and strokes them into the triangles of one mesh, with
+  each edge's colour, dash pattern, and arrowhead, or as thin lines alone at the far level of
+  detail; it decides the stroke of each level. A part of a path whose control points miss the
+  query's rectangle, grown by the stroke's width, is drawn as its chord, a segment that meets the
+  grown rectangle with an end outside it is split where it enters and leaves it, so that what the
+  rectangle shows rounds by its distance from the query's origin, and a path is subdivided at most
+  24 levels deep; the mesh of one query holds at most the mesh budget, 2^22 vertices: each edge's
+  floor, its chord or its arrowhead alone where that is its full mesh, is reserved first, edges are
+  meshed in full in slot order while each fits beside the floors of those after it, and from the
+  first that does not, every edge is drawn as its floor and the mesh is coarsened; its vectors grow
+  by `try_reserve`, so that memory running short coarsens the mesh instead of trapping. It depends
+  on no crate that reaches the browser. `graph` keeps each edge's path and its bounds as of its last
+  move, so that a query computes no bounds; `graph::slot` is the one conversion of a count to slots,
+  which the bridge uses too. Only what the bridge uses is public; the rest is private to the crate,
+  so that the `dead_code` lint finds what only tests reach.
 - **Bridge** — `crates/engine-wasm` holds every WebAssembly export: `loadGraph` checks graph data
   and resolves edge ends to slots, `addNode` checks one node as a load would and returns the slot
   the engine chose for it, `addEdge` checks one edge as a load would, refuses one from a node to

@@ -6,7 +6,7 @@
 //! those slots, the points of the labels, and the mesh of the edges into buffers the caller reads;
 //! the ends of the edges it found are computed only when inspection asks for them.
 
-use crate::geometry::{EdgePath, Point, Rect};
+use crate::geometry::{EdgePath, Point, Rect, Sides};
 use crate::positions::{self, PositionError};
 use crate::spatial::Grid;
 use crate::stroke::{EdgeStyle, MESH_BUDGET, Mesh, Stroke, near_path};
@@ -17,6 +17,8 @@ use crate::stroke::{EdgeStyle, MESH_BUDGET, Mesh, Stroke, near_path};
 pub struct EdgeSpec {
     pub source: u32,
     pub target: u32,
+    /// The sides it leaves its source by and enters its target by (ADR-0024).
+    pub sides: Sides,
     pub label: Option<LabelPlacement>,
     pub style: EdgeStyle,
 }
@@ -405,13 +407,14 @@ impl Graph {
         self.holds_edge(slot).then(|| self.edges[slot as usize])
     }
 
-    /// Gives the edge in `slot` the label placement `label` and the style `style`, and places it
-    /// again in place (ADR-0022). A slot that holds no edge refuses the change.
+    /// Gives the edge in `slot` the label placement `label`, the style `style`, and the sides
+    /// `sides`, and places it again in place (ADR-0022, ADR-0024). A slot that holds no edge refuses the change.
     pub fn update_edge(
         &mut self,
         slot: u32,
         label: Option<LabelPlacement>,
         style: EdgeStyle,
+        sides: Sides,
     ) -> Result<(), SlotError> {
         if !self.holds_edge(slot) {
             return Err(SlotError::NoEdge { slot });
@@ -419,6 +422,7 @@ impl Graph {
         let spec = &mut self.edges[slot as usize];
         spec.label = label;
         spec.style = style;
+        spec.sides = sides;
         self.place_edge(slot);
         if stale(self.edge_grid.beyond_extent(), self.edges_in_use() as usize) {
             self.index();
@@ -520,6 +524,7 @@ impl Graph {
         let path = EdgePath::between(
             &self.node_bounds(spec.source),
             &self.node_bounds(spec.target),
+            spec.sides,
         );
         let label = spec
             .label
@@ -719,6 +724,19 @@ mod budget;
 mod tests {
     use super::*;
 
+    /// Sides of an edge, mostly the default, now and then any of the sixteen pairs.
+    pub(super) fn random_sides(rng: &mut Lcg) -> Sides {
+        use crate::geometry::Side;
+        if rng.next() < 0.5 {
+            return Sides::default();
+        }
+        let sides = [Side::Top, Side::Right, Side::Bottom, Side::Left];
+        Sides {
+            source: sides[rng.below(4) as usize],
+            target: sides[rng.below(4) as usize],
+        }
+    }
+
     /// A small deterministic generator, so that a failure repeats.
     pub(super) struct Lcg(pub(super) u64);
 
@@ -752,6 +770,7 @@ mod tests {
         }
         let specs = (0..edges)
             .map(|_| EdgeSpec {
+                sides: random_sides(rng),
                 source: rng.below(nodes),
                 target: rng.below(nodes),
                 label: (rng.next() < 0.5).then(|| LabelPlacement {
@@ -780,6 +799,7 @@ mod tests {
                 EdgePath::between(
                     &graph.node_bounds(spec.source),
                     &graph.node_bounds(spec.target),
+                    spec.sides,
                 )
                 .bounds()
                 .meets(rect)
@@ -793,6 +813,7 @@ mod tests {
                     let path = EdgePath::between(
                         &graph.node_bounds(spec.source),
                         &graph.node_bounds(spec.target),
+                        spec.sides,
                     );
                     label_rect.contains(path.label_position(label.t, label.offset))
                 })
@@ -849,6 +870,7 @@ mod tests {
             let fresh = EdgePath::between(
                 &graph.node_bounds(spec.source),
                 &graph.node_bounds(spec.target),
+                spec.sides,
             )
             .bounds();
             assert_eq!(graph.bounds[e as usize], fresh, "edge {e}");
@@ -870,6 +892,7 @@ mod tests {
             offset: 0.0,
         };
         let edges = vec![EdgeSpec {
+            sides: Sides::default(),
             source: 0,
             target: 1,
             label: Some(label),
@@ -951,6 +974,7 @@ mod tests {
             offset: 0.0,
         };
         let edges = vec![EdgeSpec {
+            sides: Sides::default(),
             source: 0,
             target: 1,
             label: Some(label),
@@ -1007,6 +1031,7 @@ mod tests {
     #[test]
     fn the_ends_of_unknown_slots_keep_their_place() {
         let edges = vec![EdgeSpec {
+            sides: Sides::default(),
             source: 0,
             target: 1,
             label: None,
@@ -1031,6 +1056,7 @@ mod tests {
             offset: 0.0,
         };
         let edges = vec![EdgeSpec {
+            sides: Sides::default(),
             source: 0,
             target: 1,
             label: Some(label),
@@ -1071,12 +1097,14 @@ mod tests {
             vec![100.0, 50.0, 100.0, 50.0, 100.0, 50.0],
             vec![
                 EdgeSpec {
+                    sides: Sides::default(),
                     source: 0,
                     target: 1,
                     label: None,
                     style: EdgeStyle::unstyled(),
                 },
                 EdgeSpec {
+                    sides: Sides::default(),
                     source: 1,
                     target: 2,
                     label: None,
@@ -1183,6 +1211,7 @@ mod tests {
             offset: 0.0,
         };
         let edges = vec![EdgeSpec {
+            sides: Sides::default(),
             source: 0,
             target: 1,
             label: Some(label),
@@ -1223,6 +1252,7 @@ mod tests {
     #[test]
     fn an_edge_to_a_missing_slot_is_refused() {
         let edges = vec![EdgeSpec {
+            sides: Sides::default(),
             source: 0,
             target: 1,
             label: None,
@@ -1335,6 +1365,7 @@ mod tests {
         let pick = |rng: &mut Lcg| drawn.0[rng.below(drawn.0.len()) as usize];
         let source = pick(rng);
         EdgeSpec {
+            sides: random_sides(rng),
             source,
             target: if rng.next() < 0.1 { source } else { pick(rng) },
             label: (rng.next() < 0.5).then(|| LabelPlacement {
@@ -1392,7 +1423,9 @@ mod tests {
                             graph.remove_edges(&[edge]).unwrap();
                         } else {
                             let spec = random_edge(&mut rng, &drawn);
-                            graph.update_edge(edge, spec.label, spec.style).unwrap();
+                            graph
+                                .update_edge(edge, spec.label, spec.style, spec.sides)
+                                .unwrap();
                         }
                     }
                 } else {
@@ -1449,6 +1482,7 @@ mod tests {
         let mut graph = plane(50_000);
         let edges = (0..1_000)
             .map(|i| EdgeSpec {
+                sides: Sides::default(),
                 source: i,
                 target: i + 1,
                 label: None,
@@ -1472,6 +1506,7 @@ mod tests {
         let plane = plane(2_000);
         let specs = (0..edges)
             .map(|i| EdgeSpec {
+                sides: Sides::default(),
                 source: 2 * i,
                 target: 2 * i + 1,
                 label: None,
@@ -1490,6 +1525,7 @@ mod tests {
         let edges = (1..count)
             .flat_map(|i| [(0, i), (i, 0)])
             .map(|(source, target)| EdgeSpec {
+                sides: Sides::default(),
                 source,
                 target,
                 label: None,
@@ -1515,6 +1551,7 @@ mod tests {
         let mut graph = paired(4);
         graph.remove_nodes(&[7]).unwrap();
         let spec = |source, target| EdgeSpec {
+            sides: Sides::default(),
             source,
             target,
             label: None,
@@ -1531,7 +1568,7 @@ mod tests {
         );
         assert_eq!(graph.edge_slots, edges);
         assert_eq!(
-            graph.update_edge(3, None, EdgeStyle::unstyled()),
+            graph.update_edge(3, None, EdgeStyle::unstyled(), Sides::default()),
             Err(SlotError::NoEdge { slot: 3 })
         );
         assert_eq!(graph.edge(3), None);
@@ -1548,6 +1585,7 @@ mod tests {
         for i in 0..100 {
             graph
                 .add_edge(EdgeSpec {
+                    sides: Sides::default(),
                     source: 2 * i + 1,
                     target: 2 * i + 2,
                     label: None,
@@ -1558,6 +1596,7 @@ mod tests {
         assert_eq!(graph.builds, builds);
         graph
             .add_edge(EdgeSpec {
+                sides: Sides::default(),
                 source: 0,
                 target: 3,
                 label: None,

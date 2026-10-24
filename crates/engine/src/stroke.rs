@@ -727,6 +727,7 @@ pub(crate) fn flattened(path: &EdgePath, stroke: &Stroke, rect: &Rect) -> Vec<Po
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::Sides;
 
     /// A rectangle that holds every point: nothing is drawn as chords for lying outside it.
     const EVERYWHERE: Rect = Rect::new(
@@ -767,13 +768,13 @@ mod tests {
     fn paths() -> Vec<EdgePath> {
         let node = |x, y| Rect::of_node(x, y, 220.0, 64.0);
         vec![
-            EdgePath::between(&node(0.0, 0.0), &node(300.0, 110.0)),
-            EdgePath::between(&node(0.0, 0.0), &node(300.0, -330.0)),
-            EdgePath::between(&node(600.0, 0.0), &node(0.0, 500.0)),
-            EdgePath::between(&node(0.0, 0.0), &node(4000.0, 2000.0)),
+            EdgePath::between(&node(0.0, 0.0), &node(300.0, 110.0), Sides::default()),
+            EdgePath::between(&node(0.0, 0.0), &node(300.0, -330.0), Sides::default()),
+            EdgePath::between(&node(600.0, 0.0), &node(0.0, 500.0), Sides::default()),
+            EdgePath::between(&node(0.0, 0.0), &node(4000.0, 2000.0), Sides::default()),
             // Backwards and level: the control points pull out beyond both ends of the chord.
-            EdgePath::between(&node(500.0, 0.0), &node(0.0, 0.0)),
-            EdgePath::between(&node(500.0, 0.0), &node(0.0, 0.5)),
+            EdgePath::between(&node(500.0, 0.0), &node(0.0, 0.0), Sides::default()),
+            EdgePath::between(&node(500.0, 0.0), &node(0.0, 0.5), Sides::default()),
         ]
     }
 

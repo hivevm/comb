@@ -12,6 +12,9 @@ export interface NodeData {
   height: number;
 }
 
+/** A side of a node, at whose middle its connector sits (ADR-0024). */
+export type Side = "top" | "right" | "bottom" | "left";
+
 /** An edge label: placed by its path parameter `t` and its label offset in pixels (G-6). */
 export interface EdgeLabelData {
   text: string;
@@ -27,6 +30,10 @@ export interface EdgeData {
   id: string;
   source: string;
   target: string;
+  /** The side of its source it leaves by, `right` where left out (ADR-0024). */
+  sourceSide?: Side;
+  /** The side of its target it enters by, `left` where left out. */
+  targetSide?: Side;
   color?: number;
   dash?: readonly [number, number];
   arrow?: "end" | "none";
@@ -46,11 +53,13 @@ export interface Viewport {
   scale: number;
 }
 
-/** What `updateEdge` may change of an edge: its colour, dash pattern, arrowhead, or label, a dash
- *  and a label cleared with `null`. */
+/** What `updateEdge` may change of an edge: its colour, dash pattern, arrowhead, label, or sides,
+ *  a dash and a label cleared with `null`. */
 export interface EdgePatch {
   color?: number;
   arrow?: "end" | "none";
+  sourceSide?: Side;
+  targetSide?: Side;
   dash?: readonly [number, number] | null;
   label?: EdgeLabelData | null;
 }

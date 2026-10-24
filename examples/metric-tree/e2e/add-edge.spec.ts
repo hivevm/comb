@@ -56,7 +56,11 @@ test("addEdge draws the edge with its colour, dash, and label, and tells edgeAdd
   };
   await page.evaluate((edge) => window.comb.addEdge(edge), edge);
   expect(await told(page)).toEqual([
-    { kind: "edgeAdded", by: "host", edge: { ...edge, arrow: "end" } },
+    {
+      kind: "edgeAdded",
+      by: "host",
+      edge: { ...edge, arrow: "end", sourceSide: "right", targetSide: "left" },
+    },
   ]);
   const drawn = await page.evaluate(async () => {
     await window.comb.whenRendered();
@@ -330,3 +334,80 @@ test("a listener that writes into a delivered change reaches nothing Comb keeps"
   });
   expect([first, second]).toEqual([["one"], ["two"]]);
 });
+
+test("updateEdge moves an edge's end to another side, and the next frame draws it entering there", async ({
+  page,
+}) => {
+  // Verifies: ADR-0024, ADR-0023
+  await open(page);
+  // b below and to the right of a, so that its top and left connectors differ.
+  await loaded(page, { nodes: [node("a"), node("b", 600, 300)], edges: [] });
+  await page.evaluate(() => window.comb.addEdge({ id: "a-b", source: "a", target: "b" }));
+  const ends = async () =>
+    page.evaluate(async () => {
+      await window.comb.whenRendered();
+      return window.inspect().edges.map(({ source, target }) => ({ source, target }));
+    });
+  expect(await ends()).toEqual([{ source: { x: 220, y: 32 }, target: { x: 600, y: 332 } }]);
+  await page.evaluate(() =>
+    window.comb.updateEdge("a-b", { sourceSide: "bottom", targetSide: "top" }),
+  );
+  expect(await ends()).toEqual([{ source: { x: 110, y: 64 }, target: { x: 710, y: 300 } }]);
+  expect((await told(page)).slice(1)).toEqual([
+    {
+      kind: "edgeUpdated",
+      by: "host",
+      id: "a-b",
+      patch: { sourceSide: "bottom", targetSide: "top" },
+    },
+  ]);
+});
+
+for (const [name, value] of [
+  ["a side of middle", "middle"],
+  ["a side that is a number", 1],
+] as const) {
+  test(`load, addEdge, and updateEdge refuse ${name} as invalidField`, async ({ page }) => {
+    // Verifies: Q-7, ADR-0024
+    await open(page);
+    await loaded(page);
+    const problems = await page.evaluate((value) => {
+      const problem = (call: () => void) => {
+        try {
+          call();
+          return null;
+        } catch (error) {
+          return (error as Error & { problem: unknown }).problem;
+        }
+      };
+      const nodes = [
+        { id: "a", title: "a", x: 0, y: 0, width: 220, height: 64 },
+        { id: "b", title: "b", x: 600, y: 0, width: 220, height: 64 },
+      ];
+      const edge = { id: "x", source: "a", target: "b" };
+      return [
+        problem(() => window.comb.addEdge({ ...edge, targetSide: value } as never)),
+        problem(() =>
+          window.comb.load({ nodes, edges: [{ ...edge, sourceSide: value } as never] }),
+        ),
+        problem(() => {
+          window.comb.addEdge(edge);
+          window.comb.updateEdge("x", { sourceSide: value } as never);
+        }),
+      ];
+    }, value);
+    const expected = (index: number, field: string) => ({
+      kind: "invalidField",
+      list: "edges",
+      index,
+      id: "x",
+      field,
+      expected: '"top", "right", "bottom", or "left"',
+    });
+    expect(problems).toEqual([
+      expected(0, "targetSide"),
+      expected(0, "sourceSide"),
+      expected(0, "sourceSide"),
+    ]);
+  });
+}
