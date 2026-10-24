@@ -21,7 +21,7 @@ and a few pixels wide nearer, so it can only be hit within a tolerance. An edge 
 whose width follows its text, which the shell measures with its `BitmapText` font and the engine
 cannot; the query receives only the widest pill's reach, one number for all labels (ADR-0010).
 
-ADR-0009 keeps geometry out of the shell, and the engine's spatial index already holds the nodes,
+ADR-0026 keeps geometry out of the shell, and the engine's spatial index already holds the nodes,
 the edges, and the label points.
 
 ## Decision
@@ -56,7 +56,7 @@ one item; hitting an edge's arrowhead apart from its path.
 - **The shell hit-tests what it drew** — PixiJS's events on the bound views, or their bounds, know
   every label's pill, but node views take no events (ADR-0012) and particles have none at all;
   the order between layers would be the shell's, and the distance to a curve geometry the shell
-  does not hold (ADR-0009).
+  does not hold (ADR-0026).
 - **A label hit by the widest pill's reach** — no extents cross the bridge, but beside a long
   label every short one would be hit far beyond its pill, grabbing a label where the user meant
   the empty canvas.

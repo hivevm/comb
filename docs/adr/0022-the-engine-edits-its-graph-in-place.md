@@ -79,7 +79,7 @@ carries a rank that orders drawing and hitting, a node added taking the highest.
   hold the point, the one of the highest rank: what is drawn on top is hit first. Where the next
   rank would pass `u32::MAX`, the engine first renumbers the ranks in use from 0 in their order,
   once per four billion additions. Edges and edge labels keep slot order.
-- **The limits of a load** (ADR-0009) hold after every edit: the slots in use of each kind stay
+- **The limits of a load** (ADR-0026) hold after every edit: the slots in use of each kind stay
   within the limit, and because a free slot is taken before a new one, so does the highest slot.
 - **The shell's side:** the map from identifiers to slots drops the identifier of a removed item
   and gains that of an added one with the slot the engine returned. The store's per-slot lists of

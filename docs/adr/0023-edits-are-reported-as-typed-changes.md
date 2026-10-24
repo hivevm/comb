@@ -35,16 +35,11 @@ answers later, or an event the host cancels. A test decides a synchronous answer
 value in the same call; a promise leaves the gesture pending, with the canvas unsure what to show
 and the nodes of the pending edge free to be deleted meanwhile.
 
-This decision widens what `api` refuses itself. ADR-0009 (*What the bridge cannot see*) lets
-`api` refuse, against the store's map from identifiers to slots, an identifier `updateNode`
-names that the graph does not hold, and says every other refusal is the bridge crate's. The
-methods below need the same map for the same reason: an identifier `removeNodes`, `removeEdges`,
-or `updateEdge` names that the graph does not hold, an `addNode` or `addEdge` whose identifier the
-graph holds already, and an `addEdge` whose end the graph does not hold. The bridge crate checks
-duplicates and missing ends within one load, but the engine keeps no identifiers (ADR-0010), so
-it cannot check any of them against the graph it already holds. That conflicts with the letter
-of ADR-0009, which is accepted; the maintainer decides it before this ADR is accepted, by
-superseding ADR-0009 with that clause widened to every refusal that needs the map, or otherwise.
+The methods below need refusals only the store's map from identifiers to slots can give: an
+identifier `removeNodes`, `removeEdges`, or `updateEdge` names that the graph does not hold, an
+`addNode`, `addEdge`, or user's connection whose identifier the graph holds already, and an
+`addEdge` whose end the graph does not hold. The engine keeps no identifiers (ADR-0010), so the
+bridge crate cannot check them against the graph it holds; ADR-0026 makes them `api`'s.
 
 The maintainer asked for the editing interface as one decision: the changes, the vetoes, and the
 methods are one contract between Comb and the host, each part shaped by the others (a veto exists
@@ -96,13 +91,13 @@ and `CombOptions.canDelete` a deletion only by returning `true`.
   `GraphDataError` on a refusal and an `EngineLostError` once the engine is lost (ADR-0021);
   `worldPointAt` needs no engine and keeps working, and throws a `RangeError` on a coordinate
   that is not finite, like `setViewport`.
-- **Validation:** `api` reads each input once into primitives (ADR-0009). The bridge crate checks
+- **Validation:** `api` reads each input once into primitives (ADR-0026). The bridge crate checks
   what a load would check of that one node or edge, and a patch of `updateEdge` as a load checks
-  those fields; the limits of a load hold for the graph after the edit, the count of nodes and
-  edges and the code units of all identifiers it holds, which the store counts. `api` refuses, as
-  the store's map shows, an unknown node (`unknownNode`), an unknown edge (`unknownEdge`), an
-  identifier the graph holds already (`duplicateNode`, `duplicateEdge`), and an edge to a node it
-  does not hold (`missingNode`). Every new kind is a kind of the generated `GraphDataProblem`
+  those fields; the limits of a load hold for the graph after the edit, the count of nodes and edges
+  and the code units of all identifiers it holds, which the store counts. `api` refuses, as the
+  store's map shows, an unknown node (`unknownNode`), an unknown edge (`unknownEdge`), an identifier
+  the graph holds already (`duplicateNode`, `duplicateEdge`), and an edge to a node it does not hold
+  (`missingNode`), as ADR-0026 decides. Every new kind is a kind of the generated `GraphDataProblem`
   (ADR-0010), never one written in TypeScript.
 - **Vetoes:** both are called synchronously, in the input event that ends the gesture, and
   neither for the host application's own calls. Where one throws, Comb makes no edit, ends the
@@ -201,7 +196,7 @@ gesture.
   which the host sees in its error handling for the page, not at a call of its own.
 - Negative / trade-offs: the public interface grows by seven methods, two options, and the
   change types, each a promise to every host application (Q-3).
-- Follow-ups: the conflict with ADR-0009 above; moving a node from the host application, and
+- Follow-ups: moving a node from the host application, and
   bringing one to the front; a selection of several items, which would widen `canDelete` and the
   removal changes, not their shape.
 
