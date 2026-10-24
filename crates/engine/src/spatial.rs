@@ -153,13 +153,20 @@ impl Grid {
         }
     }
 
-    /// Puts `item` into the cells its `bounds` meet, out of those it was in. An item beyond the
-    /// grid's items is ignored.
+    /// Puts `item` into the cells its `bounds` meet, out of those it was in, growing the grid's
+    /// records of items to hold it where it lies beyond them, as a slot appended after the highest
+    /// does (ADR-0022). A grid made for no extent, the default, has no cells and holds nothing.
     pub fn set(&mut self, item: u32, bounds: &Rect) {
-        let i = item as usize;
-        let Some(&old) = self.places.get(i) else {
+        if self.cells.is_empty() {
             return;
-        };
+        }
+        let i = item as usize;
+        if i >= self.places.len() {
+            self.places.resize(i + 1, None);
+            self.beyond.resize(i + 1, false);
+            self.seen.resize(i + 1, 0);
+        }
+        let old = self.places[i];
         let beyond = self
             .extent
             .is_some_and(|extent| !(extent.contains_rect(bounds)));
@@ -185,18 +192,6 @@ impl Grid {
         }
         self.insert(item, place);
         self.places[i] = Some(place);
-    }
-
-    /// Puts `item` into the cells its `bounds` meet, growing the grid's records of items to hold
-    /// it where it lies beyond them, as a slot appended after the highest does (ADR-0022).
-    pub fn add(&mut self, item: u32, bounds: &Rect) {
-        let i = item as usize;
-        if i >= self.places.len() {
-            self.places.resize(i + 1, None);
-            self.beyond.resize(i + 1, false);
-            self.seen.resize(i + 1, 0);
-        }
-        self.set(item, bounds);
     }
 
     /// Takes `items` out of the grid, so that no query finds them until they are set again; each

@@ -88,9 +88,14 @@ The functional core and its shell follow
   spatial index (`spatial`, a uniform grid each for nodes and edges, with an overflow list for items
   that cover many cells) that loads, additions, and moves keep current and that is built again once
   many items have moved or been added beyond its extent, or the nodes or the edges in use pass twice
-  the count it was built for ([ADR-0022](adr/0022-the-engine-edits-its-graph-in-place.md));
-  `add_node` takes the free slot freed last, or a new one after the highest, and the next rank, and
-  puts the node into the grid in place; a load ranks node `i` as `i`; `add_edge` takes the edge slot
+  the count it was built for ([ADR-0022](adr/0022-the-engine-edits-its-graph-in-place.md)).
+  Its modules under `graph/` follow its concepts: `slots`, the free slots of a kind, one type kept
+  once for nodes and once for edges; `nodes` and `edges`, the edits of each; `index`, the grids
+  and the one function that holds the rule that builds them again, called after every edit;
+  `hit`, `labels`, and `query`; each with its tests, and `tests` with the graphs they build and
+  the property tests of the whole graph against a scan. `add_node` takes the free slot freed
+  last, or a new one after the highest, and the next rank, and puts the node into the grid in
+  place; a load ranks node `i` as `i`; `add_edge` takes the edge slot
   freed last, or a new one, and puts the edge into the lists of its ends and the grid in place, and
   `update_edge` restyles and re-places one; `remove_nodes` frees the node slots and those of the
   edges at them, `remove_edges` edge slots, and both take the items out of the grids and the lists
