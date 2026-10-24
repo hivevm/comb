@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 import { canvasSize, open, sceneNumbers, screenCentre, setViewport } from "./shared";
 
 test("zooming through each threshold switches the level of detail", async ({ page }) => {
-  // Verifies: ADR-0012
+  // Verifies: ADR-0027
   await open(page);
   const { width, height } = await canvasSize(page);
   const { near: nearFrom, far: middleFrom } = await sceneNumbers(page);

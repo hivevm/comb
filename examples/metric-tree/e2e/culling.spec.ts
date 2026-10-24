@@ -5,7 +5,7 @@ import { canvasSize, open, sceneNumbers, screenCentre, setViewport } from "./sha
 test("what lies entirely outside the viewport is not bound to a display object", async ({
   page,
 }) => {
-  // Verifies: G-7, ADR-0012
+  // Verifies: G-7, ADR-0027
   await open(page);
   expect((await page.evaluate(() => window.inspect())).edgeLabels).toHaveLength(7);
 
@@ -59,7 +59,7 @@ async function drawnBeyond(page: Page, margin: number): Promise<string[]> {
 test("at every level, nothing entirely outside the viewport and its margin is drawn", async ({
   page,
 }) => {
-  // Verifies: G-7, ADR-0012
+  // Verifies: G-7, ADR-0027
   test.setTimeout(60_000);
   await open(page, "?copies=100");
   const { width, height } = await canvasSize(page);
@@ -157,7 +157,7 @@ test("a pan within the culling margin moves the world without a query", async ({
 });
 
 test("the same area binds as many display objects at 1 and at 1,000 copies", async ({ page }) => {
-  // Verifies: ADR-0012
+  // Verifies: ADR-0027
   test.setTimeout(120_000);
   // Inside the first copy: the next copy to the right starts at x = 1500 and the one below at
   // y = 550, both beyond the canvas and its culling margin at scale 1.
@@ -177,7 +177,7 @@ test("the same area binds as many display objects at 1 and at 1,000 copies", asy
 test("at the middle level, the same area binds as many display objects at 100 and 1,000 copies", async ({
   page,
 }) => {
-  // Verifies: ADR-0012
+  // Verifies: ADR-0027
   test.setTimeout(120_000);
   // Every copy fills the same cell of 1500 × 770 world units, whatever the number of copies; an
   // area well inside both grids shows the same nodes and edges in both.

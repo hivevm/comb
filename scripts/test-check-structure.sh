@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Self-test of scripts/check-structure.sh. Verifies: ADR-0009, ADR-0012, ADR-0018
+# Self-test of scripts/check-structure.sh. Verifies: ADR-0026, ADR-0027, ADR-0018
 #
 # Each case builds a fixture tree under a temporary directory — a core crate with its lock, a
 # library with a bridge, a store, and a render layer, and an example — runs the check against it,

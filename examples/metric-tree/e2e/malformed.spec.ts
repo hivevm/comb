@@ -66,7 +66,7 @@ const MALFORMED: { name: string; graph: GraphData; problem: unknown }[] = [
     },
     problem: { kind: "duplicateEdge", edge: "e" },
   },
-  // Verifies: ADR-0009
+  // Verifies: ADR-0026
   {
     name: "a title that is not a string",
     graph: { nodes: [node("a"), { ...node("b", 300), title: wrong<string>(5) }], edges: [] },
@@ -265,7 +265,7 @@ for (const { patch, problem } of PATCHES) {
   test(`updateNode refuses the patch ${JSON.stringify(patch)} with a GraphDataError, and changes nothing`, async ({
     page,
   }) => {
-    // Verifies: Q-7, ADR-0009
+    // Verifies: Q-7, ADR-0026
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
@@ -414,7 +414,7 @@ async function runCases(cases: number) {
 test("random graph data and patches through the public interface end in a GraphDataError or a drawn graph, and no page error", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0026
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -436,7 +436,7 @@ type Read = { refused: unknown; reads: number; titles: unknown[] };
 test("load reads the host's graph data once and keeps what the bridge checked", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0026
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -530,7 +530,7 @@ for (const { name, kind, expected } of READ_ONCE) {
   test(`updateNode reads the host's patch once and keeps what the bridge checked: ${name}`, async ({
     page,
   }) => {
-    // Verifies: Q-7, ADR-0009
+    // Verifies: Q-7, ADR-0026
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
@@ -544,7 +544,7 @@ for (const { name, kind, expected } of READ_ONCE) {
 test("load copies nodes out of a list whose own map would hand over the host's objects", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0026
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -571,7 +571,7 @@ test("load copies nodes out of a list whose own map would hand over the host's o
 test("updateNode refuses thousands of patches whose getter throws, and the engine still works", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0026
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -601,7 +601,7 @@ test("updateNode refuses thousands of patches whose getter throws, and the engin
 });
 
 test("load draws a title and a label text of 1,000 UTF-16 code units", async ({ page }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0026
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -625,7 +625,7 @@ test("load draws a title and a label text of 1,000 UTF-16 code units", async ({ 
 test("load refuses a million and one nodes by their count, before it copies any", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0026
   await open(page);
   const result = await page.evaluate(() => {
     const nodes = new Array(1_000_001);
@@ -736,7 +736,7 @@ for (const kind of HOSTILE) {
   test(`a hostile value (${kind}) anywhere in graph data or a patch is refused, and the engine still loads`, async ({
     page,
   }) => {
-    // Verifies: Q-7, ADR-0009
+    // Verifies: Q-7, ADR-0026
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
@@ -886,7 +886,7 @@ for (const { name, kind, problem } of REFUSALS) {
   test(`refuses ${name} quickly with a typed problem, and the engine still loads`, async ({
     page,
   }) => {
-    // Verifies: Q-7, ADR-0009
+    // Verifies: Q-7, ADR-0026
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
@@ -899,7 +899,7 @@ for (const { name, kind, problem } of REFUSALS) {
 }
 
 test("load draws identifiers of 256 characters", async ({ page }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0026
   await open(page);
   const a = "a".repeat(256);
   const b = "b".repeat(256);
@@ -941,7 +941,7 @@ async function budgeted(length: number) {
 test("load takes a million edges whose identifiers hold 63 million code units, and refuses 66 million by the budget, quickly", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0026
   test.setTimeout(120_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

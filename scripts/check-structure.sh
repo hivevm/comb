@@ -2,7 +2,7 @@
 #
 # Structural test of the shape of the code (ADR-0009) and of how the scene draws (ADR-0012,
 # ADR-0018).
-# Verifies: ADR-0009, ADR-0012, ADR-0018
+# Verifies: ADR-0026, ADR-0027, ADR-0018
 #
 # ADR-0009 builds Comb as a functional core of pure Rust and a TypeScript shell whose only door to
 # the engine is its bridge; ADR-0012 draws every text as BitmapText and the edges as one mesh. This

@@ -802,7 +802,7 @@ mod tests {
 
     #[test]
     fn a_path_is_subdivided_at_most_24_levels_deep() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         // No tolerance stops the subdivision, so it stops at its deepest. Around the source alone,
         // each level splits off the half beyond it as a chord: the source, the end of the deepest
         // part, 2^-24 along the path, and one end per level, 24 of them.
@@ -1008,7 +1008,7 @@ mod tests {
 
     #[test]
     fn a_stroke_lies_half_its_width_either_side_of_the_polyline() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         let p = |x, y| Point::new(x, y);
         // Down and right along (0.6, 0.8) for 50, then straight down for 60.
         let points = [p(0.0, 0.0), p(30.0, 40.0), p(30.0, 100.0)];
@@ -1048,7 +1048,7 @@ mod tests {
 
     #[test]
     fn an_arrowhead_points_along_a_slanted_end() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         // Straight from (0, 0) to (60, 80), direction (0.6, 0.8): the base lies 10 back at
         // (54, 72), its corners 5 either side along (-0.8, 0.6).
         let path = straight(Point::new(0.0, 0.0), Point::new(60.0, 80.0));
@@ -1074,7 +1074,7 @@ mod tests {
 
     #[test]
     fn an_arrowhead_on_an_edge_shorter_than_it_reaches_back_past_the_source() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         // Straight up from (0, 4) to (0, 0), 4 long: the base lies 10 back, at (0, 10), its
         // corners 5 either side along (1, 0); no stroke is drawn.
         let path = straight(Point::new(0.0, 4.0), Point::new(0.0, 0.0));
@@ -1229,7 +1229,7 @@ mod tests {
 
     #[test]
     fn edges_are_meshed_in_full_while_each_fits_beside_the_floors_after_it() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         let edges = found(&paths()[..3]);
         let sizes: Vec<usize> = (0..3)
             .map(|i| built(&edges[i..=i], u32::MAX).distances.len())
@@ -1340,7 +1340,7 @@ mod tests {
 
     #[test]
     fn an_edge_fits_while_its_flattened_points_stay_within_the_room() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         // The flattening stops once its points pass the room left, counted before the arrowhead
         // cuts the end off.
         let path = paths()[0];
@@ -1384,7 +1384,7 @@ mod tests {
 
     #[test]
     fn outside_the_rectangle_a_path_is_its_chords() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         let path = paths()[3];
         let mut everywhere = Vec::new();
         flatten_all(&path, 0.01, &mut everywhere);
@@ -1491,7 +1491,7 @@ mod tests {
 
     #[test]
     fn a_straight_edge_far_beyond_the_viewport_is_drawn_within_a_quarter_pixel_inside_it() {
-        // Verifies: Q-4, ADR-0012
+        // Verifies: Q-4, ADR-0027
         let rect = viewport_around(Point::default());
         let worst = strays_inside(&long_straight(), &rect);
         assert!(worst <= 0.25, "strays {worst} px");
@@ -1514,7 +1514,7 @@ mod tests {
 
     #[test]
     fn a_segment_is_split_where_it_enters_and_leaves_the_rectangle_grown_by_the_stroke() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         let path = long_straight();
         let rect = viewport_around(Point::default());
         let stroke = Stroke::at(Level::Near, 0.25);
@@ -1534,7 +1534,7 @@ mod tests {
 
     #[test]
     fn the_distance_along_the_path_runs_on_through_the_split() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         let path = long_straight();
         let rect = viewport_around(Point::default());
         let mesh = queried(&path, &UNARROWED, &rect);
@@ -1560,7 +1560,7 @@ mod tests {
 
     #[test]
     fn a_path_wholly_inside_the_rectangle_is_meshed_as_without_one() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         let edges = found(&paths());
         let around = Rect::new(-1000.0, -1000.0, 5000.0, 3000.0);
         let mut points = Vec::new();
@@ -1582,7 +1582,7 @@ mod tests {
 
     #[test]
     fn an_arrowhead_cuts_the_path_before_it_is_split() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         // From far to the left into the rectangle: the stroke enters it at x = -2, the edge of
         // the grown rectangle, and ends at the base of the arrowhead, 10 before the tip.
         let path = straight(Point::new(-1e6, 50.0), Point::new(50.0, 50.0));
@@ -1608,7 +1608,7 @@ mod tests {
 
     #[test]
     fn the_split_points_count_against_the_room_left() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         // Flat at once, two points fit in 4 vertices; split, the four take 8.
         let path = long_straight();
         let stroke = Stroke::at(Level::Near, 0.25);
@@ -1752,7 +1752,7 @@ mod tests {
 
     #[test]
     fn an_edge_whose_full_mesh_is_its_arrowhead_has_that_for_its_floor() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         let mut edges = found(&paths()[..1]);
         edges.extend((0..4).map(|i| short(f64::from(i) * 100.0)));
         let first = built(&edges[..1], u32::MAX).distances.len();

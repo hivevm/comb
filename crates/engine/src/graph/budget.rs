@@ -4,7 +4,7 @@
 //! when every edge is meshed in full, draw each edge within a quarter pixel inside the
 //! rectangle, edges from (0, 0) to (-1e8, 3e7) among them, and split each segment that meets the
 //! rectangle where it leaves the rectangle grown by the stroke's width.
-// Verifies: Q-7, Q-4, ADR-0012
+// Verifies: Q-7, Q-4, ADR-0027
 
 use super::tests::Lcg;
 use super::{EdgeSpec, Graph, Level, Visible};
@@ -322,7 +322,7 @@ fn viewport_at(scale: f64) -> Rect {
 
 #[test]
 fn twenty_thousand_edges_between_two_nodes_far_apart_mesh_in_full_zoomed_in() {
-    // Verifies: Q-7, ADR-0012
+    // Verifies: Q-7, ADR-0027
     let mut graph = far_apart(20_000, true);
     let rect = viewport_at(4.0);
     let mut out = Visible::default();

@@ -10,7 +10,7 @@
 //! field of which node or edge is missing or of another type, and whether the value has the shape
 //! of graph data at all: the bridge names such a field (`invalidField`), and refuses as malformed
 //! only what has no such shape, and no message names a Rust type or crate.
-// Verifies: Q-7, ADR-0009, ADR-0010
+// Verifies: Q-7, ADR-0026, ADR-0010
 
 use proptest::prelude::*;
 use serde::Deserialize;
