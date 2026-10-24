@@ -12,7 +12,7 @@ import {
 
 const url = new URL("../../wasm/test-mode/engine_bg.wasm", import.meta.url);
 const bridge = createBridgeSync(await Bun.file(url).arrayBuffer());
-// Plain data of its own in place of a snapshot of `api/snapshot.ts` (ADR-0026).
+// Plain data of its own in place of a snapshot of `api/snapshot.ts` (ADR-0028).
 const batch: GraphBatch = {
   nodes: [{ id: "a", title: "a", x: 0, y: 0, width: 100, height: 50 }],
   edges: [],

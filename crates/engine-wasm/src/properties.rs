@@ -1,4 +1,4 @@
-//! The property test of the bridge's validation (Q-7, ADR-0026): graph data of any shape, well
+//! The property test of the bridge's validation (Q-7, ADR-0028): graph data of any shape, well
 //! formed or not, ends in a typed error or a graph, never in a panic, and in a graph exactly when
 //! an oracle written apart from the bridge finds nothing to refuse. Every field crosses, those the
 //! engine does not keep among them: titles, label texts and backgrounds, the patch of
@@ -11,7 +11,7 @@
 //! field of which node or edge is missing or of another type, and whether the value has the shape
 //! of graph data at all: the bridge names such a field (`invalidField`), and refuses as malformed
 //! only what has no such shape, and no message names a Rust type or crate.
-// Verifies: Q-7, ADR-0026, ADR-0010
+// Verifies: Q-7, ADR-0028, ADR-0010
 
 use proptest::prelude::*;
 use serde::Deserialize;
@@ -788,7 +788,7 @@ proptest! {
     fn an_added_edge_is_refused_exactly_as_a_load_of_it_alone_and_a_self_edge_besides(
         value in prop_oneof![9 => edge(true, 0, 2), 1 => anything()],
     ) {
-        // Verifies: ADR-0026, ADR-0024, Q-7
+        // Verifies: ADR-0028, ADR-0024, Q-7
         let as_load = loaded(two_nodes(vec![value.clone()]));
         // An end the graph does not hold is `api`'s to refuse, against its map.
         prop_assume!(!matches!(as_load, Err(GraphDataProblem::MissingNode { .. })));
@@ -832,7 +832,7 @@ proptest! {
     fn an_edge_patch_is_refused_exactly_as_a_load_of_the_edge_it_makes_and_the_edge_kept(
         patch in edge_patch(),
     ) {
-        // Verifies: ADR-0026, ADR-0023, Q-7
+        // Verifies: ADR-0028, ADR-0023, Q-7
         let mut graph = loaded(two_nodes(vec![Value::Object(base_edge())])).unwrap();
         let before = graph.edge(0);
         let other = patch
@@ -869,7 +869,7 @@ proptest! {
     fn an_added_node_is_refused_exactly_as_a_load_of_it_alone_and_the_graph_kept(
         value in added_node(),
     ) {
-        // Verifies: ADR-0026, ADR-0022, Q-7
+        // Verifies: ADR-0028, ADR-0022, Q-7
         let loaded = || {
             let a = Value::Object(vec![
                 ("id".to_owned(), Value::Text("a".to_owned())),

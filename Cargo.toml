@@ -1,4 +1,4 @@
-# The engine: a pure core and its WebAssembly bridge (ADR-0026).
+# The engine: a pure core and its WebAssembly bridge (ADR-0028).
 [workspace]
 resolver = "3"
 members = ["crates/engine", "crates/engine-wasm"]
