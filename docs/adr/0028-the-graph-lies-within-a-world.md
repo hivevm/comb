@@ -1,6 +1,6 @@
 # ADR-0028: A pure Rust engine as functional core, and a TypeScript shell around it, the shell refusing what only its map of identifiers knows, and the graph within a world's limit
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** the directory layout, `crates/`, `packages/`, `examples/`, and every import between their modules
