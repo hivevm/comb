@@ -19,13 +19,13 @@ Q-2's second, so an edit that reloads costs that much per edit, and a host appli
 nodes in a loop pays it each time. A frame of 16.7 ms has no room for it.
 
 A slot is the index of a node or an edge in the engine's buffers, the same on both sides of the
-bridge (ADR-0010). The shell keeps the map from identifiers to slots, and every call into the
-engine after a load names slots (ADR-0010, *Slots*). ADR-0010 leaves open when slots are compacted
-after deletions. Removing an item leaves its slot empty; what fills it decides whether slots stay
-dense, whether the buffers grow with every edit, and in what order nodes are drawn, since the
-scene draws in slot order and the hit test takes the node in the highest slot as the one on top
-(ADR-0012). The maintainer asks that a node the host application adds comes to the front, also
-when it takes a freed slot below others.
+bridge (ADR-0010). The shell keeps the map from identifiers to slots, and every call into the engine
+after a load names slots (ADR-0010, *Slots*). ADR-0010 leaves open when slots are compacted after
+deletions. Removing an item leaves its slot empty; what fills it decides whether slots stay dense,
+whether the buffers grow with every edit, and in what order nodes are drawn, since the scene draws
+in slot order and the hit test takes the node in the highest slot as the one on top (ADR-0012). A
+node the host application adds has to come to the front, where the user dropped it, also when it
+takes a freed slot below others.
 
 This conflicts with the letter of ADR-0012 (*Culling*), which is accepted: it binds the pooled
 display objects to the slots a query found "in slot order". Edges and edge labels keep that

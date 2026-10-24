@@ -112,13 +112,13 @@ and `CombOptions.canDelete` a deletion only by returning `true`.
     (ADR-0022), all as `readonly string[]`. Comb deletes only where it returns `true`. Without
     `canDelete`, a deletion is allowed.
 - **The user's edge:** the identifier `canConnect` returns is checked as the identifier of an edge
-  `addEdge` receives: read once, refused by the bridge crate where it is too long and by `api`
-  where it holds a lone surrogate or the graph holds an edge of that identifier already. A refused
-  identifier refuses the connection: Comb makes no edge, delivers no change, ends the gesture, and
-  then throws the `GraphDataError` of the generated kind from the input event, as it throws on the
-  error of a callback that threw, so that the host's mistake reaches the page as an error. A
-  connection made is drawn with the defaults of an edge without appearance and delivered as
-  `edgeAdded` with `by: "user"`.
+  `addEdge` receives: read once, refused by the bridge crate where it is too long or, handed over as
+  `false` (ADR-0026), holds a lone surrogate, and by `api` where the graph holds an edge of that
+  identifier already. A refused identifier refuses the connection: Comb makes no edge, delivers no
+  change, ends the gesture, and then throws the `GraphDataError` of the generated kind from the
+  input event, as it throws on the error of a callback that threw, so that the host's mistake
+  reaches the page as an error. A connection made is drawn with the defaults of an edge without
+  appearance and delivered as `edgeAdded` with `by: "user"`.
 - **A drop from the palette** is the host application's own `addNode`, so it arrives as
   `by: "host"`; a host that persists only `by: "user"` persists a drop in its own drop handler.
 - **Deleting:** with the canvas focused, Delete or Backspace deletes the selection, a node with
@@ -153,7 +153,7 @@ gesture.
 - **Comb names the user's edge**, such as the first free `edge-n` — a boolean veto and no
   callback needed to connect, but Comb's names would share the host's namespace, a host naming
   its own edges `edge-n` would meet a `duplicateEdge`, and the host would rename or map every edge
-  the user draws. The maintainer chose the host's names.
+  the user draws.
 - **The refused identifier reported through `onChange` or a listener of its own** — no error
   escapes an input event, but a refusal is no change of the graph, and a listener only for the
   host's own mistake is more interface than throwing the error the method calls throw.
@@ -190,15 +190,16 @@ gesture.
   where it makes the call.
 - Negative / trade-offs: a refusal that needs the host's server cannot be given during the
   gesture.
-- Negative / trade-offs: a host has to give `canConnect` to let the user connect at all, and
-  `canConnect` answers two questions at once, whether and under which name.
+- Negative / trade-offs: a host has to give `canConnect` to let the user connect at all, where a
+  missing `canDelete` allows; and `canConnect` answers two questions at once, whether and under
+  which name.
 - Negative / trade-offs: a refused identifier surfaces as an error thrown from an input event,
   which the host sees in its error handling for the page, not at a call of its own.
 - Negative / trade-offs: the public interface grows by seven methods, two options, and the
   change types, each a promise to every host application (Q-3).
-- Follow-ups: moving a node from the host application, and
-  bringing one to the front; a selection of several items, which would widen `canDelete` and the
-  removal changes, not their shape.
+- Follow-ups: moving a node from the host application, and bringing an existing one to the front; a
+  selection of several items, which would widen `canDelete` and the removal changes, not their
+  shape.
 
 ## Enforcement
 
