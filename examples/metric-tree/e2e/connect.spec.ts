@@ -179,7 +179,7 @@ for (const [name, id, kind] of [
 test("without canConnect a press on a connector begins no connection and shows none", async ({
   page,
 }) => {
-  // Verifies: ADR-0023
+  // Verifies: ADR-0023, ADR-0025
   await open(page, "?connect=none");
   await loaded(page);
   const midway = await drag(page, A_BOTTOM, B_TOP);

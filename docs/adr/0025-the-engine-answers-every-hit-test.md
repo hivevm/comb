@@ -1,6 +1,6 @@
 # ADR-0025: The engine answers every hit test in one call, a connector before an edge label, a node, and an edge
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** the hit test of `crates/engine/src/graph.rs` and its export in `crates/engine-wasm/`, the label extents the render layer of `packages/comb/src/render/` hands the engine, and the press and hover of `packages/comb/src/interaction/`
@@ -27,11 +27,14 @@ the edges, and the label points.
 ## Decision
 
 We will answer every hit test in the engine, from its spatial index, with one call that takes a
-world point, the size of a screen pixel, and the level of detail, and returns the target drawn on
-top there: a connector, else an edge label, else a node, else an edge, else none.
+world point, the size of a screen pixel, the level of detail, and whether to look for connectors,
+and returns the target drawn on top there: a connector, else an edge label, else a node, else an
+edge, else none.
 
 - **Connector:** within 8 screen pixels of its point, at the near and the middle level, the node
-  and side it belongs to (ADR-0024).
+  and side it belongs to (ADR-0024). The shell asks for connectors only where a connection can
+  begin, where `CombOptions.canConnect` is set (ADR-0023); otherwise the call hits none, and a
+  press there finds what lies beneath.
 - **Edge label:** at the near level only, where labels are drawn, the label whose pill holds the
   point. The shell hands the engine the half width and half height of each label's pill, in world
   units, when it draws the label's text and whenever that text changes; a label the shell has
@@ -99,5 +102,8 @@ Each test below cites this ADR with `Verifies: ADR-0025`.
 - **Precedence:** browser tests in `examples/metric-tree/e2e/` press on a label above a node, on
   a connector on a node, on a node above an edge, on an edge, and on the empty canvas, and assert
   what is selected or dragged; they also `Verifies: G-5, G-6`.
+- **Connectors asked for:** a browser test asserts that a press on a connector without
+  `canConnect` begins no connection, and one asks `hitKind` beside a connector with and without
+  connectors and asserts a connector only where they are asked for.
 - **Unmeasured labels:** a test asserts that a label without extents is not hit, and one with
   them is hit inside its pill and not beyond it.
