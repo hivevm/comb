@@ -1,7 +1,8 @@
 // The benchmark of Q-1 and Q-2 (ADR-0008): the example at 50,000 nodes and 50,000 edges, served
 // from its production build. It measures the time from handing the graph to Comb until its first
 // frame is drawn, and the p95 frame time while a node on screen is dragged, the viewport panned,
-// and zoomed in and out, and while the viewport is panned at the scale where the near and the
+// and zoomed in and out, while the graph is edited one edit a frame, a node and an edge added and
+// removed again (ADR-0022), and while the viewport is panned at the scale where the near and the
 // middle level of detail begin. Only frames in which Comb rendered count; each action is checked for its
 // effect, so a gesture that missed fails the run instead of measuring idle frames. Before the
 // gestures it times the reference workload of bench/reference.ts in the same page, by which
@@ -153,6 +154,84 @@ function expectEffect(ok: boolean, what: string): void {
   if (!ok) throw new Error(`the ${what} had no effect; the measurement would be of idle frames`);
 }
 
+/** Edits the graph, one edit a frame: adds a node beside `near` and an edge from `near` to it,
+ *  and removes the edge and the node again, as many times over as the steps allow (ADR-0022);
+ *  returns how many edits it made. */
+async function edits(page: Page, near: string): Promise<number> {
+  const at = await drawnNode(page, near);
+  return steps(page, (i) =>
+    page.evaluate(
+      ({ i, near, at }) => {
+        const { comb } = window;
+        const round = Math.floor((i - 1) / 4);
+        const [node, edge] = [`bench-node-${round}`, `bench-edge-${round}`];
+        switch ((i - 1) % 4) {
+          case 0:
+            comb.addNode({
+              id: node,
+              title: "edit",
+              x: at.x + 40,
+              y: at.y + 90,
+              width: 160,
+              height: 48,
+            });
+            break;
+          case 1: {
+            const w = window as unknown as { drawnAdds: number };
+            if (window.inspect().nodes.some(({ id }) => id === node)) w.drawnAdds += 1;
+            comb.addEdge({ id: edge, source: near, target: node });
+            break;
+          }
+          case 2:
+            comb.removeEdges([edge]);
+            break;
+          default:
+            comb.removeNodes([node]);
+        }
+      },
+      { i, near, at: { x: at.x, y: at.y } },
+    ),
+  );
+}
+
+/** The zoom gesture around `at`, checked for having changed the scale. */
+async function zoomGesture(page: Page, at: Point): Promise<Measure> {
+  const zoomFrom = await viewport(page);
+  const scales: number[] = [];
+  const zoomed = await frameTimes(page, () => zoom(page, at, scales));
+  expectEffect(
+    scales.some((scale) => scale !== zoomFrom.scale),
+    "zoom",
+  );
+  console.log(`zoom: ${zoomed.frames} frames, p95 ${zoomed.p95.toFixed(1)} ms`);
+  return zoomed;
+}
+
+/** The edit gesture, beside the node nearest the centre of the view: each edit is told, each node
+ *  added is drawn before its edge is added, and none is drawn at the end. */
+async function editGesture(page: Page): Promise<Measure> {
+  await page.evaluate(() => {
+    const w = window as unknown as { told: number; drawnAdds: number };
+    [w.told, w.drawnAdds] = [0, 0];
+    window.comb.onChange(() => (w.told += 1));
+  });
+  const beside = await nodeNearCentre(page);
+  const edited = await frameTimes(page, () => edits(page, beside.id));
+  const checked = await page.evaluate(async () => {
+    await window.comb.whenRendered();
+    const w = window as unknown as { told: number; drawnAdds: number };
+    const left = window.inspect().nodes.some(({ id }) => id.startsWith("bench-node-"));
+    return { told: w.told, drawnAdds: w.drawnAdds, left };
+  });
+  const rounds = Math.ceil(edited.steps / 4);
+  expectEffect(
+    checked.told === edited.steps && checked.drawnAdds === rounds && !checked.left,
+    "edits",
+  );
+  console.log(`edit: ${edited.frames} frames, p95 ${edited.p95.toFixed(1)} ms`);
+  return edited;
+}
+
 /** Pans at the scale where a level of detail begins, the least scale it draws at and so the most
  *  it binds, centred in the graph; the pan leaves the culling margin, so the scene queries. */
 async function panAt(page: Page, scale: number): Promise<Measure> {
@@ -184,7 +263,8 @@ async function emptyPoint(page: Page): Promise<Point> {
     const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();
     for (let py = 4; py < rect.height / 2; py += 3) {
       for (let px = 4; px < rect.width / 2; px += 3) {
-        if (window.hitKind(px, py) === "none") return { x: rect.left + px, y: rect.top + py };
+        // The example lets the user connect, so a press near a connector would begin a connection.
+        if (window.hitKind(px, py, true) === "none") return { x: rect.left + px, y: rect.top + py };
       }
     }
     throw new Error("no empty point to pan from");
@@ -231,16 +311,9 @@ async function measure(page: Page) {
   expectEffect(panTo.x !== panFrom.x || panTo.y !== panFrom.y, "pan");
   console.log(`pan: ${pan.frames} frames, p95 ${pan.p95.toFixed(1)} ms`);
 
-  const zoomFrom = await viewport(page);
-  const scales: number[] = [];
-  const zoomed = await frameTimes(page, () =>
-    zoom(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 }, scales),
-  );
-  expectEffect(
-    scales.some((scale) => scale !== zoomFrom.scale),
-    "zoom",
-  );
-  console.log(`zoom: ${zoomed.frames} frames, p95 ${zoomed.p95.toFixed(1)} ms`);
+  const zoomed = await zoomGesture(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
+
+  const edited = await editGesture(page);
 
   const begins = await page.evaluate(() => window.sceneNumbers());
   const near = await panAt(page, begins.near);
@@ -250,7 +323,17 @@ async function measure(page: Page) {
     near: { scale: begins.near, pan: near },
     middle: { scale: begins.far, pan: middle },
   };
-  return { load, gpu, reference, node: node.id, drag: dragged, pan, zoom: zoomed, levels };
+  return {
+    load,
+    gpu,
+    reference,
+    node: node.id,
+    drag: dragged,
+    pan,
+    zoom: zoomed,
+    levels,
+    edit: edited,
+  };
 }
 
 /** Compared at the precision printed, so that a frame of 16.67 ms at 60 Hz meets 16.7. */

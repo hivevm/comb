@@ -520,3 +520,37 @@ describe("the parts of the reference", () => {
     expect((result as Run).reference).toEqual(parts(2));
   });
 });
+
+describe("the edit gesture", () => {
+  test("a baseline without it reports the run's edits unjudged, and judges the others", () => {
+    // Verifies: ADR-0008, ADR-0022
+    const verdict = compare({ ...run(200, 100), edit: { p95: 900 } }, run(200, 100));
+    expect(verdict).toMatchObject({ kind: "compared", regressions: [] });
+    expect((verdict as { lines: string[] }).lines).toContain("edit p95 (ms): 900.0, no baseline");
+    const slower = compare({ ...run(200, 200), edit: { p95: 900 } }, run(200, 100));
+    expect((slower as { regressions: string[] }).regressions).toContain(
+      "drag p95 (ms): 200.0 against 100.0 (+100 %)",
+    );
+  });
+
+  test("a baseline with it judges the run's edits as the other gestures", () => {
+    // Verifies: ADR-0008, ADR-0022
+    const verdict = compare(
+      { ...run(200, 100), edit: { p95: 200 } },
+      { ...run(200, 100), edit: { p95: 100 } },
+    );
+    expect((verdict as { regressions: string[] }).regressions).toEqual([
+      "edit p95 (ms): 200.0 against 100.0 (+100 %)",
+    ]);
+    // The median keeps the gesture only where every run has it.
+    expect(median([{ ...run(200, 100), edit: { p95: 50 } }, run(200, 100)])).not.toHaveProperty(
+      "edit",
+    );
+    expect(
+      median([
+        { ...run(200, 100), edit: { p95: 50 } },
+        { ...run(200, 100), edit: { p95: 70 } },
+      ]),
+    ).toMatchObject({ edit: { p95: 60 } });
+  });
+});

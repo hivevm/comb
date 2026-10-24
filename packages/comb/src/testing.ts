@@ -34,10 +34,11 @@ export function screenPoint(comb: Comb, x: number, y: number): { x: number; y: n
   return toScreen(viewport(comb), x, y);
 }
 
-/** What a press at the screen point `(x, y)`, relative to the canvas of `comb`, hits, asking for
- *  no connector: a label, a node, an edge, or nothing (ADR-0025). */
-export function hitKind(comb: Comb, x: number, y: number): Hit["kind"] {
-  return sceneOf(comb).hitKind(x, y);
+/** What a press at the screen point `(x, y)`, relative to the canvas of `comb`, hits: a connector
+ *  where `connectors` asks for them, as a Comb with `canConnect` does, a label, a node, an edge,
+ *  or nothing (ADR-0025). */
+export function hitKind(comb: Comb, x: number, y: number, connectors = false): Hit["kind"] {
+  return sceneOf(comb).hitKind(x, y, connectors);
 }
 
 /** The world rectangle the canvas of `comb` shows, grown by `margin` screen pixels. */

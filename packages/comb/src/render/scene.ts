@@ -207,11 +207,11 @@ export class Scene {
 
   /** What a press at the screen point `(x, y)` of the canvas hits, as the engine of the last
    *  render answers it at the drawn viewport's scale; nothing before the first render. */
-  hitKind(x: number, y: number): Hit["kind"] {
+  hitKind(x: number, y: number, connectors = false): Hit["kind"] {
     if (!this.source) return "none";
     const { scale, x: vx, y: vy } = this.drawnViewport();
     const [wx, wy] = [(x - vx) / scale, (y - vy) / scale];
-    return this.source.bridge.hit(wx, wy, 1 / scale, levelAt(scale), false).kind;
+    return this.source.bridge.hit(wx, wy, 1 / scale, levelAt(scale), connectors).kind;
   }
 
   /** The viewport the world is drawn through: its transform less the origin's screen point. */
