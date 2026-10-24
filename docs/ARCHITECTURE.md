@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([ADR-0001](adr/0001-agent-governance-model.md)).
 >
-> **Last design revision:** 2026-10-21, due after 20 changes. The revision that ran moves the
+> **Last design revision:** 2026-10-24, due after 20 changes. The revision that ran moves the
 > date; the number is this project's to set; a sensor counts the changes outside `docs/` since
 > the commit that set the date and says when the next is due
 > ([ADR-0006](adr/0006-feature-layer.md)).
@@ -28,41 +28,44 @@
 ```
 
 Graph data from the host application is untrusted, and every field of it crosses the bridge before
-the store keeps any of it: the bridge crate refuses a field that is missing or holds a value of
-another type, naming the node or edge by index, and by identifier where it has one, the field, and
-what the field expects in plain words (`invalidField`); graph data that is no object of node and
-edge lists of objects as malformed; coordinates, sizes, and dash patterns that are not finite as
-the engine keeps them (`f32`), negative sizes, a dash that is not positive or a negative gap,
-duplicate node or edge identifiers, edges to missing nodes, non-finite label placements, a colour
-that is not an integer from `0` to `0xFFFFFF`, a title or label text that is not a string or longer
-than 1,000 UTF-16 code units, a label background that is not an integer from `0` to `0xFFFFFF`,
-more than 1,000,000 nodes or edges, an identifier, source, or target longer than 256 UTF-16 code
-units, and identifiers of one load that hold more than 64,000,000 code units together
-with a typed error. `updateNode` refuses an identifier the graph does not hold, and the bridge crate
-refuses a patch that holds a field other than a title, or a title it would refuse in a load. Titles,
-label texts, and label backgrounds are checked there but not kept by the engine. `api` reads the
-host's graph data once, in JavaScript, into a snapshot (`api/snapshot.ts`) of plain data whose every
-field is a primitive of the type it expects, any other value replaced by `false`, and whose texts
-and identifiers are cut one code unit beyond the bridge's limits, so that no value of the host
-application and none of its code reaches the engine, and a text of any length costs no more than
-that to check; the bridge checks the counts of nodes and edges before anything is copied, then the
-code units of the identifiers, counted while the snapshot is read and read no further once they
-exceed the budget, then the snapshot, and the store keeps the snapshot. Strings with a lone
-surrogate, which the bridge would read as U+FFFD, are refused. `updateNode` reads its patch the same
-way, every own key of a plain object, and merges only the fields the bridge returns as checked. The
-bridge never formats a refused value into its message. Graph data that cannot be read at all, such
-as nodes that are not a list, a list with a hole, a patch that is no plain object, or a getter that
-throws, is refused as malformed before the bridge sees it. That no code of the host application runs
-in the engine holds while nothing on the page has patched JavaScript's built-ins, such as a setter
-on `Object.prototype` or a `Symbol.hasInstance` of `Uint8Array`, which the generated glue reaches.
+the store keeps any of it. The bridge crate refuses, each with a typed error: a field that is
+missing or holds a value of another type, naming the node or edge by index, and by identifier where
+it has one, the field, and what the field expects in plain words (`invalidField`); graph data that
+is no object of node and edge lists of objects, as malformed; coordinates, sizes, and dash patterns
+that are not finite as the engine keeps them (`f32`), negative sizes, a dash that is not positive
+or a negative gap, duplicate node or edge identifiers, edges to missing nodes, non-finite label
+placements, a colour that is not an integer from `0` to `0xFFFFFF`, a title or label text that is
+not a string or longer than 1,000 UTF-16 code units, a label background that is not an integer
+from `0` to `0xFFFFFF`, more than 1,000,000 nodes or edges, an identifier, source, or target longer
+than 256 UTF-16 code units, and identifiers of one load that hold more than 64,000,000 code units
+together. `api` refuses an identifier `updateNode` names that the graph does not hold, against the
+store's map from identifiers to slots (ADR-0009), and the bridge crate refuses a patch that holds a
+field other than a title, or a title it would refuse in a load. Titles, label texts, and label
+backgrounds are checked there but not kept by the engine. `api` reads the host's graph data once,
+in JavaScript, into a snapshot (`api/snapshot.ts`) of plain data whose every field is a primitive
+of the type it expects, any other value replaced by `false`, and whose texts and identifiers are
+cut one code unit beyond the bridge's limits, so that no value of the host application and none of
+its code reaches the engine, and a text of any length costs no more than that to check. The bridge
+checks the counts of nodes and edges before anything is copied, then the code units of the
+identifiers, counted while the snapshot is read and read no further once they exceed the budget,
+then the snapshot, and the store keeps the snapshot. A string with a lone surrogate, which the
+bridge would read as U+FFFD, `api` hands over as `false`, so that it is refused. `updateNode` reads
+its patch the same way, every own key of a plain object, and merges only the fields the bridge
+returns as checked. The bridge never formats a refused value into its message. Graph data that
+cannot be read at all, such as nodes that are not a list, a list with a hole, a patch that is no
+plain object, or a getter that throws, is refused as malformed before the bridge sees it. That no
+code of the host application runs in the engine holds while nothing on the page has patched
+JavaScript's built-ins, such as a setter on `Object.prototype` or a `Symbol.hasInstance` of
+`Uint8Array`, which the generated glue reaches.
 
 ## Building blocks
 
 The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imperative-shell.md).
 
-- **Engine** (`crates/engine`) — pure geometry: edge paths as cubic Bézier curves from the right
-  middle of one node to the left middle of another, their exact bounds, the point and normal at a
-  path parameter, and edge-label placement. `graph` keeps the loaded graph, node positions and
+- **Engine** (`crates/engine`) — pure geometry: `geometry` holds edge paths as cubic Bézier
+  curves from the right middle of one node to the left middle of another, their exact bounds, the
+  point and normal at a path parameter, and edge-label placement; `positions` the positions
+  buffer and its moves. `graph` keeps the loaded graph, node positions and
   sizes per slot and edges per slot, and a spatial index (`spatial`, a uniform grid each for nodes
   and edges, with an overflow list for items that cover many cells) that loads and moves keep
   current and that is built again once many items have moved beyond its extent; its query
@@ -98,14 +101,16 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   those buffers through fresh typed-array views per read
   ([ADR-0010](adr/0010-bridge-data-format.md)).
 - **Store** (`packages/comb/src/store`) — a vanilla Zustand store with the graph's structure, the
-  selection, the viewport, and a counter for moved positions; no coordinates
+  map from identifiers to slots, the selection, the viewport, and a counter for moved positions;
+  no coordinates
   ([ADR-0011](adr/0011-store.md)). `GraphView` is its state without the actions, the type the
   render layer reads.
 - **Interaction** (`packages/comb/src/interaction`) — pointer and wheel input into store actions
-  and engine moves: drag a node, pan, zoom around the pointer. The engine's `hit` says which node
+  and engine moves: select a node on press and clear the selection on the empty canvas, drag a
+  node, pan, zoom around the pointer, and the cursor over a node. The engine's `hit` says which node
   the pointer is on, at every level of detail; node views take no events. `viewport.ts` holds the
   viewport's arithmetic, the transform between world and screen included, for interaction, the
-  scene, and the testing entry.
+  scene, `api`'s `fitView` and `setViewport`, and the testing entry.
 - **Render** (`packages/comb/src/render`) — the PixiJS scene (`scene.ts`): a `world` render
   group with the layers `EdgesContainer` (`edges.ts`), `NodeParticles` (`particles.ts`),
   `NodesContainer` (`nodes.ts`), and `LabelsContainer` (`labels.ts`), and an `overlay`
@@ -115,31 +120,34 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   and far nodes as particles of one `ParticleContainer` (`render/particles.ts`) and edges as
   lines one pixel wide. A render queries the engine for the viewport grown by the culling margin
   and binds pooled node views and edge-label views to exactly the slots it found, drawn in slot
-  order; while the viewport stays within what it last queried, at about its scale, and the graph
-  and the selection are unchanged, a render moves the world alone. The world stands at the screen
-  point of the last query's origin, the edges and labels at (0, 0) in it, the nodes and particles
-  at minus the origin, so that the GPU sees no far coordinate of edges, labels, and node views.
+  order; while the viewport stays within what it last queried, that rectangle within the viewport
+  grown by twice the culling margin, at about its scale and the same level of detail, and the
+  graph and the selection are unchanged, a render moves the world alone. The world stands at the
+  screen point of the last query's origin, the edges and labels at (0, 0) in it, the nodes and
+  particles at minus the origin, so that the GPU sees no far coordinate of edges, labels, and node
+  views.
   `EdgesContainer` (`render/edges.ts`) draws the edge mesh with a shader that leaves out the gaps
   of dash patterns; on the Canvas 2D renderer a
   host application opts into ([ADR-0018](adr/0018-webgl2-or-an-opted-in-canvas-fallback.md)),
   which runs no shader, `EdgeFill` (`render/edges-canvas.ts`) takes its place, builds no mesh,
   and fills the same triangles into one `Graphics`, one fill per run of one colour, dash
   patterns solid. Not built yet: the node content of
-  [ADR-0013](adr/0013-node-content-model.md), and the `grid` and `connectors` layers of
-  [ADR-0012](adr/0012-virtualized-scene-graph.md).
+  [ADR-0013](adr/0013-node-content-model.md), and the connectors of G-3, a layer that joins the
+  scene with the change that builds it ([ADR-0012](adr/0012-virtualized-scene-graph.md)).
 - **API** (`packages/comb/src/api`) — `api/index.ts` imports `pixi.js/unsafe-eval` before
   PixiJS, so that no PixiJS renderer on the page generates code with eval
   ([ADR-0020](adr/0020-pixijs-without-eval.md)); `createComb`, which takes the engine's
   WebAssembly from the host application as `engine` and refuses with an `EngineSourceError`
   where it is missing, a string, `URL`, or `Request`, or none of a `Response`, a module, and the
   bytes (`api/engine.ts`, [ADR-0019](adr/0019-the-host-hands-comb-its-engine.md)), before it
-  touches the host element,
-  and with a `RendererUnavailableError` where PixiJS finds no WebGL2 unless `allowCanvasFallback`
-  lets it draw on Canvas 2D, the graph data, read once into a snapshot (`api/snapshot.ts`) and
-  handed to the engine, the viewport (`fitView`,
-  `setViewport`, `viewport`), and the events to the host application;
-  `whenRendered` resolves once a change is drawn, with one render per animation frame scheduled
-  by `frames`.
+  touches the host element, and with a `RendererUnavailableError` where PixiJS finds no WebGL2
+  unless `allowCanvasFallback` lets it draw on Canvas 2D (`api/renderers.ts`); and the `Comb` it
+  returns: the graph data (`load`, `updateNode`), read once into a snapshot (`api/snapshot.ts`)
+  and handed to the engine, the viewport (`fitView`, `setViewport`, `viewport`), the events to
+  the host application (`onSelectionChange`, `onEngineLost`), and `destroy`; `whenRendered`
+  resolves once a change is drawn, with one render per animation frame scheduled by
+  `api/frames.ts`. `api/scenes.ts` is the one way from a `Comb` to its scene, for the testing
+  entry.
 - **Testing entry** (`comb/testing`, `packages/comb/src/testing.ts`) — `inspect` returns what the
   scene draws, the text of the titles and labels drawn included, and the size and detail of the
   edge mesh, which the host application is not told; `viewport` and `renderCount`, cheap
@@ -162,10 +170,12 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   element of its own.
 - **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, measuring the time to
   the first frame and p95 frame times of drag, pan, and zoom over the frames Comb rendered, and of
-  a pan where the near and the middle level begin, each gesture checked for its effect (Q-1, Q-2).
+  a pan where the near and the middle level begin, each gesture checked for its effect (Q-1, Q-2),
+  served from the example's production build by `vite preview` on port 4173, in a Chromium
+  started by `bench/chromium.ts`.
   After the first frame and before the gestures it times the reference workload of
   `bench/reference.ts` in the same page, which uses the browser's JavaScript, WebAssembly, and
-  WebGL2 and none of Comb's code. `bench/compare.ts` holds the median of several runs against
+  WebGL2 and none of Comb's code. `bench/compare.ts` compares the median of several runs with
   the baseline of the runner's kind, the CPU model the run records, in `bench/baselines/`, with a
   margin of 25 %, refuses a run on a kind without a baseline, and refuses a run whose reference
   differs from its kind's baseline by more than 25 % in a part; a kind's baseline is the median of
@@ -175,33 +185,37 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
 - **Mutation testing** (`.github/workflows/mutation.yml`) — cargo-mutants mutates `crates/engine`
   on a GitHub runner, weekly and on demand; `scripts/check-mutants.sh` compares the surviving
   mutants with `crates/engine/mutants-missed.txt` by file, function, and replacement, and fails
-  on a survivor the list does not name (ADR-0008).
+  on a survivor the list does not name, and on a run that caught none (ADR-0008).
 
-**Test pattern:** Rust unit tests beside the code they test (`#[cfg(test)]`), and a property test
-of the bridge crate's validation (`crates/engine-wasm/src/properties.rs`, proptest) that feeds it
-10,000 random batches per run against a brute-force oracle; Bun tests beside
-their module as `*.test.ts`, the bridge's against the built WebAssembly module, and the lint's
-rules for Comb's library sources in `packages/comb/src/lint.test.ts`; browser tests
-under `examples/*/e2e`, a file for the golden path and one for each concern they verify, sharing
-their helpers through `e2e/shared.ts`, run by Playwright on Bun against the example, reading what
-is drawn through `comb/testing` rather than pixels, apart from one reference image of the edges
-alone.
-Both run the bridge in test mode, which grows the engine's memory before each of its calls, so a
-view kept across a call reads empty; the browser tests serve the example in Vite's `test` mode
-for it, on port 5174, and assert it through `testMode()` of `comb/testing`, and the bundle check
-fails a bundle that carries it. In test mode the engine traps on demand: `trapNextCall()` of
-`comb/testing` arms an export the bridge crate carries only when built with its feature
-`test-mode`, and the next call of an `Engine` traps. The Bun test of the trap reads that engine
-from `packages/comb/wasm/test-mode/` in a process of its own, since a trap loses the engine for
-the process; the example's Vite configuration hands it over in place of `comb/engine.wasm` on the
-development server in test mode, and the bundle check fails an engine file that carries the
-export. In test mode the example's Vite configuration sends every response
-with the Content Security Policy of Q-6, `default-src 'self'; script-src 'self'
-'wasm-unsafe-eval'`, from the development server and from `vite preview`, so every browser test
-runs under it; `e2e/policy.spec.ts` records every request and `securitypolicyviolation` while the
-graph loads, is panned, and is zoomed, once on the development server and once, tagged `@built`,
-on the example's production build, which `vite preview` serves on port 5175.
-Playwright and the benchmark start headless Chromium without the displays a Dev Container
+**Test pattern:** Rust unit tests beside the code they test (`#[cfg(test)]`); a property test of
+the bridge crate's validation (`crates/engine-wasm/src/properties.rs`, proptest) that feeds it
+10,000 random batches per run against a brute-force oracle, and one of the mesh budget
+(`crates/engine/src/graph/budget.rs`) that queries random graphs of long edges with the budget
+lowered; Bun tests beside their module as `*.test.ts`, the bridge's against the built WebAssembly
+module, the lint's rules for Comb's library sources in `packages/comb/src/lint.test.ts`, and those
+of `bench/compare.ts` and `bench/chromium.ts` beside them; browser tests under `examples/*/e2e`, a
+file for the golden path and one for each concern they verify, sharing their helpers through
+`e2e/shared.ts`, run by Playwright on Bun against the example, reading what is drawn through
+`comb/testing` rather than pixels, apart from one reference image of the edges alone.
+
+The Bun tests and the browser tests on the development server run the bridge in test mode, which
+grows the engine's memory before each of its calls, so a view kept across a call reads empty. The
+browser tests serve the example in Vite's `test` mode for it, on port 5174, and assert it through
+`testMode()` of `comb/testing`; the bundle check fails a bundle that carries it. In test mode the
+engine traps on demand: `trapNextCall()` of `comb/testing` arms an export the bridge crate carries
+only when built with its feature `test-mode`, and the next call of an `Engine` traps. The example's
+Vite configuration hands that engine, from `packages/comb/wasm/test-mode/`, over in place of
+`comb/engine.wasm` on the development server in test mode; the Bun test of the trap reads it in a
+process of its own (`packages/comb/src/bridge/trap.fixture.ts`), since a trap loses the engine for
+the process; and the bundle check fails an engine file that carries the export.
+
+In test mode the example's Vite configuration also sends every response with the Content Security
+Policy of Q-6, `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'`, from the development
+server and from `vite preview`, so every browser test runs under it. `e2e/policy.spec.ts` records
+every request and `securitypolicyviolation` while the graph loads, is panned, and is zoomed, once
+on the development server and once, tagged `@built`, on the example's production build, which
+`vite preview` serves on port 5175; that build runs without test mode, as a host application ships
+it. Playwright and the benchmark start headless Chromium without the displays a Dev Container
 forwards, so WebGL2 runs on SwiftShader instead of PixiJS falling back to Canvas 2D.
 
 ## How it runs
@@ -215,11 +229,12 @@ found, and uploads the edge mesh the query built, so edges and labels follow the
 same frame.
 
 **Panning and zooming.** `interaction` sets the store's viewport. While the viewport stays inside
-the rectangle the scene last queried, at a scale within a factor of 1.25 of the one it queried at,
-the world moves alone; beyond that the scene renders as above, so what leaves the viewport and its
-margin returns its views to the pools and what enters takes them from there. The mesh is flattened
-within a quarter pixel at the current zoom, so zoomed out it has fewer points. A resize of the
-canvas renders too.
+the rectangle the scene last queried, and that rectangle within the viewport grown by twice the
+culling margin, at a scale within a factor of 1.25 of the one it queried at and the same level of
+detail, the world moves alone; beyond that the scene renders as above, so what leaves the
+viewport and its margin returns its views to the pools and what enters takes them from there. The
+mesh is flattened within a quarter pixel at the current zoom, so zoomed out it has fewer points. A
+resize of the canvas renders too.
 
 **Building.** `bun run build:engine` compiles `crates/engine-wasm` with wasm-pack into
 `packages/comb/wasm/` (generated, not tracked), with glue that has no default path to the engine
@@ -245,15 +260,22 @@ guard, `createComb`, and the calls of `Comb` that need the engine throw an `Engi
 (ADR-0021). The frame that finds the engine lost stops rendering and resolves its waiters, and
 input handlers do nothing, so no trap escapes as a page error.
 
-**Holding the shape.** `scripts/check-structure.sh` fails when the engine's core names or, through
-`Cargo.lock`, reaches a crate that touches the browser, when a module other than the bridge
+**Holding the shape.** `scripts/check-code.sh`, which `scripts/check-all.sh` runs and the
+**Checks** workflow (`.github/workflows/checks.yml`) runs on every pull request, runs the
+structural and dependency checks below with their self-tests, then the build, the lint, and the
+tests, then the bundle check with its self-test. `scripts/check-structure.sh`
+fails when the engine's core names or, through `Cargo.lock`, reaches a crate that touches the
+browser, the clock, randomness, or I/O, when a module other than the bridge
 imports the WebAssembly package, when the render layer reaches the store instead of the action-free
 `GraphView`, or when an example imports past the library's entries and its engine file
 (ADR-0009, ADR-0019), and when the render layer names PixiJS's `Text`, `HTMLText`, or
 `SplitText` or the edges layer a `Graphics` (ADR-0012), and when its Canvas 2D fallback names
 `Graphics` outside its imports and its one field (ADR-0018). `scripts/check-bundle.sh` builds
 the library and fails when its gzipped JavaScript and the engine file reach the 300 kB of Q-3,
-or when the JavaScript inlines the engine (ADR-0019). `scripts/check-dependencies.sh` fails on a
+when no engine file is measured, when the JavaScript inlines the engine (ADR-0019), and when the
+JavaScript carries the bridge's test mode or the engine file the trap's export (ADR-0010,
+ADR-0021); it fails too when it does not recognise either in the library built in test mode and
+the engine of `packages/comb/wasm/test-mode/`. `scripts/check-dependencies.sh` fails on a
 lockfile of another package manager beside `bun.lock` (ADR-0008), on tsify's default or `json`
 features or `serde_json` in the bridge crate (ADR-0010), in whatever form the entry takes, and on
 a listed state library other than zustand in the library's dependency lists (ADR-0011). The type
