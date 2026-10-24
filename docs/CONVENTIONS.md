@@ -23,9 +23,10 @@ skimmed. The design revision drops what prevented nothing
   environment (the renderer, the GPU, the display) asserts that environment before it records
   anything, and fails rather than measure a fallback: a silent fallback looks like a result.
 - **Geometry is tested on its awkward cases.** A test of paths, bounds, or strokes includes edges
-  that run backwards (target left of source), level edges, and edges shorter than their
-  arrowhead; distances are measured to the segment, not to its line. The easy forward curve hides
-  the errors that matter.
+  that run backwards (target left of source), level edges, edges shorter than their arrowhead,
+  and edges far from the world's origin and far longer than the viewport, where `f32` rounds by
+  more than a pixel; distances are measured to the segment, not to its line. The easy forward
+  curve near the origin hides the errors that matter.
 - **Check a value as the engine keeps it.** Graph data is judged in the type the engine stores it
   in, not the type it arrived in: `1e300` is a finite `f64` and an infinite `f32`, so a check of
   the wider type lets through what the engine then holds as infinity. Narrow first, then check.

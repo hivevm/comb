@@ -43,6 +43,14 @@ whose only door to the engine is its `bridge` module.
   1,000,000 nodes and 1,000,000 edges, at most 256 UTF-16 code units per identifier (a node's or
   an edge's, a source, a target), at most 64,000,000 code units of identifiers per load, and at
   most 1,000 code units per title and per label text.
+- **What the bridge cannot see:** `api` decides two things itself, each because the bridge cannot.
+  A string that holds a lone surrogate, which serde-wasm-bindgen hands the bridge crate as
+  U+FFFD, so that it would check another string than the store keeps, is handed over as `false`,
+  which the bridge refuses as a value of the wrong type. An identifier `updateNode` names that the
+  graph does not hold is refused as `unknownNode` against the store's map from identifiers to
+  slots, which only the shell keeps (ADR-0010). Every other refusal, the limits among them, is the
+  bridge crate's, and `api` reads the limits from it; the defaults `api` fills in for an edge's
+  colour and arrowhead refuse nothing.
 - **Shell:** `packages/comb/src` has the modules `api` (the public interface, which only reads:
   it copies the host application's graph data once into primitives, what it cannot read is
   malformed, and it hands the copy to the bridge before the store keeps any of it), `store`
@@ -65,6 +73,9 @@ graph, and the model of node content, each a decision of its own.
   and `api` checks in TypeScript what only the store keeps. No text crosses the bridge, but there
   are two places of validation, and error kinds written by hand stand beside the generated ones
   of ADR-0010.
+- **Lone surrogates checked in the bridge crate** — one place for that refusal too, but the
+  bridge would have to read each string as a JavaScript string before serde-wasm-bindgen converts
+  it, outside the generated types of ADR-0010, for a refusal `api` makes with one expression.
 - **Validation in `api` alone** — the shell checks all graph data in TypeScript before the
   bridge. The bridge crate would check again in its own types, so every rule would be written
   twice in two languages.
@@ -115,5 +126,7 @@ imports anything of `packages/comb` other than its entries `comb`, `comb/testing
 cites this ADR with `Verifies: ADR-0009`. The property test of the bridge crate generates every
 field of graph data, those the engine does not keep among them, and a browser test refuses a
 malformed title, label text, label background, and patch of `updateNode` through the public
-interface; both cite this ADR. That a function of the core writes only the buffers it is given,
-and that `api` checks no field of graph data itself, is review.
+interface; both cite this ADR. Browser tests refuse a lone surrogate in an identifier and in a
+title, citing this ADR, and an `updateNode` of an identifier the graph does not hold, citing
+Q-7, through the public interface. That a function of the core writes only the buffers it is
+given, and that `api` refuses nothing of graph data beyond what the bridge cannot see, is review.
