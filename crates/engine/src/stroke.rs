@@ -341,8 +341,9 @@ impl Mesh {
             reason = "less the query's origin and only then rounded (ADR-0010): a vertex the split \
                       keeps near the rectangle rounds by its distance from it, and an end left far \
                       beyond it keeps the rounding ADR-0027 records, which Q-4 allows past 2^21 \
-                      px; a vertex lies within a few times `WORLD_LIMIT` of the world's origin, and \
-                      the origin of a rectangle cut to `QUERY_LIMIT` too, far within f32"
+                      px; a vertex lies within three times `WORLD_LIMIT` of the world's origin, a \
+                      stroke's width within `PIXEL_LIMIT`'s, and the origin of a rectangle that \
+                      finds it within 2^127 of it (ADR-0010), within f32"
         )]
         self.positions
             .extend([(at.x - x) as f32, (at.y - y) as f32]);

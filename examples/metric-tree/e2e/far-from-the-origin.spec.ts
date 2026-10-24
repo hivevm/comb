@@ -212,7 +212,6 @@ test("a viewport around 1e300 draws nothing infinite, loses no engine, and draws
       return window.inspect();
     }, at);
     expect(finite(drawn)).toBe(true);
-    expect(drawn.edgeMesh.vertices).toBeGreaterThanOrEqual(0);
   }
   await setViewport(page, { x: 100, y: 100, scale: 1 });
   const back = await page.evaluate(() => window.inspect());

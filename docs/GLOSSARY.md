@@ -88,3 +88,6 @@ to invent.
   deletion of the user's, and that allows a deletion only by returning `true`, a connection only by
   returning the new edge's identifier.
 - **Viewport** — the part of the world that the canvas currently shows, given by pan and zoom.
+- **World limit** — how far from the world's origin the graph may lie, 2^120 world units on each
+  axis: every node, its far side included, and every label offset; graph data beyond it is
+  refused, and a drag stops at it.

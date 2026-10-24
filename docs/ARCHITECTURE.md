@@ -27,7 +27,8 @@
  │ node positions and sizes, edges, spatial index, edge paths      │
  └────────────────────────────────────────────────────────────────┘
 ```
- Graph data from the host application is untrusted, and every field of it crosses the bridge before
+
+Graph data from the host application is untrusted, and every field of it crosses the bridge before
 the store keeps any of it. The bridge crate refuses, each with a typed error: a field that is
 missing or holds a value of another type, naming the node or edge by index, and by identifier where
 it has one, the field, and what the field expects in plain words (`invalidField`); graph data that
@@ -127,24 +128,25 @@ The functional core and its shell follow
   re-places the edge, `edgesAt` names the edges at given nodes without removing anything,
   `removeNodes` removes nodes and the edges at them and returns those edges' slots, `removeEdges`
   removes edges, `translate` moves nodes, each as far as keeps it within the world's limit, and a
-  label dragged beyond it stops there too, so that every point the engine derives stays far within
-  `f32`, `query` takes a rectangle, cut to four times that limit, a level of detail, the size of a
-  screen pixel, and how far an edge label's pill reaches from its point, and writes the found node
-  slots, the edge-label slots and points (at the near level only), the found edge slots, and the
-  edge mesh into buffers the engine owns, the label points and the mesh's positions relative to the
-  query's origin, which `originX` and `originY` read ([ADR-0010](adr/0010-bridge-data-format.md)),
-  and returns the mesh's detail, complete or coarsened, and refuses a pixel that is not a finite
-  number above zero as malformed; `drawnEdges` computes the ends of the found edges when inspection
-  asks, as they lie then, and `hit` names what a press at a point hits, a connector where the shell
-  asks for connectors, a label, a node, or an edge by its slot, or nothing, as one generated value,
-  and refuses a pixel as `query` does; `setLabelSize` takes the measure of a label's pill,
-  `labelPoint` names where a label lies, and `moveLabel` places a dragged label and returns its path
-  parameter and offset; it generates the type of every problem of graph data the methods of `Comb`
-  throw, `GraphDataProblem`, which `comb` exports, and keeps the refusals of the shell's mistakes in
-  types of their own: `TranslateError` of `translate`, and `SlotError` of a slot that holds nothing,
-  which the removals, `edgesAt`, `setLabelSize`, and `moveLabel` throw, while `addEdge` and
-  `updateEdge` report such a slot as malformed. Its crate root holds the exports and their
-  conversions; its module `graph_data` reads and checks graph data, the one place that does
+  label dragged beyond it stops there too, so that every point the engine derives stays within
+  `f32`, `query` takes a rectangle, a level of detail, the size of a screen pixel, at most 2^114
+  world units for a stroke, and how far an edge label's pill reaches from its point, and writes the
+  found node slots, the edge-label slots and points (at the near level only), the found edge slots,
+  and the edge mesh into buffers the engine owns, the label points and the mesh's positions relative
+  to the query's origin, which `originX` and `originY` read
+  ([ADR-0010](adr/0010-bridge-data-format.md)), and returns the mesh's detail, complete or
+  coarsened, and refuses a pixel that is not a finite number above zero as malformed; `drawnEdges`
+  computes the ends of the found edges when inspection asks, as they lie then, and `hit` names what
+  a press at a point hits, a connector where the shell asks for connectors, a label, a node, or an
+  edge by its slot, or nothing, as one generated value, and refuses a pixel as `query` does;
+  `setLabelSize` takes the measure of a label's pill, `labelPoint` names where a label lies, and
+  `moveLabel` places a dragged label and returns its path parameter and offset; it generates the
+  type of every problem of graph data the methods of `Comb` throw, `GraphDataProblem`, which `comb`
+  exports, and keeps the refusals of the shell's mistakes in types of their own: `TranslateError` of
+  `translate`, and `SlotError` of a slot that holds nothing, which the removals, `edgesAt`,
+  `setLabelSize`, and `moveLabel` throw, while `addEdge` and `updateEdge` report such a slot as
+  malformed. Its crate root holds the exports and their conversions; its module `graph_data` reads
+  and checks graph data, the one place that does
   ([ADR-0026](adr/0026-the-shell-refuses-what-only-its-map-knows.md)); `packages/comb/src/bridge` is
   the one module that imports the WebAssembly package and reads those buffers through fresh
   typed-array views per read ([ADR-0010](adr/0010-bridge-data-format.md)).
