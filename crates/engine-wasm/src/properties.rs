@@ -22,8 +22,7 @@ use super::{
     EdgeInput, EdgePatch, EdgeRefusal, GraphBatch, GraphDataProblem, GraphList, NodeInput,
 };
 use super::{
-    NodePatch, add_edge_to, add_node_to, graph_of, malformed, patch_of, reading, unshaped,
-    update_edge_in,
+    NodePatch, add_edge_to, add_node_to, graph_of, patch_of, reading, unshaped, update_edge_in,
 };
 
 /// How many random batches one run feeds the bridge: the ticket's floor, which runs in seconds.
@@ -374,13 +373,12 @@ fn finite32(v: f64) -> bool {
     v.is_finite() && (v as f32).is_finite()
 }
 
-/// The problem of the data an edit of an edge was refused for: these properties hand over slots
-/// that hold what they name, so a slot refused is a failure of its own, which no load matches.
-fn data(refusal: EdgeRefusal) -> GraphDataProblem {
-    match refusal {
-        EdgeRefusal::Data(problem) => problem,
-        EdgeRefusal::Slot(error) => malformed(&format!("a slot refused: {error:?}")),
-    }
+/// Whether a load of the two nodes and `edge` alone is to be refused by nothing, by the oracle
+/// above: what an added edge and a patched one are held to on their own, not only to a load.
+fn accepted_alone(edge: Value) -> bool {
+    let data = two_nodes(vec![edge]);
+    named_fields(&data).is_empty()
+        && reading(|| GraphBatch::deserialize(data)).is_ok_and(|batch| acceptable(&batch))
 }
 
 /// Whether nothing in `batch` is to be refused, by brute force over the batch alone.
@@ -827,25 +825,31 @@ proptest! {
         let slot_of = |end: &Option<String>| u32::from(end.as_deref() == Some("n1"));
         let mut graph = loaded(two_nodes(Vec::new())).unwrap();
         let added = reading(|| EdgeInput::deserialize(value.clone()))
-            .map_err(unshaped)
-            .and_then(|edge| add_edge_to(&mut graph, &edge, slot_of(&source), slot_of(&target)).map_err(data));
+            .map_err(|error| EdgeRefusal::Data(unshaped(error)))
+            .and_then(|edge| add_edge_to(&mut graph, &edge, slot_of(&source), slot_of(&target)));
         let typed = matches!(
             as_load,
             Err(GraphDataProblem::InvalidField { .. } | GraphDataProblem::IdTooLong { .. }
                 | GraphDataProblem::Malformed { .. })
         );
         if source.is_some() && source == target && !typed {
-            prop_assert!(matches!(added, Err(GraphDataProblem::SelfEdge { .. })), "{:?}", added);
+            prop_assert!(
+                matches!(added, Err(EdgeRefusal::Data(GraphDataProblem::SelfEdge { .. }))),
+                "{:?}",
+                added
+            );
             prop_assert_eq!(graph.edges_in_use(), 0);
             return Ok(());
         }
+        // Held to the oracle on its own too, so that a check a load shares with it, dropped, is seen.
+        prop_assert_eq!(added.is_ok(), accepted_alone(value.clone()), "{:?}", added);
         match (added, as_load) {
             (Ok(slot), Ok(expected)) => {
                 prop_assert_eq!(slot, 0);
                 prop_assert_eq!(graph.edge(0), expected.edge(0));
             }
             (Err(error), Err(expected)) => {
-                prop_assert_eq!(error, expected);
+                prop_assert_eq!(error, EdgeRefusal::Data(expected));
                 prop_assert_eq!(graph.edges_in_use(), 0);
             }
             (added, as_load) => prop_assert!(false, "added {:?}, loaded {:?}", added, as_load.map(|_| ())),
@@ -869,20 +873,22 @@ proptest! {
             merged.push((name.clone(), value.clone()));
         }
         let updated = reading(|| EdgePatch::deserialize(Value::Object(patch)))
-            .map_err(unshaped)
-            .and_then(|patch| update_edge_in(&mut graph, 0, "e0", patch).map_err(data));
+            .map_err(|error| EdgeRefusal::Data(unshaped(error)))
+            .and_then(|patch| update_edge_in(&mut graph, 0, "e0", patch));
         if let Some(field) = other {
-            prop_assert_eq!(updated, Err(GraphDataProblem::UnknownEdgePatchField {
+            prop_assert_eq!(updated, Err(EdgeRefusal::Data(GraphDataProblem::UnknownEdgePatchField {
                 edge: "e0".to_owned(),
                 field,
-            }));
+            })));
             prop_assert_eq!(graph.edge(0), before);
             return Ok(());
         }
+        // Held to the oracle on its own too, as an added edge is.
+        prop_assert_eq!(updated.is_ok(), accepted_alone(Value::Object(merged.clone())), "{:?}", updated);
         match (updated, loaded(two_nodes(vec![Value::Object(merged)]))) {
             (Ok(()), Ok(expected)) => prop_assert_eq!(graph.edge(0), expected.edge(0)),
             (Err(error), Err(expected)) => {
-                prop_assert_eq!(error, expected);
+                prop_assert_eq!(error, EdgeRefusal::Data(expected));
                 prop_assert_eq!(graph.edge(0), before);
             }
             (updated, as_load) => prop_assert!(false, "updated {:?}, loaded {:?}", updated, as_load.map(|_| ())),

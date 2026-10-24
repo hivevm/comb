@@ -521,6 +521,8 @@ describe("bridge removals", () => {
       kind: "noEdge",
       slot: 1,
     });
+    bridge.query(everywhere, "near", 1, 0);
+    expect([...bridge.drawnEdges().slots]).toEqual([0]);
     expect([...bridge.query(everywhere, "near", 1, 0).nodes]).toEqual([0, 1]);
     expect([...bridge.positions()].slice(0, 4)).toEqual([0, 0, 200, 0]);
   });

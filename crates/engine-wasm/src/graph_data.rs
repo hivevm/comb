@@ -567,10 +567,7 @@ fn edge_of(index: usize, edge: &EdgeInput) -> Result<Edge<'_>, GraphDataProblem>
     item.id = Some(id);
     let source = item.id("source", &edge.source)?;
     let target = item.id("target", &edge.target)?;
-    let label = item
-        .read("label", edge.label, A_LABEL)?
-        .map(|label| label_of(&item, label))
-        .transpose()?;
+    let label = label_of(&item, edge.label)?;
     Ok(Edge {
         id,
         source,
@@ -586,15 +583,22 @@ fn edge_of(index: usize, edge: &EdgeInput) -> Result<Edge<'_>, GraphDataProblem>
     })
 }
 
-/// The label `input` of the edge `item` with every field read, as a load, `addEdge`, and a patch
-/// of `updateEdge` read it, or the refusal that names its first missing or mistyped field.
-fn label_of(item: &Item, input: LabelInput) -> Result<Label, GraphDataProblem> {
-    Ok(Label {
-        text_length: input.text_length,
-        t: item.read("label.t", input.t, A_NUMBER)?,
-        offset: item.read("label.offset", input.offset, A_NUMBER)?,
-        background: input.background,
-    })
+/// The label `field` of the edge `item`, or none, with every field read, as a load, `addEdge`, and
+/// a patch of `updateEdge` read it, or the refusal that names its first missing or mistyped field.
+fn label_of(
+    item: &Item,
+    field: Field<Option<LabelInput>>,
+) -> Result<Option<Label>, GraphDataProblem> {
+    item.read("label", field, A_LABEL)?
+        .map(|input| {
+            Ok(Label {
+                text_length: input.text_length,
+                t: item.read("label.t", input.t, A_NUMBER)?,
+                offset: item.read("label.offset", input.offset, A_NUMBER)?,
+                background: input.background,
+            })
+        })
+        .transpose()
 }
 
 /// Reads every field of every node and edge of a batch, or names the first that is missing or
@@ -824,12 +828,8 @@ fn id_length(list: &str, index: usize, field: &str, id: &str) -> Result<usize, G
 /// Checks the length of every identifier of a batch, and of all of them together.
 fn ids_of(batch: &Batch) -> Result<(), GraphDataProblem> {
     let mut units = 0;
-    let mut add = |list: &str, index: usize, field: &str, id: &str| {
-        units += id_length(list, index, field, id)?;
-        Ok::<(), GraphDataProblem>(())
-    };
     for (index, node) in batch.nodes.iter().enumerate() {
-        add("nodes", index, "id", node.id)?;
+        units += id_length("nodes", index, "id", node.id)?;
     }
     for (index, edge) in batch.edges.iter().enumerate() {
         units += edge_ids(index, edge)?;
@@ -877,7 +877,7 @@ pub(crate) fn add_node_to(graph: &mut Graph, node: &NodeInput) -> Result<u32, Gr
 
 /// Why an edit of an edge was refused: its data, which the host application handed over, or a
 /// slot that holds nothing, which is the shell's mistake (ADR-0022), and crosses as `SlotError`
-/// as from every other export that takes slots.
+/// as from the removals, `edgesAt`, `setLabelSize`, and `moveLabel`.
 #[derive(Debug, PartialEq)]
 pub enum EdgeRefusal {
     Data(GraphDataProblem),
@@ -1000,11 +1000,7 @@ pub(crate) fn update_edge_in(
     item.id = Some(id);
     let label = patch
         .label
-        .map(|label| {
-            item.read("label", label, A_LABEL)?
-                .map(|input| label_of(&item, input))
-                .transpose()
-        })
+        .map(|label| label_of(&item, label))
         .transpose()?;
     let color = patch
         .color
