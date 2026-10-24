@@ -8,7 +8,9 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use comb_engine::geometry::{self as graph_side, Sides, WORLD_LIMIT};
-use comb_engine::graph::{self, EdgeSpec, Graph, GraphError, LabelPlacement, SlotError};
+use comb_engine::graph::{
+    self, AddEdgeError, EdgeSpec, Graph, GraphError, LabelPlacement, SlotError,
+};
 use comb_engine::stroke::EdgeStyle;
 use serde::de::{self, IgnoredAny, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -896,6 +898,17 @@ impl From<SlotError> for EdgeRefusal {
     }
 }
 
+/// An edge the engine did not add: an end that holds no node is the shell's mistake, and a slot
+/// past those the engine numbers a refusal of the graph's size, as for a node.
+impl From<AddEdgeError> for EdgeRefusal {
+    fn from(error: AddEdgeError) -> Self {
+        match error {
+            AddEdgeError::Slot(error) => Self::Slot(error),
+            AddEdgeError::Graph(error) => Self::Data(error.into()),
+        }
+    }
+}
+
 /// Checks the edge `addEdge` hands over as a load checks an edge, the only one of its batch at
 /// index 0, and refuses one from a node to itself (ADR-0024) and one past `MAX_ITEMS` edges in
 /// use; adds it to `graph` between the node slots `source` and `target`, which `api` resolved
@@ -1584,6 +1597,21 @@ pub(crate) mod tests {
         let mut node = batch(&[("n", x, y)], &[]).nodes.remove(0);
         change(&mut node);
         node
+    }
+
+    #[test]
+    fn an_edge_the_engine_cannot_number_is_refused_as_a_node_it_cannot_number() {
+        // Verifies: ADR-0022
+        let node = GraphDataProblem::from(GraphError::TooManySlots);
+        assert_eq!(
+            EdgeRefusal::from(AddEdgeError::Graph(GraphError::TooManySlots)),
+            EdgeRefusal::Data(node)
+        );
+        let slot = SlotError::NoNode { slot: 3 };
+        assert_eq!(
+            EdgeRefusal::from(AddEdgeError::Slot(slot)),
+            EdgeRefusal::Slot(slot)
+        );
     }
 
     #[test]

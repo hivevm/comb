@@ -3,7 +3,7 @@
 //! and the path of each edge, its bounds, and the point of its label (ADR-0022, ADR-0024).
 
 use super::slots::put;
-use super::{EdgeSpec, Graph, LabelPlacement, SlotError};
+use super::{AddEdgeError, EdgeSpec, Graph, LabelPlacement, SlotError};
 use crate::geometry::{EdgePath, Point, Rect, Sides};
 use crate::stroke::EdgeStyle;
 
@@ -54,17 +54,16 @@ impl Graph {
     /// Adds the edge `spec` and returns its slot: the free slot freed last, or a new one after the
     /// highest. It goes into the lists of its ends and into the index in place, which the rule of
     /// ADR-0022 then builds again where it asks for it. An end that holds no node refuses the
-    /// edge, and nothing changes.
-    pub fn add_edge(&mut self, spec: EdgeSpec) -> Result<u32, SlotError> {
+    /// edge, and a slot past those a `u32` numbers refuses it as it refuses a node; either way,
+    /// nothing changes.
+    pub fn add_edge(&mut self, spec: EdgeSpec) -> Result<u32, AddEdgeError> {
         if let Some(slot) = [spec.source, spec.target]
             .into_iter()
             .find(|&s| !self.holds_node(s))
         {
-            return Err(SlotError::NoNode { slot });
+            return Err(SlotError::NoNode { slot }.into());
         }
-        let slot = self.edge_slots.take().map_err(|_| SlotError::NoEdge {
-            slot: self.edge_slots.count(),
-        })?;
+        let slot = self.edge_slots.take()?;
         let i = slot as usize;
         put(&mut self.edges, i, spec);
         put(&mut self.pills, i, None);
@@ -193,6 +192,7 @@ impl Graph {
 
 #[cfg(test)]
 mod tests {
+    use super::super::GraphError;
     use super::super::tests::{Lcg, paired, random_graph};
     use super::*;
 
@@ -253,11 +253,11 @@ mod tests {
         let edges = graph.edge_slots.count();
         assert_eq!(
             graph.add_edge(spec(0, 7)),
-            Err(SlotError::NoNode { slot: 7 })
+            Err(SlotError::NoNode { slot: 7 }.into())
         );
         assert_eq!(
             graph.add_edge(spec(5_000, 0)),
-            Err(SlotError::NoNode { slot: 5_000 })
+            Err(SlotError::NoNode { slot: 5_000 }.into())
         );
         assert_eq!(graph.edge_slots.count(), edges);
         assert_eq!(
@@ -268,5 +268,34 @@ mod tests {
         // The freed edge slot is the next addition's.
         assert_eq!(graph.add_edge(spec(0, 2)), Ok(3));
         assert_eq!(graph.add_edge(spec(2, 0)), Ok(4));
+    }
+
+    #[test]
+    fn an_edge_past_the_slots_a_u32_numbers_is_refused_as_a_node_past_them_and_nothing_changes() {
+        // Verifies: ADR-0022
+        let spec = EdgeSpec {
+            sides: Sides::default(),
+            source: 0,
+            target: 1,
+            label: None,
+            style: EdgeStyle::unstyled(),
+        };
+        let mut graph = paired(4);
+        graph.node_slots.set_count(u32::MAX);
+        assert_eq!(
+            graph.add_node(0.0, 0.0, 5.0, 5.0),
+            Err(GraphError::TooManySlots)
+        );
+        let mut graph = paired(4);
+        graph.edge_slots.set_count(u32::MAX);
+        assert_eq!(
+            graph.add_edge(spec),
+            Err(AddEdgeError::Graph(GraphError::TooManySlots))
+        );
+        assert_eq!((graph.edges.len(), graph.paths.len()), (4, 4));
+        assert_eq!(
+            (&graph.incident[0], &graph.incident[1]),
+            (&vec![0], &vec![0])
+        );
     }
 }

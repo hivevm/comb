@@ -73,6 +73,26 @@ pub enum SlotError {
     NoEdge { slot: u32 },
 }
 
+/// Why an edge was not added: an end that holds no node, or a slot past those a `u32` numbers,
+/// refused as a node past them is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AddEdgeError {
+    Slot(SlotError),
+    Graph(GraphError),
+}
+
+impl From<SlotError> for AddEdgeError {
+    fn from(error: SlotError) -> Self {
+        Self::Slot(error)
+    }
+}
+
+impl From<GraphError> for AddEdgeError {
+    fn from(error: GraphError) -> Self {
+        Self::Graph(error)
+    }
+}
+
 /// The slot of the node or edge at `index`, or the count of `index` of them, refused where it
 /// lies beyond `u32`: the one conversion of a count to slots, for the engine and the bridge alike.
 pub fn slot(index: usize) -> Result<u32, GraphError> {

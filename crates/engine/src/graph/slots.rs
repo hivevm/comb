@@ -73,6 +73,13 @@ impl Slots {
         true
     }
 
+    /// Makes the slots `count`, those past the ones recorded holding nothing, for the tests of a
+    /// slot past those a `u32` numbers.
+    #[cfg(test)]
+    pub(super) fn set_count(&mut self, count: u32) {
+        self.count = count;
+    }
+
     /// The free slots, the one freed last at the end.
     #[cfg(test)]
     pub(super) fn free_list(&self) -> &[u32] {
