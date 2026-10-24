@@ -19,8 +19,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { cpus } from "node:os";
 import type { LoadReport } from "../examples/metric-tree/src/main";
 import { chromiumEnv } from "./chromium";
-import { gestures } from "./compare";
-import { referenceWorkload } from "./reference";
+import { gestures, type Run } from "./compare";
+import { PARTS, referenceWorkload } from "./reference";
 
 const PORT = 4173;
 const COPIES = Number(process.env.BENCH_COPIES ?? 3334);
@@ -212,10 +212,10 @@ async function measure(page: Page) {
   });
 
   const reference = await referenceWorkload(page);
-  console.log(
-    `reference: ${reference.ms.toFixed(1)} ms (JavaScript ${reference.js.toFixed(1)}, ` +
-      `WebAssembly ${reference.wasm.toFixed(1)}, WebGL2 ${reference.gpu.toFixed(1)})`,
-  );
+  const each = PARTS.filter(([, key]) => key !== "ms")
+    .map(([name, key]) => `${name} ${reference[key].toFixed(1)}`)
+    .join(", ");
+  console.log(`reference: ${reference.ms.toFixed(1)} ms (${each})`);
 
   const node = await nodeNearCentre(page);
   const before = await drawnNode(page, node.id);
@@ -317,6 +317,12 @@ try {
       copies: COPIES,
       steps: STEPS,
       ...result,
+      // Every field of `Run` present, an optional one too, so that one misnamed is refused rather
+      // than read as missing, as a run of an older shape would be.
+    } satisfies Run & { [K in keyof Run]-?: unknown } & {
+      date: string;
+      commit: string;
+      steps: number;
     };
     mkdirSync("bench-results", { recursive: true });
     writeFileSync("bench-results/latest.json", JSON.stringify(record, null, 2) + "\n");

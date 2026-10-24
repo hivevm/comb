@@ -9,7 +9,7 @@
 // its argument and the timer the page is given first.
 import type { Page } from "@playwright/test";
 
-/** What the reference workload took, in milliseconds. */
+/** What the reference workload took, in milliseconds: its sum and each of its parts. */
 export interface Reference {
   /** The sum of the parts, reported beside them; the runner gate judges the parts. */
   ms: number;
@@ -18,6 +18,22 @@ export interface Reference {
   gpu: number;
 }
 
+/** The parts of the reference by the name a log line and the gate report, and their key: the one
+ *  list the gate, `usable`, the median, and the log line walk, so that a part added to the
+ *  workload is taken everywhere. The sum comes first. */
+export const PARTS = [
+  ["sum", "ms"],
+  ["JavaScript", "js"],
+  ["WebAssembly", "wasm"],
+  ["WebGL2", "gpu"],
+] as const satisfies readonly (readonly [string, keyof Reference])[];
+
+/** Every key of `Reference` among `PARTS`: the type checker refuses a part left out of the list. */
+type Unlisted = Exclude<keyof Reference, (typeof PARTS)[number][1]>;
+export const EVERY_PART_LISTED: [Unlisted] extends [never] ? true : never = true;
+
+/** Odd, since the in-page timer takes the middle of its sorted times as their median, which
+ *  `page.evaluate` keeps it from importing from bench/compare.ts. */
 const ROUNDS = 5;
 const LOOP = 100_000_000;
 

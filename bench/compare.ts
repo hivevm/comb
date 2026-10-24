@@ -24,7 +24,7 @@
 // cannot be compared, the runner kind and the runner gate included.
 import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import type { Reference } from "./reference";
+import { PARTS, type Reference } from "./reference";
 
 /** How much a number may exceed its baseline, and a part of the reference differ from the
  *  baseline's: a quarter, the maintainer's margin. */
@@ -170,12 +170,9 @@ export function median(runs: Run[]): Run | string {
     ...(first.cpu && { cpu: first.cpu }),
     gpu: first.gpu,
     ...(referenced && {
-      reference: {
-        ms: of((run) => run.reference!.ms),
-        js: of((run) => run.reference!.js),
-        wasm: of((run) => run.reference!.wasm),
-        gpu: of((run) => run.reference!.gpu),
-      },
+      reference: Object.fromEntries(
+        PARTS.map(([, key]) => [key, of((run) => run.reference![key])]),
+      ) as unknown as Reference,
     }),
     load: { nodes: first.load.nodes, firstFrameMs: of((run) => run.load.firstFrameMs) },
     drag: gesture((run) => run.drag),
@@ -192,16 +189,8 @@ export type Verdict =
 /** A reference whose sum and parts are all positive, finite times. */
 export function usable(reference: Reference | undefined): reference is Reference {
   if (!reference) return false;
-  const times = [reference.ms, reference.js, reference.wasm, reference.gpu];
-  return times.every((ms) => Number.isFinite(ms) && ms > 0);
+  return PARTS.every(([, key]) => Number.isFinite(reference[key]) && reference[key] > 0);
 }
-
-const PARTS = [
-  ["sum", "ms"],
-  ["JavaScript", "js"],
-  ["WebAssembly", "wasm"],
-  ["WebGL2", "gpu"],
-] as const;
 
 /** The runner gate: each part of the run's reference against the baseline's, as a line for the
  *  log, and the parts whose ratio differs from 1 by more than `margin`, either way. The sum is
