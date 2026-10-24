@@ -7,6 +7,8 @@
 # exit code and a line it prints. A fresh build passes and prints nothing; an engine file older
 # than a source under crates/, than Cargo.toml, or than Cargo.lock fails, naming the file, the
 # source, and `bun run build:engine`, for the engine and for the engine built in test mode alike;
+# what lies under crates/ but no build reads (the list of surviving mutants, proptest's
+# regressions, a run of cargo-mutants, an editor's swap file) does not, while any other file does;
 # a missing engine file and a missing engine directory fail with the same advice; a root without
 # the sources fails rather than pass.
 #
@@ -87,6 +89,20 @@ expect "Cargo.lock is a source" 1 "is older than Cargo.lock" "$lock"
 added="$(tree added)"
 : > "$added/crates/engine/src/new.rs"
 expect "a source added after the build fails" 1 "is older than crates/engine/src/new.rs" "$added"
+
+ignored="$(tree ignored)"
+mkdir -p "$ignored/crates/engine-wasm/proptest-regressions" "$ignored/crates/engine/mutants.out"
+for f in crates/engine/mutants-missed.txt crates/engine-wasm/proptest-regressions/properties.txt \
+  crates/engine/mutants.out/missed.txt crates/engine/src/.stroke.rs.swp \
+  crates/engine/src/stroke.rs~; do
+  : > "$ignored/$f"
+done
+expect "a file no build reads leaves the engine fresh" 0 "" "$ignored"
+
+unknown="$(tree unknown)"
+: > "$unknown/crates/engine/src/shader.wgsl"
+expect "a file nobody listed counts as a source" 1 "is older than crates/engine/src/shader.wgsl" \
+  "$unknown"
 
 file="$(tree file)"
 rm "$file/$TESTING"

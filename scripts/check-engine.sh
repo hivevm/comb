@@ -7,9 +7,11 @@
 # bundle check read whatever those directories hold, so a change to crates/ that is not built yet
 # would be tested in the engine of an earlier change. This check fails, naming the file and the
 # command to run, when either engine file is missing or older than the newest of the sources it is
-# built from: every file under crates/, Cargo.toml, and Cargo.lock. It passes silently. A root
+# built from: every file under crates/ but those no build reads, Cargo.toml, and Cargo.lock. It
+# passes silently. A root
 # without those sources fails, since there would be nothing to compare with.
-# `bun run test` and scripts/check-bundle.sh run it before anything else.
+# `bun run test`, `bun run dev`, which Playwright serves the example with, and
+# scripts/check-bundle.sh run it before anything else.
 #
 # Usage:
 #     scripts/check-engine.sh [repository root]
@@ -25,6 +27,13 @@ if [[ ! -d crates || ! -f Cargo.toml || ! -f Cargo.lock ]]; then
   exit 1
 fi
 
+# What lies under crates/ but no build reads: the survivors of mutation testing, the cases proptest
+# records when a property fails, a run of cargo-mutants started inside a crate, and the swap and
+# backup files of editors. Any other file counts, so that an input nobody listed here makes the
+# engine stale rather than leave it unchecked.
+NOT_SOURCES=(-name mutants-missed.txt -o -name proptest-regressions -o -name 'mutants.out*'
+  -o -name '*.swp' -o -name '*.swo' -o -name '*~' -o -name '.#*')
+
 failed=0
 for engine in packages/comb/wasm/engine_bg.wasm packages/comb/wasm/test-mode/engine_bg.wasm; do
   if [[ ! -f "$engine" ]]; then
@@ -32,7 +41,8 @@ for engine in packages/comb/wasm/engine_bg.wasm packages/comb/wasm/test-mode/eng
     failed=1
     continue
   fi
-  newer="$(find crates Cargo.toml Cargo.lock -type f -newer "$engine" -print -quit 2> /dev/null)"
+  newer="$(find crates Cargo.toml Cargo.lock \( "${NOT_SOURCES[@]}" \) -prune -o \
+    -type f -newer "$engine" -print -quit)"
   if [[ -n "$newer" ]]; then
     echo "Engine check FAILED: $engine is older than $newer — run \`bun run build:engine\`." >&2
     failed=1

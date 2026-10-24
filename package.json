@@ -13,7 +13,7 @@
     "typecheck": "bunx --bun tsc -p tsconfig.json",
     "test": "bash scripts/check-engine.sh && cargo test --workspace && bun test packages/comb/src bench && bunx --bun playwright test",
     "lint": "cargo fmt --all --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && bunx --bun eslint . && bunx --bun prettier --check .",
-    "dev": "bun run --cwd examples/metric-tree dev",
+    "dev": "bash scripts/check-engine.sh && bun run --cwd examples/metric-tree dev",
     "example": "bun run build:engine && bun run dev",
     "bench": "bun run build:engine && bun run --cwd examples/metric-tree build && bun --bun bench/run.ts"
   },
