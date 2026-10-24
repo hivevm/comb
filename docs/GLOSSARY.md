@@ -13,8 +13,13 @@ to invent.
 - **Bridge** — the boundary across which TypeScript and the engine exchange data.
 - **Canvas** — the WebGL2 surface on which Comb draws, and on which the user manipulates nodes,
   edges, and edge labels.
-- **Connector** — a point on a node where an edge starts or ends.
+- **Connector** — a point on a node where an edge starts or ends: the middle of one of its four
+  sides.
   _Avoid:_ port, handle, socket, pin.
+- **Connection** — the gesture of dragging from a connector of one node to a connector of another,
+  which creates an edge where it is released over a compatible one.
+- **Change** — one edit of the graph as Comb reports it to the host application, typed by its
+  kind and saying whether the user or the host application made it.
 - **Coarsened** — said of an edge mesh in which some edges are drawn less exactly than the
   flattening asks, or not at all, because the mesh budget or memory ran short.
 - **Culling** — leaving out of the draw everything that lies entirely outside the viewport grown
@@ -61,13 +66,25 @@ to invent.
   over its vertex positions and label points, and at whose screen point the shell draws the world.
 - **Runner kind** — the CPU model a benchmark run records of the machine it ran on; runs are
   compared only with the baseline of their own kind.
+- **Rank** — the place of a node in the order nodes are drawn and hit, kept by the engine; a load
+  ranks nodes by slot, and a node added takes the highest rank.
+- **Selection** — the one node or edge the user has picked on the canvas, which the sidebar edits
+  and a delete removes.
+- **Side** — one of the four sides of a node, `top`, `right`, `bottom`, or `left`, each with one
+  connector; an edge records the side it leaves and the side it enters.
 - **Sidebar** — the host application's HTML panel, outside the canvas, in which the attributes of
   the selection are edited.
 - **Slot** — the index of a node or an edge in the engine's buffers, the same on both sides of the
-  bridge; a load gives node `i` and edge `i` of the graph data slot `i`.
+  bridge; a load gives node `i` and edge `i` of the graph data slot `i`, and an addition takes the
+  free slot of its kind freed last, or a new one after the highest.
   _Avoid:_ handle.
+- **Free slot** — a slot whose node or edge was removed; it holds nothing until an addition takes
+  it again, and no query or hit test returns it.
 - **Spatial index** — the engine's uniform grid over the bounds of nodes and edges, which answers
   which slots a rectangle meets.
 - **Trap** — WebAssembly aborting a call of the engine, as when its memory runs out; after a trap
   the engine is lost for the page, and Comb refuses every later call that needs it.
+- **Veto** — a callback of the host application that Comb asks before it makes a connection or a
+  deletion of the user's, and that allows a deletion only by returning `true`, a connection only by
+  returning the new edge's identifier.
 - **Viewport** — the part of the world that the canvas currently shows, given by pan and zoom.

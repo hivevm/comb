@@ -6,7 +6,7 @@ import { open } from "./shared";
 test("20,000 edges between two nodes far apart draw zoomed in, and a later graph draws", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0012
+  // Verifies: Q-7, ADR-0027
   test.setTimeout(120_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

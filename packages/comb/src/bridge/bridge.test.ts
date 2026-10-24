@@ -255,7 +255,7 @@ const RUST =
 
 describe("bridge fields the engine does not keep", () => {
   test("a title, label text, or label background of the wrong kind comes back as a typed error", () => {
-    // Verifies: ADR-0009, ADR-0010
+    // Verifies: ADR-0026, ADR-0010
     const label = (fields: object) => ({ text: "x", t: 0.5, offset: 0, ...fields });
     const errors = [
       graph([{ ...node("a", 0, 0), title: 5 as unknown as string }]),
@@ -276,7 +276,7 @@ describe("bridge fields the engine does not keep", () => {
   });
 
   test("a patch of a node comes back as a typed error unless it holds only a title", () => {
-    // Verifies: ADR-0009, ADR-0010
+    // Verifies: ADR-0026, ADR-0010
     expect(bridge.checkNodePatch("a", { title: "A" })).toEqual({ title: "A" });
     expect(bridge.checkNodePatch("a", {})).toEqual({});
     const errors = [{ id: "b" }, { title: 5 }].map((patch) => {

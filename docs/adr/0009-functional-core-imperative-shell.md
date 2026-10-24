@@ -1,6 +1,6 @@
 # ADR-0009: A pure Rust engine as functional core, and a TypeScript shell around it
 
-- **Status:** 🟢 accepted
+- **Status:** ⚪ superseded by [ADR-0026](0026-the-shell-refuses-what-only-its-map-knows.md)
 - **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** the directory layout, `crates/`, `packages/`, `examples/`, and every import between their modules

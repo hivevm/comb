@@ -1570,7 +1570,7 @@ mod tests {
 
     #[test]
     fn four_vertices_for_each_of_the_most_edges_a_load_holds_fit_the_budget() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         assert!(4 * u64::from(MAX_ITEMS) <= u64::from(MESH_BUDGET));
         assert_eq!(MESH_BUDGET, (4 * MAX_ITEMS).next_power_of_two());
     }
@@ -1634,7 +1634,7 @@ mod tests {
 
     #[test]
     fn a_pixel_that_is_not_a_finite_number_above_zero_is_refused_before_any_edge_is_flattened() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         let mut engine = Engine::new();
         let data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 100.0)], &[("e", "a", "b")]);
         engine.graph = graph_of(&data).unwrap();

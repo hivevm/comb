@@ -35,7 +35,7 @@ and the bridge's `loadGraph` and `checkNodePatch` take those. A type test, in th
 
 ## Read first
 
-- ADR-0009 (*Bridge*, *Shell*, *What the bridge cannot see*); ADR-0010 (*Structured data*).
+- ADR-0026 (*Bridge*, *Shell*, *What the bridge cannot see*); ADR-0010 (*Structured data*).
 - `packages/comb/src/api/snapshot.ts`, `packages/comb/src/api/index.ts` (`loaderOf`,
   `updaterOf`), `packages/comb/src/bridge/index.ts` (`Bridge`).
 - `packages/comb/src/store/graph-view.test.ts`, the golden path of a type test.

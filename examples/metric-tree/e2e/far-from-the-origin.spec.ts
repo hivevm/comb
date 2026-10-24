@@ -143,7 +143,7 @@ async function loadLongEdge(page: Page): Promise<[number, number][]> {
 test("a segment whose ends lie far outside the viewport is drawn within a quarter pixel", async ({
   page,
 }) => {
-  // Verifies: Q-4, ADR-0012
+  // Verifies: Q-4, ADR-0027
   await open(page);
   const { width, height } = await canvasSize(page);
   const path = await loadLongEdge(page);

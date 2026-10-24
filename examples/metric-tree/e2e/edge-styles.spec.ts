@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 import { open } from "./shared";
 
 test("the edges show their colours, dashes, and arrowheads", async ({ page }) => {
-  // Verifies: G-11, ADR-0012
+  // Verifies: G-11, ADR-0027
   await open(page);
   expect((await page.evaluate(() => window.inspect())).edgeTriangles).toBeGreaterThan(0);
   // The reference image, approved by eye, holds the edges alone, without the text of nodes and

@@ -39,7 +39,7 @@ not a string or longer than 1,000 UTF-16 code units, a label background that is 
 from `0` to `0xFFFFFF`, more than 1,000,000 nodes or edges, an identifier, source, or target longer
 than 256 UTF-16 code units, and identifiers of one load that hold more than 64,000,000 code units
 together. `api` refuses an identifier `updateNode` names that the graph does not hold, against the
-store's map from identifiers to slots (ADR-0009), and the bridge crate refuses a patch that holds a
+store's map from identifiers to slots (ADR-0026), and the bridge crate refuses a patch that holds a
 field other than a title, or a title it would refuse in a load. Titles, label texts, and label
 backgrounds are checked there but not kept by the engine. `api` reads the host's graph data once,
 in JavaScript, into a snapshot (`api/snapshot.ts`) of plain data whose every field is a primitive
@@ -60,7 +60,8 @@ JavaScript's built-ins, such as a setter on `Object.prototype` or a `Symbol.hasI
 
 ## Building blocks
 
-The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imperative-shell.md).
+The functional core and its shell follow
+[ADR-0026](adr/0026-the-shell-refuses-what-only-its-map-knows.md).
 
 - **Engine** (`crates/engine`) — pure geometry: `geometry` holds edge paths as cubic Bézier
   curves from the right middle of one node to the left middle of another, their exact bounds, the
@@ -114,7 +115,7 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
 - **Render** (`packages/comb/src/render`) — the PixiJS scene (`scene.ts`): a `world` render
   group with the layers `EdgesContainer` (`edges.ts`), `NodeParticles` (`particles.ts`),
   `NodesContainer` (`nodes.ts`), and `LabelsContainer` (`labels.ts`), and an `overlay`
-  ([ADR-0012](adr/0012-virtualized-scene-graph.md)); `bindings.ts` is the pool of views the
+  ([ADR-0027](adr/0027-nodes-bound-by-rank.md)); `bindings.ts` is the pool of views the
   nodes and labels layers bind to slots. The scale chooses the level of
   detail: near (from 0.6) draws node views and edge labels, middle (from 0.3) node views alone,
   and far nodes as particles of one `ParticleContainer` (`render/particles.ts`) and edges as
@@ -133,7 +134,7 @@ The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imp
   and fills the same triangles into one `Graphics`, one fill per run of one colour, dash
   patterns solid. Not built yet: the node content of
   [ADR-0013](adr/0013-node-content-model.md), and the connectors of G-3, a layer that joins the
-  scene with the change that builds it ([ADR-0012](adr/0012-virtualized-scene-graph.md)).
+  scene with the change that builds it ([ADR-0027](adr/0027-nodes-bound-by-rank.md)).
 - **API** (`packages/comb/src/api`) — `api/index.ts` imports `pixi.js/unsafe-eval` before
   PixiJS, so that no PixiJS renderer on the page generates code with eval
   ([ADR-0020](adr/0020-pixijs-without-eval.md)); `createComb`, which takes the engine's
@@ -268,8 +269,8 @@ fails when the engine's core names or, through `Cargo.lock`, reaches a crate tha
 browser, the clock, randomness, or I/O, when a module other than the bridge
 imports the WebAssembly package, when the render layer reaches the store instead of the action-free
 `GraphView`, or when an example imports past the library's entries and its engine file
-(ADR-0009, ADR-0019), and when the render layer names PixiJS's `Text`, `HTMLText`, or
-`SplitText` or the edges layer a `Graphics` (ADR-0012), and when its Canvas 2D fallback names
+(ADR-0026, ADR-0019), and when the render layer names PixiJS's `Text`, `HTMLText`, or
+`SplitText` or the edges layer a `Graphics` (ADR-0027), and when its Canvas 2D fallback names
 `Graphics` outside its imports and its one field (ADR-0018). `scripts/check-bundle.sh` builds
 the library and fails when its gzipped JavaScript and the engine file reach the 300 kB of Q-3,
 when no engine file is measured, when the JavaScript inlines the engine (ADR-0019), and when the

@@ -52,7 +52,7 @@ async function pan(
 test("a pan within the queried rectangle creates, resizes, and uploads nothing, at every level", async ({
   page,
 }) => {
-  // Verifies: ADR-0012
+  // Verifies: ADR-0027
   test.setTimeout(60_000);
   await open(page, "?copies=100");
   const { cullingMargin } = await sceneNumbers(page);
@@ -84,7 +84,7 @@ test("a pan within the queried rectangle creates, resizes, and uploads nothing, 
 test("a pan across queries at the near level takes every view from the warm pools", async ({
   page,
 }) => {
-  // Verifies: ADR-0012
+  // Verifies: ADR-0027
   test.setTimeout(60_000);
   await open(page, "?copies=100");
   const { cullingMargin } = await sceneNumbers(page);
@@ -109,7 +109,7 @@ test("a pan across queries at the near level takes every view from the warm pool
 test("a drag at the far level updates the GPU buffers in place, never reallocating them", async ({
   page,
 }) => {
-  // Verifies: ADR-0012
+  // Verifies: ADR-0027
   await open(page);
   const { width, height } = await canvasSize(page);
   await setViewport(page, { x: width / 2, y: height / 2, scale: 0.2 });
