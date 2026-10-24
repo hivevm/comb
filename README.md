@@ -98,10 +98,6 @@ budget of Q-3 (`bun run build:lib`, at most 300 kB gzipped without PixiJS).
 
 ## Usage
 
-<!-- Once there is something to use, show how to use the built software: the primary commands or
-     API, a minimal example, and the expected output. Keep build/test/run mechanics in the section
-     above; this section is about using the result, not producing it. -->
-
 A host application gives Comb an element to fill and the engine's WebAssembly, hands it the
 graph, and keeps the forms:
 
