@@ -243,7 +243,12 @@ With the canvas focused, which a press on it does, Delete or Backspace deletes t
 with every edge at it, once `CombOptions.canDelete` returns `true` for the identifiers of everything
 that would go; without `canDelete` a deletion is allowed, and the host application's own
 `removeNodes` and `removeEdges` never ask it. The deletion is told as `nodesRemoved` or
-`edgesRemoved` with `by: "user"`.
+`edgesRemoved` with `by: "user"`. Where `CombOptions.canConnect` is set, hovering a
+node shows its four connectors, and a drag from one to a connector of another node the source does
+not reach yet connects them: `canConnect({ source, sourceSide, target, targetSide })` names the
+new edge, checked as `addEdge` checks one, or refuses with `false`; the edge is told as
+`edgeAdded` with `by: "user"`. Without `canConnect`, no connection begins. The example names each
+edge after its ends.
 
 ## Project Layout
 

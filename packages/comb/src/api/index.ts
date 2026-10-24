@@ -13,7 +13,14 @@ import {
   type GraphDataProblem,
   type Rect,
 } from "../bridge";
-import { attachDeletion, attachInteraction, canvasPointAt, type Deletion } from "../interaction";
+import {
+  attachDeletion,
+  attachInteraction,
+  canvasPointAt,
+  type Connect,
+  type Deletion,
+  type Proposal,
+} from "../interaction";
 import { clampScale, fitViewport, toWorld } from "../interaction/viewport";
 import { Scene } from "../render/scene";
 import { engineOf, type EngineSource } from "./engine";
@@ -52,7 +59,7 @@ export { EngineLostError } from "../bridge";
 export { EngineSourceError } from "./engine";
 export type { EngineSource, EngineSourceProblem } from "./engine";
 export type { GraphDataProblem } from "../bridge";
-export type { Deletion } from "../interaction";
+export type { Deletion, Proposal } from "../interaction";
 
 /** The attributes `updateEdge` changes on an edge, as `edgeUpdated` reports them merged: its
  *  colour, arrowhead, dash pattern or none, and label or none (ADR-0023). */
@@ -143,6 +150,14 @@ export interface CombOptions {
    *  Never called for the host application's own calls. Without it, a deletion is allowed
    *  (ADR-0023). */
   canDelete?: (deletion: Deletion) => boolean;
+  /** The veto of a connection of the user's (G-3): called when the user releases a connection
+   *  over a compatible connector of another node, with the identifiers of both nodes and the sides
+   *  of both connectors. It returns the identifier of the new edge, which is checked as `addEdge`
+   *  checks one, or `false` to refuse; any other value refuses as `false` does. An error it
+   *  throws, or one of the identifier it returns, refuses the connection and is thrown on from the
+   *  input event. Never called for the host application's own calls. Without it, no connection
+   *  begins: Comb has no name to give the edge (ADR-0023). */
+  canConnect?: (proposal: Proposal) => string | false;
 }
 
 /** Once the engine is lost for the page, `load`, `updateNode`, `addNode`, `fitView`, and
@@ -397,7 +412,12 @@ function edgeRemoverOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb[
  *  the store's map holds already and an end it does not hold, and the code units of identifiers
  *  past the budget, and has the bridge check the edge as a load would and add it between the
  *  slots of its ends (ADR-0022, ADR-0026). A value that is no string the bridge refuses itself. */
-function edgeAdderOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["addEdge"] {
+function edgeAdderOf(
+  store: GraphStore,
+  bridge: Bridge,
+  limits: Limits,
+  by: "user" | "host" = "host",
+): Comb["addEdge"] {
   return (edge) => {
     refuseIfLost();
     const { snapshot, idUnits } = readOnce(() => edgeSnapshotOf(edge, limits));
@@ -420,7 +440,7 @@ function edgeAdderOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["a
     checked(() => bridge.checkIdBudget(store.getState().idUnits + idUnits));
     const slot = checked(() => bridge.addEdge(snapshot, from, to));
     // The bridge took the edge, so each field holds a value of its type.
-    store.getState().addEdge(snapshot as unknown as EdgeData, slot);
+    store.getState().addEdge(snapshot as unknown as EdgeData, slot, by);
   };
 }
 
@@ -438,6 +458,23 @@ function edgeUpdaterOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb[
     if (Object.keys(plain).length === 0) return;
     checked(() => bridge.updateEdge(slot, id, plain));
     store.getState().updateEdge(id, plain as unknown as EdgePatch);
+  };
+}
+
+/** The user's connections on `store`, where the host gives `canConnect`: the veto asked, and the
+ *  edge it names added as `addEdge` adds one, by the user (ADR-0023); none without it. */
+function connectorOf(
+  store: GraphStore,
+  bridge: Bridge,
+  limits: Limits,
+  canConnect: CombOptions["canConnect"],
+): Connect | undefined {
+  if (!canConnect) return undefined;
+  const add = edgeAdderOf(store, bridge, limits, "user");
+  return ({ source, sourceSide, target, targetSide }) => {
+    const id: unknown = canConnect({ source, sourceSide, target, targetSide });
+    if (typeof id !== "string") return;
+    add({ id, source, target, sourceSide, targetSide });
   };
 }
 
@@ -646,7 +683,8 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
   const unsubscribe = store.subscribe(frames.schedule);
   // A larger canvas shows more of the world, so what is culled changes with its size.
   app.renderer.on("resize", frames.schedule);
-  const detach = attachInteraction(app, store, bridge);
+  const connect = connectorOf(store, bridge, limits, options.canConnect);
+  const detach = attachInteraction(app, store, bridge, connect);
   const detachDeletion = attachDeletion(app.canvas, store, bridge, options.canDelete);
   const lost = engineLostOf();
   const listeners = listenersOf(store, bridge);

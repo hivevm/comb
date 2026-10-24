@@ -46,7 +46,7 @@ const edgeOf = (fields: object) =>
 const plainEdge = (patch: object) => patch as PlainEdgePatch;
 /** The slot of the node a press at `(x, y)` hits, at a screen pixel of one world unit. */
 const nodeAt = (x: number, y: number) => {
-  const hit = bridge.hit(x, y, 1, "near");
+  const hit = bridge.hit(x, y, 1, "near", false);
   return hit.kind === "node" ? hit.slot : undefined;
 };
 /** Nodes `a` and `b`. */
@@ -75,7 +75,7 @@ describe("bridge views", () => {
       ["positions", () => bridge.positions()],
       ["query", () => bridge.query(everywhere, "near", 4, 0)],
       ["drawnEdges", () => bridge.drawnEdges()],
-      ["hit", () => bridge.hit(0, 0, 1, "near")],
+      ["hit", () => bridge.hit(0, 0, 1, "near", true)],
       ["addEdge", () => bridge.addEdge(edgeOf(edge("x", "n0", "n2")), 0, 2)],
       ["updateEdge", () => bridge.updateEdge(0, "e0", plainEdge({ color: 0 }))],
       ["removeEdges", () => bridge.removeEdges(new Uint32Array([0]))],

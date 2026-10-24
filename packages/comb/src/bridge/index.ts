@@ -169,9 +169,11 @@ export interface Bridge {
    *  not keep them across calls. */
   drawnEdges(): DrawnEdges;
   /** What a press at the world point `(x, y)` hits where a screen pixel is `pixel` world units,
-   *  at `level`: the node drawn on top there, else the edge drawn on top within 4 screen pixels of
-   *  its path as the stroke flattens it, else nothing (ADR-0025). */
-  hit(x: number, y: number, pixel: number, level: Level): Hit;
+   *  at `level`: where `connectors` asks for them, at the near and middle level, a connector
+   *  within 8 screen pixels, of the node drawn on top; else the node drawn on top there, else the
+   *  edge drawn on top within 4 screen pixels of its path as the stroke flattens it, else nothing
+   *  (ADR-0025). */
+  hit(x: number, y: number, pixel: number, level: Level, connectors: boolean): Hit;
 }
 
 /** Whether the bridge runs in test mode: under `bun test`, and in Vite's `test` mode, which the
@@ -346,7 +348,7 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
     edgesAt: (slots) => engine.edgesAt(slots),
     translate: (slots, dx, dy) => engine.translate(slots, dx, dy),
     positions: () => f32(engine.positionsPtr(), engine.positionsLen()),
-    hit: (x, y, pixel, level) => engine.hit(x, y, pixel, LEVELS[level]),
+    hit: (x, y, pixel, level, connectors) => engine.hit(x, y, pixel, LEVELS[level], connectors),
     drawnEdges() {
       engine.drawnEdges();
       return {

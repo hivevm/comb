@@ -3,6 +3,7 @@ import {
   createComb,
   type Comb,
   type Deletion,
+  type Proposal,
   type EdgeData,
   type EdgePatch,
   type EngineSource,
@@ -51,6 +52,9 @@ declare global {
     /** The veto of the user's deletions a browser test sets; without one, every deletion is
      *  allowed. Its result is handed to Comb as it is. */
     canDelete?: (deletion: Deletion) => unknown;
+    /** The veto of the user's connections a browser test sets; without one, the example names
+     *  each new edge after its ends. Its result is handed to Comb as it is. */
+    canConnect?: (proposal: Proposal) => unknown;
     /** Loads `graph` as the example's own, which its sidebar edits, for a browser test. */
     useGraph: (graph: GraphData) => void;
     /** What the canvas draws, from comb/testing, for the browser tests and the benchmark. */
@@ -95,6 +99,8 @@ async function engineAs(form: string): Promise<EngineSource> {
 }
 
 const form = query.get("engine");
+/** How many edges the user connected, for the name of the next. */
+let connected = 0;
 // `?fallback=canvas` lets Comb draw on Canvas 2D where the browser offers no WebGL2.
 const fallback = query.get("fallback") === "canvas";
 // By default the example hands over the promise of its request, as a host application would.
@@ -102,6 +108,15 @@ const comb = await createComb(element("canvas"), {
   engine: form ? await engineAs(form) : fetch(engineUrl),
   allowCanvasFallback: fallback,
   canDelete: (deletion) => (window.canDelete ? window.canDelete(deletion) : true) as boolean,
+  // `?connect=none` gives Comb no veto of connections, so that the user connects nothing.
+  ...(query.get("connect") === "none"
+    ? {}
+    : {
+        canConnect: (proposal: Proposal) =>
+          (window.canConnect
+            ? window.canConnect(proposal)
+            : `${proposal.source}-${proposal.target}-${(connected += 1)}`) as string | false,
+      }),
 });
 const copies = element<HTMLSelectElement>("copies");
 const count = element("count");
