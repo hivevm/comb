@@ -19,7 +19,7 @@ mod graph_data;
 
 use comb_engine::geometry::Point;
 use comb_engine::geometry::Rect;
-use comb_engine::graph::{Graph, Level, SlotError as GraphSlotError, Visible};
+use comb_engine::graph::{Graph, Level, SlotError as GraphSlotError, Target, Visible};
 use comb_engine::positions::PositionError;
 use comb_engine::stroke::Detail;
 use serde::{Deserialize, Serialize};
@@ -152,6 +152,16 @@ pub fn check_node_patch(
 ) -> Result<Ts<CheckedPatch>, GraphDataProblem> {
     let checked = patch_of(node, patch.to_rust().map_err(unshaped)?)?;
     Ts::from_rust(&checked).map_err(|_| malformed("the checked patch could not be handed back"))
+}
+
+/// What a press hits (ADR-0025): a node or an edge by its slot, or nothing; one generated value
+/// (ADR-0010).
+#[derive(Tsify, Serialize, Debug, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum Hit {
+    None,
+    Node { slot: u32 },
+    Edge { slot: u32 },
 }
 
 /// A rectangle in world coordinates, as a query asks for it.
@@ -353,10 +363,23 @@ impl Engine {
         self.graph.edge_ends(&self.visible.edges, &mut self.ends);
     }
 
-    /// The slot of the node drawn on top at the world point `(x, y)`, if any.
-    pub fn hit(&mut self, x: f64, y: f64) -> Option<u32> {
+    /// What a press at the world point `(x, y)` hits where a screen pixel is `pixel` world units,
+    /// at `level`: the node drawn on top there, else the edge drawn on top within 4 screen pixels
+    /// of its path, else nothing (ADR-0025).
+    pub fn hit(
+        &mut self,
+        x: f64,
+        y: f64,
+        pixel: f64,
+        level: DetailLevel,
+    ) -> Result<Ts<Hit>, GraphDataProblem> {
         trap::spring();
-        self.graph.hit(Point::new(x, y))
+        let hit = match self.graph.hit_at(Point::new(x, y), pixel, level.into()) {
+            Some(Target::Node(slot)) => Hit::Node { slot },
+            Some(Target::Edge(slot)) => Hit::Edge { slot },
+            None => Hit::None,
+        };
+        Ts::from_rust(&hit).map_err(|_| malformed("the hit could not be handed back"))
     }
 }
 

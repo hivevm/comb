@@ -4,7 +4,7 @@
 // cannot hold, and a patch of an unknown edge or field change nothing (ADR-0026, Q-7).
 import { expect, test, type Page } from "@playwright/test";
 import type { EdgeData, GraphData } from "comb";
-import { NODE_HEIGHT, NODE_WIDTH, open, setViewport } from "./shared";
+import { NODE_HEIGHT, NODE_WIDTH, open, setViewport, strokeOf } from "./shared";
 
 const node = (id: string, x = 0, y = 0) => ({
   id,
@@ -33,42 +33,6 @@ async function loaded(page: Page, graph: GraphData = PAIR): Promise<void> {
 
 async function told(page: Page): Promise<unknown[]> {
   return page.evaluate(() => (window as unknown as { told: unknown[] }).told);
-}
-
-/** Along the edge from `a` to `b`, screen y = 132 from x = 340 to 680, which pixels the canvas
- *  draws in `color` (`0xRRGGBB`), within a tolerance, read off a screenshot with the nodes and
- *  labels hidden: as many as it draws and how many runs they fall into. */
-async function strokeOf(page: Page, color: number) {
-  await page.evaluate(async () => {
-    window.showLayers({ nodes: false, edgeLabels: false });
-    await window.comb.whenRendered();
-  });
-  const png = await page.locator("#canvas canvas").screenshot();
-  const stroke = await page.evaluate(
-    async ({ png, color }) => {
-      const bytes = Uint8Array.from(atob(png), (char) => char.charCodeAt(0));
-      const image = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
-      const ratio = image.width / document.querySelector("#canvas canvas")!.clientWidth;
-      const copy = document.createElement("canvas");
-      [copy.width, copy.height] = [image.width, image.height];
-      const context = copy.getContext("2d")!;
-      context.drawImage(image, 0, 0);
-      const want = [(color >> 16) & 0xff, (color >> 8) & 0xff, color & 0xff];
-      const hits: boolean[] = [];
-      for (let x = 340; x <= 680; x++) {
-        const { data } = context.getImageData(Math.round(x * ratio), Math.round(132 * ratio), 1, 1);
-        hits.push(want.every((value, channel) => Math.abs(data[channel]! - value) < 48));
-      }
-      const runs = hits.filter((hit, i) => hit && !hits[i - 1]).length;
-      return { drawn: hits.filter(Boolean).length, runs };
-    },
-    { png: png.toString("base64"), color },
-  );
-  await page.evaluate(async () => {
-    window.showLayers({ nodes: true, edgeLabels: true });
-    await window.comb.whenRendered();
-  });
-  return stroke;
 }
 
 const RED = 0xe0453a;
@@ -259,4 +223,110 @@ test("addEdge refuses an edge past the limit of a load as tooMany", async ({ pag
     }
   });
   expect(result).toEqual({ kind: "tooMany", list: "edges", limit: 1_000_000 });
+});
+
+test("a patch of one field keeps the label and the dash, and moves a label the edge has", async ({
+  page,
+}) => {
+  // Verifies: G-5, ADR-0023
+  await open(page);
+  await loaded(page);
+  const edge = {
+    id: "a-b",
+    source: "a",
+    target: "b",
+    color: RED,
+    dash: [8, 8] as const,
+    label: { text: "kept", t: 0.5, offset: 0 },
+  };
+  await page.evaluate((edge) => window.comb.addEdge(edge), edge);
+  await page.evaluate(() => window.comb.updateEdge("a-b", { arrow: "none" }));
+  const labels = async () =>
+    page.evaluate(async () => {
+      await window.comb.whenRendered();
+      return window.inspect().edgeLabels.map(({ text, x }) => ({ text, x }));
+    });
+  expect(await labels()).toEqual([{ text: "kept", x: 410 }]);
+  expect((await strokeOf(page, RED)).runs).toBeGreaterThan(10);
+  await page.evaluate(() =>
+    window.comb.updateEdge("a-b", { label: { text: "kept", t: 0.25, offset: 0 } }),
+  );
+  expect(await labels()).toEqual([{ text: "kept", x: 332.8125 }]);
+  // A patch that sets nothing tells nothing.
+  await page.evaluate(() => window.comb.updateEdge("a-b", {}));
+  expect((await told(page)).map((change) => (change as { kind: string }).kind)).toEqual([
+    "edgeAdded",
+    "edgeUpdated",
+    "edgeUpdated",
+  ]);
+});
+
+test("a getter of a patch that removes the edge refuses the patch, and no other edge changes", async ({
+  page,
+}) => {
+  // Verifies: Q-7, ADR-0026
+  await open(page);
+  await loaded(page);
+  await page.evaluate(
+    (red) => window.comb.addEdge({ id: "e1", source: "a", target: "b", color: red }),
+    RED,
+  );
+  const result = await page.evaluate((blue) => {
+    const { comb } = window;
+    const patch = {
+      get color() {
+        comb.removeEdges(["e1"]);
+        // It takes the slot e1 freed.
+        comb.addEdge({ id: "e2", source: "b", target: "a" });
+        return blue;
+      },
+    };
+    try {
+      comb.updateEdge("e1", patch);
+      return null;
+    } catch (error) {
+      return (error as Error & { problem: unknown }).problem;
+    }
+  }, BLUE);
+  expect(result).toEqual({ kind: "unknownEdge", edge: "e1" });
+  expect((await told(page)).map((change) => (change as { kind: string }).kind)).toEqual([
+    "edgeAdded",
+    "edgesRemoved",
+    "edgeAdded",
+  ]);
+  expect((await strokeOf(page, BLUE)).drawn).toBe(0);
+});
+
+test("a listener that writes into a delivered change reaches nothing Comb keeps", async ({
+  page,
+}) => {
+  // Verifies: Q-7, ADR-0026
+  await open(page);
+  await loaded(page);
+  await page.evaluate(() => {
+    window.comb.onChange((change) => {
+      if (change.kind === "edgeUpdated" && change.patch.label)
+        (change.patch.label as { text: string }).text = "written by a listener";
+      if (change.kind === "edgeAdded" && change.edge.label)
+        (change.edge.label as { text: string }).text = "written by a listener";
+    });
+    window.comb.addEdge({
+      id: "a-b",
+      source: "a",
+      target: "b",
+      label: { text: "one", t: 0.5, offset: 0 },
+    });
+  });
+  const first = await page.evaluate(async () => {
+    await window.comb.whenRendered();
+    return window.inspect().edgeLabels.map(({ text }) => text);
+  });
+  await page.evaluate(() =>
+    window.comb.updateEdge("a-b", { label: { text: "two", t: 0.5, offset: 0 } }),
+  );
+  const second = await page.evaluate(async () => {
+    await window.comb.whenRendered();
+    return window.inspect().edgeLabels.map(({ text }) => text);
+  });
+  expect([first, second]).toEqual([["one"], ["two"]]);
 });

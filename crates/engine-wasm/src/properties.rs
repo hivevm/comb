@@ -701,7 +701,8 @@ fn loaded(data: Value) -> Result<comb_engine::graph::Graph, GraphDataProblem> {
         .and_then(|batch| graph_of(&batch))
 }
 
-/// The edge `e0` from `n0` to `n1`, styled, which a patch of `updateEdge` changes.
+/// The edge `e0` from `n0` to `n1`, styled, dashed, and labelled, which a patch of `updateEdge`
+/// changes.
 fn base_edge() -> Vec<(String, Value)> {
     vec![
         ("id".to_owned(), Value::Text("e0".to_owned())),
@@ -709,6 +710,19 @@ fn base_edge() -> Vec<(String, Value)> {
         ("target".to_owned(), Value::Text("n1".to_owned())),
         ("color".to_owned(), Value::Number(f64::from(0x12_3456))),
         ("arrow".to_owned(), Value::Text("end".to_owned())),
+        // A dash and a label too, so that a patch that names neither is seen to keep them.
+        (
+            "dash".to_owned(),
+            Value::List(vec![Value::Number(8.0), Value::Number(4.0)]),
+        ),
+        (
+            "label".to_owned(),
+            Value::Object(vec![
+                ("text".to_owned(), Value::Text("x".to_owned())),
+                ("t".to_owned(), Value::Number(0.3)),
+                ("offset".to_owned(), Value::Number(5.0)),
+            ]),
+        ),
     ]
 }
 

@@ -18,13 +18,22 @@ import init, {
   type EdgeInput,
   type EdgePatch,
   type GraphBatch,
+  type Hit,
   type GraphDataProblem,
   type NodeInput,
   type NodePatch,
   type TranslateError,
 } from "../../wasm/engine.js";
 
-export type { CheckedPatch, GraphBatch, GraphDataProblem, NodeInput, NodePatch, TranslateError };
+export type {
+  CheckedPatch,
+  GraphBatch,
+  GraphDataProblem,
+  Hit,
+  NodeInput,
+  NodePatch,
+  TranslateError,
+};
 
 /** The mark of plain data `api/snapshot.ts` read once from the host application's value
  *  (ADR-0026). It is exported nowhere, so that handing the bridge a value of the host
@@ -156,8 +165,10 @@ export interface Bridge {
    *  before the next query are already moved: for inspection, not for drawing. Fresh views; do
    *  not keep them across calls. */
   drawnEdges(): DrawnEdges;
-  /** The slot of the node drawn on top at the world point `(x, y)`, if any. */
-  hit(x: number, y: number): number | undefined;
+  /** What a press at the world point `(x, y)` hits where a screen pixel is `pixel` world units,
+   *  at `level`: the node drawn on top there, else the edge drawn on top within 4 screen pixels of
+   *  its path as the stroke flattens it, else nothing (ADR-0025). */
+  hit(x: number, y: number, pixel: number, level: Level): Hit;
 }
 
 /** Whether the bridge runs in test mode: under `bun test`, and in Vite's `test` mode, which the
@@ -331,7 +342,7 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
     removeEdges: (slots) => engine.removeEdges(slots),
     translate: (slots, dx, dy) => engine.translate(slots, dx, dy),
     positions: () => f32(engine.positionsPtr(), engine.positionsLen()),
-    hit: (x, y) => engine.hit(x, y),
+    hit: (x, y, pixel, level) => engine.hit(x, y, pixel, LEVELS[level]),
     drawnEdges() {
       engine.drawnEdges();
       return {

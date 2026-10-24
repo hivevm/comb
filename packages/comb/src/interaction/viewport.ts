@@ -1,7 +1,20 @@
 // The viewport's arithmetic: zoom, fit, pan, and the transform between world and screen, in one
 // place for interaction, the scene, and the testing entry.
-import type { Rect } from "../bridge";
+import type { Level, Rect } from "../bridge";
 import type { Viewport } from "../store";
+
+/** The scale from which the scene draws near: edge labels, 12 px, are 7 px tall there, the least
+ *  that still reads. */
+export const NEAR_SCALE = 0.6;
+/** The scale below which the scene draws far: titles, 14 px, are under 4 px tall there and no
+ *  longer read, so nodes become particles. */
+export const FAR_SCALE = 0.3;
+
+/** The level of detail at `scale` (ADR-0027), which the scene draws and a press hits at. */
+export function levelAt(scale: number): Level {
+  if (scale >= NEAR_SCALE) return "near";
+  return scale >= FAR_SCALE ? "middle" : "far";
+}
 
 const MIN_SCALE = 0.005;
 const MAX_SCALE = 4;
