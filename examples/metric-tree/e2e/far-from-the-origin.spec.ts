@@ -190,7 +190,7 @@ test("a segment whose ends lie far outside the viewport is drawn within a quarte
 test("a viewport around 1e300 draws nothing infinite, loses no engine, and draws again once back", async ({
   page,
 }) => {
-  // Verifies: Q-4, Q-7
+  // Verifies: Q-4, Q-7, ADR-0028
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);

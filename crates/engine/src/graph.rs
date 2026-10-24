@@ -2249,7 +2249,7 @@ mod tests {
 
     #[test]
     fn no_coordinate_turns_infinite_where_nodes_and_labels_are_dragged_to_the_world_limit() {
-        // Verifies: Q-4, Q-7
+        // Verifies: Q-4, Q-7, ADR-0028
         // Node `a` between `b` and `c`, an edge from each to `a` with a label, which the drags
         // below carry to opposite corners of the world, and the labels beyond them.
         let label = Some(LabelPlacement {

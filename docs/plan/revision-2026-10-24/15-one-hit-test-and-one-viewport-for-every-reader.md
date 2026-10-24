@@ -31,7 +31,7 @@ connector points from the engine, or pin the shell's copy to the engine's by a t
 
 ## Read first
 
-- ADR-0025 (*One call*), ADR-0024 (*Drawing*), ADR-0026 (*Direction*), ADR-0027.
+- ADR-0025 (*One call*), ADR-0024 (*Drawing*), ADR-0028 (*Direction*), ADR-0027.
 - `packages/comb/src/interaction/index.ts`, `interaction/viewport.ts`, `render/scene.ts`,
   `render/connectors.ts`, `packages/comb/src/testing.ts`, `bench/run.ts`,
   `examples/metric-tree/src/main.ts`.

@@ -30,7 +30,7 @@ function after every edit; let `add_edge` place its edge through `place_edge`; n
 
 ## Read first
 
-- ADR-0022 (*Free slots*, *The spatial index*, *Draw order*), ADR-0025, ADR-0027, ADR-0026 (*Core*).
+- ADR-0022 (*Free slots*, *The spatial index*, *Draw order*), ADR-0025, ADR-0027, ADR-0028 (*Core*).
 - `crates/engine/src/graph.rs`, `crates/engine/src/spatial.rs`, `crates/engine/src/graph/budget.rs`,
   `crates/engine/mutants-missed.txt`.
 
