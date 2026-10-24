@@ -1,5 +1,12 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { createBridgeSync, type Bridge, type GraphBatch } from ".";
+import {
+  createBridgeSync,
+  type Bridge,
+  type GraphBatch,
+  type GraphSnapshot,
+  type NodePatch,
+  type PlainPatch,
+} from ".";
 
 let bridge: Bridge;
 
@@ -23,13 +30,17 @@ const edge = (id: string, source: string, target: string) => ({
   color: 0x22a55b,
   arrow: "none" as const,
 });
-const graph = (nodes: GraphBatch["nodes"], edges: GraphBatch["edges"] = []) => ({ nodes, edges });
+// The bridge takes only what `api/snapshot.ts` produces (ADR-0026); its own tests stand in for
+// that module and hand it plain data of their own.
+const graph = (nodes: GraphBatch["nodes"], edges: GraphBatch["edges"] = []) =>
+  ({ nodes, edges }) as GraphSnapshot;
+const plain = (patch: NodePatch) => patch as PlainPatch;
 /** Nodes `a` and `b`. */
 const two = () => [node("a", 0, 0), node("b", 1, 1)];
 const everywhere = { minX: -1e6, minY: -1e6, maxX: 1e6, maxY: 1e6 };
 
 /** A row of `count` nodes 200 apart, each linked to the next. */
-function row(count: number): GraphBatch {
+function row(count: number): GraphSnapshot {
   const nodes = Array.from({ length: count }, (_, i) => node(`n${i}`, i * 200, 0));
   const edges = nodes.slice(1).map((_, i) => edge(`e${i}`, `n${i}`, `n${i + 1}`));
   return graph(nodes, edges);
@@ -64,7 +75,7 @@ describe("bridge", () => {
     bridge.loadGraph(graph([node("a", 1, 2), node("b", 3, 4)]));
     const calls: [string, () => unknown][] = [
       ["loadGraph", () => bridge.loadGraph(graph([node("a", 1, 2), node("b", 3, 4)]))],
-      ["checkNodePatch", () => bridge.checkNodePatch("a", { title: "A" })],
+      ["checkNodePatch", () => bridge.checkNodePatch("a", plain({ title: "A" }))],
       ["translate", () => bridge.translate(new Uint32Array([0]), 0, 0)],
       ["positions", () => bridge.positions()],
       ["query", () => bridge.query(everywhere, "near", 4, 0)],
@@ -169,7 +180,7 @@ const CORRUPTIONS: { field: string; value?: unknown; problem: object }[] = [
 
 /** Nodes `a` and `b` and an edge `e` between them with every field of its own, with `path`
  *  (`node.…` for `b`, `edge.…` for `e`) set to `value`, or left out where `value` is absent. */
-function corrupted(path: string, corruption: { value?: unknown }): GraphBatch {
+function corrupted(path: string, corruption: { value?: unknown }): GraphSnapshot {
   const b: Record<string, unknown> = node("b", 300, 0);
   const label: Record<string, unknown> = { text: "x", t: 0.5, offset: 0, background: 0x123456 };
   const e: Record<string, unknown> = { ...edge("e", "a", "b"), label, dash: [6, 4] };
@@ -277,8 +288,8 @@ describe("bridge fields the engine does not keep", () => {
 
   test("a patch of a node comes back as a typed error unless it holds only a title", () => {
     // Verifies: ADR-0026, ADR-0010
-    expect(bridge.checkNodePatch("a", { title: "A" })).toEqual({ title: "A" });
-    expect(bridge.checkNodePatch("a", {})).toEqual({});
+    expect(bridge.checkNodePatch("a", plain({ title: "A" }))).toEqual({ title: "A" });
+    expect(bridge.checkNodePatch("a", plain({}))).toEqual({});
     const errors = [{ id: "b" }, { title: 5 }].map((patch) => {
       try {
         bridge.checkNodePatch("a", patch as never);
