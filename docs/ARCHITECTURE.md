@@ -224,8 +224,9 @@ The functional core and its shell follow
   `window.createComb` and `window.engineUrl` let a browser test make a second Comb in a host
   element of its own.
 - **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, measuring the time to
-  the first frame and p95 frame times of drag, pan, and zoom over the frames Comb rendered, and of
-  a pan where the near and the middle level begin, each gesture checked for its effect (Q-1, Q-2),
+  the first frame and p95 frame times of drag, pan, and zoom over the frames Comb rendered, of
+  edits one a frame, a node and an edge added and removed again, and of a pan where the near and
+  the middle level begin, each gesture checked for its effect (Q-1, Q-2),
   served from the example's production build by `vite preview` on port 4173, in a Chromium
   started by `bench/chromium.ts`.
   After the first frame and before the gestures it times the reference workload of

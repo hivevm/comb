@@ -53,6 +53,9 @@ export interface Run {
   pan: Gesture;
   zoom: Gesture;
   levels?: { near: { pan: Gesture }; middle: { pan: Gesture } };
+  /** Edits, one a frame: a node and an edge added and removed again (ADR-0022); absent in a run
+   *  recorded before the gesture, whose baseline then reports it unjudged. */
+  edit?: Gesture;
 }
 
 /** The gestures of a run, by the names bench/run.ts prints and a comparison reports. */
@@ -61,6 +64,7 @@ export function gestures<G extends Gesture>(run: {
   pan: G;
   zoom: G;
   levels?: { near: { pan: G }; middle: { pan: G } };
+  edit?: G;
 }): [string, G][] {
   return [
     ["drag", run.drag],
@@ -72,6 +76,7 @@ export function gestures<G extends Gesture>(run: {
           ["pan middle", run.levels.middle.pan],
         ] as [string, G][])
       : []),
+    ...(run.edit ? ([["edit", run.edit]] as [string, G][]) : []),
   ];
 }
 
@@ -179,6 +184,7 @@ export function median(runs: Run[]): Run | string {
     pan: gesture((run) => run.pan),
     zoom: gesture((run) => run.zoom),
     ...(levels && { levels }),
+    ...(runs.every((run) => run.edit) && { edit: gesture((run) => run.edit!) }),
   };
 }
 

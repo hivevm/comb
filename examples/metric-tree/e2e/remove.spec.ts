@@ -84,6 +84,40 @@ test("removeEdges removes edges and keeps their nodes, and tells one edgesRemove
   });
 });
 
+test("isDrawn answers as inspect does, at the near, middle, and far level, before and after a removal", async ({
+  page,
+}) => {
+  // Verifies: ADR-0022
+  await open(page);
+  await loaded(page);
+  const asked = (scale: number) =>
+    page.evaluate(async (scale) => {
+      window.comb.setViewport({ x: 100, y: 100, scale });
+      await window.comb.whenRendered();
+      const probe = (what: { node: string } | { edge: string }) => window.isDrawn(what);
+      const { nodes, edges } = window.inspect();
+      return {
+        level: window.inspect().level,
+        agrees:
+          ["a", "b", "z"].every(
+            (node) => probe({ node }) === nodes.some(({ id }) => id === node),
+          ) &&
+          ["a-b", "b-c", "z-z"].every(
+            (edge) => probe({ edge }) === edges.some(({ id }) => id === edge),
+          ),
+        a: probe({ node: "a" }),
+        ab: probe({ edge: "a-b" }),
+      };
+    }, scale);
+  expect(await asked(1)).toEqual({ level: "near", agrees: true, a: true, ab: true });
+  expect(await asked(0.5)).toEqual({ level: "middle", agrees: true, a: true, ab: true });
+  expect(await asked(0.1)).toEqual({ level: "far", agrees: true, a: true, ab: true });
+  await page.evaluate(() => window.comb.removeNodes(["a"]));
+  expect(await asked(1)).toEqual({ level: "near", agrees: true, a: false, ab: false });
+  expect(await asked(0.5)).toEqual({ level: "middle", agrees: true, a: false, ab: false });
+  expect(await asked(0.1)).toEqual({ level: "far", agrees: true, a: false, ab: false });
+});
+
 test("a node added after a removal takes the freed slot and is drawn and hit above the others", async ({
   page,
 }) => {

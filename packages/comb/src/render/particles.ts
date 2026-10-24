@@ -69,6 +69,13 @@ export class NodeParticles extends ParticleContainer {
     return new Particle({ texture: Texture.WHITE });
   }
 
+  /** Whether the last sync drew the node `id`, found without building `drawn`. */
+  draws(id: string): boolean {
+    const count = this.particleChildren.length;
+    for (let i = 0; i < count; i++) if (this.nodes[this.slots[i]!]?.id === id) return true;
+    return false;
+  }
+
   /** The nodes the last sync drew, with their place and size. */
   drawn(): { id: string; x: number; y: number; width: number; height: number }[] {
     return this.particleChildren.flatMap((particle, i) => {
