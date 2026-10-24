@@ -1,6 +1,6 @@
 # ADR-0012: A virtualized scene graph with culling by the engine and three levels of detail
 
-- **Status:** 🟢 accepted
+- **Status:** ⚪ superseded by [ADR-0027](0027-nodes-bound-by-rank.md)
 - **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `packages/comb/src/render/`, and the exports of `crates/engine` and `crates/engine-wasm` that answer spatial queries and compute edge geometry

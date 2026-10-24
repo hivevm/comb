@@ -10,12 +10,12 @@
 G-5 asks that the user selects a node or an edge, and G-6 that the user drags an edge label; G-3
 starts a connection on a connector (ADR-0024). Today only nodes can be hit: the engine answers
 which node is drawn on top at a point from its spatial index, at every level of detail, and node
-views take no events (ADR-0012). An edge cannot be selected, though the store's selection already
+views take no events (ADR-0027). An edge cannot be selected, though the store's selection already
 has a kind for it, and nothing under the pointer tells a label from the edge or the node behind
 it.
 
 The canvas draws, from the bottom, the edges as one mesh in slot order, the nodes in the order of
-their ranks (ADR-0022), the edge labels in slot order, and the connectors (ADR-0012, ADR-0024). A
+their ranks (ADR-0022), the edge labels in slot order, and the connectors (ADR-0027, ADR-0024). A
 user expects to grab what they see on top. An edge is a curve, drawn one pixel wide at the far level
 and a few pixels wide nearer, so it can only be hit within a tolerance. An edge label is a pill
 whose width follows its text, which the shell measures with its `BitmapText` font and the engine
@@ -54,7 +54,7 @@ one item; hitting an edge's arrowhead apart from its path.
 ## Alternatives considered
 
 - **The shell hit-tests what it drew** — PixiJS's events on the bound views, or their bounds, know
-  every label's pill, but node views take no events (ADR-0012) and particles have none at all;
+  every label's pill, but node views take no events (ADR-0027) and particles have none at all;
   the order between layers would be the shell's, and the distance to a curve geometry the shell
   does not hold (ADR-0026).
 - **A label hit by the widest pill's reach** — no extents cross the bridge, but beside a long
@@ -72,7 +72,7 @@ one item; hitting an edge's arrowhead apart from its path.
 - `Graph::hit` and the query in `crates/engine/src/graph.rs`, the labels layer in
   `packages/comb/src/render/labels.ts`, and the press in `packages/comb/src/interaction/index.ts`,
   as they stand (read on 2026-10-24).
-- The layer order and the hit test of ADR-0012 (*Layers*, *Hit testing*).
+- The layer order and the hit test of ADR-0027 (*Layers*, *Hit testing*).
 
 ## Consequences
 

@@ -27,11 +27,9 @@ in slot order and the hit test takes the node in the highest slot as the one on 
 node the host application adds has to come to the front, where the user dropped it, also when it
 takes a freed slot below others.
 
-This conflicts with the letter of ADR-0012 (*Culling*), which is accepted: it binds the pooled
-display objects to the slots a query found "in slot order". Edges and edge labels keep that
-order; node views and particles would be bound in the order of the nodes' ranks below. The
-maintainer decides it before this ADR is accepted, by superseding ADR-0012 with that clause
-narrowed to edges and labels, or otherwise.
+ADR-0012 bound the pooled display objects to the slots a query found "in slot order". ADR-0027,
+which supersedes it, binds node views and particles in the order of the nodes' ranks below, and
+edges and edge labels in slot order, as before.
 
 The spatial index is a uniform grid over the extent it was built for; items beyond the extent
 fall into its border cells, it counts them, and it is built again once more than an eighth of the
@@ -141,7 +139,7 @@ application owns (ADR-0011).
   packed array was one; the benchmark's first frame shows what that costs (Q-2).
 - Negative / trade-offs: the store's lists are sparse after removals, and every reader has to
   skip a hole; a reader that forgets it reads a removed node as present.
-- Follow-ups: the conflict with ADR-0012 above; bringing an existing node to the front, such as
+- Follow-ups: bringing an existing node to the front, such as
   on selection, which a new rank would give; batching many additions into one call, should a host
   application add thousands at once.
 
