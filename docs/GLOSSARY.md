@@ -48,16 +48,16 @@ to invent.
 - **Label offset** — the distance in pixels of an edge label from its path point, along the edge's
   normal there.
 - **Level of detail** — how much of the graph the canvas draws at the current zoom: near draws
-  nodes with their titles and edge labels, middle nodes with their titles, far nodes as plain
-  boxes and edges as thin lines, without text.
+  nodes with their whole content and edge labels, middle nodes with their titles, far nodes as
+  plain boxes and edges as thin lines, without text.
 - **Mesh budget** — the most vertices the edge mesh of one query may hold.
 - **Node** — a box on the canvas that stands for one element of the host application's graph.
   _Avoid:_ vertex, block.
 - **Node content** — the host application's description of what a node shows, as a list of
   content elements that Comb draws.
   _Avoid:_ node template, node renderer.
-- **Content element** — one piece of node content: a text, an icon, a progress bar, a badge, or a
-  value with its trend.
+- **Content element** — one piece of node content: a text, an icon, a progress bar, a badge, a
+  value with its trend, or an action, a text whose click the host application gives a meaning.
 - **Palette** — the host application's HTML list of node types, from which the user drags new nodes
   onto the canvas.
 - **Path parameter** — a number `t` from 0.0 to 1.0 that marks a point along an edge's path, from
