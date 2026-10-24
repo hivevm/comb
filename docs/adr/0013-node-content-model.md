@@ -22,7 +22,7 @@ elements is a public interface the host application relies on, so adding an elem
 of that interface.
 
 Laying out the elements is geometry: the height of each row, the position of each element, the
-truncation of text to its column. ADR-0026 puts geometry into the engine, where Q-4 can be tested
+truncation of text to its column. ADR-0028 puts geometry into the engine, where Q-4 can be tested
 without a browser. Text widths depend on the font, which the shell knows from its `BitmapText`
 fonts (ADR-0027).
 
