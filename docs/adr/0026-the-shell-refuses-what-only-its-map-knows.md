@@ -157,5 +157,7 @@ tests refuse a lone surrogate in an identifier and in a title, citing this ADR, 
 of an identifier the graph does not hold, citing Q-7, through the public interface; browser tests of
 each new method refuse an unknown, a duplicate, and a missing identifier through the public
 interface, citing this ADR and Q-7. The tests that cited ADR-0009 cite this ADR, since a superseded
-ADR is cited by none. That a function of the core writes only the buffers it is given, and that
+ADR is cited by none. A type test refuses handing the bridge anything but the snapshot and the
+plain patch `api` builds (`packages/comb/src/bridge/snapshot-only.test.ts`), citing this ADR. That
+a function of the core writes only the buffers it is given, and that
 `api` refuses nothing of graph data beyond what the bridge cannot see, is review.
