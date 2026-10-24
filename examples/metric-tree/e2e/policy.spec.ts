@@ -59,7 +59,7 @@ async function recordViolations(page: Page): Promise<() => Promise<string[]>> {
 /** Loads the example under the policy, then pans the empty canvas by the pointer and zooms by the
  *  wheel, at a point no node covers, and asserts that no violation and no page error occurred;
  *  returns the policy the document was served under and every request the page made. */
-async function loadPanZoom(page: Page) {
+async function loadPanZoom(page: Page, testMode: boolean) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const made = await recordRequests(page);
@@ -73,6 +73,8 @@ async function loadPanZoom(page: Page) {
   );
   expect(await violations()).toEqual([]);
   await page.evaluate(() => window.loadReport);
+  // The development server runs the bridge in test mode, the production build no seam of it.
+  expect(await page.evaluate(() => window.testMode())).toBe(testMode);
   expect(await page.evaluate(() => window.inspect().renderer)).toBe("webgl");
 
   const canvas = (await page.locator("#canvas canvas").boundingBox())!;
@@ -111,7 +113,7 @@ test("under the policy, Comb loads, pans, and zooms without a violation or a req
   page,
 }) => {
   // Verifies: Q-6, ADR-0019, ADR-0020
-  const { policy, made } = await loadPanZoom(page);
+  const { policy, made } = await loadPanZoom(page, true);
   expect(policy).toBe(POLICY);
   // No request or socket was made by Comb's code, whatever its kind.
   expect(made.filter((request) => request.by.some((script) => script.includes(COMB)))).toEqual([]);
@@ -137,7 +139,8 @@ test(
   { tag: "@built" },
   async ({ page }) => {
     // Verifies: Q-6, ADR-0019, ADR-0020
-    const { policy, made } = await loadPanZoom(page);
+    // The production build, which the benchmark measures too, runs no seam of test mode.
+    const { policy, made } = await loadPanZoom(page, false);
     expect(policy).toBe(POLICY);
     // The bundler puts Comb's code in the example's entry chunk, so a script does not tell whose
     // code made a request; the requests themselves do. Beyond the document, the chunks the page

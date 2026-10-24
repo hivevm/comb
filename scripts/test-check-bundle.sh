@@ -4,11 +4,22 @@
 #
 # Each case writes a fixture bundle — JavaScript and WebAssembly files of known content — and runs
 # the check against it with a small budget, asserting the exit code and the message. Random bytes
-# do not compress, so their gzipped size is close to their size.
+# do not compress, so their gzipped size is close to their size. A bundle that carries either seam
+# of test mode, by the marks the bridge's source names and this self-test reads as the check does,
+# fails naming it. The run without arguments is played in a fixture repository whose builds are
+# stand-ins that write fixture bundles, so that each fault can be put in where a real build would
+# not make it: it passes where both builds carry what they should, and fails where the engine
+# check fails, where the bridge names no marks, where the build fails, where the package exports
+# no engine file or one that is missing, where the build in test mode fails, where that build
+# lacks either seam's mark, where the engine built in test mode lacks the trap, and where the two
+# engines' glue is missing or differs. Verifies: ADR-0010, ADR-0021
 #
 # Usage:
 #     scripts/test-check-bundle.sh
 # Exit code 0 when every case passes, 1 otherwise.
+
+# The single-quoted fixtures and stand-in builds are written as they stand, $1 among them.
+# shellcheck disable=SC2016
 
 set -uo pipefail
 
@@ -17,6 +28,13 @@ CHECK="$ROOT/scripts/check-bundle.sh"
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
+
+# mark <constant> — the mark the bridge's source names, read as the check reads it.
+mark() {
+  sed -n "s/^const $1 = \"\([^\"]*\)\";\$/\1/p" "$ROOT/packages/comb/src/bridge/index.ts" | head -n 1
+}
+DETACHING="$(mark DETACHING_MARK)"
+TRAP="$(mark TRAP_EXPORT)"
 
 failed=0
 passed=0
@@ -78,25 +96,104 @@ expect fail "a bundle without the engine file fails" "$script" 10000 "no engine 
 
 testing="$work/test-mode"
 mkdir -p "$testing"
-echo 'throw new Error("Comb test mode: the engine'"'"'s memory cannot grow further");' > "$testing/comb.js"
+printf 'throw new Error(`%s: the memory cannot grow`);\n' "$DETACHING" > "$testing/comb.js"
 head -c 100 /dev/urandom > "$testing/engine_bg.wasm"
-expect fail "a bundle with the bridge's test mode fails" "$testing" 10000 "test mode"
+expect fail "a bundle with the seam detaching alone fails naming it" "$testing" 10000 \
+  "seam \`detaching\`"
 
 trap="$work/trap"
 mkdir -p "$trap"
 echo 'export {};' > "$trap/comb.js"
-{ head -c 100 /dev/urandom; printf 'comb_test_mode_trap'; } > "$trap/engine_bg.wasm"
-expect fail "an engine with the trap of test mode fails" "$trap" 10000 "trap of test mode"
+{ head -c 100 /dev/urandom; printf '%s' "$TRAP"; } > "$trap/engine_bg.wasm"
+expect fail "an engine with the trap of test mode fails" "$trap" 10000 "the engine's trap"
 
 trapjs="$work/trap-js"
 mkdir -p "$trapjs"
-echo 'export const trap = (e) => e.comb_test_mode_trap();' > "$trapjs/comb.js"
+printf 'export const trap = (e) => e.%s();\n' "$TRAP" > "$trapjs/comb.js"
 head -c 100 /dev/urandom > "$trapjs/engine_bg.wasm"
-expect fail "JavaScript that names the trap of test mode fails" "$trapjs" 10000 "trap of test mode"
+expect fail "a bundle with the seam of the trap alone fails naming it" "$trapjs" 10000 \
+  "the engine's trap"
 
 empty="$work/empty"
 mkdir -p "$empty"
 expect fail "a directory without a bundle fails" "$empty" 10000 "no .js or .wasm"
+
+# repository <name> — a fixture repository for the run without arguments: an engine check that
+# passes, a bridge that names both marks, a package that exports its engine, the production
+# engine and the one built in test mode, which names the trap, each with the same glue; printed
+# as its path.
+repository() {
+  local dir="$work/$1"
+  mkdir -p "$dir/scripts" "$dir/packages/comb/wasm/test-mode" "$dir/packages/comb/src/bridge"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/scripts/check-engine.sh"
+  printf 'const DETACHING_MARK = "%s";\nconst TRAP_EXPORT = "%s";\n' "$DETACHING" "$TRAP" \
+    > "$dir/packages/comb/src/bridge/index.ts"
+  echo '{ "exports": { "./engine.wasm": "./wasm/engine_bg.wasm" } }' > "$dir/packages/comb/package.json"
+  head -c 100 /dev/urandom > "$dir/packages/comb/wasm/engine_bg.wasm"
+  { head -c 100 /dev/urandom; printf '%s' "$TRAP"; } \
+    > "$dir/packages/comb/wasm/test-mode/engine_bg.wasm"
+  echo 'export const glue = 1;' | tee "$dir/packages/comb/wasm/engine.js" \
+    > "$dir/packages/comb/wasm/test-mode/engine.js"
+  echo "$dir"
+}
+
+# writes <text> — a stand-in for the build in test mode that writes <text> as its bundle.
+writes() { printf 'printf %%s %q > "$1/comb.js"' "$1"; }
+
+# A stand-in for each build: the library, and the library in test mode with both marks.
+BUILT='mkdir -p packages/comb/dist && echo "export {};" > packages/comb/dist/comb.js'
+TESTED="$(writes "const a = \"$DETACHING\", b = \"$TRAP\";")"
+
+# expect_run <pass|fail> <description> <repository> <pattern> [build [test build]] — run the
+# check without arguments in a fixture repository.
+expect_run() {
+  local want="$1" desc="$2" repo="$3" pattern="$4" out rc
+  out="$(CHECK_BUNDLE_ROOT="$repo" CHECK_BUNDLE_BUILD="${5:-$BUILT}" \
+    CHECK_BUNDLE_TEST_BUILD="${6:-$TESTED}" bash "$CHECK" 2>&1)"; rc=$?
+  if [[ ( "$want" == pass && $rc -eq 0 ) || ( "$want" == fail && $rc -eq 1 ) ]] \
+    && [[ "$out" == *"$pattern"* ]]; then
+    passed=$((passed + 1))
+  else
+    failed=$((failed + 1))
+    echo "FAIL: $desc (expected $want, exit $rc)" >&2
+    printf '%s\n' "$out" | sed 's/^/    /' >&2
+  fi
+}
+
+expect_run pass "a run whose builds carry what they should passes" "$(repository full)" \
+  "Bundle check passed"
+stale="$(repository stale)"
+printf '#!/usr/bin/env bash\necho "the engine is stale" >&2; exit 1\n' > "$stale/scripts/check-engine.sh"
+expect_run fail "an engine check that fails" "$stale" "the engine is stale"
+unmarked="$(repository unmarked)"
+echo "export const TRAP_EXPORT = \"$TRAP\";" > "$unmarked/packages/comb/src/bridge/index.ts"
+expect_run fail "a bridge that names no marks" "$unmarked" "holds no DETACHING_MARK or TRAP_EXPORT"
+expect_run fail "a build that fails" "$(repository broken)" "the build failed" "exit 1"
+unexported="$(repository unexported)"
+echo '{ "exports": {} }' > "$unexported/packages/comb/package.json"
+expect_run fail "a package that exports no engine file" "$unexported" "exports no engine file"
+vanished="$(repository vanished)"
+rm "$vanished/packages/comb/wasm/engine_bg.wasm"
+expect_run fail "a package that exports an engine file that is missing" "$vanished" \
+  "exports no engine file"
+expect_run fail "a build in test mode that fails" "$(repository test-broken)" \
+  "the build in test mode failed" "$BUILT" "exit 1"
+expect_run fail "a library in test mode without detaching's mark" "$(repository no-detaching)" \
+  "does not recognise \`detaching\`" "$BUILT" "$(writes "const b = \"$TRAP\";")"
+expect_run fail "a library in test mode without the trap's mark" "$(repository no-trap)" \
+  "does not recognise the trap in the library" "$BUILT" "$(writes "const a = \"$DETACHING\";")"
+untrapped="$(repository untrapped)"
+head -c 100 /dev/urandom > "$untrapped/packages/comb/wasm/test-mode/engine_bg.wasm"
+expect_run fail "an engine built in test mode without the trap" "$untrapped" \
+  "does not recognise the engine built in test mode"
+glue="$(repository glue)"
+echo 'export const glue = 2;' > "$glue/packages/comb/wasm/test-mode/engine.js"
+expect_run fail "glue of the engine built in test mode that differs" "$glue" \
+  "test-mode/engine.js differs from wasm/engine.js"
+unglued="$(repository unglued)"
+rm "$unglued/packages/comb/wasm/test-mode/engine.js"
+expect_run fail "glue of the engine built in test mode that is missing" "$unglued" \
+  "test-mode/engine.js is missing"
 
 if ((failed)); then
   echo "Bundle check self-test FAILED ($failed of $((passed + failed)) cases)." >&2

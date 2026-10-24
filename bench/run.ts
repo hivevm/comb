@@ -297,6 +297,9 @@ async function measure(page: Page) {
   await page.goto(`http://localhost:${PORT}/?copies=${COPIES}`, { timeout: LOAD_TIMEOUT_MS });
   // The example sets loadReport after a top-level await, which the load event does not wait for.
   await page.waitForFunction(() => "loadReport" in window, null, { timeout: LOAD_TIMEOUT_MS });
+  // A build in test mode grows the engine's memory before every call: no number of it holds.
+  if (await page.evaluate(() => window.testMode()))
+    throw new Error("the example runs the bridge in test mode; no number holds");
   const load: LoadReport = await page.evaluate(() => window.loadReport);
   if (errors.length) throw new Error(`the example failed: ${errors.join("; ")}`);
   console.log(
