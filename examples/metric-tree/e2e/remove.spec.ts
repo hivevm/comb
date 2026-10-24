@@ -1,7 +1,7 @@
 // The host application removes nodes and edges through `removeNodes` and `removeEdges` (G-4,
 // ADR-0022, ADR-0023): the canvas draws them no more, a node takes its edges along, `onChange`
 // tells one change, a freed slot is the next addition's, and an identifier the graph does not hold
-// refuses the call, which then removes nothing (ADR-0026, Q-7).
+// refuses the call, which then removes nothing (ADR-0028, Q-7).
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData } from "comb";
 import { loaded, node, open, screenCentre, told } from "./shared";
@@ -156,7 +156,7 @@ const REFUSED: { name: string; call: [string, unknown]; problem: unknown }[] = [
 
 for (const { name, call, problem } of REFUSED) {
   test(`a removal of ${name} throws a GraphDataError and removes nothing`, async ({ page }) => {
-    // Verifies: Q-7, ADR-0026
+    // Verifies: Q-7, ADR-0028
     await open(page);
     await loaded(page, STAR, HALF);
     const before = await drawn(page);
@@ -243,7 +243,7 @@ test("a node the host removes during a drag ends it: no error, and no move of th
 test("a removal reads a hostile list's length once and refuses a list too long quickly", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0026
+  // Verifies: Q-7, ADR-0028
   await open(page);
   await loaded(page, STAR, HALF);
   const before = await drawn(page);
@@ -287,7 +287,7 @@ test("a removal reads a hostile list's length once and refuses a list too long q
 test("a removal names an unknown identifier cut to the limit, and an empty one tells nothing", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0026
+  // Verifies: Q-7, ADR-0028
   await open(page);
   await loaded(page, STAR, HALF);
   const before = await drawn(page);

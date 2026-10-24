@@ -2,7 +2,7 @@
 
 ## What to build
 
-ADR-0026 makes `crates/engine-wasm/src/graph_data.rs` the one place that checks graph data, and
+ADR-0028 makes `crates/engine-wasm/src/graph_data.rs` the one place that checks graph data, and
 an added edge is to be checked "as a load checks one". The checks are written more than once:
 the label of an edge in `edge_of` and again in `update_edge_in`; the `EdgeSpec` in `edges_of` and
 in `add_edge_to`; the three identifier lengths in `ids_of` and in `add_edge_to`. In
@@ -29,7 +29,7 @@ check the pixel in one function; throw `SlotError` for a slot that holds nothing
 
 ## Read first
 
-- ADR-0026 (*Bridge*), ADR-0010, ADR-0023 (*Validation*), ADR-0025.
+- ADR-0028 (*Bridge*), ADR-0010, ADR-0023 (*Validation*), ADR-0025.
 - `crates/engine-wasm/src/graph_data.rs`, `crates/engine-wasm/src/lib.rs`,
   `crates/engine-wasm/src/properties.rs`, `packages/comb/src/bridge/bridge.test.ts`;
   `docs/CONVENTIONS.md` (*Check a value as the engine keeps it*).

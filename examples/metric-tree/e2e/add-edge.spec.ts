@@ -1,7 +1,7 @@
 // The host application adds edges through `addEdge` and changes them through `updateEdge` (G-5,
 // G-11, ADR-0023): the next frame draws them with their colour, dash pattern, and label,
 // `onChange` tells each change once, and an edge or a patch a load would refuse, an edge the graph
-// cannot hold, and a patch of an unknown edge or field change nothing (ADR-0026, Q-7).
+// cannot hold, and a patch of an unknown edge or field change nothing (ADR-0028, Q-7).
 import { expect, test } from "@playwright/test";
 import type { EdgeData, GraphData } from "comb";
 import { loaded, node, open, strokeOf, told } from "./shared";
@@ -160,7 +160,7 @@ for (const { name, call, problem } of REFUSED) {
   test(`${call[0]} refuses ${name} with a GraphDataError, and nothing changes`, async ({
     page,
   }) => {
-    // Verifies: Q-7, ADR-0026, ADR-0024
+    // Verifies: Q-7, ADR-0028, ADR-0024
     await open(page);
     await loaded(page, PAIR);
     const edge = { id: "a-b", source: "a", target: "b", color: RED, dash: [8, 8] as const };
@@ -184,7 +184,7 @@ for (const { name, call, problem } of REFUSED) {
 }
 
 test("addEdge refuses an edge past the limit of a load as tooMany", async ({ page }) => {
-  // Verifies: Q-7, ADR-0026
+  // Verifies: Q-7, ADR-0028
   test.setTimeout(120_000);
   await open(page);
   const result = await page.evaluate(() => {
@@ -247,7 +247,7 @@ test("a patch of one field keeps the label and the dash, and moves a label the e
 test("a getter of a patch that removes the edge refuses the patch, and no other edge changes", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0026
+  // Verifies: Q-7, ADR-0028
   await open(page);
   await loaded(page, PAIR);
   await page.evaluate(
@@ -283,7 +283,7 @@ test("a getter of a patch that removes the edge refuses the patch, and no other 
 test("a listener that writes into a delivered change reaches nothing Comb keeps", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0026
+  // Verifies: Q-7, ADR-0028
   await open(page);
   await loaded(page, PAIR);
   await page.evaluate(() => {

@@ -40,7 +40,7 @@ not a string or longer than 1,000 UTF-16 code units, a label background that is 
 `0` to `0xFFFFFF`, more than 1,000,000 nodes or edges, an identifier, source, or target longer than
 256 UTF-16 code units, and identifiers of one load that hold more than 64,000,000 code units
 together, and an edge side other than `top`, `right`, `bottom`, and `left`. `api` refuses, against
-the store's map from identifiers to slots (ADR-0026), an identifier `updateNode` or `removeNodes`
+the store's map from identifiers to slots (ADR-0028), an identifier `updateNode` or `removeNodes`
 names that the graph does not hold (`unknownNode`), one `updateEdge` or `removeEdges` names
 (`unknownEdge`), one `addNode`, `addEdge`, or a user's connection adds that it holds already
 (`duplicateNode`, `duplicateEdge`), and an end of an added edge it does not hold (`missingNode`).
@@ -74,7 +74,7 @@ patched JavaScript's built-ins, such as a setter on `Object.prototype` or a `Sym
 ## Building blocks
 
 The functional core and its shell follow
-[ADR-0026](adr/0026-the-shell-refuses-what-only-its-map-knows.md).
+[ADR-0028](adr/0028-the-graph-lies-within-a-world.md).
 
 - **Engine** (`crates/engine`) — pure geometry: `geometry` holds edge paths as cubic Bézier curves
   from the connector of a side of one node, the middle of its `top`, `right`, `bottom`, or `left`,
@@ -142,7 +142,7 @@ The functional core and its shell follow
   which the removals, `edgesAt`, `setLabelSize`, and `moveLabel` throw, while `addEdge` and
   `updateEdge` report such a slot as malformed. Its crate root holds the exports and their
   conversions; its module `graph_data` reads and checks graph data, the one place that does
-  ([ADR-0026](adr/0026-the-shell-refuses-what-only-its-map-knows.md)); `packages/comb/src/bridge` is
+  ([ADR-0028](adr/0028-the-graph-lies-within-a-world.md)); `packages/comb/src/bridge` is
   the one module that imports the WebAssembly package and reads those buffers through fresh
   typed-array views per read ([ADR-0010](adr/0010-bridge-data-format.md)).
 - **Store** (`packages/comb/src/store`) — a vanilla Zustand store with the graph's structure, its
@@ -361,12 +361,12 @@ the lint, and the tests, then the bundle check with its self-test. `scripts/chec
 `bun run test`, `bun run dev`, and the bundle check run first, fails when `engine_bg.wasm` of
 `packages/comb/wasm/` or of `packages/comb/wasm/test-mode/` is missing or older than a file under
 `crates/` other than those no build reads (the list of surviving mutants, proptest's regressions, a
-run of cargo-mutants, editors' swap files), `Cargo.toml`, or `Cargo.lock`, naming the file and `bun
-run build:engine`. `scripts/check-structure.sh` fails when the engine's core names or, through
+run of cargo-mutants, editors' swap files), `Cargo.toml`, or `Cargo.lock`, naming the file and
+`bun run build:engine`. `scripts/check-structure.sh` fails when the engine's core names or, through
 `Cargo.lock`, reaches a crate that touches the browser, the clock, randomness, or I/O, when a module
 other than the bridge imports the WebAssembly package, when the render layer reaches the store
 instead of the action-free `GraphView`, or when an example imports past the library's entries and
-its engine file (ADR-0026, ADR-0019), and when the render layer names PixiJS's `Text`, `HTMLText`,
+its engine file (ADR-0028, ADR-0019), and when the render layer names PixiJS's `Text`, `HTMLText`,
 or `SplitText` or the edges layer a `Graphics` (ADR-0027), and when its Canvas 2D fallback names
 `Graphics` outside its imports and its one field (ADR-0018). `scripts/check-bundle.sh` builds the
 library and fails when its gzipped JavaScript and the engine file reach the 300 kB of Q-3, when no

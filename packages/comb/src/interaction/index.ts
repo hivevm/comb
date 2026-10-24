@@ -1,4 +1,4 @@
-// Input into commands on the store (ADR-0026): a press begins the gesture of what it hits, the
+// Input into commands on the store (ADR-0028): a press begins the gesture of what it hits, the
 // drag of a node or of an edge's label, a connection, or a pan, each a module of its own that
 // says how it moves, how it ends, and whether a change of the graph takes its subject; the wheel
 // zooms, and hover shows what a press would do. The engine answers what lies under the pointer

@@ -1,5 +1,5 @@
 // The public interface of Comb, which hands every field of graph data to the bridge before the
-// store keeps any of it, and checks none itself (ADR-0026).
+// store keeps any of it, and checks none itself (ADR-0028).
 // First, before any PixiJS renderer is created: PixiJS's code generation without eval, so that Comb
 // draws under a Content Security Policy without `unsafe-eval` (Q-6, ADR-0020).
 import "pixi.js/unsafe-eval";
@@ -330,7 +330,7 @@ function updaterOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["upd
 
 /** `addNode` on `store`: reads the node once, refuses an identifier the store's map holds already
  *  and the code units of identifiers past the budget, and has the bridge check the node as a load
- *  would and add it; the store keeps it in the slot the engine chose (ADR-0022, ADR-0026). */
+ *  would and add it; the store keeps it in the slot the engine chose (ADR-0022, ADR-0028). */
 function adderOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["addNode"] {
   return (node) => {
     refuseIfLost();
@@ -381,7 +381,7 @@ function removedIds(
 
 /** `removeNodes` on `store`: reads the identifiers once, refuses one the graph does not hold, and
  *  has the engine remove the nodes and every edge at them; the store forgets what the engine
- *  removed (ADR-0022, ADR-0026). A list that names none changes nothing and tells nothing. */
+ *  removed (ADR-0022, ADR-0028). A list that names none changes nothing and tells nothing. */
 function nodeRemoverOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["removeNodes"] {
   return (ids) => {
     refuseIfLost();
@@ -411,7 +411,7 @@ function edgeRemoverOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb[
 /** `addEdge` on `store`: reads the edge once, its style's defaults filled, refuses an identifier
  *  the store's map holds already and an end it does not hold, and the code units of identifiers
  *  past the budget, and has the bridge check the edge as a load would and add it between the
- *  slots of its ends (ADR-0022, ADR-0026). A value that is no string the bridge refuses itself. */
+ *  slots of its ends (ADR-0022, ADR-0028). A value that is no string the bridge refuses itself. */
 function edgeAdderOf(
   store: GraphStore,
   bridge: Bridge,

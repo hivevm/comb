@@ -1,6 +1,6 @@
 # ADR-0026: A pure Rust engine as functional core, and a TypeScript shell around it, with the shell refusing what only its map of identifiers knows
 
-- **Status:** 🟢 accepted
+- **Status:** ⚪ superseded by [ADR-0028](0028-the-graph-lies-within-a-world.md)
 - **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** the directory layout, `crates/`, `packages/`, `examples/`, and every import between their modules
