@@ -64,8 +64,11 @@ to invent.
 - **Sidebar** — the host application's HTML panel, outside the canvas, in which the attributes of
   the selection are edited.
 - **Slot** — the index of a node or an edge in the engine's buffers, the same on both sides of the
-  bridge; a load gives node `i` and edge `i` of the graph data slot `i`.
+  bridge; a load gives node `i` and edge `i` of the graph data slot `i`, and an addition takes the
+  free slot of its kind freed last, or a new one after the highest.
   _Avoid:_ handle.
+- **Free slot** — a slot whose node or edge was removed; it holds nothing until an addition takes
+  it again, and no query or hit test returns it.
 - **Spatial index** — the engine's uniform grid over the bounds of nodes and edges, which answers
   which slots a rectangle meets.
 - **Trap** — WebAssembly aborting a call of the engine, as when its memory runs out; after a trap
