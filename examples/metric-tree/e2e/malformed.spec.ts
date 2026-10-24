@@ -48,6 +48,16 @@ const MALFORMED: { name: string; graph: GraphData; problem: unknown }[] = [
     problem: { kind: "nonFiniteCoordinate", node: "b" },
   },
   {
+    name: "a node whose far side lies beyond what a 32-bit float holds",
+    graph: { nodes: [node("a"), { ...node("b", 3e38), width: 3e38 }], edges: [] },
+    problem: { kind: "beyondWorld", list: "nodes", id: "b", field: "x", limit: 2 ** 120 },
+  },
+  {
+    name: "a node within the world whose far side lies beyond it",
+    graph: { nodes: [node("a"), { ...node("b", 2 ** 119), width: 2 ** 119 + 1e30 }], edges: [] },
+    problem: { kind: "beyondWorld", list: "nodes", id: "b", field: "width", limit: 2 ** 120 },
+  },
+  {
     name: "an edge to a missing node",
     graph: { nodes: [node("a"), node("b", 300)], edges: [edge("e", "a", "z")] },
     problem: { kind: "missingNode", edge: "e", node: "z" },
@@ -988,6 +998,7 @@ async function everyKind() {
     malformed: load(null),
     invalidField: nodes({ x: "1" }),
     nonFiniteCoordinate: nodes({ x: Number.POSITIVE_INFINITY }),
+    beyondWorld: nodes({ x: 3e38, width: 3e38 }),
     invalidSize: nodes({ width: -1 }),
     invalidTitle: nodes({ title: 5 }),
     titleTooLong: nodes({ title: "x".repeat(1001) }),
@@ -1043,5 +1054,5 @@ test("load and the methods that edit the graph throw every kind of GraphDataProb
   const thrown = await page.evaluate(everyKind);
   expect(errors).toEqual([]);
   expect(thrown).toEqual(Object.fromEntries(Object.keys(thrown).map((kind) => [kind, kind])));
-  expect(Object.keys(thrown).length).toBe(23);
+  expect(Object.keys(thrown).length).toBe(24);
 });

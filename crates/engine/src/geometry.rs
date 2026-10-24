@@ -5,6 +5,17 @@
 //! path's normal there (G-6). An edge leaves its source node at the middle of its right side and
 //! enters its target node at the middle of its left side.
 
+/// How far from the world's origin the graph lies, in world units, 2^120: every node within it on
+/// each axis, its extent included, and every label offset within it. Every point the engine
+/// derives from them, a connector, a control point, a vertex, a label point, lies within a few
+/// times this, and also relative to the origin of a query of a rectangle within `QUERY_LIMIT`, so
+/// that each stays far within `f32`, whose largest value is about 2^128.
+pub const WORLD_LIMIT: f64 = 1_329_227_995_784_915_872_903_807_060_280_344_576.0;
+
+/// How far from the world's origin a query looks, 2^122: beyond everything the graph draws, the
+/// width of a stroke included, so that a rectangle cut to it finds what the whole one would.
+pub(crate) const QUERY_LIMIT: f64 = 4.0 * WORLD_LIMIT;
+
 /// A point in world coordinates.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Point {
@@ -71,6 +82,17 @@ impl Rect {
             && other.max_x <= self.max_x
             && self.min_y <= other.min_y
             && other.max_y <= self.max_y
+    }
+
+    /// The rectangle cut to within `limit` of the origin on each axis; one that is NaN stays so.
+    pub(crate) fn clamped(&self, limit: f64) -> Self {
+        let cut = |v: f64| v.clamp(-limit, limit);
+        Self::new(
+            cut(self.min_x),
+            cut(self.min_y),
+            cut(self.max_x),
+            cut(self.max_y),
+        )
     }
 
     /// The rectangle grown by `by` on every side.
