@@ -354,25 +354,28 @@ guard, `createComb`, and the calls of `Comb` that need the engine throw an `Engi
 (ADR-0021). The frame that finds the engine lost stops rendering and resolves its waiters, and
 input handlers do nothing, so no trap escapes as a page error.
 
-**Holding the shape.** `scripts/check-code.sh`, which `scripts/check-all.sh` runs and the
-**Checks** workflow (`.github/workflows/checks.yml`) runs on every pull request, runs the
-structural and dependency checks below with their self-tests, then the build, the lint, and the
-tests, then the bundle check with its self-test. `scripts/check-structure.sh`
-fails when the engine's core names or, through `Cargo.lock`, reaches a crate that touches the
-browser, the clock, randomness, or I/O, when a module other than the bridge
-imports the WebAssembly package, when the render layer reaches the store instead of the action-free
-`GraphView`, or when an example imports past the library's entries and its engine file
-(ADR-0028, ADR-0019), and when the render layer names PixiJS's `Text`, `HTMLText`, or
-`SplitText` or the edges layer a `Graphics` (ADR-0027), and when its Canvas 2D fallback names
-`Graphics` outside its imports and its one field (ADR-0018). `scripts/check-bundle.sh` builds
-the library and fails when its gzipped JavaScript and the engine file reach the 300 kB of Q-3,
-when no engine file is measured, when the JavaScript inlines the engine (ADR-0019), and when the
-JavaScript carries the bridge's test mode or the engine file the trap's export (ADR-0010,
-ADR-0021); it fails too when it does not recognise either in the library built in test mode and
-the engine of `packages/comb/wasm/test-mode/`. `scripts/check-dependencies.sh` fails on a
-lockfile of another package manager beside `bun.lock` (ADR-0008), on tsify's default or `json`
-features or `serde_json` in the bridge crate (ADR-0010), in whatever form the entry takes, and on
-a listed state library other than zustand in the library's dependency lists (ADR-0011). The type
-checker does the rest for the render layer: `GraphView` has no action to call. ESLint forbids
-the DOM markup sinks (Q-5) and `eval`, implied eval, and `new Function` (Q-6) in Comb's library
-sources, outside its tests.
+**Holding the shape.** `scripts/check-code.sh`, which `scripts/check-all.sh` runs and the **Checks**
+workflow (`.github/workflows/checks.yml`) runs on every pull request, runs the structural and
+dependency checks below with their self-tests and the self-test of the engine check, then the build,
+the lint, and the tests, then the bundle check with its self-test. `scripts/check-engine.sh`, which
+`bun run test`, `bun run dev`, and the bundle check run first, fails when `engine_bg.wasm` of
+`packages/comb/wasm/` or of `packages/comb/wasm/test-mode/` is missing or older than a file under
+`crates/` other than those no build reads (the list of surviving mutants, proptest's regressions, a
+run of cargo-mutants, editors' swap files), `Cargo.toml`, or `Cargo.lock`, naming the file and
+`bun run build:engine`. `scripts/check-structure.sh` fails when the engine's core names or, through
+`Cargo.lock`, reaches a crate that touches the browser, the clock, randomness, or I/O, when a module
+other than the bridge imports the WebAssembly package, when the render layer reaches the store
+instead of the action-free `GraphView`, or when an example imports past the library's entries and
+its engine file (ADR-0028, ADR-0019), and when the render layer names PixiJS's `Text`, `HTMLText`,
+or `SplitText` or the edges layer a `Graphics` (ADR-0027), and when its Canvas 2D fallback names
+`Graphics` outside its imports and its one field (ADR-0018). `scripts/check-bundle.sh` builds the
+library and fails when its gzipped JavaScript and the engine file reach the 300 kB of Q-3, when no
+engine file is measured, when the JavaScript inlines the engine (ADR-0019), and when the JavaScript
+carries the bridge's test mode or the engine file the trap's export (ADR-0010, ADR-0021); it fails
+too when it does not recognise either in the library built in test mode and the engine of
+`packages/comb/wasm/test-mode/`. `scripts/check-dependencies.sh` fails on a lockfile of another
+package manager beside `bun.lock` (ADR-0008), on tsify's default or `json` features or `serde_json`
+in the bridge crate (ADR-0010), in whatever form the entry takes, and on a listed state library
+other than zustand in the library's dependency lists (ADR-0011). The type checker does the rest for
+the render layer: `GraphView` has no action to call. ESLint forbids the DOM markup sinks (Q-5) and
+`eval`, implied eval, and `new Function` (Q-6) in Comb's library sources, outside its tests.
