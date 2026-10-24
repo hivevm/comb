@@ -356,8 +356,12 @@ input handlers do nothing, so no trap escapes as a page error.
 
 **Holding the shape.** `scripts/check-code.sh`, which `scripts/check-all.sh` runs and the
 **Checks** workflow (`.github/workflows/checks.yml`) runs on every pull request, runs the
-structural and dependency checks below with their self-tests, then the build, the lint, and the
-tests, then the bundle check with its self-test. `scripts/check-structure.sh`
+structural and dependency checks below with their self-tests and the self-test of the engine
+check, then the build, the lint, and the tests, then the bundle check with its self-test.
+`scripts/check-engine.sh`, which `bun run test` and the bundle check run first, fails when an
+engine file of `packages/comb/wasm/` or `packages/comb/wasm/test-mode/` is missing or older than a
+file under `crates/`, `Cargo.toml`, or `Cargo.lock`, naming the file and `bun run build:engine`.
+`scripts/check-structure.sh`
 fails when the engine's core names or, through `Cargo.lock`, reaches a crate that touches the
 browser, the clock, randomness, or I/O, when a module other than the bridge
 imports the WebAssembly package, when the render layer reaches the store instead of the action-free

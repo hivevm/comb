@@ -26,6 +26,9 @@
 # so a renamed export turns it red rather than blind.
 # Verifies: ADR-0021
 #
+# Without arguments it measures the engine of packages/comb/wasm/, so it first runs
+# scripts/check-engine.sh and fails on an engine older than its sources.
+#
 # Usage:
 #     scripts/check-bundle.sh [directory [budget in bytes]]
 # Exit code 0 when the bundle is under the budget, 1 otherwise.
@@ -37,6 +40,7 @@ BUDGET="${2:-300000}"
 
 files=()
 if (($# == 0)); then
+  bash "$ROOT/scripts/check-engine.sh" || exit 1
   (cd "$ROOT" && bun run build:lib > /dev/null) || { echo "Bundle check: the build failed." >&2; exit 1; }
   dir="$ROOT/packages/comb/dist"
   package="$ROOT/packages/comb"

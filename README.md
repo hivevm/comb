@@ -41,13 +41,16 @@ statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), th
 
 Inside the Dev Container, which provides Bun, Rust, wasm-pack, and Chromium
 ([ADR-0008](docs/adr/0008-toolchain.md), [ADR-0014](docs/adr/0014-dev-container-toolchain.md)).
-[`scripts/check-code.sh`](scripts/check-code.sh) runs the first three in order, then the
-structural test of
-[ADR-0026](docs/adr/0026-the-shell-refuses-what-only-its-map-knows.md)
-and the bundle budget of Q-3 (`bun run build:lib`, at most 300 kB gzipped without PixiJS).
+[`scripts/check-code.sh`](scripts/check-code.sh) runs, in order, the structural check of
+[ADR-0026](docs/adr/0026-the-shell-refuses-what-only-its-map-knows.md) and the dependency check,
+each after its self-test, and the self-test of the engine check; then the first three below,
+build, lint, and test; then the bundle budget of Q-3 after its self-test (`bun run build:lib`, at
+most 300 kB gzipped without PixiJS).
 
 - **Build:** `bun run build` — the engine with wasm-pack, the type check, and the example
-- **Test:** `bun run test` — `cargo test`, `bun test`, and the Playwright browser tests
+- **Test:** `bun run test` — `cargo test`, `bun test`, and the Playwright browser tests; it
+  refuses to start on an engine older than its sources under `crates/`, `Cargo.toml`, and
+  `Cargo.lock` (`scripts/check-engine.sh`), naming the file and `bun run build:engine`
 - **Lint:** `bun run lint` — rustfmt, clippy, ESLint, and Prettier
 - **Run:** `bun run example`, or the launch configuration **Example: metric tree** in VS Code,
   which opens the example in the host's browser; `?copies=3334` opens it with 50,010 nodes
