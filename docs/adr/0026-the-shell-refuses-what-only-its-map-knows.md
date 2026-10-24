@@ -57,8 +57,9 @@ whose only door to the engine is its `bridge` module.
   A string the store keeps that holds a lone surrogate, which serde-wasm-bindgen hands the bridge
   crate as U+FFFD, so that it would check another string than the store keeps, is handed over as
   `false`, which the bridge refuses as a value of the wrong type; a patch's key, which the store
-  does not keep, crosses as written and is named with U+FFFD in its place. And `api` checks, against the store's map
-  from identifiers to slots, which only the shell keeps (ADR-0010), what only that map knows,
+  does not keep, crosses as written and is named with U+FFFD in its place. And `api` checks,
+  against the store's map from identifiers to slots, which only the shell keeps (ADR-0010), what
+  only that map knows,
   whichever method of the public interface or gesture asks: an identifier named that the graph
   does not hold (`unknownNode`, `unknownEdge`), as `updateNode`, `removeNodes`, `removeEdges`, and
   `updateEdge` name one; an identifier added that the graph holds already (`duplicateNode`,
