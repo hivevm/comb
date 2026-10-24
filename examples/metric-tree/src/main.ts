@@ -226,13 +226,19 @@ const MIRROR: { [K in GraphChange["kind"]]: (change: Extract<GraphChange, { kind
     // `load` and `useGraph` set the copy before they hand it to Comb.
     loaded: () => {},
     nodeAdded: ({ node }) => void graph.nodes.push({ ...node }),
-    nodeUpdated: ({ id, patch }) => void Object.assign(nodeOf(id) ?? {}, patch),
-    nodeMoved: ({ id, x, y }) => void Object.assign(nodeOf(id) ?? {}, { x, y }),
+    nodeUpdated: ({ id, patch }) => {
+      const node = nodeOf(id);
+      if (node) Object.assign(node, patch);
+    },
+    nodeMoved: ({ id, x, y }) => {
+      const node = nodeOf(id);
+      if (node) Object.assign(node, { x, y });
+    },
     nodesRemoved: ({ nodes, edges }) => removed(nodes, edges),
     edgeAdded: ({ edge }) => void graph.edges.push({ ...edge }),
     edgeUpdated: ({ id, patch }) => {
       const edge = edgeOf(id);
-      if (edge) patched(edge, patch as EdgePatch);
+      if (edge) patched(edge, patch);
     },
     edgesRemoved: ({ edges }) => removed([], edges),
     labelMoved: ({ edge: id, t, offset }) => {
@@ -305,9 +311,8 @@ copies.addEventListener("change", () => {
   window.loadReport = load();
 });
 title.addEventListener("input", () => {
-  const node = graph.nodes.find((candidate) => candidate.id === selected);
   // The copy follows from the `nodeUpdated` Comb tells.
-  if (node) comb.updateNode(node.id, { title: title.value });
+  if (selected !== null && nodeOf(selected)) comb.updateNode(selected, { title: title.value });
 });
 edgeColor.addEventListener("input", () =>
   changeEdge({ color: Number.parseInt(edgeColor.value.slice(1), 16) }),
