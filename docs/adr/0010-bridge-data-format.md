@@ -28,16 +28,16 @@ never to cause a WebAssembly panic.
 A typed-array view on WebAssembly memory becomes detached when the memory grows. A view kept
 across an engine call that allocates reads nothing, silently.
 
-An `f32` holds 24 significant bits. From 2^25 to 2^26 world units, about 3.4e7 to 6.7e7, it
-holds every fourth number, so a coordinate near ±5e7 rounds by up to 2 world units, 8 px at a
-scale of 4; Q-4 asks for 0.5 px for everything the viewport shows. The engine computes edge paths
-and label points in `f64` and rounds them to `f32` as it writes the stream, so the rounding is
-that of the distance to the world's origin, while the query reports the mesh complete. The engine
-keeps node positions as `f32` itself: a node lies where its `f32` lies, its edges end there, and
-the positions buffer hands over that value without rounding it again. The GPU computes in `f32`
-too: WebGL2 has no `double` attribute or uniform, and PixiJS hands the shader the transform of a
-render group as a `mat3x3<f32>` uniform, so a world at ±5e7 shown at a scale of 4 has a
-translation near 2e8 on the GPU, rounded by up to 8 px whatever the vertices hold.
+An `f32` holds 24 significant bits. From 2^25 to 2^26 world units, about 3.4e7 to 6.7e7, it holds
+every fourth number, so a coordinate near ±5e7 rounds by up to 2 world units, 8 px at a scale of 4;
+Q-4 asks for 0.5 px for paths within 2^21 px of the viewport. The engine computes edge paths and
+label points in `f64` and rounds them to `f32` as it writes the stream, so the rounding is that of
+the distance to the world's origin, while the query reports the mesh complete. The engine keeps node
+positions as `f32` itself: a node lies where its `f32` lies, its edges end there, and the positions
+buffer hands over that value without rounding it again. The GPU computes in `f32` too: WebGL2 has no
+`double` attribute or uniform, and PixiJS hands the shader the transform of a render group as a
+`mat3x3<f32>` uniform, so a world at ±5e7 shown at a scale of 4 has a translation near 2e8 on the
+GPU, rounded by up to 8 px whatever the vertices hold.
 
 ## Decision
 
@@ -170,6 +170,10 @@ Precision far from the world's origin:
 - Negative / trade-offs: the origin bounds the rounding of vertices near the rectangle, not of
   every vertex the mesh holds; which vertices keep the rounding of ends far beyond the rectangle,
   and how far it reaches, ADR-0012 states (*Consequences*).
+- Negative / trade-offs: the distances along the path cross as `f32` from the path's source,
+  without an origin, and round by up to 2^-24 of their value, 0.5 px at 2^23 px along a path;
+  Q-4 bounds dashes at 2^21 px, leaving room for the GPU's `f32`, and past that a dash pattern may
+  shift by that rounding.
 - Negative / trade-offs: the particles of the far level keep the rounding they had, of their
   container's transform on the GPU, of the order of a pixel at ±5e7 at the far level's largest
   scale, 0.3; Q-4 does not cover nodes.

@@ -34,10 +34,11 @@ they trap. A load may hold up to 1,000,000 edges (ADR-0009). Rust's standard col
 when an allocation fails, which on WebAssembly is a trap; `try_reserve` returns the failure
 instead.
 
-Q-4 asks for edge paths that deviate by at most 0.5 px from a reference computation at every
-zoom level, for everything the viewport shows, and allows a coarsened edge mesh where the mesh
-budget or memory runs short; the rectangle and the mesh budget below rest on Q-4 as it reads. The
-viewport lies inside the rectangle the scene last queried. Why the rectangle and the budget hold
+Q-4 asks for edge paths that deviate by at most 0.5 px from a reference computation at every zoom
+level, for everything the viewport shows within Q-4's bounds of single precision (paths within 2^21
+px of the viewport, dashes up to 2^21 px along a path), and allows a coarsened edge mesh where the
+mesh budget or memory runs short; the rectangle and the mesh budget below rest on Q-4 as it reads.
+The viewport lies inside the rectangle the scene last queried. Why the rectangle and the budget hold
 what they claim:
 
 - **The rectangle.** A curve and its chord lie in the hull of the curve's control points, so where
@@ -208,12 +209,13 @@ What an edge and a query cost:
 - Negative / trade-offs: the query's origin (ADR-0010) bounds the rounding of vertices near the
   rectangle, not of every vertex the mesh holds. An end at a distance `d` from the origin strays by
   up to `d` × 2^-24 world units, which at a scale `s` reaches 0.5 px from `d` = 2^23 / `s`, about
-  2.1e6 at a scale of 4. The split keeps the ends of a segment that meets the rectangle near it;
-  a chord of a part whose control points miss the grown rectangle, a segment that passes outside
-  it, and the chord of an edge coarsened for the budget are not split, and keep the rounding of
-  their ends however far they lie. The first two reach into the rectangle only where that rounding
-  exceeds their clearance, at least half the stroke's width, which takes ends some 2^23 stroke
-  widths from the query's origin.
+  2.1e6 at a scale of 4. The split keeps the ends of a segment that meets the rectangle near it; a
+  chord of a part whose control points miss the grown rectangle, a segment that passes outside it,
+  and the chord of an edge coarsened for the budget are not split, and keep the rounding of their
+  ends however far they lie, which Q-4 allows past 2^21 px from the viewport. The first two reach
+  into the rectangle only where that rounding exceeds their clearance, at least half the stroke's
+  width, which takes ends some 2^23 stroke widths from the query's origin; a bend's offset of up to
+  the full width narrows that clearance, and Q-4 bounds the rest at 2^21 px.
 - Negative / trade-offs: a chord is shorter than the part it stands for, so where an edge leaves
   the rectangle and comes back, its dash pattern inside may shift when a query moves the chord.
 - Negative / trade-offs: which edges keep full detail past the budget follows slot order, not
