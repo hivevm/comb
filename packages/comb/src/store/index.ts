@@ -200,26 +200,24 @@ function idUnitsOf(graph: GraphData): number {
   return units;
 }
 
-/** What a removal changes of the pointer's state: a removed node shows no connectors, a
- *  connection from it ends, and one over it is over nothing. */
+/** What a removal changes of the pointer's state: a removed node shows no connectors, and a
+ *  connection over it is over nothing until it moves. Whether the removal ends a connection from
+ *  it is its gesture's to decide (`interaction/connect.ts`). */
 function pointerWithout(state: GraphView, nodes: GraphView["nodes"]): Partial<GraphView> {
   const gone = (slot: number | null | undefined) => slot != null && !nodes[slot];
   const { hovered, connection } = state;
-  // A connection from a removed node ends; one over a removed node is over nothing until it moves.
   const after =
-    !connection || gone(connection.source)
-      ? null
-      : gone(connection.over)
-        ? { ...connection, over: null, compatible: false, target: null }
-        : connection;
+    connection && gone(connection.over)
+      ? { ...connection, over: null, compatible: false, target: null }
+      : connection;
   return {
     ...(gone(hovered) ? { hovered: null } : {}),
     ...(after === connection ? {} : { connection: after }),
   };
 }
 
-/** What `load` changes of `state`: the graph replaced, and the selection and the pointer's state
- *  cleared. */
+/** What `load` changes of `state`: the graph replaced, and the selection and the node under the
+ *  pointer cleared; a connection is ended by its gesture. */
 function loadedFrom(state: GraphView, graph: GraphData): Partial<GraphView> {
   return {
     nodes: graph.nodes.map(({ id, title, width, height }) => ({ id, title, width, height })),
@@ -230,7 +228,6 @@ function loadedFrom(state: GraphView, graph: GraphData): Partial<GraphView> {
     change: { kind: "loaded", by: "host" },
     selection: null,
     hovered: null,
-    connection: null,
     positionsVersion: state.positionsVersion + 1,
   };
 }

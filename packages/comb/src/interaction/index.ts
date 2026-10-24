@@ -1,13 +1,20 @@
-// Input into commands on the store (ADR-0026): drag a node, pan the empty canvas, zoom by wheel.
-// The engine answers which node lies under the pointer from its spatial index, at every level of
-// detail, also where the scene draws nodes as particles (ADR-0027). Once the engine is lost, input
-// changes nothing, and no trap escapes a handler (ADR-0021).
+// Input into commands on the store (ADR-0026): a press begins the gesture of what it hits, the
+// drag of a node or of an edge's label, a connection, or a pan, each a module of its own that
+// says how it moves, how it ends, and whether a change of the graph takes its subject; the wheel
+// zooms, and hover shows what a press would do. The engine answers what lies under the pointer
+// from its spatial index, at every level of detail, also where the scene draws nodes as
+// particles (ADR-0025, ADR-0027). Once the engine is lost, input changes nothing, and no trap
+// escapes a handler (ADR-0021).
 import type { Application, FederatedPointerEvent } from "pixi.js";
-import { EngineLostError, refuseIfLost, type Bridge, type Hit } from "../bridge";
-import type { GraphState, GraphStore, Side } from "../store";
-import { levelAt, panBy, toWorld, zoomAt } from "./viewport";
-
-import { connectionAt, endConnection, type Connect } from "./connect";
+import type { Bridge, Hit } from "../bridge";
+import type { GraphStore } from "../store";
+import { connection, type Connect } from "./connect";
+import { targetAt, type Context, type Gesture } from "./gesture";
+import { untilLost } from "./guard";
+import { labelDrag } from "./label-drag";
+import { nodeDrag } from "./node-drag";
+import { pan } from "./pan";
+import { levelAt, zoomAt } from "./viewport";
 
 export { attachDeletion, type CanDelete, type Deletion } from "./delete";
 export type { Connect, Proposal } from "./connect";
@@ -24,140 +31,18 @@ const CURSORS: Record<Hit["kind"], string> = {
   none: "",
 };
 
-/** A drag in progress: of a node, which records whether it moved it, or of the viewport. */
-type Drag =
-  | { kind: "node"; slot: number; id: string; x: number; y: number; moved: boolean }
-  /** A pan; one begun on an edge waits until the pointer has moved beyond `PAN_SLOP`. */
-  | { kind: "pan"; x: number; y: number; waiting: boolean }
-  /** A drag of the label of the edge in slot `slot`, held `grab` world units off its point, and
-   *  where it last placed it (G-6). */
-  | {
-      kind: "label";
-      slot: number;
-      id: string;
-      grab: { x: number; y: number };
-      placed: { t: number; offset: number } | null;
-    }
-  /** A connection from the connector `side` of the node in slot `slot` (ADR-0024). */
-  | { kind: "connect"; slot: number; id: string; side: Side; x: number; y: number };
-
-/** How far, in screen pixels, the pointer moves after a press on an edge before it pans. */
-const PAN_SLOP = 4;
-
-/** What a press at a screen point hits, from the engine's spatial index, at the level of detail
- *  of the viewport's scale, connectors where `connectors` asks for them (ADR-0025). */
-function targetAt(
-  store: GraphStore,
-  bridge: Bridge,
-  x: number,
-  y: number,
-  connectors: boolean,
-): Hit {
-  const { viewport } = store.getState();
-  const world = toWorld(viewport, x, y);
-  return bridge.hit(world.x, world.y, 1 / viewport.scale, levelAt(viewport.scale), connectors);
-}
-
-/** Begins what a press does where it hits: on a connector, where the host lets the user connect,
- *  a connection; on a node it selects the node and begins a drag of it; on an edge it selects the
- *  edge and begins a pan that waits for the pointer to move beyond the slop; on nothing it clears
- *  the selection and begins a pan. */
-function startDrag(
-  store: GraphStore,
-  bridge: Bridge,
-  event: FederatedPointerEvent,
-  connecting: boolean,
-): Drag {
-  const { x, y } = event.global;
-  const { nodes, edges } = store.getState();
-  const hit = targetAt(store, bridge, x, y, connecting);
-  const begun = connectionFrom(store, bridge, hit, x, y) ?? labelDragFrom(store, bridge, hit, x, y);
-  if (begun) return begun;
-  const node = hit.kind === "node" ? nodes[hit.slot] : undefined;
-  if (hit.kind === "node" && node) {
-    store.getState().select({ kind: "node", id: node.id });
-    return { kind: "node", slot: hit.slot, id: node.id, x, y, moved: false };
-  }
-  const edge = hit.kind === "edge" ? edges[hit.slot] : undefined;
-  if (edge) {
-    store.getState().select({ kind: "edge", id: edge.id });
-    return { kind: "pan", x, y, waiting: true };
-  }
-  store.getState().select(null);
-  return { kind: "pan", x, y, waiting: false };
-}
-
-/** A connection begun on the connector `hit` names, at the screen point `(x, y)`. */
-function connectionFrom(
-  store: GraphStore,
-  bridge: Bridge,
-  hit: Hit,
-  x: number,
-  y: number,
-): Drag | undefined {
-  const from = hit.kind === "connector" ? store.getState().nodes[hit.slot] : undefined;
-  if (hit.kind !== "connector" || !from) return undefined;
-  store.getState().connect(connectionAt(store, bridge, hit.slot, hit.side, x, y, hit));
-  return { kind: "connect", slot: hit.slot, id: from.id, side: hit.side, x, y };
-}
-
-/** A drag of the label `hit` names, held where the press at the screen point `(x, y)` met it;
- *  the label's edge selected. */
-function labelDragFrom(
-  store: GraphStore,
-  bridge: Bridge,
-  hit: Hit,
-  x: number,
-  y: number,
-): Drag | undefined {
-  const edge = hit.kind === "label" ? store.getState().edges[hit.slot] : undefined;
-  const point = hit.kind === "label" ? bridge.labelPoint(hit.slot) : undefined;
-  if (hit.kind !== "label" || !edge || !point) return undefined;
-  store.getState().select({ kind: "edge", id: edge.id });
-  const at = toWorld(store.getState().viewport, x, y);
-  const grab = { x: at.x - point.x, y: at.y - point.y };
-  return { kind: "label", slot: hit.slot, id: edge.id, grab, placed: null };
-}
-
-function continueDrag(store: GraphStore, bridge: Bridge, drag: Drag, event: FederatedPointerEvent) {
-  if (drag.kind === "label") {
-    const at = toWorld(store.getState().viewport, event.global.x, event.global.y);
-    drag.placed = bridge.moveLabel(drag.slot, at.x - drag.grab.x, at.y - drag.grab.y);
-    store.getState().positionsMoved();
-    return;
-  }
-  if (drag.kind === "connect") {
-    const { x, y } = event.global;
-    const hit = targetAt(store, bridge, x, y, true);
-    store.getState().connect(connectionAt(store, bridge, drag.slot, drag.side, x, y, hit));
-    return;
-  }
-  const dx = event.global.x - drag.x;
-  const dy = event.global.y - drag.y;
-  // A press on an edge selects it; only a move beyond the slop makes it a pan, from the press.
-  if (drag.kind === "pan" && drag.waiting) {
-    if (Math.hypot(dx, dy) <= PAN_SLOP) return;
-    drag.waiting = false;
-  }
-  drag.x = event.global.x;
-  drag.y = event.global.y;
-  const { viewport } = store.getState();
-  if (drag.kind === "node") {
-    if (dx === 0 && dy === 0) return;
-    bridge.translate(new Uint32Array([drag.slot]), dx / viewport.scale, dy / viewport.scale);
-    drag.moved = true;
-    store.getState().positionsMoved();
-  } else {
-    store.getState().setViewport(panBy(viewport, dx, dy));
-  }
-}
-
-/** Ends `drag` where the pointer was released: a drag that moved its node records, once, where
- *  it left it (ADR-0023), on the canvas or outside it. */
-function endDrag(store: GraphStore, drag: Drag | null): void {
-  if (drag?.kind === "label") return endLabelDrag(store, drag);
-  if (drag?.kind !== "node" || !drag.moved) return;
-  if (store.getState().nodes[drag.slot]?.id === drag.id) store.getState().nodeMoved(drag.id);
+/** Begins what a press at the screen point `(x, y)` does where it hits (ADR-0025): on a
+ *  connector, where the host lets the user connect, a connection; on an edge label, a drag of it,
+ *  its edge selected; on a node, a drag of it, the node selected; on an edge, a pan that waits for
+ *  the slop, the edge selected; on nothing, a pan, the selection cleared. */
+function begin(context: Context, x: number, y: number, connect?: Connect): Gesture {
+  const hit = targetAt(context, x, y, !!connect);
+  return (
+    (connect && connection(context, hit, x, y, connect)) ||
+    labelDrag(context, hit, x, y) ||
+    nodeDrag(context, hit, x, y) ||
+    pan(context, hit, x, y)
+  );
 }
 
 /** Zooms around the pointer by the wheel's turn. */
@@ -173,46 +58,17 @@ function zoomByWheel(app: Application, store: GraphStore, event: WheelEvent): vo
  *  connect, the connectors of the node under it. */
 function hoverAt(
   app: Application,
-  store: GraphStore,
-  bridge: Bridge,
+  context: Context,
   event: FederatedPointerEvent,
   connecting: boolean,
 ): void {
-  const hit = targetAt(store, bridge, event.global.x, event.global.y, connecting);
+  const { store } = context;
+  const hit = targetAt(context, event.global.x, event.global.y, connecting);
   app.canvas.style.cursor = CURSORS[hit.kind];
   // At the far level no connector is drawn, so none is shown, and hover writes nothing.
   const far = levelAt(store.getState().viewport.scale) === "far";
   const over = hit.kind === "connector" || hit.kind === "node";
   store.getState().hover(connecting && over && !far ? hit.slot : null);
-}
-
-/** Whether the graph of `state` took the node of `drag` from under it: a load, or a removal of
- *  the node, which a node that took its slot does not make good. */
-function takenFrom(state: GraphState, drag: Drag | null): boolean {
-  if (!drag || drag.kind === "pan") return false;
-  const held = drag.kind === "label" ? state.edges[drag.slot] : state.nodes[drag.slot];
-  // A label the host cleared is taken from under its drag as its edge would be.
-  const cleared = drag.kind === "label" && !state.edges[drag.slot]?.label;
-  return state.change?.kind === "loaded" || held?.id !== drag.id || cleared;
-}
-
-/** Ends a drag of a label, which records, once, where it left the label, where it moved it. */
-function endLabelDrag(store: GraphStore, drag: Extract<Drag, { kind: "label" }>): void {
-  const edge = store.getState().edges[drag.slot];
-  if (drag.placed && edge?.id === drag.id && edge.label)
-    store.getState().labelMoved(drag.id, drag.placed.t, drag.placed.offset);
-}
-
-/** `handler`, doing nothing once the engine is lost. */
-function untilLost<A extends unknown[]>(handler: (...args: A) => void): (...args: A) => void {
-  return (...args) => {
-    try {
-      refuseIfLost();
-      handler(...args);
-    } catch (error) {
-      if (!(error instanceof EngineLostError)) throw error;
-    }
-  };
 }
 
 /** The screen point of `canvas`, drawn at the size of `screen`, under the point (`clientX`,
@@ -237,42 +93,36 @@ export function attachInteraction(
   bridge: Bridge,
   connect?: Connect,
 ): () => void {
-  let drag: Drag | null = null;
+  const context: Context = { store, bridge };
+  let gesture: Gesture | null = null;
   app.stage.eventMode = "static";
   app.stage.hitArea = app.screen;
   // The cursor shows what a press would do, and the connectors of the node under the pointer show
   // where a connection may begin, where the host lets the user connect.
   const hover = untilLost((event: FederatedPointerEvent) =>
-    hoverAt(app, store, bridge, event, !!connect),
+    hoverAt(app, context, event, !!connect),
   );
-  // The drag is over before its change is told, so that it stays over where a listener throws,
-  // and also once the engine is lost, when nothing is told.
-  // A connection the user released proposes its edge; one a later press ends, its release never
-  // having come, proposes none.
-  const tellEnd = untilLost((ended: Drag | null, released: boolean) => {
-    if (ended?.kind !== "connect") return endDrag(store, ended);
-    const connection = store.getState().connection;
-    if (released && connect) endConnection(store, connection, connect);
-    else store.getState().connect(null);
-  });
+  // The gesture is over before its change is told, so that it stays over where a listener
+  // throws, and also once the engine is lost, when nothing is told.
+  const tellEnd = untilLost((ended: Gesture | null, released: boolean) => ended?.end(released));
   const release = (released = true) => {
-    const ended = drag;
-    drag = null;
+    const ended = gesture;
+    gesture = null;
     tellEnd(ended, released);
   };
   app.stage.on(
     "pointerdown",
     untilLost((event: FederatedPointerEvent) => {
-      // A drag whose release never came ends where the next press begins.
+      // A gesture whose release never came ends where the next press begins.
       release(false);
-      drag = startDrag(store, bridge, event, !!connect);
-      if (drag?.kind === "node" || drag?.kind === "label") app.canvas.style.cursor = "grabbing";
+      gesture = begin(context, event.global.x, event.global.y, connect);
+      if (gesture.grabs) app.canvas.style.cursor = "grabbing";
     }),
   );
   app.stage.on(
     "globalpointermove",
     untilLost((event: FederatedPointerEvent) =>
-      drag ? continueDrag(store, bridge, drag, event) : hover(event),
+      gesture ? gesture.move(event.global.x, event.global.y) : hover(event),
     ),
   );
   app.stage.on("pointerup", (event) => {
@@ -283,11 +133,13 @@ export function attachInteraction(
     }
   });
   app.stage.on("pointerupoutside", () => release());
-  // A load, or a removal of the dragged node, takes the node from under a drag: the drag ends,
-  // moves no node that took its slot, and tells nothing of a node the user never moved.
-  // A connection from a node the graph no longer holds ends the same way.
+  // A change that takes a gesture's subject from under it ends the gesture without a word: it
+  // moves nothing that took the subject's slot, and tells nothing of what the user never moved.
   const unsubscribe = store.subscribe((state, previous) => {
-    if (state.change !== previous.change && takenFrom(state, drag)) drag = null;
+    if (state.change === previous.change || !gesture?.taken(state)) return;
+    const taken = gesture;
+    gesture = null;
+    taken.drop();
   });
 
   const onWheel = untilLost((event: WheelEvent) => zoomByWheel(app, store, event));
