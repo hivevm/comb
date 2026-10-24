@@ -213,18 +213,17 @@ The functional core and its shell follow
   a string, `URL`, or `Request`, or none of a `Response`, a module, and the bytes (`api/engine.ts`,
   [ADR-0019](adr/0019-the-host-hands-comb-its-engine.md)), before it touches the host element, and
   with a `RendererUnavailableError` where PixiJS finds no WebGL2 unless `allowCanvasFallback` lets
-  it draw on Canvas 2D (`api/renderers.ts`); and the `Comb` it returns: the graph data (`load`,
-  `updateNode`, `addNode`, `addEdge`, `updateEdge`, `removeNodes`, `removeEdges`), read once into
-  a snapshot
-  (`api/snapshot.ts`) and handed to the engine, the viewport (`fitView`, `setViewport`, `viewport`,
-  and `worldPointAt`, the world point under a point of the page, which needs no engine), the events
-  to the host application (`onChange`, `onSelectionChange`, `onEngineLost`), and `destroy`;
-  `onChange` delivers each change the store records as a `GraphChange`
-  ([ADR-0023](adr/0023-edits-are-reported-as-typed-changes.md)), its positions read from the
-  engine's buffer, synchronously from one subscription to the store that tells a change before the
-  selection it cleared; `whenRendered` resolves once a change is drawn, with one render per
-  animation frame scheduled by `api/frames.ts`. `api/scenes.ts` is the one way from a `Comb` to its
-  scene, for the testing entry.
+  it draw on Canvas 2D (`api/renderers.ts`), and paints the canvas in `background`; and the `Comb`
+  it returns: the graph data (`load`, `updateNode`, `addNode`, `addEdge`, `updateEdge`,
+  `removeNodes`, `removeEdges`), read once into a snapshot (`api/snapshot.ts`) and handed to the
+  engine, the viewport (`fitView`, `setViewport`, `viewport`, and `worldPointAt`, the world point
+  under a point of the page, which needs no engine), the events to the host application (`onChange`,
+  `onSelectionChange`, `onEngineLost`), and `destroy`; `onChange` delivers each change the store
+  records as a `GraphChange` ([ADR-0023](adr/0023-edits-are-reported-as-typed-changes.md)), its
+  positions read from the engine's buffer, synchronously from one subscription to the store that
+  tells a change before the selection it cleared; `whenRendered` resolves once a change is drawn,
+  with one render per animation frame scheduled by `api/frames.ts`. `api/scenes.ts` is the one way
+  from a `Comb` to its scene, for the testing entry.
 - **Testing entry** (`comb/testing`, `packages/comb/src/testing.ts`) — `inspect` returns what the
   scene draws, the text of the titles and labels drawn included, and the size and detail of the
   edge mesh, which the host application is not told; `viewport` and `renderCount`, cheap
@@ -360,27 +359,30 @@ guard, `createComb`, and the calls of `Comb` that need the engine throw an `Engi
 input handlers do nothing, so no trap escapes as a page error.
 
 **Holding the shape.** `scripts/check-code.sh`, which `scripts/check-all.sh` runs and the **Checks**
-workflow (`.github/workflows/checks.yml`) runs on every pull request, runs the structural and
-dependency checks below with their self-tests and the self-test of the engine check, then the build,
-the lint, and the tests, then the bundle check with its self-test. `scripts/check-engine.sh`, which
-`bun run test`, `bun run dev`, and the bundle check run first, fails when `engine_bg.wasm` of
-`packages/comb/wasm/` or of `packages/comb/wasm/test-mode/` is missing or older than a file under
-`crates/` other than those no build reads (the list of surviving mutants, proptest's regressions, a
-run of cargo-mutants, editors' swap files), `Cargo.toml`, or `Cargo.lock`, naming the file and
-`bun run build:engine`. `scripts/check-structure.sh` fails when the engine's core names or, through
-`Cargo.lock`, reaches a crate that touches the browser, the clock, randomness, or I/O, when a module
-other than the bridge imports the WebAssembly package, when the render layer reaches the store
-instead of the action-free `GraphView`, or when an example imports past the library's entries and
-its engine file (ADR-0028, ADR-0019), and when the render layer names PixiJS's `Text`, `HTMLText`,
-or `SplitText` or the edges layer a `Graphics` (ADR-0027), and when its Canvas 2D fallback names
-`Graphics` outside its imports and its one field (ADR-0018). `scripts/check-bundle.sh` builds the
-library and fails when its gzipped JavaScript and the engine file reach the 300 kB of Q-3, when no
-engine file is measured, when the JavaScript inlines the engine (ADR-0019), and when the JavaScript
-carries the bridge's test mode or the engine file the trap's export (ADR-0010, ADR-0021); it fails
-too when it does not recognise either in the library built in test mode and the engine of
-`packages/comb/wasm/test-mode/`. `scripts/check-dependencies.sh` fails on a lockfile of another
-package manager beside `bun.lock` (ADR-0008), on tsify's default or `json` features or `serde_json`
-in the bridge crate (ADR-0010), in whatever form the entry takes, and on a listed state library
-other than zustand in the library's dependency lists (ADR-0011). The type checker does the rest for
-the render layer: `GraphView` has no action to call. ESLint forbids the DOM markup sinks (Q-5) and
-`eval`, implied eval, and `new Function` (Q-6) in Comb's library sources, outside its tests.
+workflow (`.github/workflows/checks.yml`) runs on every pull request, runs the structural, the
+dependency, and the overview checks below with their self-tests and the self-test of the engine
+check, then the build, the lint, and the tests, then the bundle check with its self-test.
+`scripts/check-engine.sh`, which `bun run test`, `bun run dev`, and the bundle check run first,
+fails when `engine_bg.wasm` of `packages/comb/wasm/` or of `packages/comb/wasm/test-mode/` is
+missing or older than a file under `crates/` other than those no build reads (the list of surviving
+mutants, proptest's regressions, a run of cargo-mutants, editors' swap files), `Cargo.toml`, or
+`Cargo.lock`, naming the file and `bun run build:engine`. `scripts/check-structure.sh` fails when
+the engine's core names or, through `Cargo.lock`, reaches a crate that touches the browser, the
+clock, randomness, or I/O, when a module other than the bridge imports the WebAssembly package, when
+the render layer reaches the store instead of the action-free `GraphView`, or when an example
+imports past the library's entries and its engine file (ADR-0028, ADR-0019), and when the render
+layer names PixiJS's `Text`, `HTMLText`, or `SplitText` or the edges layer a `Graphics` (ADR-0027),
+and when its Canvas 2D fallback names `Graphics` outside its imports and its one field (ADR-0018).
+`scripts/check-overview.sh` fails, naming each, where this overview names in no backquoted span a
+method or property of the `Comb` interface, an option of `CombOptions`, or a function `comb/testing`
+exports (ADR-0001). `scripts/check-bundle.sh` builds the library and fails when its gzipped
+JavaScript and the engine file reach the 300 kB of Q-3, when no engine file is measured, when the
+JavaScript inlines the engine (ADR-0019), and when the JavaScript carries the bridge's test mode or
+the engine file the trap's export (ADR-0010, ADR-0021); it fails too when it does not recognise
+either in the library built in test mode and the engine of `packages/comb/wasm/test-mode/`.
+`scripts/check-dependencies.sh` fails on a lockfile of another package manager beside `bun.lock`
+(ADR-0008), on tsify's default or `json` features or `serde_json` in the bridge crate (ADR-0010), in
+whatever form the entry takes, and on a listed state library other than zustand in the library's
+dependency lists (ADR-0011). The type checker does the rest for the render layer: `GraphView` has no
+action to call. ESLint forbids the DOM markup sinks (Q-5) and `eval`, implied eval, and `new
+Function` (Q-6) in Comb's library sources, outside its tests.

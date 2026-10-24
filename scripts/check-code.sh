@@ -2,7 +2,8 @@
 #
 # Builds, tests, and lints Comb: the commands of the README's "Build, Test & Run" (ADR-0008),
 # with the shape of the code (scripts/check-structure.sh, ADR-0028) and the decided dependencies
-# (scripts/check-dependencies.sh, ADR-0008, ADR-0010, ADR-0011) first, each after its self-test,
+# (scripts/check-dependencies.sh, ADR-0008, ADR-0010, ADR-0011), and the overview's naming of every
+# entry point (scripts/check-overview.sh, ADR-0001) first, each after its self-test,
 # since they need no toolchain and a red test must not hide them; then the self-test of the check
 # of the engine's freshness (scripts/check-engine.sh), which `bun run test` runs itself; and the
 # bundle budget (scripts/check-bundle.sh, Q-3) last, after its self-test.
@@ -25,6 +26,8 @@ bash scripts/test-check-structure.sh
 bash scripts/check-structure.sh
 bash scripts/test-check-dependencies.sh
 bash scripts/check-dependencies.sh
+bash scripts/test-check-overview.sh
+bash scripts/check-overview.sh
 bash scripts/test-check-engine.sh
 
 missing=()
