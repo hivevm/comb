@@ -15,7 +15,8 @@
 
 ```
  host application (its HTML sidebar, palette, persistence)
-        │  graph data in, selection events out          ▲
+        │  graph data and edits in; changes, selection,  ▲
+        │  and veto questions out                        │
         ▼                                                │
  ┌──────────────── packages/comb (TypeScript) ──────────┴──┐
  │ api → store ← interaction        render (PixiJS, WebGL2) │
@@ -38,31 +39,37 @@ placements, a colour that is not an integer from `0` to `0xFFFFFF`, a title or l
 not a string or longer than 1,000 UTF-16 code units, a label background that is not an integer from
 `0` to `0xFFFFFF`, more than 1,000,000 nodes or edges, an identifier, source, or target longer than
 256 UTF-16 code units, and identifiers of one load that hold more than 64,000,000 code units
-together. `api` refuses, against the store's map from identifiers to slots (ADR-0026), an identifier
-`updateNode` names that the graph does not hold and one `addNode` adds that it holds already
-(`duplicateNode`); the bridge crate checks the node `addNode` hands over as a load checks a node,
-and refuses it where the graph would hold more than 1,000,000 nodes, and `api` has it check the code
-units of identifiers the store counts with the new one's; and the bridge crate refuses a patch that
-holds a field other than a title, or a title it would refuse in a load. Titles, label texts, and
-label backgrounds are checked there but not kept by the engine. `api` reads the host's graph data
-once, in JavaScript, into a snapshot (`api/snapshot.ts`) of plain data whose every field is a
-primitive of the type it expects, any other value replaced by `false`, and whose texts and
-identifiers are cut one code unit beyond the bridge's limits, so that no value of the host
-application and none of its code reaches the engine, and a text of any length costs no more than
-that to check. The bridge's `loadGraph`, `addNode`, and `checkNodePatch` take only the types
-`GraphSnapshot`, `NodeSnapshot`, and `PlainPatch` that the snapshot's functions return, so that the
-type checker refuses the host's graph data, node, or patch handed to the bridge directly
-(`bridge/snapshot-only.test.ts`). The bridge checks the counts of nodes and edges before anything is
-copied, then the code units of the identifiers, counted while the snapshot is read and read no
-further once they exceed the budget, then the snapshot, and the store keeps the snapshot. A string
-with a lone surrogate, which the bridge would read as U+FFFD, `api` hands over as `false`, so that
-it is refused. `updateNode` reads its patch the same way, every own key of a plain object, and
-merges only the fields the bridge returns as checked. The bridge never formats a refused value into
-its message. Graph data that cannot be read at all, such as nodes that are not a list, a list with a
-hole, a patch that is no plain object, or a getter that throws, is refused as malformed before the
-bridge sees it. That no code of the host application runs in the engine holds while nothing on the
-page has patched JavaScript's built-ins, such as a setter on `Object.prototype` or a
-`Symbol.hasInstance` of `Uint8Array`, which the generated glue reaches.
+together, and an edge side other than `top`, `right`, `bottom`, and `left`. `api` refuses, against
+the store's map from identifiers to slots (ADR-0026), an identifier `updateNode` or `removeNodes`
+names that the graph does not hold (`unknownNode`), one `updateEdge` or `removeEdges` names
+(`unknownEdge`), one `addNode`, `addEdge`, or a user's connection adds that it holds already
+(`duplicateNode`, `duplicateEdge`), and an end of an added edge it does not hold (`missingNode`).
+The bridge crate checks the node `addNode` and the edge `addEdge` hand over as a load checks one,
+refuses an edge from a node to itself (`selfEdge`) and an addition past the 1,000,000 nodes or edges
+a load may hold, and `api` has it check the code units of identifiers the store counts with the new
+ones; it refuses a patch of `updateNode` that holds a field other than a title, a patch of
+`updateEdge` that holds a field other than a colour, dash, arrowhead, label, or side
+(`unknownEdgePatchField`), and a field it would refuse in a load. Titles, label texts, and label
+backgrounds are checked there but not kept by the engine. `api` reads the host's graph data once, in
+JavaScript, into a snapshot (`api/snapshot.ts`) of plain data whose every field is a primitive of
+the type it expects, any other value replaced by `false`, and whose texts and identifiers are cut
+one code unit beyond the bridge's limits, so that no value of the host application and none of its
+code reaches the engine, and a text of any length costs no more than that to check. The bridge's
+`loadGraph`, `addNode`, `checkNodePatch`, `addEdge`, and `updateEdge` take only the types
+`GraphSnapshot`, `NodeSnapshot`, `PlainPatch`, `EdgeSnapshot`, and `PlainEdgePatch` that the
+snapshot's functions return, so that the type checker refuses the host's graph data, node, edge, or
+patch handed to the bridge directly (`bridge/snapshot-only.test.ts`). The bridge checks the counts
+of nodes and edges before anything is copied, then the code units of the identifiers, counted while
+the snapshot is read and read no further once they exceed the budget, then the snapshot, and the
+store keeps the snapshot. A string with a lone surrogate, which the bridge would read as U+FFFD,
+`api` hands over as `false`, so that it is refused. `updateNode` and `updateEdge` read their patch
+the same way, every own key of a plain object, before they look up the item it names, and merge only
+the fields the bridge returns as checked. The bridge never formats a refused value into its message.
+Graph data that cannot be read at all, such as nodes that are not a list, a list with a hole, a
+patch that is no plain object, or a getter that throws, is refused as malformed before the bridge
+sees it. That no code of the host application runs in the engine holds while nothing on the page has
+patched JavaScript's built-ins, such as a setter on `Object.prototype` or a `Symbol.hasInstance` of
+`Uint8Array`, which the generated glue reaches.
 
 ## Building blocks
 
@@ -78,19 +85,19 @@ The functional core and its shell follow
   slot, a list of the edges at each node slot, a list each of free node and edge slots, and a
   spatial index (`spatial`, a uniform grid each for nodes and edges, with an overflow list for items
   that cover many cells) that loads, additions, and moves keep current and that is built again once
-  many items have moved or been added beyond its extent, or the nodes in use pass twice the count it
-  was built for ([ADR-0022](adr/0022-the-engine-edits-its-graph-in-place.md)); `add_node` takes the
-  free slot freed last, or a new one after the highest, and the next rank, and puts the node into
-  the grid in place; a load ranks node `i` as `i`; `add_edge` takes the edge slot freed last, or a
-  new one, and puts the edge into the lists of its ends and the grid in place, and `update_edge`
-  restyles and re-places one; `remove_nodes` frees the node slots and those of the edges at them,
-  `remove_edges` edge slots, and both take the items out of the grids and the lists at the nodes; a
-  free slot holds nothing, no query or hit returns it, a rebuild covers only the slots in use, and a
-  call that names one refuses it as a slot beyond the graph. Its query returns the slots a rectangle
-  meets, node slots in ascending rank, and `hit_at` what a press at a point hits
-  ([ADR-0025](adr/0025-the-engine-answers-every-hit-test.md)): the node drawn on top there, the one
-  of the highest rank, else the edge in the highest slot within 4 screen pixels of its path as the
-  stroke of the level flattens it, the parts of the path far from the point as chords; where the
+  many items have moved or been added beyond its extent, or the nodes or the edges in use pass twice
+  the count it was built for ([ADR-0022](adr/0022-the-engine-edits-its-graph-in-place.md));
+  `add_node` takes the free slot freed last, or a new one after the highest, and the next rank, and
+  puts the node into the grid in place; a load ranks node `i` as `i`; `add_edge` takes the edge slot
+  freed last, or a new one, and puts the edge into the lists of its ends and the grid in place, and
+  `update_edge` restyles and re-places one; `remove_nodes` frees the node slots and those of the
+  edges at them, `remove_edges` edge slots, and both take the items out of the grids and the lists
+  at the nodes; a free slot holds nothing, no query or hit returns it, a rebuild covers only the
+  slots in use, and a call that names one refuses it as a slot beyond the graph. Its query returns
+  the slots a rectangle meets, node slots in ascending rank, and `hit_at` what a press at a point
+  hits ([ADR-0025](adr/0025-the-engine-answers-every-hit-test.md)): the node drawn on top there, the
+  one of the highest rank, else the edge in the highest slot within 4 screen pixels of its path as
+  the stroke of the level flattens it, the parts of the path far from the point as chords; where the
   shell asks for connectors, at the near and middle level, a connector within 8 screen pixels, of
   the node of the highest rank, comes before them all. At the near level a label whose pill, as the
   labels layer measures and hands it over (`setLabelSize`), holds the point comes before a node;
@@ -115,49 +122,56 @@ The functional core and its shell follow
   and resolves edge ends to slots, `addNode` checks one node as a load would and returns the slot
   the engine chose for it, `addEdge` checks one edge as a load would, refuses one from a node to
   itself, and adds it between the node slots `api` resolved, `updateEdge` checks a patch of an
-  edge's colour, dash, arrowhead, and label as a load checks those fields and restyles and re-places
-  the edge, `edgesAt` names the edges at given nodes without removing anything, `removeNodes`
-  removes nodes and the edges at them and returns those edges' slots, `removeEdges` removes edges,
-  `translate` moves nodes, `query` takes a rectangle, a level of detail, the size of a screen pixel,
-  and how far an edge label's pill reaches from its point, and writes the found node slots, the
-  edge-label slots and points (at the near level only), the found edge slots, and the edge mesh into
-  buffers the engine owns, the label points and the mesh's positions relative to the query's origin,
-  which `originX` and `originY` read ([ADR-0010](adr/0010-bridge-data-format.md)), and returns the
-  mesh's detail, complete or coarsened, and refuses a pixel that is not a finite number above zero
-  as malformed; `drawnEdges` computes the ends of the found edges when inspection asks, as they lie
-  then, and `hit` names what a press at a point hits, a connector, a label, a node, or an edge by
-  its slot, or nothing, as one generated value; `setLabelSize` takes the measure of a label's pill,
+  edge's colour, dash, arrowhead, label, and sides as a load checks those fields and restyles and
+  re-places the edge, `edgesAt` names the edges at given nodes without removing anything,
+  `removeNodes` removes nodes and the edges at them and returns those edges' slots, `removeEdges`
+  removes edges, `translate` moves nodes, `query` takes a rectangle, a level of detail, the size of
+  a screen pixel, and how far an edge label's pill reaches from its point, and writes the found node
+  slots, the edge-label slots and points (at the near level only), the found edge slots, and the
+  edge mesh into buffers the engine owns, the label points and the mesh's positions relative to the
+  query's origin, which `originX` and `originY` read ([ADR-0010](adr/0010-bridge-data-format.md)),
+  and returns the mesh's detail, complete or coarsened, and refuses a pixel that is not a finite
+  number above zero as malformed; `drawnEdges` computes the ends of the found edges when inspection
+  asks, as they lie then, and `hit` names what a press at a point hits, a connector where the shell
+  asks for connectors, a label, a node, or an edge by its slot, or nothing, as one generated value,
+  and refuses a pixel as `query` does; `setLabelSize` takes the measure of a label's pill,
   `labelPoint` names where a label lies, and `moveLabel` places a dragged label and returns its path
   parameter and offset; it generates the type of every problem of graph data the methods of `Comb`
-  throw, `GraphDataProblem`, which `comb` exports, and keeps the refusals of `translate` and of the
-  removals, a mistake of the shell's, in types of their own. Its crate root holds the exports and
-  their conversions; its module `graph_data` reads and checks graph data, the one place that does
+  throw, `GraphDataProblem`, which `comb` exports, and keeps the refusals of the shell's mistakes in
+  types of their own: `TranslateError` of `translate`, and `SlotError` of a slot that holds nothing,
+  which the removals, `edgesAt`, `setLabelSize`, and `moveLabel` throw, while `addEdge` and
+  `updateEdge` report such a slot as malformed. Its crate root holds the exports and their
+  conversions; its module `graph_data` reads and checks graph data, the one place that does
   ([ADR-0026](adr/0026-the-shell-refuses-what-only-its-map-knows.md)); `packages/comb/src/bridge` is
   the one module that imports the WebAssembly package and reads those buffers through fresh
   typed-array views per read ([ADR-0010](adr/0010-bridge-data-format.md)).
 - **Store** (`packages/comb/src/store`) — a vanilla Zustand store with the graph's structure, its
   nodes and edges by slot with holes at free slots, which every reader skips, the maps from node and
   edge identifiers to slots, the code units of the identifiers it holds, the change the last
-  action that changed the graph made, by kind and identifier, the selection, the viewport, and a
-  counter for moved positions; no coordinates
+  action that changed the graph made, by kind and identifier, the selection, the node under the
+  pointer, the connection the user drags, with the world point it is dragged to, the viewport, and
+  a counter for moved positions; no coordinates of nodes or edges
   ([ADR-0011](adr/0011-store.md)). `GraphView` is its state without the actions, the type the
   render layer reads.
-- **Interaction** (`packages/comb/src/interaction`) — pointer and wheel input into store actions and
-  engine moves: select a node on press and drag it, select an edge on press, clear the selection on
-  the empty canvas and pan, zoom around the pointer, and the cursor over what a press would hit;
-  `connect.ts` begins a connection on a press on a connector, where `CombOptions.canConnect` is set,
-  follows the pointer with it, marks compatible the connectors of a node the source does not reach
-  yet, and proposes the edge to the veto on a release over one; `delete.ts` makes the canvas
-  focusable and deletes the selection on Delete or Backspace, a node with the edges the engine names
-  at it (`edgesAt`) before anything is removed, once `CombOptions.canDelete` returns `true`,
-  recording it as the user's. A press on a label, at the near level, selects its edge and drags the
-  label, held where it was grabbed, which the engine places on every move; its release, or a later
-  press, records `labelMoved` once, and a load, a removal of its edge, or a label the host cleared
-  ends the drag. A drag that moved its node records `nodeMoved` once, when the pointer is released
-  on the canvas or outside it; a load ends a drag. The engine's `hit` says what the pointer is on,
-  at the level of detail of the scale; node views and edges take no events. `viewport.ts` holds the
-  viewport's arithmetic, the transform between world and screen included, for interaction, the
-  scene, `api`'s `fitView` and `setViewport`, and the testing entry.
+- **Interaction** (`packages/comb/src/interaction`) — pointer, wheel, and key input into store
+  actions and engine moves: select a node on press and drag it, select an edge on press and pan once
+  the pointer has moved more than 4 screen pixels, clear the selection on the empty canvas and pan,
+  zoom around the pointer, and the cursor over what a press would hit; `connect.ts` begins a
+  connection on a press on a connector, where `CombOptions.canConnect` is set, follows the pointer
+  with it, marks compatible the connectors of a node the source does not reach yet, and proposes the
+  edge to the veto on a release over one; `delete.ts` makes the canvas focusable and deletes the
+  selection on Delete or Backspace, a node with the edges the engine names at it (`edgesAt`) before
+  anything is removed, once `CombOptions.canDelete` returns `true` and has not changed the graph
+  itself, recording it as the user's; a key held down or pressed with Control, Alt, or Meta deletes
+  nothing beyond its first press. A press on a label, at the near level, selects its edge and drags
+  the label, held where it was grabbed, which the engine places on every move; its release, or a
+  later press, records `labelMoved` once, and a load, a removal of its edge, or a label the host
+  cleared ends the drag. A drag that moved its node records `nodeMoved` once, when the pointer is
+  released on the canvas or outside it; a load ends a drag. The engine's `hit` says what the pointer
+  is on, at the level of detail of the scale; node views and edges take no events. `viewport.ts`
+  holds the viewport's arithmetic, the transform between world and screen and the level of detail of
+  a scale included, for interaction, the scene, `api`'s `fitView` and `setViewport`, and the testing
+  entry.
 - **Render** (`packages/comb/src/render`) — the PixiJS scene (`scene.ts`): a `world` render group
   with the layers `EdgesContainer` (`edges.ts`), `NodeParticles` (`particles.ts`), `NodesContainer`
   (`nodes.ts`), `LabelsContainer` (`labels.ts`), and `ConnectorsLayer` (`connectors.ts`), with the
@@ -205,7 +219,9 @@ The functional core and its shell follow
   scene draws, the text of the titles and labels drawn included, and the size and detail of the
   edge mesh, which the host application is not told; `viewport` and `renderCount`, cheap
   enough for every frame, return its transform and how often it rendered; `screenPoint` and
-  `visibleRect` apply the scene's transform between world and screen; `showLayers` hides layers for
+  `visibleRect` apply the scene's transform between world and screen; `hitKind` names what a press
+  at a screen point hits, connectors only where asked; `isDrawn` finds whether one node or edge is
+  drawn without building every drawn view, as `inspect` does; `showLayers` hides layers for
   a reference image; `sceneNumbers` gives the numbers the scene draws by (where the levels of detail
   begin, the culling margin, the label reach, the rescale); `work` counts what the canvas did: GPU
   buffers created and allocated, bytes uploaded, those of the edge mesh among them, and texture
@@ -215,14 +231,19 @@ The functional core and its shell follow
   the benchmark, and tooling. Its shape follows the scene and is outside the stable interface of
   `comb`.
 - **Example** (`examples/metric-tree`) — a host application with a metric tree and an HTML
-  sidebar (G-9), with a palette whose kinds HTML drag and drop puts onto the canvas, where the
-  example adds a node centred on `worldPointAt` of the drop (G-1); `?copies=` sets its size, the
+  sidebar (G-9) that edits the selected node's title or the selected edge's colour, dash,
+  arrowhead, and label, with a palette whose kinds HTML drag and drop puts onto the canvas, where
+  the example adds a node centred on `worldPointAt` of the drop (G-1); it keeps its own copy of the
+  graph from the changes `onChange` tells, names each edge the user connects after its ends, and
+  hands its vetoes to `window.canConnect` and `window.canDelete` where a browser test sets them;
+  `?connect=none` gives Comb no `canConnect`; `?copies=` sets its size, the
   copies lie in a grid about as wide as tall, and it reports its load time as
   `window.loadReport`; `?fallback=canvas` allows the Canvas 2D fallback;
   it fetches the engine file Vite emits for its `comb/engine.wasm?url` import and hands over the
   promise of the response, or with `?engine=response`, `module`, `bytes`, or `view` that form;
   `window.createComb` and `window.engineUrl` let a browser test make a second Comb in a host
-  element of its own.
+  element of its own, `window.useGraph` loads a graph as the example's own, and the functions of
+  `comb/testing` stand on `window`, bound to its Comb.
 - **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, measuring the time to
   the first frame and p95 frame times of drag, pan, and zoom over the frames Comb rendered, of
   edits one a frame, a node and an edge added and removed again, and of a pan where the near and
@@ -283,6 +304,15 @@ The store notifies the scene, which renders once per animation frame: it queries
 the viewport grown by the culling margin, binds node views and edge-label views to the slots
 found, and uploads the edge mesh the query built, so edges and labels follow the node in the
 same frame.
+
+**Editing.** A method of `Comb` that changes the graph reads its input once into a snapshot,
+refuses what the store's map shows, and hands the snapshot to the bridge, which checks it and has
+the engine add, change, or remove the items in place; the store then takes the result and records
+the change, and `api`, subscribed to the store, delivers it to `onChange` as a `GraphChange`
+before the call returns, and the next frame draws it. A user's connection and deletion run the
+same way from `interaction` once their veto allows, recorded as `by: "user"`; a dragged node or
+label writes the engine alone while it moves and records `nodeMoved` or `labelMoved` once, at
+release.
 
 **Panning and zooming.** `interaction` sets the store's viewport. While the viewport stays inside
 the rectangle the scene last queried, and that rectangle within the viewport grown by twice the
