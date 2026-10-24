@@ -53,11 +53,13 @@ points pull out of each end along that side's outward normal.
   A connection is made only to a compatible connector, and only after the host's veto allows it
   (ADR-0023). The node the user drags from is the edge's source, the one released over its
   target.
-- **What the host may do:** `addEdge` accepts a second edge between two nodes in the same
-  direction, as `load` does, and refuses an edge from a node to itself with a generated kind of
-  its own, since the specification assumes every edge joins a connector of one node to one of
-  another ([Assumptions](../SPECIFICATION.md#assumptions)). `load` accepts such an edge today; the
-  maintainer decides whether it refuses it too, which changes what a load accepts.
+- **Self-edges:** a user's connection and `addEdge` refuse an edge from a node to itself, the
+  connection by never counting a connector of its own source as compatible, `addEdge` with a
+  generated kind of its own. `load` keeps accepting one, as it does today: the specification's
+  assumption that every edge joins a connector of one node to one of another
+  ([Assumptions](../SPECIFICATION.md#assumptions)) is not enforced for a load.
+- **Second edges:** `addEdge` accepts a second edge between two nodes in the same direction, as
+  `load` does; the rule of compatibility binds the user's gesture alone.
 - **Levels:** at the far level no connector is drawn, and no connection is begun. How a
   connector is hit is decided with the other hit tests.
 - **Drawing:** a `connectors` layer joins the world above the nodes and edge labels (ADR-0012),
@@ -111,8 +113,8 @@ which the host does through `updateEdge`.
 - Negative / trade-offs: an edge record grows by two sides, a byte each in the engine.
 - Negative / trade-offs: with the duplicate rule, a user cannot draw a second edge between two
   nodes in the same direction, even to another side; the host can, through `addEdge`.
-- Negative / trade-offs: `addEdge` refuses a self-edge that `load` accepts, until the maintainer
-  decides the load.
+- Negative / trade-offs: `addEdge` refuses a self-edge that `load` accepts, so a graph loaded with
+  one cannot be rebuilt edge by edge through `addEdge`.
 - Negative / trade-offs: the host's veto is asked only at release, so a connector drawn as
   compatible during the drag may still be refused.
 - Follow-ups: whether a node may show connectors on some sides only; reconnecting an edge by
