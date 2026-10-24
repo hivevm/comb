@@ -8,7 +8,7 @@
 // that much to check. The code units of all identifiers are counted while they are read, and
 // reading stops once they exceed the bridge's budget, whose check then refuses the load. What
 // cannot be read at all throws an `UnreadableError`.
-import type { GraphBatch, NodePatch } from "../bridge";
+import type { GraphSnapshot, PlainPatch } from "../bridge";
 import { EDGE_ARROW, edgeColor } from "../render/edges";
 import type { GraphData } from "../store";
 
@@ -186,7 +186,7 @@ export function snapshotOf(lists: Lists, limits: Limits) {
   const done = () => read.idUnits > limits.idBudget;
   const nodes = copied(lists.nodes, lists.nodeCount, "nodes", (n) => nodeOf(read, n), done);
   const edges = copied(lists.edges, lists.edgeCount, "edges", (e) => edgeOf(read, e), done);
-  const snapshot = { nodes, edges } as unknown as GraphData & GraphBatch;
+  const snapshot = { nodes, edges } as GraphData & GraphSnapshot;
   return { snapshot, idUnits: read.idUnits };
 }
 
@@ -195,7 +195,7 @@ export function snapshotOf(lists: Lists, limits: Limits) {
  *  `limits`, and the name of that other field no longer than one code unit beyond the limit for
  *  texts. A patch that is no plain object, a `Map` or an array among them, or that has a key that
  *  is no string, cannot be read. */
-export function patchOf(patch: unknown, limits: Limits): NodePatch {
+export function patchOf(patch: unknown, limits: Limits): PlainPatch {
   const fields = objectOf(patch);
   if (!fields || Object.getPrototypeOf(fields) !== Object.prototype)
     throw new UnreadableError("the patch is not a plain object");
@@ -213,5 +213,5 @@ export function patchOf(patch: unknown, limits: Limits): NodePatch {
     const value = fields[key];
     plain[key] = typeof value === "string" ? read.text(value) : read.number(value);
   }
-  return plain as NodePatch;
+  return plain as PlainPatch;
 }

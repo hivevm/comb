@@ -23,6 +23,17 @@ import init, {
 
 export type { CheckedPatch, GraphBatch, GraphDataProblem, NodePatch, TranslateError };
 
+/** The mark of plain data `api/snapshot.ts` read once from the host application's value
+ *  (ADR-0026). It is exported nowhere, so that handing the bridge a value of the host
+ *  application, which may hold a getter or a Proxy, takes a cast a reviewer sees. */
+declare const read: unique symbol;
+
+/** The snapshot of a load: what `snapshotOf` returns, and the graph data the bridge takes. */
+export type GraphSnapshot = GraphBatch & { readonly [read]: "graph" };
+
+/** The plain patch of `updateNode`: what `patchOf` returns, and the patch the bridge takes. */
+export type PlainPatch = NodePatch & { readonly [read]: "patch" };
+
 /** A rectangle in world coordinates. */
 export interface Rect {
   minX: number;
@@ -86,7 +97,7 @@ export interface DrawnEdges {
 export interface Bridge {
   /** Replaces the graph; node slot `i` is the batch's node `i`, edge slot `i` its edge `i`.
    *  Throws a `GraphDataProblem`. */
-  loadGraph(batch: GraphBatch): number;
+  loadGraph(batch: GraphSnapshot): number;
   /** The most UTF-16 code units of a title or a label text the bridge accepts. */
   textLimit(): number;
   /** The most UTF-16 code units of an identifier the bridge accepts. */
@@ -101,7 +112,7 @@ export interface Bridge {
   checkGraphSize(nodes: number, edges: number): void;
   /** Checks the patch `updateNode` hands over for the node `node`, reading it once, and returns
    *  the fields it changes; the engine keeps nothing of it. Throws a `GraphDataProblem`. */
-  checkNodePatch(node: string, patch: NodePatch): CheckedPatch;
+  checkNodePatch(node: string, patch: PlainPatch): CheckedPatch;
   /** Moves the nodes in `slots`, their edges with them. Throws a `TranslateError`, a mistake of
    *  the shell's, never one of graph data. */
   translate(slots: Uint32Array, dx: number, dy: number): void;

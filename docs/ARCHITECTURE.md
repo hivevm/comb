@@ -45,11 +45,14 @@ backgrounds are checked there but not kept by the engine. `api` reads the host's
 in JavaScript, into a snapshot (`api/snapshot.ts`) of plain data whose every field is a primitive
 of the type it expects, any other value replaced by `false`, and whose texts and identifiers are
 cut one code unit beyond the bridge's limits, so that no value of the host application and none of
-its code reaches the engine, and a text of any length costs no more than that to check. The bridge
-checks the counts of nodes and edges before anything is copied, then the code units of the
-identifiers, counted while the snapshot is read and read no further once they exceed the budget,
-then the snapshot, and the store keeps the snapshot. A string with a lone surrogate, which the
-bridge would read as U+FFFD, `api` hands over as `false`, so that it is refused. `updateNode` reads
+its code reaches the engine, and a text of any length costs no more than that to check. The
+bridge's `loadGraph` and `checkNodePatch` take only the types `GraphSnapshot` and `PlainPatch`
+that the snapshot's functions return, so that the type checker refuses the host's graph data or
+patch handed to the bridge directly (`bridge/snapshot-only.test.ts`). The bridge checks the
+counts of nodes and edges before anything is copied, then the code units of the identifiers,
+counted while the snapshot is read and read no further once they exceed the budget, then the
+snapshot, and the store keeps the snapshot. A string with a lone surrogate, which the bridge would
+read as U+FFFD, `api` hands over as `false`, so that it is refused. `updateNode` reads
 its patch the same way, every own key of a plain object, and merges only the fields the bridge
 returns as checked. The bridge never formats a refused value into its message. Graph data that
 cannot be read at all, such as nodes that are not a list, a list with a hole, a patch that is no
