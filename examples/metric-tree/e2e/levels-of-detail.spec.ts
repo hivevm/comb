@@ -1,4 +1,4 @@
-// The three levels of detail, chosen by zoom (ADR-0012).
+// The three levels of detail, chosen by zoom (ADR-0027).
 import { expect, test } from "@playwright/test";
 import { canvasSize, open, sceneNumbers, screenCentre, setViewport } from "./shared";
 

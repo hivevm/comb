@@ -1,5 +1,5 @@
 //! The loaded graph as the engine keeps it: node positions and sizes per node slot, edges per edge
-//! slot, and a spatial index over both that loads and moves keep current (ADR-0010, ADR-0012).
+//! slot, and a spatial index over both that loads and moves keep current (ADR-0010, ADR-0027).
 //!
 //! A query answers which node slots, edge slots, and edge labels a rectangle meets, and writes
 //! those slots, the points of the labels, and the mesh of the edges into buffers the caller reads;
@@ -44,7 +44,7 @@ pub fn slot(index: usize) -> Result<u32, GraphError> {
     u32::try_from(index).map_err(|_| GraphError::TooManySlots)
 }
 
-/// The level of detail a query serves (ADR-0012): near draws edge labels, middle does not, and
+/// The level of detail a query serves (ADR-0027): near draws edge labels, middle does not, and
 /// far draws edges as plain lines one pixel wide.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Level {
@@ -312,7 +312,7 @@ impl Graph {
 
     /// Writes into `out` the nodes and edges whose bounds meet `rect` and the mesh of the edges,
     /// stroked for `level` where a screen pixel is `pixel` world units, within the mesh budget
-    /// (ADR-0012); at the near level also the labels whose point lies within `label_reach` of it,
+    /// (ADR-0027); at the near level also the labels whose point lies within `label_reach` of it,
     /// and at the others no label.
     pub fn query(
         &mut self,

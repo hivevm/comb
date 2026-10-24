@@ -1,4 +1,4 @@
-//! A uniform grid over the bounds of items, for the spatial queries of culling (G-7, ADR-0012).
+//! A uniform grid over the bounds of items, for the spatial queries of culling (G-7, ADR-0027).
 //!
 //! The grid covers the extent it is made for; bounds beyond it fall into its border cells, so a
 //! query stays exact however far an item moves, and the grid counts the items that left its

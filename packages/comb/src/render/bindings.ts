@@ -1,4 +1,4 @@
-// The pool of a layer's views (ADR-0012): a render binds pooled views to exactly the slots the
+// The pool of a layer's views (ADR-0027): a render binds pooled views to exactly the slots the
 // engine found, in slot order, and returns the others for reuse.
 import type { Container } from "pixi.js";
 

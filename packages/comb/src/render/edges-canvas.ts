@@ -1,6 +1,6 @@
 // The edges layer on PixiJS's Canvas 2D renderer, where the host application opts in (ADR-0018):
 // the triangles of the engine's edge mesh filled into one drawing of the layer, never one per
-// edge (ADR-0012). Canvas 2D runs no shader, so dash patterns draw solid; and no WebGL mesh is
+// edge (ADR-0027). Canvas 2D runs no shader, so dash patterns draw solid; and no WebGL mesh is
 // built, so nothing is copied for upload.
 import { Container, Graphics } from "pixi.js";
 import type { Visible } from "../bridge";

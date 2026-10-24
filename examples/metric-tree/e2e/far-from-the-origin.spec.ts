@@ -2,7 +2,7 @@
 // points relative to the query's origin, and the scene draws the world relative to it, so that an
 // edge at ±5e7 is drawn as precisely as one near the origin (Q-4). A segment of an edge that
 // crosses the viewport is split where it leaves the queried rectangle grown by the stroke's width
-// (ADR-0012), so that its ends far beyond the viewport do not round what it shows.
+// (ADR-0027), so that its ends far beyond the viewport do not round what it shows.
 import { expect, test, type Page } from "@playwright/test";
 import { canvasSize, open, setViewport } from "./shared";
 

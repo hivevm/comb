@@ -1,4 +1,4 @@
-# The functional core (ADR-0009): no crate that reaches the browser, the clock, randomness, or I/O.
+# The functional core (ADR-0026): no crate that reaches the browser, the clock, randomness, or I/O.
 [package]
 name = "comb-engine"
 version = "0.0.0"

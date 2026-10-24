@@ -14,15 +14,15 @@ segments, a status badge, values over three periods with a coloured trend, and a
 Q-1 asks for 60 fps with 50,000 nodes, Q-4 for geometry exact to 0.5 px, and Q-5 forbids
 interpreting graph data as HTML, script, or URL.
 
-A description Comb draws itself can be pooled and batched (ADR-0012); a callback in which the host
+A description Comb draws itself can be pooled and batched (ADR-0027); a callback in which the host
 application draws with PixiJS cannot, and its cost is outside Comb's control. A closed set of
 elements is a public interface the host application relies on, so adding an element is a change
 of that interface.
 
 Laying out the elements is geometry: the height of each row, the position of each element, the
-truncation of text to its column. ADR-0009 puts geometry into the engine, where Q-4 can be tested
+truncation of text to its column. ADR-0026 puts geometry into the engine, where Q-4 can be tested
 without a browser. Text widths depend on the font, which the shell knows from its `BitmapText`
-fonts (ADR-0012).
+fonts (ADR-0027).
 
 ## Decision
 
@@ -73,7 +73,7 @@ host application draws; styling beyond colours and roles, such as fonts per node
   revision of this ADR.
 - Negative / trade-offs: glyph advances cross the bridge once per font, and a font change means a
   new layout of every node that uses it.
-- Follow-ups: how the levels of detail of ADR-0012 reduce each element; kerning and right-to-left
+- Follow-ups: how the levels of detail of ADR-0027 reduce each element; kerning and right-to-left
   text, which glyph advances alone do not cover.
 
 ## Enforcement

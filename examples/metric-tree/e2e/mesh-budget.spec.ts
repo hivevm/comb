@@ -1,4 +1,4 @@
-// A query's edge mesh within its budget (ADR-0012): graph data the bridge accepts never runs the
+// A query's edge mesh within its budget (ADR-0027): graph data the bridge accepts never runs the
 // engine out of memory, at any viewport.
 import { expect, test } from "@playwright/test";
 import { open } from "./shared";

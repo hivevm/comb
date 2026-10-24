@@ -1,4 +1,4 @@
-// The one module that imports the WebAssembly package (ADR-0009). Structured data crosses as
+// The one module that imports the WebAssembly package (ADR-0026). Structured data crosses as
 // generated types through serde-wasm-bindgen; node positions and the results of a viewport query
 // are read through views on the engine's buffers, created anew on every read because growing
 // memory detaches older views (ADR-0010).
@@ -42,7 +42,7 @@ export interface EdgeMesh {
   indices: Uint32Array;
 }
 
-/** The detail of a query's edge mesh (ADR-0012): complete, or coarsened where an edge was drawn
+/** The detail of a query's edge mesh (ADR-0027): complete, or coarsened where an edge was drawn
  *  as its chord, or left out, for the mesh budget or for memory. */
 export type Detail = "complete" | "coarsened";
 
@@ -66,7 +66,7 @@ export interface Visible {
   origin: { x: number; y: number };
 }
 
-/** The level of detail a query serves (ADR-0012): near with edge labels, middle without, far
+/** The level of detail a query serves (ADR-0027): near with edge labels, middle without, far
  *  with edges as plain lines one pixel wide. */
 export type Level = "near" | "middle" | "far";
 

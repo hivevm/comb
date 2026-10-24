@@ -1,4 +1,4 @@
-// What lies outside the viewport is not drawn (G-7, ADR-0012).
+// What lies outside the viewport is not drawn (G-7, ADR-0027).
 import { expect, test, type Page } from "@playwright/test";
 import { canvasSize, open, sceneNumbers, screenCentre, setViewport } from "./shared";
 
