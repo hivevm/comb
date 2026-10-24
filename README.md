@@ -133,6 +133,9 @@ comb.addNode({ id: "c", title: "Churned users", x: 640, y: 0, width: 220, height
 ```
 
 `addNode` adds one node at its `x` and `y` without a load, drawn above every node it overlaps.
+For a node dropped from the host application's palette, `comb.worldPointAt(event.clientX,
+event.clientY)` returns the world point under the drop; Comb handles no drag and drop itself, and
+`worldPointAt` throws a `RangeError` on a coordinate that is not finite.
 `onChange` tells every change of the graph, a `GraphChange` that `comb` exports, typed by its
 `kind` and by `by`, `"user"` or `"host"`: `loaded` after `load`, `nodeAdded` with the node as Comb
 took it after `addNode`, and `nodeUpdated` with the merged patch after `updateNode`. Each arrives
@@ -189,11 +192,11 @@ instance.
 
 Should the engine trap, as WebAssembly does when it runs out of memory, it is lost for the page, for
 every Comb on it (ADR-0021). From then on `load`, `updateNode`, `addNode`, `fitView`, `setViewport`,
-and `createComb` throw an `EngineLostError`, which `comb` exports; `viewport`, `onSelectionChange`,
-`onChange`, and `destroy` keep working, the canvas keeps its last frame, and input on it changes
-nothing. `comb.onEngineLost(listener)` calls `listener` once with the error, at once where the
-engine is lost already, and returns the function that removes it. The only recovery is loading the
-page anew, so a host application tells its user and offers a reload:
+and `createComb` throw an `EngineLostError`, which `comb` exports; `viewport`, `worldPointAt`,
+`onSelectionChange`, `onChange`, and `destroy` keep working, the canvas keeps its last frame, and
+input on it changes nothing. `comb.onEngineLost(listener)` calls `listener` once with the error, at
+once where the engine is lost already, and returns the function that removes it. The only recovery
+is loading the page anew, so a host application tells its user and offers a reload:
 
 ```ts
 comb.onEngineLost(() => showBanner("The graph stopped responding. Reload the page."));
@@ -213,7 +216,8 @@ PixiJS's Canvas 2D renderer:
 const comb = await createComb(host, { engine: fetch(engineUrl), allowCanvasFallback: true });
 ```
 
-[`examples/metric-tree/`](examples/metric-tree/) is a complete host application with a sidebar.
+[`examples/metric-tree/`](examples/metric-tree/) is a complete host application with a sidebar and
+a palette, whose kinds the user drags onto the canvas to add a node under the drop.
 
 ## Project Layout
 
