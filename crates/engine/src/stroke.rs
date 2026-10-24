@@ -336,8 +336,24 @@ impl Mesh {
     /// Adds a vertex at `at`, its position written relative to the origin and only then rounded.
     fn vertex(&mut self, at: Point, distance: f64, color: u32, dash: (f32, f32)) {
         let Point { x, y } = self.origin;
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "less the query's origin and only then rounded (ADR-0010): a vertex the split \
+                      keeps near the rectangle rounds by its distance from it, and an end left far \
+                      beyond it keeps the rounding ADR-0027 records, which Q-4 allows past 2^21 \
+                      px; a vertex past f32::MAX from the origin, which only a node near the end of \
+                      f32's range or a rectangle reaching that far produces, turns infinite"
+        )]
         self.positions
             .extend([(at.x - x) as f32, (at.y - y) as f32]);
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "the distance along the path crosses as f32 from the source, rounded by up to \
+                      2^-24 of itself, the residual ADR-0010 and ADR-0027 record; Q-4 bounds \
+                      dashes at 2^21 px along the path, where that is under 0.5 px; a path longer \
+                      than f32::MAX, which only nodes near the end of f32's range produce, turns \
+                      it infinite"
+        )]
         self.distances.push(distance as f32);
         self.colors.push(color);
         self.dashes.extend([dash.0, dash.1]);

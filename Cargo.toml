@@ -15,6 +15,11 @@ dead_code = "deny"
 [workspace.lints.clippy]
 too_many_lines = "deny"
 cognitive_complexity = "deny"
+# Every narrowing outside the tests says why it holds, by a checked conversion or an `expect`
+# whose reason names what bounds the value, since a narrowing written without a look at its range
+# can lose what Q-4 or Q-7 needs (docs/CONVENTIONS.md, *Check a value as the engine keeps it*). Dev
+# tooling within ADR-0008; each crate root allows it in test code, under `cfg(test)`.
+cast_possible_truncation = "deny"
 
 [profile.release]
 lto = true

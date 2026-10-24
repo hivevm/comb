@@ -4,6 +4,14 @@
 //! generates; node positions and the results of a viewport query cross as buffers the engine
 //! owns, which the shell reads as typed-array views created anew after every call.
 
+#![cfg_attr(
+    test,
+    allow(
+        clippy::cast_possible_truncation,
+        reason = "test code narrows the fixtures it builds; the lint holds the code that ships"
+    )
+)]
+
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -20,18 +28,26 @@ use wasm_bindgen::prelude::*;
 
 /// The most UTF-16 code units, the length JavaScript gives a string, of a node's title or an edge
 /// label's text.
-pub const MAX_TEXT: usize = 1_000;
+pub const MAX_TEXT: usize = TEXT_LIMIT as usize;
 
 /// The most nodes, and the most edges, of one graph.
 pub const MAX_ITEMS: u32 = 1_000_000;
 
 /// The most UTF-16 code units of an identifier: a node's or an edge's, or an edge's source or
 /// target.
-pub const MAX_ID: usize = 256;
+pub const MAX_ID: usize = ID_LIMIT as usize;
 
 /// The most UTF-16 code units of all identifiers of one load together, sources and targets
 /// among them, so that the identifiers of a graph within its other limits cost a bounded copy.
 pub const MAX_ID_UNITS: u32 = 64_000_000;
+
+/// `MAX_TEXT` as the `u32` a refusal and `textLimit` name, declared in the narrower type so that
+/// `MAX_TEXT` widens it.
+const TEXT_LIMIT: u32 = 1_000;
+
+/// `MAX_ID` as the `u32` a refusal and `idLimit` name, declared in the narrower type so that
+/// `MAX_ID` widens it.
+const ID_LIMIT: u32 = 256;
 
 /// The length of a text in UTF-16 code units, as JavaScript counts it.
 fn utf16_length(text: &str) -> usize {
@@ -496,10 +512,14 @@ impl<'a> Item<'a> {
     }
 
     /// The value of `field`, or the refusal that names the item and the field.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "an index below the count of its list, which the bridge checked against \
+                  `MAX_ITEMS` first (ADR-0026)"
+    )]
     fn read<T>(&self, field: &str, value: Field<T>, expected: &str) -> Result<T, GraphDataProblem> {
         value.0.ok_or_else(|| GraphDataProblem::InvalidField {
             list: self.list,
-            // Within `MAX_ITEMS`, which the bridge checked first.
             index: self.index as u32,
             id: self.id.map(str::to_owned),
             field: field.to_owned(),
@@ -584,6 +604,10 @@ fn nodes_of<'a>(batch: &Batch<'a>) -> Result<Nodes<'a>, GraphDataProblem> {
     for (index, node) in batch.nodes.iter().enumerate() {
         let named = || node.id.to_owned();
         // Checked as the engine keeps them: a number beyond `f32` is as infinite as infinity.
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "checked as f32 below, so that what f32 cannot hold is refused"
+        )]
         let [x, y, width, height] = [node.x, node.y, node.width, node.height].map(|v| v as f32);
         if !x.is_finite() || !y.is_finite() {
             return Err(GraphDataProblem::NonFiniteCoordinate { node: named() });
@@ -596,7 +620,7 @@ fn nodes_of<'a>(batch: &Batch<'a>) -> Result<Nodes<'a>, GraphDataProblem> {
             Some(length) if length > MAX_TEXT => {
                 return Err(GraphDataProblem::TitleTooLong {
                     node: named(),
-                    limit: MAX_TEXT as u32,
+                    limit: TEXT_LIMIT,
                 });
             }
             Some(_) => {}
@@ -632,7 +656,7 @@ fn placement_of(edge: &Edge) -> Result<(Option<LabelPlacement>, EdgeStyle), Grap
         Some(l) if l.text_length > Some(MAX_TEXT) => {
             return Err(GraphDataProblem::LabelTextTooLong {
                 edge: id(),
-                limit: MAX_TEXT as u32,
+                limit: TEXT_LIMIT,
             });
         }
         Some(Label {
@@ -650,14 +674,21 @@ fn placement_of(edge: &Edge) -> Result<(Option<LabelPlacement>, EdgeStyle), Grap
         return Err(GraphDataProblem::InvalidColor { edge: id() });
     }
     // Checked as the engine keeps it, so that a dash too short for `f32` is refused too.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "checked as f32 below, so that what f32 cannot hold is refused"
+    )]
     let dash = match edge.dash.map(|[dash, gap]| (dash as f32, gap as f32)) {
         Some((dash, gap)) if !(dash.is_finite() && gap.is_finite() && dash > 0.0 && gap >= 0.0) => {
             return Err(GraphDataProblem::InvalidDash { edge: id() });
         }
         dash => dash,
     };
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "an integer from 0 to 0xFFFFFF, as `rgb` checked above"
+    )]
     let style = EdgeStyle {
-        // An integer from 0 to 0xFFFFFF, as `rgb` checked.
         color: edge.color as u32,
         dash,
         arrow: edge.arrow == Arrow::End,
@@ -710,7 +741,7 @@ fn ids_of(batch: &Batch) -> Result<(), GraphDataProblem> {
                 list: list.to_owned(),
                 index: slot(index)?,
                 field: field.to_owned(),
-                limit: MAX_ID as u32,
+                limit: ID_LIMIT,
             });
         }
         units += length;
@@ -783,14 +814,14 @@ impl<'de> Visitor<'de> for PatchVisitor {
 /// more than one beyond it, so that a text of any length costs at most that much to check.
 #[wasm_bindgen(js_name = textLimit)]
 pub fn text_limit() -> u32 {
-    MAX_TEXT as u32
+    TEXT_LIMIT
 }
 
 /// The most UTF-16 code units of an identifier, `MAX_ID`: the shell hands over no more than one
 /// beyond it.
 #[wasm_bindgen(js_name = idLimit)]
 pub fn id_limit() -> u32 {
-    MAX_ID as u32
+    ID_LIMIT
 }
 
 /// The most UTF-16 code units of all identifiers of one load, `MAX_ID_UNITS`: the shell stops
@@ -857,7 +888,7 @@ fn patch_of(node: &str, patch: NodePatch) -> Result<CheckedPatch, GraphDataProbl
         if utf16_length(&title) > MAX_TEXT {
             return Err(GraphDataProblem::TitleTooLong {
                 node: node.to_owned(),
-                limit: MAX_TEXT as u32,
+                limit: TEXT_LIMIT,
             });
         }
         checked.title = Some(title);
