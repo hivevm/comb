@@ -3,31 +3,43 @@
 // detail, also where the scene draws nodes as particles (ADR-0027). Once the engine is lost, input
 // changes nothing, and no trap escapes a handler (ADR-0021).
 import type { Application, FederatedPointerEvent } from "pixi.js";
-import { EngineLostError, refuseIfLost, type Bridge } from "../bridge";
+import { EngineLostError, refuseIfLost, type Bridge, type Hit } from "../bridge";
 import type { GraphStore } from "../store";
-import { panBy, toWorld, zoomAt } from "./viewport";
+import { levelAt, panBy, toWorld, zoomAt } from "./viewport";
 
 const WHEEL_STEP = 1.0015;
+
+/** The cursor over what a press would hit: grab a node, select an edge, or nothing. */
+const CURSORS: Record<Hit["kind"], string> = { node: "grab", edge: "pointer", none: "" };
 
 /** A drag in progress: of a node, which records whether it moved it, or of the viewport. */
 type Drag =
   | { kind: "node"; slot: number; id: string; x: number; y: number; moved: boolean }
   | { kind: "pan"; x: number; y: number };
 
-/** The slot of the node under a screen point, from the engine's spatial index. */
-function nodeAt(store: GraphStore, bridge: Bridge, x: number, y: number): number | undefined {
-  const world = toWorld(store.getState().viewport, x, y);
-  return bridge.hit(world.x, world.y);
+/** What a press at a screen point hits, from the engine's spatial index, at the level of detail
+ *  of the viewport's scale (ADR-0025). */
+function targetAt(store: GraphStore, bridge: Bridge, x: number, y: number): Hit {
+  const { viewport } = store.getState();
+  const world = toWorld(viewport, x, y);
+  return bridge.hit(world.x, world.y, 1 / viewport.scale, levelAt(viewport.scale));
 }
 
-function startDrag(store: GraphStore, bridge: Bridge, event: FederatedPointerEvent): Drag {
+/** Begins what a press does where it hits: on a node it selects the node and begins a drag of
+ *  it; on an edge it selects the edge; on nothing it clears the selection and begins a pan. */
+function startDrag(store: GraphStore, bridge: Bridge, event: FederatedPointerEvent): Drag | null {
   const { x, y } = event.global;
-  const { nodes } = store.getState();
-  const slot = nodeAt(store, bridge, x, y);
-  const node = slot === undefined ? undefined : nodes[slot];
-  if (slot !== undefined && node) {
+  const { nodes, edges } = store.getState();
+  const hit = targetAt(store, bridge, x, y);
+  const node = hit.kind === "node" ? nodes[hit.slot] : undefined;
+  if (hit.kind === "node" && node) {
     store.getState().select({ kind: "node", id: node.id });
-    return { kind: "node", slot, id: node.id, x, y, moved: false };
+    return { kind: "node", slot: hit.slot, id: node.id, x, y, moved: false };
+  }
+  const edge = hit.kind === "edge" ? edges[hit.slot] : undefined;
+  if (edge) {
+    store.getState().select({ kind: "edge", id: edge.id });
+    return null;
   }
   store.getState().select(null);
   return { kind: "pan", x, y };
@@ -90,8 +102,8 @@ export function attachInteraction(app: Application, store: GraphStore, bridge: B
   app.stage.hitArea = app.screen;
   // The cursor shows what a press would do: grab a node, or, over the empty canvas, nothing.
   const hover = untilLost((event: FederatedPointerEvent) => {
-    const over = nodeAt(store, bridge, event.global.x, event.global.y) !== undefined;
-    app.canvas.style.cursor = over ? "grab" : "";
+    const { kind } = targetAt(store, bridge, event.global.x, event.global.y);
+    app.canvas.style.cursor = CURSORS[kind];
   });
   // The drag is over before its change is told, so that it stays over where a listener throws,
   // and also once the engine is lost, when nothing is told.
@@ -107,7 +119,7 @@ export function attachInteraction(app: Application, store: GraphStore, bridge: B
       // A drag whose release never came ends where the next press begins.
       release();
       drag = startDrag(store, bridge, event);
-      if (drag.kind === "node") app.canvas.style.cursor = "grabbing";
+      if (drag?.kind === "node") app.canvas.style.cursor = "grabbing";
     }),
   );
   app.stage.on(

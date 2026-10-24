@@ -38,7 +38,29 @@
           <input id="title" type="text" />
         </label>
       </section>
-      <p id="empty">Select a node on the canvas to edit it here.</p>
+      <section id="edge-selection" hidden>
+        <h2>Selected edge</h2>
+        <label>
+          Colour
+          <input id="edge-color" type="color" />
+        </label>
+        <label>
+          Line
+          <select id="edge-dash">
+            <option value="solid">Solid</option>
+            <option value="dashed">Dashed</option>
+          </select>
+        </label>
+        <label class="inline">
+          <input id="edge-arrow" type="checkbox" />
+          Arrowhead
+        </label>
+        <label>
+          Label
+          <input id="edge-label" type="text" />
+        </label>
+      </section>
+      <p id="empty">Select a node or an edge on the canvas to edit it here.</p>
     </aside>
     <script type="module" src="./src/main.ts"></script>
   </body>

@@ -1,5 +1,13 @@
 // The example host application: Comb on the canvas, the attribute form in the HTML sidebar.
-import { createComb, type Comb, type EngineSource, type GraphData, type Selection } from "comb";
+import {
+  createComb,
+  type Comb,
+  type EdgeData,
+  type EdgePatch,
+  type EngineSource,
+  type GraphData,
+  type Selection,
+} from "comb";
 import engineUrl from "comb/engine.wasm?url";
 import {
   edgeVertices,
@@ -38,6 +46,8 @@ declare global {
      *  engine. */
     engineUrl: string;
     loadReport: Promise<LoadReport>;
+    /** Loads `graph` as the example's own, which its sidebar edits, for a browser test. */
+    useGraph: (graph: GraphData) => void;
     /** What the canvas draws, from comb/testing, for the browser tests and the benchmark. */
     inspect: (other?: Comb) => SceneSnapshot;
     renderCount: () => number;
@@ -91,9 +101,19 @@ const count = element("count");
 const selection = element("selection");
 const empty = element("empty");
 const title = element<HTMLInputElement>("title");
+const edgeSelection = element("edge-selection");
+const edgeColor = element<HTMLInputElement>("edge-color");
+const edgeDash = element<HTMLSelectElement>("edge-dash");
+const edgeArrow = element<HTMLInputElement>("edge-arrow");
+const edgeLabel = element<HTMLInputElement>("edge-label");
+/** The dash pattern the sidebar gives an edge it makes dashed, as the tree's own dashed edges. */
+const DASH = [6, 4] as const;
+/** Comb's colour for an edge that names none. */
+const EDGE_GREY = 0x9aa1ad;
 
 let graph: GraphData = metricTree(1);
 let selected: string | null = null;
+let selectedEdge: EdgeData | undefined;
 
 /** Selects the copies the query string asks for, adding the option where it is missing. */
 function copiesFromQuery(): void {
@@ -129,9 +149,41 @@ async function load(): Promise<LoadReport> {
 function show(next: Selection): void {
   selected = next?.kind === "node" ? next.id : null;
   const node = graph.nodes.find((candidate) => candidate.id === selected);
+  selectedEdge =
+    next?.kind === "edge" ? graph.edges.find((candidate) => candidate.id === next.id) : undefined;
   selection.hidden = !node;
-  empty.hidden = !!node;
+  edgeSelection.hidden = !selectedEdge;
+  empty.hidden = !!node || !!selectedEdge;
   if (node) title.value = node.title;
+  if (selectedEdge) showEdge(selectedEdge);
+}
+
+/** Fills the sidebar's form of an edge from `edge`. */
+function showEdge(edge: EdgeData): void {
+  const color = edge.color ?? EDGE_GREY;
+  edgeColor.value = `#${color.toString(16).padStart(6, "0")}`;
+  edgeDash.value = edge.dash ? "dashed" : "solid";
+  edgeArrow.checked = edge.arrow !== "none";
+  edgeLabel.value = edge.label?.text ?? "";
+}
+
+/** Changes the selected edge by `patch`, in the example's graph and through `updateEdge`. */
+function changeEdge(patch: EdgePatch): void {
+  const edge = selectedEdge;
+  if (!edge) return;
+  comb.updateEdge(edge.id, patch);
+  const { dash, label, ...rest } = patch;
+  Object.assign(edge, rest);
+  if (dash !== undefined) edge.dash = dash ?? undefined;
+  if (label !== undefined) edge.label = label ?? undefined;
+}
+
+/** The label the sidebar's text gives the selected edge: its own moved to the new text, a new one
+ *  in the middle of the edge, or none for no text. */
+function labelFor(text: string): EdgeData["label"] | null {
+  if (text === "") return null;
+  const color = selectedEdge?.color ?? EDGE_GREY;
+  return { t: 0.5, offset: 0, background: color, ...selectedEdge?.label, text };
 }
 
 /** The title a node dropped from the palette starts with, by its kind. */
@@ -194,8 +246,23 @@ title.addEventListener("input", () => {
   node.title = title.value;
   comb.updateNode(node.id, { title: title.value });
 });
+edgeColor.addEventListener("input", () =>
+  changeEdge({ color: Number.parseInt(edgeColor.value.slice(1), 16) }),
+);
+edgeDash.addEventListener("change", () =>
+  changeEdge({ dash: edgeDash.value === "dashed" ? DASH : null }),
+);
+edgeArrow.addEventListener("change", () =>
+  changeEdge({ arrow: edgeArrow.checked ? "end" : "none" }),
+);
+edgeLabel.addEventListener("input", () => changeEdge({ label: labelFor(edgeLabel.value) }));
 copiesFromQuery();
 window.comb = comb;
+window.useGraph = (next) => {
+  graph = next;
+  counted();
+  comb.load(next);
+};
 window.createComb = createComb;
 window.engineUrl = engineUrl;
 window.inspect = (other = comb) => inspect(other);

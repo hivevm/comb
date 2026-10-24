@@ -4,7 +4,7 @@
 // cannot hold, and a patch of an unknown edge or field change nothing (ADR-0026, Q-7).
 import { expect, test, type Page } from "@playwright/test";
 import type { EdgeData, GraphData } from "comb";
-import { NODE_HEIGHT, NODE_WIDTH, open, setViewport } from "./shared";
+import { NODE_HEIGHT, NODE_WIDTH, open, setViewport, strokeOf } from "./shared";
 
 const node = (id: string, x = 0, y = 0) => ({
   id,
@@ -33,42 +33,6 @@ async function loaded(page: Page, graph: GraphData = PAIR): Promise<void> {
 
 async function told(page: Page): Promise<unknown[]> {
   return page.evaluate(() => (window as unknown as { told: unknown[] }).told);
-}
-
-/** Along the edge from `a` to `b`, screen y = 132 from x = 340 to 680, which pixels the canvas
- *  draws in `color` (`0xRRGGBB`), within a tolerance, read off a screenshot with the nodes and
- *  labels hidden: as many as it draws and how many runs they fall into. */
-async function strokeOf(page: Page, color: number) {
-  await page.evaluate(async () => {
-    window.showLayers({ nodes: false, edgeLabels: false });
-    await window.comb.whenRendered();
-  });
-  const png = await page.locator("#canvas canvas").screenshot();
-  const stroke = await page.evaluate(
-    async ({ png, color }) => {
-      const bytes = Uint8Array.from(atob(png), (char) => char.charCodeAt(0));
-      const image = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
-      const ratio = image.width / document.querySelector("#canvas canvas")!.clientWidth;
-      const copy = document.createElement("canvas");
-      [copy.width, copy.height] = [image.width, image.height];
-      const context = copy.getContext("2d")!;
-      context.drawImage(image, 0, 0);
-      const want = [(color >> 16) & 0xff, (color >> 8) & 0xff, color & 0xff];
-      const hits: boolean[] = [];
-      for (let x = 340; x <= 680; x++) {
-        const { data } = context.getImageData(Math.round(x * ratio), Math.round(132 * ratio), 1, 1);
-        hits.push(want.every((value, channel) => Math.abs(data[channel]! - value) < 48));
-      }
-      const runs = hits.filter((hit, i) => hit && !hits[i - 1]).length;
-      return { drawn: hits.filter(Boolean).length, runs };
-    },
-    { png: png.toString("base64"), color },
-  );
-  await page.evaluate(async () => {
-    window.showLayers({ nodes: true, edgeLabels: true });
-    await window.comb.whenRendered();
-  });
-  return stroke;
 }
 
 const RED = 0xe0453a;

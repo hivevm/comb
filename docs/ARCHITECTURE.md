@@ -85,8 +85,11 @@ The functional core and its shell follow
   slots and those of the edges at them, `remove_edges` edge slots, and both take the items out of
   the grids and the lists at the nodes; a free slot holds nothing, no query or hit returns it, a
   rebuild covers only the slots in use, and a call that names one refuses it as a slot beyond the
-  graph. Its query returns the slots a rectangle meets, node slots in ascending rank, and `hit` the
-  node drawn on top at a point, the one of the highest rank. `stroke` flattens the found edges
+  graph. Its query returns the slots a rectangle meets, node slots in ascending rank, and `hit_at`
+  what a press at a point hits ([ADR-0025](adr/0025-the-engine-answers-every-hit-test.md)): the
+  node drawn on top there, the one of the highest rank, else the edge in the highest slot within 4
+  screen pixels of its path as the stroke of the level flattens it, the parts of the path far from
+  the point as chords. `stroke` flattens the found edges
   within a tolerance and strokes them into the triangles of one mesh, with each edge's colour, dash
   pattern, and arrowhead, or as thin lines alone at the far level of detail; it decides the stroke
   of each level. A part of a path whose control points miss the query's rectangle, grown by the
@@ -106,20 +109,21 @@ The functional core and its shell follow
   and resolves edge ends to slots, `addNode` checks one node as a load would and returns the slot
   the engine chose for it, `addEdge` checks one edge as a load would, refuses one from a node to
   itself, and adds it between the node slots `api` resolved, `updateEdge` checks a patch of an
-  edge's colour, dash, arrowhead, and label as a load checks those fields and restyles and
-  re-places the edge, `removeNodes` removes nodes and the edges at them and returns those
-  edges' slots, `removeEdges` removes edges, `translate` moves nodes, `query` takes a rectangle, a
-  level of detail, the size of a screen pixel, and how far an edge label's pill reaches from its
-  point, and writes the found node slots, the edge-label slots and points (at the near level only),
-  the found edge slots, and the edge mesh into buffers the engine owns, the label points and the
-  mesh's positions relative to the query's origin, which `originX` and `originY` read
+  edge's colour, dash, arrowhead, and label as a load checks those fields and restyles and re-places
+  the edge, `removeNodes` removes nodes and the edges at them and returns those edges' slots,
+  `removeEdges` removes edges, `translate` moves nodes, `query` takes a rectangle, a level of
+  detail, the size of a screen pixel, and how far an edge label's pill reaches from its point, and
+  writes the found node slots, the edge-label slots and points (at the near level only), the found
+  edge slots, and the edge mesh into buffers the engine owns, the label points and the mesh's
+  positions relative to the query's origin, which `originX` and `originY` read
   ([ADR-0010](adr/0010-bridge-data-format.md)), and returns the mesh's detail, complete or
   coarsened, and refuses a pixel that is not a finite number above zero as malformed; `drawnEdges`
-  computes the ends of the found edges when inspection asks, as they lie then, and `hit` names the
-  node at a point; it generates the type of every problem of graph data the methods of `Comb` throw,
-  `GraphDataProblem`, which `comb` exports, and keeps the refusals of `translate` and of the
-  removals, a mistake of the shell's, in types of their own. Its crate root holds the exports and
-  their conversions; its module `graph_data` reads and checks graph data, the one place that does
+  computes the ends of the found edges when inspection asks, as they lie then, and `hit` names what
+  a press at a point hits, a node or an edge by its slot or nothing, as one generated value; it
+  generates the type of every problem of graph data the methods of `Comb` throw, `GraphDataProblem`,
+  which `comb` exports, and keeps the refusals of `translate` and of the removals, a mistake of the
+  shell's, in types of their own. Its crate root holds the exports and their conversions; its module
+  `graph_data` reads and checks graph data, the one place that does
   ([ADR-0026](adr/0026-the-shell-refuses-what-only-its-map-knows.md)); `packages/comb/src/bridge` is
   the one module that imports the WebAssembly package and reads those buffers through fresh
   typed-array views per read ([ADR-0010](adr/0010-bridge-data-format.md)).
@@ -131,12 +135,13 @@ The functional core and its shell follow
   ([ADR-0011](adr/0011-store.md)). `GraphView` is its state without the actions, the type the
   render layer reads.
 - **Interaction** (`packages/comb/src/interaction`) — pointer and wheel input into store actions and
-  engine moves: select a node on press and clear the selection on the empty canvas, drag a node,
-  pan, zoom around the pointer, and the cursor over a node. A drag that moved its node records
-  `nodeMoved` once, when the pointer is released on the canvas or outside it; a load ends a drag.
-  The engine's `hit` says which node the pointer is on, at every level of detail; node views take no
-  events. `viewport.ts` holds the viewport's arithmetic, the transform between world and screen
-  included, for interaction, the scene, `api`'s `fitView` and `setViewport`, and the testing entry.
+  engine moves: select a node on press and drag it, select an edge on press, clear the selection on
+  the empty canvas and pan, zoom around the pointer, and the cursor over what a press would hit. A
+  drag that moved its node records `nodeMoved` once, when the pointer is released on the canvas or
+  outside it; a load ends a drag. The engine's `hit` says what the pointer is on, at the level of
+  detail of the scale; node views and edges take no events. `viewport.ts` holds the viewport's
+  arithmetic, the transform between world and screen included, for interaction, the scene, `api`'s
+  `fitView` and `setViewport`, and the testing entry.
 - **Render** (`packages/comb/src/render`) — the PixiJS scene (`scene.ts`): a `world` render
   group with the layers `EdgesContainer` (`edges.ts`), `NodeParticles` (`particles.ts`),
   `NodesContainer` (`nodes.ts`), and `LabelsContainer` (`labels.ts`), and an `overlay`

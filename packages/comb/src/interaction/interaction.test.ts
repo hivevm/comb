@@ -36,7 +36,7 @@ function fakeApp() {
 function fakeBridge() {
   const moves: { slots: number[]; dx: number; dy: number }[] = [];
   const bridge = {
-    hit: () => 0,
+    hit: () => ({ kind: "node", slot: 0 }),
     translate: (slots: Uint32Array, dx: number, dy: number) =>
       moves.push({ slots: [...slots], dx, dy }),
   };

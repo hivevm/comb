@@ -643,6 +643,26 @@ fn split_at(points: &mut Vec<Point>, area: &Rect) -> bool {
     true
 }
 
+/// Whether `p` lies within `reach` of `path` as a stroke within `tolerance` flattens it: the parts
+/// of the path whose control points miss the square of side `2 · reach` around `p` are their
+/// chords, which lie in those control points' hull and so no nearer than `reach` (ADR-0025).
+/// `scratch` holds the flattened points afterwards.
+pub(crate) fn near_path(
+    path: &EdgePath,
+    tolerance: f64,
+    p: Point,
+    reach: f64,
+    scratch: &mut Vec<Point>,
+) -> bool {
+    let area = Rect::at(p).grown(reach);
+    if !flatten(path, tolerance, &area, scratch, |_, _| true) {
+        return false;
+    }
+    scratch
+        .windows(2)
+        .any(|segment| distance_to_segment(p, segment[0], segment[1]) <= reach)
+}
+
 /// How far `p` lies from the segment `a`–`b`.
 pub(crate) fn distance_to_segment(p: Point, a: Point, b: Point) -> f64 {
     let (dx, dy) = (b.x - a.x, b.y - a.y);

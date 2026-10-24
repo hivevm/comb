@@ -43,6 +43,11 @@ body {
   font-size: 13px;
 }
 
+#sidebar label.inline {
+  flex-direction: row;
+  align-items: center;
+}
+
 #sidebar input,
 #sidebar select {
   font: inherit;

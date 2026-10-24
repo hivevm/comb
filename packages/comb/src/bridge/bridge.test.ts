@@ -41,6 +41,11 @@ const plain = (patch: NodePatch) => patch as PlainPatch;
 const added = (fields: object) => fields as NodeSnapshot;
 const edgeOf = (fields: object) => ({ color: 0, arrow: "end", ...fields }) as EdgeSnapshot;
 const plainEdge = (patch: object) => patch as PlainEdgePatch;
+/** The slot of the node a press at `(x, y)` hits, at a screen pixel of one world unit. */
+const nodeAt = (x: number, y: number) => {
+  const hit = bridge.hit(x, y, 1, "near");
+  return hit.kind === "node" ? hit.slot : undefined;
+};
 /** Nodes `a` and `b`. */
 const two = () => [node("a", 0, 0), node("b", 1, 1)];
 const everywhere = { minX: -1e6, minY: -1e6, maxX: 1e6, maxY: 1e6 };
@@ -67,7 +72,7 @@ describe("bridge views", () => {
       ["positions", () => bridge.positions()],
       ["query", () => bridge.query(everywhere, "near", 4, 0)],
       ["drawnEdges", () => bridge.drawnEdges()],
-      ["hit", () => bridge.hit(0, 0)],
+      ["hit", () => bridge.hit(0, 0, 1, "near")],
       ["addEdge", () => bridge.addEdge(edgeOf(edge("x", "n0", "n2")), 0, 2)],
       ["updateEdge", () => bridge.updateEdge(0, "e0", plainEdge({ color: 0 }))],
       ["removeEdges", () => bridge.removeEdges(new Uint32Array([0]))],
@@ -418,11 +423,11 @@ describe("bridge mesh and hit", () => {
 
   test("a hit finds the node drawn on top at a point", () => {
     bridge.loadGraph(graph([node("a", 0, 0), node("b", 50, 25), node("c", 500, 0)]));
-    expect(bridge.hit(10, 10)).toBe(0);
-    expect(bridge.hit(60, 30)).toBe(1);
-    expect(bridge.hit(300, 10)).toBeUndefined();
+    expect(nodeAt(10, 10)).toBe(0);
+    expect(nodeAt(60, 30)).toBe(1);
+    expect(nodeAt(300, 10)).toBeUndefined();
     bridge.translate(new Uint32Array([2]), -440, 0);
-    expect(bridge.hit(70, 10)).toBe(2);
+    expect(nodeAt(70, 10)).toBe(2);
   });
 });
 
@@ -435,7 +440,7 @@ describe("bridge additions", () => {
     const visible = bridge.query({ minX: 0, minY: 0, maxX: 200, maxY: 200 }, "near", 1, 0);
     expect([...visible.nodes]).toEqual([0, 1, 2]);
     // (45, 25) lies in all three; c, added last, is on top.
-    expect(bridge.hit(45, 25)).toBe(2);
+    expect(nodeAt(45, 25)).toBe(2);
   });
 
   test("an added node the bridge refuses comes back as a typed error, the graph as it was", () => {
@@ -477,7 +482,7 @@ describe("bridge removals", () => {
     bridge.query(everywhere, "near", 1, 0);
     expect([...bridge.drawnEdges().slots]).toEqual([]);
     expect(bridge.addNode(added(node("c", 200, 0)))).toBe(1);
-    expect(bridge.hit(205, 5)).toBe(1);
+    expect(nodeAt(205, 5)).toBe(1);
   });
 
   test("a free slot is refused wherever a call names one, and the graph stays as it was", () => {

@@ -9,7 +9,7 @@
 use crate::geometry::{EdgePath, Point, Rect};
 use crate::positions::{self, PositionError};
 use crate::spatial::Grid;
-use crate::stroke::{EdgeStyle, MESH_BUDGET, Mesh, Stroke};
+use crate::stroke::{EdgeStyle, MESH_BUDGET, Mesh, Stroke, near_path};
 
 /// An edge between two node slots, with the path parameter and label offset of its edge label
 /// and the style it is drawn with.
@@ -102,6 +102,16 @@ pub(crate) fn origin_of(rect: &Rect) -> Point {
 /// again: more than an eighth of them, and at least 16.
 fn stale(beyond: usize, items: usize) -> bool {
     beyond > (items / 8).max(16)
+}
+
+/// How near a press has to come to an edge's path to hit it, in screen pixels (ADR-0025).
+const EDGE_REACH: f64 = 4.0;
+
+/// What a press hits (ADR-0025): a node or an edge, by its slot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Target {
+    Node(u32),
+    Edge(u32),
 }
 
 /// The loaded graph and its spatial index.
@@ -555,9 +565,32 @@ impl Graph {
         }
     }
 
+    /// What a press at `point` hits where a screen pixel is `pixel` world units, at `level`: a node
+    /// whose bounds hold it, the one of the highest rank, else an edge within `EDGE_REACH` screen
+    /// pixels of its path as the stroke of `level` flattens it, the one in the highest slot, else
+    /// nothing (ADR-0025).
+    pub fn hit_at(&mut self, point: Point, pixel: f64, level: Level) -> Option<Target> {
+        if let Some(slot) = self.hit(point) {
+            return Some(Target::Node(slot));
+        }
+        let reach = EDGE_REACH * pixel;
+        let tolerance = Stroke::at(level, pixel).tolerance;
+        self.edge_grid
+            .candidates(&Rect::at(point).grown(reach), &mut self.scratch);
+        let mut candidates = std::mem::take(&mut self.scratch);
+        candidates.sort_unstable_by(|a, b| b.cmp(a));
+        let found = candidates.iter().copied().find(|&slot| {
+            let i = slot as usize;
+            self.bounds[i].grown(reach).contains(point)
+                && near_path(&self.paths[i], tolerance, point, reach, &mut self.points)
+        });
+        self.scratch = candidates;
+        found.map(Target::Edge)
+    }
+
     /// The node at `point`: of the nodes whose bounds hold it, the one drawn on top, which is the
     /// one of the highest rank (ADR-0022).
-    pub fn hit(&mut self, point: Point) -> Option<u32> {
+    fn hit(&mut self, point: Point) -> Option<u32> {
         self.node_grid
             .candidates(&Rect::at(point), &mut self.scratch);
         self.scratch
@@ -1522,6 +1555,94 @@ mod tests {
             })
             .unwrap();
         assert_eq!(graph.builds, builds + 1);
+    }
+
+    /// How far `p` lies from the curve of `path`: an oracle apart from the flattening, sampled at
+    /// 513 points and then, around every sample within a step's length of the nearest, by ternary
+    /// search, so that it is exact to far below the smallest reach of the test.
+    fn distance_to_curve(path: &EdgePath, p: Point) -> f64 {
+        let at = |t: f64| {
+            let q = path.point_at(t);
+            (q.x - p.x).hypot(q.y - p.y)
+        };
+        // Coarsely, then around each sample that may lie nearest, by bisection of a bracket; the
+        // distance along the curve between samples bounds how much nearer a point between them is.
+        let n = 512;
+        let ts: Vec<f64> = (0..=n).map(|i| f64::from(i) / f64::from(n)).collect();
+        let coarse: Vec<f64> = ts.iter().map(|&t| at(t)).collect();
+        let step = ts
+            .windows(2)
+            .map(|w| {
+                let (a, b) = (path.point_at(w[0]), path.point_at(w[1]));
+                (a.x - b.x).hypot(a.y - b.y)
+            })
+            .fold(0.0, f64::max);
+        let best = coarse.iter().copied().fold(f64::INFINITY, f64::min);
+        let mut nearest = best;
+        for i in 0..=n as usize {
+            if coarse[i] > best + step {
+                continue;
+            }
+            let (mut from, mut to) = (ts[i.saturating_sub(1)], ts[(i + 1).min(n as usize)]);
+            for _ in 0..60 {
+                let (m1, m2) = (from + (to - from) / 3.0, to - (to - from) / 3.0);
+                if at(m1) < at(m2) {
+                    to = m2;
+                } else {
+                    from = m1;
+                }
+            }
+            nearest = nearest.min(at(from));
+        }
+        nearest
+    }
+
+    #[test]
+    fn a_hit_finds_a_node_before_an_edge_and_an_edge_only_near_its_flattened_path() {
+        // Verifies: ADR-0025
+        for seed in 1..=4 {
+            let mut rng = Lcg(seed);
+            let mut graph = random_graph(&mut rng, 30, 40);
+            for _ in 0..300 {
+                let level = [Level::Near, Level::Middle, Level::Far][rng.below(3) as usize];
+                let pixel = [0.25, 1.0, 4.0, 20.0][rng.below(4) as usize];
+                // Near a point of a random edge, now and then anywhere.
+                let p = if rng.next() < 0.8 {
+                    let edge = rng.below(graph.edge_slots as usize) as usize;
+                    let on = graph.paths[edge].point_at(rng.next());
+                    let off = 8.0 * pixel;
+                    Point::new(on.x + rng.range(-off, off), on.y + rng.range(-off, off))
+                } else {
+                    Point::new(rng.range(-2500.0, 2500.0), rng.range(-2500.0, 2500.0))
+                };
+                let node = graph.hit(p);
+                let hit = graph.hit_at(p, pixel, level);
+                if let Some(slot) = node {
+                    assert_eq!(hit, Some(Target::Node(slot)), "a node before any edge");
+                    continue;
+                }
+                // Within the reach less the flattening's tolerance an edge is surely hit, beyond it
+                // plus the tolerance surely not; between, either is right.
+                let (reach, tolerance) = (EDGE_REACH * pixel, Stroke::at(level, pixel).tolerance);
+                let d: Vec<f64> = (0..graph.edge_slots)
+                    .map(|e| distance_to_curve(&graph.paths[e as usize], p))
+                    .collect();
+                let sure = (0..graph.edge_slots)
+                    .rev()
+                    .find(|&e| d[e as usize] < reach - tolerance);
+                match hit {
+                    Some(Target::Edge(e)) => {
+                        assert!(
+                            d[e as usize] <= reach + tolerance + 1e-9,
+                            "edge {e} too far"
+                        );
+                        assert!(sure.is_none_or(|s| e >= s), "edge {e} below {sure:?}");
+                    }
+                    None => assert_eq!(sure, None, "missed at {p:?}"),
+                    Some(Target::Node(_)) => panic!("a node no scan finds"),
+                }
+            }
+        }
     }
 
     #[test]
