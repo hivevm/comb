@@ -100,7 +100,9 @@ The functional core and its shell follow
   malformed; `drawnEdges` computes the ends of the found edges when inspection asks,
   as they lie then, and `hit` names the node at a point; it generates the type of every problem
   of graph data `load` and `updateNode` throw, `GraphDataProblem`, which `comb` exports, and keeps
-  `translate`'s refusals, a mistake of the shell's, in a type of their own;
+  `translate`'s refusals, a mistake of the shell's, in a type of their own. Its crate root holds
+  the exports and their conversions; its module `graph_data` reads and checks graph data, the
+  one place that does ([ADR-0026](adr/0026-the-shell-refuses-what-only-its-map-knows.md));
   `packages/comb/src/bridge` is the one module that imports the WebAssembly package and reads
   those buffers through fresh typed-array views per read
   ([ADR-0010](adr/0010-bridge-data-format.md)).
