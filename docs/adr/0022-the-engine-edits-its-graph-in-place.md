@@ -139,9 +139,8 @@ application owns (ADR-0011).
   packed array was one; the benchmark's first frame shows what that costs (Q-2).
 - Negative / trade-offs: the store's lists are sparse after removals, and every reader has to
   skip a hole; a reader that forgets it reads a removed node as present.
-- Follow-ups: bringing an existing node to the front, such as
-  on selection, which a new rank would give; batching many additions into one call, should a host
-  application add thousands at once.
+- Follow-ups: bringing an existing node to the front, such as on selection, which a new rank would
+  give; batching many additions into one call, should a host application add thousands at once.
 
 ## Enforcement
 

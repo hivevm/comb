@@ -23,7 +23,7 @@ transform of a container to the GPU, so panning and zooming it costs little CPU.
 Culling alone does not hold Q-1. Zoomed out far enough, all 50,000 nodes are in the viewport at
 once, and a display object with full node content for each of them is too much for the CPU and
 for the load time of Q-2. The engine already owns the coordinates (ADR-0010) and is the place for
-a spatial index (ADR-0009).
+a spatial index (ADR-0026).
 
 The edge mesh grows with what the engine flattens, not with what is visible. A path subdivided
 into up to 2^12 segments, and a query that meshes every edge it finds whole, into vectors that
@@ -31,7 +31,7 @@ grow without bound, run WebAssembly out of memory with graph data the bridge acc
 one at (0, 0) and one at (-1e7, 3e6), with 20,000 edges between them, trap with `unreachable` at
 the first frame after zooming to a scale of 4, inside the animation frame, where the host
 application cannot catch it; 10,000 such edges at a pixel of 0.25 world units take 3.7 GB before
-they trap. A load may hold up to 1,000,000 edges (ADR-0009). Rust's standard collections abort
+they trap. A load may hold up to 1,000,000 edges (ADR-0026). Rust's standard collections abort
 when an allocation fails, which on WebAssembly is a trap; `try_reserve` returns the failure
 instead.
 
@@ -57,7 +57,7 @@ what they claim:
   times, and the base of the arrowhead, off the curve, may add one more per line: sixteen. Counted
   against the room left as every flattened point is, a rounding that adds more cannot break the
   budget, and the floors and the budget stay as they are.
-- **The budget's size.** The floors of a load at the limit of 1,000,000 edges (ADR-0009) are
+- **The budget's size.** The floors of a load at the limit of 1,000,000 edges (ADR-0026) are
   4,000,000 vertices; the next power of two is the size the shell's arrays grow to anyway. It is
   twelve times the largest mesh measured of the benchmark's graph (Sources), which never reaches
   it, nor would with 32 more vertices for each of its edges. So every edge found is drawn at every
@@ -241,8 +241,7 @@ What an edge and a query cost:
 
 ## Enforcement
 
-Each test and check below cites this ADR with `Verifies: ADR-0027`; the tests that cited
-ADR-0012 cite this ADR.
+Each test and check below cites this ADR with `Verifies: ADR-0027`.
 
 - **Culling:** a Playwright test in `examples/metric-tree/e2e/culling.spec.ts` loads a known
   graph, pans so that a known set of nodes, edges, and labels lies outside the viewport, and
