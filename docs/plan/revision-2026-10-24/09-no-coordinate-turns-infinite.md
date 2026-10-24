@@ -30,7 +30,7 @@ maintainer's decision.
 ## Read first
 
 - `docs/SPECIFICATION.md` Q-4, Q-7; ADR-0026 (*Bridge*), ADR-0010 (*Origin*), ADR-0027.
-- `crates/engine-wasm/src/lib.rs` (`nodes_of`), `crates/engine/src/graph.rs` (`translate`,
+- `crates/engine-wasm/src/graph_data.rs` (`nodes_of`), `crates/engine/src/graph.rs` (`translate`,
   `query_within`, `edge_ends`), `docs/CONVENTIONS.md` (*Check a value as the engine keeps it*).
 
 ## Blocked by
