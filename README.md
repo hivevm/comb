@@ -49,8 +49,9 @@ most 300 kB gzipped without PixiJS).
 
 - **Build:** `bun run build` — the engine with wasm-pack, the type check, and the example
 - **Test:** `bun run test` — `cargo test`, `bun test`, and the Playwright browser tests; it
-  refuses to start on an engine older than its sources under `crates/`, `Cargo.toml`, and
-  `Cargo.lock` (`scripts/check-engine.sh`), naming the file and `bun run build:engine`
+  refuses to start on a missing engine or one older than a file under `crates/`, than
+  `Cargo.toml`, or than `Cargo.lock` (`scripts/check-engine.sh`), naming the file and
+  `bun run build:engine`
 - **Lint:** `bun run lint` — rustfmt, clippy, ESLint, and Prettier
 - **Run:** `bun run example`, or the launch configuration **Example: metric tree** in VS Code,
   which opens the example in the host's browser; `?copies=3334` opens it with 50,010 nodes

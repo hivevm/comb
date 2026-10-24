@@ -7,7 +7,8 @@
 # bundle check read whatever those directories hold, so a change to crates/ that is not built yet
 # would be tested in the engine of an earlier change. This check fails, naming the file and the
 # command to run, when either engine file is missing or older than the newest of the sources it is
-# built from: every file under crates/, Cargo.toml, and Cargo.lock. It passes silently.
+# built from: every file under crates/, Cargo.toml, and Cargo.lock. It passes silently. A root
+# without those sources fails, since there would be nothing to compare with.
 # `bun run test` and scripts/check-bundle.sh run it before anything else.
 #
 # Usage:
@@ -19,6 +20,10 @@ set -uo pipefail
 
 ROOT="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$ROOT" || exit 1
+if [[ ! -d crates || ! -f Cargo.toml || ! -f Cargo.lock ]]; then
+  echo "Engine check FAILED: $ROOT holds no crates/, Cargo.toml, and Cargo.lock to compare with." >&2
+  exit 1
+fi
 
 failed=0
 for engine in packages/comb/wasm/engine_bg.wasm packages/comb/wasm/test-mode/engine_bg.wasm; do

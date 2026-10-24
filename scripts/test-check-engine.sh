@@ -7,7 +7,8 @@
 # exit code and a line it prints. A fresh build passes and prints nothing; an engine file older
 # than a source under crates/, than Cargo.toml, or than Cargo.lock fails, naming the file, the
 # source, and `bun run build:engine`, for the engine and for the engine built in test mode alike;
-# a missing engine file and a missing engine directory fail with the same advice.
+# a missing engine file and a missing engine directory fail with the same advice; a root without
+# the sources fails rather than pass.
 #
 # Usage:
 #     scripts/test-check-engine.sh
@@ -96,6 +97,8 @@ directory="$(tree directory)"
 rm -r "$directory/packages/comb/wasm"
 expect "a missing engine directory fails with the advice" 1 \
   "$ENGINE is missing — run \`bun run build:engine\`" "$directory"
+
+expect "a root without the sources fails" 1 "holds no crates/" "$work/directory/packages"
 
 echo "Engine check self-test: $passed passed, $failed failed."
 ((failed == 0))
