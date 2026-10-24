@@ -176,7 +176,7 @@ vertices per query, and choose by zoom between three levels of detail.
 - Negative / trade-offs: a custom edge mesh and its shader are more code than `Graphics`, and
   `BitmapText` renders less crisp text than `Text` at some sizes.
 - Negative / trade-offs: between queries, bound objects may reach up to twice the culling margin
-  beyond the viewport, which G-7's wording does not yet allow for.
+  beyond the viewport, as far as G-7 allows.
 - Negative / trade-offs: at the budget, the mesh takes up to 151 MB in the engine, 24 bytes of
   attributes and up to 12 bytes of indices per vertex, and the engine's scratch of flattened points
   up to about 100 MB more while it grows, kept for the graph's lifetime; the shell's arrays and the
@@ -186,10 +186,10 @@ vertices per query, and choose by zoom between three levels of detail.
 - Negative / trade-offs: an edge drawn as its chord for the budget strays beyond 0.5 px and draws
   no arrowhead. Q-4 allows that in a coarsened mesh, which inspection reports. Its chord is not
   split, so it also keeps the rounding of its ends, however far they lie.
-- Negative / trade-offs: a chord or a segment that passes outside the grown rectangle is not
-  split and keeps the rounding of its ends; it reaches into the rectangle only where that
-  rounding exceeds its clearance, at least half the stroke's width, which takes ends some 2^23
-  stroke widths from the query's origin.
+- Negative / trade-offs: a chord of a part whose control points miss the grown rectangle, and a
+  segment that passes outside it, are not split either and keep the rounding of their ends; they
+  reach into the rectangle only where that rounding exceeds their clearance, at least half the
+  stroke's width, which takes ends some 2^23 stroke widths from the query's origin.
 - Negative / trade-offs: a chord is shorter than the part it stands for, so where an edge leaves
   the rectangle and comes back, its dash pattern inside may shift when a query moves the chord.
 - Negative / trade-offs: which edges keep full detail past the budget follows slot order, not
@@ -227,9 +227,10 @@ an end beyond the grown rectangle, and engine tests assert that a straight edge 
 distance along the path continuous across the split, counts the split points against the room left,
 and is drawn within a quarter pixel there, as is one from (-1e9, -3e8) to (1e9, 3e8), whose ends f32
 rounds by more, and that a path wholly inside the rectangle is meshed as without one; without the
-split, those of the split turn red. A Playwright test draws an edge whose flattening leaves one
-segment some 4e7 long across a viewport at a scale of 4, edges leaving and entering their nodes
-level so that none the graph data describes is straight and slanted, and asserts that inspection
+split, those of the split turn red. A Playwright test draws a long edge whose middle, where it turns
+from one bend into the other, flattens into one segment some 4e7 long across a viewport at a scale
+of 4 (graph data describes no straight slanted edge, since edges leave and enter their nodes
+level), and asserts that inspection
 reports the mesh complete and every point of the edge inside the viewport lies within a quarter
 pixel of half the stroke's width from either side of the stroke the shell draws; without the split
 it turns red. Each cites `Verifies: ADR-0012`, those of accuracy also `Verifies: Q-4`.
