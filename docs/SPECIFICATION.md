@@ -97,10 +97,15 @@ Intel Iris Xe or AMD Radeon 680M, running the current stable Chrome.
   framework such as React or Vue, its public interface is fully typed in TypeScript, and its
   bundle of JavaScript and WebAssembly, gzipped and without PixiJS, stays under 300 kB.
 - **Q-4** — Geometric accuracy: edge paths and label positions deviate by at most 0.5 px from a
-  reference computation at every zoom level, for everything the viewport shows. Where the mesh
-  budget or memory runs short, the edge mesh may be coarsened instead, and its edge paths then
-  deviate further: every edge in the viewport is still drawn while memory lasts, and the system
-  reports the edge mesh as coarsened through inspection.
+  reference computation at every zoom level, for everything the viewport shows. An edge path holds
+  this where every point of the path lies within 2^21 px of the viewport, and its dash pattern where
+  it lies at most 2^21 px along the path from the source connector, in pixels at the current zoom.
+  Past these bounds the accuracy is that of single precision: the deviation grows beyond 0.5 px by
+  at most 2^-22 of the distance in pixels from the viewport of the path's farthest point, and for a
+  dash by at most 2^-22 of its distance in pixels along the path. Where the mesh budget or memory
+  runs short, the edge mesh may be coarsened instead, and its edge paths then deviate further: every
+  edge in the viewport is still drawn while memory lasts, and the system reports the edge mesh as
+  coarsened through inspection.
 - **Q-5** — No injection: the system never interprets graph data as HTML, script, or URL. Labels
   are drawn as text only, and no value of the graph data creates a DOM node.
 - **Q-6** — No dynamic code and no network: the system never uses `eval`, `new Function`, or a
