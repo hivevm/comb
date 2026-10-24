@@ -99,6 +99,7 @@ is the table a session reads.
 | [0020](0020-pixijs-without-eval.md) | Comb installs PixiJS's code generation without eval before it creates a renderer | `createComb` in `packages/comb/src/api/`, how `packages/comb` imports `pixi.js`, and every host application that embeds Comb | 🟢 accepted |
 | [0021](0021-a-trapped-engine-is-lost-for-the-page.md) | A trapped engine is lost for the page; Comb refuses every later call with a typed error and tells the host application | `packages/comb/src/bridge/`, `createComb` and the `Comb` interface in `packages/comb/src/api/`, the error types `comb` exports, and the render's animation frame | 🟢 accepted |
 | [0022](0022-the-engine-edits-its-graph-in-place.md) | The engine edits its graph in place, one node or edge at a time, and reuses freed slots | `crates/engine/src/graph.rs`, `crates/engine/src/spatial.rs`, the exports of `crates/engine-wasm` that add and remove nodes and edges, and the map from identifiers to slots and the per-slot lists of `packages/comb/src/store/` | 🟡 proposed |
+| [0023](0023-edits-are-reported-as-typed-changes.md) | Comb applies edits at once, reports every change through one listener as a typed change, and lets the host application refuse a user's connection or deletion | `CombOptions` and the `Comb` interface in `packages/comb/src/api/`, the change types `comb` exports, the store's actions in `packages/comb/src/store/`, and the gestures of `packages/comb/src/interaction/` that change the graph | 🟡 proposed |
 
 ### Superseded and rejected
 

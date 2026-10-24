@@ -15,6 +15,8 @@ to invent.
   edges, and edge labels.
 - **Connector** — a point on a node where an edge starts or ends.
   _Avoid:_ port, handle, socket, pin.
+- **Change** — one edit of the graph as Comb reports it to the host application, typed by its
+  kind and saying whether the user or the host application made it.
 - **Coarsened** — said of an edge mesh in which some edges are drawn less exactly than the
   flattening asks, or not at all, because the mesh budget or memory ran short.
 - **Culling** — leaving out of the draw everything that lies entirely outside the viewport grown
@@ -61,6 +63,8 @@ to invent.
   over its vertex positions and label points, and at whose screen point the shell draws the world.
 - **Runner kind** — the CPU model a benchmark run records of the machine it ran on; runs are
   compared only with the baseline of their own kind.
+- **Selection** — the one node or edge the user has picked on the canvas, which the sidebar edits
+  and a delete removes.
 - **Sidebar** — the host application's HTML panel, outside the canvas, in which the attributes of
   the selection are edited.
 - **Slot** — the index of a node or an edge in the engine's buffers, the same on both sides of the
@@ -73,4 +77,6 @@ to invent.
   which slots a rectangle meets.
 - **Trap** — WebAssembly aborting a call of the engine, as when its memory runs out; after a trap
   the engine is lost for the page, and Comb refuses every later call that needs it.
+- **Veto** — a callback of the host application that Comb asks before it makes a connection or a
+  deletion of the user's, and that allows it only by returning `true`.
 - **Viewport** — the part of the world that the canvas currently shows, given by pan and zoom.
