@@ -146,7 +146,9 @@ check "outside a repository the script exits 1" "[[ $rc -eq 1 ]]"
 # map script leaves to the normalization, so it is not run; its references to the record are
 # links and file names, which the map script moves. Accepted ADRs cycle among themselves and the
 # others among themselves: the map moves the markers but not the record, so an accepted ADR has to
-# receive the markers of another accepted one, not those of a proposed ADR no test cites yet.
+# receive the markers of another accepted one, not those of a proposed ADR no test cites yet. The
+# exemption is part of the record and stays, so an accepted ADR that is not exempt has to receive
+# the markers of another one that is not exempt, not those of an exempt ADR no test cites.
 copy="$work/tree"
 mkdir -p "$copy"
 (cd "$ROOT" && git ls-files --cached --others --exclude-standard | while IFS= read -r f; do
@@ -161,11 +163,13 @@ cycle() {
   done
 }
 mapfile -t accepted < <(cd "$copy/docs/adr" && grep -l '^- \*\*Status:\*\* 🟢 accepted' [0-9][0-9][0-9][0-9]-*.md)
+mapfile -t exempt < <(cd "$copy/docs/adr" && ((${#accepted[@]})) && grep -l '^\*\*Not mechanically decidable:\*\*' "${accepted[@]}")
+mapfile -t cited < <(cd "$copy/docs/adr" && ((${#accepted[@]})) && grep -L '^\*\*Not mechanically decidable:\*\*' "${accepted[@]}")
 mapfile -t others < <(cd "$copy/docs/adr" && grep -L '^- \*\*Status:\*\* 🟢 accepted' [0-9][0-9][0-9][0-9]-*.md)
 mapfile -t goals < <(grep -oE '^[-0-9. ]*\*\*G-[0-9]+\*\*' "$copy/docs/SPECIFICATION.md" | grep -oE 'G-[0-9]+')
 mapfile -t quals < <(grep -oE '^[-0-9. ]*\*\*Q-[0-9]+\*\*' "$copy/docs/SPECIFICATION.md" | grep -oE 'Q-[0-9]+')
 {
-  cycle "${accepted[@]}"; cycle "${others[@]}"; cycle "${goals[@]}"; cycle "${quals[@]}"
+  cycle "${exempt[@]}"; cycle "${cited[@]}"; cycle "${others[@]}"; cycle "${goals[@]}"; cycle "${quals[@]}"
 } > "$work/map-tree"
 (cd "$copy" && bash .agents/skills/normalize/remap.sh "$work/map-tree") > /dev/null 2>&1; rc=$?
 check "a cycle of the real tree's ADRs and criteria exits 0" "[[ $rc -eq 0 ]]"
