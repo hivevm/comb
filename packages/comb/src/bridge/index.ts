@@ -125,10 +125,12 @@ export interface Bridge {
   addNode(node: NodeSnapshot): number;
   /** Checks `edge` as a load checks an edge, refuses one from a node to itself, and adds it
    *  between the node slots `source` and `target`, which `api` resolved; returns the slot the
-   *  engine chose for it (ADR-0022). Throws a `GraphDataProblem`, the graph as it was. */
+   *  engine chose for it (ADR-0022). Throws a `GraphDataProblem`, and a `SlotError` where a slot
+   *  of an end holds no node, the graph as it was. */
   addEdge(edge: EdgeSnapshot, source: number, target: number): number;
   /** Checks the patch of the edge `id` in `slot` as a load checks those fields and gives the edge
-   *  its new style and label placement. Throws a `GraphDataProblem`, the graph as it was. */
+   *  its new style and label placement. Throws a `GraphDataProblem`, and a `SlotError` where
+   *  `slot` holds no edge, the graph as it was. */
   updateEdge(slot: number, id: string, patch: PlainEdgePatch): void;
   /** The most UTF-16 code units of a title or a label text the bridge accepts. */
   textLimit(): number;

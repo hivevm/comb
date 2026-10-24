@@ -18,8 +18,13 @@ use serde::Deserialize;
 use serde::de::value::{MapDeserializer, SeqDeserializer};
 use serde::de::{self, IntoDeserializer, Visitor};
 
-use super::{EdgeInput, EdgePatch, GraphBatch, GraphDataProblem, GraphList, NodeInput, NodePatch};
-use super::{add_edge_to, add_node_to, graph_of, patch_of, reading, unshaped, update_edge_in};
+use super::{
+    EdgeInput, EdgePatch, EdgeRefusal, GraphBatch, GraphDataProblem, GraphList, NodeInput,
+};
+use super::{
+    NodePatch, add_edge_to, add_node_to, graph_of, malformed, patch_of, reading, unshaped,
+    update_edge_in,
+};
 
 /// How many random batches one run feeds the bridge: the ticket's floor, which runs in seconds.
 const CASES: u32 = 10_000;
@@ -367,6 +372,15 @@ fn graph_data() -> impl Strategy<Value = Value> {
 /// Whether `v` stays finite as the `f32` the engine keeps.
 fn finite32(v: f64) -> bool {
     v.is_finite() && (v as f32).is_finite()
+}
+
+/// The problem of the data an edit of an edge was refused for: these properties hand over slots
+/// that hold what they name, so a slot refused is a failure of its own, which no load matches.
+fn data(refusal: EdgeRefusal) -> GraphDataProblem {
+    match refusal {
+        EdgeRefusal::Data(problem) => problem,
+        EdgeRefusal::Slot(error) => malformed(&format!("a slot refused: {error:?}")),
+    }
 }
 
 /// Whether nothing in `batch` is to be refused, by brute force over the batch alone.
@@ -814,7 +828,7 @@ proptest! {
         let mut graph = loaded(two_nodes(Vec::new())).unwrap();
         let added = reading(|| EdgeInput::deserialize(value.clone()))
             .map_err(unshaped)
-            .and_then(|edge| add_edge_to(&mut graph, &edge, slot_of(&source), slot_of(&target)));
+            .and_then(|edge| add_edge_to(&mut graph, &edge, slot_of(&source), slot_of(&target)).map_err(data));
         let typed = matches!(
             as_load,
             Err(GraphDataProblem::InvalidField { .. } | GraphDataProblem::IdTooLong { .. }
@@ -856,7 +870,7 @@ proptest! {
         }
         let updated = reading(|| EdgePatch::deserialize(Value::Object(patch)))
             .map_err(unshaped)
-            .and_then(|patch| update_edge_in(&mut graph, 0, "e0", patch));
+            .and_then(|patch| update_edge_in(&mut graph, 0, "e0", patch).map_err(data));
         if let Some(field) = other {
             prop_assert_eq!(updated, Err(GraphDataProblem::UnknownEdgePatchField {
                 edge: "e0".to_owned(),

@@ -144,12 +144,13 @@ The functional core and its shell follow
   type of every problem of graph data the methods of `Comb` throw, `GraphDataProblem`, which `comb`
   exports, and keeps the refusals of the shell's mistakes in types of their own: `TranslateError` of
   `translate`, and `SlotError` of a slot that holds nothing, which the removals, `edgesAt`,
-  `setLabelSize`, and `moveLabel` throw, while `addEdge` and `updateEdge` report such a slot as
-  malformed. Its crate root holds the exports and their conversions; its module `graph_data` reads
-  and checks graph data, the one place that does
-  ([ADR-0028](adr/0028-the-graph-lies-within-a-world.md)); `packages/comb/src/bridge` is
-  the one module that imports the WebAssembly package and reads those buffers through fresh
-  typed-array views per read ([ADR-0010](adr/0010-bridge-data-format.md)).
+  `setLabelSize`, `moveLabel`, `addEdge`, and `updateEdge` throw. It checks the screen pixel of a
+  query and of a hit test in one function. Its crate root holds the exports and their conversions;
+  its module `graph_data` reads and checks graph data, the one place that does, each field of an
+  edge through one function that a load, `addEdge`, and `updateEdge` call alike
+  ([ADR-0028](adr/0028-the-graph-lies-within-a-world.md)); `packages/comb/src/bridge` is the one
+  module that imports the WebAssembly package and reads those buffers through fresh typed-array
+  views per read ([ADR-0010](adr/0010-bridge-data-format.md)).
 - **Store** (`packages/comb/src/store`) — a vanilla Zustand store with the graph's structure, its
   nodes and edges by slot with holes at free slots, which every reader skips, the maps from node and
   edge identifiers to slots, the code units of the identifiers it holds, the change the last

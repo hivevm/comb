@@ -32,8 +32,8 @@ pub use graph_data::{
 };
 
 use graph_data::{
-    ID_LIMIT, TEXT_LIMIT, add_edge_to, add_node_to, graph_of, malformed, patch_of, reading, slot,
-    unshaped, update_edge_in,
+    EdgeRefusal, ID_LIMIT, TEXT_LIMIT, add_edge_to, add_node_to, graph_of, malformed, patch_of,
+    reading, slot, unshaped, update_edge_in,
 };
 
 /// Why the engine refused a move of nodes: the shell's own mistake, never one of graph data, so
@@ -109,6 +109,27 @@ impl From<SlotError> for JsValue {
     }
 }
 
+impl From<EdgeRefusal> for JsValue {
+    fn from(refusal: EdgeRefusal) -> Self {
+        match refusal {
+            EdgeRefusal::Data(problem) => problem.into(),
+            EdgeRefusal::Slot(error) => SlotError::from(error).into(),
+        }
+    }
+}
+
+/// The size of a screen pixel, in world units, a query and a hit test take, or its refusal as
+/// malformed where it is no finite number above zero, before any edge is flattened.
+fn checked_pixel(pixel: f64) -> Result<f64, GraphDataProblem> {
+    if pixel.is_finite() && pixel > 0.0 {
+        Ok(pixel)
+    } else {
+        Err(malformed(
+            "the size of a screen pixel is not a finite number above zero",
+        ))
+    }
+}
+
 /// The most UTF-16 code units of a title or a label text, `MAX_TEXT`: the shell hands over no
 /// more than one beyond it, so that a text of any length costs at most that much to check.
 #[wasm_bindgen(js_name = textLimit)]
@@ -154,8 +175,8 @@ pub fn check_node_patch(
     Ts::from_rust(&checked).map_err(|_| malformed("the checked patch could not be handed back"))
 }
 
-/// What a press hits (ADR-0025): a node or an edge by its slot, or nothing; one generated value
-/// (ADR-0010).
+/// What a press hits (ADR-0025): a connector by the slot of its node and its side, a label by the
+/// slot of its edge, a node or an edge by its slot, or nothing; one generated value (ADR-0010).
 #[derive(Tsify, Serialize, Debug, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Hit {
@@ -286,14 +307,14 @@ impl Engine {
     /// Checks the edge `addEdge` hands over as a load checks an edge, refuses one from a node to
     /// itself (ADR-0024), adds it between the node slots `source` and `target`, which the shell
     /// resolved, and returns the slot the engine chose for it (ADR-0022). A refused edge leaves
-    /// the graph as it was.
+    /// the graph as it was; a slot of an end that holds no node throws a `SlotError`.
     #[wasm_bindgen(js_name = addEdge)]
     pub fn add_edge(
         &mut self,
         edge: Ts<EdgeInput>,
         source: u32,
         target: u32,
-    ) -> Result<u32, GraphDataProblem> {
+    ) -> Result<u32, EdgeRefusal> {
         trap::spring();
         let edge = reading(|| edge.to_rust()).map_err(unshaped)?;
         add_edge_to(&mut self.graph, &edge, source, target)
@@ -302,14 +323,14 @@ impl Engine {
     /// Checks the patch `updateEdge` hands over for the edge `id` in `slot`, reading it once, as a
     /// load checks those fields, and gives the edge its new style and label placement; the store
     /// merges the patch, the rest of which the engine does not keep. A refused patch changes
-    /// nothing.
+    /// nothing; a slot that holds no edge throws a `SlotError`.
     #[wasm_bindgen(js_name = updateEdge)]
     pub fn update_edge(
         &mut self,
         slot: u32,
         id: &str,
         patch: Ts<EdgePatch>,
-    ) -> Result<(), GraphDataProblem> {
+    ) -> Result<(), EdgeRefusal> {
         trap::spring();
         let patch = reading(|| patch.to_rust()).map_err(unshaped)?;
         update_edge_in(&mut self.graph, slot, id, patch)
@@ -409,8 +430,10 @@ impl Engine {
 
     /// What a press at the world point `(x, y)` hits where a screen pixel is `pixel` world units,
     /// at `level`: where `connectors` asks for them, at the near and middle level, a connector
-    /// within 8 screen pixels, of the node drawn on top; else the node drawn on top there, else
-    /// the edge drawn on top within 4 screen pixels of its path, else nothing (ADR-0025).
+    /// within 8 screen pixels, of the node drawn on top; else, at the near level, the label whose
+    /// measured pill holds the point; else the node drawn on top there, else the edge drawn on top
+    /// within 4 screen pixels of its path, else nothing (ADR-0025). A pixel is checked as `query`
+    /// checks it.
     pub fn hit(
         &mut self,
         x: f64,
@@ -420,11 +443,7 @@ impl Engine {
         connectors: bool,
     ) -> Result<Ts<Hit>, GraphDataProblem> {
         trap::spring();
-        if !(pixel.is_finite() && pixel > 0.0) {
-            return Err(malformed(
-                "the size of a screen pixel is not a finite number above zero",
-            ));
-        }
+        let pixel = checked_pixel(pixel)?;
         let hit = match self
             .graph
             .hit_at(Point::new(x, y), pixel, level.into(), connectors)
@@ -451,11 +470,7 @@ impl Engine {
         pixel: f64,
         label_reach: f64,
     ) -> Result<MeshDetail, GraphDataProblem> {
-        if !(pixel.is_finite() && pixel > 0.0) {
-            return Err(malformed(
-                "the size of a screen pixel is not a finite number above zero",
-            ));
-        }
+        let pixel = checked_pixel(pixel)?;
         let rect = Rect::new(rect.min_x, rect.min_y, rect.max_x, rect.max_y);
         self.graph
             .query(&rect, level.into(), pixel, label_reach, &mut self.visible);
