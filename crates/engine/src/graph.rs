@@ -73,6 +73,11 @@ pub struct Visible {
 pub(crate) fn origin_of(rect: &Rect) -> Point {
     let side = (rect.max_x - rect.min_x).max(rect.max_y - rect.min_y);
     let grid = side.log2().ceil().exp2();
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "taken to the nearest f32 on purpose, so that the origin holds exactly in both \
+                  (ADR-0010); a centre beyond f32 turns infinite and falls back to (0, 0) below"
+    )]
     let snap = |min: f64, max: f64| f64::from((((min + max) / 2.0 / grid).round() * grid) as f32);
     let origin = Point::new(snap(rect.min_x, rect.max_x), snap(rect.min_y, rect.max_y));
     if origin.x.is_finite() && origin.y.is_finite() {
@@ -252,6 +257,13 @@ impl Graph {
     /// Writes into `out`, after clearing it, the ends of the edges in `slots` as they lie now:
     /// per edge the point it leaves its source and the point it enters its target, `x, y` each,
     /// and NaN for a slot beyond the loaded edges, so that the pairs stay in step with `slots`.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "an end is the middle of a side of a node, whose position and size the engine \
+                  keeps as f32; the ends cross without an origin, rounded by their distance from \
+                  the world's origin (ADR-0010); a node near the end of f32's range can put an \
+                  end past f32::MAX, where it turns infinite, which nothing bounds yet"
+    )]
     pub fn edge_ends(&self, slots: &[u32], out: &mut Vec<f32>) {
         out.clear();
         for &slot in slots {
@@ -362,6 +374,13 @@ impl Graph {
             if let Some(point) = self.labels[slot as usize].filter(|p| label_rect.contains(*p)) {
                 out.labels.push(slot);
                 let Point { x, y } = out.origin;
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    reason = "a label point within `label_rect`, less the query's origin and only \
+                              then rounded, rounds by its distance from the rectangle (ADR-0010); \
+                              a rectangle reaching past f32::MAX from its origin, which the \
+                              bridge does not refuse, can turn it infinite"
+                )]
                 out.label_points
                     .extend([(point.x - x) as f32, (point.y - y) as f32]);
             }

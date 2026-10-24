@@ -30,3 +30,7 @@ skimmed. The design revision drops what prevented nothing
 - **Check a value as the engine keeps it.** Graph data is judged in the type the engine stores it
   in, not the type it arrived in: `1e300` is a finite `f64` and an infinite `f32`, so a check of
   the wider type lets through what the engine then holds as infinity. Narrow first, then check.
+  Clippy's `cast_possible_truncation`, denied outside the tests, makes each narrowing say why it
+  holds, by a checked conversion or an `expect` whose reason names what bounds the value, since a
+  narrowing written without a look at its range can lose what Q-4 or Q-7 needs. The lint makes the
+  author look; it does not check the value after the narrowing, which this entry still asks.

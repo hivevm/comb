@@ -68,6 +68,10 @@ impl Grid {
         let count = |span: f64, cell: f64| {
             let n = (span / cell).ceil();
             if n.is_finite() && n >= 1.0 {
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    reason = "a whole number of at least 1; the cast saturates and `most` caps it"
+                )]
                 (n as usize).min(most)
             } else {
                 1
@@ -106,6 +110,10 @@ impl Grid {
 
     /// The column or row of `value`: before the first, beyond the last, or not a number, the
     /// border one, as the cast to `usize` saturates and takes NaN to 0.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "the cast saturates and takes NaN to 0 on purpose, and `count - 1` caps it"
+    )]
     fn index(&self, value: f64, origin: f64, count: usize) -> usize {
         (((value - origin) / self.cell).floor() as usize).min(count - 1)
     }
