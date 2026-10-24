@@ -115,7 +115,7 @@ The functional core and its shell follow
 - **Render** (`packages/comb/src/render`) — the PixiJS scene (`scene.ts`): a `world` render
   group with the layers `EdgesContainer` (`edges.ts`), `NodeParticles` (`particles.ts`),
   `NodesContainer` (`nodes.ts`), and `LabelsContainer` (`labels.ts`), and an `overlay`
-  ([ADR-0012](adr/0012-virtualized-scene-graph.md)); `bindings.ts` is the pool of views the
+  ([ADR-0027](adr/0027-nodes-bound-by-rank.md)); `bindings.ts` is the pool of views the
   nodes and labels layers bind to slots. The scale chooses the level of
   detail: near (from 0.6) draws node views and edge labels, middle (from 0.3) node views alone,
   and far nodes as particles of one `ParticleContainer` (`render/particles.ts`) and edges as
@@ -134,7 +134,7 @@ The functional core and its shell follow
   and fills the same triangles into one `Graphics`, one fill per run of one colour, dash
   patterns solid. Not built yet: the node content of
   [ADR-0013](adr/0013-node-content-model.md), and the connectors of G-3, a layer that joins the
-  scene with the change that builds it ([ADR-0012](adr/0012-virtualized-scene-graph.md)).
+  scene with the change that builds it ([ADR-0027](adr/0027-nodes-bound-by-rank.md)).
 - **API** (`packages/comb/src/api`) — `api/index.ts` imports `pixi.js/unsafe-eval` before
   PixiJS, so that no PixiJS renderer on the page generates code with eval
   ([ADR-0020](adr/0020-pixijs-without-eval.md)); `createComb`, which takes the engine's
@@ -270,7 +270,7 @@ browser, the clock, randomness, or I/O, when a module other than the bridge
 imports the WebAssembly package, when the render layer reaches the store instead of the action-free
 `GraphView`, or when an example imports past the library's entries and its engine file
 (ADR-0026, ADR-0019), and when the render layer names PixiJS's `Text`, `HTMLText`, or
-`SplitText` or the edges layer a `Graphics` (ADR-0012), and when its Canvas 2D fallback names
+`SplitText` or the edges layer a `Graphics` (ADR-0027), and when its Canvas 2D fallback names
 `Graphics` outside its imports and its one field (ADR-0018). `scripts/check-bundle.sh` builds
 the library and fails when its gzipped JavaScript and the engine file reach the 300 kB of Q-3,
 when no engine file is measured, when the JavaScript inlines the engine (ADR-0019), and when the

@@ -39,7 +39,7 @@ ended (ADR-0023). Without `canConnect`, no connection begins.
 
 ## Read first
 
-- ADR-0024, ADR-0025, ADR-0023 (*Vetoes*, *The user's edge*), ADR-0026, ADR-0012 (*Layers*).
+- ADR-0024, ADR-0025, ADR-0023 (*Vetoes*, *The user's edge*), ADR-0026, ADR-0027 (*Layers*).
 - Glossary: connector, connection, side, veto.
 - `interaction/index.ts`, `render/scene.ts`, `render/bindings.ts`, `e2e/drag.spec.ts`.
 

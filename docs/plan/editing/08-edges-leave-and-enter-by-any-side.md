@@ -15,7 +15,7 @@ normal (ADR-0024); for right to left that is today's path to the bit. `load`, `a
 - [ ] Given a graph that names no side, when it is drawn, then every existing geometry test and
       the reference image of the edges pass unchanged.
 - [ ] Given the budget's property test with random sides, when it runs, then its assertions of
-      ADR-0012 hold (Q-4).
+      ADR-0027 hold (Q-4).
 - [ ] Given an edge with a side of `"middle"` or a number, when the host loads or adds it, then a
       `GraphDataError` of kind `invalidField` names the field (Q-7); the bridge's property test
       generates both fields.
@@ -26,7 +26,7 @@ normal (ADR-0024); for right to left that is today's path to the bit. `load`, `a
 
 ## Read first
 
-- ADR-0024, ADR-0012 (*The rectangle*, *Sixteen split points*, *Mesh budget*), ADR-0010.
+- ADR-0024, ADR-0027 (*The rectangle*, *Sixteen split points*, *Mesh budget*), ADR-0010.
 - Glossary: connector, side, edge, arrowhead.
 - Convention: *Geometry is tested on its awkward cases*.
 - `crates/engine/src/geometry.rs` (`EdgePath::horizontal`, `between`),

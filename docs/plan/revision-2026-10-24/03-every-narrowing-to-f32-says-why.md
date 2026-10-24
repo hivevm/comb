@@ -19,7 +19,7 @@ workspace's lints, outside test code, and give each site either a conversion tha
 range (`u32::try_from`, a checked narrowing) or an `#[expect(clippy::cast_possible_truncation,
 reason = "…")]` whose reason says why the value fits: checked as `f32` by the bridge, relative to
 the query's origin (ADR-0010), a count bounded by the limits of a load (ADR-0026). The distance
-along a path (`stroke.rs`, `distances`), a residual ADR-0010 and ADR-0012 record, gets a reason
+along a path (`stroke.rs`, `distances`), a residual ADR-0010 and ADR-0027 record, gets a reason
 that says so.
 
 The sensor list of ADR-0008 (*Sensors for maintainability*) names the lints the workspace

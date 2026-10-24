@@ -173,17 +173,14 @@ makes before Comb makes it.
 
 Binding: ADR-0002 (every criterion met is cited by a test), ADR-0008 (the benchmark of ticket 11),
 ADR-0007 (every ticket here touches a protected part, so every ticket is worked with the
-maintainer), ADR-0010, ADR-0011, ADR-0012, ADR-0018 (the edges layer's fallback draws
+maintainer), ADR-0010, ADR-0011, ADR-0027, ADR-0018 (the edges layer's fallback draws
 the new paths unchanged), ADR-0021 (the new methods that need the engine throw
 `EngineLostError`), and ADR-0013 as proposed only where node content is concerned, which this
 spec leaves out.
 
-New, proposed before implementation starts: ADR-0022 (the engine edits its graph in place and
-draws a node added last on top), ADR-0023 (the editing interface: typed changes, vetoes, new
-methods), ADR-0024 (one connector per side), ADR-0025 (the engine answers every hit test), and
-ADR-0026, which supersedes ADR-0009 and makes `api` refuse what only the store's map of
-identifiers knows.
-
-Before the first ticket starts, the maintainer decides the conflict ADR-0022 records with the
-letter of ADR-0012 (*Culling*: display objects bound "in slot order"), which ranked node views
-and particles no longer follow.
+New, proposed before implementation starts: ADR-0022 (the engine edits its graph in place and draws
+a node added last on top), ADR-0023 (the editing interface: typed changes, vetoes, new methods),
+ADR-0024 (one connector per side), ADR-0025 (the engine answers every hit test), ADR-0026, which
+supersedes ADR-0009 and makes `api` refuse what only the store's map of identifiers knows, and
+ADR-0027, which supersedes ADR-0012 and binds node views and particles by rank, edges and edge
+labels by slot.

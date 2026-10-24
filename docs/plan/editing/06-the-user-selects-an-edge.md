@@ -25,7 +25,7 @@ dash, arrowhead, and label and changes them through `updateEdge`, as it changes 
 
 ## Read first
 
-- ADR-0025, ADR-0012 (*Hit testing*, *Layers*), ADR-0010 (*Structured data*), ADR-0026.
+- ADR-0025, ADR-0027 (*Hit testing*, *Layers*), ADR-0010 (*Structured data*), ADR-0026.
 - Glossary: selection, sidebar, level of detail.
 - `crates/engine/src/graph.rs` (`hit`), `crates/engine/src/stroke.rs` (the flattening),
   `interaction/index.ts`, the example's `src/main.ts`, `e2e/drag.spec.ts`.

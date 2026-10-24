@@ -34,7 +34,7 @@ widens to a node the graph does not hold.
 
 ## Read first
 
-- ADR-0023, ADR-0026, ADR-0010, ADR-0012 (*Edges*), ADR-0022.
+- ADR-0023, ADR-0026, ADR-0010, ADR-0027 (*Edges*), ADR-0022.
 - Glossary: edge, edge label, dash pattern, arrowhead, change.
 - `api/index.ts` (`updaterOf`), `api/snapshot.ts` (`patchOf`), the bridge crate's
   `placement_of` and `patch_of`, `e2e/edge-styles.spec.ts`.

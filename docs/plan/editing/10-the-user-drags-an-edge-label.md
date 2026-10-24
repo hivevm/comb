@@ -30,7 +30,7 @@ the label keeps that `t` and offset (G-6).
 
 ## Read first
 
-- ADR-0025, ADR-0023 (*Delivery*), ADR-0012 (*Layers*, *Text*), ADR-0026 (the nearest path
+- ADR-0025, ADR-0023 (*Delivery*), ADR-0027 (*Layers*, *Text*), ADR-0026 (the nearest path
   parameter is the engine's geometry).
 - Glossary: edge label, path parameter, label offset.
 - Convention: *Geometry is tested on its awkward cases*.

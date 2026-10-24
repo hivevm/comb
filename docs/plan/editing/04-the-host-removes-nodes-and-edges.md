@@ -33,7 +33,7 @@ selection of a removed item is cleared.
 
 ## Read first
 
-- ADR-0022, ADR-0023, ADR-0026, ADR-0010 (*Slots*), ADR-0012 (*Culling*, *Hit testing*).
+- ADR-0022, ADR-0023, ADR-0026, ADR-0010 (*Slots*), ADR-0027 (*Culling*, *Hit testing*).
 - Glossary: slot, free slot, change, selection.
 - `crates/engine/src/graph.rs` (`link`, `translate`, the tests against a scan),
   `crates/engine/src/spatial.rs`, `store/index.ts`, `api/index.ts` (`boundsOf` reads every slot).
