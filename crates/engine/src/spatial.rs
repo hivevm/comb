@@ -155,7 +155,9 @@ impl Grid {
 
     /// Puts `item` into the cells its `bounds` meet, out of those it was in, growing the grid's
     /// records of items to hold it where it lies beyond them, as a slot appended after the highest
-    /// does (ADR-0022). A grid made for no extent, the default, has no cells and holds nothing.
+    /// does (ADR-0022). A grid made for no extent, the default, has no cells and holds nothing:
+    /// the graph of an engine that never loaded one builds its index at its first addition, and a
+    /// grid of no cells has none to put an item in.
     pub fn set(&mut self, item: u32, bounds: &Rect) {
         if self.cells.is_empty() {
             return;

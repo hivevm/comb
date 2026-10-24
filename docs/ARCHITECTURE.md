@@ -88,23 +88,23 @@ The functional core and its shell follow
   spatial index (`spatial`, a uniform grid each for nodes and edges, with an overflow list for items
   that cover many cells) that loads, additions, and moves keep current and that is built again once
   many items have moved or been added beyond its extent, or the nodes or the edges in use pass twice
-  the count it was built for ([ADR-0022](adr/0022-the-engine-edits-its-graph-in-place.md)).
-  Its modules under `graph/` follow its concepts: `slots`, the free slots of a kind, one type kept
-  once for nodes and once for edges; `nodes` and `edges`, the edits of each; `index`, the grids
-  and the one function that holds the rule that builds them again, called after every edit;
-  `hit`, `labels`, and `query`; each with its tests, and `tests` with the graphs they build and
-  the property tests of the whole graph against a scan. `add_node` takes the free slot freed
-  last, or a new one after the highest, and the next rank, and puts the node into the grid in
-  place; a load ranks node `i` as `i`; `add_edge` takes the edge slot
-  freed last, or a new one, and puts the edge into the lists of its ends and the grid in place, and
-  `update_edge` restyles and re-places one; `remove_nodes` frees the node slots and those of the
-  edges at them, `remove_edges` edge slots, and both take the items out of the grids and the lists
-  at the nodes; a free slot holds nothing, no query or hit returns it, a rebuild covers only the
-  slots in use, and a call that names one refuses it as a slot beyond the graph. Its query returns
-  the slots a rectangle meets, node slots in ascending rank, and `hit_at` what a press at a point
-  hits ([ADR-0025](adr/0025-the-engine-answers-every-hit-test.md)): the node drawn on top there, the
-  one of the highest rank, else the edge in the highest slot within 4 screen pixels of its path as
-  the stroke of the level flattens it, the parts of the path far from the point as chords; where the
+  the count it was built for ([ADR-0022](adr/0022-the-engine-edits-its-graph-in-place.md)). Its
+  modules under `graph/` follow its concepts: `slots`, the free slots of a kind, one type kept once
+  for nodes and once for edges; `nodes` and `edges`, the edits of each; `index`, the grids and the
+  one function that holds the rule that builds them again, called after every addition and move, a
+  removal building nothing; `hit`, `labels`, and `query`; each with its tests, and `tests` with the
+  graphs they build and the property tests of the whole graph against a scan. `add_node` takes the
+  free slot freed last, or a new one after the highest, and the next rank, and puts the node into
+  the grid in place; a load ranks node `i` as `i`; `add_edge` takes the edge slot freed last, or a
+  new one, and puts the edge into the lists of its ends and the grid in place, and `update_edge`
+  restyles and re-places one; `remove_nodes` frees the node slots and those of the edges at them,
+  `remove_edges` edge slots, and both take the items out of the grids and the lists at the nodes; a
+  free slot holds nothing, no query or hit returns it, a rebuild covers only the slots in use, and a
+  call that names one refuses it as a slot beyond the graph. Its query returns the slots a rectangle
+  meets, node slots in ascending rank, and `hit_at` what a press at a point hits
+  ([ADR-0025](adr/0025-the-engine-answers-every-hit-test.md)): the node drawn on top there, the one
+  of the highest rank, else the edge in the highest slot within 4 screen pixels of its path as the
+  stroke of the level flattens it, the parts of the path far from the point as chords; where the
   shell asks for connectors, at the near and middle level, a connector within 8 screen pixels, of
   the node of the highest rank, comes before them all. At the near level a label whose pill, as the
   labels layer measures and hands it over (`setLabelSize`), holds the point comes before a node;

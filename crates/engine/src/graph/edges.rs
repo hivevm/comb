@@ -109,8 +109,8 @@ impl Graph {
         if let Some(&slot) = slots.iter().find(|&&s| !self.holds_edge(s)) {
             return Err(SlotError::NoEdge { slot });
         }
+        // A removal builds nothing: the index is built again after growth and moves (ADR-0022).
         self.free_edges_at(slots);
-        self.keep_index();
         Ok(())
     }
 

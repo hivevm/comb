@@ -81,8 +81,8 @@ impl Graph {
             }
         }
         self.node_grid.take(slots);
+        // A removal builds nothing: the index is built again after growth and moves (ADR-0022).
         self.free_edges_at(&edges);
-        self.keep_index();
         Ok(edges)
     }
 
