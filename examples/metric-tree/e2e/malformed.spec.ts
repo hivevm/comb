@@ -225,7 +225,7 @@ for (const { name, graph, problem } of MALFORMED) {
 test("updateNode with an identifier the graph does not hold throws a GraphDataError naming it, and changes nothing", async ({
   page,
 }) => {
-  // Verifies: Q-7
+  // Verifies: Q-7, ADR-0026
   await open(page);
   const before = await drawn(page);
   const result = await page.evaluate(async () => {
@@ -764,7 +764,8 @@ type RefusalKind =
   | "hugeKey"
   | "thrownProxy"
   | "loneSurrogateId"
-  | "loneSurrogateTitle";
+  | "loneSurrogateTitle"
+  | "loneSurrogateKey";
 
 /** In the page: loads one node `a`, provokes the refusal of `kind`, and reports what it threw, how
  *  long it took, and what the canvas drew after a valid load that follows it. */
@@ -798,6 +799,7 @@ async function refusal(kind: RefusalKind) {
         edges: [{ id: "e", source: "a\uD801", target: "b" }],
       }),
     loneSurrogateTitle: () => window.comb.updateNode("a", { title: "x\uDC00" }),
+    loneSurrogateKey: () => window.comb.updateNode("a", { "x\uDC00": 1 } as never),
     thrownProxy: () =>
       window.comb.load({
         nodes: [
@@ -874,6 +876,13 @@ const REFUSALS: { name: string; kind: RefusalKind; problem: unknown }[] = [
     name: "a title with a lone surrogate",
     kind: "loneSurrogateTitle",
     problem: { kind: "invalidTitle", node: "a" },
+  },
+  {
+    // The bridge crate reads the lone surrogate as U+FFFD, so the field names the key as a Rust
+    // string can carry it.
+    name: "a patch with a key that holds a lone surrogate",
+    kind: "loneSurrogateKey",
+    problem: { kind: "unknownPatchField", node: "a", field: "x\uFFFD" },
   },
   {
     name: "a getter that throws a Proxy",
