@@ -66,6 +66,8 @@ to invent.
   over its vertex positions and label points, and at whose screen point the shell draws the world.
 - **Runner kind** — the CPU model a benchmark run records of the machine it ran on; runs are
   compared only with the baseline of their own kind.
+- **Rank** — the place of a node in the order nodes are drawn and hit, kept by the engine; a load
+  ranks nodes by slot, and a node added takes the highest rank.
 - **Selection** — the one node or edge the user has picked on the canvas, which the sidebar edits
   and a delete removes.
 - **Side** — one of the four sides of a node, `top`, `right`, `bottom`, or `left`, each with one

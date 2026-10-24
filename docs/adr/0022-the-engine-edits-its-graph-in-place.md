@@ -1,9 +1,9 @@
-# ADR-0022: The engine edits its graph in place, one node or edge at a time, and reuses freed slots
+# ADR-0022: The engine edits its graph in place, one node or edge at a time, reuses freed slots, and draws a node added last on top
 
 - **Status:** 🟡 proposed
 - **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
-- **Applies to:** `crates/engine/src/graph.rs`, `crates/engine/src/spatial.rs`, the exports of `crates/engine-wasm` that add and remove nodes and edges, and the map from identifiers to slots and the per-slot lists of `packages/comb/src/store/`
+- **Applies to:** `crates/engine/src/graph.rs`, `crates/engine/src/spatial.rs`, the exports of `crates/engine-wasm` that add and remove nodes and edges, the order in which `packages/comb/src/render/` binds node views and particles, and the map from identifiers to slots and the per-slot lists of `packages/comb/src/store/`
 
 ## Context
 
@@ -24,7 +24,14 @@ engine after a load names slots (ADR-0010, *Slots*). ADR-0010 leaves open when s
 after deletions. Removing an item leaves its slot empty; what fills it decides whether slots stay
 dense, whether the buffers grow with every edit, and in what order nodes are drawn, since the
 scene draws in slot order and the hit test takes the node in the highest slot as the one on top
-(ADR-0012).
+(ADR-0012). The maintainer asks that a node the host application adds comes to the front, also
+when it takes a freed slot below others.
+
+This conflicts with the letter of ADR-0012 (*Culling*), which is accepted: it binds the pooled
+display objects to the slots a query found "in slot order". Edges and edge labels keep that
+order; node views and particles would be bound in the order of the nodes' ranks below. The
+maintainer decides it before this ADR is accepted, by superseding ADR-0012 with that clause
+narrowed to edges and labels, or otherwise.
 
 The spatial index is a uniform grid over the extent it was built for; items beyond the extent
 fall into its border cells, it counts them, and it is built again once more than an eighth of the
@@ -35,8 +42,9 @@ cells lives in an overflow list every query scans.
 
 We will edit the engine's graph in place, one node or edge at a time: an addition takes the most
 recently freed slot of its kind, or a new slot after the last, a removal frees its slot and takes
-the item out of the spatial index and out of the lists of edges at its nodes, and no edit builds
-the graph again, nor its index beyond the rule that rebuilds it after growth and moves.
+the item out of the spatial index and out of the lists of edges at its nodes, no edit builds the
+graph again, nor its index beyond the rule that rebuilds it after growth and moves, and every node
+carries a rank that orders drawing and hitting, a node added taking the highest.
 
 - **Free slots:** the engine keeps a list of free slots for nodes and one for edges, last freed
   first out. An addition pops from it, or appends a slot after the highest when it is empty. The
@@ -63,6 +71,14 @@ the graph again, nor its index beyond the rule that rebuilds it after growth and
   A rebuild costs what the index part of a load costs, at most once per doubling or per eighth
   of the items moved beyond the extent, so its cost per edit is constant on average; the frame
   that holds it may miss Q-1.
+- **Draw order of nodes:** the engine keeps a rank per node slot, a `u32`. A load ranks node `i`
+  as `i`, as slot order is today; each node added takes the next rank, one above the highest
+  given, so it is drawn above every other node whatever its slot. A query returns the node slots
+  it found in ascending rank, and the shell binds node views and particles in the order it
+  returns them, so the last bound is drawn on top. The hit test of nodes takes, of the nodes that
+  hold the point, the one of the highest rank: what is drawn on top is hit first. Where the next
+  rank would pass `u32::MAX`, the engine first renumbers the ranks in use from 0 in their order,
+  once per four billion additions. Edges and edge labels keep slot order.
 - **The limits of a load** (ADR-0009) hold after every edit: the slots in use of each kind stay
   within the limit, and because a free slot is taken before a new one, so does the highest slot.
 - **The shell's side:** the map from identifiers to slots drops the identifier of a removed item
@@ -83,6 +99,11 @@ application owns (ADR-0011).
   is drawn on top, but every addition grows the buffers and the grids for good. A session that
   adds and removes reaches the limit of 1,000,000 slots without holding as many items, and needs
   the compaction ADR-0010 leaves open, which renumbers slots under the shell's map.
+- **A draw-order key the shell keeps** — the scene would sort the found node slots by a key of
+  its own per frame, in JavaScript, and the engine's hit test would still need the same key to
+  find what is drawn on top, so the key would cross the bridge anyway.
+- **Nodes never reuse a slot** — a new node then is always the highest slot and on top, but the
+  node buffers grow with every addition, as under *Append only*.
 - **Swap-remove, the last slot moved into the freed one** — slots stay dense and no free list is
   needed, but the moved item changes its slot: the shell's map, the store's lists, every edge
   that names the moved node, and every view bound to it would follow, in one edit.
@@ -109,16 +130,19 @@ application owns (ADR-0011).
   serves Q-1.
 - Positive: slots stay as dense as the graph is large; buffers grow only with the graph.
 - Positive: a load stays what it is, so Q-2 and every test of a load keep their meaning.
-- Negative / trade-offs: draw order follows slot order (ADR-0012), so a node added into a freed
-  slot is drawn beneath the nodes in higher slots, and the hit test finds them first where nodes
-  overlap. Bringing a node to the front is not decided here.
+- Positive: a node the host adds appears on top, where the user dropped it, and is hit first.
+- Negative / trade-offs: a query sorts the node slots it found by rank, `k log k` for `k` found,
+  where it sorted by slot before at the same cost; the engine keeps four bytes more per node.
+- Negative / trade-offs: node order and slot order part after the first addition, so a test or a
+  reader that takes the highest slot for the top node is wrong from then on.
 - Negative / trade-offs: the frame in which a rebuild for growth or moves falls costs what the
   index of a load costs, which at 50,000 nodes may exceed one frame.
 - Negative / trade-offs: a list per node is a small allocation per node at load time, where the
   packed array was one; the benchmark's first frame shows what that costs (Q-2).
 - Negative / trade-offs: the store's lists are sparse after removals, and every reader has to
   skip a hole; a reader that forgets it reads a removed node as present.
-- Follow-ups: bringing a node to the front; batching many additions into one call, should a host
+- Follow-ups: the conflict with ADR-0012 above; bringing an existing node to the front, such as
+  on selection, which a new rank would give; batching many additions into one call, should a host
   application add thousands at once.
 
 ## Enforcement
@@ -137,5 +161,9 @@ Each test below cites this ADR with `Verifies: ADR-0022`.
   no more often.
 - **Reuse:** a test asserts that the slot freed last is the slot the next addition of its kind
   takes, and that a slot past the highest is taken only when no slot is free.
+- **Draw order:** a test of `crates/engine/src/graph.rs` adds a node into a freed slot below
+  others, overlapping them, and asserts that a query returns it last and the hit test finds it;
+  a browser test asserts that inspection draws it above the nodes it overlaps. Taking the highest
+  slot instead turns both red.
 - **Free slots refused:** a test of `crates/engine-wasm/src/lib.rs` names a freed slot in each
   export that takes slots and asserts the refusal of a slot beyond the graph.

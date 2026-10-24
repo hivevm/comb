@@ -14,12 +14,12 @@ views take no events (ADR-0012). An edge cannot be selected, though the store's 
 has a kind for it, and nothing under the pointer tells a label from the edge or the node behind
 it.
 
-The canvas draws, from the bottom, the edges as one mesh in slot order, the nodes in slot order,
-the edge labels in slot order, and the connectors (ADR-0012, ADR-0024). A user expects to grab
-what they see on top. An edge is a curve, drawn one pixel wide at the far level and a few pixels
-wide nearer, so it can only be hit within a tolerance. An edge label is a pill whose width
-follows its text, which the shell measures with its `BitmapText` font and the engine cannot; the
-query receives only the widest pill's reach, one number for all labels (ADR-0010).
+The canvas draws, from the bottom, the edges as one mesh in slot order, the nodes in the order of
+their ranks (ADR-0022), the edge labels in slot order, and the connectors (ADR-0012, ADR-0024). A
+user expects to grab what they see on top. An edge is a curve, drawn one pixel wide at the far level
+and a few pixels wide nearer, so it can only be hit within a tolerance. An edge label is a pill
+whose width follows its text, which the shell measures with its `BitmapText` font and the engine
+cannot; the query receives only the widest pill's reach, one number for all labels (ADR-0010).
 
 ADR-0009 keeps geometry out of the shell, and the engine's spatial index already holds the nodes,
 the edges, and the label points.
@@ -39,7 +39,8 @@ top there: a connector, else an edge label, else a node, else an edge, else none
 - **Node:** inside its bounds, at every level, as today.
 - **Edge:** within 4 screen pixels of its path as the stroke flattens it at the current zoom, at
   every level.
-- **On top:** within one kind, the item in the highest slot, the one drawn last.
+- **On top:** within one kind, the item drawn last: the node of the highest rank (ADR-0022), and
+  the edge or label in the highest slot.
 - **One call:** the result crosses as one generated structured value (ADR-0010) naming the kind
   and the slot, and for a connector its side. Interaction calls it on press and on hover, and
   draws the cursor from it.
