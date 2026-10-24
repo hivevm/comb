@@ -92,22 +92,25 @@ The functional core and its shell follow
   of the highest rank, else the edge in the highest slot within 4 screen pixels of its path as the
   stroke of the level flattens it, the parts of the path far from the point as chords; where the
   shell asks for connectors, at the near and middle level, a connector within 8 screen pixels, of
-  the node of the highest rank, comes before them all. `stroke` flattens the found edges within a
-  tolerance and strokes them into the triangles of one mesh, with each edge's colour, dash pattern,
-  and arrowhead, or as thin lines alone at the far level of detail; it decides the stroke of each
-  level. A part of a path whose control points miss the query's rectangle, grown by the stroke's
-  width, is drawn as its chord, a segment that meets the grown rectangle with an end outside it is
-  split where it enters and leaves it, so that what the rectangle shows rounds by its distance from
-  the query's origin, and a path is subdivided at most 24 levels deep; the mesh of one query holds
-  at most the mesh budget, 2^22 vertices: each edge's floor, its chord or its arrowhead alone where
-  that is its full mesh, is reserved first, edges are meshed in full in slot order while each fits
-  beside the floors of those after it, and from the first that does not, every edge is drawn as its
-  floor and the mesh is coarsened; its vectors grow by `try_reserve`, so that memory running short
-  coarsens the mesh instead of trapping. It depends on no crate that reaches the browser. `graph`
-  keeps each edge's path and its bounds as of its last move, so that a query computes no bounds;
-  `graph::slot` is the one conversion of a count to slots, which the bridge uses too. Only what the
-  bridge uses is public; the rest is private to the crate, so that the `dead_code` lint finds what
-  only tests reach.
+  the node of the highest rank, comes before them all. At the near level a label whose pill, as the
+  labels layer measures and hands it over (`setLabelSize`), holds the point comes before a node;
+  `move_label` places a dragged label at the path parameter nearest a point and its distance along
+  the normal there. `stroke` flattens the found edges within a tolerance and strokes them into the
+  triangles of one mesh, with each edge's colour, dash pattern, and arrowhead, or as thin lines
+  alone at the far level of detail; it decides the stroke of each level. A part of a path whose
+  control points miss the query's rectangle, grown by the stroke's width, is drawn as its chord, a
+  segment that meets the grown rectangle with an end outside it is split where it enters and leaves
+  it, so that what the rectangle shows rounds by its distance from the query's origin, and a path is
+  subdivided at most 24 levels deep; the mesh of one query holds at most the mesh budget, 2^22
+  vertices: each edge's floor, its chord or its arrowhead alone where that is its full mesh, is
+  reserved first, edges are meshed in full in slot order while each fits beside the floors of those
+  after it, and from the first that does not, every edge is drawn as its floor and the mesh is
+  coarsened; its vectors grow by `try_reserve`, so that memory running short coarsens the mesh
+  instead of trapping. It depends on no crate that reaches the browser. `graph` keeps each edge's
+  path and its bounds as of its last move, so that a query computes no bounds; `graph::slot` is the
+  one conversion of a count to slots, which the bridge uses too. Only what the bridge uses is
+  public; the rest is private to the crate, so that the `dead_code` lint finds what only tests
+  reach.
 - **Bridge** — `crates/engine-wasm` holds every WebAssembly export: `loadGraph` checks graph data
   and resolves edge ends to slots, `addNode` checks one node as a load would and returns the slot
   the engine chose for it, `addEdge` checks one edge as a load would, refuses one from a node to

@@ -5,7 +5,7 @@ import type { Buffer, Matrix, WebGLRenderer } from "pixi.js";
 import type { Comb } from "./api";
 import { scenes } from "./api/scenes";
 import { toScreen, worldRect } from "./interaction/viewport";
-import { TEST_MODE, trapNextCall, type Rect } from "./bridge";
+import { TEST_MODE, trapNextCall, type Hit, type Rect } from "./bridge";
 import { EdgesContainer } from "./render/edges";
 import { LABEL_REACH } from "./render/labels";
 import { CULLING_MARGIN, FAR_SCALE, NEAR_SCALE, RESCALE, type SceneSnapshot } from "./render/scene";
@@ -36,7 +36,7 @@ export function screenPoint(comb: Comb, x: number, y: number): { x: number; y: n
 
 /** What a press at the screen point `(x, y)`, relative to the canvas of `comb`, hits: a node, an
  *  edge, or nothing (ADR-0025). */
-export function hitKind(comb: Comb, x: number, y: number): "connector" | "node" | "edge" | "none" {
+export function hitKind(comb: Comb, x: number, y: number): Hit["kind"] {
   return sceneOf(comb).hitKind(x, y);
 }
 

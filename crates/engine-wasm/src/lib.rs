@@ -161,6 +161,7 @@ pub fn check_node_patch(
 pub enum Hit {
     None,
     Connector { slot: u32, side: Side },
+    Label { slot: u32 },
     Node { slot: u32 },
     Edge { slot: u32 },
 }
@@ -314,6 +315,39 @@ impl Engine {
         update_edge_in(&mut self.graph, slot, id, patch)
     }
 
+    /// Records the half width and half height of the pill of the label of the edge in `slot`, in
+    /// world units, as the shell draws it; a label it has not measured is not hit (ADR-0025).
+    #[wasm_bindgen(js_name = setLabelSize)]
+    pub fn set_label_size(
+        &mut self,
+        slot: u32,
+        half_width: f64,
+        half_height: f64,
+    ) -> Result<(), SlotError> {
+        trap::spring();
+        Ok(self.graph.set_label_size(slot, half_width, half_height)?)
+    }
+
+    /// The world point of the label of the edge in `slot`, `x, y`, or nothing where it holds no
+    /// edge with a label.
+    #[wasm_bindgen(js_name = labelPoint)]
+    pub fn label_point(&mut self, slot: u32) -> Vec<f64> {
+        trap::spring();
+        self.graph
+            .label_point(slot)
+            .map_or_else(Vec::new, |p| vec![p.x, p.y])
+    }
+
+    /// Places the label of the edge in `slot` at the world point `(x, y)`, at the path parameter
+    /// nearest it and its distance along the normal there, and returns the two, `t, offset`
+    /// (G-6). A slot that holds no edge with a label refuses it.
+    #[wasm_bindgen(js_name = moveLabel)]
+    pub fn move_label(&mut self, slot: u32, x: f64, y: f64) -> Result<Vec<f64>, SlotError> {
+        trap::spring();
+        let placed = self.graph.move_label(slot, Point::new(x, y))?;
+        Ok(vec![placed.t, placed.offset])
+    }
+
     /// The slots of the edges at the nodes in `slots`, in ascending order, as a removal of them
     /// would take along, named before anything is removed (ADR-0022). A slot that holds no node
     /// refuses the call.
@@ -399,6 +433,7 @@ impl Engine {
                 slot,
                 side: side.into(),
             },
+            Some(Target::Label(slot)) => Hit::Label { slot },
             Some(Target::Node(slot)) => Hit::Node { slot },
             Some(Target::Edge(slot)) => Hit::Edge { slot },
             None => Hit::None,

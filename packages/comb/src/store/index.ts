@@ -86,6 +86,7 @@ export type StoreChange =
     }
   | { readonly kind: "edgesRemoved"; readonly by: By; readonly edges: readonly string[] }
   | { readonly kind: "edgeAdded"; readonly by: By; readonly id: string }
+  | { readonly kind: "labelMoved"; readonly by: "user"; readonly edge: string }
   | {
       readonly kind: "edgeUpdated";
       readonly by: "host";
@@ -154,6 +155,9 @@ export interface GraphState extends GraphView {
   removeEdges(edgeSlots: readonly number[], by?: By): void;
   /** Keeps `edge`, which the engine took into `slot`, as `by` made it. */
   addEdge(edge: EdgeData, slot: number, by?: By): void;
+  /** Records that a drag, now released, left the label of the edge `id` at path parameter `t`
+   *  and label offset `offset`, where the engine placed it. */
+  labelMoved(id: string, t: number, offset: number): void;
   /** Shows the connectors of the node in `slot`, or none. */
   hover(slot: number | null): void;
   /** Records the connection the user drags, or that it ended. */
@@ -344,6 +348,14 @@ export function createGraphStore() {
       set((state) => withoutNodes(state, nodeSlots, edgeSlots, by)),
     removeEdges: (edgeSlots, by = "host") => set((state) => withoutEdgesOf(state, edgeSlots, by)),
     addEdge: (edge, slot, by = "host") => set((state) => withEdge(state, edge, slot, by)),
+    labelMoved: (id, t, offset) =>
+      set((state) => {
+        const slot = state.edgeSlots.get(id)!;
+        const edge = state.edges[slot]!;
+        const edges = state.edges.slice();
+        edges[slot] = { ...edge, label: { ...edge.label!, t, offset } };
+        return { edges, change: { kind: "labelMoved", by: "user", edge: id } };
+      }),
     hover: (hovered) => set((state) => (state.hovered === hovered ? state : { hovered })),
     connect: (connection) => set({ connection }),
     updateEdge: (id, patch) =>

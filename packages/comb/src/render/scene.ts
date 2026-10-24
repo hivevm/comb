@@ -15,7 +15,7 @@
 // the world's origin the viewport lies; the particles, whose shader takes their container's whole
 // transform, keep the rounding they had.
 import { Application, BitmapText, Container } from "pixi.js";
-import type { Bridge, Detail, Level, Rect } from "../bridge";
+import type { Bridge, Detail, Hit, Level, Rect } from "../bridge";
 import { levelAt, worldRect } from "../interaction/viewport";
 import type { GraphView } from "../store";
 import { EdgesContainer, type MeshSize } from "./edges";
@@ -184,7 +184,7 @@ export class Scene {
     this.particles.sync(state, far ? visible.nodes : NONE, visible.positions);
     this.edges.sync(visible);
     this.detail = visible.detail;
-    this.labels.sync(state, visible, level === "near");
+    this.labels.sync(state, visible, level === "near", bridge);
     this.level = level;
     this.queries += 1;
     this.source = { bridge, edges: state.edges };
@@ -207,7 +207,7 @@ export class Scene {
 
   /** What a press at the screen point `(x, y)` of the canvas hits, as the engine of the last
    *  render answers it at the drawn viewport's scale; nothing before the first render. */
-  hitKind(x: number, y: number): "connector" | "node" | "edge" | "none" {
+  hitKind(x: number, y: number): Hit["kind"] {
     if (!this.source) return "none";
     const { scale, x: vx, y: vy } = this.drawnViewport();
     const [wx, wy] = [(x - vx) / scale, (y - vy) / scale];

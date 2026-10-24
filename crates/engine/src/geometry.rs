@@ -306,6 +306,37 @@ impl EdgePath {
     /// Where an edge label with path parameter `t` and label offset `offset` sits: the path
     /// point at `t`, moved `offset` pixels along the normal, which points left of the direction
     /// of travel.
+    /// The path parameter and label offset that place a label at `p`: the parameter of the path
+    /// point nearest `p`, and how far `p` lies from it along the normal there, so that
+    /// `label_position` of the two is `p` where that nearest point lies inside the path (G-6).
+    pub(crate) fn placement_at(&self, p: Point) -> (f64, f64) {
+        let squared = |t: f64| {
+            let q = self.point_at(t);
+            (q.x - p.x).powi(2) + (q.y - p.y).powi(2)
+        };
+        // Coarsely, then within the bracket of the nearest sample by ternary search; a cubic's
+        // distance has at most a few minima, which samples this close apart do not straddle.
+        let n = 256;
+        let best = (0..=n)
+            .map(|i| f64::from(i) / f64::from(n))
+            .min_by(|a, b| squared(*a).total_cmp(&squared(*b)))
+            .unwrap_or(0.0);
+        let step = 1.0 / f64::from(n);
+        let (mut from, mut to) = ((best - step).max(0.0), (best + step).min(1.0));
+        for _ in 0..100 {
+            let (m1, m2) = (from + (to - from) / 3.0, to - (to - from) / 3.0);
+            if squared(m1) < squared(m2) {
+                to = m2;
+            } else {
+                from = m1;
+            }
+        }
+        let t = (from + to) / 2.0;
+        let (point, tangent) = (self.point_at(t), self.tangent_at(t));
+        let offset = (p.x - point.x) * tangent.y - (p.y - point.y) * tangent.x;
+        (t, offset)
+    }
+
     pub(crate) fn label_position(&self, t: f64, offset: f64) -> Point {
         let point = self.point_at(t);
         let tangent = self.tangent_at(t);

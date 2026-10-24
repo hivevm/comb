@@ -1,7 +1,7 @@
 // The edge-labels layer at the near level (ADR-0027, G-6): a pooled pill per edge label in view,
 // centred on the point the engine placed it at.
 import { BitmapText, Container, Graphics } from "pixi.js";
-import type { Visible } from "../bridge";
+import type { Bridge, Visible } from "../bridge";
 import type { GraphView } from "../store";
 import { Bindings } from "./bindings";
 import { edgeColor } from "./edges";
@@ -10,6 +10,9 @@ import { edgeColor } from "./edges";
  *  width of a label of up to 224 pixels. The reach grows to the widest label drawn so far; a
  *  label whose point lies farther outside is not bound. */
 export const LABEL_REACH = 120;
+
+/** Half the height of an edge label's pill, in world units. */
+const PILL_HALF_HEIGHT = 11;
 
 type EdgeView = NonNullable<GraphView["edges"][number]>;
 
@@ -47,7 +50,13 @@ export class LabelView extends Container {
       this.text.text = text;
       this.pill
         .clear()
-        .roundRect(-this.text.width / 2 - 8, -11, this.text.width + 16, 22, 11)
+        .roundRect(
+          -this.text.width / 2 - 8,
+          -PILL_HALF_HEIGHT,
+          this.text.width + 16,
+          2 * PILL_HALF_HEIGHT,
+          PILL_HALF_HEIGHT,
+        )
         .fill({ color });
       this.text.position.set(-this.text.width / 2, -this.text.height / 2);
     }
@@ -68,20 +77,28 @@ export class LabelsContainer extends Container {
    *  the reach the next query uses for labels. */
   reach = LABEL_REACH;
 
-  /** Binds a label view to every label `visible` found, or to none where `shown` is false. */
-  sync(state: GraphView, visible: Visible, shown: boolean): void {
+  /** Binds a label view to every label `visible` found, or to none where `shown` is false, and
+   *  hands the engine the half width and half height of each pill drawn, by which a press hits
+   *  it (ADR-0025). */
+  sync(state: GraphView, visible: Visible, shown: boolean, bridge: Bridge): void {
     this.views.begin();
-    if (shown) this.bindAll(state, visible);
+    const pills = shown ? this.bindAll(state, visible) : [];
     this.views.end();
+    // After the views of `visible` are read: each call into the engine may detach them.
+    for (const [slot, halfWidth] of pills) bridge.setLabelSize(slot, halfWidth, PILL_HALF_HEIGHT);
   }
 
-  private bindAll(state: GraphView, visible: Visible): void {
+  private bindAll(state: GraphView, visible: Visible): [number, number][] {
+    const pills: [number, number][] = [];
     visible.labels.forEach((slot, i) => {
       const edge = state.edges[slot];
       if (!edge?.label) return;
       const view = this.views.bind(slot);
-      this.reach = Math.max(this.reach, view.bind(edge));
+      const halfWidth = view.bind(edge);
+      this.reach = Math.max(this.reach, halfWidth);
+      pills.push([slot, halfWidth]);
       view.position.set(visible.labelPoints[i * 2], visible.labelPoints[i * 2 + 1]);
     });
+    return pills;
   }
 }
