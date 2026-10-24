@@ -2,38 +2,12 @@
 // G-11, ADR-0023): the next frame draws them with their colour, dash pattern, and label,
 // `onChange` tells each change once, and an edge or a patch a load would refuse, an edge the graph
 // cannot hold, and a patch of an unknown edge or field change nothing (ADR-0026, Q-7).
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import type { EdgeData, GraphData } from "comb";
-import { NODE_HEIGHT, NODE_WIDTH, open, setViewport, strokeOf } from "./shared";
-
-const node = (id: string, x = 0, y = 0) => ({
-  id,
-  title: id,
-  x,
-  y,
-  width: NODE_WIDTH,
-  height: NODE_HEIGHT,
-});
+import { loaded, node, open, strokeOf, told } from "./shared";
 
 /** Nodes `a` and `b` side by side, an edge between them running straight along y = 32. */
 const PAIR: GraphData = { nodes: [node("a"), node("b", 600)], edges: [] };
-
-/** Loads `graph` at a scale of 1 with the world's origin at (100, 100), records every change
- *  `onChange` tells into `window.told`, and waits until it is drawn. */
-async function loaded(page: Page, graph: GraphData = PAIR): Promise<void> {
-  await page.evaluate(async (graph) => {
-    window.comb.load(graph);
-    const w = window as unknown as { told: unknown[] };
-    w.told = [];
-    window.comb.onChange((change) => w.told.push(change));
-    await window.comb.whenRendered();
-  }, graph);
-  await setViewport(page, { x: 100, y: 100, scale: 1 });
-}
-
-async function told(page: Page): Promise<unknown[]> {
-  return page.evaluate(() => (window as unknown as { told: unknown[] }).told);
-}
 
 const RED = 0xe0453a;
 const BLUE = 0x2060e0;
@@ -45,7 +19,7 @@ test("addEdge draws the edge with its colour, dash, and label, and tells edgeAdd
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
-  await loaded(page);
+  await loaded(page, PAIR);
   const edge: EdgeData = {
     id: "a-b",
     source: "a",
@@ -83,7 +57,7 @@ test("updateEdge recolours an edge, clears its dash, moves its label, and tells 
 }) => {
   // Verifies: G-5, G-11, ADR-0023
   await open(page);
-  await loaded(page);
+  await loaded(page, PAIR);
   const edge = { id: "a-b", source: "a", target: "b", color: RED, dash: [8, 8] as const };
   await page.evaluate((edge) => window.comb.addEdge(edge), edge);
   const patch = { color: BLUE, dash: null, label: { text: "moved", t: 0.25, offset: 0 } };
@@ -188,7 +162,7 @@ for (const { name, call, problem } of REFUSED) {
   }) => {
     // Verifies: Q-7, ADR-0026, ADR-0024
     await open(page);
-    await loaded(page);
+    await loaded(page, PAIR);
     const edge = { id: "a-b", source: "a", target: "b", color: RED, dash: [8, 8] as const };
     await page.evaluate((edge) => window.comb.addEdge(edge), edge);
     const before = await strokeOf(page, RED);
@@ -239,7 +213,7 @@ test("a patch of one field keeps the label and the dash, and moves a label the e
 }) => {
   // Verifies: G-5, ADR-0023
   await open(page);
-  await loaded(page);
+  await loaded(page, PAIR);
   const edge = {
     id: "a-b",
     source: "a",
@@ -275,7 +249,7 @@ test("a getter of a patch that removes the edge refuses the patch, and no other 
 }) => {
   // Verifies: Q-7, ADR-0026
   await open(page);
-  await loaded(page);
+  await loaded(page, PAIR);
   await page.evaluate(
     (red) => window.comb.addEdge({ id: "e1", source: "a", target: "b", color: red }),
     RED,
@@ -311,7 +285,7 @@ test("a listener that writes into a delivered change reaches nothing Comb keeps"
 }) => {
   // Verifies: Q-7, ADR-0026
   await open(page);
-  await loaded(page);
+  await loaded(page, PAIR);
   await page.evaluate(() => {
     window.comb.onChange((change) => {
       if (change.kind === "edgeUpdated" && change.patch.label)
@@ -375,7 +349,7 @@ for (const [name, value] of [
   test(`load, addEdge, and updateEdge refuse ${name} as invalidField`, async ({ page }) => {
     // Verifies: Q-7, ADR-0024
     await open(page);
-    await loaded(page);
+    await loaded(page, PAIR);
     const problems = await page.evaluate((value) => {
       const problem = (call: () => void) => {
         try {

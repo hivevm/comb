@@ -4,16 +4,10 @@
 // refuses the call, which then removes nothing (ADR-0026, Q-7).
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData } from "comb";
-import { NODE_HEIGHT, NODE_WIDTH, open, screenCentre, setViewport } from "./shared";
+import { loaded, node, open, screenCentre, told } from "./shared";
 
-const node = (id: string, x = 0, y = 0) => ({
-  id,
-  title: id,
-  x,
-  y,
-  width: NODE_WIDTH,
-  height: NODE_HEIGHT,
-});
+/** The viewport the tests look through: a scale of 0.5 with the world's origin at (100, 100). */
+const HALF = { x: 100, y: 100, scale: 0.5 };
 
 /** Node `a` in the middle, `b`, `c`, and `d` around it, an edge from `a` to each, and one from `b`
  *  to `c`. */
@@ -27,30 +21,14 @@ const STAR: GraphData = {
   ],
 };
 
-/** Loads `graph` at a scale of 0.5 with the world's origin at (100, 100), records every change
- *  `onChange` tells into `window.told`, and waits until it is drawn. */
-async function loaded(page: Page, graph: GraphData = STAR): Promise<void> {
-  await page.evaluate(async (graph) => {
-    window.comb.load(graph);
-    const w = window as unknown as { told: unknown[] };
-    w.told = [];
-    window.comb.onChange((change) => w.told.push(change));
-    await window.comb.whenRendered();
-  }, graph);
-  await setViewport(page, { x: 100, y: 100, scale: 0.5 });
-}
-
 /** The nodes and edges the canvas draws once it has drawn, and what `onChange` told. */
 async function drawn(page: Page) {
-  return page.evaluate(async () => {
+  const ids = await page.evaluate(async () => {
     await window.comb.whenRendered();
     const { nodes, edges } = window.inspect();
-    return {
-      nodes: nodes.map(({ id }) => id),
-      edges: edges.map(({ id }) => id).sort(),
-      told: (window as unknown as { told: unknown[] }).told,
-    };
+    return { nodes: nodes.map(({ id }) => id), edges: edges.map(({ id }) => id).sort() };
   });
+  return { ...ids, told: await told(page) };
 }
 
 test("removeNodes removes a node and its three edges, and tells one nodesRemoved", async ({
@@ -60,7 +38,7 @@ test("removeNodes removes a node and its three edges, and tells one nodesRemoved
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
-  await loaded(page);
+  await loaded(page, STAR, HALF);
   await page.evaluate(() => window.comb.removeNodes(["a"]));
   expect(await drawn(page)).toEqual({
     nodes: ["b", "c", "d"],
@@ -75,7 +53,7 @@ test("removeEdges removes edges and keeps their nodes, and tells one edgesRemove
 }) => {
   // Verifies: G-4, ADR-0022, ADR-0023
   await open(page);
-  await loaded(page);
+  await loaded(page, STAR, HALF);
   await page.evaluate(() => window.comb.removeEdges(["b-c", "a-c", "b-c"]));
   expect(await drawn(page)).toEqual({
     nodes: ["a", "b", "c", "d"],
@@ -89,7 +67,7 @@ test("isDrawn answers as inspect does, at the near, middle, and far level, befor
 }) => {
   // Verifies: ADR-0022
   await open(page);
-  await loaded(page);
+  await loaded(page, STAR, HALF);
   const asked = (scale: number) =>
     page.evaluate(async (scale) => {
       window.comb.setViewport({ x: 100, y: 100, scale });
@@ -124,7 +102,7 @@ test("a node added after a removal takes the freed slot and is drawn and hit abo
   // Verifies: ADR-0022, ADR-0027
   await open(page);
   // Three nodes at one place: a load stacks them by slot, c on top.
-  await loaded(page, { nodes: [node("a"), node("b"), node("c")], edges: [] });
+  await loaded(page, { nodes: [node("a"), node("b"), node("c")], edges: [] }, HALF);
   await page.evaluate(
     async (e) => {
       window.comb.removeNodes(["a"]);
@@ -180,7 +158,7 @@ for (const { name, call, problem } of REFUSED) {
   test(`a removal of ${name} throws a GraphDataError and removes nothing`, async ({ page }) => {
     // Verifies: Q-7, ADR-0026
     await open(page);
-    await loaded(page);
+    await loaded(page, STAR, HALF);
     const before = await drawn(page);
     const refused = await page.evaluate(([method, ids]) => {
       try {
@@ -201,7 +179,7 @@ test("removing the selected node reports null to onSelectionChange, after its ch
 }) => {
   // Verifies: ADR-0023
   await open(page);
-  await loaded(page);
+  await loaded(page, STAR, HALF);
   const at = await screenCentre(page, "a");
   await page.mouse.click(at.x, at.y);
   const told = await page.evaluate(() => {
@@ -217,7 +195,7 @@ test("removing the selected node reports null to onSelectionChange, after its ch
 test("fitView fits the nodes a removal kept", async ({ page }) => {
   // Verifies: ADR-0022
   await open(page);
-  await loaded(page);
+  await loaded(page, STAR, HALF);
   const viewports = await page.evaluate(async () => {
     window.comb.removeNodes(["a", "b", "c"]);
     window.comb.fitView();
@@ -238,7 +216,7 @@ test("a node the host removes during a drag ends it: no error, and no move of th
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
-  await loaded(page);
+  await loaded(page, STAR, HALF);
   const from = await screenCentre(page, "a");
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
@@ -267,7 +245,7 @@ test("a removal reads a hostile list's length once and refuses a list too long q
 }) => {
   // Verifies: Q-7, ADR-0026
   await open(page);
-  await loaded(page);
+  await loaded(page, STAR, HALF);
   const before = await drawn(page);
   const result = await page.evaluate(() => {
     const kindOf = (call: () => void) => {
@@ -311,7 +289,7 @@ test("a removal names an unknown identifier cut to the limit, and an empty one t
 }) => {
   // Verifies: Q-7, ADR-0026
   await open(page);
-  await loaded(page);
+  await loaded(page, STAR, HALF);
   const before = await drawn(page);
   const result = await page.evaluate(() => {
     let cut = 0;

@@ -3,16 +3,7 @@
 // a curved edge; the example's sidebar edits the selected edge through `updateEdge` (G-9).
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData } from "comb";
-import { NODE_HEIGHT, NODE_WIDTH, open, screenCentre, setViewport, strokeOf } from "./shared";
-
-const node = (id: string, x = 0, y = 0) => ({
-  id,
-  title: id,
-  x,
-  y,
-  width: NODE_WIDTH,
-  height: NODE_HEIGHT,
-});
+import { clickWorld, loaded, node, open, screenCentre, selections, strokeOf } from "./shared";
 
 /** Nodes `a` and `b` side by side and the edge `a-b` between them, straight along y = 32. */
 const PAIR: GraphData = {
@@ -20,31 +11,10 @@ const PAIR: GraphData = {
   edges: [{ id: "a-b", source: "a", target: "b", color: 0xe0453a }],
 };
 
-/** Loads `graph`, views it at `scale` with the world's origin at (100, 100), and records each
- *  selection into `window.selections`. */
-async function loaded(page: Page, graph: GraphData, scale = 1): Promise<void> {
-  await page.evaluate(async (graph) => {
-    window.useGraph(graph);
-    const w = window as unknown as { selections: unknown[] };
-    w.selections = [];
-    window.comb.onSelectionChange((selection) => w.selections.push(selection));
-    await window.comb.whenRendered();
-  }, graph);
-  await setViewport(page, { x: 100, y: 100, scale });
-}
-
 /** Clicks the world point `(x, y)` and returns the selections reported since the load. */
 async function clickAt(page: Page, x: number, y: number) {
-  const at = await page.evaluate(
-    ({ x, y }) => {
-      const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();
-      const screen = window.screenPoint(x, y);
-      return { x: rect.left + screen.x, y: rect.top + screen.y };
-    },
-    { x, y },
-  );
-  await page.mouse.click(at.x, at.y);
-  return page.evaluate(() => (window as unknown as { selections: unknown[] }).selections);
+  await clickWorld(page, x, y);
+  return selections(page);
 }
 
 for (const [level, scale] of [
@@ -55,7 +25,7 @@ for (const [level, scale] of [
   test(`a click on an edge's path selects the edge at the ${level} level`, async ({ page }) => {
     // Verifies: G-5, ADR-0025
     await open(page);
-    await loaded(page, PAIR, scale);
+    await loaded(page, PAIR, { x: 100, y: 100, scale });
     expect((await page.evaluate(() => window.inspect())).level).toBe(level);
     // On the path, and 3 screen pixels beside it.
     expect(await clickAt(page, 410, 32 + 3 / scale)).toEqual([{ kind: "edge", id: "a-b" }]);
@@ -84,7 +54,11 @@ test("a click beside a curved edge, within its bounds, selects nothing", async (
   await open(page);
   // From a's right middle (220, 32) down to b's left middle (600, 432): the path bends through the
   // middle of its bounds, far from their corners.
-  await loaded(page, { ...PAIR, nodes: [node("a"), node("b", 600, 400)] }, 0.8);
+  await loaded(
+    page,
+    { ...PAIR, nodes: [node("a"), node("b", 600, 400)] },
+    { x: 100, y: 100, scale: 0.8 },
+  );
   expect(await clickAt(page, 560, 60)).toEqual([]);
   expect(await clickAt(page, 410, 232)).toEqual([{ kind: "edge", id: "a-b" }]);
 });

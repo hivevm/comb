@@ -3,16 +3,7 @@
 // alone, told as `by: "user"`, the selection cleared.
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData } from "comb";
-import { NODE_HEIGHT, NODE_WIDTH, open, screenCentre, setViewport } from "./shared";
-
-const node = (id: string, x = 0, y = 0) => ({
-  id,
-  title: id,
-  x,
-  y,
-  width: NODE_WIDTH,
-  height: NODE_HEIGHT,
-});
+import { clickWorld, loaded, node, open, screenCentre, told } from "./shared";
 
 /** Node `a` between `b` and `c`, an edge from `b` to `a` and one from `a` to `c`, and one from `b`
  *  to `c` below them. */
@@ -25,44 +16,24 @@ const ROW: GraphData = {
   ],
 };
 
-/** Loads ROW as the example's own at a scale of 0.8, recording each change and selection into
- *  `window.told`, the selections as `selection <id or null>`. */
-async function loaded(page: Page): Promise<void> {
-  await page.evaluate(async (graph) => {
-    window.useGraph(graph);
-    const w = window as unknown as { told: unknown[] };
-    w.told = [];
-    window.comb.onChange((change) => w.told.push(change));
-    window.comb.onSelectionChange((selection) => w.told.push(`selection ${selection?.id ?? null}`));
-    await window.comb.whenRendered();
-  }, ROW);
-  await setViewport(page, { x: 40, y: 200, scale: 0.8 });
-}
-
 /** What the canvas draws once it has drawn, and what was told since the load. */
-async function state(page: Page) {
-  return page.evaluate(async () => {
-    await window.comb.whenRendered();
-    const { nodes, edges } = window.inspect();
-    return {
-      nodes: nodes.map(({ id }) => id).sort(),
-      edges: edges.map(({ id }) => id).sort(),
-      told: (window as unknown as { told: unknown[] }).told,
-    };
+/** Loads ROW at a scale of 0.8, as `loaded` does, and records each selection into `window.told`
+ *  as well, as `selection <id or null>`, so that changes and selections are told in one order. */
+async function loadedRow(page: Page): Promise<void> {
+  await loaded(page, ROW, { x: 40, y: 200, scale: 0.8 });
+  await page.evaluate(() => {
+    const w = window as unknown as { told: unknown[] };
+    window.comb.onSelectionChange((selection) => w.told.push(`selection ${selection?.id ?? null}`));
   });
 }
 
-/** Clicks the screen point at which the canvas shows the world point `(x, y)`. */
-async function clickWorld(page: Page, x: number, y: number): Promise<void> {
-  const at = await page.evaluate(
-    ({ x, y }) => {
-      const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();
-      const screen = window.screenPoint(x, y);
-      return { x: rect.left + screen.x, y: rect.top + screen.y };
-    },
-    { x, y },
-  );
-  await page.mouse.click(at.x, at.y);
+async function state(page: Page) {
+  const drawn = await page.evaluate(async () => {
+    await window.comb.whenRendered();
+    const { nodes, edges } = window.inspect();
+    return { nodes: nodes.map(({ id }) => id).sort(), edges: edges.map(({ id }) => id).sort() };
+  });
+  return { ...drawn, told: await told(page) };
 }
 
 async function selectNode(page: Page, id: string): Promise<void> {
@@ -75,7 +46,7 @@ test("Delete removes a selected node with both its edges, as the user's, and cle
 }) => {
   // Verifies: G-4, ADR-0023
   await open(page);
-  await loaded(page);
+  await loadedRow(page);
   await selectNode(page, "a");
   await page.keyboard.press("Delete");
   expect(await state(page)).toEqual({
@@ -95,7 +66,7 @@ test("Backspace removes a selected edge alone, and its default action is prevent
 }) => {
   // Verifies: G-4, ADR-0023
   await open(page);
-  await loaded(page);
+  await loadedRow(page);
   await page.evaluate(() => {
     const w = window as unknown as { prevented: boolean[] };
     w.prevented = [];
@@ -124,7 +95,7 @@ for (const name of ["false", "undefined", "a truthy value that is not true", "a 
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
-    await loaded(page);
+    await loadedRow(page);
     await page.evaluate((name) => {
       const asked: unknown[] = [];
       (window as unknown as { asked: unknown[] }).asked = asked;
@@ -154,7 +125,7 @@ test("canDelete returning true deletes, and a host's own removal never asks it",
 }) => {
   // Verifies: ADR-0023
   await open(page);
-  await loaded(page);
+  await loadedRow(page);
   await page.evaluate(() => {
     const w = window as unknown as { asked: number };
     w.asked = 0;
@@ -171,7 +142,7 @@ test("canDelete returning true deletes, and a host's own removal never asks it",
 test("Delete with the focus outside the canvas deletes nothing", async ({ page }) => {
   // Verifies: ADR-0023
   await open(page);
-  await loaded(page);
+  await loadedRow(page);
   await selectNode(page, "a");
   await page.locator("#title").focus();
   await page.keyboard.press("Delete");
@@ -187,7 +158,7 @@ test("a veto that adds an edge itself refuses the deletion, and Comb and the eng
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
-  await loaded(page);
+  await loadedRow(page);
   await page.evaluate(() => {
     window.canDelete = () => {
       window.comb.addEdge({ id: "x", source: "a", target: "b" });
@@ -207,7 +178,7 @@ test("a veto that adds an edge itself refuses the deletion, and Comb and the eng
 test("a Delete held down deletes once, and with a modifier not at all", async ({ page }) => {
   // Verifies: ADR-0023
   await open(page);
-  await loaded(page);
+  await loadedRow(page);
   await page.evaluate(() => {
     const w = window as unknown as { asked: number };
     w.asked = 0;
