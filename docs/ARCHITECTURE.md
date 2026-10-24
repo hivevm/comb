@@ -32,34 +32,37 @@ the store keeps any of it. The bridge crate refuses, each with a typed error: a 
 missing or holds a value of another type, naming the node or edge by index, and by identifier where
 it has one, the field, and what the field expects in plain words (`invalidField`); graph data that
 is no object of node and edge lists of objects, as malformed; coordinates, sizes, and dash patterns
-that are not finite as the engine keeps them (`f32`), negative sizes, a dash that is not positive
-or a negative gap, duplicate node or edge identifiers, edges to missing nodes, non-finite label
+that are not finite as the engine keeps them (`f32`), negative sizes, a dash that is not positive or
+a negative gap, duplicate node or edge identifiers, edges to missing nodes, non-finite label
 placements, a colour that is not an integer from `0` to `0xFFFFFF`, a title or label text that is
-not a string or longer than 1,000 UTF-16 code units, a label background that is not an integer
-from `0` to `0xFFFFFF`, more than 1,000,000 nodes or edges, an identifier, source, or target longer
-than 256 UTF-16 code units, and identifiers of one load that hold more than 64,000,000 code units
-together. `api` refuses an identifier `updateNode` names that the graph does not hold, against the
-store's map from identifiers to slots (ADR-0026), and the bridge crate refuses a patch that holds a
-field other than a title, or a title it would refuse in a load. Titles, label texts, and label
-backgrounds are checked there but not kept by the engine. `api` reads the host's graph data once,
-in JavaScript, into a snapshot (`api/snapshot.ts`) of plain data whose every field is a primitive
-of the type it expects, any other value replaced by `false`, and whose texts and identifiers are
-cut one code unit beyond the bridge's limits, so that no value of the host application and none of
-its code reaches the engine, and a text of any length costs no more than that to check. The
-bridge's `loadGraph` and `checkNodePatch` take only the types `GraphSnapshot` and `PlainPatch`
-that the snapshot's functions return, so that the type checker refuses the host's graph data or
-patch handed to the bridge directly (`bridge/snapshot-only.test.ts`). The bridge checks the
-counts of nodes and edges before anything is copied, then the code units of the identifiers,
-counted while the snapshot is read and read no further once they exceed the budget, then the
-snapshot, and the store keeps the snapshot. A string with a lone surrogate, which the bridge would
-read as U+FFFD, `api` hands over as `false`, so that it is refused. `updateNode` reads
-its patch the same way, every own key of a plain object, and merges only the fields the bridge
-returns as checked. The bridge never formats a refused value into its message. Graph data that
-cannot be read at all, such as nodes that are not a list, a list with a hole, a patch that is no
-plain object, or a getter that throws, is refused as malformed before the bridge sees it. That no
-code of the host application runs in the engine holds while nothing on the page has patched
-JavaScript's built-ins, such as a setter on `Object.prototype` or a `Symbol.hasInstance` of
-`Uint8Array`, which the generated glue reaches.
+not a string or longer than 1,000 UTF-16 code units, a label background that is not an integer from
+`0` to `0xFFFFFF`, more than 1,000,000 nodes or edges, an identifier, source, or target longer than
+256 UTF-16 code units, and identifiers of one load that hold more than 64,000,000 code units
+together. `api` refuses, against the store's map from identifiers to slots (ADR-0026), an identifier
+`updateNode` names that the graph does not hold and one `addNode` adds that it holds already
+(`duplicateNode`); the bridge crate checks the node `addNode` hands over as a load checks a node,
+and refuses it where the graph would hold more than 1,000,000 nodes, and `api` has it check the code
+units of identifiers the store counts with the new one's; and the bridge crate refuses a patch that
+holds a field other than a title, or a title it would refuse in a load. Titles, label texts, and
+label backgrounds are checked there but not kept by the engine. `api` reads the host's graph data
+once, in JavaScript, into a snapshot (`api/snapshot.ts`) of plain data whose every field is a
+primitive of the type it expects, any other value replaced by `false`, and whose texts and
+identifiers are cut one code unit beyond the bridge's limits, so that no value of the host
+application and none of its code reaches the engine, and a text of any length costs no more than
+that to check. The bridge's `loadGraph`, `addNode`, and `checkNodePatch` take only the types
+`GraphSnapshot`, `NodeSnapshot`, and `PlainPatch` that the snapshot's functions return, so that the
+type checker refuses the host's graph data, node, or patch handed to the bridge directly
+(`bridge/snapshot-only.test.ts`). The bridge checks the counts of nodes and edges before anything is
+copied, then the code units of the identifiers, counted while the snapshot is read and read no
+further once they exceed the budget, then the snapshot, and the store keeps the snapshot. A string
+with a lone surrogate, which the bridge would read as U+FFFD, `api` hands over as `false`, so that
+it is refused. `updateNode` reads its patch the same way, every own key of a plain object, and
+merges only the fields the bridge returns as checked. The bridge never formats a refused value into
+its message. Graph data that cannot be read at all, such as nodes that are not a list, a list with a
+hole, a patch that is no plain object, or a getter that throws, is refused as malformed before the
+bridge sees it. That no code of the host application runs in the engine holds while nothing on the
+page has patched JavaScript's built-ins, such as a setter on `Object.prototype` or a
+`Symbol.hasInstance` of `Uint8Array`, which the generated glue reaches.
 
 ## Building blocks
 
@@ -70,10 +73,15 @@ The functional core and its shell follow
   curves from the right middle of one node to the left middle of another, their exact bounds, the
   point and normal at a path parameter, and edge-label placement; `positions` the positions
   buffer and its moves. `graph` keeps the loaded graph, node positions and
-  sizes per slot and edges per slot, and a spatial index (`spatial`, a uniform grid each for nodes
-  and edges, with an overflow list for items that cover many cells) that loads and moves keep
-  current and that is built again once many items have moved beyond its extent; its query
-  returns the slots a rectangle meets, and `hit` the node drawn on top at a point. `stroke`
+  sizes per slot and edges per slot, a rank per node slot, and a spatial index (`spatial`, a
+  uniform grid each for nodes and edges, with an overflow list for items that cover many cells)
+  that loads, additions, and moves keep current and that is built again once many items have
+  moved or been added beyond its extent, or the nodes in use pass twice the count it was built
+  for ([ADR-0022](adr/0022-the-engine-edits-its-graph-in-place.md)); `add_node` takes the free
+  slot freed last, or a new one after the highest, and the next rank, and puts the node into the
+  grid in place; a load ranks node `i` as `i`. Its query returns the slots a rectangle meets, node
+  slots in ascending rank, and `hit` the node drawn on top at a point, the one of the highest
+  rank. `stroke`
   flattens the found edges within a tolerance and strokes them into the triangles of one mesh,
   with each edge's colour, dash pattern, and arrowhead, or as thin lines alone at the far level
   of detail; it decides the stroke of each level. A part of a path whose control points miss the
@@ -90,25 +98,26 @@ The functional core and its shell follow
   conversion of a count to slots, which the bridge uses too. Only what the bridge uses is public;
   the rest is private to the crate, so that the `dead_code` lint finds what only tests reach.
 - **Bridge** — `crates/engine-wasm` holds every WebAssembly export: `loadGraph` checks graph data
-  and resolves edge ends to slots, `translate` moves nodes, `query` takes a rectangle, a level of
-  detail, the size of a screen pixel, and how far an edge label's pill reaches from its point,
-  and writes the found node slots, the edge-label slots and points (at the near level only), the
-  found edge slots, and the edge mesh into buffers the engine owns, the label points and the
-  mesh's positions relative to the query's origin, which `originX` and `originY` read
-  ([ADR-0010](adr/0010-bridge-data-format.md)), and returns the mesh's detail,
-  complete or coarsened, and refuses a pixel that is not a finite number above zero as
-  malformed; `drawnEdges` computes the ends of the found edges when inspection asks,
-  as they lie then, and `hit` names the node at a point; it generates the type of every problem
-  of graph data `load` and `updateNode` throw, `GraphDataProblem`, which `comb` exports, and keeps
-  `translate`'s refusals, a mistake of the shell's, in a type of their own. Its crate root holds
-  the exports and their conversions; its module `graph_data` reads and checks graph data, the
-  one place that does ([ADR-0026](adr/0026-the-shell-refuses-what-only-its-map-knows.md));
-  `packages/comb/src/bridge` is the one module that imports the WebAssembly package and reads
-  those buffers through fresh typed-array views per read
-  ([ADR-0010](adr/0010-bridge-data-format.md)).
+  and resolves edge ends to slots, `addNode` checks one node as a load would and returns the slot
+  the engine chose for it, `translate` moves nodes, `query` takes a rectangle, a level of detail,
+  the size of a screen pixel, and how far an edge label's pill reaches from its point, and writes
+  the found node slots, the edge-label slots and points (at the near level only), the found edge
+  slots, and the edge mesh into buffers the engine owns, the label points and the mesh's positions
+  relative to the query's origin, which `originX` and `originY` read
+  ([ADR-0010](adr/0010-bridge-data-format.md)), and returns the mesh's detail, complete or
+  coarsened, and refuses a pixel that is not a finite number above zero as malformed; `drawnEdges`
+  computes the ends of the found edges when inspection asks, as they lie then, and `hit` names the
+  node at a point; it generates the type of every problem of graph data `load`, `updateNode`, and
+  `addNode` throw, `GraphDataProblem`, which `comb` exports, and keeps `translate`'s refusals, a
+  mistake of the shell's, in a type of their own. Its crate root holds the exports and their
+  conversions; its module `graph_data` reads and checks graph data, the one place that does
+  ([ADR-0026](adr/0026-the-shell-refuses-what-only-its-map-knows.md)); `packages/comb/src/bridge` is
+  the one module that imports the WebAssembly package and reads those buffers through fresh
+  typed-array views per read ([ADR-0010](adr/0010-bridge-data-format.md)).
 - **Store** (`packages/comb/src/store`) — a vanilla Zustand store with the graph's structure, the
-  map from identifiers to slots, the selection, the viewport, and a counter for moved positions;
-  no coordinates
+  map from identifiers to slots, the code units of the identifiers it holds, the change the last
+  action that changed the graph made, by kind and identifier, the selection, the viewport, and a
+  counter for moved positions; no coordinates
   ([ADR-0011](adr/0011-store.md)). `GraphView` is its state without the actions, the type the
   render layer reads.
 - **Interaction** (`packages/comb/src/interaction`) — pointer and wheel input into store actions
@@ -121,13 +130,15 @@ The functional core and its shell follow
   group with the layers `EdgesContainer` (`edges.ts`), `NodeParticles` (`particles.ts`),
   `NodesContainer` (`nodes.ts`), and `LabelsContainer` (`labels.ts`), and an `overlay`
   ([ADR-0027](adr/0027-nodes-bound-by-rank.md)); `bindings.ts` is the pool of views the
-  nodes and labels layers bind to slots. The scale chooses the level of
+  nodes and labels layers bind to slots, keeping the layer's children in the order a render binds
+  them. The scale chooses the level of
   detail: near (from 0.6) draws node views and edge labels, middle (from 0.3) node views alone,
   and far nodes as particles of one `ParticleContainer` (`render/particles.ts`) and edges as
   lines one pixel wide. A render queries the engine for the viewport grown by the culling margin
-  and binds pooled node views and edge-label views to exactly the slots it found, drawn in slot
-  order; while the viewport stays within what it last queried, that rectangle within the viewport
-  grown by twice the culling margin, at about its scale and the same level of detail, and the
+  and binds pooled node views and edge-label views to exactly the slots it found, node views and
+  particles in the order of the nodes' ranks, which the query returns, edge labels in slot order;
+  while the viewport stays within what it last queried, that rectangle within the viewport grown
+  by twice the culling margin, at about its scale and the same level of detail, and the
   graph and the selection are unchanged, a render moves the world alone. The world stands at the
   screen point of the last query's origin, the edges and labels at (0, 0) in it, the nodes and
   particles at minus the origin, so that the GPU sees no far coordinate of edges, labels, and node
@@ -148,9 +159,13 @@ The functional core and its shell follow
   bytes (`api/engine.ts`, [ADR-0019](adr/0019-the-host-hands-comb-its-engine.md)), before it
   touches the host element, and with a `RendererUnavailableError` where PixiJS finds no WebGL2
   unless `allowCanvasFallback` lets it draw on Canvas 2D (`api/renderers.ts`); and the `Comb` it
-  returns: the graph data (`load`, `updateNode`), read once into a snapshot (`api/snapshot.ts`)
-  and handed to the engine, the viewport (`fitView`, `setViewport`, `viewport`), the events to
-  the host application (`onSelectionChange`, `onEngineLost`), and `destroy`; `whenRendered`
+  returns: the graph data (`load`, `updateNode`, `addNode`), read once into a snapshot
+  (`api/snapshot.ts`) and handed to the engine, the viewport (`fitView`, `setViewport`,
+  `viewport`), the events to the host application (`onChange`, `onSelectionChange`,
+  `onEngineLost`), and `destroy`; `onChange` delivers each change the store records as a
+  `GraphChange` ([ADR-0023](adr/0023-edits-are-reported-as-typed-changes.md)), its positions read
+  from the engine's buffer, synchronously from one subscription to the store that tells a change
+  before the selection it cleared; `whenRendered`
   resolves once a change is drawn, with one render per animation frame scheduled by
   `api/frames.ts`. `api/scenes.ts` is the one way from a `Comb` to its scene, for the testing
   entry.

@@ -60,6 +60,7 @@ test("after a trap in load, every call that needs the engine throws an EngineLos
     const later = {
       load: outcome(() => comb.load({ ...graph, edges: [] })),
       updateNode: outcome(() => comb.updateNode("n0", { title: "x" })),
+      addNode: outcome(() => comb.addNode({ ...graph.nodes[0]!, id: "b" })),
       fitView: outcome(() => comb.fitView()),
       setViewport: outcome(() => comb.setViewport({ x: 0, y: 0, scale: 1 })),
     };
@@ -92,7 +93,7 @@ test("after a trap in load, every call that needs the engine throws an EngineLos
   });
   expect(outcomes).toEqual({
     trap: LOST,
-    later: { load: LOST, updateNode: LOST, fitView: LOST, setViewport: LOST },
+    later: { load: LOST, updateNode: LOST, addNode: LOST, fitView: LOST, setViewport: LOST },
     created: LOST,
     kept: { viewport: "ok", onSelectionChange: "ok", unsubscribe: "ok" },
   });

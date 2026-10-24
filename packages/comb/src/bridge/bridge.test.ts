@@ -5,6 +5,7 @@ import {
   type GraphBatch,
   type GraphSnapshot,
   type NodePatch,
+  type NodeSnapshot,
   type PlainPatch,
 } from ".";
 
@@ -35,6 +36,7 @@ const edge = (id: string, source: string, target: string) => ({
 const graph = (nodes: GraphBatch["nodes"], edges: GraphBatch["edges"] = []) =>
   ({ nodes, edges }) as GraphSnapshot;
 const plain = (patch: NodePatch) => patch as PlainPatch;
+const added = (fields: object) => fields as NodeSnapshot;
 /** Nodes `a` and `b`. */
 const two = () => [node("a", 0, 0), node("b", 1, 1)];
 const everywhere = { minX: -1e6, minY: -1e6, maxX: 1e6, maxY: 1e6 };
@@ -76,6 +78,7 @@ describe("bridge", () => {
     const calls: [string, () => unknown][] = [
       ["loadGraph", () => bridge.loadGraph(graph([node("a", 1, 2), node("b", 3, 4)]))],
       ["checkNodePatch", () => bridge.checkNodePatch("a", plain({ title: "A" }))],
+      ["addNode", () => bridge.addNode(added(node("c", 5, 6)))],
       ["translate", () => bridge.translate(new Uint32Array([0]), 0, 0)],
       ["positions", () => bridge.positions()],
       ["query", () => bridge.query(everywhere, "near", 4, 0)],
@@ -410,6 +413,46 @@ describe("bridge mesh and hit", () => {
     expect(bridge.hit(300, 10)).toBeUndefined();
     bridge.translate(new Uint32Array([2]), -440, 0);
     expect(bridge.hit(70, 10)).toBe(2);
+  });
+});
+
+describe("bridge additions", () => {
+  test("an added node takes the next slot, is found where it was placed, and drawn and hit on top", () => {
+    // Verifies: ADR-0022
+    bridge.loadGraph(graph([node("a", 0, 0), node("b", 40, 20)]));
+    expect(bridge.addNode(added(node("c", 20, 10)))).toBe(2);
+    expect([...bridge.positions()]).toEqual([0, 0, 40, 20, 20, 10]);
+    const visible = bridge.query({ minX: 0, minY: 0, maxX: 200, maxY: 200 }, "near", 1, 0);
+    expect([...visible.nodes]).toEqual([0, 1, 2]);
+    // (45, 25) lies in all three; c, added last, is on top.
+    expect(bridge.hit(45, 25)).toBe(2);
+  });
+
+  test("an added node the bridge refuses comes back as a typed error, the graph as it was", () => {
+    // Verifies: ADR-0026, Q-7
+    bridge.loadGraph(graph([node("a", 0, 0)]));
+    const refusals = [
+      added({ ...node("c", 0, 0), x: Number.POSITIVE_INFINITY }),
+      added({ ...node("c", 0, 0), title: 5 }),
+      added({ ...node("c", 0, 0), height: false }),
+      added({ ...node("c", 0, 0), id: "x".repeat(257) }),
+      false as unknown as NodeSnapshot,
+    ].map((refused) => {
+      try {
+        bridge.addNode(refused);
+        return "accepted";
+      } catch (error) {
+        return error;
+      }
+    });
+    expect(refusals).toEqual([
+      { kind: "nonFiniteCoordinate", node: "c" },
+      { kind: "invalidTitle", node: "c" },
+      { kind: "invalidField", list: "nodes", index: 0, id: "c", field: "height", expected: SIZE },
+      { kind: "idTooLong", list: "nodes", index: 0, field: "id", limit: 256 },
+      expect.objectContaining({ kind: "malformed" }),
+    ]);
+    expect([...bridge.positions()]).toEqual([0, 0]);
   });
 });
 

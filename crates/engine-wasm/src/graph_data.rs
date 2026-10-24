@@ -274,9 +274,11 @@ pub enum GraphList {
     Edges,
 }
 
-/// Why Comb refused graph data in `load` or `updateNode` (Q-7): what the bridge refused, what the
-/// shell could not read, and a node `updateNode` names that the graph does not hold. The shell
-/// builds the last two as values of this type; no kind of it is written by hand in TypeScript.
+/// Why Comb refused graph data in `load`, `updateNode`, or `addNode` (Q-7): what the bridge
+/// refused, what the shell could not read, and what only the shell's map from identifiers to slots
+/// knows, a node `updateNode` names that the graph does not hold and one `addNode` adds that it
+/// holds already (ADR-0026). The shell builds the last three as values of this type; no kind of it
+/// is written by hand in TypeScript.
 /// `query` refuses a rectangle without its shape as malformed too, which no host application
 /// meets.
 #[derive(Tsify, Serialize, Deserialize, Debug, PartialEq)]
@@ -314,7 +316,8 @@ pub enum GraphDataProblem {
     /// A patch of a node holds a field other than its title.
     #[serde(rename_all = "camelCase")]
     UnknownPatchField { node: String, field: String },
-    /// Two nodes share an identifier.
+    /// Two nodes share an identifier, in a load, or `addNode` adds a node of an identifier the
+    /// graph holds already.
     #[serde(rename_all = "camelCase")]
     DuplicateNode { node: String },
     /// Two edges share an identifier.
@@ -341,7 +344,8 @@ pub enum GraphDataProblem {
     /// An edge's dash is not positive or its gap negative, or either is not finite.
     #[serde(rename_all = "camelCase")]
     InvalidDash { edge: String },
-    /// A graph holds more than `limit` nodes or edges; `list` names which.
+    /// A graph holds more than `limit` nodes or edges, loaded or after an addition; `list` names
+    /// which.
     #[serde(rename_all = "camelCase")]
     TooMany { list: String, limit: u32 },
     /// An identifier is longer than `limit` UTF-16 code units: `field` (`id`, `source`, or
@@ -539,40 +543,47 @@ struct Nodes<'a> {
     slots: HashMap<&'a str, u32>,
 }
 
+/// The position and size of a node as the engine keeps them, `[x, y]` and `[width, height]`, or
+/// why the node was refused: a coordinate or a size `f32` cannot hold, or a title that is no text
+/// or too long.
+fn checked_node(node: &Node) -> Result<([f32; 2], [f32; 2]), GraphDataProblem> {
+    let named = || node.id.to_owned();
+    // Checked as the engine keeps them: a number beyond `f32` is as infinite as infinity.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "checked as f32 below, so that what f32 cannot hold is refused"
+    )]
+    let [x, y, width, height] = [node.x, node.y, node.width, node.height].map(|v| v as f32);
+    if !x.is_finite() || !y.is_finite() {
+        return Err(GraphDataProblem::NonFiniteCoordinate { node: named() });
+    }
+    if !(width.is_finite() && height.is_finite()) || width < 0.0 || height < 0.0 {
+        return Err(GraphDataProblem::InvalidSize { node: named() });
+    }
+    match node.title_length {
+        None => Err(GraphDataProblem::InvalidTitle { node: named() }),
+        Some(length) if length > MAX_TEXT => Err(GraphDataProblem::TitleTooLong {
+            node: named(),
+            limit: TEXT_LIMIT,
+        }),
+        Some(_) => Ok(([x, y], [width, height])),
+    }
+}
+
 /// Checks the nodes and flattens them, or names the first offending node.
 fn nodes_of<'a>(batch: &Batch<'a>) -> Result<Nodes<'a>, GraphDataProblem> {
     let mut slots = HashMap::with_capacity(batch.nodes.len());
     let mut positions = Vec::with_capacity(batch.nodes.len() * 2);
     let mut sizes = Vec::with_capacity(batch.nodes.len() * 2);
     for (index, node) in batch.nodes.iter().enumerate() {
-        let named = || node.id.to_owned();
-        // Checked as the engine keeps them: a number beyond `f32` is as infinite as infinity.
-        #[expect(
-            clippy::cast_possible_truncation,
-            reason = "checked as f32 below, so that what f32 cannot hold is refused"
-        )]
-        let [x, y, width, height] = [node.x, node.y, node.width, node.height].map(|v| v as f32);
-        if !x.is_finite() || !y.is_finite() {
-            return Err(GraphDataProblem::NonFiniteCoordinate { node: named() });
-        }
-        if !(width.is_finite() && height.is_finite()) || width < 0.0 || height < 0.0 {
-            return Err(GraphDataProblem::InvalidSize { node: named() });
-        }
-        match node.title_length {
-            None => return Err(GraphDataProblem::InvalidTitle { node: named() }),
-            Some(length) if length > MAX_TEXT => {
-                return Err(GraphDataProblem::TitleTooLong {
-                    node: named(),
-                    limit: TEXT_LIMIT,
-                });
-            }
-            Some(_) => {}
-        }
+        let (position, size) = checked_node(node)?;
         if slots.insert(node.id, slot(index)?).is_some() {
-            return Err(GraphDataProblem::DuplicateNode { node: named() });
+            return Err(GraphDataProblem::DuplicateNode {
+                node: node.id.to_owned(),
+            });
         }
-        positions.extend([x, y]);
-        sizes.extend([width, height]);
+        positions.extend(position);
+        sizes.extend(size);
     }
     Ok(Nodes {
         positions,
@@ -674,21 +685,27 @@ fn edges_of(batch: &Batch, slots: &HashMap<&str, u32>) -> Result<Vec<EdgeSpec>, 
         .collect()
 }
 
+/// The length of the identifier `field` of the item at `index` of `list`, or its refusal where it
+/// is longer than `MAX_ID`.
+fn id_length(list: &str, index: usize, field: &str, id: &str) -> Result<usize, GraphDataProblem> {
+    let length = utf16_length(id);
+    if length > MAX_ID {
+        return Err(GraphDataProblem::IdTooLong {
+            list: list.to_owned(),
+            index: slot(index)?,
+            field: field.to_owned(),
+            limit: ID_LIMIT,
+        });
+    }
+    Ok(length)
+}
+
 /// Checks the length of every identifier of a batch, and of all of them together.
 fn ids_of(batch: &Batch) -> Result<(), GraphDataProblem> {
     let mut units = 0;
     let mut add = |list: &str, index: usize, field: &str, id: &str| {
-        let length = utf16_length(id);
-        if length > MAX_ID {
-            return Err(GraphDataProblem::IdTooLong {
-                list: list.to_owned(),
-                index: slot(index)?,
-                field: field.to_owned(),
-                limit: ID_LIMIT,
-            });
-        }
-        units += length;
-        Ok(())
+        units += id_length(list, index, field, id)?;
+        Ok::<(), GraphDataProblem>(())
     };
     for (index, node) in batch.nodes.iter().enumerate() {
         add("nodes", index, "id", node.id)?;
@@ -710,6 +727,19 @@ pub(crate) fn graph_of(batch: &GraphBatch) -> Result<Graph, GraphDataProblem> {
     let nodes = nodes_of(&batch)?;
     let edges = edges_of(&batch, &nodes.slots)?;
     Ok(Graph::new(nodes.positions, nodes.sizes, edges)?)
+}
+
+/// Checks the node `addNode` hands over as a load checks a node, the only one of its batch at
+/// index 0, and adds it to `graph`, whose nodes in use stay within `MAX_ITEMS`; returns the slot
+/// the engine chose. A refused node leaves the graph as it was. That the graph holds no node of
+/// its identifier is `api`'s to check, against the map only it keeps (ADR-0026).
+pub(crate) fn add_node_to(graph: &mut Graph, node: &NodeInput) -> Result<u32, GraphDataProblem> {
+    let nodes = f64::from(graph.nodes_in_use()) + 1.0;
+    check_graph_size(nodes, 0.0)?;
+    let node = node_of(0, node)?;
+    id_length("nodes", 0, "id", node.id)?;
+    let ([x, y], [width, height]) = checked_node(&node)?;
+    Ok(graph.add_node(x, y, width, height)?)
 }
 
 /// The attributes `updateNode` changes on a node, by name: only its title, a string. Read from a
@@ -1186,5 +1216,97 @@ pub(crate) mod tests {
         let data = batch_of(&data).unwrap();
         let edges = edges_of(&data, &nodes_of(&data).unwrap().slots).unwrap();
         assert_eq!((edges[0].source, edges[0].target), (2, 0));
+    }
+
+    /// The node of `batch` at `(x, y)` with `change` made to it.
+    fn added(x: f64, y: f64, change: impl FnOnce(&mut NodeInput)) -> NodeInput {
+        let mut node = batch(&[("n", x, y)], &[]).nodes.remove(0);
+        change(&mut node);
+        node
+    }
+
+    #[test]
+    fn an_added_node_takes_the_next_slot_where_it_was_placed() {
+        // Verifies: ADR-0022
+        let mut graph = graph_of(&batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[])).unwrap();
+        assert_eq!(add_node_to(&mut graph, &added(40.0, 50.0, |_| {})), Ok(2));
+        assert_eq!(&graph.positions()[4..], [40.0, 50.0]);
+        // On an engine that never loaded a graph too.
+        let mut empty = Graph::default();
+        assert_eq!(add_node_to(&mut empty, &added(1.0, 2.0, |_| {})), Ok(0));
+        assert_eq!(empty.positions(), [1.0, 2.0]);
+    }
+
+    #[test]
+    fn an_added_node_is_refused_as_a_load_refuses_it_and_the_graph_kept() {
+        // Verifies: ADR-0026, Q-7
+        let named = || "n".to_owned();
+        let cases: Vec<(NodeInput, GraphDataProblem)> = vec![
+            (
+                added(f64::INFINITY, 0.0, |_| {}),
+                GraphDataProblem::NonFiniteCoordinate { node: named() },
+            ),
+            (
+                added(0.0, 1e39, |_| {}),
+                GraphDataProblem::NonFiniteCoordinate { node: named() },
+            ),
+            (
+                added(0.0, 0.0, |n| n.width = (-1.0).into()),
+                GraphDataProblem::InvalidSize { node: named() },
+            ),
+            (
+                added(0.0, 0.0, |n| n.title_length = None),
+                GraphDataProblem::InvalidTitle { node: named() },
+            ),
+            (
+                added(0.0, 0.0, |n| n.title_length = Some(MAX_TEXT + 1)),
+                GraphDataProblem::TitleTooLong {
+                    node: named(),
+                    limit: TEXT_LIMIT,
+                },
+            ),
+            (
+                added(0.0, 0.0, |n| n.id = "x".repeat(MAX_ID + 1).into()),
+                GraphDataProblem::IdTooLong {
+                    list: "nodes".into(),
+                    index: 0,
+                    field: "id".into(),
+                    limit: ID_LIMIT,
+                },
+            ),
+            (
+                added(0.0, 0.0, |n| n.x = Field(None)),
+                GraphDataProblem::InvalidField {
+                    list: GraphList::Nodes,
+                    index: 0,
+                    id: Some(named()),
+                    field: "x".into(),
+                    expected: A_NUMBER.into(),
+                },
+            ),
+        ];
+        for (node, problem) in cases {
+            let mut graph = graph_of(&batch(&[("a", 0.0, 0.0)], &[])).unwrap();
+            assert_eq!(add_node_to(&mut graph, &node), Err(problem));
+            assert_eq!(graph.positions(), [0.0, 0.0]);
+            assert_eq!(graph.nodes_in_use(), 1);
+        }
+    }
+
+    #[test]
+    fn a_node_added_to_a_graph_at_the_limit_of_a_load_is_refused() {
+        // Verifies: ADR-0026, Q-7
+        let count = MAX_ITEMS as usize;
+        let positions = (0..count).flat_map(|i| [i as f32, 0.0]).collect();
+        let mut graph = Graph::new(positions, vec![1.0; count * 2], Vec::new()).unwrap();
+        assert_eq!(
+            add_node_to(&mut graph, &added(0.0, 0.0, |_| {})),
+            Err(GraphDataProblem::TooMany {
+                list: "nodes".into(),
+                limit: MAX_ITEMS,
+            })
+        );
+        assert_eq!(graph.nodes_in_use(), MAX_ITEMS);
+        assert_eq!(graph.positions().len(), count * 2);
     }
 }

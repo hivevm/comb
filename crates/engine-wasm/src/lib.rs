@@ -31,7 +31,9 @@ pub use graph_data::{
     MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_TEXT, NodeInput, NodePatch, Pair, Text,
 };
 
-use graph_data::{ID_LIMIT, TEXT_LIMIT, graph_of, malformed, patch_of, reading, slot, unshaped};
+use graph_data::{
+    ID_LIMIT, TEXT_LIMIT, add_node_to, graph_of, malformed, patch_of, reading, slot, unshaped,
+};
 
 /// Why the engine refused a move of nodes: the shell's own mistake, never one of graph data, so
 /// that a host application never meets it.
@@ -227,6 +229,16 @@ impl Engine {
         self.graph = graph_of(&batch)?;
         self.visible = Visible::default();
         slot(batch.nodes.len())
+    }
+
+    /// Checks the node `addNode` hands over as a load checks a node and adds it, drawn and hit
+    /// above every other node, and returns the slot the engine chose for it: the free slot freed
+    /// last, or a new one after the highest (ADR-0022). A refused node leaves the graph as it was.
+    #[wasm_bindgen(js_name = addNode)]
+    pub fn add_node(&mut self, node: Ts<NodeInput>) -> Result<u32, GraphDataProblem> {
+        trap::spring();
+        let node = reading(|| node.to_rust()).map_err(unshaped)?;
+        add_node_to(&mut self.graph, &node)
     }
 
     /// Moves the nodes in `slots` by `(dx, dy)`, their edges with them.

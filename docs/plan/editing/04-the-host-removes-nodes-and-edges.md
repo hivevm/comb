@@ -29,6 +29,10 @@ selection of a removed item is cleared.
       `GraphDataError` of kind `unknownNode` or `unknownEdge` is thrown and nothing is removed
       (Q-7).
 - [ ] Given the selected node, when the host removes it, then `onSelectionChange` reports `null`.
+- [ ] Given free slots, when the index is built again, then it covers only the slots in use, its
+      extent and cell side and the counts of its rule among them (ADR-0022): `Graph::index`
+      fills the grid over every node slot until now. Renumbering ranks marks free slots in a
+      bitmap rather than searching the free list per slot.
 - [ ] Broken once: with removals left in the grid, the property test fails.
 
 ## Read first
