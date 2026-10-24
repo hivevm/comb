@@ -9,6 +9,7 @@ export {
 export type {
   Comb,
   CombOptions,
+  Deletion,
   EngineSource,
   EngineSourceProblem,
   GraphChange,

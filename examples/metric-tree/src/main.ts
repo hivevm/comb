@@ -2,6 +2,7 @@
 import {
   createComb,
   type Comb,
+  type Deletion,
   type EdgeData,
   type EdgePatch,
   type EngineSource,
@@ -46,6 +47,9 @@ declare global {
      *  engine. */
     engineUrl: string;
     loadReport: Promise<LoadReport>;
+    /** The veto of the user's deletions a browser test sets; without one, every deletion is
+     *  allowed. Its result is handed to Comb as it is. */
+    canDelete?: (deletion: Deletion) => unknown;
     /** Loads `graph` as the example's own, which its sidebar edits, for a browser test. */
     useGraph: (graph: GraphData) => void;
     /** What the canvas draws, from comb/testing, for the browser tests and the benchmark. */
@@ -95,6 +99,7 @@ const fallback = query.get("fallback") === "canvas";
 const comb = await createComb(element("canvas"), {
   engine: form ? await engineAs(form) : fetch(engineUrl),
   allowCanvasFallback: fallback,
+  canDelete: (deletion) => (window.canDelete ? window.canDelete(deletion) : true) as boolean,
 });
 const copies = element<HTMLSelectElement>("copies");
 const count = element("count");
@@ -230,10 +235,16 @@ canvas.addEventListener("drop", (event) => {
   event.preventDefault();
   drop(event.dataTransfer?.getData(PALETTE_TYPE) ?? "", event.clientX, event.clientY);
 });
-// The example keeps its own copy of the graph for the sidebar, from what Comb tells it.
+// The example keeps its own copy of the graph for the sidebar, from what Comb tells it: a node
+// dropped from the palette, and what the user or the host removed.
 comb.onChange((change) => {
-  if (change.kind !== "nodeAdded") return;
-  graph.nodes.push({ ...change.node });
+  if (change.kind === "nodeAdded") graph.nodes.push({ ...change.node });
+  else if (change.kind === "nodesRemoved" || change.kind === "edgesRemoved") {
+    const nodes = new Set(change.kind === "nodesRemoved" ? change.nodes : []);
+    const edges = new Set(change.edges);
+    graph.nodes = graph.nodes.filter(({ id }) => !nodes.has(id));
+    graph.edges = graph.edges.filter(({ id }) => !edges.has(id));
+  } else return;
   counted();
 });
 comb.onSelectionChange(show);

@@ -7,6 +7,8 @@ import { EngineLostError, refuseIfLost, type Bridge, type Hit } from "../bridge"
 import type { GraphStore } from "../store";
 import { levelAt, panBy, toWorld, zoomAt } from "./viewport";
 
+export { attachDeletion, type CanDelete, type Deletion } from "./delete";
+
 const WHEEL_STEP = 1.0015;
 
 /** The cursor over what a press would hit: grab a node, select an edge, or nothing. */

@@ -313,11 +313,10 @@ impl Graph {
         self.incident = incident;
     }
 
-    /// Removes the nodes in `slots` and every edge at them, and returns the slots of those edges
-    /// in ascending order. Their slots go onto the free lists, the one named last freed last, and
-    /// they leave the index; nothing else moves (ADR-0022). A slot that holds no node refuses the
-    /// call, which then changes nothing.
-    pub fn remove_nodes(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
+    /// The slots of the edges at the nodes in `slots`, each once, in ascending order: what a
+    /// removal of those nodes would take along, named before anything is removed (ADR-0022). A
+    /// slot that holds no node refuses the call.
+    pub fn edges_at(&self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
         if let Some(&slot) = slots.iter().find(|&&s| !self.holds_node(s)) {
             return Err(SlotError::NoNode { slot });
         }
@@ -327,6 +326,15 @@ impl Graph {
             .collect();
         edges.sort_unstable();
         edges.dedup();
+        Ok(edges)
+    }
+
+    /// Removes the nodes in `slots` and every edge at them, and returns the slots of those edges
+    /// in ascending order. Their slots go onto the free lists, the one named last freed last, and
+    /// they leave the index; nothing else moves (ADR-0022). A slot that holds no node refuses the
+    /// call, which then changes nothing.
+    pub fn remove_nodes(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
+        let edges = self.edges_at(slots)?;
         // The nodes go first, so that the edges leave only the lists of the nodes that stay.
         for &slot in slots {
             let i = slot as usize;
@@ -1366,7 +1374,9 @@ mod tests {
                     let before: Vec<u32> = (0..graph.edge_slots)
                         .filter(|&e| graph.holds_edge(e))
                         .collect();
+                    let named = graph.edges_at(&removed[..count]).unwrap();
                     let edges = graph.remove_nodes(&removed[..count]).unwrap();
+                    assert_eq!(named, edges, "edges named before the removal");
                     let gone: Vec<u32> = before
                         .into_iter()
                         .filter(|&e| graph.ends(e).any(|end| removed[..count].contains(&end)))

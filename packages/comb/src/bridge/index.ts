@@ -149,6 +149,9 @@ export interface Bridge {
    *  ascending order (ADR-0022). Throws a `SlotError`, a mistake of the shell's, never one of
    *  graph data, the graph as it was. */
   removeNodes(slots: Uint32Array): Uint32Array;
+  /** The slots of the edges at the nodes in `slots`, in ascending order, as a removal of them
+   *  would take along, named before anything is removed (ADR-0022). Throws a `SlotError`. */
+  edgesAt(slots: Uint32Array): Uint32Array;
   /** Removes the edges in `slots`. Throws a `SlotError`, the graph as it was. */
   removeEdges(slots: Uint32Array): void;
   /** Moves the nodes in `slots`, their edges with them. Throws a `TranslateError`, a mistake of
@@ -340,6 +343,7 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
     checkNodePatch,
     removeNodes: (slots) => engine.removeNodes(slots),
     removeEdges: (slots) => engine.removeEdges(slots),
+    edgesAt: (slots) => engine.edgesAt(slots),
     translate: (slots, dx, dy) => engine.translate(slots, dx, dy),
     positions: () => f32(engine.positionsPtr(), engine.positionsLen()),
     hit: (x, y, pixel, level) => engine.hit(x, y, pixel, LEVELS[level]),

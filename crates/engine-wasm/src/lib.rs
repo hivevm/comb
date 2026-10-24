@@ -313,6 +313,15 @@ impl Engine {
         update_edge_in(&mut self.graph, slot, id, patch)
     }
 
+    /// The slots of the edges at the nodes in `slots`, in ascending order, as a removal of them
+    /// would take along, named before anything is removed (ADR-0022). A slot that holds no node
+    /// refuses the call.
+    #[wasm_bindgen(js_name = edgesAt)]
+    pub fn edges_at(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
+        trap::spring();
+        Ok(self.graph.edges_at(slots)?)
+    }
+
     /// Removes the nodes in `slots` and every edge at them, and returns the slots of those edges
     /// in ascending order; the slots go onto the free lists (ADR-0022). A slot that holds no node
     /// refuses the call, which then changes nothing.

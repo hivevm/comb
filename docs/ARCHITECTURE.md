@@ -110,7 +110,8 @@ The functional core and its shell follow
   the engine chose for it, `addEdge` checks one edge as a load would, refuses one from a node to
   itself, and adds it between the node slots `api` resolved, `updateEdge` checks a patch of an
   edge's colour, dash, arrowhead, and label as a load checks those fields and restyles and re-places
-  the edge, `removeNodes` removes nodes and the edges at them and returns those edges' slots,
+  the edge, `edgesAt` names the edges at given nodes without removing anything, `removeNodes`
+  removes nodes and the edges at them and returns those edges' slots,
   `removeEdges` removes edges, `translate` moves nodes, `query` takes a rectangle, a level of
   detail, the size of a screen pixel, and how far an edge label's pill reaches from its point, and
   writes the found node slots, the edge-label slots and points (at the near level only), the found
@@ -136,7 +137,10 @@ The functional core and its shell follow
   render layer reads.
 - **Interaction** (`packages/comb/src/interaction`) — pointer and wheel input into store actions and
   engine moves: select a node on press and drag it, select an edge on press, clear the selection on
-  the empty canvas and pan, zoom around the pointer, and the cursor over what a press would hit. A
+  the empty canvas and pan, zoom around the pointer, and the cursor over what a press would hit;
+  `delete.ts` makes the canvas focusable and deletes the selection on Delete or Backspace, a node
+  with the edges the engine names at it (`edgesAt`) before anything is removed, once
+  `CombOptions.canDelete` returns `true`, recording it as the user's. A
   drag that moved its node records `nodeMoved` once, when the pointer is released on the canvas or
   outside it; a load ends a drag. The engine's `hit` says what the pointer is on, at the level of
   detail of the scale; node views and edges take no events. `viewport.ts` holds the viewport's

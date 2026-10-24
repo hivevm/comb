@@ -13,7 +13,7 @@ import {
   type GraphDataProblem,
   type Rect,
 } from "../bridge";
-import { attachInteraction, canvasPointAt } from "../interaction";
+import { attachDeletion, attachInteraction, canvasPointAt, type Deletion } from "../interaction";
 import { clampScale, fitViewport, toWorld } from "../interaction/viewport";
 import { Scene } from "../render/scene";
 import { engineOf, type EngineSource } from "./engine";
@@ -51,6 +51,7 @@ export { EngineLostError } from "../bridge";
 export { EngineSourceError } from "./engine";
 export type { EngineSource, EngineSourceProblem } from "./engine";
 export type { GraphDataProblem } from "../bridge";
+export type { Deletion } from "../interaction";
 
 /** The attributes `updateEdge` changes on an edge, as `edgeUpdated` reports them merged: its
  *  colour, arrowhead, dash pattern or none, and label or none (ADR-0023). */
@@ -130,6 +131,13 @@ export interface CombOptions {
    *  refusing: slower, Q-1 not promised, and dash patterns drawn solid (ADR-0018). Default
    *  false. */
   allowCanvasFallback?: boolean;
+  /** The veto of a deletion of the user's: called with the identifiers of every node and edge
+   *  that would go, the edges at a node among them, before anything is removed, when the user
+   *  presses Delete or Backspace on the focused canvas. Comb deletes only where it returns
+   *  `true`; an error it throws refuses the deletion and is thrown on from the key's event.
+   *  Never called for the host application's own calls. Without it, a deletion is allowed
+   *  (ADR-0023). */
+  canDelete?: (deletion: Deletion) => boolean;
 }
 
 /** Once the engine is lost for the page, `load`, `updateNode`, `addNode`, `fitView`, and
@@ -632,6 +640,7 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
   // A larger canvas shows more of the world, so what is culled changes with its size.
   app.renderer.on("resize", frames.schedule);
   const detach = attachInteraction(app, store, bridge);
+  const detachDeletion = attachDeletion(app.canvas, store, bridge, options.canDelete);
   const lost = engineLostOf();
   const listeners = listenersOf(store, bridge);
 
@@ -659,6 +668,7 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
       unsubscribe();
       app.renderer.off("resize", frames.schedule);
       detach();
+      detachDeletion();
       app.destroy(true, { children: true });
     },
   };
