@@ -1,7 +1,7 @@
 # ADR-0009: A pure Rust engine as functional core, and a TypeScript shell around it
 
-- **Status:** 🟡 proposed
-- **Date:** 2026-10-17
+- **Status:** 🟢 accepted
+- **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** the directory layout, `crates/`, `packages/`, `examples/`, and every import between their modules
 

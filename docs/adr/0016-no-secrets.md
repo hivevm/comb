@@ -1,7 +1,7 @@
 # ADR-0016: The repository holds no secrets and relies on GitHub's baseline
 
-- **Status:** 🟡 proposed
-- **Date:** 2026-10-17
+- **Status:** 🟢 accepted
+- **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** the repository, its CI workflows, and the repository settings
 

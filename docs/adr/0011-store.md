@@ -1,7 +1,7 @@
 # ADR-0011: The graph's structure lives in a vanilla Zustand store, its coordinates in the engine's buffers
 
-- **Status:** 🟡 proposed
-- **Date:** 2026-10-17
+- **Status:** 🟢 accepted
+- **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `packages/comb/src/store/`, and every module that reads or writes the state of the graph or the viewport
 

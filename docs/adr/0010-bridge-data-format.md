@@ -1,7 +1,7 @@
 # ADR-0010: Structured data crosses the bridge through serde-wasm-bindgen with generated types, coordinate streams through typed-array views on engine-owned buffers
 
-- **Status:** 🟡 proposed
-- **Date:** 2026-10-17
+- **Status:** 🟢 accepted
+- **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/engine-wasm/`, `packages/comb/src/bridge/`, and every value that crosses between them
 

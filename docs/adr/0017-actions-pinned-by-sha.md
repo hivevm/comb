@@ -1,7 +1,7 @@
 # ADR-0017: Workflows reference actions by full commit SHA, kept current by Dependabot
 
-- **Status:** 🟡 proposed
-- **Date:** 2026-10-17
+- **Status:** 🟢 accepted
+- **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** every `uses:` line under `.github/workflows/`, `.github/dependabot.yml`, `scripts/check-all.sh`, and the `sensors` job of `checks.yml`
 

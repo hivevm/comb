@@ -1,7 +1,7 @@
 # ADR-0018: Comb draws with WebGL2, and on Canvas 2D only where the host application opts in
 
-- **Status:** 🟡 proposed
-- **Date:** 2026-10-18
+- **Status:** 🟢 accepted
+- **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `createComb` and `CombOptions` in `packages/comb/src/api/`, the error types `comb` exports, and the edges layer in `packages/comb/src/render/`
 
