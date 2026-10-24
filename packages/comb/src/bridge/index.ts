@@ -193,6 +193,13 @@ export interface Bridge {
  *  production build replaces it by `production`, so the bundle carries none of it. */
 export const TEST_MODE = import.meta.env.MODE === "test" || import.meta.env.NODE_ENV === "test";
 
+/** The mark of each seam of test mode in a bundle that carries it: of `detaching`, a word of its
+ *  error's message; of the trap, the name of the engine's export that arms it, which `wrap` looks
+ *  up. scripts/check-bundle.sh reads both here, fails a shipped bundle that carries either, and
+ *  fails unless it finds both in the library built in test mode and the trap's in the engine. */
+const DETACHING_MARK = "comb-test-mode:detaching";
+const TRAP_EXPORT = "comb_test_mode_trap";
+
 /** Each call of `bridge` passed through `around`. */
 function each(
   bridge: Bridge,
@@ -204,14 +211,13 @@ function each(
 
 /** `bridge` with the engine's memory grown by a page before each of its calls, so that a view
  *  kept across a call is detached and reads empty in tests, not only when memory happens to grow
- *  (ADR-0010). The message of its error is how scripts/check-bundle.sh tells that a bundle
- *  carries it. */
+ *  (ADR-0010). The message of its error carries `DETACHING_MARK`. */
 function detaching(bridge: Bridge, memory: WebAssembly.Memory): Bridge {
   return each(bridge, (call) => (...args) => {
     try {
       memory.grow(1);
     } catch (cause) {
-      throw new Error("Comb test mode: the engine's memory cannot grow further", { cause });
+      throw new Error(`${DETACHING_MARK}: the engine's memory cannot grow further`, { cause });
     }
     return call(...args);
   });
@@ -324,7 +330,7 @@ let trapExport: (() => void) | undefined;
 export function trapNextCall(): void {
   if (!TEST_MODE) throw new Error("comb: the engine traps on demand in test mode only");
   if (!trapExport) {
-    throw new Error("Comb test mode: the engine carries no trap; run `bun run build:engine`");
+    throw new Error("comb: the engine carries no trap in test mode; run `bun run build:engine`");
   }
   trapExport();
 }
@@ -332,7 +338,7 @@ export function trapNextCall(): void {
 function wrap(exports: InitOutput): Bridge {
   const { memory } = exports;
   if (TEST_MODE) {
-    const trap = (exports as unknown as Record<string, unknown>)["comb_test_mode_trap"];
+    const trap = (exports as unknown as Record<string, unknown>)[TRAP_EXPORT];
     trapExport = typeof trap === "function" ? (trap as () => void) : undefined;
   }
   const bridge = engineBridge(memory);

@@ -15,15 +15,16 @@
 # as a data URL or as any base64 that begins with the WebAssembly magic number (`AGFzbQ`).
 # Verifies: ADR-0019
 #
-# Nor may the bundle carry the bridge's test mode (ADR-0010), which only tests run in: a production
-# build leaves it out, and its error message in a .js file shows that it did not. Without
-# arguments the check also builds the library in Vite's test mode and fails unless it tells that
-# bundle by the message, so a change to the message turns it red rather than blind.
-#
-# Nor may it carry the trap the bridge crate exports in test mode (ADR-0021): an engine file that
-# names the export `comb_test_mode_trap` fails. Without arguments the check also fails unless it
-# finds that name in the engine built in test mode, packages/comb/wasm/test-mode/engine_bg.wasm,
-# so a renamed export turns it red rather than blind.
+# Nor may the bundle carry either seam of the bridge's test mode, which only tests run in: the
+# memory grown before every call of the engine (`detaching`, ADR-0010), and the trap the engine
+# exports in test mode, which the bridge looks up (ADR-0021). Each has a mark of its own, which
+# the check reads from packages/comb/src/bridge/index.ts, `DETACHING_MARK` and `TRAP_EXPORT`: a
+# .js file that carries either, or a file that names the trap's export, fails, naming the seam.
+# Without arguments the check also builds the library in Vite's test mode and fails unless it
+# finds each mark in that bundle, and the trap's in the engine built in test mode,
+# packages/comb/wasm/test-mode/engine_bg.wasm, so a changed mark turns it red rather than blind;
+# and it fails where the glue generated for that engine, wasm/test-mode/engine.js, differs from
+# the production engine's, wasm/engine.js, which the example hands over beside it.
 # Verifies: ADR-0021
 #
 # Without arguments it measures the engine of packages/comb/wasm/, so it first runs
@@ -31,21 +32,42 @@
 #
 # Usage:
 #     scripts/check-bundle.sh [directory [budget in bytes]]
-# Exit code 0 when the bundle is under the budget, 1 otherwise.
+# Exit code 0 when the bundle is under the budget, 1 otherwise. For its self-test, a run without
+# arguments takes the repository root from CHECK_BUNDLE_ROOT, and the commands that build the
+# library and the library in test mode, run there, from CHECK_BUNDLE_BUILD and
+# CHECK_BUNDLE_TEST_BUILD, the second handed the directory to build into as $1.
 
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="${CHECK_BUNDLE_ROOT:-$SOURCE_ROOT}"
 BUDGET="${2:-300000}"
+BUILD="${CHECK_BUNDLE_BUILD:-bun run build:lib > /dev/null}"
+TEST_BUILD="${CHECK_BUNDLE_TEST_BUILD:-cd packages/comb && bunx --bun vite build --mode test --outDir \"\$1\" > /dev/null}"
+
+# mark <constant> — the string the bridge's source assigns to <constant>.
+mark() {
+  sed -n "s/^const $1 = \"\([^\"]*\)\";\$/\1/p" "$SOURCE_ROOT/packages/comb/src/bridge/index.ts" | head -n 1
+}
+DETACHING="$(mark DETACHING_MARK)"
+TRAP="$(mark TRAP_EXPORT)"
+if [[ -z "$DETACHING" || -z "$TRAP" ]]; then
+  echo "Bundle check FAILED: packages/comb/src/bridge/index.ts holds no DETACHING_MARK or TRAP_EXPORT." >&2
+  exit 1
+fi
 
 files=()
 if (($# == 0)); then
   bash "$ROOT/scripts/check-engine.sh" || exit 1
-  (cd "$ROOT" && bun run build:lib > /dev/null) || { echo "Bundle check: the build failed." >&2; exit 1; }
+  (cd "$ROOT" && bash -c "$BUILD") || { echo "Bundle check: the build failed." >&2; exit 1; }
   dir="$ROOT/packages/comb/dist"
   package="$ROOT/packages/comb"
   engine="$(cd "$package" && bun -e 'console.log(require("./package.json").exports["./engine.wasm"] ?? "")')"
-  [[ -n "$engine" && -f "$package/$engine" ]] && files+=("$package/$engine")
+  if [[ -z "$engine" || ! -f "$package/$engine" ]]; then
+    echo "Bundle check FAILED: packages/comb/package.json exports no engine file as ./engine.wasm that exists (ADR-0019)." >&2
+    exit 1
+  fi
+  files+=("$package/$engine")
 else
   dir="$1"
 fi
@@ -79,20 +101,20 @@ if ((wasm == 0)); then
   echo "Bundle check FAILED: no engine file, no .wasm among the files measured (Q-3)." >&2
   exit 1
 fi
-if grep -rqs --include='*.js' 'Comb test mode' "$dir"; then
-  echo "Bundle check FAILED: the bundle carries the bridge's test mode (ADR-0010)." >&2
+if grep -rqsF --include='*.js' "$DETACHING" "$dir"; then
+  echo "Bundle check FAILED: the bundle carries the test mode's seam \`detaching\` (ADR-0010)." >&2
   exit 1
 fi
 # carries_trap <file>... — whether any of the files names the export of the engine's trap.
 carries_trap() {
   local file
   for file in "$@"; do
-    grep -qsaF 'comb_test_mode_trap' "$file" && return 0
+    grep -qsaF "$TRAP" "$file" && return 0
   done
   return 1
 }
 if carries_trap "${files[@]}"; then
-  echo "Bundle check FAILED: the bundle carries the engine's trap of test mode (ADR-0021)." >&2
+  echo "Bundle check FAILED: the bundle carries the test mode's seam, the engine's trap (ADR-0021)." >&2
   exit 1
 fi
 if ((total >= BUDGET)); then
@@ -102,14 +124,23 @@ fi
 if (($# == 0)); then
   testing="$(mktemp -d)"
   trap 'rm -rf "$testing"' EXIT
-  (cd "$ROOT/packages/comb" && bunx --bun vite build --mode test --outDir "$testing" > /dev/null) \
+  (cd "$ROOT" && bash -c "$TEST_BUILD" _ "$testing") \
     || { echo "Bundle check: the build in test mode failed." >&2; exit 1; }
-  if ! grep -rqs --include='*.js' 'Comb test mode' "$testing"; then
-    echo "Bundle check FAILED: it does not recognise the library built in test mode (ADR-0010)." >&2
+  if ! grep -rqsF --include='*.js' "$DETACHING" "$testing"; then
+    echo "Bundle check FAILED: it does not recognise \`detaching\` in the library built in test mode (ADR-0010)." >&2
+    exit 1
+  fi
+  mapfile -t built < <(find "$testing" -type f -name '*.js')
+  if ! carries_trap "${built[@]}"; then
+    echo "Bundle check FAILED: it does not recognise the trap in the library built in test mode (ADR-0021)." >&2
     exit 1
   fi
   if ! carries_trap "$package/wasm/test-mode/engine_bg.wasm"; then
     echo "Bundle check FAILED: it does not recognise the engine built in test mode (ADR-0021)." >&2
+    exit 1
+  fi
+  if ! cmp -s "$package/wasm/engine.js" "$package/wasm/test-mode/engine.js"; then
+    echo "Bundle check FAILED: wasm/test-mode/engine.js differs from wasm/engine.js, the glue the example hands the engine built in test mode over with (ADR-0021)." >&2
     exit 1
   fi
 fi

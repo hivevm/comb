@@ -136,8 +136,10 @@ test(
   "the built example, under the policy, loads, pans, and zooms without a violation or a request of Comb's",
   { tag: "@built" },
   async ({ page }) => {
-    // Verifies: Q-6, ADR-0019, ADR-0020
+    // Verifies: Q-6, ADR-0019, ADR-0020, ADR-0010
     const { policy, made } = await loadPanZoom(page);
+    // The production build, which the benchmark measures too, runs no seam of test mode.
+    expect(await page.evaluate(() => window.testMode())).toBe(false);
     expect(policy).toBe(POLICY);
     // The bundler puts Comb's code in the example's entry chunk, so a script does not tell whose
     // code made a request; the requests themselves do. Beyond the document, the chunks the page

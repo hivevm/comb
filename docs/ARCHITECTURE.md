@@ -378,9 +378,13 @@ for a method or property of the `Comb` interface, an option of `CombOptions`, or
 constant `comb/testing` exports (ADR-0001), and where it reads no names from one of those sources.
 `scripts/check-bundle.sh` builds the library and fails when its gzipped JavaScript and the engine
 file reach the 300 kB of Q-3, when no engine file is measured, when the JavaScript inlines the
-engine (ADR-0019), and when the JavaScript carries the bridge's test mode or the engine file the
-trap's export (ADR-0010, ADR-0021); it fails too when it does not recognise either in the library
-built in test mode and the engine of `packages/comb/wasm/test-mode/`.
+engine (ADR-0019), and when the bundle carries either seam of the bridge's test mode, each by a mark
+of its own the bridge's source names once, `DETACHING_MARK` in the message of `detaching` and
+`TRAP_EXPORT`, the name of the trap's export (ADR-0010, ADR-0021); it fails too when it does not
+recognise each in the library built in test mode, and the trap in the engine of
+`packages/comb/wasm/test-mode/`, and when that engine's generated glue differs from the production
+engine's, which the example hands it over with. The benchmark and the browser test of the built
+example fail where `testMode()` says the build runs the bridge in test mode.
 `scripts/check-dependencies.sh` fails on a lockfile of another package manager beside `bun.lock`
 (ADR-0008), on tsify's default or `json` features or `serde_json` in the bridge crate (ADR-0010), in
 whatever form the entry takes, and on a listed state library other than zustand in the library's
