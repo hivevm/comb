@@ -132,18 +132,20 @@ comb.onChange((change) => {
 comb.addNode({ id: "c", title: "Churned users", x: 640, y: 0, width: 220, height: 64 });
 ```
 
-`addNode` adds one node at its `x` and `y` without a load, drawn above every node it overlaps.
-For a node dropped from the host application's palette, `comb.worldPointAt(event.clientX,
-event.clientY)` returns the world point under the drop; Comb handles no drag and drop itself, and
-`worldPointAt` throws a `RangeError` on a coordinate that is not finite.
-`onChange` tells every change of the graph, a `GraphChange` that `comb` exports, typed by its
-`kind` and by `by`, `"user"` or `"host"`: `loaded` after `load`, `nodeAdded` with the node as Comb
-took it after `addNode`, and `nodeUpdated` with the merged patch after `updateNode`. Each arrives
-before the call that made it returns, and before `onSelectionChange` reports a selection the
-change cleared; `onChange` returns the function that removes the listener. A change a listener
-makes reaches every listener after the change being delivered, so that each hears the changes in
-the order made. A listener that throws keeps no other from being told; once all are told, its
-error is thrown from the call that made the change, which the graph holds all the same.
+`addNode` adds one node at its `x` and `y` without a load, drawn above every node it overlaps. For a
+node dropped from the host application's palette, `comb.worldPointAt(event.clientX, event.clientY)`
+returns the world point under the drop; Comb handles no drag and drop itself, and `worldPointAt`
+throws a `RangeError` on a coordinate that is not finite. `onChange` tells every change of the
+graph, a `GraphChange` that `comb` exports, typed by its `kind` and by `by`, `"user"` or `"host"`:
+`loaded` after `load`, `nodeAdded` with the node as Comb took it after `addNode`, `nodeUpdated` with
+the merged patch after `updateNode`, and `nodeMoved` with where the node lies, once, when the user
+releases a node dragged, not per frame and not for a press that moved nothing. Each arrives before
+the call or input event that made it returns, and before `onSelectionChange` reports a selection the
+change cleared; `onChange` returns the function that removes the listener. A change a listener makes
+reaches every listener after the change being delivered, so that each hears the changes in the order
+made. A listener that throws keeps no other from being told; once all are told, its error is thrown
+from the call that made the change, or for a change the user made from the input event, and the
+graph holds the change all the same.
 
 `load` throws a `GraphDataError` on graph data it refuses, `updateNode` one on a node the graph does
 not hold or a patch it refuses, and `addNode` one on a node of an identifier the graph holds already

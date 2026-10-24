@@ -9,8 +9,10 @@ import { panBy, toWorld, zoomAt } from "./viewport";
 
 const WHEEL_STEP = 1.0015;
 
+/** A drag in progress: of a node, which records whether it moved it, or of the viewport. */
 type Drag =
-  { kind: "node"; slot: number; x: number; y: number } | { kind: "pan"; x: number; y: number };
+  | { kind: "node"; slot: number; x: number; y: number; moved: boolean }
+  | { kind: "pan"; x: number; y: number };
 
 /** The slot of the node under a screen point, from the engine's spatial index. */
 function nodeAt(store: GraphStore, bridge: Bridge, x: number, y: number): number | undefined {
@@ -25,7 +27,7 @@ function startDrag(store: GraphStore, bridge: Bridge, event: FederatedPointerEve
   const node = slot === undefined ? undefined : nodes[slot];
   if (slot !== undefined && node) {
     store.getState().select({ kind: "node", id: node.id });
-    return { kind: "node", slot, x, y };
+    return { kind: "node", slot, x, y, moved: false };
   }
   store.getState().select(null);
   return { kind: "pan", x, y };
@@ -38,11 +40,21 @@ function continueDrag(store: GraphStore, bridge: Bridge, drag: Drag, event: Fede
   drag.y = event.global.y;
   const { viewport } = store.getState();
   if (drag.kind === "node") {
+    if (dx === 0 && dy === 0) return;
     bridge.translate(new Uint32Array([drag.slot]), dx / viewport.scale, dy / viewport.scale);
+    drag.moved = true;
     store.getState().positionsMoved();
   } else {
     store.getState().setViewport(panBy(viewport, dx, dy));
   }
+}
+
+/** Ends `drag` where the pointer was released: a drag that moved its node records, once, where
+ *  it left it (ADR-0023), on the canvas or outside it. */
+function endDrag(store: GraphStore, drag: Drag | null): void {
+  if (drag?.kind !== "node" || !drag.moved) return;
+  const node = store.getState().nodes[drag.slot];
+  if (node) store.getState().nodeMoved(node.id);
 }
 
 /** `handler`, doing nothing once the engine is lost. */
@@ -82,9 +94,19 @@ export function attachInteraction(app: Application, store: GraphStore, bridge: B
     const over = nodeAt(store, bridge, event.global.x, event.global.y) !== undefined;
     app.canvas.style.cursor = over ? "grab" : "";
   });
+  // The drag is over before its change is told, so that it stays over where a listener throws,
+  // and also once the engine is lost, when nothing is told.
+  const tellEnd = untilLost((ended: Drag | null) => endDrag(store, ended));
+  const release = () => {
+    const ended = drag;
+    drag = null;
+    tellEnd(ended);
+  };
   app.stage.on(
     "pointerdown",
     untilLost((event: FederatedPointerEvent) => {
+      // A drag whose release never came ends where the next press begins.
+      release();
       drag = startDrag(store, bridge, event);
       if (drag.kind === "node") app.canvas.style.cursor = "grabbing";
     }),
@@ -95,8 +117,19 @@ export function attachInteraction(app: Application, store: GraphStore, bridge: B
       drag ? continueDrag(store, bridge, drag, event) : hover(event),
     ),
   );
-  app.stage.on("pointerup", (event) => ((drag = null), hover(event)));
-  app.stage.on("pointerupoutside", () => (drag = null));
+  app.stage.on("pointerup", (event) => {
+    try {
+      release();
+    } finally {
+      hover(event);
+    }
+  });
+  app.stage.on("pointerupoutside", release);
+  // A load replaces the graph under a drag: the drag ends, and tells nothing of a node the user
+  // never moved.
+  const unsubscribe = store.subscribe((state, previous) => {
+    if (state.change !== previous.change && state.change?.kind === "loaded") drag = null;
+  });
 
   const onWheel = untilLost((event: WheelEvent) => {
     event.preventDefault();
@@ -107,6 +140,7 @@ export function attachInteraction(app: Application, store: GraphStore, bridge: B
   });
   app.canvas.addEventListener("wheel", onWheel, { passive: false });
   return () => {
+    unsubscribe();
     app.stage.removeAllListeners();
     app.canvas.removeEventListener("wheel", onWheel);
   };

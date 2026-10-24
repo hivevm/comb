@@ -56,6 +56,7 @@ export type NodeView = Omit<NodeData, "x" | "y">;
 export type StoreChange =
   | { readonly kind: "loaded"; readonly by: "host" }
   | { readonly kind: "nodeAdded"; readonly by: "host"; readonly id: string }
+  | { readonly kind: "nodeMoved"; readonly by: "user"; readonly id: string }
   | {
       readonly kind: "nodeUpdated";
       readonly by: "host";
@@ -89,6 +90,8 @@ export interface GraphState extends GraphView {
   select(selection: Selection): void;
   setViewport(viewport: Viewport): void;
   positionsMoved(): void;
+  /** Records that a drag, now released, left the node `id` where the engine keeps it. */
+  nodeMoved(id: string): void;
 }
 
 export type GraphStore = ReturnType<typeof createGraphStore>;
@@ -142,5 +145,6 @@ export function createGraphStore() {
     select: (selection) => set({ selection }),
     setViewport: (viewport) => set({ viewport }),
     positionsMoved: () => set((state) => ({ positionsVersion: state.positionsVersion + 1 })),
+    nodeMoved: (id) => set({ change: { kind: "nodeMoved", by: "user", id } }),
   }));
 }

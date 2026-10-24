@@ -160,3 +160,92 @@ test("a node dragged across frames stays under the pointer, its edges' ends at i
   }
   await page.mouse.up();
 });
+
+/** Starts recording every change `onChange` tells into `window.told`. */
+async function recordChanges(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = window as unknown as { told: unknown[] };
+    w.told = [];
+    window.comb.onChange((change) => w.told.push(change));
+  });
+}
+
+async function told(page: Page): Promise<unknown[]> {
+  return page.evaluate(() => (window as unknown as { told: unknown[] }).told);
+}
+
+test("a node dragged across frames and released tells one nodeMoved, where inspection draws it", async ({
+  page,
+}) => {
+  // Verifies: ADR-0023
+  await open(page);
+  await recordChanges(page);
+  const id = "0:3.0";
+  const from = await screenCentre(page, id);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  for (let step = 1; step <= 8; step += 1) {
+    await page.mouse.move(from.x + step * 9, from.y + step * 7);
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+  }
+  expect(await told(page)).toEqual([]);
+  await page.mouse.up();
+  await page.evaluate(() => window.comb.whenRendered());
+  const node = (await drawnNode(page, id))!;
+  expect(await told(page)).toEqual([{ kind: "nodeMoved", by: "user", id, x: node.x, y: node.y }]);
+});
+
+test("a press and release on a node without a move tells no change", async ({ page }) => {
+  // Verifies: ADR-0023
+  await open(page);
+  await recordChanges(page);
+  const from = await screenCentre(page, "0:3.0");
+  await page.mouse.click(from.x, from.y);
+  await page.evaluate(() => window.comb.whenRendered());
+  expect(await told(page)).toEqual([]);
+});
+
+test("a drag released outside the canvas tells nodeMoved as on it", async ({ page }) => {
+  // Verifies: ADR-0023
+  await open(page);
+  await recordChanges(page);
+  const id = "0:3.0";
+  const from = await screenCentre(page, id);
+  const sidebar = (await page.locator("#sidebar").boundingBox())!;
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(sidebar.x + 40, from.y, { steps: 10 });
+  await page.mouse.up();
+  await page.evaluate(() => window.comb.whenRendered());
+  const node = (await drawnNode(page, id))!;
+  expect(await told(page)).toEqual([{ kind: "nodeMoved", by: "user", id, x: node.x, y: node.y }]);
+});
+
+test("a drag whose engine is lost before the release tells no change, and throws nothing", async ({
+  page,
+}) => {
+  // Verifies: ADR-0023, ADR-0021
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page);
+  await recordChanges(page);
+  const from = await screenCentre(page, "0:3.0");
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x + 20, from.y + 10, { steps: 4 });
+  await page.evaluate(() => window.trapNextCall());
+  // The next move's translate traps, and the engine is lost.
+  await page.mouse.move(from.x + 40, from.y + 20, { steps: 4 });
+  await page.mouse.up();
+  const lost = await page.evaluate(() => {
+    try {
+      window.comb.fitView();
+      return "not lost";
+    } catch (error) {
+      return (error as Error).name;
+    }
+  });
+  expect(lost).toBe("EngineLostError");
+  expect(await told(page)).toEqual([]);
+  expect(errors).toEqual([]);
+});

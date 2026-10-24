@@ -120,12 +120,13 @@ The functional core and its shell follow
   counter for moved positions; no coordinates
   ([ADR-0011](adr/0011-store.md)). `GraphView` is its state without the actions, the type the
   render layer reads.
-- **Interaction** (`packages/comb/src/interaction`) — pointer and wheel input into store actions
-  and engine moves: select a node on press and clear the selection on the empty canvas, drag a
-  node, pan, zoom around the pointer, and the cursor over a node. The engine's `hit` says which node
-  the pointer is on, at every level of detail; node views take no events. `viewport.ts` holds the
-  viewport's arithmetic, the transform between world and screen included, for interaction, the
-  scene, `api`'s `fitView` and `setViewport`, and the testing entry.
+- **Interaction** (`packages/comb/src/interaction`) — pointer and wheel input into store actions and
+  engine moves: select a node on press and clear the selection on the empty canvas, drag a node,
+  pan, zoom around the pointer, and the cursor over a node. A drag that moved its node records
+  `nodeMoved` once, when the pointer is released on the canvas or outside it; a load ends a drag.
+  The engine's `hit` says which node the pointer is on, at every level of detail; node views take no
+  events. `viewport.ts` holds the viewport's arithmetic, the transform between world and screen
+  included, for interaction, the scene, `api`'s `fitView` and `setViewport`, and the testing entry.
 - **Render** (`packages/comb/src/render`) — the PixiJS scene (`scene.ts`): a `world` render
   group with the layers `EdgesContainer` (`edges.ts`), `NodeParticles` (`particles.ts`),
   `NodesContainer` (`nodes.ts`), and `LabelsContainer` (`labels.ts`), and an `overlay`
