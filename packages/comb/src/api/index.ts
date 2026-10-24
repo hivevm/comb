@@ -18,6 +18,8 @@ import { clampScale, fitViewport, toWorld } from "../interaction/viewport";
 import { Scene } from "../render/scene";
 import { engineOf, type EngineSource } from "./engine";
 import {
+  edgePatchOf,
+  edgeSnapshotOf,
   idListOf,
   idsOf,
   isUnreadable,
@@ -34,6 +36,7 @@ import {
   createGraphStore,
   type EdgeData,
   type EdgeLabelData,
+  type EdgePatch,
   type GraphData,
   type GraphState,
   type GraphStore,
@@ -147,6 +150,19 @@ export interface Comb {
    *  the limits of a load, and changes nothing then (Q-7); and an `EngineLostError` once the
    *  engine is lost. */
   addNode(node: NodeData): void;
+  /** Adds `edge` between two nodes the graph holds, without a load, drawn with its colour, dash
+   *  pattern, arrowhead, and label (G-11). Throws a `GraphDataError` where the graph holds an edge
+   *  `edge.id` already (`duplicateEdge`) or no node at one of its ends (`missingNode`), where the
+   *  edge runs from a node to itself (`selfEdge`), where a load would refuse it, or where the
+   *  graph would pass the limits of a load, and changes nothing then (Q-7); and an
+   *  `EngineLostError` once the engine is lost. */
+  addEdge(edge: EdgeData): void;
+  /** Changes the colour, dash pattern, arrowhead, or label of the edge `id`, a dash or a label
+   *  cleared with `null`; the canvas shows the change (G-5). Throws a `GraphDataError` where the
+   *  graph holds no edge `id` (`unknownEdge`), the patch holds another field
+   *  (`unknownEdgePatchField`), or a load would refuse a field of it, and changes nothing then
+   *  (Q-7); and an `EngineLostError` once the engine is lost. */
+  updateEdge(id: string, patch: EdgePatch): void;
   /** Removes the nodes `ids` and every edge at them, without a load (G-4). Throws a
    *  `GraphDataError` where the graph holds no node of one of them (`unknownNode`), or `ids` is no
    *  list of strings, and removes nothing then (Q-7); and an `EngineLostError` once the engine is
@@ -363,6 +379,69 @@ function edgeRemoverOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb[
   };
 }
 
+/** `addEdge` on `store`: reads the edge once, its style's defaults filled, refuses an identifier
+ *  the store's map holds already and an end it does not hold, and the code units of identifiers
+ *  past the budget, and has the bridge check the edge as a load would and add it between the
+ *  slots of its ends (ADR-0022, ADR-0026). A value that is no string the bridge refuses itself. */
+function edgeAdderOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["addEdge"] {
+  return (edge) => {
+    refuseIfLost();
+    const { snapshot, idUnits } = readOnce(() => edgeSnapshotOf(edge, limits));
+    const { id, source, target } = snapshot as { id?: unknown; source?: unknown; target?: unknown };
+    const { slots, edgeSlots } = store.getState();
+    if (typeof id === "string" && edgeSlots.has(id))
+      throw new GraphDataError({ kind: "duplicateEdge", edge: id });
+    // An identifier, source, or target that is no string the bridge refuses before any slot.
+    const end = (node: unknown) => {
+      if (typeof id !== "string" || typeof node !== "string") return 0;
+      const slot = slots.get(node);
+      if (slot === undefined) throw new GraphDataError({ kind: "missingNode", edge: id, node });
+      return slot;
+    };
+    const [from, to] = [end(source), end(target)];
+    checked(() => bridge.checkIdBudget(store.getState().idUnits + idUnits));
+    const slot = checked(() => bridge.addEdge(snapshot, from, to));
+    // The bridge took the edge, so each field holds a value of its type.
+    store.getState().addEdge(snapshot as unknown as EdgeData, slot);
+  };
+}
+
+/** `updateEdge` on `store`: refuses an edge the graph does not hold and a patch the bridge
+ *  refuses, before the store sees either; the patch is read once, into plain data, which the
+ *  store merges once the bridge has checked every field of it (Q-7). */
+function edgeUpdaterOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["updateEdge"] {
+  return (id, patch) => {
+    refuseIfLost();
+    const slot = store.getState().edgeSlots.get(id);
+    if (slot === undefined) throw new GraphDataError({ kind: "unknownEdge", edge: id });
+    const plain = readOnce(() => edgePatchOf(patch, limits));
+    checked(() => bridge.updateEdge(slot, id, plain));
+    store.getState().updateEdge(id, plain as unknown as EdgePatch);
+  };
+}
+
+/** The change of an edge `change` names, as `onChange` delivers it: the edge as the store keeps
+ *  it, its colour and arrowhead filled, or the patch as merged. */
+function edgeDeliveryOf(
+  change: Extract<StoreChange, { kind: "edgeAdded" | "edgeUpdated" }>,
+  state: GraphState,
+): GraphChange {
+  if (change.kind === "edgeUpdated")
+    return { kind: change.kind, by: change.by, id: change.id, patch: { ...change.patch } };
+  const { dash, label, ...edge } = state.edges[state.edgeSlots.get(change.id)!]!;
+  return {
+    kind: change.kind,
+    by: change.by,
+    edge: {
+      ...edge,
+      color: edge.color!,
+      arrow: edge.arrow!,
+      ...(dash ? { dash: [dash[0], dash[1]] as const } : {}),
+      ...(label ? { label: { ...label } } : {}),
+    },
+  };
+}
+
 /** The change of the graph `change` names, as `onChange` delivers it: what it carries read from
  *  `state` and, for a position, from the engine's buffer as it is now. */
 function deliveryOf(change: StoreChange, state: GraphState, bridge: Bridge): GraphChange {
@@ -386,6 +465,9 @@ function deliveryOf(change: StoreChange, state: GraphState, bridge: Bridge): Gra
       };
     case "edgesRemoved":
       return { kind: change.kind, by: change.by, edges: [...change.edges] };
+    case "edgeAdded":
+    case "edgeUpdated":
+      return edgeDeliveryOf(change, state);
     case "nodeAdded": {
       const slot = state.slots.get(change.id)!;
       const { id, title, width, height } = state.nodes[slot]!;
@@ -484,6 +566,19 @@ function engineLostOf(): { onEngineLost: Comb["onEngineLost"]; removeAll(): void
   };
 }
 
+/** The methods of a `Comb` on `store` that change the graph, each through the bridge. */
+function editorsOf(store: GraphStore, bridge: Bridge, limits: Limits) {
+  return {
+    load: loaderOf(store, bridge, limits),
+    updateNode: updaterOf(store, bridge, limits),
+    addNode: adderOf(store, bridge, limits),
+    addEdge: edgeAdderOf(store, bridge, limits),
+    updateEdge: edgeUpdaterOf(store, bridge, limits),
+    removeNodes: nodeRemoverOf(store, bridge, limits),
+    removeEdges: edgeRemoverOf(store, bridge, limits),
+  } satisfies Partial<Comb>;
+}
+
 /** Creates a Comb canvas that fills `host`, with the engine `options.engine`. Throws an
  *  `EngineSourceError` before it touches `host` where the engine is missing, a string, `URL`, or
  *  `Request`, or none of a `Response`, a `WebAssembly.Module`, and the bytes, and a
@@ -521,11 +616,7 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
   const listeners = listenersOf(store, bridge);
 
   const comb: Comb = {
-    load: loaderOf(store, bridge, limits),
-    updateNode: updaterOf(store, bridge, limits),
-    addNode: adderOf(store, bridge, limits),
-    removeNodes: nodeRemoverOf(store, bridge, limits),
-    removeEdges: edgeRemoverOf(store, bridge, limits),
+    ...editorsOf(store, bridge, limits),
     fitView() {
       const bounds = boundsOf(store.getState().nodes, bridge.positions());
       if (bounds)

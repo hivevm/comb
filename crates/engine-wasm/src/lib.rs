@@ -19,7 +19,7 @@ mod graph_data;
 
 use comb_engine::geometry::Point;
 use comb_engine::geometry::Rect;
-use comb_engine::graph::{Graph, Level, RemovalError, Visible};
+use comb_engine::graph::{Graph, Level, SlotError as GraphSlotError, Visible};
 use comb_engine::positions::PositionError;
 use comb_engine::stroke::Detail;
 use serde::{Deserialize, Serialize};
@@ -27,12 +27,13 @@ use tsify::{Ts, Tsify};
 use wasm_bindgen::prelude::*;
 
 pub use graph_data::{
-    Arrow, CheckedPatch, EdgeInput, Field, GraphBatch, GraphDataProblem, GraphList, LabelInput,
-    MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_TEXT, NodeInput, NodePatch, Pair, Text,
+    Arrow, CheckedPatch, EdgeInput, EdgePatch, Field, GraphBatch, GraphDataProblem, GraphList,
+    LabelInput, MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_TEXT, NodeInput, NodePatch, Pair, Text,
 };
 
 use graph_data::{
-    ID_LIMIT, TEXT_LIMIT, add_node_to, graph_of, malformed, patch_of, reading, slot, unshaped,
+    ID_LIMIT, TEXT_LIMIT, add_edge_to, add_node_to, graph_of, malformed, patch_of, reading, slot,
+    unshaped, update_edge_in,
 };
 
 /// Why the engine refused a move of nodes: the shell's own mistake, never one of graph data, so
@@ -47,12 +48,12 @@ pub enum TranslateError {
     NonFiniteDelta,
 }
 
-/// Why the engine refused a removal: a slot that holds no node or no edge, beyond the slots or
-/// free. The shell's own mistake, never one of graph data, since `api` refuses an identifier the
+/// Why the engine refused a call that names slots: a slot that holds no node or no edge, beyond
+/// the slots or free. The shell's own mistake, never one of graph data, since `api` refuses an identifier the
 /// graph does not hold before it names a slot (ADR-0026).
 #[derive(Tsify, Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
-pub enum RemoveError {
+pub enum SlotError {
     /// A slot that holds no node.
     #[serde(rename_all = "camelCase")]
     NoNode { slot: u32 },
@@ -61,11 +62,11 @@ pub enum RemoveError {
     NoEdge { slot: u32 },
 }
 
-impl From<RemovalError> for RemoveError {
-    fn from(error: RemovalError) -> Self {
+impl From<GraphSlotError> for SlotError {
+    fn from(error: GraphSlotError) -> Self {
         match error {
-            RemovalError::NoNode { slot } => Self::NoNode { slot },
-            RemovalError::NoEdge { slot } => Self::NoEdge { slot },
+            GraphSlotError::NoNode { slot } => Self::NoNode { slot },
+            GraphSlotError::NoEdge { slot } => Self::NoEdge { slot },
         }
     }
 }
@@ -102,8 +103,8 @@ impl From<TranslateError> for JsValue {
     }
 }
 
-impl From<RemoveError> for JsValue {
-    fn from(error: RemoveError) -> Self {
+impl From<SlotError> for JsValue {
+    fn from(error: SlotError) -> Self {
         thrown(error)
     }
 }
@@ -270,11 +271,43 @@ impl Engine {
         add_node_to(&mut self.graph, &node)
     }
 
+    /// Checks the edge `addEdge` hands over as a load checks an edge, refuses one from a node to
+    /// itself (ADR-0024), adds it between the node slots `source` and `target`, which the shell
+    /// resolved, and returns the slot the engine chose for it (ADR-0022). A refused edge leaves
+    /// the graph as it was.
+    #[wasm_bindgen(js_name = addEdge)]
+    pub fn add_edge(
+        &mut self,
+        edge: Ts<EdgeInput>,
+        source: u32,
+        target: u32,
+    ) -> Result<u32, GraphDataProblem> {
+        trap::spring();
+        let edge = reading(|| edge.to_rust()).map_err(unshaped)?;
+        add_edge_to(&mut self.graph, &edge, source, target)
+    }
+
+    /// Checks the patch `updateEdge` hands over for the edge `id` in `slot`, reading it once, as a
+    /// load checks those fields, and gives the edge its new style and label placement; the store
+    /// merges the patch, the rest of which the engine does not keep. A refused patch changes
+    /// nothing.
+    #[wasm_bindgen(js_name = updateEdge)]
+    pub fn update_edge(
+        &mut self,
+        slot: u32,
+        id: &str,
+        patch: Ts<EdgePatch>,
+    ) -> Result<(), GraphDataProblem> {
+        trap::spring();
+        let patch = reading(|| patch.to_rust()).map_err(unshaped)?;
+        update_edge_in(&mut self.graph, slot, id, patch)
+    }
+
     /// Removes the nodes in `slots` and every edge at them, and returns the slots of those edges
     /// in ascending order; the slots go onto the free lists (ADR-0022). A slot that holds no node
     /// refuses the call, which then changes nothing.
     #[wasm_bindgen(js_name = removeNodes)]
-    pub fn remove_nodes(&mut self, slots: &[u32]) -> Result<Vec<u32>, RemoveError> {
+    pub fn remove_nodes(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
         trap::spring();
         Ok(self.graph.remove_nodes(slots)?)
     }
@@ -282,7 +315,7 @@ impl Engine {
     /// Removes the edges in `slots`; the slots go onto the free list (ADR-0022). A slot that holds
     /// no edge refuses the call, which then changes nothing.
     #[wasm_bindgen(js_name = removeEdges)]
-    pub fn remove_edges(&mut self, slots: &[u32]) -> Result<(), RemoveError> {
+    pub fn remove_edges(&mut self, slots: &[u32]) -> Result<(), SlotError> {
         trap::spring();
         Ok(self.graph.remove_edges(slots)?)
     }
@@ -527,7 +560,7 @@ mod tests {
         for slot in [2, 9] {
             assert_eq!(
                 engine.remove_nodes(&[0, slot]),
-                Err(RemoveError::NoNode { slot })
+                Err(SlotError::NoNode { slot })
             );
             assert_eq!(
                 engine.translate(&[0, slot], 1.0, 1.0),
@@ -537,7 +570,7 @@ mod tests {
         for slot in [1, 9] {
             assert_eq!(
                 engine.remove_edges(&[0, slot]),
-                Err(RemoveError::NoEdge { slot })
+                Err(SlotError::NoEdge { slot })
             );
         }
         assert_eq!(engine.graph.positions()[..4], [0.0, 0.0, 300.0, 0.0]);

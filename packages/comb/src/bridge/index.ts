@@ -15,6 +15,8 @@ import init, {
   MeshDetail,
   type InitOutput,
   type CheckedPatch,
+  type EdgeInput,
+  type EdgePatch,
   type GraphBatch,
   type GraphDataProblem,
   type NodeInput,
@@ -37,6 +39,12 @@ export type NodeSnapshot = NodeInput & { readonly [read]: "node" };
 
 /** The plain patch of `updateNode`: what `patchOf` returns, and the patch the bridge takes. */
 export type PlainPatch = NodePatch & { readonly [read]: "patch" };
+
+/** The edge of `addEdge` read once: what `edgeSnapshotOf` returns, and the edge the bridge takes. */
+export type EdgeSnapshot = EdgeInput & { readonly [read]: "edge" };
+
+/** The plain patch of `updateEdge`: what `edgePatchOf` returns, and the patch the bridge takes. */
+export type PlainEdgePatch = EdgePatch & { readonly [read]: "edgePatch" };
 
 /** A rectangle in world coordinates. */
 export interface Rect {
@@ -106,6 +114,13 @@ export interface Bridge {
    *  returns the slot the engine chose for it (ADR-0022). Throws a `GraphDataProblem`, the graph
    *  as it was. */
   addNode(node: NodeSnapshot): number;
+  /** Checks `edge` as a load checks an edge, refuses one from a node to itself, and adds it
+   *  between the node slots `source` and `target`, which `api` resolved; returns the slot the
+   *  engine chose for it (ADR-0022). Throws a `GraphDataProblem`, the graph as it was. */
+  addEdge(edge: EdgeSnapshot, source: number, target: number): number;
+  /** Checks the patch of the edge `id` in `slot` as a load checks those fields and gives the edge
+   *  its new style and label placement. Throws a `GraphDataProblem`, the graph as it was. */
+  updateEdge(slot: number, id: string, patch: PlainEdgePatch): void;
   /** The most UTF-16 code units of a title or a label text the bridge accepts. */
   textLimit(): number;
   /** The most UTF-16 code units of an identifier the bridge accepts. */
@@ -122,10 +137,10 @@ export interface Bridge {
    *  the fields it changes; the engine keeps nothing of it. Throws a `GraphDataProblem`. */
   checkNodePatch(node: string, patch: PlainPatch): CheckedPatch;
   /** Removes the nodes in `slots` and every edge at them, and returns the slots of those edges in
-   *  ascending order (ADR-0022). Throws a `RemoveError`, a mistake of the shell's, never one of
+   *  ascending order (ADR-0022). Throws a `SlotError`, a mistake of the shell's, never one of
    *  graph data, the graph as it was. */
   removeNodes(slots: Uint32Array): Uint32Array;
-  /** Removes the edges in `slots`. Throws a `RemoveError`, the graph as it was. */
+  /** Removes the edges in `slots`. Throws a `SlotError`, the graph as it was. */
   removeEdges(slots: Uint32Array): void;
   /** Moves the nodes in `slots`, their edges with them. Throws a `TranslateError`, a mistake of
    *  the shell's, never one of graph data. */
@@ -304,6 +319,8 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
   return {
     loadGraph: (batch) => engine.loadGraph(batch),
     addNode: (node) => engine.addNode(node),
+    addEdge: (edge, source, target) => engine.addEdge(edge, source, target),
+    updateEdge: (slot, id, patch) => engine.updateEdge(slot, id, patch),
     textLimit,
     idLimit,
     idBudget,

@@ -79,7 +79,9 @@ The functional core and its shell follow
   built again once many items have moved or been added beyond its extent, or the nodes in use pass
   twice the count it was built for ([ADR-0022](adr/0022-the-engine-edits-its-graph-in-place.md));
   `add_node` takes the free slot freed last, or a new one after the highest, and the next rank, and
-  puts the node into the grid in place; a load ranks node `i` as `i`; `remove_nodes` frees the node
+  puts the node into the grid in place; a load ranks node `i` as `i`; `add_edge` takes the edge slot
+  freed last, or a new one, and puts the edge into the lists of its ends and the grid in place, and
+  `update_edge` restyles and re-places one; `remove_nodes` frees the node
   slots and those of the edges at them, `remove_edges` edge slots, and both take the items out of
   the grids and the lists at the nodes; a free slot holds nothing, no query or hit returns it, a
   rebuild covers only the slots in use, and a call that names one refuses it as a slot beyond the
@@ -102,7 +104,10 @@ The functional core and its shell follow
   `dead_code` lint finds what only tests reach.
 - **Bridge** — `crates/engine-wasm` holds every WebAssembly export: `loadGraph` checks graph data
   and resolves edge ends to slots, `addNode` checks one node as a load would and returns the slot
-  the engine chose for it, `removeNodes` removes nodes and the edges at them and returns those
+  the engine chose for it, `addEdge` checks one edge as a load would, refuses one from a node to
+  itself, and adds it between the node slots `api` resolved, `updateEdge` checks a patch of an
+  edge's colour, dash, arrowhead, and label as a load checks those fields and restyles and
+  re-places the edge, `removeNodes` removes nodes and the edges at them and returns those
   edges' slots, `removeEdges` removes edges, `translate` moves nodes, `query` takes a rectangle, a
   level of detail, the size of a screen pixel, and how far an edge label's pill reaches from its
   point, and writes the found node slots, the edge-label slots and points (at the near level only),
@@ -165,7 +170,8 @@ The functional core and its shell follow
   [ADR-0019](adr/0019-the-host-hands-comb-its-engine.md)), before it touches the host element, and
   with a `RendererUnavailableError` where PixiJS finds no WebGL2 unless `allowCanvasFallback` lets
   it draw on Canvas 2D (`api/renderers.ts`); and the `Comb` it returns: the graph data (`load`,
-  `updateNode`, `addNode`, `removeNodes`, `removeEdges`), read once into a snapshot
+  `updateNode`, `addNode`, `addEdge`, `updateEdge`, `removeNodes`, `removeEdges`), read once into
+  a snapshot
   (`api/snapshot.ts`) and handed to the engine, the viewport (`fitView`, `setViewport`, `viewport`,
   and `worldPointAt`, the world point under a point of the page, which needs no engine), the events
   to the host application (`onChange`, `onSelectionChange`, `onEngineLost`), and `destroy`;

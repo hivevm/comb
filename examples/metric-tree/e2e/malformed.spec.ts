@@ -1011,6 +1011,12 @@ async function everyKind() {
     }),
     unknownNode: () => window.comb.updateNode("z", { title: "Z" }),
     unknownEdge: () => window.comb.removeEdges(["z"]),
+    selfEdge: () => window.comb.addEdge({ id: "e", source: "a", target: "a" }),
+    unknownEdgePatchField: () => {
+      window.comb.addNode(node("b"));
+      window.comb.addEdge({ id: "e", source: "a", target: "b" });
+      window.comb.updateEdge("e", { width: 2 } as never);
+    },
   };
   const thrown: Record<string, unknown> = {};
   for (const [kind, call] of Object.entries(calls)) {
@@ -1038,5 +1044,5 @@ test("load and the methods that edit the graph throw every kind of GraphDataProb
   const thrown = await page.evaluate(everyKind);
   expect(errors).toEqual([]);
   expect(thrown).toEqual(Object.fromEntries(Object.keys(thrown).map((kind) => [kind, kind])));
-  expect(Object.keys(thrown).length).toBe(21);
+  expect(Object.keys(thrown).length).toBe(23);
 });

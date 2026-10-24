@@ -5,7 +5,9 @@ import {
   type GraphBatch,
   type GraphSnapshot,
   type NodePatch,
+  type EdgeSnapshot,
   type NodeSnapshot,
+  type PlainEdgePatch,
   type PlainPatch,
 } from ".";
 
@@ -37,6 +39,8 @@ const graph = (nodes: GraphBatch["nodes"], edges: GraphBatch["edges"] = []) =>
   ({ nodes, edges }) as GraphSnapshot;
 const plain = (patch: NodePatch) => patch as PlainPatch;
 const added = (fields: object) => fields as NodeSnapshot;
+const edgeOf = (fields: object) => ({ color: 0, arrow: "end", ...fields }) as EdgeSnapshot;
+const plainEdge = (patch: object) => patch as PlainEdgePatch;
 /** Nodes `a` and `b`. */
 const two = () => [node("a", 0, 0), node("b", 1, 1)];
 const everywhere = { minX: -1e6, minY: -1e6, maxX: 1e6, maxY: 1e6 };
@@ -47,6 +51,36 @@ function row(count: number): GraphSnapshot {
   const edges = nodes.slice(1).map((_, i) => edge(`e${i}`, `n${i}`, `n${i + 1}`));
   return graph(nodes, edges);
 }
+
+describe("bridge views", () => {
+  test("in test mode, every call detaches the views taken before it", () => {
+    // Verifies: ADR-0010
+    // Under `bun test` the bridge runs in test mode: it grows the engine's memory before each of
+    // its calls, so a view kept across any call reads empty, not only when memory happens to grow.
+    // Only a grown memory detaches its buffer, so an empty view shows that the call grew it.
+    bridge.loadGraph(graph([node("a", 1, 2), node("b", 3, 4)]));
+    const calls: [string, () => unknown][] = [
+      ["loadGraph", () => bridge.loadGraph(row(3))],
+      ["checkNodePatch", () => bridge.checkNodePatch("a", plain({ title: "A" }))],
+      ["addNode", () => bridge.addNode(added(node("c", 5, 6)))],
+      ["translate", () => bridge.translate(new Uint32Array([0]), 0, 0)],
+      ["positions", () => bridge.positions()],
+      ["query", () => bridge.query(everywhere, "near", 4, 0)],
+      ["drawnEdges", () => bridge.drawnEdges()],
+      ["hit", () => bridge.hit(0, 0)],
+      ["addEdge", () => bridge.addEdge(edgeOf(edge("x", "n0", "n2")), 0, 2)],
+      ["updateEdge", () => bridge.updateEdge(0, "e0", plainEdge({ color: 0 }))],
+      ["removeEdges", () => bridge.removeEdges(new Uint32Array([0]))],
+      ["removeNodes", () => bridge.removeNodes(new Uint32Array([1]))],
+    ];
+    const after = calls.map(([name, call]) => {
+      const kept = bridge.positions();
+      call();
+      return { name, kept: kept.length };
+    });
+    expect(after).toEqual(calls.map(([name]) => ({ name, kept: 0 })));
+  });
+});
 
 describe("bridge", () => {
   test("positions are read back in slot order", () => {
@@ -67,32 +101,6 @@ describe("bridge", () => {
     bridge.loadGraph(graph(big));
     bridge.loadGraph(graph([node("a", 7, 8)]));
     expect([...bridge.positions()]).toEqual([7, 8]);
-  });
-
-  test("in test mode, every call detaches the views taken before it", () => {
-    // Verifies: ADR-0010
-    // Under `bun test` the bridge runs in test mode: it grows the engine's memory before each of
-    // its calls, so a view kept across any call reads empty, not only when memory happens to grow.
-    // Only a grown memory detaches its buffer, so an empty view shows that the call grew it.
-    bridge.loadGraph(graph([node("a", 1, 2), node("b", 3, 4)]));
-    const calls: [string, () => unknown][] = [
-      ["loadGraph", () => bridge.loadGraph(row(3))],
-      ["checkNodePatch", () => bridge.checkNodePatch("a", plain({ title: "A" }))],
-      ["addNode", () => bridge.addNode(added(node("c", 5, 6)))],
-      ["translate", () => bridge.translate(new Uint32Array([0]), 0, 0)],
-      ["positions", () => bridge.positions()],
-      ["query", () => bridge.query(everywhere, "near", 4, 0)],
-      ["drawnEdges", () => bridge.drawnEdges()],
-      ["hit", () => bridge.hit(0, 0)],
-      ["removeEdges", () => bridge.removeEdges(new Uint32Array([0]))],
-      ["removeNodes", () => bridge.removeNodes(new Uint32Array([1]))],
-    ];
-    const after = calls.map(([name, call]) => {
-      const kept = bridge.positions();
-      call();
-      return { name, kept: kept.length };
-    });
-    expect(after).toEqual(calls.map(([name]) => ({ name, kept: 0 })));
   });
 
   test("malformed graph data comes back as a typed error", () => {
