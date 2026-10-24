@@ -155,12 +155,15 @@ function labelOf(read: Reader, label: unknown) {
   const fields = objectOf(label);
   if (!fields) return false;
   const { text, t, offset, background } = fields;
-  return {
+  const placed = {
     text: read.text(text),
     t: read.number(t),
     offset: read.number(offset),
     background: read.number(background),
   };
+  // No key for a background left out, so that the edge as Comb keeps it holds none.
+  if (placed.background === undefined) delete (placed as { background?: unknown }).background;
+  return placed;
 }
 
 /** A dash pattern: absent where null or undefined, `false` where no list of two. */
@@ -176,11 +179,17 @@ function edgeOf(read: Reader, edge: Fields) {
     id: read.id(id),
     source: read.id(source),
     target: read.id(target),
-    label: labelOf(read, label),
     color: edgeColor({ color: read.number(color) as number | undefined }),
-    dash: dashOf(read, dash),
     arrow: read.text(arrow) ?? EDGE_ARROW,
+    // No key for a label or a dash left out.
+    ...optional("label", labelOf(read, label)),
+    ...optional("dash", dashOf(read, dash)),
   };
+}
+
+/** `{ [name]: value }`, or nothing where `value` is undefined. */
+function optional<K extends string, V>(name: K, value: V | undefined) {
+  return (value === undefined ? {} : { [name]: value }) as { [P in K]?: V };
 }
 
 /** The snapshot of the lists `listsOf` read, with the edge styles' defaults and its strings cut

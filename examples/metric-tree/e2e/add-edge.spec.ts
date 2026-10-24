@@ -260,3 +260,109 @@ test("addEdge refuses an edge past the limit of a load as tooMany", async ({ pag
   });
   expect(result).toEqual({ kind: "tooMany", list: "edges", limit: 1_000_000 });
 });
+
+test("a patch of one field keeps the label and the dash, and moves a label the edge has", async ({
+  page,
+}) => {
+  // Verifies: G-5, ADR-0023
+  await open(page);
+  await loaded(page);
+  const edge = {
+    id: "a-b",
+    source: "a",
+    target: "b",
+    color: RED,
+    dash: [8, 8] as const,
+    label: { text: "kept", t: 0.5, offset: 0 },
+  };
+  await page.evaluate((edge) => window.comb.addEdge(edge), edge);
+  await page.evaluate(() => window.comb.updateEdge("a-b", { arrow: "none" }));
+  const labels = async () =>
+    page.evaluate(async () => {
+      await window.comb.whenRendered();
+      return window.inspect().edgeLabels.map(({ text, x }) => ({ text, x }));
+    });
+  expect(await labels()).toEqual([{ text: "kept", x: 410 }]);
+  expect((await strokeOf(page, RED)).runs).toBeGreaterThan(10);
+  await page.evaluate(() =>
+    window.comb.updateEdge("a-b", { label: { text: "kept", t: 0.25, offset: 0 } }),
+  );
+  expect(await labels()).toEqual([{ text: "kept", x: 332.8125 }]);
+  // A patch that sets nothing tells nothing.
+  await page.evaluate(() => window.comb.updateEdge("a-b", {}));
+  expect((await told(page)).map((change) => (change as { kind: string }).kind)).toEqual([
+    "edgeAdded",
+    "edgeUpdated",
+    "edgeUpdated",
+  ]);
+});
+
+test("a getter of a patch that removes the edge refuses the patch, and no other edge changes", async ({
+  page,
+}) => {
+  // Verifies: Q-7, ADR-0026
+  await open(page);
+  await loaded(page);
+  await page.evaluate(
+    (red) => window.comb.addEdge({ id: "e1", source: "a", target: "b", color: red }),
+    RED,
+  );
+  const result = await page.evaluate((blue) => {
+    const { comb } = window;
+    const patch = {
+      get color() {
+        comb.removeEdges(["e1"]);
+        // It takes the slot e1 freed.
+        comb.addEdge({ id: "e2", source: "b", target: "a" });
+        return blue;
+      },
+    };
+    try {
+      comb.updateEdge("e1", patch);
+      return null;
+    } catch (error) {
+      return (error as Error & { problem: unknown }).problem;
+    }
+  }, BLUE);
+  expect(result).toEqual({ kind: "unknownEdge", edge: "e1" });
+  expect((await told(page)).map((change) => (change as { kind: string }).kind)).toEqual([
+    "edgeAdded",
+    "edgesRemoved",
+    "edgeAdded",
+  ]);
+  expect((await strokeOf(page, BLUE)).drawn).toBe(0);
+});
+
+test("a listener that writes into a delivered change reaches nothing Comb keeps", async ({
+  page,
+}) => {
+  // Verifies: Q-7, ADR-0026
+  await open(page);
+  await loaded(page);
+  await page.evaluate(() => {
+    window.comb.onChange((change) => {
+      if (change.kind === "edgeUpdated" && change.patch.label)
+        (change.patch.label as { text: string }).text = "written by a listener";
+      if (change.kind === "edgeAdded" && change.edge.label)
+        (change.edge.label as { text: string }).text = "written by a listener";
+    });
+    window.comb.addEdge({
+      id: "a-b",
+      source: "a",
+      target: "b",
+      label: { text: "one", t: 0.5, offset: 0 },
+    });
+  });
+  const first = await page.evaluate(async () => {
+    await window.comb.whenRendered();
+    return window.inspect().edgeLabels.map(({ text }) => text);
+  });
+  await page.evaluate(() =>
+    window.comb.updateEdge("a-b", { label: { text: "two", t: 0.5, offset: 0 } }),
+  );
+  const second = await page.evaluate(async () => {
+    await window.comb.whenRendered();
+    return window.inspect().edgeLabels.map(({ text }) => text);
+  });
+  expect([first, second]).toEqual([["one"], ["two"]]);
+});

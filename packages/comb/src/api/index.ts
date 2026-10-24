@@ -289,9 +289,10 @@ function checked<T>(check: () => T): T {
 function updaterOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["updateNode"] {
   return (id, patch) => {
     refuseIfLost();
+    // Read first: a getter of the patch may change the graph, which the map then shows.
+    const plain = readOnce(() => patchOf(patch, limits));
     if (!store.getState().slots.has(id))
       throw new GraphDataError({ kind: "unknownNode", node: id });
-    const plain = readOnce(() => patchOf(patch, limits));
     store.getState().updateNode(
       id,
       checked(() => bridge.checkNodePatch(id, plain)),
@@ -389,11 +390,15 @@ function edgeAdderOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["a
     const { snapshot, idUnits } = readOnce(() => edgeSnapshotOf(edge, limits));
     const { id, source, target } = snapshot as { id?: unknown; source?: unknown; target?: unknown };
     const { slots, edgeSlots } = store.getState();
-    if (typeof id === "string" && edgeSlots.has(id))
+    // An identifier, source, or target that is no string, or longer than the limit, the bridge
+    // refuses before the map is asked, as a load refuses it before any end is resolved.
+    const named = (value: unknown): value is string =>
+      typeof value === "string" && value.length <= limits.id;
+    const checkable = named(id) && named(source) && named(target);
+    if (checkable && edgeSlots.has(id))
       throw new GraphDataError({ kind: "duplicateEdge", edge: id });
-    // An identifier, source, or target that is no string the bridge refuses before any slot.
     const end = (node: unknown) => {
-      if (typeof id !== "string" || typeof node !== "string") return 0;
+      if (!checkable || typeof node !== "string") return 0;
       const slot = slots.get(node);
       if (slot === undefined) throw new GraphDataError({ kind: "missingNode", edge: id, node });
       return slot;
@@ -412,9 +417,12 @@ function edgeAdderOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["a
 function edgeUpdaterOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["updateEdge"] {
   return (id, patch) => {
     refuseIfLost();
+    // Read first: a getter of the patch may change the graph, which the map then shows.
+    const plain = readOnce(() => edgePatchOf(patch, limits));
     const slot = store.getState().edgeSlots.get(id);
     if (slot === undefined) throw new GraphDataError({ kind: "unknownEdge", edge: id });
-    const plain = readOnce(() => edgePatchOf(patch, limits));
+    // A patch that sets nothing changes and tells nothing.
+    if (Object.keys(plain).length === 0) return;
     checked(() => bridge.updateEdge(slot, id, plain));
     store.getState().updateEdge(id, plain as unknown as EdgePatch);
   };
@@ -426,8 +434,20 @@ function edgeDeliveryOf(
   change: Extract<StoreChange, { kind: "edgeAdded" | "edgeUpdated" }>,
   state: GraphState,
 ): GraphChange {
-  if (change.kind === "edgeUpdated")
-    return { kind: change.kind, by: change.by, id: change.id, patch: { ...change.patch } };
+  if (change.kind === "edgeUpdated") {
+    // Copies all down, so that no listener reaches into what the store keeps.
+    const { dash, label, ...patch } = change.patch;
+    return {
+      kind: change.kind,
+      by: change.by,
+      id: change.id,
+      patch: {
+        ...patch,
+        ...(dash === undefined ? {} : { dash: dash && ([dash[0], dash[1]] as const) }),
+        ...(label === undefined ? {} : { label: label && { ...label } }),
+      },
+    };
+  }
   const { dash, label, ...edge } = state.edges[state.edgeSlots.get(change.id)!]!;
   return {
     kind: change.kind,
