@@ -59,6 +59,8 @@ declare global {
     canConnect?: (proposal: Proposal) => unknown;
     /** Loads `graph` as the example's own, which its sidebar edits, for a browser test. */
     useGraph: (graph: GraphData) => void;
+    /** The example's copy of the graph, kept from what `onChange` tells. */
+    exampleGraph: () => GraphData;
     /** What the canvas draws, from comb/testing, for the browser tests and the benchmark. */
     inspect: (other?: Comb) => SceneSnapshot;
     renderCount: () => number;
@@ -198,15 +200,8 @@ function changeEdge(patch: EdgePatch): void {
   if (selectedEdge) comb.updateEdge(selectedEdge.id, patch);
 }
 
-/** Takes into the example's graph a change of an edge it holds: a label the user dragged, or a
- *  patch the host made. */
-function changedEdge(change: Extract<GraphChange, { kind: "labelMoved" | "edgeUpdated" }>): void {
-  const id = change.kind === "labelMoved" ? change.edge : change.id;
-  const edge = graph.edges.find((candidate) => candidate.id === id);
-  if (!edge) return;
-  if (change.kind === "edgeUpdated") patched(edge, change.patch as EdgePatch);
-  else if (edge.label) edge.label = { ...edge.label, t: change.t, offset: change.offset };
-}
+const nodeOf = (id: string) => graph.nodes.find((candidate) => candidate.id === id);
+const edgeOf = (id: string) => graph.edges.find((candidate) => candidate.id === id);
 
 /** `edge` with `patch` merged, as Comb merges it: `null` clears a dash or a label. */
 function patched(edge: EdgeData, patch: EdgePatch): void {
@@ -214,6 +209,42 @@ function patched(edge: EdgeData, patch: EdgePatch): void {
   Object.assign(edge, rest);
   if (dash !== undefined) edge.dash = dash ?? undefined;
   if (label !== undefined) edge.label = label ?? undefined;
+}
+
+/** Drops from the copy the nodes and edges a removal names. */
+function removed(nodes: readonly string[], edges: readonly string[]): void {
+  const [goneNodes, goneEdges] = [new Set(nodes), new Set(edges)];
+  graph.nodes = graph.nodes.filter(({ id }) => !goneNodes.has(id));
+  graph.edges = graph.edges.filter(({ id }) => !goneEdges.has(id));
+}
+
+/** How the example's copy of the graph takes each kind of change, as a host application that
+ *  persists keeps its own from `onChange` alone (ADR-0023); the type checker fails it where a
+ *  kind is left out. */
+const MIRROR: { [K in GraphChange["kind"]]: (change: Extract<GraphChange, { kind: K }>) => void } =
+  {
+    // `load` and `useGraph` set the copy before they hand it to Comb.
+    loaded: () => {},
+    nodeAdded: ({ node }) => void graph.nodes.push({ ...node }),
+    nodeUpdated: ({ id, patch }) => void Object.assign(nodeOf(id) ?? {}, patch),
+    nodeMoved: ({ id, x, y }) => void Object.assign(nodeOf(id) ?? {}, { x, y }),
+    nodesRemoved: ({ nodes, edges }) => removed(nodes, edges),
+    edgeAdded: ({ edge }) => void graph.edges.push({ ...edge }),
+    edgeUpdated: ({ id, patch }) => {
+      const edge = edgeOf(id);
+      if (edge) patched(edge, patch as EdgePatch);
+    },
+    edgesRemoved: ({ edges }) => removed([], edges),
+    labelMoved: ({ edge: id, t, offset }) => {
+      const edge = edgeOf(id);
+      if (edge?.label) edge.label = { ...edge.label, t, offset };
+    },
+  };
+
+/** Takes `change` into the example's copy of the graph. */
+function mirror(change: GraphChange): void {
+  (MIRROR[change.kind] as (change: GraphChange) => void)(change);
+  counted();
 }
 
 /** The label the sidebar's text gives the selected edge: its own moved to the new text, a new one
@@ -268,29 +299,15 @@ canvas.addEventListener("drop", (event) => {
   event.preventDefault();
   drop(event.dataTransfer?.getData(PALETTE_TYPE) ?? "", event.clientX, event.clientY);
 });
-// The example keeps its own copy of the graph for the sidebar, from what Comb tells it: a node
-// dropped from the palette, an edge added or changed, and what the user or the host removed.
-comb.onChange((change) => {
-  if (change.kind === "labelMoved" || change.kind === "edgeUpdated") return changedEdge(change);
-  if (change.kind === "nodeAdded") graph.nodes.push({ ...change.node });
-  else if (change.kind === "edgeAdded") graph.edges.push({ ...change.edge });
-  else if (change.kind === "nodesRemoved" || change.kind === "edgesRemoved") {
-    const nodes = new Set(change.kind === "nodesRemoved" ? change.nodes : []);
-    const edges = new Set(change.edges);
-    graph.nodes = graph.nodes.filter(({ id }) => !nodes.has(id));
-    graph.edges = graph.edges.filter(({ id }) => !edges.has(id));
-  } else return;
-  counted();
-});
+comb.onChange(mirror);
 comb.onSelectionChange(show);
 copies.addEventListener("change", () => {
   window.loadReport = load();
 });
 title.addEventListener("input", () => {
   const node = graph.nodes.find((candidate) => candidate.id === selected);
-  if (!node) return;
-  node.title = title.value;
-  comb.updateNode(node.id, { title: title.value });
+  // The copy follows from the `nodeUpdated` Comb tells.
+  if (node) comb.updateNode(node.id, { title: title.value });
 });
 edgeColor.addEventListener("input", () =>
   changeEdge({ color: Number.parseInt(edgeColor.value.slice(1), 16) }),
@@ -304,6 +321,7 @@ edgeArrow.addEventListener("change", () =>
 edgeLabel.addEventListener("input", () => changeEdge({ label: labelFor(edgeLabel.value) }));
 copiesFromQuery();
 window.comb = comb;
+window.exampleGraph = () => structuredClone(graph);
 window.useGraph = (next) => {
   graph = next;
   counted();
