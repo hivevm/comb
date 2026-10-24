@@ -1,4 +1,4 @@
-// The one module that imports the WebAssembly package (ADR-0026). Structured data crosses as
+// The one module that imports the WebAssembly package (ADR-0028). Structured data crosses as
 // generated types through serde-wasm-bindgen; node positions and the results of a viewport query
 // are read through views on the engine's buffers, created anew on every read because growing
 // memory detaches older views (ADR-0010).
@@ -36,7 +36,7 @@ export type {
 };
 
 /** The mark of plain data `api/snapshot.ts` read once from the host application's value
- *  (ADR-0026). It is exported nowhere, so that handing the bridge a value of the host
+ *  (ADR-0028). It is exported nowhere, so that handing the bridge a value of the host
  *  application, which may hold a getter or a Proxy, takes a cast a reviewer sees. */
 declare const read: unique symbol;
 

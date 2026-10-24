@@ -1,4 +1,4 @@
-//! The reading and checking of graph data, the one place that validates it (ADR-0026, ADR-0010):
+//! The reading and checking of graph data, the one place that validates it (ADR-0028, ADR-0010):
 //! the limits of a load, the lenient readers of fields, the input types, and the checks that turn
 //! a batch into the engine's graph and a patch of `updateNode` into what the store merges. The
 //! exports in the crate root hand graph data here and pass on what it returns.
@@ -316,7 +316,7 @@ pub enum GraphList {
 /// Why Comb refused graph data in `load`, `updateNode`, or `addNode` (Q-7): what the bridge
 /// refused, what the shell could not read, and what only the shell's map from identifiers to slots
 /// knows, a node `updateNode` names that the graph does not hold and one `addNode` adds that it
-/// holds already (ADR-0026). The shell builds the last three as values of this type; no kind of it
+/// holds already (ADR-0028). The shell builds the last three as values of this type; no kind of it
 /// is written by hand in TypeScript.
 /// `query` refuses a rectangle without its shape as malformed too, which no host application
 /// meets.
@@ -514,7 +514,7 @@ impl<'a> Item<'a> {
     #[expect(
         clippy::cast_possible_truncation,
         reason = "an index below the count of its list, which the bridge checked against \
-                  `MAX_ITEMS` first (ADR-0026)"
+                  `MAX_ITEMS` first (ADR-0028)"
     )]
     fn read<T>(&self, field: &str, value: Field<T>, expected: &str) -> Result<T, GraphDataProblem> {
         value.0.ok_or_else(|| GraphDataProblem::InvalidField {
@@ -806,7 +806,7 @@ pub(crate) fn graph_of(batch: &GraphBatch) -> Result<Graph, GraphDataProblem> {
 /// Checks the node `addNode` hands over as a load checks a node, the only one of its batch at
 /// index 0, and adds it to `graph`, whose nodes in use stay within `MAX_ITEMS`; returns the slot
 /// the engine chose. A refused node leaves the graph as it was. That the graph holds no node of
-/// its identifier is `api`'s to check, against the map only it keeps (ADR-0026).
+/// its identifier is `api`'s to check, against the map only it keeps (ADR-0028).
 pub(crate) fn add_node_to(graph: &mut Graph, node: &NodeInput) -> Result<u32, GraphDataProblem> {
     let nodes = f64::from(graph.nodes_in_use()) + 1.0;
     check_graph_size(nodes, 0.0)?;
@@ -820,7 +820,7 @@ pub(crate) fn add_node_to(graph: &mut Graph, node: &NodeInput) -> Result<u32, Gr
 /// index 0, and refuses one from a node to itself (ADR-0024) and one past `MAX_ITEMS` edges in
 /// use; adds it to `graph` between the node slots `source` and `target`, which `api` resolved
 /// against the map only it keeps, and returns the slot the engine chose. That the graph holds no
-/// edge of its identifier and holds its ends is `api`'s to check (ADR-0026). A refused edge leaves
+/// edge of its identifier and holds its ends is `api`'s to check (ADR-0028). A refused edge leaves
 /// the graph as it was.
 pub(crate) fn add_edge_to(
     graph: &mut Graph,
@@ -1486,7 +1486,7 @@ pub(crate) mod tests {
 
     #[test]
     fn an_added_node_is_refused_as_a_load_refuses_it_and_the_graph_kept() {
-        // Verifies: ADR-0026, Q-7
+        // Verifies: ADR-0028, Q-7
         let named = || "n".to_owned();
         let cases: Vec<(NodeInput, GraphDataProblem)> = vec![
             (
@@ -1542,7 +1542,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_node_added_to_a_graph_at_the_limit_of_a_load_is_refused() {
-        // Verifies: ADR-0026, Q-7
+        // Verifies: ADR-0028, Q-7
         let count = MAX_ITEMS as usize;
         let positions = (0..count).flat_map(|i| [i as f32, 0.0]).collect();
         let mut graph = Graph::new(positions, vec![1.0; count * 2], Vec::new()).unwrap();

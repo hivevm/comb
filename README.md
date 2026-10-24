@@ -43,7 +43,7 @@ Inside the Dev Container, which provides Bun, Rust, wasm-pack, and Chromium
 ([ADR-0008](docs/adr/0008-toolchain.md), [ADR-0014](docs/adr/0014-dev-container-toolchain.md)).
 [`scripts/check-code.sh`](scripts/check-code.sh) runs the first three in order, then the
 structural test of
-[ADR-0026](docs/adr/0026-the-shell-refuses-what-only-its-map-knows.md)
+[ADR-0028](docs/adr/0028-the-graph-lies-within-a-world.md)
 and the bundle budget of Q-3 (`bun run build:lib`, at most 300 kB gzipped without PixiJS).
 
 - **Build:** `bun run build` — the engine with wasm-pack, the type check, and the example
@@ -263,7 +263,7 @@ docs/GLOSSARY.md      # the vocabulary everyone uses, kept current inline
 docs/CONVENTIONS.md   # how this project writes what no check decides, kept current inline
 docs/ARCHITECTURE.md  # the system as it currently stands
 docs/adr/             # Architecture Decision Records (+ template)
-crates/engine/        # the engine's pure Rust core: geometry over values and buffers (ADR-0026)
+crates/engine/        # the engine's pure Rust core: geometry over values and buffers (ADR-0028)
 crates/engine-wasm/   # the bridge's Rust side: every WebAssembly export (ADR-0010)
 packages/comb/        # the library: api, store, interaction, render, bridge
 examples/metric-tree/ # the example host application, with its browser tests (G-9)

@@ -113,7 +113,7 @@ export interface Connection {
 }
 
 /** The state without its actions, read-only to its leaves: what the render layer sees, so the
- *  type checker refuses a write (ADR-0026). */
+ *  type checker refuses a write (ADR-0028). */
 export interface GraphView {
   /** The node in each slot, none at a free slot (ADR-0022). */
   readonly nodes: readonly (Readonly<NodeView> | undefined)[];

@@ -2,7 +2,7 @@
 // of the node under the pointer, and while the user drags a connection those of its source and of
 // the node under the pointer, the compatible ones drawn apart; and in the overlay, a line from the
 // source's connector to the pointer. It reads the store and the engine's positions, and writes
-// neither (ADR-0026).
+// neither (ADR-0028).
 import { Graphics } from "pixi.js";
 import type { GraphView, Side } from "../store";
 

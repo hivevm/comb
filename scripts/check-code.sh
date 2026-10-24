@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Builds, tests, and lints Comb: the commands of the README's "Build, Test & Run" (ADR-0008),
-# with the shape of the code (scripts/check-structure.sh, ADR-0026) and the decided dependencies
+# with the shape of the code (scripts/check-structure.sh, ADR-0028) and the decided dependencies
 # (scripts/check-dependencies.sh, ADR-0008, ADR-0010, ADR-0011) first, since they need no
 # toolchain and a red test must not hide them, and the bundle budget (scripts/check-bundle.sh,
 # Q-3) last, each after its self-test.

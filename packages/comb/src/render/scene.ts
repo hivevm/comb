@@ -1,5 +1,5 @@
 // The PixiJS scene (ADR-0027): a `world` render group with its layers in drawing order, and an
-// `overlay` in screen coordinates. This render reads the store and never writes it (ADR-0026).
+// `overlay` in screen coordinates. This render reads the store and never writes it (ADR-0028).
 //
 // After every change, the scene asks the engine which nodes, edges, and edge labels meet the
 // viewport and a margin around it, and binds pooled node views and edge-label views to exactly

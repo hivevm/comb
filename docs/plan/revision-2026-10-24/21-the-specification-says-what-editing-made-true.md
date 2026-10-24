@@ -30,7 +30,7 @@ Draft of its first sentence:
 > the public interface that names a node or an edge the graph does not hold, or adds one it holds
 > already, never crash or hang the host page and never cause a WebAssembly panic; …
 
-Moves: ADR-0023 (*Validation*, *Refusals*), ADR-0026 (*What the bridge cannot see*), whose
+Moves: ADR-0023 (*Validation*, *Refusals*), ADR-0028 (*What the bridge cannot see*), whose
 Context cites Q-7's wording.
 
 **3. The assumption on edges and a load's self-edges.** The specification assumes every edge
@@ -47,7 +47,7 @@ Two drafts, one to choose:
 > refuses a self-edge as `addEdge` does, a change of what a load accepts (*Existing behaviour*
 > of the editing spec kept it).
 
-Moves: ADR-0024 (*Self-edges*, its *Consequences*), and with (b) ADR-0026 (the limits and refusals
+Moves: ADR-0024 (*Self-edges*, its *Consequences*), and with (b) ADR-0028 (the limits and refusals
 of a load).
 
 ## Acceptance criteria
@@ -60,7 +60,7 @@ of a load).
 ## Read first
 
 - `docs/SPECIFICATION.md` (Q-1, Q-7, *Assumptions*); ADR-0008, ADR-0022, ADR-0023, ADR-0024,
-  ADR-0026.
+  ADR-0028.
 
 ## Blocked by
 
