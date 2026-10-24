@@ -191,12 +191,15 @@ function hoverAt(
 function takenFrom(state: GraphState, drag: Drag | null): boolean {
   if (!drag || drag.kind === "pan") return false;
   const held = drag.kind === "label" ? state.edges[drag.slot] : state.nodes[drag.slot];
-  return state.change?.kind === "loaded" || held?.id !== drag.id;
+  // A label the host cleared is taken from under its drag as its edge would be.
+  const cleared = drag.kind === "label" && !state.edges[drag.slot]?.label;
+  return state.change?.kind === "loaded" || held?.id !== drag.id || cleared;
 }
 
 /** Ends a drag of a label, which records, once, where it left the label, where it moved it. */
 function endLabelDrag(store: GraphStore, drag: Extract<Drag, { kind: "label" }>): void {
-  if (drag.placed && store.getState().edges[drag.slot]?.id === drag.id)
+  const edge = store.getState().edges[drag.slot];
+  if (drag.placed && edge?.id === drag.id && edge.label)
     store.getState().labelMoved(drag.id, drag.placed.t, drag.placed.offset);
 }
 
@@ -263,7 +266,7 @@ export function attachInteraction(
       // A drag whose release never came ends where the next press begins.
       release(false);
       drag = startDrag(store, bridge, event, !!connect);
-      if (drag?.kind === "node") app.canvas.style.cursor = "grabbing";
+      if (drag?.kind === "node" || drag?.kind === "label") app.canvas.style.cursor = "grabbing";
     }),
   );
   app.stage.on(

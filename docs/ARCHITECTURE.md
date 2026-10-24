@@ -117,20 +117,21 @@ The functional core and its shell follow
   itself, and adds it between the node slots `api` resolved, `updateEdge` checks a patch of an
   edge's colour, dash, arrowhead, and label as a load checks those fields and restyles and re-places
   the edge, `edgesAt` names the edges at given nodes without removing anything, `removeNodes`
-  removes nodes and the edges at them and returns those edges' slots,
-  `removeEdges` removes edges, `translate` moves nodes, `query` takes a rectangle, a level of
-  detail, the size of a screen pixel, and how far an edge label's pill reaches from its point, and
-  writes the found node slots, the edge-label slots and points (at the near level only), the found
-  edge slots, and the edge mesh into buffers the engine owns, the label points and the mesh's
-  positions relative to the query's origin, which `originX` and `originY` read
-  ([ADR-0010](adr/0010-bridge-data-format.md)), and returns the mesh's detail, complete or
-  coarsened, and refuses a pixel that is not a finite number above zero as malformed; `drawnEdges`
-  computes the ends of the found edges when inspection asks, as they lie then, and `hit` names what
-  a press at a point hits, a node or an edge by its slot or nothing, as one generated value; it
-  generates the type of every problem of graph data the methods of `Comb` throw, `GraphDataProblem`,
-  which `comb` exports, and keeps the refusals of `translate` and of the removals, a mistake of the
-  shell's, in types of their own. Its crate root holds the exports and their conversions; its module
-  `graph_data` reads and checks graph data, the one place that does
+  removes nodes and the edges at them and returns those edges' slots, `removeEdges` removes edges,
+  `translate` moves nodes, `query` takes a rectangle, a level of detail, the size of a screen pixel,
+  and how far an edge label's pill reaches from its point, and writes the found node slots, the
+  edge-label slots and points (at the near level only), the found edge slots, and the edge mesh into
+  buffers the engine owns, the label points and the mesh's positions relative to the query's origin,
+  which `originX` and `originY` read ([ADR-0010](adr/0010-bridge-data-format.md)), and returns the
+  mesh's detail, complete or coarsened, and refuses a pixel that is not a finite number above zero
+  as malformed; `drawnEdges` computes the ends of the found edges when inspection asks, as they lie
+  then, and `hit` names what a press at a point hits, a connector, a label, a node, or an edge by
+  its slot, or nothing, as one generated value; `setLabelSize` takes the measure of a label's pill,
+  `labelPoint` names where a label lies, and `moveLabel` places a dragged label and returns its path
+  parameter and offset; it generates the type of every problem of graph data the methods of `Comb`
+  throw, `GraphDataProblem`, which `comb` exports, and keeps the refusals of `translate` and of the
+  removals, a mistake of the shell's, in types of their own. Its crate root holds the exports and
+  their conversions; its module `graph_data` reads and checks graph data, the one place that does
   ([ADR-0026](adr/0026-the-shell-refuses-what-only-its-map-knows.md)); `packages/comb/src/bridge` is
   the one module that imports the WebAssembly package and reads those buffers through fresh
   typed-array views per read ([ADR-0010](adr/0010-bridge-data-format.md)).
@@ -149,11 +150,14 @@ The functional core and its shell follow
   yet, and proposes the edge to the veto on a release over one; `delete.ts` makes the canvas
   focusable and deletes the selection on Delete or Backspace, a node with the edges the engine names
   at it (`edgesAt`) before anything is removed, once `CombOptions.canDelete` returns `true`,
-  recording it as the user's. A drag that moved its node records `nodeMoved` once, when the pointer
-  is released on the canvas or outside it; a load ends a drag. The engine's `hit` says what the
-  pointer is on, at the level of detail of the scale; node views and edges take no events.
-  `viewport.ts` holds the viewport's arithmetic, the transform between world and screen included,
-  for interaction, the scene, `api`'s `fitView` and `setViewport`, and the testing entry.
+  recording it as the user's. A press on a label, at the near level, selects its edge and drags the
+  label, held where it was grabbed, which the engine places on every move; its release, or a later
+  press, records `labelMoved` once, and a load, a removal of its edge, or a label the host cleared
+  ends the drag. A drag that moved its node records `nodeMoved` once, when the pointer is released
+  on the canvas or outside it; a load ends a drag. The engine's `hit` says what the pointer is on,
+  at the level of detail of the scale; node views and edges take no events. `viewport.ts` holds the
+  viewport's arithmetic, the transform between world and screen included, for interaction, the
+  scene, `api`'s `fitView` and `setViewport`, and the testing entry.
 - **Render** (`packages/comb/src/render`) — the PixiJS scene (`scene.ts`): a `world` render group
   with the layers `EdgesContainer` (`edges.ts`), `NodeParticles` (`particles.ts`), `NodesContainer`
   (`nodes.ts`), `LabelsContainer` (`labels.ts`), and `ConnectorsLayer` (`connectors.ts`), with the

@@ -303,9 +303,6 @@ impl EdgePath {
         }
     }
 
-    /// Where an edge label with path parameter `t` and label offset `offset` sits: the path
-    /// point at `t`, moved `offset` pixels along the normal, which points left of the direction
-    /// of travel.
     /// The path parameter and label offset that place a label at `p`: the parameter of the path
     /// point nearest `p`, and how far `p` lies from it along the normal there, so that
     /// `label_position` of the two is `p` where that nearest point lies inside the path (G-6).
@@ -337,6 +334,9 @@ impl EdgePath {
         (t, offset)
     }
 
+    /// Where an edge label with path parameter `t` and label offset `offset` sits: the path
+    /// point at `t`, moved `offset` pixels along the normal, which points left of the direction
+    /// of travel.
     pub(crate) fn label_position(&self, t: f64, offset: f64) -> Point {
         let point = self.point_at(t);
         let tangent = self.tangent_at(t);
@@ -454,7 +454,7 @@ mod tests {
         // Verifies: G-6
         // From the right of a node to the left of one behind and below it: the path swings out to
         // the right, back across, and out to the left, so that a point beside it lies near
-        // several stretches of it, and only the nearest places the label there.
+        // several stretches of it, and the placement has to end at a foot of a perpendicular.
         let path = EdgePath::between(
             &Rect::of_node(0.0, 0.0, 220.0, 64.0),
             &Rect::of_node(-400.0, 140.0, 220.0, 64.0),
@@ -464,8 +464,9 @@ mod tests {
             let q = path.point_at(t);
             (q.x - p.x).hypot(q.y - p.y)
         };
-        // A point far beside a path that turns back, whose distance has two minima, so that only a
-        // search near the nearest sample finds the nearer: a search of the whole path misses it.
+        // A point far beside a path that turns back, whose distance has two minima: a search near
+        // the nearest sample ends at a foot of a perpendicular, where a search of the whole path
+        // ends at a point that is none.
         let turning = EdgePath::between(
             &Rect::of_node(0.0, 0.0, 220.0, 64.0),
             &Rect::of_node(

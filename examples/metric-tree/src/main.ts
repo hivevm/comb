@@ -7,6 +7,7 @@ import {
   type EdgeData,
   type EdgePatch,
   type EngineSource,
+  type GraphChange,
   type GraphData,
   type Selection,
 } from "comb";
@@ -195,6 +196,16 @@ function changeEdge(patch: EdgePatch): void {
   if (selectedEdge) comb.updateEdge(selectedEdge.id, patch);
 }
 
+/** Takes into the example's graph a change of an edge it holds: a label the user dragged, or a
+ *  patch the host made. */
+function changedEdge(change: Extract<GraphChange, { kind: "labelMoved" | "edgeUpdated" }>): void {
+  const id = change.kind === "labelMoved" ? change.edge : change.id;
+  const edge = graph.edges.find((candidate) => candidate.id === id);
+  if (!edge) return;
+  if (change.kind === "edgeUpdated") patched(edge, change.patch as EdgePatch);
+  else if (edge.label) edge.label = { ...edge.label, t: change.t, offset: change.offset };
+}
+
 /** `edge` with `patch` merged, as Comb merges it: `null` clears a dash or a label. */
 function patched(edge: EdgeData, patch: EdgePatch): void {
   const { dash, label, ...rest } = patch;
@@ -258,13 +269,10 @@ canvas.addEventListener("drop", (event) => {
 // The example keeps its own copy of the graph for the sidebar, from what Comb tells it: a node
 // dropped from the palette, an edge added or changed, and what the user or the host removed.
 comb.onChange((change) => {
+  if (change.kind === "labelMoved" || change.kind === "edgeUpdated") return changedEdge(change);
   if (change.kind === "nodeAdded") graph.nodes.push({ ...change.node });
   else if (change.kind === "edgeAdded") graph.edges.push({ ...change.edge });
-  else if (change.kind === "edgeUpdated") {
-    const edge = graph.edges.find(({ id }) => id === change.id);
-    if (edge) patched(edge, change.patch as EdgePatch);
-    return;
-  } else if (change.kind === "nodesRemoved" || change.kind === "edgesRemoved") {
+  else if (change.kind === "nodesRemoved" || change.kind === "edgesRemoved") {
     const nodes = new Set(change.kind === "nodesRemoved" ? change.nodes : []);
     const edges = new Set(change.edges);
     graph.nodes = graph.nodes.filter(({ id }) => !nodes.has(id));

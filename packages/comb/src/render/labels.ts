@@ -73,13 +73,18 @@ export class LabelsContainer extends Container {
     return this.views.created;
   }
 
+  /** The edge each slot's pill was last measured for, against the map from edge identifiers to
+   *  slots then: a new map, which an addition, a removal, or a load makes, measures again. */
+  private measured = new Map<number, EdgeView>();
+  private measuredWith: GraphView["edgeSlots"] | null = null;
+
   /** How far the widest pill drawn so far reaches from its point, and at least `LABEL_REACH`:
    *  the reach the next query uses for labels. */
   reach = LABEL_REACH;
 
   /** Binds a label view to every label `visible` found, or to none where `shown` is false, and
-   *  hands the engine the half width and half height of each pill drawn, by which a press hits
-   *  it (ADR-0025). */
+   *  hands the engine the half width and half height of each pill it has not measured for that
+   *  edge, as it was drawn, by which a press hits it (ADR-0025). */
   sync(state: GraphView, visible: Visible, shown: boolean, bridge: Bridge): void {
     this.views.begin();
     const pills = shown ? this.bindAll(state, visible) : [];
@@ -89,6 +94,10 @@ export class LabelsContainer extends Container {
   }
 
   private bindAll(state: GraphView, visible: Visible): [number, number][] {
+    if (this.measuredWith !== state.edgeSlots) {
+      this.measured.clear();
+      this.measuredWith = state.edgeSlots;
+    }
     const pills: [number, number][] = [];
     visible.labels.forEach((slot, i) => {
       const edge = state.edges[slot];
@@ -96,7 +105,10 @@ export class LabelsContainer extends Container {
       const view = this.views.bind(slot);
       const halfWidth = view.bind(edge);
       this.reach = Math.max(this.reach, halfWidth);
-      pills.push([slot, halfWidth]);
+      if (this.measured.get(slot) !== edge) {
+        this.measured.set(slot, edge);
+        pills.push([slot, halfWidth]);
+      }
       view.position.set(visible.labelPoints[i * 2], visible.labelPoints[i * 2 + 1]);
     });
     return pills;
