@@ -373,13 +373,14 @@ the render layer reaches the store instead of the action-free `GraphView`, or wh
 imports past the library's entries and its engine file (ADR-0028, ADR-0019), and when the render
 layer names PixiJS's `Text`, `HTMLText`, or `SplitText` or the edges layer a `Graphics` (ADR-0027),
 and when its Canvas 2D fallback names `Graphics` outside its imports and its one field (ADR-0018).
-`scripts/check-overview.sh` fails, naming each, where this overview names in no backquoted span a
-method or property of the `Comb` interface, an option of `CombOptions`, or a function `comb/testing`
-exports (ADR-0001). `scripts/check-bundle.sh` builds the library and fails when its gzipped
-JavaScript and the engine file reach the 300 kB of Q-3, when no engine file is measured, when the
-JavaScript inlines the engine (ADR-0019), and when the JavaScript carries the bridge's test mode or
-the engine file the trap's export (ADR-0010, ADR-0021); it fails too when it does not recognise
-either in the library built in test mode and the engine of `packages/comb/wasm/test-mode/`.
+`scripts/check-overview.sh` fails, naming each, where this overview holds no code span of its own
+for a method or property of the `Comb` interface, an option of `CombOptions`, or a function
+`comb/testing` exports (ADR-0001), and where it reads no names from one of those sources.
+`scripts/check-bundle.sh` builds the library and fails when its gzipped JavaScript and the engine
+file reach the 300 kB of Q-3, when no engine file is measured, when the JavaScript inlines the
+engine (ADR-0019), and when the JavaScript carries the bridge's test mode or the engine file the
+trap's export (ADR-0010, ADR-0021); it fails too when it does not recognise either in the library
+built in test mode and the engine of `packages/comb/wasm/test-mode/`.
 `scripts/check-dependencies.sh` fails on a lockfile of another package manager beside `bun.lock`
 (ADR-0008), on tsify's default or `json` features or `serde_json` in the bridge crate (ADR-0010), in
 whatever form the entry takes, and on a listed state library other than zustand in the library's
