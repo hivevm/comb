@@ -18,7 +18,20 @@ skimmed. The design revision drops what prevented nothing
   A test that passes either way verifies nothing, and reading it rarely shows that.
 - **An oracle owes nothing to the code it judges.** A test computes its expected value from the
   inputs, by brute force or by hand, never from a cache, buffer, or helper of the module under
-  test; an oracle that reads the engine's own state agrees with the engine's mistakes.
+  test; an oracle that reads the engine's own state agrees with the engine's mistakes. Nor does
+  it take its cases from that code: a case the code under test picks is skipped exactly where the
+  code errs.
+- **Host code may change the graph.** A getter of the host's input, a listener of `onChange`, and
+  a veto are the host application's code, and each may call `Comb` again. Read the host's input
+  whole before the first look at the store or the engine, and after a veto or a listener returns,
+  decide from the graph as it stands then, not from what was found before the call: a slot looked
+  up before host code ran may hold another item after it.
+- **Hand the host copies.** What a change or a method gives the host application is a copy, never
+  an object the store keeps, since a host that writes into it changes the graph past every check.
+- **Work a frame need not redo is pinned by a count.** A layer, a hand-over to the engine, or a
+  probe that should do nothing while the pointer moves or the view pans has a test that counts it
+  across such a move (`work()` of `comb/testing`, or a count of its calls), because a frame that
+  redoes it still draws the right picture and no other test sees the cost.
 - **A number says where it was taken.** A test or a measurement whose verdict depends on the
   environment (the renderer, the GPU, the display) asserts that environment before it records
   anything, and fails rather than measure a fallback: a silent fallback looks like a result.
