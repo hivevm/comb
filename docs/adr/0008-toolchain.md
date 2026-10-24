@@ -14,50 +14,31 @@ test runner, and lets Node.js run only what does not yet run on Bun
 runner, the linters, and the sensors that check what an agent wrote.
 
 Several goals need a real browser with WebGL2: the example started from VS Code (G-9), culling
-(G-7), and the performance goals Q-1 and Q-2. Playwright drives one. Bun 1.4 (2026-08-20)
-announces that Playwright runs on it, test runner and configuration included; Playwright's own
-system requirements still name only Node.js 22, 24, and 26. A Bun issue that broke Playwright's
-navigation was closed on 2026-09-22, before Bun 1.4.3 (2026-10-10), and other projects report
-both working setups and keeping Node.js for Playwright. `bunx` runs an executable whose shebang
-names `node` with Node.js unless `--bun` is passed. The project's scaffold ran its whole gate on
-Bun in a container without Node.js on 2026-10-17: wasm-pack, `tsc`, ESLint, Prettier, Vite,
-`bun test`, and `bunx --bun playwright test` with Chromium.
-
-Q-3 caps the bundle at 300 kB, a number a check can hold on every push. Q-1 and Q-2 are defined
-on a reference machine with an integrated GPU, which no CI runner has, so CI can only compare
-against earlier measurements. The runner itself varies between workflow runs: runs 39098695116
-and 39102498247 of the **Benchmark** workflow on `main`, without a change to the code they
-measure, differed in every number by 13 to 42 %, while the three runs within each agreed
-closely. Compared as they are, the numbers judge the runner as much as Comb.
-
-A reference workload timed in the benchmark's page, a JavaScript loop, a WebAssembly loop, and a
-WebGL2 draw of a fixed mesh, does not move with Comb's numbers in proportion. In the Dev
-Container limited to four cores, a GitHub runner's size, its WebGL2 part took five times as long
-as on all 24 cores (58.4 against 303.9 ms), the loops did not move, and Comb's numbers took 1.0
-to 1.83 times as long. Two runs on all 24 cores measured the WebGL2 part at 58.4 and 94.0 ms.
-
-Each run records the CPU model of its runner, and the CPU model names the runner's kind. The eleven
-runs of the **Benchmark** workflow from 2026-10-18 to 2026-10-21 ran on four kinds: AMD EPYC 7763 in
-six, Intel Xeon Platinum 8370C and AMD EPYC 9V45 in two each, and AMD EPYC 9V74 in one; runs
-39098695116 and 39102498247 ran on a 7763 and a 9V45. Every runner reported the same SwiftShader
-renderer. Within a kind the numbers repeat: the six runs on the 7763 agreed within one frame in the
-median of every gesture, pan near took 8 frames in all eighteen of their files, and each part of the
-median reference of the five that recorded one agreed within 2 %. A first run's WebGL2 part read up
-to 34 % slower in three of the five, and the median of three absorbed it. Between kinds the
-reference passes runners whose numbers it does not predict. Drag and pan follow its WebGL2 part
-(Pearson r = 0.99 over the eight medians with a reference, the run with a deliberate slowdown left
-out); pan near and pan middle do not (0.69 and 0.74, and 0.07 with the JavaScript part). Divided by
-the WebGL2 ratio, pan near and pan middle come to 1.33 and 1.39 on the 8370C (run 39544445534), 1.50
-and 1.32 on the 9V74, and 1.22 and 1.30 on the 9V45. Run 39544445534 on the 8370C, its WebGL2 part
-22 % slower, failed zoom, pan near, and pan middle by 42 to 70 % with a change that measured as
-`main` did on the 7763 (run 39545410268); run 39545986669 on the 9V74, faster in every part,
-measured pan near 25 % slower. Every p95 is a whole number of 60 Hz frames, and every gesture runs
-out of its time before its last step, so a faster runner sends more steps and pans further; within a
-kind neither moved a verdict.
+(G-7), and the performance goals Q-1 and Q-2. Playwright drives one. Bun 1.4 announces that
+Playwright runs on it, test runner and configuration included; Playwright's own system
+requirements still name only Node.js 22, 24, and 26. A Bun issue that broke Playwright's
+navigation was closed before Bun 1.4.3, and other projects report both working setups and keeping
+Node.js for Playwright. `bunx` runs an executable whose shebang names `node` with Node.js unless
+`--bun` is passed. The project's scaffold ran its whole gate on Bun in a container without
+Node.js on 2026-10-17: wasm-pack, `tsc`, ESLint, Prettier, Vite, `bun test`, and
+`bunx --bun playwright test` with Chromium.
 
 Bun runs the lifecycle scripts of a dependency only when `package.json` lists it under
 `trustedDependencies`, and listing any replaces Bun's default list. The npm package of wasm-pack
 fetches its binary in such a script.
+
+Q-3 caps the bundle at 300 kB, a number a check can hold on every push. Q-1 and Q-2 are defined on a
+reference machine with an integrated GPU, which no CI runner has, so CI can only compare against
+earlier measurements. The **Benchmark** workflow's runs on GitHub runners (Sources) show what such a
+comparison has to allow for. The runner varies between workflow runs: two runs on `main` without a
+change to the code they measure differed in every number by 13 to 42 %, while the three runs within
+each agreed closely, so that numbers compared as they are judge the runner as much as Comb. The CPU
+model a run records names the runner's kind; within a kind the numbers repeat, and every runner
+reports the same SwiftShader renderer. A reference workload timed in the benchmark's page, a
+JavaScript loop, a WebAssembly loop, and a WebGL2 draw of a fixed mesh, does not move with Comb's
+numbers in proportion, and between kinds it passes runners whose numbers it does not predict. Every
+p95 is a whole number of 60 Hz frames, and every gesture runs out of its time before its last step,
+so a faster runner sends more steps and pans further; within a kind neither moved a verdict.
 
 The catalogue offers three forms of sensors: the linter's own rules first, one tool per kind, and
 mutation testing on a schedule. A test that passes without the behaviour it names is what
@@ -87,27 +68,29 @@ run by `scripts/check-code.sh`.
 - **Sensor for Q-3:** a check that fails when the gzipped JavaScript and WebAssembly of the
   library bundle, without PixiJS, reach 300 kB.
 - **Benchmark:** `bun run bench` measures Q-1 and Q-2 with Playwright. On the reference machine it
-  decides against the absolute numbers; in CI it runs as a workflow of its own, weekly and on
-  demand, three times on a GitHub runner, and fails when the median of a number exceeds the baseline
-  of the runner's kind by more than 25 %. The kind is the CPU model the run records. Each kind's
-  baseline is a file of its own, `bench/baselines/<kind>.json`, whose name is the CPU model in lower
-  case with every run of characters other than `a`–`z` and `0`–`9` replaced by one hyphen and no
-  hyphen at either end (`amd-epyc-7763-64-core-processor.json`); the baseline names its CPU model,
-  and a run is compared only with a baseline that names the same. A run on a kind without a
-  baseline, or one that names no CPU model, is refused, naming the kind, if any, and the kinds that
-  have a baseline. The GPU is no part of the kind, since every runner reports the same SwiftShader
-  renderer, but a run of another size, mode, or GPU than its kind's baseline is refused as well.
-  Each run also times a fixed reference workload in the same page, after the first frame and before
-  the gestures, which uses the browser's JavaScript, WebAssembly, and WebGL2 raster but none of
-  Comb's code: a JavaScript loop, a WebAssembly loop, and a WebGL2 draw of a fixed mesh. The
-  reference is a gate within a kind, not a correction: when a part of the run's reference differs
-  from its kind's baseline by more than 25 %, either way, the workflow refuses to compare and names
-  the parts, since the runner was not in the state the baseline was taken in. A run without a
-  reference is refused against a baseline with one; against a baseline without one the numbers are
-  compared and the gate is reported as not checked. The median of the runs keeps the CPU model and,
-  for each gesture beside its p95, the median of the steps sent and of the frames rendered, and so
-  does a baseline. A kind's baseline is the median of runs on that kind on `main`, every part of its
-  reference included, and is added or changed only in a pull request that says why.
+  decides against the absolute numbers. In CI it runs as a workflow of its own, weekly and on
+  demand, three times on a GitHub runner, and fails when the median of a number exceeds the
+  baseline of the runner's kind by more than 25 %.
+- **Runner kind and baselines:** the kind is the CPU model the run records; the GPU is no part of
+  it. Each kind's baseline is a file of its own, `bench/baselines/<kind>.json`, named by the CPU
+  model in lower case with every run of characters other than `a`–`z` and `0`–`9` replaced by one
+  hyphen and no hyphen at either end (`amd-epyc-7763-64-core-processor.json`). The baseline names
+  its CPU model, and a run is compared only with a baseline that names the same. A kind's baseline
+  is the median of runs on that kind on `main`, every part of its reference included, and is added
+  or changed only in a pull request that says why.
+- **Refusals:** a run on a kind without a baseline, or one that names no CPU model, is refused,
+  naming the kind, if any, and the kinds that have a baseline; so is a run of another size, mode,
+  or GPU than its kind's baseline.
+- **Reference gate:** each run also times a fixed reference workload in the same page, after the
+  first frame and before the gestures: a JavaScript loop, a WebAssembly loop, and a WebGL2 draw of a
+  fixed mesh, which use the browser's JavaScript, WebAssembly, and WebGL2 raster but none of Comb's
+  code. The reference is a gate within a kind, not a correction: when a part of the run's reference
+  differs from its kind's baseline by more than 25 %, either way, the workflow refuses to compare
+  and names the parts, since the runner was not in the state the baseline was taken in. A run
+  without a reference is refused against a baseline with one; against a baseline without one the
+  numbers are compared and the gate is reported as not checked.
+- **What a median keeps:** the median of the runs keeps the CPU model and, for each gesture beside
+  its p95, the median of the steps sent and of the frames rendered, and so does a baseline.
 - **Mutation testing:** cargo-mutants, at a pinned version, mutates `crates/engine` in a workflow
   of its own, weekly and on demand, and fails when a mutant survives that
   `crates/engine/mutants-missed.txt` does not list. The list shrinks with each change that kills
@@ -122,11 +105,13 @@ design revision adds when a mistake calls for them; how the code is laid out in 
 
 ## Alternatives considered
 
+The toolchain:
+
 - **Node.js with npm and Vitest** — the widest support, Playwright included, but the maintainer
   chose Bun, and `bun test` makes Vitest one dependency too many.
-- **Node.js as Playwright's fallback runtime** — what this ADR first decided, for the case that
-  Playwright failed on Bun; the scaffold ran it on Bun without Node.js, so the second runtime
-  would be kept for a failure nobody has seen.
+- **Node.js as Playwright's fallback runtime**, for the case that Playwright fails on Bun — the
+  scaffold ran it on Bun without Node.js, so the second runtime would be kept for a failure nobody
+  has seen.
 - **Playwright on Node.js until Playwright lists Bun** — the supported path, but a second runtime
   kept for a support statement Bun's announcement and the scaffold's run already answer.
 - **Vitest run on Bun** — more plugins than `bun test`, but a dependency for what Bun already
@@ -137,6 +122,9 @@ design revision adds when a mistake calls for them; how the code is laid out in 
   a plugin for what `--target web` gives without one.
 - **One tool per kind from the start** — dependency-cruiser, jscpd, and knip catch real mistakes,
   but with no code yet nothing says which of them this project needs.
+
+Where and against what the benchmark judges:
+
 - **Benchmark only on the reference machine** — absolute numbers where they count, but nothing
   notices a regression between the maintainer's runs.
 - **A baseline over several workflow runs**, the median of five weekly runs on `main` — one
@@ -144,12 +132,28 @@ design revision adds when a mistake calls for them; how the code is laid out in 
   numbers, whose speed decides the verdict as much as Comb does.
 - **A wider margin sized to the spread between runners** — nothing new to measure, but with
   runners 42 % apart it catches only regressions larger than that.
+- **Telling kinds apart by a tighter reference gate** — the JavaScript part alone differs from the
+  7763's by 7 % on the 8370C and 12 % on the 9V74, and within each of these three kinds by under 1
+  %, but on the 9V45 it spread by 18 % within one workflow run, and a reference that matches does
+  not say which baseline applies; the CPU model names the kind exactly.
+- **A tighter gate within a kind**, 5 % — the median references of the best-measured kind agreed
+  within 2 %, but two kinds have one run with a reference each, too few to size a tighter gate by,
+  and a first run 34 % slower in its WebGL2 part did not move the median.
+
+Correcting the numbers by the reference instead of gating on it:
+
 - **Normalising every number by the reference's sum** — would cancel a runner's speed if Comb's
   numbers moved with it, but on four cores the sum rose with the WebGL2 part more than Comb's
   numbers did, so every ratio fell by 15 to 54 % and a first frame twice as slow would pass.
 - **Normalising by the reference's parts**, the loops alone or a weighted sum — the loops did not
   move on four cores while Comb's numbers did, so dividing by them raised false alarms of 61 to
   78 %; a weighting fitted to one machine says nothing about another runner.
+- **A gate per gesture**, each gesture divided by the part of the reference it follows — holds
+  drag and pan within 8 %, but no part predicts pan near and pan middle, which stay 22 to 50 %
+  off on the three other kinds.
+
+The shape of a gesture and its margin:
+
 - **A margin of whole frames**, the larger of 25 % and three frames — fits a p95 that comes in
   whole frames, under which 25 % of pan near is two frames, but it changes no verdict of the
   eleven runs: on the 8370C pan near took 5 frames and pan middle 7 frames more than the
@@ -159,17 +163,9 @@ design revision adds when a mistake calls for them; how the code is laid out in 
   the 7763 and 25 to 28 minutes on the 8370C, past the job's 30, and within a kind the frames
   rendered did not move the p95: pan near on the 9V74 took 10 frames in runs of 77 and of 64
   frames.
-- **A gate per gesture**, each gesture divided by the part of the reference it follows — holds
-  drag and pan within 8 %, but no part predicts pan near and pan middle, which stay 22 to 50 %
-  off on the three other kinds.
-- **Telling kinds apart by a tighter reference gate** — the JavaScript part alone differs from the
-  7763's by 7 % on the 8370C and 12 % on the 9V74, and within each of these three kinds by under
-  1 %, but on the 9V45 it spread by 18 % within one workflow run, and a reference that matches does
-  not say which baseline applies; each run records the CPU model, which names the kind exactly.
-- **A tighter gate within a kind**, 5 % — the median references of the 7763 agreed within 2 %, and
-  those of the two runs on the 8370C within 3 %, but the 9V45 and the 9V74 have one run with a
-  reference each, too few to size a tighter gate by, and a first run 34 % slower in its WebGL2 part
-  did not move the median.
+
+Mutation testing:
+
 - **Mutation testing that only reports** — never red, but a report nobody is made to read
   changes nothing.
 - **A threshold on the share of mutants caught** — one number, but a new surviving mutant hides
@@ -185,9 +181,9 @@ design revision adds when a mistake calls for them; how the code is laid out in 
 - Bun, `bunx` and shebangs — <https://bun.sh/docs/cli/bunx>; lifecycle scripts and
   `trustedDependencies` — <https://bun.sh/docs/install/lifecycle>; `bun test` —
   <https://bun.sh/docs/cli/test>. npm `bun` 1.4.3 (checked 2026-10-17).
-- Bun 1.4 release notes, *Playwright* — <https://bun.com/blog/bun-v1.4>; Bun issue 41851,
-  closed 2026-09-22 — <https://github.com/oven-sh/bun/issues/41851>; npm `bun` 1.4.3 published
-  2026-10-10 (checked 2026-10-17).
+- Bun 1.4 release notes (2026-08-20), *Playwright* — <https://bun.com/blog/bun-v1.4>; Bun issue
+  41851, closed 2026-09-22 — <https://github.com/oven-sh/bun/issues/41851>; npm `bun` 1.4.3
+  published 2026-10-10 (checked 2026-10-17).
 - Playwright, system requirements — <https://playwright.dev/docs/intro> (checked 2026-10-17).
 - Running Playwright on Bun: NixOS Wiki — <https://nixos.wiki/wiki/Playwright>;
   playwright-ruby-client on Bun 1.4 —
@@ -202,6 +198,36 @@ design revision adds when a mistake calls for them; how the code is laid out in 
 - cargo-mutants — <https://mutants.rs/>, crate `cargo-mutants` 27.1.0 (checked 2026-10-18).
 - StrykerJS test runners — <https://stryker-mutator.io/docs/stryker-js/>: Jest, Karma, Mocha,
   Vitest; no runner for `bun test`.
+- The **Benchmark** workflow's runs on GitHub runners, 2026-10-18 to 2026-10-21, and the
+  reference workload timed in the Dev Container:
+  - Runs 39098695116 and 39102498247 on `main`, without a change to the code they measure, ran on
+    an AMD EPYC 7763 and an AMD EPYC 9V45 and differed in every number by 13 to 42 %; the three
+    runs within each agreed closely.
+  - In the Dev Container limited to four cores, a GitHub runner's size, the reference's WebGL2
+    part took five times as long as on all 24 cores (58.4 against 303.9 ms), the loops did not
+    move, and Comb's numbers took 1.0 to 1.83 times as long. Two runs on all 24 cores measured
+    the WebGL2 part at 58.4 and 94.0 ms.
+  - The eleven runs ran on four kinds: AMD EPYC 7763 in six, Intel Xeon Platinum 8370C and AMD
+    EPYC 9V45 in two each, and AMD EPYC 9V74 in one. Every runner reported the same SwiftShader
+    renderer.
+  - Within a kind: the six runs on the 7763 agreed within one frame in the median of every
+    gesture, pan near took 8 frames in all eighteen of their files, and each part of the median
+    reference of the five that recorded one agreed within 2 %; the median references of the two
+    runs on the 8370C agreed within 3 %. A first run's WebGL2 part read up to 34 % slower in three
+    of the five, and the median of three absorbed it. Pan near on the 9V74 took 10 frames in runs
+    of 77 and of 64 frames.
+  - Between kinds, the reference passes runners whose numbers it does not predict. Drag and pan
+    follow its WebGL2 part (Pearson r = 0.99 over the eight medians with a reference, the run with
+    a deliberate slowdown left out); pan near and pan middle do not (0.69 and 0.74, and 0.07 with
+    the JavaScript part). Divided by the WebGL2 ratio, pan near and pan middle come to 1.33 and
+    1.39 on the 8370C (run 39544445534), 1.50 and 1.32 on the 9V74, and 1.22 and 1.30 on the
+    9V45. Run 39544445534 on the 8370C, its WebGL2 part 22 % slower, failed zoom, pan near, and
+    pan middle by 42 to 70 % with a change that measured as `main` did on the 7763 (run
+    39545410268); run 39545986669 on the 9V74, faster in every part, measured pan near 25 %
+    slower.
+  - The JavaScript part alone differs from the 7763's by 7 % on the 8370C and 12 % on the 9V74,
+    and within each of these three kinds by under 1 %; on the 9V45 it spread by 18 % within one
+    workflow run. The 9V45 and the 9V74 have one run with a reference each.
 
 ## Consequences
 
@@ -211,6 +237,10 @@ design revision adds when a mistake calls for them; how the code is laid out in 
   every push.
 - Positive: one script runs the same checks locally, in the pre-push hook, and in CI.
 - Positive: one JavaScript runtime in the Dev Container and in CI.
+- Positive: a verdict of the workflow compares a run with the baseline of its own kind, so a
+  runner whose numbers the reference does not predict, as pan near on the 8370C and the 9V74,
+  is not judged by another kind's numbers, and a run in an unusual state says so instead of
+  passing or failing on the runner's speed.
 - Negative / trade-offs: Playwright on Bun rests on Bun's claim and the scaffold's run, not on
   Playwright's support; a regression in either shows as a failing browser test, and the way back
   is a revision of this ADR that adds Node.js for Playwright again.
@@ -218,10 +248,6 @@ design revision adds when a mistake calls for them; how the code is laid out in 
   larger and slower to set up.
 - Negative / trade-offs: CI measures performance only relatively; a slow regression that stays
   under the threshold of each comparison is caught only on the reference machine.
-- Positive: a verdict of the workflow compares a run with the baseline of its own kind, so a
-  runner whose numbers the reference does not predict, as pan near on the 8370C and the 9V74,
-  is not judged by another kind's numbers, and a run in an unusual state says so instead of
-  passing or failing on the runner's speed.
 - Negative / trade-offs: a run on a kind without a baseline is refused, not judged; five of the
   eleven runs from 2026-10-18 to 2026-10-21 ran on another kind than the 7763. Each kind needs a run
   on `main` before its first verdict, a kind GitHub adds is refused until then, and every baseline
@@ -230,15 +256,20 @@ design revision adds when a mistake calls for them; how the code is laid out in 
 
 ## Enforcement
 
-The golden path's tests cite this ADR with a `Verifies: ADR-0008` marker. Check 9 of
-`scripts/check-docs.sh` holds the build job, `scripts/check-code.sh`, and the required checks of
-the README together. `scripts/check-dependencies.sh` fails when a lockfile of another package
-manager (`package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`, or `pnpm-lock.yaml`) exists
-beside `bun.lock`. `scripts/check-mutants.sh` fails on a surviving mutant that
-`crates/engine/mutants-missed.txt` does not list, and on a run that caught none; the
-**Mutation testing** workflow runs it, and its self-test runs in `scripts/check-all.sh` and
-`checks.yml`. Each script's self-test cites this ADR. The tests of `bench/compare.ts` decide how
-the runner gate and the comparison judge given numbers, among them that a run whose CPU model
-differs from the baseline's is refused, naming both kinds, and that a run of the same kind is
-compared. Whether 25 % suits the variance within a kind no test decides; the workflow's runs on
-`main` do. On the 7763 they agreed within one frame in every gesture's median.
+- The golden path's test, `examples/metric-tree/e2e/example.spec.ts`, cites this ADR with a
+  `Verifies: ADR-0008` marker.
+- Check 9 of `scripts/check-docs.sh` holds the build job, `scripts/check-code.sh`, and the
+  required checks of the README together.
+- `scripts/check-dependencies.sh` fails when a lockfile of another package manager
+  (`package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`, or `pnpm-lock.yaml`) exists beside
+  `bun.lock`; its self-test, `scripts/test-check-dependencies.sh`, cites this ADR.
+- `scripts/check-mutants.sh` fails on a surviving mutant that `crates/engine/mutants-missed.txt`
+  does not list, and on a run that caught none; the **Mutation testing** workflow runs it, and its
+  self-test, `scripts/test-check-mutants.sh`, runs in `scripts/check-all.sh` and `checks.yml` and
+  cites this ADR.
+- The tests of `bench/compare.ts`, in `bench/compare.test.ts`, cite this ADR and decide how the
+  runner gate and the comparison judge given numbers, among them that a run whose CPU model
+  differs from the baseline's is refused, naming both kinds, and that a run of the same kind is
+  compared.
+- Whether 25 % suits the variance within a kind no test decides; the workflow's runs on `main` do.
+  On the 7763 they agreed within one frame in every gesture's median.
