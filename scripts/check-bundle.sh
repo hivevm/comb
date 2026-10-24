@@ -33,21 +33,21 @@
 # Usage:
 #     scripts/check-bundle.sh [directory [budget in bytes]]
 # Exit code 0 when the bundle is under the budget, 1 otherwise. For its self-test, a run without
-# arguments takes the repository root from CHECK_BUNDLE_ROOT, and the commands that build the
+# arguments takes the repository root, whose bridge's source names the marks, from
+# CHECK_BUNDLE_ROOT, and the commands that build the
 # library and the library in test mode, run there, from CHECK_BUNDLE_BUILD and
 # CHECK_BUNDLE_TEST_BUILD, the second handed the directory to build into as $1.
 
 set -uo pipefail
 
-SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ROOT="${CHECK_BUNDLE_ROOT:-$SOURCE_ROOT}"
+ROOT="${CHECK_BUNDLE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 BUDGET="${2:-300000}"
 BUILD="${CHECK_BUNDLE_BUILD:-bun run build:lib > /dev/null}"
 TEST_BUILD="${CHECK_BUNDLE_TEST_BUILD:-cd packages/comb && bunx --bun vite build --mode test --outDir \"\$1\" > /dev/null}"
 
 # mark <constant> — the string the bridge's source assigns to <constant>.
 mark() {
-  sed -n "s/^const $1 = \"\([^\"]*\)\";\$/\1/p" "$SOURCE_ROOT/packages/comb/src/bridge/index.ts" | head -n 1
+  sed -n "s/^const $1 = \"\([^\"]*\)\";\$/\1/p" "$ROOT/packages/comb/src/bridge/index.ts" | head -n 1
 }
 DETACHING="$(mark DETACHING_MARK)"
 TRAP="$(mark TRAP_EXPORT)"
@@ -139,6 +139,12 @@ if (($# == 0)); then
     echo "Bundle check FAILED: it does not recognise the engine built in test mode (ADR-0021)." >&2
     exit 1
   fi
+  for glue in "$package/wasm/engine.js" "$package/wasm/test-mode/engine.js"; do
+    if [[ ! -f "$glue" ]]; then
+      echo "Bundle check FAILED: ${glue#"$ROOT/"} is missing — run \`bun run build:engine\`." >&2
+      exit 1
+    fi
+  done
   if ! cmp -s "$package/wasm/engine.js" "$package/wasm/test-mode/engine.js"; then
     echo "Bundle check FAILED: wasm/test-mode/engine.js differs from wasm/engine.js, the glue the example hands the engine built in test mode over with (ADR-0021)." >&2
     exit 1
