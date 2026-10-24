@@ -18,7 +18,7 @@ in the engine's two crates: 23 sites outside the tests today, run with
 workspace's lints, outside test code, and give each site either a conversion that states its
 range (`u32::try_from`, a checked narrowing) or an `#[expect(clippy::cast_possible_truncation,
 reason = "…")]` whose reason says why the value fits: checked as `f32` by the bridge, relative to
-the query's origin (ADR-0010), a count bounded by the limits of a load (ADR-0009). The distance
+the query's origin (ADR-0010), a count bounded by the limits of a load (ADR-0026). The distance
 along a path (`stroke.rs`, `distances`), a residual ADR-0010 and ADR-0012 record, gets a reason
 that says so.
 
@@ -40,7 +40,7 @@ so the convention *Check a value as the engine keeps it* stays.
 ## Read first
 
 - ADR-0008 (*Sensors for maintainability*); ADR-0010 (*Origin*, the rounding consequences);
-  ADR-0009 (*Bridge*, the limits).
+  ADR-0026 (*Bridge*, the limits).
 - `docs/CONVENTIONS.md` (*Check a value as the engine keeps it*); `Cargo.toml`
   (`[workspace.lints]`), `clippy.toml`; the sites in `crates/engine-wasm/src/lib.rs` and
   `crates/engine/src/` (`graph.rs`, `spatial.rs`, `stroke.rs`).

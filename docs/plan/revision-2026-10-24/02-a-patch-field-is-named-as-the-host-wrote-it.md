@@ -11,7 +11,7 @@ fault was found by reading; no test runs it.
 
 The key is a name, not a text the store keeps: it needs the cut of a text (so that a key of any
 length costs no more to check) but not the lone-surrogate refusal. Hand it over cut and
-otherwise as written; the bridge crate receives a lone surrogate as U+FFFD (ADR-0009, *What the
+otherwise as written; the bridge crate receives a lone surrogate as U+FFFD (ADR-0026, *What the
 bridge cannot see*), so the problem names the key with U+FFFD in its place, which is what a
 Rust `String` can carry. Naming it exactly as written would need `api` to build this refusal
 itself, a third item of that ADR clause; that is not this ticket.
@@ -24,10 +24,10 @@ instead, which comes back as malformed. Correct it to what `patchOf` does.
 
 - [ ] Given `updateNode("a", { "x\uDC00": 1 })`, when it is refused, then the `GraphDataError`
       is `unknownPatchField` and its `field` is `"x\uFFFD"`, not `"false"`
-      (`Verifies: Q-7, ADR-0009`).
+      (`Verifies: Q-7, ADR-0026`).
 - [ ] Given the browser test of `updateNode` naming a node the graph does not hold
-      (`malformed.spec.ts`), when it is read, then it cites `Verifies: ADR-0009` beside Q-7, as
-      the Enforcement of ADR-0009 names it.
+      (`malformed.spec.ts`), when it is read, then it cites `Verifies: ADR-0026` beside Q-7, as
+      the Enforcement of ADR-0026 names it.
 - [ ] Given a key longer than the text limit, when it is refused, then the field is the key cut
       as today (the `hugeKey` case of `malformed.spec.ts` unchanged).
 - [ ] Given the bridge crate, when its `NodePatch` comment is read, then it says what `api` hands
@@ -36,7 +36,7 @@ instead, which comes back as malformed. Correct it to what `patchOf` does.
 
 ## Read first
 
-- ADR-0009 (*What the bridge cannot see*); `docs/SPECIFICATION.md` Q-7.
+- ADR-0026 (*What the bridge cannot see*); `docs/SPECIFICATION.md` Q-7.
 - `packages/comb/src/api/snapshot.ts` (`cut`, `readerOf`, `patchOf`);
   `examples/metric-tree/e2e/malformed.spec.ts` (the patch cases, `hugeKey`).
 

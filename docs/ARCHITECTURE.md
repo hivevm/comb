@@ -39,7 +39,7 @@ not a string or longer than 1,000 UTF-16 code units, a label background that is 
 from `0` to `0xFFFFFF`, more than 1,000,000 nodes or edges, an identifier, source, or target longer
 than 256 UTF-16 code units, and identifiers of one load that hold more than 64,000,000 code units
 together. `api` refuses an identifier `updateNode` names that the graph does not hold, against the
-store's map from identifiers to slots (ADR-0009), and the bridge crate refuses a patch that holds a
+store's map from identifiers to slots (ADR-0026), and the bridge crate refuses a patch that holds a
 field other than a title, or a title it would refuse in a load. Titles, label texts, and label
 backgrounds are checked there but not kept by the engine. `api` reads the host's graph data once,
 in JavaScript, into a snapshot (`api/snapshot.ts`) of plain data whose every field is a primitive
@@ -60,7 +60,8 @@ JavaScript's built-ins, such as a setter on `Object.prototype` or a `Symbol.hasI
 
 ## Building blocks
 
-The functional core and its shell follow [ADR-0009](adr/0009-functional-core-imperative-shell.md).
+The functional core and its shell follow
+[ADR-0026](adr/0026-the-shell-refuses-what-only-its-map-knows.md).
 
 - **Engine** (`crates/engine`) — pure geometry: `geometry` holds edge paths as cubic Bézier
   curves from the right middle of one node to the left middle of another, their exact bounds, the
@@ -268,7 +269,7 @@ fails when the engine's core names or, through `Cargo.lock`, reaches a crate tha
 browser, the clock, randomness, or I/O, when a module other than the bridge
 imports the WebAssembly package, when the render layer reaches the store instead of the action-free
 `GraphView`, or when an example imports past the library's entries and its engine file
-(ADR-0009, ADR-0019), and when the render layer names PixiJS's `Text`, `HTMLText`, or
+(ADR-0026, ADR-0019), and when the render layer names PixiJS's `Text`, `HTMLText`, or
 `SplitText` or the edges layer a `Graphics` (ADR-0012), and when its Canvas 2D fallback names
 `Graphics` outside its imports and its one field (ADR-0018). `scripts/check-bundle.sh` builds
 the library and fails when its gzipped JavaScript and the engine file reach the 300 kB of Q-3,

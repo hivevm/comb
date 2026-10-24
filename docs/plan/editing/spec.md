@@ -103,13 +103,13 @@ makes before Comb makes it.
   counts the code units of the identifiers it holds for the limit of a load. Each action that
   changes the graph records the change it made, from which `api` delivers `onChange` (ADR-0011,
   ADR-0023).
-- **Public interface (ADR-0023):** `onChange` with the changes `loaded`, `nodeAdded`,
-  `nodeUpdated`, `nodeMoved`, `nodesRemoved`, `edgeAdded`, `edgeUpdated`, `edgesRemoved`, and
-  `labelMoved`, each with `by`; the methods `addNode`, `removeNodes`, `addEdge`, `updateEdge`,
-  `removeEdges`, and `worldPointAt`; the options `canConnect`, synchronous, allowing a connection
-  only by returning the new edge's identifier, and `canDelete`, synchronous, allowing only on
-  `true`; the types of the sides and of the changes exported beside the existing
-  ones. Each method changes all it names or nothing.
+- **Public interface (ADR-0023):** `onChange` with the changes `loaded`, `nodeAdded`, `nodeUpdated`,
+  `nodeMoved`, `nodesRemoved`, `edgeAdded`, `edgeUpdated`, `edgesRemoved`, and `labelMoved`, each
+  with `by`; the methods `addNode`, `removeNodes`, `addEdge`, `updateEdge`, `removeEdges`, and
+  `worldPointAt`; the options `canConnect`, synchronous, allowing a connection only by returning the
+  new edge's identifier, and `canDelete`, synchronous, allowing only on `true`; the types of the
+  sides and of the changes exported beside the existing ones. Each method changes all it names or
+  nothing.
 - **Validation:** every new input is read once into primitives by `api` and checked by the bridge
   crate as a load would check that node, edge, or field; the limits of a load hold for the graph
   after each edit. Refusals that need the map from identifiers (unknown node or edge, duplicate
@@ -117,11 +117,11 @@ makes before Comb makes it.
   patch field of an edge Comb does not know) are generated from the bridge crate.
 - **Connectors (ADR-0024):** four per node, at the middle of each side; `EdgeData` gains
   `sourceSide` and `targetSide`, defaults `right` and `left`; the path's control points pull along
-  each side's outward normal, which for right to left is today's path. A user's connection is
-  made only to a connector of another node that the source does not already reach, after
-  `canConnect`, under the identifier it returns, checked as any edge's; without `canConnect` no
-  connection begins. Connectors are drawn for the node under the
-  pointer and during a connection; the connection being dragged is a line in the overlay.
+  each side's outward normal, which for right to left is today's path. A user's connection is made
+  only to a connector of another node that the source does not already reach, after `canConnect`,
+  under the identifier it returns, checked as any edge's; without `canConnect` no connection begins.
+  Connectors are drawn for the node under the pointer and during a connection; the connection being
+  dragged is a line in the overlay.
 - **Hit testing (ADR-0025):** one engine call returns the target on top at a point: a connector
   (8 screen pixels, near and middle level), an edge label (inside its pill, near level, by
   extents the labels layer hands over when it draws a text), a node, an edge (4 screen pixels of
