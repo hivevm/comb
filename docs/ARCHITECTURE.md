@@ -90,22 +90,24 @@ The functional core and its shell follow
   meets, node slots in ascending rank, and `hit_at` what a press at a point hits
   ([ADR-0025](adr/0025-the-engine-answers-every-hit-test.md)): the node drawn on top there, the one
   of the highest rank, else the edge in the highest slot within 4 screen pixels of its path as the
-  stroke of the level flattens it, the parts of the path far from the point as chords. `stroke`
-  flattens the found edges within a tolerance and strokes them into the triangles of one mesh, with
-  each edge's colour, dash pattern, and arrowhead, or as thin lines alone at the far level of
-  detail; it decides the stroke of each level. A part of a path whose control points miss the
-  query's rectangle, grown by the stroke's width, is drawn as its chord, a segment that meets the
-  grown rectangle with an end outside it is split where it enters and leaves it, so that what the
-  rectangle shows rounds by its distance from the query's origin, and a path is subdivided at most
-  24 levels deep; the mesh of one query holds at most the mesh budget, 2^22 vertices: each edge's
-  floor, its chord or its arrowhead alone where that is its full mesh, is reserved first, edges are
-  meshed in full in slot order while each fits beside the floors of those after it, and from the
-  first that does not, every edge is drawn as its floor and the mesh is coarsened; its vectors grow
-  by `try_reserve`, so that memory running short coarsens the mesh instead of trapping. It depends
-  on no crate that reaches the browser. `graph` keeps each edge's path and its bounds as of its last
-  move, so that a query computes no bounds; `graph::slot` is the one conversion of a count to slots,
-  which the bridge uses too. Only what the bridge uses is public; the rest is private to the crate,
-  so that the `dead_code` lint finds what only tests reach.
+  stroke of the level flattens it, the parts of the path far from the point as chords; where the
+  shell asks for connectors, at the near and middle level, a connector within 8 screen pixels, of
+  the node of the highest rank, comes before them all. `stroke` flattens the found edges within a
+  tolerance and strokes them into the triangles of one mesh, with each edge's colour, dash pattern,
+  and arrowhead, or as thin lines alone at the far level of detail; it decides the stroke of each
+  level. A part of a path whose control points miss the query's rectangle, grown by the stroke's
+  width, is drawn as its chord, a segment that meets the grown rectangle with an end outside it is
+  split where it enters and leaves it, so that what the rectangle shows rounds by its distance from
+  the query's origin, and a path is subdivided at most 24 levels deep; the mesh of one query holds
+  at most the mesh budget, 2^22 vertices: each edge's floor, its chord or its arrowhead alone where
+  that is its full mesh, is reserved first, edges are meshed in full in slot order while each fits
+  beside the floors of those after it, and from the first that does not, every edge is drawn as its
+  floor and the mesh is coarsened; its vectors grow by `try_reserve`, so that memory running short
+  coarsens the mesh instead of trapping. It depends on no crate that reaches the browser. `graph`
+  keeps each edge's path and its bounds as of its last move, so that a query computes no bounds;
+  `graph::slot` is the one conversion of a count to slots, which the bridge uses too. Only what the
+  bridge uses is public; the rest is private to the crate, so that the `dead_code` lint finds what
+  only tests reach.
 - **Bridge** — `crates/engine-wasm` holds every WebAssembly export: `loadGraph` checks graph data
   and resolves edge ends to slots, `addNode` checks one node as a load would and returns the slot
   the engine chose for it, `addEdge` checks one edge as a load would, refuses one from a node to
@@ -139,38 +141,39 @@ The functional core and its shell follow
 - **Interaction** (`packages/comb/src/interaction`) — pointer and wheel input into store actions and
   engine moves: select a node on press and drag it, select an edge on press, clear the selection on
   the empty canvas and pan, zoom around the pointer, and the cursor over what a press would hit;
-  `delete.ts` makes the canvas focusable and deletes the selection on Delete or Backspace, a node
-  with the edges the engine names at it (`edgesAt`) before anything is removed, once
-  `CombOptions.canDelete` returns `true`, recording it as the user's. A
-  drag that moved its node records `nodeMoved` once, when the pointer is released on the canvas or
-  outside it; a load ends a drag. The engine's `hit` says what the pointer is on, at the level of
-  detail of the scale; node views and edges take no events. `viewport.ts` holds the viewport's
-  arithmetic, the transform between world and screen included, for interaction, the scene, `api`'s
-  `fitView` and `setViewport`, and the testing entry.
-- **Render** (`packages/comb/src/render`) — the PixiJS scene (`scene.ts`): a `world` render
-  group with the layers `EdgesContainer` (`edges.ts`), `NodeParticles` (`particles.ts`),
-  `NodesContainer` (`nodes.ts`), and `LabelsContainer` (`labels.ts`), and an `overlay`
-  ([ADR-0027](adr/0027-nodes-bound-by-rank.md)); `bindings.ts` is the pool of views the
-  nodes and labels layers bind to slots, keeping the layer's children in the order a render binds
-  them. The scale chooses the level of
-  detail: near (from 0.6) draws node views and edge labels, middle (from 0.3) node views alone,
-  and far nodes as particles of one `ParticleContainer` (`render/particles.ts`) and edges as
-  lines one pixel wide. A render queries the engine for the viewport grown by the culling margin
-  and binds pooled node views and edge-label views to exactly the slots it found, node views and
-  particles in the order of the nodes' ranks, which the query returns, edge labels in slot order;
-  while the viewport stays within what it last queried, that rectangle within the viewport grown
-  by twice the culling margin, at about its scale and the same level of detail, and the
-  graph and the selection are unchanged, a render moves the world alone. The world stands at the
-  screen point of the last query's origin, the edges and labels at (0, 0) in it, the nodes and
-  particles at minus the origin, so that the GPU sees no far coordinate of edges, labels, and node
-  views.
-  `EdgesContainer` (`render/edges.ts`) draws the edge mesh with a shader that leaves out the gaps
-  of dash patterns; on the Canvas 2D renderer a
-  host application opts into ([ADR-0018](adr/0018-webgl2-or-an-opted-in-canvas-fallback.md)),
-  which runs no shader, `EdgeFill` (`render/edges-canvas.ts`) takes its place, builds no mesh,
-  and fills the same triangles into one `Graphics`, one fill per run of one colour, dash
-  patterns solid. Not built yet: the node content of
-  [ADR-0013](adr/0013-node-content-model.md), and the connectors of G-3, a layer that joins the
+  `connect.ts` begins a connection on a press on a connector, where `CombOptions.canConnect` is set,
+  follows the pointer with it, marks compatible the connectors of a node the source does not reach
+  yet, and proposes the edge to the veto on a release over one; `delete.ts` makes the canvas
+  focusable and deletes the selection on Delete or Backspace, a node with the edges the engine names
+  at it (`edgesAt`) before anything is removed, once `CombOptions.canDelete` returns `true`,
+  recording it as the user's. A drag that moved its node records `nodeMoved` once, when the pointer
+  is released on the canvas or outside it; a load ends a drag. The engine's `hit` says what the
+  pointer is on, at the level of detail of the scale; node views and edges take no events.
+  `viewport.ts` holds the viewport's arithmetic, the transform between world and screen included,
+  for interaction, the scene, `api`'s `fitView` and `setViewport`, and the testing entry.
+- **Render** (`packages/comb/src/render`) — the PixiJS scene (`scene.ts`): a `world` render group
+  with the layers `EdgesContainer` (`edges.ts`), `NodeParticles` (`particles.ts`), `NodesContainer`
+  (`nodes.ts`), `LabelsContainer` (`labels.ts`), and `ConnectorsLayer` (`connectors.ts`), with the
+  connectors of the node under the pointer and, while the user connects, of the source and the node
+  under the pointer, and an `overlay` with the line of the connection being dragged
+  ([ADR-0027](adr/0027-nodes-bound-by-rank.md)); `bindings.ts` is the pool of views the nodes and
+  labels layers bind to slots, keeping the layer's children in the order a render binds them. The
+  scale chooses the level of detail: near (from 0.6) draws node views and edge labels, middle (from
+  0.3) node views alone, and far nodes as particles of one `ParticleContainer`
+  (`render/particles.ts`) and edges as lines one pixel wide. A render queries the engine for the
+  viewport grown by the culling margin and binds pooled node views and edge-label views to exactly
+  the slots it found, node views and particles in the order of the nodes' ranks, which the query
+  returns, edge labels in slot order; while the viewport stays within what it last queried, that
+  rectangle within the viewport grown by twice the culling margin, at about its scale and the same
+  level of detail, and the graph and the selection are unchanged, a render moves the world alone.
+  The world stands at the screen point of the last query's origin, the edges and labels at (0, 0) in
+  it, the nodes and particles at minus the origin, so that the GPU sees no far coordinate of edges,
+  labels, and node views. `EdgesContainer` (`render/edges.ts`) draws the edge mesh with a shader
+  that leaves out the gaps of dash patterns; on the Canvas 2D renderer a host application opts into
+  ([ADR-0018](adr/0018-webgl2-or-an-opted-in-canvas-fallback.md)), which runs no shader, `EdgeFill`
+  (`render/edges-canvas.ts`) takes its place, builds no mesh, and fills the same triangles into one
+  `Graphics`, one fill per run of one colour, dash patterns solid. Not built yet: the node content
+  of [ADR-0013](adr/0013-node-content-model.md), and the connectors of G-3, a layer that joins the
   scene with the change that builds it ([ADR-0027](adr/0027-nodes-bound-by-rank.md)).
 - **API** (`packages/comb/src/api`) — `api/index.ts` imports `pixi.js/unsafe-eval` before PixiJS, so
   that no PixiJS renderer on the page generates code with eval

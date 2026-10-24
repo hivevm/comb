@@ -22,6 +22,7 @@ import { EdgesContainer, type MeshSize } from "./edges";
 import { EdgeFill } from "./edges-canvas";
 import { LabelsContainer, type LabelView } from "./labels";
 import { NodeGraphic, NodesContainer } from "./nodes";
+import { ConnectionLine, ConnectorsLayer, type DrawnConnector } from "./connectors";
 import { NodeParticles } from "./particles";
 
 /** The level of detail the scene draws at (ADR-0027); the engine strokes edges for it. */
@@ -67,6 +68,10 @@ export interface SceneSnapshot {
   renders: number;
   /** How many of the renders queried the engine; the others moved the world alone. */
   queries: number;
+  /** The connectors the connectors layer draws (ADR-0024). */
+  connectors: DrawnConnector[];
+  /** The connection being dragged, from its source's connector to the pointer, in world units. */
+  connection: { from: { x: number; y: number }; to: { x: number; y: number } } | null;
 }
 
 function countDisplayObjects(container: Container): number {
@@ -109,7 +114,9 @@ export class Scene {
   readonly particles = new NodeParticles();
   readonly nodes = new NodesContainer();
   readonly labels = new LabelsContainer();
+  readonly connectors = new ConnectorsLayer();
   readonly overlay = new Container();
+  private readonly connection = new ConnectionLine();
   level: Level = "near";
   /** The detail of the edge mesh the last query drew, which inspection reports; the host
    *  application is not told. */
@@ -124,12 +131,16 @@ export class Scene {
 
   constructor(readonly app: Application) {
     this.edges = app.renderer.name === "canvas" ? new EdgeFill() : new EdgesContainer();
-    this.world.addChild(this.edges, this.particles, this.nodes, this.labels);
+    this.world.addChild(this.edges, this.particles, this.nodes, this.labels, this.connectors);
+    this.overlay.addChild(this.connection);
     app.stage.addChild(this.world, this.overlay);
   }
 
   render(state: GraphView, bridge: Bridge): void {
     if (!this.covers(state)) this.query(state, bridge);
+    const positions = bridge.positions();
+    this.connectors.sync(state, positions, this.origin, this.level === "far");
+    this.connection.sync(state, positions);
     const { x, y, scale } = state.viewport;
     // In f64 here, so that the world's transform on the GPU holds no far coordinate.
     this.world.position.set(x + this.origin.x * scale, y + this.origin.y * scale);
@@ -196,11 +207,11 @@ export class Scene {
 
   /** What a press at the screen point `(x, y)` of the canvas hits, as the engine of the last
    *  render answers it at the drawn viewport's scale; nothing before the first render. */
-  hitKind(x: number, y: number): "node" | "edge" | "none" {
+  hitKind(x: number, y: number): "connector" | "node" | "edge" | "none" {
     if (!this.source) return "none";
     const { scale, x: vx, y: vy } = this.drawnViewport();
     const [wx, wy] = [(x - vx) / scale, (y - vy) / scale];
-    return this.source.bridge.hit(wx, wy, 1 / scale, levelAt(scale)).kind;
+    return this.source.bridge.hit(wx, wy, 1 / scale, levelAt(scale), false).kind;
   }
 
   /** The viewport the world is drawn through: its transform less the origin's screen point. */
@@ -243,6 +254,8 @@ export class Scene {
       displayObjects: countDisplayObjects(this.world),
       renders: this.renders,
       queries: this.queries,
+      connectors: [...this.connectors.drawn],
+      connection: this.connection.drawn,
     };
   }
 }

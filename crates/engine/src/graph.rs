@@ -6,7 +6,10 @@
 //! those slots, the points of the labels, and the mesh of the edges into buffers the caller reads;
 //! the ends of the edges it found are computed only when inspection asks for them.
 
-use crate::geometry::{EdgePath, Point, Rect, Sides};
+use crate::geometry::{EdgePath, Point, Rect, Side, Sides};
+
+/// The four sides, each with a connector.
+const SIDES: [Side; 4] = [Side::Top, Side::Right, Side::Bottom, Side::Left];
 use crate::positions::{self, PositionError};
 use crate::spatial::Grid;
 use crate::stroke::{EdgeStyle, MESH_BUDGET, Mesh, Stroke, near_path};
@@ -112,9 +115,14 @@ const EDGE_REACH: f64 = 4.0;
 /// What a press hits (ADR-0025): a node or an edge, by its slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
+    /// The connector of a side of the node in a slot (ADR-0024).
+    Connector(u32, Side),
     Node(u32),
     Edge(u32),
 }
+
+/// How near a press has to come to a connector to hit it, in screen pixels (ADR-0025).
+const CONNECTOR_REACH: f64 = 8.0;
 
 /// The loaded graph and its spatial index.
 #[derive(Debug, Default)]
@@ -582,7 +590,19 @@ impl Graph {
     /// whose bounds hold it, the one of the highest rank, else an edge within `EDGE_REACH` screen
     /// pixels of its path as the stroke of `level` flattens it, the one in the highest slot, else
     /// nothing (ADR-0025).
-    pub fn hit_at(&mut self, point: Point, pixel: f64, level: Level) -> Option<Target> {
+    pub fn hit_at(
+        &mut self,
+        point: Point,
+        pixel: f64,
+        level: Level,
+        connectors: bool,
+    ) -> Option<Target> {
+        if connectors
+            && level != Level::Far
+            && let Some((slot, side)) = self.connector_at(point, CONNECTOR_REACH * pixel)
+        {
+            return Some(Target::Connector(slot, side));
+        }
         if let Some(slot) = self.hit(point) {
             return Some(Target::Node(slot));
         }
@@ -599,6 +619,37 @@ impl Graph {
         });
         self.scratch = candidates;
         found.map(Target::Edge)
+    }
+
+    /// The connector within `reach` of `point`: of the nodes with one there, the one drawn on top,
+    /// and of its connectors the nearest (ADR-0025).
+    fn connector_at(&mut self, point: Point, reach: f64) -> Option<(u32, Side)> {
+        self.node_grid
+            .candidates(&Rect::at(point).grown(reach), &mut self.scratch);
+        let mut best: Option<(u32, Side, f64)> = None;
+        for &slot in &self.scratch {
+            let bounds = self.node_bounds(slot);
+            if !bounds.grown(reach).contains(point) {
+                continue;
+            }
+            let near = SIDES
+                .iter()
+                .map(|&side| {
+                    let c = side.connector(&bounds);
+                    (side, (c.x - point.x).hypot(c.y - point.y))
+                })
+                .filter(|&(_, d)| d <= reach)
+                .min_by(|a, b| a.1.total_cmp(&b.1));
+            if let Some((side, d)) = near {
+                let above = best.is_none_or(|(other, _, _)| {
+                    self.ranks[slot as usize] > self.ranks[other as usize]
+                });
+                if above {
+                    best = Some((slot, side, d));
+                }
+            }
+        }
+        best.map(|(slot, side, _)| (slot, side))
     }
 
     /// The node at `point`: of the nodes whose bounds hold it, the one drawn on top, which is the
@@ -1661,7 +1712,7 @@ mod tests {
                     Point::new(rng.range(-2500.0, 2500.0), rng.range(-2500.0, 2500.0))
                 };
                 let node = graph.hit(p);
-                let hit = graph.hit_at(p, pixel, level);
+                let hit = graph.hit_at(p, pixel, level, false);
                 if let Some(slot) = node {
                     assert_eq!(hit, Some(Target::Node(slot)), "a node before any edge");
                     continue;
@@ -1684,8 +1735,60 @@ mod tests {
                         assert!(sure.is_none_or(|s| e >= s), "edge {e} below {sure:?}");
                     }
                     None => assert_eq!(sure, None, "missed at {p:?}"),
-                    Some(Target::Node(_)) => panic!("a node no scan finds"),
+                    Some(Target::Node(_) | Target::Connector(..)) => {
+                        panic!("{hit:?} where a scan finds none")
+                    }
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn a_hit_finds_a_connector_before_a_node_as_a_scan_finds_and_none_at_the_far_level() {
+        // Verifies: ADR-0025, ADR-0024
+        for seed in 1..=6 {
+            let mut rng = Lcg(seed);
+            let mut graph = random_graph(&mut rng, 40, 20);
+            graph.remove_nodes(&[5]).unwrap();
+            for _ in 0..400 {
+                let level = [Level::Near, Level::Middle, Level::Far][rng.below(3) as usize];
+                let pixel = [0.25, 1.0, 4.0][rng.below(3) as usize];
+                let reach = CONNECTOR_REACH * pixel;
+                // Near a connector of a random node, now and then anywhere.
+                let p = if rng.next() < 0.8 {
+                    let node = rng.below(graph.node_slots as usize);
+                    let side = SIDES[rng.below(4) as usize];
+                    let c = side.connector(&graph.node_bounds(node));
+                    let off = 1.5 * reach;
+                    Point::new(c.x + rng.range(-off, off), c.y + rng.range(-off, off))
+                } else {
+                    Point::new(rng.range(-2500.0, 2500.0), rng.range(-2500.0, 2500.0))
+                };
+                // The scan: of the nodes in use with a connector within the reach, the one of the
+                // highest rank, and its nearest connector.
+                let scan = (0..graph.node_slots)
+                    .filter(|&n| graph.holds_node(n))
+                    .filter_map(|n| {
+                        let bounds = graph.node_bounds(n);
+                        SIDES
+                            .iter()
+                            .map(|&side| {
+                                let c = side.connector(&bounds);
+                                (n, side, (c.x - p.x).hypot(c.y - p.y))
+                            })
+                            .filter(|&(_, _, d)| d <= reach)
+                            .min_by(|a, b| a.2.total_cmp(&b.2))
+                    })
+                    .max_by_key(|&(n, _, _)| graph.ranks[n as usize]);
+                let without = graph.hit_at(p, pixel, level, false);
+                let with = graph.hit_at(p, pixel, level, true);
+                match scan {
+                    Some((n, side, _)) if level != Level::Far => {
+                        assert_eq!(with, Some(Target::Connector(n, side)), "at {p:?}");
+                    }
+                    _ => assert_eq!(with, without, "no connector at {p:?}, {level:?}"),
+                }
+                assert!(!matches!(without, Some(Target::Connector(..))));
             }
         }
     }

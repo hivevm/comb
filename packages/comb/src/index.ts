@@ -10,6 +10,7 @@ export type {
   Comb,
   CombOptions,
   Deletion,
+  Proposal,
   EngineSource,
   EngineSourceProblem,
   GraphChange,

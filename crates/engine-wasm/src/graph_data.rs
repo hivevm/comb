@@ -213,6 +213,17 @@ pub enum Side {
     Left,
 }
 
+impl From<graph_side::Side> for Side {
+    fn from(side: graph_side::Side) -> Self {
+        match side {
+            graph_side::Side::Top => Self::Top,
+            graph_side::Side::Right => Self::Right,
+            graph_side::Side::Bottom => Self::Bottom,
+            graph_side::Side::Left => Self::Left,
+        }
+    }
+}
+
 impl From<Side> for graph_side::Side {
     fn from(side: Side) -> Self {
         match side {

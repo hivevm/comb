@@ -28,7 +28,7 @@ use wasm_bindgen::prelude::*;
 
 pub use graph_data::{
     Arrow, CheckedPatch, EdgeInput, EdgePatch, Field, GraphBatch, GraphDataProblem, GraphList,
-    LabelInput, MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_TEXT, NodeInput, NodePatch, Pair, Text,
+    LabelInput, MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_TEXT, NodeInput, NodePatch, Pair, Side, Text,
 };
 
 use graph_data::{
@@ -160,6 +160,7 @@ pub fn check_node_patch(
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Hit {
     None,
+    Connector { slot: u32, side: Side },
     Node { slot: u32 },
     Edge { slot: u32 },
 }
@@ -373,14 +374,16 @@ impl Engine {
     }
 
     /// What a press at the world point `(x, y)` hits where a screen pixel is `pixel` world units,
-    /// at `level`: the node drawn on top there, else the edge drawn on top within 4 screen pixels
-    /// of its path, else nothing (ADR-0025).
+    /// at `level`: where `connectors` asks for them, at the near and middle level, a connector
+    /// within 8 screen pixels, of the node drawn on top; else the node drawn on top there, else
+    /// the edge drawn on top within 4 screen pixels of its path, else nothing (ADR-0025).
     pub fn hit(
         &mut self,
         x: f64,
         y: f64,
         pixel: f64,
         level: DetailLevel,
+        connectors: bool,
     ) -> Result<Ts<Hit>, GraphDataProblem> {
         trap::spring();
         if !(pixel.is_finite() && pixel > 0.0) {
@@ -388,7 +391,14 @@ impl Engine {
                 "the size of a screen pixel is not a finite number above zero",
             ));
         }
-        let hit = match self.graph.hit_at(Point::new(x, y), pixel, level.into()) {
+        let hit = match self
+            .graph
+            .hit_at(Point::new(x, y), pixel, level.into(), connectors)
+        {
+            Some(Target::Connector(slot, side)) => Hit::Connector {
+                slot,
+                side: side.into(),
+            },
             Some(Target::Node(slot)) => Hit::Node { slot },
             Some(Target::Edge(slot)) => Hit::Edge { slot },
             None => Hit::None,
@@ -690,7 +700,9 @@ mod tests {
         // Refused before anything is hit, so the native test needs no JavaScript value.
         for pixel in [0.0, -0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             assert!(
-                engine.hit(200.0, 60.0, pixel, DetailLevel::Near).is_err(),
+                engine
+                    .hit(200.0, 60.0, pixel, DetailLevel::Near, true)
+                    .is_err(),
                 "{pixel}"
             );
         }
