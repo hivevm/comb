@@ -13,8 +13,11 @@ to invent.
 - **Bridge** — the boundary across which TypeScript and the engine exchange data.
 - **Canvas** — the WebGL2 surface on which Comb draws, and on which the user manipulates nodes,
   edges, and edge labels.
-- **Connector** — a point on a node where an edge starts or ends.
+- **Connector** — a point on a node where an edge starts or ends: the middle of one of its four
+  sides.
   _Avoid:_ port, handle, socket, pin.
+- **Connection** — the gesture of dragging from a connector of one node to a connector of another,
+  which creates an edge where it is released over a compatible one.
 - **Change** — one edit of the graph as Comb reports it to the host application, typed by its
   kind and saying whether the user or the host application made it.
 - **Coarsened** — said of an edge mesh in which some edges are drawn less exactly than the
@@ -65,6 +68,8 @@ to invent.
   compared only with the baseline of their own kind.
 - **Selection** — the one node or edge the user has picked on the canvas, which the sidebar edits
   and a delete removes.
+- **Side** — one of the four sides of a node, `top`, `right`, `bottom`, or `left`, each with one
+  connector; an edge records the side it leaves and the side it enters.
 - **Sidebar** — the host application's HTML panel, outside the canvas, in which the attributes of
   the selection are edited.
 - **Slot** — the index of a node or an edge in the engine's buffers, the same on both sides of the
