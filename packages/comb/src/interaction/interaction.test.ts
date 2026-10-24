@@ -185,7 +185,7 @@ describe("interaction ends a drag the graph took its node from", () => {
 });
 
 describe("interaction on an edge", () => {
-  test("a press on an edge selects it and pans not, and the cursor over it shows a pointer", () => {
+  test("a press on an edge selects it, pans once the pointer moves beyond 4 pixels, and shows a pointer", () => {
     // Verifies: ADR-0025
     const store = createGraphStore();
     store.getState().load({
@@ -201,10 +201,14 @@ describe("interaction on an edge", () => {
     expect(app.canvas.style.cursor).toBe("pointer");
     const { viewport } = store.getState();
     emit("pointerdown", 200, 20);
+    // Within the slop the press stays a selection.
+    emit("globalpointermove", 203, 22);
+    expect(store.getState().viewport).toBe(viewport);
+    // Beyond it, a pan from the press.
     emit("globalpointermove", 260, 80);
     emit("pointerup", 260, 80);
     expect(store.getState().selection).toEqual({ kind: "edge", id: "a-b" });
-    expect(store.getState().viewport).toBe(viewport);
+    expect(store.getState().viewport).toEqual({ x: 60, y: 60, scale: 1 });
   });
 
   test("the cursor over nothing is the default, and a press there pans", () => {
