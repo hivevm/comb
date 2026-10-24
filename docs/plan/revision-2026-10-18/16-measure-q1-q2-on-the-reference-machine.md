@@ -17,7 +17,7 @@ specification change if the target itself is in question.
 - [ ] Given the numbers, when Q-1 and Q-2 hold, then the benchmark's check against the absolute
       targets cites them; when they miss, a ticket under `docs/plan/` names the gap.
 - [ ] Given the levels, when they are measured there, then the pull request says whether the
-      thresholds of ADR-0027 should move (docs/plan/revision-2026-10-18/02-adr-0012-revision.md).
+      thresholds of ADR-0027 should move.
 
 ## Read first
 

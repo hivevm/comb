@@ -135,10 +135,10 @@ makes before Comb makes it.
 - **Self-edges:** `addEdge` and a user's connection refuse an edge from a node to itself; `load`
   keeps accepting one, so the specification's assumption that every edge joins two nodes is not
   enforced for a load (ADR-0024).
-- **Draw order (ADR-0022):** every node has a rank in the engine, a load ranking by slot and an
-  added node taking the highest, so a new node is drawn on top even in a freed slot; queries
-  return node slots by rank, node views and particles bind in that order, and the hit test takes
-  the node of the highest rank.
+- **Draw order (ADR-0022, ADR-0027):** every node has a rank in the engine, a load ranking by slot
+  and an added node taking the highest, so a new node is drawn on top even in a freed slot; queries
+  return node slots by rank, node views and particles bind in that order, and the hit test takes the
+  node of the highest rank.
 - **Delete:** the canvas becomes focusable and takes focus when pressed; Delete and Backspace
   delete the selection after `canDelete`, and the key's default action is prevented.
 - **Example:** the metric tree gains an HTML palette whose items the user drags onto the canvas,

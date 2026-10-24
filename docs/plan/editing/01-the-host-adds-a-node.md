@@ -36,7 +36,8 @@ made, from which `api` delivers `onChange`. The change types are exported from `
 
 ## Read first
 
-- ADR-0022, ADR-0023 (proposed; they bind this work), ADR-0026, ADR-0010, ADR-0011, ADR-0021.
+- ADR-0022, ADR-0023 (proposed; they bind this work), ADR-0026, ADR-0027 (*Culling*, *Hit
+  testing*), ADR-0010, ADR-0011, ADR-0021.
 - Glossary: slot, free slot, change, graph data.
 - `api/index.ts` (`loaderOf`, `updaterOf`), `api/snapshot.ts`, `store/index.ts`,
   `crates/engine/src/graph.rs` (`Graph::new`, `index`), `crates/engine/src/spatial.rs`
