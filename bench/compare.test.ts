@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { baselineName, compare, gestures, MARGIN, median, usable, type Run } from "./compare";
-import type { Reference } from "./reference";
+import { PARTS, type Reference } from "./reference";
 
 const SWIFTSHADER =
   "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader driver)";
@@ -378,6 +378,12 @@ describe("the runner kind", () => {
     expect(baselineName(XEON_8370C)).toBe("intel-r-xeon-r-platinum-8370c-cpu-2-80ghz");
   });
 
+  test("a CPU model that starts and ends with a character other than a letter or digit names a file of none at either end", () => {
+    // Verifies: ADR-0008
+    expect(baselineName(" (Intel) Core i7 @ 3.6GHz ")).toBe("intel-core-i7-3-6ghz");
+    expect(baselineName("--AMD Ryzen 9--")).toBe("amd-ryzen-9");
+  });
+
   test("two CPU models of one file name are told apart by the name the baseline records", () => {
     const lookalike = "AMD EPYC 7763 64 Core Processor";
     expect(baselineName(lookalike)).toBe(baselineName(EPYC_7763));
@@ -491,5 +497,26 @@ describe("median", () => {
     expect(compare(unknown, run(200, 100))).toMatchObject({ kind: "incomparable" });
     expect(compare(run(200, 100), none)).toMatchObject({ kind: "incomparable" });
     expect(median([run(200, 100), unknown])).toBe("a run names no GPU (unknown)");
+  });
+});
+
+describe("the parts of the reference", () => {
+  test("usable and the median take every part the reference lists", () => {
+    // Verifies: ADR-0008
+    for (const [, key] of PARTS) {
+      expect(usable({ ...REFERENCE, [key]: Number.NaN })).toBe(false);
+      expect(usable({ ...REFERENCE, [key]: 0 })).toBe(false);
+    }
+    expect(usable(REFERENCE)).toBe(true);
+    // Three runs whose parts differ part by part: the median holds each part's middle value.
+    const parts = (n: number) =>
+      Object.fromEntries(PARTS.map(([, key], i) => [key, n * 10 + i])) as unknown as Reference;
+    const result = median([
+      run(300, 100, 3334, parts(1)),
+      run(300, 100, 3334, parts(3)),
+      run(300, 100, 3334, parts(2)),
+    ]);
+    expect(typeof result).not.toBe("string");
+    expect((result as Run).reference).toEqual(parts(2));
   });
 });
