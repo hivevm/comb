@@ -512,6 +512,17 @@ describe("bridge removals", () => {
       kind: "slotOutOfRange",
       slot: 2,
     });
+    // addEdge and updateEdge throw the shell's mistake as the other exports do, no problem of data.
+    expect(refused(() => bridge.addEdge(edgeOf(edge("x", "n0", "n2")), 0, 2))).toEqual({
+      kind: "noNode",
+      slot: 2,
+    });
+    expect(refused(() => bridge.updateEdge(1, "e1", plainEdge({ color: 0 })))).toEqual({
+      kind: "noEdge",
+      slot: 1,
+    });
+    bridge.query(everywhere, "near", 1, 0);
+    expect([...bridge.drawnEdges().slots]).toEqual([0]);
     expect([...bridge.query(everywhere, "near", 1, 0).nodes]).toEqual([0, 1]);
     expect([...bridge.positions()].slice(0, 4)).toEqual([0, 0, 200, 0]);
   });

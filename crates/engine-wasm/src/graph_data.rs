@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use comb_engine::geometry::{self as graph_side, Sides, WORLD_LIMIT};
-use comb_engine::graph::{self, EdgeSpec, Graph, GraphError, LabelPlacement};
+use comb_engine::graph::{self, EdgeSpec, Graph, GraphError, LabelPlacement, SlotError};
 use comb_engine::stroke::EdgeStyle;
 use serde::de::{self, IgnoredAny, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -567,15 +567,7 @@ fn edge_of(index: usize, edge: &EdgeInput) -> Result<Edge<'_>, GraphDataProblem>
     item.id = Some(id);
     let source = item.id("source", &edge.source)?;
     let target = item.id("target", &edge.target)?;
-    let label = match item.read("label", edge.label, A_LABEL)? {
-        None => None,
-        Some(label) => Some(Label {
-            text_length: label.text_length,
-            t: item.read("label.t", label.t, A_NUMBER)?,
-            offset: item.read("label.offset", label.offset, A_NUMBER)?,
-            background: label.background,
-        }),
-    };
+    let label = label_of(&item, edge.label)?;
     Ok(Edge {
         id,
         source,
@@ -589,6 +581,24 @@ fn edge_of(index: usize, edge: &EdgeInput) -> Result<Edge<'_>, GraphDataProblem>
             target: item.read("targetSide", edge.target_side, A_SIDE)?.into(),
         },
     })
+}
+
+/// The label `field` of the edge `item`, or none, with every field read, as a load, `addEdge`, and
+/// a patch of `updateEdge` read it, or the refusal that names its first missing or mistyped field.
+fn label_of(
+    item: &Item,
+    field: Field<Option<LabelInput>>,
+) -> Result<Option<Label>, GraphDataProblem> {
+    item.read("label", field, A_LABEL)?
+        .map(|input| {
+            Ok(Label {
+                text_length: input.text_length,
+                t: item.read("label.t", input.t, A_NUMBER)?,
+                offset: item.read("label.offset", input.offset, A_NUMBER)?,
+                background: input.background,
+            })
+        })
+        .transpose()
 }
 
 /// Reads every field of every node and edge of a batch, or names the first that is missing or
@@ -760,6 +770,19 @@ fn placement_of(edge: &Edge) -> Result<(Option<LabelPlacement>, EdgeStyle), Grap
     Ok((label, style))
 }
 
+/// The edge as the engine keeps it between the node slots `source` and `target`, as a load and
+/// `addEdge` build it, or why its label or style was refused.
+fn spec_of(edge: &Edge, source: u32, target: u32) -> Result<EdgeSpec, GraphDataProblem> {
+    let (label, style) = placement_of(edge)?;
+    Ok(EdgeSpec {
+        sides: edge.sides,
+        source,
+        target,
+        label,
+        style,
+    })
+}
+
 /// Resolves every edge's ends to node slots, or names the first offending edge: the second of
 /// two that share an identifier, or one whose ends, label, or style were refused.
 fn edges_of(batch: &Batch, slots: &HashMap<&str, u32>) -> Result<Vec<EdgeSpec>, GraphDataProblem> {
@@ -782,16 +805,7 @@ fn edges_of(batch: &Batch, slots: &HashMap<&str, u32>) -> Result<Vec<EdgeSpec>, 
                     edge: edge.id.to_owned(),
                 });
             }
-            let source = end(edge, edge.source)?;
-            let target = end(edge, edge.target)?;
-            let (label, style) = placement_of(edge)?;
-            Ok(EdgeSpec {
-                sides: edge.sides,
-                source,
-                target,
-                label,
-                style,
-            })
+            spec_of(edge, end(edge, edge.source)?, end(edge, edge.target)?)
         })
         .collect()
 }
@@ -814,19 +828,27 @@ fn id_length(list: &str, index: usize, field: &str, id: &str) -> Result<usize, G
 /// Checks the length of every identifier of a batch, and of all of them together.
 fn ids_of(batch: &Batch) -> Result<(), GraphDataProblem> {
     let mut units = 0;
-    let mut add = |list: &str, index: usize, field: &str, id: &str| {
-        units += id_length(list, index, field, id)?;
-        Ok::<(), GraphDataProblem>(())
-    };
     for (index, node) in batch.nodes.iter().enumerate() {
-        add("nodes", index, "id", node.id)?;
+        units += id_length("nodes", index, "id", node.id)?;
     }
     for (index, edge) in batch.edges.iter().enumerate() {
-        add("edges", index, "id", edge.id)?;
-        add("edges", index, "source", edge.source)?;
-        add("edges", index, "target", edge.target)?;
+        units += edge_ids(index, edge)?;
     }
     check_id_budget(units as f64)
+}
+
+/// The UTF-16 code units of the identifier, the source, and the target of the edge at `index`, as
+/// a load and `addEdge` check them, or the refusal of the first longer than `MAX_ID`.
+fn edge_ids(index: usize, edge: &Edge) -> Result<usize, GraphDataProblem> {
+    let mut units = 0;
+    for (field, id) in [
+        ("id", edge.id),
+        ("source", edge.source),
+        ("target", edge.target),
+    ] {
+        units += id_length("edges", index, field, id)?;
+    }
+    Ok(units)
 }
 
 /// Checks a batch and builds the engine's graph from it: its size, then every field's type, the
@@ -853,43 +875,50 @@ pub(crate) fn add_node_to(graph: &mut Graph, node: &NodeInput) -> Result<u32, Gr
     Ok(graph.add_node(x, y, width, height)?)
 }
 
+/// Why an edit of an edge was refused: its data, which the host application handed over, or a
+/// slot that holds nothing, which is the shell's mistake (ADR-0022), and crosses as `SlotError`
+/// as from the removals, `edgesAt`, `setLabelSize`, and `moveLabel`.
+#[derive(Debug, PartialEq)]
+pub enum EdgeRefusal {
+    Data(GraphDataProblem),
+    Slot(SlotError),
+}
+
+impl From<GraphDataProblem> for EdgeRefusal {
+    fn from(problem: GraphDataProblem) -> Self {
+        Self::Data(problem)
+    }
+}
+
+impl From<SlotError> for EdgeRefusal {
+    fn from(error: SlotError) -> Self {
+        Self::Slot(error)
+    }
+}
+
 /// Checks the edge `addEdge` hands over as a load checks an edge, the only one of its batch at
 /// index 0, and refuses one from a node to itself (ADR-0024) and one past `MAX_ITEMS` edges in
 /// use; adds it to `graph` between the node slots `source` and `target`, which `api` resolved
 /// against the map only it keeps, and returns the slot the engine chose. That the graph holds no
-/// edge of its identifier and holds its ends is `api`'s to check (ADR-0028). A refused edge leaves
-/// the graph as it was.
+/// edge of its identifier and holds its ends is `api`'s to check (ADR-0028); a slot of an end that
+/// holds no node is the shell's mistake. A refused edge leaves the graph as it was.
 pub(crate) fn add_edge_to(
     graph: &mut Graph,
     edge: &EdgeInput,
     source: u32,
     target: u32,
-) -> Result<u32, GraphDataProblem> {
+) -> Result<u32, EdgeRefusal> {
     check_graph_size(0.0, f64::from(graph.edges_in_use()) + 1.0)?;
     let edge = edge_of(0, edge)?;
-    for (field, id) in [
-        ("id", edge.id),
-        ("source", edge.source),
-        ("target", edge.target),
-    ] {
-        id_length("edges", 0, field, id)?;
-    }
+    edge_ids(0, &edge)?;
     if edge.source == edge.target {
         return Err(GraphDataProblem::SelfEdge {
             edge: edge.id.to_owned(),
-        });
+        }
+        .into());
     }
-    let (label, style) = placement_of(&edge)?;
-    let spec = EdgeSpec {
-        sides: edge.sides,
-        source,
-        target,
-        label,
-        style,
-    };
-    graph
-        .add_edge(spec)
-        .map_err(|_| malformed("comb: an end of the edge names no node"))
+    let spec = spec_of(&edge, source, target)?;
+    Ok(graph.add_edge(spec)?)
 }
 
 /// The fields a patch of `updateEdge` may hold, each as the host application handed it over:
@@ -950,37 +979,29 @@ impl<'de> Visitor<'de> for EdgePatchVisitor {
 
 /// Checks a patch of the edge `id` in `slot` as a load checks those fields, and gives the edge the
 /// patched label placement and style; the store merges the rest, which the engine does not keep.
-/// The first offending field refuses the patch, and nothing changes.
+/// The first offending field refuses the patch, and nothing changes; a slot that holds no edge is
+/// the shell's mistake.
 pub(crate) fn update_edge_in(
     graph: &mut Graph,
     slot: u32,
     id: &str,
     patch: EdgePatch,
-) -> Result<(), GraphDataProblem> {
+) -> Result<(), EdgeRefusal> {
     if let Some(field) = patch.other {
         return Err(GraphDataProblem::UnknownEdgePatchField {
             edge: id.to_owned(),
             field,
-        });
+        }
+        .into());
     }
-    let current = graph
-        .edge(slot)
-        .ok_or_else(|| malformed("comb: the slot holds no edge"))?;
+    let current = graph.edge(slot).ok_or(SlotError::NoEdge { slot })?;
     // Every field's type first, then their values, in the order a load reads and checks them.
     let mut item = Item::new(GraphList::Edges, 0);
     item.id = Some(id);
-    let label = match patch.label {
-        None => None,
-        Some(label) => Some(match item.read("label", label, A_LABEL)? {
-            None => None,
-            Some(input) => Some(Label {
-                text_length: input.text_length,
-                t: item.read("label.t", input.t, A_NUMBER)?,
-                offset: item.read("label.offset", input.offset, A_NUMBER)?,
-                background: input.background,
-            }),
-        }),
-    };
+    let label = patch
+        .label
+        .map(|label| label_of(&item, label))
+        .transpose()?;
     let color = patch
         .color
         .map(|color| item.read("color", color, A_COLOR))
@@ -1019,9 +1040,7 @@ pub(crate) fn update_edge_in(
         source: source_side.map_or(current.sides.source, Into::into),
         target: target_side.map_or(current.sides.target, Into::into),
     };
-    graph
-        .update_edge(slot, label, style, sides)
-        .map_err(|_| malformed("comb: the slot holds no edge"))
+    Ok(graph.update_edge(slot, label, style, sides)?)
 }
 
 /// The attributes `updateNode` changes on a node, by name: only its title, a string. Read from a
