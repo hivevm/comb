@@ -76,3 +76,90 @@ describe("interaction", () => {
     expect(store.getState().selection).toEqual({ kind: "node", id: "a" });
   });
 });
+
+/** A store holding node `a`, with interaction attached; `changes` lists every change recorded
+ *  from then on. */
+function dragged() {
+  const store = createGraphStore();
+  store.getState().load({
+    nodes: [{ id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 }],
+    edges: [],
+  });
+  const { app, emit } = fakeApp();
+  attachInteraction(app, store, fakeBridge().bridge);
+  const changes: unknown[] = [];
+  store.subscribe((state, previous) => {
+    if (state.change !== previous.change) changes.push(state.change);
+  });
+  return { store, app, emit, changes };
+}
+
+describe("interaction records where a drag left its node", () => {
+  for (const release of ["pointerup", "pointerupoutside"]) {
+    test(`a drag records one nodeMoved on ${release}, and none per frame`, () => {
+      // Verifies: ADR-0023
+      const { emit, changes } = dragged();
+      emit("pointerdown", 10, 10);
+      for (let frame = 1; frame <= 6; frame += 1) emit("globalpointermove", 10 + frame * 5, 10);
+      expect(changes).toEqual([]);
+      emit(release, 40, 10);
+      expect(changes).toEqual([{ kind: "nodeMoved", by: "user", id: "a" }]);
+      // The drag is over: a later move moves nothing and records nothing.
+      emit("globalpointermove", 80, 10);
+      emit(release, 80, 10);
+      expect(changes).toHaveLength(1);
+    });
+  }
+
+  test("a press released where it began, or with moves that move nothing, records no change", () => {
+    // Verifies: ADR-0023
+    const { emit, changes } = dragged();
+    emit("pointerdown", 10, 10);
+    emit("pointerup", 10, 10);
+    emit("pointerdown", 10, 10);
+    emit("globalpointermove", 10, 10);
+    emit("pointerup", 10, 10);
+    expect(changes).toEqual([]);
+  });
+
+  test("a load during a drag ends it, and its release tells nothing", () => {
+    // Verifies: ADR-0023
+    const { store, emit, changes } = dragged();
+    emit("pointerdown", 10, 10);
+    emit("globalpointermove", 30, 10);
+    store.getState().load({
+      nodes: [{ id: "z", title: "Z", x: 0, y: 0, width: 100, height: 40 }],
+      edges: [],
+    });
+    emit("pointerup", 30, 10);
+    expect(changes).toEqual([{ kind: "loaded", by: "host" }]);
+  });
+
+  test("a press after a drag whose release never came tells the drag's nodeMoved first", () => {
+    // Verifies: ADR-0023
+    const { emit, changes } = dragged();
+    emit("pointerdown", 10, 10);
+    emit("globalpointermove", 30, 10);
+    emit("pointerdown", 30, 10);
+    expect(changes).toEqual([{ kind: "nodeMoved", by: "user", id: "a" }]);
+    emit("pointerup", 30, 10);
+    expect(changes).toHaveLength(1);
+  });
+
+  test("a listener that throws on release leaves the drag over and the cursor updated", () => {
+    // Verifies: ADR-0023
+    const { store, app, emit, changes } = dragged();
+    store.subscribe((state, previous) => {
+      if (state.change !== previous.change) throw new Error("host listener");
+    });
+    emit("pointerdown", 10, 10);
+    emit("globalpointermove", 30, 10);
+    expect(() => emit("pointerup", 30, 10)).toThrow("host listener");
+    expect(changes).toEqual([{ kind: "nodeMoved", by: "user", id: "a" }]);
+    // The fake bridge has a node under every point, so the cursor offers to grab it again.
+    expect(app.canvas.style.cursor).toBe("grab");
+    emit("globalpointermove", 50, 10);
+    emit("pointerup", 50, 10);
+    expect(changes).toHaveLength(1);
+  });
+});

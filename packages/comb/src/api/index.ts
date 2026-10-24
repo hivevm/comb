@@ -295,6 +295,12 @@ function deliveryOf(change: StoreChange, state: GraphState, bridge: Bridge): Gra
       return { kind: change.kind, by: change.by };
     case "nodeUpdated":
       return { kind: change.kind, by: change.by, id: change.id, patch: { ...change.patch } };
+    case "nodeMoved": {
+      const slot = state.slots.get(change.id)!;
+      const positions = bridge.positions();
+      const [x, y] = [positions[slot * 2]!, positions[slot * 2 + 1]!];
+      return { kind: change.kind, by: change.by, id: change.id, x, y };
+    }
     case "nodeAdded": {
       const slot = state.slots.get(change.id)!;
       const { id, title, width, height } = state.nodes[slot]!;
