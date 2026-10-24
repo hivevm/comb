@@ -7,7 +7,9 @@
       "name": "Example: metric tree",
       "type": "node-terminal",
       "request": "launch",
-      "command": "bun run example",
+      // A debug terminal sets BUN_INSPECT to one socket, which every nested Bun process of the
+      // script would open again; the build needs no debugger.
+      "command": "BUN_INSPECT= bun run example",
       "cwd": "${workspaceFolder}",
       // Vite prints the port in bold; without colours the pattern below sees plain digits.
       "env": { "NO_COLOR": "1" },
