@@ -11,12 +11,6 @@ explicit and reviewable.
 > For agent instructions, see [`AGENTS.md`](AGENTS.md), the single source of truth for all coding
 > agents.
 
-> [!NOTE]
-> **This project still carries its template setup.** The one-time steps that turn the scaffold
-> into your own project are in [`TEMPLATE-SETUP.md`](TEMPLATE-SETUP.md); ask your agent to run the
-> `setup-project` skill to be walked through them, one question at a time. Delete that file and
-> this note once you are through them.
-
 ## Overview
 
 Comb draws nodes, edges, connectors, and edge labels on a WebGL2 canvas with PixiJS and lets the
@@ -34,9 +28,6 @@ statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), th
 - Docker / Podman (rootless) available on the host
 
 ## Getting Started
-
-> Setting the project up for the first time? The one-time steps are in
-> [`TEMPLATE-SETUP.md`](TEMPLATE-SETUP.md). Delete this paragraph together with that file.
 
 1. Open the repository in VS Code and choose **Reopen in Container**. The Dev Container and the
    preconfigured agent extensions build automatically, and the container enables the repository's
@@ -106,10 +97,6 @@ budget of Q-3 (`bun run build:lib`, at most 300 kB gzipped without PixiJS).
   110 seconds.
 
 ## Usage
-
-<!-- Once there is something to use, show how to use the built software: the primary commands or
-     API, a minimal example, and the expected output. Keep build/test/run mechanics in the section
-     above; this section is about using the result, not producing it. -->
 
 A host application gives Comb an element to fill and the engine's WebAssembly, hands it the
 graph, and keeps the forms:
@@ -214,7 +201,6 @@ const comb = await createComb(host, { engine: fetch(engineUrl), allowCanvasFallb
 ## Project Layout
 
 ```
-TEMPLATE-SETUP.md     # one-time template setup; delete it when the project is yours
 README.md             # overview & setup for humans
 AGENTS.md             # single source of truth for coding agents
 docs/SPECIFICATION.md # the specification: problem, goals, success criteria
