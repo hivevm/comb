@@ -148,6 +148,30 @@ mod tests {
     }
 
     #[test]
+    fn a_label_moved_to_where_it_lies_keeps_its_parameter_and_offset() {
+        // Verifies: G-6
+        let label = LabelPlacement {
+            t: 0.4,
+            offset: -25.0,
+        };
+        let edges = vec![EdgeSpec {
+            sides: Sides::default(),
+            source: 0,
+            target: 1,
+            label: Some(label),
+            style: EdgeStyle::unstyled(),
+        }];
+        let sizes = vec![220.0, 64.0, 220.0, 64.0];
+        let mut graph = Graph::new(vec![0.0, 0.0, 300.0, 100.0], sizes, edges).unwrap();
+        let at = graph.label_point(0).unwrap();
+        let moved = graph.move_label(0, at).unwrap();
+        assert!(
+            (moved.t - label.t).abs() < 1e-6 && (moved.offset - label.offset).abs() < 1e-6,
+            "{moved:?}"
+        );
+    }
+
+    #[test]
     fn a_label_measured_with_a_size_that_is_not_finite_and_positive_is_not_hit() {
         // Verifies: ADR-0025
         let mut rng = Lcg(11);
