@@ -236,7 +236,11 @@ const comb = await createComb(host, { engine: fetch(engineUrl), allowCanvasFallb
 [`examples/metric-tree/`](examples/metric-tree/) is a complete host application with a sidebar and
 a palette, whose kinds the user drags onto the canvas to add a node under the drop. A click on a
 node or an edge selects it, an edge within 4 screen pixels of its path, and the sidebar edits a
-node's title or an edge's colour, line, arrowhead, and label.
+node's title or an edge's colour, line, arrowhead, and label. With the canvas focused, which a
+press on it does, Delete or Backspace deletes the selection, a node with every edge at it, once
+`CombOptions.canDelete` returns `true` for the identifiers of everything that would go; without
+`canDelete` a deletion is allowed, and the host application's own `removeNodes` and `removeEdges`
+never ask it. The deletion is told as `nodesRemoved` or `edgesRemoved` with `by: "user"`.
 
 ## Project Layout
 

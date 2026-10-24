@@ -58,6 +58,9 @@ export interface EdgePatch {
 /** A node as the store keeps it: everything but its position. */
 export type NodeView = Omit<NodeData, "x" | "y">;
 
+/** Who made a change: the user on the canvas, or the host application through `Comb`. */
+export type By = "user" | "host";
+
 /** The change the last action that changed the graph made, by kind and the identifier it touched,
  *  never a coordinate (ADR-0011, ADR-0023): `api` delivers it to the host application, reading
  *  what it carries from the store and the engine's buffers. A new object for every change, so
@@ -68,11 +71,11 @@ export type StoreChange =
   | { readonly kind: "nodeMoved"; readonly by: "user"; readonly id: string }
   | {
       readonly kind: "nodesRemoved";
-      readonly by: "host";
+      readonly by: By;
       readonly nodes: readonly string[];
       readonly edges: readonly string[];
     }
-  | { readonly kind: "edgesRemoved"; readonly by: "host"; readonly edges: readonly string[] }
+  | { readonly kind: "edgesRemoved"; readonly by: By; readonly edges: readonly string[] }
   | { readonly kind: "edgeAdded"; readonly by: "host"; readonly id: string }
   | {
       readonly kind: "edgeUpdated";
@@ -121,9 +124,9 @@ export interface GraphState extends GraphView {
   nodeMoved(id: string): void;
   /** Forgets the nodes in `nodeSlots` and the edges in `edgeSlots`, which the engine removed,
    *  leaving their slots free, and clears a selection of one of them. */
-  removeNodes(nodeSlots: readonly number[], edgeSlots: readonly number[]): void;
+  removeNodes(nodeSlots: readonly number[], edgeSlots: readonly number[], by?: By): void;
   /** Forgets the edges in `edgeSlots`, which the engine removed, leaving their slots free. */
-  removeEdges(edgeSlots: readonly number[]): void;
+  removeEdges(edgeSlots: readonly number[], by?: By): void;
   /** Keeps `edge`, which the engine took into `slot`. */
   addEdge(edge: EdgeData, slot: number): void;
   /** Merges `patch` into the edge `id`, which the engine changed. */
@@ -170,6 +173,7 @@ function withoutNodes(
   state: GraphView,
   nodeSlots: readonly number[],
   edgeSlots: readonly number[],
+  by: By,
 ): Partial<GraphView> {
   const removed = withoutEdges(state.edges, state.edgeSlots, edgeSlots);
   const nodes = state.nodes.slice();
@@ -194,14 +198,18 @@ function withoutNodes(
     edges: removed.edges,
     edgeSlots: removed.edgeSlots,
     idUnits: state.idUnits - units,
-    change: { kind: "nodesRemoved", by: "host", nodes: ids, edges: removed.ids },
+    change: { kind: "nodesRemoved", by, nodes: ids, edges: removed.ids },
     ...(cleared ? { selection: null } : {}),
   };
 }
 
 /** What `removeEdges` changes of `state`: the edges in `edgeSlots` forgotten, and a selection of
  *  a removed edge cleared. */
-function withoutEdgesOf(state: GraphView, edgeSlots: readonly number[]): Partial<GraphView> {
+function withoutEdgesOf(
+  state: GraphView,
+  edgeSlots: readonly number[],
+  by: By,
+): Partial<GraphView> {
   const removed = withoutEdges(state.edges, state.edgeSlots, edgeSlots);
   const { selection } = state;
   const cleared = selection?.kind === "edge" && !removed.edgeSlots.has(selection.id);
@@ -209,7 +217,7 @@ function withoutEdgesOf(state: GraphView, edgeSlots: readonly number[]): Partial
     edges: removed.edges,
     edgeSlots: removed.edgeSlots,
     idUnits: state.idUnits - removed.units,
-    change: { kind: "edgesRemoved", by: "host", edges: removed.ids },
+    change: { kind: "edgesRemoved", by, edges: removed.ids },
     ...(cleared ? { selection: null } : {}),
   };
 }
@@ -283,9 +291,9 @@ export function createGraphStore() {
     setViewport: (viewport) => set({ viewport }),
     positionsMoved: () => set((state) => ({ positionsVersion: state.positionsVersion + 1 })),
     nodeMoved: (id) => set({ change: { kind: "nodeMoved", by: "user", id } }),
-    removeNodes: (nodeSlots, edgeSlots) =>
-      set((state) => withoutNodes(state, nodeSlots, edgeSlots)),
-    removeEdges: (edgeSlots) => set((state) => withoutEdgesOf(state, edgeSlots)),
+    removeNodes: (nodeSlots, edgeSlots, by = "host") =>
+      set((state) => withoutNodes(state, nodeSlots, edgeSlots, by)),
+    removeEdges: (edgeSlots, by = "host") => set((state) => withoutEdgesOf(state, edgeSlots, by)),
     addEdge: (edge, slot) => set((state) => withEdge(state, edge, slot)),
     updateEdge: (id, patch) =>
       set((state) => {
