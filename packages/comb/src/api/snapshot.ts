@@ -225,3 +225,27 @@ export function patchOf(patch: unknown, limits: Limits): PlainPatch {
   }
   return plain as PlainPatch;
 }
+
+/** The list of identifiers `removeNodes` or `removeEdges` names, and its length, read once: a
+ *  list that is no array, or whose length is no number, is unreadable. The length goes to the
+ *  bridge first, so that a list too long is never read. */
+export function idListOf(ids: unknown, name: string): { list: readonly unknown[]; count: number } {
+  const list = listOf(ids, name);
+  const count = list.length;
+  if (typeof count !== "number") throw new UnreadableError(`${name} has no length`);
+  return { list, count };
+}
+
+/** The first `count` identifiers of `list`, read once by index into strings no longer than one
+ *  code unit beyond the bridge's limit, which no identifier the graph holds is: a hole, or an
+ *  item that is no string, is unreadable. */
+export function idsOf(list: readonly unknown[], count: number, name: string, limits: Limits) {
+  const read: string[] = [];
+  for (let i = 0; i < count; i++) {
+    if (!(i in list)) throw new UnreadableError(`${name} has no item ${i}`);
+    const id = list[i];
+    if (typeof id !== "string") throw new UnreadableError(`${name} item ${i} is not a string`);
+    read.push(id.length > limits.id ? id.slice(0, limits.id + 1) : id);
+  }
+  return read;
+}

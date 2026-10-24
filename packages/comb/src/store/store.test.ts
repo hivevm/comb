@@ -63,3 +63,50 @@ describe("graph store", () => {
     expect(store.getState().change).toBe(state.change);
   });
 });
+
+describe("graph store removals", () => {
+  test("a removal leaves holes at the free slots, forgets the identifiers, and clears the selection", () => {
+    // Verifies: ADR-0022, ADR-0023
+    const store = createGraphStore();
+    store.getState().load(graph);
+    store.getState().select({ kind: "node", id: "a" });
+    const { idUnits } = store.getState();
+    store.getState().removeNodes([0], [0]);
+    const state = store.getState();
+    expect(state.nodes).toEqual([undefined, { id: "b", title: "B", width: 100, height: 40 }]);
+    expect(state.edges).toEqual([undefined]);
+    expect([...state.slots]).toEqual([["b", 1]]);
+    expect([...state.edgeSlots]).toEqual([]);
+    expect(state.idUnits).toBe(idUnits - "a".length - "a-b".length - "a".length - "b".length);
+    expect(state.selection).toBeNull();
+    expect(state.change).toEqual({
+      kind: "nodesRemoved",
+      by: "host",
+      nodes: ["a"],
+      edges: ["a-b"],
+    });
+  });
+
+  test("a removal of edges keeps the nodes and a selection of a node", () => {
+    // Verifies: ADR-0022, ADR-0023
+    const store = createGraphStore();
+    store.getState().load(graph);
+    store.getState().select({ kind: "node", id: "b" });
+    const { nodes } = store.getState();
+    store.getState().removeEdges([0]);
+    const state = store.getState();
+    expect(state.nodes).toBe(nodes);
+    expect(state.edges).toEqual([undefined]);
+    expect(state.selection).toEqual({ kind: "node", id: "b" });
+    expect(state.change).toEqual({ kind: "edgesRemoved", by: "host", edges: ["a-b"] });
+  });
+
+  test("a removal of a node clears a selection of an edge it took along", () => {
+    // Verifies: ADR-0022
+    const store = createGraphStore();
+    store.getState().load(graph);
+    store.getState().select({ kind: "edge", id: "a-b" });
+    store.getState().removeNodes([1], [0]);
+    expect(store.getState().selection).toBeNull();
+  });
+});

@@ -41,6 +41,7 @@ const DESCRIBE: { [K in Kind]: (problem: Of<K>) => string } = {
   idTooLong: (p) => `${p.list} ${p.index} ${p.field} ${p.limit}`,
   idBudgetExceeded: (p) => `${p.limit}`,
   unknownNode: (p) => p.node,
+  unknownEdge: (p) => p.edge,
 };
 
 /** `problem` described by the handler of its kind. */

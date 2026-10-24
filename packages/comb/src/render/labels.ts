@@ -11,7 +11,7 @@ import { edgeColor } from "./edges";
  *  label whose point lies farther outside is not bound. */
 export const LABEL_REACH = 120;
 
-type EdgeView = GraphView["edges"][number];
+type EdgeView = NonNullable<GraphView["edges"][number]>;
 
 /** One edge label: a pill with its text, centred on its point. A pooled view. */
 export class LabelView extends Container {

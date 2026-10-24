@@ -199,6 +199,43 @@ impl Grid {
         self.set(item, bounds);
     }
 
+    /// Takes `items` out of the grid, so that no query finds them until they are set again; each
+    /// cell they were in is filtered once, so that many items sharing cells cost each cell once,
+    /// not once per item. An item not in the grid is ignored.
+    pub fn take(&mut self, items: &[u32]) {
+        let mut cells = Vec::new();
+        let mut overflow = false;
+        for &item in items {
+            let i = item as usize;
+            let Some(Some(place)) = self.places.get(i).copied() else {
+                continue;
+            };
+            match place {
+                Place::Overflow => overflow = true,
+                Place::Cells(span) => {
+                    for r in span.r0..=span.r1 {
+                        cells.extend((span.c0..=span.c1).map(|c| r * self.cols + c));
+                    }
+                }
+            }
+            self.places[i] = None;
+            if self.beyond[i] {
+                self.beyond[i] = false;
+                self.beyond_count -= 1;
+            }
+        }
+        cells.sort_unstable();
+        cells.dedup();
+        let places = &self.places;
+        let kept = |other: &u32| places[*other as usize].is_some();
+        for cell in cells {
+            self.cells[cell].retain(kept);
+        }
+        if overflow {
+            self.overflow.retain(kept);
+        }
+    }
+
     /// Writes into `out`, after clearing it, every item in a cell that `rect` meets and every
     /// item in the overflow list, each once.
     pub fn candidates(&mut self, rect: &Rect, out: &mut Vec<u32>) {
@@ -242,6 +279,24 @@ mod tests {
         assert_eq!(out, [0]);
         grid.candidates(&Rect::new(0.0, 0.0, 100.0, 100.0), &mut out);
         assert_eq!(sorted(out), [0, 1]);
+    }
+
+    #[test]
+    fn an_item_taken_out_is_found_by_no_query_and_counts_no_more_beyond() {
+        let mut grid = Grid::new(Rect::new(0.0, 0.0, 100.0, 100.0), 10.0, 3);
+        grid.set(0, &Rect::new(5.0, 5.0, 8.0, 8.0));
+        grid.set(1, &Rect::new(150.0, 5.0, 160.0, 8.0));
+        grid.set(2, &Rect::new(-1e9, -1e9, 1e9, 1e9));
+        assert_eq!(grid.beyond_extent(), 2);
+        grid.take(&[0, 1]);
+        grid.take(&[2, 1]);
+        assert_eq!(grid.beyond_extent(), 0);
+        let mut out = Vec::new();
+        grid.candidates(&Rect::new(-1e10, -1e10, 1e10, 1e10), &mut out);
+        assert!(out.is_empty());
+        grid.set(1, &Rect::new(5.0, 5.0, 8.0, 8.0));
+        grid.candidates(&Rect::new(0.0, 0.0, 10.0, 10.0), &mut out);
+        assert_eq!(out, [1]);
     }
 
     #[test]

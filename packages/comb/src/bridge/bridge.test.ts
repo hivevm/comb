@@ -76,7 +76,7 @@ describe("bridge", () => {
     // Only a grown memory detaches its buffer, so an empty view shows that the call grew it.
     bridge.loadGraph(graph([node("a", 1, 2), node("b", 3, 4)]));
     const calls: [string, () => unknown][] = [
-      ["loadGraph", () => bridge.loadGraph(graph([node("a", 1, 2), node("b", 3, 4)]))],
+      ["loadGraph", () => bridge.loadGraph(row(3))],
       ["checkNodePatch", () => bridge.checkNodePatch("a", plain({ title: "A" }))],
       ["addNode", () => bridge.addNode(added(node("c", 5, 6)))],
       ["translate", () => bridge.translate(new Uint32Array([0]), 0, 0)],
@@ -84,6 +84,8 @@ describe("bridge", () => {
       ["query", () => bridge.query(everywhere, "near", 4, 0)],
       ["drawnEdges", () => bridge.drawnEdges()],
       ["hit", () => bridge.hit(0, 0)],
+      ["removeEdges", () => bridge.removeEdges(new Uint32Array([0]))],
+      ["removeNodes", () => bridge.removeNodes(new Uint32Array([1]))],
     ];
     const after = calls.map(([name, call]) => {
       const kept = bridge.positions();
@@ -453,6 +455,49 @@ describe("bridge additions", () => {
       expect.objectContaining({ kind: "malformed" }),
     ]);
     expect([...bridge.positions()]).toEqual([0, 0]);
+  });
+});
+
+describe("bridge removals", () => {
+  test("a removed node takes its edges along, and its slot is the next addition's", () => {
+    // Verifies: ADR-0022
+    bridge.loadGraph(row(4));
+    expect([...bridge.removeNodes(new Uint32Array([1]))]).toEqual([0, 1]);
+    expect([...bridge.query(everywhere, "near", 1, 0).nodes]).toEqual([0, 2, 3]);
+    expect([...bridge.drawnEdges().slots]).toEqual([2]);
+    bridge.removeEdges(new Uint32Array([2]));
+    bridge.query(everywhere, "near", 1, 0);
+    expect([...bridge.drawnEdges().slots]).toEqual([]);
+    expect(bridge.addNode(added(node("c", 200, 0)))).toBe(1);
+    expect(bridge.hit(205, 5)).toBe(1);
+  });
+
+  test("a free slot is refused wherever a call names one, and the graph stays as it was", () => {
+    // Verifies: ADR-0022
+    bridge.loadGraph(row(3));
+    bridge.removeNodes(new Uint32Array([2]));
+    const refused = (call: () => unknown) => {
+      try {
+        call();
+        return "accepted";
+      } catch (error) {
+        return error;
+      }
+    };
+    expect(refused(() => bridge.removeNodes(new Uint32Array([0, 2])))).toEqual({
+      kind: "noNode",
+      slot: 2,
+    });
+    expect(refused(() => bridge.removeEdges(new Uint32Array([1])))).toEqual({
+      kind: "noEdge",
+      slot: 1,
+    });
+    expect(refused(() => bridge.translate(new Uint32Array([2]), 1, 1))).toEqual({
+      kind: "slotOutOfRange",
+      slot: 2,
+    });
+    expect([...bridge.query(everywhere, "near", 1, 0).nodes]).toEqual([0, 1]);
+    expect([...bridge.positions()].slice(0, 4)).toEqual([0, 0, 200, 0]);
   });
 });
 

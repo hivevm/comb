@@ -1010,6 +1010,7 @@ async function everyKind() {
       edges: [],
     }),
     unknownNode: () => window.comb.updateNode("z", { title: "Z" }),
+    unknownEdge: () => window.comb.removeEdges(["z"]),
   };
   const thrown: Record<string, unknown> = {};
   for (const [kind, call] of Object.entries(calls)) {
@@ -1027,7 +1028,9 @@ async function everyKind() {
   return thrown;
 }
 
-test("load and updateNode throw every kind of GraphDataProblem", async ({ page }) => {
+test("load and the methods that edit the graph throw every kind of GraphDataProblem", async ({
+  page,
+}) => {
   // Verifies: Q-3, Q-7, ADR-0010
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -1035,5 +1038,5 @@ test("load and updateNode throw every kind of GraphDataProblem", async ({ page }
   const thrown = await page.evaluate(everyKind);
   expect(errors).toEqual([]);
   expect(thrown).toEqual(Object.fromEntries(Object.keys(thrown).map((kind) => [kind, kind])));
-  expect(Object.keys(thrown).length).toBe(20);
+  expect(Object.keys(thrown).length).toBe(21);
 });

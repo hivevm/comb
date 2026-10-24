@@ -61,6 +61,8 @@ test("after a trap in load, every call that needs the engine throws an EngineLos
       load: outcome(() => comb.load({ ...graph, edges: [] })),
       updateNode: outcome(() => comb.updateNode("n0", { title: "x" })),
       addNode: outcome(() => comb.addNode({ ...graph.nodes[0]!, id: "b" })),
+      removeNodes: outcome(() => comb.removeNodes(["a"])),
+      removeEdges: outcome(() => comb.removeEdges([])),
       fitView: outcome(() => comb.fitView()),
       setViewport: outcome(() => comb.setViewport({ x: 0, y: 0, scale: 1 })),
     };
@@ -94,7 +96,11 @@ test("after a trap in load, every call that needs the engine throws an EngineLos
   });
   expect(outcomes).toEqual({
     trap: LOST,
-    later: { load: LOST, updateNode: LOST, addNode: LOST, fitView: LOST, setViewport: LOST },
+    later: Object.fromEntries(
+      ["load", "updateNode", "addNode", "removeNodes", "removeEdges", "fitView", "setViewport"].map(
+        (call) => [call, LOST],
+      ),
+    ),
     created: LOST,
     kept: { viewport: "ok", worldPointAt: "ok", onSelectionChange: "ok", unsubscribe: "ok" },
   });

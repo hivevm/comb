@@ -135,10 +135,13 @@ comb.addNode({ id: "c", title: "Churned users", x: 640, y: 0, width: 220, height
 `addNode` adds one node at its `x` and `y` without a load, drawn above every node it overlaps. For a
 node dropped from the host application's palette, `comb.worldPointAt(event.clientX, event.clientY)`
 returns the world point under the drop; Comb handles no drag and drop itself, and `worldPointAt`
-throws a `RangeError` on a coordinate that is not finite. `onChange` tells every change of the
-graph, a `GraphChange` that `comb` exports, typed by its `kind` and by `by`, `"user"` or `"host"`:
-`loaded` after `load`, `nodeAdded` with the node as Comb took it after `addNode`, `nodeUpdated` with
-the merged patch after `updateNode`, and `nodeMoved` with where the node lies, once, when the user
+throws a `RangeError` on a coordinate that is not finite. `removeNodes(ids)` removes those nodes and
+every edge at them, and `removeEdges(ids)` those edges, without a load. `onChange` tells every
+change of the graph, a `GraphChange` that `comb` exports, typed by its `kind` and by `by`, `"user"`
+or `"host"`: `loaded` after `load`, `nodeAdded` with the node as Comb took it after `addNode`,
+`nodeUpdated` with the merged patch after `updateNode`, `nodesRemoved` with the nodes and the edges
+that went with them after `removeNodes`, `edgesRemoved` with the edges after `removeEdges`, nothing
+for a removal that names none, and `nodeMoved` with where the node lies, once, when the user
 releases a node dragged, not per frame and not for a press that moved nothing. Each arrives before
 the call or input event that made it returns, and before `onSelectionChange` reports a selection the
 change cleared; `onChange` returns the function that removes the listener. A change a listener makes
@@ -149,16 +152,18 @@ graph holds the change all the same.
 
 `load` throws a `GraphDataError` on graph data it refuses, `updateNode` one on a node the graph does
 not hold or a patch it refuses, and `addNode` one on a node of an identifier the graph holds already
-(`duplicateNode`), a node a load would refuse, or one past the limits of a load; each keeps the
-graph it had and tells `onChange` nothing (Q-7). The error's `problem` is a `GraphDataProblem`,
-which `comb` exports, and its `kind` says what was wrong and where: `invalidField` for a field
-missing or of another type, with the list, the index, the identifier where the item has one, the
-field, and what it expects; `unknownNode` for a node `updateNode` does not know; `malformed` for
-graph data that is no object of node and edge lists; and a kind of its own for every other refusal,
-such as `nonFiniteCoordinate` or `missingNode`. `problem.kind` narrows the union to the fields of
-its kind. A `switch` on it without a `default` has to handle every kind, so that a kind a later
-version adds fails the host application's type check; the example handles two and leaves the rest to
-a `default`:
+(`duplicateNode`), a node a load would refuse, or one past the limits of a load, and `removeNodes`
+and `removeEdges` one on an identifier the graph does not hold among those they name (`unknownNode`,
+`unknownEdge`) or identifiers that are no list of strings; each keeps the graph it had and tells
+`onChange` nothing (Q-7). The error's `problem` is a `GraphDataProblem`, which `comb` exports, and
+its `kind` says what was wrong and where: `invalidField` for a field missing or of another type,
+with the list, the index, the identifier where the item has one, the field, and what it expects;
+`unknownNode` and `unknownEdge` for a node or an edge the graph does not hold; `malformed` for graph
+data that is no object of node and edge lists; and a kind of its own for every other refusal, such
+as `nonFiniteCoordinate` or `missingNode`. `problem.kind` narrows the union to the fields of its
+kind. A `switch` on it without a `default` has to handle every kind, so that a kind a later version
+adds fails the host application's type check; the example handles two and leaves the rest to a
+`default`:
 
 ```ts
 import { GraphDataError, type GraphDataProblem } from "comb";
@@ -193,7 +198,8 @@ instantiated once per page: a later `createComb` checks its `engine` but reuses 
 instance.
 
 Should the engine trap, as WebAssembly does when it runs out of memory, it is lost for the page, for
-every Comb on it (ADR-0021). From then on `load`, `updateNode`, `addNode`, `fitView`, `setViewport`,
+every Comb on it (ADR-0021). From then on `load`, `updateNode`, `addNode`, `removeNodes`,
+`removeEdges`, `fitView`, `setViewport`,
 and `createComb` throw an `EngineLostError`, which `comb` exports; `viewport`, `worldPointAt`,
 `onSelectionChange`, `onChange`, and `destroy` keep working, the canvas keeps its last frame, and
 input on it changes nothing. `comb.onEngineLost(listener)` calls `listener` once with the error, at

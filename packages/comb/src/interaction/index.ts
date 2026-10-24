@@ -11,7 +11,7 @@ const WHEEL_STEP = 1.0015;
 
 /** A drag in progress: of a node, which records whether it moved it, or of the viewport. */
 type Drag =
-  | { kind: "node"; slot: number; x: number; y: number; moved: boolean }
+  | { kind: "node"; slot: number; id: string; x: number; y: number; moved: boolean }
   | { kind: "pan"; x: number; y: number };
 
 /** The slot of the node under a screen point, from the engine's spatial index. */
@@ -27,7 +27,7 @@ function startDrag(store: GraphStore, bridge: Bridge, event: FederatedPointerEve
   const node = slot === undefined ? undefined : nodes[slot];
   if (slot !== undefined && node) {
     store.getState().select({ kind: "node", id: node.id });
-    return { kind: "node", slot, x, y, moved: false };
+    return { kind: "node", slot, id: node.id, x, y, moved: false };
   }
   store.getState().select(null);
   return { kind: "pan", x, y };
@@ -53,8 +53,7 @@ function continueDrag(store: GraphStore, bridge: Bridge, drag: Drag, event: Fede
  *  it left it (ADR-0023), on the canvas or outside it. */
 function endDrag(store: GraphStore, drag: Drag | null): void {
   if (drag?.kind !== "node" || !drag.moved) return;
-  const node = store.getState().nodes[drag.slot];
-  if (node) store.getState().nodeMoved(node.id);
+  if (store.getState().nodes[drag.slot]?.id === drag.id) store.getState().nodeMoved(drag.id);
 }
 
 /** `handler`, doing nothing once the engine is lost. */
@@ -125,10 +124,11 @@ export function attachInteraction(app: Application, store: GraphStore, bridge: B
     }
   });
   app.stage.on("pointerupoutside", release);
-  // A load replaces the graph under a drag: the drag ends, and tells nothing of a node the user
-  // never moved.
+  // A load, or a removal of the dragged node, takes the node from under a drag: the drag ends,
+  // moves no node that took its slot, and tells nothing of a node the user never moved.
   const unsubscribe = store.subscribe((state, previous) => {
-    if (state.change !== previous.change && state.change?.kind === "loaded") drag = null;
+    if (state.change === previous.change || drag?.kind !== "node") return;
+    if (state.change?.kind === "loaded" || state.nodes[drag.slot]?.id !== drag.id) drag = null;
   });
 
   const onWheel = untilLost((event: WheelEvent) => {

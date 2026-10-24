@@ -19,7 +19,7 @@ mod graph_data;
 
 use comb_engine::geometry::Point;
 use comb_engine::geometry::Rect;
-use comb_engine::graph::{Graph, Level, Visible};
+use comb_engine::graph::{Graph, Level, RemovalError, Visible};
 use comb_engine::positions::PositionError;
 use comb_engine::stroke::Detail;
 use serde::{Deserialize, Serialize};
@@ -45,6 +45,29 @@ pub enum TranslateError {
     SlotOutOfRange { slot: u32 },
     /// A delta that is NaN or infinite.
     NonFiniteDelta,
+}
+
+/// Why the engine refused a removal: a slot that holds no node or no edge, beyond the slots or
+/// free. The shell's own mistake, never one of graph data, since `api` refuses an identifier the
+/// graph does not hold before it names a slot (ADR-0026).
+#[derive(Tsify, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum RemoveError {
+    /// A slot that holds no node.
+    #[serde(rename_all = "camelCase")]
+    NoNode { slot: u32 },
+    /// A slot that holds no edge.
+    #[serde(rename_all = "camelCase")]
+    NoEdge { slot: u32 },
+}
+
+impl From<RemovalError> for RemoveError {
+    fn from(error: RemovalError) -> Self {
+        match error {
+            RemovalError::NoNode { slot } => Self::NoNode { slot },
+            RemovalError::NoEdge { slot } => Self::NoEdge { slot },
+        }
+    }
 }
 
 impl From<PositionError> for TranslateError {
@@ -75,6 +98,12 @@ impl From<GraphDataProblem> for JsValue {
 
 impl From<TranslateError> for JsValue {
     fn from(error: TranslateError) -> Self {
+        thrown(error)
+    }
+}
+
+impl From<RemoveError> for JsValue {
+    fn from(error: RemoveError) -> Self {
         thrown(error)
     }
 }
@@ -239,6 +268,23 @@ impl Engine {
         trap::spring();
         let node = reading(|| node.to_rust()).map_err(unshaped)?;
         add_node_to(&mut self.graph, &node)
+    }
+
+    /// Removes the nodes in `slots` and every edge at them, and returns the slots of those edges
+    /// in ascending order; the slots go onto the free lists (ADR-0022). A slot that holds no node
+    /// refuses the call, which then changes nothing.
+    #[wasm_bindgen(js_name = removeNodes)]
+    pub fn remove_nodes(&mut self, slots: &[u32]) -> Result<Vec<u32>, RemoveError> {
+        trap::spring();
+        Ok(self.graph.remove_nodes(slots)?)
+    }
+
+    /// Removes the edges in `slots`; the slots go onto the free list (ADR-0022). A slot that holds
+    /// no edge refuses the call, which then changes nothing.
+    #[wasm_bindgen(js_name = removeEdges)]
+    pub fn remove_edges(&mut self, slots: &[u32]) -> Result<(), RemoveError> {
+        trap::spring();
+        Ok(self.graph.remove_edges(slots)?)
     }
 
     /// Moves the nodes in `slots` by `(dx, dy)`, their edges with them.
@@ -466,6 +512,37 @@ mod tests {
     use super::*;
     use comb_engine::stroke::MESH_BUDGET;
     use graph_data::tests::batch;
+
+    #[test]
+    fn a_freed_slot_is_refused_by_every_export_that_takes_slots_as_a_slot_beyond_the_graph() {
+        // Verifies: ADR-0022
+        let data = batch(
+            &[("a", 0.0, 0.0), ("b", 300.0, 0.0), ("c", 600.0, 0.0)],
+            &[("a-b", "a", "b"), ("b-c", "b", "c")],
+        );
+        let mut engine = Engine::new();
+        engine.graph = graph_of(&data).unwrap();
+        // Node c goes, and edge b-c, slot 1, with it.
+        assert_eq!(engine.remove_nodes(&[2]), Ok(vec![1]));
+        for slot in [2, 9] {
+            assert_eq!(
+                engine.remove_nodes(&[0, slot]),
+                Err(RemoveError::NoNode { slot })
+            );
+            assert_eq!(
+                engine.translate(&[0, slot], 1.0, 1.0),
+                Err(TranslateError::SlotOutOfRange { slot })
+            );
+        }
+        for slot in [1, 9] {
+            assert_eq!(
+                engine.remove_edges(&[0, slot]),
+                Err(RemoveError::NoEdge { slot })
+            );
+        }
+        assert_eq!(engine.graph.positions()[..4], [0.0, 0.0, 300.0, 0.0]);
+        assert_eq!(engine.remove_edges(&[0]), Ok(()));
+    }
 
     #[test]
     fn four_vertices_for_each_of_the_most_edges_a_load_holds_fit_the_budget() {

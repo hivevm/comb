@@ -18,6 +18,8 @@ import { clampScale, fitViewport, toWorld } from "../interaction/viewport";
 import { Scene } from "../render/scene";
 import { engineOf, type EngineSource } from "./engine";
 import {
+  idListOf,
+  idsOf,
   isUnreadable,
   listsOf,
   nodeSnapshotOf,
@@ -145,6 +147,14 @@ export interface Comb {
    *  the limits of a load, and changes nothing then (Q-7); and an `EngineLostError` once the
    *  engine is lost. */
   addNode(node: NodeData): void;
+  /** Removes the nodes `ids` and every edge at them, without a load (G-4). Throws a
+   *  `GraphDataError` where the graph holds no node of one of them (`unknownNode`), or `ids` is no
+   *  list of strings, and removes nothing then (Q-7); and an `EngineLostError` once the engine is
+   *  lost. */
+  removeNodes(ids: readonly string[]): void;
+  /** Removes the edges `ids`, as `removeNodes` removes nodes, with `unknownEdge` for an edge the
+   *  graph does not hold. */
+  removeEdges(ids: readonly string[]): void;
   /** Pans and zooms so the whole graph is in view. Throws an `EngineLostError` once the engine is
    *  lost. */
   fitView(): void;
@@ -198,11 +208,14 @@ export class GraphDataError extends Error {
   }
 }
 
-/** The world rectangle the nodes cover, or null for an empty graph. */
-function boundsOf(nodes: readonly NodeView[], positions: Float32Array): Rect | null {
-  if (nodes.length === 0) return null;
+/** The world rectangle the nodes cover, or null for a graph without nodes; a free slot covers
+ *  nothing. */
+function boundsOf(nodes: readonly (NodeView | undefined)[], positions: Float32Array): Rect | null {
   const bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  let any = false;
   nodes.forEach((node, slot) => {
+    if (!node) return;
+    any = true;
     const x = positions[slot * 2]!;
     const y = positions[slot * 2 + 1]!;
     bounds.minX = Math.min(bounds.minX, x);
@@ -210,7 +223,7 @@ function boundsOf(nodes: readonly NodeView[], positions: Float32Array): Rect | n
     bounds.maxX = Math.max(bounds.maxX, x + node.width);
     bounds.maxY = Math.max(bounds.maxY, y + node.height);
   });
-  return bounds;
+  return any ? bounds : null;
 }
 
 /** Reads the host application's value into plain data with `read`, in JavaScript, before the
@@ -287,6 +300,69 @@ function adderOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["addNo
   };
 }
 
+/** The slots of `ids` in `map`, each once, in the order first named; refuses, before anything is
+ *  removed, an identifier the map does not hold with the problem `unknown` makes of it. */
+function slotsOf(
+  ids: readonly string[],
+  map: ReadonlyMap<string, number>,
+  unknown: (id: string) => GraphDataProblem,
+): Uint32Array {
+  const slots = new Set<number>();
+  for (const id of ids) {
+    const slot = map.get(id);
+    if (slot === undefined) throw new GraphDataError(unknown(id));
+    slots.add(slot);
+  }
+  return Uint32Array.from(slots);
+}
+
+/** The identifiers a removal names, read once, its list's length checked by the bridge before
+ *  any is read, as a load's lists are. */
+function removedIds(
+  bridge: Bridge,
+  limits: Limits,
+  ids: unknown,
+  list: "nodes" | "edges",
+): string[] {
+  const name = list === "nodes" ? "node identifiers" : "edge identifiers";
+  const listed = readOnce(() => idListOf(ids, name));
+  checked(() =>
+    list === "nodes"
+      ? bridge.checkGraphSize(listed.count, 0)
+      : bridge.checkGraphSize(0, listed.count),
+  );
+  return readOnce(() => idsOf(listed.list, listed.count, name, limits));
+}
+
+/** `removeNodes` on `store`: reads the identifiers once, refuses one the graph does not hold, and
+ *  has the engine remove the nodes and every edge at them; the store forgets what the engine
+ *  removed (ADR-0022, ADR-0026). A list that names none changes nothing and tells nothing. */
+function nodeRemoverOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["removeNodes"] {
+  return (ids) => {
+    refuseIfLost();
+    const read = removedIds(bridge, limits, ids, "nodes");
+    const nodes = slotsOf(read, store.getState().slots, (node) => ({ kind: "unknownNode", node }));
+    if (nodes.length === 0) return;
+    const edges = bridge.removeNodes(nodes);
+    store.getState().removeNodes([...nodes], [...edges]);
+  };
+}
+
+/** `removeEdges` on `store`, as `removeNodes` removes nodes. */
+function edgeRemoverOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["removeEdges"] {
+  return (ids) => {
+    refuseIfLost();
+    const read = removedIds(bridge, limits, ids, "edges");
+    const edges = slotsOf(read, store.getState().edgeSlots, (edge) => ({
+      kind: "unknownEdge",
+      edge,
+    }));
+    if (edges.length === 0) return;
+    bridge.removeEdges(edges);
+    store.getState().removeEdges([...edges]);
+  };
+}
+
 /** The change of the graph `change` names, as `onChange` delivers it: what it carries read from
  *  `state` and, for a position, from the engine's buffer as it is now. */
 function deliveryOf(change: StoreChange, state: GraphState, bridge: Bridge): GraphChange {
@@ -301,6 +377,15 @@ function deliveryOf(change: StoreChange, state: GraphState, bridge: Bridge): Gra
       const [x, y] = [positions[slot * 2]!, positions[slot * 2 + 1]!];
       return { kind: change.kind, by: change.by, id: change.id, x, y };
     }
+    case "nodesRemoved":
+      return {
+        kind: change.kind,
+        by: change.by,
+        nodes: [...change.nodes],
+        edges: [...change.edges],
+      };
+    case "edgesRemoved":
+      return { kind: change.kind, by: change.by, edges: [...change.edges] };
     case "nodeAdded": {
       const slot = state.slots.get(change.id)!;
       const { id, title, width, height } = state.nodes[slot]!;
@@ -439,6 +524,8 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
     load: loaderOf(store, bridge, limits),
     updateNode: updaterOf(store, bridge, limits),
     addNode: adderOf(store, bridge, limits),
+    removeNodes: nodeRemoverOf(store, bridge, limits),
+    removeEdges: edgeRemoverOf(store, bridge, limits),
     fitView() {
       const bounds = boundsOf(store.getState().nodes, bridge.positions());
       if (bounds)
