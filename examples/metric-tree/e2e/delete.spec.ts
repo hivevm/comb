@@ -179,3 +179,45 @@ test("Delete with the focus outside the canvas deletes nothing", async ({ page }
   expect(result.nodes).toEqual(["a", "b", "c"]);
   expect(result.told).toEqual(["selection a"]);
 });
+
+test("a veto that adds an edge itself refuses the deletion, and Comb and the engine stay in step", async ({
+  page,
+}) => {
+  // Verifies: ADR-0023, ADR-0022
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page);
+  await loaded(page);
+  await page.evaluate(() => {
+    window.canDelete = () => {
+      window.comb.addEdge({ id: "x", source: "a", target: "b" });
+      return true;
+    };
+  });
+  await selectNode(page, "a");
+  await page.keyboard.press("Delete");
+  const result = await state(page);
+  expect(result.nodes).toEqual(["a", "b", "c"]);
+  expect(result.edges).toEqual(["a-c", "b-a", "b-c", "x"]);
+  // The edge the veto added is the store's and the engine's alike: a patch of it is taken.
+  await page.evaluate(() => window.comb.updateEdge("x", { color: 0x2060e0 }));
+  expect(errors).toEqual([]);
+});
+
+test("a Delete held down deletes once, and with a modifier not at all", async ({ page }) => {
+  // Verifies: ADR-0023
+  await open(page);
+  await loaded(page);
+  await page.evaluate(() => {
+    const w = window as unknown as { asked: number };
+    w.asked = 0;
+    window.canDelete = () => ((w.asked += 1), false);
+  });
+  await selectNode(page, "a");
+  await page.keyboard.down("Delete");
+  await page.keyboard.down("Delete");
+  await page.keyboard.down("Delete");
+  await page.keyboard.up("Delete");
+  await page.keyboard.press("Control+Backspace");
+  expect(await page.evaluate(() => (window as unknown as { asked: number }).asked)).toBe(1);
+});
