@@ -57,6 +57,21 @@ function untilLost<A extends unknown[]>(handler: (...args: A) => void): (...args
   };
 }
 
+/** The screen point of `canvas`, drawn at the size of `screen`, under the point (`clientX`,
+ *  `clientY`) of the page: its place in the page taken away, and a canvas the page scales with
+ *  CSS scaled back, as PixiJS maps a pointer. */
+export function canvasPointAt(
+  canvas: HTMLCanvasElement,
+  screen: { width: number; height: number },
+  clientX: number,
+  clientY: number,
+): { x: number; y: number } {
+  const rect = canvas.getBoundingClientRect();
+  const sx = rect.width > 0 ? screen.width / rect.width : 1;
+  const sy = rect.height > 0 ? screen.height / rect.height : 1;
+  return { x: (clientX - rect.left) * sx, y: (clientY - rect.top) * sy };
+}
+
 /** Wires pointer and wheel input on the canvas; returns the function that removes it. */
 export function attachInteraction(app: Application, store: GraphStore, bridge: Bridge): () => void {
   let drag: Drag | null = null;
@@ -85,10 +100,10 @@ export function attachInteraction(app: Application, store: GraphStore, bridge: B
 
   const onWheel = untilLost((event: WheelEvent) => {
     event.preventDefault();
-    const rect = app.canvas.getBoundingClientRect();
+    const at = canvasPointAt(app.canvas, app.screen, event.clientX, event.clientY);
     const factor = WHEEL_STEP ** -event.deltaY;
     const { viewport, setViewport } = store.getState();
-    setViewport(zoomAt(viewport, event.clientX - rect.left, event.clientY - rect.top, factor));
+    setViewport(zoomAt(viewport, at.x, at.y, factor));
   });
   app.canvas.addEventListener("wheel", onWheel, { passive: false });
   return () => {

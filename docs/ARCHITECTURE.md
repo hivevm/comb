@@ -161,7 +161,8 @@ The functional core and its shell follow
   unless `allowCanvasFallback` lets it draw on Canvas 2D (`api/renderers.ts`); and the `Comb` it
   returns: the graph data (`load`, `updateNode`, `addNode`), read once into a snapshot
   (`api/snapshot.ts`) and handed to the engine, the viewport (`fitView`, `setViewport`,
-  `viewport`), the events to the host application (`onChange`, `onSelectionChange`,
+  `viewport`, and `worldPointAt`, the world point under a point of the page, which needs no
+  engine), the events to the host application (`onChange`, `onSelectionChange`,
   `onEngineLost`), and `destroy`; `onChange` delivers each change the store records as a
   `GraphChange` ([ADR-0023](adr/0023-edits-are-reported-as-typed-changes.md)), its positions read
   from the engine's buffer, synchronously from one subscription to the store that tells a change
@@ -183,8 +184,10 @@ The functional core and its shell follow
   the benchmark, and tooling. Its shape follows the scene and is outside the stable interface of
   `comb`.
 - **Example** (`examples/metric-tree`) — a host application with a metric tree and an HTML
-  sidebar (G-9); `?copies=` sets its size, the copies lie in a grid about as wide as tall, and it
-  reports its load time as `window.loadReport`; `?fallback=canvas` allows the Canvas 2D fallback;
+  sidebar (G-9), with a palette whose kinds HTML drag and drop puts onto the canvas, where the
+  example adds a node centred on `worldPointAt` of the drop (G-1); `?copies=` sets its size, the
+  copies lie in a grid about as wide as tall, and it reports its load time as
+  `window.loadReport`; `?fallback=canvas` allows the Canvas 2D fallback;
   it fetches the engine file Vite emits for its `comb/engine.wasm?url` import and hands over the
   promise of the response, or with `?engine=response`, `module`, `bytes`, or `view` that form;
   `window.createComb` and `window.engineUrl` let a browser test make a second Comb in a host

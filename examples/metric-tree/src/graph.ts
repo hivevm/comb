@@ -6,8 +6,8 @@ import type { EdgeData, GraphData, NodeData } from "comb";
 const GREY = 0x9aa1ad;
 const GREEN = 0x22a55b;
 const RED = 0xe0453a;
-const WIDTH = 220;
-const HEIGHT = 64;
+export const NODE_WIDTH = 220;
+export const NODE_HEIGHT = 64;
 const COLUMN = 300;
 const ROW = 110;
 
@@ -55,8 +55,8 @@ function nodesOf(copy: number, top: number): NodeData[] {
       title,
       x: c * COLUMN,
       y: top + (r - (titles.length - 1) / 2) * ROW,
-      width: WIDTH,
-      height: HEIGHT,
+      width: NODE_WIDTH,
+      height: NODE_HEIGHT,
     })),
   );
 }

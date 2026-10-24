@@ -13,8 +13,8 @@ import {
   type GraphDataProblem,
   type Rect,
 } from "../bridge";
-import { attachInteraction } from "../interaction";
-import { clampScale, fitViewport } from "../interaction/viewport";
+import { attachInteraction, canvasPointAt } from "../interaction";
+import { clampScale, fitViewport, toWorld } from "../interaction/viewport";
 import { Scene } from "../render/scene";
 import { engineOf, type EngineSource } from "./engine";
 import {
@@ -154,6 +154,11 @@ export interface Comb {
   setViewport(viewport: Viewport): void;
   /** The current viewport. */
   viewport(): Viewport;
+  /** The world point under the point (`clientX`, `clientY`) of the page, in the client
+   *  coordinates of a pointer or drop event, for a node dropped from the host's palette (G-1).
+   *  Throws a `RangeError` on a coordinate that is not finite; needs no engine, so it keeps
+   *  answering once the engine is lost (ADR-0023). */
+  worldPointAt(clientX: number, clientY: number): { x: number; y: number };
   /** Calls `listener` whenever the selection changes (G-5); returns the unsubscribe function. */
   onSelectionChange(listener: (selection: Selection) => void): () => void;
   /** Calls `listener` with every change of the graph, whoever made it, once the canvas holds it
@@ -357,6 +362,18 @@ function loaderOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["load
   };
 }
 
+/** `worldPointAt` on `store` and the canvas of `app`: the world point under a point of the page,
+ *  from the canvas's place in it and the viewport, without the engine. */
+function worldPointerOf(store: GraphStore, app: Application): Comb["worldPointAt"] {
+  // The canvas and the screen kept, so that the point is answered after `destroy` too.
+  const { canvas, screen } = app;
+  return (clientX, clientY) => {
+    if (![clientX, clientY].every(Number.isFinite)) throw new RangeError("comb: point not finite");
+    const at = canvasPointAt(canvas, screen, clientX, clientY);
+    return toWorld(store.getState().viewport, at.x, at.y);
+  };
+}
+
 /** `onEngineLost` of one Comb, and the removal of its listeners, which its `destroy` calls. */
 function engineLostOf(): { onEngineLost: Comb["onEngineLost"]; removeAll(): void } {
   const removers = new Set<() => void>();
@@ -427,6 +444,7 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
       store.getState().setViewport({ x, y, scale: clampScale(scale) });
     },
     viewport: () => ({ ...store.getState().viewport }),
+    worldPointAt: worldPointerOf(store, app),
     onSelectionChange: listeners.onSelectionChange,
     onChange: listeners.onChange,
     onEngineLost: lost.onEngineLost,

@@ -24,7 +24,7 @@ function fakeApp() {
     style: { cursor: "" },
     addEventListener() {},
     removeEventListener() {},
-    getBoundingClientRect: () => ({ left: 0, top: 0 }),
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }),
   };
   const app = { stage, canvas, screen: { width: 800, height: 600 } };
   const emit = (name: string, x: number, y: number) =>

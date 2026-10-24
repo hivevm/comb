@@ -15,7 +15,10 @@ import {
   work,
   type SceneSnapshot,
 } from "comb/testing";
-import { metricTree } from "./graph";
+import { metricTree, NODE_HEIGHT, NODE_WIDTH } from "./graph";
+
+/** The type of the data a palette item carries in a drag. */
+const PALETTE_TYPE = "application/x-metric-tree-kind";
 
 /** How the last load went: what the benchmark and the browser tests read. */
 export interface LoadReport {
@@ -102,9 +105,14 @@ function copiesFromQuery(): void {
   copies.value = String(asked);
 }
 
+/** Shows the size of the graph the example holds. */
+function counted(): void {
+  count.textContent = `${graph.nodes.length} nodes, ${graph.edges.length} edges`;
+}
+
 async function load(): Promise<LoadReport> {
   graph = metricTree(Number(copies.value));
-  count.textContent = `${graph.nodes.length} nodes, ${graph.edges.length} edges`;
+  counted();
   const start = performance.now();
   comb.load(graph);
   comb.fitView();
@@ -126,6 +134,56 @@ function show(next: Selection): void {
   if (node) title.value = node.title;
 }
 
+/** The title a node dropped from the palette starts with, by its kind. */
+const PALETTE: Record<string, string> = {
+  bet: "New bet",
+  epic: "New epic",
+  metric: "New input metric",
+  kpi: "New KPI",
+};
+let dropped = 0;
+
+/** Adds a node of the palette's `kind`, centred on the world point under the drop at
+ *  (`clientX`, `clientY`) of the page (G-1). */
+function drop(kind: string, clientX: number, clientY: number): void {
+  const title = PALETTE[kind];
+  if (!title) return;
+  const { x, y } = comb.worldPointAt(clientX, clientY);
+  dropped += 1;
+  try {
+    comb.addNode({
+      id: `${kind}-${dropped}`,
+      title,
+      x: x - NODE_WIDTH / 2,
+      y: y - NODE_HEIGHT / 2,
+      width: NODE_WIDTH,
+      height: NODE_HEIGHT,
+    });
+  } catch (error) {
+    // A lost engine, or a node past the limits of a load: the drop adds nothing.
+    console.warn("metric tree: the dropped node was not added", error);
+  }
+}
+
+for (const item of document.querySelectorAll<HTMLElement>("#palette [data-kind]")) {
+  item.addEventListener("dragstart", (event) => {
+    event.dataTransfer?.setData(PALETTE_TYPE, item.dataset.kind ?? "");
+  });
+}
+const canvas = element("canvas");
+canvas.addEventListener("dragover", (event) => {
+  if (event.dataTransfer?.types.includes(PALETTE_TYPE)) event.preventDefault();
+});
+canvas.addEventListener("drop", (event) => {
+  event.preventDefault();
+  drop(event.dataTransfer?.getData(PALETTE_TYPE) ?? "", event.clientX, event.clientY);
+});
+// The example keeps its own copy of the graph for the sidebar, from what Comb tells it.
+comb.onChange((change) => {
+  if (change.kind !== "nodeAdded") return;
+  graph.nodes.push({ ...change.node });
+  counted();
+});
 comb.onSelectionChange(show);
 copies.addEventListener("change", () => {
   window.loadReport = load();

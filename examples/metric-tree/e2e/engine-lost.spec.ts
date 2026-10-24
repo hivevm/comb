@@ -74,6 +74,7 @@ test("after a trap in load, every call that needs the engine throws an EngineLos
     window.viewportBefore = comb.viewport();
     const kept = {
       viewport: outcome(() => comb.viewport()),
+      worldPointAt: outcome(() => comb.worldPointAt(10, 20)),
       onSelectionChange: outcome(() => comb.onSelectionChange(() => {})()),
       unsubscribe: outcome(selection),
     };
@@ -95,7 +96,7 @@ test("after a trap in load, every call that needs the engine throws an EngineLos
     trap: LOST,
     later: { load: LOST, updateNode: LOST, addNode: LOST, fitView: LOST, setViewport: LOST },
     created: LOST,
-    kept: { viewport: "ok", onSelectionChange: "ok", unsubscribe: "ok" },
+    kept: { viewport: "ok", worldPointAt: "ok", onSelectionChange: "ok", unsubscribe: "ok" },
   });
   expect(destroyed).toEqual({ moved: false, outcome: "ok", canvases: 0 });
   expect(errors).toEqual([]);
