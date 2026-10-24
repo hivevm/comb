@@ -126,18 +126,34 @@ comb.load({
 });
 comb.fitView();
 comb.onSelectionChange((selection) => console.log(selection)); // fill the sidebar from here
+comb.onChange((change) => {
+  if (change.kind === "nodeAdded") console.log(change.node.id, change.by); // "c", "host"
+});
+comb.addNode({ id: "c", title: "Churned users", x: 640, y: 0, width: 220, height: 64 });
 ```
 
-`load` throws a `GraphDataError` on graph data it refuses, and `updateNode` one on a node the
-graph does not hold or a patch it refuses; either keeps the graph it had (Q-7). The error's
-`problem` is a `GraphDataProblem`, which `comb` exports, and its `kind` says what was wrong and
-where: `invalidField` for a field missing or of another type, with the list, the index, the
-identifier where the item has one, the field, and what it expects; `unknownNode` for a node
-`updateNode` does not know; `malformed` for graph data that is no object of node and edge lists;
-and a kind of its own for every other refusal, such as `nonFiniteCoordinate` or `missingNode`.
-`problem.kind` narrows the union to the fields of its kind. A `switch` on it without a `default`
-has to handle every kind, so that a kind a later version adds fails the host application's type
-check; the example handles two and leaves the rest to a `default`:
+`addNode` adds one node at its `x` and `y` without a load, drawn above every node it overlaps.
+`onChange` tells every change of the graph, a `GraphChange` that `comb` exports, typed by its
+`kind` and by `by`, `"user"` or `"host"`: `loaded` after `load`, `nodeAdded` with the node as Comb
+took it after `addNode`, and `nodeUpdated` with the merged patch after `updateNode`. Each arrives
+before the call that made it returns, and before `onSelectionChange` reports a selection the
+change cleared; `onChange` returns the function that removes the listener. A change a listener
+makes reaches every listener after the change being delivered, so that each hears the changes in
+the order made. A listener that throws keeps no other from being told; once all are told, its
+error is thrown from the call that made the change, which the graph holds all the same.
+
+`load` throws a `GraphDataError` on graph data it refuses, `updateNode` one on a node the graph does
+not hold or a patch it refuses, and `addNode` one on a node of an identifier the graph holds already
+(`duplicateNode`), a node a load would refuse, or one past the limits of a load; each keeps the
+graph it had and tells `onChange` nothing (Q-7). The error's `problem` is a `GraphDataProblem`,
+which `comb` exports, and its `kind` says what was wrong and where: `invalidField` for a field
+missing or of another type, with the list, the index, the identifier where the item has one, the
+field, and what it expects; `unknownNode` for a node `updateNode` does not know; `malformed` for
+graph data that is no object of node and edge lists; and a kind of its own for every other refusal,
+such as `nonFiniteCoordinate` or `missingNode`. `problem.kind` narrows the union to the fields of
+its kind. A `switch` on it without a `default` has to handle every kind, so that a kind a later
+version adds fails the host application's type check; the example handles two and leaves the rest to
+a `default`:
 
 ```ts
 import { GraphDataError, type GraphDataProblem } from "comb";
@@ -171,13 +187,13 @@ else (`"invalid"`); `comb` exports the type of `reason`, `EngineSourceProblem`. 
 instantiated once per page: a later `createComb` checks its `engine` but reuses the first
 instance.
 
-Should the engine trap, as WebAssembly does when it runs out of memory, it is lost for the page,
-for every Comb on it (ADR-0021). From then on `load`, `updateNode`, `fitView`, `setViewport`, and
-`createComb` throw an `EngineLostError`, which `comb` exports; `viewport`, `onSelectionChange`, and
-`destroy` keep working, the canvas keeps its last frame, and input on it changes nothing.
-`comb.onEngineLost(listener)` calls `listener` once with the error, at once where the engine is
-lost already, and returns the function that removes it. The only recovery is loading the page
-anew, so a host application tells its user and offers a reload:
+Should the engine trap, as WebAssembly does when it runs out of memory, it is lost for the page, for
+every Comb on it (ADR-0021). From then on `load`, `updateNode`, `addNode`, `fitView`, `setViewport`,
+and `createComb` throw an `EngineLostError`, which `comb` exports; `viewport`, `onSelectionChange`,
+`onChange`, and `destroy` keep working, the canvas keeps its last frame, and input on it changes
+nothing. `comb.onEngineLost(listener)` calls `listener` once with the error, at once where the
+engine is lost already, and returns the function that removes it. The only recovery is loading the
+page anew, so a host application tells its user and offers a reload:
 
 ```ts
 comb.onEngineLost(() => showBanner("The graph stopped responding. Reload the page."));

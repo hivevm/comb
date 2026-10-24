@@ -187,6 +187,18 @@ impl Grid {
         self.places[i] = Some(place);
     }
 
+    /// Puts `item` into the cells its `bounds` meet, growing the grid's records of items to hold
+    /// it where it lies beyond them, as a slot appended after the highest does (ADR-0022).
+    pub fn add(&mut self, item: u32, bounds: &Rect) {
+        let i = item as usize;
+        if i >= self.places.len() {
+            self.places.resize(i + 1, None);
+            self.beyond.resize(i + 1, false);
+            self.seen.resize(i + 1, 0);
+        }
+        self.set(item, bounds);
+    }
+
     /// Writes into `out`, after clearing it, every item in a cell that `rect` meets and every
     /// item in the overflow list, each once.
     pub fn candidates(&mut self, rect: &Rect, out: &mut Vec<u32>) {

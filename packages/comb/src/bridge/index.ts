@@ -17,11 +17,12 @@ import init, {
   type CheckedPatch,
   type GraphBatch,
   type GraphDataProblem,
+  type NodeInput,
   type NodePatch,
   type TranslateError,
 } from "../../wasm/engine.js";
 
-export type { CheckedPatch, GraphBatch, GraphDataProblem, NodePatch, TranslateError };
+export type { CheckedPatch, GraphBatch, GraphDataProblem, NodeInput, NodePatch, TranslateError };
 
 /** The mark of plain data `api/snapshot.ts` read once from the host application's value
  *  (ADR-0026). It is exported nowhere, so that handing the bridge a value of the host
@@ -30,6 +31,9 @@ declare const read: unique symbol;
 
 /** The snapshot of a load: what `snapshotOf` returns, and the graph data the bridge takes. */
 export type GraphSnapshot = GraphBatch & { readonly [read]: "graph" };
+
+/** The node of `addNode` read once: what `nodeSnapshotOf` returns, and the node the bridge takes. */
+export type NodeSnapshot = NodeInput & { readonly [read]: "node" };
 
 /** The plain patch of `updateNode`: what `patchOf` returns, and the patch the bridge takes. */
 export type PlainPatch = NodePatch & { readonly [read]: "patch" };
@@ -98,6 +102,10 @@ export interface Bridge {
   /** Replaces the graph; node slot `i` is the batch's node `i`, edge slot `i` its edge `i`.
    *  Throws a `GraphDataProblem`. */
   loadGraph(batch: GraphSnapshot): number;
+  /** Checks `node` as a load checks a node and adds it, drawn and hit above every other node, and
+   *  returns the slot the engine chose for it (ADR-0022). Throws a `GraphDataProblem`, the graph
+   *  as it was. */
+  addNode(node: NodeSnapshot): number;
   /** The most UTF-16 code units of a title or a label text the bridge accepts. */
   textLimit(): number;
   /** The most UTF-16 code units of an identifier the bridge accepts. */
@@ -289,6 +297,7 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
   const f32 = (ptr: number, len: number) => new Float32Array(memory.buffer, ptr, len);
   return {
     loadGraph: (batch) => engine.loadGraph(batch),
+    addNode: (node) => engine.addNode(node),
     textLimit,
     idLimit,
     idBudget,

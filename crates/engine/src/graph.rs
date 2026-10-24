@@ -1,5 +1,6 @@
 //! The loaded graph as the engine keeps it: node positions and sizes per node slot, edges per edge
-//! slot, and a spatial index over both that loads and moves keep current (ADR-0010, ADR-0027).
+//! slot, a rank per node slot that orders drawing and hitting, and a spatial index over both that
+//! loads, additions, and moves keep current (ADR-0010, ADR-0022, ADR-0027).
 //!
 //! A query answers which node slots, edge slots, and edge labels a rectangle meets, and writes
 //! those slots, the points of the labels, and the mesh of the edges into buffers the caller reads;
@@ -53,7 +54,8 @@ pub enum Level {
     Far,
 }
 
-/// What a query found: node, edge, and label slots in ascending order, per found label its
+/// What a query found: node slots in ascending rank, edge and label slots in ascending order, per
+/// found label its
 /// point, and the mesh of the found edges with its detail; the label points and the mesh's
 /// positions relative to `origin` (ADR-0010).
 #[derive(Debug, Default)]
@@ -87,6 +89,12 @@ pub(crate) fn origin_of(rect: &Rect) -> Point {
     }
 }
 
+/// Whether an index whose grid holds `beyond` of `items` items beyond its extent is to be built
+/// again: more than an eighth of them, and at least 16.
+fn stale(beyond: usize, items: usize) -> bool {
+    beyond > (items / 8).max(16)
+}
+
 /// The loaded graph and its spatial index.
 #[derive(Debug, Default)]
 pub struct Graph {
@@ -102,8 +110,20 @@ pub struct Graph {
     /// The edge slots at each node slot: `incident[offsets[n]..offsets[n + 1]]`.
     offsets: Vec<u32>,
     incident: Vec<u32>,
+    /// The rank of each node slot: the node of the higher rank is drawn and hit above the other
+    /// (ADR-0022).
+    ranks: Vec<u32>,
+    /// The rank the next node added takes, one above the highest given.
+    next_rank: u64,
+    /// The free node slots, the one freed last at the end.
+    free_nodes: Vec<u32>,
+    /// The node slots in use when the index was last built.
+    indexed_nodes: u32,
     node_grid: Grid,
     edge_grid: Grid,
+    /// How often the index was built, for the tests that count rebuilds.
+    #[cfg(test)]
+    builds: u32,
     scratch: Vec<u32>,
     points: Vec<Point>,
 }
@@ -133,11 +153,83 @@ impl Graph {
             edges,
             node_slots,
             edge_slots,
+            ranks: (0..node_slots).collect(),
+            next_rank: u64::from(node_slots),
             ..Self::default()
         };
         graph.link();
         graph.index();
         Ok(graph)
+    }
+
+    /// How many node slots hold a node.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "the free slots are slots below `node_slots`, a u32, and no more of them"
+    )]
+    pub fn nodes_in_use(&self) -> u32 {
+        self.node_slots - self.free_nodes.len() as u32
+    }
+
+    /// Adds the node at `(x, y)` of size `(width, height)` and returns its slot: the free slot
+    /// freed last, or a new one after the highest. It takes the next rank, so that it is drawn and
+    /// hit above every other node, and goes into the index in place; the index is built again only
+    /// where the nodes in use pass twice the count it was built for, or more than an eighth of
+    /// them, and at least 16, lie beyond its extent (ADR-0022).
+    pub fn add_node(&mut self, x: f32, y: f32, width: f32, height: f32) -> Result<u32, GraphError> {
+        let rank = self.take_rank();
+        let slot = if let Some(free) = self.free_nodes.pop() {
+            let i = free as usize;
+            self.positions[i * 2..i * 2 + 2].copy_from_slice(&[x, y]);
+            self.sizes[i * 2..i * 2 + 2].copy_from_slice(&[width, height]);
+            self.ranks[i] = rank;
+            free
+        } else {
+            let next = slot(self.node_slots as usize + 1)?;
+            let new = self.node_slots;
+            self.positions.extend([x, y]);
+            self.sizes.extend([width, height]);
+            self.ranks.push(rank);
+            // A node added has no edges yet: its list ends where it starts.
+            let end = self.offsets.last().copied().unwrap_or(0);
+            if self.offsets.is_empty() {
+                self.offsets.push(end);
+            }
+            self.offsets.push(end);
+            self.node_slots = next;
+            new
+        };
+        self.next_rank += 1;
+        let in_use = self.nodes_in_use();
+        if in_use > self.indexed_nodes.saturating_mul(2) {
+            self.index();
+        } else {
+            let bounds = self.node_bounds(slot);
+            self.node_grid.add(slot, &bounds);
+            if stale(self.node_grid.beyond_extent(), in_use as usize) {
+                self.index();
+            }
+        }
+        Ok(slot)
+    }
+
+    /// The rank the next node added takes, after the ranks in use are numbered again from 0 in
+    /// their order where it would pass `u32::MAX`.
+    fn take_rank(&mut self) -> u32 {
+        if let Ok(rank) = u32::try_from(self.next_rank) {
+            return rank;
+        }
+        let mut order: Vec<u32> = (0..self.node_slots)
+            .filter(|s| !self.free_nodes.contains(s))
+            .collect();
+        order.sort_unstable_by_key(|&s| self.ranks[s as usize]);
+        let mut next = 0;
+        for &s in &order {
+            self.ranks[s as usize] = next;
+            next += 1;
+        }
+        self.next_rank = u64::from(next);
+        next
     }
 
     /// The node positions, `x, y` per slot.
@@ -203,6 +295,11 @@ impl Graph {
 
     /// Rebuilds both grids from the current positions.
     fn index(&mut self) {
+        #[cfg(test)]
+        {
+            self.builds += 1;
+        }
+        self.indexed_nodes = self.nodes_in_use();
         let nodes: Vec<Rect> = (0..self.node_slots).map(|s| self.node_bounds(s)).collect();
         let extent = nodes
             .iter()
@@ -280,7 +377,7 @@ impl Graph {
     }
 
     /// The node at `point`: of the nodes whose bounds hold it, the one drawn on top, which is the
-    /// one in the highest slot.
+    /// one of the highest rank (ADR-0022).
     pub fn hit(&mut self, point: Point) -> Option<u32> {
         self.node_grid
             .candidates(&Rect::at(point), &mut self.scratch);
@@ -288,7 +385,7 @@ impl Graph {
             .iter()
             .copied()
             .filter(|&slot| self.node_bounds(slot).contains(point))
-            .max()
+            .max_by_key(|&slot| self.ranks[slot as usize])
     }
 
     /// Moves the nodes in `slots` by `(dx, dy)` and their edges with them. A refused move changes
@@ -313,8 +410,7 @@ impl Graph {
             self.place_edge(edge);
         }
         self.scratch = edges;
-        let stale = |beyond: usize, items: usize| beyond > (items / 8).max(16);
-        if stale(self.node_grid.beyond_extent(), self.node_slots as usize)
+        if stale(self.node_grid.beyond_extent(), self.nodes_in_use() as usize)
             || stale(self.edge_grid.beyond_extent(), self.edge_slots as usize)
         {
             self.index();
@@ -356,7 +452,8 @@ impl Graph {
                 .iter()
                 .filter(|&&slot| self.node_bounds(slot).meets(rect)),
         );
-        out.nodes.sort_unstable();
+        out.nodes
+            .sort_unstable_by_key(|&slot| self.ranks[slot as usize]);
         self.edge_grid
             .candidates(&rect.union(&label_rect), &mut self.scratch);
         self.scratch.sort_unstable();
@@ -921,5 +1018,216 @@ mod tests {
         let mut graph = Graph::new(vec![0.0, 0.0], vec![1.0, 1.0], Vec::new()).unwrap();
         assert!(graph.translate(&[1], 1.0, 1.0).is_err());
         assert_eq!(graph.positions(), [0.0, 0.0]);
+    }
+
+    /// The node slots in the order a test added them, the first loaded first: the order they are
+    /// drawn in, bottom to top, kept apart from the engine's ranks.
+    struct Drawn(Vec<u32>);
+
+    impl Drawn {
+        /// The slots whose node meets `rect`, bottom to top.
+        fn meeting(&self, graph: &Graph, rect: &Rect) -> Vec<u32> {
+            let meets = |&&s: &&u32| graph.node_bounds(s).meets(rect);
+            self.0.iter().filter(meets).copied().collect()
+        }
+
+        /// The slot of the node on top at `p`.
+        fn top_at(&self, graph: &Graph, p: Point) -> Option<u32> {
+            let holds = |&&s: &&u32| graph.node_bounds(s).contains(p);
+            self.0.iter().rev().find(holds).copied()
+        }
+    }
+
+    /// Asserts that queries and hits find what a scan of the nodes in `drawn` finds, in its order.
+    fn assert_matches_scan(graph: &mut Graph, drawn: &Drawn, rng: &mut Lcg) {
+        let mut out = Visible::default();
+        for _ in 0..20 {
+            let rect = random_rect(rng);
+            graph.query(&rect, Level::Near, 4.0, 0.0, &mut out);
+            assert_eq!(out.nodes, drawn.meeting(graph, &rect), "nodes in {rect:?}");
+            let p = Point::new(rng.range(-2500.0, 2500.0), rng.range(-2500.0, 2500.0));
+            assert_eq!(graph.hit(p), drawn.top_at(graph, p), "hit at {p:?}");
+        }
+    }
+
+    /// A random node: its position and size.
+    fn random_node(rng: &mut Lcg) -> [f32; 4] {
+        [
+            rng.range(-2000.0, 2000.0) as f32,
+            rng.range(-2000.0, 2000.0) as f32,
+            rng.range(0.0, 300.0) as f32,
+            rng.range(0.0, 120.0) as f32,
+        ]
+    }
+
+    #[test]
+    fn queries_and_hits_find_what_a_scan_finds_after_each_addition_and_move() {
+        // Verifies: ADR-0022
+        for seed in 1..=10 {
+            let mut rng = Lcg(seed);
+            // Now and then from an empty graph, which the first addition indexes.
+            let loaded = if seed % 3 == 0 { 0 } else { 60 };
+            let mut graph = random_graph(&mut rng, loaded, loaded);
+            let mut drawn = Drawn((0..graph.node_slots).collect());
+            for _ in 0..80 {
+                if rng.next() < 0.6 || drawn.0.is_empty() {
+                    let [x, y, width, height] = random_node(&mut rng);
+                    let slot = graph.add_node(x, y, width, height).unwrap();
+                    assert!(!drawn.0.contains(&slot), "slot {slot} taken twice");
+                    drawn.0.push(slot);
+                } else {
+                    let moved = [drawn.0[rng.below(drawn.0.len()) as usize]];
+                    let (dx, dy) = (rng.range(-3000.0, 3000.0), rng.range(-3000.0, 3000.0));
+                    graph.translate(&moved, dx as f32, dy as f32).unwrap();
+                }
+                assert_matches_scan(&mut graph, &drawn, &mut rng);
+            }
+        }
+    }
+
+    #[test]
+    fn a_node_added_takes_the_slot_after_the_highest_and_its_place() {
+        // Verifies: ADR-0022
+        let mut graph = row(3);
+        assert_eq!(graph.add_node(500.0, 0.0, 5.0, 5.0), Ok(3));
+        assert_eq!(graph.add_node(510.0, 0.0, 5.0, 5.0), Ok(4));
+        assert_eq!(&graph.positions()[6..], [500.0, 0.0, 510.0, 0.0]);
+        assert_eq!(graph.nodes_in_use(), 5);
+        // A node added has no edges: a move of it moves no edge, and of the others none of its.
+        graph.translate(&[3, 0], 1.0, 1.0).unwrap();
+        assert_eq!(graph.offsets, [0; 6]);
+    }
+
+    #[test]
+    fn an_addition_takes_the_slot_freed_last_before_a_new_one() {
+        // Verifies: ADR-0022
+        // Free slots come with removals; until they do, the list is set up by hand.
+        let mut graph = row(4);
+        graph.free_nodes.extend([2, 0]);
+        assert_eq!(graph.nodes_in_use(), 2);
+        assert_eq!(graph.add_node(100.0, 0.0, 5.0, 5.0), Ok(0));
+        assert_eq!(graph.add_node(110.0, 0.0, 5.0, 5.0), Ok(2));
+        assert_eq!(graph.add_node(120.0, 0.0, 5.0, 5.0), Ok(4));
+        assert_eq!(&graph.positions()[..2], [100.0, 0.0]);
+        assert_eq!(&graph.sizes[4..6], [5.0, 5.0]);
+    }
+
+    #[test]
+    fn a_node_added_into_a_lower_slot_is_drawn_and_hit_above_the_nodes_it_overlaps() {
+        // Verifies: ADR-0022
+        // Nodes 0 to 3 overlap at (0, 0); slot 1 is free, so the addition takes it.
+        let positions = vec![0.0; 8];
+        let mut graph = Graph::new(positions, vec![50.0; 8], Vec::new()).unwrap();
+        graph.free_nodes.push(1);
+        let slot = graph.add_node(10.0, 10.0, 50.0, 50.0).unwrap();
+        assert_eq!(slot, 1);
+        let mut out = Visible::default();
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        graph.query(&rect, Level::Near, 4.0, 0.0, &mut out);
+        assert_eq!(out.nodes, [0, 2, 3, 1]);
+        assert_eq!(graph.hit(Point::new(20.0, 20.0)), Some(1));
+    }
+
+    #[test]
+    fn a_load_ranks_nodes_by_slot() {
+        // Verifies: ADR-0022
+        let mut graph = Graph::new(vec![0.0; 6], vec![50.0; 6], Vec::new()).unwrap();
+        let mut out = Visible::default();
+        graph.query(
+            &Rect::new(0.0, 0.0, 10.0, 10.0),
+            Level::Near,
+            4.0,
+            0.0,
+            &mut out,
+        );
+        assert_eq!(out.nodes, [0, 1, 2]);
+        assert_eq!(graph.hit(Point::new(5.0, 5.0)), Some(2));
+        assert_eq!(graph.add_node(0.0, 0.0, 50.0, 50.0), Ok(3));
+        assert_eq!(graph.ranks, [0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn ranks_are_numbered_again_from_0_in_their_order_before_they_pass_u32_max() {
+        // Verifies: ADR-0022
+        let mut graph = Graph::new(vec![0.0; 8], vec![50.0; 8], Vec::new()).unwrap();
+        graph.ranks = vec![u32::MAX - 1, 7, u32::MAX, 3];
+        graph.free_nodes.push(1);
+        graph.next_rank = u64::from(u32::MAX) + 1;
+        let slot = graph.add_node(0.0, 0.0, 50.0, 50.0).unwrap();
+        assert_eq!(slot, 1);
+        // In use, by rank: 3, 0, 2; the new node above them.
+        assert_eq!(graph.ranks, [1, 3, 2, 0]);
+        assert_eq!(graph.next_rank, 4);
+        assert_eq!(graph.add_node(0.0, 0.0, 50.0, 50.0), Ok(4));
+        assert_eq!(graph.ranks[4], 4);
+        assert_eq!(graph.hit(Point::new(5.0, 5.0)), Some(4));
+    }
+
+    /// A grid of `count` nodes of side 50, 100 apart, in rows of 250.
+    fn plane(count: usize) -> Graph {
+        let positions = (0..count)
+            .flat_map(|i| [(i % 250) as f32 * 100.0, (i / 250) as f32 * 100.0])
+            .collect();
+        Graph::new(positions, vec![50.0; count * 2], Vec::new()).unwrap()
+    }
+
+    #[test]
+    fn a_node_added_within_the_extent_of_50_000_is_found_without_building_the_index() {
+        // Verifies: ADR-0022
+        let mut graph = plane(50_000);
+        assert_eq!(graph.builds, 1);
+        let slot = graph.add_node(1_020.0, 1_020.0, 50.0, 50.0).unwrap();
+        assert_eq!(graph.builds, 1);
+        // It overlaps the node at (1,000, 1,000), slot 10 · 250 + 10, and is drawn above it.
+        let mut out = Visible::default();
+        let rect = Rect::new(1_030.0, 1_030.0, 1_040.0, 1_040.0);
+        graph.query(&rect, Level::Near, 4.0, 0.0, &mut out);
+        assert_eq!(out.nodes, [2_510, slot]);
+        assert_eq!(graph.hit(Point::new(1_035.0, 1_035.0)), Some(slot));
+        graph.query(
+            &Rect::new(1_060.0, 1_060.0, 1_065.0, 1_065.0),
+            Level::Near,
+            4.0,
+            0.0,
+            &mut out,
+        );
+        assert_eq!(out.nodes, [slot]);
+    }
+
+    #[test]
+    fn a_graph_grown_by_additions_inside_its_extent_is_indexed_again_at_each_doubling() {
+        // Verifies: ADR-0022
+        let mut rng = Lcg(5);
+        let mut graph = plane(100);
+        let mut built_at = Vec::new();
+        for _ in 100..1_000 {
+            // Within the extent of the row, (0, 0) to (9,950, 50).
+            let (x, y) = (rng.range(0.0, 9_900.0), 0.0);
+            let builds = graph.builds;
+            graph.add_node(x as f32, y as f32, 50.0, 50.0).unwrap();
+            if graph.builds > builds {
+                built_at.push(graph.nodes_in_use());
+            }
+        }
+        // Built for 100, again past 200; built for 201, again past 402; then past 806.
+        assert_eq!(built_at, [201, 403, 807]);
+    }
+
+    #[test]
+    fn nodes_added_far_beyond_the_extent_build_the_index_again() {
+        // Verifies: ADR-0022
+        // 200 nodes: once more than an eighth of the nodes in use lie beyond the extent, it is
+        // built again; 28 of 228 are not more than 228 / 8 = 28, and 29 of 229 are.
+        let mut graph = row(200);
+        for i in 0..28 {
+            graph
+                .add_node(1e6 + i as f32 * 10.0, 1e6, 5.0, 5.0)
+                .unwrap();
+        }
+        assert_eq!(graph.builds, 1);
+        assert_eq!(graph.node_grid.beyond_extent(), 28);
+        graph.add_node(1e6 + 280.0, 1e6, 5.0, 5.0).unwrap();
+        assert_eq!(graph.builds, 2);
+        assert_eq!(graph.node_grid.beyond_extent(), 0);
     }
 }

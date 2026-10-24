@@ -1,8 +1,8 @@
 //! The property test of the bridge's validation (Q-7, ADR-0026): graph data of any shape, well
 //! formed or not, ends in a typed error or a graph, never in a panic, and in a graph exactly when
 //! an oracle written apart from the bridge finds nothing to refuse. Every field crosses, those the
-//! engine does not keep among them: titles, label texts and backgrounds, and the patch of
-//! `updateNode`.
+//! engine does not keep among them: titles, label texts and backgrounds, the patch of
+//! `updateNode`, and the node of `addNode`, which is refused exactly as a load of it alone is.
 //!
 //! The data crosses as serde-wasm-bindgen would hand it over, through a value of any shape that
 //! `GraphBatch` is deserialized from, so that values of the wrong type and missing fields reach
@@ -18,7 +18,7 @@ use serde::de::value::{MapDeserializer, SeqDeserializer};
 use serde::de::{self, IntoDeserializer, Visitor};
 
 use super::{EdgeInput, GraphBatch, GraphDataProblem, GraphList, NodeInput, NodePatch};
-use super::{graph_of, patch_of, reading, unshaped};
+use super::{add_node_to, graph_of, patch_of, reading, unshaped};
 
 /// How many random batches one run feeds the bridge: the ticket's floor, which runs in seconds.
 const CASES: u32 = 10_000;
@@ -662,8 +662,63 @@ fn patch() -> impl Strategy<Value = Value> {
     ]
 }
 
+/// A node `addNode` might be handed: mostly of the right shape with values to refuse here and
+/// there, loose now and then, and now and then a value of any shape at all.
+fn added_node() -> impl Strategy<Value = Value> {
+    prop_oneof![
+        6 => node(false, 0),
+        3 => item(node(true, 0), true),
+        1 => anything(),
+    ]
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(CASES))]
+
+    #[test]
+    fn an_added_node_is_refused_exactly_as_a_load_of_it_alone_and_the_graph_kept(
+        value in added_node(),
+    ) {
+        // Verifies: ADR-0026, ADR-0022, Q-7
+        let loaded = || {
+            let a = Value::Object(vec![
+                ("id".to_owned(), Value::Text("a".to_owned())),
+                ("title".to_owned(), Value::Text("A".to_owned())),
+                ("x".to_owned(), Value::Number(0.0)),
+                ("y".to_owned(), Value::Number(0.0)),
+                ("width".to_owned(), Value::Number(1.0)),
+                ("height".to_owned(), Value::Number(1.0)),
+            ]);
+            let data = Value::Object(vec![
+                ("nodes".to_owned(), Value::List(vec![a])),
+                ("edges".to_owned(), Value::List(Vec::new())),
+            ]);
+            graph_of(&GraphBatch::deserialize(data).unwrap()).unwrap()
+        };
+        let alone = Value::Object(vec![
+            ("nodes".to_owned(), Value::List(vec![value.clone()])),
+            ("edges".to_owned(), Value::List(Vec::new())),
+        ]);
+        let as_load = reading(|| GraphBatch::deserialize(alone))
+            .map_err(unshaped)
+            .and_then(|batch| graph_of(&batch).map(|graph| graph.positions().to_vec()));
+        let mut graph = loaded();
+        let added = reading(|| NodeInput::deserialize(value))
+            .map_err(unshaped)
+            .and_then(|node| add_node_to(&mut graph, &node));
+        match (added, as_load) {
+            (Ok(slot), Ok(positions)) => {
+                prop_assert_eq!(slot, 1);
+                prop_assert_eq!(&graph.positions()[2..], &positions[..]);
+            }
+            (Err(error), Err(expected)) => {
+                prop_assert_eq!(error, expected);
+                prop_assert_eq!(graph.positions(), &[0.0, 0.0][..]);
+                prop_assert_eq!(graph.nodes_in_use(), 1);
+            }
+            (added, as_load) => prop_assert!(false, "added {:?}, loaded {:?}", added, as_load),
+        }
+    }
 
     #[test]
     fn any_graph_data_ends_in_a_typed_error_or_a_graph(value in graph_data()) {

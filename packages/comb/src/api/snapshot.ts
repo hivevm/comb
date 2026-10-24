@@ -8,7 +8,7 @@
 // that much to check. The code units of all identifiers are counted while they are read, and
 // reading stops once they exceed the bridge's budget, whose check then refuses the load. What
 // cannot be read at all throws an `UnreadableError`.
-import type { GraphSnapshot, PlainPatch } from "../bridge";
+import type { GraphSnapshot, NodeSnapshot, PlainPatch } from "../bridge";
 import { EDGE_ARROW, edgeColor } from "../render/edges";
 import type { GraphData } from "../store";
 
@@ -187,6 +187,16 @@ export function snapshotOf(lists: Lists, limits: Limits) {
   const nodes = copied(lists.nodes, lists.nodeCount, "nodes", (n) => nodeOf(read, n), done);
   const edges = copied(lists.edges, lists.edgeCount, "edges", (e) => edgeOf(read, e), done);
   const snapshot = { nodes, edges } as GraphData & GraphSnapshot;
+  return { snapshot, idUnits: read.idUnits };
+}
+
+/** The node of `addNode` read once as a load reads one, its identifier cut by `limits`, or `false`
+ *  where it is no object, which the bridge refuses as malformed; and the code units of its
+ *  identifier, for the bridge to check against what the graph holds already. */
+export function nodeSnapshotOf(node: unknown, limits: Limits) {
+  const read = readerOf(limits);
+  const fields = objectOf(node);
+  const snapshot = (fields ? nodeOf(read, fields) : false) as NodeSnapshot;
   return { snapshot, idUnits: read.idUnits };
 }
 

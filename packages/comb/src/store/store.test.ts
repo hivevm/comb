@@ -42,4 +42,24 @@ describe("graph store", () => {
     expect(after[0]).toBe(before[0]);
     expect(after[1]?.title).toBe("Renamed");
   });
+
+  test("an added node takes its slot in the map and the lists, and the change names it", () => {
+    // Verifies: ADR-0022, ADR-0023
+    const store = createGraphStore();
+    store.getState().load(graph);
+    const { nodes, positionsVersion, idUnits } = store.getState();
+    expect(idUnits).toBe("a".length + "b".length + "a-b".length + 2);
+    expect(store.getState().change).toEqual({ kind: "loaded", by: "host" });
+    store.getState().addNode({ id: "cc", title: "C", x: 5, y: 6, width: 10, height: 20 }, 2);
+    const state = store.getState();
+    expect(state.nodes).not.toBe(nodes);
+    expect(state.nodes[2]).toEqual({ id: "cc", title: "C", width: 10, height: 20 });
+    expect(state.slots.get("cc")).toBe(2);
+    expect(state.idUnits).toBe(idUnits + 2);
+    expect(state.positionsVersion).toBe(positionsVersion + 1);
+    expect(state.change).toEqual({ kind: "nodeAdded", by: "host", id: "cc" });
+    // Selecting changes nothing of the graph, so the change stays the one of the addition.
+    store.getState().select({ kind: "node", id: "cc" });
+    expect(store.getState().change).toBe(state.change);
+  });
 });
