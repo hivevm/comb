@@ -2,7 +2,7 @@
 
 ## What to build
 
-The bridge refuses a coordinate or a size that is not finite as `f32` (ADR-0026), but nothing
+The bridge refuses a coordinate or a size that is not finite as `f32` (ADR-0028), but nothing
 bounds what the engine derives from them. A node at `x = 3e38` with `width = 3e38` has its right
 connector past `f32::MAX`; a node dragged far enough in `f32` has no overflow check; a query
 rectangle around ±1e300, which the bridge does not refuse, makes label points relative to its
@@ -29,7 +29,7 @@ maintainer's decision.
 
 ## Read first
 
-- `docs/SPECIFICATION.md` Q-4, Q-7; ADR-0026 (*Bridge*), ADR-0010 (*Origin*), ADR-0027.
+- `docs/SPECIFICATION.md` Q-4, Q-7; ADR-0028 (*Bridge*), ADR-0010 (*Origin*), ADR-0027.
 - `crates/engine-wasm/src/graph_data.rs` (`nodes_of`), `crates/engine/src/graph.rs` (`translate`,
   `query_within`, `edge_ends`), `docs/CONVENTIONS.md` (*Check a value as the engine keeps it*).
 

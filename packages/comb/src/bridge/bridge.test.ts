@@ -35,7 +35,7 @@ const edge = (id: string, source: string, target: string) => ({
   sourceSide: "right" as const,
   targetSide: "left" as const,
 });
-// The bridge takes only what `api/snapshot.ts` produces (ADR-0026); its own tests stand in for
+// The bridge takes only what `api/snapshot.ts` produces (ADR-0028); its own tests stand in for
 // that module and hand it plain data of their own.
 const graph = (nodes: GraphBatch["nodes"], edges: GraphBatch["edges"] = []) =>
   ({ nodes, edges }) as GraphSnapshot;
@@ -287,7 +287,7 @@ const RUST =
 
 describe("bridge fields the engine does not keep", () => {
   test("a title, label text, or label background of the wrong kind comes back as a typed error", () => {
-    // Verifies: ADR-0026, ADR-0010
+    // Verifies: ADR-0028, ADR-0010
     const label = (fields: object) => ({ text: "x", t: 0.5, offset: 0, ...fields });
     const errors = [
       graph([{ ...node("a", 0, 0), title: 5 as unknown as string }]),
@@ -308,7 +308,7 @@ describe("bridge fields the engine does not keep", () => {
   });
 
   test("a patch of a node comes back as a typed error unless it holds only a title", () => {
-    // Verifies: ADR-0026, ADR-0010
+    // Verifies: ADR-0028, ADR-0010
     expect(bridge.checkNodePatch("a", plain({ title: "A" }))).toEqual({ title: "A" });
     expect(bridge.checkNodePatch("a", plain({}))).toEqual({});
     const errors = [{ id: "b" }, { title: 5 }].map((patch) => {
@@ -447,7 +447,7 @@ describe("bridge additions", () => {
   });
 
   test("an added node the bridge refuses comes back as a typed error, the graph as it was", () => {
-    // Verifies: ADR-0026, Q-7
+    // Verifies: ADR-0028, Q-7
     bridge.loadGraph(graph([node("a", 0, 0)]));
     const refusals = [
       added({ ...node("c", 0, 0), x: Number.POSITIVE_INFINITY }),

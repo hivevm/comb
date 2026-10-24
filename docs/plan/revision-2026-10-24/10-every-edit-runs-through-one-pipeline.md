@@ -5,7 +5,7 @@
 Each method of `Comb` that changes the graph (`load`, `updateNode`, `addNode`, `addEdge`,
 `updateEdge`, `removeNodes`, `removeEdges`) writes out the same steps by hand in
 `packages/comb/src/api/index.ts`: refuse once the engine is lost, read the input once into a
-snapshot, refuse what the store's map shows (ADR-0026), check the identifier budget, hand the
+snapshot, refuse what the store's map shows (ADR-0028), check the identifier budget, hand the
 snapshot to the bridge, and have the store take the result and record the change (ADR-0023). The
 order, the input read before the map is asked, is what Q-7 rests on, and it stands only as two
 copied comments; two editors already had it wrong until review (`updateEdge`, `updateNode`). The
@@ -40,7 +40,7 @@ changes what it accepts, returns, throws, or tells.
 
 ## Read first
 
-- ADR-0023 (*Validation*, *Delivery*), ADR-0026 (*What the bridge cannot see*), ADR-0011, ADR-0021.
+- ADR-0023 (*Validation*, *Delivery*), ADR-0028 (*What the bridge cannot see*), ADR-0011, ADR-0021.
 - `packages/comb/src/api/index.ts`, `api/snapshot.ts`, `store/index.ts`,
   `interaction/delete.ts`, `interaction/connect.ts`; `docs/CONVENTIONS.md` (*Host code may change
   the graph*, *Hand the host copies*).
