@@ -1,4 +1,4 @@
-# The bridge (ADR-0009, ADR-0010): every #[wasm_bindgen] export, no geometry of its own.
+# The bridge (ADR-0026, ADR-0010): every #[wasm_bindgen] export, no geometry of its own.
 [package]
 name = "comb-engine-wasm"
 version = "0.0.0"

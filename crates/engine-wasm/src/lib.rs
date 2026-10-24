@@ -884,7 +884,7 @@ pub struct RectInput {
     pub max_y: f64,
 }
 
-/// The level of detail a query serves (ADR-0012).
+/// The level of detail a query serves (ADR-0027).
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DetailLevel {
@@ -903,7 +903,7 @@ impl From<DetailLevel> for Level {
     }
 }
 
-/// The detail of a query's edge mesh (ADR-0012): complete, or coarsened where an edge was drawn
+/// The detail of a query's edge mesh (ADR-0027): complete, or coarsened where an edge was drawn
 /// as its chord, or left out, for the mesh budget or for memory.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

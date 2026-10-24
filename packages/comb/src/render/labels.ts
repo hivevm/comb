@@ -1,4 +1,4 @@
-// The edge-labels layer at the near level (ADR-0012, G-6): a pooled pill per edge label in view,
+// The edge-labels layer at the near level (ADR-0027, G-6): a pooled pill per edge label in view,
 // centred on the point the engine placed it at.
 import { BitmapText, Container, Graphics } from "pixi.js";
 import type { Visible } from "../bridge";

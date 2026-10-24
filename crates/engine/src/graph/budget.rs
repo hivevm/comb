@@ -1,4 +1,4 @@
-//! The property test of the mesh budget (ADR-0012): graphs of long edges, and of many edges
+//! The property test of the mesh budget (ADR-0027): graphs of long edges, and of many edges
 //! between few nodes, queried at random rectangles, scales, and levels with the budget lowered,
 //! keep their mesh within the budget, draw every edge they find, report the mesh complete exactly
 //! when every edge is meshed in full, draw each edge within a quarter pixel inside the
@@ -194,7 +194,7 @@ fn assert_stroke_of(out: &Visible, range: std::ops::Range<usize>, points: &[Poin
 
 /// Asserts that no segment of `points` that meets `rect` has an end beyond `rect` grown by
 /// `width`, the stroke's: where one would, the segment is split there, so that each rounds by its
-/// distance from the query's origin (ADR-0012).
+/// distance from the query's origin (ADR-0027).
 fn assert_within_reach(points: &[Point], rect: &Rect, width: f64, context: &str) {
     let area = rect.grown(width);
     let slack = |p: Point| 1e-9 * (1.0 + p.x.abs().max(p.y.abs()));

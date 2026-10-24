@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# Structural test of the shape of the code (ADR-0009) and of how the scene draws (ADR-0012,
+# Structural test of the shape of the code (ADR-0026) and of how the scene draws (ADR-0027,
 # ADR-0018).
 # Verifies: ADR-0026, ADR-0027, ADR-0018
 #
-# ADR-0009 builds Comb as a functional core of pure Rust and a TypeScript shell whose only door to
-# the engine is its bridge; ADR-0012 draws every text as BitmapText and the edges as one mesh. This
+# ADR-0026 builds Comb as a functional core of pure Rust and a TypeScript shell whose only door to
+# the engine is its bridge; ADR-0027 draws every text as BitmapText and the edges as one mesh. This
 # check reads the tree and fails on what would break that shape:
 #
 #   1. Core: the core crate crates/engine depends on no crate that reaches the browser, the clock,
@@ -166,7 +166,7 @@ if [[ -f "$fill" ]]; then
 fi
 
 if ((${#problems[@]})); then
-  echo "Structure check FAILED (ADR-0009, ADR-0012, ADR-0018):" >&2
+  echo "Structure check FAILED (ADR-0026, ADR-0027, ADR-0018):" >&2
   printf '  - %s\n' "${problems[@]}" >&2
   exit 1
 fi

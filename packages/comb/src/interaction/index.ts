@@ -1,6 +1,6 @@
-// Input into commands on the store (ADR-0009): drag a node, pan the empty canvas, zoom by wheel.
+// Input into commands on the store (ADR-0026): drag a node, pan the empty canvas, zoom by wheel.
 // The engine answers which node lies under the pointer from its spatial index, at every level of
-// detail, also where the scene draws nodes as particles (ADR-0012). Once the engine is lost, input
+// detail, also where the scene draws nodes as particles (ADR-0027). Once the engine is lost, input
 // changes nothing, and no trap escapes a handler (ADR-0021).
 import type { Application, FederatedPointerEvent } from "pixi.js";
 import { EngineLostError, refuseIfLost, type Bridge } from "../bridge";

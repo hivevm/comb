@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { sceneNumbers } from "../testing";
 
 describe("scene numbers", () => {
-  test("the numbers the browser tests read are the ones ADR-0012 decides", () => {
+  test("the numbers the browser tests read are the ones ADR-0027 decides", () => {
     // Verifies: ADR-0027
     // Taken from the ADR's text, not from the code: the browser tests follow the code, so this is
     // the one place that holds the code to the decision. The label reach is the scene's own: half

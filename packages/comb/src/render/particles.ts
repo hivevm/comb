@@ -1,4 +1,4 @@
-// The nodes at the far level of detail (ADR-0012): one particle per node in view, a plain box
+// The nodes at the far level of detail (ADR-0027): one particle per node in view, a plain box
 // in one ParticleContainer, without text, so that a view of the whole graph binds no display
 // object per node. Every property is static: a sync uploads them once, and the frames between
 // syncs upload nothing.

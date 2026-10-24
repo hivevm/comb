@@ -1,4 +1,4 @@
-// The work a frame does on the GPU and in the pools (ADR-0012).
+// The work a frame does on the GPU and in the pools (ADR-0027).
 import { expect, test, type Page } from "@playwright/test";
 import { canvasSize, open, sceneNumbers, screenCentre, setViewport } from "./shared";
 

@@ -554,7 +554,7 @@ mod tests {
     }
 
     /// A small generator of numbers with a fixed seed (SplitMix64): the core takes no crate that
-    /// reaches randomness (ADR-0009).
+    /// reaches randomness (ADR-0026).
     struct Numbers(u64);
 
     impl Numbers {

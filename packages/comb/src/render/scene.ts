@@ -1,5 +1,5 @@
-// The PixiJS scene (ADR-0012): a `world` render group with its layers in drawing order, and an
-// `overlay` in screen coordinates. This render reads the store and never writes it (ADR-0009).
+// The PixiJS scene (ADR-0027): a `world` render group with its layers in drawing order, and an
+// `overlay` in screen coordinates. This render reads the store and never writes it (ADR-0026).
 //
 // After every change, the scene asks the engine which nodes, edges, and edge labels meet the
 // viewport and a margin around it, and binds pooled node views and edge-label views to exactly
@@ -24,7 +24,7 @@ import { LabelsContainer, type LabelView } from "./labels";
 import { NodeGraphic, NodesContainer } from "./nodes";
 import { NodeParticles } from "./particles";
 
-/** The level of detail the scene draws at (ADR-0012); the engine strokes edges for it. */
+/** The level of detail the scene draws at (ADR-0027); the engine strokes edges for it. */
 export type { Level };
 /** The scale from which the scene draws near: edge labels, 12 px, are 7 px tall there, the least
  *  that still reads. */
@@ -70,7 +70,7 @@ export interface SceneSnapshot {
   edgeTriangles: number;
   /** How many vertices and indices the edge mesh draws, how many its buffers hold before they
    *  grow, and its detail: complete, or coarsened where the engine's mesh budget or memory ran
-   *  short (ADR-0012). */
+   *  short (ADR-0027). */
   edgeMesh: MeshSize & { detail: Detail };
   /** Every display object under the world, the layers themselves included. */
   displayObjects: number;

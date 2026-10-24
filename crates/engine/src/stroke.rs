@@ -1,4 +1,4 @@
-//! The edge mesh (ADR-0012): edge paths flattened into polylines within a tolerance, and stroked
+//! The edge mesh (ADR-0027): edge paths flattened into polylines within a tolerance, and stroked
 //! into triangles with each edge's colour, dash pattern, and arrowhead (G-11).
 //!
 //! A path is flattened by subdividing it until its control points lie within the tolerance of
@@ -28,12 +28,12 @@ use std::collections::TryReserveError;
 use crate::geometry::{EdgePath, Point, Rect};
 use crate::graph::Level;
 
-/// The most vertices the edge mesh of one query holds (ADR-0012): the floors of a load at its
+/// The most vertices the edge mesh of one query holds (ADR-0027): the floors of a load at its
 /// limit of 1,000,000 edges, four vertices each, taken to the next power of two. A mesh holds at
 /// most three times as many indices.
 pub const MESH_BUDGET: u32 = 1 << 22;
 
-/// The detail of a query's edge mesh (ADR-0012): complete, or coarsened where an edge was drawn
+/// The detail of a query's edge mesh (ADR-0027): complete, or coarsened where an edge was drawn
 /// as its chord, or left out, for the budget or for memory.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Detail {
@@ -75,7 +75,7 @@ const FULL_WIDTH: f64 = 2.0;
 
 /// How a query strokes its edges: flattened within `tolerance` and `width` wide, in world units;
 /// `plain` draws thin lines alone, without dash patterns or arrowheads, as the far level of
-/// detail does (ADR-0012).
+/// detail does (ADR-0027).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Stroke {
     pub(crate) tolerance: f64,
@@ -588,7 +588,7 @@ fn splits(a: Point, b: Point, area: &Rect) -> [Option<Point>; 2] {
 }
 
 /// Splits each segment of the polyline `points` where it enters and leaves `area`, the query's
-/// rectangle grown by the stroke's width (ADR-0012), so that no segment that meets the rectangle
+/// rectangle grown by the stroke's width (ADR-0027), so that no segment that meets the rectangle
 /// has an end beyond `area`; the parts outside are chords. It runs after the arrowhead has cut
 /// the end, whose base may lie anywhere. The points stay in order along the path, so that the
 /// distance along it runs on through them. Returns false, leaving `points` as they were, where

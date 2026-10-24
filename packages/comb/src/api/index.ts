@@ -1,5 +1,5 @@
 // The public interface of Comb, which hands every field of graph data to the bridge before the
-// store keeps any of it, and checks none itself (ADR-0009).
+// store keeps any of it, and checks none itself (ADR-0026).
 // First, before any PixiJS renderer is created: PixiJS's code generation without eval, so that Comb
 // draws under a Content Security Policy without `unsafe-eval` (Q-6, ADR-0020).
 import "pixi.js/unsafe-eval";

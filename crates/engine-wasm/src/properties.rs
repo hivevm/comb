@@ -1,4 +1,4 @@
-//! The property test of the bridge's validation (Q-7, ADR-0009): graph data of any shape, well
+//! The property test of the bridge's validation (Q-7, ADR-0026): graph data of any shape, well
 //! formed or not, ends in a typed error or a graph, never in a panic, and in a graph exactly when
 //! an oracle written apart from the bridge finds nothing to refuse. Every field crosses, those the
 //! engine does not keep among them: titles, label texts and backgrounds, and the patch of

@@ -50,7 +50,7 @@ export interface Viewport {
 export type NodeView = Omit<NodeData, "x" | "y">;
 
 /** The state without its actions, read-only to its leaves: what the render layer sees, so the
- *  type checker refuses a write (ADR-0009). */
+ *  type checker refuses a write (ADR-0026). */
 export interface GraphView {
   readonly nodes: readonly Readonly<NodeView>[];
   readonly slots: ReadonlyMap<string, number>;

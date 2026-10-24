@@ -1,4 +1,4 @@
-// The nodes layer at the near and the middle level (ADR-0012): a pooled view per node in view,
+// The nodes layer at the near and the middle level (ADR-0027): a pooled view per node in view,
 // its box and its title.
 import { BitmapText, Container, Graphics } from "pixi.js";
 import type { GraphView, NodeView } from "../store";
