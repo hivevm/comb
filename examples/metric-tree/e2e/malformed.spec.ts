@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData, GraphDataProblem } from "comb";
-import { open, setViewport } from "./shared";
+import { node, open, setViewport } from "./shared";
 
 /** The identifiers and places of the nodes the canvas draws, and of its edges. */
 async function drawn(page: Page) {
@@ -14,7 +14,6 @@ async function drawn(page: Page) {
   });
 }
 
-const node = (id: string, x = 0, y = 0) => ({ id, title: id, x, y, width: 220, height: 64 });
 const edge = (id: string, source: string, target: string) => ({ id, source, target });
 /** Nodes `a` and `b` and an edge `e` between them whose label lies in view at the near level,
  *  where a label the store kept would be drawn in the next frame. */
@@ -123,7 +122,7 @@ const ID = "a well-formed string of at most 256 code units";
 
 /** Nodes `a` and `b` and an edge `e` between them, with `change` made to `b` or to `e`. */
 function changed(item: "b" | "e", change: (fields: Record<string, unknown>) => void): GraphData {
-  const b: Record<string, unknown> = node("b", 300);
+  const b: Record<string, unknown> = { ...node("b", 300) };
   const e: Record<string, unknown> = {
     ...edge("e", "a", "b"),
     label: { text: "e", t: 0.5, offset: 0 },

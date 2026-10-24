@@ -3,17 +3,8 @@
 // change of the graph before the call that made it returns. A node a load would refuse, or one of
 // an identifier the graph holds already, is refused, and nothing changes (ADR-0026, Q-7).
 import { expect, test, type Page } from "@playwright/test";
-import type { GraphChange, GraphData } from "comb";
-import { NODE_HEIGHT, NODE_WIDTH, open, screenCentre, setViewport } from "./shared";
-
-const node = (id: string, x = 0, y = 0) => ({
-  id,
-  title: id,
-  x,
-  y,
-  width: NODE_WIDTH,
-  height: NODE_HEIGHT,
-});
+import type { GraphChange } from "comb";
+import { loaded, node, open, screenCentre } from "./shared";
 
 /** The identifiers and places of the nodes the canvas draws, bottom to top, once it has drawn. */
 async function drawn(page: Page) {
@@ -21,16 +12,6 @@ async function drawn(page: Page) {
     await window.comb.whenRendered();
     return window.inspect().nodes.map(({ id, x, y, title }) => ({ id, x, y, title }));
   });
-}
-
-/** Loads `graph` at a scale of 1 with the world's origin at (100, 100), the near level, and
- *  waits until it is drawn. */
-async function loaded(page: Page, graph: GraphData): Promise<void> {
-  await page.evaluate(async (graph) => {
-    window.comb.load(graph);
-    await window.comb.whenRendered();
-  }, graph);
-  await setViewport(page, { x: 100, y: 100, scale: 1 });
 }
 
 /** Presses and releases the pointer at the screen centre of the drawn node `id`, and returns the

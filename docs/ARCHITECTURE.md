@@ -265,15 +265,17 @@ The functional core and its shell follow
   mutants with `crates/engine/mutants-missed.txt` by file, function, and replacement, and fails
   on a survivor the list does not name, and on a run that caught none (ADR-0008).
 
-**Test pattern:** Rust unit tests beside the code they test (`#[cfg(test)]`); a property test of
-the bridge crate's validation (`crates/engine-wasm/src/properties.rs`, proptest) that feeds it
-10,000 random batches per run against a brute-force oracle, and one of the mesh budget
+**Test pattern:** Rust unit tests beside the code they test (`#[cfg(test)]`); a property test of the
+bridge crate's validation (`crates/engine-wasm/src/properties.rs`, proptest) that feeds it 10,000
+random batches per run against a brute-force oracle, and one of the mesh budget
 (`crates/engine/src/graph/budget.rs`) that queries random graphs of long edges with the budget
 lowered; Bun tests beside their module as `*.test.ts`, the bridge's against the built WebAssembly
 module, the lint's rules for Comb's library sources in `packages/comb/src/lint.test.ts`, and those
 of `bench/compare.ts` and `bench/chromium.ts` beside them; browser tests under `examples/*/e2e`, a
 file for the golden path and one for each concern they verify, sharing their helpers through
-`e2e/shared.ts`, run by Playwright on Bun against the example, reading what is drawn through
+`e2e/shared.ts` (a graph loaded as the example's own through `useGraph` with what Comb tells
+recorded, the node size the example's source states, and the page point of a world point, a click
+and a drag there), run by Playwright on Bun against the example, reading what is drawn through
 `comb/testing` rather than pixels, apart from one reference image of the edges alone.
 
 The Bun tests and the browser tests on the development server run the bridge in test mode, which

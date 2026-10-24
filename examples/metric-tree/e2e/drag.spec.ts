@@ -1,6 +1,14 @@
 // Dragging a node (G-2).
 import { expect, test, type Page } from "@playwright/test";
-import { canvasOrigin, NODE_HEIGHT, NODE_WIDTH, open, screenCentre } from "./shared";
+import {
+  canvasOrigin,
+  NODE_HEIGHT,
+  NODE_WIDTH,
+  open,
+  recordChanges,
+  screenCentre,
+  told,
+} from "./shared";
 
 /** A node's position in world coordinates, as the canvas draws it. */
 async function drawnNode(page: Page, id: string) {
@@ -160,19 +168,6 @@ test("a node dragged across frames stays under the pointer, its edges' ends at i
   }
   await page.mouse.up();
 });
-
-/** Starts recording every change `onChange` tells into `window.told`. */
-async function recordChanges(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const w = window as unknown as { told: unknown[] };
-    w.told = [];
-    window.comb.onChange((change) => w.told.push(change));
-  });
-}
-
-async function told(page: Page): Promise<unknown[]> {
-  return page.evaluate(() => (window as unknown as { told: unknown[] }).told);
-}
 
 test("a node dragged across frames and released tells one nodeMoved, where inspection draws it", async ({
   page,

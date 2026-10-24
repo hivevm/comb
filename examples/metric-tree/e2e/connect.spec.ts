@@ -4,16 +4,7 @@
 // reaches makes none, and a refused name reaches the page as an error (ADR-0023).
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData } from "comb";
-import { NODE_HEIGHT, NODE_WIDTH, open, setViewport } from "./shared";
-
-const node = (id: string, x = 0, y = 0) => ({
-  id,
-  title: id,
-  x,
-  y,
-  width: NODE_WIDTH,
-  height: NODE_HEIGHT,
-});
+import { dragWorld, loaded, node, open, pagePoint, setViewport, told } from "./shared";
 
 /** Node `a` above `b` and `c` beside it, and an edge from `a` to `c`. */
 const NODES: GraphData = {
@@ -21,56 +12,27 @@ const NODES: GraphData = {
   edges: [{ id: "a-c", source: "a", target: "c" }],
 };
 
-async function loaded(page: Page, graph: GraphData = NODES): Promise<void> {
-  await page.evaluate(async (graph) => {
-    window.useGraph(graph);
-    const w = window as unknown as { told: unknown[] };
-    w.told = [];
-    window.comb.onChange((change) => w.told.push(change));
-    await window.comb.whenRendered();
-  }, graph);
-  await setViewport(page, { x: 100, y: 100, scale: 1 });
-}
-
-/** The page point at which the canvas shows the world point `(x, y)`. */
-async function pagePoint(page: Page, x: number, y: number) {
-  return page.evaluate(
-    ({ x, y }) => {
-      const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();
-      const screen = window.screenPoint(x, y);
-      return { x: rect.left + screen.x, y: rect.top + screen.y };
-    },
-    { x, y },
+/** Drags from the world point `from` to `to`, and returns what the canvas drew midway. */
+function drag(page: Page, from: [number, number], to: [number, number]) {
+  return dragWorld(page, from, to, () =>
+    page.evaluate(async () => {
+      await window.comb.whenRendered();
+      const { connection, connectors } = window.inspect();
+      return { connection, connectors };
+    }),
   );
-}
-
-/** Drags from the world point `from` to `to` in steps, and returns what the canvas drew midway. */
-async function drag(page: Page, from: [number, number], to: [number, number]) {
-  const [a, b] = [await pagePoint(page, ...from), await pagePoint(page, ...to)];
-  await page.mouse.move(a.x, a.y);
-  await page.mouse.down();
-  await page.mouse.move(b.x, b.y, { steps: 8 });
-  const midway = await page.evaluate(async () => {
-    await window.comb.whenRendered();
-    const { connection, connectors } = window.inspect();
-    return { connection, connectors };
-  });
-  await page.mouse.up();
-  return midway;
 }
 
 /** The edges drawn once the canvas has drawn, and what was told since the load. */
 async function after(page: Page) {
-  return page.evaluate(async () => {
+  const edges = await page.evaluate(async () => {
     await window.comb.whenRendered();
-    return {
-      edges: window
-        .inspect()
-        .edges.map(({ id }) => id)
-        .sort(),
-      told: (window as unknown as { told: unknown[] }).told,
-    };
+    return window
+      .inspect()
+      .edges.map(({ id }) => id)
+      .sort();
   });
+  return { edges, told: await told(page) };
 }
 
 // The connectors: a's bottom at (110, 64), b's top at (110, 300), c's left at (500, 32).
@@ -83,7 +45,7 @@ test("a drag from a's bottom connector to b's top one connects them by those sid
 }) => {
   // Verifies: G-3, ADR-0024, ADR-0023
   await open(page);
-  await loaded(page);
+  await loaded(page, NODES);
   await page.evaluate(() => {
     window.canConnect = (proposal) => {
       (window as unknown as { proposal: unknown }).proposal = proposal;
@@ -125,7 +87,7 @@ for (const [name, to] of [
   test(`a connection released over ${name} makes no edge`, async ({ page }) => {
     // Verifies: G-3, ADR-0024
     await open(page);
-    await loaded(page);
+    await loaded(page, NODES);
     const midway = await drag(page, A_BOTTOM, to as [number, number]);
     expect(midway.connection).not.toBeNull();
     expect(midway.connectors.some(({ compatible }) => compatible)).toBe(false);
@@ -139,7 +101,7 @@ for (const name of ["false", "undefined", "a number", "a throw"] as const) {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
-    await loaded(page);
+    await loaded(page, NODES);
     await page.evaluate((name) => {
       const results: Record<string, () => unknown> = {
         false: () => false,
@@ -168,7 +130,7 @@ for (const [name, id, kind] of [
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
-    await loaded(page);
+    await loaded(page, NODES);
     await page.evaluate((id) => (window.canConnect = () => id), id);
     await drag(page, A_BOTTOM, B_TOP);
     expect(await after(page)).toEqual({ edges: ["a-c"], told: [] });
@@ -181,7 +143,7 @@ test("without canConnect a press on a connector begins no connection and shows n
 }) => {
   // Verifies: ADR-0023, ADR-0025
   await open(page, "?connect=none");
-  await loaded(page);
+  await loaded(page, NODES);
   const midway = await drag(page, A_BOTTOM, B_TOP);
   expect(midway).toEqual({ connection: null, connectors: [] });
   // The press lies on a's edge, so it drags a, as a press on a node does.
@@ -194,7 +156,7 @@ test("hitKind finds a connector just outside a node only where it is asked for c
 }) => {
   // Verifies: ADR-0025
   await open(page);
-  await loaded(page);
+  await loaded(page, NODES);
   const kinds = await page.evaluate(() => {
     // Three world units below a's bottom connector, outside a and within 8 pixels of it.
     const { x, y } = window.screenPoint(110, 67);
@@ -208,7 +170,7 @@ test("at the far level no connector is drawn and a press where one would be conn
 }) => {
   // Verifies: ADR-0024, ADR-0025
   await open(page);
-  await loaded(page);
+  await loaded(page, NODES);
   await setViewport(page, { x: 100, y: 100, scale: 0.25 });
   const midway = await drag(page, A_BOTTOM, B_TOP);
   expect(midway).toEqual({ connection: null, connectors: [] });
@@ -218,7 +180,7 @@ test("at the far level no connector is drawn and a press where one would be conn
 test("an edge the other way does not count: c connects to a, which reaches c", async ({ page }) => {
   // Verifies: ADR-0024
   await open(page);
-  await loaded(page);
+  await loaded(page, NODES);
   await page.evaluate(() => (window.canConnect = () => "c-a"));
   // From c's bottom connector at (610, 64) to a's bottom one at (110, 64).
   const midway = await drag(page, [610, 64], A_BOTTOM);
@@ -235,7 +197,7 @@ test("a veto that throws ends the gesture first: no connection is drawn after it
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
-  await loaded(page);
+  await loaded(page, NODES);
   await page.evaluate(() => {
     window.canConnect = () => {
       throw new Error("host veto");
