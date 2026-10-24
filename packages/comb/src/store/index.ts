@@ -58,6 +58,13 @@ export type StoreChange =
   | { readonly kind: "nodeAdded"; readonly by: "host"; readonly id: string }
   | { readonly kind: "nodeMoved"; readonly by: "user"; readonly id: string }
   | {
+      readonly kind: "nodesRemoved";
+      readonly by: "host";
+      readonly nodes: readonly string[];
+      readonly edges: readonly string[];
+    }
+  | { readonly kind: "edgesRemoved"; readonly by: "host"; readonly edges: readonly string[] }
+  | {
       readonly kind: "nodeUpdated";
       readonly by: "host";
       readonly id: string;
@@ -67,16 +74,20 @@ export type StoreChange =
 /** The state without its actions, read-only to its leaves: what the render layer sees, so the
  *  type checker refuses a write (ADR-0026). */
 export interface GraphView {
-  readonly nodes: readonly Readonly<NodeView>[];
+  /** The node in each slot, none at a free slot (ADR-0022). */
+  readonly nodes: readonly (Readonly<NodeView> | undefined)[];
   readonly slots: ReadonlyMap<string, number>;
+  /** The slot of each edge the graph holds, by its identifier. */
+  readonly edgeSlots: ReadonlyMap<string, number>;
   /** The UTF-16 code units of every identifier the graph holds, a node's, an edge's, and each
    *  edge's source and target, which the limits of a load bound after every edit (ADR-0023). */
   readonly idUnits: number;
   /** The change the last action that changed the graph made, or none before the first. */
   readonly change: StoreChange | null;
-  readonly edges: readonly Readonly<
-    Omit<EdgeData, "label"> & { readonly label?: Readonly<EdgeLabelData> }
-  >[];
+  /** The edge in each slot, none at a free slot (ADR-0022). */
+  readonly edges: readonly (
+    Readonly<Omit<EdgeData, "label"> & { readonly label?: Readonly<EdgeLabelData> }> | undefined
+  )[];
   readonly selection: Readonly<Selection>;
   readonly viewport: Readonly<Viewport>;
   readonly positionsVersion: number;
@@ -92,9 +103,38 @@ export interface GraphState extends GraphView {
   positionsMoved(): void;
   /** Records that a drag, now released, left the node `id` where the engine keeps it. */
   nodeMoved(id: string): void;
+  /** Forgets the nodes in `nodeSlots` and the edges in `edgeSlots`, which the engine removed,
+   *  leaving their slots free, and clears a selection of one of them. */
+  removeNodes(nodeSlots: readonly number[], edgeSlots: readonly number[]): void;
+  /** Forgets the edges in `edgeSlots`, which the engine removed, leaving their slots free. */
+  removeEdges(edgeSlots: readonly number[]): void;
 }
 
 export type GraphStore = ReturnType<typeof createGraphStore>;
+
+type Edges = GraphView["edges"];
+
+/** `edges` without those in `slots`, the identifiers of those edges, the map without them, and
+ *  the code units of identifiers they held. */
+function withoutEdges(
+  edges: Edges,
+  edgeSlots: ReadonlyMap<string, number>,
+  slots: readonly number[],
+) {
+  const kept = edges.slice();
+  const map = new Map(edgeSlots);
+  const ids: string[] = [];
+  let units = 0;
+  for (const slot of slots) {
+    const edge = kept[slot];
+    if (!edge) continue;
+    kept[slot] = undefined;
+    map.delete(edge.id);
+    ids.push(edge.id);
+    units += edge.id.length + edge.source.length + edge.target.length;
+  }
+  return { edges: kept, edgeSlots: map, ids, units };
+}
 
 /** The UTF-16 code units of every identifier of `graph`. */
 function idUnitsOf(graph: GraphData): number {
@@ -104,10 +144,61 @@ function idUnitsOf(graph: GraphData): number {
   return units;
 }
 
+/** What `removeNodes` changes of `state`: the nodes in `nodeSlots` and the edges in `edgeSlots`
+ *  forgotten, and a selection of a removed node cleared. */
+function withoutNodes(
+  state: GraphView,
+  nodeSlots: readonly number[],
+  edgeSlots: readonly number[],
+): Partial<GraphView> {
+  const removed = withoutEdges(state.edges, state.edgeSlots, edgeSlots);
+  const nodes = state.nodes.slice();
+  const slots = new Map(state.slots);
+  const ids: string[] = [];
+  let units = removed.units;
+  for (const slot of nodeSlots) {
+    const node = nodes[slot];
+    if (!node) continue;
+    nodes[slot] = undefined;
+    slots.delete(node.id);
+    ids.push(node.id);
+    units += node.id.length;
+  }
+  const { selection } = state;
+  const cleared =
+    (selection?.kind === "node" && !slots.has(selection.id)) ||
+    (selection?.kind === "edge" && !removed.edgeSlots.has(selection.id));
+  return {
+    nodes,
+    slots,
+    edges: removed.edges,
+    edgeSlots: removed.edgeSlots,
+    idUnits: state.idUnits - units,
+    change: { kind: "nodesRemoved", by: "host", nodes: ids, edges: removed.ids },
+    ...(cleared ? { selection: null } : {}),
+  };
+}
+
+/** What `removeEdges` changes of `state`: the edges in `edgeSlots` forgotten, and a selection of
+ *  a removed edge cleared. */
+function withoutEdgesOf(state: GraphView, edgeSlots: readonly number[]): Partial<GraphView> {
+  const removed = withoutEdges(state.edges, state.edgeSlots, edgeSlots);
+  const { selection } = state;
+  const cleared = selection?.kind === "edge" && !removed.edgeSlots.has(selection.id);
+  return {
+    edges: removed.edges,
+    edgeSlots: removed.edgeSlots,
+    idUnits: state.idUnits - removed.units,
+    change: { kind: "edgesRemoved", by: "host", edges: removed.ids },
+    ...(cleared ? { selection: null } : {}),
+  };
+}
+
 export function createGraphStore() {
   return createStore<GraphState>()((set) => ({
     nodes: [],
     slots: new Map(),
+    edgeSlots: new Map(),
     edges: [],
     idUnits: 0,
     change: null,
@@ -118,6 +209,7 @@ export function createGraphStore() {
       set((state) => ({
         nodes: graph.nodes.map(({ id, title, width, height }) => ({ id, title, width, height })),
         slots: new Map(graph.nodes.map((node, slot) => [node.id, slot])),
+        edgeSlots: new Map(graph.edges.map((edge, slot) => [edge.id, slot])),
         edges: graph.edges,
         idUnits: idUnitsOf(graph),
         change: { kind: "loaded", by: "host" },
@@ -139,12 +231,15 @@ export function createGraphStore() {
       }),
     updateNode: (id, patch) =>
       set((state) => ({
-        nodes: state.nodes.map((node) => (node.id === id ? { ...node, ...patch } : node)),
+        nodes: state.nodes.map((node) => (node?.id === id ? { ...node, ...patch } : node)),
         change: { kind: "nodeUpdated", by: "host", id, patch },
       })),
     select: (selection) => set({ selection }),
     setViewport: (viewport) => set({ viewport }),
     positionsMoved: () => set((state) => ({ positionsVersion: state.positionsVersion + 1 })),
     nodeMoved: (id) => set({ change: { kind: "nodeMoved", by: "user", id } }),
+    removeNodes: (nodeSlots, edgeSlots) =>
+      set((state) => withoutNodes(state, nodeSlots, edgeSlots)),
+    removeEdges: (edgeSlots) => set((state) => withoutEdgesOf(state, edgeSlots)),
   }));
 }

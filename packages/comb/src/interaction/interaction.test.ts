@@ -121,7 +121,9 @@ describe("interaction records where a drag left its node", () => {
     emit("pointerup", 10, 10);
     expect(changes).toEqual([]);
   });
+});
 
+describe("interaction ends a drag the graph took its node from", () => {
   test("a load during a drag ends it, and its release tells nothing", () => {
     // Verifies: ADR-0023
     const { store, emit, changes } = dragged();
@@ -161,5 +163,23 @@ describe("interaction records where a drag left its node", () => {
     emit("globalpointermove", 50, 10);
     emit("pointerup", 50, 10);
     expect(changes).toHaveLength(1);
+  });
+
+  test("a removal of the dragged node ends the drag, which then moves and tells nothing", () => {
+    // Verifies: ADR-0022, ADR-0023
+    const { store, emit, changes } = dragged();
+    emit("pointerdown", 10, 10);
+    emit("globalpointermove", 30, 10);
+    store.getState().removeNodes([0], []);
+    // A node added takes the freed slot; the drag moves it not.
+    store.getState().addNode({ id: "e", title: "E", x: 0, y: 0, width: 100, height: 40 }, 0);
+    const { positionsVersion } = store.getState();
+    emit("globalpointermove", 50, 10);
+    emit("pointerup", 50, 10);
+    expect(store.getState().positionsVersion).toBe(positionsVersion);
+    expect(changes.map((change) => (change as { kind: string }).kind)).toEqual([
+      "nodesRemoved",
+      "nodeAdded",
+    ]);
   });
 });

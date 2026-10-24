@@ -69,53 +69,58 @@ page has patched JavaScript's built-ins, such as a setter on `Object.prototype` 
 The functional core and its shell follow
 [ADR-0026](adr/0026-the-shell-refuses-what-only-its-map-knows.md).
 
-- **Engine** (`crates/engine`) — pure geometry: `geometry` holds edge paths as cubic Bézier
-  curves from the right middle of one node to the left middle of another, their exact bounds, the
-  point and normal at a path parameter, and edge-label placement; `positions` the positions
-  buffer and its moves. `graph` keeps the loaded graph, node positions and
-  sizes per slot and edges per slot, a rank per node slot, and a spatial index (`spatial`, a
-  uniform grid each for nodes and edges, with an overflow list for items that cover many cells)
-  that loads, additions, and moves keep current and that is built again once many items have
-  moved or been added beyond its extent, or the nodes in use pass twice the count it was built
-  for ([ADR-0022](adr/0022-the-engine-edits-its-graph-in-place.md)); `add_node` takes the free
-  slot freed last, or a new one after the highest, and the next rank, and puts the node into the
-  grid in place; a load ranks node `i` as `i`. Its query returns the slots a rectangle meets, node
-  slots in ascending rank, and `hit` the node drawn on top at a point, the one of the highest
-  rank. `stroke`
-  flattens the found edges within a tolerance and strokes them into the triangles of one mesh,
-  with each edge's colour, dash pattern, and arrowhead, or as thin lines alone at the far level
-  of detail; it decides the stroke of each level. A part of a path whose control points miss the
-  query's rectangle, grown by the stroke's width, is drawn as its chord, a segment that meets the
-  grown rectangle with an end outside it is split where it enters and leaves it, so that what the
-  rectangle shows rounds by its distance from the query's origin, and a path is subdivided at most
-  24 levels deep; the mesh of one query holds at most the mesh budget, 2^22 vertices: each
-  edge's floor, its chord or its arrowhead alone where that is its full mesh, is reserved first,
-  edges are meshed in full in slot order while each fits beside the floors of those after it, and
-  from the first that does not, every edge is drawn as its floor and the mesh is coarsened; its
-  vectors grow by `try_reserve`, so that memory running short coarsens the mesh instead of
-  trapping. It depends on no crate that reaches the browser. `graph` keeps each edge's path and
-  its bounds as of its last move, so that a query computes no bounds; `graph::slot` is the one
-  conversion of a count to slots, which the bridge uses too. Only what the bridge uses is public;
-  the rest is private to the crate, so that the `dead_code` lint finds what only tests reach.
+- **Engine** (`crates/engine`) — pure geometry: `geometry` holds edge paths as cubic Bézier curves
+  from the right middle of one node to the left middle of another, their exact bounds, the point and
+  normal at a path parameter, and edge-label placement; `positions` the positions buffer and its
+  moves. `graph` keeps the loaded graph, node positions and sizes per slot and edges per slot, a
+  rank per node slot, a list of the edges at each node slot, a list each of free node and edge
+  slots, and a spatial index (`spatial`, a uniform grid each for nodes and edges, with an overflow
+  list for items that cover many cells) that loads, additions, and moves keep current and that is
+  built again once many items have moved or been added beyond its extent, or the nodes in use pass
+  twice the count it was built for ([ADR-0022](adr/0022-the-engine-edits-its-graph-in-place.md));
+  `add_node` takes the free slot freed last, or a new one after the highest, and the next rank, and
+  puts the node into the grid in place; a load ranks node `i` as `i`; `remove_nodes` frees the node
+  slots and those of the edges at them, `remove_edges` edge slots, and both take the items out of
+  the grids and the lists at the nodes; a free slot holds nothing, no query or hit returns it, a
+  rebuild covers only the slots in use, and a call that names one refuses it as a slot beyond the
+  graph. Its query returns the slots a rectangle meets, node slots in ascending rank, and `hit` the
+  node drawn on top at a point, the one of the highest rank. `stroke` flattens the found edges
+  within a tolerance and strokes them into the triangles of one mesh, with each edge's colour, dash
+  pattern, and arrowhead, or as thin lines alone at the far level of detail; it decides the stroke
+  of each level. A part of a path whose control points miss the query's rectangle, grown by the
+  stroke's width, is drawn as its chord, a segment that meets the grown rectangle with an end
+  outside it is split where it enters and leaves it, so that what the rectangle shows rounds by its
+  distance from the query's origin, and a path is subdivided at most 24 levels deep; the mesh of one
+  query holds at most the mesh budget, 2^22 vertices: each edge's floor, its chord or its arrowhead
+  alone where that is its full mesh, is reserved first, edges are meshed in full in slot order while
+  each fits beside the floors of those after it, and from the first that does not, every edge is
+  drawn as its floor and the mesh is coarsened; its vectors grow by `try_reserve`, so that memory
+  running short coarsens the mesh instead of trapping. It depends on no crate that reaches the
+  browser. `graph` keeps each edge's path and its bounds as of its last move, so that a query
+  computes no bounds; `graph::slot` is the one conversion of a count to slots, which the bridge uses
+  too. Only what the bridge uses is public; the rest is private to the crate, so that the
+  `dead_code` lint finds what only tests reach.
 - **Bridge** — `crates/engine-wasm` holds every WebAssembly export: `loadGraph` checks graph data
   and resolves edge ends to slots, `addNode` checks one node as a load would and returns the slot
-  the engine chose for it, `translate` moves nodes, `query` takes a rectangle, a level of detail,
-  the size of a screen pixel, and how far an edge label's pill reaches from its point, and writes
-  the found node slots, the edge-label slots and points (at the near level only), the found edge
-  slots, and the edge mesh into buffers the engine owns, the label points and the mesh's positions
-  relative to the query's origin, which `originX` and `originY` read
+  the engine chose for it, `removeNodes` removes nodes and the edges at them and returns those
+  edges' slots, `removeEdges` removes edges, `translate` moves nodes, `query` takes a rectangle, a
+  level of detail, the size of a screen pixel, and how far an edge label's pill reaches from its
+  point, and writes the found node slots, the edge-label slots and points (at the near level only),
+  the found edge slots, and the edge mesh into buffers the engine owns, the label points and the
+  mesh's positions relative to the query's origin, which `originX` and `originY` read
   ([ADR-0010](adr/0010-bridge-data-format.md)), and returns the mesh's detail, complete or
   coarsened, and refuses a pixel that is not a finite number above zero as malformed; `drawnEdges`
   computes the ends of the found edges when inspection asks, as they lie then, and `hit` names the
-  node at a point; it generates the type of every problem of graph data `load`, `updateNode`, and
-  `addNode` throw, `GraphDataProblem`, which `comb` exports, and keeps `translate`'s refusals, a
-  mistake of the shell's, in a type of their own. Its crate root holds the exports and their
-  conversions; its module `graph_data` reads and checks graph data, the one place that does
+  node at a point; it generates the type of every problem of graph data the methods of `Comb` throw,
+  `GraphDataProblem`, which `comb` exports, and keeps the refusals of `translate` and of the
+  removals, a mistake of the shell's, in types of their own. Its crate root holds the exports and
+  their conversions; its module `graph_data` reads and checks graph data, the one place that does
   ([ADR-0026](adr/0026-the-shell-refuses-what-only-its-map-knows.md)); `packages/comb/src/bridge` is
   the one module that imports the WebAssembly package and reads those buffers through fresh
   typed-array views per read ([ADR-0010](adr/0010-bridge-data-format.md)).
-- **Store** (`packages/comb/src/store`) — a vanilla Zustand store with the graph's structure, the
-  map from identifiers to slots, the code units of the identifiers it holds, the change the last
+- **Store** (`packages/comb/src/store`) — a vanilla Zustand store with the graph's structure, its
+  nodes and edges by slot with holes at free slots, which every reader skips, the maps from node and
+  edge identifiers to slots, the code units of the identifiers it holds, the change the last
   action that changed the graph made, by kind and identifier, the selection, the viewport, and a
   counter for moved positions; no coordinates
   ([ADR-0011](adr/0011-store.md)). `GraphView` is its state without the actions, the type the
@@ -152,25 +157,24 @@ The functional core and its shell follow
   patterns solid. Not built yet: the node content of
   [ADR-0013](adr/0013-node-content-model.md), and the connectors of G-3, a layer that joins the
   scene with the change that builds it ([ADR-0027](adr/0027-nodes-bound-by-rank.md)).
-- **API** (`packages/comb/src/api`) — `api/index.ts` imports `pixi.js/unsafe-eval` before
-  PixiJS, so that no PixiJS renderer on the page generates code with eval
-  ([ADR-0020](adr/0020-pixijs-without-eval.md)); `createComb`, which takes the engine's
-  WebAssembly from the host application as `engine` and refuses with an `EngineSourceError`
-  where it is missing, a string, `URL`, or `Request`, or none of a `Response`, a module, and the
-  bytes (`api/engine.ts`, [ADR-0019](adr/0019-the-host-hands-comb-its-engine.md)), before it
-  touches the host element, and with a `RendererUnavailableError` where PixiJS finds no WebGL2
-  unless `allowCanvasFallback` lets it draw on Canvas 2D (`api/renderers.ts`); and the `Comb` it
-  returns: the graph data (`load`, `updateNode`, `addNode`), read once into a snapshot
-  (`api/snapshot.ts`) and handed to the engine, the viewport (`fitView`, `setViewport`,
-  `viewport`, and `worldPointAt`, the world point under a point of the page, which needs no
-  engine), the events to the host application (`onChange`, `onSelectionChange`,
-  `onEngineLost`), and `destroy`; `onChange` delivers each change the store records as a
-  `GraphChange` ([ADR-0023](adr/0023-edits-are-reported-as-typed-changes.md)), its positions read
-  from the engine's buffer, synchronously from one subscription to the store that tells a change
-  before the selection it cleared; `whenRendered`
-  resolves once a change is drawn, with one render per animation frame scheduled by
-  `api/frames.ts`. `api/scenes.ts` is the one way from a `Comb` to its scene, for the testing
-  entry.
+- **API** (`packages/comb/src/api`) — `api/index.ts` imports `pixi.js/unsafe-eval` before PixiJS, so
+  that no PixiJS renderer on the page generates code with eval
+  ([ADR-0020](adr/0020-pixijs-without-eval.md)); `createComb`, which takes the engine's WebAssembly
+  from the host application as `engine` and refuses with an `EngineSourceError` where it is missing,
+  a string, `URL`, or `Request`, or none of a `Response`, a module, and the bytes (`api/engine.ts`,
+  [ADR-0019](adr/0019-the-host-hands-comb-its-engine.md)), before it touches the host element, and
+  with a `RendererUnavailableError` where PixiJS finds no WebGL2 unless `allowCanvasFallback` lets
+  it draw on Canvas 2D (`api/renderers.ts`); and the `Comb` it returns: the graph data (`load`,
+  `updateNode`, `addNode`, `removeNodes`, `removeEdges`), read once into a snapshot
+  (`api/snapshot.ts`) and handed to the engine, the viewport (`fitView`, `setViewport`, `viewport`,
+  and `worldPointAt`, the world point under a point of the page, which needs no engine), the events
+  to the host application (`onChange`, `onSelectionChange`, `onEngineLost`), and `destroy`;
+  `onChange` delivers each change the store records as a `GraphChange`
+  ([ADR-0023](adr/0023-edits-are-reported-as-typed-changes.md)), its positions read from the
+  engine's buffer, synchronously from one subscription to the store that tells a change before the
+  selection it cleared; `whenRendered` resolves once a change is drawn, with one render per
+  animation frame scheduled by `api/frames.ts`. `api/scenes.ts` is the one way from a `Comb` to its
+  scene, for the testing entry.
 - **Testing entry** (`comb/testing`, `packages/comb/src/testing.ts`) — `inspect` returns what the
   scene draws, the text of the titles and labels drawn included, and the size and detail of the
   edge mesh, which the host application is not told; `viewport` and `renderCount`, cheap

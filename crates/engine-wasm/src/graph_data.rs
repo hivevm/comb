@@ -360,9 +360,12 @@ pub enum GraphDataProblem {
     /// The identifiers of one load hold more than `limit` UTF-16 code units together.
     #[serde(rename_all = "camelCase")]
     IdBudgetExceeded { limit: u32 },
-    /// `updateNode` names a node the graph does not hold.
+    /// `updateNode` or `removeNodes` names a node the graph does not hold.
     #[serde(rename_all = "camelCase")]
     UnknownNode { node: String },
+    /// `removeEdges` names an edge the graph does not hold.
+    #[serde(rename_all = "camelCase")]
+    UnknownEdge { edge: String },
 }
 
 /// A value that does not have the shape an export expects. Its message is the bridge's own: the

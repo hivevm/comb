@@ -121,6 +121,12 @@ export interface Bridge {
   /** Checks the patch `updateNode` hands over for the node `node`, reading it once, and returns
    *  the fields it changes; the engine keeps nothing of it. Throws a `GraphDataProblem`. */
   checkNodePatch(node: string, patch: PlainPatch): CheckedPatch;
+  /** Removes the nodes in `slots` and every edge at them, and returns the slots of those edges in
+   *  ascending order (ADR-0022). Throws a `RemoveError`, a mistake of the shell's, never one of
+   *  graph data, the graph as it was. */
+  removeNodes(slots: Uint32Array): Uint32Array;
+  /** Removes the edges in `slots`. Throws a `RemoveError`, the graph as it was. */
+  removeEdges(slots: Uint32Array): void;
   /** Moves the nodes in `slots`, their edges with them. Throws a `TranslateError`, a mistake of
    *  the shell's, never one of graph data. */
   translate(slots: Uint32Array, dx: number, dy: number): void;
@@ -304,6 +310,8 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
     checkIdBudget,
     checkGraphSize,
     checkNodePatch,
+    removeNodes: (slots) => engine.removeNodes(slots),
+    removeEdges: (slots) => engine.removeEdges(slots),
     translate: (slots, dx, dy) => engine.translate(slots, dx, dy),
     positions: () => f32(engine.positionsPtr(), engine.positionsLen()),
     hit: (x, y) => engine.hit(x, y),
