@@ -396,13 +396,22 @@ fn accepts(batch: &GraphBatch) -> Option<bool> {
     for e in &batch.edges {
         ends.extend([id(&e.source)?, id(&e.target)?]);
     }
+    // The world's limit, 2^120: a node within it, its far side included, as f32 holds them, and
+    // a label offset within it.
+    let world = 2f64.powi(120);
+    let as_f32 = |v: f64| f64::from(v as f32);
     let node_ok = |n: &NodeInput| {
         let [x, y, width, height] = [n.x.0?, n.y.0?, n.width.0?, n.height.0?];
+        let within = [x, y, x, y]
+            .into_iter()
+            .zip([0.0, 0.0, width, height])
+            .all(|(at, size)| (as_f32(at) + as_f32(size)).abs() <= world);
         Some(
             n.title_length.is_some_and(|l| l <= 1_000)
                 && [x, y, width, height].into_iter().all(finite32)
                 && width as f32 >= 0.0
-                && height as f32 >= 0.0,
+                && height as f32 >= 0.0
+                && within,
         )
     };
     let edge_ok = |e: &EdgeInput| {
@@ -412,6 +421,7 @@ fn accepts(batch: &GraphBatch) -> Option<bool> {
                 let (t, offset) = (l.t.0?, l.offset.0?);
                 t.is_finite()
                     && offset.is_finite()
+                    && offset.abs() <= world
                     && l.text_length.is_some_and(|l| l <= 1_000)
                     && l.background.is_none_or(rgb)
             }

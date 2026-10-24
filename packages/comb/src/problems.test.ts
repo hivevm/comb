@@ -24,6 +24,7 @@ const DESCRIBE: { [K in Kind]: (problem: Of<K>) => string } = {
   malformed: (p) => p.message,
   invalidField: (p) => `${p.list} ${p.index} ${p.id ?? "-"} ${p.field}: ${p.expected}`,
   nonFiniteCoordinate: (p) => p.node,
+  beyondWorld: (p) => `${p.list} ${p.id} ${p.field} ${p.limit}`,
   invalidSize: (p) => p.node,
   invalidTitle: (p) => p.node,
   titleTooLong: (p) => `${p.node} ${p.limit}`,

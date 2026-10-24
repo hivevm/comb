@@ -5,6 +5,18 @@
 //! path's normal there (G-6). An edge leaves its source node at the middle of its right side and
 //! enters its target node at the middle of its left side.
 
+/// How far from the world's origin the graph lies, in world units, 2^120: every node within it on
+/// each axis, its far side included, and every label offset within it. Every point the engine
+/// derives from them, a connector, a control point, a vertex, a label point, lies within three
+/// times this, and the width of a stroke within `PIXEL_LIMIT`'s, so that each stays far within
+/// `f32`, whose largest value is about 2^128; relative to the origin of a query that draws it,
+/// which lies within half its grid of the rectangle's centre, at most 2^127 (ADR-0010), too.
+pub const WORLD_LIMIT: f64 = 1_329_227_995_784_915_872_903_807_060_280_344_576.0;
+
+/// The largest screen pixel a query strokes for, 2^114 world units: far beyond the shell's least
+/// zoom, and small enough that no stroke or arrowhead reaches past a sixth of `WORLD_LIMIT`.
+pub(crate) const PIXEL_LIMIT: f64 = WORLD_LIMIT / 64.0;
+
 /// A point in world coordinates.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Point {

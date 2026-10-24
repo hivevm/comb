@@ -6,7 +6,7 @@
 //! those slots, the points of the labels, and the mesh of the edges into buffers the caller reads;
 //! the ends of the edges it found are computed only when inspection asks for them.
 
-use crate::geometry::{EdgePath, Point, Rect, Side, Sides};
+use crate::geometry::{EdgePath, PIXEL_LIMIT, Point, Rect, Side, Sides, WORLD_LIMIT};
 
 /// The four sides, each with a connector.
 const SIDES: [Side; 4] = [Side::Top, Side::Right, Side::Bottom, Side::Left];
@@ -576,8 +576,8 @@ impl Graph {
         clippy::cast_possible_truncation,
         reason = "an end is the middle of a side of a node, whose position and size the engine \
                   keeps as f32; the ends cross without an origin, rounded by their distance from \
-                  the world's origin (ADR-0010); a node near the end of f32's range can put an \
-                  end past f32::MAX, where it turns infinite, which nothing bounds yet"
+                  the world's origin (ADR-0010); a node lies within `WORLD_LIMIT`, its far side \
+                  included, so an end does too, far within f32"
     )]
     pub fn edge_ends(&self, slots: &[u32], out: &mut Vec<f32>) {
         out.clear();
@@ -702,6 +702,9 @@ impl Graph {
             return Err(SlotError::NoEdge { slot });
         }
         let (t, offset) = self.paths[slot as usize].placement_at(point);
+        // A label dragged to a point beyond the world's limit stops there, as a load would refuse
+        // an offset beyond it.
+        let offset = offset.clamp(-WORLD_LIMIT, WORLD_LIMIT);
         let placement = LabelPlacement { t, offset };
         self.edges[slot as usize].label = Some(placement);
         self.place_edge(slot);
@@ -762,7 +765,15 @@ impl Graph {
         if let Some(&slot) = slots.iter().find(|&&s| !self.holds_node(s)) {
             return Err(PositionError::SlotOutOfRange { slot });
         }
-        positions::translate(&mut self.positions, slots, dx, dy)?;
+        // Each node stops where it meets the world's limit, so that nothing derived from it turns
+        // infinite.
+        positions::translate(
+            &mut self.positions,
+            &self.sizes,
+            slots,
+            [dx, dy],
+            WORLD_LIMIT,
+        )?;
         let mut edges = std::mem::take(&mut self.scratch);
         edges.clear();
         for &slot in slots {
@@ -809,6 +820,8 @@ impl Graph {
         budget: u32,
         out: &mut Visible,
     ) {
+        // A stroke for a pixel beyond any zoom stays within the world's reach.
+        let pixel = pixel.min(PIXEL_LIMIT);
         let labelled = level == Level::Near;
         let label_rect = rect.grown(if labelled { label_reach.max(0.0) } else { 0.0 });
         self.node_grid.candidates(rect, &mut self.scratch);
@@ -841,8 +854,9 @@ impl Graph {
                     clippy::cast_possible_truncation,
                     reason = "a label point within `label_rect`, less the query's origin and only \
                               then rounded, rounds by its distance from the rectangle (ADR-0010); \
-                              a rectangle reaching past f32::MAX from its origin, which the \
-                              bridge does not refuse, can turn it infinite"
+                              a label point lies within three times `WORLD_LIMIT`, and the \
+                              origin of a rectangle that finds it within 2^127 of it (ADR-0010), \
+                              within f32"
                 )]
                 out.label_points
                     .extend([(point.x - x) as f32, (point.y - y) as f32]);
@@ -2211,5 +2225,105 @@ mod tests {
         graph.add_node(1e6 + 280.0, 1e6, 5.0, 5.0).unwrap();
         assert_eq!(graph.builds, 2);
         assert_eq!(graph.node_grid.beyond_extent(), 0);
+    }
+
+    /// Every coordinate a query of `rect` writes, the origin, the mesh's positions and distances,
+    /// the label points, and the ends of the edges found, at each level and at a pixel of a near,
+    /// a far, and no zoom the shell reaches.
+    fn written(graph: &mut Graph, rect: &Rect) -> Vec<f64> {
+        let mut out = Visible::default();
+        let mut all = Vec::new();
+        for level in [Level::Near, Level::Middle, Level::Far] {
+            for pixel in [0.25, 200.0, 1e300] {
+                graph.query(rect, level, pixel, 1e3, &mut out);
+                let mut ends = Vec::new();
+                graph.edge_ends(&out.edges, &mut ends);
+                all.extend([out.origin.x, out.origin.y]);
+                let mesh = [&out.mesh.positions, &out.mesh.distances];
+                let floats = mesh.into_iter().chain([&out.label_points, &ends]);
+                all.extend(floats.flatten().map(|&v| f64::from(v)));
+            }
+        }
+        all
+    }
+
+    #[test]
+    fn no_coordinate_turns_infinite_where_nodes_and_labels_are_dragged_to_the_world_limit() {
+        // Verifies: Q-4, Q-7, ADR-0028
+        // Node `a` between `b` and `c`, an edge from each to `a` with a label, which the drags
+        // below carry to opposite corners of the world, and the labels beyond them.
+        let label = Some(LabelPlacement {
+            t: 0.5,
+            offset: 40.0,
+        });
+        let edge = |source, sides| EdgeSpec {
+            sides,
+            source,
+            target: 0,
+            label,
+            style: EdgeStyle::unstyled(),
+        };
+        let crossed = Sides {
+            source: Side::Bottom,
+            target: Side::Top,
+        };
+        let mut graph = Graph::new(
+            vec![0.0, 0.0, 300.0, 0.0, -300.0, 0.0],
+            vec![220.0, 64.0, 220.0, 64.0, 220.0, 64.0],
+            vec![edge(1, Sides::default()), edge(2, crossed)],
+        )
+        .unwrap();
+        for _ in 0..4 {
+            graph.translate(&[1], f32::MAX, f32::MAX).unwrap();
+            graph.translate(&[2], -f32::MAX, -f32::MAX).unwrap();
+        }
+        // Each stopped where its far side meets the limit, as f32 rounds it: 2^120 - 220 rounds to
+        // 2^120 itself.
+        let at = |slot: usize| [graph.positions[slot * 2], graph.positions[slot * 2 + 1]];
+        let limit = WORLD_LIMIT as f32;
+        assert_eq!(at(2), [-limit, -limit]);
+        assert_eq!(at(1), [limit, limit]);
+        let [x, y] = at(1);
+        for slot in [0, 1] {
+            let far = graph.move_label(slot, Point::new(1e300, -1e300)).unwrap();
+            assert_eq!(far.offset.abs(), WORLD_LIMIT);
+        }
+        for rect in [
+            Rect::new(-1e300, -1e300, 1e300, 1e300),
+            Rect::new(1e300, 1e300, 1.1e300, 1.1e300),
+            Rect::new(-1e300, 0.0, 1e300, 1.0),
+            Rect::new(
+                f64::from(x) - 1e3,
+                f64::from(y) - 1e3,
+                f64::from(x) + 1e3,
+                f64::from(y) + 1e3,
+            ),
+            Rect::new(-1e3, -1e3, 1e3, 1e3),
+            // Beyond the world, but within f32, where its origin is too.
+            Rect::new(3e38, 3e38, 3.1e38, 3.1e38),
+            // From within the world to 2^127, whose grid of 2^127 snaps its origin there, the
+            // largest power of two f32 holds.
+            Rect::new(1e36, 1e36, 2f64.powi(127), 2f64.powi(127)),
+        ] {
+            let written = written(&mut graph, &rect);
+            assert!(!written.is_empty());
+            assert!(
+                written.iter().all(|v| v.abs() < f64::from(f32::MAX)),
+                "{rect:?} wrote a coordinate that f32 does not hold",
+            );
+        }
+        let mut out = Visible::default();
+        let far = 2f64.powi(127);
+        graph.query(
+            &Rect::new(1e36, 1e36, far, far),
+            Level::Far,
+            200.0,
+            0.0,
+            &mut out,
+        );
+        assert_eq!(out.origin, Point::new(far, far));
+        assert!(!out.edges.is_empty());
+        // A press anywhere still answers.
+        graph.hit_at(Point::new(1e300, 1e300), 1e300, Level::Near, true);
     }
 }

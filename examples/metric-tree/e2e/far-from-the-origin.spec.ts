@@ -4,7 +4,7 @@
 // crosses the viewport is split where it leaves the queried rectangle grown by the stroke's width
 // (ADR-0027), so that its ends far beyond the viewport do not round what it shows.
 import { expect, test, type Page } from "@playwright/test";
-import { canvasSize, open, setViewport } from "./shared";
+import { canvasSize, loaded, node, open, setViewport } from "./shared";
 
 /** Where the far edge starts: there an `f32` holds every fourth number. */
 const FAR = 5e7;
@@ -185,4 +185,37 @@ test("a segment whose ends lie far outside the viewport is drawn within a quarte
     }),
   );
   expect(Math.max(...off)).toBeLessThanOrEqual(QUARTER);
+});
+
+test("a viewport around 1e300 draws nothing infinite, loses no engine, and draws again once back", async ({
+  page,
+}) => {
+  // Verifies: Q-4, Q-7, ADR-0028
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page);
+  // A node at the world's limit, 2^120, with an edge back to one near the origin.
+  await loaded(page, {
+    nodes: [node("a"), node("b", 2 ** 120 - 220, 2 ** 120 - 64)],
+    edges: [{ id: "a-b", source: "a", target: "b", label: { text: "far", t: 0.5, offset: 0 } }],
+  });
+  const finite = (snapshot: ReturnType<typeof window.inspect>) =>
+    [
+      ...snapshot.nodes.flatMap(({ x, y }) => [x, y]),
+      ...snapshot.edges.flatMap(({ source, target }) => [source.x, source.y, target.x, target.y]),
+      ...snapshot.edgeLabels.flatMap(({ x, y }) => [x, y]),
+    ].every(Number.isFinite);
+  for (const at of [1e300, -1e300]) {
+    const drawn = await page.evaluate(async (at) => {
+      window.comb.setViewport({ x: at, y: -at, scale: 1 });
+      await window.comb.whenRendered();
+      return window.inspect();
+    }, at);
+    expect(finite(drawn)).toBe(true);
+  }
+  await setViewport(page, { x: 100, y: 100, scale: 1 });
+  const back = await page.evaluate(() => window.inspect());
+  expect(finite(back)).toBe(true);
+  expect(back.nodes.map(({ id }) => id)).toContain("a");
+  expect(errors).toEqual([]);
 });

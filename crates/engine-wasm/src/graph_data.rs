@@ -7,7 +7,7 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-use comb_engine::geometry::{self as graph_side, Sides};
+use comb_engine::geometry::{self as graph_side, Sides, WORLD_LIMIT};
 use comb_engine::graph::{self, EdgeSpec, Graph, GraphError, LabelPlacement};
 use comb_engine::stroke::EdgeStyle;
 use serde::de::{self, IgnoredAny, Visitor};
@@ -343,6 +343,17 @@ pub enum GraphDataProblem {
     /// A node's coordinate is NaN or infinite.
     #[serde(rename_all = "camelCase")]
     NonFiniteCoordinate { node: String },
+    /// A node's coordinate or the far side of its extent, or an edge label's offset, lies more
+    /// than `limit` world units from the origin, past which what the engine derives from it could
+    /// turn infinite; `field` names it, the far side of a node by its `width` or `height`, a
+    /// label's offset as `label.offset`.
+    #[serde(rename_all = "camelCase")]
+    BeyondWorld {
+        list: GraphList,
+        id: String,
+        field: String,
+        limit: f64,
+    },
     /// A node's width or height is negative, NaN, or infinite.
     #[serde(rename_all = "camelCase")]
     InvalidSize { node: String },
@@ -616,6 +627,24 @@ fn checked_node(node: &Node) -> Result<([f32; 2], [f32; 2]), GraphDataProblem> {
     if !(width.is_finite() && height.is_finite()) || width < 0.0 || height < 0.0 {
         return Err(GraphDataProblem::InvalidSize { node: named() });
     }
+    // Also its far side, `x + width` and `y + height`, which `f32` may hold where their sum
+    // turns infinite.
+    let beyond = [
+        ("x", x, 0.0),
+        ("y", y, 0.0),
+        ("width", x, width),
+        ("height", y, height),
+    ]
+    .into_iter()
+    .find(|&(_, at, size)| (f64::from(at) + f64::from(size)).abs() > WORLD_LIMIT);
+    if let Some((field, ..)) = beyond {
+        return Err(GraphDataProblem::BeyondWorld {
+            list: GraphList::Nodes,
+            id: named(),
+            field: field.to_owned(),
+            limit: WORLD_LIMIT,
+        });
+    }
     match node.title_length {
         None => Err(GraphDataProblem::InvalidTitle { node: named() }),
         Some(length) if length > MAX_TEXT => Err(GraphDataProblem::TitleTooLong {
@@ -658,6 +687,14 @@ fn label_placement(id: &str, label: &Label) -> Result<LabelPlacement, GraphDataP
     let edge = || id.to_owned();
     if !(label.t.is_finite() && label.offset.is_finite()) {
         return Err(GraphDataProblem::NonFiniteLabel { edge: edge() });
+    }
+    if label.offset.abs() > WORLD_LIMIT {
+        return Err(GraphDataProblem::BeyondWorld {
+            list: GraphList::Edges,
+            id: edge(),
+            field: "label.offset".to_owned(),
+            limit: WORLD_LIMIT,
+        });
     }
     match label.text_length {
         None => return Err(GraphDataProblem::InvalidLabelText { edge: edge() }),
@@ -1228,6 +1265,64 @@ pub(crate) mod tests {
         .into();
         let error = graph_of(&data).unwrap_err();
         assert_eq!(error, GraphDataProblem::NonFiniteLabel { edge: "e".into() });
+    }
+
+    /// The refusal of a node or label of `list` and `id` lying past the world's limit by `field`.
+    fn beyond(list: GraphList, id: &str, field: &str) -> GraphDataProblem {
+        GraphDataProblem::BeyondWorld {
+            list,
+            id: id.into(),
+            field: field.into(),
+            limit: WORLD_LIMIT,
+        }
+    }
+
+    #[test]
+    fn a_node_whose_place_or_far_side_lies_past_the_world_names_it_and_the_field() {
+        // Verifies: Q-7, ADR-0028
+        // 3e38 is a finite f32, as is 3e38 + 3e38 in f64, which f32 cannot hold.
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 3e38, 0.0)], &[]);
+        data.nodes[1].width = 3e38.into();
+        assert_eq!(
+            graph_of(&data).unwrap_err(),
+            beyond(GraphList::Nodes, "b", "x")
+        );
+        // Each within the limit, the far side past it: 2^119 + 2^119 + 1e30.
+        let half = WORLD_LIMIT / 2.0;
+        for (field, x, y, width, height) in [
+            ("width", half, 0.0, half + 1e30, 10.0),
+            ("height", 0.0, half, 10.0, half + 1e30),
+            ("y", 0.0, -WORLD_LIMIT * 1.01, 10.0, 10.0),
+        ] {
+            let mut data = batch(&[("a", x, y)], &[]);
+            data.nodes[0].width = width.into();
+            data.nodes[0].height = height.into();
+            assert_eq!(
+                graph_of(&data).unwrap_err(),
+                beyond(GraphList::Nodes, "a", field)
+            );
+        }
+        // At the limit, its far side on it, it is taken.
+        let mut data = batch(&[("a", -WORLD_LIMIT, WORLD_LIMIT - 64.0)], &[]);
+        data.nodes[0].height = 0.0.into();
+        assert!(graph_of(&data).is_ok());
+    }
+
+    #[test]
+    fn a_label_offset_past_the_world_names_its_edge_and_the_field() {
+        // Verifies: Q-7, ADR-0028
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[("e", "a", "b")]);
+        data.edges[0].label = Some(LabelInput {
+            text_length: Some(1),
+            t: 0.5.into(),
+            offset: (-WORLD_LIMIT * 2.0).into(),
+            background: None,
+        })
+        .into();
+        assert_eq!(
+            graph_of(&data).unwrap_err(),
+            beyond(GraphList::Edges, "e", "label.offset")
+        );
     }
 
     #[test]
