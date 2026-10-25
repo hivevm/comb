@@ -69,8 +69,8 @@ test("isDrawn answers as inspect does, at the near, middle, and far level, befor
   await open(page);
   await loaded(page, STAR, HALF);
   const asked = (scale: number) =>
-    page.evaluate(async (scale) => {
-      window.comb.setViewport({ x: 100, y: 100, scale });
+    page.evaluate(async (viewScale) => {
+      window.comb.setViewport({ x: 100, y: 100, scale: viewScale });
       await window.comb.whenRendered();
       const probe = (what: { node: string } | { edge: string }) => window.isDrawn(what);
       const { nodes, edges } = window.inspect();
@@ -78,7 +78,7 @@ test("isDrawn answers as inspect does, at the near, middle, and far level, befor
         level: window.inspect().level,
         agrees:
           ["a", "b", "z"].every(
-            (node) => probe({ node }) === nodes.some(({ id }) => id === node),
+            (named) => probe({ node: named }) === nodes.some(({ id }) => id === named),
           ) &&
           ["a-b", "b-c", "z-z"].every(
             (edge) => probe({ edge }) === edges.some(({ id }) => id === edge),
@@ -165,8 +165,8 @@ for (const { name, call, problem } of REFUSED) {
         (window.comb as unknown as Record<string, (ids: unknown) => void>)[method]!(ids);
         return null;
       } catch (error) {
-        const { name, problem } = error as Error & { problem: unknown };
-        return { name, problem };
+        const { name: thrown, problem: found } = error as Error & { problem: unknown };
+        return { name: thrown, problem: found };
       }
     }, call);
     expect(refused).toEqual({ name: "GraphDataError", problem });
@@ -183,11 +183,11 @@ test("removing the selected node reports null to onSelectionChange, after its ch
   const at = await screenCentre(page, "a");
   await page.mouse.click(at.x, at.y);
   const heard = await page.evaluate(() => {
-    const heard: string[] = [];
-    window.comb.onChange((change) => heard.push(change.kind));
-    window.comb.onSelectionChange((selection) => heard.push(`selection ${String(selection)}`));
+    const events: string[] = [];
+    window.comb.onChange((change) => events.push(change.kind));
+    window.comb.onSelectionChange((selection) => events.push(`selection ${String(selection)}`));
     window.comb.removeNodes(["a"]);
-    return heard;
+    return events;
   });
   expect(heard).toEqual(["nodesRemoved", "selection null"]);
 });

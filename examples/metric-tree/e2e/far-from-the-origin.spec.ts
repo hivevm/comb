@@ -17,8 +17,8 @@ const QUARTER = 0.25;
  *  shader computes it, the point of its label less `at`, and how many renders queried. */
 async function drawnAt(page: Page, at: number, pan = 0) {
   const { width, height } = await canvasSize(page);
-  await page.evaluate(async (at) => {
-    const node = (id: string, x: number, y: number) => ({
+  await page.evaluate(async (offset) => {
+    const nodeAt = (id: string, x: number, y: number) => ({
       id,
       title: id,
       x,
@@ -27,7 +27,7 @@ async function drawnAt(page: Page, at: number, pan = 0) {
       height: 64,
     });
     window.comb.load({
-      nodes: [node("a", at, 0), node("b", at + 300, 200)],
+      nodes: [nodeAt("a", offset, 0), nodeAt("b", offset + 300, 200)],
       edges: [{ id: "e", source: "a", target: "b", label: { text: "far", t: 0.5, offset: 0 } }],
     });
     await window.comb.whenRendered();
@@ -38,13 +38,13 @@ async function drawnAt(page: Page, at: number, pan = 0) {
   const queried = await page.evaluate(() => window.inspect().queries);
   if (pan !== 0) await setViewport(page, { x: centre.x + pan, y: centre.y - pan, scale: SCALE });
   return page.evaluate(
-    ({ at, queried }) => {
+    ({ at: offset, queried: before }) => {
       const { edgeLabels, edgeMesh, queries } = window.inspect();
       return {
         vertices: [...window.edgeVertices()],
-        labels: edgeLabels.map(({ x, y }) => ({ x: x - at, y })),
+        labels: edgeLabels.map(({ x, y }) => ({ x: x - offset, y })),
         detail: edgeMesh.detail,
-        queriedSince: queries - queried,
+        queriedSince: queries - before,
       };
     },
     { at, queried },
@@ -115,8 +115,8 @@ async function loadLongEdge(page: Page): Promise<[number, number][]> {
   const [ax, ay] = [Math.fround(-FAR_END - 220), Math.fround(-0.3 * FAR_END - 32)];
   const [bx, by] = [Math.fround(FAR_END), Math.fround(0.3 * FAR_END - 32)];
   await page.evaluate(
-    async ({ ax, ay, bx, by }) => {
-      const node = (id: string, x: number, y: number) => ({
+    async ({ ax: leftX, ay: leftY, bx: rightX, by: rightY }) => {
+      const nodeAt = (id: string, x: number, y: number) => ({
         id,
         title: id,
         x,
@@ -125,7 +125,7 @@ async function loadLongEdge(page: Page): Promise<[number, number][]> {
         height: 64,
       });
       window.comb.load({
-        nodes: [node("a", ax, ay), node("b", bx, by)],
+        nodes: [nodeAt("a", leftX, leftY), nodeAt("b", rightX, rightY)],
         edges: [{ id: "e", source: "a", target: "b", arrow: "none" }],
       });
       await window.comb.whenRendered();
@@ -206,8 +206,8 @@ test("a viewport around 1e300 draws nothing infinite, loses no engine, and draws
       ...snapshot.edgeLabels.flatMap(({ x, y }) => [x, y]),
     ].every(Number.isFinite);
   for (const at of [1e300, -1e300]) {
-    const drawn = await page.evaluate(async (at) => {
-      window.comb.setViewport({ x: at, y: -at, scale: 1 });
+    const drawn = await page.evaluate(async (far) => {
+      window.comb.setViewport({ x: far, y: -far, scale: 1 });
       await window.comb.whenRendered();
       return window.inspect();
     }, at);

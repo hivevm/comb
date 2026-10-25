@@ -206,7 +206,7 @@ for (const { name, added, problem } of REFUSED) {
     await open(page);
     await loaded(page, { nodes: [node("a")], edges: [] });
     const before = await drawn(page);
-    const result = await page.evaluate(async (added) => {
+    const result = await page.evaluate(async (candidate) => {
       const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
       await frame();
       const renders = window.renderCount();
@@ -214,10 +214,10 @@ for (const { name, added, problem } of REFUSED) {
       window.comb.onChange((change) => told.push(change.kind));
       let refused = null;
       try {
-        window.comb.addNode(added as never);
+        window.comb.addNode(candidate as never);
       } catch (error) {
-        const { name, problem } = error as Error & { problem: unknown };
-        refused = { name, problem };
+        const { name: thrown, problem: found } = error as Error & { problem: unknown };
+        refused = { name: thrown, problem: found };
       }
       await frame();
       await frame();

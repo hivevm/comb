@@ -96,7 +96,7 @@ for (const name of ["false", "undefined", "a truthy value that is not true", "a 
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
     await loadedRow(page);
-    await page.evaluate((name) => {
+    await page.evaluate((returning) => {
       const asked: unknown[] = [];
       (window as unknown as { asked: unknown[] }).asked = asked;
       const results: Record<string, () => unknown> = {
@@ -107,7 +107,7 @@ for (const name of ["false", "undefined", "a truthy value that is not true", "a 
           throw new Error("host veto");
         },
       };
-      window.canDelete = (deletion) => (asked.push(deletion), results[name]!());
+      window.canDelete = (deletion) => (asked.push(deletion), results[returning]!());
     }, name);
     await selectNode(page, "a");
     await page.keyboard.press("Delete");
