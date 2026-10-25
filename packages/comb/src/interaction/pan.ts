@@ -7,12 +7,12 @@ import { panBy } from "../store/viewport";
 /** How far, in screen pixels, the pointer moves after a press on an edge before it pans. */
 const PAN_SLOP = 4;
 
-/** A pan pressed at the screen point `(x, y)` where `hit` names an edge, which it selects and
- *  waits for the slop, or nothing else, which clears the selection. */
-export function pan({ store }: Context, hit: Hit, x: number, y: number): Gesture {
+/** A pan pressed at the screen point `(pressX, pressY)` where `hit` names an edge, which it
+ *  selects and waits for the slop, or nothing else, which clears the selection. */
+export function pan({ store }: Context, hit: Hit, pressX: number, pressY: number): Gesture {
   const edge = hit.kind === "edge" ? store.getState().edges[hit.slot] : undefined;
   store.getState().select(edge ? { kind: "edge", id: edge.id } : null);
-  let [lastX, lastY, waiting] = [x, y, !!edge];
+  let [lastX, lastY, waiting] = [pressX, pressY, !!edge];
   return {
     grabs: false,
     move(x, y) {

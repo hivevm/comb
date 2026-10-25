@@ -67,37 +67,38 @@ function follow({ store, pointer }: Context, x: number, y: number): void {
   [pointer.x, pointer.y] = [to.x, to.y];
 }
 
-/** Ends the connection `connection`, and proposes its edge where it was released over a
+/** Ends the connection `ended`, and proposes its edge where it was released over a
  *  compatible connector. */
-function endConnection(store: GraphStore, connection: Connection | null, connect: Connect): void {
+function endConnection(store: GraphStore, ended: Connection | null, connect: Connect): void {
   store.getState().connect(null);
-  const target = connection?.target;
-  if (!connection || !target) return;
+  const target = ended?.target;
+  if (!ended || !target) return;
   const { nodes } = store.getState();
-  const [source, over] = [nodes[connection.source], nodes[target.slot]];
+  const [source, over] = [nodes[ended.source], nodes[target.slot]];
   if (!source || !over) return;
   connect({
     source: source.id,
-    sourceSide: connection.side,
+    sourceSide: ended.side,
     target: over.id,
     targetSide: target.side,
   });
 }
 
-/** A connection begun by a press on the connector `hit` names, at the screen point `(x, y)`, which
- *  a release proposes through `connect`; none where `hit` names no connector of a node held. */
+/** A connection begun by a press on the connector `hit` names, at the screen point
+ *  `(pressX, pressY)`, which a release proposes through `connect`; none where `hit` names no
+ *  connector of a node held. */
 export function connection(
   context: Context,
   hit: Hit,
-  x: number,
-  y: number,
+  pressX: number,
+  pressY: number,
   connect: Connect,
 ): Gesture | undefined {
   const { store, bridge } = context;
   const from = hit.kind === "connector" ? store.getState().nodes[hit.slot] : undefined;
   if (hit.kind !== "connector" || !from) return undefined;
   const { id } = from;
-  follow(context, x, y);
+  follow(context, pressX, pressY);
   store.getState().connect(connectionOver(store, bridge, hit.slot, hit.side, hit));
   return {
     grabs: false,

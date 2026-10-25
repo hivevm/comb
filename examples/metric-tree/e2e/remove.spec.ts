@@ -233,8 +233,8 @@ test("a node the host removes during a drag ends it: no error, and no move of th
   const result = await page.evaluate(async () => {
     await window.comb.whenRendered();
     const e = window.inspect().nodes.find(({ id }) => id === "e")!;
-    const told = (window as unknown as { told: { kind: string }[] }).told.map(({ kind }) => kind);
-    return { e: { x: e.x, y: e.y }, told };
+    const kinds = (window as unknown as { told: { kind: string }[] }).told.map(({ kind }) => kind);
+    return { e: { x: e.x, y: e.y }, told: kinds };
   });
   expect(result).toEqual({ e: { x: 300, y: 200 }, told: ["nodesRemoved", "nodeAdded"] });
   expect(errors).toEqual([]);

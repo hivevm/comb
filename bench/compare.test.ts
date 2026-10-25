@@ -42,8 +42,8 @@ function run(firstFrameMs: number, p95: number, copies = 3334, reference = REFER
 }
 
 /** The run without a reference, as one recorded before the reference existed. */
-function bare(run: Run): Run {
-  const copy = { ...run };
+function bare(full: Run): Run {
+  const copy = { ...full };
   delete copy.reference;
   return copy;
 }

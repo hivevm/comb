@@ -273,14 +273,14 @@ let dropped = 0;
 /** Adds a node of the palette's `kind`, centred on the world point under the drop at
  *  (`clientX`, `clientY`) of the page (G-1). */
 function drop(kind: string, clientX: number, clientY: number): void {
-  const title = PALETTE[kind];
-  if (!title) return;
+  const kindTitle = PALETTE[kind];
+  if (!kindTitle) return;
   const { x, y } = comb.worldPointAt(clientX, clientY);
   dropped += 1;
   try {
     comb.addNode({
       id: `${kind}-${dropped}`,
-      title,
+      title: kindTitle,
       x: x - NODE_WIDTH / 2,
       y: y - NODE_HEIGHT / 2,
       width: NODE_WIDTH,

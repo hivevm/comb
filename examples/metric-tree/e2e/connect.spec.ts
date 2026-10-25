@@ -102,13 +102,13 @@ for (const [side, at] of [
       return point && { x: point.x, y: point.y };
     }, side);
     const midway = await drag(page, at as [number, number], B_TOP);
-    const { edges, told } = await page.evaluate(async () => {
+    const { edges, told: changes } = await page.evaluate(async () => {
       await window.comb.whenRendered();
       const w = window as unknown as { told: { edge: { sourceSide: string } }[] };
       return { edges: window.inspect().edges, told: w.told };
     });
     // The press hit the connector of this side, which the engine records as the edge's.
-    expect(told.map(({ edge }) => edge.sourceSide)).toEqual([side]);
+    expect(changes.map(({ edge }) => edge.sourceSide)).toEqual([side]);
     // The connector the shell draws, and draws the connection from, is where the engine begins
     // the edge.
     const ends = edges.find(({ id }) => id === "e7");

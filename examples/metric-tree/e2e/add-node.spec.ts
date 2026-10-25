@@ -122,11 +122,11 @@ test("a load that clears the selection tells its change before the selection", a
   await loaded(page, { nodes: [node("a")], edges: [] });
   expect(await pressOn(page, "a")).toBe("a");
   const told = await page.evaluate((a) => {
-    const told: string[] = [];
-    window.comb.onSelectionChange((selection) => told.push(`selection ${String(selection)}`));
-    window.comb.onChange((change) => told.push(change.kind));
+    const heard: string[] = [];
+    window.comb.onSelectionChange((selection) => heard.push(`selection ${String(selection)}`));
+    window.comb.onChange((change) => heard.push(change.kind));
     window.comb.load({ nodes: [a], edges: [] });
-    return told;
+    return heard;
   }, node("a"));
   expect(told).toEqual(["loaded", "selection null"]);
 });
