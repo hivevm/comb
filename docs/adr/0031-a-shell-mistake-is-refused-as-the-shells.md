@@ -1,6 +1,6 @@
 # ADR-0031: A number the shell computes is refused as the shell's mistake, never as malformed graph data
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-25
 - **Deciders:** Markus Brigl
 - **Applies to:** the refusals of the exports `hit`, `moveLabel`, `query`, and `translate` of `crates/engine-wasm/`, their generated types in `packages/comb/src/bridge/`, and the callers of those exports in `packages/comb/src/interaction/` and `packages/comb/src/render/`
