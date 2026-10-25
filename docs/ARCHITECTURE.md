@@ -103,7 +103,8 @@ The functional core and its shell follow
   restyles and re-places one; `remove_nodes` frees the node slots and those of the edges at them,
   `remove_edges` edge slots, and both take the items out of the grids and the lists at the nodes; a
   free slot holds nothing, no query or hit returns it, a rebuild covers only the slots in use, and a
-  call that names one refuses it as a slot beyond the graph. Its query returns the slots a rectangle
+  call that names one refuses it as it refuses a slot beyond the graph, as a slot that holds
+  nothing (`SlotError`). Its query returns the slots a rectangle
   meets, node slots in ascending rank, and `hit_at` what a press at a point hits
   ([ADR-0025](adr/0025-the-engine-answers-every-hit-test.md)): the node drawn on top there, the one
   of the highest rank, else the edge in the highest slot within 4 screen pixels of its path as the
@@ -208,6 +209,8 @@ The functional core and its shell follow
   viewport, connectors only where `CombOptions.canConnect` is set, as `hitAt`, which the gestures'
   `Context` carries, for the press, the hover, and every move of a connection, and returns it, for
   the testing entry, beside the `pointer` of a connection and the function that detaches the input.
+  Where the viewport puts a screen point beyond any finite world point, `targetAt` answers nothing
+  without asking the engine, and a label drag skips a move to such a point.
 - **Render** (`packages/comb/src/render`) — the PixiJS scene (`scene.ts`), which imports nothing
   from interaction: a `world` render group with the layers `EdgesContainer` (`edges.ts`),
   `NodeParticles` (`particles.ts`), `NodesContainer` (`nodes.ts`), `LabelsContainer` (`labels.ts`),
