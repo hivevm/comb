@@ -4,7 +4,7 @@
 //! when every edge is meshed in full, draw each edge within a quarter pixel inside the
 //! rectangle, edges from (0, 0) to (-1e8, 3e7) among them, and split each segment that meets the
 //! rectangle where it leaves the rectangle grown by the stroke's width.
-// Verifies: Q-7, Q-4, ADR-0027
+// Verifies: Q-7, Q-4, ADR-0027, ADR-0024
 
 use super::tests::{Lcg, random_sides};
 use super::{EdgeSpec, Graph, Level, Visible};

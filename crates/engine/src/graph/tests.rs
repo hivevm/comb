@@ -417,7 +417,7 @@ fn random_edge(rng: &mut Lcg, drawn: &Drawn) -> EdgeSpec {
 
 #[test]
 fn queries_hits_and_lists_find_what_a_scan_finds_after_additions_removals_and_moves() {
-    // Verifies: ADR-0022
+    // Verifies: ADR-0022, G-4
     for seed in 1..=12 {
         let mut rng = Lcg(seed);
         let mut graph = random_graph(&mut rng, 60, 80);
