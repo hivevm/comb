@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([ADR-0001](adr/0001-agent-governance-model.md)).
 >
-> **Last design revision:** 2026-10-24, due after 20 changes. The revision that ran moves the
+> **Last design revision:** 2026-10-25, due after 20 changes. The revision that ran moves the
 > date; the number is this project's to set; a sensor counts the changes outside `docs/` since
 > the commit that set the date and says when the next is due
 > ([ADR-0006](adr/0006-feature-layer.md)).
@@ -92,8 +92,9 @@ The functional core and its shell follow
   modules under `graph/` follow its concepts: `slots`, the free slots of a kind, one type kept once
   for nodes and once for edges; `nodes` and `edges`, the edits of each; `index`, the grids and the
   one function that holds the rule that builds them again, called after every addition and move, a
-  removal building nothing; `hit`, `labels`, and `query`; each with its tests, and `tests` with the
-  graphs they build and the property tests of the whole graph against a scan. `add_node` takes the
+  removal building nothing; `hit`, `labels`, and `query`; each with its tests, `tests` with the
+  graphs they build and the property tests of the whole graph against a scan, and `budget`, the
+  property test of the mesh budget. `add_node` takes the
   free slot freed last, or a new one after the highest, and the next rank, and puts the node into
   the grid in place; a load ranks node `i` as `i`; `add_edge` takes the edge slot freed last, or a
   new one, and puts the edge into the lists of its ends and the grid in place, and `update_edge`
@@ -132,20 +133,21 @@ The functional core and its shell follow
   edge's colour, dash, arrowhead, label, and sides as a load checks those fields and restyles and
   re-places the edge, `edgesAt` names the edges at given nodes without removing anything,
   `removeNodes` removes nodes and the edges at them and returns those edges' slots, `removeEdges`
-  removes edges, `translate` moves nodes, each as far as keeps it within the world's limit, and a
-  label dragged beyond it stops there too, so that every point the engine derives stays within
-  `f32`, `query` takes a rectangle, a level of detail, the size of a screen pixel, at most 2^114
-  world units for a stroke, and how far an edge label's pill reaches from its point, and writes the
-  found node slots, the edge-label slots and points (at the near level only), the found edge slots,
-  and the edge mesh into buffers the engine owns, the label points and the mesh's positions relative
-  to the query's origin, which `originX` and `originY` read
+  removes edges, `translate` moves nodes, each as far as keeps it within the world's limit, so that
+  every point the engine derives stays within `f32`, `query` takes a rectangle, a level of detail,
+  the size of a screen pixel, at most 2^114 world units for a stroke, and how far an edge label's
+  pill reaches from its point, and writes the found node slots, the edge-label slots and points (at
+  the near level only), the found edge slots, and the edge mesh into buffers the engine owns, the
+  label points and the mesh's positions relative to the query's origin, which `originX` and
+  `originY` read
   ([ADR-0010](adr/0010-bridge-data-format.md)), and returns the mesh's detail, complete or
   coarsened, and refuses a pixel that is not a finite number above zero as malformed; `drawnEdges`
   computes the ends of the found edges when inspection asks, as they lie then, and `hit` names what
   a press at a point hits, a connector where the shell asks for connectors, a label, a node, or an
   edge by its slot, or nothing, as one generated value, and refuses a pixel as `query` does;
   `setLabelSize` takes the measure of a label's pill, `labelPoint` names where a label lies, and
-  `moveLabel` places a dragged label and returns its path parameter and offset; it generates the
+  `moveLabel` places a dragged label, one dragged beyond the world's limit stopping there, and
+  returns its path parameter and offset; it generates the
   type of every problem of graph data the methods of `Comb` throw, `GraphDataProblem`, which `comb`
   exports, and keeps the refusals of the shell's mistakes in types of their own: `TranslateError` of
   `translate`, and `SlotError` of a slot that holds nothing, which the removals, `edgesAt`,
@@ -198,7 +200,8 @@ The functional core and its shell follow
   and edges take no events.
   `targetAt` of `gesture.ts` is the one hit test: `attachInteraction` asks it from the store's
   viewport, connectors only where `CombOptions.canConnect` is set, for the press and the hover, and
-  returns it as `hitAt`, with the function that detaches the input, for the testing entry.
+  returns it as `hitAt`, for the testing entry, beside the `pointer` of a connection and the
+  function that detaches the input.
 - **Render** (`packages/comb/src/render`) — the PixiJS scene (`scene.ts`), which imports nothing
   from interaction: a `world` render group with the layers `EdgesContainer` (`edges.ts`),
   `NodeParticles` (`particles.ts`), `NodesContainer` (`nodes.ts`), `LabelsContainer` (`labels.ts`),
@@ -257,8 +260,9 @@ The functional core and its shell follow
   margin, the label reach, the rescale); `work` counts what the canvas did: GPU buffers created and
   allocated, bytes uploaded, those of the edge mesh among them, and texture uploads, counted at the
   WebGL context from its first call, resizes of the edge mesh's buffers, and views the pools made,
-  and refuses where the canvas draws without WebGL; `edgeVertices` gives the screen point of every
-  vertex of the edge mesh as its shader computes it in `f32`; for tests, the benchmark, and tooling.
+  and refuses with an `UncountedRendererError` where the canvas draws without WebGL;
+  `edgeVertices` gives the screen point of every vertex of the edge mesh as its shader computes it
+  in `f32`; for tests, the benchmark, and tooling.
   Its shape follows the scene and is outside the stable interface of `comb`.
 - **Example** (`examples/metric-tree`) — a host application with a metric tree and an HTML sidebar
   (G-9) that edits the selected node's title or the selected edge's colour, dash, arrowhead, and
@@ -398,8 +402,8 @@ the render layer reaches the store instead of the action-free `GraphView`, or wh
 imports past the library's entries and its engine file (ADR-0028, ADR-0019), and when the render
 layer names PixiJS's `Text`, `HTMLText`, or `SplitText` or the edges layer a `Graphics` (ADR-0027),
 and when its Canvas 2D fallback names `Graphics` outside its imports and its one field (ADR-0018);
-it also holds one boundary of this overview that no ADR decides, failing a render file that
-imports from interaction by a relative path.
+it also fails a render file that imports from interaction by a relative path, a boundary no ADR
+decides, which the check holds as its own rule and this overview describes.
 `scripts/check-overview.sh` fails, naming each, where this overview holds no code span of its own
 for a method or property of the `Comb` interface, an option of `CombOptions`, or a function or
 constant `comb/testing` exports (ADR-0001), and where it reads no names from one of those sources.
