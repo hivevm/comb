@@ -18,6 +18,10 @@ impl Graph {
     /// move: where the slots in use of a kind pass twice the count it was built for, or more than an
     /// eighth of them, and at least 16, lie beyond its extent.
     pub(super) fn keep_index(&mut self) {
+        #[cfg(test)]
+        {
+            self.rule_asked += 1;
+        }
         let (nodes, edges) = (self.nodes_in_use(), self.edges_in_use());
         if nodes > self.indexed_nodes.saturating_mul(2)
             || edges > self.indexed_edges.saturating_mul(2)
@@ -178,7 +182,7 @@ mod tests {
     }
 
     #[test]
-    fn a_node_and_an_edge_removed_and_a_node_added_within_the_extent_of_50_000_build_nothing() {
+    fn a_node_and_an_edge_removed_and_added_within_the_extent_of_50_000_build_nothing() {
         // Verifies: ADR-0022
         let mut graph = plane(50_000);
         let edges = (0..1_000)
@@ -194,10 +198,21 @@ mod tests {
         let sizes = graph.sizes.clone();
         graph = Graph::new(positions, sizes, edges).unwrap();
         assert_eq!(graph.builds, 1);
-        // Node 500 lies at (0, 200), between edges 499 and 500.
+        // Node 500 lies at (0, 200), between edges 499 and 500. A removal asks the rule nothing.
+        let asked = graph.rule_asked;
         assert_eq!(graph.remove_nodes(&[500]), Ok(vec![499, 500]));
         graph.remove_edges(&[5]).unwrap();
+        assert_eq!(graph.rule_asked, asked);
         assert_eq!(graph.add_node(20.0, 220.0, 50.0, 50.0), Ok(500));
+        let edge = EdgeSpec {
+            sides: Sides::default(),
+            source: 499,
+            target: 500,
+            label: None,
+            style: EdgeStyle::unstyled(),
+        };
+        assert_eq!(graph.add_edge(edge), Ok(5));
+        assert_eq!(graph.rule_asked, asked + 2);
         assert_eq!(graph.builds, 1);
         assert_eq!(graph.node_at(Point::new(35.0, 235.0)), Some(500));
     }

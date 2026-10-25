@@ -165,6 +165,9 @@ pub struct Graph {
     /// How often the index was built, for the tests that count rebuilds.
     #[cfg(test)]
     builds: u32,
+    /// How often the rule that builds the index again was asked, for the tests that count it.
+    #[cfg(test)]
+    rule_asked: u32,
     /// How often an edge was placed, for the tests that count placements.
     #[cfg(test)]
     placements: std::cell::Cell<u32>,
