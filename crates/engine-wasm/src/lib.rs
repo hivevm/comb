@@ -19,8 +19,9 @@ mod graph_data;
 
 use comb_engine::geometry::Point;
 use comb_engine::geometry::Rect;
-use comb_engine::graph::{Graph, Level, SlotError as GraphSlotError, Target, Visible};
-use comb_engine::positions::PositionError;
+use comb_engine::graph::{
+    Graph, Level, MoveError, PositionError, SlotError as GraphSlotError, Target, Visible,
+};
 use comb_engine::stroke::Detail;
 use serde::{Deserialize, Serialize};
 use tsify::{Ts, Tsify};
@@ -36,16 +37,22 @@ use graph_data::{
     reading, slot, unshaped, update_edge_in,
 };
 
-/// Why the engine refused a move of nodes: the shell's own mistake, never one of graph data, so
-/// that a host application never meets it.
+/// Why the engine refused the delta of a move of nodes: the shell's own mistake, never one of
+/// graph data, so that a host application never meets it. A slot that holds no node is refused
+/// with a `SlotError`, as every export that takes slots refuses one.
 #[derive(Tsify, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum TranslateError {
-    /// A slot beyond the loaded nodes.
-    #[serde(rename_all = "camelCase")]
-    SlotOutOfRange { slot: u32 },
     /// A delta that is NaN or infinite.
     NonFiniteDelta,
+}
+
+/// Why `translate` was refused, as the shell receives it: a slot that holds no node, crossing as
+/// `SlotError`, or a delta that is not finite, crossing as `TranslateError`.
+#[derive(Debug, PartialEq)]
+pub enum TranslateRefusal {
+    Slot(SlotError),
+    Delta(TranslateError),
 }
 
 /// Why the engine refused a call that names slots: a slot that holds no node or no edge, beyond
@@ -71,11 +78,13 @@ impl From<GraphSlotError> for SlotError {
     }
 }
 
-impl From<PositionError> for TranslateError {
-    fn from(error: PositionError) -> Self {
+impl From<MoveError> for TranslateRefusal {
+    fn from(error: MoveError) -> Self {
         match error {
-            PositionError::SlotOutOfRange { slot } => Self::SlotOutOfRange { slot },
-            PositionError::NonFinite => Self::NonFiniteDelta,
+            MoveError::Slot(error) => Self::Slot(error.into()),
+            MoveError::Position(PositionError::NonFinite) => {
+                Self::Delta(TranslateError::NonFiniteDelta)
+            }
         }
     }
 }
@@ -97,9 +106,12 @@ impl From<GraphDataProblem> for JsValue {
     }
 }
 
-impl From<TranslateError> for JsValue {
-    fn from(error: TranslateError) -> Self {
-        thrown(error)
+impl From<TranslateRefusal> for JsValue {
+    fn from(refusal: TranslateRefusal) -> Self {
+        match refusal {
+            TranslateRefusal::Slot(error) => thrown(error),
+            TranslateRefusal::Delta(error) => thrown(error),
+        }
     }
 }
 
@@ -407,12 +419,14 @@ impl Engine {
         Ok(self.graph.remove_edges(slots)?)
     }
 
-    /// Moves the nodes in `slots` by `(dx, dy)`, their edges with them.
-    pub fn translate(&mut self, slots: &[u32], dx: f32, dy: f32) -> Result<(), TranslateError> {
+    /// Moves the nodes in `slots` by `(dx, dy)`, their edges with them. A slot that holds no node
+    /// throws a `SlotError`, and a delta that is not finite a `TranslateError`; either way nothing
+    /// moves.
+    pub fn translate(&mut self, slots: &[u32], dx: f32, dy: f32) -> Result<(), TranslateRefusal> {
         trap::spring();
         self.graph
             .translate(slots, dx, dy)
-            .map_err(TranslateError::from)
+            .map_err(TranslateRefusal::from)
     }
 
     /// Finds the nodes and edges that meet the rectangle and builds the mesh of the edges for
@@ -671,7 +685,7 @@ mod tests {
             );
             assert_eq!(
                 engine.translate(&[0, slot], 1.0, 1.0),
-                Err(TranslateError::SlotOutOfRange { slot })
+                Err(TranslateRefusal::Slot(SlotError::NoNode { slot }))
             );
         }
         for slot in [1, 9] {
@@ -682,6 +696,25 @@ mod tests {
         }
         assert_eq!(engine.graph.positions()[..4], [0.0, 0.0, 300.0, 0.0]);
         assert_eq!(engine.remove_edges(&[0]), Ok(()));
+    }
+
+    #[test]
+    fn a_move_by_a_delta_that_is_not_finite_is_refused_after_its_slots_and_nothing_moves() {
+        // Decides no ADR clause and no criterion: a delta is the shell's own mistake, which
+        // crosses as `TranslateError`, never as a problem of graph data.
+        let mut engine = Engine::new();
+        engine.graph = graph_of(&batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[])).unwrap();
+        for (dx, dy) in [(f32::NAN, 1.0), (1.0, f32::INFINITY)] {
+            assert_eq!(
+                engine.translate(&[0, 1], dx, dy),
+                Err(TranslateRefusal::Delta(TranslateError::NonFiniteDelta))
+            );
+            assert_eq!(
+                engine.translate(&[0, 7], dx, dy),
+                Err(TranslateRefusal::Slot(SlotError::NoNode { slot: 7 }))
+            );
+        }
+        assert_eq!(engine.graph.positions(), [0.0, 0.0, 300.0, 0.0]);
     }
 
     #[test]

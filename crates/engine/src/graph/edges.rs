@@ -18,6 +18,15 @@ impl Graph {
         self.edge_slots.holds(slot)
     }
 
+    /// Refuses `slots` where one holds no edge, beyond the slots or free, naming the first: the
+    /// one check of the edge slots a call names (ADR-0022).
+    pub(super) fn edges_held(&self, slots: &[u32]) -> Result<(), SlotError> {
+        match slots.iter().find(|&&s| !self.holds_edge(s)) {
+            Some(&slot) => Err(SlotError::NoEdge { slot }),
+            None => Ok(()),
+        }
+    }
+
     /// The node slots at the ends of the edge in `slot`, each once.
     pub(super) fn ends(&self, slot: u32) -> impl Iterator<Item = u32> {
         let edge = self.edges[slot as usize];
@@ -39,9 +48,7 @@ impl Graph {
     /// removal of those nodes would take along, named before anything is removed (ADR-0022). A
     /// slot that holds no node refuses the call.
     pub fn edges_at(&self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
-        if let Some(&slot) = slots.iter().find(|&&s| !self.holds_node(s)) {
-            return Err(SlotError::NoNode { slot });
-        }
+        self.nodes_held(slots)?;
         let mut edges: Vec<u32> = slots
             .iter()
             .flat_map(|&s| self.incident[s as usize].iter().copied())
@@ -57,12 +64,7 @@ impl Graph {
     /// edge, and a slot past those a `u32` numbers refuses it as it refuses a node; either way,
     /// nothing changes.
     pub fn add_edge(&mut self, spec: EdgeSpec) -> Result<u32, AddEdgeError> {
-        if let Some(slot) = [spec.source, spec.target]
-            .into_iter()
-            .find(|&s| !self.holds_node(s))
-        {
-            return Err(SlotError::NoNode { slot }.into());
-        }
+        self.nodes_held(&[spec.source, spec.target])?;
         let slot = self.edge_slots.take()?;
         let i = slot as usize;
         put(&mut self.edges, i, spec);
@@ -90,9 +92,7 @@ impl Graph {
         style: EdgeStyle,
         sides: Sides,
     ) -> Result<(), SlotError> {
-        if !self.holds_edge(slot) {
-            return Err(SlotError::NoEdge { slot });
-        }
+        self.edges_held(&[slot])?;
         let spec = &mut self.edges[slot as usize];
         spec.label = label;
         spec.style = style;
@@ -106,9 +106,7 @@ impl Graph {
     /// last, and they leave the index and the lists of edges at their ends (ADR-0022). A slot that
     /// holds no edge refuses the call, which then changes nothing.
     pub fn remove_edges(&mut self, slots: &[u32]) -> Result<(), SlotError> {
-        if let Some(&slot) = slots.iter().find(|&&s| !self.holds_edge(s)) {
-            return Err(SlotError::NoEdge { slot });
-        }
+        self.edges_held(slots)?;
         // A removal builds nothing: the index is built again after growth and moves (ADR-0022).
         self.free_edges_at(slots);
         Ok(())
@@ -162,7 +160,8 @@ impl Graph {
 
     /// Writes into `out`, after clearing it, the ends of the edges in `slots` as they lie now:
     /// per edge the point it leaves its source and the point it enters its target, `x, y` each,
-    /// and NaN for a slot beyond the loaded edges, so that the pairs stay in step with `slots`.
+    /// and NaN for a slot that holds no edge, beyond the slots or free, so that the pairs stay in
+    /// step with `slots`.
     #[expect(
         clippy::cast_possible_truncation,
         reason = "an end is the middle of a side of a node, whose position and size the engine \
@@ -192,7 +191,7 @@ impl Graph {
 
 #[cfg(test)]
 mod tests {
-    use super::super::GraphError;
+    use super::super::TooManySlots;
     use super::super::tests::{Lcg, paired, random_graph};
     use super::*;
 
@@ -282,15 +281,12 @@ mod tests {
         };
         let mut graph = paired(4);
         graph.node_slots.set_count(u32::MAX);
-        assert_eq!(
-            graph.add_node(0.0, 0.0, 5.0, 5.0),
-            Err(GraphError::TooManySlots)
-        );
+        assert_eq!(graph.add_node(0.0, 0.0, 5.0, 5.0), Err(TooManySlots));
         let mut graph = paired(4);
         graph.edge_slots.set_count(u32::MAX);
         assert_eq!(
             graph.add_edge(spec),
-            Err(AddEdgeError::Graph(GraphError::TooManySlots))
+            Err(AddEdgeError::TooManySlots(TooManySlots))
         );
         assert_eq!((graph.edges.len(), graph.paths.len()), (4, 4));
         assert_eq!(

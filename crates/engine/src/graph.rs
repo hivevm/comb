@@ -28,6 +28,7 @@ mod budget;
 mod tests;
 
 pub use hit::Target;
+pub use nodes::PositionError;
 /// The origin of a query, which the tests of `stroke` take theirs from.
 #[cfg(test)]
 pub(crate) use query::origin_of;
@@ -64,6 +65,17 @@ pub enum GraphError {
     TooManySlots,
 }
 
+/// More nodes or edges than slots numbered in a `u32`: the one refusal of a count, of an addition,
+/// and of a slot taken.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TooManySlots;
+
+impl From<TooManySlots> for GraphError {
+    fn from(_: TooManySlots) -> Self {
+        Self::TooManySlots
+    }
+}
+
 /// Why a call that names slots was refused: a slot beyond the slots, or free (ADR-0022).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SlotError {
@@ -78,7 +90,26 @@ pub enum SlotError {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AddEdgeError {
     Slot(SlotError),
-    Graph(GraphError),
+    TooManySlots(TooManySlots),
+}
+
+/// Why a move of nodes was refused: a slot that holds no node, or a delta that is not finite.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MoveError {
+    Slot(SlotError),
+    Position(PositionError),
+}
+
+impl From<SlotError> for MoveError {
+    fn from(error: SlotError) -> Self {
+        Self::Slot(error)
+    }
+}
+
+impl From<PositionError> for MoveError {
+    fn from(error: PositionError) -> Self {
+        Self::Position(error)
+    }
 }
 
 impl From<SlotError> for AddEdgeError {
@@ -87,16 +118,16 @@ impl From<SlotError> for AddEdgeError {
     }
 }
 
-impl From<GraphError> for AddEdgeError {
-    fn from(error: GraphError) -> Self {
-        Self::Graph(error)
+impl From<TooManySlots> for AddEdgeError {
+    fn from(error: TooManySlots) -> Self {
+        Self::TooManySlots(error)
     }
 }
 
 /// The slot of the node or edge at `index`, or the count of `index` of them, refused where it
 /// lies beyond `u32`: the one conversion of a count to slots, for the engine and the bridge alike.
-pub fn slot(index: usize) -> Result<u32, GraphError> {
-    u32::try_from(index).map_err(|_| GraphError::TooManySlots)
+pub fn slot(index: usize) -> Result<u32, TooManySlots> {
+    u32::try_from(index).map_err(|_| TooManySlots)
 }
 
 /// The loaded graph and its spatial index.

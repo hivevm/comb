@@ -170,8 +170,9 @@ export interface Bridge {
   edgesAt(slots: Uint32Array): Uint32Array;
   /** Removes the edges in `slots`. Throws a `SlotError`, the graph as it was. */
   removeEdges(slots: Uint32Array): void;
-  /** Moves the nodes in `slots`, their edges with them. Throws a `TranslateError`, a mistake of
-   *  the shell's, never one of graph data. */
+  /** Moves the nodes in `slots`, their edges with them. Throws a `SlotError` for a slot that
+   *  holds no node and a `TranslateError` for a delta that is not finite, mistakes of the shell's,
+   *  never of graph data. */
   translate(slots: Uint32Array, dx: number, dy: number): void;
   /** A fresh view on the positions buffer, `x, y` per slot. Do not keep it across calls. */
   positions(): Float32Array;

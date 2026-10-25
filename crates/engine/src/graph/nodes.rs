@@ -3,9 +3,15 @@
 //! the nodes along; and a move, which takes them along too (ADR-0022).
 
 use super::slots::put;
-use super::{Graph, GraphError, SlotError};
+use super::{Graph, MoveError, SlotError, TooManySlots};
 use crate::geometry::{Rect, WORLD_LIMIT};
-use crate::positions::{self, PositionError};
+
+/// Why the positions refused a move: a delta that is NaN or infinite.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PositionError {
+    /// A delta that is NaN or infinite.
+    NonFinite,
+}
 
 impl Graph {
     /// How many node slots hold a node.
@@ -18,11 +24,26 @@ impl Graph {
         self.node_slots.holds(slot)
     }
 
+    /// Refuses `slots` where one holds no node, beyond the slots or free, naming the first: the
+    /// one check of the node slots a call names (ADR-0022).
+    pub(super) fn nodes_held(&self, slots: &[u32]) -> Result<(), SlotError> {
+        match slots.iter().find(|&&s| !self.holds_node(s)) {
+            Some(&slot) => Err(SlotError::NoNode { slot }),
+            None => Ok(()),
+        }
+    }
+
     /// Adds the node at `(x, y)` of size `(width, height)` and returns its slot: the free slot
     /// freed last, or a new one after the highest. It takes the next rank, so that it is drawn and
     /// hit above every other node, and goes into the index in place, which the rule of ADR-0022
     /// then builds again where it asks for it.
-    pub fn add_node(&mut self, x: f32, y: f32, width: f32, height: f32) -> Result<u32, GraphError> {
+    pub fn add_node(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+    ) -> Result<u32, TooManySlots> {
         let rank = self.take_rank();
         let slot = self.node_slots.take()?;
         let i = slot as usize;
@@ -89,14 +110,11 @@ impl Graph {
     /// Moves the nodes in `slots` by `(dx, dy)` and their edges with them. A refused move changes
     /// nothing. Once more than an eighth of the nodes or edges, and at least 16, reach beyond the
     /// extent the index was built for, the index is built again over the current extent.
-    pub fn translate(&mut self, slots: &[u32], dx: f32, dy: f32) -> Result<(), PositionError> {
-        // A free slot is refused as a slot beyond the graph (ADR-0022).
-        if let Some(&slot) = slots.iter().find(|&&s| !self.holds_node(s)) {
-            return Err(PositionError::SlotOutOfRange { slot });
-        }
+    pub fn translate(&mut self, slots: &[u32], dx: f32, dy: f32) -> Result<(), MoveError> {
+        self.nodes_held(slots)?;
         // Each node stops where it meets the world's limit, so that nothing derived from it turns
         // infinite.
-        positions::translate(
+        translate_positions(
             &mut self.positions,
             &self.sizes,
             slots,
@@ -119,6 +137,37 @@ impl Graph {
         self.keep_index();
         Ok(())
     }
+}
+
+/// Moves the nodes in `slots`, slots that hold a node, by `(dx, dy)` within `positions`, `x, y`
+/// per node slot (ADR-0010), each as far as keeps it, of the size `sizes` holds for it, within
+/// `limit` of the origin on each axis, as `f32` rounds it. Nothing is written unless the delta is
+/// finite, so a refused move leaves the buffer as it was.
+fn translate_positions(
+    positions: &mut [f32],
+    sizes: &[f32],
+    slots: &[u32],
+    [dx, dy]: [f32; 2],
+    limit: f64,
+) -> Result<(), PositionError> {
+    if !dx.is_finite() || !dy.is_finite() {
+        return Err(PositionError::NonFinite);
+    }
+    for &slot in slots {
+        let i = slot as usize * 2;
+        for (axis, delta) in [(i, dx), (i + 1, dy)] {
+            // In `f64`, so that a move past `f32` is cut rather than turned infinite.
+            let moved = f64::from(positions[axis]) + f64::from(delta);
+            let size = f64::from(sizes[axis]);
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "cut to within `limit`, far within f32, before it is rounded"
+            )]
+            let cut = moved.clamp(-limit, (limit - size).max(-limit)) as f32;
+            positions[axis] = cut;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -289,5 +338,43 @@ mod tests {
         assert_eq!(graph.add_node(0.0, 0.0, 50.0, 50.0), Ok(4));
         assert_eq!(graph.ranks[4], 4);
         assert_eq!(graph.node_at(Point::new(5.0, 5.0)), Some(4));
+    }
+
+    #[test]
+    fn translate_moves_only_the_given_slots() {
+        let mut positions = [0.0, 0.0, 10.0, 10.0, 20.0, 20.0];
+        translate_positions(&mut positions, &[0.0; 6], &[0, 2], [5.0, -5.0], 1e9).unwrap();
+        assert_eq!(positions, [5.0, -5.0, 10.0, 10.0, 25.0, 15.0]);
+    }
+
+    #[test]
+    fn a_non_finite_delta_is_refused() {
+        let mut positions = [0.0, 0.0];
+        assert_eq!(
+            translate_positions(&mut positions, &[0.0; 2], &[0], [f32::NAN, 0.0], 1e9),
+            Err(PositionError::NonFinite)
+        );
+        assert_eq!(
+            translate_positions(&mut positions, &[0.0; 2], &[0], [0.0, f32::INFINITY], 1e9),
+            Err(PositionError::NonFinite)
+        );
+        assert_eq!(positions, [0.0, 0.0]);
+    }
+
+    #[test]
+    fn a_move_past_the_limit_stops_where_the_node_meets_it() {
+        // A node of 20 × 10 at (90, -90) moved by 1e30 either way, within 100 of the origin.
+        let mut positions = [90.0, -90.0];
+        translate_positions(&mut positions, &[20.0, 10.0], &[0], [1e30, -1e30], 100.0).unwrap();
+        assert_eq!(positions, [80.0, -100.0]);
+        translate_positions(
+            &mut positions,
+            &[20.0, 10.0],
+            &[0],
+            [f32::MAX, f32::MAX],
+            100.0,
+        )
+        .unwrap();
+        assert_eq!(positions, [80.0, 90.0]);
     }
 }

@@ -82,17 +82,18 @@ The functional core and its shell follow
   from the connector of a side of one node, the middle of its `top`, `right`, `bottom`, or `left`,
   to that of a side of another, their control points pulled out along each side's outward normal
   ([ADR-0024](adr/0024-one-connector-per-side.md)), their exact bounds, the point and normal at a
-  path parameter, and edge-label placement; `positions` the positions buffer and its moves. `graph`
-  keeps the loaded graph, node positions and sizes per slot and edges per slot, a rank per node
-  slot, a list of the edges at each node slot, a list each of free node and edge slots, and a
-  spatial index (`spatial`, a uniform grid each for nodes and edges, with an overflow list for items
-  that cover many cells) that loads, additions, and moves keep current and that is built again once
-  many items have moved or been added beyond its extent, or the nodes or the edges in use pass twice
-  the count it was built for ([ADR-0022](adr/0022-the-engine-edits-its-graph-in-place.md)). Its
-  modules under `graph/` follow its concepts: `slots`, the free slots of a kind, one type kept once
-  for nodes and once for edges; `nodes` and `edges`, the edits of each; `index`, the grids and the
-  one function that holds the rule that builds them again, called after every addition and move, a
-  removal building nothing; `hit`, `labels`, and `query`; each with its tests, `tests` with the
+  path parameter, and edge-label placement. `graph` keeps the loaded graph, node positions and
+  sizes per slot and edges per slot, a rank per node slot, a list of the edges at each node slot, a
+  list each of free node and edge slots, and a spatial index (`spatial`, a uniform grid each for
+  nodes and edges, with an overflow list for items that cover many cells) that loads, additions,
+  and moves keep current and that is built again once many items have moved or been added beyond
+  its extent, or the nodes or the edges in use pass twice the count it was built for
+  ([ADR-0022](adr/0022-the-engine-edits-its-graph-in-place.md)). Its modules under `graph/` follow
+  its concepts: `slots`, the free slots of a kind, one type kept once for nodes and once for edges;
+  `nodes` and `edges`, the edits of each, each with the one check that the slots a call names hold
+  one, and `nodes` with the moves of the positions buffer; `index`, the grids and the one function
+  that holds the rule that builds them again, called after every addition and move, a removal
+  building nothing; `hit`, `labels`, and `query`; each with its tests, `tests` with the
   graphs they build and the property tests of the whole graph against a scan, and `budget`, the
   property test of the mesh budget. `add_node` takes the
   free slot freed last, or a new one after the highest, and the next rank, and puts the node into
@@ -150,9 +151,10 @@ The functional core and its shell follow
   `moveLabel` places a dragged label, one dragged beyond the world's limit stopping there, refuses
   a point that is not finite as `hit` does, and returns its path parameter and offset; it generates
   the type of every problem of graph data the methods of `Comb` throw, `GraphDataProblem`, which
-  `comb` exports, and keeps the refusals of the shell's mistakes in types of their own:
-  `TranslateError` of `translate`, and `SlotError` of a slot that holds nothing, which the removals,
-  `edgesAt`, `setLabelSize`, `moveLabel`, `addEdge`, and `updateEdge` throw. It checks the screen
+  `comb` exports, and keeps the refusals of the shell's mistakes in types of their own: `SlotError`
+  of a slot that holds nothing, which `translate`, the removals, `edgesAt`, `setLabelSize`,
+  `moveLabel`, `addEdge`, and `updateEdge` throw alike, and `TranslateError` of a delta of
+  `translate` that is not finite. It checks the screen
   pixel of a query and of a hit test in one function, and the point of a hit test and of a label's
   move in another; the core bounds a pixel beyond any zoom for both, in one function. Its crate
   root holds the exports and their conversions; its module `graph_data` reads and checks graph
