@@ -42,8 +42,9 @@ statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), th
 Inside the Dev Container, which provides Bun, Rust, wasm-pack, and Chromium
 ([ADR-0008](docs/adr/0008-toolchain.md), [ADR-0014](docs/adr/0014-dev-container-toolchain.md)).
 [`scripts/check-code.sh`](scripts/check-code.sh) runs, in order, the structural check of
-[ADR-0028](docs/adr/0028-the-graph-lies-within-a-world.md) and the dependency check,
-each after its self-test, and the self-test of the engine check; then the first three below,
+[ADR-0028](docs/adr/0028-the-graph-lies-within-a-world.md), the dependency check, and the
+overview check of [ADR-0001](docs/adr/0001-agent-governance-model.md), each after its self-test,
+and the self-test of the engine check; then the first three below,
 build, lint, and test; then the bundle budget of Q-3 after its self-test (`bun run build:lib`, at
 most 300 kB gzipped without PixiJS).
 
