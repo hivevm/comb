@@ -82,11 +82,13 @@ test("after a trap in load, every call that needs the engine throws an EngineLos
       setViewport: outcome(() => comb.setViewport({ x: 0, y: 0, scale: 1 })),
     };
     let created = "ok";
+    const host = window.secondHost();
     try {
-      await window.createComb(window.secondHost(), { engine: fetch(window.engineUrl) });
+      await window.createComb(host, { engine: fetch(window.engineUrl) });
     } catch (error) {
       created = (error as Error).name;
     }
+    const hostChildren = host.childElementCount;
     await comb.whenRendered();
     window.viewportBefore = comb.viewport();
     const kept = {
@@ -95,7 +97,7 @@ test("after a trap in load, every call that needs the engine throws an EngineLos
       onSelectionChange: outcome(() => comb.onSelectionChange(() => {})()),
       unsubscribe: outcome(selection),
     };
-    return { trap, later, created, kept };
+    return { trap, later, created, hostChildren, kept };
   });
   // Input over the lost canvas changes nothing and throws nothing.
   await page.mouse.move(300, 300);
@@ -113,30 +115,10 @@ test("after a trap in load, every call that needs the engine throws an EngineLos
     trap: LOST,
     later: Object.fromEntries(NEEDS_THE_ENGINE.map((call) => [call, LOST])),
     created: LOST,
+    hostChildren: 0,
     kept: { viewport: "ok", worldPointAt: "ok", onSelectionChange: "ok", unsubscribe: "ok" },
   });
   expect(destroyed).toEqual({ moved: false, outcome: "ok", canvases: 0 });
-  expect(errors).toEqual([]);
-});
-
-test("a createComb called once the engine is lost is refused before it touches its host element", async ({
-  page,
-}) => {
-  // Verifies: ADR-0021
-  const errors = await openWithErrors(page);
-  const result = await page.evaluate(async () => {
-    window.trapNextCall();
-    window.outcome(() => window.comb.load({ nodes: [], edges: [] }));
-    const host = window.secondHost();
-    let created = "ok";
-    try {
-      await window.createComb(host, { engine: fetch(window.engineUrl) });
-    } catch (error) {
-      created = (error as Error).name;
-    }
-    return { created, children: host.childElementCount };
-  });
-  expect(result).toEqual({ created: LOST, children: 0 });
   expect(errors).toEqual([]);
 });
 
@@ -153,27 +135,41 @@ test("a createComb whose engine is lost while PixiJS initialises resolves, or le
     // canvas made: this depends on PixiJS making a canvas inside app.init.
     const createElement = document.createElement.bind(document);
     let sprung = false;
-    document.createElement = ((name: string, options?: ElementCreationOptions) => {
-      if (name === "canvas" && !sprung) {
-        sprung = true;
-        window.trapNextCall();
-        outcome(() => comb.load({ nodes: [], edges: [] }));
-      }
-      return createElement(name, options);
-    }) as typeof document.createElement;
-    const host = window.secondHost();
     let created = "resolved";
+    let host: HTMLElement | undefined;
+    let canvasInHost = false;
+    let refused = "not called";
     try {
-      await window.createComb(host, { engine: fetch(window.engineUrl) });
+      document.createElement = ((name: string, options?: ElementCreationOptions) => {
+        if (name === "canvas" && !sprung) {
+          sprung = true;
+          window.trapNextCall();
+          outcome(() => comb.load({ nodes: [], edges: [] }));
+        }
+        return createElement(name, options);
+      }) as typeof document.createElement;
+      host = window.secondHost();
+      const second = await window.createComb(host, { engine: fetch(window.engineUrl) });
+      canvasInHost =
+        host.childElementCount === 1 && host.firstElementChild instanceof HTMLCanvasElement;
+      refused = outcome(() => second.load({ nodes: [], edges: [] }));
+      second.destroy();
     } catch (error) {
-      created = `${(error as Error).name} leaving ${host.childElementCount} children`;
+      created = `${(error as Error).name} leaving ${host?.childElementCount} children`;
     } finally {
       document.createElement = createElement;
     }
-    return { sprung, lost: outcome(() => comb.load({ nodes: [], edges: [] })), created };
+    return { sprung, created, canvasInHost, refused };
   });
-  expect(result).toMatchObject({ sprung: true, lost: LOST });
-  expect(["resolved", `${LOST} leaving 0 children`]).toContain(result.created);
+  // The limits are read as the engine is created, before PixiJS initialises, so a loss there lets
+  // createComb resolve: that is the order the test guards. A rejection would mean the trap sprang
+  // before the limits were read, where it decides nothing, so the test pins "resolved".
+  expect(result).toEqual({
+    sprung: true,
+    created: "resolved",
+    canvasInHost: true,
+    refused: LOST,
+  });
   expect(errors).toEqual([]);
 });
 
