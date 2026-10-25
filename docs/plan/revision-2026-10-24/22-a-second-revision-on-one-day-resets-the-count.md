@@ -15,6 +15,19 @@ on the latest commit that a revision marks, such as the deletion of a `spec.md` 
 choose the simplest rule that a second revision of a day can satisfy without editing anything but
 the line, and say which in the pull request. Its self-test covers two revisions on one day.
 
+## What a first attempt found
+
+Counting from the newest commit whose diff of the overview writes the line with its date, `-G`,
+made a second revision of a day reset the count only where it rewrote the line, its number at
+least; the design-revision skill tells it to move the date to today, which changes nothing on a
+second revision of a day. And it made commits that are no revision reset the count too: prose
+reworded on the line's own physical line, the line moved, a revert of a revision, an example of
+the line in a code block, a duplicate removed. A change to the overview could then hide a
+revision that is due. A match of the whole line, `-S`, fixes the rewording and the move but not
+the rest. The sensor and the skill are the template's (ADR-0005), so the fix goes upstream to
+hivevm/nuc, the sensor and the skill together, on the maintainer's decision; this project takes
+it with the next template release.
+
 ## Acceptance criteria
 
 - [ ] Given two commits that each move the line to the same date, with changes outside `docs/`
