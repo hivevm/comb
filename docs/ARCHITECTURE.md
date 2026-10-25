@@ -245,9 +245,9 @@ The functional core and its shell follow
   records as a `GraphChange`
   ([ADR-0030](adr/0030-a-veto-that-changes-the-graph-ends-its-gesture.md)), its positions read
   from the engine's buffer, synchronously from one subscription to the store that tells a change
-  before the selection it cleared (`api/changes.ts`); `whenRendered` resolves once a change is drawn, with one render
-  per animation frame scheduled by `api/frames.ts`. `api/scenes.ts` is the one way from a `Comb`
-  to its scene and to the hit test its presses ask, for the testing entry.
+  before the selection it cleared (`api/changes.ts`); `whenRendered` resolves once a change is
+  drawn, with one render per animation frame scheduled by `api/frames.ts`. `api/scenes.ts` is the
+  one way from a `Comb` to its scene and to the hit test its presses ask, for the testing entry.
 - **Testing entry** (`comb/testing`, `packages/comb/src/testing.ts`) — `inspect` returns what the
   scene draws, the text of the titles and labels drawn included, the connectors drawn with where
   each is centred and how often the layer drew them anew, and the size and detail of the edge mesh,
