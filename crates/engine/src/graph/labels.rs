@@ -55,7 +55,7 @@ impl Graph {
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::{Lcg, random_graph};
+    use super::super::tests::{Lcg, Model};
     use super::super::{EdgeSpec, Level, Target, Visible};
     use super::*;
     use crate::geometry::{Rect, Sides};
@@ -113,12 +113,11 @@ mod tests {
             let mut rng = Lcg(seed);
             // Paths of random sides, backwards ones among them, near the origin and far from it.
             let far = if seed % 2 == 0 { 0.0 } else { 3e6 };
-            let mut graph = random_graph(&mut rng, 30, 60);
-            graph
-                .translate(&(0..30).collect::<Vec<_>>(), far as f32, -far as f32)
-                .unwrap();
-            for edge in 0..graph.edge_slots.count() {
-                let path = graph.paths[edge as usize];
+            let (mut model, _) = Model::random(&mut rng, 30, 60);
+            let all: Vec<u32> = (0..30).collect();
+            model.translate(&all, far as f32, -far as f32);
+            for edge in 0..60 {
+                let path = model.path(edge);
                 for _ in 0..4 {
                     let at = path.label_position(rng.range(0.0, 1.0), rng.range(-60.0, 60.0));
                     // The nearest path point by a dense scan apart from the placement: a point
@@ -160,8 +159,8 @@ mod tests {
             style: EdgeStyle::unstyled(),
         }];
         let sizes = vec![220.0, 64.0, 220.0, 64.0];
-        let mut graph = Graph::new(vec![0.0, 0.0, 300.0, 100.0], sizes, edges).unwrap();
-        let at = graph.label_point(0).unwrap();
+        let (model, mut graph) = Model::of(vec![0.0, 0.0, 300.0, 100.0], sizes, edges);
+        let at = model.label_point(0).unwrap();
         let moved = graph.move_label(0, at).unwrap();
         assert!(
             (moved.t - label.t).abs() < 1e-6 && (moved.offset - label.offset).abs() < 1e-6,
@@ -173,11 +172,9 @@ mod tests {
     fn a_label_measured_with_a_size_that_is_not_finite_and_positive_is_not_hit() {
         // Verifies: ADR-0025
         let mut rng = Lcg(11);
-        let mut graph = random_graph(&mut rng, 10, 10);
-        let edge = (0..graph.edge_slots.count())
-            .find(|&e| graph.label_point(e).is_some())
-            .unwrap();
-        let at = graph.label_point(edge).unwrap();
+        let (model, mut graph) = Model::random(&mut rng, 10, 10);
+        let edge = (0..10).find(|&e| model.label_point(e).is_some()).unwrap();
+        let at = model.label_point(edge).unwrap();
         let hit = |graph: &mut Graph| graph.hit_at(at, 1.0, Level::Near, false);
         assert_ne!(hit(&mut graph), Some(Target::Label(edge)), "unmeasured");
         for (w, h) in [
@@ -202,22 +199,25 @@ mod tests {
     fn a_moved_label_keeps_its_parameter_and_offset_when_a_node_of_its_edge_moves() {
         // Verifies: G-6
         let mut rng = Lcg(4);
-        let mut graph = random_graph(&mut rng, 10, 10);
-        let edge = (0..graph.edge_slots.count())
+        let (mut model, mut graph) = Model::random(&mut rng, 10, 10);
+        let edge = (0..10)
             .find(|&e| {
-                graph.label_point(e).is_some()
-                    && graph.edges[e as usize].source != graph.edges[e as usize].target
+                let spec = model.specs[e as usize];
+                model.label_point(e).is_some() && spec.source != spec.target
             })
             .unwrap();
-        let at = graph.label_point(edge).unwrap();
+        let at = model.label_point(edge).unwrap();
         let placement = graph
             .move_label(edge, Point::new(at.x + 15.0, at.y - 25.0))
             .unwrap();
         assert_eq!(graph.edges[edge as usize].label, Some(placement));
-        let source = graph.edges[edge as usize].source;
+        let source = model.specs[edge as usize].source;
         graph.translate(&[source], 120.0, 40.0).unwrap();
+        model.translate(&[source], 120.0, 40.0);
         let moved = graph.label_point(edge).unwrap();
-        let expected = graph.paths[edge as usize].label_position(placement.t, placement.offset);
+        let expected = model
+            .path(edge)
+            .label_position(placement.t, placement.offset);
         assert_eq!(moved, expected);
         assert_eq!(
             graph.move_label(5_000, at),
