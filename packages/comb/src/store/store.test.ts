@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createGraphStore, type GraphData } from ".";
+import { createGraphStore, type GraphData, type GraphState } from ".";
 
 const graph: GraphData = {
   nodes: [
@@ -9,10 +9,13 @@ const graph: GraphData = {
   edges: [{ id: "a-b", source: "a", target: "b" }],
 };
 
+/** The code units of the identifiers of `graph`, as the snapshot of its load counts them. */
+const units = "a".length + "b".length + "a-b".length + "a".length + "b".length;
+
 describe("graph store", () => {
   test("a load assigns slots in node order and keeps no coordinates", () => {
     const store = createGraphStore();
-    store.getState().load(graph);
+    store.getState().load(graph, units);
     const state = store.getState();
     expect([...state.slots]).toEqual([
       ["a", 0],
@@ -23,7 +26,7 @@ describe("graph store", () => {
 
   test("moving positions bumps the counter and leaves the graph untouched", () => {
     const store = createGraphStore();
-    store.getState().load(graph);
+    store.getState().load(graph, units);
     const { nodes, edges, positionsVersion } = store.getState();
     store.getState().positionsMoved();
     store.getState().positionsMoved();
@@ -35,7 +38,7 @@ describe("graph store", () => {
 
   test("an attribute change replaces only the changed node", () => {
     const store = createGraphStore();
-    store.getState().load(graph);
+    store.getState().load(graph, units);
     const before = store.getState().nodes;
     store.getState().updateNode("b", { title: "Renamed" });
     const after = store.getState().nodes;
@@ -46,7 +49,7 @@ describe("graph store", () => {
   test("an added node takes its slot in the map and the lists, and the change names it", () => {
     // Verifies: ADR-0022, ADR-0023
     const store = createGraphStore();
-    store.getState().load(graph);
+    store.getState().load(graph, units);
     const { nodes, positionsVersion, idUnits } = store.getState();
     expect(idUnits).toBe("a".length + "b".length + "a-b".length + 2);
     expect(store.getState().change).toEqual({ kind: "loaded", by: "host" });
@@ -68,10 +71,10 @@ describe("graph store removals", () => {
   test("a removal leaves holes at the free slots, forgets the identifiers, and clears the selection", () => {
     // Verifies: ADR-0022, ADR-0023
     const store = createGraphStore();
-    store.getState().load(graph);
+    store.getState().load(graph, units);
     store.getState().select({ kind: "node", id: "a" });
     const { idUnits } = store.getState();
-    store.getState().removeNodes([0], [0]);
+    store.getState().removeNodes([0], [0], "host");
     const state = store.getState();
     expect(state.nodes).toEqual([undefined, { id: "b", title: "B", width: 100, height: 40 }]);
     expect(state.edges).toEqual([undefined]);
@@ -90,10 +93,10 @@ describe("graph store removals", () => {
   test("a removal of edges keeps the nodes and a selection of a node", () => {
     // Verifies: ADR-0022, ADR-0023
     const store = createGraphStore();
-    store.getState().load(graph);
+    store.getState().load(graph, units);
     store.getState().select({ kind: "node", id: "b" });
     const { nodes } = store.getState();
-    store.getState().removeEdges([0]);
+    store.getState().removeEdges([0], "host");
     const state = store.getState();
     expect(state.nodes).toBe(nodes);
     expect(state.edges).toEqual([undefined]);
@@ -104,9 +107,9 @@ describe("graph store removals", () => {
   test("a removal of a node clears a selection of an edge it took along", () => {
     // Verifies: ADR-0022
     const store = createGraphStore();
-    store.getState().load(graph);
+    store.getState().load(graph, units);
     store.getState().select({ kind: "edge", id: "a-b" });
-    store.getState().removeNodes([1], [0]);
+    store.getState().removeNodes([1], [0], "host");
     expect(store.getState().selection).toBeNull();
   });
 });
@@ -115,10 +118,12 @@ describe("graph store edge edits", () => {
   test("an added edge takes its slot and counts its identifiers; a patch merges, null clears", () => {
     // Verifies: ADR-0022, ADR-0023
     const store = createGraphStore();
-    store.getState().load(graph);
+    store.getState().load(graph, units);
     const { idUnits } = store.getState();
     const edge = { id: "b-a", source: "b", target: "a", color: 1, arrow: "end" as const };
-    store.getState().addEdge({ ...edge, dash: [4, 4], label: { text: "x", t: 0.5, offset: 0 } }, 1);
+    store
+      .getState()
+      .addEdge({ ...edge, dash: [4, 4], label: { text: "x", t: 0.5, offset: 0 } }, 1, "host");
     expect(store.getState().edgeSlots.get("b-a")).toBe(1);
     expect(store.getState().idUnits).toBe(idUnits + 5);
     expect(store.getState().change).toEqual({ kind: "edgeAdded", by: "host", id: "b-a" });
@@ -131,4 +136,29 @@ describe("graph store edge edits", () => {
       patch: { color: 2, dash: null, label: null },
     });
   });
+});
+
+describe("graph store counts", () => {
+  test("a load keeps the code units its snapshot counted, and counts none itself", () => {
+    // Verifies: ADR-0023
+    const store = createGraphStore();
+    store.getState().load(graph, 99);
+    expect(store.getState().idUnits).toBe(99);
+  });
+});
+
+/** Each call leaves out who made the change, which the type checker refuses: `tsc` fails on a
+ *  `@ts-expect-error` that has no error to expect. Never called. */
+function withoutBy(state: GraphState): void {
+  // @ts-expect-error a removal of nodes names who made it
+  state.removeNodes([0], [0]);
+  // @ts-expect-error a removal of edges names who made it
+  state.removeEdges([0]);
+  // @ts-expect-error an added edge names who added it
+  state.addEdge(graph.edges[0]!, 1);
+}
+
+test("a store action whose change may be the user's or the host's takes who made it", () => {
+  // Verifies: ADR-0023
+  expect(typeof withoutBy).toBe("function");
 });

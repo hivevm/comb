@@ -22,6 +22,7 @@ import init, {
   type GraphDataProblem,
   type NodeInput,
   type NodePatch,
+  type SlotError,
   type TranslateError,
 } from "../../wasm/engine.js";
 
@@ -32,6 +33,7 @@ export type {
   Hit,
   NodeInput,
   NodePatch,
+  SlotError,
   TranslateError,
 };
 

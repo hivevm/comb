@@ -140,7 +140,9 @@ export interface GraphView {
 }
 
 export interface GraphState extends GraphView {
-  load(graph: GraphData): void;
+  /** Replaces the graph by `graph`, whose identifiers hold `idUnits` UTF-16 code units, as the
+   *  snapshot counted them while it read them. */
+  load(graph: GraphData, idUnits: number): void;
   /** Keeps `node`, which the engine took into `slot`, without its position. */
   addNode(node: NodeData, slot: number): void;
   updateNode(id: string, patch: Partial<Pick<NodeView, "title">>): void;
@@ -151,11 +153,11 @@ export interface GraphState extends GraphView {
   nodeMoved(id: string): void;
   /** Forgets the nodes in `nodeSlots` and the edges in `edgeSlots`, which the engine removed,
    *  leaving their slots free, and clears a selection of one of them. */
-  removeNodes(nodeSlots: readonly number[], edgeSlots: readonly number[], by?: By): void;
+  removeNodes(nodeSlots: readonly number[], edgeSlots: readonly number[], by: By): void;
   /** Forgets the edges in `edgeSlots`, which the engine removed, leaving their slots free. */
-  removeEdges(edgeSlots: readonly number[], by?: By): void;
+  removeEdges(edgeSlots: readonly number[], by: By): void;
   /** Keeps `edge`, which the engine took into `slot`, as `by` made it. */
-  addEdge(edge: EdgeData, slot: number, by?: By): void;
+  addEdge(edge: EdgeData, slot: number, by: By): void;
   /** Records that a drag, now released, left the label of the edge `id` at path parameter `t`
    *  and label offset `offset`, where the engine placed it. */
   labelMoved(id: string, t: number, offset: number): void;
@@ -170,6 +172,16 @@ export interface GraphState extends GraphView {
 export type GraphStore = ReturnType<typeof createGraphStore>;
 
 type Edges = GraphView["edges"];
+
+/** The UTF-16 code units of the identifier of `node`. */
+function nodeUnits(node: Pick<NodeView, "id">): number {
+  return node.id.length;
+}
+
+/** The UTF-16 code units of the identifiers of `edge`: its own, its source's, and its target's. */
+function edgeUnits(edge: Pick<EdgeData, "id" | "source" | "target">): number {
+  return edge.id.length + edge.source.length + edge.target.length;
+}
 
 /** `edges` without those in `slots`, the identifiers of those edges, the map without them, and
  *  the code units of identifiers they held. */
@@ -188,17 +200,9 @@ function withoutEdges(
     kept[slot] = undefined;
     map.delete(edge.id);
     ids.push(edge.id);
-    units += edge.id.length + edge.source.length + edge.target.length;
+    units += edgeUnits(edge);
   }
   return { edges: kept, edgeSlots: map, ids, units };
-}
-
-/** The UTF-16 code units of every identifier of `graph`. */
-function idUnitsOf(graph: GraphData): number {
-  let units = 0;
-  for (const node of graph.nodes) units += node.id.length;
-  for (const edge of graph.edges) units += edge.id.length + edge.source.length + edge.target.length;
-  return units;
 }
 
 /** What a removal changes of the pointer's state: a removed node shows no connectors, and a
@@ -217,15 +221,16 @@ function pointerWithout(state: GraphView, nodes: GraphView["nodes"]): Partial<Gr
   };
 }
 
-/** What `load` changes of `state`: the graph replaced, and the selection and the node under the
- *  pointer cleared; a connection is ended by its gesture. */
-function loadedFrom(state: GraphView, graph: GraphData): Partial<GraphView> {
+/** What `load` changes of `state`: the graph replaced, whose identifiers hold `idUnits` code
+ *  units, and the selection and the node under the pointer cleared; a connection is ended by its
+ *  gesture. */
+function loadedFrom(state: GraphView, graph: GraphData, idUnits: number): Partial<GraphView> {
   return {
     nodes: graph.nodes.map(({ id, title, width, height }) => ({ id, title, width, height })),
     slots: new Map(graph.nodes.map((node, slot) => [node.id, slot])),
     edgeSlots: new Map(graph.edges.map((edge, slot) => [edge.id, slot])),
     edges: graph.edges,
-    idUnits: idUnitsOf(graph),
+    idUnits,
     change: { kind: "loaded", by: "host" },
     selection: null,
     hovered: null,
@@ -252,7 +257,7 @@ function withoutNodes(
     nodes[slot] = undefined;
     slots.delete(node.id);
     ids.push(node.id);
-    units += node.id.length;
+    units += nodeUnits(node);
   }
   const { selection } = state;
   const cleared =
@@ -310,7 +315,7 @@ function withEdge(state: GraphView, edge: EdgeData, slot: number, by: By): Parti
   return {
     edges,
     edgeSlots: new Map(state.edgeSlots).set(edge.id, slot),
-    idUnits: state.idUnits + edge.id.length + edge.source.length + edge.target.length,
+    idUnits: state.idUnits + edgeUnits(edge),
     change: { kind: "edgeAdded", by, id: edge.id },
   };
 }
@@ -328,7 +333,7 @@ export function createGraphStore() {
     connection: null,
     viewport: { x: 0, y: 0, scale: 1 },
     positionsVersion: 0,
-    load: (graph) => set((state) => loadedFrom(state, graph)),
+    load: (graph, idUnits) => set((state) => loadedFrom(state, graph, idUnits)),
     addNode: ({ id, title, width, height }, slot) =>
       set((state) => {
         const nodes = state.nodes.slice();
@@ -336,7 +341,7 @@ export function createGraphStore() {
         return {
           nodes,
           slots: new Map(state.slots).set(id, slot),
-          idUnits: state.idUnits + id.length,
+          idUnits: state.idUnits + nodeUnits({ id }),
           change: { kind: "nodeAdded", by: "host", id },
           // The engine's positions buffer holds the new slot.
           positionsVersion: state.positionsVersion + 1,
@@ -351,10 +356,10 @@ export function createGraphStore() {
     setViewport: (viewport) => set({ viewport }),
     positionsMoved: () => set((state) => ({ positionsVersion: state.positionsVersion + 1 })),
     nodeMoved: (id) => set({ change: { kind: "nodeMoved", by: "user", id } }),
-    removeNodes: (nodeSlots, edgeSlots, by = "host") =>
+    removeNodes: (nodeSlots, edgeSlots, by) =>
       set((state) => withoutNodes(state, nodeSlots, edgeSlots, by)),
-    removeEdges: (edgeSlots, by = "host") => set((state) => withoutEdgesOf(state, edgeSlots, by)),
-    addEdge: (edge, slot, by = "host") => set((state) => withEdge(state, edge, slot, by)),
+    removeEdges: (edgeSlots, by) => set((state) => withoutEdgesOf(state, edgeSlots, by)),
+    addEdge: (edge, slot, by) => set((state) => withEdge(state, edge, slot, by)),
     labelMoved: (id, t, offset) =>
       set((state) => {
         const slot = state.edgeSlots.get(id)!;
