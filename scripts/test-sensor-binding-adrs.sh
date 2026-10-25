@@ -6,7 +6,8 @@
 # top of a tagged base, runs the sensor against the base, and asserts the exit code and a line a
 # reader would meet. The cases cover a directory path and a file path in an Applies to line, a
 # path its prose only resembles, an ADR no longer in force, an ADR the change itself adds, a
-# change no ADR names, nothing to compare, and a base that does not resolve.
+# change no ADR names, nothing to compare, and a base that does not resolve; a Rust file binds the
+# modules under the directory of its name, and a file of another kind does not.
 #
 # Usage:
 #     scripts/test-sensor-binding-adrs.sh
@@ -109,6 +110,29 @@ d="$(repo file)"
 printf 'more\n' >> "$d/README.md"
 commit "$d" "touch the readme"
 expect 0 "a file named in Applies to binds" "$d" "- $(adr_id 1) (docs/adr/0001-fixture.md) — README.md"
+
+d="$(repo rust-module)"
+# shellcheck disable=SC2016  # the backticks are literal Markdown, not a command substitution
+adr "$d" 0004 "🟢 accepted" 'the graph of `crates/engine/src/graph.rs`'
+mkdir -p "$d/crates/engine/src/graph"
+printf 'mod\n' > "$d/crates/engine/src/graph/hit.rs"
+commit "$d" "a module of the graph"
+expect 0 "a Rust file binds the modules under the directory of its name" "$d" \
+  "- $(adr_id 4) (docs/adr/0004-fixture.md) — crates/engine/src/graph/hit.rs"
+
+d="$(repo other-kind)"
+mkdir -p "$d/src/app"
+printf 'x\n' > "$d/src/app/part.sh"
+# shellcheck disable=SC2016  # the backticks are literal Markdown, not a command substitution
+adr "$d" 0004 "🟢 accepted" 'the script `src/app.sh`'
+git -C "${d:?}" add -A
+git -C "${d:?}" -c user.name=fixture -c user.email=fixture@example.invalid commit -q --amend -m base
+git -C "${d:?}" tag -f base >/dev/null
+printf 'more\n' >> "$d/src/app/part.sh"
+commit "$d" "a file under a directory named like a script"
+# Only the ADR of `src/` binds it, not the one of `src/app.sh`.
+expect 0 "a file of another kind binds no directory of its name" "$d" \
+  "1 ADR(s) in force name one of them"
 
 d="$(repo prefix)"
 printf 'x\n' > "$d/README.md.bak"
