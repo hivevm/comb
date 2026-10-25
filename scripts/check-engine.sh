@@ -8,8 +8,8 @@
 # would be tested in the engine of an earlier change. This check fails, naming the file and the
 # command to run, when either engine file is missing or older than the newest of the sources it is
 # built from: every file under crates/ but those no build reads, Cargo.toml, and Cargo.lock. It
-# passes silently. A root
-# without those sources fails, since there would be nothing to compare with.
+# passes silently. A root without those sources fails, since there would be nothing to compare
+# with.
 # `bun run test`, `bun run dev`, which Playwright serves the example with, and
 # scripts/check-bundle.sh run it before anything else.
 #

@@ -14,8 +14,9 @@
 #
 # Usage:
 #     scripts/check-code.sh
-# Exit code 0 when the structure, the dependencies, the overview, the build, the lint, the tests,
-# and the bundle budget pass, non-zero at the first that fails.
+# Exit code 0 when the structure, the dependencies, the overview, the self-test of the engine
+# check, the build, the lint, the tests, and the bundle budget pass, non-zero at the first that
+# fails.
 
 set -euo pipefail
 
@@ -45,4 +46,4 @@ bun run lint
 bun run test
 bash scripts/test-check-bundle.sh
 bash scripts/check-bundle.sh
-echo "Structure, build, lint, tests, and bundle budget passed."
+echo "Structure, dependencies, overview, engine check, build, lint, tests, and bundle budget passed."
