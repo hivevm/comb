@@ -8,7 +8,7 @@
 // gesture holds nothing of it but the identifier of its source.
 import type { Bridge, Hit } from "../bridge";
 import type { Connection, GraphStore, Side } from "../store";
-import { targetAt, type Context, type Gesture } from "./gesture";
+import type { Context, Gesture } from "./gesture";
 import { toWorld } from "../store/viewport";
 
 /** A connection the user proposes, by identifiers and sides, as `canConnect` is asked. */
@@ -107,13 +107,7 @@ export function connection(
       const held = store.getState().connection;
       if (!held) return;
       follow(context, x, y);
-      const next = connectionOver(
-        store,
-        bridge,
-        held.source,
-        held.side,
-        targetAt(context, x, y, true),
-      );
+      const next = connectionOver(store, bridge, held.source, held.side, context.hitAt(x, y));
       if (!same(held, next)) store.getState().connect(next);
       store.getState().pointerMoved();
     },

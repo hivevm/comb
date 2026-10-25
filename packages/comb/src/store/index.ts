@@ -211,10 +211,13 @@ function withoutEdges(
   return { edges: kept, edgeSlots: map, ids, units };
 }
 
-/** What a removal changes of the pointer's state: a removed node shows no connectors, and a
- *  connection over it is over nothing until it moves. Whether the removal ends a connection from
- *  it is its gesture's to decide. */
-function pointerWithout(state: GraphView, nodes: GraphView["nodes"]): Partial<GraphView> {
+/** What a removal changes of the node under the pointer and of the connection: a removed node
+ *  shows no connectors, and a connection over it is over nothing until it moves. Whether the
+ *  removal ends a connection from it is its gesture's to decide. */
+function hoveredAndConnectionWithout(
+  state: GraphView,
+  nodes: GraphView["nodes"],
+): Partial<GraphView> {
   const gone = (slot: number | null | undefined) => slot != null && !nodes[slot];
   const { hovered, connection } = state;
   const after =
@@ -269,7 +272,7 @@ function withoutNodes(
   const cleared =
     (selection?.kind === "node" && !slots.has(selection.id)) ||
     (selection?.kind === "edge" && !removed.edgeSlots.has(selection.id));
-  const pointer = pointerWithout(state, nodes);
+  const hoveredAndConnection = hoveredAndConnectionWithout(state, nodes);
   return {
     nodes,
     slots,
@@ -278,7 +281,7 @@ function withoutNodes(
     idUnits: state.idUnits - units,
     change: { kind: "nodesRemoved", by, nodes: ids, edges: removed.ids },
     ...(cleared ? { selection: null } : {}),
-    ...pointer,
+    ...hoveredAndConnection,
   };
 }
 
