@@ -28,6 +28,16 @@ the rest. The sensor and the skill are the template's (ADR-0005), so the fix goe
 hivevm/nuc, the sensor and the skill together, on the maintainer's decision; this project takes
 it with the next template release.
 
+## Travelling with it
+
+The maintainer sends a second fix of a template sensor upstream with this one: the rule of
+`scripts/sensor-binding-adrs.sh` that a Rust file `x.rs` names the directory `x/` beside it too,
+except `lib.rs`, `main.rs`, `mod.rs`, and `build.rs`, with its self-test cases (commits f224e94
+and b52c280). Upstream it would take a language-neutral form, a file `x.<ext>` binding a sibling
+`x/` with the exclusions a language names. Until a template release carries it, the rule stays in
+this project's sensor; a release that brings the template's sensor back without it drops it, and
+the take-up of that release adds it again.
+
 ## Acceptance criteria
 
 - [ ] Given two commits that each move the line to the same date, with changes outside `docs/`
