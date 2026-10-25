@@ -37,14 +37,48 @@ use graph_data::{
     reading, slot, unshaped, update_edge_in,
 };
 
-/// Why the engine refused the delta of a move of nodes: the shell's own mistake, never one of
-/// graph data, so that a host application never meets it. A slot that holds no node is refused
-/// with a `SlotError`, as every export that takes slots refuses one.
-#[derive(Tsify, Serialize, Deserialize, Debug, PartialEq)]
+/// A number the shell computed that an export cannot take: the shell's own mistake, never one of
+/// graph data, so that a host application never meets it (ADR-0031). Its kind names the number.
+#[derive(Tsify, Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
-pub enum TranslateError {
-    /// A delta that is NaN or infinite.
+pub enum NumberError {
+    /// A world point of `hit` or `moveLabel` with a coordinate that is NaN or infinite.
+    NonFinitePoint,
+    /// A screen pixel of `query` or `hit` that is not a finite number above zero.
+    InvalidPixel,
+    /// A delta of `translate` that is NaN or infinite.
     NonFiniteDelta,
+}
+
+/// The refusal of `translate`'s delta, under the name it had before `NumberError` held it. A slot
+/// that holds no node is refused with a `SlotError`, as every export that takes slots refuses one.
+pub type TranslateError = NumberError;
+
+/// Why `hit`, `query`, or `moveLabel` was refused, as the shell receives it: a problem of graph
+/// data, a slot that holds nothing, or a number the shell computed (ADR-0031).
+#[derive(Debug, PartialEq)]
+pub enum CallRefusal {
+    Data(GraphDataProblem),
+    Slot(SlotError),
+    Number(NumberError),
+}
+
+impl From<GraphDataProblem> for CallRefusal {
+    fn from(problem: GraphDataProblem) -> Self {
+        Self::Data(problem)
+    }
+}
+
+impl From<GraphSlotError> for CallRefusal {
+    fn from(error: GraphSlotError) -> Self {
+        Self::Slot(error.into())
+    }
+}
+
+impl From<NumberError> for CallRefusal {
+    fn from(error: NumberError) -> Self {
+        Self::Number(error)
+    }
 }
 
 /// Why `translate` was refused, as the shell receives it: a slot that holds no node, crossing as
@@ -121,6 +155,16 @@ impl From<SlotError> for JsValue {
     }
 }
 
+impl From<CallRefusal> for JsValue {
+    fn from(refusal: CallRefusal) -> Self {
+        match refusal {
+            CallRefusal::Data(problem) => problem.into(),
+            CallRefusal::Slot(error) => thrown(error),
+            CallRefusal::Number(error) => thrown(error),
+        }
+    }
+}
+
 impl From<EdgeRefusal> for JsValue {
     fn from(refusal: EdgeRefusal) -> Self {
         match refusal {
@@ -130,25 +174,24 @@ impl From<EdgeRefusal> for JsValue {
     }
 }
 
-/// The size of a screen pixel, in world units, a query and a hit test take, or its refusal as
-/// malformed where it is no finite number above zero, before any edge is flattened.
-fn checked_pixel(pixel: f64) -> Result<f64, GraphDataProblem> {
+/// The size of a screen pixel, in world units, a query and a hit test take, or its refusal as the
+/// shell's mistake where it is no finite number above zero, before any edge is flattened
+/// (ADR-0031).
+fn checked_pixel(pixel: f64) -> Result<f64, NumberError> {
     if pixel.is_finite() && pixel > 0.0 {
         Ok(pixel)
     } else {
-        Err(malformed(
-            "the size of a screen pixel is not a finite number above zero",
-        ))
+        Err(NumberError::InvalidPixel)
     }
 }
 
-/// The world point `(x, y)` a hit test or a label's move takes, or its refusal as malformed where
-/// a coordinate is NaN or infinite, before anything is hit or moved (ADR-0028).
-fn checked_point(x: f64, y: f64) -> Result<Point, GraphDataProblem> {
+/// The world point `(x, y)` a hit test or a label's move takes, or its refusal as the shell's
+/// mistake where a coordinate is NaN or infinite, before anything is hit or moved (ADR-0031).
+fn checked_point(x: f64, y: f64) -> Result<Point, NumberError> {
     if x.is_finite() && y.is_finite() {
         Ok(Point::new(x, y))
     } else {
-        Err(malformed("a point is not a pair of finite numbers"))
+        Err(NumberError::NonFinitePoint)
     }
 }
 
@@ -384,9 +427,9 @@ impl Engine {
     /// Places the label of the edge in `slot` at the world point `(x, y)`, at the path parameter
     /// nearest it and its distance along the normal there, and returns the two, `t, offset`
     /// (G-6). A slot that holds no edge with a label refuses it with a `SlotError`, and a point
-    /// that is not finite as malformed, before anything moves.
+    /// that is not finite with a `NumberError`, before anything moves.
     #[wasm_bindgen(js_name = moveLabel)]
-    pub fn move_label(&mut self, slot: u32, x: f64, y: f64) -> Result<Vec<f64>, EdgeRefusal> {
+    pub fn move_label(&mut self, slot: u32, x: f64, y: f64) -> Result<Vec<f64>, CallRefusal> {
         trap::spring();
         let point = checked_point(x, y)?;
         let placed = self.graph.move_label(slot, point)?;
@@ -420,8 +463,8 @@ impl Engine {
     }
 
     /// Moves the nodes in `slots` by `(dx, dy)`, their edges with them. A slot that holds no node
-    /// throws a `SlotError`, and a delta that is not finite a `TranslateError`; either way nothing
-    /// moves.
+    /// throws a `SlotError`, and a delta that is not finite a `NumberError` `nonFiniteDelta`, which
+    /// `TranslateError` names; either way nothing moves.
     pub fn translate(&mut self, slots: &[u32], dx: f32, dy: f32) -> Result<(), TranslateRefusal> {
         trap::spring();
         self.graph
@@ -433,14 +476,14 @@ impl Engine {
     /// `level`, where a screen pixel is `pixel` world units, within the mesh budget; at the near
     /// level also the edge labels within `label_reach` of it. Returns the detail of the mesh; the
     /// results are read through the `visible…` and `mesh…` buffers. A pixel that is not a finite
-    /// number above zero is refused as malformed before any edge is flattened.
+    /// number above zero is refused with a `NumberError` before any edge is flattened.
     pub fn query(
         &mut self,
         rect: Ts<RectInput>,
         level: DetailLevel,
         pixel: f64,
         label_reach: f64,
-    ) -> Result<MeshDetail, GraphDataProblem> {
+    ) -> Result<MeshDetail, CallRefusal> {
         trap::spring();
         let rect = rect.to_rust().map_err(unshaped)?;
         self.query_rect(&rect, level, pixel, label_reach)
@@ -459,7 +502,7 @@ impl Engine {
     /// within 8 screen pixels, of the node drawn on top; else, at the near level, the label whose
     /// measured pill holds the point; else the node drawn on top there, else the edge drawn on top
     /// within 4 screen pixels of its path, else nothing (ADR-0025). A pixel is checked as `query`
-    /// checks it, and a point that is not finite is refused as malformed.
+    /// checks it, and a point that is not finite is refused, both with a `NumberError`.
     pub fn hit(
         &mut self,
         x: f64,
@@ -467,7 +510,7 @@ impl Engine {
         pixel: f64,
         level: DetailLevel,
         connectors: bool,
-    ) -> Result<Ts<Hit>, GraphDataProblem> {
+    ) -> Result<Ts<Hit>, CallRefusal> {
         trap::spring();
         let point = checked_point(x, y)?;
         let pixel = checked_pixel(pixel)?;
@@ -481,7 +524,7 @@ impl Engine {
             Some(Target::Edge(slot)) => Hit::Edge { slot },
             None => Hit::None,
         };
-        Ts::from_rust(&hit).map_err(|_| malformed("the hit could not be handed back"))
+        Ts::from_rust(&hit).map_err(|_| malformed("the hit could not be handed back").into())
     }
 }
 
@@ -493,7 +536,7 @@ impl Engine {
         level: DetailLevel,
         pixel: f64,
         label_reach: f64,
-    ) -> Result<MeshDetail, GraphDataProblem> {
+    ) -> Result<MeshDetail, CallRefusal> {
         let pixel = checked_pixel(pixel)?;
         let rect = Rect::new(rect.min_x, rect.min_y, rect.max_x, rect.max_y);
         self.graph
@@ -700,8 +743,9 @@ mod tests {
 
     #[test]
     fn a_move_by_a_delta_that_is_not_finite_is_refused_after_its_slots_and_nothing_moves() {
-        // Decides no ADR clause and no criterion: a delta is the shell's own mistake, which
-        // crosses as `TranslateError`, never as a problem of graph data.
+        // Verifies: ADR-0031
+        // A delta is the shell's own mistake, which crosses as `TranslateError`, the
+        // `NumberError` of a delta, never as a problem of graph data.
         let mut engine = Engine::new();
         engine.graph = graph_of(&batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[])).unwrap();
         for (dx, dy) in [(f32::NAN, 1.0), (1.0, f32::INFINITY)] {
@@ -802,8 +846,27 @@ mod tests {
     }
 
     #[test]
+    fn a_hit_refuses_a_pixel_that_is_not_a_finite_number_above_zero_as_the_shells_mistake() {
+        // Verifies: ADR-0031
+        let mut engine = Engine::new();
+        let data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 100.0)], &[("e", "a", "b")]);
+        engine.graph = graph_of(&data).unwrap();
+        let before = engine.graph.positions().to_vec();
+        // Refused before anything is hit, so the native test needs no JavaScript value.
+        for pixel in [0.0, -0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let hit = engine.hit(200.0, 60.0, pixel, DetailLevel::Near, true);
+            assert_eq!(
+                hit.err(),
+                Some(CallRefusal::Number(NumberError::InvalidPixel)),
+                "{pixel}"
+            );
+        }
+        assert_eq!(engine.graph.positions(), before);
+    }
+
+    #[test]
     fn a_hit_and_a_move_of_a_label_refuse_a_point_that_is_not_finite_and_change_nothing() {
-        // Verifies: ADR-0028, Q-7
+        // Verifies: ADR-0031
         let mut engine = Engine::new();
         let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 100.0)], &[("e", "a", "b")]);
         data.edges[0].label = Some(LabelInput {
@@ -815,11 +878,11 @@ mod tests {
         .into();
         engine.graph = graph_of(&data).unwrap();
         let before = engine.label_point(0);
-        let refusal = || malformed("a point is not a pair of finite numbers");
+        let refusal = || CallRefusal::Number(NumberError::NonFinitePoint);
         for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             for (x, y) in [(bad, 60.0), (200.0, bad)] {
                 let moved = engine.move_label(0, x, y);
-                assert_eq!(moved, Err(EdgeRefusal::Data(refusal())), "({x}, {y})");
+                assert_eq!(moved, Err(refusal()), "({x}, {y})");
                 assert_eq!(engine.label_point(0), before, "the label at ({x}, {y})");
                 // Refused before anything is hit, so the native test needs no JavaScript value.
                 let hit = engine.hit(x, y, 1.0, DetailLevel::Near, true);
@@ -832,7 +895,7 @@ mod tests {
 
     #[test]
     fn a_pixel_that_is_not_a_finite_number_above_zero_is_refused_before_any_edge_is_flattened() {
-        // Verifies: ADR-0027
+        // Verifies: ADR-0027, ADR-0031
         let mut engine = Engine::new();
         let data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 100.0)], &[("e", "a", "b")]);
         engine.graph = graph_of(&data).unwrap();
@@ -846,9 +909,7 @@ mod tests {
             let refused = engine.query_rect(&rect, DetailLevel::Near, pixel, 0.0);
             assert_eq!(
                 refused,
-                Err(malformed(
-                    "the size of a screen pixel is not a finite number above zero"
-                )),
+                Err(CallRefusal::Number(NumberError::InvalidPixel)),
                 "{pixel}"
             );
             assert!(engine.visible.edges.is_empty(), "{pixel}");

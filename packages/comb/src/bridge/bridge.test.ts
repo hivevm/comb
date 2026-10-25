@@ -528,6 +528,38 @@ describe("bridge removals", () => {
   });
 });
 
+describe("the numbers the shell computes", () => {
+  test("a point, a pixel, or a delta an export cannot take crosses as a NumberError of its kind", () => {
+    // Verifies: ADR-0031
+    bridge.loadGraph(row(2));
+    const refused = (call: () => unknown) => {
+      try {
+        call();
+        return "accepted";
+      } catch (error) {
+        return error;
+      }
+    };
+    const point = { kind: "nonFinitePoint" };
+    const pixel = { kind: "invalidPixel" };
+    for (const bad of [Number.NaN, Infinity, -Infinity]) {
+      expect(refused(() => bridge.hit(bad, 0, 1, "near", true))).toEqual(point);
+      expect(refused(() => bridge.hit(0, bad, 1, "near", true))).toEqual(point);
+      expect(refused(() => bridge.moveLabel(0, bad, 0))).toEqual(point);
+      expect(refused(() => bridge.hit(0, 0, bad, "near", true))).toEqual(pixel);
+      expect(refused(() => bridge.query(everywhere, "near", bad, 0))).toEqual(pixel);
+      expect(refused(() => bridge.translate(new Uint32Array([0]), bad, 0))).toEqual({
+        kind: "nonFiniteDelta",
+      });
+    }
+    for (const bad of [0, -1]) {
+      expect(refused(() => bridge.hit(0, 0, bad, "near", true))).toEqual(pixel);
+      expect(refused(() => bridge.query(everywhere, "near", bad, 0))).toEqual(pixel);
+    }
+    expect([...bridge.positions()]).toEqual([0, 0, 200, 0]);
+  });
+});
+
 describe("a trap", () => {
   test("loses the engine: every later call throws an EngineLostError, and the listeners hear it once", () => {
     // Verifies: ADR-0021

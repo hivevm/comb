@@ -144,19 +144,23 @@ The functional core and its shell follow
   label points and the mesh's positions relative to the query's origin, which `originX` and
   `originY` read
   ([ADR-0010](adr/0010-bridge-data-format.md)), and returns the mesh's detail, complete or
-  coarsened, and refuses a pixel that is not a finite number above zero as malformed; `drawnEdges`
+  coarsened, and refuses a pixel that is not a finite number above zero; `drawnEdges`
   computes the ends of the found edges when inspection asks, as they lie then, and `hit` names what
   a press at a point hits, a connector where the shell asks for connectors, a label, a node, or an
   edge by its slot, or nothing, as one generated value, and refuses a pixel as `query` does and a
-  point that is not finite as malformed;
+  point that is not finite;
   `setLabelSize` takes the measure of a label's pill, `labelPoint` names where a label lies, and
   `moveLabel` places a dragged label, one dragged beyond the world's limit stopping there, refuses
   a point that is not finite as `hit` does, and returns its path parameter and offset; it generates
   the type of every problem of graph data the methods of `Comb` throw, `GraphDataProblem`, which
   `comb` exports, and keeps the refusals of the shell's mistakes in types of their own: `SlotError`
   of a slot that holds nothing, which `translate`, the removals, `edgesAt`, `setLabelSize`,
-  `moveLabel`, `addEdge`, and `updateEdge` throw alike, and `TranslateError` of a delta of
-  `translate` that is not finite. It checks the screen
+  `moveLabel`, `addEdge`, and `updateEdge` throw alike, and `NumberError` of a number the shell
+  computed that an export cannot take, whose kind names it: `nonFinitePoint` of `hit` and
+  `moveLabel`, `invalidPixel` of `query` and `hit`, and `nonFiniteDelta` of `translate`, which
+  `TranslateError` names, never a `GraphDataProblem`
+  ([ADR-0031](adr/0031-a-shell-mistake-is-refused-as-the-shells.md)). The shell
+  guards each such number before it calls the export. It checks the screen
   pixel of a query and of a hit test in one function, and the point of a hit test and of a label's
   move in another; the core bounds a pixel beyond any zoom for both, in one function. Its crate
   root holds the exports and their conversions; its module `graph_data` reads and checks graph

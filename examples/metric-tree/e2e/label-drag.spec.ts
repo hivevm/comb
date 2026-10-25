@@ -128,7 +128,7 @@ test("a label the host clears mid-drag ends the drag: no error, and no labelMove
 test("a label drag past every finite world point moves nothing and throws nothing", async ({
   page,
 }) => {
-  // Verifies: ADR-0025, ADR-0030
+  // Verifies: ADR-0025, ADR-0030, ADR-0031
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);

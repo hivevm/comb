@@ -22,8 +22,8 @@ import init, {
   type GraphDataProblem,
   type NodeInput,
   type NodePatch,
+  type NumberError,
   type SlotError,
-  type TranslateError,
 } from "../../wasm/engine.js";
 
 export type {
@@ -33,9 +33,12 @@ export type {
   Hit,
   NodeInput,
   NodePatch,
+  NumberError,
   SlotError,
-  TranslateError,
 };
+
+/** The refusal of `translate`'s delta, under the name it had before `NumberError` held it. */
+export type TranslateError = NumberError;
 
 /** The mark of plain data `api/snapshot.ts` read once from the host application's value
  *  (ADR-0028). It is exported nowhere, so that handing the bridge a value of the host
@@ -162,8 +165,8 @@ export interface Bridge {
   labelPoint(slot: number): { x: number; y: number } | undefined;
   /** Places the label of the edge in `slot` at the world point `(x, y)`: at the path parameter
    *  nearest it and its distance along the normal there, which it returns (G-6). Throws a
-   *  `SlotError`, and a `GraphDataProblem` `malformed` for a point that is not finite, before
-   *  anything moves. */
+   *  `SlotError`, and a `NumberError` `nonFinitePoint` for a point that is not finite, before
+   *  anything moves (ADR-0031). */
   moveLabel(slot: number, x: number, y: number): { t: number; offset: number };
   /** The slots of the edges at the nodes in `slots`, in ascending order, as a removal of them
    *  would take along, named before anything is removed (ADR-0022). Throws a `SlotError`. */
@@ -171,15 +174,16 @@ export interface Bridge {
   /** Removes the edges in `slots`. Throws a `SlotError`, the graph as it was. */
   removeEdges(slots: Uint32Array): void;
   /** Moves the nodes in `slots`, their edges with them. Throws a `SlotError` for a slot that
-   *  holds no node and a `TranslateError` for a delta that is not finite, mistakes of the shell's,
-   *  never of graph data. */
+   *  holds no node and a `NumberError` `nonFiniteDelta` for a delta that is not finite, mistakes
+   *  of the shell's, never of graph data (ADR-0031). */
   translate(slots: Uint32Array, dx: number, dy: number): void;
   /** A fresh view on the positions buffer, `x, y` per slot. Do not keep it across calls. */
   positions(): Float32Array;
   /** The nodes and edges that meet `rect` and the mesh of the edges for `level`, where a screen
    *  pixel is `pixel` world units, within the engine's mesh budget, and the mesh's detail; at the
    *  near level also the edge labels whose point lies within `labelReach` of it. Fresh views; do
-   *  not keep them across calls. */
+   *  not keep them across calls. Throws a `NumberError` `invalidPixel` for a pixel that is not a
+   *  finite number above zero (ADR-0031). */
   query(rect: Rect, level: Level, pixel: number, labelReach: number): Visible;
   /** The edges the last query found, with their ends as they lie now, which after a move and
    *  before the next query are already moved: for inspection, not for drawing. Fresh views; do
@@ -189,8 +193,8 @@ export interface Bridge {
    *  at `level`: where `connectors` asks for them, at the near and middle level, a connector
    *  within 8 screen pixels, of the node drawn on top; else the node drawn on top there, else the
    *  edge drawn on top within 4 screen pixels of its path as the stroke flattens it, else nothing
-   *  (ADR-0025). Throws a `GraphDataProblem` `malformed` for a pixel that is not a finite number
-   *  above zero or a point that is not finite. */
+   *  (ADR-0025). Throws a `NumberError`, `invalidPixel` for a pixel that is not a finite number
+   *  above zero and `nonFinitePoint` for a point that is not finite (ADR-0031). */
   hit(x: number, y: number, pixel: number, level: Level, connectors: boolean): Hit;
 }
 
