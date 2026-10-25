@@ -329,7 +329,7 @@ describe("interaction keeps the point a connection is dragged to", () => {
   });
 });
 
-describe("interaction connects", () => {
+describe("interaction writes a connection whose target changed", () => {
   test("a move from one connector of a node to another of it retargets the connection", () => {
     // Verifies: ADR-0024
     const store = createGraphStore();
@@ -365,7 +365,9 @@ describe("interaction connects", () => {
       { source: "a", sourceSide: "right", target: "b", targetSide: "right" },
     ]);
   });
+});
 
+describe("interaction writes a connection whose compatibility changed", () => {
   test("a move over a node the source came to reach since the last move marks it incompatible", () => {
     // Verifies: ADR-0024
     const store = createGraphStore();
@@ -398,7 +400,9 @@ describe("interaction connects", () => {
       target: null,
     });
   });
+});
 
+describe("interaction connects", () => {
   test("a connection a later press ends, its release never having come, proposes no edge", () => {
     // Verifies: ADR-0023, ADR-0024
     const store = createGraphStore();
