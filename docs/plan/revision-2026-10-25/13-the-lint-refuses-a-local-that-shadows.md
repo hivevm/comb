@@ -5,16 +5,25 @@
 Review of ticket 16 of the revision of 2026-10-24 (commit 6f905c9) found a test of
 `examples/metric-tree/e2e/remove.spec.ts` that declared a local `told`, shadowing the reader
 `e2e/shared.ts` exports, so the test read its own list where the reader was meant. A check decides
-this:
-ESLint's `@typescript-eslint/no-shadow`. Enable it for the library's sources, the example, its
-browser tests, and the benchmark, and rename what it finds.
+this: ESLint's `@typescript-eslint/no-shadow`. Enable it for the library's sources and tests, the
+example's sources, and the benchmark, and rename the 19 sites it finds there.
+
+The maintainer cut the ticket into slices: over the browser tests as well the rule finds 97 sites,
+78 of them in `examples/*/e2e/**`, mostly Playwright's idiom of handing a value into the page
+under its own name. That slice is ticket 15 of this directory. This one also renames by hand the
+four locals of the browser tests that hide a name the test meant to read, the `told` of
+`remove.spec.ts` among them.
 
 ## Acceptance criteria
 
-- [ ] Given `eslint.config.js`, when `bun run lint` runs over a file that declares a local of an
-      imported or outer name, then it fails naming the line.
+- [ ] Given `eslint.config.js`, when `bun run lint` runs over a file of the library, the example's
+      sources, or the benchmark that declares a local of an imported or outer name, then it fails
+      naming the line; over a browser test it does not yet.
 - [ ] Given the tree after this ticket, when `bun run lint` runs, then it passes, each finding
       renamed, not disabled.
+- [ ] Given the four locals of `remove.spec.ts`, `add-node.spec.ts`, `connect.spec.ts`, and
+      `engine-lost.spec.ts` that shadow a name the test reads, when they are read, then each is
+      renamed, and nothing a test asserts changes.
 - [ ] Given `bun run test`, when it runs, then it passes.
 
 ## Read first
@@ -29,24 +38,5 @@ browser tests, and the benchmark, and rename what it finds.
 ## Mode
 
 unattended: the lint decides it; a configuration change and renames, no part the harness ADR keeps
-with the human (ADR-0007), and one revert undoes it. Stop: where the rule finds more than about
-thirty sites, or one whose rename changes behaviour, hand off with the count.
-
-## Where it stands
-
-Handed off at the stop of the *Mode*: enabled for every linted file, `@typescript-eslint/no-shadow`
-finds 97 sites, past the stop of about thirty. By part: 78 in the browser tests, 11 in the
-library's sources, 1 in its tests, 6 in the benchmark, 1 in the example's sources. The option
-`hoist: "never"` leaves 96.
-
-Most sites in the browser tests are Playwright's idiom of handing a value into the page,
-`page.evaluate((id) => …, id)` or `({ id, w, h }) => …`, where the callback's parameter repeats
-the outer name for the same value; others are a callback's `name` and `problem` repeating those of
-a parameterised test, or a `node`/`edge` local over a helper of the same name, the kind the review
-found. In the library they are gesture handlers whose `(x, y)` repeat the press point's
-parameters, and in `interaction/connect.ts` a parameter `connection` named after the exported
-function `connection`.
-
-To decide: rename all 97, or limit the rule's scope (for instance outside the browser tests'
-`page.evaluate` callbacks, which no option of the rule tells apart), or cut the ticket into
-slices by part.
+with the human (ADR-0007), and one revert undoes it. Stop: where a rename changes behaviour, hand
+off naming it.

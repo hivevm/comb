@@ -17,8 +17,8 @@ Ticket 16 of the revision of 2026-10-24 moved the browser tests' page helpers in
 Give `shared.ts` one reader of what is drawn, which each spec narrows as it needs, and have the
 specs above use it, `loaded`, `node`, and the shared recorders.
 
-It waits for ticket 13 of this directory, so that a helper moved into `shared.ts` cannot leave a
-local shadowing it.
+It waits for ticket 15 of this directory, the lint refusing a shadowing local in the browser
+tests, so that a helper moved into `shared.ts` cannot leave a local shadowing it.
 
 ## Acceptance criteria
 
@@ -36,7 +36,7 @@ local shadowing it.
 
 ## Blocked by
 
-- docs/plan/revision-2026-10-25/13-the-lint-refuses-a-local-that-shadows.md
+- docs/plan/revision-2026-10-25/15-the-lint-refuses-a-shadowing-local-in-the-browser-tests.md
 
 ## Mode
 
