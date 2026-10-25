@@ -15,7 +15,15 @@ skimmed. The design revision drops what prevented nothing
 - **Break the feature once, and watch its test fail.** Before a test that verifies a criterion
   lands, the author removes or breaks the behaviour it claims (drops the dashes, skips the
   rebuild, returns every slot) and sees the test go red; the pull request names the breakage.
-  A test that passes either way verifies nothing, and reading it rarely shows that.
+  A test that passes either way verifies nothing, and reading it rarely shows that. The breakage
+  is the one the test claims to decide, not a neighbour of it: a test named for one function's
+  refusal is run with that refusal removed. A test that admits more than one outcome fails under
+  the breakage in each, or it pins the one outcome the fixed code gives, since an outcome that
+  holds either way decides nothing.
+- **A random test counts the cases each clause rests on.** A property test over random inputs
+  counts, per clause it decides, the cases where that clause and no earlier one settles the result,
+  and asserts a floor on each count. A seed, a size, or a spread that leaves no case then fails,
+  instead of leaving the clause unchecked silently.
 - **An oracle owes nothing to the code it judges.** A test computes its expected value from the
   inputs, by brute force or by hand, never from a cache, buffer, or helper of the module under
   test; an oracle that reads the engine's own state agrees with the engine's mistakes. Nor does
@@ -28,6 +36,11 @@ skimmed. The design revision drops what prevented nothing
   up before host code ran may hold another item after it. A veto during whose call Comb tells a
   change to `onChange` ends its gesture with nothing done, a rule `api/editors.ts` writes once for
   every veto ([ADR-0030](adr/0030-a-veto-that-changes-the-graph-ends-its-gesture.md)).
+- **A refusal added at the bridge is traced to the shell's callers.** Before an export refuses a
+  value it took until now, each caller in the shell that can hand it that value from inputs the
+  host may give, such as an extreme viewport, either guards it or handles the refusal. A browser
+  test drives one such input and asserts no page error. An export's refusal that an input event
+  reaches is an uncaught error on the host's page.
 - **Hand the host copies.** What a change or a method gives the host application is a copy, never
   an object the store keeps, since a host that writes into it changes the graph past every check.
 - **Work a frame need not redo is pinned by a count.** A layer, a hand-over to the engine, or a
