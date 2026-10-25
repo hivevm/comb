@@ -1,6 +1,7 @@
 //! The spatial index over the graph: a grid each for nodes and edges, built over the slots in use,
 //! which edits keep current in place, and the rule that builds it again (ADR-0022, *The spatial
-//! index*).
+//! index*). A rebuild builds the grids from the edges as they are placed and places none: a load
+//! places every edge once, and every edit places the edges it changes before it asks for one.
 
 use super::Graph;
 use crate::geometry::Rect;
@@ -46,8 +47,10 @@ impl Graph {
         (2.0 * mean).max((area / count).sqrt())
     }
 
-    /// Rebuilds both grids from the current positions of the slots in use: free slots count for
-    /// nothing, neither in the extent nor in the cell side, and stay out of the grids (ADR-0022).
+    /// Rebuilds both grids from the current positions of the slots in use and the edges as they
+    /// are placed: free slots count for nothing, neither in the extent nor in the cell side, and
+    /// stay out of the grids (ADR-0022). It places no edge: a load places every edge before the
+    /// first build, and every edit after it places the edges it changes before it asks for one.
     pub(super) fn index(&mut self) {
         #[cfg(test)]
         {
@@ -72,11 +75,6 @@ impl Graph {
         }
         let edge_slots = self.edge_slots.count();
         self.edge_grid = Grid::new(extent, cell, edge_slots as usize);
-        // A free slot is placed too, from whatever it held, and stays out of the grid.
-        let placed: Vec<_> = (0..edge_slots).map(|e| self.placement(e)).collect();
-        self.paths = placed.iter().map(|&(path, _, _)| path).collect();
-        self.bounds = placed.iter().map(|&(_, bounds, _)| bounds).collect();
-        self.labels = placed.iter().map(|&(_, _, label)| label).collect();
         for slot in 0..edge_slots {
             if self.holds_edge(slot) {
                 self.reindex_edge(slot);
@@ -95,11 +93,50 @@ impl Graph {
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::{Lcg, paired, plane, row};
+    use super::super::tests::{Lcg, paired, plane, random_graph, row};
     use super::super::{EdgeSpec, Level, Visible};
     use super::*;
     use crate::geometry::{Point, Sides};
     use crate::stroke::EdgeStyle;
+
+    #[test]
+    fn a_rebuild_places_no_edge_and_finds_every_edge_placed_as_it_lies() {
+        // Verifies: ADR-0022
+        let mut rng = Lcg(11);
+        let mut graph = random_graph(&mut rng, 200, 300);
+        graph.remove_edges(&[5, 9, 40]).unwrap();
+        let placed = |graph: &Graph| {
+            (0..graph.edge_slots.count())
+                .filter(|&e| graph.holds_edge(e))
+                .map(|e| {
+                    let i = e as usize;
+                    (graph.paths[i], graph.bounds[i], graph.labels[i])
+                })
+                .collect::<Vec<_>>()
+        };
+        // Nodes moved far, one a move, until the index is built again: each move places the edges
+        // at its node, and the rebuild it ends in places none.
+        let builds = graph.builds;
+        let mut node = 0;
+        while graph.builds == builds {
+            let before = graph.placements.get();
+            graph.translate(&[node], 1e6, 1e6).unwrap();
+            let edges = graph.incident[node as usize].len() as u32;
+            assert_eq!(graph.placements.get() - before, edges, "node {node}");
+            node += 1;
+        }
+        // What the rebuild left is where every edge lies now.
+        let fresh: Vec<_> = (0..graph.edge_slots.count())
+            .filter(|&e| graph.holds_edge(e))
+            .map(|e| graph.placement(e))
+            .collect();
+        assert_eq!(placed(&graph), fresh);
+        // A rebuild on its own changes no placement and makes none.
+        let (before, placements) = (placed(&graph), graph.placements.get());
+        graph.index();
+        assert_eq!(placed(&graph), before);
+        assert_eq!(graph.placements.get(), placements);
+    }
 
     #[test]
     fn nodes_dragged_far_beyond_the_extent_rebuild_the_index() {

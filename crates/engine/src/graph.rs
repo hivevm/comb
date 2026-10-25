@@ -165,6 +165,9 @@ pub struct Graph {
     /// How often the index was built, for the tests that count rebuilds.
     #[cfg(test)]
     builds: u32,
+    /// How often an edge was placed, for the tests that count placements.
+    #[cfg(test)]
+    placements: std::cell::Cell<u32>,
     scratch: Vec<u32>,
     points: Vec<Point>,
 }
@@ -200,6 +203,7 @@ impl Graph {
             ..Self::default()
         };
         graph.link();
+        graph.place_edges();
         graph.index();
         Ok(graph)
     }
