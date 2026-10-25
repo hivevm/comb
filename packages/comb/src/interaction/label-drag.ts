@@ -2,7 +2,7 @@
 // pointer, and the release records, once, where the drag left it (ADR-0023).
 import type { Hit } from "../bridge";
 import type { Context, Gesture } from "./gesture";
-import { toWorld } from "./viewport";
+import { toWorld } from "../store/viewport";
 
 /** A drag of the label `hit` names, held where the press at the screen point `(x, y)` met it,
  *  the label's edge selected; none where `hit` names no label of an edge the graph holds. */

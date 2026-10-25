@@ -21,7 +21,7 @@ import {
   type Deletion,
   type Proposal,
 } from "../interaction";
-import { clampScale, fitViewport, toWorld } from "../interaction/viewport";
+import { clampScale, fitViewport, toWorld } from "../store/viewport";
 import { Scene } from "../render/scene";
 import { engineOf, type EngineSource } from "./engine";
 import {
@@ -691,7 +691,7 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
   // Interaction subscribes before the listeners, and the frames read the store only on the next
   // frame, so that a gesture a change takes, a connection among them, is over before anything
   // reads the store after that change.
-  const detach = attachInteraction(app, store, bridge, connect);
+  const interaction = attachInteraction(app, store, bridge, connect);
   const detachDeletion = attachDeletion(app.canvas, store, bridge, options.canDelete);
   const lost = engineLostOf();
   const listeners = listenersOf(store, bridge);
@@ -719,11 +719,11 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
       frames.stop();
       unsubscribe();
       app.renderer.off("resize", frames.schedule);
-      detach();
+      interaction.detach();
       detachDeletion();
       app.destroy(true, { children: true });
     },
   };
-  scenes.set(comb, scene);
+  scenes.set(comb, { scene, hitAt: interaction.hitAt });
   return comb;
 }

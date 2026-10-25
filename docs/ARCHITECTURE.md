@@ -163,7 +163,10 @@ The functional core and its shell follow
   pointer, the connection the user drags, with the world point it is dragged to, the viewport, and
   a counter for moved positions; no coordinates of nodes or edges
   ([ADR-0011](adr/0011-store.md)). `GraphView` is its state without the actions, the type the
-  render layer reads.
+  render layer reads. `store/viewport.ts` holds the viewport's arithmetic, the transform between
+  world and screen and the level of detail of a scale included, for interaction, the scene, `api`'s
+  `fitView`, `setViewport`, and `worldPointAt`, and the testing entry; it imports none of them, so
+  the render layer takes it from the store, not from interaction.
 - **Interaction** (`packages/comb/src/interaction`) — pointer, wheel, and key input into store
   actions and engine moves. `index.ts` dispatches: a press begins the gesture of what it hits, each
   a module of its own behind the `Gesture` of `gesture.ts`, which says how it moves, how it ends at
@@ -185,29 +188,30 @@ The functional core and its shell follow
   `labelMoved` once, and a load, a removal of its edge, or a label the host cleared ends the drag. A
   drag that moved its node records `nodeMoved` once, when the pointer is released on the canvas or
   outside it; a load ends a drag. The engine's `hit` says what the pointer is on, at the level of
-  detail of the scale; node views and edges take no events. `viewport.ts` holds the viewport's
-  arithmetic, the transform between world and screen and the level of detail of a scale included,
-  for interaction, the scene, `api`'s `fitView` and `setViewport`, and the testing entry.
-- **Render** (`packages/comb/src/render`) — the PixiJS scene (`scene.ts`): a `world` render group
-  with the layers `EdgesContainer` (`edges.ts`), `NodeParticles` (`particles.ts`), `NodesContainer`
-  (`nodes.ts`), `LabelsContainer` (`labels.ts`), and `ConnectorsLayer` (`connectors.ts`), with the
-  connectors of the node under the pointer and, while the user connects, of the source and the node
-  under the pointer, and an `overlay` with the line of the connection being dragged
-  ([ADR-0027](adr/0027-nodes-bound-by-rank.md)); `bindings.ts` is the pool of views the nodes and
-  labels layers bind to slots, keeping the layer's children in the order a render binds them. The
-  scale chooses the level of detail: near (from 0.6) draws node views and edge labels, middle (from
-  0.3) node views alone, and far nodes as particles of one `ParticleContainer`
-  (`render/particles.ts`) and edges as lines one pixel wide. A render queries the engine for the
-  viewport grown by the culling margin and binds pooled node views and edge-label views to exactly
-  the slots it found, node views and particles in the order of the nodes' ranks, which the query
-  returns, edge labels in slot order; while the viewport stays within what it last queried, that
-  rectangle within the viewport grown by twice the culling margin, at about its scale and the same
-  level of detail, and the graph and the selection are unchanged, a render moves the world alone.
-  The world stands at the screen point of the last query's origin, the edges, labels, and connectors
-  at (0, 0) in it, drawn less the origin, the nodes and particles at minus the origin, so that the
-  GPU sees no far coordinate of edges, labels, and node views. `EdgesContainer` (`render/edges.ts`)
-  draws the edge mesh with a shader that leaves out the gaps of dash patterns; on the Canvas 2D
-  renderer a host application opts into
+  detail of the scale; node views and edges take no events. `targetAt` of `gesture.ts` is the one
+  hit test: `attachInteraction` asks it from the store's viewport, connectors only where
+  `CombOptions.canConnect` is set, for the press and the hover, and returns it as `hitAt`, with
+  the function that detaches the input, for the testing entry.
+- **Render** (`packages/comb/src/render`) — the PixiJS scene (`scene.ts`), which imports nothing
+  from interaction: a `world` render group with the layers `EdgesContainer` (`edges.ts`),
+  `NodeParticles` (`particles.ts`), `NodesContainer` (`nodes.ts`), `LabelsContainer` (`labels.ts`),
+  and `ConnectorsLayer` (`connectors.ts`), with the connectors of the node under the pointer and,
+  while the user connects, of the source and the node under the pointer, and an `overlay` with the
+  line of the connection being dragged ([ADR-0027](adr/0027-nodes-bound-by-rank.md)); `bindings.ts`
+  is the pool of views the nodes and labels layers bind to slots, keeping the layer's children in
+  the order a render binds them. The scale chooses the level of detail: near (from 0.6) draws node
+  views and edge labels, middle (from 0.3) node views alone, and far nodes as particles of one
+  `ParticleContainer` (`render/particles.ts`) and edges as lines one pixel wide. A render queries
+  the engine for the viewport grown by the culling margin and binds pooled node views and edge-label
+  views to exactly the slots it found, node views and particles in the order of the nodes' ranks,
+  which the query returns, edge labels in slot order; while the viewport stays within what it last
+  queried, that rectangle within the viewport grown by twice the culling margin, at about its scale
+  and the same level of detail, and the graph and the selection are unchanged, a render moves the
+  world alone. The world stands at the screen point of the last query's origin, the edges, labels,
+  and connectors at (0, 0) in it, drawn less the origin, the nodes and particles at minus the
+  origin, so that the GPU sees no far coordinate of edges, labels, and node views. `EdgesContainer`
+  (`render/edges.ts`) draws the edge mesh with a shader that leaves out the gaps of dash patterns;
+  on the Canvas 2D renderer a host application opts into
   ([ADR-0018](adr/0018-webgl2-or-an-opted-in-canvas-fallback.md)), which runs no shader, `EdgeFill`
   (`render/edges-canvas.ts`) takes its place, builds no mesh, and fills the same triangles into one
   `Graphics`, one fill per run of one colour, dash patterns solid. Not built yet: the node content
@@ -229,22 +233,23 @@ The functional core and its shell follow
   positions read from the engine's buffer, synchronously from one subscription to the store that
   tells a change before the selection it cleared; `whenRendered` resolves once a change is drawn,
   with one render per animation frame scheduled by `api/frames.ts`. `api/scenes.ts` is the one way
-  from a `Comb` to its scene, for the testing entry.
+  from a `Comb` to its scene and to the hit test its presses ask, for the testing entry.
 - **Testing entry** (`comb/testing`, `packages/comb/src/testing.ts`) — `inspect` returns what the
-  scene draws, the text of the titles and labels drawn included, and the size and detail of the
-  edge mesh, which the host application is not told; `viewport` and `renderCount`, cheap
-  enough for every frame, return its transform and how often it rendered; `screenPoint` and
-  `visibleRect` apply the scene's transform between world and screen; `hitKind` names what a press
-  at a screen point hits, connectors only where asked; `isDrawn` finds whether one node or edge is
-  drawn without building every drawn view, as `inspect` does; `showLayers` hides layers for
-  a reference image; `sceneNumbers` gives the numbers the scene draws by (where the levels of detail
-  begin, the culling margin, the label reach, the rescale); `work` counts what the canvas did: GPU
-  buffers created and allocated, bytes uploaded, those of the edge mesh among them, and texture
-  uploads, counted at the WebGL context from its first call, resizes of the edge mesh's buffers, and
-  views the pools made, and refuses where the canvas draws without WebGL; `edgeVertices` gives the
-  screen point of every vertex of the edge mesh as its shader computes it in `f32`; for tests,
-  the benchmark, and tooling. Its shape follows the scene and is outside the stable interface of
-  `comb`.
+  scene draws, the text of the titles and labels drawn included, the connectors drawn with where
+  each is centred, and the size and detail of the edge mesh, which the host application is not told;
+  `viewport` and `renderCount`, cheap enough for every frame, return its transform and how often it
+  rendered; `screenPoint` and `visibleRect` apply the scene's transform between world and screen;
+  `hitKind` names what a press at a screen point hits, asking interaction's hit test from the
+  viewport a press reads, which is the drawn one once `whenRendered` resolves, connectors only where
+  the Comb lets the user connect; `isDrawn` finds whether one node or edge is drawn without building
+  every drawn view, as `inspect` does; `showLayers` hides layers for a reference image;
+  `sceneNumbers` gives the numbers the scene draws by (where the levels of detail begin, the culling
+  margin, the label reach, the rescale); `work` counts what the canvas did: GPU buffers created and
+  allocated, bytes uploaded, those of the edge mesh among them, and texture uploads, counted at the
+  WebGL context from its first call, resizes of the edge mesh's buffers, and views the pools made,
+  and refuses where the canvas draws without WebGL; `edgeVertices` gives the screen point of every
+  vertex of the edge mesh as its shader computes it in `f32`; for tests, the benchmark, and tooling.
+  Its shape follows the scene and is outside the stable interface of `comb`.
 - **Example** (`examples/metric-tree`) — a host application with a metric tree and an HTML sidebar
   (G-9) that edits the selected node's title or the selected edge's colour, dash, arrowhead, and
   label, with a palette whose kinds HTML drag and drop puts onto the canvas, where the example adds
@@ -378,7 +383,9 @@ clock, randomness, or I/O, when a module other than the bridge imports the WebAs
 the render layer reaches the store instead of the action-free `GraphView`, or when an example
 imports past the library's entries and its engine file (ADR-0028, ADR-0019), and when the render
 layer names PixiJS's `Text`, `HTMLText`, or `SplitText` or the edges layer a `Graphics` (ADR-0027),
-and when its Canvas 2D fallback names `Graphics` outside its imports and its one field (ADR-0018).
+and when its Canvas 2D fallback names `Graphics` outside its imports and its one field (ADR-0018);
+it also holds one boundary of this overview that no ADR decides, failing a render file that
+imports from interaction by a relative path.
 `scripts/check-overview.sh` fails, naming each, where this overview holds no code span of its own
 for a method or property of the `Comb` interface, an option of `CombOptions`, or a function or
 constant `comb/testing` exports (ADR-0001), and where it reads no names from one of those sources.

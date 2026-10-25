@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Structural test of the shape of the code (ADR-0028) and of how the scene draws (ADR-0027,
-# ADR-0018).
+# Structural test of the shape of the code (ADR-0028), of how the scene draws (ADR-0027,
+# ADR-0018), and of one boundary between the shell's modules that docs/ARCHITECTURE.md draws.
 # Verifies: ADR-0028, ADR-0027, ADR-0018
 #
 # ADR-0028 builds Comb as a functional core of pure Rust and a TypeScript shell whose only door to
@@ -32,6 +32,12 @@
 #      declares a readonly class field `= new Graphics()`: one drawing, made with the layer, never
 #      in a loop over edges or triangles. What text cannot decide is left to review: a class with
 #      that one field created once per edge, or a Graphics made by a factory in another file.
+#   6. Boundaries: the render layer imports nothing from interaction/, as the module boundaries of
+#      docs/ARCHITECTURE.md (*Holding the shape*) keep it: the scene draws from the store and the
+#      engine alone, and takes the viewport's arithmetic from the store. No ADR decides this
+#      boundary, so it verifies none. It reads relative imports only, by a path that passes
+#      through interaction/; a name interaction exports that reaches render re-exported through
+#      `comb` or `../api` is out of its reach.
 #
 # Source files are .ts, .tsx, .mts, .cts, .js, .jsx, .mjs, and .cjs; test files are read like any
 # other. Dependencies (node_modules/) and the library's generated directories
@@ -165,9 +171,15 @@ if [[ -f "$fill" ]]; then
   fi
 fi
 
+# 6. Boundaries
+while IFS= read -r file; do
+  report "$file" "${specifier}\.\.?/(${inside}*/)?interaction(/${inside}*)?${quote}" \
+    "the render layer imports nothing from interaction/ (docs/ARCHITECTURE.md, Holding the shape)"
+done < <(sources packages/comb/src/render)
+
 if ((${#problems[@]})); then
   echo "Structure check FAILED (ADR-0028, ADR-0027, ADR-0018):" >&2
   printf '  - %s\n' "${problems[@]}" >&2
   exit 1
 fi
-echo "Structure check passed (core, bridge, render, examples, drawing)."
+echo "Structure check passed (core, bridge, render, examples, drawing, boundaries)."

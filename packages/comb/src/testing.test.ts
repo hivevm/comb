@@ -8,7 +8,8 @@ describe("work", () => {
   test("refuses, naming the renderer, where the canvas draws without WebGL", () => {
     // A canvas that draws with Canvas 2D has no WebGL context to count the calls of.
     const comb = {} as Comb;
-    scenes.set(comb, { app: { renderer: { name: "canvas" } } } as unknown as Scene);
+    const scene = { app: { renderer: { name: "canvas" } } } as unknown as Scene;
+    scenes.set(comb, { scene, hitAt: () => ({ kind: "none" }) });
     expect(() => work(comb)).toThrow(UncountedRendererError);
     expect(() => work(comb)).toThrow(/canvas/);
   });

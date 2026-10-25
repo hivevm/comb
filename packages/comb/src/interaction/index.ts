@@ -14,7 +14,7 @@ import { untilLost } from "./guard";
 import { labelDrag } from "./label-drag";
 import { nodeDrag } from "./node-drag";
 import { pan } from "./pan";
-import { levelAt, zoomAt } from "./viewport";
+import { levelAt, zoomAt } from "../store/viewport";
 
 export { attachDeletion, type CanDelete, type Deletion } from "./delete";
 export type { Connect, Proposal } from "./connect";
@@ -31,12 +31,18 @@ const CURSORS: Record<Hit["kind"], string> = {
   none: "",
 };
 
-/** Begins what a press at the screen point `(x, y)` does where it hits (ADR-0025): on a
- *  connector, where the host lets the user connect, a connection; on an edge label, a drag of it,
- *  its edge selected; on a node, a drag of it, the node selected; on an edge, a pan that waits for
- *  the slop, the edge selected; on nothing, a pan, the selection cleared. */
-function begin(context: Context, x: number, y: number, connect?: Connect): Gesture {
-  const hit = targetAt(context, x, y, !!connect);
+/** Begins what a press at the screen point `(x, y)` does where `hitAt` says it hits (ADR-0025):
+ *  on a connector, where the host lets the user connect, a connection; on an edge label, a drag of
+ *  it, its edge selected; on a node, a drag of it, the node selected; on an edge, a pan that waits
+ *  for the slop, the edge selected; on nothing, a pan, the selection cleared. */
+function begin(
+  context: Context,
+  hitAt: (x: number, y: number) => Hit,
+  x: number,
+  y: number,
+  connect?: Connect,
+): Gesture {
+  const hit = hitAt(x, y);
   return (
     (connect && connection(context, hit, x, y, connect)) ||
     labelDrag(context, hit, x, y) ||
@@ -56,14 +62,7 @@ function zoomByWheel(app: Application, store: GraphStore, event: WheelEvent): vo
 
 /** Shows what a press at the pointer would do: the cursor, and where the host lets the user
  *  connect, the connectors of the node under it. */
-function hoverAt(
-  app: Application,
-  context: Context,
-  event: FederatedPointerEvent,
-  connecting: boolean,
-): void {
-  const { store } = context;
-  const hit = targetAt(context, event.global.x, event.global.y, connecting);
+function hoverAt(app: Application, store: GraphStore, hit: Hit, connecting: boolean): void {
   app.canvas.style.cursor = CURSORS[hit.kind];
   // At the far level no connector is drawn, so none is shown, and hover writes nothing.
   const far = levelAt(store.getState().viewport.scale) === "far";
@@ -86,21 +85,34 @@ export function canvasPointAt(
   return { x: (clientX - rect.left) * sx, y: (clientY - rect.top) * sy };
 }
 
-/** Wires pointer and wheel input on the canvas; returns the function that removes it. */
+/** Interaction attached to a canvas: what a press at a screen point hits, and the removal of its
+ *  input. */
+export interface Interaction {
+  /** What a press at the screen point `(x, y)` of the canvas hits now, from the store's viewport,
+   *  connectors only where the host lets the user connect: the one hit test the press, the hover,
+   *  and the testing entry ask (ADR-0025). */
+  hitAt(x: number, y: number): Hit;
+  /** Removes the input from the canvas. */
+  detach(): void;
+}
+
+/** Wires pointer and wheel input on the canvas. */
 export function attachInteraction(
   app: Application,
   store: GraphStore,
   bridge: Bridge,
   connect?: Connect,
-): () => void {
+): Interaction {
   const context: Context = { store, bridge };
+  const connecting = connect !== undefined;
+  const hitAt = (x: number, y: number) => targetAt(context, x, y, connecting);
   let gesture: Gesture | null = null;
   app.stage.eventMode = "static";
   app.stage.hitArea = app.screen;
   // The cursor shows what a press would do, and the connectors of the node under the pointer show
   // where a connection may begin, where the host lets the user connect.
   const hover = untilLost((event: FederatedPointerEvent) =>
-    hoverAt(app, context, event, !!connect),
+    hoverAt(app, store, hitAt(event.global.x, event.global.y), connecting),
   );
   // The gesture is over before its change is told, so that it stays over where a listener
   // throws, and also once the engine is lost, when nothing is told.
@@ -115,7 +127,7 @@ export function attachInteraction(
     untilLost((event: FederatedPointerEvent) => {
       // A gesture whose release never came ends where the next press begins.
       release(false);
-      gesture = begin(context, event.global.x, event.global.y, connect);
+      gesture = begin(context, hitAt, event.global.x, event.global.y, connect);
       if (gesture.grabs) app.canvas.style.cursor = "grabbing";
     }),
   );
@@ -144,9 +156,12 @@ export function attachInteraction(
 
   const onWheel = untilLost((event: WheelEvent) => zoomByWheel(app, store, event));
   app.canvas.addEventListener("wheel", onWheel, { passive: false });
-  return () => {
-    unsubscribe();
-    app.stage.removeAllListeners();
-    app.canvas.removeEventListener("wheel", onWheel);
+  return {
+    hitAt,
+    detach() {
+      unsubscribe();
+      app.stage.removeAllListeners();
+      app.canvas.removeEventListener("wheel", onWheel);
+    },
   };
 }

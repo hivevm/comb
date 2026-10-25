@@ -283,8 +283,8 @@ async function emptyPoint(page: Page): Promise<Point> {
     const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();
     for (let py = 4; py < rect.height / 2; py += 3) {
       for (let px = 4; px < rect.width / 2; px += 3) {
-        // The example lets the user connect, so a press near a connector would begin a connection.
-        if (window.hitKind(px, py, true) === "none") return { x: rect.left + px, y: rect.top + py };
+        // The example lets the user connect, so the hit test finds connectors, as a press does.
+        if (window.hitKind(px, py) === "none") return { x: rect.left + px, y: rect.top + py };
       }
     }
     throw new Error("no empty point to pan from");

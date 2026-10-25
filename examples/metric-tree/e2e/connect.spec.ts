@@ -79,6 +79,44 @@ test("a drag from a's bottom connector to b's top one connects them by those sid
   expect(await page.evaluate(() => window.inspect().connection)).toBeNull();
 });
 
+// a's connectors: top (110, 0), right (220, 32), bottom (110, 64), left (0, 32).
+for (const [side, at] of [
+  ["top", [110, 0]],
+  ["right", [220, 32]],
+  ["bottom", A_BOTTOM],
+  ["left", [0, 32]],
+] as const) {
+  test(`a's ${side} connector and a connection from it are drawn where the engine begins its edge`, async ({
+    page,
+  }) => {
+    // Verifies: ADR-0024
+    await open(page);
+    await loaded(page, NODES);
+    await page.evaluate(() => (window.canConnect = () => "e7"));
+    // Hovered, a shows its four connectors.
+    const over = await pagePoint(page, ...(at as [number, number]));
+    await page.mouse.move(over.x, over.y);
+    const circle = await page.evaluate(async (side) => {
+      await window.comb.whenRendered();
+      const point = window.inspect().connectorPoints.find((p) => p.node === "a" && p.side === side);
+      return point && { x: point.x, y: point.y };
+    }, side);
+    const midway = await drag(page, at as [number, number], B_TOP);
+    const { edges, told } = await page.evaluate(async () => {
+      await window.comb.whenRendered();
+      const w = window as unknown as { told: { edge: { sourceSide: string } }[] };
+      return { edges: window.inspect().edges, told: w.told };
+    });
+    // The press hit the connector of this side, which the engine records as the edge's.
+    expect(told.map(({ edge }) => edge.sourceSide)).toEqual([side]);
+    // The connector the shell draws, and draws the connection from, is where the engine begins
+    // the edge.
+    const ends = edges.find(({ id }) => id === "e7");
+    expect(circle).toEqual(ends?.source);
+    expect(midway.connection?.from).toEqual(ends?.source);
+  });
+}
+
 for (const [name, to] of [
   ["the empty canvas", [300, 200]],
   ["a connector of the source itself", [220, 32]],
@@ -151,18 +189,23 @@ test("without canConnect a press on a connector begins no connection and shows n
   expect(kinds).toEqual(["nodeMoved"]);
 });
 
-test("hitKind finds a connector just outside a node only where it is asked for connectors", async ({
+test("hitKind finds a connector just outside a node only where the Comb lets the user connect", async ({
   page,
 }) => {
   // Verifies: ADR-0025
-  await open(page);
-  await loaded(page, NODES);
-  const kinds = await page.evaluate(() => {
-    // Three world units below a's bottom connector, outside a and within 8 pixels of it.
-    const { x, y } = window.screenPoint(110, 67);
-    return [window.hitKind(x, y, true), window.hitKind(x, y, false), window.hitKind(x, y)];
-  });
-  expect(kinds).toEqual(["connector", "none", "none"]);
+  const kinds = [];
+  for (const query of ["", "?connect=none"]) {
+    await open(page, query);
+    await loaded(page, NODES);
+    kinds.push(
+      await page.evaluate(() => {
+        // Three world units below a's bottom connector, outside a and within 8 pixels of it.
+        const { x, y } = window.screenPoint(110, 67);
+        return window.hitKind(x, y);
+      }),
+    );
+  }
+  expect(kinds).toEqual(["connector", "none"]);
 });
 
 test("at the far level no connector is drawn and a press where one would be connects nothing", async ({

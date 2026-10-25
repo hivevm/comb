@@ -231,6 +231,50 @@ describe("interaction on an edge", () => {
   });
 });
 
+describe("the hit test", () => {
+  const hits = [
+    ["a connector", { kind: "connector", slot: 0, side: "right" }],
+    ["a label", { kind: "label", slot: 0 }],
+    ["a node", { kind: "node", slot: 0 }],
+    ["an edge", { kind: "edge", slot: 0 }],
+    ["nothing", { kind: "none" }],
+  ] as const;
+  for (const connects of [true, false]) {
+    for (const [over, hit] of hits) {
+      test(`over ${over}, ${connects ? "with" : "without"} connect, hitAt, the hover, and a press ask the engine alike`, () => {
+        // Verifies: ADR-0025
+        const store = createGraphStore();
+        store.getState().load({
+          nodes: [
+            { id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 },
+            { id: "b", title: "B", x: 300, y: 0, width: 100, height: 40 },
+          ],
+          edges: [{ id: "a-b", source: "a", target: "b" }],
+        });
+        store.getState().setViewport({ x: 30, y: 20, scale: 2 });
+        const calls: unknown[][] = [];
+        const bridge = {
+          hit: (...args: unknown[]) => (calls.push(args), hit),
+          labelPoint: () => ({ x: 0, y: 0 }),
+          edgesAt: () => new Uint32Array(0),
+          positions: () => new Float32Array(8),
+          translate() {},
+        } as unknown as Bridge;
+        const { app, emit } = fakeApp();
+        const interaction = attachInteraction(app, store, bridge, connects ? () => {} : undefined);
+        // The screen point (130, 60) shows the world point (50, 20), a screen pixel half a unit.
+        const asked = [50, 20, 0.5, "near", connects];
+        emit("globalpointermove", 130, 60);
+        expect(calls).toEqual([asked]);
+        expect(interaction.hitAt(130, 60)).toBe(hit);
+        expect(calls).toEqual([asked, asked]);
+        emit("pointerdown", 130, 60);
+        expect(calls).toEqual([asked, asked, asked]);
+      });
+    }
+  }
+});
+
 describe("interaction connects", () => {
   test("a connection a later press ends, its release never having come, proposes no edge", () => {
     // Verifies: ADR-0023, ADR-0024

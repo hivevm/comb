@@ -4,18 +4,22 @@
 import type { Buffer, Matrix, WebGLRenderer } from "pixi.js";
 import type { Comb } from "./api";
 import { scenes } from "./api/scenes";
-import { toScreen, worldRect } from "./interaction/viewport";
 import { TEST_MODE, trapNextCall, type Hit, type Rect } from "./bridge";
 import { EdgesContainer } from "./render/edges";
 import { LABEL_REACH } from "./render/labels";
-import { CULLING_MARGIN, FAR_SCALE, NEAR_SCALE, RESCALE, type SceneSnapshot } from "./render/scene";
+import { CULLING_MARGIN, RESCALE, type SceneSnapshot } from "./render/scene";
+import { FAR_SCALE, NEAR_SCALE, toScreen, worldRect } from "./store/viewport";
 
 export type { SceneSnapshot };
 
+function inspectedOf(comb: Comb) {
+  const inspected = scenes.get(comb);
+  if (!inspected) throw new Error("comb/testing: not a Comb created by createComb");
+  return inspected;
+}
+
 function sceneOf(comb: Comb) {
-  const scene = scenes.get(comb);
-  if (!scene) throw new Error("comb/testing: not a Comb created by createComb");
-  return scene;
+  return inspectedOf(comb).scene;
 }
 
 /** What the canvas of `comb` draws right now, in world coordinates. */
@@ -40,11 +44,12 @@ export function isDrawn(comb: Comb, what: { node: string } | { edge: string }): 
   return sceneOf(comb).draws(what);
 }
 
-/** What a press at the screen point `(x, y)`, relative to the canvas of `comb`, hits: a connector
- *  where `connectors` asks for them, as a Comb with `canConnect` does, a label, a node, an edge,
- *  or nothing (ADR-0025). */
-export function hitKind(comb: Comb, x: number, y: number, connectors = false): Hit["kind"] {
-  return sceneOf(comb).hitKind(x, y, connectors);
+/** What a press at the screen point `(x, y)`, relative to the canvas of `comb`, hits now: a
+ *  connector where `comb` lets the user connect, a label, a node, an edge, or nothing. It asks the
+ *  hit test a press asks, from the viewport a press reads, which is the drawn one once
+ *  `whenRendered` resolves (ADR-0025). */
+export function hitKind(comb: Comb, x: number, y: number): Hit["kind"] {
+  return inspectedOf(comb).hitAt(x, y).kind;
 }
 
 /** The world rectangle the canvas of `comb` shows, grown by `margin` screen pixels. */
