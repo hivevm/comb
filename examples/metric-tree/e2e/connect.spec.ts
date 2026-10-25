@@ -256,3 +256,45 @@ test("a veto that throws ends the gesture first: no connection is drawn after it
   expect(state).toEqual({ connection: null, edges: 1 });
   expect(errors).toEqual(["host veto"]);
 });
+
+test("a connection dragged across the empty canvas neither queries the engine nor redraws the connectors per move", async ({
+  page,
+}) => {
+  // Verifies: ADR-0011
+  await open(page);
+  await loaded(page, NODES);
+  await page.evaluate(() => (window.canConnect = () => "e7"));
+  const press = await pagePoint(page, ...A_BOTTOM);
+  await page.mouse.move(press.x, press.y);
+  await page.mouse.down();
+  // The first move leaves a's connector for the empty canvas, below a and above b.
+  const first = await pagePoint(page, 120, 120);
+  await page.mouse.move(first.x, first.y);
+  const before = await page.evaluate(async () => {
+    await window.comb.whenRendered();
+    return window.inspect();
+  });
+  const moves = 20;
+  const seen = [];
+  for (let i = 1; i <= moves; i++) {
+    const at = await pagePoint(page, 120 + i * 5, 120 + i * 2);
+    await page.mouse.move(at.x, at.y);
+    seen.push(
+      await page.evaluate(async () => {
+        await window.comb.whenRendered();
+        const { connection, queries, connectorRedraws, renders } = window.inspect();
+        return { to: connection?.to, queries, connectorRedraws, renders };
+      }),
+    );
+  }
+  await page.mouse.up();
+  // Every move rendered the line to the pointer, and none queried or redrew the connectors.
+  expect(seen.map(({ to }) => to)).toEqual(
+    Array.from({ length: moves }, (_, i) => ({ x: 125 + i * 5, y: 122 + i * 2 })),
+  );
+  expect(seen.at(-1)!.renders).toBe(before.renders + moves);
+  expect(seen.map(({ queries }) => queries)).toEqual(Array(moves).fill(before.queries));
+  expect(seen.map(({ connectorRedraws }) => connectorRedraws)).toEqual(
+    Array(moves).fill(before.connectorRedraws),
+  );
+});

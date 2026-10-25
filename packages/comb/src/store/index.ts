@@ -1,5 +1,6 @@
-// The state of the graph and the viewport (ADR-0011). Coordinates are not kept here: they live in
-// the engine's buffer, and `positionsVersion` tells readers that they moved.
+// The state of the graph and the viewport (ADR-0011). Coordinates are not kept here: positions live
+// in the engine's buffer, and `positionsVersion` tells readers that they moved; the point a
+// connection is dragged to lives in interaction, and `pointerVersion` tells them that it moved.
 import { createStore } from "zustand/vanilla";
 
 /** A node as the host application hands it over; `x` and `y` are its initial position. */
@@ -100,13 +101,14 @@ export type StoreChange =
       readonly patch: Readonly<Partial<Pick<NodeView, "title">>>;
     };
 
-/** A connection the user drags from the connector `side` of the node in slot `source` to the world
- *  point `to` (ADR-0024): over the node in slot `over`, whose connectors are `compatible` where the
- *  source does not reach it yet, and over its connector `target` where a release connects. */
+/** A connection the user drags from the connector `side` of the node in slot `source` (ADR-0024):
+ *  over the node in slot `over`, whose connectors are `compatible` where the source does not reach
+ *  it yet, and over its connector `target` where a release connects. The world point it is dragged
+ *  to is no part of it: interaction keeps that point and signals its moves by `pointerVersion`
+ *  (ADR-0011). */
 export interface Connection {
   readonly source: number;
   readonly side: Side;
-  readonly to: { readonly x: number; readonly y: number };
   readonly over: number | null;
   readonly compatible: boolean;
   readonly target: { readonly slot: number; readonly side: Side } | null;
@@ -137,6 +139,8 @@ export interface GraphView {
   readonly connection: Connection | null;
   readonly viewport: Readonly<Viewport>;
   readonly positionsVersion: number;
+  /** Counts the moves of the point a connection is dragged to, which interaction keeps. */
+  readonly pointerVersion: number;
 }
 
 export interface GraphState extends GraphView {
@@ -149,6 +153,8 @@ export interface GraphState extends GraphView {
   select(selection: Selection): void;
   setViewport(viewport: Viewport): void;
   positionsMoved(): void;
+  /** Records that the point a connection is dragged to moved, where interaction keeps it. */
+  pointerMoved(): void;
   /** Records that a drag, now released, left the node `id` where the engine keeps it. */
   nodeMoved(id: string): void;
   /** Forgets the nodes in `nodeSlots` and the edges in `edgeSlots`, which the engine removed,
@@ -333,6 +339,7 @@ export function createGraphStore() {
     connection: null,
     viewport: { x: 0, y: 0, scale: 1 },
     positionsVersion: 0,
+    pointerVersion: 0,
     load: (graph, idUnits) => set((state) => loadedFrom(state, graph, idUnits)),
     addNode: ({ id, title, width, height }, slot) =>
       set((state) => {
@@ -355,6 +362,7 @@ export function createGraphStore() {
     select: (selection) => set({ selection }),
     setViewport: (viewport) => set({ viewport }),
     positionsMoved: () => set((state) => ({ positionsVersion: state.positionsVersion + 1 })),
+    pointerMoved: () => set((state) => ({ pointerVersion: state.pointerVersion + 1 })),
     nodeMoved: (id) => set({ change: { kind: "nodeMoved", by: "user", id } }),
     removeNodes: (nodeSlots, edgeSlots, by) =>
       set((state) => withoutNodes(state, nodeSlots, edgeSlots, by)),

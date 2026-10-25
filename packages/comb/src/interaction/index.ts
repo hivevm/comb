@@ -60,6 +60,13 @@ function zoomByWheel(app: Application, store: GraphStore, event: WheelEvent): vo
   setViewport(zoomAt(viewport, at.x, at.y, factor));
 }
 
+/** Zooms around the pointer by the wheel on the canvas; returns the removal of the listener. */
+function attachWheel(app: Application, store: GraphStore): () => void {
+  const onWheel = untilLost((event: WheelEvent) => zoomByWheel(app, store, event));
+  app.canvas.addEventListener("wheel", onWheel, { passive: false });
+  return () => app.canvas.removeEventListener("wheel", onWheel);
+}
+
 /** Shows what a press at the pointer would do: the cursor, and where the host lets the user
  *  connect, the connectors of the node under it. */
 function hoverAt(app: Application, store: GraphStore, hit: Hit, connecting: boolean): void {
@@ -92,6 +99,9 @@ export interface Interaction {
    *  connectors only where the host lets the user connect: the one hit test the press, the hover,
    *  and the testing entry ask (ADR-0025). */
   hitAt(x: number, y: number): Hit;
+  /** The world point the connection the user drags is dragged to, while the store holds one: kept
+   *  here, not in the store, and its moves signalled by the store's `pointerVersion` (ADR-0011). */
+  readonly pointer: { readonly x: number; readonly y: number };
   /** Removes the input from the canvas. */
   detach(): void;
 }
@@ -103,7 +113,7 @@ export function attachInteraction(
   bridge: Bridge,
   connect?: Connect,
 ): Interaction {
-  const context: Context = { store, bridge };
+  const context: Context = { store, bridge, pointer: { x: 0, y: 0 } };
   const connecting = connect !== undefined;
   const hitAt = (x: number, y: number) => targetAt(context, x, y, connecting);
   let gesture: Gesture | null = null;
@@ -154,14 +164,14 @@ export function attachInteraction(
     taken.drop();
   });
 
-  const onWheel = untilLost((event: WheelEvent) => zoomByWheel(app, store, event));
-  app.canvas.addEventListener("wheel", onWheel, { passive: false });
+  const detachWheel = attachWheel(app, store);
   return {
     hitAt,
+    pointer: context.pointer,
     detach() {
       unsubscribe();
       app.stage.removeAllListeners();
-      app.canvas.removeEventListener("wheel", onWheel);
+      detachWheel();
     },
   };
 }

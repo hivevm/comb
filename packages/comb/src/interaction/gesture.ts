@@ -5,10 +5,12 @@ import type { Bridge, Hit } from "../bridge";
 import type { GraphState, GraphStore } from "../store";
 import { levelAt, toWorld } from "../store/viewport";
 
-/** What a gesture works on: the store, and the bridge to the engine. */
+/** What a gesture works on: the store, the bridge to the engine, and the world point a connection
+ *  is dragged to, which the store does not hold (ADR-0011). */
 export interface Context {
   readonly store: GraphStore;
   readonly bridge: Bridge;
+  readonly pointer: { x: number; y: number };
 }
 
 /** A gesture in progress, begun by a press. */
