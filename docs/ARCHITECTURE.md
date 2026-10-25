@@ -161,8 +161,10 @@ The functional core and its shell follow
   edge identifiers to slots, the code units of the identifiers it holds, counted for a node and for
   an edge by one function each and for a load taken as its snapshot counted them, the change the
   last action that changed the graph made, by kind and identifier, the selection, the node under the
-  pointer, the connection the user drags, with the world point it is dragged to, the viewport, and a
-  counter for moved positions; no coordinates of nodes or edges ([ADR-0011](adr/0011-store.md)).
+  pointer, the connection the user drags, its source, side, the node under the pointer, and
+  compatibility, the viewport, a counter for moved positions, and a counter for moves of the point a
+  connection is dragged to; no coordinates of nodes, edges, or the pointer
+  ([ADR-0011](adr/0011-store.md)).
   `GraphView` is its state without the actions, the type the render layer reads.
   `store/viewport.ts` holds the viewport's arithmetic, the transform between world and screen and
   the level of detail of a scale included, for interaction, the scene, `api`'s `fitView`,
@@ -183,13 +185,16 @@ The functional core and its shell follow
   at it (`edgesAt`) before anything is removed, once `CombOptions.canDelete` returns `true` and has
   not changed the graph itself, through the removal `api` hands it, which records it as the user's;
   a key held down or pressed with Control, Alt, or Meta deletes nothing beyond its first press. A
-  connection's place is the store's alone, which the render draws; its gesture ends it at a load or
-  a removal of its source. `label-drag.ts`: a press on a label, at the near level, selects its edge
-  and drags the label, held where it was grabbed, which the engine places on every move; its
-  release, or a later press, records `labelMoved` once, and a load, a removal of its edge, or a
-  label the host cleared ends the drag. A drag that moved its node records `nodeMoved` once, when
-  the pointer is released on the canvas or outside it; a load ends a drag. The engine's `hit` says
-  what the pointer is on, at the level of detail of the scale; node views and edges take no events.
+  connection's source and what it is over are the store's, written only where they change; the
+  world point it is dragged to is interaction's `pointer`, which `attachInteraction` returns, and a
+  move signals it with the store's `pointerMoved`, as a drag of a node signals its positions; its
+  gesture ends it at a load or a removal of its source. `label-drag.ts`: a press on a label, at the
+  near level, selects its edge and drags the label, held where it was grabbed, which the engine
+  places on every move; its release, or a later press, records `labelMoved` once, and a load, a
+  removal of its edge, or a label the host cleared ends the drag. A drag that moved its node records
+  `nodeMoved` once, when the pointer is released on the canvas or outside it; a load ends a drag.
+  The engine's `hit` says what the pointer is on, at the level of detail of the scale; node views
+  and edges take no events.
   `targetAt` of `gesture.ts` is the one hit test: `attachInteraction` asks it from the store's
   viewport, connectors only where `CombOptions.canConnect` is set, for the press and the hover, and
   returns it as `hitAt`, with the function that detaches the input, for the testing entry.
@@ -198,7 +203,8 @@ The functional core and its shell follow
   `NodeParticles` (`particles.ts`), `NodesContainer` (`nodes.ts`), `LabelsContainer` (`labels.ts`),
   and `ConnectorsLayer` (`connectors.ts`), with the connectors of the node under the pointer and,
   while the user connects, of the source and the node under the pointer, and an `overlay` with the
-  line of the connection being dragged ([ADR-0027](adr/0027-nodes-bound-by-rank.md)); `bindings.ts`
+  line of the connection being dragged, to the pointer `api` hands each render from interaction
+  ([ADR-0027](adr/0027-nodes-bound-by-rank.md)); `bindings.ts`
   is the pool of views the nodes and labels layers bind to slots, keeping the layer's children in
   the order a render binds them. The scale chooses the level of detail: near (from 0.6) draws node
   views and edge labels, middle (from 0.3) node views alone, and far nodes as particles of one

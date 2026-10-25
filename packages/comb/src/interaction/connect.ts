@@ -2,8 +2,10 @@
 // follows the pointer and marks the connectors of the node under it compatible where the source
 // does not reach that node yet; released over a compatible connector, it proposes the edge to the
 // host application's veto, through `connect`, which `api` gives where `canConnect` is set. The
-// store holds where the connection is, which the render draws; the gesture holds nothing of it
-// but the identifier of its source.
+// store holds what the connection is from and over, which changes rarely; the world point it is
+// dragged to, which changes on every move, is the context's `pointer`, which the store's
+// `pointerMoved` signals, as a drag of a node signals the positions it moves (ADR-0011). The
+// gesture holds nothing of it but the identifier of its source.
 import type { Bridge, Hit } from "../bridge";
 import type { Connection, GraphStore, Side } from "../store";
 import { targetAt, type Context, type Gesture } from "./gesture";
@@ -32,22 +34,37 @@ function reaches(store: GraphStore, bridge: Bridge, source: number, target: numb
   });
 }
 
-/** The connection from the connector `side` of the node in slot `source` with the pointer at the
- *  screen point `(x, y)`, where `hit` says what lies there. */
-function connectionAt(
+/** The connection from the connector `side` of the node in slot `source` with the pointer over
+ *  what `hit` says. */
+function connectionOver(
   store: GraphStore,
   bridge: Bridge,
   source: number,
   side: Side,
-  x: number,
-  y: number,
   hit: Hit,
 ): Connection {
-  const to = toWorld(store.getState().viewport, x, y);
   const over = hit.kind === "connector" || hit.kind === "node" ? hit.slot : null;
   const compatible = over !== null && over !== source && !reaches(store, bridge, source, over);
   const target = compatible && hit.kind === "connector" ? { slot: hit.slot, side: hit.side } : null;
-  return { source, side, to, over, compatible, target };
+  return { source, side, over, compatible, target };
+}
+
+/** Whether `a` and `b` are the same connection: from, over, and onto the same. */
+function same(a: Connection, b: Connection): boolean {
+  return (
+    a.source === b.source &&
+    a.side === b.side &&
+    a.over === b.over &&
+    a.compatible === b.compatible &&
+    a.target?.slot === b.target?.slot &&
+    a.target?.side === b.target?.side
+  );
+}
+
+/** Keeps the world point under the screen point `(x, y)` as where the connection is dragged to. */
+function follow({ store, pointer }: Context, x: number, y: number): void {
+  const to = toWorld(store.getState().viewport, x, y);
+  [pointer.x, pointer.y] = [to.x, to.y];
 }
 
 /** Ends the connection `connection`, and proposes its edge where it was released over a
@@ -80,14 +97,24 @@ export function connection(
   const from = hit.kind === "connector" ? store.getState().nodes[hit.slot] : undefined;
   if (hit.kind !== "connector" || !from) return undefined;
   const { id } = from;
-  store.getState().connect(connectionAt(store, bridge, hit.slot, hit.side, x, y, hit));
+  follow(context, x, y);
+  store.getState().connect(connectionOver(store, bridge, hit.slot, hit.side, hit));
   return {
     grabs: false,
+    // The store hears of the point once a move, and of the connection only where it changed.
     move(x, y) {
       const held = store.getState().connection;
       if (!held) return;
-      const over = targetAt(context, x, y, true);
-      store.getState().connect(connectionAt(store, bridge, held.source, held.side, x, y, over));
+      follow(context, x, y);
+      const next = connectionOver(
+        store,
+        bridge,
+        held.source,
+        held.side,
+        targetAt(context, x, y, true),
+      );
+      if (!same(held, next)) store.getState().connect(next);
+      store.getState().pointerMoved();
     },
     // One a later press ends, its release never having come, proposes none.
     end(released) {

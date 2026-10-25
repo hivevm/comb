@@ -451,7 +451,8 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
 
   const store = createGraphStore();
   const scene = new Scene(app);
-  const frames = createFrames(() => scene.render(store.getState(), bridge));
+  // The frames render only from the next animation frame on, once interaction is attached.
+  const frames = createFrames(() => scene.render(store.getState(), bridge, interaction.pointer));
   const unsubscribe = store.subscribe(frames.schedule);
   // A larger canvas shows more of the world, so what is culled changes with its size.
   app.renderer.on("resize", frames.schedule);

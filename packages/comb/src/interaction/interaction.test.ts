@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { Application } from "pixi.js";
 import { attachInteraction } from ".";
 import type { Bridge } from "../bridge";
+import { ConnectionLine } from "../render/connectors";
 import { createGraphStore, type GraphData, type GraphStore } from "../store";
 
 /** Loads `graph` into `store` with the code units of its identifiers, as `api` hands a load over. */
@@ -280,6 +281,52 @@ describe("the hit test", () => {
       });
     }
   }
+});
+
+describe("interaction keeps the point a connection is dragged to", () => {
+  test("a connection dragged across the empty canvas writes no coordinate into the store, and its line follows", () => {
+    // Verifies: ADR-0011
+    const store = createGraphStore();
+    load(store, {
+      nodes: [{ id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 }],
+      edges: [],
+    });
+    store.getState().setViewport({ x: 30, y: 20, scale: 2 });
+    const { app, emit } = fakeApp();
+    // The press at the screen point (230, 60), the world point (100, 20), meets a's right
+    // connector; every point right of it is empty canvas.
+    const hit = (x: number) =>
+      x <= 100 ? { kind: "connector", slot: 0, side: "right" } : { kind: "none" };
+    const { bridge } = fakeBridge(hit);
+    const interaction = attachInteraction(app, store, bridge, () => {});
+    emit("pointerdown", 230, 60);
+    const line = new ConnectionLine();
+    // The first move leaves a's connector for the empty canvas: the connection is over nothing.
+    emit("globalpointermove", 240, 60);
+    const over = store.getState().connection;
+    expect(over).toMatchObject({ source: 0, over: null, compatible: false, target: null });
+    const writes: string[][] = [];
+    const unsubscribe = store.subscribe((state, previous) =>
+      writes.push(
+        Object.keys(state).filter(
+          (key) => state[key as keyof typeof state] !== previous[key as keyof typeof previous],
+        ),
+      ),
+    );
+    // One pointer move per frame, as a browser delivers them while the user drags.
+    const frames = 12;
+    for (let frame = 1; frame <= frames; frame += 1) {
+      const [x, y] = [240 + frame * 10, 60 + frame * 4];
+      emit("globalpointermove", x, y);
+      line.sync(store.getState(), bridge.positions(), interaction.pointer);
+      // The screen point (x, y) shows the world point ((x - 30) / 2, (y - 20) / 2).
+      expect(line.drawn?.to).toEqual({ x: (x - 30) / 2, y: (y - 20) / 2 });
+    }
+    unsubscribe();
+    // Each move only counts that the pointer moved; the connection, over nothing, stays as it was.
+    expect(writes).toEqual(Array.from({ length: frames }, () => ["pointerVersion"]));
+    expect(store.getState().connection).toBe(over);
+  });
 });
 
 describe("interaction connects", () => {

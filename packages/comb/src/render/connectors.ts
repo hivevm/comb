@@ -1,8 +1,8 @@
 // The connectors layer and the connection being dragged (ADR-0024, ADR-0027): the four connectors
 // of the node under the pointer, and while the user drags a connection those of its source and of
 // the node under the pointer, the compatible ones drawn apart; and in the overlay, a line from the
-// source's connector to the pointer. It reads the store and the engine's positions, and writes
-// neither (ADR-0028).
+// source's connector to the pointer. It reads the store, the engine's positions, and the point
+// interaction keeps for the pointer, and writes none of them (ADR-0011, ADR-0028).
 import { Graphics } from "pixi.js";
 import type { GraphView, Side } from "../store";
 import { toScreen } from "../store/viewport";
@@ -143,7 +143,12 @@ function shownBy(state: GraphView): [number, boolean][] {
 export class ConnectionLine extends Graphics {
   drawn: { from: { x: number; y: number }; to: { x: number; y: number } } | null = null;
 
-  sync(state: GraphView, positions: Float32Array): void {
+  /** Draws the connection `state` holds to the world point `pointer`, or none. */
+  sync(
+    state: GraphView,
+    positions: Float32Array,
+    pointer: { readonly x: number; readonly y: number },
+  ): void {
     const { connection, viewport } = state;
     const node = connection ? state.nodes[connection.source] : undefined;
     if (!connection || !node) {
@@ -161,8 +166,8 @@ export class ConnectionLine extends Graphics {
       connection.side,
     );
     const from = toScreen(viewport, world.x, world.y);
-    const to = toScreen(viewport, connection.to.x, connection.to.y);
+    const to = toScreen(viewport, pointer.x, pointer.y);
     this.moveTo(from.x, from.y).lineTo(to.x, to.y).stroke({ width: 2, color: LINE });
-    this.drawn = { from: world, to: { ...connection.to } };
+    this.drawn = { from: world, to: { x: pointer.x, y: pointer.y } };
   }
 }

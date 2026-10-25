@@ -143,11 +143,17 @@ export class Scene {
     app.stage.addChild(this.world, this.overlay);
   }
 
-  render(state: GraphView, bridge: Bridge): void {
+  /** Draws `state` from the engine behind `bridge`, a connection being dragged to the world point
+   *  `pointer`, which interaction keeps outside the store (ADR-0011). */
+  render(
+    state: GraphView,
+    bridge: Bridge,
+    pointer: { readonly x: number; readonly y: number },
+  ): void {
     if (!this.covers(state)) this.query(state, bridge);
     const positions = bridge.positions();
     this.connectors.sync(state, positions, this.origin, this.level === "far");
-    this.connection.sync(state, positions);
+    this.connection.sync(state, positions, pointer);
     // In f64 here, so that the world's transform on the GPU holds no far coordinate.
     const at = toScreen(state.viewport, this.origin.x, this.origin.y);
     this.world.position.set(at.x, at.y);
