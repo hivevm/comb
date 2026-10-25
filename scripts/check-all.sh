@@ -36,6 +36,8 @@ run() {
 run "Documentation self-test" scripts/test-check-docs.sh
 run "Documentation consistency" scripts/check-docs.sh
 run "Normalize map self-test" scripts/test-normalize-remap.sh
+run "Plan modes self-test" scripts/test-check-plan-modes.sh
+run "Plan modes" scripts/check-plan-modes.sh
 run "Traceability self-test" scripts/test-check-traceability.sh
 run "Traceability" scripts/check-traceability.sh
 run "Dev Container self-test" scripts/test-check-devcontainer.sh

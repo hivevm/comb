@@ -6,7 +6,8 @@ name: Checks
 # lists and the required checks named in README.md together. Each job runs a check after its own
 # self-test, and each script's header says what it checks:
 # - Documentation: scripts/check-docs.sh, then the self-test of the normalize skill's map script,
-#   scripts/test-normalize-remap.sh (ADR-0001).
+#   scripts/test-normalize-remap.sh (ADR-0001), then scripts/check-plan-modes.sh, which refuses an
+#   unattended ticket that names a protected part of ADR-0007.
 # - Traceability: scripts/check-traceability.sh (ADR-0002).
 # - Dev Container: scripts/check-devcontainer.sh (ADR-0004).
 # - Sensors: scripts/sensor-tests-kept.sh, sensor-binding-adrs.sh (ADR-0001),
@@ -67,6 +68,10 @@ jobs:
         run: bash scripts/check-docs.sh
       - name: Self-test the map script of the normalize skill
         run: bash scripts/test-normalize-remap.sh
+      - name: Self-test the plan modes check
+        run: bash scripts/test-check-plan-modes.sh
+      - name: Check that no unattended ticket names a protected part
+        run: bash scripts/check-plan-modes.sh
 
   traceability:
     runs-on: ubuntu-latest
