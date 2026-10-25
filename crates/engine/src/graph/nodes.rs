@@ -9,7 +9,7 @@ use crate::geometry::{Rect, WORLD_LIMIT};
 /// Why the positions refused a move: a delta that is NaN or infinite.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PositionError {
-    /// A coordinate or delta that is NaN or infinite.
+    /// A delta that is NaN or infinite.
     NonFinite,
 }
 
