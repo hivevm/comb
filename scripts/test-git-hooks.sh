@@ -1,13 +1,20 @@
 #!/usr/bin/env bash
 #
 # Self-test of the git hooks under .githooks/: pre-commit refuses a commit on main, pre-push
-# refuses a push while the checks are red (AGENTS.md, sections 5 and 6).
+# refuses a push while the checks are red (AGENTS.md, sections 5 and 6), and pre-merge-commit
+# refuses a merge commit on main while the documentation check or the plan frontier sensor fails
+# or is missing.
 #
 # Each case builds a throwaway repository under a temporary directory with core.hooksPath pointing
-# at this repository's .githooks/, runs a real 'git commit' or 'git push' in it — the push goes to
-# a bare repository next to it — and asserts the exit code and, for a refused command, the message.
-# A push case ships its own scripts/check-all.sh, green or red, so the test decides what the hook
-# finds.
+# at this repository's .githooks/, runs a real 'git commit', 'git push', or 'git merge --no-ff' in
+# it — the push goes to a bare repository next to it — and asserts the exit code and, for a
+# refused command, the message. A push case ships its own scripts/check-all.sh, green or red, so
+# the test decides what the hook finds. A merge case ships this repository's plan frontier sensor
+# and, as its scripts/check-docs.sh, a stand-in that fails on a Markdown line over 100 columns,
+# the rule of the real check a merge breaks most easily, and that fails as well when git run in
+# another repository still sees the hook's repository; one case merges in a linked worktree,
+# where git hands the hook absolute paths, and a tag named 'main' is played against both hooks
+# that gate main.
 #
 # Usage:
 #     scripts/test-git-hooks.sh
@@ -72,6 +79,10 @@ d="$(repo on-main)"
 expect refuse "a commit on main" "$d" "on 'main'" commit -q --allow-empty -m x
 expect pass "a push from main with no check script to run" "$d" "" push -q origin main
 
+d="$(repo tag-main)"
+git -C "${d:?}" tag main
+expect refuse "a commit on main beside a tag named main" "$d" "on 'main'" commit -q --allow-empty -m x
+
 d="$(repo on-branch)"
 git -C "${d:?}" switch -q -c feature
 expect pass "a commit on a branch" "$d" "" commit -q --allow-empty -m x
@@ -91,6 +102,86 @@ expect pass "a push while the checks are green" "$d" "" push -q origin feature
 d="$(repo detached)"
 git -C "${d:?}" checkout -q --detach
 expect pass "a commit on a detached HEAD is not on main" "$d" "" commit -q --allow-empty -m x
+
+# merging <name> — a fixture repository whose main carries a stand-in scripts/check-docs.sh and
+# this repository's plan frontier sensor, committed before the hooks are enabled. Prints its path.
+merging() {
+  local dir="$work/$1"
+  mkdir -p "$dir/scripts"
+  git -C "${dir:?}" init -q -b main
+  cat > "$dir/scripts/check-docs.sh" <<'STAND_IN'
+#!/usr/bin/env bash
+other="$(mktemp -d)"
+git -C "$other" init -q
+[[ -z "$(git -C "$other" ls-files)" ]] \
+  || { echo "the hook's git variables reached another repository"; exit 1; }
+rm -rf "$other"
+long="$(git ls-files '*.md' | xargs -r awk 'length > 100 { print FILENAME ": " FNR }')"
+[[ -z "$long" ]] || { echo "line over 100 columns: $long"; exit 1; }
+STAND_IN
+  cp "$ROOT/scripts/sensor-plan-frontier.sh" "$dir/scripts/"
+  g "$dir" add scripts
+  g "$dir" commit -q -m init
+  git -C "${dir:?}" config core.hooksPath "$HOOKS"
+  echo "$dir"
+}
+
+# branch_with <dir> <branch> <path> <content> — a branch off main that commits one file.
+branch_with() {
+  git -C "${1:?}" switch -q -c "$2" main
+  mkdir -p "$(dirname "$1/$3")"
+  printf '%s\n' "$4" > "$1/$3"
+  g "$1" add "$3"
+  g "$1" commit -q -m "$2"
+  git -C "${1:?}" switch -q main
+}
+
+LONG="$(printf 'word %.0s' {1..20})x"   # 101 columns of prose
+
+d="$(merging merge-long-line)"
+branch_with "$d" feature docs/notes.md "$LONG"
+expect refuse "a merge commit on main with a line over 100 columns" "$d" "scripts/check-docs.sh" \
+  merge -q --no-ff -m merge feature
+
+d="$(merging merge-blocker)"
+branch_with "$d" feature docs/plan/s/01-a.md \
+  "$(printf '# Ticket\n\n## Blocked by\n\n- [a link](x.md)\n\n## Mode\n\nunattended')"
+expect refuse "a merge commit on main with a blocker the sensor cannot read" "$d" \
+  "scripts/sensor-plan-frontier.sh" merge -q --no-ff -m merge feature
+
+d="$(merging merge-green)"
+branch_with "$d" feature docs/notes.md "A short line."
+expect pass "a merge commit on main of a green branch" "$d" "" merge -q --no-ff -m merge feature
+
+d="$(merging merge-elsewhere)"
+branch_with "$d" feature docs/notes.md "$LONG"
+git -C "${d:?}" switch -q -c other main
+expect pass "a merge commit into a branch other than main" "$d" "" merge -q --no-ff -m merge feature
+
+d="$(merging merge-tag-main)"
+branch_with "$d" feature docs/notes.md "$LONG"
+git -C "${d:?}" tag main
+expect refuse "a merge commit on main beside a tag named main" "$d" "scripts/check-docs.sh" \
+  merge -q --no-ff -m merge feature
+
+d="$(merging merge-missing)"
+git -C "${d:?}" switch -q -c feature
+g "$d" rm -q scripts/check-docs.sh
+g "$d" commit -q -m "drop the check"
+git -C "${d:?}" switch -q main
+expect refuse "a merge commit on main that removes a check" "$d" \
+  "scripts/check-docs.sh is missing" merge -q --no-ff -m merge feature
+
+d="$(merging merge-worktree)"
+branch_with "$d" red docs/notes.md "$LONG"
+branch_with "$d" green docs/notes.md "A short line."
+git -C "${d:?}" switch -q -c park
+git -C "${d:?}" worktree add -q "$d-wt" main
+expect refuse "a red merge commit on main in a linked worktree" "$d-wt" "scripts/check-docs.sh" \
+  merge -q --no-ff -m merge red
+git -C "$d-wt" merge --abort
+expect pass "a green merge commit on main in a linked worktree" "$d-wt" "" \
+  merge -q --no-ff -m merge green
 
 # --- summary -------------------------------------------------------------------------------
 
