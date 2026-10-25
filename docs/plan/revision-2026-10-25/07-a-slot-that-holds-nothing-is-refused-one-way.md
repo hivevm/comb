@@ -54,8 +54,8 @@ must four existing assertions:
 
 - `packages/comb/src/bridge/bridge.test.ts` (the test of free slots): `bridge.translate` on a free
   slot expects `{ kind: "slotOutOfRange", slot: 2 }`.
-- `crates/engine-wasm/src/lib.rs`, `a_freed_slot_is_refused_by_every_export_that_takes_slots_as_a_slot_beyond_the_graph`:
-  expects `Err(TranslateError::SlotOutOfRange { slot })`.
+- `crates/engine-wasm/src/lib.rs`, the test of a freed slot refused by every export that takes
+  slots: expects `Err(TranslateError::SlotOutOfRange { slot })`.
 - `crates/engine/src/graph/tests.rs`: expects `Err(PositionError::SlotOutOfRange { slot: 3 })` of
   `Graph::translate`.
 - `crates/engine/src/positions.rs`: its own test of the range check, which folding the module into
