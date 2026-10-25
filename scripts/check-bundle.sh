@@ -64,8 +64,40 @@ if (($# == 0)); then
   (cd "$ROOT" && bash -c "$BUILD") || { echo "Bundle check: the build failed." >&2; exit 1; }
   dir="$ROOT/packages/comb/dist"
   package="$ROOT/packages/comb"
-  engine="$(cd "$package" && bun -e 'console.log(require("./package.json").exports["./engine.wasm"] ?? "")')"
-  if [[ -z "$engine" || ! -f "$package/$engine" ]]; then
+  # The export is read without a JSON parser, so the self-test runs where no Bun is installed: the
+  # one plain string the top-level `exports` object maps "./engine.wasm" to, key and value on one
+  # line. A key named twice, a value that is not a plain string, a key and value on separate
+  # lines, the key outside `exports`, or an unreadable file reads as no export.
+  mapfile -t engines < <(awk '
+    {
+      n = length($0)
+      for (i = 1; i <= n; i++) {
+        c = substr($0, i, 1)
+        if (c == "\"") {
+          for (j = i + 1; j <= n && substr($0, j, 1) != "\""; j++)
+            if (substr($0, j, 1) == "\\") j++
+          token = substr($0, i + 1, j - i - 1)
+          rest = substr($0, j + 1)
+          if (rest ~ /^[ \t]*:/) key[depth] = token
+          if (exports && depth == 2 && token == "./engine.wasm" \
+            && match(rest, /^[ \t]*:[ \t]*"[^"\\]*"/)) {
+            value = substr(rest, 1, RLENGTH)
+            sub(/.*:[ \t]*"/, "", value)
+            print substr(value, 1, length(value) - 1)
+          }
+          i = j
+        } else if (c == "{" || c == "[") {
+          if (c == "{" && depth == 1 && key[1] == "exports") exports = 1
+          depth++
+        } else if (c == "}" || c == "]") {
+          depth--
+          if (depth == 1) exports = 0
+          delete key[depth + 1]
+        }
+      }
+    }' "$package/package.json" 2> /dev/null)
+  engine="${engines[0]:-}"
+  if ((${#engines[@]} != 1)) || [[ -z "$engine" || ! -f "$package/$engine" ]]; then
     echo "Bundle check FAILED: packages/comb/package.json exports no engine file as ./engine.wasm that exists (ADR-0019)." >&2
     exit 1
   fi

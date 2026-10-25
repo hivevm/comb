@@ -9,12 +9,13 @@
 # fails naming it. The run without arguments is played in a fixture repository whose builds are
 # stand-ins that write fixture bundles, so that each fault can be put in where a real build would
 # not make it: it passes where both builds carry what they should, and fails where the engine
-# check fails, where the bridge names no marks, where the build fails, where the package exports
-# no engine file or one that is missing, where the build in test mode fails, where that build
-# lacks either seam's mark, where the engine built in test mode lacks the trap, and where the two
-# engines' glue is missing or differs. The cases of the trap and of the engine built in test mode
-# verify ADR-0021, whose seam of test mode only they keep out of the shipped bundle; those of
-# `detaching` hold the check's own rule and verify none. Verifies: ADR-0021
+# check fails, where the bridge names no marks, where the build fails, where the package has no
+# package.json, exports no engine file, one that is missing, or one that is no plain string, maps
+# the engine outside exports, or names that export twice, where the build in test mode fails,
+# where that build lacks either seam's mark, where the engine built in test mode lacks the trap,
+# and where the two engines' glue is missing or differs. The cases of the trap and of the engine
+# built in test mode verify ADR-0021, whose seam of test mode only they keep out of the shipped
+# bundle; those of `detaching` hold the check's own rule and verify none. Verifies: ADR-0021
 #
 # Usage:
 #     scripts/test-check-bundle.sh
@@ -130,7 +131,8 @@ repository() {
   printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/scripts/check-engine.sh"
   printf 'const DETACHING_MARK = "%s";\nconst TRAP_EXPORT = "%s";\n' "$DETACHING" "$TRAP" \
     > "$dir/packages/comb/src/bridge/index.ts"
-  echo '{ "exports": { "./engine.wasm": "./wasm/engine_bg.wasm" } }' > "$dir/packages/comb/package.json"
+  printf '{\n  "exports": {\n    ".": "./src/index.ts",\n    "./engine.wasm": "./wasm/engine_bg.wasm"\n  }\n}\n' \
+    > "$dir/packages/comb/package.json"
   head -c 100 /dev/urandom > "$dir/packages/comb/wasm/engine_bg.wasm"
   { head -c 100 /dev/urandom; printf '%s' "$TRAP"; } \
     > "$dir/packages/comb/wasm/test-mode/engine_bg.wasm"
@@ -178,6 +180,22 @@ vanished="$(repository vanished)"
 rm "$vanished/packages/comb/wasm/engine_bg.wasm"
 expect_run fail "a package that exports an engine file that is missing" "$vanished" \
   "exports no engine file"
+twice="$(repository twice)"
+printf '{ "exports": {\n  "./engine.wasm": "./wasm/engine_bg.wasm",\n  "./engine.wasm": "./wasm/engine_bg.wasm"\n} }\n' \
+  > "$twice/packages/comb/package.json"
+expect_run fail "a package that names its engine's export twice" "$twice" "exports no engine file"
+outside="$(repository outside)"
+echo '{"exports":{".":"./src/index.ts"},"browser":{"./engine.wasm":"./wasm/engine_bg.wasm"}}' \
+  > "$outside/packages/comb/package.json"
+expect_run fail "a package that maps its engine outside exports" "$outside" "exports no engine file"
+conditional="$(repository conditional)"
+echo '{"exports":{"./engine.wasm":{"default":"./wasm/engine_bg.wasm"}}}' \
+  > "$conditional/packages/comb/package.json"
+expect_run fail "a package that exports its engine as no plain string" "$conditional" \
+  "exports no engine file"
+unpackaged="$(repository unpackaged)"
+rm "$unpackaged/packages/comb/package.json"
+expect_run fail "a package without package.json" "$unpackaged" "exports no engine file"
 expect_run fail "a build in test mode that fails" "$(repository test-broken)" \
   "the build in test mode failed" "$BUILT" "exit 1"
 expect_run fail "a library in test mode without detaching's mark" "$(repository no-detaching)" \
