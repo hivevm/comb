@@ -138,7 +138,7 @@ test("a node dragged across frames stays under the pointer, its edges' ends at i
     const pointer = { x: from.x, y: from.y + i * step };
     const renders = await page.evaluate(() => window.renderCount());
     await page.mouse.move(pointer.x, pointer.y);
-    // The frame that drew this move, read before any other: one render per move (ADR-0011).
+    // The frame that drew this move, read before any other: one render per move (ADR-0029).
     const frame = await drawnFrame(page, northStar);
     expect(frame.renders).toBe(renders + 1);
     const local = { x: pointer.x - origin.left, y: pointer.y - origin.top };

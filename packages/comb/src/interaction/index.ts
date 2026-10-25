@@ -100,7 +100,7 @@ export interface Interaction {
    *  and the testing entry ask (ADR-0025). */
   hitAt(x: number, y: number): Hit;
   /** The world point the connection the user drags is dragged to, while the store holds one: kept
-   *  here, not in the store, and its moves signalled by the store's `pointerVersion` (ADR-0011). */
+   *  here, not in the store, and its moves signalled by the store's `pointerVersion` (ADR-0029). */
   readonly pointer: { readonly x: number; readonly y: number };
   /** Removes the input from the canvas. */
   detach(): void;

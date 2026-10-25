@@ -1,8 +1,9 @@
 # ADR-0029: The graph's structure and what the pointer is over live in a vanilla Zustand store; no coordinate does, and each kind of move is signalled by a counter of its own
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-25
 - **Deciders:** Markus Brigl
+- **Supersedes:** [ADR-0011](0011-store.md)
 - **Applies to:** `packages/comb/src/store/`, the state `packages/comb/src/interaction/` keeps between pointer events, and every module that reads or writes the state of the graph or the viewport
 
 ## Context
@@ -29,9 +30,7 @@ second counter, `pointerVersion`, beside `positionsVersion`. A reader of ADR-001
 outside the engine's buffers and a counter whose value no reader compares, and would take either
 for a mistake.
 
-This ADR carries ADR-0011 over and says both. It is meant to supersede ADR-0011; the
-`Supersedes` field and the flip of ADR-0011's status are the maintainer's, made in the change that
-accepts it, since a status changes only by a human.
+This ADR carries ADR-0011 over and says both, and supersedes it.
 
 ## Decision
 

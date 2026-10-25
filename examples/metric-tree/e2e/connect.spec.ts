@@ -260,7 +260,7 @@ test("a veto that throws ends the gesture first: no connection is drawn after it
 test("a connection dragged across the empty canvas neither queries the engine nor redraws the connectors per move", async ({
   page,
 }) => {
-  // Verifies: ADR-0011
+  // Verifies: ADR-0029
   await open(page);
   await loaded(page, NODES);
   await page.evaluate(() => (window.canConnect = () => "e7"));
