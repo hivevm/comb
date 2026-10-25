@@ -48,5 +48,11 @@
         "truncated": true
       }
     }
+  },
+  "edit": {
+    "p95": 150,
+    "steps": 113,
+    "frames": 113,
+    "truncated": true
   }
 }
