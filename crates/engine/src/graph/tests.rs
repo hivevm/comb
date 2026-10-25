@@ -38,7 +38,13 @@ impl Lcg {
     }
 }
 
-pub(super) fn random_graph(rng: &mut Lcg, nodes: usize, edges: usize) -> Graph {
+/// The positions, sizes, and edges of a random graph of `nodes` nodes and `edges` edges, which
+/// `random_graph` loads and `Model` judges it by.
+pub(super) fn random_inputs(
+    rng: &mut Lcg,
+    nodes: usize,
+    edges: usize,
+) -> (Vec<f32>, Vec<f32>, Vec<EdgeSpec>) {
     let mut positions = Vec::new();
     let mut sizes = Vec::new();
     for _ in 0..nodes {
@@ -63,7 +69,122 @@ pub(super) fn random_graph(rng: &mut Lcg, nodes: usize, edges: usize) -> Graph {
             },
         })
         .collect();
+    (positions, sizes, specs)
+}
+
+pub(super) fn random_graph(rng: &mut Lcg, nodes: usize, edges: usize) -> Graph {
+    let (positions, sizes, specs) = random_inputs(rng, nodes, edges);
     Graph::new(positions, sizes, specs).unwrap()
+}
+
+/// What a graph holds, kept apart from it from the inputs a test gave it: the positions, sizes,
+/// and edges it was loaded with, the moves and removals made since, and the label sizes measured.
+/// It computes node bounds, connectors, paths, and label points from them with the geometry alone,
+/// reading nothing of the graph it judges, so that an oracle built on it owes nothing to the code
+/// under test (`docs/CONVENTIONS.md`). A load ranks node `i` as `i`, and these graphs add no node,
+/// so the node of the higher slot is drawn above.
+pub(super) struct Model {
+    pub(super) positions: Vec<f32>,
+    pub(super) sizes: Vec<f32>,
+    pub(super) specs: Vec<EdgeSpec>,
+    pub(super) free_nodes: Vec<bool>,
+    pub(super) free_edges: Vec<bool>,
+    pub(super) pills: Vec<Option<(f64, f64)>>,
+}
+
+impl Model {
+    /// A random graph and its model, from the same inputs.
+    pub(super) fn random(rng: &mut Lcg, nodes: usize, edges: usize) -> (Self, Graph) {
+        let (positions, sizes, specs) = random_inputs(rng, nodes, edges);
+        Self::of(positions, sizes, specs)
+    }
+
+    /// The graph loaded from `positions`, `sizes`, and `specs`, and its model.
+    pub(super) fn of(positions: Vec<f32>, sizes: Vec<f32>, specs: Vec<EdgeSpec>) -> (Self, Graph) {
+        let graph = Graph::new(positions.clone(), sizes.clone(), specs.clone()).unwrap();
+        let (nodes, edges) = (positions.len() / 2, specs.len());
+        let model = Self {
+            positions,
+            sizes,
+            free_nodes: vec![false; nodes],
+            free_edges: vec![false; edges],
+            pills: vec![None; edges],
+            specs,
+        };
+        (model, graph)
+    }
+
+    /// The node slots that hold a node, ascending.
+    pub(super) fn nodes(&self) -> impl Iterator<Item = u32> + '_ {
+        (0..self.free_nodes.len() as u32).filter(|&n| !self.free_nodes[n as usize])
+    }
+
+    /// The edge slots that hold an edge, ascending.
+    pub(super) fn edges(&self) -> impl Iterator<Item = u32> + '_ {
+        (0..self.free_edges.len() as u32).filter(|&e| !self.free_edges[e as usize])
+    }
+
+    pub(super) fn bounds(&self, node: u32) -> Rect {
+        let i = node as usize * 2;
+        Rect::of_node(
+            f64::from(self.positions[i]),
+            f64::from(self.positions[i + 1]),
+            f64::from(self.sizes[i]),
+            f64::from(self.sizes[i + 1]),
+        )
+    }
+
+    pub(super) fn path(&self, edge: u32) -> EdgePath {
+        let spec = self.specs[edge as usize];
+        EdgePath::between(
+            &self.bounds(spec.source),
+            &self.bounds(spec.target),
+            spec.sides,
+        )
+    }
+
+    /// The point of the label of `edge`, where it holds one.
+    pub(super) fn label_point(&self, edge: u32) -> Option<Point> {
+        let label = self.specs[edge as usize].label?;
+        Some(self.path(edge).label_position(label.t, label.offset))
+    }
+
+    /// Moves the nodes `slots` as `Graph::translate` does, within the world's limit, which no
+    /// test's move comes near.
+    pub(super) fn translate(&mut self, slots: &[u32], dx: f32, dy: f32) {
+        for &slot in slots {
+            let i = slot as usize * 2;
+            for (axis, delta) in [(i, dx), (i + 1, dy)] {
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    reason = "the tests move nodes far within f32"
+                )]
+                let moved = (f64::from(self.positions[axis]) + f64::from(delta)) as f32;
+                self.positions[axis] = moved;
+            }
+        }
+    }
+
+    /// Frees the nodes `slots` and every edge at them.
+    pub(super) fn remove_nodes(&mut self, slots: &[u32]) {
+        for &slot in slots {
+            self.free_nodes[slot as usize] = true;
+        }
+        for (e, spec) in self.specs.iter().enumerate() {
+            if slots.contains(&spec.source) || slots.contains(&spec.target) {
+                self.free_edges[e] = true;
+                self.pills[e] = None;
+            }
+        }
+    }
+
+    /// Frees the edges `slots`, their label sizes with them.
+    pub(super) fn remove_edges(&mut self, slots: &[u32]) {
+        for &slot in slots {
+            self.free_edges[slot as usize] = true;
+            self.pills[slot as usize] = None;
+        }
+    }
 }
 
 /// What a query must find, by testing every node and edge.

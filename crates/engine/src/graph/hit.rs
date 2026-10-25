@@ -140,7 +140,7 @@ impl Graph {
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::{Lcg, random_graph};
+    use super::super::tests::{Lcg, Model};
     use super::*;
     use crate::geometry::{EdgePath, PIXEL_LIMIT};
 
@@ -182,21 +182,19 @@ mod tests {
     #[test]
     fn a_hit_finds_the_topmost_node_a_scan_finds_before_and_after_moves() {
         let mut rng = Lcg(7);
-        let mut graph = random_graph(&mut rng, 300, 0);
-        let scan = |graph: &Graph, p: Point| {
-            (0..graph.node_slots.count())
-                .filter(|&s| graph.node_bounds(s).contains(p))
-                .max()
-        };
+        let (mut model, mut graph) = Model::random(&mut rng, 300, 0);
+        let scan =
+            |model: &Model, p: Point| model.nodes().filter(|&s| model.bounds(s).contains(p)).max();
         for round in 0..2 {
             for _ in 0..500 {
                 let p = Point::new(rng.range(-2500.0, 2500.0), rng.range(-2500.0, 2500.0));
-                assert_eq!(graph.node_at(p), scan(&graph, p), "{p:?} in round {round}");
+                assert_eq!(graph.node_at(p), scan(&model, p), "{p:?} in round {round}");
             }
             for _ in 0..40 {
                 let moved = [rng.below(300)];
                 let (dx, dy) = (rng.range(-3000.0, 3000.0), rng.range(-3000.0, 3000.0));
                 graph.translate(&moved, dx as f32, dy as f32).unwrap();
+                model.translate(&moved, dx as f32, dy as f32);
             }
         }
         // Every hit lies inside a node, so random points find some.
@@ -247,23 +245,24 @@ mod tests {
         // Verifies: ADR-0025
         for seed in 1..=4 {
             let mut rng = Lcg(seed);
-            let mut graph = random_graph(&mut rng, 30, 40);
+            let (mut model, mut graph) = Model::random(&mut rng, 30, 40);
             // A free slot now and then too, which no hit may return; a press near its old path
             // finds what lies there besides.
             graph.remove_edges(&[3, 17, 29]).unwrap();
+            model.remove_edges(&[3, 17, 29]);
             for _ in 0..300 {
                 let level = [Level::Near, Level::Middle, Level::Far][rng.below(3) as usize];
                 let pixel = [0.25, 1.0, 4.0, 20.0][rng.below(4) as usize];
                 // Near a point of a random edge, now and then anywhere.
                 let p = if rng.next() < 0.8 {
-                    let edge = rng.below(graph.edge_slots.count() as usize) as usize;
-                    let on = graph.paths[edge].point_at(rng.next());
+                    let edge = rng.below(model.specs.len());
+                    let on = model.path(edge).point_at(rng.next());
                     let off = 8.0 * pixel;
                     Point::new(on.x + rng.range(-off, off), on.y + rng.range(-off, off))
                 } else {
                     Point::new(rng.range(-2500.0, 2500.0), rng.range(-2500.0, 2500.0))
                 };
-                let node = graph.node_at(p);
+                let node = model.nodes().filter(|&n| model.bounds(n).contains(p)).max();
                 let hit = graph.hit_at(p, pixel, level, false);
                 if let Some(slot) = node {
                     assert_eq!(hit, Some(Target::Node(slot)), "a node before any edge");
@@ -272,17 +271,19 @@ mod tests {
                 // Within the reach less the flattening's tolerance an edge is surely hit, beyond it
                 // plus the tolerance surely not; between, either is right.
                 let (reach, tolerance) = (EDGE_REACH * pixel, Stroke::at(level, pixel).tolerance);
-                let d: Vec<(f64, f64)> = (0..graph.edge_slots.count())
-                    .map(|e| distance_to_curve(&graph.paths[e as usize], p))
+                let d: Vec<(f64, f64)> = (0..model.specs.len() as u32)
+                    .map(|e| distance_to_curve(&model.path(e), p))
                     .collect();
                 // Surely hit by its upper bound, surely too far by its lower one.
-                let sure = (0..graph.edge_slots.count())
+                let sure = model
+                    .edges()
+                    .collect::<Vec<_>>()
+                    .into_iter()
                     .rev()
-                    .filter(|&e| graph.holds_edge(e))
                     .find(|&e| d[e as usize].1 < reach - tolerance);
                 match hit {
                     Some(Target::Edge(e)) => {
-                        assert!(graph.holds_edge(e), "free edge {e}");
+                        assert!(!model.free_edges[e as usize], "free edge {e}");
                         assert!(d[e as usize].0 <= reach + tolerance, "edge {e} too far");
                         assert!(sure.is_none_or(|s| e >= s), "edge {e} below {sure:?}");
                     }
@@ -300,28 +301,29 @@ mod tests {
         // Verifies: ADR-0025, ADR-0024
         for seed in 1..=6 {
             let mut rng = Lcg(seed);
-            let mut graph = random_graph(&mut rng, 40, 20);
+            let (mut model, mut graph) = Model::random(&mut rng, 40, 20);
             graph.remove_nodes(&[5]).unwrap();
+            model.remove_nodes(&[5]);
             for _ in 0..400 {
                 let level = [Level::Near, Level::Middle, Level::Far][rng.below(3) as usize];
                 let pixel = [0.25, 1.0, 4.0][rng.below(3) as usize];
                 let reach = CONNECTOR_REACH * pixel;
                 // Near a connector of a random node, now and then anywhere.
                 let p = if rng.next() < 0.8 {
-                    let node = rng.below(graph.node_slots.count() as usize);
+                    let node = rng.below(model.free_nodes.len());
                     let side = SIDES[rng.below(4) as usize];
-                    let c = side.connector(&graph.node_bounds(node));
+                    let c = side.connector(&model.bounds(node));
                     let off = 1.5 * reach;
                     Point::new(c.x + rng.range(-off, off), c.y + rng.range(-off, off))
                 } else {
                     Point::new(rng.range(-2500.0, 2500.0), rng.range(-2500.0, 2500.0))
                 };
                 // The scan: of the nodes in use with a connector within the reach, the one of the
-                // highest rank, and its nearest connector.
-                let scan = (0..graph.node_slots.count())
-                    .filter(|&n| graph.holds_node(n))
+                // highest rank, the highest slot, and its nearest connector.
+                let scan = model
+                    .nodes()
                     .filter_map(|n| {
-                        let bounds = graph.node_bounds(n);
+                        let bounds = model.bounds(n);
                         SIDES
                             .iter()
                             .map(|&side| {
@@ -331,7 +333,7 @@ mod tests {
                             .filter(|&(_, _, d)| d <= reach)
                             .min_by(|a, b| a.2.total_cmp(&b.2))
                     })
-                    .max_by_key(|&(n, _, _)| graph.ranks[n as usize]);
+                    .max_by_key(|&(n, _, _)| n);
                 let without = graph.hit_at(p, pixel, level, false);
                 let with = graph.hit_at(p, pixel, level, true);
                 match scan {
@@ -345,24 +347,191 @@ mod tests {
         }
     }
 
+    /// What a scan of every kind finds at `p`, in the order of ADR-0025, from the model alone: a
+    /// connector where they are asked for, at the near and middle level; a measured label at the
+    /// near level; a node; and an edge, which the flattening's tolerance blurs, given as the edge
+    /// surely hit and the distance bounds of each.
+    enum Scan {
+        Exactly(Target),
+        Edge {
+            sure: Option<u32>,
+            bounds: Vec<(f64, f64)>,
+        },
+    }
+
+    fn scan(model: &Model, p: Point, pixel: f64, level: Level, connectors: bool) -> Scan {
+        let reach = CONNECTOR_REACH * pixel;
+        let connector = model
+            .nodes()
+            .filter_map(|n| {
+                let bounds = model.bounds(n);
+                SIDES
+                    .iter()
+                    .map(|&side| {
+                        let c = side.connector(&bounds);
+                        (n, side, (c.x - p.x).hypot(c.y - p.y))
+                    })
+                    .filter(|&(_, _, d)| d <= reach)
+                    .min_by(|a, b| a.2.total_cmp(&b.2))
+            })
+            .max_by_key(|&(n, _, _)| n);
+        if let Some((n, side, _)) = connector.filter(|_| connectors && level != Level::Far) {
+            return Scan::Exactly(Target::Connector(n, side));
+        }
+        let label = model.edges().filter(|&e| {
+            let (Some(at), Some((w, h))) = (model.label_point(e), model.pills[e as usize]) else {
+                return false;
+            };
+            (p.x - at.x).abs() <= w && (p.y - at.y).abs() <= h
+        });
+        if let Some(e) = label.max().filter(|_| level == Level::Near) {
+            return Scan::Exactly(Target::Label(e));
+        }
+        if let Some(n) = model.nodes().filter(|&n| model.bounds(n).contains(p)).max() {
+            return Scan::Exactly(Target::Node(n));
+        }
+        let (reach, tolerance) = (EDGE_REACH * pixel, Stroke::at(level, pixel).tolerance);
+        let bounds: Vec<(f64, f64)> = (0..model.specs.len() as u32)
+            .map(|e| distance_to_curve(&model.path(e), p))
+            .collect();
+        let sure = model
+            .edges()
+            .filter(|&e| bounds[e as usize].1 < reach - tolerance)
+            .max();
+        Scan::Edge { sure, bounds }
+    }
+
+    /// A random graph and its model with a node and an edge removed, two labels of three measured,
+    /// and a few nodes moved after.
+    fn scanned_graph(rng: &mut Lcg) -> (Model, Graph) {
+        let (mut model, mut graph) = Model::random(rng, 30, 40);
+        graph.remove_nodes(&[4]).unwrap();
+        model.remove_nodes(&[4]);
+        let gone = model.edges().find(|&e| e >= 11).unwrap();
+        graph.remove_edges(&[gone]).unwrap();
+        model.remove_edges(&[gone]);
+        for e in model.edges().filter(|e| e % 3 != 0).collect::<Vec<_>>() {
+            let size = (15.0 + f64::from(e % 4) * 10.0, 10.0);
+            graph.set_label_size(e, size.0, size.1).unwrap();
+            model.pills[e as usize] = Some(size);
+        }
+        for _ in 0..6 {
+            let moved: Vec<u32> = model.nodes().filter(|_| rng.next() < 0.2).collect();
+            let (dx, dy) = (rng.range(-300.0, 300.0), rng.range(-300.0, 300.0));
+            graph.translate(&moved, dx as f32, dy as f32).unwrap();
+            model.translate(&moved, dx as f32, dy as f32);
+        }
+        (model, graph)
+    }
+
+    /// A press near a connector, a label, or an edge of `model`, now and then anywhere, the
+    /// cases taken from the model, not the graph.
+    fn press_near(model: &Model, pixel: f64, rng: &mut Lcg) -> Point {
+        let (nodes, edges) = (model.free_nodes.len(), model.specs.len());
+        let around = |at: Point, (bx, by): (f64, f64), rng: &mut Lcg| {
+            Point::new(at.x + rng.range(-bx, bx), at.y + rng.range(-by, by))
+        };
+        let anywhere = |rng: &mut Lcg| around(Point::new(0.0, 0.0), (2500.0, 2500.0), rng);
+        match rng.below(4) {
+            0 => {
+                let side = SIDES[rng.below(4) as usize];
+                let c = side.connector(&model.bounds(rng.below(nodes)));
+                around(c, (12.0 * pixel, 12.0 * pixel), rng)
+            }
+            1 => match model.label_point(rng.below(edges)) {
+                Some(at) => around(at, (50.0, 12.0), rng),
+                None => anywhere(rng),
+            },
+            2 => {
+                let on = model.path(rng.below(edges)).point_at(rng.next());
+                around(on, (8.0 * pixel, 8.0 * pixel), rng)
+            }
+            _ => anywhere(rng),
+        }
+    }
+
+    /// Asserts that `hit` is what the scan `found` allows, and returns the kind it found:
+    /// connector, label, node, or edge, as 0 to 3, or none.
+    fn judged(
+        model: &Model,
+        hit: Option<Target>,
+        found: Scan,
+        stroke: (f64, Stroke),
+        at: &str,
+    ) -> Option<usize> {
+        let kind = |target: Target| match target {
+            Target::Connector(..) => 0,
+            Target::Label(_) => 1,
+            Target::Node(_) => 2,
+            Target::Edge(_) => 3,
+        };
+        match found {
+            Scan::Exactly(target) => {
+                assert_eq!(hit, Some(target), "{at}");
+                Some(kind(target))
+            }
+            Scan::Edge { sure, bounds } => {
+                let (reach, tolerance) = (EDGE_REACH * stroke.0, stroke.1.tolerance);
+                match hit {
+                    Some(Target::Edge(e)) => {
+                        assert!(!model.free_edges[e as usize], "free edge {e}, {at}");
+                        assert!(bounds[e as usize].0 <= reach + tolerance, "{at}");
+                        assert!(sure.is_none_or(|s| e >= s), "{e} below {sure:?}, {at}");
+                        Some(3)
+                    }
+                    None => {
+                        assert_eq!(sure, None, "missed, {at}");
+                        None
+                    }
+                    _ => panic!("{hit:?} where a scan finds none, {at}"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_hit_finds_what_a_scan_of_every_kind_finds_in_the_order_connector_label_node_edge() {
+        // Verifies: ADR-0025
+        // How often the scan found each kind, connector, label, node, and edge, so that none goes
+        // untested.
+        let mut found = [0; 4];
+        for seed in 1..=3 {
+            let mut rng = Lcg(100 + seed);
+            let (model, mut graph) = scanned_graph(&mut rng);
+            for _ in 0..300 {
+                let level = [Level::Near, Level::Middle, Level::Far][rng.below(3) as usize];
+                let pixel = [0.25, 1.0, 4.0][rng.below(3) as usize];
+                let p = press_near(&model, pixel, &mut rng);
+                for connectors in [false, true] {
+                    let hit = graph.hit_at(p, pixel, level, connectors);
+                    let at = format!("{p:?}, {pixel}, {level:?}, connectors {connectors}");
+                    let scanned = scan(&model, p, pixel, level, connectors);
+                    let stroke = (pixel, Stroke::at(level, pixel));
+                    if let Some(kind) = judged(&model, hit, scanned, stroke, &at) {
+                        found[kind] += 1;
+                    }
+                }
+            }
+        }
+        assert!(found.iter().all(|&n| n > 20), "{found:?}");
+    }
+
     #[test]
     fn a_hit_at_the_near_level_finds_a_measured_label_inside_its_pill_before_a_node() {
         // Verifies: ADR-0025
         let mut rng = Lcg(9);
-        let mut graph = random_graph(&mut rng, 30, 60);
-        let measured: Vec<u32> = (0..graph.edge_slots.count())
-            .filter(|e| e % 3 != 0)
-            .collect();
+        let (mut model, mut graph) = Model::random(&mut rng, 30, 60);
+        let measured: Vec<u32> = (0..60).filter(|e| e % 3 != 0).collect();
         for &edge in &measured {
-            graph
-                .set_label_size(edge, 20.0 + f64::from(edge % 5) * 10.0, 11.0)
-                .unwrap();
+            let size = (20.0 + f64::from(edge % 5) * 10.0, 11.0);
+            graph.set_label_size(edge, size.0, size.1).unwrap();
+            model.pills[edge as usize] = Some(size);
         }
         for _ in 0..2_000 {
             let p = Point::new(rng.range(-2500.0, 2500.0), rng.range(-2500.0, 2500.0));
             let p = if rng.next() < 0.7 {
-                let edge = rng.below(graph.edge_slots.count() as usize);
-                match graph.label_point(edge) {
+                let edge = rng.below(model.specs.len());
+                match model.label_point(edge) {
                     Some(at) => {
                         Point::new(at.x + rng.range(-70.0, 70.0), at.y + rng.range(-15.0, 15.0))
                     }
@@ -372,7 +541,7 @@ mod tests {
                 p
             };
             let scan = measured.iter().copied().rev().find(|&e| {
-                let (Some(at), Some((w, h))) = (graph.label_point(e), graph.pills[e as usize])
+                let (Some(at), Some((w, h))) = (model.label_point(e), model.pills[e as usize])
                 else {
                     return false;
                 };
