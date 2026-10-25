@@ -272,13 +272,27 @@ test("a removal reads a hostile list's length once and refuses a list too long q
       sparse: kindOf(() => window.comb.removeEdges(new Array(1_000_001))),
       counted: kindOf(() => window.comb.removeNodes(counted)),
     };
-    return { kinds, lengthReads, ms: performance.now() - start };
+    // The list a refusal of a list too long names, so that the two removals' size checks stay apart.
+    const listOf = (call: () => void) => {
+      try {
+        call();
+        return "accepted";
+      } catch (error) {
+        return (error as Error & { problem: { list?: string } }).problem.list;
+      }
+    };
+    const lists = {
+      nodes: listOf(() => window.comb.removeNodes(new Array(1_000_001))),
+      edges: listOf(() => window.comb.removeEdges(new Array(1_000_001))),
+    };
+    return { kinds, lists, lengthReads, ms: performance.now() - start };
   });
   expect(result.kinds).toEqual({
     endless: "GraphDataError tooMany",
     sparse: "GraphDataError tooMany",
     counted: "GraphDataError malformed",
   });
+  expect(result.lists).toEqual({ nodes: "nodes", edges: "edges" });
   expect(result.lengthReads).toBe(0);
   expect(result.ms).toBeLessThan(2_000);
   expect(await drawn(page)).toEqual(before);
