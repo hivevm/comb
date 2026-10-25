@@ -3,7 +3,7 @@
 //! ADR-0027).
 
 use super::Graph;
-use crate::geometry::{PIXEL_LIMIT, Point, Rect};
+use crate::geometry::{Point, Rect, bounded_pixel};
 use crate::stroke::{MESH_BUDGET, Mesh, Stroke};
 
 /// The level of detail a query serves (ADR-0027): near draws edge labels, middle does not, and
@@ -76,8 +76,7 @@ impl Graph {
         budget: u32,
         out: &mut Visible,
     ) {
-        // A stroke for a pixel beyond any zoom stays within the world's reach.
-        let pixel = pixel.min(PIXEL_LIMIT);
+        let pixel = bounded_pixel(pixel);
         let labelled = level == Level::Near;
         let label_rect = rect.grown(if labelled { label_reach.max(0.0) } else { 0.0 });
         self.node_grid.candidates(rect, &mut self.scratch);

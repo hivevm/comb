@@ -130,6 +130,16 @@ fn checked_pixel(pixel: f64) -> Result<f64, GraphDataProblem> {
     }
 }
 
+/// The world point `(x, y)` a hit test or a label's move takes, or its refusal as malformed where
+/// a coordinate is NaN or infinite, before anything is hit or moved (ADR-0028).
+fn checked_point(x: f64, y: f64) -> Result<Point, GraphDataProblem> {
+    if x.is_finite() && y.is_finite() {
+        Ok(Point::new(x, y))
+    } else {
+        Err(malformed("a point is not a pair of finite numbers"))
+    }
+}
+
 /// The most UTF-16 code units of a title or a label text, `MAX_TEXT`: the shell hands over no
 /// more than one beyond it, so that a text of any length costs at most that much to check.
 #[wasm_bindgen(js_name = textLimit)]
@@ -361,11 +371,13 @@ impl Engine {
 
     /// Places the label of the edge in `slot` at the world point `(x, y)`, at the path parameter
     /// nearest it and its distance along the normal there, and returns the two, `t, offset`
-    /// (G-6). A slot that holds no edge with a label refuses it.
+    /// (G-6). A slot that holds no edge with a label refuses it with a `SlotError`, and a point
+    /// that is not finite as malformed, before anything moves.
     #[wasm_bindgen(js_name = moveLabel)]
-    pub fn move_label(&mut self, slot: u32, x: f64, y: f64) -> Result<Vec<f64>, SlotError> {
+    pub fn move_label(&mut self, slot: u32, x: f64, y: f64) -> Result<Vec<f64>, EdgeRefusal> {
         trap::spring();
-        let placed = self.graph.move_label(slot, Point::new(x, y))?;
+        let point = checked_point(x, y)?;
+        let placed = self.graph.move_label(slot, point)?;
         Ok(vec![placed.t, placed.offset])
     }
 
@@ -433,7 +445,7 @@ impl Engine {
     /// within 8 screen pixels, of the node drawn on top; else, at the near level, the label whose
     /// measured pill holds the point; else the node drawn on top there, else the edge drawn on top
     /// within 4 screen pixels of its path, else nothing (ADR-0025). A pixel is checked as `query`
-    /// checks it.
+    /// checks it, and a point that is not finite is refused as malformed.
     pub fn hit(
         &mut self,
         x: f64,
@@ -443,11 +455,9 @@ impl Engine {
         connectors: bool,
     ) -> Result<Ts<Hit>, GraphDataProblem> {
         trap::spring();
+        let point = checked_point(x, y)?;
         let pixel = checked_pixel(pixel)?;
-        let hit = match self
-            .graph
-            .hit_at(Point::new(x, y), pixel, level.into(), connectors)
-        {
+        let hit = match self.graph.hit_at(point, pixel, level.into(), connectors) {
             Some(Target::Connector(slot, side)) => Hit::Connector {
                 slot,
                 side: side.into(),
@@ -756,6 +766,35 @@ mod tests {
                 "{pixel}"
             );
         }
+    }
+
+    #[test]
+    fn a_hit_and_a_move_of_a_label_refuse_a_point_that_is_not_finite_and_change_nothing() {
+        // Verifies: ADR-0028, Q-7
+        let mut engine = Engine::new();
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 100.0)], &[("e", "a", "b")]);
+        data.edges[0].label = Some(LabelInput {
+            text_length: Some(1),
+            t: 0.5.into(),
+            offset: 0.0.into(),
+            background: None,
+        })
+        .into();
+        engine.graph = graph_of(&data).unwrap();
+        let before = engine.label_point(0);
+        let refusal = || malformed("a point is not a pair of finite numbers");
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            for (x, y) in [(bad, 60.0), (200.0, bad)] {
+                let moved = engine.move_label(0, x, y);
+                assert_eq!(moved, Err(EdgeRefusal::Data(refusal())), "({x}, {y})");
+                assert_eq!(engine.label_point(0), before, "the label at ({x}, {y})");
+                // Refused before anything is hit, so the native test needs no JavaScript value.
+                let hit = engine.hit(x, y, 1.0, DetailLevel::Near, true);
+                assert_eq!(hit.err(), Some(refusal()), "hit at ({x}, {y})");
+            }
+        }
+        assert!(engine.move_label(0, 150.0, 80.0).is_ok());
+        assert_ne!(engine.label_point(0), before);
     }
 
     #[test]

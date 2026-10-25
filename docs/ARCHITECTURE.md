@@ -144,17 +144,20 @@ The functional core and its shell follow
   coarsened, and refuses a pixel that is not a finite number above zero as malformed; `drawnEdges`
   computes the ends of the found edges when inspection asks, as they lie then, and `hit` names what
   a press at a point hits, a connector where the shell asks for connectors, a label, a node, or an
-  edge by its slot, or nothing, as one generated value, and refuses a pixel as `query` does;
+  edge by its slot, or nothing, as one generated value, and refuses a pixel as `query` does and a
+  point that is not finite as malformed;
   `setLabelSize` takes the measure of a label's pill, `labelPoint` names where a label lies, and
-  `moveLabel` places a dragged label, one dragged beyond the world's limit stopping there, and
-  returns its path parameter and offset; it generates the
-  type of every problem of graph data the methods of `Comb` throw, `GraphDataProblem`, which `comb`
-  exports, and keeps the refusals of the shell's mistakes in types of their own: `TranslateError` of
-  `translate`, and `SlotError` of a slot that holds nothing, which the removals, `edgesAt`,
-  `setLabelSize`, `moveLabel`, `addEdge`, and `updateEdge` throw. It checks the screen pixel of a
-  query and of a hit test in one function. Its crate root holds the exports and their conversions;
-  its module `graph_data` reads and checks graph data, the one place that does, each field of an
-  edge through one function that a load, `addEdge`, and `updateEdge` call alike
+  `moveLabel` places a dragged label, one dragged beyond the world's limit stopping there, refuses
+  a point that is not finite as `hit` does, and returns its path parameter and offset; it generates
+  the type of every problem of graph data the methods of `Comb` throw, `GraphDataProblem`, which
+  `comb` exports, and keeps the refusals of the shell's mistakes in types of their own:
+  `TranslateError` of `translate`, and `SlotError` of a slot that holds nothing, which the removals,
+  `edgesAt`, `setLabelSize`, `moveLabel`, `addEdge`, and `updateEdge` throw. It checks the screen
+  pixel of a query and of a hit test in one function, and the point of a hit test and of a label's
+  move in another; the core bounds a pixel beyond any zoom for both, in one function. Its crate
+  root holds the exports and their conversions; its module `graph_data` reads and checks graph
+  data, the one place that does, each field of an edge through one function that a load,
+  `addEdge`, and `updateEdge` call alike
   ([ADR-0028](adr/0028-the-graph-lies-within-a-world.md)); `packages/comb/src/bridge` is the one
   module that imports the WebAssembly package and reads those buffers through fresh typed-array
   views per read ([ADR-0010](adr/0010-bridge-data-format.md)).

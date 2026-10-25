@@ -2,7 +2,7 @@
 //! node, and an edge.
 
 use super::{Graph, Level};
-use crate::geometry::{Point, Rect, Side};
+use crate::geometry::{Point, Rect, Side, bounded_pixel};
 use crate::stroke::{Stroke, near_path};
 
 /// The four sides, each with a connector.
@@ -33,6 +33,7 @@ impl Graph {
     /// label whose measured pill holds it, of the highest edge slot; else a node whose bounds hold
     /// it, the one of the highest rank; else an edge within `EDGE_REACH` screen pixels of its path
     /// as the stroke of `level` flattens it, the one in the highest slot; else nothing (ADR-0025).
+    /// A pixel beyond any zoom hits as the largest a query strokes for.
     pub fn hit_at(
         &mut self,
         point: Point,
@@ -40,6 +41,7 @@ impl Graph {
         level: Level,
         connectors: bool,
     ) -> Option<Target> {
+        let pixel = bounded_pixel(pixel);
         if connectors
             && level != Level::Far
             && let Some((slot, side)) = self.connector_at(point, CONNECTOR_REACH * pixel)
@@ -140,7 +142,42 @@ impl Graph {
 mod tests {
     use super::super::tests::{Lcg, random_graph};
     use super::*;
-    use crate::geometry::EdgePath;
+    use crate::geometry::{EdgePath, PIXEL_LIMIT};
+
+    #[test]
+    fn a_pixel_beyond_any_zoom_hits_as_the_largest_a_query_strokes_for() {
+        // Verifies: ADR-0028
+        // Two nodes near the world's limit, an edge between them, and presses near them and twice
+        // that far away: an unbounded pixel would reach everything from anywhere.
+        let edges = vec![super::super::EdgeSpec {
+            sides: crate::geometry::Sides::default(),
+            source: 0,
+            target: 1,
+            label: None,
+            style: crate::stroke::EdgeStyle::unstyled(),
+        }];
+        let positions = vec![1e36, 0.0, 1e36, 1e35];
+        let sizes = vec![220.0, 64.0, 220.0, 64.0];
+        let mut graph = Graph::new(positions, sizes, edges).unwrap();
+        let near = Point::new(1e36 - 1e34, 32.0);
+        let far = Point::new(-1e36, 0.0);
+        for (point, connectors, level) in [
+            (near, true, Level::Near),
+            (far, true, Level::Near),
+            (far, false, Level::Middle),
+            (far, false, Level::Far),
+        ] {
+            let largest = graph.hit_at(point, PIXEL_LIMIT, level, connectors);
+            let beyond = graph.hit_at(point, 1e308, level, connectors);
+            assert_eq!(beyond, largest, "{point:?}, {level:?}");
+        }
+        assert!(matches!(
+            graph.hit_at(near, 1e308, Level::Near, true),
+            Some(Target::Connector(..))
+        ));
+        assert_eq!(graph.hit_at(far, 1e308, Level::Middle, false), None);
+        assert!(bounded_pixel(1e308) * CONNECTOR_REACH < f64::MAX);
+    }
 
     #[test]
     fn a_hit_finds_the_topmost_node_a_scan_finds_before_and_after_moves() {
