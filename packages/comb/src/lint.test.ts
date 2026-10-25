@@ -86,6 +86,8 @@ describe("eval, implied eval, and new Function", () => {
   });
 });
 
+// Decides no ADR clause and no criterion: a check of the kind AGENTS.md §5 asks for where a mistake
+// could have been caught, a local that hid the shared `told` of the browser tests.
 describe("a local that shadows an outer name", () => {
   const code = [
     'import { told } from "./shared";',
