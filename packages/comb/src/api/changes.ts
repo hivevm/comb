@@ -35,7 +35,7 @@ export type GraphChange =
       readonly kind: "nodeUpdated";
       readonly by: "host";
       readonly id: string;
-      readonly patch: Readonly<Partial<Pick<NodeData, "title">>>;
+      readonly patch: Extract<StoreChange, { kind: "nodeUpdated" }>["patch"];
     }
   /** A drag left the node `id` at `x`, `y`. */
   | {

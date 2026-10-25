@@ -410,7 +410,8 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
 }
 
 /** The top-left corner of the node in `slot`, read from the engine's buffer of positions,
- *  `bridge.positions()`. */
+ *  `bridge.positions()`. The render layer reads the buffer by index itself, as it draws every
+ *  node of a frame, and makes no object per node. */
 export function positionAt(positions: Float32Array, slot: number): { x: number; y: number } {
   return { x: positions[slot * 2]!, y: positions[slot * 2 + 1]! };
 }
