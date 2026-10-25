@@ -44,3 +44,28 @@ unattended: the existing engine and bridge tests decide it, plus the mutants lis
 harness ADR keeps with the human (ADR-0007) is touched, and one revert undoes it. Stop: where the
 shell would see another error than today for a call it makes, hand off, since `TranslateError` is
 part of the bridge's data format (ADR-0010).
+
+## Where it stands
+
+Handed off before any change, at the stop of the *Mode*: the first criterion asks `translate` to
+refuse a free slot with `SlotError`, and today the bridge throws `TranslateError`
+`{ kind: "slotOutOfRange", slot }` for it. The kind the shell sees changes, to `noNode`, and so
+must four existing assertions:
+
+- `packages/comb/src/bridge/bridge.test.ts` (the test of free slots): `bridge.translate` on a free
+  slot expects `{ kind: "slotOutOfRange", slot: 2 }`.
+- `crates/engine-wasm/src/lib.rs`, `a_freed_slot_is_refused_by_every_export_that_takes_slots_as_a_slot_beyond_the_graph`:
+  expects `Err(TranslateError::SlotOutOfRange { slot })`.
+- `crates/engine/src/graph/tests.rs`: expects `Err(PositionError::SlotOutOfRange { slot: 3 })` of
+  `Graph::translate`.
+- `crates/engine/src/positions.rs`: its own test of the range check, which folding the module into
+  the node edits makes unreachable code, so the assertion goes with it.
+
+No shell code reads the kind: `interaction/node-drag.ts` calls `bridge.translate` without a catch,
+on slots the store holds, and `checked()` of `api/editors.ts`, which tells `noNode` and `noEdge`
+apart, never wraps `translate`. `TranslateError` would keep `nonFiniteDelta` only, or `translate`
+would throw `SlotError` for a slot and `TranslateError` for a delta.
+
+To decide: whether the four assertions may change as the criterion implies, and so the bridge's
+format of `translate`'s refusal (ADR-0010, *Errors*); and whether `translate` then throws two types
+or `TranslateError` carries `SlotError` as a variant.
