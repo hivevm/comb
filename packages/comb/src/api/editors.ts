@@ -273,8 +273,11 @@ function remove(
           : slotsOf(read, state.edgeSlots, (edge) => ({ kind: "unknownEdge", edge }));
       return slots.length === 0 ? undefined : slots;
     },
-    engine: (slots) =>
-      list === "nodes" ? bridge.removeNodes(slots) : (bridge.removeEdges(slots), slots),
+    engine(slots) {
+      if (list === "nodes") return bridge.removeNodes(slots);
+      bridge.removeEdges(slots);
+      return slots;
+    },
     record(state, slots, edges) {
       if (list === "nodes") state.removeNodes([...slots], [...edges], by);
       else state.removeEdges([...slots], by);

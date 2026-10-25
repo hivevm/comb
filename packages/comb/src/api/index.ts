@@ -432,6 +432,9 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
   // A caller without types may leave the options out; that is a missing engine too.
   options ??= {} as CombOptions;
   const bridge = await createBridge(await engineOf(options.engine));
+  // Read at once, as the engine is created: once the canvas is in the host element, nothing may
+  // refuse, and a trap of another Comb's on the page would refuse these calls.
+  const limits = limitsOf(bridge);
   const app = new Application();
   await app.init({
     resizeTo: host,
@@ -452,7 +455,7 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
   const unsubscribe = store.subscribe(frames.schedule);
   // A larger canvas shows more of the world, so what is culled changes with its size.
   app.renderer.on("resize", frames.schedule);
-  const { host: edits, user } = editorsOf(store, bridge, limitsOf(bridge));
+  const { host: edits, user } = editorsOf(store, bridge, limits);
   const connect = connectorOf(user.addEdge, options.canConnect);
   // Interaction subscribes before the listeners, and the frames read the store only on the next
   // frame, so that a gesture a change takes, a connection among them, is over before anything

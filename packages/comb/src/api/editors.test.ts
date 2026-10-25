@@ -263,7 +263,10 @@ describe("the user's deletion", () => {
 });
 
 describe("a slot the shell names that holds nothing", () => {
-  const holdingNothing = (name: "removeNodes" | "addEdge", kind: "noNode" | "noEdge") =>
+  const holdingNothing = (
+    name: "removeNodes" | "removeEdges" | "addEdge",
+    kind: "noNode" | "noEdge",
+  ) =>
     editing((bridge) => ({
       ...bridge,
       [name]: () => {
@@ -272,12 +275,14 @@ describe("a slot the shell names that holds nothing", () => {
     }));
 
   test("is thrown as an Error naming the slot, no GraphDataError, and changes nothing", () => {
-    // Verifies: ADR-0028
-    for (const [name, kind, call] of [
-      ["removeNodes", "noNode", (comb: Editing["host"]) => comb.removeNodes(["a"])],
+    // Verifies: ADR-0022
+    for (const [name, kind, item, call] of [
+      ["removeNodes", "noNode", "node", (comb: Editing["host"]) => comb.removeNodes(["a"])],
+      ["removeEdges", "noEdge", "edge", (comb: Editing["host"]) => comb.removeEdges(["a-b"])],
       [
         "addEdge",
         "noNode",
+        "node",
         (comb: Editing["host"]) => comb.addEdge({ id: "e", source: "b", target: "a" }),
       ],
     ] as const) {
@@ -286,7 +291,7 @@ describe("a slot the shell names that holds nothing", () => {
       const error = refusal(() => call(host));
       expect(error).toBeInstanceOf(Error);
       expect(error).not.toBeInstanceOf(GraphDataError);
-      expect((error as Error).message).toBe("comb: the engine holds no node in slot 7");
+      expect((error as Error).message).toBe(`comb: the engine holds no ${item} in slot 7`);
       expect((error as Error).cause).toEqual({ kind, slot: 7 });
       expect(store.getState()).toBe(before);
     }

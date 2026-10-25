@@ -182,18 +182,17 @@ The functional core and its shell follow
   focusable and deletes the selection on Delete or Backspace, a node with the edges the engine names
   at it (`edgesAt`) before anything is removed, once `CombOptions.canDelete` returns `true` and has
   not changed the graph itself, through the removal `api` hands it, which records it as the user's;
-  a key held down or pressed with Control,
-  Alt, or Meta deletes nothing beyond its first press. A connection's place is the store's alone,
-  which the render draws; its gesture ends it at a load or a removal of its source. `label-drag.ts`:
-  a press on a label, at the near level, selects its edge and drags the label, held where it was
-  grabbed, which the engine places on every move; its release, or a later press, records
-  `labelMoved` once, and a load, a removal of its edge, or a label the host cleared ends the drag. A
-  drag that moved its node records `nodeMoved` once, when the pointer is released on the canvas or
-  outside it; a load ends a drag. The engine's `hit` says what the pointer is on, at the level of
-  detail of the scale; node views and edges take no events. `targetAt` of `gesture.ts` is the one
-  hit test: `attachInteraction` asks it from the store's viewport, connectors only where
-  `CombOptions.canConnect` is set, for the press and the hover, and returns it as `hitAt`, with
-  the function that detaches the input, for the testing entry.
+  a key held down or pressed with Control, Alt, or Meta deletes nothing beyond its first press. A
+  connection's place is the store's alone, which the render draws; its gesture ends it at a load or
+  a removal of its source. `label-drag.ts`: a press on a label, at the near level, selects its edge
+  and drags the label, held where it was grabbed, which the engine places on every move; its
+  release, or a later press, records `labelMoved` once, and a load, a removal of its edge, or a
+  label the host cleared ends the drag. A drag that moved its node records `nodeMoved` once, when
+  the pointer is released on the canvas or outside it; a load ends a drag. The engine's `hit` says
+  what the pointer is on, at the level of detail of the scale; node views and edges take no events.
+  `targetAt` of `gesture.ts` is the one hit test: `attachInteraction` asks it from the store's
+  viewport, connectors only where `CombOptions.canConnect` is set, for the press and the hover, and
+  returns it as `hitAt`, with the function that detaches the input, for the testing entry.
 - **Render** (`packages/comb/src/render`) — the PixiJS scene (`scene.ts`), which imports nothing
   from interaction: a `world` render group with the layers `EdgesContainer` (`edges.ts`),
   `NodeParticles` (`particles.ts`), `NodesContainer` (`nodes.ts`), `LabelsContainer` (`labels.ts`),
