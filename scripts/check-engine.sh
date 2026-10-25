@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# Freshness of the engine the tests run (ADR-0008).
+# Freshness of the engine the tests run. Dev-only tooling, it decides no ADR or criterion and
+# cites none.
 #
 # `bun run build:engine` writes the engine into packages/comb/wasm/ and the engine built in test
 # mode into packages/comb/wasm/test-mode/, generated and untracked. The TypeScript tests and the

@@ -16,10 +16,12 @@
 # Verifies: ADR-0019
 #
 # Nor may the bundle carry either seam of the bridge's test mode, which only tests run in: the
-# memory grown before every call of the engine (`detaching`, ADR-0010), and the trap the engine
-# exports in test mode, which the bridge looks up (ADR-0021). Each has a mark of its own, which
-# the check reads from packages/comb/src/bridge/index.ts, `DETACHING_MARK` and `TRAP_EXPORT`: a
-# .js file that carries either, or a file that names the trap's export, fails, naming the seam.
+# memory grown before every call of the engine (`detaching`), and the trap the engine exports in
+# test mode, which the bridge looks up. ADR-0021 decides the trap a seam of test mode only;
+# keeping `detaching` out is the check's own rule, which no ADR decides. Each has a mark of its
+# own, which the check reads from packages/comb/src/bridge/index.ts, `DETACHING_MARK` and
+# `TRAP_EXPORT`: a .js file that carries either, or a file that names the trap's export, fails,
+# naming the seam.
 # Without arguments the check also builds the library in Vite's test mode and fails unless it
 # finds each mark in that bundle, and the trap's in the engine built in test mode,
 # packages/comb/wasm/test-mode/engine_bg.wasm, so a changed mark turns it red rather than blind;
@@ -102,7 +104,7 @@ if ((wasm == 0)); then
   exit 1
 fi
 if grep -rqsF --include='*.js' "$DETACHING" "$dir"; then
-  echo "Bundle check FAILED: the bundle carries the test mode's seam \`detaching\` (ADR-0010)." >&2
+  echo "Bundle check FAILED: the bundle carries the test mode's seam \`detaching\` (the check's own rule)." >&2
   exit 1
 fi
 # carries_trap <file>... — whether any of the files names the export of the engine's trap.
@@ -127,7 +129,7 @@ if (($# == 0)); then
   (cd "$ROOT" && bash -c "$TEST_BUILD" _ "$testing") \
     || { echo "Bundle check: the build in test mode failed." >&2; exit 1; }
   if ! grep -rqsF --include='*.js' "$DETACHING" "$testing"; then
-    echo "Bundle check FAILED: it does not recognise \`detaching\` in the library built in test mode (ADR-0010)." >&2
+    echo "Bundle check FAILED: it does not recognise \`detaching\` in the library built in test mode (the check's own rule)." >&2
     exit 1
   fi
   mapfile -t built < <(find "$testing" -type f -name '*.js')

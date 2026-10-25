@@ -6,7 +6,7 @@
 # library with a bridge, a store, and a render layer, and an example — runs the check against it,
 # and asserts the exit code and, for a failing case, the message that names the offence. The
 # baseline passes; every failing case breaks one rule of ADR-0028, ADR-0027, or ADR-0018, or the
-# boundary of docs/ARCHITECTURE.md the check holds, in one form, and the passing cases are near
+# boundary the check holds as its own rule, in one form, and the passing cases are near
 # misses the check must not mistake for offences.
 #
 # Usage:
