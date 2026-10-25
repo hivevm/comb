@@ -41,10 +41,20 @@ export function connectorPoint(
   }
 }
 
+/** Where a drawn connector's circle is centred, in world units, for inspection. */
+export interface DrawnConnectorPoint {
+  node: string;
+  side: Side;
+  x: number;
+  y: number;
+}
+
 /** The connectors of the nodes the pointer shows, in world units less the query's origin, as the
  *  edges and labels are placed, so that the GPU sees no far coordinate. */
 export class ConnectorsLayer extends Graphics {
   drawn: DrawnConnector[] = [];
+  /** The centre of each drawn connector, in the order of `drawn`. */
+  points: DrawnConnectorPoint[] = [];
   /** What the layer last drew from, so that a render that changes none of it draws nothing anew:
    *  a change of the layer's geometry would have its render group build its instructions again. */
   private from: unknown[] = [];
@@ -70,6 +80,7 @@ export class ConnectorsLayer extends Graphics {
     if (shown.length === 0 && this.drawn.length === 0) return;
     this.clear();
     this.drawn = [];
+    this.points = [];
     for (const [slot, compatible] of shown)
       this.drawNode(state, positions, origin, slot, compatible);
   }
@@ -91,6 +102,7 @@ export class ConnectorsLayer extends Graphics {
         compatible ? COMPATIBLE : PLAIN,
       );
       this.drawn.push({ node: node.id, side, compatible });
+      this.points.push({ node: node.id, side, x: at.x, y: at.y });
     }
   }
 }

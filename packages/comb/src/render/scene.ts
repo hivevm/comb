@@ -21,7 +21,12 @@ import { EdgesContainer, type MeshSize } from "./edges";
 import { EdgeFill } from "./edges-canvas";
 import { LabelsContainer, type LabelView } from "./labels";
 import { NodeGraphic, NodesContainer } from "./nodes";
-import { ConnectionLine, ConnectorsLayer, type DrawnConnector } from "./connectors";
+import {
+  ConnectionLine,
+  ConnectorsLayer,
+  type DrawnConnector,
+  type DrawnConnectorPoint,
+} from "./connectors";
 import { NodeParticles } from "./particles";
 import { levelAt, toScreen, worldRect } from "../store/viewport";
 
@@ -69,6 +74,9 @@ export interface SceneSnapshot {
   queries: number;
   /** The connectors the connectors layer draws (ADR-0024). */
   connectors: DrawnConnector[];
+  /** Where each connector the layer draws is centred, in world units, in the order of
+   *  `connectors`. */
+  connectorPoints: DrawnConnectorPoint[];
   /** The connection being dragged, from its source's connector to the pointer, in world units. */
   connection: { from: { x: number; y: number }; to: { x: number; y: number } } | null;
 }
@@ -259,6 +267,7 @@ export class Scene {
       renders: this.renders,
       queries: this.queries,
       connectors: [...this.connectors.drawn],
+      connectorPoints: [...this.connectors.points],
       connection: this.connection.drawn,
     };
   }

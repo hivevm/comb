@@ -86,13 +86,21 @@ for (const [side, at] of [
   ["bottom", A_BOTTOM],
   ["left", [0, 32]],
 ] as const) {
-  test(`a connection from a's ${side} connector is drawn from where the engine begins its edge`, async ({
+  test(`a's ${side} connector and a connection from it are drawn where the engine begins its edge`, async ({
     page,
   }) => {
     // Verifies: ADR-0024
     await open(page);
     await loaded(page, NODES);
     await page.evaluate(() => (window.canConnect = () => "e7"));
+    // Hovered, a shows its four connectors.
+    const over = await pagePoint(page, ...(at as [number, number]));
+    await page.mouse.move(over.x, over.y);
+    const circle = await page.evaluate(async (side) => {
+      await window.comb.whenRendered();
+      const point = window.inspect().connectorPoints.find((p) => p.node === "a" && p.side === side);
+      return point && { x: point.x, y: point.y };
+    }, side);
     const midway = await drag(page, at as [number, number], B_TOP);
     const { edges, told } = await page.evaluate(async () => {
       await window.comb.whenRendered();
@@ -101,8 +109,10 @@ for (const [side, at] of [
     });
     // The press hit the connector of this side, which the engine records as the edge's.
     expect(told.map(({ edge }) => edge.sourceSide)).toEqual([side]);
-    // The connector the shell draws the connection from is the one the engine begins the edge at.
+    // The connector the shell draws, and draws the connection from, is where the engine begins
+    // the edge.
     const ends = edges.find(({ id }) => id === "e7");
+    expect(circle).toEqual(ends?.source);
     expect(midway.connection?.from).toEqual(ends?.source);
   });
 }

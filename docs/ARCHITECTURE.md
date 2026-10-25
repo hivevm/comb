@@ -235,21 +235,21 @@ The functional core and its shell follow
   with one render per animation frame scheduled by `api/frames.ts`. `api/scenes.ts` is the one way
   from a `Comb` to its scene and to the hit test its presses ask, for the testing entry.
 - **Testing entry** (`comb/testing`, `packages/comb/src/testing.ts`) — `inspect` returns what the
-  scene draws, the text of the titles and labels drawn included, and the size and detail of the edge
-  mesh, which the host application is not told; `viewport` and `renderCount`, cheap enough for every
-  frame, return its transform and how often it rendered; `screenPoint` and `visibleRect` apply the
-  scene's transform between world and screen; `hitKind` names what a press at a screen point hits,
-  asking interaction's hit test from the viewport a press reads, which is the drawn one once
-  `whenRendered` resolves, connectors only where the Comb lets the user connect; `isDrawn` finds
-  whether one node or edge is drawn without building every drawn view, as `inspect` does;
-  `showLayers` hides layers for a reference image; `sceneNumbers` gives the numbers the scene draws
-  by (where the levels of detail begin, the culling margin, the label reach, the rescale); `work`
-  counts what the canvas did: GPU buffers created and allocated, bytes uploaded, those of the edge
-  mesh among them, and texture uploads, counted at the WebGL context from its first call, resizes of
-  the edge mesh's buffers, and views the pools made, and refuses where the canvas draws without
-  WebGL; `edgeVertices` gives the screen point of every vertex of the edge mesh as its shader
-  computes it in `f32`; for tests, the benchmark, and tooling. Its shape follows the scene and is
-  outside the stable interface of `comb`.
+  scene draws, the text of the titles and labels drawn included, the connectors drawn with where
+  each is centred, and the size and detail of the edge mesh, which the host application is not told;
+  `viewport` and `renderCount`, cheap enough for every frame, return its transform and how often it
+  rendered; `screenPoint` and `visibleRect` apply the scene's transform between world and screen;
+  `hitKind` names what a press at a screen point hits, asking interaction's hit test from the
+  viewport a press reads, which is the drawn one once `whenRendered` resolves, connectors only where
+  the Comb lets the user connect; `isDrawn` finds whether one node or edge is drawn without building
+  every drawn view, as `inspect` does; `showLayers` hides layers for a reference image;
+  `sceneNumbers` gives the numbers the scene draws by (where the levels of detail begin, the culling
+  margin, the label reach, the rescale); `work` counts what the canvas did: GPU buffers created and
+  allocated, bytes uploaded, those of the edge mesh among them, and texture uploads, counted at the
+  WebGL context from its first call, resizes of the edge mesh's buffers, and views the pools made,
+  and refuses where the canvas draws without WebGL; `edgeVertices` gives the screen point of every
+  vertex of the edge mesh as its shader computes it in `f32`; for tests, the benchmark, and tooling.
+  Its shape follows the scene and is outside the stable interface of `comb`.
 - **Example** (`examples/metric-tree`) — a host application with a metric tree and an HTML sidebar
   (G-9) that edits the selected node's title or the selected edge's colour, dash, arrowhead, and
   label, with a palette whose kinds HTML drag and drop puts onto the canvas, where the example adds
