@@ -9,7 +9,7 @@ use std::fmt;
 
 use comb_engine::geometry::{self as graph_side, Sides, WORLD_LIMIT};
 use comb_engine::graph::{
-    self, AddEdgeError, EdgeSpec, Graph, GraphError, LabelPlacement, SlotError,
+    self, AddEdgeError, EdgeSpec, Graph, GraphError, LabelPlacement, SlotError, TooManySlots,
 };
 use comb_engine::stroke::EdgeStyle;
 use serde::de::{self, IgnoredAny, Visitor};
@@ -451,6 +451,14 @@ impl From<GraphError> for GraphDataProblem {
             GraphError::EdgeEndOutOfRange { .. } => "an edge ends at a node beyond the graph",
             GraphError::TooManySlots => "the graph holds more items than the engine can number",
         })
+    }
+}
+
+/// A count or an addition past the slots the engine numbers is refused as a graph too large for
+/// it, the message of `GraphError::TooManySlots`.
+impl From<TooManySlots> for GraphDataProblem {
+    fn from(error: TooManySlots) -> Self {
+        GraphError::from(error).into()
     }
 }
 
@@ -904,7 +912,7 @@ impl From<AddEdgeError> for EdgeRefusal {
     fn from(error: AddEdgeError) -> Self {
         match error {
             AddEdgeError::Slot(error) => Self::Slot(error),
-            AddEdgeError::Graph(error) => Self::Data(error.into()),
+            AddEdgeError::TooManySlots(error) => Self::Data(error.into()),
         }
     }
 }
@@ -1602,9 +1610,9 @@ pub(crate) mod tests {
     #[test]
     fn an_edge_the_engine_cannot_number_is_refused_as_a_node_it_cannot_number() {
         // Verifies: ADR-0022
-        let node = GraphDataProblem::from(GraphError::TooManySlots);
+        let node = GraphDataProblem::from(TooManySlots);
         assert_eq!(
-            EdgeRefusal::from(AddEdgeError::Graph(GraphError::TooManySlots)),
+            EdgeRefusal::from(AddEdgeError::TooManySlots(TooManySlots)),
             EdgeRefusal::Data(node)
         );
         let slot = SlotError::NoNode { slot: 3 };

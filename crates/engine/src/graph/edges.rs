@@ -191,7 +191,7 @@ impl Graph {
 
 #[cfg(test)]
 mod tests {
-    use super::super::GraphError;
+    use super::super::TooManySlots;
     use super::super::tests::{Lcg, paired, random_graph};
     use super::*;
 
@@ -281,15 +281,12 @@ mod tests {
         };
         let mut graph = paired(4);
         graph.node_slots.set_count(u32::MAX);
-        assert_eq!(
-            graph.add_node(0.0, 0.0, 5.0, 5.0),
-            Err(GraphError::TooManySlots)
-        );
+        assert_eq!(graph.add_node(0.0, 0.0, 5.0, 5.0), Err(TooManySlots));
         let mut graph = paired(4);
         graph.edge_slots.set_count(u32::MAX);
         assert_eq!(
             graph.add_edge(spec),
-            Err(AddEdgeError::Graph(GraphError::TooManySlots))
+            Err(AddEdgeError::TooManySlots(TooManySlots))
         );
         assert_eq!((graph.edges.len(), graph.paths.len()), (4, 4));
         assert_eq!(

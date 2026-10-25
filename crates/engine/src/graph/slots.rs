@@ -1,7 +1,7 @@
 //! The slots of one kind, nodes or edges, the graph keeps one each of (ADR-0022): how many there
 //! are, which of them are free, and the list of the free ones, the one freed last taken first.
 
-use super::{GraphError, slot};
+use super::{TooManySlots, slot};
 
 /// The slots of a kind: those a load numbered and those additions appended, free ones among them.
 #[derive(Debug, Default)]
@@ -50,7 +50,7 @@ impl Slots {
 
     /// Takes a slot for an item added: the free slot freed last, or a new one after the highest,
     /// refused where it would lie beyond `u32`, which then changes nothing.
-    pub(super) fn take(&mut self) -> Result<u32, GraphError> {
+    pub(super) fn take(&mut self) -> Result<u32, TooManySlots> {
         if let Some(free) = self.free.pop() {
             self.is_free[free as usize] = false;
             return Ok(free);
@@ -122,7 +122,7 @@ mod tests {
     fn a_slot_past_u32_is_refused_and_nothing_changes() {
         let mut slots = Slots::loaded(0);
         slots.count = u32::MAX;
-        assert_eq!(slots.take(), Err(GraphError::TooManySlots));
+        assert_eq!(slots.take(), Err(TooManySlots));
         assert_eq!(slots.count(), u32::MAX);
         assert!(slots.is_free.is_empty());
     }

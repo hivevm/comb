@@ -3,7 +3,7 @@
 //! the nodes along; and a move, which takes them along too (ADR-0022).
 
 use super::slots::put;
-use super::{Graph, GraphError, MoveError, SlotError};
+use super::{Graph, MoveError, SlotError, TooManySlots};
 use crate::geometry::{Rect, WORLD_LIMIT};
 
 /// Why the positions refused a move: a delta that is NaN or infinite.
@@ -37,7 +37,13 @@ impl Graph {
     /// freed last, or a new one after the highest. It takes the next rank, so that it is drawn and
     /// hit above every other node, and goes into the index in place, which the rule of ADR-0022
     /// then builds again where it asks for it.
-    pub fn add_node(&mut self, x: f32, y: f32, width: f32, height: f32) -> Result<u32, GraphError> {
+    pub fn add_node(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+    ) -> Result<u32, TooManySlots> {
         let rank = self.take_rank();
         let slot = self.node_slots.take()?;
         let i = slot as usize;

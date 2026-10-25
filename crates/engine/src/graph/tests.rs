@@ -168,7 +168,7 @@ fn a_query_finds_exactly_what_a_scan_finds_before_and_after_moves() {
 #[test]
 fn a_count_beyond_u32_is_refused_and_one_within_kept() {
     assert_eq!(slot(u32::MAX as usize), Ok(u32::MAX));
-    assert_eq!(slot(u32::MAX as usize + 1), Err(GraphError::TooManySlots));
+    assert_eq!(slot(u32::MAX as usize + 1), Err(TooManySlots));
 }
 
 #[test]
