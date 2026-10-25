@@ -8,6 +8,7 @@ import {
   createBridge,
   EngineLostError,
   onEngineLost,
+  positionAt,
   refuseIfLost,
   type Bridge,
   type Rect,
@@ -21,6 +22,7 @@ import {
 } from "../interaction";
 import { clampScale, fitViewport, toWorld } from "../store/viewport";
 import { Scene } from "../render/scene";
+import { listenersOf, type GraphChange } from "./changes";
 import { engineOf, type EngineSource } from "./engine";
 import { editorsOf } from "./editors";
 import type { Limits } from "./snapshot";
@@ -30,95 +32,22 @@ import { scenes } from "./scenes";
 import {
   createGraphStore,
   type EdgeData,
-  type EdgeLabelData,
   type EdgePatch,
   type GraphData,
-  type GraphState,
   type GraphStore,
   type NodeData,
   type NodeView,
   type Selection,
-  type Side,
-  type StoreChange,
   type Viewport,
 } from "../store";
 
 export { EngineLostError } from "../bridge";
 export { GraphDataError } from "./editors";
 export { EngineSourceError } from "./engine";
+export type { GraphChange } from "./changes";
 export type { EngineSource, EngineSourceProblem } from "./engine";
 export type { GraphDataProblem } from "../bridge";
 export type { Deletion, Proposal } from "../interaction";
-
-/** The attributes `updateEdge` changes on an edge, as `edgeUpdated` reports them merged: its
- *  colour, arrowhead, dash pattern or none, and label or none (ADR-0030). */
-interface EdgeChangePatch {
-  readonly color?: number;
-  readonly arrow?: "end" | "none";
-  readonly sourceSide?: Side;
-  readonly targetSide?: Side;
-  readonly dash?: readonly [number, number] | null;
-  readonly label?: Readonly<EdgeLabelData> | null;
-}
-
-/** One change of the graph, by its `kind` and by who made it, `"user"` or `"host"`, as
- *  `onChange` delivers it (ADR-0030). */
-export type GraphChange =
-  /** `load` replaced the graph. */
-  | { readonly kind: "loaded"; readonly by: "host" }
-  /** `addNode` added `node`, as Comb took it. */
-  | { readonly kind: "nodeAdded"; readonly by: "host"; readonly node: Readonly<NodeData> }
-  /** `updateNode` changed the node `id` by `patch`, as Comb merged it. */
-  | {
-      readonly kind: "nodeUpdated";
-      readonly by: "host";
-      readonly id: string;
-      readonly patch: Readonly<Partial<Pick<NodeData, "title">>>;
-    }
-  /** A drag left the node `id` at `x`, `y`. */
-  | {
-      readonly kind: "nodeMoved";
-      readonly by: "user";
-      readonly id: string;
-      readonly x: number;
-      readonly y: number;
-    }
-  /** The nodes `nodes` were removed, and with them the edges `edges`. */
-  | {
-      readonly kind: "nodesRemoved";
-      readonly by: "user" | "host";
-      readonly nodes: readonly string[];
-      readonly edges: readonly string[];
-    }
-  /** The edge `edge` was added, as Comb keeps it, its defaults filled. */
-  | {
-      readonly kind: "edgeAdded";
-      readonly by: "user" | "host";
-      readonly edge: Readonly<
-        EdgeData & Required<Pick<EdgeData, "color" | "arrow" | "sourceSide" | "targetSide">>
-      >;
-    }
-  /** `updateEdge` changed the edge `id` by `patch`, as Comb merged it. */
-  | {
-      readonly kind: "edgeUpdated";
-      readonly by: "host";
-      readonly id: string;
-      readonly patch: EdgeChangePatch;
-    }
-  /** The edges `edges` were removed. */
-  | {
-      readonly kind: "edgesRemoved";
-      readonly by: "user" | "host";
-      readonly edges: readonly string[];
-    }
-  /** A drag left the label of the edge `edge` at path parameter `t` and label offset `offset`. */
-  | {
-      readonly kind: "labelMoved";
-      readonly by: "user";
-      readonly edge: string;
-      readonly t: number;
-      readonly offset: number;
-    };
 
 export interface CombOptions {
   /** The engine's WebAssembly, the file `comb/engine.wasm`, as the host application loads it:
@@ -152,9 +81,9 @@ export interface CombOptions {
   canConnect?: (proposal: Proposal) => string | false;
 }
 
-/** Once the engine is lost for the page, `load`, `updateNode`, `addNode`, `fitView`, and
- *  `setViewport` of every Comb on it throw an `EngineLostError`, and so does `createComb`
- *  (ADR-0021). */
+/** Once the engine is lost for the page, `load`, `updateNode`, `addNode`, `addEdge`, `updateEdge`,
+ *  `removeNodes`, `removeEdges`, `fitView`, and `setViewport` of every Comb on it throw an
+ *  `EngineLostError`, and so does `createComb` (ADR-0021). */
 export interface Comb {
   /** Replaces the graph. Throws a `GraphDataError` on malformed graph data (Q-7), and an
    *  `EngineLostError` once the engine is lost. */
@@ -243,8 +172,7 @@ function boundsOf(nodes: readonly (NodeView | undefined)[], positions: Float32Ar
   nodes.forEach((node, slot) => {
     if (!node) return;
     any = true;
-    const x = positions[slot * 2]!;
-    const y = positions[slot * 2 + 1]!;
+    const { x, y } = positionAt(positions, slot);
     bounds.minX = Math.min(bounds.minX, x);
     bounds.minY = Math.min(bounds.minY, y);
     bounds.maxX = Math.max(bounds.maxX, x + node.width);
@@ -256,125 +184,6 @@ function boundsOf(nodes: readonly (NodeView | undefined)[], positions: Float32Ar
 /** The bridge's limits the snapshot cuts strings by. */
 function limitsOf(bridge: Bridge): Limits {
   return { text: bridge.textLimit(), id: bridge.idLimit(), idBudget: bridge.idBudget() };
-}
-
-/** The change of an edge `change` names, as `onChange` delivers it: the edge as the store keeps
- *  it, its colour and arrowhead filled, or the patch as merged. */
-function edgeDeliveryOf(
-  change: Extract<StoreChange, { kind: "edgeAdded" | "edgeUpdated" }>,
-  state: GraphState,
-): GraphChange {
-  if (change.kind === "edgeUpdated") {
-    // Copies all down, so that no listener reaches into what the store keeps.
-    const { dash, label, ...patch } = change.patch;
-    return {
-      kind: change.kind,
-      by: change.by,
-      id: change.id,
-      patch: {
-        ...patch,
-        ...(dash === undefined ? {} : { dash: dash && ([dash[0], dash[1]] as const) }),
-        ...(label === undefined ? {} : { label: label && { ...label } }),
-      },
-    };
-  }
-  const { dash, label, ...edge } = state.edges[state.edgeSlots.get(change.id)!]!;
-  return {
-    kind: change.kind,
-    by: change.by,
-    edge: {
-      ...edge,
-      color: edge.color!,
-      arrow: edge.arrow!,
-      sourceSide: edge.sourceSide!,
-      targetSide: edge.targetSide!,
-      ...(dash ? { dash: [dash[0], dash[1]] as const } : {}),
-      ...(label ? { label: { ...label } } : {}),
-    },
-  };
-}
-
-/** The change of the graph `change` names, as `onChange` delivers it: what it carries read from
- *  `state` and, for a position, from the engine's buffer as it is now. */
-function deliveryOf(change: StoreChange, state: GraphState, bridge: Bridge): GraphChange {
-  switch (change.kind) {
-    case "loaded":
-      return { kind: change.kind, by: change.by };
-    case "nodeUpdated":
-      return { kind: change.kind, by: change.by, id: change.id, patch: { ...change.patch } };
-    case "nodeMoved": {
-      const slot = state.slots.get(change.id)!;
-      const positions = bridge.positions();
-      const [x, y] = [positions[slot * 2]!, positions[slot * 2 + 1]!];
-      return { kind: change.kind, by: change.by, id: change.id, x, y };
-    }
-    case "nodesRemoved":
-      return {
-        kind: change.kind,
-        by: change.by,
-        nodes: [...change.nodes],
-        edges: [...change.edges],
-      };
-    case "edgesRemoved":
-      return { kind: change.kind, by: change.by, edges: [...change.edges] };
-    case "edgeAdded":
-    case "edgeUpdated":
-      return edgeDeliveryOf(change, state);
-    case "labelMoved": {
-      const { t, offset } = state.edges[state.edgeSlots.get(change.edge)!]!.label!;
-      return { kind: change.kind, by: change.by, edge: change.edge, t, offset };
-    }
-    case "nodeAdded": {
-      const slot = state.slots.get(change.id)!;
-      const { id, title, width, height } = state.nodes[slot]!;
-      const positions = bridge.positions();
-      const [x, y] = [positions[slot * 2]!, positions[slot * 2 + 1]!];
-      return { kind: change.kind, by: change.by, node: { id, title, x, y, width, height } };
-    }
-  }
-}
-
-/** `onChange` and `onSelectionChange` of one Comb, told from one subscription to `store`, so that
- *  a change of the graph reaches its listeners before the selection it cleared reaches theirs.
- *  Deliveries wait in one queue, so that a change a listener makes reaches every listener after
- *  the one being delivered, in the order made; a listener that throws keeps no other from being
- *  told, and the first error is thrown on once the queue is empty. */
-function listenersOf(store: GraphStore, bridge: Bridge) {
-  const changes = new Set<(change: GraphChange) => void>();
-  const selections = new Set<(selection: Selection) => void>();
-  const add =
-    <A>(set: Set<(value: A) => void>) =>
-    (listener: (value: A) => void) => {
-      // A registration of its own, so that one listener registered twice is told twice.
-      const registration = (value: A) => listener(value);
-      set.add(registration);
-      return () => void set.delete(registration);
-    };
-  const queue: (() => void)[] = [];
-  let delivering = false;
-  const tell = <A>(set: Set<(value: A) => void>, value: A) =>
-    queue.push(...[...set].map((listener) => () => listener(value)));
-  store.subscribe((state, previous) => {
-    if (state.change !== previous.change && state.change && changes.size > 0)
-      tell(changes, deliveryOf(state.change, state, bridge));
-    if (state.selection !== previous.selection) tell(selections, state.selection);
-    if (delivering) return;
-    delivering = true;
-    const failed: unknown[] = [];
-    try {
-      for (let next = queue.shift(); next; next = queue.shift()) {
-        try {
-          next();
-        } catch (error) {
-          failed.push(error);
-        }
-      }
-    } finally {
-      delivering = false;
-    }
-    if (failed.length > 0) throw failed[0];
-  });
-  return { onChange: add(changes), onSelectionChange: add(selections) };
 }
 
 /** `worldPointAt` on `store` and the canvas of `app`: the world point under a point of the page,

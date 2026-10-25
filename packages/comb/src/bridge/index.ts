@@ -409,6 +409,12 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
   };
 }
 
+/** The top-left corner of the node in `slot`, read from the engine's buffer of positions,
+ *  `bridge.positions()`. */
+export function positionAt(positions: Float32Array, slot: number): { x: number; y: number } {
+  return { x: positions[slot * 2]!, y: positions[slot * 2 + 1]! };
+}
+
 /** Loads the engine from what the host application handed over: a `Response`, which is compiled
  *  while it streams, a compiled module, or the bytes (ADR-0019). Never a string, `URL`, or
  *  `Request`, which the initialiser would fetch itself; the API refuses those before it gets here,
