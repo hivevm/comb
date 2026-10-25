@@ -93,10 +93,11 @@ The functional core and its shell follow
   `nodes` and `edges`, the edits of each, each with the one check that the slots a call names hold
   one, and `nodes` with the moves of the positions buffer; `index`, the grids and the one function
   that holds the rule that builds them again, called after every addition and move, a removal
-  building nothing; `hit`, `labels`, and `query`; each with its tests, `tests` with the
-  graphs they build and the property tests of the whole graph against a scan, and `budget`, the
-  property test of the mesh budget. `add_node` takes the
-  free slot freed last, or a new one after the highest, and the next rank, and puts the node into
+  building nothing, and a rebuild building the grids from the edges as they are placed: a load
+  places every edge once, and each edit places the edges it changes; `hit`, `labels`, and `query`;
+  each with its tests, `tests` with the graphs they build and the property tests of the whole graph
+  against a scan, and `budget`, the property test of the mesh budget. `add_node` takes the free
+  slot freed last, or a new one after the highest, and the next rank, and puts the node into
   the grid in place; a load ranks node `i` as `i`; `add_edge` takes the edge slot freed last, or a
   new one, and puts the edge into the lists of its ends and the grid in place, and `update_edge`
   restyles and re-places one; `remove_nodes` frees the node slots and those of the edges at them,

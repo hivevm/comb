@@ -135,6 +135,8 @@ impl Graph {
 
     /// The path, its bounds, and the label point of the edge in `slot` from the current positions.
     pub(super) fn placement(&self, slot: u32) -> (EdgePath, Rect, Option<Point>) {
+        #[cfg(test)]
+        self.placements.set(self.placements.get() + 1);
         let spec = self.edges[slot as usize];
         let path = EdgePath::between(
             &self.node_bounds(spec.source),
@@ -145,6 +147,17 @@ impl Graph {
             .label
             .map(|label| path.label_position(label.t, label.offset));
         (path, path.bounds(), label)
+    }
+
+    /// Computes the path, bounds, and label point of every edge, as a load does, once, before the
+    /// index is built from them: every later edit places the edges it changes itself.
+    pub(super) fn place_edges(&mut self) {
+        let placed: Vec<_> = (0..self.edge_slots.count())
+            .map(|e| self.placement(e))
+            .collect();
+        self.paths = placed.iter().map(|&(path, _, _)| path).collect();
+        self.bounds = placed.iter().map(|&(_, bounds, _)| bounds).collect();
+        self.labels = placed.iter().map(|&(_, _, label)| label).collect();
     }
 
     /// Computes the path and label of the edge in `slot`, an edge taken into a new slot among
