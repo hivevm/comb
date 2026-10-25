@@ -64,8 +64,13 @@ if (($# == 0)); then
   (cd "$ROOT" && bash -c "$BUILD") || { echo "Bundle check: the build failed." >&2; exit 1; }
   dir="$ROOT/packages/comb/dist"
   package="$ROOT/packages/comb"
-  engine="$(cd "$package" && bun -e 'console.log(require("./package.json").exports["./engine.wasm"] ?? "")')"
-  if [[ -z "$engine" || ! -f "$package/$engine" ]]; then
+  # The export is read as the one string package.json maps "./engine.wasm" to, without a JSON
+  # parser, so the self-test runs where no Bun is installed; a key named twice, a value that is
+  # not a plain string, or an unreadable file reads as no export.
+  mapfile -t engines < <(grep -o '"\./engine\.wasm"[[:space:]]*:[[:space:]]*"[^"\\]*"' \
+    "$package/package.json" 2> /dev/null | sed 's/.*"\([^"]*\)"$/\1/')
+  engine="${engines[0]:-}"
+  if ((${#engines[@]} != 1)) || [[ -z "$engine" || ! -f "$package/$engine" ]]; then
     echo "Bundle check FAILED: packages/comb/package.json exports no engine file as ./engine.wasm that exists (ADR-0019)." >&2
     exit 1
   fi
