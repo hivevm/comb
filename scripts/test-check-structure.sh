@@ -5,8 +5,9 @@
 # Each case builds a fixture tree under a temporary directory — a core crate with its lock, a
 # library with a bridge, a store, and a render layer, and an example — runs the check against it,
 # and asserts the exit code and, for a failing case, the message that names the offence. The
-# baseline passes; every failing case breaks one rule of ADR-0028 or ADR-0027 in one form, and
-# the passing cases are near misses the check must not mistake for offences.
+# baseline passes; every failing case breaks one rule of ADR-0028, ADR-0027, or ADR-0018, or the
+# boundary of docs/ARCHITECTURE.md the check holds, in one form, and the passing cases are near
+# misses the check must not mistake for offences.
 #
 # Usage:
 #     scripts/test-check-structure.sh
@@ -172,9 +173,9 @@ echo 'export { attachInteraction } from "../interaction";' >> "$d/packages/comb/
 expect fail "the render layer re-exporting interaction fails" "$d" "imports nothing from interaction/"
 
 d="$(fixture render-interaction-near)"
-printf '%s\n' 'import { levelAt } from "../viewport";' 'import "pixi.js/interaction";' \
+printf '%s\n' 'import { levelAt } from "../store/viewport";' 'import "pixi.js/interaction";' \
   'const interaction = "../interaction";' >> "$d/packages/comb/src/render/scene.ts"
-expect pass "the shared viewport, a package path, and a string naming interaction pass" "$d"
+expect pass "the store's viewport, a package path, and a string naming interaction pass" "$d"
 
 d="$(fixture render-assets)"
 echo 'await Assets.load("font.fnt"); const selectable = state.selection !== null;' \

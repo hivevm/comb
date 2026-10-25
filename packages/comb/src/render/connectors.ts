@@ -5,7 +5,7 @@
 // neither (ADR-0028).
 import { Graphics } from "pixi.js";
 import type { GraphView, Side } from "../store";
-import { toScreen } from "../viewport";
+import { toScreen } from "../store/viewport";
 
 const SIDES: readonly Side[] = ["top", "right", "bottom", "left"];
 /** The radius of a drawn connector, in screen pixels. */

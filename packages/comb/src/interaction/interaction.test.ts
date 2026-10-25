@@ -241,7 +241,7 @@ describe("the hit test", () => {
   ] as const;
   for (const connects of [true, false]) {
     for (const [over, hit] of hits) {
-      test(`over ${over}, ${connects ? "with" : "without"} connect, the testing entry's hit test, the hover, and a press ask the engine alike`, () => {
+      test(`over ${over}, ${connects ? "with" : "without"} connect, hitAt, the hover, and a press ask the engine alike`, () => {
         // Verifies: ADR-0025
         const store = createGraphStore();
         store.getState().load({

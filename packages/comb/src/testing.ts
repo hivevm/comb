@@ -3,19 +3,23 @@
 // Its shape follows the scene and changes with it, outside the stable interface of `comb`.
 import type { Buffer, Matrix, WebGLRenderer } from "pixi.js";
 import type { Comb } from "./api";
-import { hitTests, scenes } from "./api/scenes";
+import { scenes } from "./api/scenes";
 import { TEST_MODE, trapNextCall, type Hit, type Rect } from "./bridge";
 import { EdgesContainer } from "./render/edges";
 import { LABEL_REACH } from "./render/labels";
 import { CULLING_MARGIN, RESCALE, type SceneSnapshot } from "./render/scene";
-import { FAR_SCALE, NEAR_SCALE, toScreen, worldRect } from "./viewport";
+import { FAR_SCALE, NEAR_SCALE, toScreen, worldRect } from "./store/viewport";
 
 export type { SceneSnapshot };
 
+function inspectedOf(comb: Comb) {
+  const inspected = scenes.get(comb);
+  if (!inspected) throw new Error("comb/testing: not a Comb created by createComb");
+  return inspected;
+}
+
 function sceneOf(comb: Comb) {
-  const scene = scenes.get(comb);
-  if (!scene) throw new Error("comb/testing: not a Comb created by createComb");
-  return scene;
+  return inspectedOf(comb).scene;
 }
 
 /** What the canvas of `comb` draws right now, in world coordinates. */
@@ -45,9 +49,7 @@ export function isDrawn(comb: Comb, what: { node: string } | { edge: string }): 
  *  hit test a press asks, from the viewport a press reads, which is the drawn one once
  *  `whenRendered` resolves (ADR-0025). */
 export function hitKind(comb: Comb, x: number, y: number): Hit["kind"] {
-  const hitAt = hitTests.get(comb);
-  if (!hitAt) throw new Error("comb/testing: not a Comb created by createComb");
-  return hitAt(x, y).kind;
+  return inspectedOf(comb).hitAt(x, y).kind;
 }
 
 /** The world rectangle the canvas of `comb` shows, grown by `margin` screen pixels. */

@@ -23,7 +23,7 @@ import { LabelsContainer, type LabelView } from "./labels";
 import { NodeGraphic, NodesContainer } from "./nodes";
 import { ConnectionLine, ConnectorsLayer, type DrawnConnector } from "./connectors";
 import { NodeParticles } from "./particles";
-import { levelAt, toScreen, worldRect } from "../viewport";
+import { levelAt, toScreen, worldRect } from "../store/viewport";
 
 /** The level of detail the scene draws at (ADR-0027); the engine strokes edges for it. */
 export type { Level };

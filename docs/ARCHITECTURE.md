@@ -163,7 +163,10 @@ The functional core and its shell follow
   pointer, the connection the user drags, with the world point it is dragged to, the viewport, and
   a counter for moved positions; no coordinates of nodes or edges
   ([ADR-0011](adr/0011-store.md)). `GraphView` is its state without the actions, the type the
-  render layer reads.
+  render layer reads. `store/viewport.ts` holds the viewport's arithmetic, the transform between
+  world and screen and the level of detail of a scale included, for interaction, the scene, `api`'s
+  `fitView`, `setViewport`, and `worldPointAt`, and the testing entry; it imports none of them, so
+  the render layer takes it from the store, not from interaction.
 - **Interaction** (`packages/comb/src/interaction`) — pointer, wheel, and key input into store
   actions and engine moves. `index.ts` dispatches: a press begins the gesture of what it hits, each
   a module of its own behind the `Gesture` of `gesture.ts`, which says how it moves, how it ends at
@@ -189,10 +192,6 @@ The functional core and its shell follow
   hit test: `attachInteraction` asks it from the store's viewport, connectors only where
   `CombOptions.canConnect` is set, for the press and the hover, and returns it as `hitAt`, with
   the function that detaches the input, for the testing entry.
-- **Viewport** (`packages/comb/src/viewport.ts`) — the viewport's arithmetic, the transform
-  between world and screen and the level of detail of a scale included, for interaction, the
-  scene, `api`'s `fitView`, `setViewport`, and `worldPointAt`, and the testing entry; it imports
-  none of them, so the render layer takes it without importing from interaction.
 - **Render** (`packages/comb/src/render`) — the PixiJS scene (`scene.ts`), which imports nothing
   from interaction: a `world` render group with the layers `EdgesContainer` (`edges.ts`),
   `NodeParticles` (`particles.ts`), `NodesContainer` (`nodes.ts`), `LabelsContainer` (`labels.ts`),
@@ -236,22 +235,21 @@ The functional core and its shell follow
   with one render per animation frame scheduled by `api/frames.ts`. `api/scenes.ts` is the one way
   from a `Comb` to its scene and to the hit test its presses ask, for the testing entry.
 - **Testing entry** (`comb/testing`, `packages/comb/src/testing.ts`) — `inspect` returns what the
-  scene draws, the text of the titles and labels drawn included, and the size and detail of the
-  edge mesh, which the host application is not told; `viewport` and `renderCount`, cheap
-  enough for every frame, return its transform and how often it rendered; `screenPoint` and
-  `visibleRect` apply the scene's transform between world and screen; `hitKind` names what a press
-  at a screen point hits, asking interaction's hit test from the viewport a press reads, which is
-  the drawn one once `whenRendered` resolves, connectors only where the Comb lets the user
-  connect; `isDrawn` finds whether one node or edge is drawn without building every drawn view, as
-  `inspect` does; `showLayers` hides layers for
-  a reference image; `sceneNumbers` gives the numbers the scene draws by (where the levels of detail
-  begin, the culling margin, the label reach, the rescale); `work` counts what the canvas did: GPU
-  buffers created and allocated, bytes uploaded, those of the edge mesh among them, and texture
-  uploads, counted at the WebGL context from its first call, resizes of the edge mesh's buffers, and
-  views the pools made, and refuses where the canvas draws without WebGL; `edgeVertices` gives the
-  screen point of every vertex of the edge mesh as its shader computes it in `f32`; for tests,
-  the benchmark, and tooling. Its shape follows the scene and is outside the stable interface of
-  `comb`.
+  scene draws, the text of the titles and labels drawn included, and the size and detail of the edge
+  mesh, which the host application is not told; `viewport` and `renderCount`, cheap enough for every
+  frame, return its transform and how often it rendered; `screenPoint` and `visibleRect` apply the
+  scene's transform between world and screen; `hitKind` names what a press at a screen point hits,
+  asking interaction's hit test from the viewport a press reads, which is the drawn one once
+  `whenRendered` resolves, connectors only where the Comb lets the user connect; `isDrawn` finds
+  whether one node or edge is drawn without building every drawn view, as `inspect` does;
+  `showLayers` hides layers for a reference image; `sceneNumbers` gives the numbers the scene draws
+  by (where the levels of detail begin, the culling margin, the label reach, the rescale); `work`
+  counts what the canvas did: GPU buffers created and allocated, bytes uploaded, those of the edge
+  mesh among them, and texture uploads, counted at the WebGL context from its first call, resizes of
+  the edge mesh's buffers, and views the pools made, and refuses where the canvas draws without
+  WebGL; `edgeVertices` gives the screen point of every vertex of the edge mesh as its shader
+  computes it in `f32`; for tests, the benchmark, and tooling. Its shape follows the scene and is
+  outside the stable interface of `comb`.
 - **Example** (`examples/metric-tree`) — a host application with a metric tree and an HTML sidebar
   (G-9) that edits the selected node's title or the selected edge's colour, dash, arrowhead, and
   label, with a palette whose kinds HTML drag and drop puts onto the canvas, where the example adds
@@ -382,11 +380,12 @@ mutants, proptest's regressions, a run of cargo-mutants, editors' swap files), `
 `Cargo.lock`, naming the file and `bun run build:engine`. `scripts/check-structure.sh` fails when
 the engine's core names or, through `Cargo.lock`, reaches a crate that touches the browser, the
 clock, randomness, or I/O, when a module other than the bridge imports the WebAssembly package, when
-the render layer reaches the store instead of the action-free `GraphView` or imports from
-interaction, or when an example imports past the library's entries and its engine file (ADR-0028,
-ADR-0019), and when the render
+the render layer reaches the store instead of the action-free `GraphView`, or when an example
+imports past the library's entries and its engine file (ADR-0028, ADR-0019), and when the render
 layer names PixiJS's `Text`, `HTMLText`, or `SplitText` or the edges layer a `Graphics` (ADR-0027),
-and when its Canvas 2D fallback names `Graphics` outside its imports and its one field (ADR-0018).
+and when its Canvas 2D fallback names `Graphics` outside its imports and its one field (ADR-0018);
+it also holds one boundary of this overview that no ADR decides, failing a render file that
+imports from interaction by a relative path.
 `scripts/check-overview.sh` fails, naming each, where this overview holds no code span of its own
 for a method or property of the `Comb` interface, an option of `CombOptions`, or a function or
 constant `comb/testing` exports (ADR-0001), and where it reads no names from one of those sources.

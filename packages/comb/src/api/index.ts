@@ -21,7 +21,7 @@ import {
   type Deletion,
   type Proposal,
 } from "../interaction";
-import { clampScale, fitViewport, toWorld } from "../viewport";
+import { clampScale, fitViewport, toWorld } from "../store/viewport";
 import { Scene } from "../render/scene";
 import { engineOf, type EngineSource } from "./engine";
 import {
@@ -38,7 +38,7 @@ import {
 } from "./snapshot";
 import { createFrames } from "./frames";
 import { drawsWith, preferenceFor } from "./renderers";
-import { hitTests, scenes } from "./scenes";
+import { scenes } from "./scenes";
 import {
   createGraphStore,
   type EdgeData,
@@ -724,7 +724,6 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
       app.destroy(true, { children: true });
     },
   };
-  scenes.set(comb, scene);
-  hitTests.set(comb, interaction.hitAt);
+  scenes.set(comb, { scene, hitAt: interaction.hitAt });
   return comb;
 }

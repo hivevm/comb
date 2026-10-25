@@ -1,8 +1,8 @@
 // The viewport's arithmetic: zoom, fit, pan, the level of detail of a scale, and the transform
-// between world and screen, in one place for interaction, the scene, `api`, and the testing entry,
-// none of which it imports.
-import type { Level, Rect } from "./bridge";
-import type { Viewport } from "./store";
+// between world and screen, beside the viewport the store holds, in one place for interaction,
+// the scene, `api`, and the testing entry, none of which it imports.
+import type { Level, Rect } from "../bridge";
+import type { Viewport } from ".";
 
 /** The scale from which the scene draws near: edge labels, 12 px, are 7 px tall there, the least
  *  that still reads. */
