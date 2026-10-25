@@ -79,6 +79,34 @@ test("a drag from a's bottom connector to b's top one connects them by those sid
   expect(await page.evaluate(() => window.inspect().connection)).toBeNull();
 });
 
+// a's connectors: top (110, 0), right (220, 32), bottom (110, 64), left (0, 32).
+for (const [side, at] of [
+  ["top", [110, 0]],
+  ["right", [220, 32]],
+  ["bottom", A_BOTTOM],
+  ["left", [0, 32]],
+] as const) {
+  test(`a connection from a's ${side} connector is drawn from where the engine begins its edge`, async ({
+    page,
+  }) => {
+    // Verifies: ADR-0024
+    await open(page);
+    await loaded(page, NODES);
+    await page.evaluate(() => (window.canConnect = () => "e7"));
+    const midway = await drag(page, at as [number, number], B_TOP);
+    const { edges, told } = await page.evaluate(async () => {
+      await window.comb.whenRendered();
+      const w = window as unknown as { told: { edge: { sourceSide: string } }[] };
+      return { edges: window.inspect().edges, told: w.told };
+    });
+    // The press hit the connector of this side, which the engine records as the edge's.
+    expect(told.map(({ edge }) => edge.sourceSide)).toEqual([side]);
+    // The connector the shell draws the connection from is the one the engine begins the edge at.
+    const ends = edges.find(({ id }) => id === "e7");
+    expect(midway.connection?.from).toEqual(ends?.source);
+  });
+}
+
 for (const [name, to] of [
   ["the empty canvas", [300, 200]],
   ["a connector of the source itself", [220, 32]],
