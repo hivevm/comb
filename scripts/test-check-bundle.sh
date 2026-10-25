@@ -10,12 +10,12 @@
 # stand-ins that write fixture bundles, so that each fault can be put in where a real build would
 # not make it: it passes where both builds carry what they should, and fails where the engine
 # check fails, where the bridge names no marks, where the build fails, where the package has no
-# package.json, exports no engine file or one that is missing, or names that export twice, where
-# the build in test mode fails, where that build lacks either seam's mark, where the engine built
-# in test mode lacks the trap, and where the two engines' glue is missing or differs. The cases of
-# the trap and of the engine built in test mode verify ADR-0021, whose seam of test mode only they
-# keep out of the shipped bundle; those of `detaching` hold the check's own rule and verify none.
-# Verifies: ADR-0021
+# package.json, exports no engine file, one that is missing, or one that is no plain string, maps
+# the engine outside exports, or names that export twice, where the build in test mode fails,
+# where that build lacks either seam's mark, where the engine built in test mode lacks the trap,
+# and where the two engines' glue is missing or differs. The cases of the trap and of the engine
+# built in test mode verify ADR-0021, whose seam of test mode only they keep out of the shipped
+# bundle; those of `detaching` hold the check's own rule and verify none. Verifies: ADR-0021
 #
 # Usage:
 #     scripts/test-check-bundle.sh
@@ -184,6 +184,15 @@ twice="$(repository twice)"
 printf '{ "exports": {\n  "./engine.wasm": "./wasm/engine_bg.wasm",\n  "./engine.wasm": "./wasm/engine_bg.wasm"\n} }\n' \
   > "$twice/packages/comb/package.json"
 expect_run fail "a package that names its engine's export twice" "$twice" "exports no engine file"
+outside="$(repository outside)"
+echo '{"exports":{".":"./src/index.ts"},"browser":{"./engine.wasm":"./wasm/engine_bg.wasm"}}' \
+  > "$outside/packages/comb/package.json"
+expect_run fail "a package that maps its engine outside exports" "$outside" "exports no engine file"
+conditional="$(repository conditional)"
+echo '{"exports":{"./engine.wasm":{"default":"./wasm/engine_bg.wasm"}}}' \
+  > "$conditional/packages/comb/package.json"
+expect_run fail "a package that exports its engine as no plain string" "$conditional" \
+  "exports no engine file"
 unpackaged="$(repository unpackaged)"
 rm "$unpackaged/packages/comb/package.json"
 expect_run fail "a package without package.json" "$unpackaged" "exports no engine file"
