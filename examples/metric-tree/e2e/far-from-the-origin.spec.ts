@@ -4,7 +4,16 @@
 // crosses the viewport is split where it leaves the queried rectangle grown by the stroke's width
 // (ADR-0027), so that its ends far beyond the viewport do not round what it shows.
 import { expect, test, type Page } from "@playwright/test";
-import { canvasSize, loaded, node, NODE_HEIGHT, NODE_WIDTH, open, setViewport } from "./shared";
+import {
+  canvasOrigin,
+  canvasSize,
+  loaded,
+  node,
+  NODE_HEIGHT,
+  NODE_WIDTH,
+  open,
+  setViewport,
+} from "./shared";
 
 /** Where the far edge starts: there an `f32` holds every fourth number. */
 const FAR = 5e7;
@@ -197,4 +206,28 @@ test("a viewport around 1e300 draws nothing infinite, loses no engine, and draws
   expect(finite(back)).toBe(true);
   expect(back.nodes.map(({ id }) => id)).toContain("a");
   expect(errors).toEqual([]);
+});
+
+test("a pointer over a viewport beyond any finite world point hits nothing, and throws nothing", async ({
+  page,
+}) => {
+  // Verifies: ADR-0025
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page);
+  // Accepted, since each number is finite, but a screen point divided out of it lies beyond any
+  // finite world point, where nothing can be hit.
+  await setViewport(page, { x: 1e306, y: 0, scale: 0.005 });
+  const { width, height } = await canvasSize(page);
+  const { left, top } = await canvasOrigin(page);
+  const [x, y] = [left + width / 2, top + height / 2];
+  await page.mouse.move(x, y);
+  await page.mouse.move(x + 40, y + 20, { steps: 4 });
+  await page.mouse.down();
+  await page.mouse.move(x + 80, y + 40, { steps: 4 });
+  await page.mouse.up();
+  // The hover, the press, and the pan threw nothing.
+  expect(errors).toEqual([]);
+  const kind = await page.evaluate(([cx, cy]) => window.hitKind(cx!, cy!), [width / 2, height / 2]);
+  expect(kind).toBe("none");
 });
