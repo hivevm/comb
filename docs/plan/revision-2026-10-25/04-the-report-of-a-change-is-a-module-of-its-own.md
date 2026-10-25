@@ -25,7 +25,7 @@ each. The comment of `api/index.ts` that lists the methods throwing `EngineLostE
 
 ## Read first
 
-- ADR-0023 (*Changes*, the copies handed to the host); `docs/CONVENTIONS.md` (*Hand the host
+- ADR-0030 (*Changes*, the copies handed to the host); `docs/CONVENTIONS.md` (*Hand the host
   copies*).
 - `packages/comb/src/api/index.ts`, `api/editors.ts`, `store/index.ts` (`EdgePatch`, `By`).
 

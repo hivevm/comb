@@ -25,7 +25,7 @@ identifier. A press that drags moves the node and reports no click.
 
 ## Read first
 
-- ADR-0013 (*Clicks*), ADR-0025 (one hit test), ADR-0023 (how events reach the host).
+- ADR-0013 (*Clicks*), ADR-0025 (one hit test), ADR-0030 (how events reach the host).
 - The interaction's gesture modules and the selection and drag browser specs, as the pattern.
 
 ## Blocked by

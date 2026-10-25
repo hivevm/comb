@@ -242,7 +242,7 @@ describe("the user's deletion", () => {
     [{ kind: "edge", id: "a-b" }, "edges"],
   ] as const) {
     test(`of ${list} removes as the host's removal does, and tells the same change but for by`, () => {
-      // Verifies: ADR-0023
+      // Verifies: ADR-0030
       const hostCalls: string[] = [];
       const byHost = editing(recording(hostCalls));
       hostCalls.length = 0;

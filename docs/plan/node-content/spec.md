@@ -139,7 +139,7 @@ describes them, and its sidebar edits them.
   replacing the title and the height, what each level of detail draws, and limits. It is
   accepted after its implementation and tests are reviewed.
 - ADR-0027 (levels of detail, text as `BitmapText`, pools), ADR-0025 (one hit test, now down to
-  the element), ADR-0028 (the bridge checks, the shell refuses what its map knows), ADR-0023
+  the element), ADR-0028 (the bridge checks, the shell refuses what its map knows), ADR-0030
   (`nodeUpdated` carries content), ADR-0010 (bulk geometry as typed-array views), ADR-0029 (no
   coordinates in the store), and ADR-0020 (no eval) bind it as they stand.
 - No new ADR: `registerIcon` and `onContentClick` are public interface that ADR-0013 decides.

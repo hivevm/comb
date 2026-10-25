@@ -1,5 +1,5 @@
 // The edits of the graph: every method of `Comb` that changes it, and the user's connection and
-// deletion, each run through `edit`, which holds their order (Q-7, ADR-0023, ADR-0028). Refuse
+// deletion, each run through `edit`, which holds their order (Q-7, ADR-0030, ADR-0028). Refuse
 // once the engine is lost; read the host's input once, whole, into plain data; refuse what the
 // store's map shows, as it stands after the read, since a getter of the input is the host's code
 // and may have changed the graph through `Comb`; check the code units of identifiers the graph
@@ -287,7 +287,7 @@ function remove(
   });
 }
 
-/** The host application's vetoes of the user's connection and deletion (ADR-0023). */
+/** The host application's vetoes of the user's connection and deletion (ADR-0030). */
 export interface Vetoes {
   readonly canConnect?: ((proposal: Proposal) => unknown) | undefined;
   readonly canDelete?: ((deletion: Deletion) => unknown) | undefined;

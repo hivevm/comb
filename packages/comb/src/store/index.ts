@@ -72,7 +72,7 @@ export type NodeView = Omit<NodeData, "x" | "y">;
 export type By = "user" | "host";
 
 /** The change the last action that changed the graph made, by kind and the identifier it touched,
- *  never a coordinate (ADR-0029, ADR-0023): `api` delivers it to the host application, reading
+ *  never a coordinate (ADR-0029, ADR-0030): `api` delivers it to the host application, reading
  *  what it carries from the store and the engine's buffers. A new object for every change, so
  *  that one is told from the next by identity. */
 export type StoreChange =
@@ -123,7 +123,7 @@ export interface GraphView {
   /** The slot of each edge the graph holds, by its identifier. */
   readonly edgeSlots: ReadonlyMap<string, number>;
   /** The UTF-16 code units of every identifier the graph holds, a node's, an edge's, and each
-   *  edge's source and target, which the limits of a load bound after every edit (ADR-0023). */
+   *  edge's source and target, which the limits of a load bound after every edit (ADR-0030). */
   readonly idUnits: number;
   /** The change the last action that changed the graph made, or none before the first. */
   readonly change: StoreChange | null;

@@ -1,5 +1,5 @@
 // The host application removes nodes and edges through `removeNodes` and `removeEdges` (G-4,
-// ADR-0022, ADR-0023): the canvas draws them no more, a node takes its edges along, `onChange`
+// ADR-0022, ADR-0030): the canvas draws them no more, a node takes its edges along, `onChange`
 // tells one change, a freed slot is the next addition's, and an identifier the graph does not hold
 // refuses the call, which then removes nothing (ADR-0028, Q-7).
 import { expect, test, type Page } from "@playwright/test";
@@ -34,7 +34,7 @@ async function drawn(page: Page) {
 test("removeNodes removes a node and its three edges, and tells one nodesRemoved", async ({
   page,
 }) => {
-  // Verifies: G-4, ADR-0022, ADR-0023
+  // Verifies: G-4, ADR-0022, ADR-0030
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -51,7 +51,7 @@ test("removeNodes removes a node and its three edges, and tells one nodesRemoved
 test("removeEdges removes edges and keeps their nodes, and tells one edgesRemoved", async ({
   page,
 }) => {
-  // Verifies: G-4, ADR-0022, ADR-0023
+  // Verifies: G-4, ADR-0022, ADR-0030
   await open(page);
   await loaded(page, STAR, HALF);
   await page.evaluate(() => window.comb.removeEdges(["b-c", "a-c", "b-c"]));
@@ -177,7 +177,7 @@ for (const { name, call, problem } of REFUSED) {
 test("removing the selected node reports null to onSelectionChange, after its change", async ({
   page,
 }) => {
-  // Verifies: ADR-0023
+  // Verifies: ADR-0030
   await open(page);
   await loaded(page, STAR, HALF);
   const at = await screenCentre(page, "a");
@@ -212,7 +212,7 @@ test("fitView fits the nodes a removal kept", async ({ page }) => {
 test("a node the host removes during a drag ends it: no error, and no move of the node in its slot", async ({
   page,
 }) => {
-  // Verifies: ADR-0022, ADR-0023
+  // Verifies: ADR-0022, ADR-0030
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);

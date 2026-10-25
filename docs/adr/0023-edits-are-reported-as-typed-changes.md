@@ -1,6 +1,6 @@
 # ADR-0023: Comb applies edits at once, reports every change through one listener as a typed change, and lets the host application refuse a user's connection or deletion
 
-- **Status:** 🟢 accepted
+- **Status:** ⚪ superseded by [ADR-0030](0030-a-veto-that-changes-the-graph-ends-its-gesture.md)
 - **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `CombOptions` and the `Comb` interface in `packages/comb/src/api/`, the change types `comb` exports, the store's actions in `packages/comb/src/store/`, and the gestures of `packages/comb/src/interaction/` that change the graph

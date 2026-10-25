@@ -1,5 +1,5 @@
 // The drag of a node (G-2): it moves the node in the engine by the pointer's moves, and records
-// once, where it moved it, where the release left it (ADR-0023).
+// once, where it moved it, where the release left it (ADR-0030).
 import type { Hit } from "../bridge";
 import type { Context, Gesture } from "./gesture";
 

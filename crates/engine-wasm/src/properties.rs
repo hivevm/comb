@@ -860,7 +860,7 @@ proptest! {
     fn an_edge_patch_is_refused_exactly_as_a_load_of_the_edge_it_makes_and_the_edge_kept(
         patch in edge_patch(),
     ) {
-        // Verifies: ADR-0028, ADR-0023, Q-7
+        // Verifies: ADR-0028, ADR-0030, Q-7
         let mut graph = loaded(two_nodes(vec![Value::Object(base_edge())])).unwrap();
         let before = graph.edge(0);
         let other = patch

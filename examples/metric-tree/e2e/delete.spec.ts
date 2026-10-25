@@ -1,5 +1,5 @@
 // The user deletes the selection with Delete or Backspace on the focused canvas, unless the host
-// application's `canDelete` refuses (G-4, ADR-0023): a node with every edge at it, or an edge
+// application's `canDelete` refuses (G-4, ADR-0030): a node with every edge at it, or an edge
 // alone, told as `by: "user"`, the selection cleared.
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData } from "comb";
@@ -44,7 +44,7 @@ async function selectNode(page: Page, id: string): Promise<void> {
 test("Delete removes a selected node with both its edges, as the user's, and clears the selection", async ({
   page,
 }) => {
-  // Verifies: G-4, ADR-0023
+  // Verifies: G-4, ADR-0030
   await open(page);
   await loadedRow(page);
   await selectNode(page, "a");
@@ -64,7 +64,7 @@ test("Delete removes a selected node with both its edges, as the user's, and cle
 test("Backspace removes a selected edge alone, and its default action is prevented", async ({
   page,
 }) => {
-  // Verifies: G-4, ADR-0023
+  // Verifies: G-4, ADR-0030
   await open(page);
   await loadedRow(page);
   await page.evaluate(() => {
@@ -91,7 +91,7 @@ test("Backspace removes a selected edge alone, and its default action is prevent
 
 for (const name of ["false", "undefined", "a truthy value that is not true", "a throw"] as const) {
   test(`canDelete returning ${name} deletes nothing and tells nothing`, async ({ page }) => {
-    // Verifies: ADR-0023
+    // Verifies: ADR-0030
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
@@ -123,7 +123,7 @@ for (const name of ["false", "undefined", "a truthy value that is not true", "a 
 test("canDelete returning true deletes, and a host's own removal never asks it", async ({
   page,
 }) => {
-  // Verifies: ADR-0023
+  // Verifies: ADR-0030
   await open(page);
   await loadedRow(page);
   await page.evaluate(() => {
@@ -140,7 +140,7 @@ test("canDelete returning true deletes, and a host's own removal never asks it",
 });
 
 test("Delete with the focus outside the canvas deletes nothing", async ({ page }) => {
-  // Verifies: ADR-0023
+  // Verifies: ADR-0030
   await open(page);
   await loadedRow(page);
   await selectNode(page, "a");
@@ -154,7 +154,7 @@ test("Delete with the focus outside the canvas deletes nothing", async ({ page }
 test("a veto that adds an edge itself refuses the deletion, and Comb and the engine stay in step", async ({
   page,
 }) => {
-  // Verifies: ADR-0023, ADR-0022, ADR-0030
+  // Verifies: ADR-0030, ADR-0022
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -176,7 +176,7 @@ test("a veto that adds an edge itself refuses the deletion, and Comb and the eng
 });
 
 test("a Delete held down deletes once, and with a modifier not at all", async ({ page }) => {
-  // Verifies: ADR-0023
+  // Verifies: ADR-0030
   await open(page);
   await loadedRow(page);
   await page.evaluate(() => {

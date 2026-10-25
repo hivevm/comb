@@ -51,7 +51,7 @@ export type { GraphDataProblem } from "../bridge";
 export type { Deletion, Proposal } from "../interaction";
 
 /** The attributes `updateEdge` changes on an edge, as `edgeUpdated` reports them merged: its
- *  colour, arrowhead, dash pattern or none, and label or none (ADR-0023). */
+ *  colour, arrowhead, dash pattern or none, and label or none (ADR-0030). */
 interface EdgeChangePatch {
   readonly color?: number;
   readonly arrow?: "end" | "none";
@@ -62,7 +62,7 @@ interface EdgeChangePatch {
 }
 
 /** One change of the graph, by its `kind` and by who made it, `"user"` or `"host"`, as
- *  `onChange` delivers it (ADR-0023). */
+ *  `onChange` delivers it (ADR-0030). */
 export type GraphChange =
   /** `load` replaced the graph. */
   | { readonly kind: "loaded"; readonly by: "host" }
@@ -137,7 +137,7 @@ export interface CombOptions {
    *  presses Delete or Backspace on the focused canvas. Comb deletes only where it returns
    *  `true`; an error it throws refuses the deletion and is thrown on from the key's event.
    *  Never called for the host application's own calls. Without it, a deletion is allowed
-   *  (ADR-0023). One that changes the graph during its call deletes nothing, whatever it returns
+   *  (ADR-0030). One that changes the graph during its call deletes nothing, whatever it returns
    *  (ADR-0030). */
   canDelete?: (deletion: Deletion) => boolean;
   /** The veto of a connection of the user's (G-3): called when the user releases a connection
@@ -146,7 +146,7 @@ export interface CombOptions {
    *  checks one, or `false` to refuse; any other value refuses as `false` does. An error it
    *  throws, or one of the identifier it returns, refuses the connection and is thrown on from the
    *  input event. Never called for the host application's own calls. Without it, no connection
-   *  begins: Comb has no name to give the edge (ADR-0023). One that changes the graph during its
+   *  begins: Comb has no name to give the edge (ADR-0030). One that changes the graph during its
    *  call connects nothing, whatever it returns, and nothing is thrown (ADR-0030). */
   canConnect?: (proposal: Proposal) => string | false;
 }
@@ -202,14 +202,14 @@ export interface Comb {
   /** The world point under the point (`clientX`, `clientY`) of the page, in the client
    *  coordinates of a pointer or drop event, for a node dropped from the host's palette (G-1).
    *  Throws a `RangeError` on a coordinate that is not finite; needs no engine, so it keeps
-   *  answering once the engine is lost (ADR-0023). */
+   *  answering once the engine is lost (ADR-0030). */
   worldPointAt(clientX: number, clientY: number): { x: number; y: number };
   /** Calls `listener` whenever the selection changes (G-5); returns the unsubscribe function. */
   onSelectionChange(listener: (selection: Selection) => void): () => void;
   /** Calls `listener` with every change of the graph, whoever made it, once the canvas holds it
    *  and before the call that made it returns, in the order made; where the change also clears
    *  the selection, before `onSelectionChange` reports it. Returns the unsubscribe function
-   *  (ADR-0023). */
+   *  (ADR-0030). */
   onChange(listener: (change: GraphChange) => void): () => void;
   /** Calls `listener` once, with the `EngineLostError`, when the engine is lost for the page, and
    *  at once where it is lost already; returns the unsubscribe function. The page recovers only

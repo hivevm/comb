@@ -23,7 +23,7 @@ It waits for ticket 02 of this directory, which moves the deletion's veto into t
 
 ## Read first
 
-- ADR-0023 (*Deleting*, `by: "user"`), ADR-0022 (the edges at a node named before anything is
+- ADR-0030 (*Deleting*, `by: "user"`), ADR-0022 (the edges at a node named before anything is
   removed).
 - `packages/comb/src/api/editors.ts` (`remove`, `editorsOf`), `interaction/delete.ts`
   (`Remove`, `deleteSelection`); the golden path is the other edits of `editors.ts`.
