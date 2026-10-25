@@ -4,7 +4,11 @@
 #
 # Lists the ADRs in force — accepted or proposed — whose '**Applies to:**' line names a path a
 # change touches. A path is what that line writes in backticks with no space in it, such as
-# `docs/plan/`, `README.md`, or `Makefile`; it names itself and everything under it. A word in
+# `docs/plan/`, `README.md`, or `Makefile`; it names itself and everything under it, and a Rust
+# file `x.rs` names the directory `x/` beside it too, which holds the modules Rust lays out as its
+# children, so that a module split off a file stays bound by the ADRs that name the file. A
+# `lib.rs`, `main.rs`, `mod.rs`, or `build.rs` names no such directory: the children of the first
+# three lie beside it, and the last is no module. A word in
 # backticks that is no path, such as a skill's name, matches no changed path unless one carries
 # that name, so it needs no filter. The rest of the line is prose no script reads ("every
 # accepted ADR", "the pull request template"), so the list is the ADRs a session reads at the
@@ -24,6 +28,15 @@
 # code 0 always, except 2 on a base or head that does not resolve.
 
 set -uo pipefail
+
+# parent <path> — whether the path is a Rust file whose child modules lie in the directory of its
+# name.
+parent() {
+  [[ "$1" == *.rs ]] || return 1
+  case "${1##*/}" in
+    lib.rs | main.rs | mod.rs | build.rs) return 1 ;;
+  esac
+}
 
 base="${1:-}"
 head="${2:-}"
@@ -96,7 +109,7 @@ while IFS= read -r file; do
   hits=()
   for c in "${changed[@]}"; do
     for p in "${paths[@]}"; do
-      if [[ "$c" == "$p" || "$c" == "$p/"* ]]; then
+      if [[ "$c" == "$p" || "$c" == "$p/"* ]] || { parent "$p" && [[ "$c" == "${p%.rs}/"* ]]; }; then
         hits+=("$c")
         break
       fi
