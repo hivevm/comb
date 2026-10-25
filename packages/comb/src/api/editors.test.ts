@@ -252,7 +252,7 @@ describe("the user's deletion", () => {
       const byUser = editing(recording(userCalls));
       byUser.store.getState().select(selection);
       userCalls.length = 0;
-      deleteSelection(byUser.store, byUser.bridge, byUser.user.remove);
+      deleteSelection(byUser.store, byUser.bridge, byUser.user.delete);
       // The deletion names what would go before the veto; from there it is the host's removal.
       expect(userCalls.filter((name) => name !== "edgesAt")).toEqual(hostCalls);
       const told = byHost.store.getState().change;

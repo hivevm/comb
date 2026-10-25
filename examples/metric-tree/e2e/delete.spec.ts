@@ -154,7 +154,7 @@ test("Delete with the focus outside the canvas deletes nothing", async ({ page }
 test("a veto that adds an edge itself refuses the deletion, and Comb and the engine stay in step", async ({
   page,
 }) => {
-  // Verifies: ADR-0023, ADR-0022
+  // Verifies: ADR-0023, ADR-0022, ADR-0030
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);

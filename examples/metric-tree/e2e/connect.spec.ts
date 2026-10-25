@@ -257,6 +257,50 @@ test("a veto that throws ends the gesture first: no connection is drawn after it
   expect(errors).toEqual(["host veto"]);
 });
 
+test("a veto that removes the target and returns an identifier makes no edge and throws nothing", async ({
+  page,
+}) => {
+  // Verifies: ADR-0030
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page);
+  await loaded(page, NODES);
+  await page.evaluate(() => {
+    window.canConnect = () => {
+      window.comb.removeNodes(["b"]);
+      return "e7";
+    };
+  });
+  await drag(page, A_BOTTOM, B_TOP);
+  const result = await after(page);
+  expect(result.edges).toEqual(["a-c"]);
+  expect(result.told).toEqual([{ kind: "nodesRemoved", by: "host", nodes: ["b"], edges: [] }]);
+  expect(errors).toEqual([]);
+});
+
+test("a veto that adds an edge between the two itself and returns another identifier keeps its edge alone", async ({
+  page,
+}) => {
+  // Verifies: ADR-0030
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page);
+  await loaded(page, NODES);
+  await page.evaluate(() => {
+    window.canConnect = ({ source, target }) => {
+      window.comb.addEdge({ id: "own", source, target });
+      return "e7";
+    };
+  });
+  await drag(page, A_BOTTOM, B_TOP);
+  const result = await after(page);
+  expect(result.edges).toEqual(["a-c", "own"]);
+  expect(result.told.map((change) => (change as { kind: string; by: string }).by)).toEqual([
+    "host",
+  ]);
+  expect(errors).toEqual([]);
+});
+
 test("a connection dragged across the empty canvas neither queries the engine nor redraws the connectors per move", async ({
   page,
 }) => {

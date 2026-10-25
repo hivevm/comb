@@ -16,7 +16,6 @@ import {
   attachDeletion,
   attachInteraction,
   canvasPointAt,
-  type Connect,
   type Deletion,
   type Proposal,
 } from "../interaction";
@@ -138,7 +137,8 @@ export interface CombOptions {
    *  presses Delete or Backspace on the focused canvas. Comb deletes only where it returns
    *  `true`; an error it throws refuses the deletion and is thrown on from the key's event.
    *  Never called for the host application's own calls. Without it, a deletion is allowed
-   *  (ADR-0023). */
+   *  (ADR-0023). One that changes the graph during its call deletes nothing, whatever it returns
+   *  (ADR-0030). */
   canDelete?: (deletion: Deletion) => boolean;
   /** The veto of a connection of the user's (G-3): called when the user releases a connection
    *  over a compatible connector of another node, with the identifiers of both nodes and the sides
@@ -146,7 +146,8 @@ export interface CombOptions {
    *  checks one, or `false` to refuse; any other value refuses as `false` does. An error it
    *  throws, or one of the identifier it returns, refuses the connection and is thrown on from the
    *  input event. Never called for the host application's own calls. Without it, no connection
-   *  begins: Comb has no name to give the edge (ADR-0023). */
+   *  begins: Comb has no name to give the edge (ADR-0023). One that changes the graph during its
+   *  call connects nothing, whatever it returns, and nothing is thrown (ADR-0030). */
   canConnect?: (proposal: Proposal) => string | false;
 }
 
@@ -254,21 +255,6 @@ function boundsOf(nodes: readonly (NodeView | undefined)[], positions: Float32Ar
 /** The bridge's limits the snapshot cuts strings by. */
 function limitsOf(bridge: Bridge): Limits {
   return { text: bridge.textLimit(), id: bridge.idLimit(), idBudget: bridge.idBudget() };
-}
-
-/** The user's connections, where the host gives `canConnect`: the veto asked, and the edge it
- *  names added by `add`, which adds it as `addEdge` does, by the user (ADR-0023); none without
- *  it. */
-function connectorOf(
-  add: (edge: EdgeData) => void,
-  canConnect: CombOptions["canConnect"],
-): Connect | undefined {
-  if (!canConnect) return undefined;
-  return ({ source, sourceSide, target, targetSide }) => {
-    const id: unknown = canConnect({ source, sourceSide, target, targetSide });
-    if (typeof id !== "string") return;
-    add({ id, source, target, sourceSide, targetSide });
-  };
 }
 
 /** The change of an edge `change` names, as `onChange` delivers it: the edge as the store keeps
@@ -451,17 +437,16 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
 
   const store = createGraphStore();
   const scene = new Scene(app);
-  const { host: edits, user } = editorsOf(store, bridge, limits);
-  const connect = connectorOf(user.addEdge, options.canConnect);
+  const { host: edits, user } = editorsOf(store, bridge, limits, options);
   // Interaction subscribes before the listeners, and the frames read the store only on the next
   // frame, so that a gesture a change takes, a connection among them, is over before anything
   // reads the store after that change.
-  const interaction = attachInteraction(app, store, bridge, connect);
+  const interaction = attachInteraction(app, store, bridge, user.connect);
   const frames = createFrames(() => scene.render(store.getState(), bridge, interaction.pointer));
   const unsubscribe = store.subscribe(frames.schedule);
   // A larger canvas shows more of the world, so what is culled changes with its size.
   app.renderer.on("resize", frames.schedule);
-  const detachDeletion = attachDeletion(app.canvas, store, bridge, user.remove, options.canDelete);
+  const detachDeletion = attachDeletion(app.canvas, store, bridge, user.delete);
   const lost = engineLostOf();
   const listeners = listenersOf(store, bridge);
 
