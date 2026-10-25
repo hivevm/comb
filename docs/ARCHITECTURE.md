@@ -161,9 +161,10 @@ The functional core and its shell follow
   edge identifiers to slots, the code units of the identifiers it holds, counted for a node and for
   an edge by one function each and for a load taken as its snapshot counted them, the change the
   last action that changed the graph made, by kind and identifier, the selection, the node under the
-  pointer, the connection the user drags, its source, side, the node under the pointer, and
-  compatibility, the viewport, a counter for moved positions, and a counter for moves of the point a
-  connection is dragged to; no coordinates of nodes, edges, or the pointer
+  pointer, the connection the user drags, its source, side, the node under the pointer,
+  compatibility, and the connector a release connects to, the viewport, a counter for moved
+  positions, and a counter for moves of the point a connection is dragged to; no coordinates of
+  nodes, edges, or the pointer
   ([ADR-0011](adr/0011-store.md)).
   `GraphView` is its state without the actions, the type the render layer reads.
   `store/viewport.ts` holds the viewport's arithmetic, the transform between world and screen and
@@ -244,13 +245,14 @@ The functional core and its shell follow
   from a `Comb` to its scene and to the hit test its presses ask, for the testing entry.
 - **Testing entry** (`comb/testing`, `packages/comb/src/testing.ts`) — `inspect` returns what the
   scene draws, the text of the titles and labels drawn included, the connectors drawn with where
-  each is centred, and the size and detail of the edge mesh, which the host application is not told;
-  `viewport` and `renderCount`, cheap enough for every frame, return its transform and how often it
-  rendered; `screenPoint` and `visibleRect` apply the scene's transform between world and screen;
-  `hitKind` names what a press at a screen point hits, asking interaction's hit test from the
-  viewport a press reads, which is the drawn one once `whenRendered` resolves, connectors only where
-  the Comb lets the user connect; `isDrawn` finds whether one node or edge is drawn without building
-  every drawn view, as `inspect` does; `showLayers` hides layers for a reference image;
+  each is centred and how often the layer drew them anew, and the size and detail of the edge mesh,
+  which the host application is not told; `viewport` and `renderCount`, cheap enough for every
+  frame, return its transform and how often it rendered; `screenPoint` and `visibleRect` apply the
+  scene's transform between world and screen; `hitKind` names what a press at a screen point hits,
+  asking interaction's hit test from the viewport a press reads, which is the drawn one once
+  `whenRendered` resolves, connectors only where the Comb lets the user connect; `isDrawn` finds
+  whether one node or edge is drawn without building every drawn view, as `inspect` does;
+  `showLayers` hides layers for a reference image;
   `sceneNumbers` gives the numbers the scene draws by (where the levels of detail begin, the culling
   margin, the label reach, the rescale); `work` counts what the canvas did: GPU buffers created and
   allocated, bytes uploaded, those of the edge mesh among them, and texture uploads, counted at the

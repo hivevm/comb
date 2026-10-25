@@ -77,6 +77,8 @@ export interface SceneSnapshot {
   /** Where each connector the layer draws is centred, in world units, in the order of
    *  `connectors`. */
   connectorPoints: DrawnConnectorPoint[];
+  /** How many times the connectors layer drew its connectors anew. */
+  connectorRedraws: number;
   /** The connection being dragged, from its source's connector to the pointer, in world units. */
   connection: { from: { x: number; y: number }; to: { x: number; y: number } } | null;
 }
@@ -274,6 +276,7 @@ export class Scene {
       queries: this.queries,
       connectors: [...this.connectors.drawn],
       connectorPoints: [...this.connectors.points],
+      connectorRedraws: this.connectors.redraws,
       connection: this.connection.drawn,
     };
   }

@@ -55,6 +55,8 @@ export class ConnectorsLayer extends Graphics {
   drawn: DrawnConnector[] = [];
   /** The centre of each drawn connector, in the order of `drawn`. */
   points: DrawnConnectorPoint[] = [];
+  /** How many times the layer drew its connectors anew. */
+  redraws = 0;
   /** What the layer last drew from, so that a render that changes none of it draws nothing anew:
    *  a change of the layer's geometry would have its render group build its instructions again. */
   private from: unknown[] = [];
@@ -79,6 +81,7 @@ export class ConnectorsLayer extends Graphics {
     const shown = far ? [] : shownBy(state);
     if (shown.length === 0 && this.drawn.length === 0) return;
     this.clear();
+    this.redraws += 1;
     this.drawn = [];
     this.points = [];
     for (const [slot, compatible] of shown)

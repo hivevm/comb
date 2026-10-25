@@ -451,17 +451,16 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
 
   const store = createGraphStore();
   const scene = new Scene(app);
-  // The frames render only from the next animation frame on, once interaction is attached.
-  const frames = createFrames(() => scene.render(store.getState(), bridge, interaction.pointer));
-  const unsubscribe = store.subscribe(frames.schedule);
-  // A larger canvas shows more of the world, so what is culled changes with its size.
-  app.renderer.on("resize", frames.schedule);
   const { host: edits, user } = editorsOf(store, bridge, limits);
   const connect = connectorOf(user.addEdge, options.canConnect);
   // Interaction subscribes before the listeners, and the frames read the store only on the next
   // frame, so that a gesture a change takes, a connection among them, is over before anything
   // reads the store after that change.
   const interaction = attachInteraction(app, store, bridge, connect);
+  const frames = createFrames(() => scene.render(store.getState(), bridge, interaction.pointer));
+  const unsubscribe = store.subscribe(frames.schedule);
+  // A larger canvas shows more of the world, so what is culled changes with its size.
+  app.renderer.on("resize", frames.schedule);
   const detachDeletion = attachDeletion(app.canvas, store, bridge, user.remove, options.canDelete);
   const lost = engineLostOf();
   const listeners = listenersOf(store, bridge);
