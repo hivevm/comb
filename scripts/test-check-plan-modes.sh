@@ -8,9 +8,10 @@
 # naming a protected path in its 'What to build' and in its 'Acceptance criteria', by a glob
 # pattern and by a link relative to the ticket; the same path under 'Read first', inside an HTML
 # comment, or in a ticket worked with the human; an unprotected path; a glob that does not cross a
-# '/'; a CODEOWNERS with no pattern or none at all, and one whose last pattern has no final
-# newline; a ticket that cannot be read; a ticket without a 'Mode', which the check leaves to the
-# plan frontier sensor; and an unattended ticket with neither section the check reads.
+# '/'; the exempt scripts/check-all.sh; a CODEOWNERS with no pattern or none at all, and one whose
+# last pattern has no final newline; a ticket that cannot be read; a ticket without a 'Mode',
+# which the check leaves to the plan frontier sensor; and an unattended ticket with neither
+# section the check reads.
 #
 # Usage:
 #     scripts/test-check-plan-modes.sh
@@ -95,6 +96,11 @@ d="$(tree glob)"
 ticket "$d" 01-a.md "unattended" "Change the checks." "Given \`scripts/check-docs.sh\`, it fails."
 expect 1 "a glob pattern covers a path the Acceptance criteria name" "$d" \
   "docs/plan/s/01-a.md" "scripts/check-docs.sh" "/scripts/check-*.sh"
+
+d="$(tree check-all)"
+ticket "$d" 01-a.md "unattended" "Change the layout." \
+  "Given the change, \`scripts/check-all.sh\` passes."
+expect 0 "a criterion that runs scripts/check-all.sh is exempt" "$d" "1 ticket(s)" "1 unattended"
 
 d="$(tree glob-slash)"
 ticket "$d" 01-a.md "unattended" "Change \`scripts/check-docs/notes.sh\`."

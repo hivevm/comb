@@ -10,7 +10,9 @@
 # scripts/sensor-plan-frontier.sh does, with HTML comments removed. A ticket whose 'Mode' begins
 # with 'unattended' fails when its 'What to build' or its 'Acceptance criteria' names a path that
 # a protected pattern covers, and the failure names the ticket, the path, and the pattern. 'Read
-# first' is not read, because reading a part does not touch it. A ticket the check cannot read
+# first' is not read, because reading a part does not touch it. The one path the check exempts is
+# scripts/check-all.sh, because every ticket runs it and none names it in order to change it. A
+# ticket the check cannot read
 # fails, and so does an unattended ticket with neither a 'What to build' nor an 'Acceptance
 # criteria' section, a shape the check does not know. A ticket without a 'Mode' is left to the plan
 # frontier sensor, which fails on it.
@@ -134,6 +136,7 @@ for t in ${tickets[@]+"${tickets[@]}"}; do
     while [[ "$path" == /* || "$path" == ./* ]]; do path="${path#/}"; path="${path#./}"; done
     while [[ "$path" == */ || "$path" == *. ]]; do path="${path%/}"; path="${path%.}"; done
     [[ -n "$path" && "$seen" != *" $path "* ]] || continue
+    [[ "$path" != "scripts/check-all.sh" ]] || continue
     seen+="$path "
     for i in "${!patterns[@]}"; do
       if [[ "$path" =~ ${regexes[i]} ]]; then
