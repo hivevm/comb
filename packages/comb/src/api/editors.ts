@@ -1,12 +1,14 @@
 // The edits of the graph: every method of `Comb` that changes it, and the user's connection and
-// deletion, each run through `edit`, which holds their order (Q-7, ADR-0023, ADR-0028). Refuse
+// deletion, each run through `edit`, which holds their order (Q-7, ADR-0030, ADR-0028). Refuse
 // once the engine is lost; read the host's input once, whole, into plain data; refuse what the
 // store's map shows, as it stands after the read, since a getter of the input is the host's code
 // and may have changed the graph through `Comb`; check the code units of identifiers the graph
 // would hold; have the bridge check the plain data and the engine apply it; and have the store
-// take the result and record the change, by whom it names.
+// take the result and record the change, by whom it names. The user's edits come after the host
+// application's veto, asked here for both, and a veto during whose call the store records a
+// change, which Comb tells to `onChange`, ends its gesture with nothing done (ADR-0030).
 import { refuseIfLost, type Bridge, type GraphDataProblem, type SlotError } from "../bridge";
-import type { Remove } from "../interaction";
+import type { Connect, Delete, Deletion, Proposal } from "../interaction";
 import type {
   By,
   EdgeData,
@@ -285,9 +287,27 @@ function remove(
   });
 }
 
+/** The host application's vetoes of the user's connection and deletion (ADR-0030). */
+export interface Vetoes {
+  readonly canConnect?: ((proposal: Proposal) => unknown) | undefined;
+  readonly canDelete?: ((deletion: Deletion) => unknown) | undefined;
+}
+
+/** What the veto `ask` answers, or `undefined` where the store recorded a change of the graph
+ *  during its call, a change Comb tells to `onChange`: its answer was given about a graph that is
+ *  gone, so the gesture ends with nothing done, and no error (ADR-0030). An error it throws is
+ *  thrown on. */
+function answerOf(store: GraphStore, ask: () => unknown): unknown {
+  const before = store.getState().change;
+  const answer = ask();
+  return store.getState().change === before ? answer : undefined;
+}
+
 /** The edits of one Comb on `store` through `bridge`: `host`, the methods of `Comb` that change
- *  the graph, and `user`, the user's connection and deletion, which interaction is handed. */
-export function editorsOf(store: GraphStore, bridge: Bridge, limits: Limits) {
+ *  the graph, and `user`, the user's connection and deletion after the host's `vetoes`, which
+ *  interaction is handed; `connect` none without `canConnect`, since Comb has no name to give the
+ *  edge. */
+export function editorsOf(store: GraphStore, bridge: Bridge, limits: Limits, vetoes: Vetoes) {
   const editing: Editing = { store, bridge, limits };
   const host = {
     load: (graph: GraphData) => load(editing, graph),
@@ -299,9 +319,24 @@ export function editorsOf(store: GraphStore, bridge: Bridge, limits: Limits) {
     removeNodes: (ids: readonly string[]) => remove(editing, "nodes", ids, "host"),
     removeEdges: (ids: readonly string[]) => remove(editing, "edges", ids, "host"),
   };
-  const user = {
-    addEdge: (edge: EdgeData) => addEdge(editing, edge, "user"),
-    remove: ((list, ids) => remove(editing, list, ids, "user")) satisfies Remove,
+  const { canConnect, canDelete } = vetoes;
+  // The veto is handed copies, so that one that writes into what it is asked about changes
+  // nothing that goes.
+  const connect: Connect | undefined =
+    canConnect &&
+    (({ source, sourceSide, target, targetSide }) => {
+      const id = answerOf(store, () => canConnect({ source, sourceSide, target, targetSide }));
+      if (typeof id !== "string") return;
+      addEdge(editing, { id, source, target, sourceSide, targetSide }, "user");
+    });
+  const deletion: Delete = ({ nodes, edges }) => {
+    if (
+      canDelete &&
+      answerOf(store, () => canDelete({ nodes: [...nodes], edges: [...edges] })) !== true
+    )
+      return;
+    if (nodes.length > 0) remove(editing, "nodes", nodes, "user");
+    else remove(editing, "edges", edges, "user");
   };
-  return { host, user };
+  return { host, user: { connect, delete: deletion } };
 }

@@ -1,5 +1,5 @@
 // A node dropped from the host's palette (G-1): `worldPointAt` names the world point under a
-// point of the page, and the example adds a node of the palette's kind there (ADR-0023).
+// point of the page, and the example adds a node of the palette's kind there (ADR-0030).
 import { expect, test, type Page } from "@playwright/test";
 import { NODE_HEIGHT, NODE_WIDTH, open, screenCentre, setViewport } from "./shared";
 
@@ -21,7 +21,7 @@ for (const scale of [1, 0.5]) {
   test(`worldPointAt returns the world point that screenPoint takes back to the point of the page, at a CSS scale of ${scale}`, async ({
     page,
   }) => {
-    // Verifies: G-1, ADR-0023
+    // Verifies: G-1, ADR-0030
     await open(page);
     await offsetCanvas(page, scale);
     await setViewport(page, { x: -153.25, y: 87.5, scale: 0.37 });
@@ -43,7 +43,7 @@ for (const scale of [1, 0.5]) {
 }
 
 test("worldPointAt refuses a coordinate that is not finite", async ({ page }) => {
-  // Verifies: ADR-0023
+  // Verifies: ADR-0030
   await open(page);
   const refused = await page.evaluate(() =>
     [

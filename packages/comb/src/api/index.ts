@@ -16,7 +16,6 @@ import {
   attachDeletion,
   attachInteraction,
   canvasPointAt,
-  type Connect,
   type Deletion,
   type Proposal,
 } from "../interaction";
@@ -52,7 +51,7 @@ export type { GraphDataProblem } from "../bridge";
 export type { Deletion, Proposal } from "../interaction";
 
 /** The attributes `updateEdge` changes on an edge, as `edgeUpdated` reports them merged: its
- *  colour, arrowhead, dash pattern or none, and label or none (ADR-0023). */
+ *  colour, arrowhead, dash pattern or none, and label or none (ADR-0030). */
 interface EdgeChangePatch {
   readonly color?: number;
   readonly arrow?: "end" | "none";
@@ -63,7 +62,7 @@ interface EdgeChangePatch {
 }
 
 /** One change of the graph, by its `kind` and by who made it, `"user"` or `"host"`, as
- *  `onChange` delivers it (ADR-0023). */
+ *  `onChange` delivers it (ADR-0030). */
 export type GraphChange =
   /** `load` replaced the graph. */
   | { readonly kind: "loaded"; readonly by: "host" }
@@ -137,8 +136,9 @@ export interface CombOptions {
    *  that would go, the edges at a node among them, before anything is removed, when the user
    *  presses Delete or Backspace on the focused canvas. Comb deletes only where it returns
    *  `true`; an error it throws refuses the deletion and is thrown on from the key's event.
-   *  Never called for the host application's own calls. Without it, a deletion is allowed
-   *  (ADR-0023). */
+   *  Never called for the host application's own calls. Without it, a deletion is allowed. One
+   *  during whose call Comb tells a change to `onChange` deletes nothing, whatever it returns
+   *  (ADR-0030). */
   canDelete?: (deletion: Deletion) => boolean;
   /** The veto of a connection of the user's (G-3): called when the user releases a connection
    *  over a compatible connector of another node, with the identifiers of both nodes and the sides
@@ -146,7 +146,9 @@ export interface CombOptions {
    *  checks one, or `false` to refuse; any other value refuses as `false` does. An error it
    *  throws, or one of the identifier it returns, refuses the connection and is thrown on from the
    *  input event. Never called for the host application's own calls. Without it, no connection
-   *  begins: Comb has no name to give the edge (ADR-0023). */
+   *  begins: Comb has no name to give the edge. One during whose call Comb tells a change to
+   *  `onChange` connects nothing, whatever it returns, and its identifier is neither checked nor
+   *  thrown (ADR-0030). */
   canConnect?: (proposal: Proposal) => string | false;
 }
 
@@ -201,14 +203,14 @@ export interface Comb {
   /** The world point under the point (`clientX`, `clientY`) of the page, in the client
    *  coordinates of a pointer or drop event, for a node dropped from the host's palette (G-1).
    *  Throws a `RangeError` on a coordinate that is not finite; needs no engine, so it keeps
-   *  answering once the engine is lost (ADR-0023). */
+   *  answering once the engine is lost (ADR-0030). */
   worldPointAt(clientX: number, clientY: number): { x: number; y: number };
   /** Calls `listener` whenever the selection changes (G-5); returns the unsubscribe function. */
   onSelectionChange(listener: (selection: Selection) => void): () => void;
   /** Calls `listener` with every change of the graph, whoever made it, once the canvas holds it
    *  and before the call that made it returns, in the order made; where the change also clears
    *  the selection, before `onSelectionChange` reports it. Returns the unsubscribe function
-   *  (ADR-0023). */
+   *  (ADR-0030). */
   onChange(listener: (change: GraphChange) => void): () => void;
   /** Calls `listener` once, with the `EngineLostError`, when the engine is lost for the page, and
    *  at once where it is lost already; returns the unsubscribe function. The page recovers only
@@ -254,21 +256,6 @@ function boundsOf(nodes: readonly (NodeView | undefined)[], positions: Float32Ar
 /** The bridge's limits the snapshot cuts strings by. */
 function limitsOf(bridge: Bridge): Limits {
   return { text: bridge.textLimit(), id: bridge.idLimit(), idBudget: bridge.idBudget() };
-}
-
-/** The user's connections, where the host gives `canConnect`: the veto asked, and the edge it
- *  names added by `add`, which adds it as `addEdge` does, by the user (ADR-0023); none without
- *  it. */
-function connectorOf(
-  add: (edge: EdgeData) => void,
-  canConnect: CombOptions["canConnect"],
-): Connect | undefined {
-  if (!canConnect) return undefined;
-  return ({ source, sourceSide, target, targetSide }) => {
-    const id: unknown = canConnect({ source, sourceSide, target, targetSide });
-    if (typeof id !== "string") return;
-    add({ id, source, target, sourceSide, targetSide });
-  };
 }
 
 /** The change of an edge `change` names, as `onChange` delivers it: the edge as the store keeps
@@ -451,17 +438,16 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
 
   const store = createGraphStore();
   const scene = new Scene(app);
-  const { host: edits, user } = editorsOf(store, bridge, limits);
-  const connect = connectorOf(user.addEdge, options.canConnect);
+  const { host: edits, user } = editorsOf(store, bridge, limits, options);
   // Interaction subscribes before the listeners, and the frames read the store only on the next
   // frame, so that a gesture a change takes, a connection among them, is over before anything
   // reads the store after that change.
-  const interaction = attachInteraction(app, store, bridge, connect);
+  const interaction = attachInteraction(app, store, bridge, user.connect);
   const frames = createFrames(() => scene.render(store.getState(), bridge, interaction.pointer));
   const unsubscribe = store.subscribe(frames.schedule);
   // A larger canvas shows more of the world, so what is culled changes with its size.
   app.renderer.on("resize", frames.schedule);
-  const detachDeletion = attachDeletion(app.canvas, store, bridge, user.remove, options.canDelete);
+  const detachDeletion = attachDeletion(app.canvas, store, bridge, user.delete);
   const lost = engineLostOf();
   const listeners = listenersOf(store, bridge);
 

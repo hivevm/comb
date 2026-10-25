@@ -183,10 +183,10 @@ The functional core and its shell follow
   and pans; `index.ts` zooms around the pointer and sets the cursor over what a press would hit;
   `connect.ts` begins a connection on a press on a connector, where `CombOptions.canConnect` is set,
   follows the pointer with it, marks compatible the connectors of a node the source does not reach
-  yet, and proposes the edge to the veto on a release over one; `delete.ts` makes the canvas
-  focusable and deletes the selection on Delete or Backspace, a node with the edges the engine names
-  at it (`edgesAt`) before anything is removed, once `CombOptions.canDelete` returns `true` and has
-  not changed the graph itself, through the removal `api` hands it, which records it as the user's;
+  yet, and proposes the edge on a release over one, through the connection `api` hands it;
+  `delete.ts` makes the canvas focusable and, on Delete or Backspace, names what deleting the
+  selection would remove, a node with the edges the engine names at it (`edgesAt`) before anything
+  is removed, and hands it to the deletion `api` hands it; neither asks a veto itself;
   a key held down or pressed with Control, Alt, or Meta deletes nothing beyond its first press. A
   connection's source and what it is over are the store's, written only where they change; the
   world point it is dragged to is interaction's `pointer`, which `attachInteraction` returns, and a
@@ -237,15 +237,17 @@ The functional core and its shell follow
   it draw on Canvas 2D (`api/renderers.ts`), and paints the canvas in `background`; and the `Comb`
   it returns: the graph data (`load`, `updateNode`, `addNode`, `addEdge`, `updateEdge`,
   `removeNodes`, `removeEdges`), read once into a snapshot (`api/snapshot.ts`) and handed to the
-  engine by `api/editors.ts`, which also gives interaction the user's connection and deletion, the
+  engine by `api/editors.ts`, which also gives interaction the user's connection and deletion, each
+  after its veto, `CombOptions.canConnect` or `CombOptions.canDelete`, the
   viewport (`fitView`, `setViewport`, `viewport`, and `worldPointAt`, the world point
   under a point of the page, which needs no engine), the events to the host application (`onChange`,
   `onSelectionChange`, `onEngineLost`), and `destroy`; `onChange` delivers each change the store
-  records as a `GraphChange` ([ADR-0023](adr/0023-edits-are-reported-as-typed-changes.md)), its
-  positions read from the engine's buffer, synchronously from one subscription to the store that
-  tells a change before the selection it cleared; `whenRendered` resolves once a change is drawn,
-  with one render per animation frame scheduled by `api/frames.ts`. `api/scenes.ts` is the one way
-  from a `Comb` to its scene and to the hit test its presses ask, for the testing entry.
+  records as a `GraphChange`
+  ([ADR-0030](adr/0030-a-veto-that-changes-the-graph-ends-its-gesture.md)), its positions read
+  from the engine's buffer, synchronously from one subscription to the store that tells a change
+  before the selection it cleared; `whenRendered` resolves once a change is drawn, with one render
+  per animation frame scheduled by `api/frames.ts`. `api/scenes.ts` is the one way from a `Comb`
+  to its scene and to the hit test its presses ask, for the testing entry.
 - **Testing entry** (`comb/testing`, `packages/comb/src/testing.ts`) — `inspect` returns what the
   scene draws, the text of the titles and labels drawn included, the connectors drawn with where
   each is centred and how often the layer drew them anew, and the size and detail of the edge mesh,
@@ -350,8 +352,13 @@ it and has the engine add, change, or remove the items in place; the store then 
 records the change, and `api`, subscribed to the store, delivers it to `onChange` as a `GraphChange`
 before the call returns, and the next frame draws it. What the bridge refuses of the data becomes a
 `GraphDataError`; a `SlotError`, the shell's own mistake, an `Error` naming the slot. A user's
-connection and deletion run through the same function from `interaction` once their veto allows, the
-deletion through the one removal `removeNodes` and `removeEdges` use, recorded as `by: "user"`,
+connection and deletion, which `interaction` hands to `api/editors.ts`, are asked of their veto
+there, in one place: only an identifier `canConnect` returns connects and only `true` from
+`canDelete` deletes, and a veto during whose call Comb tells a change to `onChange` ends its
+gesture with nothing done and no error, whatever it returned
+([ADR-0030](adr/0030-a-veto-that-changes-the-graph-ends-its-gesture.md)). Then they run through
+the same function, the deletion through the one removal `removeNodes` and `removeEdges` use,
+recorded as `by: "user"`,
 which every store action whose change may be either's requires; a dragged node or label writes the
 engine alone while it moves and records `nodeMoved` or `labelMoved` once, at release.
 

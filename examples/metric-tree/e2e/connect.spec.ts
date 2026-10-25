@@ -1,7 +1,7 @@
 // The user connects two nodes by dragging from a connector of one to a compatible connector of
 // another (G-3, ADR-0024): the host application's `canConnect` names the edge, which is told as
 // `edgeAdded` by the user; a release anywhere else, over the source, or over a node it already
-// reaches makes none, and a refused name reaches the page as an error (ADR-0023).
+// reaches makes none, and a refused name reaches the page as an error (ADR-0030).
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData } from "comb";
 import { dragWorld, loaded, node, open, pagePoint, setViewport, told } from "./shared";
@@ -43,7 +43,7 @@ const C_LEFT: [number, number] = [500, 32];
 test("a drag from a's bottom connector to b's top one connects them by those sides", async ({
   page,
 }) => {
-  // Verifies: G-3, ADR-0024, ADR-0023
+  // Verifies: G-3, ADR-0024, ADR-0030
   await open(page);
   await loaded(page, NODES);
   await page.evaluate(() => {
@@ -135,7 +135,7 @@ for (const [name, to] of [
 
 for (const name of ["false", "undefined", "a number", "a throw"] as const) {
   test(`canConnect returning ${name} makes no edge`, async ({ page }) => {
-    // Verifies: ADR-0023
+    // Verifies: ADR-0030
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
@@ -164,7 +164,7 @@ for (const [name, id, kind] of [
   test(`canConnect returning ${name} makes no edge, and its GraphDataError reaches the page`, async ({
     page,
   }) => {
-    // Verifies: ADR-0023, Q-7
+    // Verifies: ADR-0030, Q-7
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
@@ -179,7 +179,7 @@ for (const [name, id, kind] of [
 test("without canConnect a press on a connector begins no connection and shows none", async ({
   page,
 }) => {
-  // Verifies: ADR-0023, ADR-0025
+  // Verifies: ADR-0030, ADR-0025
   await open(page, "?connect=none");
   await loaded(page, NODES);
   const midway = await drag(page, A_BOTTOM, B_TOP);
@@ -236,7 +236,7 @@ test("an edge the other way does not count: c connects to a, which reaches c", a
 test("a veto that throws ends the gesture first: no connection is drawn after it", async ({
   page,
 }) => {
-  // Verifies: ADR-0023
+  // Verifies: ADR-0030
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -254,6 +254,98 @@ test("a veto that throws ends the gesture first: no connection is drawn after it
     return { connection: window.inspect().connection, edges: window.inspect().edges.length };
   });
   expect(state).toEqual({ connection: null, edges: 1 });
+  expect(errors).toEqual(["host veto"]);
+});
+
+test("a veto that removes the target and returns an identifier makes no edge and throws nothing", async ({
+  page,
+}) => {
+  // Verifies: ADR-0030
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page);
+  await loaded(page, NODES);
+  await page.evaluate(() => {
+    window.canConnect = () => {
+      window.comb.removeNodes(["b"]);
+      return "e7";
+    };
+  });
+  await drag(page, A_BOTTOM, B_TOP);
+  const result = await after(page);
+  expect(result.edges).toEqual(["a-c"]);
+  expect(result.told).toEqual([{ kind: "nodesRemoved", by: "host", nodes: ["b"], edges: [] }]);
+  expect(errors).toEqual([]);
+});
+
+test("a veto that adds an edge between the two itself and returns another identifier keeps its edge alone", async ({
+  page,
+}) => {
+  // Verifies: ADR-0030
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page);
+  await loaded(page, NODES);
+  await page.evaluate(() => {
+    window.canConnect = ({ source, target }) => {
+      window.comb.addEdge({ id: "own", source, target });
+      return "e7";
+    };
+  });
+  await drag(page, A_BOTTOM, B_TOP);
+  const result = await after(page);
+  expect(result.edges).toEqual(["a-c", "own"]);
+  expect(result.told.map((change) => (change as { kind: string; by: string }).by)).toEqual([
+    "host",
+  ]);
+  expect(errors).toEqual([]);
+});
+
+test("a veto that sets the viewport and fits the view still connects under its identifier", async ({
+  page,
+}) => {
+  // Verifies: ADR-0030
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page);
+  await loaded(page, NODES);
+  await page.evaluate(() => {
+    window.canConnect = () => {
+      window.comb.setViewport({ x: 0, y: 0, scale: 0.5 });
+      window.comb.fitView();
+      return "e7";
+    };
+  });
+  await drag(page, A_BOTTOM, B_TOP);
+  const result = await after(page);
+  expect(result.edges).toEqual(["a-c", "e7"]);
+  expect(result.told.map((change) => (change as { kind: string; by: string }).by)).toEqual([
+    "user",
+  ]);
+  expect(errors).toEqual([]);
+});
+
+test("a veto that adds an edge and then throws keeps its edge alone, its error thrown after the gesture ended", async ({
+  page,
+}) => {
+  // Verifies: ADR-0030
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page);
+  await loaded(page, NODES);
+  await page.evaluate(() => {
+    window.canConnect = ({ source, target }) => {
+      window.comb.addEdge({ id: "own", source, target });
+      throw new Error("host veto");
+    };
+  });
+  await drag(page, A_BOTTOM, B_TOP);
+  const state = await page.evaluate(async () => {
+    await window.comb.whenRendered();
+    const { connection, edges } = window.inspect();
+    return { connection, edges: edges.map(({ id }) => id).sort() };
+  });
+  expect(state).toEqual({ connection: null, edges: ["a-c", "own"] });
   expect(errors).toEqual(["host veto"]);
 });
 

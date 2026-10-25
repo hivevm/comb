@@ -22,7 +22,7 @@ function editing(around: (bridge: Bridge) => Bridge = (bridge) => bridge) {
   const store = createGraphStore();
   const bridge = around(createBridgeSync(bytes));
   const limits = { text: bridge.textLimit(), id: bridge.idLimit(), idBudget: bridge.idBudget() };
-  const editors = editorsOf(store, bridge, limits);
+  const editors = editorsOf(store, bridge, limits, {});
   editors.host.load({
     nodes: [node("a"), node("b", 300)],
     edges: [{ id: "a-b", source: "a", target: "b" }],
@@ -242,7 +242,7 @@ describe("the user's deletion", () => {
     [{ kind: "edge", id: "a-b" }, "edges"],
   ] as const) {
     test(`of ${list} removes as the host's removal does, and tells the same change but for by`, () => {
-      // Verifies: ADR-0023
+      // Verifies: ADR-0030
       const hostCalls: string[] = [];
       const byHost = editing(recording(hostCalls));
       hostCalls.length = 0;
@@ -252,7 +252,7 @@ describe("the user's deletion", () => {
       const byUser = editing(recording(userCalls));
       byUser.store.getState().select(selection);
       userCalls.length = 0;
-      deleteSelection(byUser.store, byUser.bridge, byUser.user.remove);
+      deleteSelection(byUser.store, byUser.bridge, byUser.user.delete);
       // The deletion names what would go before the veto; from there it is the host's removal.
       expect(userCalls.filter((name) => name !== "edgesAt")).toEqual(hostCalls);
       const told = byHost.store.getState().change;

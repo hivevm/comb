@@ -219,7 +219,7 @@ function removed(nodes: readonly string[], edges: readonly string[]): void {
 }
 
 /** How the example's copy of the graph takes each kind of change, as a host application that
- *  persists keeps its own from `onChange` alone (ADR-0023); the type checker fails it where a
+ *  persists keeps its own from `onChange` alone (ADR-0030); the type checker fails it where a
  *  kind is left out. */
 const MIRROR: { [K in GraphChange["kind"]]: (change: Extract<GraphChange, { kind: K }>) => void } =
   {

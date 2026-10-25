@@ -20,7 +20,7 @@ export interface Proposal {
 }
 
 /** Proposes the user's connection to the host application's veto, and adds the edge it allows;
- *  an error it throws is thrown on once the gesture has ended (ADR-0023). */
+ *  an error it throws is thrown on once the gesture has ended (ADR-0030). */
 export type Connect = (proposal: Proposal) => void;
 
 /** Whether an edge from the node in slot `source` to the node in slot `target` exists, in that

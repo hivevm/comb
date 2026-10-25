@@ -20,7 +20,7 @@ export interface Gesture {
   /** Follows the pointer to the screen point `(x, y)`. */
   move(x: number, y: number): void;
   /** Ends it, `released` where the pointer was released, not ended by a later press; tells
-   *  what it changed (ADR-0023). */
+   *  what it changed (ADR-0030). */
   end(released: boolean): void;
   /** Whether the change `state` records took its subject from under it. */
   taken(state: GraphState): boolean;

@@ -251,8 +251,9 @@ that would go; without `canDelete` a deletion is allowed, and the host applicati
 node shows its four connectors, and a drag from one to a connector of another node the source does
 not reach yet connects them: `canConnect({ source, sourceSide, target, targetSide })` names the
 new edge, checked as `addEdge` checks one, or refuses with `false`; the edge is told as
-`edgeAdded` with `by: "user"`. Without `canConnect`, no connection begins. The example names each
-edge after its ends. At the near level a press inside an edge label's pill
+`edgeAdded` with `by: "user"`. Without `canConnect`, no connection begins. A veto during whose call
+Comb tells a change to `onChange` ends its gesture with nothing done, whatever it returns. The
+example names each edge after its ends. At the near level a press inside an edge label's pill
 selects its edge and drags the label, which stays where it is dropped: the engine places it at the
 nearest path parameter and the distance along the normal there, and the release is told as
 `labelMoved` with that `t` and `offset`.

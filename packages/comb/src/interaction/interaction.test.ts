@@ -112,7 +112,7 @@ function dragged() {
 describe("interaction records where a drag left its node", () => {
   for (const release of ["pointerup", "pointerupoutside"]) {
     test(`a drag records one nodeMoved on ${release}, and none per frame`, () => {
-      // Verifies: ADR-0023
+      // Verifies: ADR-0030
       const { emit, changes } = dragged();
       emit("pointerdown", 10, 10);
       for (let frame = 1; frame <= 6; frame += 1) emit("globalpointermove", 10 + frame * 5, 10);
@@ -127,7 +127,7 @@ describe("interaction records where a drag left its node", () => {
   }
 
   test("a press released where it began, or with moves that move nothing, records no change", () => {
-    // Verifies: ADR-0023
+    // Verifies: ADR-0030
     const { emit, changes } = dragged();
     emit("pointerdown", 10, 10);
     emit("pointerup", 10, 10);
@@ -140,7 +140,7 @@ describe("interaction records where a drag left its node", () => {
 
 describe("interaction ends a drag the graph took its node from", () => {
   test("a load during a drag ends it, and its release tells nothing", () => {
-    // Verifies: ADR-0023
+    // Verifies: ADR-0030
     const { store, emit, changes } = dragged();
     emit("pointerdown", 10, 10);
     emit("globalpointermove", 30, 10);
@@ -153,7 +153,7 @@ describe("interaction ends a drag the graph took its node from", () => {
   });
 
   test("a press after a drag whose release never came tells the drag's nodeMoved first", () => {
-    // Verifies: ADR-0023
+    // Verifies: ADR-0030
     const { emit, changes } = dragged();
     emit("pointerdown", 10, 10);
     emit("globalpointermove", 30, 10);
@@ -164,7 +164,7 @@ describe("interaction ends a drag the graph took its node from", () => {
   });
 
   test("a listener that throws on release leaves the drag over and the cursor updated", () => {
-    // Verifies: ADR-0023
+    // Verifies: ADR-0030
     const { store, app, emit, changes } = dragged();
     store.subscribe((state, previous) => {
       if (state.change !== previous.change) throw new Error("host listener");
@@ -181,7 +181,7 @@ describe("interaction ends a drag the graph took its node from", () => {
   });
 
   test("a removal of the dragged node ends the drag, which then moves and tells nothing", () => {
-    // Verifies: ADR-0022, ADR-0023
+    // Verifies: ADR-0022, ADR-0030
     const { store, emit, changes } = dragged();
     emit("pointerdown", 10, 10);
     emit("globalpointermove", 30, 10);
@@ -404,7 +404,7 @@ describe("interaction writes a connection whose compatibility changed", () => {
 
 describe("interaction connects", () => {
   test("a connection a later press ends, its release never having come, proposes no edge", () => {
-    // Verifies: ADR-0023, ADR-0024
+    // Verifies: ADR-0030, ADR-0024
     const store = createGraphStore();
     load(store, {
       nodes: [
@@ -436,7 +436,7 @@ describe("interaction connects", () => {
 
   for (const taken of ["a removal of its source, whose slot a node then takes", "a load"]) {
     test(`a connection ends at ${taken}, and its release proposes no edge`, () => {
-      // Verifies: ADR-0023
+      // Verifies: ADR-0030
       const store = createGraphStore();
       const graph = {
         nodes: [
