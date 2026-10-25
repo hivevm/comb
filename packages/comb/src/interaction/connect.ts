@@ -4,7 +4,7 @@
 // host application's veto, through `connect`, which `api` gives where `canConnect` is set. The
 // store holds what the connection is from and over, which changes rarely; the world point it is
 // dragged to, which changes on every move, is the context's `pointer`, which the store's
-// `pointerMoved` signals, as a drag of a node signals the positions it moves (ADR-0011). The
+// `pointerMoved` signals, as a drag of a node signals the positions it moves (ADR-0029). The
 // gesture holds nothing of it but the identifier of its source.
 import type { Bridge, Hit } from "../bridge";
 import type { Connection, GraphStore, Side } from "../store";

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Self-test of scripts/check-dependencies.sh. Verifies: ADR-0008, ADR-0010, ADR-0011
+# Self-test of scripts/check-dependencies.sh. Verifies: ADR-0008, ADR-0010, ADR-0029
 #
 # Each case builds a fixture tree under a temporary directory — bun.lock, the bridge crate's
 # Cargo.toml, and the library's package.json — runs the check against it, and asserts the exit

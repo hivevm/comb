@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Check of the dependencies the toolchain, the bridge, and the store decided.
-# Verifies: ADR-0008, ADR-0010, ADR-0011
+# Verifies: ADR-0008, ADR-0010, ADR-0029
 #
 # Fails on what would undo those decisions without a word:
 #
@@ -14,7 +14,7 @@
 #      under [target.'…'.dependencies] or not, or inherited with `workspace = true` from the root
 #      Cargo.toml's [workspace.dependencies] — says `default-features = false` and enables no
 #      `json` feature; and no serde_json is named, under any key or as a renamed `package`.
-#   3. Store (ADR-0011): the dependency lists of packages/comb/package.json (dependencies,
+#   3. Store (ADR-0029): the dependency lists of packages/comb/package.json (dependencies,
 #      devDependencies, peerDependencies, optionalDependencies) name none of the state libraries
 #      listed below; zustand is the store.
 #
@@ -114,7 +114,7 @@ if [[ -f "$library" ]]; then
 fi
 
 if ((${#problems[@]})); then
-  echo "Dependency check FAILED (ADR-0008, ADR-0010, ADR-0011):" >&2
+  echo "Dependency check FAILED (ADR-0008, ADR-0010, ADR-0029):" >&2
   printf '  - %s\n' "${problems[@]}" >&2
   exit 1
 fi

@@ -167,7 +167,7 @@ The functional core and its shell follow
   compatibility, and the connector a release connects to, the viewport, a counter for moved
   positions, and a counter for moves of the point a connection is dragged to; no coordinates of
   nodes, edges, or the pointer
-  ([ADR-0011](adr/0011-store.md)).
+  ([ADR-0029](adr/0029-the-store-holds-no-coordinate-each-move-its-counter.md)).
   `GraphView` is its state without the actions, the type the render layer reads.
   `store/viewport.ts` holds the viewport's arithmetic, the transform between world and screen and
   the level of detail of a scale included, for interaction, the scene, `api`'s `fitView`,
@@ -419,6 +419,6 @@ example fail where `testMode()` says the build runs the bridge in test mode.
 `scripts/check-dependencies.sh` fails on a lockfile of another package manager beside `bun.lock`
 (ADR-0008), on tsify's default or `json` features or `serde_json` in the bridge crate (ADR-0010), in
 whatever form the entry takes, and on a listed state library other than zustand in the library's
-dependency lists (ADR-0011). The type checker does the rest for the render layer: `GraphView` has no
+dependency lists (ADR-0029). The type checker does the rest for the render layer: `GraphView` has no
 action to call. ESLint forbids the DOM markup sinks (Q-5) and `eval`, implied eval, and `new
 Function` (Q-6) in Comb's library sources, outside its tests.

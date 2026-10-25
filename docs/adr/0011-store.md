@@ -1,6 +1,6 @@
 # ADR-0011: The graph's structure lives in a vanilla Zustand store, its coordinates in the engine's buffers
 
-- **Status:** 🟢 accepted
+- **Status:** ⚪ superseded by [ADR-0029](0029-the-store-holds-no-coordinate-each-move-its-counter.md)
 - **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `packages/comb/src/store/`, and every module that reads or writes the state of the graph or the viewport

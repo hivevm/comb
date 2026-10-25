@@ -1,4 +1,4 @@
-// The state of the graph and the viewport (ADR-0011). Coordinates are not kept here: positions live
+// The state of the graph and the viewport (ADR-0029). Coordinates are not kept here: positions live
 // in the engine's buffer, and `positionsVersion` tells readers that they moved; the point a
 // connection is dragged to lives in interaction, and `pointerVersion` tells them that it moved.
 import { createStore } from "zustand/vanilla";
@@ -72,7 +72,7 @@ export type NodeView = Omit<NodeData, "x" | "y">;
 export type By = "user" | "host";
 
 /** The change the last action that changed the graph made, by kind and the identifier it touched,
- *  never a coordinate (ADR-0011, ADR-0023): `api` delivers it to the host application, reading
+ *  never a coordinate (ADR-0029, ADR-0023): `api` delivers it to the host application, reading
  *  what it carries from the store and the engine's buffers. A new object for every change, so
  *  that one is told from the next by identity. */
 export type StoreChange =
@@ -105,7 +105,7 @@ export type StoreChange =
  *  over the node in slot `over`, whose connectors are `compatible` where the source does not reach
  *  it yet, and over its connector `target` where a release connects. The world point it is dragged
  *  to is no part of it: interaction keeps that point and signals its moves by `pointerVersion`
- *  (ADR-0011). */
+ *  (ADR-0029). */
 export interface Connection {
   readonly source: number;
   readonly side: Side;
