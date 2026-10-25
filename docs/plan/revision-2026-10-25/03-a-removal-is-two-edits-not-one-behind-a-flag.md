@@ -10,6 +10,8 @@ to call the engine, and to record. The flag leaks into interaction's `Remove` ty
 share what they share (the read of the identifier list, the slots of the identifiers), and hand
 interaction a deletion that takes nodes and edges as `deleteSelection` already finds them.
 
+It waits for ticket 02 of this directory, which moves the deletion's veto into the same module.
+
 ## Acceptance criteria
 
 - [ ] Given `api/editors.ts`, when it is read, then no edit takes a parameter that selects between
@@ -28,8 +30,7 @@ interaction a deletion that takes nodes and edges as `deleteSelection` already f
 
 ## Blocked by
 
-- docs/plan/revision-2026-10-25/02-a-veto-that-changes-the-graph-ends-both-gestures-alike.md,
-  which moves the deletion's veto into the same module.
+- docs/plan/revision-2026-10-25/02-a-veto-that-changes-the-graph-ends-both-gestures-alike.md
 
 ## Mode
 

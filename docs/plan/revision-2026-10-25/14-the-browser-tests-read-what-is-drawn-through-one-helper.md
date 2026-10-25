@@ -17,6 +17,9 @@ Ticket 16 of the revision of 2026-10-24 moved the browser tests' page helpers in
 Give `shared.ts` one reader of what is drawn, which each spec narrows as it needs, and have the
 specs above use it, `loaded`, `node`, and the shared recorders.
 
+It waits for ticket 13 of this directory, so that a helper moved into `shared.ts` cannot leave a
+local shadowing it.
+
 ## Acceptance criteria
 
 - [ ] Given `e2e/`, when it is read, then the drawn identifiers after `whenRendered` are read by one
@@ -33,8 +36,7 @@ specs above use it, `loaded`, `node`, and the shared recorders.
 
 ## Blocked by
 
-- docs/plan/revision-2026-10-25/13-the-lint-refuses-a-local-that-shadows.md, so that a helper
-  moved into `shared.ts` cannot leave a local shadowing it.
+- docs/plan/revision-2026-10-25/13-the-lint-refuses-a-local-that-shadows.md
 
 ## Mode
 
