@@ -4,12 +4,12 @@
 
 Ticket 13 of this directory enabled ESLint's `@typescript-eslint/no-shadow` for every linted file
 but the browser tests, `examples/*/e2e/**`, where it found 78 sites, past what one session renames
-with care. It renamed by hand four in-page locals named `told`: two hid the shared reader `told`
-of `shared.ts`, among them the one of `remove.spec.ts` that review of ticket 16 of the revision of
-2026-10-24 found, and two hid the test's own outer `told`; 74 sites remain. Most of them are Playwright's idiom of handing a value into the page under its own
-name, `page.evaluate((id) => …, id)` or `({ id, w, h }) => …`; others are a callback's `name` and
-`problem` repeating those of a parameterised test, or a `node` or `edge` local over the helper of
-`e2e/shared.ts` of that name.
+with care. It renamed by hand four in-page locals named `told`: two hid the shared reader `told` of
+`shared.ts`, among them the one of `remove.spec.ts` that review of ticket 16 of the revision of
+2026-10-24 found, and two hid the test's own outer `told`; 74 sites remain. Most of them are
+Playwright's idiom of handing a value into the page under its own name, `page.evaluate((id) => …,
+id)` or `({ id, w, h }) => …`; others are a callback's `name` and `problem` repeating those of a
+parameterised test, or a `node` or `edge` local over the helper of `e2e/shared.ts` of that name.
 
 Enable the rule for the browser tests too, and rename what it finds there.
 
