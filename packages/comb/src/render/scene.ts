@@ -190,6 +190,7 @@ export class Scene {
     const { scale } = state.viewport;
     const level = levelAt(scale);
     const far = level === "far";
+    // A pixel `query` takes (ADR-0031): every writer of `viewport.scale` goes through `clampScale`.
     const visible = bridge.query(rect, level, 1 / scale, this.labels.reach);
     const { origin } = visible;
     this.origin = origin;

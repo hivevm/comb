@@ -488,6 +488,19 @@ describe("bridge removals", () => {
     expect(nodeAt(205, 5)).toBe(1);
   });
 
+  test("moveLabel on a free slot throws the SlotError the other slot exports throw", () => {
+    // Verifies: ADR-0022
+    bridge.loadGraph(row(3));
+    bridge.removeEdges(new Uint32Array([1]));
+    let refused: unknown = "accepted";
+    try {
+      bridge.moveLabel(1, 300, 0);
+    } catch (error) {
+      refused = error;
+    }
+    expect(refused).toEqual({ kind: "noEdge", slot: 1 });
+  });
+
   test("a free slot is refused wherever a call names one, and the graph stays as it was", () => {
     // Verifies: ADR-0022
     bridge.loadGraph(row(3));
@@ -525,6 +538,38 @@ describe("bridge removals", () => {
     expect([...bridge.drawnEdges().slots]).toEqual([0]);
     expect([...bridge.query(everywhere, "near", 1, 0).nodes]).toEqual([0, 1]);
     expect([...bridge.positions()].slice(0, 4)).toEqual([0, 0, 200, 0]);
+  });
+});
+
+describe("the numbers the shell computes", () => {
+  test("a point, a pixel, or a delta an export cannot take crosses as a NumberError of its kind", () => {
+    // Verifies: ADR-0031
+    bridge.loadGraph(row(2));
+    const refused = (call: () => unknown) => {
+      try {
+        call();
+        return "accepted";
+      } catch (error) {
+        return error;
+      }
+    };
+    const point = { kind: "nonFinitePoint" };
+    const pixel = { kind: "invalidPixel" };
+    for (const bad of [Number.NaN, Infinity, -Infinity]) {
+      expect(refused(() => bridge.hit(bad, 0, 1, "near", true))).toEqual(point);
+      expect(refused(() => bridge.hit(0, bad, 1, "near", true))).toEqual(point);
+      expect(refused(() => bridge.moveLabel(0, bad, 0))).toEqual(point);
+      expect(refused(() => bridge.hit(0, 0, bad, "near", true))).toEqual(pixel);
+      expect(refused(() => bridge.query(everywhere, "near", bad, 0))).toEqual(pixel);
+      expect(refused(() => bridge.translate(new Uint32Array([0]), bad, 0))).toEqual({
+        kind: "nonFiniteDelta",
+      });
+    }
+    for (const bad of [0, -1]) {
+      expect(refused(() => bridge.hit(0, 0, bad, "near", true))).toEqual(pixel);
+      expect(refused(() => bridge.query(everywhere, "near", bad, 0))).toEqual(pixel);
+    }
+    expect([...bridge.positions()]).toEqual([0, 0, 200, 0]);
   });
 });
 
