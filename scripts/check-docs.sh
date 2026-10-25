@@ -436,10 +436,13 @@ anchor_resolves() {
   fi
   case "$file" in
     *.md)
+      # Every slug is read, so the producer never writes past its reader: with SIGPIPE ignored,
+      # as git runs a hook, a reader that returned early would leave sed failing on each write.
+      local found=1
       while IFS= read -r slug; do
-        [[ "$slug" == "$frag" ]] && return 0
+        [[ "$slug" == "$frag" ]] && found=0
       done < <(extract_heading_slugs "$file")
-      return 1 ;;
+      return "$found" ;;
     *) return 0 ;;
   esac
 }
