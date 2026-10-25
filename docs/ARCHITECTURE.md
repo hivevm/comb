@@ -354,8 +354,8 @@ before the call returns, and the next frame draws it. What the bridge refuses of
 `GraphDataError`; a `SlotError`, the shell's own mistake, an `Error` naming the slot. A user's
 connection and deletion, which `interaction` hands to `api/editors.ts`, are asked of their veto
 there, in one place: only an identifier `canConnect` returns connects and only `true` from
-`canDelete` deletes, and a veto that changed the graph during its call ends its gesture with
-nothing done and no error, whatever it returned
+`canDelete` deletes, and a veto during whose call Comb tells a change to `onChange` ends its
+gesture with nothing done and no error, whatever it returned
 ([ADR-0030](adr/0030-a-veto-that-changes-the-graph-ends-its-gesture.md)). Then they run through
 the same function, the deletion through the one removal `removeNodes` and `removeEdges` use,
 recorded as `by: "user"`,

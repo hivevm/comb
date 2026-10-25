@@ -58,4 +58,16 @@ describe("deleting the selection", () => {
     expect(calls).toEqual([]);
     expect(store.getState().slots.has("a")).toBe(true);
   });
+
+  test("a veto that changes the selection and the viewport leaves the deletion to its answer", () => {
+    // Verifies: ADR-0030
+    const { store, bridge, remove, calls } = selected(() => {
+      store.getState().select({ kind: "node", id: "b" });
+      store.getState().setViewport({ x: 10, y: 10, scale: 2 });
+      return true;
+    });
+    deleteSelection(store, bridge, remove);
+    expect(calls).toEqual(["removeNodes"]);
+    expect(store.getState().slots.has("a")).toBe(false);
+  });
 });

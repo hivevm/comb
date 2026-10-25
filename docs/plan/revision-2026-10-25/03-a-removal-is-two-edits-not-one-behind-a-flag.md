@@ -4,18 +4,18 @@
 
 Moving every edit into `api/editors.ts` made the two removals one function, `remove(editing,
 list, ids, by)`, whose `list: "nodes" | "edges"` it branches on four times: to read, to resolve,
-to call the engine, and to record. The flag leaks into interaction's `Remove` type
-(`interaction/delete.ts`) and `deleteSelection`. Before the move they were two functions
-(`nodeRemoverOf`, `edgeRemoverOf`). Write the two removals as two edits of the one pipeline that
-share what they share (the read of the identifier list, the slots of the identifiers), and hand
-interaction a deletion that takes nodes and edges as `deleteSelection` already finds them.
-
-It waits for ticket 02 of this directory, which moves the deletion's veto into the same module.
+to call the engine, and to record. Interaction no longer sees the flag: `deleteSelection` hands
+the `Deletion` it finds, nodes and edges, to the user's deletion `editorsOf` gives (`Delete` in
+`interaction/delete.ts`), which asks `canDelete` and then picks the flag itself from whether the
+deletion names nodes. Before the move the removals were two functions (`nodeRemoverOf`,
+`edgeRemoverOf`). What is left is in `api/editors.ts`: write the two removals as two edits of the
+one pipeline that share what they share (the read of the identifier list, the slots of the
+identifiers), and have the user's deletion call the one its `Deletion` names.
 
 ## Acceptance criteria
 
 - [ ] Given `api/editors.ts`, when it is read, then no edit takes a parameter that selects between
-      nodes and edges, and interaction's deletion type names no such flag.
+      nodes and edges.
 - [ ] Given the tests of `api/editors.test.ts`, `interaction/delete.test.ts`, and the browser tests
       of `remove.spec.ts` and `delete.spec.ts`, when they run, then they pass unchanged in what
       they assert.
@@ -25,8 +25,9 @@ It waits for ticket 02 of this directory, which moves the deletion's veto into t
 
 - ADR-0030 (*Deleting*, `by: "user"`), ADR-0022 (the edges at a node named before anything is
   removed).
-- `packages/comb/src/api/editors.ts` (`remove`, `editorsOf`), `interaction/delete.ts`
-  (`Remove`, `deleteSelection`); the golden path is the other edits of `editors.ts`.
+- `packages/comb/src/api/editors.ts` (`remove`, `editorsOf` and the user's deletion in it),
+  `interaction/delete.ts` (`Delete`, `deleteSelection`); the golden path is the other edits of
+  `editors.ts`.
 
 ## Blocked by
 

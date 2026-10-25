@@ -5,8 +5,8 @@
 // and may have changed the graph through `Comb`; check the code units of identifiers the graph
 // would hold; have the bridge check the plain data and the engine apply it; and have the store
 // take the result and record the change, by whom it names. The user's edits come after the host
-// application's veto, asked here for both, and a veto that changed the graph during its call
-// ends its gesture with nothing done (ADR-0030).
+// application's veto, asked here for both, and a veto during whose call the store records a
+// change, which Comb tells to `onChange`, ends its gesture with nothing done (ADR-0030).
 import { refuseIfLost, type Bridge, type GraphDataProblem, type SlotError } from "../bridge";
 import type { Connect, Delete, Deletion, Proposal } from "../interaction";
 import type {
@@ -293,9 +293,10 @@ export interface Vetoes {
   readonly canDelete?: ((deletion: Deletion) => unknown) | undefined;
 }
 
-/** What the veto `ask` answers, or `undefined` where it changed the graph during its call: its
- *  answer was given about a graph that is gone, so the gesture ends with nothing done, and no
- *  error (ADR-0030). An error it throws is thrown on. */
+/** What the veto `ask` answers, or `undefined` where the store recorded a change of the graph
+ *  during its call, a change Comb tells to `onChange`: its answer was given about a graph that is
+ *  gone, so the gesture ends with nothing done, and no error (ADR-0030). An error it throws is
+ *  thrown on. */
 function answerOf(store: GraphStore, ask: () => unknown): unknown {
   const before = store.getState().change;
   const answer = ask();
@@ -306,7 +307,7 @@ function answerOf(store: GraphStore, ask: () => unknown): unknown {
  *  the graph, and `user`, the user's connection and deletion after the host's `vetoes`, which
  *  interaction is handed; `connect` none without `canConnect`, since Comb has no name to give the
  *  edge. */
-export function editorsOf(store: GraphStore, bridge: Bridge, limits: Limits, vetoes: Vetoes = {}) {
+export function editorsOf(store: GraphStore, bridge: Bridge, limits: Limits, vetoes: Vetoes) {
   const editing: Editing = { store, bridge, limits };
   const host = {
     load: (graph: GraphData) => load(editing, graph),

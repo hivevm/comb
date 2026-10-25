@@ -22,7 +22,7 @@ function editing(around: (bridge: Bridge) => Bridge = (bridge) => bridge) {
   const store = createGraphStore();
   const bridge = around(createBridgeSync(bytes));
   const limits = { text: bridge.textLimit(), id: bridge.idLimit(), idBudget: bridge.idBudget() };
-  const editors = editorsOf(store, bridge, limits);
+  const editors = editorsOf(store, bridge, limits, {});
   editors.host.load({
     nodes: [node("a"), node("b", 300)],
     edges: [{ id: "a-b", source: "a", target: "b" }],

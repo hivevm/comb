@@ -25,9 +25,9 @@ skimmed. The design revision drops what prevented nothing
   a veto are the host application's code, and each may call `Comb` again. Read the host's input
   whole before the first look at the store or the engine, and after a veto or a listener returns,
   decide from the graph as it stands then, not from what was found before the call: a slot looked
-  up before host code ran may hold another item after it. A veto that changed the graph ends its
-  gesture with nothing done, a rule `api/editors.ts` writes once for every veto
-  ([ADR-0030](adr/0030-a-veto-that-changes-the-graph-ends-its-gesture.md)).
+  up before host code ran may hold another item after it. A veto during whose call Comb tells a
+  change to `onChange` ends its gesture with nothing done, a rule `api/editors.ts` writes once for
+  every veto ([ADR-0030](adr/0030-a-veto-that-changes-the-graph-ends-its-gesture.md)).
 - **Hand the host copies.** What a change or a method gives the host application is a copy, never
   an object the store keeps, since a host that writes into it changes the graph past every check.
 - **Work a frame need not redo is pinned by a count.** A layer, a hand-over to the engine, or a

@@ -136,8 +136,8 @@ export interface CombOptions {
    *  that would go, the edges at a node among them, before anything is removed, when the user
    *  presses Delete or Backspace on the focused canvas. Comb deletes only where it returns
    *  `true`; an error it throws refuses the deletion and is thrown on from the key's event.
-   *  Never called for the host application's own calls. Without it, a deletion is allowed
-   *  (ADR-0030). One that changes the graph during its call deletes nothing, whatever it returns
+   *  Never called for the host application's own calls. Without it, a deletion is allowed. One
+   *  during whose call Comb tells a change to `onChange` deletes nothing, whatever it returns
    *  (ADR-0030). */
   canDelete?: (deletion: Deletion) => boolean;
   /** The veto of a connection of the user's (G-3): called when the user releases a connection
@@ -146,8 +146,9 @@ export interface CombOptions {
    *  checks one, or `false` to refuse; any other value refuses as `false` does. An error it
    *  throws, or one of the identifier it returns, refuses the connection and is thrown on from the
    *  input event. Never called for the host application's own calls. Without it, no connection
-   *  begins: Comb has no name to give the edge (ADR-0030). One that changes the graph during its
-   *  call connects nothing, whatever it returns, and nothing is thrown (ADR-0030). */
+   *  begins: Comb has no name to give the edge. One during whose call Comb tells a change to
+   *  `onChange` connects nothing, whatever it returns, and its identifier is neither checked nor
+   *  thrown (ADR-0030). */
   canConnect?: (proposal: Proposal) => string | false;
 }
 

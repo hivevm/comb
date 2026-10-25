@@ -175,6 +175,49 @@ test("a veto that adds an edge itself refuses the deletion, and Comb and the eng
   expect(errors).toEqual([]);
 });
 
+test("a veto that sets the viewport and returns true still deletes", async ({ page }) => {
+  // Verifies: ADR-0030
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page);
+  await loadedRow(page);
+  await page.evaluate(() => {
+    window.canDelete = () => {
+      window.comb.setViewport({ x: 0, y: 0, scale: 0.5 });
+      window.comb.fitView();
+      return true;
+    };
+  });
+  await selectNode(page, "a");
+  await page.keyboard.press("Delete");
+  const result = await state(page);
+  expect(result.nodes).toEqual(["b", "c"]);
+  expect(result.edges).toEqual(["b-c"]);
+  expect(errors).toEqual([]);
+});
+
+test("a veto that adds an edge and then throws deletes nothing, and its error reaches the page", async ({
+  page,
+}) => {
+  // Verifies: ADR-0030
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page);
+  await loadedRow(page);
+  await page.evaluate(() => {
+    window.canDelete = () => {
+      window.comb.addEdge({ id: "x", source: "a", target: "b" });
+      throw new Error("host veto");
+    };
+  });
+  await selectNode(page, "a");
+  await page.keyboard.press("Delete");
+  const result = await state(page);
+  expect(result.nodes).toEqual(["a", "b", "c"]);
+  expect(result.edges).toEqual(["a-c", "b-a", "b-c", "x"]);
+  expect(errors).toEqual(["host veto"]);
+});
+
 test("a Delete held down deletes once, and with a modifier not at all", async ({ page }) => {
   // Verifies: ADR-0030
   await open(page);
