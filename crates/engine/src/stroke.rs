@@ -727,7 +727,17 @@ pub(crate) fn flattened(path: &EdgePath, stroke: &Stroke, rect: &Rect) -> Vec<Po
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geometry::Sides;
+    use crate::geometry::{PIXEL_LIMIT, Sides, WORLD_LIMIT};
+
+    #[test]
+    fn a_stroke_at_the_largest_pixel_stays_within_a_sixth_of_the_worlds_limit() {
+        // Verifies: ADR-0028
+        for level in [Level::Near, Level::Middle, Level::Far] {
+            let stroke = Stroke::at(level, PIXEL_LIMIT);
+            assert!(stroke.width <= WORLD_LIMIT / 6.0, "{level:?}");
+            assert!(stroke.tolerance <= WORLD_LIMIT / 6.0, "{level:?}");
+        }
+    }
 
     /// A rectangle that holds every point: nothing is drawn as chords for lying outside it.
     const EVERYWHERE: Rect = Rect::new(

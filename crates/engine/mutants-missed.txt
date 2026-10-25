@@ -3,15 +3,15 @@
 # and for an equivalent mutant its reason after ' # '.
 # Recorded with scripts/check-mutants.sh --record; the README says how the list changes.
 crates/engine/src/geometry.rs EdgePath::placement_at replace < with <= # equivalent: on a tie of the two thirds either one is dropped, and the nearest point lies in what is kept
-crates/engine/src/graph.rs Graph::cell_side replace * with + (x2) # equivalent: it affects only how fast a query runs, not which slots it returns
-crates/engine/src/graph.rs Graph::cell_side replace * with / (x2) # equivalent: it affects only how fast a query runs, not which slots it returns
-crates/engine/src/graph.rs Graph::cell_side replace - with + (x2) # equivalent: it affects only how fast a query runs, not which slots it returns
-crates/engine/src/graph.rs Graph::cell_side replace - with / (x2) # equivalent: it affects only how fast a query runs, not which slots it returns
-crates/engine/src/graph.rs Graph::cell_side replace / with % (x2) # equivalent: it affects only how fast a query runs, not which slots it returns
-crates/engine/src/graph.rs Graph::cell_side replace / with * (x2) # equivalent: it affects only how fast a query runs, not which slots it returns
-crates/engine/src/graph.rs Graph::cell_side replace Graph::cell_side -> f64 with -1.0 # equivalent: it affects only how fast a query runs, not which slots it returns
-crates/engine/src/graph.rs Graph::cell_side replace Graph::cell_side -> f64 with 0.0 # equivalent: it affects only how fast a query runs, not which slots it returns
-crates/engine/src/graph.rs Graph::cell_side replace Graph::cell_side -> f64 with 1.0 # equivalent: it affects only how fast a query runs, not which slots it returns
-crates/engine/src/graph.rs Graph::connector_at replace > with >= # equivalent: no two nodes in use share a rank, so no tie is ever broken
+crates/engine/src/graph/hit.rs Graph::connector_at replace > with >= # equivalent: no two nodes in use share a rank, so no tie is ever broken
+crates/engine/src/graph/index.rs Graph::cell_side replace * with + (x2) # equivalent: it affects only how fast a query runs, not which slots it returns
+crates/engine/src/graph/index.rs Graph::cell_side replace * with / (x2) # equivalent: it affects only how fast a query runs, not which slots it returns
+crates/engine/src/graph/index.rs Graph::cell_side replace - with + (x2) # equivalent: it affects only how fast a query runs, not which slots it returns
+crates/engine/src/graph/index.rs Graph::cell_side replace - with / (x2) # equivalent: it affects only how fast a query runs, not which slots it returns
+crates/engine/src/graph/index.rs Graph::cell_side replace / with % (x2) # equivalent: it affects only how fast a query runs, not which slots it returns
+crates/engine/src/graph/index.rs Graph::cell_side replace / with * (x2) # equivalent: it affects only how fast a query runs, not which slots it returns
+crates/engine/src/graph/index.rs Graph::cell_side replace Graph::cell_side -> f64 with -1.0 # equivalent: it affects only how fast a query runs, not which slots it returns
+crates/engine/src/graph/index.rs Graph::cell_side replace Graph::cell_side -> f64 with 0.0 # equivalent: it affects only how fast a query runs, not which slots it returns
+crates/engine/src/graph/index.rs Graph::cell_side replace Graph::cell_side -> f64 with 1.0 # equivalent: it affects only how fast a query runs, not which slots it returns
 crates/engine/src/spatial.rs Grid::candidates replace == with != # equivalent: clearing the marks on every query instead of when the counter wraps returns the same items, only slower
 crates/engine/src/stroke.rs crossing replace < with <= # equivalent: a side the segment runs along, out == 0, is handled before, so < and <= pick the same branch
