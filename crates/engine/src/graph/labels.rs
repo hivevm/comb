@@ -14,9 +14,7 @@ impl Graph {
         half_width: f64,
         half_height: f64,
     ) -> Result<(), SlotError> {
-        if !self.holds_edge(slot) {
-            return Err(SlotError::NoEdge { slot });
-        }
+        self.edges_held(&[slot])?;
         let measured = [half_width, half_height]
             .iter()
             .all(|size| size.is_finite() && *size > 0.0);

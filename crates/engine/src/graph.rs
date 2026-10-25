@@ -28,6 +28,7 @@ mod budget;
 mod tests;
 
 pub use hit::Target;
+pub use nodes::PositionError;
 /// The origin of a query, which the tests of `stroke` take theirs from.
 #[cfg(test)]
 pub(crate) use query::origin_of;
@@ -79,6 +80,25 @@ pub enum SlotError {
 pub enum AddEdgeError {
     Slot(SlotError),
     Graph(GraphError),
+}
+
+/// Why a move of nodes was refused: a slot that holds no node, or a delta that is not finite.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MoveError {
+    Slot(SlotError),
+    Position(PositionError),
+}
+
+impl From<SlotError> for MoveError {
+    fn from(error: SlotError) -> Self {
+        Self::Slot(error)
+    }
+}
+
+impl From<PositionError> for MoveError {
+    fn from(error: PositionError) -> Self {
+        Self::Position(error)
+    }
 }
 
 impl From<SlotError> for AddEdgeError {

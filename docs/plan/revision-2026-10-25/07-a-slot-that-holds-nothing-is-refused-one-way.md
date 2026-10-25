@@ -47,25 +47,23 @@ part of the bridge's data format (ADR-0010).
 
 ## Where it stands
 
-Handed off before any change, at the stop of the *Mode*: the first criterion asks `translate` to
-refuse a free slot with `SlotError`, and today the bridge throws `TranslateError`
-`{ kind: "slotOutOfRange", slot }` for it. The kind the shell sees changes, to `noNode`, and so
-must four existing assertions:
+The maintainer approved that `translate` refuses a free or out-of-range slot with `SlotError`
+(`{ kind: "noNode", slot }`) and a delta that is not finite with `TranslateError`, narrowed to
+`nonFiniteDelta`. That part has landed on the branch: the check that slots hold a node is written
+once (`nodes_held`) and once for an edge (`edges_held`), `positions` is folded into
+`graph/nodes.rs`, and the doc comment of `edge_ends` names free slots.
 
-- `packages/comb/src/bridge/bridge.test.ts` (the test of free slots): `bridge.translate` on a free
-  slot expects `{ kind: "slotOutOfRange", slot: 2 }`.
-- `crates/engine-wasm/src/lib.rs`, the test of a freed slot refused by every export that takes
-  slots: expects `Err(TranslateError::SlotOutOfRange { slot })`.
-- `crates/engine/src/graph/tests.rs`: expects `Err(PositionError::SlotOutOfRange { slot: 3 })` of
-  `Graph::translate`.
-- `crates/engine/src/positions.rs`: its own test of the range check, which folding the module into
-  the node edits makes unreachable code, so the assertion goes with it.
+Handed off before the narrowing of the error types, at the stop the dispatcher set: narrowing
+`Slots::take`, `add_node`, and `AddEdgeError` to `TooManySlots` changes five more assertions in
+their type, not their value, beyond the four approved:
 
-No shell code reads the kind: `interaction/node-drag.ts` calls `bridge.translate` without a catch,
-on slots the store holds, and `checked()` of `api/editors.ts`, which tells `noNode` and `noEdge`
-apart, never wraps `translate`. `TranslateError` would keep `nonFiniteDelta` only, or `translate`
-would throw `SlotError` for a slot and `TranslateError` for a delta.
+- `crates/engine/src/graph/slots.rs`: `slots.take()` expects `Err(GraphError::TooManySlots)`.
+- `crates/engine/src/graph/tests.rs`: `slot(u32::MAX as usize + 1)` expects
+  `Err(GraphError::TooManySlots)`.
+- `crates/engine/src/graph/edges.rs`: `add_node` expects `Err(GraphError::TooManySlots)`, and
+  `add_edge` `Err(AddEdgeError::Graph(GraphError::TooManySlots))`.
+- `crates/engine-wasm/src/graph_data.rs`: `EdgeRefusal::from(AddEdgeError::Graph(...))` and
+  `GraphDataProblem::from(GraphError::TooManySlots)`.
 
-To decide: whether the four assertions may change as the criterion implies, and so the bridge's
-format of `translate`'s refusal (ADR-0010, *Errors*); and whether `translate` then throws two types
-or `TranslateError` carries `SlotError` as a variant.
+What the shell receives does not change: each still crosses as the same `GraphDataProblem`. To
+decide: whether those assertions may change their types with the narrowing.

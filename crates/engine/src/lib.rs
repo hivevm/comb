@@ -10,6 +10,5 @@
 
 pub mod geometry;
 pub mod graph;
-pub mod positions;
 mod spatial;
 pub mod stroke;

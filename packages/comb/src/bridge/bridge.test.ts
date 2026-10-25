@@ -509,7 +509,7 @@ describe("bridge removals", () => {
       slot: 1,
     });
     expect(refused(() => bridge.translate(new Uint32Array([2]), 1, 1))).toEqual({
-      kind: "slotOutOfRange",
+      kind: "noNode",
       slot: 2,
     });
     // addEdge and updateEdge throw the shell's mistake as the other exports do, no problem of data.

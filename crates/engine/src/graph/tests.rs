@@ -4,7 +4,6 @@
 
 use super::*;
 use crate::geometry::Side;
-use crate::positions::PositionError;
 
 /// Sides of an edge, mostly the default, now and then any of the sixteen pairs.
 pub(super) fn random_sides(rng: &mut Lcg) -> Sides {
@@ -381,7 +380,7 @@ fn a_slot_that_holds_nothing_refuses_a_removal_and_a_move_which_change_nothing()
     );
     assert_eq!(
         graph.translate(&[0, 3], 1.0, 1.0),
-        Err(PositionError::SlotOutOfRange { slot: 3 })
+        Err(MoveError::Slot(SlotError::NoNode { slot: 3 }))
     );
     assert_eq!(graph.positions(), positions);
     assert_eq!(
