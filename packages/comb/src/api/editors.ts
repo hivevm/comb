@@ -234,56 +234,57 @@ function updateEdge({ store, bridge, limits }: Editing, id: string, patch: unkno
   });
 }
 
-/** The slots of `ids` in `map`, each once, in the order first named; refuses, before anything is
- *  removed, an identifier the map does not hold with the problem `unknown` makes of it. */
+/** The identifier list `ids` read once, its length checked by `size` before any identifier is
+ *  read; `name` names the list in a refusal. */
+function idListRead(
+  ids: unknown,
+  name: string,
+  limits: Limits,
+  size: (count: number) => void,
+): string[] {
+  const listed = idListOf(ids, name);
+  size(listed.count);
+  return idsOf(listed.list, listed.count, name, limits);
+}
+
+/** The slots of `ids` in `map`, each once, in the order first named, or nothing where `ids` names
+ *  none; refuses, before anything is removed, an identifier the map does not hold with the problem
+ *  `unknown` makes of it. */
 function slotsOf(
   ids: readonly string[],
   map: ReadonlyMap<string, number>,
   unknown: (id: string) => GraphDataProblem,
-): Uint32Array {
+): Uint32Array | undefined {
   const slots = new Set<number>();
   for (const id of ids) {
     const slot = map.get(id);
     if (slot === undefined) throw new GraphDataError(unknown(id));
     slots.add(slot);
   }
-  return Uint32Array.from(slots);
+  return slots.size === 0 ? undefined : Uint32Array.from(slots);
 }
 
-/** The one removal: of the nodes `ids` with every edge at them, or of the edges `ids`, as `by`
- *  makes it; `removeNodes`, `removeEdges`, and the user's deletion run through it. The list is
- *  read once, its length checked by the bridge before any identifier is read; an identifier the
- *  graph does not hold is refused, and a list that names none changes and tells nothing. */
-function remove(
-  { store, bridge, limits }: Editing,
-  list: "nodes" | "edges",
-  ids: unknown,
-  by: By,
-): void {
-  const name = list === "nodes" ? "node identifiers" : "edge identifiers";
+/** `removeNodes`, and the user's deletion of nodes, as `by` makes it: the nodes `ids` removed with
+ *  every edge at them, which the engine names (ADR-0022). An identifier the graph does not hold is
+ *  refused, and a list that names none changes and tells nothing. */
+function removeNodes({ store, bridge, limits }: Editing, ids: unknown, by: By): void {
   edit(store, bridge, {
-    read(sized) {
-      const listed = idListOf(ids, name);
-      if (list === "nodes") sized(listed.count, 0);
-      else sized(0, listed.count);
-      return idsOf(listed.list, listed.count, name, limits);
-    },
-    resolve(read, state) {
-      const slots =
-        list === "nodes"
-          ? slotsOf(read, state.slots, (node) => ({ kind: "unknownNode", node }))
-          : slotsOf(read, state.edgeSlots, (edge) => ({ kind: "unknownEdge", edge }));
-      return slots.length === 0 ? undefined : slots;
-    },
-    engine(slots) {
-      if (list === "nodes") return bridge.removeNodes(slots);
-      bridge.removeEdges(slots);
-      return slots;
-    },
-    record(state, slots, edges) {
-      if (list === "nodes") state.removeNodes([...slots], [...edges], by);
-      else state.removeEdges([...slots], by);
-    },
+    read: (sized) => idListRead(ids, "node identifiers", limits, (count) => sized(count, 0)),
+    resolve: (read, state) => slotsOf(read, state.slots, (node) => ({ kind: "unknownNode", node })),
+    engine: (slots) => bridge.removeNodes(slots),
+    record: (state, slots, edges) => state.removeNodes([...slots], [...edges], by),
+  });
+}
+
+/** `removeEdges`, and the user's deletion of edges, as `by` makes it: the edges `ids` removed, as
+ *  `removeNodes` removes nodes. */
+function removeEdges({ store, bridge, limits }: Editing, ids: unknown, by: By): void {
+  edit(store, bridge, {
+    read: (sized) => idListRead(ids, "edge identifiers", limits, (count) => sized(0, count)),
+    resolve: (read, state) =>
+      slotsOf(read, state.edgeSlots, (edge) => ({ kind: "unknownEdge", edge })),
+    engine: (slots) => bridge.removeEdges(slots),
+    record: (state, slots) => state.removeEdges([...slots], by),
   });
 }
 
@@ -316,8 +317,8 @@ export function editorsOf(store: GraphStore, bridge: Bridge, limits: Limits, vet
     addNode: (node: NodeData) => addNode(editing, node),
     addEdge: (edge: EdgeData) => addEdge(editing, edge, "host"),
     updateEdge: (id: string, patch: EdgePatch) => updateEdge(editing, id, patch),
-    removeNodes: (ids: readonly string[]) => remove(editing, "nodes", ids, "host"),
-    removeEdges: (ids: readonly string[]) => remove(editing, "edges", ids, "host"),
+    removeNodes: (ids: readonly string[]) => removeNodes(editing, ids, "host"),
+    removeEdges: (ids: readonly string[]) => removeEdges(editing, ids, "host"),
   };
   const { canConnect, canDelete } = vetoes;
   // The veto is handed copies, so that one that writes into what it is asked about changes
@@ -335,8 +336,8 @@ export function editorsOf(store: GraphStore, bridge: Bridge, limits: Limits, vet
       answerOf(store, () => canDelete({ nodes: [...nodes], edges: [...edges] })) !== true
     )
       return;
-    if (nodes.length > 0) remove(editing, "nodes", nodes, "user");
-    else remove(editing, "edges", edges, "user");
+    if (nodes.length > 0) removeNodes(editing, nodes, "user");
+    else removeEdges(editing, edges, "user");
   };
   return { host, user: { connect, delete: deletion } };
 }

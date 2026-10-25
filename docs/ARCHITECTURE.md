@@ -357,9 +357,9 @@ there, in one place: only an identifier `canConnect` returns connects and only `
 `canDelete` deletes, and a veto during whose call Comb tells a change to `onChange` ends its
 gesture with nothing done and no error, whatever it returned
 ([ADR-0030](adr/0030-a-veto-that-changes-the-graph-ends-its-gesture.md)). Then they run through
-the same function, the deletion through the one removal `removeNodes` and `removeEdges` use,
-recorded as `by: "user"`,
-which every store action whose change may be either's requires; a dragged node or label writes the
+the same function, the deletion through the removal of nodes or the one of edges, as its
+`Deletion` names, that `removeNodes` and `removeEdges` use, recorded as `by: "user"`, which every
+store action whose change may be either's requires; a dragged node or label writes the
 engine alone while it moves and records `nodeMoved` or `labelMoved` once, at release.
 
 **Panning and zooming.** `interaction` sets the store's viewport. While the viewport stays inside
