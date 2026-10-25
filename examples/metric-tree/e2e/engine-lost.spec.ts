@@ -119,6 +119,64 @@ test("after a trap in load, every call that needs the engine throws an EngineLos
   expect(errors).toEqual([]);
 });
 
+test("a createComb called once the engine is lost is refused before it touches its host element", async ({
+  page,
+}) => {
+  // Verifies: ADR-0021
+  const errors = await openWithErrors(page);
+  const result = await page.evaluate(async () => {
+    window.trapNextCall();
+    window.outcome(() => window.comb.load({ nodes: [], edges: [] }));
+    const host = window.secondHost();
+    let created = "ok";
+    try {
+      await window.createComb(host, { engine: fetch(window.engineUrl) });
+    } catch (error) {
+      created = (error as Error).name;
+    }
+    return { created, children: host.childElementCount };
+  });
+  expect(result).toEqual({ created: LOST, children: 0 });
+  expect(errors).toEqual([]);
+});
+
+test("a createComb whose engine is lost while PixiJS initialises resolves, or leaves its host element without a child", async ({
+  page,
+}) => {
+  // Verifies: ADR-0021
+  const errors = await openWithErrors(page);
+  const result = await page.evaluate(async () => {
+    const { comb, outcome } = window;
+    // An engine lost before createComb is refused as the engine is created; only a loss while
+    // PixiJS initialises reaches what comes after. No event marks that moment, so a stand-in for
+    // document.createElement springs a trap through the Comb already on the page at the first
+    // canvas made: this depends on PixiJS making a canvas inside app.init.
+    const createElement = document.createElement.bind(document);
+    let sprung = false;
+    document.createElement = ((name: string, options?: ElementCreationOptions) => {
+      if (name === "canvas" && !sprung) {
+        sprung = true;
+        window.trapNextCall();
+        outcome(() => comb.load({ nodes: [], edges: [] }));
+      }
+      return createElement(name, options);
+    }) as typeof document.createElement;
+    const host = window.secondHost();
+    let created = "resolved";
+    try {
+      await window.createComb(host, { engine: fetch(window.engineUrl) });
+    } catch (error) {
+      created = `${(error as Error).name} leaving ${host.childElementCount} children`;
+    } finally {
+      document.createElement = createElement;
+    }
+    return { sprung, lost: outcome(() => comb.load({ nodes: [], edges: [] })), created };
+  });
+  expect(result).toMatchObject({ sprung: true, lost: LOST });
+  expect(["resolved", `${LOST} leaving 0 children`]).toContain(result.created);
+  expect(errors).toEqual([]);
+});
+
 test("a trap inside the animation frame stops the renders, resolves whenRendered, and tells the host application", async ({
   page,
 }) => {
