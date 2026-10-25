@@ -24,6 +24,7 @@ export function nodeDrag(
       [lastX, lastY] = [x, y];
       if (dx === 0 && dy === 0) return;
       const { scale } = store.getState().viewport;
+      // A finite delta (ADR-0031): every writer of `viewport.scale` goes through `clampScale`.
       bridge.translate(new Uint32Array([slot]), dx / scale, dy / scale);
       moved = true;
       store.getState().positionsMoved();

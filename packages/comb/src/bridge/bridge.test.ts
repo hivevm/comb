@@ -488,6 +488,19 @@ describe("bridge removals", () => {
     expect(nodeAt(205, 5)).toBe(1);
   });
 
+  test("moveLabel on a free slot throws the SlotError the other slot exports throw", () => {
+    // Verifies: ADR-0022
+    bridge.loadGraph(row(3));
+    bridge.removeEdges(new Uint32Array([1]));
+    let refused: unknown = "accepted";
+    try {
+      bridge.moveLabel(1, 300, 0);
+    } catch (error) {
+      refused = error;
+    }
+    expect(refused).toEqual({ kind: "noEdge", slot: 1 });
+  });
+
   test("a free slot is refused wherever a call names one, and the graph stays as it was", () => {
     // Verifies: ADR-0022
     bridge.loadGraph(row(3));

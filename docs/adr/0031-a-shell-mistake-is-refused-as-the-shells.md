@@ -36,8 +36,8 @@ from an input event, for data it never handed over.
 We will refuse every number the shell computes and an export cannot take — a point, a pixel, or a
 delta that is not finite, and a pixel not above zero — in one generated type of the shell's
 mistakes, whose kind names the number, beside `SlotError` and never as a `GraphDataProblem`. The
-shell guards each such number before it calls the export, so no refusal of this type is reached
-from an input event.
+shell guards each such number before it calls the export, or rests on an invariant it names at the
+call, so no refusal of this type is reached from an input event.
 
 **Out of scope:** the shape of `SlotError`, which stays as it is; the refusals of graph data,
 which ADR-0010 and ADR-0028 decide; what the shell answers in place of a refused call, which each
@@ -70,8 +70,13 @@ caller decides as `targetAt` and the label drag do today.
 
 ## Consequences
 
-- Positive: `GraphDataProblem` means one thing, a problem of the host's graph data (Q-7, Q-3). A
-  refusal of the shell's mistake reads as one in a test. The overview's sentence becomes true.
+- Positive: `GraphDataProblem` means one thing for the numbers the shell computes: none of them is
+  refused as one (Q-7, Q-3). A refusal of the shell's mistake reads as one in a test. The
+  overview's sentence becomes true. Two refusals stay `malformed`: `query`'s rectangle, which the
+  scene builds, when it is not a rectangle the bridge can read, and `hit`'s result when it cannot be
+  handed back. Neither number comes from the host, and no call reaches either today: the scene
+  always builds a rectangle of four numbers, and a hit is one generated value. They stay
+  `malformed`, since a type of their own would name a mistake that does not happen.
 - Negative / trade-offs: the bridge's data format changes, and the bridge crate's and the bridge's
   tests that expect `malformed` for a point or a pixel change their expected type. `TranslateError`
   is folded into the new type or kept as its alias, a choice for the implementation.
