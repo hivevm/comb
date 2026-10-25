@@ -188,17 +188,17 @@ gesture.
   host's own mistake is more interface than throwing the error the method calls throw.
 - **Vetoes as listener methods of `Comb`** — they could change while Comb runs, but each is one
   function, not a list, and a host that needs to change one reads its own state inside it.
-- **A veto that changed the graph: re-check and carry out against the changed graph** — the
-  connection would add its edge where both nodes still exist and no edge joins them, and the
-  deletion would recompute what goes. The veto would then have allowed something it was never
-  asked about: a deletion that now takes an edge the veto added, a connection beside an edge the
-  veto drew between the same nodes. Asking the veto again could loop with a veto that changes the
-  graph each time.
-- **A veto that changed the graph: throw a typed error** — a `GraphDataError` from the input
-  event, as a refused identifier is thrown. The host's call that changed the graph succeeded, and
-  the host chose to make it; reporting that as its mistake makes every host that edits in a veto
-  handle an error for a case it made on purpose, and the deletion, which ended silently, would
-  change behaviour a host may rely on.
+- **A veto during whose call Comb tells a change: re-check and carry out against the changed
+  graph** — the connection would add its edge where both nodes still exist and no edge joins
+  them, and the deletion would recompute what goes. The veto would then have allowed something it
+  was never asked about: a deletion that now takes an edge the veto added, a connection beside an
+  edge the veto drew between the same nodes. Asking the veto again could loop with a veto that
+  changes the graph each time.
+- **A veto during whose call Comb tells a change: throw a typed error** — a `GraphDataError` from
+  the input event, as a refused identifier is thrown. The host's call that changed the graph
+  succeeded, and the host chose to make it; reporting that as its mistake makes every host that
+  edits in a veto handle an error for a case it made on purpose, and the deletion, which ended
+  silently, would change behaviour a host may rely on.
 - **Count only a change that touches the proposal's nodes or edges** — an `updateNode` of a third
   node would leave the gesture to the veto's answer. But a change touches a proposal in more ways
   than by naming its items: an edge the veto adds between the two nodes makes the connection no
