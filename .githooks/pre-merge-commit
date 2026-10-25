@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+#
+# Git pre-merge-commit hook: a merge commit on main runs the documentation checks first.
+#
+# A branch commits freely and a push waits for green checks (AGENTS.md, sections 5 and 6), but a
+# merge commit git records itself runs neither pre-commit nor pre-push. Git runs this hook after
+# the merge succeeded and before it records the commit, with the merged result in the working
+# tree. When the checkout is on main, it runs scripts/check-docs.sh and
+# scripts/sensor-plan-frontier.sh on that result and refuses the merge while either fails, naming
+# it; together they take about half a minute. A fast-forward records no merge commit and runs no
+# hook, and the project accepts that, so the clone sets no 'merge.ff'.
+# Enabled through 'git config core.hooksPath .githooks', which the Dev Container sets on creation
+# (.devcontainer/devcontainer.json); outside it, run that command once per clone.
+#
+# A script the repository does not have is not run. Bypassable with 'git merge --no-verify'.
+# scripts/test-git-hooks.sh exercises this hook.
+
+set -uo pipefail
+
+branch="$(git symbolic-ref --short -q HEAD 2>/dev/null || true)"
+[[ "$branch" == "main" ]] || exit 0
+
+root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+[[ -n "$root" ]] || exit 0
+# Git sets GIT_INDEX_FILE relative to the top level; the default index is the same file, and an
+# unset variable cannot reach a repository a check creates elsewhere.
+unset GIT_INDEX_FILE
+
+failed=()
+for check in scripts/check-docs.sh scripts/sensor-plan-frontier.sh; do
+  [[ -f "$root/$check" ]] || continue
+  bash "$root/$check" || failed+=("$check")
+done
+
+if ((${#failed[@]})); then
+  echo >&2
+  echo "pre-merge-commit: refused — ${failed[*]} failed on the merged result, and main takes no red merge (AGENTS.md, section 5). Run 'git merge --abort', fix the branch, and merge again." >&2
+  exit 1
+fi
+
+exit 0

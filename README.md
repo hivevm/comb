@@ -31,7 +31,8 @@ statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), th
 
 1. Open the repository in VS Code and choose **Reopen in Container**. The Dev Container and the
    preconfigured agent extensions build automatically, and the container enables the repository's
-   git hooks ([`.githooks/`](.githooks/)): no commit on `main`, and the checks run before a push.
+   git hooks ([`.githooks/`](.githooks/)): no commit on `main`, the checks run before a push, and
+   the documentation checks run before a merge commit on `main`.
    Working outside the container? Enable them yourself, once per clone:
    `git config core.hooksPath .githooks`.
 2. Authenticate your coding agent inside the container (for Claude Code: `claude login`).
@@ -274,7 +275,8 @@ crates/engine-wasm/   # the bridge's Rust side: every WebAssembly export (ADR-00
 packages/comb/        # the library: api, store, interaction, render, bridge
 examples/metric-tree/ # the example host application, with its browser tests (G-9)
 scripts/              # consistency checks and sensors (check-all.sh runs them all), run in CI
-.githooks/            # git hooks: refuse a commit on main and a push while the checks are red
+.githooks/            # git hooks: refuse a commit on main, a push while the checks are red, and
+                      # a merge commit on main while the documentation checks are red
 .github/              # CI workflows, Dependabot, issue & pull request templates, code owners
 .devcontainer/        # Dev Container definition (Dockerfile + Features)
 .vscode/              # shared editor settings
