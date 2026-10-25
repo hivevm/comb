@@ -16,7 +16,7 @@ import { nodeDrag } from "./node-drag";
 import { pan } from "./pan";
 import { levelAt, zoomAt } from "../store/viewport";
 
-export { attachDeletion, type CanDelete, type Deletion } from "./delete";
+export { attachDeletion, type CanDelete, type Deletion, type Remove } from "./delete";
 export type { Connect, Proposal } from "./connect";
 
 const WHEEL_STEP = 1.0015;

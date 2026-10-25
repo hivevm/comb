@@ -2,7 +2,14 @@ import { describe, expect, test } from "bun:test";
 import type { Application } from "pixi.js";
 import { attachInteraction } from ".";
 import type { Bridge } from "../bridge";
-import { createGraphStore } from "../store";
+import { createGraphStore, type GraphData, type GraphStore } from "../store";
+
+/** Loads `graph` into `store` with the code units of its identifiers, as `api` hands a load over. */
+function load(store: GraphStore, graph: GraphData): void {
+  const ids = [...graph.nodes, ...graph.edges].map((item) => item.id);
+  const ends = graph.edges.flatMap((edge) => [edge.source, edge.target]);
+  store.getState().load(graph, [...ids, ...ends].join("").length);
+}
 
 type Handler = (event: { global: { x: number; y: number } }) => void;
 
@@ -54,7 +61,7 @@ describe("interaction", () => {
   test("a drag across many frames moves the node through the engine and keeps the graph", () => {
     // Verifies: ADR-0011
     const store = createGraphStore();
-    store.getState().load({
+    load(store, {
       nodes: [{ id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 }],
       edges: [],
     });
@@ -88,7 +95,7 @@ describe("interaction", () => {
  *  from then on. */
 function dragged() {
   const store = createGraphStore();
-  store.getState().load({
+  load(store, {
     nodes: [{ id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 }],
     edges: [],
   });
@@ -136,7 +143,7 @@ describe("interaction ends a drag the graph took its node from", () => {
     const { store, emit, changes } = dragged();
     emit("pointerdown", 10, 10);
     emit("globalpointermove", 30, 10);
-    store.getState().load({
+    load(store, {
       nodes: [{ id: "z", title: "Z", x: 0, y: 0, width: 100, height: 40 }],
       edges: [],
     });
@@ -177,7 +184,7 @@ describe("interaction ends a drag the graph took its node from", () => {
     const { store, emit, changes } = dragged();
     emit("pointerdown", 10, 10);
     emit("globalpointermove", 30, 10);
-    store.getState().removeNodes([0], []);
+    store.getState().removeNodes([0], [], "host");
     // A node added takes the freed slot; the drag moves it not.
     store.getState().addNode({ id: "e", title: "E", x: 0, y: 0, width: 100, height: 40 }, 0);
     const { positionsVersion } = store.getState();
@@ -195,7 +202,7 @@ describe("interaction on an edge", () => {
   test("a press on an edge selects it, pans once the pointer moves beyond 4 pixels, and shows a pointer", () => {
     // Verifies: ADR-0025
     const store = createGraphStore();
-    store.getState().load({
+    load(store, {
       nodes: [
         { id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 },
         { id: "b", title: "B", x: 300, y: 0, width: 100, height: 40 },
@@ -244,7 +251,7 @@ describe("the hit test", () => {
       test(`over ${over}, ${connects ? "with" : "without"} connect, hitAt, the hover, and a press ask the engine alike`, () => {
         // Verifies: ADR-0025
         const store = createGraphStore();
-        store.getState().load({
+        load(store, {
           nodes: [
             { id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 },
             { id: "b", title: "B", x: 300, y: 0, width: 100, height: 40 },
@@ -279,7 +286,7 @@ describe("interaction connects", () => {
   test("a connection a later press ends, its release never having come, proposes no edge", () => {
     // Verifies: ADR-0023, ADR-0024
     const store = createGraphStore();
-    store.getState().load({
+    load(store, {
       nodes: [
         { id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 },
         { id: "b", title: "B", x: 300, y: 0, width: 100, height: 40 },
@@ -318,7 +325,7 @@ describe("interaction connects", () => {
         ],
         edges: [],
       };
-      store.getState().load(graph);
+      load(store, graph);
       const { app, emit } = fakeApp();
       const hit = (x: number) =>
         x < 200
@@ -328,7 +335,7 @@ describe("interaction connects", () => {
       attachInteraction(app, store, fakeBridge(hit).bridge, (proposal) => proposals.push(proposal));
       emit("pointerdown", 100, 20);
       emit("globalpointermove", 300, 20);
-      if (taken === "a load") store.getState().load(graph);
+      if (taken === "a load") load(store, graph);
       else {
         store.getState().removeNodes([0], [], "host");
         store.getState().addNode({ id: "z", title: "Z", x: 0, y: 0, width: 100, height: 40 }, 0);

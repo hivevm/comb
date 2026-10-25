@@ -158,15 +158,16 @@ The functional core and its shell follow
   views per read ([ADR-0010](adr/0010-bridge-data-format.md)).
 - **Store** (`packages/comb/src/store`) — a vanilla Zustand store with the graph's structure, its
   nodes and edges by slot with holes at free slots, which every reader skips, the maps from node and
-  edge identifiers to slots, the code units of the identifiers it holds, the change the last
-  action that changed the graph made, by kind and identifier, the selection, the node under the
-  pointer, the connection the user drags, with the world point it is dragged to, the viewport, and
-  a counter for moved positions; no coordinates of nodes or edges
-  ([ADR-0011](adr/0011-store.md)). `GraphView` is its state without the actions, the type the
-  render layer reads. `store/viewport.ts` holds the viewport's arithmetic, the transform between
-  world and screen and the level of detail of a scale included, for interaction, the scene, `api`'s
-  `fitView`, `setViewport`, and `worldPointAt`, and the testing entry; it imports none of them, so
-  the render layer takes it from the store, not from interaction.
+  edge identifiers to slots, the code units of the identifiers it holds, counted for a node and for
+  an edge by one function each and for a load taken as its snapshot counted them, the change the
+  last action that changed the graph made, by kind and identifier, the selection, the node under the
+  pointer, the connection the user drags, with the world point it is dragged to, the viewport, and a
+  counter for moved positions; no coordinates of nodes or edges ([ADR-0011](adr/0011-store.md)).
+  `GraphView` is its state without the actions, the type the render layer reads.
+  `store/viewport.ts` holds the viewport's arithmetic, the transform between world and screen and
+  the level of detail of a scale included, for interaction, the scene, `api`'s `fitView`,
+  `setViewport`, and `worldPointAt`, and the testing entry; it imports none of them, so the render
+  layer takes it from the store, not from interaction.
 - **Interaction** (`packages/comb/src/interaction`) — pointer, wheel, and key input into store
   actions and engine moves. `index.ts` dispatches: a press begins the gesture of what it hits, each
   a module of its own behind the `Gesture` of `gesture.ts`, which says how it moves, how it ends at
@@ -180,7 +181,8 @@ The functional core and its shell follow
   yet, and proposes the edge to the veto on a release over one; `delete.ts` makes the canvas
   focusable and deletes the selection on Delete or Backspace, a node with the edges the engine names
   at it (`edgesAt`) before anything is removed, once `CombOptions.canDelete` returns `true` and has
-  not changed the graph itself, recording it as the user's; a key held down or pressed with Control,
+  not changed the graph itself, through the removal `api` hands it, which records it as the user's;
+  a key held down or pressed with Control,
   Alt, or Meta deletes nothing beyond its first press. A connection's place is the store's alone,
   which the render draws; its gesture ends it at a load or a removal of its source. `label-drag.ts`:
   a press on a label, at the near level, selects its edge and drags the label, held where it was
@@ -226,7 +228,8 @@ The functional core and its shell follow
   it draw on Canvas 2D (`api/renderers.ts`), and paints the canvas in `background`; and the `Comb`
   it returns: the graph data (`load`, `updateNode`, `addNode`, `addEdge`, `updateEdge`,
   `removeNodes`, `removeEdges`), read once into a snapshot (`api/snapshot.ts`) and handed to the
-  engine, the viewport (`fitView`, `setViewport`, `viewport`, and `worldPointAt`, the world point
+  engine by `api/editors.ts`, which also gives interaction the user's connection and deletion, the
+  viewport (`fitView`, `setViewport`, `viewport`, and `worldPointAt`, the world point
   under a point of the page, which needs no engine), the events to the host application (`onChange`,
   `onSelectionChange`, `onEngineLost`), and `destroy`; `onChange` delivers each change the store
   records as a `GraphChange` ([ADR-0023](adr/0023-edits-are-reported-as-typed-changes.md)), its
@@ -328,14 +331,18 @@ the viewport grown by the culling margin, binds node views and edge-label views 
 found, and uploads the edge mesh the query built, so edges and labels follow the node in the
 same frame.
 
-**Editing.** A method of `Comb` that changes the graph reads its input once into a snapshot,
-refuses what the store's map shows, and hands the snapshot to the bridge, which checks it and has
-the engine add, change, or remove the items in place; the store then takes the result and records
-the change, and `api`, subscribed to the store, delivers it to `onChange` as a `GraphChange`
-before the call returns, and the next frame draws it. A user's connection and deletion run the
-same way from `interaction` once their veto allows, recorded as `by: "user"`; a dragged node or
-label writes the engine alone while it moves and records `nodeMoved` or `labelMoved` once, at
-release.
+**Editing.** A method of `Comb` that changes the graph runs through one function of
+`api/editors.ts`, which holds the order: it refuses once the engine is lost, reads the input once,
+whole, into a snapshot, refuses what the store's map shows as it stands after the read, checks the
+code units of identifiers the graph would hold, and hands the snapshot to the bridge, which checks
+it and has the engine add, change, or remove the items in place; the store then takes the result and
+records the change, and `api`, subscribed to the store, delivers it to `onChange` as a `GraphChange`
+before the call returns, and the next frame draws it. What the bridge refuses of the data becomes a
+`GraphDataError`; a `SlotError`, the shell's own mistake, an `Error` naming the slot. A user's
+connection and deletion run through the same function from `interaction` once their veto allows, the
+deletion through the one removal `removeNodes` and `removeEdges` use, recorded as `by: "user"`,
+which every store action whose change may be either's requires; a dragged node or label writes the
+engine alone while it moves and records `nodeMoved` or `labelMoved` once, at release.
 
 **Panning and zooming.** `interaction` sets the store's viewport. While the viewport stays inside
 the rectangle the scene last queried, and that rectangle within the viewport grown by twice the

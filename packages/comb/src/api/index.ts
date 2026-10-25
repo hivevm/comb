@@ -10,7 +10,6 @@ import {
   onEngineLost,
   refuseIfLost,
   type Bridge,
-  type GraphDataProblem,
   type Rect,
 } from "../bridge";
 import {
@@ -24,18 +23,8 @@ import {
 import { clampScale, fitViewport, toWorld } from "../store/viewport";
 import { Scene } from "../render/scene";
 import { engineOf, type EngineSource } from "./engine";
-import {
-  edgePatchOf,
-  edgeSnapshotOf,
-  idListOf,
-  idsOf,
-  isUnreadable,
-  listsOf,
-  nodeSnapshotOf,
-  patchOf,
-  snapshotOf,
-  type Limits,
-} from "./snapshot";
+import { editorsOf } from "./editors";
+import type { Limits } from "./snapshot";
 import { createFrames } from "./frames";
 import { drawsWith, preferenceFor } from "./renderers";
 import { scenes } from "./scenes";
@@ -56,6 +45,7 @@ import {
 } from "../store";
 
 export { EngineLostError } from "../bridge";
+export { GraphDataError } from "./editors";
 export { EngineSourceError } from "./engine";
 export type { EngineSource, EngineSourceProblem } from "./engine";
 export type { GraphDataProblem } from "../bridge";
@@ -243,15 +233,6 @@ export class RendererUnavailableError extends Error {
   }
 }
 
-/** Graph data Comb refused in `load`, `updateNode`, or `addNode`, with what was wrong and where: `problem`,
- *  whose `kind` tells which of the generated `GraphDataProblem`s it is. */
-export class GraphDataError extends Error {
-  constructor(readonly problem: GraphDataProblem) {
-    super(`comb: malformed graph data (${problem.kind})`);
-    this.name = "GraphDataError";
-  }
-}
-
 /** The world rectangle the nodes cover, or null for a graph without nodes; a free slot covers
  *  nothing. */
 function boundsOf(nodes: readonly (NodeView | undefined)[], positions: Float32Array): Rect | null {
@@ -270,207 +251,19 @@ function boundsOf(nodes: readonly (NodeView | undefined)[], positions: Float32Ar
   return any ? bounds : null;
 }
 
-/** Reads the host application's value into plain data with `read`, in JavaScript, before the
- *  bridge sees it; what reading throws (graph data that is not an object, nodes that are not a
- *  list, a getter that throws) refuses it as malformed. The message is Comb's own: a value the
- *  host application threw is not read. */
-function readOnce<T>(read: () => T): T {
-  try {
-    return read();
-  } catch (error) {
-    const message = isUnreadable(error) ? error.message : "comb: graph data could not be read";
-    throw new GraphDataError({ kind: "malformed", message });
-  }
-}
-
 /** The bridge's limits the snapshot cuts strings by. */
 function limitsOf(bridge: Bridge): Limits {
   return { text: bridge.textLimit(), id: bridge.idLimit(), idBudget: bridge.idBudget() };
 }
 
-/** Whether `error` is a problem the bridge produced: a plain object with a `kind`. */
-function isProblem(error: unknown): error is GraphDataProblem {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    Object.getPrototypeOf(error) === Object.prototype &&
-    typeof (error as { kind?: unknown }).kind === "string"
-  );
-}
-
-/** Calls the bridge with plain data; what it refuses becomes a `GraphDataError`, and any other
- *  error, such as the `EngineLostError` of a trap, no problem of the data, is thrown on as an
- *  `Error`. */
-function checked<T>(check: () => T): T {
-  try {
-    return check();
-  } catch (error) {
-    if (isProblem(error)) throw new GraphDataError(error);
-    throw error instanceof Error ? error : new Error("comb: the engine failed");
-  }
-}
-
-/** `updateNode` on `store`: refuses a node the graph does not hold, and a patch the bridge
- *  refuses, before the store sees either. The patch is read once, into plain data, and the store
- *  merges only the fields the bridge returns as checked, so that it and its subscribers stay as
- *  they were on a refusal (Q-7). */
-function updaterOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["updateNode"] {
-  return (id, patch) => {
-    refuseIfLost();
-    // Read first: a getter of the patch may change the graph, which the map then shows.
-    const plain = readOnce(() => patchOf(patch, limits));
-    if (!store.getState().slots.has(id))
-      throw new GraphDataError({ kind: "unknownNode", node: id });
-    store.getState().updateNode(
-      id,
-      checked(() => bridge.checkNodePatch(id, plain)),
-    );
-  };
-}
-
-/** `addNode` on `store`: reads the node once, refuses an identifier the store's map holds already
- *  and the code units of identifiers past the budget, and has the bridge check the node as a load
- *  would and add it; the store keeps it in the slot the engine chose (ADR-0022, ADR-0028). */
-function adderOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["addNode"] {
-  return (node) => {
-    refuseIfLost();
-    const { snapshot, idUnits } = readOnce(() => nodeSnapshotOf(node, limits));
-    const { id } = snapshot as { id?: unknown };
-    if (typeof id === "string" && store.getState().slots.has(id))
-      throw new GraphDataError({ kind: "duplicateNode", node: id });
-    checked(() => bridge.checkIdBudget(store.getState().idUnits + idUnits));
-    const slot = checked(() => bridge.addNode(snapshot));
-    // The bridge took the node, so each field holds a value of its type.
-    store.getState().addNode(snapshot as unknown as NodeData, slot);
-  };
-}
-
-/** The slots of `ids` in `map`, each once, in the order first named; refuses, before anything is
- *  removed, an identifier the map does not hold with the problem `unknown` makes of it. */
-function slotsOf(
-  ids: readonly string[],
-  map: ReadonlyMap<string, number>,
-  unknown: (id: string) => GraphDataProblem,
-): Uint32Array {
-  const slots = new Set<number>();
-  for (const id of ids) {
-    const slot = map.get(id);
-    if (slot === undefined) throw new GraphDataError(unknown(id));
-    slots.add(slot);
-  }
-  return Uint32Array.from(slots);
-}
-
-/** The identifiers a removal names, read once, its list's length checked by the bridge before
- *  any is read, as a load's lists are. */
-function removedIds(
-  bridge: Bridge,
-  limits: Limits,
-  ids: unknown,
-  list: "nodes" | "edges",
-): string[] {
-  const name = list === "nodes" ? "node identifiers" : "edge identifiers";
-  const listed = readOnce(() => idListOf(ids, name));
-  checked(() =>
-    list === "nodes"
-      ? bridge.checkGraphSize(listed.count, 0)
-      : bridge.checkGraphSize(0, listed.count),
-  );
-  return readOnce(() => idsOf(listed.list, listed.count, name, limits));
-}
-
-/** `removeNodes` on `store`: reads the identifiers once, refuses one the graph does not hold, and
- *  has the engine remove the nodes and every edge at them; the store forgets what the engine
- *  removed (ADR-0022, ADR-0028). A list that names none changes nothing and tells nothing. */
-function nodeRemoverOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["removeNodes"] {
-  return (ids) => {
-    refuseIfLost();
-    const read = removedIds(bridge, limits, ids, "nodes");
-    const nodes = slotsOf(read, store.getState().slots, (node) => ({ kind: "unknownNode", node }));
-    if (nodes.length === 0) return;
-    const edges = bridge.removeNodes(nodes);
-    store.getState().removeNodes([...nodes], [...edges]);
-  };
-}
-
-/** `removeEdges` on `store`, as `removeNodes` removes nodes. */
-function edgeRemoverOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["removeEdges"] {
-  return (ids) => {
-    refuseIfLost();
-    const read = removedIds(bridge, limits, ids, "edges");
-    const edges = slotsOf(read, store.getState().edgeSlots, (edge) => ({
-      kind: "unknownEdge",
-      edge,
-    }));
-    if (edges.length === 0) return;
-    bridge.removeEdges(edges);
-    store.getState().removeEdges([...edges]);
-  };
-}
-
-/** `addEdge` on `store`: reads the edge once, its style's defaults filled, refuses an identifier
- *  the store's map holds already and an end it does not hold, and the code units of identifiers
- *  past the budget, and has the bridge check the edge as a load would and add it between the
- *  slots of its ends (ADR-0022, ADR-0028). A value that is no string the bridge refuses itself. */
-function edgeAdderOf(
-  store: GraphStore,
-  bridge: Bridge,
-  limits: Limits,
-  by: "user" | "host" = "host",
-): Comb["addEdge"] {
-  return (edge) => {
-    refuseIfLost();
-    const { snapshot, idUnits } = readOnce(() => edgeSnapshotOf(edge, limits));
-    const { id, source, target } = snapshot as { id?: unknown; source?: unknown; target?: unknown };
-    const { slots, edgeSlots } = store.getState();
-    // An identifier, source, or target that is no string, or longer than the limit, the bridge
-    // refuses before the map is asked, as a load refuses it before any end is resolved.
-    const named = (value: unknown): value is string =>
-      typeof value === "string" && value.length <= limits.id;
-    const checkable = named(id) && named(source) && named(target);
-    if (checkable && edgeSlots.has(id))
-      throw new GraphDataError({ kind: "duplicateEdge", edge: id });
-    const end = (node: unknown) => {
-      if (!checkable || typeof node !== "string") return 0;
-      const slot = slots.get(node);
-      if (slot === undefined) throw new GraphDataError({ kind: "missingNode", edge: id, node });
-      return slot;
-    };
-    const [from, to] = [end(source), end(target)];
-    checked(() => bridge.checkIdBudget(store.getState().idUnits + idUnits));
-    const slot = checked(() => bridge.addEdge(snapshot, from, to));
-    // The bridge took the edge, so each field holds a value of its type.
-    store.getState().addEdge(snapshot as unknown as EdgeData, slot, by);
-  };
-}
-
-/** `updateEdge` on `store`: refuses an edge the graph does not hold and a patch the bridge
- *  refuses, before the store sees either; the patch is read once, into plain data, which the
- *  store merges once the bridge has checked every field of it (Q-7). */
-function edgeUpdaterOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["updateEdge"] {
-  return (id, patch) => {
-    refuseIfLost();
-    // Read first: a getter of the patch may change the graph, which the map then shows.
-    const plain = readOnce(() => edgePatchOf(patch, limits));
-    const slot = store.getState().edgeSlots.get(id);
-    if (slot === undefined) throw new GraphDataError({ kind: "unknownEdge", edge: id });
-    // A patch that sets nothing changes and tells nothing.
-    if (Object.keys(plain).length === 0) return;
-    checked(() => bridge.updateEdge(slot, id, plain));
-    store.getState().updateEdge(id, plain as unknown as EdgePatch);
-  };
-}
-
-/** The user's connections on `store`, where the host gives `canConnect`: the veto asked, and the
- *  edge it names added as `addEdge` adds one, by the user (ADR-0023); none without it. */
+/** The user's connections, where the host gives `canConnect`: the veto asked, and the edge it
+ *  names added by `add`, which adds it as `addEdge` does, by the user (ADR-0023); none without
+ *  it. */
 function connectorOf(
-  store: GraphStore,
-  bridge: Bridge,
-  limits: Limits,
+  add: (edge: EdgeData) => void,
   canConnect: CombOptions["canConnect"],
 ): Connect | undefined {
   if (!canConnect) return undefined;
-  const add = edgeAdderOf(store, bridge, limits, "user");
   return ({ source, sourceSide, target, targetSide }) => {
     const id: unknown = canConnect({ source, sourceSide, target, targetSide });
     if (typeof id !== "string") return;
@@ -597,20 +390,6 @@ function listenersOf(store: GraphStore, bridge: Bridge) {
   return { onChange: add(changes), onSelectionChange: add(selections) };
 }
 
-/** `load` on `store`: reads the graph data once, has the bridge check it, and hands the store only
- *  what the engine took (Q-7). */
-function loaderOf(store: GraphStore, bridge: Bridge, limits: Limits): Comb["load"] {
-  return (graph) => {
-    refuseIfLost();
-    const lists = readOnce(() => listsOf(graph));
-    checked(() => bridge.checkGraphSize(lists.nodeCount, lists.edgeCount));
-    const { snapshot, idUnits } = readOnce(() => snapshotOf(lists, limits));
-    checked(() => bridge.checkIdBudget(idUnits));
-    checked(() => bridge.loadGraph(snapshot));
-    store.getState().load(snapshot);
-  };
-}
-
 /** `worldPointAt` on `store` and the canvas of `app`: the world point under a point of the page,
  *  from the canvas's place in it and the viewport, without the engine. */
 function worldPointerOf(store: GraphStore, app: Application): Comb["worldPointAt"] {
@@ -642,19 +421,6 @@ function engineLostOf(): { onEngineLost: Comb["onEngineLost"]; removeAll(): void
   };
 }
 
-/** The methods of a `Comb` on `store` that change the graph, each through the bridge. */
-function editorsOf(store: GraphStore, bridge: Bridge, limits: Limits) {
-  return {
-    load: loaderOf(store, bridge, limits),
-    updateNode: updaterOf(store, bridge, limits),
-    addNode: adderOf(store, bridge, limits),
-    addEdge: edgeAdderOf(store, bridge, limits),
-    updateEdge: edgeUpdaterOf(store, bridge, limits),
-    removeNodes: nodeRemoverOf(store, bridge, limits),
-    removeEdges: edgeRemoverOf(store, bridge, limits),
-  } satisfies Partial<Comb>;
-}
-
 /** Creates a Comb canvas that fills `host`, with the engine `options.engine`. Throws an
  *  `EngineSourceError` before it touches `host` where the engine is missing, a string, `URL`, or
  *  `Request`, or none of a `Response`, a `WebAssembly.Module`, and the bytes, and a
@@ -666,7 +432,6 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
   // A caller without types may leave the options out; that is a missing engine too.
   options ??= {} as CombOptions;
   const bridge = await createBridge(await engineOf(options.engine));
-  const limits = limitsOf(bridge);
   const app = new Application();
   await app.init({
     resizeTo: host,
@@ -687,17 +452,18 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
   const unsubscribe = store.subscribe(frames.schedule);
   // A larger canvas shows more of the world, so what is culled changes with its size.
   app.renderer.on("resize", frames.schedule);
-  const connect = connectorOf(store, bridge, limits, options.canConnect);
+  const { host: edits, user } = editorsOf(store, bridge, limitsOf(bridge));
+  const connect = connectorOf(user.addEdge, options.canConnect);
   // Interaction subscribes before the listeners, and the frames read the store only on the next
   // frame, so that a gesture a change takes, a connection among them, is over before anything
   // reads the store after that change.
   const interaction = attachInteraction(app, store, bridge, connect);
-  const detachDeletion = attachDeletion(app.canvas, store, bridge, options.canDelete);
+  const detachDeletion = attachDeletion(app.canvas, store, bridge, user.remove, options.canDelete);
   const lost = engineLostOf();
   const listeners = listenersOf(store, bridge);
 
   const comb: Comb = {
-    ...editorsOf(store, bridge, limits),
+    ...edits,
     fitView() {
       const bounds = boundsOf(store.getState().nodes, bridge.positions());
       if (bounds)
