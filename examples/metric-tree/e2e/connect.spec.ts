@@ -54,7 +54,7 @@ test("a drag from a's bottom connector to b's top one connects them by those sid
   });
   const midway = await drag(page, A_BOTTOM, B_TOP);
   expect(midway.connection).toEqual({ from: { x: 110, y: 64 }, to: { x: 110, y: 300 } });
-  expect(midway.connectors.filter(({ node }) => node === "b")).toEqual(
+  expect(midway.connectors.filter(({ node: owner }) => owner === "b")).toEqual(
     ["top", "right", "bottom", "left"].map((side) => ({ node: "b", side, compatible: true })),
   );
   const result = await after(page);
@@ -96,9 +96,11 @@ for (const [side, at] of [
     // Hovered, a shows its four connectors.
     const over = await pagePoint(page, ...(at as [number, number]));
     await page.mouse.move(over.x, over.y);
-    const circle = await page.evaluate(async (side) => {
+    const circle = await page.evaluate(async (wanted) => {
       await window.comb.whenRendered();
-      const point = window.inspect().connectorPoints.find((p) => p.node === "a" && p.side === side);
+      const point = window
+        .inspect()
+        .connectorPoints.find((p) => p.node === "a" && p.side === wanted);
       return point && { x: point.x, y: point.y };
     }, side);
     const midway = await drag(page, at as [number, number], B_TOP);
@@ -140,7 +142,7 @@ for (const name of ["false", "undefined", "a number", "a throw"] as const) {
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
     await loaded(page, NODES);
-    await page.evaluate((name) => {
+    await page.evaluate((returning) => {
       const results: Record<string, () => unknown> = {
         false: () => false,
         undefined: () => undefined,
@@ -149,7 +151,7 @@ for (const name of ["false", "undefined", "a number", "a throw"] as const) {
           throw new Error("host veto");
         },
       };
-      window.canConnect = () => results[name]!();
+      window.canConnect = () => results[returning]!();
     }, name);
     await drag(page, A_BOTTOM, B_TOP);
     expect(await after(page)).toEqual({ edges: ["a-c"], told: [] });
@@ -169,7 +171,7 @@ for (const [name, id, kind] of [
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
     await loaded(page, NODES);
-    await page.evaluate((id) => (window.canConnect = () => id), id);
+    await page.evaluate((answer) => (window.canConnect = () => answer), id);
     await drag(page, A_BOTTOM, B_TOP);
     expect(await after(page)).toEqual({ edges: ["a-c"], told: [] });
     expect(errors).toEqual([`comb: malformed graph data (${kind})`]);
@@ -227,9 +229,9 @@ test("an edge the other way does not count: c connects to a, which reaches c", a
   await page.evaluate(() => (window.canConnect = () => "c-a"));
   // From c's bottom connector at (610, 64) to a's bottom one at (110, 64).
   const midway = await drag(page, [610, 64], A_BOTTOM);
-  expect(midway.connectors.filter(({ node }) => node === "a").every((c) => c.compatible)).toBe(
-    true,
-  );
+  expect(
+    midway.connectors.filter(({ node: owner }) => owner === "a").every((c) => c.compatible),
+  ).toBe(true);
   expect((await after(page)).edges).toEqual(["a-c", "c-a"]);
 });
 

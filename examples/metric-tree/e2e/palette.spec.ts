@@ -6,12 +6,12 @@ import { NODE_HEIGHT, NODE_WIDTH, open, screenCentre, setViewport } from "./shar
 /** Moves the canvas away from the page's corner, by a margin on its left and top, and scales it
  *  with CSS by `scale`, and waits until Comb has drawn at its new size. */
 async function offsetCanvas(page: Page, scale = 1): Promise<void> {
-  await page.evaluate(async (scale) => {
+  await page.evaluate(async (cssScale) => {
     const canvas = document.getElementById("canvas")!;
     canvas.style.marginLeft = "37px";
     canvas.style.marginTop = "23px";
     canvas.style.transformOrigin = "0 0";
-    canvas.style.transform = `scale(${scale})`;
+    canvas.style.transform = `scale(${cssScale})`;
     await new Promise((resolve) => requestAnimationFrame(resolve));
     await window.comb.whenRendered();
   }, scale);
@@ -25,7 +25,7 @@ for (const scale of [1, 0.5]) {
     await open(page);
     await offsetCanvas(page, scale);
     await setViewport(page, { x: -153.25, y: 87.5, scale: 0.37 });
-    const misses = await page.evaluate((scale) => {
+    const misses = await page.evaluate((cssScale) => {
       const canvas = document.querySelector("#canvas canvas")!.getBoundingClientRect();
       const points = [
         [0, 0],
@@ -33,7 +33,10 @@ for (const scale of [1, 0.5]) {
         [640, 17],
       ] as const;
       return points.filter(([sx, sy]) => {
-        const world = window.comb.worldPointAt(canvas.left + sx * scale, canvas.top + sy * scale);
+        const world = window.comb.worldPointAt(
+          canvas.left + sx * cssScale,
+          canvas.top + sy * cssScale,
+        );
         const back = window.screenPoint(world.x, world.y);
         return Math.abs(back.x - sx) > 0.01 || Math.abs(back.y - sy) > 0.01;
       });

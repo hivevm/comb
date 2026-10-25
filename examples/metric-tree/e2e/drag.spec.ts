@@ -12,7 +12,7 @@ import {
 
 /** A node's position in world coordinates, as the canvas draws it. */
 async function drawnNode(page: Page, id: string) {
-  return page.evaluate((id) => window.inspect().nodes.find((node) => node.id === id), id);
+  return page.evaluate((wanted) => window.inspect().nodes.find((node) => node.id === wanted), id);
 }
 
 test("dragging a node moves it with its edges and edge labels, and a click shows it in the sidebar", async ({
@@ -57,9 +57,9 @@ test("dragging a node moves it with its edges and edge labels, and a click shows
 async function inkNear(page: Page, points: { x: number; y: number }[], radius = 2) {
   const png = await page.locator("#canvas canvas").screenshot();
   return page.evaluate(
-    async ({ png, points, radius }) => {
+    async ({ png: shot, points: near, radius: reach }) => {
       // Decoded in the page, not fetched as a `data:` URL, which the policy's connect-src refuses.
-      const bytes = Uint8Array.from(atob(png), (char) => char.charCodeAt(0));
+      const bytes = Uint8Array.from(atob(shot), (char) => char.charCodeAt(0));
       const image = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
       const ratio = image.width / document.querySelector("#canvas canvas")!.clientWidth;
       const copy = document.createElement("canvas");
@@ -69,8 +69,8 @@ async function inkNear(page: Page, points: { x: number; y: number }[], radius = 
       context.drawImage(image, 0, 0);
       // Comb's default background, which createComb clears the canvas to.
       const background = [0xf7, 0xf8, 0xfa];
-      return points.map(({ x, y }) => {
-        const r = Math.ceil(radius * ratio);
+      return near.map(({ x, y }) => {
+        const r = Math.ceil(reach * ratio);
         const left = Math.round(x * ratio) - r;
         const top = Math.round(y * ratio) - r;
         const { data } = context.getImageData(left, top, 2 * r + 1, 2 * r + 1);
@@ -89,14 +89,14 @@ async function inkNear(page: Page, points: { x: number; y: number }[], radius = 
  *  its centre, its connectors, and the ends of every edge attached to it, with the render count. */
 async function drawnFrame(page: Page, id: string) {
   return page.evaluate(
-    async ({ id }) => {
+    async ({ id: wanted }) => {
       await window.comb.whenRendered();
       const { nodes, edges } = window.inspect();
-      const node = nodes.find((candidate) => candidate.id === id)!;
+      const node = nodes.find((candidate) => candidate.id === wanted)!;
       const toScreen = (p: { x: number; y: number }) => window.screenPoint(p.x, p.y);
       const attached = edges.filter((edge) => {
         const [copy, ends] = edge.id.split(":");
-        return ends!.split("-").some((end) => `${copy}:${end}` === id);
+        return ends!.split("-").some((end) => `${copy}:${end}` === wanted);
       });
       return {
         renders: window.renderCount(),
@@ -106,7 +106,7 @@ async function drawnFrame(page: Page, id: string) {
         in: toScreen({ x: node.x, y: node.y + node.height / 2 }),
         edges: attached.map((edge) => ({
           id: edge.id,
-          outgoing: edge.id.split("-")[0] === id,
+          outgoing: edge.id.split("-")[0] === wanted,
           source: toScreen(edge.source),
           target: toScreen(edge.target),
         })),

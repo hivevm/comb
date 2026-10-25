@@ -28,7 +28,7 @@ test("addEdge draws the edge with its colour, dash, and label, and tells edgeAdd
     dash: [8, 8],
     label: { text: "+0.8", t: 0.5, offset: 0 },
   };
-  await page.evaluate((edge) => window.comb.addEdge(edge), edge);
+  await page.evaluate((added) => window.comb.addEdge(added), edge);
   expect(await told(page)).toEqual([
     {
       kind: "edgeAdded",
@@ -39,7 +39,7 @@ test("addEdge draws the edge with its colour, dash, and label, and tells edgeAdd
   const drawn = await page.evaluate(async () => {
     await window.comb.whenRendered();
     const { edges, edgeLabels } = window.inspect();
-    return { edges, labels: edgeLabels.map(({ edge, text }) => ({ edge, text })) };
+    return { edges, labels: edgeLabels.map(({ edge: onEdge, text }) => ({ edge: onEdge, text })) };
   });
   expect(drawn).toEqual({
     edges: [{ id: "a-b", source: { x: 220, y: 32 }, target: { x: 600, y: 32 } }],
@@ -59,15 +59,17 @@ test("updateEdge recolours an edge, clears its dash, moves its label, and tells 
   await open(page);
   await loaded(page, PAIR);
   const edge = { id: "a-b", source: "a", target: "b", color: RED, dash: [8, 8] as const };
-  await page.evaluate((edge) => window.comb.addEdge(edge), edge);
+  await page.evaluate((added) => window.comb.addEdge(added), edge);
   const patch = { color: BLUE, dash: null, label: { text: "moved", t: 0.25, offset: 0 } };
-  await page.evaluate((patch) => window.comb.updateEdge("a-b", patch), patch);
+  await page.evaluate((changes) => window.comb.updateEdge("a-b", changes), patch);
   expect((await told(page)).slice(1)).toEqual([
     { kind: "edgeUpdated", by: "host", id: "a-b", patch },
   ]);
   const labels = await page.evaluate(async () => {
     await window.comb.whenRendered();
-    return window.inspect().edgeLabels.map(({ edge, text, x }) => ({ edge, text, x }));
+    return window
+      .inspect()
+      .edgeLabels.map(({ edge: onEdge, text, x }) => ({ edge: onEdge, text, x }));
   });
   // At t = 0.25 of the cubic from x = 220 to 600, whose control points lie half the distance in:
   // 220 · 0.75³ + 410 · 3 · 0.75² · 0.25 + 410 · 3 · 0.75 · 0.25² + 600 · 0.25³.
@@ -164,15 +166,15 @@ for (const { name, call, problem } of REFUSED) {
     await open(page);
     await loaded(page, PAIR);
     const edge = { id: "a-b", source: "a", target: "b", color: RED, dash: [8, 8] as const };
-    await page.evaluate((edge) => window.comb.addEdge(edge), edge);
+    await page.evaluate((added) => window.comb.addEdge(added), edge);
     const before = await strokeOf(page, RED);
     const refused = await page.evaluate(([method, args]) => {
       try {
         (window.comb as unknown as Record<string, (...args: unknown[]) => void>)[method]!(...args);
         return null;
       } catch (error) {
-        const { name, problem } = error as Error & { problem: unknown };
-        return { name, problem };
+        const { name: thrown, problem: found } = error as Error & { problem: unknown };
+        return { name: thrown, problem: found };
       }
     }, call);
     expect(refused).toEqual({ name: "GraphDataError", problem });
@@ -222,7 +224,7 @@ test("a patch of one field keeps the label and the dash, and moves a label the e
     dash: [8, 8] as const,
     label: { text: "kept", t: 0.5, offset: 0 },
   };
-  await page.evaluate((edge) => window.comb.addEdge(edge), edge);
+  await page.evaluate((added) => window.comb.addEdge(added), edge);
   await page.evaluate(() => window.comb.updateEdge("a-b", { arrow: "none" }));
   const labels = async () =>
     page.evaluate(async () => {
@@ -350,7 +352,7 @@ for (const [name, value] of [
     // Verifies: Q-7, ADR-0024
     await open(page);
     await loaded(page, PAIR);
-    const problems = await page.evaluate((value) => {
+    const problems = await page.evaluate((side) => {
       const problem = (call: () => void) => {
         try {
           call();
@@ -365,13 +367,11 @@ for (const [name, value] of [
       ];
       const edge = { id: "x", source: "a", target: "b" };
       return [
-        problem(() => window.comb.addEdge({ ...edge, targetSide: value } as never)),
-        problem(() =>
-          window.comb.load({ nodes, edges: [{ ...edge, sourceSide: value } as never] }),
-        ),
+        problem(() => window.comb.addEdge({ ...edge, targetSide: side } as never)),
+        problem(() => window.comb.load({ nodes, edges: [{ ...edge, sourceSide: side } as never] })),
         problem(() => {
           window.comb.addEdge(edge);
-          window.comb.updateEdge("x", { sourceSide: value } as never);
+          window.comb.updateEdge("x", { sourceSide: side } as never);
         }),
       ];
     }, value);

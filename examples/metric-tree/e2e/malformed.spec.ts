@@ -188,13 +188,13 @@ for (const { name, graph, problem } of FIELDS) {
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
     const before = await drawn(page);
-    const refused = await page.evaluate((graph) => {
+    const refused = await page.evaluate((data) => {
       try {
-        window.comb.load(graph);
+        window.comb.load(data);
         return null;
       } catch (error) {
-        const { name, problem } = error as Error & { problem: unknown };
-        return { name, problem };
+        const { name: thrown, problem: found } = error as Error & { problem: unknown };
+        return { name: thrown, problem: found };
       }
     }, graph);
     expect(errors).toEqual([]);
@@ -215,13 +215,13 @@ for (const { name, graph, problem } of MALFORMED) {
     await setViewport(page, { x: 100, y: 100, scale: 1 });
     const before = await drawn(page);
     expect(before.nodes.length).toBeGreaterThan(0);
-    const refused = await page.evaluate((graph) => {
+    const refused = await page.evaluate((data) => {
       try {
-        window.comb.load(graph);
+        window.comb.load(data);
         return null;
       } catch (error) {
-        const { name, problem } = error as Error & { problem: unknown };
-        return { name, problem };
+        const { name: thrown, problem: found } = error as Error & { problem: unknown };
+        return { name: thrown, problem: found };
       }
     }, graph);
     await frames(page);
@@ -287,7 +287,7 @@ for (const { patch, problem } of PATCHES) {
       await window.comb.whenRendered();
     });
     const before = await drawn(page);
-    const result = await page.evaluate(async (patch) => {
+    const result = await page.evaluate(async (changes) => {
       // Two frames with nothing to draw, so that a render the call would schedule is counted;
       // the store schedules one for any change, so none means its nodes stayed as they were.
       const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
@@ -295,10 +295,10 @@ for (const { patch, problem } of PATCHES) {
       const renders = window.renderCount();
       let refused = null;
       try {
-        window.comb.updateNode("a", patch as { title: string });
+        window.comb.updateNode("a", changes as { title: string });
       } catch (error) {
-        const { name, problem } = error as Error & { problem: unknown };
-        refused = { name, problem };
+        const { name, problem: found } = error as Error & { problem: unknown };
+        refused = { name, problem: found };
       }
       await frame();
       await frame();
@@ -459,11 +459,11 @@ test("load reads the host's graph data once and keeps what the bridge checked", 
       enumerable: true,
       get: () => (reads++ === 0 ? 0x123456 : -5),
     });
-    const node = (id: string, x: number) => ({ id, title: id, x, y: 0, width: 220, height: 64 });
+    const nodeAt = (id: string, x: number) => ({ id, title: id, x, y: 0, width: 220, height: 64 });
     let refused = null;
     try {
       window.comb.load({
-        nodes: [node("a", 0), node("b", 300)],
+        nodes: [nodeAt("a", 0), nodeAt("b", 300)],
         edges: [{ id: "e", source: "a", target: "b", label }],
       });
     } catch (error) {
@@ -562,13 +562,13 @@ test("load copies nodes out of a list whose own map would hand over the host's o
     // A title that is a string on its first read and a number after it, in a list whose `map`
     // returns the host's own node, not the copy it was asked for.
     let reads = 0;
-    const node = { id: "a", x: 0, y: 0, width: 220, height: 64 };
-    Object.defineProperty(node, "title", {
+    const nodeAt = { id: "a", x: 0, y: 0, width: 220, height: 64 };
+    Object.defineProperty(nodeAt, "title", {
       enumerable: true,
       get: () => (reads++ === 0 ? "a" : 5),
     });
-    const nodes = [node];
-    Object.defineProperty(nodes, "map", { value: () => [node] });
+    const nodes = [nodeAt];
+    Object.defineProperty(nodes, "map", { value: () => [nodeAt] });
     window.comb.load({ nodes: nodes as never, edges: [] });
     await window.comb.whenRendered();
     return { refused: null, reads, titles: window.inspect().nodes.map(({ title }) => title) };
@@ -629,7 +629,7 @@ test("load draws a title and a label text of 1,000 UTF-16 code units", async ({ 
   );
   await frames(page);
   expect(errors).toEqual([]);
-  expect((await drawn(page)).nodes.map(({ title }) => title?.length)).toEqual([1000, 1]);
+  expect((await drawn(page)).nodes.map(({ title: shown }) => shown?.length)).toEqual([1000, 1]);
 });
 
 test("load refuses a million and one nodes by their count, before it copies any", async ({
@@ -708,36 +708,36 @@ type Hostile = Window & { hostileValue: (kind: (typeof HOSTILE)[number]) => unkn
  *  reports what the first call threw and what the canvas drew after the second. */
 async function hostile([kind, place]: [(typeof HOSTILE)[number], (typeof PLACES)[number]]) {
   const value = (window as unknown as Hostile).hostileValue(kind) as never;
-  const node = (id: string) => ({ id, title: id, x: 0, y: 0, width: 220, height: 64 });
+  const nodeAt = (id: string) => ({ id, title: id, x: 0, y: 0, width: 220, height: 64 });
   const label = { text: "e", t: 0.5, offset: 0 };
-  const edge = { id: "e", source: "a", target: "b", label };
+  const anEdge = { id: "e", source: "a", target: "b", label };
   const calls = {
-    title: () => window.comb.load({ nodes: [{ ...node("a"), title: value }], edges: [] }),
-    id: () => window.comb.load({ nodes: [{ ...node("a"), id: value }], edges: [] }),
-    x: () => window.comb.load({ nodes: [{ ...node("a"), x: value }], edges: [] }),
+    title: () => window.comb.load({ nodes: [{ ...nodeAt("a"), title: value }], edges: [] }),
+    id: () => window.comb.load({ nodes: [{ ...nodeAt("a"), id: value }], edges: [] }),
+    x: () => window.comb.load({ nodes: [{ ...nodeAt("a"), x: value }], edges: [] }),
     text: () =>
       window.comb.load({
-        nodes: [node("a"), node("b")],
-        edges: [{ ...edge, label: { ...label, text: value } }],
+        nodes: [nodeAt("a"), nodeAt("b")],
+        edges: [{ ...anEdge, label: { ...label, text: value } }],
       }),
     background: () =>
       window.comb.load({
-        nodes: [node("a"), node("b")],
-        edges: [{ ...edge, label: { ...label, background: value } }],
+        nodes: [nodeAt("a"), nodeAt("b")],
+        edges: [{ ...anEdge, label: { ...label, background: value } }],
       }),
     nodes: () => window.comb.load({ nodes: value, edges: [] }),
     graph: () => window.comb.load(value),
     patch: () => window.comb.updateNode("a", value),
     patchTitle: () => window.comb.updateNode("a", { title: value }),
   };
-  window.comb.load({ nodes: [node("a")], edges: [] });
+  window.comb.load({ nodes: [nodeAt("a")], edges: [] });
   let first: unknown = "accepted";
   try {
     calls[place]();
   } catch (error) {
     first = (error as Error).name;
   }
-  window.comb.load({ nodes: [node("ok")], edges: [] });
+  window.comb.load({ nodes: [nodeAt("ok")], edges: [] });
   await window.comb.whenRendered();
   return { first, titles: window.inspect().nodes.map(({ title }) => title) };
 }
@@ -780,8 +780,8 @@ type RefusalKind =
 /** In the page: loads one node `a`, provokes the refusal of `kind`, and reports what it threw, how
  *  long it took, and what the canvas drew after a valid load that follows it. */
 async function refusal(kind: RefusalKind) {
-  const node = (id: string) => ({ id, title: id, x: 0, y: 0, width: 220, height: 64 });
-  window.comb.load({ nodes: [node("a")], edges: [] });
+  const nodeAt = (id: string) => ({ id, title: id, x: 0, y: 0, width: 220, height: 64 });
+  window.comb.load({ nodes: [nodeAt("a")], edges: [] });
   const big = "\u4e00".repeat(50_000_000);
   // A thrown value whose prototype chain runs the host's code.
   const thrown = new Proxy(
@@ -793,10 +793,10 @@ async function refusal(kind: RefusalKind) {
     },
   );
   const calls = {
-    bigX: () => window.comb.load({ nodes: [{ ...node("a"), x: big as never }], edges: [] }),
+    bigX: () => window.comb.load({ nodes: [{ ...nodeAt("a"), x: big as never }], edges: [] }),
     sharedTitle: () =>
       window.comb.load({
-        nodes: Array.from({ length: 10_000 }, (_, i) => ({ ...node(`n${i}`), title: big })),
+        nodes: Array.from({ length: 10_000 }, (_, i) => ({ ...nodeAt(`n${i}`), title: big })),
         edges: [],
       }),
     symbolKey: () => window.comb.updateNode("a", { [Symbol("extra")]: 1 } as never),
@@ -805,7 +805,7 @@ async function refusal(kind: RefusalKind) {
     // The bridge would read both as "a\uFFFD" and join the edge to a node the store's edge misses.
     loneSurrogateId: () =>
       window.comb.load({
-        nodes: [node("a\uD800"), node("b")],
+        nodes: [nodeAt("a\uD800"), nodeAt("b")],
         edges: [{ id: "e", source: "a\uD801", target: "b" }],
       }),
     loneSurrogateTitle: () => window.comb.updateNode("a", { title: "x\uDC00" }),
@@ -813,7 +813,7 @@ async function refusal(kind: RefusalKind) {
     thrownProxy: () =>
       window.comb.load({
         nodes: [
-          Object.defineProperty(node("a"), "title", {
+          Object.defineProperty(nodeAt("a"), "title", {
             get: () => {
               throw thrown;
             },
@@ -833,7 +833,7 @@ async function refusal(kind: RefusalKind) {
         : `untyped ${typeof error}`;
   }
   const ms = performance.now() - start;
-  window.comb.load({ nodes: [node("ok")], edges: [] });
+  window.comb.load({ nodes: [nodeAt("ok")], edges: [] });
   await window.comb.whenRendered();
   return { problem, ms, titles: window.inspect().nodes.map(({ title }) => title) };
 }
@@ -938,7 +938,7 @@ test("load draws identifiers of 256 characters", async ({ page }) => {
  *  units each, then, before a frame draws them, a graph of one node; reports the problem and the
  *  time of the first load, and what the canvas drew. */
 async function budgeted(length: number) {
-  const node = (id: string, x: number) => ({ id, title: id, x, y: 0, width: 220, height: 64 });
+  const nodeAt = (id: string, x: number) => ({ id, title: id, x, y: 0, width: 220, height: 64 });
   const edges = Array.from({ length: 1_000_000 }, (_, i) => ({
     id: String(i).padStart(length, "e"),
     source: "a",
@@ -947,12 +947,12 @@ async function budgeted(length: number) {
   const start = performance.now();
   let problem: unknown = null;
   try {
-    window.comb.load({ nodes: [node("a", 0), node("b", 300)], edges });
+    window.comb.load({ nodes: [nodeAt("a", 0), nodeAt("b", 300)], edges });
   } catch (error) {
     problem = (error as Error & { problem: unknown }).problem;
   }
   const ms = performance.now() - start;
-  window.comb.load({ nodes: [node("ok", 0)], edges: [] });
+  window.comb.load({ nodes: [nodeAt("ok", 0)], edges: [] });
   await window.comb.whenRendered();
   return { problem, ms, titles: window.inspect().nodes.map(({ title }) => title) };
 }
@@ -987,13 +987,13 @@ test("load takes a million edges whose identifiers hold 63 million code units, a
  *  each after a valid load, and reports the kind of problem each threw. Its table is typed by the
  *  kinds, so that a kind the union gains or loses fails the type check. */
 async function everyKind() {
-  const node = (id: string) => ({ id, title: id, x: 0, y: 0, width: 220, height: 64 });
-  const two = [node("a"), node("b")];
-  const edge = { id: "e", source: "a", target: "b" };
+  const nodeAt = (id: string) => ({ id, title: id, x: 0, y: 0, width: 220, height: 64 });
+  const two = [nodeAt("a"), nodeAt("b")];
+  const anEdge = { id: "e", source: "a", target: "b" };
   const label = { text: "e", t: 0.5, offset: 0 };
   const load = (graph: unknown) => () => window.comb.load(graph as GraphData);
-  const nodes = (fields: object) => load({ nodes: [{ ...node("a"), ...fields }], edges: [] });
-  const edges = (fields: object) => load({ nodes: two, edges: [{ ...edge, ...fields }] });
+  const nodes = (fields: object) => load({ nodes: [{ ...nodeAt("a"), ...fields }], edges: [] });
+  const edges = (fields: object) => load({ nodes: two, edges: [{ ...anEdge, ...fields }] });
   const long = "x".repeat(256);
   const calls: Record<GraphDataProblem["kind"], () => void> = {
     malformed: load(null),
@@ -1004,8 +1004,8 @@ async function everyKind() {
     invalidTitle: nodes({ title: 5 }),
     titleTooLong: nodes({ title: "x".repeat(1001) }),
     unknownPatchField: () => window.comb.updateNode("a", { id: "b" } as never),
-    duplicateNode: load({ nodes: [node("a"), node("a")], edges: [] }),
-    duplicateEdge: load({ nodes: two, edges: [edge, edge] }),
+    duplicateNode: load({ nodes: [nodeAt("a"), nodeAt("a")], edges: [] }),
+    duplicateEdge: load({ nodes: two, edges: [anEdge, anEdge] }),
     missingNode: edges({ target: "z" }),
     nonFiniteLabel: edges({ label: { ...label, t: Number.NaN } }),
     invalidLabelText: edges({ label: { ...label, text: 5 } }),
@@ -1017,21 +1017,21 @@ async function everyKind() {
     idTooLong: nodes({ id: long + "x" }),
     // 250,001 identifiers of 256 code units hold more than 64,000,000 together.
     idBudgetExceeded: load({
-      nodes: Array.from({ length: 250_001 }, () => node(long)),
+      nodes: Array.from({ length: 250_001 }, () => nodeAt(long)),
       edges: [],
     }),
     unknownNode: () => window.comb.updateNode("z", { title: "Z" }),
     unknownEdge: () => window.comb.removeEdges(["z"]),
     selfEdge: () => window.comb.addEdge({ id: "e", source: "a", target: "a" }),
     unknownEdgePatchField: () => {
-      window.comb.addNode(node("b"));
+      window.comb.addNode(nodeAt("b"));
       window.comb.addEdge({ id: "e", source: "a", target: "b" });
       window.comb.updateEdge("e", { width: 2 } as never);
     },
   };
   const thrown: Record<string, unknown> = {};
   for (const [kind, call] of Object.entries(calls)) {
-    window.comb.load({ nodes: [node("a")], edges: [] });
+    window.comb.load({ nodes: [nodeAt("a")], edges: [] });
     try {
       call();
       thrown[kind] = "accepted";

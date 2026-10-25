@@ -30,19 +30,19 @@ test("the example's copy holds a dragged node's position, its new title, and its
 
   // Retitled through Comb, as any host would, not through the sidebar's own handler.
   await page.evaluate(
-    ({ northStar, edge }) => {
-      window.comb.updateNode(northStar, { title: "North star" });
-      window.comb.updateEdge(edge, { color: 0x3366cc, dash: [6, 4], label: null });
+    ({ northStar: star, edge: edgeId }) => {
+      window.comb.updateNode(star, { title: "North star" });
+      window.comb.updateEdge(edgeId, { color: 0x3366cc, dash: [6, 4], label: null });
     },
     { northStar, edge },
   );
 
   const copy = await page.evaluate(
-    ({ northStar, edge }) => {
+    ({ northStar: star, edge: edgeId }) => {
       const graph = window.exampleGraph();
       return {
-        node: graph.nodes.find(({ id }) => id === northStar),
-        edge: graph.edges.find(({ id }) => id === edge),
+        node: graph.nodes.find(({ id }) => id === star),
+        edge: graph.edges.find(({ id }) => id === edgeId),
       };
     },
     { northStar, edge },

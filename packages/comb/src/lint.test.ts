@@ -98,11 +98,12 @@ describe("a local that shadows an outer name", () => {
     "export const g = told;",
   ].join("\n");
 
-  test("is an error in the library, its tests, the example, and the benchmark, naming its line", async () => {
+  test("is an error in the library, its tests, the example, its browser tests, and the benchmark, naming its line", async () => {
     for (const filePath of [
       "packages/comb/src/interaction/pan.ts",
       "packages/comb/src/api/editors.test.ts",
       "examples/metric-tree/src/main.ts",
+      "examples/metric-tree/e2e/remove.spec.ts",
       "bench/run.ts",
     ]) {
       const [result] = await eslint.lintText(code, { filePath });
@@ -112,9 +113,5 @@ describe("a local that shadows an outer name", () => {
         found: [{ ruleId: "@typescript-eslint/no-shadow", line: 3 }],
       });
     }
-  });
-
-  test("is not reported in the browser tests yet", async () => {
-    expect(await reported(code, "examples/metric-tree/e2e/remove.spec.ts")).toEqual([]);
   });
 });

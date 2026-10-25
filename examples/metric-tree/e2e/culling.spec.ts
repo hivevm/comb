@@ -31,9 +31,9 @@ test("what lies entirely outside the viewport is not bound to a display object",
  *  which holds the whole path, and labels by their point grown by the label reach. The reach is
  *  the scene's least: a label wider than any the example draws would be flagged wrongly. */
 async function drawnBeyond(page: Page, margin: number): Promise<string[]> {
-  return page.evaluate((margin) => {
+  return page.evaluate((grown) => {
     const { nodes, edges, edgeLabels } = window.inspect();
-    const view = window.visibleRect(margin);
+    const view = window.visibleRect(grown);
     const meets = (minX: number, minY: number, maxX: number, maxY: number) =>
       minX <= view.maxX && view.minX <= maxX && minY <= view.maxY && view.minY <= maxY;
     const pull = 40 + 1;
@@ -98,8 +98,8 @@ test("at every level, nothing entirely outside the viewport and its margin is dr
     // The step only shows the bound where the zoom leaves the last query's reach: the viewport
     // shrinks by (1 - 1 / zoom) of its width, which with the margin must exceed twice the margin.
     const zoom = rescale - 0.01;
-    const { width } = await canvasSize(page);
-    expect(((width * (1 - 1 / zoom)) / 2 + cullingMargin) * zoom).toBeGreaterThan(
+    const { width: canvasWidth } = await canvasSize(page);
+    expect(((canvasWidth * (1 - 1 / zoom)) / 2 + cullingMargin) * zoom).toBeGreaterThan(
       2 * cullingMargin,
     );
     await setViewport(page, centred(scale * zoom));

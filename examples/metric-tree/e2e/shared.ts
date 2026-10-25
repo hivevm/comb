@@ -25,8 +25,8 @@ export async function open(page: Page, query = ""): Promise<void> {
 /** The screen point at the centre of a drawn node. */
 export async function screenCentre(page: Page, id: string) {
   return page.evaluate(
-    ({ id, w, h }) => {
-      const node = window.inspect().nodes.find((candidate) => candidate.id === id)!;
+    ({ id: wanted, w, h }) => {
+      const node = window.inspect().nodes.find((candidate) => candidate.id === wanted)!;
       const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();
       const at = window.screenPoint(node.x + w / 2, node.y + h / 2);
       return { x: rect.left + at.x, y: rect.top + at.y };
@@ -53,8 +53,8 @@ export async function canvasOrigin(page: Page): Promise<{ left: number; top: num
 
 /** Sets the viewport through Comb's interface and waits until it is drawn. */
 export async function setViewport(page: Page, viewport: { x: number; y: number; scale: number }) {
-  await page.evaluate(async (viewport) => {
-    window.comb.setViewport(viewport);
+  await page.evaluate(async (wanted) => {
+    window.comb.setViewport(wanted);
     await window.comb.whenRendered();
   }, viewport);
 }
@@ -69,15 +69,15 @@ export async function strokeOf(page: Page, color: number) {
   });
   const png = await page.locator("#canvas canvas").screenshot();
   const stroke = await page.evaluate(
-    async ({ png, color }) => {
-      const bytes = Uint8Array.from(atob(png), (char) => char.charCodeAt(0));
+    async ({ png: shot, color: ink }) => {
+      const bytes = Uint8Array.from(atob(shot), (char) => char.charCodeAt(0));
       const image = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
       const ratio = image.width / document.querySelector("#canvas canvas")!.clientWidth;
       const copy = document.createElement("canvas");
       [copy.width, copy.height] = [image.width, image.height];
       const context = copy.getContext("2d")!;
       context.drawImage(image, 0, 0);
-      const want = [(color >> 16) & 0xff, (color >> 8) & 0xff, color & 0xff];
+      const want = [(ink >> 16) & 0xff, (ink >> 8) & 0xff, ink & 0xff];
       const hits: boolean[] = [];
       for (let x = 340; x <= 680; x++) {
         const { data } = context.getImageData(Math.round(x * ratio), Math.round(132 * ratio), 1, 1);
@@ -124,7 +124,7 @@ export async function loaded(
   graph: GraphData,
   viewport: { x: number; y: number; scale: number } = { x: 100, y: 100, scale: 1 },
 ): Promise<void> {
-  await page.evaluate((graph) => window.useGraph(graph), graph);
+  await page.evaluate((data) => window.useGraph(data), graph);
   await recordChanges(page);
   await page.evaluate(() => window.comb.whenRendered());
   await setViewport(page, viewport);
@@ -143,9 +143,9 @@ export async function selections(page: Page): Promise<unknown[]> {
 /** The page point at which the canvas shows the world point `(x, y)`. */
 export async function pagePoint(page: Page, x: number, y: number) {
   return page.evaluate(
-    ({ x, y }) => {
+    ({ x: worldX, y: worldY }) => {
       const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();
-      const screen = window.screenPoint(x, y);
+      const screen = window.screenPoint(worldX, worldY);
       return { x: rect.left + screen.x, y: rect.top + screen.y };
     },
     { x, y },

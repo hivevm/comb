@@ -39,9 +39,9 @@ async function pan(
   step = 1,
 ) {
   await page.evaluate(
-    async ({ start, frames, step }) => {
-      for (let i = 1; i <= frames; i++) {
-        window.comb.setViewport({ ...start, x: start.x - i * step });
+    async ({ start: from, frames: count, step: stride }) => {
+      for (let i = 1; i <= count; i++) {
+        window.comb.setViewport({ ...from, x: from.x - i * stride });
         await window.comb.whenRendered();
       }
     },
