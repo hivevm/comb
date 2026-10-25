@@ -4,7 +4,7 @@
 // refuses the call, which then removes nothing (ADR-0028, Q-7).
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData } from "comb";
-import { loaded, node, open, screenCentre, told } from "./shared";
+import { drawnGraph, loaded, node, open, screenCentre, told } from "./shared";
 
 /** The viewport the tests look through: a scale of 0.5 with the world's origin at (100, 100). */
 const HALF = { x: 100, y: 100, scale: 0.5 };
@@ -23,12 +23,8 @@ const STAR: GraphData = {
 
 /** The nodes and edges the canvas draws once it has drawn, and what `onChange` told. */
 async function drawn(page: Page) {
-  const ids = await page.evaluate(async () => {
-    await window.comb.whenRendered();
-    const { nodes, edges } = window.inspect();
-    return { nodes: nodes.map(({ id }) => id), edges: edges.map(({ id }) => id).sort() };
-  });
-  return { ...ids, told: await told(page) };
+  const { nodes, edges } = await drawnGraph(page);
+  return { nodes: nodes.map(({ id }) => id), edges: edges.sort(), told: await told(page) };
 }
 
 test("removeNodes removes a node and its three edges, and tells one nodesRemoved", async ({

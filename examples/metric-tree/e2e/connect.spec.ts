@@ -4,7 +4,7 @@
 // reaches makes none, and a refused name reaches the page as an error (ADR-0030).
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData } from "comb";
-import { dragWorld, loaded, node, open, pagePoint, setViewport, told } from "./shared";
+import { dragWorld, drawnGraph, loaded, node, open, pagePoint, setViewport, told } from "./shared";
 
 /** Node `a` above `b` and `c` beside it, and an edge from `a` to `c`. */
 const NODES: GraphData = {
@@ -25,14 +25,8 @@ function drag(page: Page, from: [number, number], to: [number, number]) {
 
 /** The edges drawn once the canvas has drawn, and what was told since the load. */
 async function after(page: Page) {
-  const edges = await page.evaluate(async () => {
-    await window.comb.whenRendered();
-    return window
-      .inspect()
-      .edges.map(({ id }) => id)
-      .sort();
-  });
-  return { edges, told: await told(page) };
+  const { edges } = await drawnGraph(page);
+  return { edges: edges.sort(), told: await told(page) };
 }
 
 // The connectors: a's bottom at (110, 64), b's top at (110, 300), c's left at (500, 32).

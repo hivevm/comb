@@ -1,7 +1,15 @@
 // A node dropped from the host's palette (G-1): `worldPointAt` names the world point under a
 // point of the page, and the example adds a node of the palette's kind there (ADR-0030).
 import { expect, test, type Page } from "@playwright/test";
-import { NODE_HEIGHT, NODE_WIDTH, open, screenCentre, setViewport } from "./shared";
+import {
+  NODE_HEIGHT,
+  NODE_WIDTH,
+  open,
+  recordChanges,
+  screenCentre,
+  setViewport,
+  told,
+} from "./shared";
 
 /** Moves the canvas away from the page's corner, by a margin on its left and top, and scales it
  *  with CSS by `scale`, and waits until Comb has drawn at its new size. */
@@ -72,21 +80,17 @@ test("a kind dragged from the palette and dropped on the canvas becomes a node u
   await open(page);
   await offsetCanvas(page);
   await setViewport(page, { x: 40, y: 30, scale: 0.8 });
-  await page.evaluate(() => {
-    const w = window as unknown as { told: unknown[] };
-    w.told = [];
-    window.comb.onChange((change) => w.told.push(change));
-  });
+  await recordChanges(page);
   const canvas = page.locator("#canvas canvas");
   const box = (await canvas.boundingBox())!;
   // Far below the tree, where no node lies.
   const at = { x: 500, y: box.height - 60 };
   await page.locator('#palette [data-kind="epic"]').dragTo(canvas, { targetPosition: at });
-  const result = await page.evaluate(async () => {
+  const dropped = await page.evaluate(async () => {
     await window.comb.whenRendered();
-    const node = window.inspect().nodes.find(({ id }) => id === "epic-1");
-    return { node, told: (window as unknown as { told: unknown[] }).told };
+    return window.inspect().nodes.find(({ id }) => id === "epic-1");
   });
+  const result = { node: dropped, told: await told(page) };
   // The drop lies at the node's centre: world (500 - 40, height - 60 - 30) / 0.8.
   const centre = { x: (at.x - 40) / 0.8, y: (at.y - 30) / 0.8 };
   expect(result.node).toMatchObject({ id: "epic-1", title: "New epic" });

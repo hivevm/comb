@@ -6,6 +6,13 @@ import { NODE_HEIGHT, NODE_WIDTH } from "../src/graph";
 
 export { NODE_HEIGHT, NODE_WIDTH };
 
+declare global {
+  interface Window {
+    /** `node` of these helpers in the page, for code that runs there; `open` installs it. */
+    node: (id: string, x?: number, y?: number) => NodeData;
+  }
+}
+
 /** The Content Security Policy of Q-6, which the test server sends with every response. */
 export const POLICY = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'";
 
@@ -14,12 +21,18 @@ export async function sceneNumbers(page: Page) {
   return page.evaluate(() => window.sceneNumbers());
 }
 
-/** Opens the example and waits until its first load has drawn. */
+/** Opens the example, waits until its first load has drawn, and installs `node` in the page. */
 export async function open(page: Page, query = ""): Promise<void> {
   await page.goto(`/${query}`);
   // The example sets loadReport after a top-level await, which the load event does not wait for.
   await page.waitForFunction(() => "loadReport" in window);
   await page.evaluate(() => window.loadReport);
+  await page.evaluate(
+    ([width, height]) => {
+      window.node = (id, x = 0, y = 0) => ({ id, title: id, x, y, width, height });
+    },
+    [NODE_WIDTH, NODE_HEIGHT] as const,
+  );
 }
 
 /** The screen point at the centre of a drawn node. */
@@ -95,7 +108,8 @@ export async function strokeOf(page: Page, color: number) {
   return stroke;
 }
 
-/** A node of the example's size at `x, y`, titled by its identifier. */
+/** A node of the example's size at `x, y`, titled by its identifier; `window.node` makes the same
+ *  in the page. */
 export const node = (id: string, x = 0, y = 0): NodeData => ({
   id,
   title: id,
@@ -128,6 +142,20 @@ export async function loaded(
   await recordChanges(page);
   await page.evaluate(() => window.comb.whenRendered());
   await setViewport(page, viewport);
+}
+
+/** What the canvas draws once the frames scheduled so far have rendered: each node's identifier,
+ *  place, and title, and each edge's identifier, in the order drawn. Each spec narrows it to what
+ *  its tests compare. */
+export async function drawnGraph(page: Page) {
+  return page.evaluate(async () => {
+    await window.comb.whenRendered();
+    const { nodes, edges } = window.inspect();
+    return {
+      nodes: nodes.map(({ id, x, y, title }) => ({ id, x, y, title })),
+      edges: edges.map(({ id }) => id),
+    };
+  });
 }
 
 /** The changes `onChange` told since `recordChanges`. */

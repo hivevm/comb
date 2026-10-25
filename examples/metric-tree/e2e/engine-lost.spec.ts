@@ -65,7 +65,7 @@ test("after a trap in load, every call that needs the engine throws an EngineLos
   // Verifies: ADR-0021, Q-7
   const errors = await openWithErrors(page);
   const outcomes = await page.evaluate(async () => {
-    const graph = { nodes: [{ id: "a", title: "a", x: 0, y: 0, width: 220, height: 64 }] };
+    const graph = { nodes: [window.node("a")] };
     const { comb, outcome } = window;
     const selection = comb.onSelectionChange(() => {});
     window.trapNextCall();
@@ -223,7 +223,7 @@ test("a trap in one of two Combs on a page loses the engine for both", async ({ 
       engine: fetch(window.engineUrl),
     });
     const graph = {
-      nodes: [{ id: "a", title: "a", x: 0, y: 0, width: 220, height: 64 }],
+      nodes: [window.node("a")],
       edges: [],
     };
     second.load(graph);

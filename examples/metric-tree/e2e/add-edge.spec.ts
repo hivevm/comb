@@ -361,10 +361,7 @@ for (const [name, value] of [
           return (error as Error & { problem: unknown }).problem;
         }
       };
-      const nodes = [
-        { id: "a", title: "a", x: 0, y: 0, width: 220, height: 64 },
-        { id: "b", title: "b", x: 600, y: 0, width: 220, height: 64 },
-      ];
+      const nodes = [window.node("a"), window.node("b", 600)];
       const edge = { id: "x", source: "a", target: "b" };
       return [
         problem(() => window.comb.addEdge({ ...edge, targetSide: side } as never)),
