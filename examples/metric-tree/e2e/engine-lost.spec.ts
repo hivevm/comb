@@ -255,17 +255,17 @@ test("a listener of onEngineLost is called once, also when registered after the 
   const errors = await openWithErrors(page);
   const told = await page.evaluate(async () => {
     const { comb, outcome } = window;
-    const told: string[] = [];
-    comb.onEngineLost((error) => told.push(`before: ${error.name}`));
-    const remove = comb.onEngineLost(() => told.push("removed"));
+    const heard: string[] = [];
+    comb.onEngineLost((error) => heard.push(`before: ${error.name}`));
+    const remove = comb.onEngineLost(() => heard.push("removed"));
     remove();
     window.trapNextCall();
     outcome(() => comb.load({ nodes: [], edges: [] }));
     outcome(() => comb.load({ nodes: [], edges: [] }));
-    const later = comb.onEngineLost((error) => told.push(`after: ${error.name}`));
-    told.push(typeof later);
+    const later = comb.onEngineLost((error) => heard.push(`after: ${error.name}`));
+    heard.push(typeof later);
     later();
-    return told;
+    return heard;
   });
   expect(told).toEqual(["before: EngineLostError", "after: EngineLostError", "function"]);
   expect(errors).toEqual([]);

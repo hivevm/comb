@@ -45,7 +45,7 @@ function disagreements(store: GraphStore, bridge: Bridge): string[] {
   if (slots.size !== nodes.filter(Boolean).length) found.push("the map names another node count");
   for (let slot = 0; slot <= nodes.length; slot++) {
     const kept = nodes[slot];
-    const store = kept
+    const stored = kept
       ? edges.flatMap((edge, at) =>
           edge && (edge.source === kept.id || edge.target === kept.id) ? [at] : [],
         )
@@ -56,8 +56,8 @@ function disagreements(store: GraphStore, bridge: Bridge): string[] {
     } catch {
       engine = "none";
     }
-    if (JSON.stringify(engine) !== JSON.stringify(store))
-      found.push(`slot ${slot}: the engine holds ${String(engine)}, the store ${String(store)}`);
+    if (JSON.stringify(engine) !== JSON.stringify(stored))
+      found.push(`slot ${slot}: the engine holds ${String(engine)}, the store ${String(stored)}`);
   }
   return found;
 }

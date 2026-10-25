@@ -143,7 +143,7 @@ async function nodeNearCentre(page: Page): Promise<{ id: string; at: Point }> {
 }
 
 async function drawnNode(page: Page, id: string) {
-  return page.evaluate((id) => window.inspect().nodes.find((node) => node.id === id)!, id);
+  return page.evaluate((wanted) => window.inspect().nodes.find((node) => node.id === wanted)!, id);
 }
 
 async function viewport(page: Page) {
@@ -163,7 +163,7 @@ function expectEffect(ok: boolean, what: string): void {
 async function installEdits(page: Page, near: string): Promise<void> {
   const at = await drawnNode(page, near);
   await page.evaluate(
-    ({ near, at }) => {
+    ({ near: source, at: corner }) => {
       const w = window as unknown as BenchEdits;
       const ofStep = (i: number) => {
         const round = Math.floor((i - 1) / 4);
@@ -186,12 +186,12 @@ async function installEdits(page: Page, near: string): Promise<void> {
           comb.addNode({
             id: node,
             title: "edit",
-            x: at.x + 40,
-            y: at.y + 90,
+            x: corner.x + 40,
+            y: corner.y + 90,
             width: 160,
             height: 48,
           });
-        else if (kind === 1) comb.addEdge({ id: edge, source: near, target: node });
+        else if (kind === 1) comb.addEdge({ id: edge, source, target: node });
         else if (kind === 2) comb.removeEdges([edge]);
         else comb.removeNodes([node]);
       };
@@ -228,7 +228,9 @@ async function editGesture(page: Page): Promise<Measure> {
   const beside = await nodeNearCentre(page);
   await installEdits(page, beside.id);
   const edited = await frameTimes(page, () =>
-    steps(page, (i) => page.evaluate((i) => (window as unknown as BenchEdits).benchEdit(i), i)),
+    steps(page, (i) =>
+      page.evaluate((edit) => (window as unknown as BenchEdits).benchEdit(edit), i),
+    ),
   );
   const checked = await page.evaluate(async (made) => {
     await window.comb.whenRendered();
@@ -257,13 +259,17 @@ async function editGesture(page: Page): Promise<Measure> {
 async function panAt(page: Page, scale: number): Promise<Measure> {
   const box = (await page.locator("#canvas canvas").boundingBox())!;
   await page.evaluate(
-    async ({ scale, width, height }) => {
+    async ({ scale: least, width, height }) => {
       const nodes = window.inspect().nodes;
       const xs = nodes.map((node) => node.x);
       const ys = nodes.map((node) => node.y);
       const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
       const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
-      window.comb.setViewport({ x: width / 2 - cx * scale, y: height / 2 - cy * scale, scale });
+      window.comb.setViewport({
+        x: width / 2 - cx * least,
+        y: height / 2 - cy * least,
+        scale: least,
+      });
       await window.comb.whenRendered();
     },
     { scale, width: box.width, height: box.height },

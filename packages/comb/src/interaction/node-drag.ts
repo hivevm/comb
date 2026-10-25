@@ -3,20 +3,20 @@
 import type { Hit } from "../bridge";
 import type { Context, Gesture } from "./gesture";
 
-/** A drag of the node `hit` names, pressed at the screen point `(x, y)`, the node selected; none
- *  where `hit` names no node the graph holds. */
+/** A drag of the node `hit` names, pressed at the screen point `(pressX, pressY)`, the node
+ *  selected; none where `hit` names no node the graph holds. */
 export function nodeDrag(
   { store, bridge }: Context,
   hit: Hit,
-  x: number,
-  y: number,
+  pressX: number,
+  pressY: number,
 ): Gesture | undefined {
   const node = hit.kind === "node" ? store.getState().nodes[hit.slot] : undefined;
   if (hit.kind !== "node" || !node) return undefined;
   const { slot } = hit;
   const { id } = node;
   store.getState().select({ kind: "node", id });
-  let [lastX, lastY, moved] = [x, y, false];
+  let [lastX, lastY, moved] = [pressX, pressY, false];
   return {
     grabs: true,
     move(x, y) {

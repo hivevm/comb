@@ -4,13 +4,14 @@ import type { Hit } from "../bridge";
 import type { Context, Gesture } from "./gesture";
 import { toWorld } from "../store/viewport";
 
-/** A drag of the label `hit` names, held where the press at the screen point `(x, y)` met it,
- *  the label's edge selected; none where `hit` names no label of an edge the graph holds. */
+/** A drag of the label `hit` names, held where the press at the screen point `(pressX, pressY)`
+ *  met it, the label's edge selected; none where `hit` names no label of an edge the graph
+ *  holds. */
 export function labelDrag(
   { store, bridge }: Context,
   hit: Hit,
-  x: number,
-  y: number,
+  pressX: number,
+  pressY: number,
 ): Gesture | undefined {
   const edge = hit.kind === "label" ? store.getState().edges[hit.slot] : undefined;
   const point = hit.kind === "label" ? bridge.labelPoint(hit.slot) : undefined;
@@ -18,8 +19,8 @@ export function labelDrag(
   const { slot } = hit;
   const { id } = edge;
   store.getState().select({ kind: "edge", id });
-  const at = toWorld(store.getState().viewport, x, y);
-  const grab = { x: at.x - point.x, y: at.y - point.y };
+  const pressed = toWorld(store.getState().viewport, pressX, pressY);
+  const grab = { x: pressed.x - point.x, y: pressed.y - point.y };
   let placed: { t: number; offset: number } | null = null;
   return {
     grabs: true,
@@ -29,8 +30,8 @@ export function labelDrag(
       store.getState().positionsMoved();
     },
     end() {
-      const edge = store.getState().edges[slot];
-      if (placed && edge?.id === id && edge.label)
+      const held = store.getState().edges[slot];
+      if (placed && held?.id === id && held.label)
         store.getState().labelMoved(id, placed.t, placed.offset);
     },
     // A load, a removal of the edge, or a label the host cleared, which is taken as its edge
