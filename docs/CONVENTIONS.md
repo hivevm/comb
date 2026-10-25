@@ -70,3 +70,7 @@ skimmed. The design revision drops what prevented nothing
   from an interface, files under a root, marks from the bridge) fails, naming the source, where it
   reads none or meets a shape it does not know, and its self-test plays that case; a check that
   reads nothing passes everything.
+- **A ticket names its paths in full.** *What to build* and *Acceptance criteria* write every path
+  from the repository root, `packages/comb/src/api/editors.ts` and not `api/editors.ts`, so that
+  `scripts/check-plan-modes.sh` reads each one against the protected parts of
+  [ADR-0007](adr/0007-harness.md); a short form passes that check unread.
