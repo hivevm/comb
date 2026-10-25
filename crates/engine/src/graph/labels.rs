@@ -113,9 +113,8 @@ mod tests {
             let mut rng = Lcg(seed);
             // Paths of random sides, backwards ones among them, near the origin and far from it.
             let far = if seed % 2 == 0 { 0.0 } else { 3e6 };
-            let (mut model, mut graph) = Model::random(&mut rng, 30, 60);
+            let (mut model, _) = Model::random(&mut rng, 30, 60);
             let all: Vec<u32> = (0..30).collect();
-            graph.translate(&all, far as f32, -far as f32).unwrap();
             model.translate(&all, far as f32, -far as f32);
             for edge in 0..60 {
                 let path = model.path(edge);

@@ -140,7 +140,8 @@ impl Graph {
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::{Lcg, Model};
+    use super::super::LabelPlacement;
+    use super::super::tests::{Lcg, Model, random_inputs};
     use super::*;
     use crate::geometry::{EdgePath, PIXEL_LIMIT};
 
@@ -201,7 +202,7 @@ mod tests {
         let found = (0..500)
             .filter(|_| {
                 let p = Point::new(rng.range(-2000.0, 2000.0), rng.range(-2000.0, 2000.0));
-                graph.node_at(p).is_some()
+                scan(&model, p).is_some()
             })
             .count();
         assert!(found > 0);
@@ -402,9 +403,17 @@ mod tests {
     }
 
     /// A random graph and its model with a node and an edge removed, two labels of three measured,
-    /// and a few nodes moved after.
+    /// and a few nodes moved after. Every fifth edge's label sits where the edge leaves its source,
+    /// on the connector there, so that a press there finds a connector and a label both.
     fn scanned_graph(rng: &mut Lcg) -> (Model, Graph) {
-        let (mut model, mut graph) = Model::random(rng, 30, 40);
+        let (positions, sizes, mut specs) = random_inputs(rng, 30, 40);
+        for spec in specs.iter_mut().step_by(5) {
+            spec.label = Some(LabelPlacement {
+                t: 0.0,
+                offset: 0.0,
+            });
+        }
+        let (mut model, mut graph) = Model::of(positions, sizes, specs);
         graph.remove_nodes(&[4]).unwrap();
         model.remove_nodes(&[4]);
         let gone = model.edges().find(|&e| e >= 11).unwrap();
@@ -432,7 +441,23 @@ mod tests {
             Point::new(at.x + rng.range(-bx, bx), at.y + rng.range(-by, by))
         };
         let anywhere = |rng: &mut Lcg| around(Point::new(0.0, 0.0), (2500.0, 2500.0), rng);
-        match rng.below(4) {
+        match rng.below(5) {
+            // At a connector of a node a measured label lies on, where both may be hit.
+            4 => {
+                let on: Vec<u32> = model
+                    .edges()
+                    .filter(|&e| model.pills[e as usize].is_some())
+                    .filter(|&e| model.specs[e as usize].label.is_some_and(|l| l.t == 0.0))
+                    .collect();
+                match on.is_empty() {
+                    true => anywhere(rng),
+                    false => around(
+                        model.path(on[rng.below(on.len()) as usize]).source,
+                        (pixel, pixel),
+                        rng,
+                    ),
+                }
+            }
             0 => {
                 let side = SIDES[rng.below(4) as usize];
                 let c = side.connector(&model.bounds(rng.below(nodes)));
@@ -495,6 +520,9 @@ mod tests {
         // How often the scan found each kind, connector, label, node, and edge, so that none goes
         // untested.
         let mut found = [0; 4];
+        // How often a press at the near level found a connector and a label both, where only the
+        // order of the two decides.
+        let mut both = 0;
         for seed in 1..=3 {
             let mut rng = Lcg(100 + seed);
             let (model, mut graph) = scanned_graph(&mut rng);
@@ -502,6 +530,18 @@ mod tests {
                 let level = [Level::Near, Level::Middle, Level::Far][rng.below(3) as usize];
                 let pixel = [0.25, 1.0, 4.0][rng.below(3) as usize];
                 let p = press_near(&model, pixel, &mut rng);
+                if level == Level::Near
+                    && matches!(
+                        scan(&model, p, pixel, level, true),
+                        Scan::Exactly(Target::Connector(..))
+                    )
+                    && matches!(
+                        scan(&model, p, pixel, level, false),
+                        Scan::Exactly(Target::Label(_))
+                    )
+                {
+                    both += 1;
+                }
                 for connectors in [false, true] {
                     let hit = graph.hit_at(p, pixel, level, connectors);
                     let at = format!("{p:?}, {pixel}, {level:?}, connectors {connectors}");
@@ -514,6 +554,10 @@ mod tests {
             }
         }
         assert!(found.iter().all(|&n| n > 20), "{found:?}");
+        assert!(
+            both > 20,
+            "{both} presses where a connector and a label lie both"
+        );
     }
 
     #[test]
