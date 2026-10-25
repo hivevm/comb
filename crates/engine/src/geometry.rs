@@ -17,6 +17,12 @@ pub const WORLD_LIMIT: f64 = 1_329_227_995_784_915_872_903_807_060_280_344_576.0
 /// zoom, and small enough that no stroke or arrowhead reaches past a sixth of `WORLD_LIMIT`.
 pub(crate) const PIXEL_LIMIT: f64 = WORLD_LIMIT / 64.0;
 
+/// `pixel` as a query and a hit test take it: a screen pixel beyond any zoom is the largest a query
+/// strokes for, `PIXEL_LIMIT`, so that every reach and stroke derived from it stays finite.
+pub(crate) fn bounded_pixel(pixel: f64) -> f64 {
+    pixel.min(PIXEL_LIMIT)
+}
+
 /// A point in world coordinates.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Point {

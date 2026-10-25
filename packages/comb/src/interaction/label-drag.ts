@@ -26,6 +26,8 @@ export function labelDrag(
     grabs: true,
     move(x, y) {
       const at = toWorld(store.getState().viewport, x, y);
+      // A point beyond any finite world point, which the engine would refuse, moves nothing.
+      if (!Number.isFinite(at.x - grab.x) || !Number.isFinite(at.y - grab.y)) return;
       placed = bridge.moveLabel(slot, at.x - grab.x, at.y - grab.y);
       store.getState().positionsMoved();
     },

@@ -162,7 +162,8 @@ export interface Bridge {
   labelPoint(slot: number): { x: number; y: number } | undefined;
   /** Places the label of the edge in `slot` at the world point `(x, y)`: at the path parameter
    *  nearest it and its distance along the normal there, which it returns (G-6). Throws a
-   *  `SlotError`. */
+   *  `SlotError`, and a `GraphDataProblem` `malformed` for a point that is not finite, before
+   *  anything moves. */
   moveLabel(slot: number, x: number, y: number): { t: number; offset: number };
   /** The slots of the edges at the nodes in `slots`, in ascending order, as a removal of them
    *  would take along, named before anything is removed (ADR-0022). Throws a `SlotError`. */
@@ -187,7 +188,8 @@ export interface Bridge {
    *  at `level`: where `connectors` asks for them, at the near and middle level, a connector
    *  within 8 screen pixels, of the node drawn on top; else the node drawn on top there, else the
    *  edge drawn on top within 4 screen pixels of its path as the stroke flattens it, else nothing
-   *  (ADR-0025). */
+   *  (ADR-0025). Throws a `GraphDataProblem` `malformed` for a pixel that is not a finite number
+   *  above zero or a point that is not finite. */
   hit(x: number, y: number, pixel: number, level: Level, connectors: boolean): Hit;
 }
 
