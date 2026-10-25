@@ -3,7 +3,16 @@
 // pointer and its distance along the normal there, and the release tells one `labelMoved`.
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData } from "comb";
-import { dragWorld, loaded, node, open, pagePoint, screenCentre, told } from "./shared";
+import {
+  dragWorld,
+  loaded,
+  node,
+  open,
+  pagePoint,
+  screenCentre,
+  setViewport,
+  told,
+} from "./shared";
 
 /** Nodes `a` and `b` side by side and the edge `a-b` between them, straight along y = 32, its
  *  label in the middle at (410, 32). */
@@ -114,6 +123,37 @@ test("a label the host clears mid-drag ends the drag: no error, and no labelMove
   expect((await told<{ kind: string }>(page)).map(({ kind }) => kind)).toEqual(["edgeUpdated"]);
   expect(await labels(page)).toEqual([]);
   expect(errors).toEqual([]);
+});
+
+test("a label drag past every finite world point moves nothing and throws nothing", async ({
+  page,
+}) => {
+  // Verifies: ADR-0025, ADR-0030
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page);
+  await loaded(page, PAIR);
+  // Grabbed 6 to the right of its point and moved with the point to (410, -60), as above.
+  const [a, b] = [await pagePoint(page, 416, 32), await pagePoint(page, 416, -60)];
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move(b.x, b.y, { steps: 4 });
+  // The host sets a viewport, finite in each number, under which every screen point lies beyond
+  // any finite world point; the button stays held, and the pointer moves on.
+  await page.evaluate(() => window.comb.setViewport({ x: 1e306, y: 0, scale: 0.005 }));
+  await page.mouse.move(b.x + 30, b.y + 30, { steps: 3 });
+  await page.mouse.up();
+  expect(errors).toEqual([]);
+  const changes = await told<{ kind: string; edge: string; t: number; offset: number }>(page);
+  expect(changes.map(({ kind }) => kind)).toEqual(["labelMoved"]);
+  expect(changes[0]!.edge).toBe("a-b");
+  expect(changes[0]!.t).toBeCloseTo(0.5, 6);
+  expect(changes[0]!.offset).toBeCloseTo(92, 6);
+  // Back in view, the label lies where the last finite move put it.
+  await setViewport(page, { x: 100, y: 100, scale: 1 });
+  const [label] = await labels(page);
+  expect(label!.x).toBeCloseTo(410, 2);
+  expect(label!.y).toBeCloseTo(-60, 2);
 });
 
 test("a label dragged and then retitled in the sidebar stays where it was dropped", async ({
