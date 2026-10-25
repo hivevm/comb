@@ -47,3 +47,11 @@ skimmed. The design revision drops what prevented nothing
   holds, by a checked conversion or an `expect` whose reason names what bounds the value, since a
   narrowing written without a look at its range can lose what Q-4 or Q-7 needs. The lint makes the
   author look; it does not check the value after the narrowing, which this entry still asks.
+- **Cite the clause a test decides.** A `Verifies:` names the ADR or criterion whose text says what
+  the test asserts, read in that text, not the one nearest the code; a test or check that decides
+  none says so. A citation of a neighbour passes the traceability check and tells the next reader
+  that a decision holds which nothing tests.
+- **A check fails on what it cannot read.** A check that reads its subjects from a source (names
+  from an interface, files under a root, marks from the bridge) fails, naming the source, where it
+  reads none or meets a shape it does not know, and its self-test plays that case; a check that
+  reads nothing passes everything.
