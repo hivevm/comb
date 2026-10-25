@@ -199,9 +199,9 @@ The functional core and its shell follow
   The engine's `hit` says what the pointer is on, at the level of detail of the scale; node views
   and edges take no events.
   `targetAt` of `gesture.ts` is the one hit test: `attachInteraction` asks it from the store's
-  viewport, connectors only where `CombOptions.canConnect` is set, for the press and the hover, and
-  returns it as `hitAt`, for the testing entry, beside the `pointer` of a connection and the
-  function that detaches the input.
+  viewport, connectors only where `CombOptions.canConnect` is set, as `hitAt`, which the gestures'
+  `Context` carries, for the press, the hover, and every move of a connection, and returns it, for
+  the testing entry, beside the `pointer` of a connection and the function that detaches the input.
 - **Render** (`packages/comb/src/render`) — the PixiJS scene (`scene.ts`), which imports nothing
   from interaction: a `world` render group with the layers `EdgesContainer` (`edges.ts`),
   `NodeParticles` (`particles.ts`), `NodesContainer` (`nodes.ts`), `LabelsContainer` (`labels.ts`),

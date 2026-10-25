@@ -5,12 +5,16 @@ import type { Bridge, Hit } from "../bridge";
 import type { GraphState, GraphStore } from "../store";
 import { levelAt, toWorld } from "../store/viewport";
 
-/** What a gesture works on: the store, the bridge to the engine, and the world point a connection
- *  is dragged to, which the store does not hold (ADR-0029). */
+/** What a gesture works on: the store, the bridge to the engine, the world point a connection is
+ *  dragged to, which the store does not hold (ADR-0029), and the one hit test, which the press,
+ *  the hover, and the connection ask (ADR-0025). */
 export interface Context {
   readonly store: GraphStore;
   readonly bridge: Bridge;
   readonly pointer: { x: number; y: number };
+  /** What lies under the screen point `(x, y)`, connectors where the host lets the user
+   *  connect. */
+  readonly hitAt: (x: number, y: number) => Hit;
 }
 
 /** A gesture in progress, begun by a press. */
@@ -31,7 +35,7 @@ export interface Gesture {
 /** What a press at a screen point hits, from the engine's spatial index, at the level of detail
  *  of the viewport's scale, connectors where `connectors` asks for them (ADR-0025). */
 export function targetAt(
-  { store, bridge }: Context,
+  { store, bridge }: Pick<Context, "store" | "bridge">,
   x: number,
   y: number,
   connectors: boolean,

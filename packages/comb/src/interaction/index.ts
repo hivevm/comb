@@ -31,18 +31,12 @@ const CURSORS: Record<Hit["kind"], string> = {
   none: "",
 };
 
-/** Begins what a press at the screen point `(x, y)` does where `hitAt` says it hits (ADR-0025):
- *  on a connector, where the host lets the user connect, a connection; on an edge label, a drag of
- *  it, its edge selected; on a node, a drag of it, the node selected; on an edge, a pan that waits
- *  for the slop, the edge selected; on nothing, a pan, the selection cleared. */
-function begin(
-  context: Context,
-  hitAt: (x: number, y: number) => Hit,
-  x: number,
-  y: number,
-  connect?: Connect,
-): Gesture {
-  const hit = hitAt(x, y);
+/** Begins what a press at the screen point `(x, y)` does where the context's `hitAt` says it hits
+ *  (ADR-0025): on a connector, where the host lets the user connect, a connection; on an edge
+ *  label, a drag of it, its edge selected; on a node, a drag of it, the node selected; on an edge,
+ *  a pan that waits for the slop, the edge selected; on nothing, a pan, the selection cleared. */
+function begin(context: Context, x: number, y: number, connect?: Connect): Gesture {
+  const hit = context.hitAt(x, y);
   return (
     (connect && connection(context, hit, x, y, connect)) ||
     labelDrag(context, hit, x, y) ||
@@ -113,9 +107,9 @@ export function attachInteraction(
   bridge: Bridge,
   connect?: Connect,
 ): Interaction {
-  const context: Context = { store, bridge, pointer: { x: 0, y: 0 } };
   const connecting = connect !== undefined;
-  const hitAt = (x: number, y: number) => targetAt(context, x, y, connecting);
+  const hitAt = (x: number, y: number) => targetAt({ store, bridge }, x, y, connecting);
+  const context: Context = { store, bridge, pointer: { x: 0, y: 0 }, hitAt };
   let gesture: Gesture | null = null;
   app.stage.eventMode = "static";
   app.stage.hitArea = app.screen;
@@ -137,7 +131,7 @@ export function attachInteraction(
     untilLost((event: FederatedPointerEvent) => {
       // A gesture whose release never came ends where the next press begins.
       release(false);
-      gesture = begin(context, hitAt, event.global.x, event.global.y, connect);
+      gesture = begin(context, event.global.x, event.global.y, connect);
       if (gesture.grabs) app.canvas.style.cursor = "grabbing";
     }),
   );
