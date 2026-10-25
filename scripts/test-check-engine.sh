@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Self-test of scripts/check-engine.sh. Verifies: ADR-0008
+# Self-test of scripts/check-engine.sh, which decides no ADR or criterion, so this cites none.
 #
 # Each case builds a tree in a temporary directory with sources under crates/, Cargo.toml,
 # Cargo.lock, and the two engine files, sets their times, runs the check on it, and asserts the

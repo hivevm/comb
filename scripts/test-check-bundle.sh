@@ -12,7 +12,9 @@
 # check fails, where the bridge names no marks, where the build fails, where the package exports
 # no engine file or one that is missing, where the build in test mode fails, where that build
 # lacks either seam's mark, where the engine built in test mode lacks the trap, and where the two
-# engines' glue is missing or differs. Verifies: ADR-0010, ADR-0021
+# engines' glue is missing or differs. The cases of the trap and of the engine built in test mode
+# verify ADR-0021, whose seam of test mode only they keep out of the shipped bundle; those of
+# `detaching` hold the check's own rule and verify none. Verifies: ADR-0021
 #
 # Usage:
 #     scripts/test-check-bundle.sh
