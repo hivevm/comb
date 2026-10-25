@@ -14,11 +14,15 @@ Assert that a `createComb` refused because the engine is lost adds nothing to it
 and that a refusal for a missing engine does the same, as `api/engine.test.ts` already does for
 the latter.
 
+The maintainer changed the first criterion: `createBridge` refuses an engine lost before
+`createComb` runs, before the limits are read, so only a loss while PixiJS initialises tells the
+two orders apart. There ac2cb91's order lets `createComb` resolve. The test of an engine lost
+before the call lands too, as the regression test of `createBridge`'s own refusal.
+
 ## Acceptance criteria
 
-- [ ] Given an engine lost by a trap on the page, when `createComb` is called with a host element
-      of its own, then it rejects with an `EngineLostError` and the host element holds no child
-      (`Verifies: ADR-0021`).
+- [ ] Given the engine lost while PixiJS initialises, when `createComb` runs, then it resolves,
+      or rejects leaving its host element without a child (`Verifies: ADR-0021`).
 - [ ] Broken once: with the limits read after the renderer is created, as before ac2cb91, the test
       fails.
 - [ ] Given `bun run test`, when it runs, then it passes.
@@ -40,28 +44,3 @@ unattended: a test decides it (the criteria above); it adds one assertion or tes
 part the harness ADR keeps with the human (ADR-0007), so a wrong result costs one revert; the
 broken-once run proves it right and a red suite shows it wrong. Stop: if the assertion cannot be
 made to fail by undoing ac2cb91's order within two attempts, hand off with what was tried.
-
-## Where it stands
-
-Handed off at the stop of the *Mode*: the first criterion cannot be made to fail by undoing
-ac2cb91's order, and the test that does fail asserts another outcome than the criterion names.
-
-- **Attempt 1, the criterion as written.** A trap through `window.comb` loses the engine, then
-  `createComb(window.secondHost(), …)` is awaited. It rejects with an `EngineLostError` and the
-  host holds no child, with the limits read before the renderer and after it alike:
-  `createBridge` calls `refuseIfLost()` first, so an engine lost before `createComb` is refused
-  before the limits are read. Arming the trap without springing it does not reach the limits
-  either, as `textLimit`, `idLimit`, and `idBudget` do not spring it.
-- **Attempt 2, the engine lost while PixiJS initialises.** The order of ac2cb91 matters only
-  where the engine is lost during `await app.init(...)`, after the bridge is created. A stand-in
-  for `document.createElement` springs a trap through `window.comb` at the first canvas PixiJS
-  makes. With ac2cb91's order, `createComb` resolves and its canvas is in the host element
-  (`created: ok, children: 1`); with the limits read after `host.appendChild`, it rejects with an
-  `EngineLostError` and leaves the canvas behind (`created: EngineLostError, children: 1`). So the
-  test that fails broken asserts that `createComb` resolves, not that it rejects.
-
-To decide: whether the criterion becomes "given the engine lost while PixiJS initialises,
-`createComb` resolves, or rejects leaving its host element without a child", which attempt 2
-decides; whether that test may stand in for `document.createElement` to time the trap; and
-whether attempt 1 lands too, as the regression test of `createBridge`'s own refusal (ADR-0021)
-that it is.
