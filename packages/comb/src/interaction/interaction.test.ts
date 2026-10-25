@@ -304,7 +304,7 @@ describe("interaction keeps the point a connection is dragged to", () => {
     // The first move leaves a's connector for the empty canvas: the connection is over nothing.
     emit("globalpointermove", 240, 60);
     const over = store.getState().connection;
-    expect(over).toMatchObject({ source: 0, over: null, compatible: false, target: null });
+    expect(over).toEqual({ source: 0, side: "right", over: null, compatible: false, target: null });
     const writes: string[][] = [];
     const unsubscribe = store.subscribe((state, previous) =>
       writes.push(
@@ -330,6 +330,75 @@ describe("interaction keeps the point a connection is dragged to", () => {
 });
 
 describe("interaction connects", () => {
+  test("a move from one connector of a node to another of it retargets the connection", () => {
+    // Verifies: ADR-0024
+    const store = createGraphStore();
+    load(store, {
+      nodes: [
+        { id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 },
+        { id: "b", title: "B", x: 300, y: 0, width: 100, height: 40 },
+      ],
+      edges: [],
+    });
+    const { app, emit } = fakeApp();
+    // The press at x = 100 meets a's right connector, x = 300 b's top one, x = 400 b's right one.
+    const hit = (x: number) =>
+      x < 200
+        ? { kind: "connector", slot: 0, side: "right" }
+        : { kind: "connector", slot: 1, side: x < 350 ? "top" : "right" };
+    const proposals: unknown[] = [];
+    attachInteraction(app, store, fakeBridge(hit).bridge, (proposal) => proposals.push(proposal));
+    emit("pointerdown", 100, 20);
+    emit("globalpointermove", 300, 0);
+    expect(store.getState().connection?.target).toEqual({ slot: 1, side: "top" });
+    // Over, compatibility, and the target's node stay; only the target's side changes.
+    emit("globalpointermove", 400, 20);
+    expect(store.getState().connection).toEqual({
+      source: 0,
+      side: "right",
+      over: 1,
+      compatible: true,
+      target: { slot: 1, side: "right" },
+    });
+    emit("pointerup", 400, 20);
+    expect(proposals).toEqual([
+      { source: "a", sourceSide: "right", target: "b", targetSide: "right" },
+    ]);
+  });
+
+  test("a move over a node the source came to reach since the last move marks it incompatible", () => {
+    // Verifies: ADR-0024
+    const store = createGraphStore();
+    load(store, {
+      nodes: [
+        { id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 },
+        { id: "b", title: "B", x: 300, y: 0, width: 100, height: 40 },
+      ],
+      edges: [],
+    });
+    const { app, emit } = fakeApp();
+    // The press at x = 100 meets a's right connector; right of it lies b's body.
+    const hit = (x: number) =>
+      x < 200 ? { kind: "connector", slot: 0, side: "right" } : { kind: "node", slot: 1 };
+    let edges = new Uint32Array(0);
+    const bridge = { ...fakeBridge(hit).bridge, edgesAt: () => edges } as unknown as Bridge;
+    attachInteraction(app, store, bridge, () => {});
+    emit("pointerdown", 100, 20);
+    emit("globalpointermove", 320, 20);
+    expect(store.getState().connection?.compatible).toBe(true);
+    // The host adds an edge from a to b mid-drag; a move within b's body finds it reached.
+    store.getState().addEdge({ id: "a-b", source: "a", target: "b" }, 0, "host");
+    edges = Uint32Array.of(0);
+    emit("globalpointermove", 330, 20);
+    expect(store.getState().connection).toEqual({
+      source: 0,
+      side: "right",
+      over: 1,
+      compatible: false,
+      target: null,
+    });
+  });
+
   test("a connection a later press ends, its release never having come, proposes no edge", () => {
     // Verifies: ADR-0023, ADR-0024
     const store = createGraphStore();
