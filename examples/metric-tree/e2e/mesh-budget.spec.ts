@@ -12,16 +12,8 @@ test("20,000 edges between two nodes far apart draw zoomed in, and a later graph
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
   await page.evaluate(async () => {
-    const node = (id: string, x: number, y: number) => ({
-      id,
-      title: id,
-      x,
-      y,
-      width: 220,
-      height: 64,
-    });
     window.comb.load({
-      nodes: [node("a", 0, 0), node("b", -1e7, 3e6)],
+      nodes: [window.node("a", 0, 0), window.node("b", -1e7, 3e6)],
       edges: Array.from({ length: 20_000 }, (_, i) => ({ id: `e${i}`, source: "a", target: "b" })),
     });
     await window.comb.whenRendered();
@@ -44,9 +36,8 @@ test("20,000 edges between two nodes far apart draw zoomed in, and a later graph
   expect(drawn).toMatchObject({ rendered: true, edges: 20_000, mesh: { detail: "complete" } });
   expect(drawn.mesh!.vertices).toBeGreaterThan(0);
   const after = await page.evaluate(async () => {
-    const node = (id: string, x: number) => ({ id, title: id, x, y: 0, width: 220, height: 64 });
     window.comb.load({
-      nodes: [node("c", 0), node("d", 300)],
+      nodes: [window.node("c", 0), window.node("d", 300)],
       edges: [{ id: "f", source: "c", target: "d" }],
     });
     window.comb.setViewport({ x: 0, y: 100, scale: 1 });

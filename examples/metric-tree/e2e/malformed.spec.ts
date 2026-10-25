@@ -1,18 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData, GraphDataProblem } from "comb";
-import { node, open, setViewport } from "./shared";
-
-/** The identifiers and places of the nodes the canvas draws, and of its edges. */
-async function drawn(page: Page) {
-  return page.evaluate(async () => {
-    await window.comb.whenRendered();
-    const { nodes, edges } = window.inspect();
-    return {
-      nodes: nodes.map(({ id, x, y, title }) => ({ id, x, y, title })),
-      edges: edges.map(({ id }) => id),
-    };
-  });
-}
+import { drawnGraph, node, open, setViewport } from "./shared";
 
 const edge = (id: string, source: string, target: string) => ({ id, source, target });
 /** Nodes `a` and `b` and an edge `e` between them whose label lies in view at the near level,
@@ -187,7 +175,7 @@ for (const { name, graph, problem } of FIELDS) {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
-    const before = await drawn(page);
+    const before = await drawnGraph(page);
     const refused = await page.evaluate((data) => {
       try {
         window.comb.load(data);
@@ -199,7 +187,7 @@ for (const { name, graph, problem } of FIELDS) {
     }, graph);
     expect(errors).toEqual([]);
     expect(refused).toStrictEqual({ name: "GraphDataError", problem });
-    expect(await drawn(page)).toEqual(before);
+    expect(await drawnGraph(page)).toEqual(before);
   });
 }
 
@@ -213,7 +201,7 @@ for (const { name, graph, problem } of MALFORMED) {
     await open(page);
     // At the near level, with the origin in view, so that an edge label the store kept is drawn.
     await setViewport(page, { x: 100, y: 100, scale: 1 });
-    const before = await drawn(page);
+    const before = await drawnGraph(page);
     expect(before.nodes.length).toBeGreaterThan(0);
     const refused = await page.evaluate((data) => {
       try {
@@ -228,7 +216,7 @@ for (const { name, graph, problem } of MALFORMED) {
     // First, since a value the check let through throws in the next frame, not in `load`.
     expect(errors).toEqual([]);
     expect(refused).toEqual({ name: "GraphDataError", problem });
-    expect(await drawn(page)).toEqual(before);
+    expect(await drawnGraph(page)).toEqual(before);
   });
 }
 
@@ -237,7 +225,7 @@ test("updateNode with an identifier the graph does not hold throws a GraphDataEr
 }) => {
   // Verifies: Q-7, ADR-0028
   await open(page);
-  const before = await drawn(page);
+  const before = await drawnGraph(page);
   const result = await page.evaluate(async () => {
     await window.comb.whenRendered();
     // Two frames with nothing to draw, so that a render the call would schedule is counted.
@@ -259,7 +247,7 @@ test("updateNode with an identifier the graph does not hold throws a GraphDataEr
     refused: { name: "GraphDataError", problem: { kind: "unknownNode", node: "no-such-node" } },
     rendered: 0,
   });
-  expect(await drawn(page)).toEqual(before);
+  expect(await drawnGraph(page)).toEqual(before);
 });
 
 /** Each kind of patch `updateNode` refuses, with the problem it reports for it. */
@@ -281,12 +269,12 @@ for (const { patch, problem } of PATCHES) {
     await open(page);
     await page.evaluate(async () => {
       window.comb.load({
-        nodes: [{ id: "a", title: "a", x: 0, y: 0, width: 220, height: 64 }],
+        nodes: [window.node("a")],
         edges: [],
       });
       await window.comb.whenRendered();
     });
-    const before = await drawn(page);
+    const before = await drawnGraph(page);
     const result = await page.evaluate(async (changes) => {
       // Two frames with nothing to draw, so that a render the call would schedule is counted;
       // the store schedules one for any change, so none means its nodes stayed as they were.
@@ -305,7 +293,7 @@ for (const { patch, problem } of PATCHES) {
       return { refused, rendered: window.renderCount() - renders };
     }, patch);
     expect(result).toEqual({ refused: { name: "GraphDataError", problem }, rendered: 0 });
-    expect(await drawn(page)).toEqual(before);
+    expect(await drawnGraph(page)).toEqual(before);
     expect(errors).toEqual([]);
   });
 }
@@ -459,7 +447,7 @@ test("load reads the host's graph data once and keeps what the bridge checked", 
       enumerable: true,
       get: () => (reads++ === 0 ? 0x123456 : -5),
     });
-    const nodeAt = (id: string, x: number) => ({ id, title: id, x, y: 0, width: 220, height: 64 });
+    const nodeAt = (id: string, x: number) => window.node(id, x);
     let refused = null;
     try {
       window.comb.load({
@@ -508,7 +496,7 @@ const READ_ONCE: { name: string; kind: "turning" | "map" | "throwing"; expected:
 /** In the page: loads one node `a`, hands `updateNode` the patch of `kind`, and reports. */
 async function patchOnce(kind: (typeof READ_ONCE)[number]["kind"]): Promise<Read> {
   window.comb.load({
-    nodes: [{ id: "a", title: "a", x: 0, y: 0, width: 220, height: 64 }],
+    nodes: [window.node("a")],
     edges: [],
   });
   let reads = 0;
@@ -562,7 +550,8 @@ test("load copies nodes out of a list whose own map would hand over the host's o
     // A title that is a string on its first read and a number after it, in a list whose `map`
     // returns the host's own node, not the copy it was asked for.
     let reads = 0;
-    const nodeAt = { id: "a", x: 0, y: 0, width: 220, height: 64 };
+    const { id, x, y, width, height } = window.node("a");
+    const nodeAt = { id, x, y, width, height };
     Object.defineProperty(nodeAt, "title", {
       enumerable: true,
       get: () => (reads++ === 0 ? "a" : 5),
@@ -587,7 +576,7 @@ test("updateNode refuses thousands of patches whose getter throws, and the engin
   await open(page);
   const result = await page.evaluate(async () => {
     window.comb.load({
-      nodes: [{ id: "a", title: "a", x: 0, y: 0, width: 220, height: 64 }],
+      nodes: [window.node("a")],
       edges: [],
     });
     const kinds = new Set<unknown>();
@@ -629,7 +618,9 @@ test("load draws a title and a label text of 1,000 UTF-16 code units", async ({ 
   );
   await frames(page);
   expect(errors).toEqual([]);
-  expect((await drawn(page)).nodes.map(({ title: shown }) => shown?.length)).toEqual([1000, 1]);
+  expect((await drawnGraph(page)).nodes.map(({ title: shown }) => shown?.length)).toEqual([
+    1000, 1,
+  ]);
 });
 
 test("load refuses a million and one nodes by their count, before it copies any", async ({
@@ -708,7 +699,7 @@ type Hostile = Window & { hostileValue: (kind: (typeof HOSTILE)[number]) => unkn
  *  reports what the first call threw and what the canvas drew after the second. */
 async function hostile([kind, place]: [(typeof HOSTILE)[number], (typeof PLACES)[number]]) {
   const value = (window as unknown as Hostile).hostileValue(kind) as never;
-  const nodeAt = (id: string) => ({ id, title: id, x: 0, y: 0, width: 220, height: 64 });
+  const nodeAt = (id: string) => window.node(id);
   const label = { text: "e", t: 0.5, offset: 0 };
   const anEdge = { id: "e", source: "a", target: "b", label };
   const calls = {
@@ -780,7 +771,7 @@ type RefusalKind =
 /** In the page: loads one node `a`, provokes the refusal of `kind`, and reports what it threw, how
  *  long it took, and what the canvas drew after a valid load that follows it. */
 async function refusal(kind: RefusalKind) {
-  const nodeAt = (id: string) => ({ id, title: id, x: 0, y: 0, width: 220, height: 64 });
+  const nodeAt = (id: string) => window.node(id);
   window.comb.load({ nodes: [nodeAt("a")], edges: [] });
   const big = "\u4e00".repeat(50_000_000);
   // A thrown value whose prototype chain runs the host's code.
@@ -929,7 +920,7 @@ test("load draws identifiers of 256 characters", async ({ page }) => {
     },
     { nodes: [node(a), node(b, 300)], edges: [edge("e".repeat(256), a, b)] },
   );
-  const drawnNow = await drawn(page);
+  const drawnNow = await drawnGraph(page);
   expect(drawnNow.nodes.map(({ id }) => id.length)).toEqual([256, 256]);
   expect(drawnNow.edges.map((id) => id.length)).toEqual([256]);
 });
@@ -938,7 +929,7 @@ test("load draws identifiers of 256 characters", async ({ page }) => {
  *  units each, then, before a frame draws them, a graph of one node; reports the problem and the
  *  time of the first load, and what the canvas drew. */
 async function budgeted(length: number) {
-  const nodeAt = (id: string, x: number) => ({ id, title: id, x, y: 0, width: 220, height: 64 });
+  const nodeAt = (id: string, x: number) => window.node(id, x);
   const edges = Array.from({ length: 1_000_000 }, (_, i) => ({
     id: String(i).padStart(length, "e"),
     source: "a",
@@ -987,7 +978,7 @@ test("load takes a million edges whose identifiers hold 63 million code units, a
  *  each after a valid load, and reports the kind of problem each threw. Its table is typed by the
  *  kinds, so that a kind the union gains or loses fails the type check. */
 async function everyKind() {
-  const nodeAt = (id: string) => ({ id, title: id, x: 0, y: 0, width: 220, height: 64 });
+  const nodeAt = (id: string) => window.node(id);
   const two = [nodeAt("a"), nodeAt("b")];
   const anEdge = { id: "e", source: "a", target: "b" };
   const label = { text: "e", t: 0.5, offset: 0 };

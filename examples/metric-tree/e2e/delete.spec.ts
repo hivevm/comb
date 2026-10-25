@@ -3,7 +3,7 @@
 // alone, told as `by: "user"`, the selection cleared.
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData } from "comb";
-import { clickWorld, loaded, node, open, screenCentre, told } from "./shared";
+import { clickWorld, drawnGraph, loaded, node, open, screenCentre, told } from "./shared";
 
 /** Node `a` between `b` and `c`, an edge from `b` to `a` and one from `a` to `c`, and one from `b`
  *  to `c` below them. */
@@ -28,12 +28,8 @@ async function loadedRow(page: Page): Promise<void> {
 
 /** What the canvas draws once it has drawn, and what was told since the load. */
 async function state(page: Page) {
-  const drawn = await page.evaluate(async () => {
-    await window.comb.whenRendered();
-    const { nodes, edges } = window.inspect();
-    return { nodes: nodes.map(({ id }) => id).sort(), edges: edges.map(({ id }) => id).sort() };
-  });
-  return { ...drawn, told: await told(page) };
+  const { nodes, edges } = await drawnGraph(page);
+  return { nodes: nodes.map(({ id }) => id).sort(), edges: edges.sort(), told: await told(page) };
 }
 
 async function selectNode(page: Page, id: string): Promise<void> {

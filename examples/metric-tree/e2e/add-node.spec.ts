@@ -4,27 +4,21 @@
 // an identifier the graph holds already, is refused, and nothing changes (ADR-0028, Q-7).
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphChange } from "comb";
-import { loaded, node, open, screenCentre } from "./shared";
+import { drawnGraph, loaded, node, open, screenCentre, selections } from "./shared";
 
 /** The identifiers and places of the nodes the canvas draws, bottom to top, once it has drawn. */
 async function drawn(page: Page) {
-  return page.evaluate(async () => {
-    await window.comb.whenRendered();
-    return window.inspect().nodes.map(({ id, x, y, title }) => ({ id, x, y, title }));
-  });
+  return (await drawnGraph(page)).nodes;
 }
 
 /** Presses and releases the pointer at the screen centre of the drawn node `id`, and returns the
  *  identifier of the node selected then. */
 async function pressOn(page: Page, id: string): Promise<string | null> {
-  await page.evaluate(() => {
-    const w = window as unknown as { selected: string | null };
-    w.selected = null;
-    window.comb.onSelectionChange((selection) => (w.selected = selection?.id ?? null));
-  });
+  const before = (await selections(page)).length;
   const at = await screenCentre(page, id);
   await page.mouse.click(at.x, at.y);
-  return page.evaluate(() => (window as unknown as { selected: string | null }).selected);
+  const reported = (await selections(page)).slice(before) as ({ id: string } | null)[];
+  return reported.at(-1)?.id ?? null;
 }
 
 test("addNode draws the node where the host placed it in the next frame, without a load", async ({
@@ -223,7 +217,7 @@ for (const { name, added, problem } of REFUSED) {
       await frame();
       // The store's map took nothing: a valid node of the refused identifier is added after.
       const rendered = window.renderCount() - renders;
-      window.comb.addNode({ id: "c", title: "c", x: 500, y: 0, width: 220, height: 64 });
+      window.comb.addNode(window.node("c", 500));
       return { refused, rendered, told };
     }, added);
     expect(result).toEqual({
@@ -244,7 +238,7 @@ test("addNode reads each field of the node once, and a getter that throws refuse
   await loaded(page, { nodes: [node("a")], edges: [] });
   const result = await page.evaluate(() => {
     const reads: Record<string, number> = {};
-    const fields = { id: "c", title: "c", x: 0, y: 0, width: 220, height: 64 };
+    const fields = window.node("c");
     const counted = Object.defineProperties(
       {},
       Object.fromEntries(
@@ -298,7 +292,7 @@ test("addNode refuses a node past the limit of a load, and nothing changes", asy
     window.comb.onChange((change) => told.push(change.kind));
     let refused = null;
     try {
-      window.comb.addNode({ id: "c", title: "c", x: 0, y: 0, width: 220, height: 64 });
+      window.comb.addNode(window.node("c"));
     } catch (error) {
       const { name, problem } = error as Error & { problem: unknown };
       refused = { name, problem };
@@ -338,7 +332,7 @@ test("addNode refuses a node whose identifier passes the budget of a load, and n
     window.comb.onChange((change) => told.push(change.kind));
     let refused = null;
     try {
-      window.comb.addNode({ id: "c", title: "c", x: 0, y: 0, width: 220, height: 64 });
+      window.comb.addNode(window.node("c"));
     } catch (error) {
       const { name, problem } = error as Error & { problem: unknown };
       refused = { name, problem };

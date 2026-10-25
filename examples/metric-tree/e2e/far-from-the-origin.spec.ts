@@ -4,7 +4,7 @@
 // crosses the viewport is split where it leaves the queried rectangle grown by the stroke's width
 // (ADR-0027), so that its ends far beyond the viewport do not round what it shows.
 import { expect, test, type Page } from "@playwright/test";
-import { canvasSize, loaded, node, open, setViewport } from "./shared";
+import { canvasSize, loaded, node, NODE_HEIGHT, NODE_WIDTH, open, setViewport } from "./shared";
 
 /** Where the far edge starts: there an `f32` holds every fourth number. */
 const FAR = 5e7;
@@ -17,23 +17,13 @@ const QUARTER = 0.25;
  *  shader computes it, the point of its label less `at`, and how many renders queried. */
 async function drawnAt(page: Page, at: number, pan = 0) {
   const { width, height } = await canvasSize(page);
-  await page.evaluate(async (offset) => {
-    const nodeAt = (id: string, x: number, y: number) => ({
-      id,
-      title: id,
-      x,
-      y,
-      width: 220,
-      height: 64,
-    });
-    window.comb.load({
-      nodes: [nodeAt("a", offset, 0), nodeAt("b", offset + 300, 200)],
-      edges: [{ id: "e", source: "a", target: "b", label: { text: "far", t: 0.5, offset: 0 } }],
-    });
-    await window.comb.whenRendered();
-  }, at);
-  // The edge runs from (at + 220, 32) to (at + 300, 232).
-  const centre = { x: width / 2 - (at + 260) * SCALE, y: height / 2 - 132 * SCALE };
+  await loaded(page, {
+    nodes: [node("a", at, 0), node("b", at + 300, 200)],
+    edges: [{ id: "e", source: "a", target: "b", label: { text: "far", t: 0.5, offset: 0 } }],
+  });
+  // The edge runs from a's right middle to b's left middle, around its middle.
+  const middle = { x: at + (NODE_WIDTH + 300) / 2, y: 100 + NODE_HEIGHT / 2 };
+  const centre = { x: width / 2 - middle.x * SCALE, y: height / 2 - middle.y * SCALE };
   await setViewport(page, { ...centre, scale: SCALE });
   const queried = await page.evaluate(() => window.inspect().queries);
   if (pan !== 0) await setViewport(page, { x: centre.x + pan, y: centre.y - pan, scale: SCALE });
@@ -112,30 +102,19 @@ function toSegment(p: [number, number], a: [number, number], b: [number, number]
 /** Loads the long edge, without an arrowhead, and returns its path, in f64. */
 async function loadLongEdge(page: Page): Promise<[number, number][]> {
   // Node positions are f32: these are, and so are the connectors the engine computes from them.
-  const [ax, ay] = [Math.fround(-FAR_END - 220), Math.fround(-0.3 * FAR_END - 32)];
-  const [bx, by] = [Math.fround(FAR_END), Math.fround(0.3 * FAR_END - 32)];
-  await page.evaluate(
-    async ({ ax: leftX, ay: leftY, bx: rightX, by: rightY }) => {
-      const nodeAt = (id: string, x: number, y: number) => ({
-        id,
-        title: id,
-        x,
-        y,
-        width: 220,
-        height: 64,
-      });
-      window.comb.load({
-        nodes: [nodeAt("a", leftX, leftY), nodeAt("b", rightX, rightY)],
-        edges: [{ id: "e", source: "a", target: "b", arrow: "none" }],
-      });
-      await window.comb.whenRendered();
-    },
-    { ax, ay, bx, by },
-  );
+  const [ax, ay] = [
+    Math.fround(-FAR_END - NODE_WIDTH),
+    Math.fround(-0.3 * FAR_END - NODE_HEIGHT / 2),
+  ];
+  const [bx, by] = [Math.fround(FAR_END), Math.fround(0.3 * FAR_END - NODE_HEIGHT / 2)];
+  await loaded(page, {
+    nodes: [node("a", ax, ay), node("b", bx, by)],
+    edges: [{ id: "e", source: "a", target: "b", arrow: "none" }],
+  });
   // The edge's path: from the right middle of a to the left middle of b, its control points
   // pulled level by half the horizontal distance.
-  const source: [number, number] = [ax + 220, ay + 32];
-  const target: [number, number] = [bx, by + 32];
+  const source: [number, number] = [ax + NODE_WIDTH, ay + NODE_HEIGHT / 2];
+  const target: [number, number] = [bx, by + NODE_HEIGHT / 2];
   const pull = (target[0] - source[0]) / 2;
   return [source, [source[0] + pull, source[1]], [target[0] - pull, target[1]], target];
 }
@@ -196,7 +175,7 @@ test("a viewport around 1e300 draws nothing infinite, loses no engine, and draws
   await open(page);
   // A node at the world's limit, 2^120, with an edge back to one near the origin.
   await loaded(page, {
-    nodes: [node("a"), node("b", 2 ** 120 - 220, 2 ** 120 - 64)],
+    nodes: [node("a"), node("b", 2 ** 120 - NODE_WIDTH, 2 ** 120 - NODE_HEIGHT)],
     edges: [{ id: "a-b", source: "a", target: "b", label: { text: "far", t: 0.5, offset: 0 } }],
   });
   const finite = (snapshot: ReturnType<typeof window.inspect>) =>

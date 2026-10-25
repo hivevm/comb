@@ -42,12 +42,8 @@ async function drawWatched(hostile: string[]) {
   const comb = await window.createComb(host, { engine: fetch(window.engineUrl) });
   comb.load({
     nodes: hostile.map((title, i) => ({
-      id: `n${i}`,
+      ...window.node(`n${i}`, (i % 4) * 300, Math.floor(i / 4) * 150),
       title,
-      x: (i % 4) * 300,
-      y: Math.floor(i / 4) * 150,
-      width: 220,
-      height: 64,
     })),
     edges: hostile.map((text, i) => ({
       id: `e${i}`,
