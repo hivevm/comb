@@ -5,6 +5,7 @@
 // neither (ADR-0028).
 import { Graphics } from "pixi.js";
 import type { GraphView, Side } from "../store";
+import { toScreen } from "../viewport";
 
 const SIDES: readonly Side[] = ["top", "right", "bottom", "left"];
 /** The radius of a drawn connector, in screen pixels. */
@@ -147,11 +148,8 @@ export class ConnectionLine extends Graphics {
       node.height,
       connection.side,
     );
-    const screen = (p: { x: number; y: number }) => ({
-      x: viewport.x + p.x * viewport.scale,
-      y: viewport.y + p.y * viewport.scale,
-    });
-    const [from, to] = [screen(world), screen(connection.to)];
+    const from = toScreen(viewport, world.x, world.y);
+    const to = toScreen(viewport, connection.to.x, connection.to.y);
     this.moveTo(from.x, from.y).lineTo(to.x, to.y).stroke({ width: 2, color: LINE });
     this.drawn = { from: world, to: { ...connection.to } };
   }

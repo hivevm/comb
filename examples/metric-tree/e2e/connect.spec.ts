@@ -151,18 +151,23 @@ test("without canConnect a press on a connector begins no connection and shows n
   expect(kinds).toEqual(["nodeMoved"]);
 });
 
-test("hitKind finds a connector just outside a node only where it is asked for connectors", async ({
+test("hitKind finds a connector just outside a node only where the Comb lets the user connect", async ({
   page,
 }) => {
   // Verifies: ADR-0025
-  await open(page);
-  await loaded(page, NODES);
-  const kinds = await page.evaluate(() => {
-    // Three world units below a's bottom connector, outside a and within 8 pixels of it.
-    const { x, y } = window.screenPoint(110, 67);
-    return [window.hitKind(x, y, true), window.hitKind(x, y, false), window.hitKind(x, y)];
-  });
-  expect(kinds).toEqual(["connector", "none", "none"]);
+  const kinds = [];
+  for (const query of ["", "?connect=none"]) {
+    await open(page, query);
+    await loaded(page, NODES);
+    kinds.push(
+      await page.evaluate(() => {
+        // Three world units below a's bottom connector, outside a and within 8 pixels of it.
+        const { x, y } = window.screenPoint(110, 67);
+        return window.hitKind(x, y);
+      }),
+    );
+  }
+  expect(kinds).toEqual(["connector", "none"]);
 });
 
 test("at the far level no connector is drawn and a press where one would be connects nothing", async ({

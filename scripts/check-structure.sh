@@ -18,7 +18,8 @@
 #      dynamic import, or require, in quotes or backticks.
 #   3. Render: the render layer sees the state without its actions (GraphView), so the type
 #      checker refuses a write. Its files name neither GraphState, GraphStore, nor the store's
-#      getState, setState, or subscribe.
+#      getState, setState, or subscribe; and they import nothing from interaction/, by a relative
+#      path that passes through it, so that the scene draws from the store and the engine alone.
 #   4. Examples: no file under examples/ imports a path inside the library: only the package's
 #      entries `comb` and `comb/testing`, and the engine file it exports as `comb/engine.wasm`,
 #      bare or as a URL with Vite's `?url` (ADR-0019), never another `comb/...`, a path through
@@ -119,6 +120,8 @@ done
 while IFS= read -r file; do
   report "$file" '\b(GraphState|GraphStore|getState|setState|subscribe)\b' \
     "the render layer sees GraphView only and never reaches the store"
+  report "$file" "${specifier}\.\.?/(${inside}*/)?interaction(/${inside}*)?${quote}" \
+    "the render layer imports nothing from interaction/"
 done < <(sources packages/comb/src/render)
 
 # 4. Examples

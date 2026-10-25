@@ -3,7 +3,7 @@
 // under it. Each gesture is a module of its own; this one holds what they share.
 import type { Bridge, Hit } from "../bridge";
 import type { GraphState, GraphStore } from "../store";
-import { levelAt, toWorld } from "./viewport";
+import { levelAt, toWorld } from "../viewport";
 
 /** What a gesture works on: the store, and the bridge to the engine. */
 export interface Context {

@@ -15,8 +15,7 @@
 // the world's origin the viewport lies; the particles, whose shader takes their container's whole
 // transform, keep the rounding they had.
 import { Application, BitmapText, Container } from "pixi.js";
-import type { Bridge, Detail, Hit, Level, Rect } from "../bridge";
-import { levelAt, worldRect } from "../interaction/viewport";
+import type { Bridge, Detail, Level, Rect } from "../bridge";
 import type { GraphView } from "../store";
 import { EdgesContainer, type MeshSize } from "./edges";
 import { EdgeFill } from "./edges-canvas";
@@ -24,10 +23,10 @@ import { LabelsContainer, type LabelView } from "./labels";
 import { NodeGraphic, NodesContainer } from "./nodes";
 import { ConnectionLine, ConnectorsLayer, type DrawnConnector } from "./connectors";
 import { NodeParticles } from "./particles";
+import { levelAt, toScreen, worldRect } from "../viewport";
 
 /** The level of detail the scene draws at (ADR-0027); the engine strokes edges for it. */
 export type { Level };
-export { FAR_SCALE, levelAt, NEAR_SCALE } from "../interaction/viewport";
 
 const NONE = new Uint32Array(0);
 /** How far beyond the viewport the scene binds display objects, in screen pixels, so that a
@@ -141,10 +140,10 @@ export class Scene {
     const positions = bridge.positions();
     this.connectors.sync(state, positions, this.origin, this.level === "far");
     this.connection.sync(state, positions);
-    const { x, y, scale } = state.viewport;
     // In f64 here, so that the world's transform on the GPU holds no far coordinate.
-    this.world.position.set(x + this.origin.x * scale, y + this.origin.y * scale);
-    this.world.scale.set(scale);
+    const at = toScreen(state.viewport, this.origin.x, this.origin.y);
+    this.world.position.set(at.x, at.y);
+    this.world.scale.set(state.viewport.scale);
     this.renders += 1;
   }
 
@@ -217,15 +216,6 @@ export class Scene {
     const { bridge, edges } = this.source;
     const slot = edges.findIndex((edge) => edge?.id === what.edge);
     return slot >= 0 && bridge.drawnEdges().slots.includes(slot);
-  }
-
-  /** What a press at the screen point `(x, y)` of the canvas hits, as the engine of the last
-   *  render answers it at the drawn viewport's scale; nothing before the first render. */
-  hitKind(x: number, y: number, connectors = false): Hit["kind"] {
-    if (!this.source) return "none";
-    const { scale, x: vx, y: vy } = this.drawnViewport();
-    const [wx, wy] = [(x - vx) / scale, (y - vy) / scale];
-    return this.source.bridge.hit(wx, wy, 1 / scale, levelAt(scale), connectors).kind;
   }
 
   /** The viewport the world is drawn through: its transform less the origin's screen point. */

@@ -7,7 +7,7 @@
 import type { Bridge, Hit } from "../bridge";
 import type { Connection, GraphStore, Side } from "../store";
 import { targetAt, type Context, type Gesture } from "./gesture";
-import { toWorld } from "./viewport";
+import { toWorld } from "../viewport";
 
 /** A connection the user proposes, by identifiers and sides, as `canConnect` is asked. */
 export interface Proposal {

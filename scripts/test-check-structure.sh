@@ -162,6 +162,20 @@ d="$(fixture render-set-state)"
 echo 'store.setState({ selection: null });' >> "$d/packages/comb/src/render/scene.ts"
 expect fail "the render layer calling setState fails" "$d" "never reaches the store"
 
+d="$(fixture render-interaction)"
+echo 'import { levelAt } from "../interaction/viewport";' >> "$d/packages/comb/src/render/scene.ts"
+expect fail "the render layer importing from interaction/ fails" "$d" \
+  "packages/comb/src/render/scene.ts:2: the render layer imports nothing from interaction/"
+
+d="$(fixture render-interaction-reexport)"
+echo 'export { attachInteraction } from "../interaction";' >> "$d/packages/comb/src/render/scene.ts"
+expect fail "the render layer re-exporting interaction fails" "$d" "imports nothing from interaction/"
+
+d="$(fixture render-interaction-near)"
+printf '%s\n' 'import { levelAt } from "../viewport";' 'import "pixi.js/interaction";' \
+  'const interaction = "../interaction";' >> "$d/packages/comb/src/render/scene.ts"
+expect pass "the shared viewport, a package path, and a string naming interaction pass" "$d"
+
 d="$(fixture render-assets)"
 echo 'await Assets.load("font.fnt"); const selectable = state.selection !== null;' \
   >> "$d/packages/comb/src/render/scene.ts"
