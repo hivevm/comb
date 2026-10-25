@@ -303,6 +303,15 @@ function withoutEdgesOf(
 
 type EdgeView = NonNullable<GraphView["edges"][number]>;
 
+/** The edge `id` names in `view`, with its slot; the graph holds it. */
+export function edgeNamed(
+  view: Pick<GraphView, "edges" | "edgeSlots">,
+  id: string,
+): { slot: number; edge: EdgeView } {
+  const slot = view.edgeSlots.get(id)!;
+  return { slot, edge: view.edges[slot]! };
+}
+
 /** `edge` with `patch` merged: a field the patch sets replaces the edge's, and `null` clears a dash
  *  or a label. */
 function patched(edge: EdgeView, patch: EdgePatch): EdgeView {
@@ -370,8 +379,7 @@ export function createGraphStore() {
     addEdge: (edge, slot, by) => set((state) => withEdge(state, edge, slot, by)),
     labelMoved: (id, t, offset) =>
       set((state) => {
-        const slot = state.edgeSlots.get(id)!;
-        const edge = state.edges[slot]!;
+        const { slot, edge } = edgeNamed(state, id);
         const edges = state.edges.slice();
         edges[slot] = { ...edge, label: { ...edge.label!, t, offset } };
         return { edges, change: { kind: "labelMoved", by: "user", edge: id } };
@@ -380,9 +388,9 @@ export function createGraphStore() {
     connect: (connection) => set({ connection }),
     updateEdge: (id, patch) =>
       set((state) => {
-        const slot = state.edgeSlots.get(id)!;
+        const { slot, edge } = edgeNamed(state, id);
         const edges = state.edges.slice();
-        edges[slot] = patched(edges[slot]!, patch);
+        edges[slot] = patched(edge, patch);
         return { edges, change: { kind: "edgeUpdated", by: "host", id, patch } };
       }),
   }));

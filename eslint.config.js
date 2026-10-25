@@ -18,6 +18,8 @@ export default defineConfig(
       "packages/comb/wasm/",
       "test-results/",
       "playwright-report/",
+      // A session's scratch files and other worktrees, which git ignores too.
+      ".scratch/",
     ],
   },
   js.configs.recommended,
