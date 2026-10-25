@@ -8,7 +8,9 @@
 # naming a protected path in its 'What to build' and in its 'Acceptance criteria', by a glob
 # pattern and by a link relative to the ticket; the same path under 'Read first', inside an HTML
 # comment, or in a ticket worked with the human; an unprotected path; a glob that does not cross a
-# '/'; and a CODEOWNERS with no pattern or none at all.
+# '/'; a CODEOWNERS with no pattern or none at all, and one whose last pattern has no final
+# newline; a ticket that cannot be read; a ticket without a 'Mode', which the check leaves to the
+# plan frontier sensor; and an unattended ticket with neither section the check reads.
 #
 # Usage:
 #     scripts/test-check-plan-modes.sh
@@ -74,7 +76,7 @@ expect 1 "an unattended ticket naming a protected path in What to build fails" "
 
 d="$(tree read-first)"
 ticket "$d" 01-a.md "unattended: a test decides it" "Change the layout." "It works." "\`$GRAPH\`"
-expect 0 "a protected path under Read first is not read" "$d" "1 ticket(s)"
+expect 0 "a protected path under Read first is not read" "$d" "1 ticket(s)" "1 unattended"
 
 d="$(tree with-human)"
 ticket "$d" 01-a.md "with the human: it touches the graph" "Change \`$GRAPH\`."
@@ -82,11 +84,12 @@ expect 0 "a ticket worked with the human may name a protected path" "$d" "1 tick
 
 d="$(tree comment)"
 ticket "$d" 01-a.md "unattended" "Change the layout. <!-- not $GRAPH -->"
-expect 0 "a protected path inside an HTML comment is not read" "$d" "1 ticket(s)"
+expect 0 "a protected path inside an HTML comment is not read" "$d" "1 ticket(s)" "1 unattended"
 
 d="$(tree unprotected)"
 ticket "$d" 01-a.md "unattended" "Change \`crates/engine/src/layout.rs\` and \`scripts/README.md\`."
-expect 0 "an unattended ticket naming only unprotected paths passes" "$d" "1 ticket(s)"
+expect 0 "an unattended ticket naming only unprotected paths passes" "$d" "1 ticket(s)" \
+  "1 unattended"
 
 d="$(tree glob)"
 ticket "$d" 01-a.md "unattended" "Change the checks." "Given \`scripts/check-docs.sh\`, it fails."
@@ -111,6 +114,29 @@ d="$(tree no-file)"
 rm "$d/.github/CODEOWNERS"
 ticket "$d" 01-a.md "unattended" "Change the layout."
 expect 1 "a missing CODEOWNERS fails, naming it" "$d" ".github/CODEOWNERS"
+
+d="$(tree no-final-newline)"
+printf '/crates/engine/src/graph/ @owner' > "$d/.github/CODEOWNERS"
+ticket "$d" 01-a.md "unattended" "Change \`$GRAPH\`."
+expect 1 "the last pattern of a CODEOWNERS without a final newline is read" "$d" \
+  "$GRAPH" "/crates/engine/src/graph/"
+
+d="$(tree unreadable)"
+ticket "$d" 01-a.md "unattended" "Change the layout."
+chmod 000 "$d/docs/plan/s/01-a.md"
+expect 1 "a ticket that cannot be read fails, naming it" "$d" "docs/plan/s/01-a.md" "cannot be read"
+chmod 644 "$d/docs/plan/s/01-a.md"
+
+d="$(tree no-mode)"
+printf '# Ticket: fixture\n\n## What to build\n\nChange %s.\n' "$GRAPH" > "$d/docs/plan/s/01-a.md"
+expect 0 "a ticket without a Mode is left to the plan frontier sensor" "$d" "1 ticket(s)" \
+  "0 unattended"
+
+d="$(tree no-sections)"
+printf '# Ticket: fixture\n\n## Work\n\nChange %s.\n\n## Mode\n\nunattended\n' "$GRAPH" \
+  > "$d/docs/plan/s/01-a.md"
+expect 1 "an unattended ticket with neither What to build nor Acceptance criteria fails" "$d" \
+  "docs/plan/s/01-a.md" "a shape this check does not know"
 
 d="$(tree empty)"
 expect 0 "no ticket under docs/plan/ passes" "$d" "0 ticket(s)"

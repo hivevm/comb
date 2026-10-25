@@ -10,14 +10,18 @@
 # scripts/sensor-plan-frontier.sh does, with HTML comments removed. A ticket whose 'Mode' begins
 # with 'unattended' fails when its 'What to build' or its 'Acceptance criteria' names a path that
 # a protected pattern covers, and the failure names the ticket, the path, and the pattern. 'Read
-# first' is not read, because reading a part does not touch it. A ticket without a 'Mode' is left
-# to the plan frontier sensor, which fails on it.
+# first' is not read, because reading a part does not touch it. A ticket the check cannot read
+# fails, and so does an unattended ticket with neither a 'What to build' nor an 'Acceptance
+# criteria' section, a shape the check does not know. A ticket without a 'Mode' is left to the plan
+# frontier sensor, which fails on it.
 #
-# A path is a run of letters, digits, and '._/*-', read from the repository root; a leading '/'
-# or './' is dropped, and one that starts with '../', such as a link, is resolved from the
-# ticket's directory. A pattern follows the gitignore rules CODEOWNERS uses: a '/' at its start or
-# in its middle anchors it to the root, a '*' matches within one path segment and '**' across
-# segments, and a pattern covers the path it names and everything below it.
+# A path is a run of letters, digits, and '._/*-', read from the repository root, so a short form
+# such as 'api/editors.ts' is not matched: a ticket names its paths in full. A leading '/' or './'
+# is dropped, and a path that starts with '../', such as a link, is resolved from the ticket's
+# directory. Of the CODEOWNERS pattern syntax the check reads comments, a '/' at the start or in
+# the middle of a pattern, which anchors it to the root, a trailing '/' for a directory, and '*'
+# and '?', which match within one path segment; a pattern covers the path it names and everything
+# below it.
 #
 # Pure bash + coreutils/awk. Usage:
 #     scripts/check-plan-modes.sh [repository root]
@@ -61,9 +65,7 @@ to_regex() {
   p="${p#/}"
   for ((i = 0; i < ${#p}; i++)); do
     c="${p:i:1}"
-    if [[ "$c" == "*" && "${p:i+1:1}" == "*" ]]; then
-      body+=".*"; i=$((i + 1))
-    elif [[ "$c" == "*" ]]; then
+    if [[ "$c" == "*" ]]; then
       body+="[^/]*"
     elif [[ "$c" == "?" ]]; then
       body+="[^/]"
@@ -85,7 +87,7 @@ if [[ ! -f "$ROOT/$OWNERS" ]]; then
   exit 1
 fi
 patterns=() regexes=()
-while read -r p _; do
+while read -r p _ || [[ -n "${p:-}" ]]; do
   [[ -z "$p" || "$p" == \#* ]] && continue
   patterns+=("$p")
   regexes+=("$(to_regex "$p")")
@@ -104,11 +106,21 @@ fi
 errors=()
 unattended=0
 for t in ${tickets[@]+"${tickets[@]}"}; do
+  if [[ ! -r "$ROOT/$t" ]]; then
+    errors+=("$t: cannot be read — its Mode is unknown")
+    continue
+  fi
   mode="$(section "$ROOT/$t" "Mode")" || continue
   mode="$(awk 'NF { print; exit }' <<< "$mode")"
   [[ "$mode" == unattended* ]] || continue
   unattended=$((unattended + 1))
-  text="$(section "$ROOT/$t" "What to build"; section "$ROOT/$t" "Acceptance criteria")"
+  build="$(section "$ROOT/$t" "What to build")"; has_build=$?
+  criteria="$(section "$ROOT/$t" "Acceptance criteria")"; has_criteria=$?
+  if ((has_build != 0 && has_criteria != 0)); then
+    errors+=("$t: unattended, but has neither '## What to build' nor '## Acceptance criteria' — a shape this check does not know")
+    continue
+  fi
+  text="$build"$'\n'"$criteria"
   seen=" "
   while IFS= read -r path; do
     if [[ "$path" == ../* ]]; then
@@ -125,7 +137,7 @@ for t in ${tickets[@]+"${tickets[@]}"}; do
     seen+="$path "
     for i in "${!patterns[@]}"; do
       if [[ "$path" =~ ${regexes[i]} ]]; then
-        errors+=("$t: unattended, but names '$path', which '${patterns[i]}' of $OWNERS protects — work it with the human, or leave the path out")
+        errors+=("$t: unattended, but names '$path', which '${patterns[i]}' of $OWNERS protects — work it with the human, unless the work does not touch that path")
         break
       fi
     done
@@ -133,7 +145,7 @@ for t in ${tickets[@]+"${tickets[@]}"}; do
 done
 
 if ((${#errors[@]})); then
-  echo "Plan modes check: ${#errors[@]} protected path(s) named by unattended tickets (ADR-0007):" >&2
+  echo "Plan modes check: ${#errors[@]} finding(s) in the tickets (ADR-0007):" >&2
   printf '  - %s\n' "${errors[@]}" >&2
   exit 1
 fi
