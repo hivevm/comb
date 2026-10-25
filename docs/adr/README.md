@@ -102,6 +102,7 @@ is the table a session reads.
 | [0027](0027-nodes-bound-by-rank.md) | A virtualized scene graph with culling by the engine and three levels of detail, nodes bound by rank | `packages/comb/src/render/`, and the exports of `crates/engine` and `crates/engine-wasm` that answer spatial queries and compute edge geometry | 🟢 accepted |
 | [0028](0028-the-graph-lies-within-a-world.md) | A pure Rust engine as functional core, and a TypeScript shell around it, the shell refusing what only its map of identifiers knows, and the graph within a world's limit | the directory layout, `crates/`, `packages/`, `examples/`, and every import between their modules | 🟢 accepted |
 | [0029](0029-the-store-holds-no-coordinate-each-move-its-counter.md) | The graph's structure and what the pointer is over live in a vanilla Zustand store; no coordinate does, and each kind of move is signalled by a counter of its own | `packages/comb/src/store/`, the state `packages/comb/src/interaction/` keeps between pointer events, and every module that reads or writes the state of the graph or the viewport | 🟢 accepted |
+| [0030](0030-a-veto-that-changes-the-graph-ends-its-gesture.md) | A veto that changes the graph during its call ends its gesture with nothing done | the vetoes `canConnect` and `canDelete` as `packages/comb/src/api/` and `packages/comb/src/interaction/` ask them | 🟡 proposed |
 
 ### Superseded and rejected
 
