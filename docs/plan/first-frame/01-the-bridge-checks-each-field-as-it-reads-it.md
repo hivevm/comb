@@ -2,6 +2,11 @@
 
 ## What to build
 
+**A fallback: work this ticket only if the maintainer rejects ADR-0032.** The columns of
+`docs/plan/first-frame/03-a-load-hands-its-nodes-over-as-columns.md` and
+`docs/plan/first-frame/04-a-load-hands-its-edges-over-as-columns.md` replace the code it
+restructures. Once ADR-0032 is accepted, the change that lands ticket 04 deletes this file.
+
 A load reaches its first frame sooner because the bridge crate no longer copies every field of
 the batch before it checks it. Today `graph_of` in `crates/engine-wasm/src/graph_data.rs` first
 builds `batch_of`'s checked copy of every node and edge, unwrapping each `Field<T>`, and only then
@@ -9,13 +14,16 @@ reads that copy in `ids_of`, `nodes_of`, and `edges_of`. The CPU timing of a loa
 and edges puts that copy at about 5 ms of `loadGraph`.
 
 Read each field where `nodes_of` and `edges_of` (and `ids_of`) use it, and drop the intermediate
-copy. The refusal a load names must stay the one it names today: a field missing or of another
-type is named before any other refusal of the batch, wherever it stands, because the batch is
-read whole before it is checked. The flag that `reading` already keeps, whether any field was
-refused, tells whether that search is needed at all; the simplest form that keeps the order wins,
-and the pull request says which it chose.
+copy. The refusal a load names must stay the one it names today: a `Field<T>` value missing or of
+another type is named before any other refusal of the batch, wherever it stands, because the batch
+is read whole before it is checked. Whether any field was refused is known while serde-wasm-bindgen
+reads the batch, in the flag `REFUSED`, but `reading` resets it once the read is done, so a
+check that needs it has to carry it out of `reading`, or search the batch for the first refused
+field itself. The simplest form that keeps the order wins, and the pull request says which it
+chose.
 
-This is a refactoring within ADR-0028 and ADR-0032: no format, rule, kind, or message changes.
+This is a refactoring within the ADRs in force, ADR-0028 among them: no format, rule, kind, or
+message changes.
 
 **The timing.** The steps of a load, `snapshotOf` of `packages/comb/src/api/snapshot.ts`,
 `loadGraph` of `packages/comb/src/bridge/index.ts`, and the store's `load` of
@@ -32,18 +40,19 @@ the pull request.
       then they pass: every refusal, its kind, its names, and the first one a load names stay as
       they are.
 - [ ] Given a batch whose first node has a coordinate that is not finite and whose last edge has a
-      field of another type, when it is loaded, then the load names the edge's field, as today; a
-      test pins it if none does yet.
+      `Field<T>` value of another type, when it is loaded, then the load names the edge's field,
+      as today; a test pins it if none does yet.
 - [ ] Given the timing, when this branch and `main` are timed in the same session, then
-      `loadGraph`'s median falls by at least 2 ms and no other step's grows.
-- [ ] Given the pull request, when it opens, then it names `batch_of` gone and its timing.
+      `loadGraph`'s median falls by at least 2 ms (about 4 ms expected), and no other step's
+      median grows by more than 1 ms, the scatter between two timings of one build.
 
 ## Read first
 
-- ADR-0028 (*Bridge*, *What the bridge cannot see*), ADR-0032 (*Errors*, *Graph data of a load*),
-  ADR-0024 (*Graph data*), ADR-0007 (protected parts).
-- `crates/engine-wasm/src/graph_data.rs`: `Field`, `reading`, `items`, `batch_of`, `nodes_of`,
-  `edges_of`, `ids_of`, `graph_of`.
+- `docs/plan/first-frame/spec.md`.
+- ADR-0028 (*Bridge*, *What the bridge cannot see*), ADR-0032 (*Errors*), ADR-0024 (*Graph
+  data*), ADR-0007 (protected parts).
+- `crates/engine-wasm/src/graph_data.rs`: `Field`, `REFUSED`, `reading`, `items`, `batch_of`,
+  `nodes_of`, `edges_of`, `ids_of`, `graph_of`.
 - The oracle of `crates/engine-wasm/src/properties.rs`, which decides the order of refusals.
 
 ## Blocked by
@@ -52,5 +61,6 @@ the pull request.
 
 ## Mode
 
-with the human: `crates/engine-wasm/` is the validation of graph data, a protected part of
-ADR-0007, and the effect is decided by a timing, not by a test.
+with the human: it is worked only on the maintainer's word that ADR-0032 is rejected;
+`crates/engine-wasm/` is the validation of graph data, a protected part of ADR-0007; and the
+effect is decided by a timing, not by a test.

@@ -14,22 +14,28 @@ against it again and passes: should its first frame have been exempted, or its b
 while the load was slow, this ticket undoes that.
 
 The comparison step of `.github/workflows/benchmark.yml` then carries the marker ADR-0032's
-*Enforcement* names, `Verifies: ADR-0032, Q-2`.
+*Enforcement* names, `Verifies: ADR-0032, ADR-0008`. It cites no Q-2: Q-2 is defined on the
+reference machine, and
+`docs/plan/revision-2026-10-18/16-measure-q1-q2-on-the-reference-machine.md` keeps that marker.
 
 ## Acceptance criteria
 
 - [ ] Given a Benchmark run on `main` after
       `docs/plan/first-frame/04-a-load-hands-its-edges-over-as-columns.md` landed, on a 7763,
-      when it compares, then the median first frame is at most 378.6 ms, its baseline unchanged,
-      and the comparison passes.
+      when it compares against its unchanged baseline, then the comparison passes and the median
+      first frame lies at least 90 ms below the 480 ms of `main` before this plan; a run that
+      misses it fails this criterion and is not repeated in the hope of a pass; the
+      maintainer decides what follows.
 - [ ] Given a Benchmark run on `main` on a 9V74, when its `median.json` is saved as
       `bench/baselines/amd-epyc-9v74-80-core-processor.json`, then its first frame is below the
       365.3 ms it replaces, and the pull request links the run and says why.
-- [ ] Given `.github/workflows/benchmark.yml`, when `scripts/check-traceability.sh` runs, then the
-      comparison step cites `Verifies: ADR-0032, Q-2`.
+- [ ] Given `.github/workflows/benchmark.yml`, when it is searched with
+      `grep -n 'Verifies: ADR-0032, ADR-0008' .github/workflows/benchmark.yml`, then the one line
+      found is a comment of the comparison step; and `scripts/check-traceability.sh` passes.
 
 ## Read first
 
+- `docs/plan/first-frame/spec.md`.
 - ADR-0008 (*Benchmark*), ADR-0032 (*Enforcement*), `docs/SPECIFICATION.md` Q-2.
 - `README.md` (**Benchmark**), `bench/compare.ts`, `.github/workflows/benchmark.yml`.
 

@@ -21,7 +21,8 @@ Together the timing expects about 1 to 3 ms less. This is a refactoring within A
 ADR-0029: the store keeps the same state, and the snapshot hands over the same values.
 
 **The timing.** As in
-`docs/plan/first-frame/01-the-bridge-checks-each-field-as-it-reads-it.md`: the steps of a load on
+`docs/plan/first-frame/01-the-bridge-checks-each-field-as-it-reads-it.md`, which describes it
+whether or not that ticket is worked: the steps of a load on
 `metricTree(3334)` of `examples/metric-tree/src/graph.ts`, in headless Chromium without a GPU, 25
 cold runs, medians per step, this branch and `main` in the same session; the harness under
 `.scratch/`, its numbers in the pull request.
@@ -38,11 +39,13 @@ cold runs, medians per step, this branch and `main` in the same session; the har
       for the first two and the string for the others; a test in
       `packages/comb/src/api/editors.test.ts` or beside the snapshot pins it if none does.
 - [ ] Given the timing, when this branch and `main` are timed in the same session, then the
-      medians of the snapshot and of the store's `load` together fall by at least 1 ms and no
-      step's grows.
+      medians of the snapshot and of the store's `load` together fall by at least 1 ms (1 to 3 ms
+      expected), and no step's median grows by more than 1 ms, the scatter between two timings of
+      one build.
 
 ## Read first
 
+- `docs/plan/first-frame/spec.md`.
 - ADR-0028 (*What the bridge cannot see*, *Shell*), ADR-0029 (the store), ADR-0022 (the map from
   identifiers to slots), ADR-0007 (protected parts).
 - `packages/comb/src/api/snapshot.ts` (`cut`, `readerOf`, `edgeOf`, `optional`),
