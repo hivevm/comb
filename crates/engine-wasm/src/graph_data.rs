@@ -1,4 +1,4 @@
-//! The reading and checking of graph data, the one place that validates it (ADR-0028, ADR-0010):
+//! The reading and checking of graph data, the one place that validates it (ADR-0028, ADR-0032):
 //! the limits of a load, the lenient readers of fields, the input types, and the checks that turn
 //! a batch into the engine's graph and a patch of `updateNode` into what the store merges. The
 //! exports in the crate root hand graph data here and pass on what it returns.
@@ -1173,10 +1173,10 @@ pub(crate) fn patch_of(node: &str, patch: NodePatch) -> Result<CheckedPatch, Gra
 #[path = "properties.rs"]
 mod properties;
 
-// The malformed-data tests below verify ADR-0010: every export that receives graph data returns a
-// typed error that names the offender, and none panics. They are the tests ADR-0010 names as
+// The malformed-data tests below verify ADR-0032: every export that receives graph data returns a
+// typed error that names the offender, and none panics. They are the tests ADR-0032 names as
 // those of `lib.rs`, the crate root of this module.
-// Verifies: ADR-0010
+// Verifies: ADR-0032
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;

@@ -171,7 +171,7 @@ const FIELDS: { name: string; graph: GraphData; problem: unknown }[] = [
 
 for (const { name, graph, problem } of FIELDS) {
   test(`load refuses ${name}, naming the node or edge and the field`, async ({ page }) => {
-    // Verifies: Q-7, ADR-0010
+    // Verifies: Q-7, ADR-0032
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
@@ -1039,7 +1039,7 @@ async function everyKind() {
 test("load and the methods that edit the graph throw every kind of GraphDataProblem", async ({
   page,
 }) => {
-  // Verifies: Q-3, Q-7, ADR-0010
+  // Verifies: Q-3, Q-7, ADR-0032
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
