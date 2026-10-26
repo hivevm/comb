@@ -49,26 +49,42 @@ edges to its first frame at 1 s on the reference machine; the Benchmark workflow
 frame on each runner kind against that kind's baseline, with a margin of 25 %
 ([ADR-0008](0008-toolchain.md)). On the AMD EPYC 7763, with an identical reference workload, the
 first frame of the benchmark's 50,010 nodes and edges took 366 to 391 ms (median 378) before every
-field crossed for its check, and takes 478 to 500 ms (median 480) now; the kind's baseline holds
-378.6 ms, so the first frame is past its margin. A timing of the load's CPU path in headless
-Chromium without a GPU, cold, puts the difference in the load, not in the render, whose far-level
-mesh is unchanged: from 107 to 164 ms in all, of which `bridge.loadGraph` from 74 to 107 ms, its
-serde-wasm-bindgen conversion of the batch from 55 to 79 ms and the bridge crate's second, checked
-copy of every field 5 ms; the snapshot from 1.6 to 10.4 ms; the store's load from 5.8 to 17.5 ms.
+field crossed for its check (Benchmark run 40232945159, at `fa46fe6`), and takes 478 to 500 ms
+(median 480) at `main` (run 40212350295, at `cf835ef`); the kind's baseline, from run
+39160029963, holds 378.6 ms. The comparison fails only past the margin, about 473 ms, so the
+first frame is just past it. A timing of the load's CPU path in headless Chromium without a GPU,
+cold, of the same two commits on a development machine, puts the difference in the load, not in
+the render, whose far-level mesh is unchanged: from 107 to 164 ms in all, of which
+`bridge.loadGraph` from 74 to 107 ms, its serde-wasm-bindgen conversion of the batch (`to_rust`)
+from 55 to 79 ms and the bridge crate's second, checked copy of every field 5 ms; the snapshot
+from 1.6 to 10.4 ms; the store's load from 5.8 to 17.5 ms; the first query from 25 to 29 ms.
 
-Most of that is the conversion's cost per field, which no change within the serde path removes
-while every field crosses. The maintainer decided that only the bulk paths change, and that the
-checks stay where they are and as they are. This ADR carries ADR-0010 over whole and changes its
-clause *Structured data*: a load's graph data crosses as columns, each a typed array or one
-string, and is no longer converted by serde-wasm-bindgen; the clause *Graph data of a load* is
-new. Every other clause stands as ADR-0010 wrote it.
+That timing explains 57 ms of the runner's 102 ms. The runner is a shared virtual machine slower
+than the development machine, and its first frame scales the same CPU path by about 1.8; that
+factor is inferred from the two numbers, not measured. Most of the 57 ms is the conversion's cost
+per field, which no change within the serde path removes while every field crosses. Columns
+remove the conversion whole, the 79 ms of `to_rust` and not only its growth of 24 ms, at the cost
+of a few copies, one per column, and the snapshot's building of them. The CPU path is then
+expected at about 90 ms, below the 107 ms of before, and the runner's first frame some 100 to
+130 ms below its 480 ms, if the factor holds; the Benchmark decides it.
+
+The maintainer decided that only the bulk paths change, and that the checks stay where they are
+and as they are. This ADR carries ADR-0010 over whole and changes its clause *Structured data*:
+the graph data of a load crosses as columns, each a typed array or one string, and is no longer
+converted by serde-wasm-bindgen. New are the clause *Graph data of a load*, the alternatives
+under that heading, the sources from the generated glue on, the consequences that name columns,
+and the last follow-up; in the Decision and the Enforcement, what is new or changed is marked
+*(new)*, *(changed)*, or *Added*. Every other clause stands as ADR-0010 wrote it, with two
+changes of reference only: it cites ADR-0028 where ADR-0010 cited ADR-0009, and ADR-0027 where
+it cited ADR-0012, the ADRs that superseded them; and the Enforcement names the files the tests
+stand in today, `crates/engine-wasm/src/graph_data.rs` and `crates/engine/src/graph/query.rs`.
 
 The specification's constraint names serde-wasm-bindgen for structured data, and graph data is
 structured data; columns of graph data are no coordinate stream. This ADR therefore needs the
-constraint changed before it can be accepted (AGENTS.md, section 3, rules 5 and 7). A drafted
-wording, for the maintainer to decide: "Structured data crosses the bridge between TypeScript and
-WebAssembly through serde-wasm-bindgen, never as JSON strings, except bulk graph data, which
-crosses as typed-array and string columns."
+constraint changed, and that change landed, before it can be accepted (AGENTS.md, section 3,
+rules 5 and 7). A drafted wording, for the maintainer to decide: "Structured data crosses the
+bridge between TypeScript and WebAssembly through serde-wasm-bindgen, never as JSON strings,
+except the graph data of a load, which crosses as typed-array and string columns."
 
 ## Decision
 
@@ -78,33 +94,52 @@ as columns, each a typed array or one string, and pass every bulk coordinate str
 buffers that `crates/engine-wasm` owns and `packages/comb/src/bridge` reads and writes as
 typed-array views created anew after every engine call.
 
-- **Structured data (changed):** node content, edge appearance, selection, errors, and graph data
-  but a load's: the node of `addNode`, the edge of `addEdge`, and the patches of `updateNode` and
-  `updateEdge`. Each type derives `Serialize`, `Deserialize`, and `Tsify`; its TypeScript
-  definition is the generated one, never written by hand.
+- **Structured data (changed):** node content, edge appearance, selection, errors, and the graph
+  data of every export but `loadGraph`: the node of `addNode`, the edge of `addEdge`, the patch of
+  `checkNodePatch`, which `updateNode` hands over, and the patch of `updateEdge`. Each type derives
+  `Serialize`, `Deserialize`, and `Tsify`; its TypeScript definition is the generated one, never
+  written by hand.
 - **Graph data of a load (new):** `loadGraph` takes its nodes and edges as columns, one per field,
   each in slot order, which `api`'s snapshot builds while it reads the host application's graph
-  data once (ADR-0028):
-  - a string field, an identifier, a source, a target, a title, or a label's text, as one
+  data once (ADR-0028). A load checks in two passes today, and the columns keep both:
+  - **The first pass** names the first value, nodes before edges and each item's fields in their
+    order, that a load refuses before any rule: a field read as `Field<T>` that is missing or of
+    another type, the identifier, the source, and the target, which hold `false` for a lone
+    surrogate (ADR-0028), `x`, `y`, `width`, `height`, the label as an object, its `t` and
+    `offset`, the colour, the dash as a list of two numbers, the arrowhead, and the two sides,
+    each refused as `invalidField`; and an item that is no object, refused as malformed. The
+    snapshot hands over the position of the first such value it reads, its list, its index, and
+    its field, or none; an arrowhead or a side that is a string naming no value crosses as its
+    code, and the bridge crate finds it in its first pass at its place in that order.
+  - **The rules** follow, as today and in the same order: the identifiers' lengths and their
+    budget, then each node's and each edge's checks, a title's and a label text's among them,
+    which are no `Field<T>`: a title or label text missing, of another type, or holding a lone
+    surrogate is refused at its rule as `invalidTitle` or `invalidLabelText`, and a background of
+    another type as `invalidBackground`, as today.
+  - A string field, an identifier, a source, a target, a title, or a label's text, crosses as one
     JavaScript string, the field's values concatenated, and a `Uint32Array` of their boundaries
-    in UTF-16 code units, one more than there are items, an absent value empty;
-  - a number field as a `Float64Array` of the values as the host application handed them, so that
-    the bridge crate checks each as it does today, as `f32` where the engine keeps `f32`;
-  - an enumeration, an arrowhead or a side, as a `Uint8Array` of codes, with one code for a string
-    that names no value, which the bridge crate refuses as it refuses that string today;
-  - whether an optional field is present, a label, its background, or a dash, as a `Uint8Array`;
-  - a value the bridge crate refuses by its type, a field missing or of another type, a string
-    with a lone surrogate that `api` hands over as of another type (ADR-0028), or an item that is
-    no object, as the position of the first such value, its list, its index, and its field,
-    which the bridge crate refuses as it refuses that value today.
+    in UTF-16 code units, one more than there are items, an absent value empty. A title and a
+    label text cross with a `Uint8Array` that says, per item, whether the value is a text, so
+    that one missing, of another type, or with a lone surrogate is refused at its rule and not
+    read as an empty text.
+  - A number field crosses as a `Float64Array` of the values as the host application handed them,
+    so that the bridge crate checks each as it does today, as `f32` where the engine keeps `f32`;
+    a background of another type crosses as NaN, which its rule refuses as today.
+  - An enumeration, an arrowhead or a side, crosses as a `Uint8Array` of codes, with one code for
+    a string that names no value; whether an optional field is present, a label, its background,
+    or a dash, as a `Uint8Array`.
 
   The bridge crate checks the columns by every rule, limit, and kind of `GraphDataProblem` by
   which it checks a load today, in the same order, and every refusal names the list, the node or
-  edge, and the field as *Errors* requires; the lengths of strings it reads off the boundaries.
-  The columns cross as wasm-bindgen's own parameter types, a string, `Uint32Array`,
-  `Float64Array`, and `Uint8Array`, which its generated definitions type; serde-wasm-bindgen
-  converts nothing of a load. An export added later that hands the engine many nodes or edges at
-  once takes them as columns too.
+  edge, and the field as *Errors* requires. It reads every length off the boundaries, and maps no
+  boundary onto the string Rust holds before every value of that column has been checked for its
+  length: the snapshot cuts a string one code unit beyond its limit, which may split a surrogate
+  pair, and two cut values side by side then make one character of the Rust string across their
+  boundary; a boundary that still falls inside a character is refused as malformed. A title and
+  a label text are never mapped, since the bridge keeps neither. The columns cross as
+  wasm-bindgen's own parameter types, a string, `Uint32Array`, `Float64Array`, and `Uint8Array`,
+  which its generated definitions type; serde-wasm-bindgen converts nothing of a load. An export
+  added later that hands the engine many nodes or edges at once takes them as columns too.
 - **Errors:** every export that receives graph data returns `Result<_, _>` with a typed error that
   names the offending node, edge, or field; no export panics on malformed input.
 - **Streams:** every buffer the shell reads is one of these:
@@ -174,6 +209,16 @@ Graph data of a load:
 - **Only the lengths of titles and label texts** — the engine keeps neither, and their
   boundaries carry every length the bridge checks; but ADR-0028 has every field cross the bridge
   and be checked there.
+- **A `Vec<String>` per column** — no boundaries to compute or map, but wasm-bindgen hands each
+  element over as a string of its own, one copy and one allocation per value, which keeps a cost
+  per item at the crossing.
+- **One packed buffer for all columns** — one copy instead of one per column, but a layout of
+  offsets written by hand on both sides that no generated type checks, for a saving of a handful
+  of copies per load.
+- **Every value refused by its type moved into the first pass** — one mechanism for every
+  field, but a title or label text missing, of another type, or with a lone surrogate, and a
+  background of another type, are refused today at their rule, after the identifiers' lengths
+  and the earlier items' checks; moving them would change which refusal a load names.
 
 Structured data:
 
@@ -264,7 +309,11 @@ Precision far from the world's origin:
   it, on the GPU too, with no more bytes per vertex.
 - Positive: a load crosses in a fixed number of copies, one per column, whatever the number of
   nodes and edges, so every field can cross for its check (ADR-0028) without a cost per field at
-  the crossing; the goal is a first frame on the 7763 at most its baseline of 378.6 ms again (Q-2).
+  the crossing. The goal it serves is Q-2's load: on the AMD EPYC 7763, a Benchmark run on
+  `main` once both lists cross as columns is expected to report a median first frame some 100 to
+  130 ms below the 480 ms of today, and at least 90 ms below it, about the 378.6 ms of its
+  baseline; a run that misses that, or whose comparison fails, misses the goal, and is not run
+  again until it passes.
 - Negative / trade-offs: two forms of crossing to learn, and slot bookkeeping in the bridge.
 - Negative / trade-offs: a load and a single edit now cross in two forms, so the checks of a node
   and an edge are reached from columns and from serde types; the bridge crate keeps one check per
@@ -301,18 +350,25 @@ Precision far from the world's origin:
 
 Each test below cites this ADR with `Verifies: ADR-0032`.
 
-- **Malformed data:** the tests of `crates/engine-wasm/src/lib.rs` send malformed graph data of
-  each kind Q-7 names through every export that receives graph data and assert a typed error and
-  no panic; the property tests of `crates/engine-wasm/src/properties.rs` also cite Q-7, and
-  generate a load as columns, a value of the wrong type at any position among them, and assert
-  that the bridge crate refuses it exactly as the oracle refuses the same graph data.
-- **Columns:** a test of `crates/engine-wasm/src/lib.rs` asserts that a load refuses, for each
-  field of a node and of an edge, a value its rules refuse, naming the list, the node or edge, and
-  the field as before; and a browser test in `examples/metric-tree/e2e/malformed.spec.ts` loads
-  graph data through the public interface with a refused value in each field, a title of 1,001
-  UTF-16 code units and an identifier of 257 among them, and asserts the refusal. A test in
-  `packages/comb/src/bridge/bridge.test.ts` asserts that a load's strings and boundaries are read
-  back exactly, strings outside the Basic Multilingual Plane among them.
+- **Malformed data:** the tests of `crates/engine-wasm/src/graph_data.rs` send malformed graph
+  data of each kind Q-7 names through every export that receives graph data and assert a typed
+  error and no panic; the property tests of `crates/engine-wasm/src/properties.rs` also cite Q-7.
+  *Added:* the property tests generate a load as columns, a value of the wrong type at any
+  position among them, and assert that the bridge crate refuses it exactly as the oracle refuses
+  the same graph data.
+- **Columns (new):** tests of `crates/engine-wasm/src/graph_data.rs` assert that a load refuses,
+  for each field of a node and of an edge, a value its rules refuse, naming the list, the node or
+  edge, and the field as before, and that the order of the two passes holds: node 0 with
+  `x: Infinity` beside node 5 whose title holds a lone surrogate is refused as
+  `nonFiniteCoordinate` for node 0, and a missing title as `invalidTitle`. A browser test in
+  `examples/metric-tree/e2e/malformed.spec.ts` loads graph data through the public interface with
+  a refused value in each field, a title of 1,001 UTF-16 code units and an identifier of 257
+  among them, and asserts the refusal. A test in `packages/comb/src/bridge/bridge.test.ts`
+  asserts that a load's strings are read back exactly, strings outside the Basic Multilingual
+  Plane among them, and that two identifiers cut inside a surrogate pair side by side are refused
+  for their length. A type test in `packages/comb/src/bridge/snapshot-only.test.ts` pins the
+  generated parameter types of the engine's `loadGraph`, strings and typed arrays and no
+  `GraphBatch`, so that a load can no longer be handed over as a serde type.
 - **Views:** a test in `packages/comb/src/bridge/bridge.test.ts` grows the engine's memory between
   two calls and asserts that the positions read afterwards are the ones written.
 - **tsify:** `scripts/check-dependencies.sh` fails when `crates/engine-wasm/Cargo.toml` enables
@@ -320,7 +376,7 @@ Each test below cites this ADR with `Verifies: ADR-0032`.
 - **Detail:** a test in `crates/engine-wasm/src/lib.rs` queries a small graph and asserts
   *complete*, and queries a graph at the limit of a load, 1,000,000 curved edges, whole at the far
   level, where its full mesh passes the budget, and asserts *coarsened*.
-- **Origin:** tests in `crates/engine/src/graph.rs` assert the origin of a rectangle far from the
+- **Origin:** tests in `crates/engine/src/graph/query.rs` assert the origin of a rectangle far from the
   world's origin, that it stays across a pan shorter than half its grid, and that the vertex
   positions and label points of a query there, with its origin added back, lie within a sixteenth of
   a world unit of those of the same graph moved near the world's origin.
@@ -331,8 +387,9 @@ Each test below cites this ADR with `Verifies: ADR-0032`.
   origin, the engine's `f64` stroke shifted; and again after a pan within the culling margin that
   moves the world without a query. With the origin left at (0, 0) it fails. It also
   `Verifies: Q-4`.
-- **The first frame:** the comparison step of `.github/workflows/benchmark.yml`, which fails when
-  the median first frame of the runner's kind exceeds its baseline under `bench/baselines/` by more
-  than the margin, cites this ADR and Q-2; on the AMD EPYC 7763 its baseline holds 378.6 ms. A
-  number of the workflow decides it, not a test of the suite: the workflow runs weekly and on
-  demand, so a load that grows slow again is found at its next run, not in the pull request.
+- **The first frame (new):** the comparison step of `.github/workflows/benchmark.yml`, which
+  fails when the median first frame of the runner's kind exceeds its baseline under
+  `bench/baselines/` by more than the margin, cites this ADR and ADR-0008; on the AMD EPYC 7763
+  its baseline holds 378.6 ms. It cites no Q-2, which is defined on the reference machine. A
+  number of the workflow decides the goal, not a test of the suite: the workflow runs weekly and
+  on demand, so a load that grows slow again is found at its next run, not in the pull request.
