@@ -1,4 +1,4 @@
-//! The bridge between the shell and the engine (ADR-0010).
+//! The bridge between the shell and the engine (ADR-0032).
 //!
 //! Structured data crosses through serde-wasm-bindgen as `Ts<T>`, with TypeScript types tsify
 //! generates; node positions and the results of a viewport query cross as buffers the engine
@@ -241,7 +241,7 @@ pub fn check_node_patch(
 }
 
 /// What a press hits (ADR-0025): a connector by the slot of its node and its side, a label by the
-/// slot of its edge, a node or an edge by its slot, or nothing; one generated value (ADR-0010).
+/// slot of its edge, a node or an edge by its slot, or nothing; one generated value (ADR-0032).
 #[derive(Tsify, Serialize, Debug, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Hit {
@@ -624,14 +624,14 @@ impl Engine {
     }
 
     /// The `x` of the origin the last `query` wrote its vertex positions and label points
-    /// relative to (ADR-0010).
+    /// relative to (ADR-0032).
     #[wasm_bindgen(js_name = originX)]
     pub fn origin_x(&self) -> f64 {
         self.visible.origin.x
     }
 
     /// The `y` of the origin the last `query` wrote its vertex positions and label points
-    /// relative to (ADR-0010).
+    /// relative to (ADR-0032).
     #[wasm_bindgen(js_name = originY)]
     pub fn origin_y(&self) -> f64 {
         self.visible.origin.y
@@ -786,7 +786,7 @@ mod tests {
 
     #[test]
     fn a_small_graph_queries_complete_and_a_million_curved_edges_whole_far_coarsened() {
-        // Verifies: ADR-0010
+        // Verifies: ADR-0032
         let small = batch(&[("a", 0.0, 0.0), ("b", 300.0, 100.0)], &[("e", "a", "b")]);
         let rect = [-100.0, -100.0, 500.0, 300.0];
         let engine = detail_of(&small, rect, DetailLevel::Near, 1.0);

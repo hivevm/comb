@@ -1,7 +1,7 @@
 // The one module that imports the WebAssembly package (ADR-0028). Structured data crosses as
 // generated types through serde-wasm-bindgen; node positions and the results of a viewport query
 // are read through views on the engine's buffers, created anew on every read because growing
-// memory detaches older views (ADR-0010).
+// memory detaches older views (ADR-0032).
 import init, {
   checkGraphSize,
   checkIdBudget,
@@ -92,7 +92,7 @@ const DETAILS: Record<MeshDetail, Detail> = {
  *  found edge label, the mesh of the found edges and its detail, and the positions buffer, all
  *  read after the same call. The label points and the mesh's positions are relative to `origin`,
  *  a world point near the query's rectangle, so that `f32` rounds them by their distance from it
- *  (ADR-0010); the positions buffer is not. */
+ *  (ADR-0032); the positions buffer is not. */
 export interface Visible {
   positions: Float32Array;
   nodes: Uint32Array;
@@ -222,7 +222,7 @@ function each(
 
 /** `bridge` with the engine's memory grown by a page before each of its calls, so that a view
  *  kept across a call is detached and reads empty in tests, not only when memory happens to grow
- *  (ADR-0010). The message of its error carries `DETACHING_MARK`. */
+ *  (ADR-0032). The message of its error carries `DETACHING_MARK`. */
 function detaching(bridge: Bridge, memory: WebAssembly.Memory): Bridge {
   return each(bridge, (call) => (...args) => {
     try {
@@ -251,7 +251,7 @@ const lostListeners = new Set<(error: EngineLostError) => void>();
 
 /** Whether `error`, thrown from a call of the engine, is a trap: WebAssembly's own, or the glue's
  *  refusal of an object a trapped call left borrowed, which only a trap no guard saw leaves. Errors the bridge returns as values are
- *  plain objects, never traps (ADR-0010). */
+ *  plain objects, never traps (ADR-0032). */
 function isTrap(error: unknown): boolean {
   return (
     error instanceof WebAssembly.RuntimeError ||

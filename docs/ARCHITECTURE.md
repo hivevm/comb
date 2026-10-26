@@ -143,8 +143,8 @@ The functional core and its shell follow
   the near level only), the found edge slots, and the edge mesh into buffers the engine owns, the
   label points and the mesh's positions relative to the query's origin, which `originX` and
   `originY` read
-  ([ADR-0010](adr/0010-bridge-data-format.md)), and returns the mesh's detail, complete or
-  coarsened, and refuses a pixel that is not a finite number above zero; `drawnEdges`
+  ([ADR-0032](adr/0032-a-load-crosses-the-bridge-as-columns.md)), and returns the mesh's detail,
+  complete or coarsened, and refuses a pixel that is not a finite number above zero; `drawnEdges`
   computes the ends of the found edges when inspection asks, as they lie then, and `hit` names what
   a press at a point hits, a connector where the shell asks for connectors, a label, a node, or an
   edge by its slot, or nothing, as one generated value, and refuses a pixel as `query` does and a
@@ -168,7 +168,7 @@ The functional core and its shell follow
   `addEdge`, and `updateEdge` call alike
   ([ADR-0028](adr/0028-the-graph-lies-within-a-world.md)); `packages/comb/src/bridge` is the one
   module that imports the WebAssembly package and reads those buffers through fresh typed-array
-  views per read ([ADR-0010](adr/0010-bridge-data-format.md)).
+  views per read ([ADR-0032](adr/0032-a-load-crosses-the-bridge-as-columns.md)).
 - **Store** (`packages/comb/src/store`) — a vanilla Zustand store with the graph's structure, its
   nodes and edges by slot with holes at free slots, which every reader skips, the maps from node and
   edge identifiers to slots, the code units of the identifiers it holds, counted for a node and for
@@ -434,13 +434,13 @@ constant `comb/testing` exports (ADR-0001), and where it reads no names from one
 file reach the 300 kB of Q-3, when no engine file is measured, when the JavaScript inlines the
 engine (ADR-0019), and when the bundle carries either seam of the bridge's test mode, each by a mark
 of its own the bridge's source names once, `DETACHING_MARK` in the message of `detaching` and
-`TRAP_EXPORT`, the name of the trap's export (ADR-0010, ADR-0021); it fails too when it does not
+`TRAP_EXPORT`, the name of the trap's export (ADR-0032, ADR-0021); it fails too when it does not
 recognise each in the library built in test mode, and the trap in the engine of
 `packages/comb/wasm/test-mode/`, and when that engine's generated glue differs from the production
 engine's, which the example hands it over with. The benchmark and the browser test of the built
 example fail where `testMode()` says the build runs the bridge in test mode.
 `scripts/check-dependencies.sh` fails on a lockfile of another package manager beside `bun.lock`
-(ADR-0008), on tsify's default or `json` features or `serde_json` in the bridge crate (ADR-0010), in
+(ADR-0008), on tsify's default or `json` features or `serde_json` in the bridge crate (ADR-0032), in
 whatever form the entry takes, and on a listed state library other than zustand in the library's
 dependency lists (ADR-0029). The type checker does the rest for the render layer: `GraphView` has no
 action to call. ESLint forbids the DOM markup sinks (Q-5) and `eval`, implied eval, and `new
