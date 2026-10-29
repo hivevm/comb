@@ -175,7 +175,17 @@ function dashOf(read: Reader, dash: unknown) {
 
 function edgeOf(read: Reader, edge: Fields) {
   const { id, source, target, label, color, dash, arrow, sourceSide, targetSide } = edge;
-  return {
+  const snapshot: {
+    id: unknown;
+    source: unknown;
+    target: unknown;
+    color: number;
+    arrow: unknown;
+    sourceSide: unknown;
+    targetSide: unknown;
+    label?: ReturnType<typeof labelOf>;
+    dash?: ReturnType<typeof dashOf>;
+  } = {
     id: read.id(id),
     source: read.id(source),
     target: read.id(target),
@@ -183,15 +193,14 @@ function edgeOf(read: Reader, edge: Fields) {
     arrow: read.text(arrow) ?? EDGE_ARROW,
     sourceSide: read.text(sourceSide) ?? "right",
     targetSide: read.text(targetSide) ?? "left",
-    // No key for a label or a dash left out.
-    ...optional("label", labelOf(read, label)),
-    ...optional("dash", dashOf(read, dash)),
   };
-}
-
-/** `{ [name]: value }`, or nothing where `value` is undefined. */
-function optional<K extends string, V>(name: K, value: V | undefined) {
-  return (value === undefined ? {} : { [name]: value }) as { [P in K]?: V };
+  // No key for a label or a dash left out: each set where present, since spreading an object of
+  // one key per edge costs a large load milliseconds.
+  const placed = labelOf(read, label);
+  if (placed !== undefined) snapshot.label = placed;
+  const pattern = dashOf(read, dash);
+  if (pattern !== undefined) snapshot.dash = pattern;
+  return snapshot;
 }
 
 /** The snapshot of the lists `listsOf` read, with the edge styles' defaults and its strings cut
