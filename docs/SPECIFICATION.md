@@ -142,7 +142,8 @@ rediscovered as a rejected alternative in an ADR.
   culling and draws node backgrounds and edges in batches.
 - Heavy geometry and graph computation runs in Rust, compiled to WebAssembly with wasm-pack.
 - Structured data crosses the bridge between TypeScript and WebAssembly through
-  serde-wasm-bindgen, never as JSON strings. Bulk coordinate streams (node positions while
+  serde-wasm-bindgen, never as JSON strings, except the graph data of a load, which crosses as
+  typed-array and string columns. Bulk coordinate streams (node positions while
   dragging, edge path points for drawing, culling results) cross the bridge as typed-array views
   on WebAssembly memory.
 - Application state lives in a lightweight TypeScript store, such as Zustand or signals.
