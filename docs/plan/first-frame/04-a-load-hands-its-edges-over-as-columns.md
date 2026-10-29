@@ -14,9 +14,11 @@ pass refuses at its place; whether a label, its background, and a dash are prese
 a lone surrogate in an identifier, a source, or a target among them. The
 `loadGraph` export of `crates/engine-wasm/src/lib.rs` takes only columns, and
 `crates/engine-wasm/src/graph_data.rs` checks the edges by every rule it checks them by today, in
-the same order, a side outside the four refused as `invalidField` naming the four. `GraphBatch`
-and the reading of a load through serde-wasm-bindgen go; the edge of `addEdge` and the patch of
-`updateEdge` keep crossing as serde types and reach the same check per rule.
+the same order, a side outside the four refused as `invalidField` naming the four. `EdgeList`,
+the serde type of a load's edges (`Ts<EdgeList>`), and with it the reading of a load through
+serde-wasm-bindgen go; the test fixture `GraphBatch` (`#[cfg(test)]`) follows, its edges written
+into columns as its nodes are. The edge of `addEdge` and the patch of `updateEdge` keep crossing
+as serde types and reach the same check per rule.
 
 The change that lands this ticket also deletes
 `docs/plan/first-frame/01-the-bridge-checks-each-field-as-it-reads-it.md`, the fallback whose code
@@ -37,9 +39,9 @@ bridge (ADR-0024, ADR-0028).
       then nodes and edges cross as columns, and the bridge crate refuses exactly what the oracle
       refuses.
 - [ ] Given the type test `packages/comb/src/bridge/snapshot-only.test.ts`, when `tsc` checks it,
-      then it pins the generated parameter types of the engine's `loadGraph` to the columns,
-      strings and typed arrays, and a call that hands it a `GraphBatch` fails to compile; and
-      `GraphBatch` no longer appears in the generated `packages/comb/wasm/engine.d.ts`.
+      then its pin of the generated parameter types of the engine's `loadGraph` names the edge
+      columns, strings and typed arrays, in place of `edges: EdgeList`; and `EdgeList` no longer
+      appears in the generated `packages/comb/wasm/engine.d.ts`.
 - [ ] Given the timing of
       `docs/plan/first-frame/01-the-bridge-checks-each-field-as-it-reads-it.md`, when this branch
       and `main` are timed in the same session, then the median of the whole load path, the

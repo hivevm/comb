@@ -1,7 +1,8 @@
 //! The reading and checking of graph data, the one place that validates it (ADR-0028, ADR-0032):
-//! the limits of a load, the lenient readers of fields, the input types, and the checks that turn
-//! a batch into the engine's graph and a patch of `updateNode` into what the store merges. The
-//! exports in the crate root hand graph data here and pass on what it returns.
+//! the limits of a load, the lenient readers of fields, the input types, the columns of a load's
+//! nodes, and the checks that turn a load into the engine's graph and a patch of `updateNode` into
+//! what the store merges. The exports in the crate root hand graph data here and pass on what it
+//! returns.
 
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
@@ -15,6 +16,7 @@ use comb_engine::stroke::EdgeStyle;
 use serde::de::{self, IgnoredAny, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use tsify::Tsify;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 /// The most UTF-16 code units, the length JavaScript gives a string, of a node's title or an edge
 /// label's text.
@@ -41,7 +43,11 @@ pub(crate) const ID_LIMIT: u32 = 256;
 
 /// The length of a text in UTF-16 code units, as JavaScript counts it.
 fn utf16_length(text: &str) -> usize {
-    text.encode_utf16().count()
+    if text.is_ascii() {
+        text.len()
+    } else {
+        text.encode_utf16().count()
+    }
 }
 
 /// The length in UTF-16 code units of a field the engine does not keep, or none where it holds
@@ -95,7 +101,14 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Field<T> {
 /// field left unread: only that field is named, so that a graph of a million refused fields costs
 /// no million errors of serde-wasm-bindgen.
 pub(crate) fn reading<T>(read: impl FnOnce() -> T) -> T {
-    REFUSED.set(false);
+    reading_after(false, read)
+}
+
+/// What `read` deserializes, the edges of a load, after nodes of which one was `refused` by its
+/// type or not: after one, every edge is left unread, as it would be after a refused node in the
+/// same list, so that the load names the node and costs no reading of the edges.
+pub(crate) fn reading_after<T>(refused: bool, read: impl FnOnce() -> T) -> T {
+    REFUSED.set(refused);
     let value = read();
     REFUSED.set(false);
     value
@@ -298,13 +311,196 @@ impl<'de> Visitor<'de> for PairVisitor {
     }
 }
 
-/// The nodes and edges of one load, each in slot order.
+/// The edges of one load, in slot order; its nodes cross as `NodeColumns`.
 #[derive(Tsify, Deserialize)]
-pub struct GraphBatch {
-    #[serde(deserialize_with = "items")]
-    pub nodes: Vec<NodeInput>,
-    #[serde(deserialize_with = "items")]
-    pub edges: Vec<EdgeInput>,
+pub struct EdgeList(#[serde(deserialize_with = "items")] pub Vec<EdgeInput>);
+
+/// A field of a node that a load's first pass refuses by its type (ADR-0032), as the shell names
+/// the first such value it reads: `Item` for a node that is no object, refused as malformed. It
+/// crosses as its code, a plain number, so that a code it does not know is refused as malformed
+/// rather than thrown by the glue while the engine is borrowed, which would wedge it.
+#[wasm_bindgen]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NodeField {
+    Item,
+    Id,
+    X,
+    Y,
+    Width,
+    Height,
+}
+
+/// The nodes of one load as columns (ADR-0032), each in slot order. The identifiers and the
+/// titles are each one string, the values concatenated, with their boundaries in UTF-16 code
+/// units, one more than there are nodes, a refused value empty; `title_texts` holds per node
+/// whether its title is a text, 1 or 0. The numbers are as the host application handed them.
+/// `refused` is the first value the shell read that the first pass refuses, its node's index and
+/// its field, or none.
+pub struct NodeColumns<'a> {
+    pub ids: &'a str,
+    pub id_bounds: &'a [u32],
+    pub titles: &'a str,
+    pub title_bounds: &'a [u32],
+    pub title_texts: &'a [u8],
+    pub x: &'a [f64],
+    pub y: &'a [f64],
+    pub width: &'a [f64],
+    pub height: &'a [f64],
+    pub refused: Option<(u32, NodeField)>,
+}
+
+/// Columns that do not fit together, which the shell never hands over.
+fn unfit() -> GraphDataProblem {
+    malformed("the columns of the nodes do not fit together")
+}
+
+impl NodeField {
+    /// The field of `code`, its discriminant, or none for a code no field has.
+    fn of(code: u32) -> Option<Self> {
+        [
+            Self::Item,
+            Self::Id,
+            Self::X,
+            Self::Y,
+            Self::Width,
+            Self::Height,
+        ]
+        .into_iter()
+        .find(|&field| field as u32 == code)
+    }
+}
+
+/// The first value a load's first pass refuses, as `loadGraph` takes it: the index of its node
+/// and the code of its field, both or neither, and a code no field has refused as malformed.
+pub(crate) fn refused_of(
+    at: Option<u32>,
+    field: Option<u32>,
+) -> Result<Option<(u32, NodeField)>, GraphDataProblem> {
+    match (at, field.map(NodeField::of)) {
+        (Some(at), Some(Some(field))) => Ok(Some((at, field))),
+        (None, None) => Ok(None),
+        _ => Err(unfit()),
+    }
+}
+
+/// Whether `bounds` are the boundaries of `count` values of a string of `units` UTF-16 code
+/// units: one more than there are values, from 0, never falling, and ending at its end.
+fn bounds_fit(bounds: &[u32], count: usize, units: usize) -> bool {
+    bounds.len() == count + 1
+        && bounds.first() == Some(&0)
+        && bounds.windows(2).all(|pair| pair[0] <= pair[1])
+        && bounds.last().map(|&end| end as usize) == Some(units)
+}
+
+/// The lengths of the values of a string column, read off its boundaries.
+fn lengths(bounds: &[u32]) -> impl Iterator<Item = usize> + '_ {
+    bounds.windows(2).map(|pair| (pair[1] - pair[0]) as usize)
+}
+
+/// The value at `index` of a string column, with a character a boundary cuts in two given as
+/// U+FFFD at each side, as the shell's string of the value alone would have crossed: to name a
+/// node before its column is mapped, which takes no boundary as falling between characters.
+fn value_at(text: &str, bounds: &[u32], index: usize) -> String {
+    let (start, end) = (bounds[index] as usize, bounds[index + 1] as usize);
+    let mut value = String::new();
+    if start == end {
+        return value;
+    }
+    let mut units = 0;
+    for character in text.chars() {
+        let next = units + character.len_utf16();
+        if next > start && units < end {
+            let whole = units >= start && next <= end;
+            value.push(if whole { character } else { '\u{FFFD}' });
+        }
+        if next >= end {
+            break;
+        }
+        units = next;
+    }
+    value
+}
+
+/// The values of a string column as slices of `text`, or a refusal as malformed where a boundary
+/// falls inside a character. Called only once every value's length is checked: a value the shell
+/// cut one code unit beyond its limit may end in half a surrogate pair, and two such values side
+/// by side make one character across their boundary.
+fn values<'a>(text: &'a str, bounds: &[u32]) -> Result<Vec<&'a str>, GraphDataProblem> {
+    let offsets: Vec<usize> = if text.is_ascii() {
+        bounds.iter().map(|&bound| bound as usize).collect()
+    } else {
+        let mut offsets = Vec::with_capacity(bounds.len());
+        let mut next = bounds.iter().map(|&bound| bound as usize).peekable();
+        let mut units = 0;
+        for (byte, character) in text.char_indices() {
+            while next.next_if_eq(&units).is_some() {
+                offsets.push(byte);
+            }
+            units += character.len_utf16();
+            if next.peek().is_some_and(|&bound| bound < units) {
+                return Err(malformed("an identifier ends inside a character"));
+            }
+        }
+        offsets.extend(next.map(|_| text.len()));
+        offsets
+    };
+    Ok(offsets.windows(2).map(|at| &text[at[0]..at[1]]).collect())
+}
+
+impl NodeColumns<'_> {
+    /// The number of nodes, or a refusal as malformed where the columns do not fit together.
+    fn count(&self) -> Result<usize, GraphDataProblem> {
+        let count = self.x.len();
+        let numbers = [self.y, self.width, self.height].map(<[f64]>::len);
+        let fit = numbers.iter().all(|&len| len == count)
+            && self.title_texts.len() == count
+            && bounds_fit(self.id_bounds, count, utf16_length(self.ids))
+            && bounds_fit(self.title_bounds, count, utf16_length(self.titles))
+            && self
+                .refused
+                .is_none_or(|(index, _)| (index as usize) < count);
+        if fit { Ok(count) } else { Err(unfit()) }
+    }
+
+    /// The first pass over the nodes: the first value the shell refused by its type, named as a
+    /// node of the batch names it, its identifier where it was read.
+    fn first_refused(&self) -> Result<(), GraphDataProblem> {
+        let Some((index, field)) = self.refused else {
+            return Ok(());
+        };
+        let index = index as usize;
+        let (name, expected) = match field {
+            NodeField::Item => return Err(unshaped("a node is no object")),
+            NodeField::Id => ("id", AN_ID),
+            NodeField::X => ("x", A_NUMBER),
+            NodeField::Y => ("y", A_NUMBER),
+            NodeField::Width => ("width", A_SIZE),
+            NodeField::Height => ("height", A_SIZE),
+        };
+        let id = (field != NodeField::Id).then(|| value_at(self.ids, self.id_bounds, index));
+        let mut item = Item::new(GraphList::Nodes, index);
+        item.id = id.as_deref();
+        item.read(name, Field::<()>(None), expected)
+    }
+
+    /// The nodes with every field read, their identifiers mapped onto the string Rust holds.
+    fn nodes(&self) -> Result<Vec<Node<'_>>, GraphDataProblem> {
+        let ids = values(self.ids, self.id_bounds)?;
+        let titles = lengths(self.title_bounds).zip(self.title_texts);
+        Ok(ids
+            .into_iter()
+            .zip(titles)
+            .enumerate()
+            .map(|(i, (id, (length, &text)))| Node {
+                id,
+                title_length: (text == 1).then_some(length),
+                x: self.x[i],
+                y: self.y[i],
+                width: self.width[i],
+                height: self.height[i],
+            })
+            .collect())
+    }
 }
 
 /// Which list of graph data an item belongs to.
@@ -611,15 +807,11 @@ fn label_of(
         .transpose()
 }
 
-/// Reads every field of every node and edge of a batch, or names the first that is missing or
-/// holds a value of another type.
-fn batch_of(batch: &GraphBatch) -> Result<Batch<'_>, GraphDataProblem> {
-    let nodes = batch.nodes.iter().enumerate().map(|(i, n)| node_of(i, n));
-    let edges = batch.edges.iter().enumerate().map(|(i, e)| edge_of(i, e));
-    Ok(Batch {
-        nodes: nodes.collect::<Result<_, _>>()?,
-        edges: edges.collect::<Result<_, _>>()?,
-    })
+/// Reads every field of every edge of a load, or names the first that is missing or holds a value
+/// of another type.
+fn edges_read(edges: &[EdgeInput]) -> Result<Vec<Edge<'_>>, GraphDataProblem> {
+    let edges = edges.iter().enumerate().map(|(i, e)| edge_of(i, e));
+    edges.collect()
 }
 
 /// The nodes of a batch as the engine takes them: positions and sizes, `x, y` and `width, height`
@@ -823,7 +1015,18 @@ fn edges_of(batch: &Batch, slots: &HashMap<&str, u32>) -> Result<Vec<EdgeSpec>, 
 /// The length of the identifier `field` of the item at `index` of `list`, or its refusal where it
 /// is longer than `MAX_ID`.
 fn id_length(list: &str, index: usize, field: &str, id: &str) -> Result<usize, GraphDataProblem> {
-    let length = utf16_length(id);
+    checked_id_length(list, index, field, utf16_length(id))
+}
+
+/// `length`, the UTF-16 code units of the identifier `field` of the item at `index` of `list`, or
+/// its refusal where it is longer than `MAX_ID`: the one check of an identifier's length, for an
+/// identifier read as a string and for one whose length a column's boundaries give.
+fn checked_id_length(
+    list: &str,
+    index: usize,
+    field: &str,
+    length: usize,
+) -> Result<usize, GraphDataProblem> {
     if length > MAX_ID {
         return Err(GraphDataProblem::IdTooLong {
             list: list.to_owned(),
@@ -835,13 +1038,17 @@ fn id_length(list: &str, index: usize, field: &str, id: &str) -> Result<usize, G
     Ok(length)
 }
 
-/// Checks the length of every identifier of a batch, and of all of them together.
-fn ids_of(batch: &Batch) -> Result<(), GraphDataProblem> {
+/// Checks the length of every identifier of a load, the nodes' by their lengths, and of all of
+/// them together.
+fn ids_of(
+    node_ids: impl IntoIterator<Item = usize>,
+    edges: &[Edge],
+) -> Result<(), GraphDataProblem> {
     let mut units = 0;
-    for (index, node) in batch.nodes.iter().enumerate() {
-        units += id_length("nodes", index, "id", node.id)?;
+    for (index, length) in node_ids.into_iter().enumerate() {
+        units += checked_id_length("nodes", index, "id", length)?;
     }
-    for (index, edge) in batch.edges.iter().enumerate() {
+    for (index, edge) in edges.iter().enumerate() {
         units += edge_ids(index, edge)?;
     }
     check_id_budget(units as f64)
@@ -861,12 +1068,20 @@ fn edge_ids(index: usize, edge: &Edge) -> Result<usize, GraphDataProblem> {
     Ok(units)
 }
 
-/// Checks a batch and builds the engine's graph from it: its size, then every field's type, the
-/// identifiers' lengths, the nodes, and the edges.
-pub(crate) fn graph_of(batch: &GraphBatch) -> Result<Graph, GraphDataProblem> {
-    check_graph_size(batch.nodes.len() as f64, batch.edges.len() as f64)?;
-    let batch = batch_of(batch)?;
-    ids_of(&batch)?;
+/// Checks a load and builds the engine's graph from it, its nodes as columns and its edges as
+/// `reading_after` read them: whether the columns fit together, the load's size, then every
+/// field's type, the nodes' before the edges', the identifiers' lengths, the nodes, and the edges.
+/// Only then are the nodes' identifiers mapped onto the string Rust holds.
+pub(crate) fn load_of(nodes: &NodeColumns, edges: &[EdgeInput]) -> Result<Graph, GraphDataProblem> {
+    let count = nodes.count()?;
+    check_graph_size(count as f64, edges.len() as f64)?;
+    nodes.first_refused()?;
+    let edges = edges_read(edges)?;
+    ids_of(lengths(nodes.id_bounds), &edges)?;
+    let batch = Batch {
+        nodes: nodes.nodes()?,
+        edges,
+    };
     let nodes = nodes_of(&batch)?;
     let edges = edges_of(&batch, &nodes.slots)?;
     Ok(Graph::new(nodes.positions, nodes.sizes, edges)?)
@@ -1165,6 +1380,129 @@ pub(crate) fn patch_of(node: &str, patch: NodePatch) -> Result<CheckedPatch, Gra
         checked.title = Some(title);
     }
     Ok(checked)
+}
+
+/// The nodes and edges of one load as the tests write them, each in slot order: the nodes as the
+/// node of `addNode` crosses, which `OwnedColumns` turns into the columns the shell builds.
+#[cfg(test)]
+#[derive(Deserialize)]
+pub(crate) struct GraphBatch {
+    #[serde(deserialize_with = "items")]
+    pub nodes: Vec<NodeInput>,
+    #[serde(deserialize_with = "items")]
+    pub edges: Vec<EdgeInput>,
+}
+
+/// The columns of a load's nodes, owned: what the snapshot of `api` builds, for the tests.
+#[cfg(test)]
+#[derive(Default)]
+pub(crate) struct OwnedColumns {
+    ids: String,
+    id_bounds: Vec<u32>,
+    titles: String,
+    title_bounds: Vec<u32>,
+    title_texts: Vec<u8>,
+    x: Vec<f64>,
+    y: Vec<f64>,
+    width: Vec<f64>,
+    height: Vec<f64>,
+    refused: Option<(u32, NodeField)>,
+}
+
+#[cfg(test)]
+impl OwnedColumns {
+    /// The columns of `nodes` as the snapshot builds them, `None` for an item that is no object: a
+    /// field missing or of another type empty or NaN, and the first such one named; a title of
+    /// the length a node holds.
+    pub(crate) fn of<'n>(nodes: impl IntoIterator<Item = Option<&'n NodeInput>>) -> Self {
+        let mut columns = Self {
+            id_bounds: vec![0],
+            title_bounds: vec![0],
+            ..Self::default()
+        };
+        for (index, node) in nodes.into_iter().enumerate() {
+            let index = index as u32;
+            let Some(node) = node else {
+                columns.refused.get_or_insert((index, NodeField::Item));
+                columns.id_bounds.push(utf16_length(&columns.ids) as u32);
+                columns
+                    .title_bounds
+                    .push(utf16_length(&columns.titles) as u32);
+                columns.title_texts.push(0);
+                for numbers in [
+                    &mut columns.x,
+                    &mut columns.y,
+                    &mut columns.width,
+                    &mut columns.height,
+                ] {
+                    numbers.push(f64::NAN);
+                }
+                continue;
+            };
+            match &node.id.0 {
+                Some(id) => columns.ids.push_str(id),
+                None => _ = columns.refused.get_or_insert((index, NodeField::Id)),
+            }
+            let numbers = [
+                (NodeField::X, node.x, &mut columns.x),
+                (NodeField::Y, node.y, &mut columns.y),
+                (NodeField::Width, node.width, &mut columns.width),
+                (NodeField::Height, node.height, &mut columns.height),
+            ];
+            for (field, value, column) in numbers {
+                if value.0.is_none() {
+                    columns.refused.get_or_insert((index, field));
+                }
+                column.push(value.0.unwrap_or(f64::NAN));
+            }
+            if let Some(length) = node.title_length {
+                columns.titles.push_str(&"x".repeat(length));
+            }
+            columns
+                .title_texts
+                .push(u8::from(node.title_length.is_some()));
+            columns.id_bounds.push(utf16_length(&columns.ids) as u32);
+            columns
+                .title_bounds
+                .push(utf16_length(&columns.titles) as u32);
+        }
+        columns
+    }
+
+    pub(crate) fn view(&self) -> NodeColumns<'_> {
+        NodeColumns {
+            ids: &self.ids,
+            id_bounds: &self.id_bounds,
+            titles: &self.titles,
+            title_bounds: &self.title_bounds,
+            title_texts: &self.title_texts,
+            x: &self.x,
+            y: &self.y,
+            width: &self.width,
+            height: &self.height,
+            refused: self.refused,
+        }
+    }
+}
+
+/// A load of `batch` as `loadGraph` checks one, its nodes crossed as columns.
+#[cfg(test)]
+pub(crate) fn graph_of(batch: &GraphBatch) -> Result<Graph, GraphDataProblem> {
+    load_of(
+        &OwnedColumns::of(batch.nodes.iter().map(Some)).view(),
+        &batch.edges,
+    )
+}
+
+/// Reads every field of every node and edge of a batch, or names the first that is missing or
+/// holds a value of another type, as `addNode` reads a node.
+#[cfg(test)]
+fn batch_of(batch: &GraphBatch) -> Result<Batch<'_>, GraphDataProblem> {
+    let nodes = batch.nodes.iter().enumerate().map(|(i, n)| node_of(i, n));
+    Ok(Batch {
+        nodes: nodes.collect::<Result<_, _>>()?,
+        edges: edges_read(&batch.edges)?,
+    })
 }
 
 // The property test reads graph data as `loadGraph` and `updateNode` do; its file keeps the path
@@ -1510,7 +1848,11 @@ pub(crate) mod tests {
             edges: Vec::new(),
         };
         // 250,000 identifiers of 256 code units hold 64,000,000 together.
-        let ids = |count| ids_of(&batch_of(&nodes(count)).unwrap());
+        let ids = |count| {
+            let data = nodes(count);
+            let batch = batch_of(&data).unwrap();
+            ids_of(batch.nodes.iter().map(|n| utf16_length(n.id)), &batch.edges)
+        };
         assert_eq!(ids(250_000), Ok(()));
         assert_eq!(
             ids(250_001),
@@ -1705,5 +2047,213 @@ pub(crate) mod tests {
         );
         assert_eq!(graph.nodes_in_use(), MAX_ITEMS);
         assert_eq!(graph.positions().len(), count * 2);
+    }
+
+    /// The load of `columns` and no edges, as `loadGraph` checks it.
+    fn load_columns(columns: &OwnedColumns) -> Result<Graph, GraphDataProblem> {
+        load_of(&columns.view(), &[])
+    }
+
+    /// The columns of node `a` and of `b`, made by `change` from a well-formed one.
+    fn a_and(change: impl FnOnce(&mut NodeInput)) -> OwnedColumns {
+        let nodes = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]).nodes;
+        let mut b = added(300.0, 0.0, |n| n.id = "b".to_owned().into());
+        change(&mut b);
+        OwnedColumns::of([Some(&nodes[0]), Some(&b)])
+    }
+
+    #[test]
+    fn every_refusal_of_a_node_crosses_as_columns_with_its_kind_and_names() {
+        // Verifies: ADR-0032
+        let b = || "b".to_owned();
+        let field =
+            |field: &str, id: Option<String>, expected: &str| GraphDataProblem::InvalidField {
+                list: GraphList::Nodes,
+                index: 1,
+                id,
+                field: field.into(),
+                expected: expected.into(),
+            };
+        // A field missing or of another type, or an identifier with a lone surrogate, which the
+        // snapshot hands over as `false`: the column holds none of it, and names its position.
+        let mut cases: Vec<(OwnedColumns, GraphDataProblem)> = vec![
+            (a_and(|n| n.id = Field(None)), field("id", None, AN_ID)),
+            (
+                a_and(|n| n.x = Field(None)),
+                field("x", Some(b()), A_NUMBER),
+            ),
+            (
+                a_and(|n| n.y = Field(None)),
+                field("y", Some(b()), A_NUMBER),
+            ),
+            (
+                a_and(|n| n.width = Field(None)),
+                field("width", Some(b()), A_SIZE),
+            ),
+            (
+                a_and(|n| n.height = Field(None)),
+                field("height", Some(b()), A_SIZE),
+            ),
+            // The first of a node's fields refused, in the order a node is read.
+            (
+                a_and(|n| (n.height, n.y) = (Field(None), Field(None))),
+                field("y", Some(b()), A_NUMBER),
+            ),
+            // A title missing, of another type, or with a lone surrogate is no text.
+            (
+                a_and(|n| n.title_length = None),
+                GraphDataProblem::InvalidTitle { node: b() },
+            ),
+            (
+                a_and(|n| n.title_length = Some(MAX_TEXT + 1)),
+                GraphDataProblem::TitleTooLong {
+                    node: b(),
+                    limit: TEXT_LIMIT,
+                },
+            ),
+            (
+                a_and(|n| n.id = "x".repeat(MAX_ID + 1).into()),
+                GraphDataProblem::IdTooLong {
+                    list: "nodes".into(),
+                    index: 1,
+                    field: "id".into(),
+                    limit: ID_LIMIT,
+                },
+            ),
+            (
+                a_and(|n| n.id = "a".to_owned().into()),
+                GraphDataProblem::DuplicateNode { node: "a".into() },
+            ),
+            (
+                a_and(|n| n.x = f64::INFINITY.into()),
+                GraphDataProblem::NonFiniteCoordinate { node: b() },
+            ),
+            (
+                a_and(|n| n.width = (-1.0).into()),
+                GraphDataProblem::InvalidSize { node: b() },
+            ),
+            (
+                a_and(|n| n.y = (-WORLD_LIMIT * 1.01).into()),
+                beyond(GraphList::Nodes, "b", "y"),
+            ),
+        ];
+        // A node that is no object, refused as malformed as one that is no object was.
+        let a = batch(&[("a", 0.0, 0.0)], &[]).nodes;
+        cases.push((
+            OwnedColumns::of([Some(&a[0]), None]),
+            unshaped("a node is no object"),
+        ));
+        for (columns, problem) in cases {
+            assert_eq!(load_columns(&columns).err(), Some(problem));
+        }
+        assert!(load_columns(&a_and(|_| {})).is_ok());
+    }
+
+    #[test]
+    fn a_coordinate_not_finite_in_an_early_node_is_named_before_a_title_in_a_later_one() {
+        // Verifies: ADR-0032
+        // The first pass names only the values `Field<T>` reads; a title is checked at its rule,
+        // in the second pass, after the nodes before it.
+        let ids: Vec<String> = (0..6).map(|i| format!("n{i}")).collect();
+        let nodes: Vec<_> = ids.iter().map(|id| (id.as_str(), 0.0, 0.0)).collect();
+        let mut data = batch(&nodes, &[]);
+        data.nodes[0].x = f64::INFINITY.into();
+        // The title of node 5 holds a lone surrogate, which the snapshot hands over as no text.
+        data.nodes[5].title_length = None;
+        assert_eq!(
+            graph_of(&data).unwrap_err(),
+            GraphDataProblem::NonFiniteCoordinate { node: "n0".into() }
+        );
+        data.nodes[0].x = 0.0.into();
+        assert_eq!(
+            graph_of(&data).unwrap_err(),
+            GraphDataProblem::InvalidTitle { node: "n5".into() }
+        );
+    }
+
+    /// The columns of nodes of identifiers `ids`, given as the string Rust holds and the
+    /// boundaries the shell computed, with the field `refused` of a node named.
+    fn cut(ids: &str, bounds: &[u32], refused: Option<(u32, NodeField)>) -> OwnedColumns {
+        let count = bounds.len() - 1;
+        let nodes = batch(&vec![("", 0.0, 0.0); count], &[]).nodes;
+        let mut columns = OwnedColumns::of(nodes.iter().map(Some));
+        columns.ids = ids.to_owned();
+        columns.id_bounds = bounds.to_vec();
+        columns.refused = refused;
+        columns
+    }
+
+    #[test]
+    fn identifiers_cut_inside_a_pair_are_refused_for_their_length_before_any_is_mapped() {
+        // Verifies: ADR-0032
+        // Two identifiers of 300 code units, cut to 257: the first ends in the high half of a
+        // pair and the second begins with the low one, one character across their boundary.
+        let ids = format!("{}\u{1F600}{}", "a".repeat(256), "b".repeat(256));
+        assert_eq!(
+            load_columns(&cut(&ids, &[0, 257, 514], None)).unwrap_err(),
+            GraphDataProblem::IdTooLong {
+                list: "nodes".into(),
+                index: 0,
+                field: "id".into(),
+                limit: ID_LIMIT,
+            }
+        );
+        // A boundary inside a character no length refuses is malformed, never mapped.
+        assert_eq!(
+            load_columns(&cut("\u{1F600}", &[0, 1, 2], None)).unwrap_err(),
+            malformed("an identifier ends inside a character")
+        );
+        // A node refused by its type in the first pass is named by its identifier as the shell
+        // read it, each half of a pair cut in two U+FFFD, as it crossed alone.
+        let named = |at, id: String| {
+            let columns = cut(&ids, &[0, 257, 514], Some((at, NodeField::X)));
+            let problem = load_columns(&columns).unwrap_err();
+            assert!(
+                matches!(&problem, GraphDataProblem::InvalidField { id: Some(named), .. } if *named == id),
+                "{problem:?}"
+            );
+        };
+        named(0, format!("{}\u{FFFD}", "a".repeat(256)));
+        named(1, format!("\u{FFFD}{}", "b".repeat(256)));
+    }
+
+    #[test]
+    fn columns_that_do_not_fit_together_are_refused_as_malformed() {
+        // Verifies: ADR-0032
+        let fits = || a_and(|_| {});
+        let changes: [fn(&mut OwnedColumns); 7] = [
+            |c| _ = c.x.pop(),
+            |c| _ = c.title_texts.pop(),
+            |c| _ = c.id_bounds.pop(),
+            |c| c.id_bounds[0] = 1,
+            |c| c.id_bounds = vec![0, 2, 1],
+            |c| c.titles.push('x'),
+            |c| c.refused = Some((2, NodeField::X)),
+        ];
+        for change in changes {
+            let mut columns = fits();
+            change(&mut columns);
+            assert_eq!(load_columns(&columns).err(), Some(unfit()));
+        }
+        assert_eq!(refused_of(Some(0), None), Err(unfit()));
+        assert_eq!(refused_of(None, Some(NodeField::Id as u32)), Err(unfit()));
+        assert_eq!(refused_of(None, None), Ok(None));
+        // Every field by its code, and a code no field has refused as malformed.
+        for field in [
+            NodeField::Item,
+            NodeField::Id,
+            NodeField::X,
+            NodeField::Y,
+            NodeField::Width,
+            NodeField::Height,
+        ] {
+            assert_eq!(
+                refused_of(Some(1), Some(field as u32)),
+                Ok(Some((1, field)))
+            );
+        }
+        for code in [6, 255, u32::MAX] {
+            assert_eq!(refused_of(Some(0), Some(code)), Err(unfit()));
+        }
     }
 }

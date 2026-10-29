@@ -28,13 +28,14 @@ use tsify::{Ts, Tsify};
 use wasm_bindgen::prelude::*;
 
 pub use graph_data::{
-    Arrow, CheckedPatch, EdgeInput, EdgePatch, Field, GraphBatch, GraphDataProblem, GraphList,
-    LabelInput, MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_TEXT, NodeInput, NodePatch, Pair, Side, Text,
+    Arrow, CheckedPatch, EdgeInput, EdgeList, EdgePatch, Field, GraphDataProblem, GraphList,
+    LabelInput, MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_TEXT, NodeField, NodeInput, NodePatch, Pair,
+    Side, Text,
 };
 
 use graph_data::{
-    EdgeRefusal, ID_LIMIT, TEXT_LIMIT, add_edge_to, add_node_to, graph_of, malformed, patch_of,
-    reading, slot, unshaped, update_edge_in,
+    EdgeRefusal, ID_LIMIT, NodeColumns, TEXT_LIMIT, add_edge_to, add_node_to, load_of, malformed,
+    patch_of, reading, reading_after, refused_of, slot, unshaped, update_edge_in,
 };
 
 /// A number the shell computed that an export cannot take: the shell's own mistake, never one of
@@ -347,16 +348,52 @@ impl Engine {
         Self::default()
     }
 
-    /// Replaces the graph with the batch, node slot `i` for the batch's node `i` and edge slot
-    /// `i` for its edge `i`, and returns the number of node slots. A refused batch leaves the
-    /// loaded graph as it was.
+    /// Replaces the graph with a load, node slot `i` for its node `i` and edge slot `i` for its
+    /// edge `i`, and returns the number of node slots. The nodes cross as columns (ADR-0032), each
+    /// in slot order: the identifiers and the titles each as one string with its boundaries in
+    /// UTF-16 code units, per title whether it is a text, the numbers as `Float64Array`, and the
+    /// first value the shell refused by its type, the index of its node and the code of its
+    /// `NodeField`, or none.
+    /// The edges still cross as structured data. A refused load leaves the loaded graph as it was.
     #[wasm_bindgen(js_name = loadGraph)]
-    pub fn load_graph(&mut self, batch: Ts<GraphBatch>) -> Result<u32, GraphDataProblem> {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one parameter per column, each a type wasm-bindgen hands over in one copy \
+                  (ADR-0032)"
+    )]
+    pub fn load_graph(
+        &mut self,
+        ids: &str,
+        id_bounds: &[u32],
+        titles: &str,
+        title_bounds: &[u32],
+        title_texts: &[u8],
+        x: &[f64],
+        y: &[f64],
+        width: &[f64],
+        height: &[f64],
+        refused_at: Option<u32>,
+        refused_field: Option<u32>,
+        edges: Ts<EdgeList>,
+    ) -> Result<u32, GraphDataProblem> {
         trap::spring();
-        let batch = reading(|| batch.to_rust()).map_err(unshaped)?;
-        self.graph = graph_of(&batch)?;
+        let refused = refused_of(refused_at, refused_field)?;
+        let nodes = NodeColumns {
+            ids,
+            id_bounds,
+            titles,
+            title_bounds,
+            title_texts,
+            x,
+            y,
+            width,
+            height,
+            refused,
+        };
+        let edges = reading_after(refused.is_some(), || edges.to_rust()).map_err(unshaped)?;
+        self.graph = load_of(&nodes, &edges.0)?;
         self.visible = Visible::default();
-        slot(batch.nodes.len())
+        slot(x.len())
     }
 
     /// Checks the node `addNode` hands over as a load checks a node and adds it, drawn and hit
@@ -709,6 +746,7 @@ mod tests {
     use super::*;
     use comb_engine::stroke::MESH_BUDGET;
     use graph_data::tests::batch;
+    use graph_data::{GraphBatch, graph_of};
 
     #[test]
     fn a_freed_slot_is_refused_by_every_export_that_takes_slots_as_a_slot_beyond_the_graph() {

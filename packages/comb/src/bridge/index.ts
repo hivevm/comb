@@ -1,7 +1,8 @@
 // The one module that imports the WebAssembly package (ADR-0028). Structured data crosses as
-// generated types through serde-wasm-bindgen; node positions and the results of a viewport query
-// are read through views on the engine's buffers, created anew on every read because growing
-// memory detaches older views (ADR-0032).
+// generated types through serde-wasm-bindgen, but for a load's nodes, which cross as columns of
+// one string or one typed array each; node positions and the results of a viewport query are read
+// through views on the engine's buffers, created anew on every read because growing memory
+// detaches older views (ADR-0032).
 import init, {
   checkGraphSize,
   checkIdBudget,
@@ -13,11 +14,12 @@ import init, {
   Engine,
   initSync,
   MeshDetail,
+  NodeField,
   type InitOutput,
   type CheckedPatch,
   type EdgeInput,
+  type EdgeList,
   type EdgePatch,
-  type GraphBatch,
   type Hit,
   type GraphDataProblem,
   type NodeInput,
@@ -28,8 +30,9 @@ import init, {
 
 export type {
   CheckedPatch,
-  GraphBatch,
+  EdgeList,
   GraphDataProblem,
+  NodeField,
   Hit,
   NodeInput,
   NodePatch,
@@ -45,8 +48,115 @@ export type TranslateError = NumberError;
  *  application, which may hold a getter or a Proxy, takes a cast a reviewer sees. */
 declare const read: unique symbol;
 
-/** The snapshot of a load: what `snapshotOf` returns, and the graph data the bridge takes. */
-export type GraphSnapshot = GraphBatch & { readonly [read]: "graph" };
+/** The nodes of a load as the engine's `loadGraph` takes them (ADR-0032), each column in slot
+ *  order: the identifiers and the titles each as one string, the values concatenated, with their
+ *  boundaries in UTF-16 code units, one more than there are nodes, a refused value empty; per
+ *  title whether it is a text, 1 or 0; the numbers as the host application handed them; and the
+ *  first value the engine's first pass refuses by its type, the index of its node and its field,
+ *  `item` for a node that is no object. */
+export interface NodeColumns {
+  readonly ids: string;
+  readonly idBounds: Uint32Array;
+  readonly titles: string;
+  readonly titleBounds: Uint32Array;
+  readonly titleTexts: Uint8Array;
+  readonly x: Float64Array;
+  readonly y: Float64Array;
+  readonly width: Float64Array;
+  readonly height: Float64Array;
+  readonly refused: { readonly index: number; readonly field: NodeField } | undefined;
+}
+
+/** What writes the columns of a load's nodes, one node after another in slot order. */
+export interface NodeColumnWriter {
+  /** The next node, from the primitives `api/snapshot.ts` read of it: an identifier or a title
+   *  that is a string is one, a number that is a number is one, and any other value is refused by
+   *  its type, the first of them named, a title at its rule. */
+  node(id: unknown, title: unknown, x: unknown, y: unknown, width: unknown, height: unknown): void;
+  /** The next node, which is no object, refused as malformed unless a value before it was. */
+  noObject(): void;
+  /** The columns of the nodes written so far. */
+  columns(): NodeColumns;
+}
+
+/** A column of at most `count` strings: the values concatenated, and their boundaries in UTF-16
+ *  code units, one more than there are values. */
+function stringColumn(count: number) {
+  const values: string[] = [];
+  const bounds = new Uint32Array(count + 1);
+  let units = 0;
+  return {
+    /** Ends the value at `at` with `value` where it is a string, else empty; returns whether it
+     *  is one. */
+    add(at: number, value: unknown): boolean {
+      const text = typeof value === "string";
+      if (text) {
+        values.push(value);
+        units += value.length;
+      }
+      bounds[at + 1] = units;
+      return text;
+    },
+    joined: () => values.join(""),
+    bounds: (written: number) => bounds.subarray(0, written + 1),
+  };
+}
+
+/** A writer of the columns of at most `count` nodes. It looks at a value by `typeof` and at a
+ *  string's length only, so that no value it is handed runs code. */
+export function nodeColumns(count: number): NodeColumnWriter {
+  const ids = stringColumn(count);
+  const titles = stringColumn(count);
+  const titleTexts = new Uint8Array(count);
+  const x = new Float64Array(count);
+  const y = new Float64Array(count);
+  const width = new Float64Array(count);
+  const height = new Float64Array(count);
+  let at = 0;
+  let refused: NodeColumns["refused"];
+  const refuse = (field: NodeField) => {
+    refused ??= { index: at, field };
+  };
+  const number = (column: Float64Array, value: unknown, field: NodeField) => {
+    if (typeof value === "number") column[at] = value;
+    else refuse(field);
+  };
+  return {
+    node(id, title, xOf, yOf, widthOf, heightOf) {
+      if (!ids.add(at, id)) refuse(NodeField.Id);
+      number(x, xOf, NodeField.X);
+      number(y, yOf, NodeField.Y);
+      number(width, widthOf, NodeField.Width);
+      number(height, heightOf, NodeField.Height);
+      titleTexts[at] = Number(titles.add(at, title));
+      at++;
+    },
+    noObject() {
+      refuse(NodeField.Item);
+      ids.add(at, undefined);
+      titles.add(at, undefined);
+      at++;
+    },
+    columns: () => ({
+      ids: ids.joined(),
+      idBounds: ids.bounds(at),
+      titles: titles.joined(),
+      titleBounds: titles.bounds(at),
+      titleTexts: titleTexts.subarray(0, at),
+      x: x.subarray(0, at),
+      y: y.subarray(0, at),
+      width: width.subarray(0, at),
+      height: height.subarray(0, at),
+      refused,
+    }),
+  };
+}
+
+/** The snapshot of a load: what `snapshotOf` hands the bridge, its nodes as columns and its edges
+ *  as the generated type. */
+export type GraphSnapshot = { readonly nodes: NodeColumns; readonly edges: EdgeList } & {
+  readonly [read]: "graph";
+};
 
 /** The node of `addNode` read once: what `nodeSnapshotOf` returns, and the node the bridge takes. */
 export type NodeSnapshot = NodeInput & { readonly [read]: "node" };
@@ -356,12 +466,19 @@ function wrap(exports: InitOutput): Bridge {
   return guarded(TEST_MODE ? detaching(bridge, memory) : bridge);
 }
 
+/** Hands `engine` the load of `snapshot`, a parameter per column. */
+function load(engine: Engine, { nodes, edges }: GraphSnapshot): number {
+  const { ids, idBounds, titles, titleBounds, titleTexts, x, y, width, height, refused } = nodes;
+  const columns = [ids, idBounds, titles, titleBounds, titleTexts, x, y, width, height] as const;
+  return engine.loadGraph(...columns, refused?.index, refused?.field, edges);
+}
+
 function engineBridge(memory: WebAssembly.Memory): Bridge {
   const engine = newEngine();
   const u32 = (ptr: number, len: number) => new Uint32Array(memory.buffer, ptr, len);
   const f32 = (ptr: number, len: number) => new Float32Array(memory.buffer, ptr, len);
   return {
-    loadGraph: (batch) => engine.loadGraph(batch),
+    loadGraph: (snapshot) => load(engine, snapshot),
     addNode: (node) => engine.addNode(node),
     addEdge: (edge, source, target) => engine.addEdge(edge, source, target),
     updateEdge: (slot, id, patch) => engine.updateEdge(slot, id, patch),

@@ -191,6 +191,93 @@ for (const { name, graph, problem } of FIELDS) {
   });
 }
 
+/** Each refusal a node of a load can cause, of node `b` after node `a`: the graph data is built in
+ *  the page, where a lone surrogate keeps its code unit, by `nodeRefusal`. */
+const NODE_REFUSALS: { kind: string; problem: unknown }[] = [
+  ...(
+    [
+      ["missingId", "id", ID],
+      ["numberId", "id", ID],
+      ["loneSurrogateId", "id", ID],
+      ["stringX", "x", NUMBER],
+      ["missingY", "y", NUMBER],
+      ["nullWidth", "width", SIZE],
+      ["booleanHeight", "height", SIZE],
+    ] as const
+  ).map(([kind, field, expected]) => {
+    const problem = { kind: "invalidField", list: "nodes", index: 1, id: "b", field, expected };
+    if (field === "id") delete (problem as { id?: string }).id;
+    return { kind, problem };
+  }),
+  {
+    kind: "noObject",
+    problem: { kind: "malformed", message: "the value does not have the shape the bridge expects" },
+  },
+  { kind: "missingTitle", problem: { kind: "invalidTitle", node: "b" } },
+  { kind: "loneSurrogateTitle", problem: { kind: "invalidTitle", node: "b" } },
+  {
+    kind: "longId",
+    problem: { kind: "idTooLong", list: "nodes", index: 1, field: "id", limit: 256 },
+  },
+  { kind: "longTitle", problem: { kind: "titleTooLong", node: "b", limit: 1000 } },
+  { kind: "duplicate", problem: { kind: "duplicateNode", node: "a" } },
+  {
+    kind: "beyondWorld",
+    problem: { kind: "beyondWorld", list: "nodes", id: "b", field: "x", limit: 2 ** 120 },
+  },
+  { kind: "nonFinite", problem: { kind: "nonFiniteCoordinate", node: "b" } },
+  { kind: "negativeSize", problem: { kind: "invalidSize", node: "b" } },
+];
+
+/** Loads nodes `a` and `b` with `b` changed as `kind` names, in the page, and returns the problem
+ *  `load` throws, or none. */
+function nodeRefusal(kind: string) {
+  const b: Record<string, unknown> = { ...window.node("b", 300) };
+  const changes: Record<string, () => unknown> = {
+    missingId: () => delete b.id,
+    numberId: () => (b.id = 5),
+    loneSurrogateId: () => (b.id = "b\uD800"),
+    stringX: () => (b.x = "1"),
+    missingY: () => delete b.y,
+    nullWidth: () => (b.width = null),
+    booleanHeight: () => (b.height = true),
+    missingTitle: () => delete b.title,
+    loneSurrogateTitle: () => (b.title = "b\uDC00"),
+    longId: () => (b.id = "b".repeat(257)),
+    longTitle: () => (b.title = "b".repeat(1001)),
+    duplicate: () => (b.id = "a"),
+    beyondWorld: () => (b.x = 2 ** 121),
+    nonFinite: () => (b.x = Number.NEGATIVE_INFINITY),
+    negativeSize: () => (b.height = -1),
+  };
+  const nodes: unknown[] = [window.node("a"), b];
+  if (kind === "noObject") nodes[1] = 5;
+  else changes[kind]!();
+  try {
+    window.comb.load({ nodes, edges: [] } as never);
+    return null;
+  } catch (error) {
+    return (error as { problem?: unknown }).problem ?? null;
+  }
+}
+
+for (const { kind, problem } of NODE_REFUSALS) {
+  test(`load refuses a node (${kind}) as before, its nodes crossing as columns, and the previous graph stays drawn`, async ({
+    page,
+  }) => {
+    // Verifies: ADR-0032
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await open(page);
+    const before = await drawnGraph(page);
+    const refused = await page.evaluate(nodeRefusal, kind);
+    await frames(page);
+    expect(errors).toEqual([]);
+    expect(refused).toStrictEqual(problem);
+    expect(await drawnGraph(page)).toEqual(before);
+  });
+}
+
 for (const { name, graph, problem } of MALFORMED) {
   test(`load refuses ${name} with a GraphDataError, and the previous graph stays drawn`, async ({
     page,

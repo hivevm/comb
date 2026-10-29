@@ -5,19 +5,20 @@ import {
   createBridgeSync,
   EngineLostError,
   onEngineLost,
+  nodeColumns,
   trapNextCall,
-  type GraphBatch,
+  type EdgeList,
   type GraphSnapshot,
 } from ".";
 
 const url = new URL("../../wasm/test-mode/engine_bg.wasm", import.meta.url);
 const bridge = createBridgeSync(await Bun.file(url).arrayBuffer());
-// Plain data of its own in place of a snapshot of `api/snapshot.ts` (ADR-0028).
-const batch: GraphBatch = {
-  nodes: [{ id: "a", title: "a", x: 0, y: 0, width: 100, height: 50 }],
-  edges: [],
-};
-const graph = batch as GraphSnapshot;
+// Plain data of its own in place of a snapshot of `api/snapshot.ts` (ADR-0028), its node written
+// into columns (ADR-0032).
+const columns = nodeColumns(1);
+columns.node("a", "a", 0, 0, 100, 50);
+const edges: EdgeList = [];
+const graph = { nodes: columns.columns(), edges } as GraphSnapshot;
 
 /** How `call` ended: `ok`, the name of a typed error with the name of its cause, or the message
  *  of an untyped one. */

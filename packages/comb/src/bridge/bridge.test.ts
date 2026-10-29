@@ -1,8 +1,10 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import {
   createBridgeSync,
+  nodeColumns,
+  type NodeField,
   type Bridge,
-  type GraphBatch,
+  type EdgeList,
   type GraphSnapshot,
   type NodePatch,
   type EdgeSnapshot,
@@ -10,6 +12,7 @@ import {
   type PlainEdgePatch,
   type PlainPatch,
 } from ".";
+import { listsOf, snapshotOf } from "../api/snapshot";
 
 let bridge: Bridge;
 
@@ -36,9 +39,20 @@ const edge = (id: string, source: string, target: string) => ({
   targetSide: "left" as const,
 });
 // The bridge takes only what `api/snapshot.ts` produces (ADR-0028); its own tests stand in for
-// that module and hand it plain data of their own.
-const graph = (nodes: GraphBatch["nodes"], edges: GraphBatch["edges"] = []) =>
-  ({ nodes, edges }) as GraphSnapshot;
+// that module and hand it plain data of their own, the nodes written into columns as it writes
+// them (ADR-0032).
+type PlainNode = ReturnType<typeof node>;
+const graph = (nodes: readonly PlainNode[], edges: EdgeList = []) => {
+  const columns = nodeColumns(nodes.length);
+  for (const n of nodes as readonly unknown[]) {
+    if (typeof n !== "object" || n === null) columns.noObject();
+    else {
+      const { id, title, x, y, width, height } = n as Record<string, unknown>;
+      columns.node(id, title, x, y, width, height);
+    }
+  }
+  return { nodes: columns.columns(), edges } as GraphSnapshot;
+};
 const plain = (patch: NodePatch) => patch as PlainPatch;
 const added = (fields: object) => fields as NodeSnapshot;
 const edgeOf = (fields: object) =>
@@ -199,6 +213,13 @@ const CORRUPTIONS: { field: string; value?: unknown; problem: object }[] = [
   },
 ];
 
+/** Columns that do not fit together: one `x` fewer than there are nodes, which the shell never
+ *  hands over, as graph data the bridge cannot read. */
+function unfit(): GraphSnapshot {
+  const { nodes, edges } = graph(two());
+  return { nodes: { ...nodes, x: nodes.x.subarray(1) }, edges } as GraphSnapshot;
+}
+
 /** Nodes `a` and `b` and an edge `e` between them with every field of its own, with `path`
  *  (`node.…` for `b`, `edge.…` for `e`) set to `value`, or left out where `value` is absent. */
 function corrupted(path: string, corruption: { value?: unknown }): GraphSnapshot {
@@ -236,7 +257,7 @@ describe("bridge refusals of a single field", () => {
     const start = performance.now();
     let problem: unknown = null;
     try {
-      bridge.loadGraph({ nodes, edges: [] } as never);
+      bridge.loadGraph(graph(nodes as never));
     } catch (error) {
       problem = error;
     }
@@ -248,8 +269,8 @@ describe("bridge refusals of a single field", () => {
       field: "id",
       expected: ID,
     });
-    // Only the first is read: each refused value costs an error of serde-wasm-bindgen, about six
-    // seconds for all six million of them.
+    // Only the first is named: the columns say where it lies, and no refused value costs an error
+    // of its own. The time is that of writing the columns in TypeScript and of the load together.
     expect(ms).toBeLessThan(1000);
   });
 
@@ -259,9 +280,9 @@ describe("bridge refusals of a single field", () => {
       ...CORRUPTIONS.map(
         (corruption) => () => bridge.loadGraph(corrupted(corruption.field, corruption)),
       ),
-      () => bridge.loadGraph(5 as never),
-      () => bridge.loadGraph({ nodes: [5], edges: [] } as never),
-      () => bridge.loadGraph({ nodes: [], edges: "e" } as never),
+      () => bridge.loadGraph(unfit()),
+      () => bridge.loadGraph(graph([5 as never])),
+      () => bridge.loadGraph(graph([], "e" as never)),
       () => bridge.checkNodePatch("a", 5 as never),
       () => bridge.checkGraphSize(Number.NaN, 0),
       () => bridge.checkIdBudget(-1),
@@ -277,6 +298,105 @@ describe("bridge refusals of a single field", () => {
       expect(words.length).toBeGreaterThan(0);
       for (const word of words) expect(word).not.toMatch(RUST);
     }
+  });
+});
+
+/** How `call` ended: `"accepted"`, or what it threw. */
+function outcome(call: () => unknown): unknown {
+  try {
+    call();
+    return "accepted";
+  } catch (error) {
+    return error;
+  }
+}
+
+/** The bridge's limits, as `api` reads them. */
+const limits = () => ({
+  text: bridge.textLimit(),
+  id: bridge.idLimit(),
+  idBudget: bridge.idBudget(),
+});
+
+/** The snapshot `api/snapshot.ts` builds of `nodes` and `edges`, and the graph the store keeps. */
+const snapshotted = (nodes: unknown[], edges: unknown[] = []) =>
+  snapshotOf(listsOf({ nodes, edges } as never), limits());
+
+describe("bridge columns of a load", () => {
+  test("identifiers cut inside a surrogate pair side by side are refused for their length", () => {
+    // Verifies: ADR-0032
+    const pair = "\u{1F600}";
+    // 300 code units each: the snapshot cuts the first after the high half of its pair, and the
+    // second begins with a low half, so that the two halves meet across the boundary.
+    const first = "a".repeat(256) + pair + "a".repeat(42);
+    const second = pair.slice(1) + "b".repeat(299);
+    expect([first.length, second.length]).toEqual([300, 300]);
+    const { snapshot } = snapshotted([node(first, 0, 0), node(second, 300, 0)]);
+    expect([...snapshot.nodes.idBounds]).toEqual([0, 257, 514]);
+    expect(snapshot.nodes.ids.codePointAt(256)).toBe(0x1f600);
+    expect(outcome(() => bridge.loadGraph(snapshot))).toStrictEqual({
+      kind: "idTooLong",
+      list: "nodes",
+      index: 0,
+      field: "id",
+      limit: 256,
+    });
+    // A boundary inside a character that no length refuses is refused as malformed, never
+    // mapped: the shell never hands one over.
+    const inside = graph([node("\u{1F600}", 0, 0), node("", 300, 0)]);
+    const cut = { ...inside.nodes, idBounds: new Uint32Array([0, 1, 2]) };
+    expect(outcome(() => bridge.loadGraph({ ...inside, nodes: cut }))).toStrictEqual({
+      kind: "malformed",
+      message: "an identifier ends inside a character",
+    });
+  });
+
+  test("identifiers and titles beyond the basic plane are held exactly by the store and the engine", () => {
+    // Verifies: ADR-0032
+    // Two identifiers that differ only in a character beyond the basic plane, one of 256 code
+    // units of such characters, and titles of them up to the limit.
+    const ids = ["\u{1F600}", "\u{1F601}", "\u{1D49C}".repeat(128), "x\u{10FFFF}y"];
+    const titles = ["\u{1F600}".repeat(500), "\u{1D49C}", "", "\u{10FFFF}"];
+    const nodes = ids.map((id, i) => ({ ...node(id, i * 300, 0), title: titles[i]! }));
+    const edges = [edge("e0", ids[1]!, ids[2]!), edge("e1", ids[3]!, ids[0]!)];
+    const { kept, snapshot } = snapshotted(nodes, edges);
+    expect(kept.nodes.map((n) => [n.id, n.title])).toEqual(ids.map((id, i) => [id, titles[i]!]));
+    expect(bridge.loadGraph(snapshot)).toBe(4);
+    // Each edge's ends resolve to the slots of exactly the identifiers it names.
+    expect([...bridge.edgesAt(new Uint32Array([1]))]).toEqual([0]);
+    expect([...bridge.edgesAt(new Uint32Array([2]))]).toEqual([0]);
+    expect([...bridge.edgesAt(new Uint32Array([0]))]).toEqual([1]);
+    expect([...bridge.edgesAt(new Uint32Array([3]))]).toEqual([1]);
+    // A code unit more than the limits is refused: the lengths are those JavaScript counts.
+    const longer = (n: (typeof nodes)[number]) => snapshotted([n]).snapshot;
+    expect(outcome(() => bridge.loadGraph(longer({ ...nodes[2]!, id: ids[2] + "x" })))).toEqual({
+      kind: "idTooLong",
+      list: "nodes",
+      index: 0,
+      field: "id",
+      limit: 256,
+    });
+    expect(
+      outcome(() => bridge.loadGraph(longer({ ...nodes[0]!, title: titles[0] + "x" }))),
+    ).toEqual({ kind: "titleTooLong", node: ids[0], limit: 1000 });
+  });
+});
+
+describe("bridge columns that do not fit", () => {
+  test("a refused field of a code no field has is refused as malformed, and the engine keeps working", () => {
+    // Verifies: ADR-0032
+    const { nodes, edges } = graph(two());
+    for (const field of [6, 255, 2 ** 32 - 1]) {
+      const refused = { index: 0, field: field as NodeField };
+      expect(
+        outcome(() => bridge.loadGraph({ nodes: { ...nodes, refused }, edges } as never)),
+      ).toStrictEqual({
+        kind: "malformed",
+        message: "the columns of the nodes do not fit together",
+      });
+    }
+    expect(bridge.loadGraph(graph(two()))).toBe(2);
+    expect([...bridge.positions()]).toEqual([0, 0, 1, 1]);
   });
 });
 
