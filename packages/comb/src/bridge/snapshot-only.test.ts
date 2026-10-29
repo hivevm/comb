@@ -4,14 +4,15 @@
 import { expect, test } from "bun:test";
 import type { Bridge } from ".";
 import type { EdgeData, EdgePatch, GraphData, NodeData } from "../store";
-import type { EdgeList, Engine, NodeField } from "../../wasm/engine.js";
+import type { EdgeList, Engine } from "../../wasm/engine.js";
 
 /** Whether `A` and `B` are the same type. */
 type Same<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 
 // The engine's `loadGraph` takes a load's nodes as columns, strings and typed arrays its glue
-// copies whole, and no `GraphBatch` (ADR-0032): its generated parameters, pinned.
+// copies whole, and no `GraphBatch` (ADR-0032): its generated parameters, pinned. The refused
+// field crosses as the code of its `NodeField`, a plain number.
 const columns: Same<
   Parameters<Engine["loadGraph"]>,
   [
@@ -25,7 +26,7 @@ const columns: Same<
     width: Float64Array,
     height: Float64Array,
     refusedAt: number | null | undefined,
-    refusedField: NodeField | null | undefined,
+    refusedField: number | null | undefined,
     edges: EdgeList,
   ]
 > = true;

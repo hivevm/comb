@@ -32,6 +32,7 @@ export type {
   CheckedPatch,
   EdgeList,
   GraphDataProblem,
+  NodeField,
   Hit,
   NodeInput,
   NodePatch,

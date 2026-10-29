@@ -352,7 +352,8 @@ impl Engine {
     /// edge `i`, and returns the number of node slots. The nodes cross as columns (ADR-0032), each
     /// in slot order: the identifiers and the titles each as one string with its boundaries in
     /// UTF-16 code units, per title whether it is a text, the numbers as `Float64Array`, and the
-    /// first value the shell refused by its type, the index of its node and its field, or none.
+    /// first value the shell refused by its type, the index of its node and the code of its
+    /// `NodeField`, or none.
     /// The edges still cross as structured data. A refused load leaves the loaded graph as it was.
     #[wasm_bindgen(js_name = loadGraph)]
     #[expect(
@@ -372,7 +373,7 @@ impl Engine {
         width: &[f64],
         height: &[f64],
         refused_at: Option<u32>,
-        refused_field: Option<NodeField>,
+        refused_field: Option<u32>,
         edges: Ts<EdgeList>,
     ) -> Result<u32, GraphDataProblem> {
         trap::spring();

@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import {
   createBridgeSync,
   nodeColumns,
+  type NodeField,
   type Bridge,
   type EdgeList,
   type GraphSnapshot,
@@ -269,7 +270,7 @@ describe("bridge refusals of a single field", () => {
       expected: ID,
     });
     // Only the first is named: the columns say where it lies, and no refused value costs an error
-    // of its own.
+    // of its own. The time is that of writing the columns in TypeScript and of the load together.
     expect(ms).toBeLessThan(1000);
   });
 
@@ -378,6 +379,24 @@ describe("bridge columns of a load", () => {
     expect(
       outcome(() => bridge.loadGraph(longer({ ...nodes[0]!, title: titles[0] + "x" }))),
     ).toEqual({ kind: "titleTooLong", node: ids[0], limit: 1000 });
+  });
+});
+
+describe("bridge columns that do not fit", () => {
+  test("a refused field of a code no field has is refused as malformed, and the engine keeps working", () => {
+    // Verifies: ADR-0032
+    const { nodes, edges } = graph(two());
+    for (const field of [6, 255, 2 ** 32 - 1]) {
+      const refused = { index: 0, field: field as NodeField };
+      expect(
+        outcome(() => bridge.loadGraph({ nodes: { ...nodes, refused }, edges } as never)),
+      ).toStrictEqual({
+        kind: "malformed",
+        message: "the columns of the nodes do not fit together",
+      });
+    }
+    expect(bridge.loadGraph(graph(two()))).toBe(2);
+    expect([...bridge.positions()]).toEqual([0, 0, 1, 1]);
   });
 });
 

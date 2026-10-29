@@ -253,7 +253,7 @@ impl From<Side> for graph_side::Side {
 /// An edge between two nodes, named by their identifiers, with the style it is drawn with: its
 /// colour as `0xRRGGBB`, its dash pattern as dash and gap lengths in world units (none for a
 /// solid line), and whether an arrowhead marks its end (G-11).
-#[derive(Tsify, Deserialize, Default, Clone)]
+#[derive(Tsify, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct EdgeInput {
     #[tsify(type = "string")]
@@ -316,7 +316,9 @@ impl<'de> Visitor<'de> for PairVisitor {
 pub struct EdgeList(#[serde(deserialize_with = "items")] pub Vec<EdgeInput>);
 
 /// A field of a node that a load's first pass refuses by its type (ADR-0032), as the shell names
-/// the first such value it reads: `Item` for a node that is no object, refused as malformed.
+/// the first such value it reads: `Item` for a node that is no object, refused as malformed. It
+/// crosses as its code, a plain number, so that a code it does not know is refused as malformed
+/// rather than thrown by the glue while the engine is borrowed, which would wedge it.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NodeField {
@@ -352,14 +354,30 @@ fn unfit() -> GraphDataProblem {
     malformed("the columns of the nodes do not fit together")
 }
 
+impl NodeField {
+    /// The field of `code`, its discriminant, or none for a code no field has.
+    fn of(code: u32) -> Option<Self> {
+        [
+            Self::Item,
+            Self::Id,
+            Self::X,
+            Self::Y,
+            Self::Width,
+            Self::Height,
+        ]
+        .into_iter()
+        .find(|&field| field as u32 == code)
+    }
+}
+
 /// The first value a load's first pass refuses, as `loadGraph` takes it: the index of its node
-/// and its field, both or neither.
+/// and the code of its field, both or neither, and a code no field has refused as malformed.
 pub(crate) fn refused_of(
     at: Option<u32>,
-    field: Option<NodeField>,
+    field: Option<u32>,
 ) -> Result<Option<(u32, NodeField)>, GraphDataProblem> {
-    match (at, field) {
-        (Some(at), Some(field)) => Ok(Some((at, field))),
+    match (at, field.map(NodeField::of)) {
+        (Some(at), Some(Some(field))) => Ok(Some((at, field))),
         (None, None) => Ok(None),
         _ => Err(unfit()),
     }
@@ -2218,7 +2236,24 @@ pub(crate) mod tests {
             assert_eq!(load_columns(&columns).err(), Some(unfit()));
         }
         assert_eq!(refused_of(Some(0), None), Err(unfit()));
-        assert_eq!(refused_of(None, Some(NodeField::Id)), Err(unfit()));
+        assert_eq!(refused_of(None, Some(NodeField::Id as u32)), Err(unfit()));
         assert_eq!(refused_of(None, None), Ok(None));
+        // Every field by its code, and a code no field has refused as malformed.
+        for field in [
+            NodeField::Item,
+            NodeField::Id,
+            NodeField::X,
+            NodeField::Y,
+            NodeField::Width,
+            NodeField::Height,
+        ] {
+            assert_eq!(
+                refused_of(Some(1), Some(field as u32)),
+                Ok(Some((1, field)))
+            );
+        }
+        for code in [6, 255, u32::MAX] {
+            assert_eq!(refused_of(Some(0), Some(code)), Err(unfit()));
+        }
     }
 }
