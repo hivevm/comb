@@ -5,7 +5,7 @@
 **A fallback: work this ticket only if the maintainer rejects ADR-0032.** The columns of
 `docs/plan/first-frame/03-a-load-hands-its-nodes-over-as-columns.md` and
 `docs/plan/first-frame/04-a-load-hands-its-edges-over-as-columns.md` replace the code it
-restructures. Once ADR-0032 is accepted, the change that lands ticket 04 deletes this file.
+restructures. ADR-0032 is accepted, so the change that lands ticket 04 deletes this file.
 
 A load reaches its first frame sooner because the bridge crate no longer copies every field of
 the batch before it checks it. Today `graph_of` in `crates/engine-wasm/src/graph_data.rs` first

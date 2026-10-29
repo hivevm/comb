@@ -1,6 +1,6 @@
 # ADR-0032: Structured data crosses the bridge through serde-wasm-bindgen with generated types, a load's graph data as columns, coordinate streams through typed-array views on engine-owned buffers
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-26
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/engine-wasm/`, `packages/comb/src/bridge/`, the snapshot of a load in `packages/comb/src/api/snapshot.ts`, and every value that crosses between them
@@ -80,11 +80,8 @@ it cited ADR-0012, the ADRs that superseded them; and the Enforcement names the 
 stand in today, `crates/engine-wasm/src/graph_data.rs` and `crates/engine/src/graph/query.rs`.
 
 The specification's constraint names serde-wasm-bindgen for structured data, and graph data is
-structured data; columns of graph data are no coordinate stream. This ADR therefore needs the
-constraint changed, and that change landed, before it can be accepted (AGENTS.md, section 3,
-rules 5 and 7). A drafted wording, for the maintainer to decide: "Structured data crosses the
-bridge between TypeScript and WebAssembly through serde-wasm-bindgen, never as JSON strings,
-except the graph data of a load, which crosses as typed-array and string columns."
+structured data; columns of graph data are no coordinate stream. The constraint therefore
+excepts the graph data of a load, which crosses as typed-array and string columns.
 
 ## Decision
 
@@ -322,8 +319,8 @@ Precision far from the world's origin:
   the host application knows; the snapshot builds both the columns and the objects the store
   keeps, and the type test that the bridge takes only the snapshot has to hold for the columns.
 - Negative / trade-offs: the code of the columns joins the bundle Q-3 bounds at 300 kB.
-- Negative / trade-offs: the specification's constraint has to change before this ADR can be
-  accepted.
+- Negative / trade-offs: the specification's constraint carries an exception for the graph data
+  of a load.
 - Negative / trade-offs: the streams of a query mean nothing without its origin, and the world's
   translation is no longer the viewport's; inspection adds the origin back and reports the
   viewport the world is drawn through, its transform less the origin's screen point.
