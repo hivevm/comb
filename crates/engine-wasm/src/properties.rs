@@ -5,12 +5,15 @@
 //! `updateNode`, the node of `addNode` and the edge of `addEdge`, each refused exactly as a load
 //! of it alone is, and the patch of `updateEdge`, refused exactly as a load of the edge it makes.
 //!
-//! The data crosses as serde-wasm-bindgen would hand it over, through a value of any shape that
-//! `GraphBatch` is deserialized from, so that values of the wrong type and missing fields reach
-//! the same conversion `loadGraph` makes. A second oracle, written on that value alone, says which
-//! field of which node or edge is missing or of another type, and whether the value has the shape
-//! of graph data at all: the bridge names such a field (`invalidField`), and refuses as malformed
-//! only what has no such shape, and no message names a Rust type or crate.
+//! The data starts as a value of any shape, as the host application hands it over. A load's nodes
+//! cross as the columns the snapshot of `api` builds of it (ADR-0032), each node read as the node
+//! of `addNode` is, so that a value of the wrong type or a missing field at any position among
+//! them, and a node that is no object, reach the bridge as the shell names them; its edges cross
+//! as serde-wasm-bindgen would hand them over, through the same conversion `loadGraph` makes. A
+//! second oracle, written on that value alone, says which field of which node or edge is missing
+//! or of another type, and whether the value has the shape of graph data at all: the bridge names
+//! such a field (`invalidField`), and refuses as malformed only what has no such shape, and no
+//! message names a Rust type or crate.
 // Verifies: Q-7, ADR-0028, ADR-0032
 
 use proptest::prelude::*;
@@ -19,10 +22,12 @@ use serde::de::value::{MapDeserializer, SeqDeserializer};
 use serde::de::{self, IntoDeserializer, Visitor};
 
 use super::{
-    EdgeInput, EdgePatch, EdgeRefusal, GraphBatch, GraphDataProblem, GraphList, NodeInput,
+    EdgeInput, EdgeList, EdgePatch, EdgeRefusal, GraphBatch, GraphDataProblem, GraphList,
+    NodeInput, OwnedColumns,
 };
 use super::{
-    NodePatch, add_edge_to, add_node_to, graph_of, patch_of, reading, unshaped, update_edge_in,
+    NodePatch, add_edge_to, add_node_to, graph_of, load_of, patch_of, reading, reading_after,
+    unshaped, update_edge_in,
 };
 
 /// How many random batches one run feeds the bridge: the ticket's floor, which runs in seconds.
@@ -105,9 +110,18 @@ impl<'de> de::Deserializer<'de> for Value {
         }
     }
 
+    /// A newtype is read as the value it wraps, as serde-wasm-bindgen reads one.
+    fn deserialize_newtype_struct<V: Visitor<'de>>(
+        self,
+        _name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value, Error> {
+        visitor.visit_newtype_struct(self)
+    }
+
     serde::forward_to_deserialize_any! {
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes byte_buf unit
-        unit_struct newtype_struct seq tuple tuple_struct map identifier ignored_any
+        unit_struct seq tuple tuple_struct map identifier ignored_any
     }
 }
 
@@ -732,11 +746,35 @@ fn two_nodes(edges: Vec<Value>) -> Value {
     ])
 }
 
-/// The graph a load of `data` builds, or why the load was refused.
+/// The graph a load of `data` builds, or why the load was refused, as the shell hands it to the
+/// bridge: graph data that is no object, or whose nodes or edges are no list, the snapshot of
+/// `api` cannot read and refuses as malformed itself; the nodes cross as the columns it builds,
+/// each node read as the node of `addNode` is, and one that is no object, nor a list, which is an
+/// object without the fields, named as such; the edges as serde-wasm-bindgen hands them over.
 fn loaded(data: Value) -> Result<comb_engine::graph::Graph, GraphDataProblem> {
-    reading(|| GraphBatch::deserialize(data))
-        .map_err(unshaped)
-        .and_then(|batch| graph_of(&batch))
+    let (nodes, edges) = match &data {
+        Value::Object(fields) => (get(fields, "nodes"), get(fields, "edges")),
+        _ => (None, None),
+    };
+    let (Some(Value::List(nodes)), Some(edges @ Value::List(_))) = (nodes, edges) else {
+        return Err(unshaped("the snapshot cannot read it"));
+    };
+    let nodes: Vec<Option<NodeInput>> = nodes
+        .iter()
+        .map(|item| {
+            fields_of(item).map(|_| {
+                reading(|| NodeInput::deserialize(item.clone()))
+                    .unwrap_or_else(|error| panic!("an object read as a node: {error}"))
+            })
+        })
+        .collect();
+    let columns = OwnedColumns::of(nodes.iter().map(Option::as_ref));
+    let nodes = columns.view();
+    let edges = reading_after(nodes.refused.is_some(), || {
+        EdgeList::deserialize(edges.clone())
+    })
+    .map_err(unshaped)?;
+    load_of(&nodes, &edges.0)
 }
 
 /// The edge `e0` from `n0` to `n1`, styled, dashed, and labelled, which a patch of `updateEdge`
@@ -900,7 +938,7 @@ proptest! {
         value in added_node(),
     ) {
         // Verifies: ADR-0028, ADR-0022, Q-7
-        let loaded = || {
+        let with_a = || {
             let a = Value::Object(vec![
                 ("id".to_owned(), Value::Text("a".to_owned())),
                 ("title".to_owned(), Value::Text("A".to_owned())),
@@ -919,10 +957,8 @@ proptest! {
             ("nodes".to_owned(), Value::List(vec![value.clone()])),
             ("edges".to_owned(), Value::List(Vec::new())),
         ]);
-        let as_load = reading(|| GraphBatch::deserialize(alone))
-            .map_err(unshaped)
-            .and_then(|batch| graph_of(&batch).map(|graph| graph.positions().to_vec()));
-        let mut graph = loaded();
+        let as_load = loaded(alone).map(|graph| graph.positions().to_vec());
+        let mut graph = with_a();
         let added = reading(|| NodeInput::deserialize(value))
             .map_err(unshaped)
             .and_then(|node| add_node_to(&mut graph, &node));
@@ -942,37 +978,37 @@ proptest! {
 
     #[test]
     fn any_graph_data_ends_in_a_typed_error_or_a_graph(value in graph_data()) {
+        // Verifies: ADR-0032
         // A panic anywhere below fails the case; the runner catches it and shrinks the input.
+        // The load crosses as columns, and is held to the oracles of the value it was built of.
         let named = named_fields(&value);
-        match reading(|| GraphBatch::deserialize(value.clone())).map_err(unshaped) {
+        let batch = || reading(|| GraphBatch::deserialize(value.clone())).ok();
+        match loaded(value.clone()) {
             // A value without the shape of graph data is refused before any check of the
             // bridge's own, as malformed.
-            Err(error) => {
+            Err(error @ GraphDataProblem::Malformed { .. }) => {
                 prop_assert!(!shaped(&value), "refused {:?}", error);
-                let malformed = matches!(error, GraphDataProblem::Malformed { .. });
-                prop_assert!(malformed);
                 prop_assert!(!messages(&error).into_iter().any(names_rust), "{:?}", error);
             }
-            Ok(batch) => {
+            Ok(graph) => {
                 prop_assert!(shaped(&value));
-                match graph_of(&batch) {
-                    Ok(graph) => {
-                        prop_assert!(named.is_empty() && acceptable(&batch));
-                        prop_assert_eq!(graph.positions().len(), 2 * batch.nodes.len());
+                let batch = batch().expect("graph data of its shape reads as a batch");
+                prop_assert!(named.is_empty() && acceptable(&batch));
+                prop_assert_eq!(graph.positions().len(), 2 * batch.nodes.len());
+            }
+            Err(error) => {
+                prop_assert!(shaped(&value), "refused {:?}", error);
+                prop_assert!(!messages(&error).into_iter().any(names_rust), "{:?}", error);
+                match &error {
+                    // A field missing or of another type is named before any other check.
+                    GraphDataProblem::InvalidField { list, index, id, field, .. } => {
+                        let at = (*list, *index, id.clone(), field.clone());
+                        prop_assert!(named.contains(&at), "refused {:?}", error);
                     }
-                    Err(error) => {
-                        prop_assert!(!messages(&error).into_iter().any(names_rust), "{:?}", error);
-                        match &error {
-                            // A field missing or of another type is named before any other check.
-                            GraphDataProblem::InvalidField { list, index, id, field, .. } => {
-                                let at = (*list, *index, id.clone(), field.clone());
-                                prop_assert!(named.contains(&at), "refused {:?}", error);
-                            }
-                            _ => {
-                                prop_assert!(named.is_empty(), "refused {:?}, not {:?}", error, named);
-                                prop_assert!(!acceptable(&batch), "refused {:?}", error);
-                            }
-                        }
+                    _ => {
+                        let batch = batch().expect("graph data of its shape reads as a batch");
+                        prop_assert!(named.is_empty(), "refused {:?}, not {:?}", error, named);
+                        prop_assert!(!acceptable(&batch), "refused {:?}", error);
                     }
                 }
             }

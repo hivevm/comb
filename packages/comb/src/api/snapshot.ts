@@ -1,19 +1,22 @@
 // The snapshot of the host application's graph data (ADR-0028): every value read once, in
 // JavaScript, into plain data whose every field is a primitive of the type the field expects, so
 // that the bridge checks it and the store keeps it, and no value of the host application, nor any
-// of its code, reaches the engine. A value of another type is replaced by `false`, which the bridge
-// refuses naming the node or edge and the field; a title, a label text, and the arrow are handed
+// of its code, reaches the engine; a load's nodes are handed over as columns besides (ADR-0032). A
+// value of another type is replaced by `false`, which the bridge refuses naming the node or edge
+// and the field; a title, a label text, and the arrow are handed
 // over no longer than one code unit beyond the bridge's limit for texts, and an identifier no
 // longer than one beyond its limit for identifiers, so that a string of any length costs at most
 // that much to check. The code units of all identifiers are counted while they are read, and
 // reading stops once they exceed the bridge's budget, whose check then refuses the load. What
 // cannot be read at all throws an `UnreadableError`.
-import type {
-  EdgeSnapshot,
-  GraphSnapshot,
-  NodeSnapshot,
-  PlainEdgePatch,
-  PlainPatch,
+import {
+  nodeColumns,
+  type EdgeList,
+  type EdgeSnapshot,
+  type GraphSnapshot,
+  type NodeSnapshot,
+  type PlainEdgePatch,
+  type PlainPatch,
 } from "../bridge";
 import { EDGE_ARROW, edgeColor } from "../render/edges";
 import type { GraphData } from "../store";
@@ -119,20 +122,19 @@ export function listsOf(graph: GraphData): Lists {
   return { nodes, edges, nodeCount: count(nodes), edgeCount: count(edges) };
 }
 
-/** The first `count` items of `list`, each copied by `copy`, by index; never through a method of
- *  the list, and refused at the first hole. */
+/** The first `count` items of `list`, each copied by `copy`, `false` for one that is no object,
+ *  by index; never through a method of the list, and refused at the first hole. */
 function copied<T>(
   list: readonly unknown[],
   count: number,
   name: string,
-  copy: (item: Fields) => T,
+  copy: (item: Fields | undefined) => T | false,
   done: () => boolean,
 ) {
   const items: (T | false)[] = [];
   for (let i = 0; i < count && !done(); i++) {
     if (!(i in list)) throw new UnreadableError(`${name} has no item ${i}`);
-    const item = objectOf(list[i]);
-    items.push(item ? copy(item) : false);
+    items.push(copy(objectOf(list[i])));
   }
   return items;
 }
@@ -204,16 +206,39 @@ function edgeOf(read: Reader, edge: Fields) {
 }
 
 /** The snapshot of the lists `listsOf` read, with the edge styles' defaults and its strings cut
- *  by `limits`: what the bridge checks and, once it has, the store keeps; and the code units of
- *  its identifiers, for the bridge to check first. Reading stops, the snapshot unfinished, once
- *  they exceed the budget. */
+ *  by `limits`: `kept`, the graph data the store keeps once the bridge has checked it; `snapshot`,
+ *  what the bridge checks, its nodes the columns of the same nodes, written while each is read,
+ *  and its edges those of `kept`; and the code units of its identifiers, for the bridge to check first.
+ *  Reading stops, the snapshot unfinished, once they exceed the budget. */
 export function snapshotOf(lists: Lists, limits: Limits) {
   const read = readerOf(limits);
   const done = () => read.idUnits > limits.idBudget;
-  const nodes = copied(lists.nodes, lists.nodeCount, "nodes", (n) => nodeOf(read, n), done);
-  const edges = copied(lists.edges, lists.edgeCount, "edges", (e) => edgeOf(read, e), done);
-  const snapshot = { nodes, edges } as GraphData & GraphSnapshot;
-  return { snapshot, idUnits: read.idUnits };
+  const columns = nodeColumns(lists.nodeCount);
+  const nodes = copied(
+    lists.nodes,
+    lists.nodeCount,
+    "nodes",
+    (item) => {
+      if (!item) {
+        columns.noObject();
+        return false;
+      }
+      const node = nodeOf(read, item);
+      columns.node(node.id, node.title, node.x, node.y, node.width, node.height);
+      return node;
+    },
+    done,
+  );
+  const edges = copied(
+    lists.edges,
+    lists.edgeCount,
+    "edges",
+    (item) => (item ? edgeOf(read, item) : false),
+    done,
+  );
+  const kept = { nodes, edges } as GraphData;
+  const snapshot = { nodes: columns.columns(), edges: edges as EdgeList } as GraphSnapshot;
+  return { kept, snapshot, idUnits: read.idUnits };
 }
 
 /** The node of `addNode` read once as a load reads one, its identifier cut by `limits`, or `false`

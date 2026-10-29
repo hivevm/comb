@@ -141,7 +141,8 @@ interface Editing {
 }
 
 /** `load`: the graph data read once, its lists' lengths checked before any item is, and handed
- *  to the engine; the store takes it with the code units its snapshot counted. */
+ *  to the engine, its nodes as columns; the store takes the same nodes and edges with the code
+ *  units its snapshot counted. */
 function load({ store, bridge, limits }: Editing, graph: GraphData): void {
   edit(store, bridge, {
     read(sized) {
@@ -152,7 +153,7 @@ function load({ store, bridge, limits }: Editing, graph: GraphData): void {
     resolve: (plain) => plain,
     idUnits: (plain) => plain.idUnits,
     engine: ({ snapshot }) => bridge.loadGraph(snapshot),
-    record: (state, { snapshot, idUnits }) => state.load(snapshot, idUnits),
+    record: (state, { kept, idUnits }) => state.load(kept, idUnits),
   });
 }
 
