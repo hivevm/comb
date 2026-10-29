@@ -6,10 +6,11 @@
 //! of it alone is, and the patch of `updateEdge`, refused exactly as a load of the edge it makes.
 //!
 //! The data starts as a value of any shape, as the host application hands it over. A load's nodes
-//! cross as the columns the snapshot of `api` builds of it (ADR-0032), each node read as the node
-//! of `addNode` is, so that a value of the wrong type or a missing field at any position among
-//! them, and a node that is no object, reach the bridge as the shell names them; its edges cross
-//! as serde-wasm-bindgen would hand them over, through the same conversion `loadGraph` makes. A
+//! and edges cross as the columns the snapshot of `api` builds of it (ADR-0032), each node read as
+//! the node of `addNode` is and each edge as the edge of `addEdge` is, but for an arrowhead and the
+//! sides, any string of which crosses as its code, so that a value of the wrong type or a missing
+//! field at any position among them, a string that names no arrowhead or side, and an item that is
+//! no object, reach the bridge as the shell hands them over. A
 //! second oracle, written on that value alone, says which field of which node or edge is missing
 //! or of another type, and whether the value has the shape of graph data at all: the bridge names
 //! such a field (`invalidField`), and refuses as malformed only what has no such shape, and no
@@ -22,12 +23,12 @@ use serde::de::value::{MapDeserializer, SeqDeserializer};
 use serde::de::{self, IntoDeserializer, Visitor};
 
 use super::{
-    EdgeInput, EdgeList, EdgePatch, EdgeRefusal, GraphBatch, GraphDataProblem, GraphList,
-    NodeInput, OwnedColumns,
+    EdgeCells, EdgeInput, EdgePatch, EdgeRefusal, GraphBatch, GraphDataProblem, GraphList,
+    NodeInput, OwnedColumns, OwnedEdgeColumns,
 };
 use super::{
-    NodePatch, add_edge_to, add_node_to, graph_of, load_of, patch_of, reading, reading_after,
-    unshaped, update_edge_in,
+    NodePatch, add_edge_to, add_node_to, graph_of, load_of, patch_of, reading, unshaped,
+    update_edge_in,
 };
 
 /// How many random batches one run feeds the bridge: the ticket's floor, which runs in seconds.
@@ -750,31 +751,31 @@ fn two_nodes(edges: Vec<Value>) -> Value {
 /// bridge: graph data that is no object, or whose nodes or edges are no list, the snapshot of
 /// `api` cannot read and refuses as malformed itself; the nodes cross as the columns it builds,
 /// each node read as the node of `addNode` is, and one that is no object, nor a list, which is an
-/// object without the fields, named as such; the edges as serde-wasm-bindgen hands them over.
+/// object without the fields, named as such; the edges as columns too, each read as the edge of
+/// `addEdge` is but for its arrowhead and sides, which cross as their codes.
 fn loaded(data: Value) -> Result<comb_engine::graph::Graph, GraphDataProblem> {
     let (nodes, edges) = match &data {
         Value::Object(fields) => (get(fields, "nodes"), get(fields, "edges")),
         _ => (None, None),
     };
-    let (Some(Value::List(nodes)), Some(edges @ Value::List(_))) = (nodes, edges) else {
+    let (Some(Value::List(nodes)), Some(Value::List(edges))) = (nodes, edges) else {
         return Err(unshaped("the snapshot cannot read it"));
     };
-    let nodes: Vec<Option<NodeInput>> = nodes
-        .iter()
-        .map(|item| {
+    /// Each item of `items` read as an object, none where it is no object.
+    fn read<T: for<'de> Deserialize<'de>>(items: &[Value]) -> Vec<Option<T>> {
+        let item = |item: &Value| {
             fields_of(item).map(|_| {
-                reading(|| NodeInput::deserialize(item.clone()))
-                    .unwrap_or_else(|error| panic!("an object read as a node: {error}"))
+                reading(|| T::deserialize(item.clone()))
+                    .unwrap_or_else(|error| panic!("an object read as an item: {error}"))
             })
-        })
-        .collect();
-    let columns = OwnedColumns::of(nodes.iter().map(Option::as_ref));
-    let nodes = columns.view();
-    let edges = reading_after(nodes.refused.is_some(), || {
-        EdgeList::deserialize(edges.clone())
-    })
-    .map_err(unshaped)?;
-    load_of(&nodes, &edges.0)
+        };
+        items.iter().map(item).collect()
+    }
+    let nodes: Vec<Option<NodeInput>> = read(nodes);
+    let edges: Vec<Option<EdgeCells>> = read(edges);
+    let nodes = OwnedColumns::of(nodes.iter().map(Option::as_ref));
+    let edges = OwnedEdgeColumns::of(edges.iter().map(Option::as_ref));
+    load_of(&nodes.view(), &edges.view())
 }
 
 /// The edge `e0` from `n0` to `n1`, styled, dashed, and labelled, which a patch of `updateEdge`

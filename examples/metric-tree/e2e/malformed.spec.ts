@@ -118,6 +118,7 @@ const SIZE = "a finite number of 0 or more";
 const COLOR = "an integer from 0 to 0xFFFFFF";
 const DASH = "a list of two finite numbers, or none";
 const ID = "a well-formed string of at most 256 code units";
+const SIDE = '"top", "right", "bottom", or "left"';
 
 /** Nodes `a` and `b` and an edge `e` between them, with `change` made to `b` or to `e`. */
 function changed(item: "b" | "e", change: (fields: Record<string, unknown>) => void): GraphData {
@@ -277,6 +278,142 @@ for (const { kind, problem } of NODE_REFUSALS) {
     expect(await drawnGraph(page)).toEqual(before);
   });
 }
+
+/** Each refusal an edge of a load can cause, of edge `e` after edge `d`, both between nodes `a`
+ *  and `b`: the graph data is built in the page, where a lone surrogate keeps its code unit, by
+ *  `edgeRefusal`. */
+const EDGE_REFUSALS: { kind: string; problem: unknown }[] = [
+  ...(
+    [
+      ["missingId", "id", ID],
+      ["numberId", "id", ID],
+      ["loneSurrogateId", "id", ID],
+      ["loneSurrogateSource", "source", ID],
+      ["objectSource", "source", ID],
+      ["nullTarget", "target", ID],
+      ["booleanLabel", "label", "an object, or none"],
+      ["stringLabelT", "label.t", NUMBER],
+      ["missingLabelOffset", "label.offset", NUMBER],
+      ["stringColor", "color", COLOR],
+      ["dashOfThree", "dash", DASH],
+      ["dashOfStrings", "dash", DASH],
+      ["arrowAtStart", "arrow", '"end" or "none"'],
+      ["numberArrow", "arrow", '"end" or "none"'],
+      ["middleSourceSide", "sourceSide", SIDE],
+      ["numberTargetSide", "targetSide", SIDE],
+      ["loneSurrogateTargetSide", "targetSide", SIDE],
+    ] as const
+  ).map(([kind, field, expected]) => {
+    const problem = { kind: "invalidField", list: "edges", index: 1, id: "e", field, expected };
+    if (field === "id") delete (problem as { id?: string }).id;
+    return { kind, problem };
+  }),
+  {
+    kind: "noObject",
+    problem: { kind: "malformed", message: "the value does not have the shape the bridge expects" },
+  },
+  { kind: "missingEnd", problem: { kind: "missingNode", edge: "e", node: "z" } },
+  { kind: "duplicate", problem: { kind: "duplicateEdge", edge: "d" } },
+  {
+    kind: "longId",
+    problem: { kind: "idTooLong", list: "edges", index: 1, field: "id", limit: 256 },
+  },
+  {
+    kind: "longTarget",
+    problem: { kind: "idTooLong", list: "edges", index: 1, field: "target", limit: 256 },
+  },
+  { kind: "missingLabelText", problem: { kind: "invalidLabelText", edge: "e" } },
+  { kind: "loneSurrogateLabelText", problem: { kind: "invalidLabelText", edge: "e" } },
+  { kind: "longLabelText", problem: { kind: "labelTextTooLong", edge: "e", limit: 1000 } },
+  { kind: "stringBackground", problem: { kind: "invalidBackground", edge: "e" } },
+  { kind: "backgroundBeyondRgb", problem: { kind: "invalidBackground", edge: "e" } },
+  { kind: "colorBeyondRgb", problem: { kind: "invalidColor", edge: "e" } },
+  { kind: "negativeGap", problem: { kind: "invalidDash", edge: "e" } },
+  { kind: "nonFiniteLabel", problem: { kind: "nonFiniteLabel", edge: "e" } },
+  {
+    kind: "labelBeyondWorld",
+    problem: {
+      kind: "beyondWorld",
+      list: "edges",
+      id: "e",
+      field: "label.offset",
+      limit: 2 ** 120,
+    },
+  },
+];
+
+/** Loads nodes `a` and `b` and edges `d` and `e` between them, with `e` changed as `kind` names,
+ *  or as it is for a kind none names, in the page, and returns the problem `load` throws, or
+ *  none. */
+function edgeRefusal(kind: string) {
+  const label: Record<string, unknown> = { text: "e", t: 0.5, offset: 0, background: 0x123456 };
+  const e: Record<string, unknown> = { id: "e", source: "b", target: "a", label, dash: [6, 4] };
+  const changes: Record<string, () => unknown> = {
+    missingId: () => delete e.id,
+    numberId: () => (e.id = 5),
+    loneSurrogateId: () => (e.id = "e\uD800"),
+    loneSurrogateSource: () => (e.source = "\uDC00b"),
+    objectSource: () => (e.source = { id: "b" }),
+    nullTarget: () => (e.target = null),
+    booleanLabel: () => (e.label = true),
+    stringLabelT: () => (label.t = "1"),
+    missingLabelOffset: () => delete label.offset,
+    stringColor: () => (e.color = "red"),
+    dashOfThree: () => (e.dash = [6, 4, 2]),
+    dashOfStrings: () => (e.dash = ["6", 4]),
+    arrowAtStart: () => (e.arrow = "start"),
+    numberArrow: () => (e.arrow = 1),
+    middleSourceSide: () => (e.sourceSide = "middle"),
+    numberTargetSide: () => (e.targetSide = 3),
+    loneSurrogateTargetSide: () => (e.targetSide = "left\uD800"),
+    missingEnd: () => (e.target = "z"),
+    duplicate: () => (e.id = "d"),
+    longId: () => (e.id = "e".repeat(257)),
+    longTarget: () => (e.target = "a".repeat(257)),
+    missingLabelText: () => delete label.text,
+    loneSurrogateLabelText: () => (label.text = "e\uDC00"),
+    longLabelText: () => (label.text = "\u{1F600}".repeat(500) + "e"),
+    stringBackground: () => (label.background = "red"),
+    backgroundBeyondRgb: () => (label.background = 0x1000000),
+    colorBeyondRgb: () => (e.color = 0x1000000),
+    negativeGap: () => (e.dash = [6, -1]),
+    nonFiniteLabel: () => (label.t = Number.POSITIVE_INFINITY),
+    labelBeyondWorld: () => (label.offset = 2 ** 121),
+  };
+  const edges: unknown[] = [{ id: "d", source: "a", target: "b" }, e];
+  if (kind === "noObject") edges[1] = 5;
+  else changes[kind]?.();
+  try {
+    window.comb.load({ nodes: [window.node("a"), window.node("b", 300)], edges } as never);
+    return null;
+  } catch (error) {
+    return (error as { problem?: unknown }).problem ?? null;
+  }
+}
+
+for (const { kind, problem } of EDGE_REFUSALS) {
+  test(`load refuses an edge (${kind}) as before, its edges crossing as columns, and the previous graph stays drawn`, async ({
+    page,
+  }) => {
+    // Verifies: ADR-0032
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await open(page);
+    const before = await drawnGraph(page);
+    const refused = await page.evaluate(edgeRefusal, kind);
+    await frames(page);
+    expect(errors).toEqual([]);
+    expect(refused).toStrictEqual(problem);
+    expect(await drawnGraph(page)).toEqual(before);
+  });
+}
+
+test("load takes an edge with every field, its edges crossing as columns", async ({ page }) => {
+  // Verifies: ADR-0032
+  await open(page);
+  const refused = await page.evaluate(edgeRefusal, "none");
+  expect(refused).toBeNull();
+});
 
 for (const { name, graph, problem } of MALFORMED) {
   test(`load refuses ${name} with a GraphDataError, and the previous graph stays drawn`, async ({

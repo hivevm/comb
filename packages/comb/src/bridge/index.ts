@@ -1,13 +1,15 @@
 // The one module that imports the WebAssembly package (ADR-0028). Structured data crosses as
-// generated types through serde-wasm-bindgen, but for a load's nodes, which cross as columns of
-// one string or one typed array each; node positions and the results of a viewport query are read
+// generated types through serde-wasm-bindgen, but for a load's nodes and edges, which cross as
+// columns of one string or one typed array each; node positions and the results of a viewport query are read
 // through views on the engine's buffers, created anew on every read because growing memory
 // detaches older views (ADR-0032).
 import init, {
+  ArrowCode,
   checkGraphSize,
   checkIdBudget,
   checkNodePatch,
   DetailLevel,
+  EdgeField,
   idBudget,
   idLimit,
   textLimit,
@@ -15,22 +17,24 @@ import init, {
   initSync,
   MeshDetail,
   NodeField,
+  SideCode,
+  type Arrow,
   type InitOutput,
   type CheckedPatch,
   type EdgeInput,
-  type EdgeList,
   type EdgePatch,
   type Hit,
   type GraphDataProblem,
   type NodeInput,
   type NodePatch,
   type NumberError,
+  type Side,
   type SlotError,
 } from "../../wasm/engine.js";
 
 export type {
   CheckedPatch,
-  EdgeList,
+  EdgeField,
   GraphDataProblem,
   NodeField,
   Hit,
@@ -152,9 +156,230 @@ export function nodeColumns(count: number): NodeColumnWriter {
   };
 }
 
-/** The snapshot of a load: what `snapshotOf` hands the bridge, its nodes as columns and its edges
- *  as the generated type. */
-export type GraphSnapshot = { readonly nodes: NodeColumns; readonly edges: EdgeList } & {
+/** The edges of a load as the engine's `loadGraph` takes them (ADR-0032), each column in slot
+ *  order: the identifiers, sources, targets, and label texts each as one string, the values
+ *  concatenated, with their boundaries in UTF-16 code units, one more than there are edges, a
+ *  refused or absent value empty; per label text whether it is a text, 1 or 0; whether a label,
+ *  its background, and a dash are present, 1 or 0; the numbers as the host application handed
+ *  them, a background of another type NaN; the arrowhead and the sides as codes, one for a string
+ *  that names none; and the first value the engine's first pass refuses by its type, the index of
+ *  its edge and its field, `item` for an edge that is no object. */
+export interface EdgeColumns {
+  readonly ids: string;
+  readonly idBounds: Uint32Array;
+  readonly sources: string;
+  readonly sourceBounds: Uint32Array;
+  readonly targets: string;
+  readonly targetBounds: Uint32Array;
+  readonly hasLabel: Uint8Array;
+  readonly labels: string;
+  readonly labelBounds: Uint32Array;
+  readonly labelTexts: Uint8Array;
+  readonly labelT: Float64Array;
+  readonly labelOffset: Float64Array;
+  readonly hasBackground: Uint8Array;
+  readonly background: Float64Array;
+  readonly color: Float64Array;
+  readonly hasDash: Uint8Array;
+  readonly dash: Float64Array;
+  readonly gap: Float64Array;
+  readonly arrow: Uint8Array;
+  readonly sourceSide: Uint8Array;
+  readonly targetSide: Uint8Array;
+  readonly refused: { readonly index: number; readonly field: EdgeField } | undefined;
+}
+
+/** What writes the columns of a load's edges, one edge after another in slot order. */
+export interface EdgeColumnWriter {
+  /** The next edge, from the plain data `api/snapshot.ts` read of it: an identifier, a source, or
+   *  a target that is a string is one, a number that is a number is one, a label that is an
+   *  object and a dash that is a list of two are read for their fields, null or undefined is an
+   *  absent label, dash, or background, and an arrowhead or a side that is a string crosses as its
+   *  code; any other value is refused by its type, the first of them named, a label text and a
+   *  background at their rule. */
+  edge(
+    id: unknown,
+    source: unknown,
+    target: unknown,
+    label: unknown,
+    color: unknown,
+    dash: unknown,
+    arrow: unknown,
+    sourceSide: unknown,
+    targetSide: unknown,
+  ): void;
+  /** The next edge, which is no object, refused as malformed unless a value before it was. */
+  noObject(): void;
+  /** The columns of the edges written so far. */
+  columns(): EdgeColumns;
+}
+
+/** The code of each arrowhead and side by its name, typed by the generated names so that one
+ *  added in the engine fails here until it has its code. */
+const ARROWS: Readonly<Record<Arrow, ArrowCode>> = { end: ArrowCode.End, none: ArrowCode.None };
+const SIDES: Readonly<Record<Side, SideCode>> = {
+  top: SideCode.Top,
+  right: SideCode.Right,
+  bottom: SideCode.Bottom,
+  left: SideCode.Left,
+};
+
+/** The code of `name` in `codes`, `unnamed` for a string that names none of them, or none for a
+ *  value that is no string. */
+function codeOf<C>(codes: Readonly<Record<string, C>>, name: unknown, unnamed: C): C | undefined {
+  if (typeof name !== "string") return undefined;
+  return Object.hasOwn(codes, name) ? codes[name] : unnamed;
+}
+
+/** Whether `value` stands for a field left out: null or undefined. */
+const absent = (value: unknown) => value === undefined || value === null;
+
+/** The columns of at most `count` labels: whether each edge has one, its text, `t`, offset, and
+ *  background. */
+function labelColumns(count: number) {
+  const texts = stringColumn(count);
+  const hasLabel = new Uint8Array(count);
+  const labelTexts = new Uint8Array(count);
+  const labelT = new Float64Array(count);
+  const labelOffset = new Float64Array(count);
+  const hasBackground = new Uint8Array(count);
+  const background = new Float64Array(count);
+  return {
+    /** Writes the label of the edge at `at`, and returns the first of its fields refused by its
+     *  type, or none. */
+    add(at: number, label: unknown): EdgeField | undefined {
+      if (typeof label !== "object" || label === null) {
+        texts.add(at, undefined);
+        return absent(label) ? undefined : EdgeField.Label;
+      }
+      const fields = label as Record<string, unknown>;
+      hasLabel[at] = 1;
+      labelTexts[at] = Number(texts.add(at, fields.text));
+      if (!absent(fields.background)) {
+        hasBackground[at] = 1;
+        background[at] = typeof fields.background === "number" ? fields.background : Number.NaN;
+      }
+      const { t, offset } = fields;
+      if (typeof t === "number") labelT[at] = t;
+      if (typeof offset === "number") labelOffset[at] = offset;
+      if (typeof t !== "number") return EdgeField.LabelT;
+      return typeof offset === "number" ? undefined : EdgeField.LabelOffset;
+    },
+    columns: (written: number) => ({
+      hasLabel: hasLabel.subarray(0, written),
+      labels: texts.joined(),
+      labelBounds: texts.bounds(written),
+      labelTexts: labelTexts.subarray(0, written),
+      labelT: labelT.subarray(0, written),
+      labelOffset: labelOffset.subarray(0, written),
+      hasBackground: hasBackground.subarray(0, written),
+      background: background.subarray(0, written),
+    }),
+  };
+}
+
+/** The columns of at most `count` dash patterns: whether each edge has one, its dash, and its
+ *  gap. */
+function dashColumns(count: number) {
+  const hasDash = new Uint8Array(count);
+  const dash = new Float64Array(count);
+  const gap = new Float64Array(count);
+  return {
+    /** Writes the dash pattern of the edge at `at`, and returns whether it is refused by its
+     *  type: neither left out nor a list of two numbers. */
+    add(at: number, pattern: unknown): boolean {
+      if (absent(pattern)) return false;
+      const [length, space] = Array.isArray(pattern) && pattern.length === 2 ? pattern : [];
+      if (typeof length !== "number" || typeof space !== "number") return true;
+      hasDash[at] = 1;
+      dash[at] = length;
+      gap[at] = space;
+      return false;
+    },
+    columns: (written: number) => ({
+      hasDash: hasDash.subarray(0, written),
+      dash: dash.subarray(0, written),
+      gap: gap.subarray(0, written),
+    }),
+  };
+}
+
+/** A column of at most `count` codes of names in `codes`, `unnamed` for a string that names none. */
+function codeColumn<C extends number>(
+  count: number,
+  codes: Readonly<Record<string, C>>,
+  unnamed: C,
+) {
+  const column = new Uint8Array(count);
+  return {
+    /** Writes the code of `name` at `at`, and returns whether it is refused by its type: no
+     *  string. */
+    add(at: number, name: unknown): boolean {
+      const code = codeOf(codes, name, unnamed);
+      if (code !== undefined) column[at] = code;
+      return code === undefined;
+    },
+    column: (written: number) => column.subarray(0, written),
+  };
+}
+
+/** A writer of the columns of at most `count` edges. It looks at a value by `typeof` and at a
+ *  string's length, and reads the fields of a label and the items of a dash, which are the
+ *  snapshot's own plain data, so that no value of the host application it is handed runs code. */
+export function edgeColumns(count: number): EdgeColumnWriter {
+  const [ids, sources, targets] = [stringColumn(count), stringColumn(count), stringColumn(count)];
+  const labels = labelColumns(count);
+  const color = new Float64Array(count);
+  const dashes = dashColumns(count);
+  const arrows = codeColumn(count, ARROWS, ArrowCode.Unnamed);
+  const sourceSides = codeColumn(count, SIDES, SideCode.Unnamed);
+  const targetSides = codeColumn(count, SIDES, SideCode.Unnamed);
+  let at = 0;
+  let refused: EdgeColumns["refused"];
+  const refuse = (field: EdgeField | undefined) => {
+    if (field !== undefined) refused ??= { index: at, field };
+  };
+  return {
+    edge(id, source, target, label, colorOf, dash, arrow, sourceSide, targetSide) {
+      if (!ids.add(at, id)) refuse(EdgeField.Id);
+      if (!sources.add(at, source)) refuse(EdgeField.Source);
+      if (!targets.add(at, target)) refuse(EdgeField.Target);
+      refuse(labels.add(at, label));
+      if (typeof colorOf === "number") color[at] = colorOf;
+      else refuse(EdgeField.Color);
+      if (dashes.add(at, dash)) refuse(EdgeField.Dash);
+      if (arrows.add(at, arrow)) refuse(EdgeField.Arrow);
+      if (sourceSides.add(at, sourceSide)) refuse(EdgeField.SourceSide);
+      if (targetSides.add(at, targetSide)) refuse(EdgeField.TargetSide);
+      at++;
+    },
+    noObject() {
+      refuse(EdgeField.Item);
+      for (const column of [ids, sources, targets]) column.add(at, undefined);
+      labels.add(at, undefined);
+      at++;
+    },
+    columns: () => ({
+      ids: ids.joined(),
+      idBounds: ids.bounds(at),
+      sources: sources.joined(),
+      sourceBounds: sources.bounds(at),
+      targets: targets.joined(),
+      targetBounds: targets.bounds(at),
+      ...labels.columns(at),
+      color: color.subarray(0, at),
+      ...dashes.columns(at),
+      arrow: arrows.column(at),
+      sourceSide: sourceSides.column(at),
+      targetSide: targetSides.column(at),
+      refused,
+    }),
+  };
+}
+
+/** The snapshot of a load: what `snapshotOf` hands the bridge, its nodes and its edges as
+ *  columns. */
+export type GraphSnapshot = { readonly nodes: NodeColumns; readonly edges: EdgeColumns } & {
   readonly [read]: "graph";
 };
 
@@ -470,7 +695,38 @@ function wrap(exports: InitOutput): Bridge {
 function load(engine: Engine, { nodes, edges }: GraphSnapshot): number {
   const { ids, idBounds, titles, titleBounds, titleTexts, x, y, width, height, refused } = nodes;
   const columns = [ids, idBounds, titles, titleBounds, titleTexts, x, y, width, height] as const;
-  return engine.loadGraph(...columns, refused?.index, refused?.field, edges);
+  const e = edges;
+  const edgeColumnValues = [
+    e.ids,
+    e.idBounds,
+    e.sources,
+    e.sourceBounds,
+    e.targets,
+    e.targetBounds,
+    e.hasLabel,
+    e.labels,
+    e.labelBounds,
+    e.labelTexts,
+    e.labelT,
+    e.labelOffset,
+    e.hasBackground,
+    e.background,
+    e.color,
+    e.hasDash,
+    e.dash,
+    e.gap,
+    e.arrow,
+    e.sourceSide,
+    e.targetSide,
+  ] as const;
+  return engine.loadGraph(
+    ...columns,
+    refused?.index,
+    refused?.field,
+    ...edgeColumnValues,
+    e.refused?.index,
+    e.refused?.field,
+  );
 }
 
 function engineBridge(memory: WebAssembly.Memory): Bridge {

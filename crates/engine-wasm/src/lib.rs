@@ -1,8 +1,9 @@
 //! The bridge between the shell and the engine (ADR-0032).
 //!
 //! Structured data crosses through serde-wasm-bindgen as `Ts<T>`, with TypeScript types tsify
-//! generates; node positions and the results of a viewport query cross as buffers the engine
-//! owns, which the shell reads as typed-array views created anew after every call.
+//! generates; the graph data of a load crosses as columns, each one string or one typed array;
+//! node positions and the results of a viewport query cross as buffers the engine owns, which
+//! the shell reads as typed-array views created anew after every call.
 //!
 //! This root holds the exports and their conversions; the reading and checking of graph data,
 //! which the bridge alone does (ADR-0028), is the module `graph_data`.
@@ -28,14 +29,15 @@ use tsify::{Ts, Tsify};
 use wasm_bindgen::prelude::*;
 
 pub use graph_data::{
-    Arrow, CheckedPatch, EdgeInput, EdgeList, EdgePatch, Field, GraphDataProblem, GraphList,
-    LabelInput, MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_TEXT, NodeField, NodeInput, NodePatch, Pair,
-    Side, Text,
+    Arrow, ArrowCode, CheckedPatch, EdgeField, EdgeInput, EdgePatch, Field, GraphDataProblem,
+    GraphList, LabelInput, MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_TEXT, NodeField, NodeInput,
+    NodePatch, Pair, Side, SideCode, Text,
 };
 
 use graph_data::{
-    EdgeRefusal, ID_LIMIT, NodeColumns, TEXT_LIMIT, add_edge_to, add_node_to, load_of, malformed,
-    patch_of, reading, reading_after, refused_of, slot, unshaped, update_edge_in,
+    EdgeColumns, EdgeRefusal, ID_LIMIT, NodeColumns, TEXT_LIMIT, add_edge_to, add_node_to,
+    edge_refused_of, load_of, malformed, patch_of, reading, refused_of, slot, unshaped,
+    update_edge_in,
 };
 
 /// A number the shell computed that an export cannot take: the shell's own mistake, never one of
@@ -349,12 +351,18 @@ impl Engine {
     }
 
     /// Replaces the graph with a load, node slot `i` for its node `i` and edge slot `i` for its
-    /// edge `i`, and returns the number of node slots. The nodes cross as columns (ADR-0032), each
-    /// in slot order: the identifiers and the titles each as one string with its boundaries in
-    /// UTF-16 code units, per title whether it is a text, the numbers as `Float64Array`, and the
-    /// first value the shell refused by its type, the index of its node and the code of its
-    /// `NodeField`, or none.
-    /// The edges still cross as structured data. A refused load leaves the loaded graph as it was.
+    /// edge `i`, and returns the number of node slots. The nodes and the edges cross as columns
+    /// (ADR-0032), each in slot order, and serde-wasm-bindgen converts nothing of a load. Of the
+    /// nodes: the identifiers and the titles each as one string with its boundaries in UTF-16 code
+    /// units, per title whether it is a text, the numbers as `Float64Array`, and the first value
+    /// the shell refused by its type, the index of its node and the code of its `NodeField`, or
+    /// none. Of the edges: the identifiers, sources, targets, and label texts each as one string
+    /// with its boundaries, per label text whether it is a text; whether a label, its background,
+    /// and a dash are present, as bytes; the label's `t` and offset, the background, the colour,
+    /// and the dash and gap as `Float64Array`; the arrowhead and the sides as the codes of
+    /// `ArrowCode` and `SideCode`; and the first value the shell refused by its type, the index
+    /// of its edge and the code of its `EdgeField`, or none. A refused load leaves the loaded
+    /// graph as it was.
     #[wasm_bindgen(js_name = loadGraph)]
     #[expect(
         clippy::too_many_arguments,
@@ -374,10 +382,56 @@ impl Engine {
         height: &[f64],
         refused_at: Option<u32>,
         refused_field: Option<u32>,
-        edges: Ts<EdgeList>,
+        edge_ids: &str,
+        edge_id_bounds: &[u32],
+        sources: &str,
+        source_bounds: &[u32],
+        targets: &str,
+        target_bounds: &[u32],
+        has_label: &[u8],
+        labels: &str,
+        label_bounds: &[u32],
+        label_texts: &[u8],
+        label_t: &[f64],
+        label_offset: &[f64],
+        has_background: &[u8],
+        background: &[f64],
+        color: &[f64],
+        has_dash: &[u8],
+        dash: &[f64],
+        gap: &[f64],
+        arrow: &[u8],
+        source_side: &[u8],
+        target_side: &[u8],
+        edge_refused_at: Option<u32>,
+        edge_refused_field: Option<u32>,
     ) -> Result<u32, GraphDataProblem> {
         trap::spring();
         let refused = refused_of(refused_at, refused_field)?;
+        let edges = EdgeColumns {
+            ids: edge_ids,
+            id_bounds: edge_id_bounds,
+            sources,
+            source_bounds,
+            targets,
+            target_bounds,
+            has_label,
+            labels,
+            label_bounds,
+            label_texts,
+            label_t,
+            label_offset,
+            has_background,
+            background,
+            color,
+            has_dash,
+            dash,
+            gap,
+            arrow,
+            source_side,
+            target_side,
+            refused: edge_refused_of(edge_refused_at, edge_refused_field)?,
+        };
         let nodes = NodeColumns {
             ids,
             id_bounds,
@@ -390,8 +444,7 @@ impl Engine {
             height,
             refused,
         };
-        let edges = reading_after(refused.is_some(), || edges.to_rust()).map_err(unshaped)?;
-        self.graph = load_of(&nodes, &edges.0)?;
+        self.graph = load_of(&nodes, &edges)?;
         self.visible = Visible::default();
         slot(x.len())
     }

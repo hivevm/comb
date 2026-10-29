@@ -63,12 +63,14 @@ snapshot's functions return, so that the type checker refuses the host's graph d
 patch handed to the bridge directly (`bridge/snapshot-only.test.ts`). The bridge checks the counts
 of nodes and edges before anything is copied, then the code units of the identifiers, counted while
 the snapshot is read and read no further once they exceed the budget, then the snapshot, and the
-store keeps the snapshot's nodes and edges. A load's nodes cross as columns the snapshot writes
-while it reads them, through the bridge's `nodeColumns`: the identifiers and the titles each as one
-string with its boundaries in UTF-16 code units, per title whether it is a text, the numbers as
-`Float64Array`, and the first value refused by its type as its position
-([ADR-0032](adr/0032-a-load-crosses-the-bridge-as-columns.md)); its edges still cross as the
-generated type. A string with a lone surrogate, which the bridge would read as U+FFFD,
+store keeps the snapshot's nodes and edges. A load's nodes and edges cross as columns the snapshot
+writes while it reads them, through the bridge's `nodeColumns` and `edgeColumns`: each string
+field, the identifiers, sources, targets, titles, and label texts, as one string with its
+boundaries in UTF-16 code units, per title and label text whether it is a text, the numbers as
+`Float64Array`, an arrowhead and the sides as byte codes, whether a label, its background, and a
+dash are present as bytes, and the first value refused by its type as its position
+([ADR-0032](adr/0032-a-load-crosses-the-bridge-as-columns.md)); serde-wasm-bindgen converts
+nothing of a load. A string with a lone surrogate, which the bridge would read as U+FFFD,
 `api` hands over as `false`, so that it is refused. `updateNode` and `updateEdge` read their patch
 the same way, every own key of a plain object, before they look up the item it names, and merge only
 the fields the bridge returns as checked. The bridge never formats a refused value into its message.
@@ -169,10 +171,10 @@ The functional core and its shell follow
   pixel of a query and of a hit test in one function, and the point of a hit test and of a label's
   move in another; the core bounds a pixel beyond any zoom for both, in one function. Its crate
   root holds the exports and their conversions; its module `graph_data` reads and checks graph
-  data, the one place that does, each field of an edge through one function that a load,
-  `addEdge`, and `updateEdge` call alike, and a node of a load's columns by the checks of the node
-  of `addNode`, mapping the columns' boundaries onto the identifiers only once their lengths are
-  checked
+  data, the one place that does, each rule of an edge through one function that a load,
+  `addEdge`, and `updateEdge` reach alike, and a node and an edge of a load's columns by the checks
+  of the node of `addNode` and the edge of `addEdge`, mapping the columns' boundaries onto the
+  identifiers only once their lengths are checked
   ([ADR-0028](adr/0028-the-graph-lies-within-a-world.md)); `packages/comb/src/bridge` is the one
   module that imports the WebAssembly package and reads those buffers through fresh typed-array
   views per read ([ADR-0032](adr/0032-a-load-crosses-the-bridge-as-columns.md)).
