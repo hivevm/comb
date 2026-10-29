@@ -1,10 +1,10 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import {
   createBridgeSync,
+  edgeColumns,
   nodeColumns,
   type NodeField,
   type Bridge,
-  type EdgeList,
   type GraphSnapshot,
   type NodePatch,
   type EdgeSnapshot,
@@ -13,6 +13,7 @@ import {
   type PlainPatch,
 } from ".";
 import { listsOf, snapshotOf } from "../api/snapshot";
+import { EdgeField, SideCode } from "../../wasm/engine.js";
 
 let bridge: Bridge;
 
@@ -39,10 +40,10 @@ const edge = (id: string, source: string, target: string) => ({
   targetSide: "left" as const,
 });
 // The bridge takes only what `api/snapshot.ts` produces (ADR-0028); its own tests stand in for
-// that module and hand it plain data of their own, the nodes written into columns as it writes
-// them (ADR-0032).
+// that module and hand it plain data of their own, the nodes and edges written into columns as
+// it writes them (ADR-0032).
 type PlainNode = ReturnType<typeof node>;
-const graph = (nodes: readonly PlainNode[], edges: EdgeList = []) => {
+const graph = (nodes: readonly PlainNode[], edges: readonly object[] = []) => {
   const columns = nodeColumns(nodes.length);
   for (const n of nodes as readonly unknown[]) {
     if (typeof n !== "object" || n === null) columns.noObject();
@@ -51,7 +52,18 @@ const graph = (nodes: readonly PlainNode[], edges: EdgeList = []) => {
       columns.node(id, title, x, y, width, height);
     }
   }
-  return { nodes: columns.columns(), edges } as GraphSnapshot;
+  const written = edgeColumns(edges.length);
+  for (const e of edges as readonly unknown[]) {
+    if (typeof e !== "object" || e === null) written.noObject();
+    else {
+      const { id, source, target, label, color, dash, arrow, sourceSide, targetSide } = e as Record<
+        string,
+        unknown
+      >;
+      written.edge(id, source, target, label, color, dash, arrow, sourceSide, targetSide);
+    }
+  }
+  return { nodes: columns.columns(), edges: written.columns() } as GraphSnapshot;
 };
 const plain = (patch: NodePatch) => patch as PlainPatch;
 const added = (fields: object) => fields as NodeSnapshot;
@@ -382,6 +394,39 @@ describe("bridge columns of a load", () => {
   });
 });
 
+describe("bridge columns of a load's edges", () => {
+  test("edge identifiers and label texts beyond the basic plane are held exactly by the store and the engine", () => {
+    // Verifies: ADR-0032
+    // An edge's identifier and label text beyond the basic plane, read back exactly where the
+    // bridge names the edge, and the label text's length counted as JavaScript counts it.
+    const ids = ["\u{1F600}", "\u{1F601}"];
+    const nodes = ids.map((id, i) => node(id, i * 300, 0));
+    const edgeIds = ["\u{1F602}", "\u{1F603}"];
+    const text = "\u{1D49C}".repeat(500);
+    const labelled = edgeIds.map((id) => ({
+      ...edge(id, ids[0]!, ids[1]!),
+      label: { text, t: 0.5, offset: 0 },
+    }));
+    const withEdges = snapshotted(nodes, labelled);
+    expect(withEdges.kept.edges.map((e) => [e.id, e.label?.text])).toEqual(
+      edgeIds.map((id) => [id, text]),
+    );
+    expect(bridge.loadGraph(withEdges.snapshot)).toBe(2);
+    expect([...bridge.edgesAt(new Uint32Array([0]))]).toEqual([0, 1]);
+    const twice = snapshotted(nodes, [labelled[0]!, labelled[0]!]).snapshot;
+    expect(outcome(() => bridge.loadGraph(twice))).toEqual({
+      kind: "duplicateEdge",
+      edge: edgeIds[0],
+    });
+    const long = { ...labelled[1]!, label: { ...labelled[1]!.label, text: text + "x" } };
+    expect(outcome(() => bridge.loadGraph(snapshotted(nodes, [long]).snapshot))).toEqual({
+      kind: "labelTextTooLong",
+      edge: edgeIds[1],
+      limit: 1000,
+    });
+  });
+});
+
 describe("bridge columns that do not fit", () => {
   test("a refused field of a code no field has is refused as malformed, and the engine keeps working", () => {
     // Verifies: ADR-0032
@@ -397,6 +442,54 @@ describe("bridge columns that do not fit", () => {
     }
     expect(bridge.loadGraph(graph(two()))).toBe(2);
     expect([...bridge.positions()]).toEqual([0, 0, 1, 1]);
+  });
+
+  test("an edge's refused field or code no field or value has is refused as malformed, and the engine keeps working", () => {
+    // Verifies: ADR-0032
+    const { nodes, edges } = graph(two(), [edge("e", "a", "b")]);
+    const misfits = [
+      { ...edges, refused: { index: 0, field: 12 } },
+      { ...edges, refused: { index: 1, field: 1 } },
+      { ...edges, arrow: new Uint8Array([3]) },
+      { ...edges, targetSide: new Uint8Array([5]) },
+      { ...edges, gap: new Float64Array(0) },
+    ];
+    for (const columns of misfits) {
+      expect(outcome(() => bridge.loadGraph({ nodes, edges: columns } as never))).toStrictEqual({
+        kind: "malformed",
+        message: "the columns of the edges do not fit together",
+      });
+    }
+    expect(bridge.loadGraph(graph(two(), [edge("e", "a", "b")]))).toBe(2);
+    expect([...bridge.edgesAt(new Uint32Array([0]))]).toEqual([0]);
+  });
+
+  test("an edge's arrowhead or side that names none crosses as its code and is refused at its place", () => {
+    // Verifies: ADR-0032
+    const snapshot = graph(two(), [
+      edge("d", "a", "b"),
+      { ...edge("e", "b", "a"), sourceSide: "middle" as never, arrow: false as never },
+    ]);
+    expect([...snapshot.edges.sourceSide]).toEqual([SideCode.Right, SideCode.Unnamed]);
+    expect(snapshot.edges.refused).toEqual({ index: 1, field: EdgeField.Arrow });
+    expect(outcome(() => bridge.loadGraph(snapshot))).toStrictEqual({
+      kind: "invalidField",
+      list: "edges",
+      index: 1,
+      id: "e",
+      field: "arrow",
+      expected: '"end" or "none"',
+    });
+    const unnamed = graph(two(), [{ ...edge("e", "b", "a"), targetSide: "middle" as never }]);
+    expect(unnamed.edges.refused).toBeUndefined();
+    expect(outcome(() => bridge.loadGraph(unnamed))).toStrictEqual({
+      kind: "invalidField",
+      list: "edges",
+      index: 0,
+      id: "e",
+      field: "targetSide",
+      expected: '"top", "right", "bottom", or "left"',
+    });
   });
 });
 

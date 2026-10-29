@@ -4,15 +4,15 @@
 import { expect, test } from "bun:test";
 import type { Bridge } from ".";
 import type { EdgeData, EdgePatch, GraphData, NodeData } from "../store";
-import type { EdgeList, Engine } from "../../wasm/engine.js";
+import type { Engine } from "../../wasm/engine.js";
 
 /** Whether `A` and `B` are the same type. */
 type Same<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 
-// The engine's `loadGraph` takes a load's nodes as columns, strings and typed arrays its glue
-// copies whole, and no `GraphBatch` (ADR-0032): its generated parameters, pinned. The refused
-// field crosses as the code of its `NodeField`, a plain number.
+// The engine's `loadGraph` takes a load's nodes and edges as columns, strings and typed arrays its
+// glue copies whole, and no `GraphBatch` and no `EdgeList` (ADR-0032): its generated parameters,
+// pinned. A refused field crosses as the code of its `NodeField` or `EdgeField`, a plain number.
 const columns: Same<
   Parameters<Engine["loadGraph"]>,
   [
@@ -27,7 +27,29 @@ const columns: Same<
     height: Float64Array,
     refusedAt: number | null | undefined,
     refusedField: number | null | undefined,
-    edges: EdgeList,
+    edgeIds: string,
+    edgeIdBounds: Uint32Array,
+    sources: string,
+    sourceBounds: Uint32Array,
+    targets: string,
+    targetBounds: Uint32Array,
+    hasLabel: Uint8Array,
+    labels: string,
+    labelBounds: Uint32Array,
+    labelTexts: Uint8Array,
+    labelT: Float64Array,
+    labelOffset: Float64Array,
+    hasBackground: Uint8Array,
+    background: Float64Array,
+    color: Float64Array,
+    hasDash: Uint8Array,
+    dash: Float64Array,
+    gap: Float64Array,
+    arrow: Uint8Array,
+    sourceSide: Uint8Array,
+    targetSide: Uint8Array,
+    edgeRefusedAt?: number | null,
+    edgeRefusedField?: number | null,
   ]
 > = true;
 
@@ -63,7 +85,7 @@ test("the bridge refuses graph data and patches that are no snapshot at compile 
   expect(typeof handsOver).toBe("function");
 });
 
-test("the engine takes a load's nodes as columns, pinned at compile time", () => {
+test("the engine takes a load's nodes and edges as columns, pinned at compile time", () => {
   // Verifies: ADR-0032
   expect(columns).toBe(true);
 });

@@ -1,17 +1,17 @@
 // The snapshot of the host application's graph data (ADR-0028): every value read once, in
 // JavaScript, into plain data whose every field is a primitive of the type the field expects, so
 // that the bridge checks it and the store keeps it, and no value of the host application, nor any
-// of its code, reaches the engine; a load's nodes are handed over as columns besides (ADR-0032). A
-// value of another type is replaced by `false`, which the bridge refuses naming the node or edge
-// and the field; a title, a label text, and the arrow are handed
+// of its code, reaches the engine; a load's nodes and edges are handed over as columns besides
+// (ADR-0032). A value of another type is replaced by `false`, which the bridge refuses naming the
+// node or edge and the field; a title, a label text, and the arrow are handed
 // over no longer than one code unit beyond the bridge's limit for texts, and an identifier no
 // longer than one beyond its limit for identifiers, so that a string of any length costs at most
 // that much to check. The code units of all identifiers are counted while they are read, and
 // reading stops once they exceed the bridge's budget, whose check then refuses the load. What
 // cannot be read at all throws an `UnreadableError`.
 import {
+  edgeColumns,
   nodeColumns,
-  type EdgeList,
   type EdgeSnapshot,
   type GraphSnapshot,
   type NodeSnapshot,
@@ -207,9 +207,9 @@ function edgeOf(read: Reader, edge: Fields) {
 
 /** The snapshot of the lists `listsOf` read, with the edge styles' defaults and its strings cut
  *  by `limits`: `kept`, the graph data the store keeps once the bridge has checked it; `snapshot`,
- *  what the bridge checks, its nodes the columns of the same nodes, written while each is read,
- *  and its edges those of `kept`; and the code units of its identifiers, for the bridge to check first.
- *  Reading stops, the snapshot unfinished, once they exceed the budget. */
+ *  what the bridge checks, the columns of the same nodes and edges, written while each is read;
+ *  and the code units of its identifiers, for the bridge to check first. Reading stops, the
+ *  snapshot unfinished, once they exceed the budget. */
 export function snapshotOf(lists: Lists, limits: Limits) {
   const read = readerOf(limits);
   const done = () => read.idUnits > limits.idBudget;
@@ -229,15 +229,25 @@ export function snapshotOf(lists: Lists, limits: Limits) {
     },
     done,
   );
+  const edgeWriter = edgeColumns(lists.edgeCount);
   const edges = copied(
     lists.edges,
     lists.edgeCount,
     "edges",
-    (item) => (item ? edgeOf(read, item) : false),
+    (item) => {
+      if (!item) {
+        edgeWriter.noObject();
+        return false;
+      }
+      const e = edgeOf(read, item);
+      const { id, source, target, label, color, dash, arrow, sourceSide, targetSide } = e;
+      edgeWriter.edge(id, source, target, label, color, dash, arrow, sourceSide, targetSide);
+      return e;
+    },
     done,
   );
   const kept = { nodes, edges } as GraphData;
-  const snapshot = { nodes: columns.columns(), edges: edges as EdgeList } as GraphSnapshot;
+  const snapshot = { nodes: columns.columns(), edges: edgeWriter.columns() } as GraphSnapshot;
   return { kept, snapshot, idUnits: read.idUnits };
 }
 
