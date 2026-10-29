@@ -43,7 +43,7 @@ today becomes one row holding one text of role title.
 ## Read first
 
 - ADR-0013 (the model), ADR-0027 (levels of detail, `BitmapText`, pools), ADR-0025 (hit test),
-  ADR-0028 (where validation lives), ADR-0032 (typed-array views), ADR-0029 (the store), ADR-0030
+  ADR-0028 (where validation lives), ADR-0033 (typed-array views), ADR-0029 (the store), ADR-0030
   (`nodeUpdated`).
 - `docs/GLOSSARY.md`: node content, content element, level of detail.
 - `docs/ARCHITECTURE.md`, the golden path of a load and of a query; the geometry tests of

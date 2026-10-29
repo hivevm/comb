@@ -6,7 +6,7 @@
 //! of it alone is, and the patch of `updateEdge`, refused exactly as a load of the edge it makes.
 //!
 //! The data starts as a value of any shape, as the host application hands it over. A load's nodes
-//! and edges cross as the columns the snapshot of `api` builds of it (ADR-0032), each node read as
+//! and edges cross as the columns the snapshot of `api` builds of it (ADR-0033), each node read as
 //! the node of `addNode` is and each edge as the edge of `addEdge` is, but for an arrowhead and the
 //! sides, any string of which crosses as its code, so that a value of the wrong type or a missing
 //! field at any position among them, a string that names no arrowhead or side, and an item that is
@@ -15,7 +15,7 @@
 //! or of another type, and whether the value has the shape of graph data at all: the bridge names
 //! such a field (`invalidField`), and refuses as malformed only what has no such shape, and no
 //! message names a Rust type or crate.
-// Verifies: Q-7, ADR-0028, ADR-0032
+// Verifies: Q-7, ADR-0028, ADR-0033
 
 use proptest::prelude::*;
 use serde::Deserialize;
@@ -979,7 +979,7 @@ proptest! {
 
     #[test]
     fn any_graph_data_ends_in_a_typed_error_or_a_graph(value in graph_data()) {
-        // Verifies: ADR-0032
+        // Verifies: ADR-0033
         // A panic anywhere below fails the case; the runner catches it and shrinks the input.
         // The load crosses as columns, and is held to the oracles of the value it was built of.
         let named = named_fields(&value);

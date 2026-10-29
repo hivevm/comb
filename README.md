@@ -272,7 +272,7 @@ docs/CONVENTIONS.md   # how this project writes what no check decides, kept curr
 docs/ARCHITECTURE.md  # the system as it currently stands
 docs/adr/             # Architecture Decision Records (+ template)
 crates/engine/        # the engine's pure Rust core: geometry over values and buffers (ADR-0028)
-crates/engine-wasm/   # the bridge's Rust side: every WebAssembly export (ADR-0032)
+crates/engine-wasm/   # the bridge's Rust side: every WebAssembly export (ADR-0033)
 packages/comb/        # the library: api, store, interaction, render, bridge
 examples/metric-tree/ # the example host application, with its browser tests (G-9)
 scripts/              # consistency checks and sensors (check-all.sh runs them all), run in CI

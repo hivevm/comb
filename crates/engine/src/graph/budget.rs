@@ -174,7 +174,7 @@ fn worst_inside(path: &EdgePath, points: &[Point], rect: &Rect, scale: f64) -> f
 
 /// Asserts that the vertices `range` of the mesh of `out`, an edge without an arrowhead, are the
 /// stroke of `points` `width` wide: the middle of each pair of vertices, its origin added back, is
-/// a point, within what `f32` holds of its distance from the origin (ADR-0032).
+/// a point, within what `f32` holds of its distance from the origin (ADR-0033).
 fn assert_stroke_of(out: &Visible, range: std::ops::Range<usize>, points: &[Point], width: f64) {
     assert_eq!(range.len(), 2 * points.len());
     let mesh = &out.mesh;

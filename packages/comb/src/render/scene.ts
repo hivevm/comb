@@ -7,7 +7,7 @@
 // near draws node boxes, titles, and edge labels; middle draws node boxes and titles; far draws
 // nodes as particles and edges as thin lines, without text.
 //
-// The world is drawn relative to the origin of the last query (ADR-0032): the `world` render
+// The world is drawn relative to the origin of the last query (ADR-0033): the `world` render
 // group stands at the screen point of the origin, the edges and the edge labels, which the engine
 // hands over relative to it, at (0, 0) in it, and the nodes and particles, placed by the positions
 // buffer, at minus the origin. The GPU, which takes PixiJS's transforms as `f32`, then sees only

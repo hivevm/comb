@@ -179,7 +179,7 @@ impl Graph {
         clippy::cast_possible_truncation,
         reason = "an end is the middle of a side of a node, whose position and size the engine \
                   keeps as f32; the ends cross without an origin, rounded by their distance from \
-                  the world's origin (ADR-0032); a node lies within `WORLD_LIMIT`, its far side \
+                  the world's origin (ADR-0033); a node lies within `WORLD_LIMIT`, its far side \
                   included, so an end does too, far within f32"
     )]
     pub fn edge_ends(&self, slots: &[u32], out: &mut Vec<f32>) {
