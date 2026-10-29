@@ -36,8 +36,7 @@ pub use graph_data::{
 
 use graph_data::{
     EdgeColumns, EdgeRefusal, ID_LIMIT, NodeColumns, TEXT_LIMIT, add_edge_to, add_node_to,
-    edge_refused_of, load_of, malformed, patch_of, reading, refused_of, slot, unshaped,
-    update_edge_in,
+    edge_refused_of, load_of, malformed, patch_of, refused_of, slot, unshaped, update_edge_in,
 };
 
 /// A number the shell computed that an export cannot take: the shell's own mistake, never one of
@@ -455,7 +454,7 @@ impl Engine {
     #[wasm_bindgen(js_name = addNode)]
     pub fn add_node(&mut self, node: Ts<NodeInput>) -> Result<u32, GraphDataProblem> {
         trap::spring();
-        let node = reading(|| node.to_rust()).map_err(unshaped)?;
+        let node = node.to_rust().map_err(unshaped)?;
         add_node_to(&mut self.graph, &node)
     }
 
@@ -471,7 +470,7 @@ impl Engine {
         target: u32,
     ) -> Result<u32, EdgeRefusal> {
         trap::spring();
-        let edge = reading(|| edge.to_rust()).map_err(unshaped)?;
+        let edge = edge.to_rust().map_err(unshaped)?;
         add_edge_to(&mut self.graph, &edge, source, target)
     }
 
@@ -487,7 +486,7 @@ impl Engine {
         patch: Ts<EdgePatch>,
     ) -> Result<(), EdgeRefusal> {
         trap::spring();
-        let patch = reading(|| patch.to_rust()).map_err(unshaped)?;
+        let patch = patch.to_rust().map_err(unshaped)?;
         update_edge_in(&mut self.graph, slot, id, patch)
     }
 

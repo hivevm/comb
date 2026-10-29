@@ -394,6 +394,39 @@ describe("bridge columns of a load", () => {
   });
 });
 
+describe("bridge columns of a load's edges", () => {
+  test("edge identifiers and label texts beyond the basic plane are held exactly by the store and the engine", () => {
+    // Verifies: ADR-0032
+    // An edge's identifier and label text beyond the basic plane, read back exactly where the
+    // bridge names the edge, and the label text's length counted as JavaScript counts it.
+    const ids = ["\u{1F600}", "\u{1F601}"];
+    const nodes = ids.map((id, i) => node(id, i * 300, 0));
+    const edgeIds = ["\u{1F602}", "\u{1F603}"];
+    const text = "\u{1D49C}".repeat(500);
+    const labelled = edgeIds.map((id) => ({
+      ...edge(id, ids[0]!, ids[1]!),
+      label: { text, t: 0.5, offset: 0 },
+    }));
+    const withEdges = snapshotted(nodes, labelled);
+    expect(withEdges.kept.edges.map((e) => [e.id, e.label?.text])).toEqual(
+      edgeIds.map((id) => [id, text]),
+    );
+    expect(bridge.loadGraph(withEdges.snapshot)).toBe(2);
+    expect([...bridge.edgesAt(new Uint32Array([0]))]).toEqual([0, 1]);
+    const twice = snapshotted(nodes, [labelled[0]!, labelled[0]!]).snapshot;
+    expect(outcome(() => bridge.loadGraph(twice))).toEqual({
+      kind: "duplicateEdge",
+      edge: edgeIds[0],
+    });
+    const long = { ...labelled[1]!, label: { ...labelled[1]!.label, text: text + "x" } };
+    expect(outcome(() => bridge.loadGraph(snapshotted(nodes, [long]).snapshot))).toEqual({
+      kind: "labelTextTooLong",
+      edge: edgeIds[1],
+      limit: 1000,
+    });
+  });
+});
+
 describe("bridge columns that do not fit", () => {
   test("a refused field of a code no field has is refused as malformed, and the engine keeps working", () => {
     // Verifies: ADR-0032

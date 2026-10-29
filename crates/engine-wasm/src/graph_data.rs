@@ -1,9 +1,10 @@
 //! The reading and checking of graph data, the one place that validates it (ADR-0028, ADR-0032):
 //! the limits of a load, the lenient readers of fields, the input types, the columns of a load's
 //! nodes and edges, and the checks that turn a load into the engine's graph and a patch of
-//! `updateNode` into what the store merges. The exports in the crate root hand graph data here and pass on what it
-//! returns.
+//! `updateNode` into what the store merges. The exports in the crate root hand graph data here
+//! and pass on what it returns.
 
+#[cfg(test)]
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -82,14 +83,16 @@ impl<T> Default for Field<T> {
     }
 }
 
+#[cfg(test)]
 thread_local! {
-    /// Whether a field of the current `reading` was refused.
+    /// Whether a field of the current `reading` of the tests was refused.
     static REFUSED: Cell<bool> = const { Cell::new(false) };
 }
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for Field<T> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let value = T::deserialize(deserializer).ok();
+        #[cfg(test)]
         if value.is_none() {
             REFUSED.set(true);
         }
@@ -97,9 +100,9 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Field<T> {
     }
 }
 
-/// What `read` deserializes, a node, an edge, or a patch, with a refused field of an earlier
-/// reading forgotten; the tests' batch of a load is read in it too, its items after the first
-/// with a refused field left unread.
+/// What `read` deserializes in the tests, with a refused field of an earlier reading forgotten:
+/// the tests' batch of a load, its items after the first with a refused field left unread.
+#[cfg(test)]
 pub(crate) fn reading<T>(read: impl FnOnce() -> T) -> T {
     REFUSED.set(false);
     let value = read();
@@ -482,6 +485,7 @@ impl NodeColumns<'_> {
         let numbers = [self.y, self.width, self.height].map(<[f64]>::len);
         let fit = numbers.iter().all(|&len| len == count)
             && self.title_texts.len() == count
+            && self.title_texts.iter().all(|&text| text <= 1)
             && bounds_fit(self.id_bounds, count, utf16_length(self.ids))
             && bounds_fit(self.title_bounds, count, utf16_length(self.titles))
             && self
@@ -693,6 +697,7 @@ impl EdgeColumns<'_> {
             self.dash,
             self.gap,
         ];
+        // The presence and validity bytes, 1 or 0, then the codes.
         let bytes = [
             self.has_label,
             self.label_texts,
@@ -710,6 +715,9 @@ impl EdgeColumns<'_> {
         ];
         let fit = numbers.iter().all(|column| column.len() == count)
             && bytes.iter().all(|column| column.len() == count)
+            && bytes[..4]
+                .iter()
+                .all(|column| column.iter().all(|&flag| flag <= 1))
             && strings
                 .iter()
                 .all(|&(text, bounds)| bounds_fit(bounds, count, utf16_length(text)))
@@ -775,11 +783,10 @@ impl EdgeColumns<'_> {
         if field == EdgeField::Item {
             return Err(unshaped("an edge is no object"));
         }
-        let (name, expected) = field.named();
         let id = (field != EdgeField::Id).then(|| value_at(self.ids, self.id_bounds, index));
         let mut item = Item::new(GraphList::Edges, index);
         item.id = id.as_deref();
-        item.read(name, Field::<()>(None), expected)
+        item.edge(field, Field::<()>(None))
     }
 
     /// The UTF-16 code units of the identifier, the source, and the target of each edge, read
@@ -1077,6 +1084,12 @@ impl<'a> Item<'a> {
         })
     }
 
+    /// The value of `field` of an edge, or the refusal that names the edge and the field.
+    fn edge<T>(&self, field: EdgeField, value: Field<T>) -> Result<T, GraphDataProblem> {
+        let (name, expected) = field.named();
+        self.read(name, value, expected)
+    }
+
     /// The identifier `field` of the item, read in place.
     fn id(&self, field: &str, value: &'a Field<String>) -> Result<&'a str, GraphDataProblem> {
         self.read(field, Field(value.0.as_deref()), AN_ID)
@@ -1113,12 +1126,14 @@ fn edge_of(index: usize, edge: &EdgeInput) -> Result<Edge<'_>, GraphDataProblem>
         source,
         target,
         label,
-        color: item.read("color", edge.color, A_COLOR)?,
-        dash: item.read("dash", edge.dash, A_DASH)?.map(|Pair(pair)| pair),
-        arrow: item.read("arrow", edge.arrow, AN_ARROW)?,
+        color: item.edge(EdgeField::Color, edge.color)?,
+        dash: item
+            .edge(EdgeField::Dash, edge.dash)?
+            .map(|Pair(pair)| pair),
+        arrow: item.edge(EdgeField::Arrow, edge.arrow)?,
         sides: Sides {
-            source: item.read("sourceSide", edge.source_side, A_SIDE)?.into(),
-            target: item.read("targetSide", edge.target_side, A_SIDE)?.into(),
+            source: item.edge(EdgeField::SourceSide, edge.source_side)?.into(),
+            target: item.edge(EdgeField::TargetSide, edge.target_side)?.into(),
         },
     })
 }
@@ -1129,12 +1144,12 @@ fn label_of(
     item: &Item,
     field: Field<Option<LabelInput>>,
 ) -> Result<Option<Label>, GraphDataProblem> {
-    item.read("label", field, A_LABEL)?
+    item.edge(EdgeField::Label, field)?
         .map(|input| {
             Ok(Label {
                 text_length: input.text_length,
-                t: item.read("label.t", input.t, A_NUMBER)?,
-                offset: item.read("label.offset", input.offset, A_NUMBER)?,
+                t: item.edge(EdgeField::LabelT, input.t)?,
+                offset: item.edge(EdgeField::LabelOffset, input.offset)?,
                 background: input.background,
             })
         })
@@ -1574,23 +1589,23 @@ pub(crate) fn update_edge_in(
         .transpose()?;
     let color = patch
         .color
-        .map(|color| item.read("color", color, A_COLOR))
+        .map(|color| item.edge(EdgeField::Color, color))
         .transpose()?;
     let dash = patch
         .dash
-        .map(|dash| item.read("dash", dash, A_DASH))
+        .map(|dash| item.edge(EdgeField::Dash, dash))
         .transpose()?;
     let arrow = patch
         .arrow
-        .map(|arrow| item.read("arrow", arrow, AN_ARROW))
+        .map(|arrow| item.edge(EdgeField::Arrow, arrow))
         .transpose()?;
     let source_side = patch
         .source_side
-        .map(|side| item.read("sourceSide", side, A_SIDE))
+        .map(|side| item.edge(EdgeField::SourceSide, side))
         .transpose()?;
     let target_side = patch
         .target_side
-        .map(|side| item.read("targetSide", side, A_SIDE))
+        .map(|side| item.edge(EdgeField::TargetSide, side))
         .transpose()?;
     let label = match label {
         None => current.label,
@@ -3060,8 +3075,13 @@ pub(crate) mod tests {
     #[test]
     fn edge_columns_that_do_not_fit_together_are_refused_as_malformed() {
         // Verifies: ADR-0032
-        let changes: [fn(&mut OwnedEdgeColumns); 10] = [
+        let changes: [fn(&mut OwnedEdgeColumns); 14] = [
             |c| _ = c.color.pop(),
+            // A presence or validity byte is 1 or 0.
+            |c| c.has_label[1] = 2,
+            |c| c.label_texts[0] = 2,
+            |c| c.has_background[1] = u8::MAX,
+            |c| c.has_dash[0] = 2,
             |c| _ = c.gap.pop(),
             |c| _ = c.has_dash.pop(),
             |c| _ = c.target_side.pop(),
@@ -3097,5 +3117,42 @@ pub(crate) mod tests {
         for code in [12, 255, u32::MAX] {
             assert_eq!(edge_refused_of(Some(0), Some(code)), Err(unfit_edges()));
         }
+    }
+
+    #[test]
+    fn a_title_validity_byte_other_than_one_or_zero_is_refused_as_malformed() {
+        // Verifies: ADR-0032
+        for byte in [2, u8::MAX] {
+            let mut columns = a_and(|_| {});
+            columns.title_texts[1] = byte;
+            assert_eq!(load_columns(&columns).err(), Some(unfit()));
+        }
+    }
+
+    #[test]
+    fn a_later_edge_refused_by_its_type_is_named_before_an_earlier_one_refused_by_a_rule() {
+        // Verifies: ADR-0032
+        // Edge `d`'s label text holds a lone surrogate, which the snapshot hands over as no text
+        // and its rule refuses; edge `e`'s colour is of another type, which the first pass
+        // refuses, before any rule.
+        let mut d = labelled("d");
+        label_in(&mut d).text_length = None;
+        let mut e = labelled("e");
+        e.color = Field(None);
+        assert_eq!(
+            load_edges(&OwnedEdgeColumns::of([Some(&d), Some(&e)])).err(),
+            Some(GraphDataProblem::InvalidField {
+                list: GraphList::Edges,
+                index: 1,
+                id: Some("e".into()),
+                field: "color".into(),
+                expected: A_COLOR.into(),
+            })
+        );
+        e.color = f64::from(0x12_3456).into();
+        assert_eq!(
+            load_edges(&OwnedEdgeColumns::of([Some(&d), Some(&e)])).err(),
+            Some(GraphDataProblem::InvalidLabelText { edge: "d".into() })
+        );
     }
 }

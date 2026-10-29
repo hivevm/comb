@@ -1,8 +1,8 @@
 // The one module that imports the WebAssembly package (ADR-0028). Structured data crosses as
 // generated types through serde-wasm-bindgen, but for a load's nodes and edges, which cross as
-// columns of one string or one typed array each; node positions and the results of a viewport query are read
-// through views on the engine's buffers, created anew on every read because growing memory
-// detaches older views (ADR-0032).
+// columns of one string or one typed array each; node positions and the results of a viewport
+// query are read through views on the engine's buffers, created anew on every read because
+// growing memory detaches older views (ADR-0032).
 import init, {
   ArrowCode,
   checkGraphSize,
@@ -304,7 +304,8 @@ function dashColumns(count: number) {
   };
 }
 
-/** A column of at most `count` codes of names in `codes`, `unnamed` for a string that names none. */
+/** A column of at most `count` codes of names in `codes`, `unnamed` for a string that names
+ *  none. */
 function codeColumn<C extends number>(
   count: number,
   codes: Readonly<Record<string, C>>,
