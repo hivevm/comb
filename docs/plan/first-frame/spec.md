@@ -60,7 +60,8 @@ query keep crossing as they do.
 - The two fixes within the decisions in force: the bridge crate checks each field where it reads
   it instead of in a second copy, a fallback worked only if the columns are rejected, since the
   columns replace that code; and the store builds its two maps from identifiers to slots in one
-  loop each, while the snapshot tests for a surrogate code unit before its search for a lone one.
+  loop each, while the snapshot sets an edge's label and dash where present instead of spreading
+  them; a test for any surrogate before the search for a lone one measured no gain in V8.
 - The columns are the decision of ADR-0032: strings as one string with UTF-16 boundaries, numbers
   as 64-bit floats, enumerations and presence as bytes, a title's and a label text's validity per
   item, and the first value refused by its type as its position.

@@ -1,6 +1,5 @@
 // The snapshot hands over a string with a lone surrogate as `false`, which the bridge refuses, and
-// every other string as it is, a well-formed surrogate pair among them (ADR-0028): the cheap test
-// for any surrogate before the search for a lone one changes neither.
+// every other string as it is, a well-formed surrogate pair among them (ADR-0028).
 import { expect, test } from "bun:test";
 import { edgeSnapshotOf, nodeSnapshotOf } from "./snapshot";
 

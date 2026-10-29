@@ -234,7 +234,6 @@ function hoveredAndConnectionWithout(
  *  units, and the selection and the node under the pointer cleared; a connection is ended by its
  *  gesture. */
 function loadedFrom(state: GraphView, graph: GraphData, idUnits: number): Partial<GraphView> {
-  // Each map built in one loop, its slots set directly, without an array of pairs between.
   const slots = new Map<string, number>();
   for (let slot = 0; slot < graph.nodes.length; slot++) slots.set(graph.nodes[slot]!.id, slot);
   const edgeSlots = new Map<string, number>();
