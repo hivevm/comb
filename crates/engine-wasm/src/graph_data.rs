@@ -1,4 +1,4 @@
-//! The reading and checking of graph data, the one place that validates it (ADR-0028, ADR-0032):
+//! The reading and checking of graph data, the one place that validates it (ADR-0028, ADR-0033):
 //! the limits of a load, the lenient readers of fields, the input types, the columns of a load's
 //! nodes and edges, and the checks that turn a load into the engine's graph and a patch of
 //! `updateNode` into what the store merges. The exports in the crate root hand graph data here
@@ -312,7 +312,7 @@ impl<'de> Visitor<'de> for PairVisitor {
     }
 }
 
-/// A field of a node that a load's first pass refuses by its type (ADR-0032), as the shell names
+/// A field of a node that a load's first pass refuses by its type (ADR-0033), as the shell names
 /// the first such value it reads: `Item` for a node that is no object, refused as malformed. It
 /// crosses as its code, a plain number, so that a code it does not know is refused as malformed
 /// rather than thrown by the glue while the engine is borrowed, which would wedge it.
@@ -327,7 +327,7 @@ pub enum NodeField {
     Height,
 }
 
-/// The nodes of one load as columns (ADR-0032), each in slot order. The identifiers and the
+/// The nodes of one load as columns (ADR-0033), each in slot order. The identifiers and the
 /// titles are each one string, the values concatenated, with their boundaries in UTF-16 code
 /// units, one more than there are nodes, a refused value empty; `title_texts` holds per node
 /// whether its title is a text, 1 or 0. The numbers are as the host application handed them.
@@ -535,7 +535,7 @@ impl NodeColumns<'_> {
     }
 }
 
-/// A field of an edge that a load's first pass refuses by its type (ADR-0032), in the order an
+/// A field of an edge that a load's first pass refuses by its type (ADR-0033), in the order an
 /// edge's fields are read, as the shell names the first such value it reads: `Item` for an edge
 /// that is no object, refused as malformed. It crosses as its code, a plain number, as
 /// `NodeField` does.
@@ -606,7 +606,7 @@ impl From<EdgeField> for u32 {
     }
 }
 
-/// The code of an edge's arrowhead in its column (ADR-0032): `Unnamed` for a string that names
+/// The code of an edge's arrowhead in its column (ADR-0033): `Unnamed` for a string that names
 /// neither, which the first pass refuses at its place.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -616,7 +616,7 @@ pub enum ArrowCode {
     Unnamed,
 }
 
-/// The code of a side of an edge in its column (ADR-0032): `Unnamed` for a string that names
+/// The code of a side of an edge in its column (ADR-0033): `Unnamed` for a string that names
 /// none of the four, which the first pass refuses at its place.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -650,7 +650,7 @@ fn side_of(code: u8) -> Option<graph_side::Side> {
     .map(|(_, side)| side)
 }
 
-/// The edges of one load as columns (ADR-0032), each in slot order. The identifiers, sources,
+/// The edges of one load as columns (ADR-0033), each in slot order. The identifiers, sources,
 /// targets, and label texts are each one string, the values concatenated, with their boundaries
 /// in UTF-16 code units, one more than there are edges, a refused or absent value empty;
 /// `label_texts` holds per edge whether its label's text is a text, 1 or 0. `has_label`,
@@ -2087,10 +2087,10 @@ fn batch_of(batch: &GraphBatch) -> Result<Batch<'_>, GraphDataProblem> {
 #[path = "properties.rs"]
 mod properties;
 
-// The malformed-data tests below verify ADR-0032: every export that receives graph data returns a
-// typed error that names the offender, and none panics. They are the tests ADR-0032 names as
+// The malformed-data tests below verify ADR-0033: every export that receives graph data returns a
+// typed error that names the offender, and none panics. They are the tests ADR-0033 names as
 // those of `lib.rs`, the crate root of this module.
-// Verifies: ADR-0032
+// Verifies: ADR-0033
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2642,7 +2642,7 @@ pub(crate) mod tests {
 
     #[test]
     fn every_refusal_of_a_node_crosses_as_columns_with_its_kind_and_names() {
-        // Verifies: ADR-0032
+        // Verifies: ADR-0033
         let b = || "b".to_owned();
         let field =
             |field: &str, id: Option<String>, expected: &str| GraphDataProblem::InvalidField {
@@ -2729,7 +2729,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_coordinate_not_finite_in_an_early_node_is_named_before_a_title_in_a_later_one() {
-        // Verifies: ADR-0032
+        // Verifies: ADR-0033
         // The first pass names only the values `Field<T>` reads; a title is checked at its rule,
         // in the second pass, after the nodes before it.
         let ids: Vec<String> = (0..6).map(|i| format!("n{i}")).collect();
@@ -2763,7 +2763,7 @@ pub(crate) mod tests {
 
     #[test]
     fn identifiers_cut_inside_a_pair_are_refused_for_their_length_before_any_is_mapped() {
-        // Verifies: ADR-0032
+        // Verifies: ADR-0033
         // Two identifiers of 300 code units, cut to 257: the first ends in the high half of a
         // pair and the second begins with the low one, one character across their boundary.
         let ids = format!("{}\u{1F600}{}", "a".repeat(256), "b".repeat(256));
@@ -2797,7 +2797,7 @@ pub(crate) mod tests {
 
     #[test]
     fn columns_that_do_not_fit_together_are_refused_as_malformed() {
-        // Verifies: ADR-0032
+        // Verifies: ADR-0033
         let fits = || a_and(|_| {});
         let changes: [fn(&mut OwnedColumns); 7] = [
             |c| _ = c.x.pop(),
@@ -2877,7 +2877,7 @@ pub(crate) mod tests {
 
     #[test]
     fn every_refusal_of_an_edge_crosses_as_columns_with_its_kind_and_names() {
-        // Verifies: ADR-0032
+        // Verifies: ADR-0033
         let e = || "e".to_owned();
         let field =
             |field: &str, id: Option<String>, expected: &str| GraphDataProblem::InvalidField {
@@ -2958,7 +2958,7 @@ pub(crate) mod tests {
 
     #[test]
     fn every_rule_of_an_edge_refuses_its_columns_with_its_kind_and_names() {
-        // Verifies: ADR-0032
+        // Verifies: ADR-0033
         let e = || "e".to_owned();
         let text = |value: &str| Field(Some(value.to_owned()));
         // The rules, after every field's type.
@@ -3036,7 +3036,7 @@ pub(crate) mod tests {
 
     #[test]
     fn the_first_value_refused_by_its_type_is_named_across_nodes_and_edges() {
-        // Verifies: ADR-0032
+        // Verifies: ADR-0033
         // A node's refused field is named before any edge's, and an earlier edge's arrowhead
         // that names nothing before a later edge's field the shell named.
         let mut nodes = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]).nodes;
@@ -3074,7 +3074,7 @@ pub(crate) mod tests {
 
     #[test]
     fn edge_columns_that_do_not_fit_together_are_refused_as_malformed() {
-        // Verifies: ADR-0032
+        // Verifies: ADR-0033
         let changes: [fn(&mut OwnedEdgeColumns); 14] = [
             |c| _ = c.color.pop(),
             // A presence or validity byte is 1 or 0.
@@ -3121,7 +3121,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_title_validity_byte_other_than_one_or_zero_is_refused_as_malformed() {
-        // Verifies: ADR-0032
+        // Verifies: ADR-0033
         for byte in [2, u8::MAX] {
             let mut columns = a_and(|_| {});
             columns.title_texts[1] = byte;
@@ -3131,7 +3131,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_later_edge_refused_by_its_type_is_named_before_an_earlier_one_refused_by_a_rule() {
-        // Verifies: ADR-0032
+        // Verifies: ADR-0033
         // Edge `d`'s label text holds a lone surrogate, which the snapshot hands over as no text
         // and its rule refuses; edge `e`'s colour is of another type, which the first pass
         // refuses, before any rule.

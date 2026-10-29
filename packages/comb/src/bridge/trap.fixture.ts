@@ -14,7 +14,7 @@ import {
 const url = new URL("../../wasm/test-mode/engine_bg.wasm", import.meta.url);
 const bridge = createBridgeSync(await Bun.file(url).arrayBuffer());
 // Plain data of its own in place of a snapshot of `api/snapshot.ts` (ADR-0028), its node and its
-// edges, none, written into columns (ADR-0032).
+// edges, none, written into columns (ADR-0033).
 const columns = nodeColumns(1);
 columns.node("a", "a", 0, 0, 100, 50);
 const edges = edgeColumns(0).columns();

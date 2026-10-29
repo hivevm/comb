@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Check of the dependencies the toolchain, the bridge, and the store decided.
-# Verifies: ADR-0008, ADR-0032, ADR-0029
+# Verifies: ADR-0008, ADR-0033, ADR-0029
 #
 # Fails on what would undo those decisions without a word:
 #
@@ -9,7 +9,7 @@
 #      npm-shrinkwrap.json, yarn.lock, or pnpm-lock.yaml lies in the tree beside bun.lock. In a git
 #      repository the tree is what git tracks or would track (.gitignore honoured); elsewhere every
 #      file outside node_modules/, .git/, and target/.
-#   2. Bridge (ADR-0032): the tsify entry of crates/engine-wasm/Cargo.toml, in whatever form —
+#   2. Bridge (ADR-0033): the tsify entry of crates/engine-wasm/Cargo.toml, in whatever form —
 #      a version string, an inline table over one or more lines, a [dependencies.tsify] table,
 #      under [target.'…'.dependencies] or not, or inherited with `workspace = true` from the root
 #      Cargo.toml's [workspace.dependencies] — says `default-features = false` and enables no
@@ -114,7 +114,7 @@ if [[ -f "$library" ]]; then
 fi
 
 if ((${#problems[@]})); then
-  echo "Dependency check FAILED (ADR-0008, ADR-0032, ADR-0029):" >&2
+  echo "Dependency check FAILED (ADR-0008, ADR-0033, ADR-0029):" >&2
   printf '  - %s\n' "${problems[@]}" >&2
   exit 1
 fi

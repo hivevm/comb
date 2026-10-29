@@ -41,7 +41,7 @@ const edge = (id: string, source: string, target: string) => ({
 });
 // The bridge takes only what `api/snapshot.ts` produces (ADR-0028); its own tests stand in for
 // that module and hand it plain data of their own, the nodes and edges written into columns as
-// it writes them (ADR-0032).
+// it writes them (ADR-0033).
 type PlainNode = ReturnType<typeof node>;
 const graph = (nodes: readonly PlainNode[], edges: readonly object[] = []) => {
   const columns = nodeColumns(nodes.length);
@@ -88,7 +88,7 @@ function row(count: number): GraphSnapshot {
 
 describe("bridge views", () => {
   test("in test mode, every call detaches the views taken before it", () => {
-    // Verifies: ADR-0032
+    // Verifies: ADR-0033
     // Under `bun test` the bridge runs in test mode: it grows the engine's memory before each of
     // its calls, so a view kept across any call reads empty, not only when memory happens to grow.
     // Only a grown memory detaches its buffer, so an empty view shows that the call grew it.
@@ -129,7 +129,7 @@ describe("bridge", () => {
   });
 
   test("a view read after memory grew still sees the positions", () => {
-    // Verifies: ADR-0032
+    // Verifies: ADR-0033
     bridge.loadGraph(graph([node("a", 7, 8)]));
     const big = Array.from({ length: 200_000 }, (_, i) => node(`n${i}`, i, i));
     bridge.loadGraph(graph(big));
@@ -138,7 +138,7 @@ describe("bridge", () => {
   });
 
   test("malformed graph data comes back as a typed error", () => {
-    // Verifies: ADR-0032
+    // Verifies: ADR-0033
     expect(() => bridge.loadGraph(graph([node("a", Number.NaN, 0)]))).toThrow();
     const errors = [
       graph([node("a", 0, 0), node("a", 1, 1)]),
@@ -250,7 +250,7 @@ describe("bridge refusals of a single field", () => {
   for (const { field, problem, ...corruption } of CORRUPTIONS) {
     const how = "value" in corruption ? `holds ${JSON.stringify(corruption.value)}` : "is missing";
     test(`where ${field} ${how}, the problem names the field and its node or edge`, () => {
-      // Verifies: ADR-0032
+      // Verifies: ADR-0033
       expect(bridge.loadGraph(corrupted("node.x", { value: 0 }))).toBe(2);
       let refused: unknown = null;
       try {
@@ -263,7 +263,7 @@ describe("bridge refusals of a single field", () => {
   }
 
   test("a million nodes with every field refused are refused quickly, naming the first", () => {
-    // Verifies: ADR-0032
+    // Verifies: ADR-0033
     const refused = { id: false, title: false, x: false, y: false, width: false, height: false };
     const nodes = Array.from({ length: 1_000_000 }, () => ({ ...refused }));
     const start = performance.now();
@@ -287,7 +287,7 @@ describe("bridge refusals of a single field", () => {
   });
 
   test("a message names no Rust type or crate", () => {
-    // Verifies: ADR-0032
+    // Verifies: ADR-0033
     const refusals = [
       ...CORRUPTIONS.map(
         (corruption) => () => bridge.loadGraph(corrupted(corruption.field, corruption)),
@@ -336,7 +336,7 @@ const snapshotted = (nodes: unknown[], edges: unknown[] = []) =>
 
 describe("bridge columns of a load", () => {
   test("identifiers cut inside a surrogate pair side by side are refused for their length", () => {
-    // Verifies: ADR-0032
+    // Verifies: ADR-0033
     const pair = "\u{1F600}";
     // 300 code units each: the snapshot cuts the first after the high half of its pair, and the
     // second begins with a low half, so that the two halves meet across the boundary.
@@ -364,7 +364,7 @@ describe("bridge columns of a load", () => {
   });
 
   test("identifiers and titles beyond the basic plane are held exactly by the store and the engine", () => {
-    // Verifies: ADR-0032
+    // Verifies: ADR-0033
     // Two identifiers that differ only in a character beyond the basic plane, one of 256 code
     // units of such characters, and titles of them up to the limit.
     const ids = ["\u{1F600}", "\u{1F601}", "\u{1D49C}".repeat(128), "x\u{10FFFF}y"];
@@ -396,7 +396,7 @@ describe("bridge columns of a load", () => {
 
 describe("bridge columns of a load's edges", () => {
   test("edge identifiers and label texts beyond the basic plane are held exactly by the store and the engine", () => {
-    // Verifies: ADR-0032
+    // Verifies: ADR-0033
     // An edge's identifier and label text beyond the basic plane, read back exactly where the
     // bridge names the edge, and the label text's length counted as JavaScript counts it.
     const ids = ["\u{1F600}", "\u{1F601}"];
@@ -429,7 +429,7 @@ describe("bridge columns of a load's edges", () => {
 
 describe("bridge columns that do not fit", () => {
   test("a refused field of a code no field has is refused as malformed, and the engine keeps working", () => {
-    // Verifies: ADR-0032
+    // Verifies: ADR-0033
     const { nodes, edges } = graph(two());
     for (const field of [6, 255, 2 ** 32 - 1]) {
       const refused = { index: 0, field: field as NodeField };
@@ -445,7 +445,7 @@ describe("bridge columns that do not fit", () => {
   });
 
   test("an edge's refused field or code no field or value has is refused as malformed, and the engine keeps working", () => {
-    // Verifies: ADR-0032
+    // Verifies: ADR-0033
     const { nodes, edges } = graph(two(), [edge("e", "a", "b")]);
     const misfits = [
       { ...edges, refused: { index: 0, field: 12 } },
@@ -465,7 +465,7 @@ describe("bridge columns that do not fit", () => {
   });
 
   test("an edge's arrowhead or side that names none crosses as its code and is refused at its place", () => {
-    // Verifies: ADR-0032
+    // Verifies: ADR-0033
     const snapshot = graph(two(), [
       edge("d", "a", "b"),
       { ...edge("e", "b", "a"), sourceSide: "middle" as never, arrow: false as never },
@@ -500,7 +500,7 @@ const RUST =
 
 describe("bridge fields the engine does not keep", () => {
   test("a title, label text, or label background of the wrong kind comes back as a typed error", () => {
-    // Verifies: ADR-0028, ADR-0032
+    // Verifies: ADR-0028, ADR-0033
     const label = (fields: object) => ({ text: "x", t: 0.5, offset: 0, ...fields });
     const errors = [
       graph([{ ...node("a", 0, 0), title: 5 as unknown as string }]),
@@ -521,7 +521,7 @@ describe("bridge fields the engine does not keep", () => {
   });
 
   test("a patch of a node comes back as a typed error unless it holds only a title", () => {
-    // Verifies: ADR-0028, ADR-0032
+    // Verifies: ADR-0028, ADR-0033
     expect(bridge.checkNodePatch("a", plain({ title: "A" }))).toEqual({ title: "A" });
     expect(bridge.checkNodePatch("a", plain({}))).toEqual({});
     const errors = [{ id: "b" }, { title: 5 }].map((patch) => {
@@ -552,7 +552,7 @@ describe("bridge query", () => {
   });
 
   test("a query read after memory grew holds the current slots", () => {
-    // Verifies: ADR-0032
+    // Verifies: ADR-0033
     bridge.loadGraph(row(3));
     expect([...bridge.query(everywhere, "near", 4, 0).nodes]).toEqual([0, 1, 2]);
     bridge.loadGraph(row(200_000));
@@ -580,7 +580,7 @@ describe("bridge query", () => {
     // The edge runs level from (100, 25) to (200, 25); its label sits at (150, 13).
     const near = bridge.query({ minX: 140, minY: -100, maxX: 160, maxY: 0 }, "near", 4, 13);
     expect([...near.labels]).toEqual([0]);
-    // The point crosses relative to the query's origin (ADR-0032).
+    // The point crosses relative to the query's origin (ADR-0033).
     expect(near.labelPoints[0]! + near.origin.x).toBeCloseTo(150, 4);
     expect(near.labelPoints[1]! + near.origin.y).toBeCloseTo(13, 4);
     expect([
@@ -612,7 +612,7 @@ describe("bridge mesh and hit", () => {
   });
 
   test("a query far from the world's origin hands over its mesh relative to its origin", () => {
-    // Verifies: ADR-0032
+    // Verifies: ADR-0033
     bridge.loadGraph(
       graph(
         [node("a", 5e7, 0), node("b", 5e7 + 200, 0)],

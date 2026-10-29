@@ -1,4 +1,4 @@
-// Edges far from the world's origin (ADR-0032): the engine hands over the edge mesh and the label
+// Edges far from the world's origin (ADR-0033): the engine hands over the edge mesh and the label
 // points relative to the query's origin, and the scene draws the world relative to it, so that an
 // edge at ±5e7 is drawn as precisely as one near the origin (Q-4). A segment of an edge that
 // crosses the viewport is split where it leaves the queried rectangle grown by the stroke's width
@@ -59,7 +59,7 @@ function worst(a: number[], b: number[]): number {
 test("an edge at 5e7 is drawn within a quarter pixel of its f64 stroke, and after a pan", async ({
   page,
 }) => {
-  // Verifies: Q-4, ADR-0032
+  // Verifies: Q-4, ADR-0033
   await open(page);
   // The reference: the same edge near the world's origin, where an f32 rounds by 2^-23 of 512,
   // under a ten-thousandth of a pixel: the engine's f64 stroke, shifted to the same screen place.
