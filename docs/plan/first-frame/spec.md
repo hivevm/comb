@@ -90,12 +90,8 @@ query keep crossing as they do.
 
 ## ADR impact
 
-- ADR-0032, proposed, supersedes ADR-0010 and decides the columns; the column tickets wait for
-  its acceptance.
-- ADR-0032 cannot be accepted before the specification's constraint on the bridge changes: it
-  names serde-wasm-bindgen for structured data. That change is the maintainer's to land, before
-  the acceptance (AGENTS.md, section 3, rule 7); ADR-0032 drafts its wording, "except the graph
-  data of a load, which crosses as typed-array and string columns".
+- ADR-0032 supersedes ADR-0010 and decides the columns; the specification's constraint on the
+  bridge excepts the graph data of a load from serde-wasm-bindgen.
 - Binding beside it: ADR-0028 (validation in the bridge crate, what `api` decides), ADR-0024 (the
   sides and their defaults), ADR-0022 and ADR-0029 (the store's maps), ADR-0008 (the Benchmark),
   ADR-0007 (the protected parts every ticket here touches).

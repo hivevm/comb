@@ -2,12 +2,6 @@
 
 ## What to build
 
-**This ticket waits for ADR-0032 to be accepted,** and ADR-0032 waits for the specification's
-constraint on the bridge to change: it names serde-wasm-bindgen for structured data. The
-maintainer lands that change first (AGENTS.md, section 3, rule 7), then decides ADR-0032; until
-it is accepted, or the maintainer tells the session to implement it while it is proposed
-(AGENTS.md, section 3, rule 4), this ticket is not started.
-
 The tracer bullet through the columns: a host application's `load` hands the engine its nodes as
 columns, end to end, and every refusal of a node stays as it is, in the order of the two passes
 ADR-0032 (*Graph data of a load*) keeps. The snapshot in `packages/comb/src/api/snapshot.ts`
@@ -85,11 +79,10 @@ the pull request.
 
 ## Blocked by
 
-- docs/plan/first-frame/02-the-store-and-the-snapshot-read-a-load-once.md
+- None (can start immediately)
 
 ## Mode
 
-with the human: it waits for the specification change and for the maintainer to accept ADR-0032,
-and it changes the data format of the bridge and the validation of graph data
+with the human: it changes the data format of the bridge and the validation of graph data
 (`crates/engine-wasm/`, `packages/comb/src/bridge/`) and `packages/comb/src/api/`, protected parts
 of ADR-0007.

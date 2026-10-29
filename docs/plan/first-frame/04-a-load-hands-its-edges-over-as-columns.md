@@ -2,9 +2,6 @@
 
 ## What to build
 
-**This ticket waits for ADR-0032 to be accepted,** as
-`docs/plan/first-frame/03-a-load-hands-its-nodes-over-as-columns.md` does.
-
 The edges follow the nodes: the snapshot in `packages/comb/src/api/snapshot.ts` builds the
 columns of the edges, the identifiers, sources, targets, and label texts each as one string with
 a `Uint32Array` of UTF-16 boundaries; the colours, the label's `t`, `offset`, and background, and
@@ -72,6 +69,6 @@ bridge (ADR-0024, ADR-0028).
 
 ## Mode
 
-with the human: it waits for the maintainer to accept ADR-0032; it changes protected parts of
-ADR-0007 (`crates/engine-wasm/`, `packages/comb/src/bridge/`, `packages/comb/src/api/`); and only
-the maintainer runs the Benchmark workflow.
+with the human: it changes protected parts of ADR-0007 (`crates/engine-wasm/`,
+`packages/comb/src/bridge/`, `packages/comb/src/api/`), and only the maintainer runs the Benchmark
+workflow.
