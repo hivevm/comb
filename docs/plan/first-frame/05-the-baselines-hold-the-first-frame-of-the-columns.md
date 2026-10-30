@@ -20,7 +20,7 @@ reference machine, and
 
 ## Acceptance criteria
 
-- [ ] Given a Benchmark run on `main` after
+- [x] Given a Benchmark run on `main` after
       `docs/plan/first-frame/04-a-load-hands-its-edges-over-as-columns.md` landed, on a 7763,
       when it compares against its unchanged baseline, then the comparison passes and the median
       first frame lies at least 90 ms below the 480 ms of `main` before this plan; a run that
@@ -29,9 +29,18 @@ reference machine, and
 - [ ] Given a Benchmark run on `main` on a 9V74, when its `median.json` is saved as
       `bench/baselines/amd-epyc-9v74-80-core-processor.json`, then its first frame is below the
       365.3 ms it replaces, and the pull request links the run and says why.
-- [ ] Given `.github/workflows/benchmark.yml`, when it is searched with
+- [x] Given `.github/workflows/benchmark.yml`, when it is searched with
       `grep -n 'Verifies: ADR-0033, ADR-0008' .github/workflows/benchmark.yml`, then the one line
       found is a comment of the comparison step; and `scripts/check-traceability.sh` passes.
+
+## Where it stands
+
+- The 7763: Benchmark run 41066540404 on `main` at `d35bb17` compares against its unchanged
+  baseline and passes; its median first frame is 387.3 ms against 378.6 (+2 %), 92.7 ms below
+  480. No exemption or moved baseline was found to undo.
+- The marker sits on the comparison step of `.github/workflows/benchmark.yml`.
+- Open: a Benchmark run on `main` that lands on a 9V74, and its `median.json` as that kind's
+  baseline.
 
 ## Read first
 
