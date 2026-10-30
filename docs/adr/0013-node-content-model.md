@@ -45,6 +45,11 @@ registers and colours given as numbers.
   identifier; it selects the node as a click on the node does.
 - **Layout:** the host application gives a node's width; the engine computes each row's height,
   each element's rectangle, and where each text is truncated, and the node's height from its rows.
+  A row is as high as its tallest element, and a row's columns share its width by their weights,
+  a weight left out counting as 1. A node is as high as its rows and the padding above and below
+  them, and at least the least height, 64 world units, so that a node of one row of a title keeps
+  the size of the nodes before content. The engine states the padding, the gap between columns,
+  and the least height; the shell states each role's line height.
 - **Levels of detail (ADR-0027):** *near* draws every element; *middle* draws the box and the
   texts of role title, at the place near gives them; *far* draws no element.
 - **Limits (Q-7):** the bridge refuses a node with more rows, a row with more columns, a text
@@ -93,10 +98,13 @@ host application draws; styling beyond colours and roles, such as fonts per node
 
 ## Enforcement
 
-A Rust test in `crates/engine` lays out node content of every element kind at several widths and
-asserts each rectangle against a reference within 0.5 px, and that no element extends past the
-node's width. A browser test clicks an element of each kind and asserts the report the host
-application receives, and that a drag that starts on an element reports none. A browser test asserts
-what each level of detail draws of a node's content. A test asserts that the generated TypeScript
-type of node content admits exactly the six element kinds. Each cites this ADR with `Verifies:
+A Rust test in `crates/engine/src/content.rs` lays out node content of every element kind at
+several widths and asserts each rectangle against a reference within 0.5 px, that no element
+extends past the node's width, and that a node is as high as its rows and padding, at least the
+least height. A browser test clicks an element of each kind and asserts the report the host
+application receives, and that a drag that starts on an element reports none. A browser test in
+`examples/metric-tree/e2e/node-content.spec.ts` asserts what each level of detail draws of a
+node's content. A test in `packages/comb/src/content-types.test.ts` asserts that the generated
+TypeScript type of node content admits exactly the element kinds built, each kind's ticket adding
+its own until it admits the six. Each cites this ADR with `Verifies:
 ADR-0013`, and the first also `Verifies: Q-4`.
