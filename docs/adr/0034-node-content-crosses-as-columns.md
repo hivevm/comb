@@ -180,10 +180,11 @@ reads and writes as typed-array views created anew after every engine call.
     to state (ADR-0013). The budget of a load's strings of content admits at least the titles a
     load holds today, 1,000 code units for each of 1,000,000 nodes, so that no load the bridge
     accepted with titles is refused for it, and stays below 2^32, so that every boundary fits a
-    `Uint32Array`. The title and the height leave a load with their columns: `invalidTitle` and
-    `titleTooLong`, and `height` as the field `invalidField` and `beyondWorld` name and as a size
-    `invalidSize` refuses, are no longer refusals of a load, since the first pass and the rules
-    read neither.
+    `Uint32Array`. The title and the height as fields a load hands over leave it with their
+    columns: `invalidTitle` and `titleTooLong`, and `height` as the field `invalidField` names and
+    as a size `invalidSize` refuses, are no longer refusals of a load, since the first pass and the
+    rules read neither. A node's far side past the world's limit stays refused as `beyondWorld`
+    naming `height` (ADR-0028), by the height its content lays out to.
   - A string field, an identifier, a source, a target, a label's text, or a string of content,
     crosses as the field's values concatenated in slot order and cut into pieces, each one
     JavaScript string of at most 2^28 UTF-16 code units that ends where a value ends, so that no
