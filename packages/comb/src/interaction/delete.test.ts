@@ -3,8 +3,11 @@
 import { describe, expect, test } from "bun:test";
 import { editorsOf } from "../api/editors";
 import type { Bridge } from "../bridge";
-import { createGraphStore } from "../store";
+import { createGraphStore, type NodeContent } from "../store";
 import { deleteSelection } from "./delete";
+
+/** One row of one title, `title`. */
+const titled = (title: string): NodeContent => [[{ kind: "text", role: "title", text: title }]];
 
 /** A store of nodes `a` and `b` and the edge `a-b`, with `a` selected, a bridge that names and
  *  removes edge 0 at node 0 and records the calls, and the user's deletion `api` gives through
@@ -14,8 +17,8 @@ function selected(canDelete?: (deletion: unknown) => unknown) {
   store.getState().load(
     {
       nodes: [
-        { id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 },
-        { id: "b", title: "B", x: 300, y: 0, width: 100, height: 40 },
+        { id: "a", x: 0, y: 0, width: 100, content: titled("A") },
+        { id: "b", x: 300, y: 0, width: 100, content: titled("B") },
       ],
       edges: [{ id: "a-b", source: "a", target: "b" }],
     },
@@ -29,7 +32,7 @@ function selected(canDelete?: (deletion: unknown) => unknown) {
     removeNodes: () => (calls.push("removeNodes"), Uint32Array.of(0)),
     removeEdges: () => calls.push("removeEdges"),
   } as unknown as Bridge;
-  const limits = { text: 1000, id: 256, idBudget: 64_000_000 };
+  const limits = { text: 1000, id: 256, idBudget: 64_000_000, rows: 8, columns: 6 };
   const remove = editorsOf(store, bridge, limits, { canDelete }).user.delete;
   return { store, bridge, remove, calls };
 }
@@ -51,7 +54,7 @@ describe("deleting the selection", () => {
   test("a veto that changes the graph itself refuses the deletion", () => {
     // Verifies: ADR-0030
     const { store, bridge, remove, calls } = selected(() => {
-      store.getState().updateNode("b", { title: "B2" });
+      store.getState().updateNode("b", { content: titled("B2") });
       return true;
     });
     deleteSelection(store, bridge, remove);

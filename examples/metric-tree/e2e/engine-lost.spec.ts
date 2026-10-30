@@ -72,7 +72,7 @@ test("after a trap in load, every call that needs the engine throws an EngineLos
     const trap = outcome(() => comb.load({ ...graph, edges: [] }));
     const later = {
       load: outcome(() => comb.load({ ...graph, edges: [] })),
-      updateNode: outcome(() => comb.updateNode("n0", { title: "x" })),
+      updateNode: outcome(() => comb.updateNode("n0", { content: graph.nodes[0]!.content })),
       addNode: outcome(() => comb.addNode({ ...graph.nodes[0]!, id: "b" })),
       addEdge: outcome(() => comb.addEdge({ id: "e", source: "a", target: "b" })),
       updateEdge: outcome(() => comb.updateEdge("e", { color: 0 })),
@@ -235,7 +235,9 @@ test("a trap in one of two Combs on a page loses the engine for both", async ({ 
     const trap = outcome(() => first.load(graph));
     const other = {
       load: outcome(() => second.load(graph)),
-      updateNode: outcome(() => second.updateNode("a", { title: "b" })),
+      updateNode: outcome(() =>
+        second.updateNode("a", { content: [[{ kind: "text", role: "title", text: "b" }]] }),
+      ),
     };
     await second.whenRendered();
     return { trap, other, told };

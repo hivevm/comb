@@ -3,7 +3,10 @@ import type { Application } from "pixi.js";
 import { attachInteraction } from ".";
 import type { Bridge } from "../bridge";
 import { ConnectionLine } from "../render/connectors";
-import { createGraphStore, type GraphData, type GraphStore } from "../store";
+import { createGraphStore, type GraphData, type GraphStore, type NodeContent } from "../store";
+
+/** One row of one title, `title`. */
+const titled = (title: string): NodeContent => [[{ kind: "text", role: "title", text: title }]];
 
 /** Loads `graph` into `store` with the code units of its identifiers, as `api` hands a load over. */
 function load(store: GraphStore, graph: GraphData): void {
@@ -63,7 +66,7 @@ describe("interaction", () => {
     // Verifies: ADR-0029
     const store = createGraphStore();
     load(store, {
-      nodes: [{ id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 }],
+      nodes: [{ id: "a", x: 0, y: 0, width: 100, content: titled("A") }],
       edges: [],
     });
     const { app, emit } = fakeApp();
@@ -97,7 +100,7 @@ describe("interaction", () => {
 function dragged() {
   const store = createGraphStore();
   load(store, {
-    nodes: [{ id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 }],
+    nodes: [{ id: "a", x: 0, y: 0, width: 100, content: titled("A") }],
     edges: [],
   });
   const { app, emit } = fakeApp();
@@ -145,7 +148,7 @@ describe("interaction ends a drag the graph took its node from", () => {
     emit("pointerdown", 10, 10);
     emit("globalpointermove", 30, 10);
     load(store, {
-      nodes: [{ id: "z", title: "Z", x: 0, y: 0, width: 100, height: 40 }],
+      nodes: [{ id: "z", x: 0, y: 0, width: 100, content: titled("Z") }],
       edges: [],
     });
     emit("pointerup", 30, 10);
@@ -187,7 +190,7 @@ describe("interaction ends a drag the graph took its node from", () => {
     emit("globalpointermove", 30, 10);
     store.getState().removeNodes([0], [], "host");
     // A node added takes the freed slot; the drag moves it not.
-    store.getState().addNode({ id: "e", title: "E", x: 0, y: 0, width: 100, height: 40 }, 0);
+    store.getState().addNode({ id: "e", x: 0, y: 0, width: 100, content: titled("E") }, 0);
     const { positionsVersion } = store.getState();
     emit("globalpointermove", 50, 10);
     emit("pointerup", 50, 10);
@@ -205,8 +208,8 @@ describe("interaction on an edge", () => {
     const store = createGraphStore();
     load(store, {
       nodes: [
-        { id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 },
-        { id: "b", title: "B", x: 300, y: 0, width: 100, height: 40 },
+        { id: "a", x: 0, y: 0, width: 100, content: titled("A") },
+        { id: "b", x: 300, y: 0, width: 100, content: titled("B") },
       ],
       edges: [{ id: "a-b", source: "a", target: "b" }],
     });
@@ -254,8 +257,8 @@ describe("the hit test", () => {
         const store = createGraphStore();
         load(store, {
           nodes: [
-            { id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 },
-            { id: "b", title: "B", x: 300, y: 0, width: 100, height: 40 },
+            { id: "a", x: 0, y: 0, width: 100, content: titled("A") },
+            { id: "b", x: 300, y: 0, width: 100, content: titled("B") },
           ],
           edges: [{ id: "a-b", source: "a", target: "b" }],
         });
@@ -288,7 +291,7 @@ describe("interaction keeps the point a connection is dragged to", () => {
     // Verifies: ADR-0029
     const store = createGraphStore();
     load(store, {
-      nodes: [{ id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 }],
+      nodes: [{ id: "a", x: 0, y: 0, width: 100, content: titled("A") }],
       edges: [],
     });
     store.getState().setViewport({ x: 30, y: 20, scale: 2 });
@@ -318,7 +321,12 @@ describe("interaction keeps the point a connection is dragged to", () => {
     for (let frame = 1; frame <= frames; frame += 1) {
       const [x, y] = [240 + frame * 10, 60 + frame * 4];
       emit("globalpointermove", x, y);
-      line.sync(store.getState(), bridge.positions(), interaction.pointer);
+      line.sync(
+        store.getState(),
+        bridge.positions(),
+        Float32Array.of(100, 40),
+        interaction.pointer,
+      );
       // The screen point (x, y) shows the world point ((x - 30) / 2, (y - 20) / 2).
       expect(line.drawn?.to).toEqual({ x: (x - 30) / 2, y: (y - 20) / 2 });
     }
@@ -335,8 +343,8 @@ describe("interaction writes a connection whose target changed", () => {
     const store = createGraphStore();
     load(store, {
       nodes: [
-        { id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 },
-        { id: "b", title: "B", x: 300, y: 0, width: 100, height: 40 },
+        { id: "a", x: 0, y: 0, width: 100, content: titled("A") },
+        { id: "b", x: 300, y: 0, width: 100, content: titled("B") },
       ],
       edges: [],
     });
@@ -373,8 +381,8 @@ describe("interaction writes a connection whose compatibility changed", () => {
     const store = createGraphStore();
     load(store, {
       nodes: [
-        { id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 },
-        { id: "b", title: "B", x: 300, y: 0, width: 100, height: 40 },
+        { id: "a", x: 0, y: 0, width: 100, content: titled("A") },
+        { id: "b", x: 300, y: 0, width: 100, content: titled("B") },
       ],
       edges: [],
     });
@@ -408,8 +416,8 @@ describe("interaction connects", () => {
     const store = createGraphStore();
     load(store, {
       nodes: [
-        { id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 },
-        { id: "b", title: "B", x: 300, y: 0, width: 100, height: 40 },
+        { id: "a", x: 0, y: 0, width: 100, content: titled("A") },
+        { id: "b", x: 300, y: 0, width: 100, content: titled("B") },
       ],
       edges: [],
     });
@@ -440,8 +448,8 @@ describe("interaction connects", () => {
       const store = createGraphStore();
       const graph = {
         nodes: [
-          { id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 },
-          { id: "b", title: "B", x: 300, y: 0, width: 100, height: 40 },
+          { id: "a", x: 0, y: 0, width: 100, content: titled("A") },
+          { id: "b", x: 300, y: 0, width: 100, content: titled("B") },
         ],
         edges: [],
       };
@@ -458,7 +466,7 @@ describe("interaction connects", () => {
       if (taken === "a load") load(store, graph);
       else {
         store.getState().removeNodes([0], [], "host");
-        store.getState().addNode({ id: "z", title: "Z", x: 0, y: 0, width: 100, height: 40 }, 0);
+        store.getState().addNode({ id: "z", x: 0, y: 0, width: 100, content: titled("Z") }, 0);
       }
       expect(store.getState().connection).toBeNull();
       emit("globalpointermove", 300, 20);

@@ -17,7 +17,7 @@ const bridge = createBridgeSync(await Bun.file(url).arrayBuffer());
 // Plain data of its own in place of a snapshot of `api/snapshot.ts` (ADR-0028), its node and its
 // edges, none, written into columns (ADR-0034).
 const columns = nodeColumns(1, PIECE_BOUND);
-columns.node("a", "a", 0, 0, 100, 50);
+columns.node("a", 0, 0, 100, [[{ kind: "text", role: "title", text: "a", weight: 1 }]]);
 const edges = edgeColumns(0, PIECE_BOUND).columns();
 const graph = { nodes: columns.columns(), edges } as GraphSnapshot;
 

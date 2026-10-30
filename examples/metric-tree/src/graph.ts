@@ -1,12 +1,13 @@
 // The metric tree of the example (G-9): bets lead to epics, epics to input metrics, input metrics
 // to one north-star metric, and that to KPIs. Edges between metrics carry their correlation;
 // every edge ends in an arrowhead at its target.
-import type { EdgeData, GraphData, NodeData } from "comb";
+import type { EdgeData, GraphData, NodeContent, NodeData } from "comb";
 
 const GREY = 0x9aa1ad;
 const GREEN = 0x22a55b;
 const RED = 0xe0453a;
 export const NODE_WIDTH = 220;
+/** The height Comb lays a node of one title out to, the least height of a node (ADR-0013). */
 export const NODE_HEIGHT = 64;
 const COLUMN = 300;
 const ROW = 110;
@@ -48,15 +49,26 @@ const links: [string, string, number?][] = [
   ["3.0", "4.2", 0.998],
 ];
 
+/** The content of a node that shows `title` alone: one row of one text of role title. */
+export function titled(title: string): NodeContent {
+  return [[{ kind: "text", role: "title", text: title }]];
+}
+
+/** The title a node of the example shows: the text of its first title, or none. */
+export function titleOf(node: Pick<NodeData, "content">): string {
+  for (const row of node.content)
+    for (const element of row) if (element.role === "title") return element.text;
+  return "";
+}
+
 function nodesOf(copy: number, top: number): NodeData[] {
   return columns.flatMap((titles, c) =>
     titles.map((title, r) => ({
       id: `${copy}:${c}.${r}`,
-      title,
       x: c * COLUMN,
       y: top + (r - (titles.length - 1) / 2) * ROW,
       width: NODE_WIDTH,
-      height: NODE_HEIGHT,
+      content: titled(title),
     })),
   );
 }

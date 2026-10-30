@@ -4,7 +4,6 @@ import {
   edgeColumns,
   nodeColumns,
   PIECE_BOUND,
-  type NodeField,
   type Bridge,
   type GraphSnapshot,
   type NodePatch,
@@ -14,7 +13,7 @@ import {
   type PlainPatch,
 } from ".";
 import { listsOf, snapshotOf } from "../api/snapshot";
-import { EdgeField, SideCode } from "../../wasm/engine.js";
+import { EdgeField, KindCode, NodeField, RoleCode, SideCode } from "../../wasm/engine.js";
 
 let bridge: Bridge;
 
@@ -23,13 +22,17 @@ beforeAll(async () => {
   bridge = createBridgeSync(bytes);
 });
 
+/** The content of a node of the time before content: one row of one title, `title`. */
+const titled = (title: string) => [
+  [{ kind: "text" as const, role: "title" as const, text: title, weight: 1 }],
+];
+/** A node of one title, 100 wide: 64 high, the least height of a node (ADR-0013). */
 const node = (id: string, x: number, y: number) => ({
   id,
-  title: id,
   x,
   y,
   width: 100,
-  height: 50,
+  content: titled(id),
 });
 const edge = (id: string, source: string, target: string) => ({
   id,
@@ -49,8 +52,8 @@ const graph = (nodes: readonly PlainNode[], edges: readonly object[] = [], bound
   for (const n of nodes as readonly unknown[]) {
     if (typeof n !== "object" || n === null) columns.noObject();
     else {
-      const { id, title, x, y, width, height } = n as Record<string, unknown>;
-      columns.node(id, title, x, y, width, height);
+      const { id, x, y, width, content } = n as Record<string, unknown>;
+      columns.node(id, x, y, width, content);
     }
   }
   const written = edgeColumns(edges.length, bound);
@@ -71,6 +74,13 @@ const added = (fields: object) => fields as NodeSnapshot;
 const edgeOf = (fields: object) =>
   ({ color: 0, arrow: "end", sourceSide: "right", targetSide: "left", ...fields }) as EdgeSnapshot;
 const plainEdge = (patch: object) => patch as PlainEdgePatch;
+/** A font whose glyphs advance by 7 and whose lines are 16 apart. */
+const FONT = {
+  codes: new Uint32Array(0),
+  advances: new Float64Array(0),
+  fallback: 7,
+  lineHeight: 16,
+};
 /** The slot of the node a press at `(x, y)` hits, at a screen pixel of one world unit. */
 const nodeAt = (x: number, y: number) => {
   const hit = bridge.hit(x, y, 1, "near", false);
@@ -96,8 +106,10 @@ describe("bridge views", () => {
     bridge.loadGraph(graph([node("a", 1, 2), node("b", 3, 4)]));
     const calls: [string, () => unknown][] = [
       ["loadGraph", () => bridge.loadGraph(row(3))],
-      ["checkNodePatch", () => bridge.checkNodePatch("a", plain({ title: "A" }))],
+      ["updateNode", () => bridge.updateNode(0, "n0", plain({ content: titled("A") }))],
       ["addNode", () => bridge.addNode(added(node("c", 5, 6)))],
+      ["nodeBuffers", () => bridge.nodeBuffers()],
+      ["setFont", () => bridge.setFont("body", FONT)],
       ["translate", () => bridge.translate(new Uint32Array([0]), 0, 0)],
       ["positions", () => bridge.positions()],
       ["query", () => bridge.query(everywhere, "near", 4, 0)],
@@ -166,13 +178,14 @@ describe("bridge", () => {
 const NUMBER = "a finite number";
 const SIZE = "a finite number of 0 or more";
 const ID = "a well-formed string of at most 256 code units";
+const CONTENT = "a list of rows";
 
 /** One field of node `b` or edge `e` corrupted, with a value of another type or by leaving it out,
  *  each with the problem the bridge reports for it. A field that may be left out (an edge's label
  *  and dash, a label's background) is only given a value of another type. */
 const CORRUPTIONS: { field: string; value?: unknown; problem: object }[] = [
-  ...["x", "y", "width", "height"].flatMap((field) => {
-    const expected = field === "x" || field === "y" ? NUMBER : SIZE;
+  ...["x", "y", "width", "content"].flatMap((field) => {
+    const expected = field === "width" ? SIZE : field === "content" ? CONTENT : NUMBER;
     const problem = { kind: "invalidField", list: "nodes", index: 1, id: "b", field, expected };
     return [
       { field: `node.${field}`, value: "1", problem },
@@ -185,9 +198,9 @@ const CORRUPTIONS: { field: string; value?: unknown; problem: object }[] = [
     problem: { kind: "invalidField", list: "nodes", index: 1, field: "id", expected: ID },
   })),
   ...[{ value: 5 }, {}].map((corruption) => ({
-    field: "node.title",
+    field: "node.content.text",
     ...corruption,
-    problem: { kind: "invalidTitle", node: "b" },
+    problem: { kind: "invalidContentText", node: "b", row: 0, column: 0, field: "text" },
   })),
   ...[
     ["id", 5, ID],
@@ -236,11 +249,13 @@ function unfit(): GraphSnapshot {
 /** Nodes `a` and `b` and an edge `e` between them with every field of its own, with `path`
  *  (`node.…` for `b`, `edge.…` for `e`) set to `value`, or left out where `value` is absent. */
 function corrupted(path: string, corruption: { value?: unknown }): GraphSnapshot {
-  const b: Record<string, unknown> = node("b", 300, 0);
+  const title: Record<string, unknown> = { kind: "text", role: "title", text: "b", weight: 1 };
+  const b: Record<string, unknown> = { ...node("b", 300, 0), content: [[title]] };
   const label: Record<string, unknown> = { text: "x", t: 0.5, offset: 0, background: 0x123456 };
   const e: Record<string, unknown> = { ...edge("e", "a", "b"), label, dash: [6, 4] };
   const [item, ...field] = path.split(".");
-  const target = item === "node" ? b : field.length > 1 ? label : e;
+  const inner = item === "node" ? title : label;
+  const target = field.length > 1 ? inner : item === "node" ? b : e;
   const name = field[field.length - 1]!;
   if ("value" in corruption) target[name] = corruption.value;
   else delete target[name];
@@ -265,7 +280,7 @@ describe("bridge refusals of a single field", () => {
 
   test("a million nodes with every field refused are refused quickly, naming the first", () => {
     // Verifies: ADR-0034
-    const refused = { id: false, title: false, x: false, y: false, width: false, height: false };
+    const refused = { id: false, x: false, y: false, width: false, content: false };
     const nodes = Array.from({ length: 1_000_000 }, () => ({ ...refused }));
     const start = performance.now();
     let problem: unknown = null;
@@ -296,7 +311,7 @@ describe("bridge refusals of a single field", () => {
       () => bridge.loadGraph(unfit()),
       () => bridge.loadGraph(graph([5 as never])),
       () => bridge.loadGraph(graph([], "e" as never)),
-      () => bridge.checkNodePatch("a", 5 as never),
+      () => bridge.updateNode(0, "a", 5 as never),
       () => bridge.checkGraphSize(Number.NaN, 0),
       () => bridge.checkIdBudget(-1),
     ];
@@ -329,6 +344,8 @@ const limits = () => ({
   text: bridge.textLimit(),
   id: bridge.idLimit(),
   idBudget: bridge.idBudget(),
+  rows: bridge.rowLimit(),
+  columns: bridge.columnLimit(),
 });
 
 /** The snapshot `api/snapshot.ts` builds of `nodes` and `edges`, and the graph the store keeps. */
@@ -370,10 +387,11 @@ describe("bridge columns of a load", () => {
     // units of such characters, and titles of them up to the limit.
     const ids = ["\u{1F600}", "\u{1F601}", "\u{1D49C}".repeat(128), "x\u{10FFFF}y"];
     const titles = ["\u{1F600}".repeat(500), "\u{1D49C}", "", "\u{10FFFF}"];
-    const nodes = ids.map((id, i) => ({ ...node(id, i * 300, 0), title: titles[i]! }));
+    const nodes = ids.map((id, i) => ({ ...node(id, i * 300, 0), content: titled(titles[i]!) }));
     const edges = [edge("e0", ids[1]!, ids[2]!), edge("e1", ids[3]!, ids[0]!)];
     const { kept, snapshot } = snapshotted(nodes, edges);
-    expect(kept.nodes.map((n) => [n.id, n.title])).toEqual(ids.map((id, i) => [id, titles[i]!]));
+    const title = (n: (typeof kept.nodes)[number]) => n.content[0]![0]!.text;
+    expect(kept.nodes.map((n) => [n.id, title(n)])).toEqual(ids.map((id, i) => [id, titles[i]!]));
     expect(bridge.loadGraph(snapshot)).toBe(4);
     // Each edge's ends resolve to the slots of exactly the identifiers it names.
     expect([...bridge.edgesAt(new Uint32Array([1]))]).toEqual([0]);
@@ -390,8 +408,15 @@ describe("bridge columns of a load", () => {
       limit: 256,
     });
     expect(
-      outcome(() => bridge.loadGraph(longer({ ...nodes[0]!, title: titles[0] + "x" }))),
-    ).toEqual({ kind: "titleTooLong", node: ids[0], limit: 1000 });
+      outcome(() => bridge.loadGraph(longer({ ...nodes[0]!, content: titled(titles[0] + "x") }))),
+    ).toEqual({
+      kind: "contentTextTooLong",
+      node: ids[0],
+      row: 0,
+      column: 0,
+      field: "text",
+      limit: 1000,
+    });
   });
 });
 
@@ -435,21 +460,21 @@ describe("bridge pieces of a string column", () => {
     // Verifies: ADR-0034
     const bound = 16;
     const ids = PIECED_IDS;
-    const nodes = ids.map((id, i) => ({ ...node(id, i * 300, 0), title: "" }));
+    const nodes = ids.map((id, i) => ({ ...node(id, i * 300, 0), content: titled("") }));
     const edges = ids.slice(1).map((id, i) => edge(id, ids[i]!, id));
     const snapshot = graph(nodes, edges, bound);
     const n = snapshot.nodes;
     const e = snapshot.edges;
     const columns: [string[], Uint32Array, readonly string[]][] = [
       [n.ids, n.idBounds, ids],
-      [n.titles, n.titleBounds, ids.map(() => "")],
+      [n.content.texts, n.content.textBounds, ids.map(() => "")],
       [e.ids, e.idBounds, ids.slice(1)],
       [e.sources, e.sourceBounds, ids.slice(0, -1)],
       [e.targets, e.targetBounds, ids.slice(1)],
       [e.labels, e.labelBounds, ids.slice(1).map(() => "")],
     ];
     for (const [pieces, bounds, values] of columns) expectPieces(pieces, bounds, values, bound);
-    expect([n.ids.length, e.sources.length, n.titles.length, e.labels.length]).toEqual([
+    expect([n.ids.length, e.sources.length, n.content.texts.length, e.labels.length]).toEqual([
       7, 6, 0, 0,
     ]);
     // The engine maps every identifier exactly: each edge's ends resolve to the slots of the
@@ -473,7 +498,8 @@ describe("bridge pieces of a string column", () => {
 
   test("a value longer than the bound on a piece fits in none, and the writer refuses it", () => {
     // Verifies: ADR-0034
-    expect(() => nodeColumns(1, 16).node("x".repeat(17), "", 0, 0, 1, 1)).toThrow(RangeError);
+    expect(() => nodeColumns(1, 16).node("x".repeat(17), 0, 0, 1, [])).toThrow(RangeError);
+    expect(() => nodeColumns(1, 16).node("x", 0, 0, 1, titled("x".repeat(17)))).toThrow(RangeError);
     expect(() =>
       edgeColumns(1, 16).edge(
         "e",
@@ -487,6 +513,203 @@ describe("bridge pieces of a string column", () => {
         "left",
       ),
     ).toThrow(RangeError);
+  });
+});
+
+/** A text of `role` and weight `weight`, as the snapshot hands one over. */
+const textOf = (role: string, value: unknown, weight: unknown = 1) => ({
+  kind: "text",
+  role,
+  text: value,
+  weight,
+});
+
+describe("bridge columns of a load's content", () => {
+  test("rows of several texts cross as columns read back exactly per node, row, and element", () => {
+    // Verifies: ADR-0034
+    // Node a: a title beside a caption, then a body; node b: no rows; node c: a row of none, then
+    // three texts beyond the basic plane. Cut with a small bound, the texts cross in pieces.
+    const contents = [
+      [
+        [textOf("title", "A\u{1F600}", 2), textOf("caption", "cap", 0.5)],
+        [textOf("body", "\u{1D49C}b")],
+      ],
+      [],
+      [
+        [],
+        [
+          textOf("title", "\u{10FFFF}"),
+          textOf("body", ""),
+          textOf("caption", "\u{1F601}".repeat(4)),
+        ],
+      ],
+    ];
+    const nodes = contents.map((content, i) => ({ ...node(`n${i}`, i * 300, 0), content }));
+    const { nodes: n } = graph(nodes as never, [], 8);
+    const c = n.content;
+    expect([...c.rowBounds]).toEqual([0, 2, 2, 4]);
+    expect([...c.elementBounds]).toEqual([0, 2, 3, 3, 6]);
+    expect([...c.kinds]).toEqual(Array(6).fill(KindCode.Text));
+    expect([...c.weights]).toEqual([2, 0.5, 1, 1, 1, 1]);
+    const { Title, Body, Caption } = RoleCode;
+    expect([...c.roles]).toEqual([Title, Caption, Body, Title, Body, Caption]);
+    expect([...c.textValid]).toEqual(Array(6).fill(1));
+    const texts = ["A\u{1F600}", "cap", "\u{1D49C}b", "\u{10FFFF}", "", "\u{1F601}".repeat(4)];
+    expectPieces(c.texts, c.textBounds, texts, 8);
+    expect(c.texts.length).toBeGreaterThan(1);
+    expect(n.refused).toBeUndefined();
+    // The engine reads them as they crossed: each node as high as its rows and padding, here below
+    // the least height of a node.
+    expect(bridge.loadGraph(graph(nodes as never, [], 8))).toBe(3);
+    const heights = (sizes: Float32Array) => [sizes[1], sizes[3], sizes[5]];
+    expect(heights(bridge.nodeBuffers().sizes)).toEqual([64, 64, 64]);
+  });
+
+  test("a kind, a role, a weight, or a text of another type crosses as its code or as none", () => {
+    // Verifies: ADR-0034
+    const content = [
+      [
+        { kind: "badge", role: "title", text: "x", weight: 1 },
+        textOf("headline", "y"),
+        textOf("body", 5, "1"),
+      ],
+    ];
+    const { nodes: n } = graph([{ ...node("a", 0, 0), content } as never]);
+    const c = n.content;
+    expect([...c.kinds]).toEqual([KindCode.Unnamed, KindCode.Text, KindCode.Text]);
+    expect([...c.roles]).toEqual([0, RoleCode.Unnamed, RoleCode.Body]);
+    expect([...c.weights]).toEqual([1, 1, Number.NaN]);
+    // The element of no kind fills no text; the others one each, the one of no string as none.
+    expect([...c.textValid]).toEqual([1, 0]);
+    expect(n.refused).toBeUndefined();
+    expect(
+      outcome(() => bridge.loadGraph(graph([{ ...node("a", 0, 0), content } as never]))),
+    ).toEqual({
+      kind: "invalidElementKind",
+      node: "a",
+      row: 0,
+      column: 0,
+    });
+  });
+});
+
+describe("bridge shapes of content", () => {
+  test("a row that is no list or an element that is no object is named where it lies", () => {
+    // Verifies: ADR-0034
+    const shaped = (content: unknown) =>
+      graph([node("a", 0, 0), { ...node("b", 300, 0), content } as never]);
+    const rows = shaped([[textOf("title", "t")], 5, "x"]);
+    expect(rows.nodes.refused).toEqual({
+      index: 1,
+      field: NodeField.Row,
+      row: 1,
+      column: undefined,
+    });
+    // A row it cannot read crosses as a row of no elements, in its place.
+    expect([...rows.nodes.content.rowBounds]).toEqual([0, 1, 4]);
+    expect([...rows.nodes.content.elementBounds]).toEqual([0, 1, 2, 2, 2]);
+    expect(outcome(() => bridge.loadGraph(rows))).toEqual({
+      kind: "invalidContentShape",
+      index: 1,
+      id: "b",
+      row: 1,
+      expected: "a list of elements",
+    });
+    const element = shaped([[textOf("title", "t"), null, [textOf("body", "b")]]]);
+    expect(element.nodes.refused).toEqual({
+      index: 1,
+      field: NodeField.Element,
+      row: 0,
+      column: 1,
+    });
+    // An element it cannot read crosses as one of no kind, which fills no text.
+    expect([...element.nodes.content.kinds]).toEqual([
+      KindCode.Text,
+      KindCode.Text,
+      KindCode.Unnamed,
+      KindCode.Unnamed,
+    ]);
+    expect(outcome(() => bridge.loadGraph(element))).toEqual({
+      kind: "invalidContentShape",
+      index: 1,
+      id: "b",
+      row: 0,
+      column: 1,
+      expected: "an object",
+    });
+    // A position that names no row or column of the columns is refused as malformed.
+    const nowhere = { ...element.nodes, refused: { ...element.nodes.refused!, row: 3 } };
+    expect(outcome(() => bridge.loadGraph({ ...element, nodes: nowhere }))).toEqual({
+      kind: "malformed",
+      message: "the columns of the nodes do not fit together",
+    });
+  });
+});
+
+describe("bridge content that does not fit, and its layout", () => {
+  test("content that does not fit together is refused as malformed, and the engine keeps working", () => {
+    // Verifies: ADR-0034
+    const { nodes, edges } = graph(two());
+    const c = nodes.content;
+    const misfits = [
+      { ...c, rowBounds: new Uint32Array([0, 2, 1]) },
+      { ...c, elementBounds: new Uint32Array([0, 1]) },
+      { ...c, kinds: new Uint8Array([KindCode.Text, KindCode.Unnamed + 1]) },
+      { ...c, roles: new Uint8Array([RoleCode.Title, RoleCode.Unnamed + 1]) },
+      { ...c, textValid: new Uint8Array([1, 2]) },
+      { ...c, weights: new Float64Array([1]) },
+      { ...c, kinds: new Uint8Array([KindCode.Text, KindCode.Unnamed]) },
+    ];
+    for (const content of misfits) {
+      expect(
+        outcome(() => bridge.loadGraph({ nodes: { ...nodes, content }, edges } as never)),
+      ).toEqual({
+        kind: "malformed",
+        message: "the columns of the nodes do not fit together",
+      });
+    }
+    expect(bridge.loadGraph(graph(two()))).toBe(2);
+  });
+
+  test("a query lays the content out at the near and middle level, and a patch lays it out anew", () => {
+    // Verifies: ADR-0013
+    bridge.setFont("title", { ...FONT, lineHeight: 18 });
+    bridge.loadGraph(
+      graph([node("a", 0, 0), { ...node("b", 300, 0), content: titled("abcdefghijklmnop") }]),
+    );
+    const near = bridge.query(everywhere, "near", 1, 0);
+    expect([...near.nodes]).toEqual([0, 1]);
+    expect([...near.content.bounds]).toEqual([0, 1, 2]);
+    expect([...near.content.rects]).toEqual([12, 10, 76, 18, 12, 10, 76, 18]);
+    // Sixteen glyphs of 7 pass 76: nine fit beside the ellipsis, which advances by 7 too.
+    expect([...near.content.kept]).toEqual([1, 9]);
+    expect([...near.content.ellipsis]).toEqual([0, 1]);
+    expect([...bridge.query(everywhere, "middle", 1, 0).content.bounds]).toEqual([0, 1, 2]);
+    expect([...bridge.query(everywhere, "far", 1, 0).content.bounds]).toEqual([]);
+    // Five rows: 10 + 18 + 4 * 16 + 10 = 102.
+    const rows = [titled("t")[0]!, ...Array(4).fill([textOf("body", "b")])];
+    bridge.updateNode(1, "b", plain({ content: rows as never }));
+    expect(bridge.nodeBuffers().sizes[3]).toBe(102);
+    expect(nodeAt(350, 100)).toBe(1);
+    expect(nodeAt(50, 100)).toBeUndefined();
+    const patched = bridge.query(everywhere, "near", 1, 0);
+    expect([...patched.content.bounds]).toEqual([0, 1, 6]);
+    expect([...patched.content.rects.subarray(8, 12)]).toEqual([12, 28, 76, 16]);
+    expect(outcome(() => bridge.updateNode(7, "c", plain({ content: titled("x") })))).toEqual({
+      kind: "noNode",
+      slot: 7,
+    });
+  });
+
+  test("a font the engine cannot take is refused as the shell's mistake", () => {
+    // Verifies: ADR-0031
+    for (const font of [
+      { ...FONT, fallback: Number.NaN },
+      { ...FONT, lineHeight: -1 },
+      { ...FONT, codes: new Uint32Array([65]) },
+    ]) {
+      expect(outcome(() => bridge.setFont("caption", font))).toEqual({ kind: "invalidFont" });
+    }
   });
 });
 
@@ -527,7 +750,7 @@ describe("bridge columns that do not fit", () => {
   test("a refused field of a code no field has is refused as malformed, and the engine keeps working", () => {
     // Verifies: ADR-0034
     const { nodes, edges } = graph(two());
-    for (const field of [6, 255, 2 ** 32 - 1]) {
+    for (const field of [8, 255, 2 ** 32 - 1]) {
       const refused = { index: 0, field: field as NodeField };
       expect(
         outcome(() => bridge.loadGraph({ nodes: { ...nodes, refused }, edges } as never)),
@@ -599,7 +822,7 @@ describe("bridge fields the engine does not keep", () => {
     // Verifies: ADR-0028, ADR-0034
     const label = (fields: object) => ({ text: "x", t: 0.5, offset: 0, ...fields });
     const errors = [
-      graph([{ ...node("a", 0, 0), title: 5 as unknown as string }]),
+      graph([{ ...node("a", 0, 0), content: titled(5 as unknown as string) }]),
       graph(two(), [{ ...edge("e", "a", "b"), label: label({ text: null }) as never }]),
       graph(two(), [{ ...edge("e", "a", "b"), label: label({ background: -5 }) }]),
     ].map((batch) => {
@@ -610,26 +833,35 @@ describe("bridge fields the engine does not keep", () => {
       }
     });
     expect(errors).toEqual([
-      { kind: "invalidTitle", node: "a" },
+      { kind: "invalidContentText", node: "a", row: 0, column: 0, field: "text" },
       { kind: "invalidLabelText", edge: "e" },
       { kind: "invalidBackground", edge: "e" },
     ]);
   });
 
-  test("a patch of a node comes back as a typed error unless it holds only a title", () => {
+  test("a patch of a node comes back as a typed error unless it holds only content", () => {
     // Verifies: ADR-0028, ADR-0034
-    expect(bridge.checkNodePatch("a", plain({ title: "A" }))).toEqual({ title: "A" });
-    expect(bridge.checkNodePatch("a", plain({}))).toEqual({});
-    const errors = [{ id: "b" }, { title: 5 }].map((patch) => {
+    bridge.loadGraph(graph([node("a", 0, 0)]));
+    expect(bridge.updateNode(0, "a", plain({ content: titled("A") }))).toBeUndefined();
+    expect(bridge.updateNode(0, "a", plain({}))).toBeUndefined();
+    const errors = [{ id: "b" }, { content: titled(5 as never) }, { content: 5 }].map((patch) => {
       try {
-        bridge.checkNodePatch("a", patch as never);
+        bridge.updateNode(0, "a", patch as never);
       } catch (error) {
         return error;
       }
     });
     expect(errors).toEqual([
       { kind: "unknownPatchField", node: "a", field: "id" },
-      { kind: "invalidTitle", node: "a" },
+      { kind: "invalidContentText", node: "a", row: 0, column: 0, field: "text" },
+      {
+        kind: "invalidField",
+        list: "nodes",
+        index: 0,
+        id: "a",
+        field: "content",
+        expected: CONTENT,
+      },
     ]);
   });
 });
@@ -637,14 +869,14 @@ describe("bridge fields the engine does not keep", () => {
 describe("bridge query", () => {
   test("a query reads the slots in a rectangle", () => {
     bridge.loadGraph(row(5));
-    const visible = bridge.query({ minX: 350, minY: 0, maxX: 450, maxY: 50 }, "near", 4, 0);
+    const visible = bridge.query({ minX: 350, minY: 0, maxX: 450, maxY: 64 }, "near", 4, 0);
     // n2 spans 400..500; of its edges, n1→n2 runs over 300..400 and meets 350..450, n2→n3 runs
     // over 500..600 and does not.
     expect([...visible.nodes]).toEqual([2]);
     // The edges it found, and their ends, are asked for when needed.
     const drawn = bridge.drawnEdges();
     expect([...drawn.slots]).toEqual([1]);
-    expect([...drawn.ends]).toEqual([300, 25, 400, 25]);
+    expect([...drawn.ends]).toEqual([300, 32, 400, 32]);
   });
 
   test("a query read after memory grew holds the current slots", () => {
@@ -654,7 +886,7 @@ describe("bridge query", () => {
     bridge.loadGraph(row(200_000));
     bridge.query(everywhere, "near", 4, 0);
     bridge.loadGraph(row(4));
-    const visible = bridge.query({ minX: 590, minY: 0, maxX: 2000, maxY: 50 }, "near", 4, 0);
+    const visible = bridge.query({ minX: 590, minY: 0, maxX: 2000, maxY: 64 }, "near", 4, 0);
     expect([...visible.nodes]).toEqual([3]);
     expect([...bridge.drawnEdges().slots]).toEqual([2]);
   });
@@ -673,14 +905,14 @@ describe("bridge query", () => {
         [{ ...edge("e", "a", "b"), label: { text: "x", t: 0.5, offset: 12 } }],
       ),
     );
-    // The edge runs level from (100, 25) to (200, 25); its label sits at (150, 13).
-    const near = bridge.query({ minX: 140, minY: -100, maxX: 160, maxY: 0 }, "near", 4, 13);
+    // The edge runs level from (100, 32) to (200, 32); its label sits at (150, 20).
+    const near = bridge.query({ minX: 140, minY: -100, maxX: 160, maxY: 0 }, "near", 4, 20);
     expect([...near.labels]).toEqual([0]);
     // The point crosses relative to the query's origin (ADR-0034).
     expect(near.labelPoints[0]! + near.origin.x).toBeCloseTo(150, 4);
-    expect(near.labelPoints[1]! + near.origin.y).toBeCloseTo(13, 4);
+    expect(near.labelPoints[1]! + near.origin.y).toBeCloseTo(20, 4);
     expect([
-      ...bridge.query({ minX: 140, minY: -100, maxX: 160, maxY: 0 }, "near", 4, 12).labels,
+      ...bridge.query({ minX: 140, minY: -100, maxX: 160, maxY: 0 }, "near", 4, 19).labels,
     ]).toEqual([]);
   });
 });
@@ -704,7 +936,7 @@ describe("bridge mesh and hit", () => {
     const rgba = new Uint8Array(mesh.colors.buffer, mesh.colors.byteOffset, 4);
     expect([...rgba]).toEqual([0x22, 0xa5, 0x5b, 0xff]);
     // The arrowhead comes first, its tip at the target's left middle.
-    expect([...mesh.positions.slice(0, 2)]).toEqual([200, 25]);
+    expect([...mesh.positions.slice(0, 2)]).toEqual([200, 32]);
   });
 
   test("a query far from the world's origin hands over its mesh relative to its origin", () => {
@@ -719,8 +951,8 @@ describe("bridge mesh and hit", () => {
     const { mesh, origin } = bridge.query(rect, "near", 0.25, 0);
     // The centre (5e7 + 100, 100) snapped to the grid of 512 that holds the side of 400.
     expect(origin).toEqual({ x: 97_656 * 512, y: 0 });
-    // The arrowhead's tip, at the target's left middle (5e7 + 200, 25), less the origin.
-    expect([...mesh.positions.slice(0, 2)]).toEqual([5e7 + 200 - origin.x, 25]);
+    // The arrowhead's tip, at the target's left middle (5e7 + 200, 32), less the origin.
+    expect([...mesh.positions.slice(0, 2)]).toEqual([5e7 + 200 - origin.x, 32]);
   });
 
   test("a query at the far level draws thin lines without arrowheads", () => {
@@ -730,7 +962,7 @@ describe("bridge mesh and hit", () => {
     const { mesh } = bridge.query(everywhere, "far", 1, 0);
     // Two vertices per point and no arrowhead: the first vertex lies at the source, not the tip.
     expect(mesh.indices.length).toBe(3 * (mesh.distances.length - 2));
-    expect([...mesh.positions.slice(0, 2)]).toEqual([100, 25.5]);
+    expect([...mesh.positions.slice(0, 2)]).toEqual([100, 32.5]);
   });
 
   test("a hit finds the node drawn on top at a point", () => {
@@ -760,8 +992,8 @@ describe("bridge additions", () => {
     bridge.loadGraph(graph([node("a", 0, 0)]));
     const refusals = [
       added({ ...node("c", 0, 0), x: Number.POSITIVE_INFINITY }),
-      added({ ...node("c", 0, 0), title: 5 }),
-      added({ ...node("c", 0, 0), height: false }),
+      added({ ...node("c", 0, 0), content: titled(5 as never) }),
+      added({ ...node("c", 0, 0), content: false }),
       added({ ...node("c", 0, 0), id: "x".repeat(257) }),
       false as unknown as NodeSnapshot,
     ].map((refused) => {
@@ -774,8 +1006,15 @@ describe("bridge additions", () => {
     });
     expect(refusals).toEqual([
       { kind: "nonFiniteCoordinate", node: "c" },
-      { kind: "invalidTitle", node: "c" },
-      { kind: "invalidField", list: "nodes", index: 0, id: "c", field: "height", expected: SIZE },
+      { kind: "invalidContentText", node: "c", row: 0, column: 0, field: "text" },
+      {
+        kind: "invalidField",
+        list: "nodes",
+        index: 0,
+        id: "c",
+        field: "content",
+        expected: CONTENT,
+      },
       { kind: "idTooLong", list: "nodes", index: 0, field: "id", limit: 256 },
       expect.objectContaining({ kind: "malformed" }),
     ]);

@@ -67,6 +67,7 @@ export class ConnectorsLayer extends Graphics {
   sync(
     state: GraphView,
     positions: Float32Array,
+    sizes: Float32Array,
     origin: { x: number; y: number },
     far: boolean,
   ): void {
@@ -85,13 +86,15 @@ export class ConnectorsLayer extends Graphics {
     this.drawn = [];
     this.points = [];
     for (const [slot, compatible] of shown)
-      this.drawNode(state, positions, origin, slot, compatible);
+      this.drawNode(state, positions, sizes, origin, slot, compatible);
   }
 
-  /** Draws the four connectors of the node in `slot`. */
+  /** Draws the four connectors of the node in `slot`, at the place `positions` and the size
+   *  `sizes` hold for it. */
   private drawNode(
     state: GraphView,
     positions: Float32Array,
+    sizes: Float32Array,
     origin: { x: number; y: number },
     slot: number,
     compatible: boolean,
@@ -100,7 +103,7 @@ export class ConnectorsLayer extends Graphics {
     if (!node) return;
     const [x, y] = [positions[slot * 2]!, positions[slot * 2 + 1]!];
     for (const side of SIDES) {
-      const at = connectorPoint(x, y, node.width, node.height, side);
+      const at = connectorPoint(x, y, node.width, sizes[slot * 2 + 1]!, side);
       this.circle(at.x - origin.x, at.y - origin.y, RADIUS / state.viewport.scale).fill(
         compatible ? COMPATIBLE : PLAIN,
       );
@@ -150,6 +153,7 @@ export class ConnectionLine extends Graphics {
   sync(
     state: GraphView,
     positions: Float32Array,
+    sizes: Float32Array,
     pointer: { readonly x: number; readonly y: number },
   ): void {
     const { connection, viewport } = state;
@@ -165,7 +169,7 @@ export class ConnectionLine extends Graphics {
       positions[slot * 2]!,
       positions[slot * 2 + 1]!,
       node.width,
-      node.height,
+      sizes[slot * 2 + 1]!,
       connection.side,
     );
     const from = toScreen(viewport, world.x, world.y);

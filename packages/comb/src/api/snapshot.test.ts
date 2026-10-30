@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test";
 import { edgeSnapshotOf, nodeSnapshotOf } from "./snapshot";
 
-const limits = { text: 1000, id: 256, idBudget: 64_000_000 };
+const limits = { text: 1000, id: 256, idBudget: 64_000_000, rows: 8, columns: 6 };
 
 const cases: [name: string, value: string, read: string | false][] = [
   ["a lone high surrogate at the end", "ab\uD83D", false],
@@ -15,11 +15,10 @@ const cases: [name: string, value: string, read: string | false][] = [
 for (const [name, value, read] of cases) {
   test(`the snapshot reads an identifier and a text with ${name}`, () => {
     // Verifies: ADR-0028
-    const node = nodeSnapshotOf(
-      { id: value, title: value, x: 0, y: 0, width: 1, height: 1 },
-      limits,
-    );
-    expect(node.snapshot).toMatchObject({ id: read, title: read });
+    const content = [[{ kind: "text", role: "title", text: value }]];
+    const node = nodeSnapshotOf({ id: value, x: 0, y: 0, width: 1, content }, limits);
+    const title = { kind: "text", role: "title", text: read };
+    expect(node.snapshot).toMatchObject({ id: read, content: [[title]] });
     const edge = edgeSnapshotOf(
       { id: value, source: "a", target: "b", label: { text: value, t: 0.5, offset: 0 } },
       limits,

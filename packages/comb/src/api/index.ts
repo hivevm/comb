@@ -22,6 +22,7 @@ import {
 } from "../interaction";
 import { clampScale, fitViewport, toWorld } from "../store/viewport";
 import { Scene } from "../render/scene";
+import { fontMetricsOf } from "../render/nodes";
 import { listenersOf, type GraphChange } from "./changes";
 import { engineOf, type EngineSource } from "./engine";
 import { editorsOf } from "./editors";
@@ -36,6 +37,7 @@ import {
   type GraphData,
   type GraphStore,
   type NodeData,
+  type NodePatch,
   type NodeView,
   type Selection,
   type Viewport,
@@ -88,11 +90,11 @@ export interface Comb {
   /** Replaces the graph. Throws a `GraphDataError` on malformed graph data (Q-7), and an
    *  `EngineLostError` once the engine is lost. */
   load(graph: GraphData): void;
-  /** Changes attributes of the node `id`; the canvas shows the change (G-5). Throws a
-   *  `GraphDataError` where the graph holds no node `id`, or the patch holds a field other than
-   *  `title` or a title that is not a string, and changes nothing then (Q-7), and an
-   *  `EngineLostError` once the engine is lost. */
-  updateNode(id: string, patch: Partial<Pick<NodeView, "title">>): void;
+  /** Replaces the content of the node `id` whole; the canvas shows it, the node as high as its
+   *  new rows (G-5, ADR-0013). Throws a `GraphDataError` where the graph holds no node `id`, or the
+   *  patch holds a field other than `content` or content a load would refuse, and changes nothing
+   *  then (Q-7), and an `EngineLostError` once the engine is lost. */
+  updateNode(id: string, patch: NodePatch): void;
   /** Adds `node` with its top-left corner at `x`, `y`, without a load; the canvas draws it above
    *  every other node (G-1). Throws a `GraphDataError` where the graph holds a node `node.id`
    *  already (`duplicateNode`), where a load would refuse the node, or where the graph would pass
@@ -164,9 +166,12 @@ export class RendererUnavailableError extends Error {
   }
 }
 
-/** The world rectangle the nodes cover, or null for a graph without nodes; a free slot covers
- *  nothing. */
-function boundsOf(nodes: readonly (NodeView | undefined)[], positions: Float32Array): Rect | null {
+/** The world rectangle the nodes cover, each as high as `sizes` holds, or null for a graph
+ *  without nodes; a free slot covers nothing. */
+function boundsOf(
+  nodes: readonly (NodeView | undefined)[],
+  { positions, sizes }: { positions: Float32Array; sizes: Float32Array },
+): Rect | null {
   const bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
   let any = false;
   nodes.forEach((node, slot) => {
@@ -176,14 +181,20 @@ function boundsOf(nodes: readonly (NodeView | undefined)[], positions: Float32Ar
     bounds.minX = Math.min(bounds.minX, x);
     bounds.minY = Math.min(bounds.minY, y);
     bounds.maxX = Math.max(bounds.maxX, x + node.width);
-    bounds.maxY = Math.max(bounds.maxY, y + node.height);
+    bounds.maxY = Math.max(bounds.maxY, y + sizes[slot * 2 + 1]!);
   });
   return any ? bounds : null;
 }
 
-/** The bridge's limits the snapshot cuts strings by. */
+/** The bridge's limits the snapshot cuts strings and content by. */
 function limitsOf(bridge: Bridge): Limits {
-  return { text: bridge.textLimit(), id: bridge.idLimit(), idBudget: bridge.idBudget() };
+  return {
+    text: bridge.textLimit(),
+    id: bridge.idLimit(),
+    idBudget: bridge.idBudget(),
+    rows: bridge.rowLimit(),
+    columns: bridge.columnLimit(),
+  };
 }
 
 /** `worldPointAt` on `store` and the canvas of `app`: the world point under a point of the page,
@@ -231,6 +242,9 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
   // Read at once, as the engine is created: once the canvas is in the host element, nothing may
   // refuse, and a trap of another Comb's on the page would refuse these calls.
   const limits = limitsOf(bridge);
+  // The metrics of the fonts the texts are drawn with, once, before the first layout (ADR-0013).
+  for (const role of ["title", "body", "caption"] as const)
+    bridge.setFont(role, fontMetricsOf(role));
   const app = new Application();
   await app.init({
     resizeTo: host,
@@ -263,7 +277,7 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
   const comb: Comb = {
     ...edits,
     fitView() {
-      const bounds = boundsOf(store.getState().nodes, bridge.positions());
+      const bounds = boundsOf(store.getState().nodes, bridge.nodeBuffers());
       if (bounds)
         store.getState().setViewport(fitViewport(bounds, app.screen.width, app.screen.height));
     },

@@ -5,7 +5,7 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { createBridgeSync, type Bridge } from "../bridge";
 import { deleteSelection } from "../interaction/delete";
-import { createGraphStore, type GraphStore, type NodeData } from "../store";
+import { createGraphStore, type GraphStore, type NodeContent, type NodeData } from "../store";
 import { editorsOf, GraphDataError } from "./editors";
 
 let bytes: ArrayBuffer;
@@ -14,14 +14,22 @@ beforeAll(async () => {
   bytes = await Bun.file(new URL("../../wasm/engine_bg.wasm", import.meta.url)).arrayBuffer();
 });
 
-const node = (id: string, x = 0): NodeData => ({ id, title: id, x, y: 0, width: 100, height: 40 });
+/** One row of one title, `title`. */
+const titled = (title: string): NodeContent => [[{ kind: "text", role: "title", text: title }]];
+const node = (id: string, x = 0): NodeData => ({ id, x, y: 0, width: 100, content: titled(id) });
 
 /** A store and an engine holding the nodes `a` and `b` and the edge `a-b`, the edits of the Comb
  *  on them, and the bridge, wrapped by `around` where a test gives it. */
 function editing(around: (bridge: Bridge) => Bridge = (bridge) => bridge) {
   const store = createGraphStore();
   const bridge = around(createBridgeSync(bytes));
-  const limits = { text: bridge.textLimit(), id: bridge.idLimit(), idBudget: bridge.idBudget() };
+  const limits = {
+    text: bridge.textLimit(),
+    id: bridge.idLimit(),
+    idBudget: bridge.idBudget(),
+    rows: bridge.rowLimit(),
+    columns: bridge.columnLimit(),
+  };
   const editors = editorsOf(store, bridge, limits, {});
   editors.host.load({
     nodes: [node("a"), node("b", 300)],
@@ -103,9 +111,9 @@ const CASES: {
         nodes: [
           {
             ...node("x"),
-            get title() {
+            get content() {
               comb.addNode(node("c", 600));
-              return "X";
+              return titled("X");
             },
           },
         ],
@@ -119,9 +127,9 @@ const CASES: {
     name: "updateNode, whose getter removes the node",
     call: (comb) =>
       comb.updateNode("a", {
-        get title() {
+        get content() {
           comb.removeNodes(["a"]);
-          return "A2";
+          return titled("A2");
         },
       }),
     outcome: { kind: "unknownNode", node: "a" },
@@ -133,9 +141,9 @@ const CASES: {
     call: (comb) =>
       comb.addNode({
         ...node("c", 600),
-        get title() {
+        get content() {
           comb.addNode(node("c", 900));
-          return "C";
+          return titled("C");
         },
       }),
     outcome: { kind: "duplicateNode", node: "c" },

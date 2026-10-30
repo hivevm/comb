@@ -2,15 +2,19 @@
 // in the engine's buffer, and `positionsVersion` tells readers that they moved; the point a
 // connection is dragged to lives in interaction, and `pointerVersion` tells them that it moved.
 import { createStore } from "zustand/vanilla";
+import type { NodeContent } from "../bridge";
 
-/** A node as the host application hands it over; `x` and `y` are its initial position. */
+export type { ContentElement, NodeContent, TextRole } from "../bridge";
+
+/** A node as the host application hands it over: `x` and `y` are its initial position, and
+ *  `content` what it shows, rows of weighted columns, from which Comb computes its height
+ *  (ADR-0013). */
 export interface NodeData {
   id: string;
-  title: string;
   x: number;
   y: number;
   width: number;
-  height: number;
+  content: NodeContent;
 }
 
 /** A side of a node, at whose middle its connector sits (ADR-0024). */
@@ -65,8 +69,13 @@ export interface EdgePatch {
   label?: EdgeLabelData | null;
 }
 
-/** A node as the store keeps it: everything but its position. */
+/** A node as the store keeps it: everything but its position; its height is the engine's. */
 export type NodeView = Omit<NodeData, "x" | "y">;
+
+/** What `updateNode` may change of a node: its content, which it replaces whole (ADR-0013). */
+export interface NodePatch {
+  content?: NodeContent;
+}
 
 /** Who made a change: the user on the canvas, or the host application through `Comb`. */
 export type By = "user" | "host";
@@ -98,7 +107,7 @@ export type StoreChange =
       readonly kind: "nodeUpdated";
       readonly by: "host";
       readonly id: string;
-      readonly patch: Readonly<Partial<Pick<NodeView, "title">>>;
+      readonly patch: Readonly<NodePatch>;
     };
 
 /** A connection the user drags from the connector `side` of the node in slot `source` (ADR-0024):
@@ -149,7 +158,7 @@ export interface GraphState extends GraphView {
   load(graph: GraphData, idUnits: number): void;
   /** Keeps `node`, which the engine took into `slot`, without its position. */
   addNode(node: NodeData, slot: number): void;
-  updateNode(id: string, patch: Partial<Pick<NodeView, "title">>): void;
+  updateNode(id: string, patch: NodePatch): void;
   select(selection: Selection): void;
   setViewport(viewport: Viewport): void;
   positionsMoved(): void;
@@ -239,7 +248,7 @@ function loadedFrom(state: GraphView, graph: GraphData, idUnits: number): Partia
   const edgeSlots = new Map<string, number>();
   for (let slot = 0; slot < graph.edges.length; slot++) edgeSlots.set(graph.edges[slot]!.id, slot);
   return {
-    nodes: graph.nodes.map(({ id, title, width, height }) => ({ id, title, width, height })),
+    nodes: graph.nodes.map(({ id, width, content }) => ({ id, width, content })),
     slots,
     edgeSlots,
     edges: graph.edges,
@@ -357,10 +366,10 @@ export function createGraphStore() {
     positionsVersion: 0,
     pointerVersion: 0,
     load: (graph, idUnits) => set((state) => loadedFrom(state, graph, idUnits)),
-    addNode: ({ id, title, width, height }, slot) =>
+    addNode: ({ id, width, content }, slot) =>
       set((state) => {
         const nodes = state.nodes.slice();
-        nodes[slot] = { id, title, width, height };
+        nodes[slot] = { id, width, content };
         return {
           nodes,
           slots: new Map(state.slots).set(id, slot),

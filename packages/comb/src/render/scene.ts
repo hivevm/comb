@@ -4,8 +4,8 @@
 // After every change, the scene asks the engine which nodes, edges, and edge labels meet the
 // viewport and a margin around it, and binds pooled node views and edge-label views to exactly
 // those; the found edges are drawn as one mesh. The zoom chooses one of three levels of detail:
-// near draws node boxes, titles, and edge labels; middle draws node boxes and titles; far draws
-// nodes as particles and edges as thin lines, without text.
+// near draws node boxes, their content, and edge labels; middle draws node boxes and the texts of
+// role title; far draws nodes as particles and edges as thin lines, without text.
 //
 // The world is drawn relative to the origin of the last query (ADR-0034): the `world` render
 // group stands at the screen point of the origin, the edges and the edge labels, which the engine
@@ -20,7 +20,7 @@ import type { GraphView } from "../store";
 import { EdgesContainer, type MeshSize } from "./edges";
 import { EdgeFill } from "./edges-canvas";
 import { LabelsContainer, type LabelView } from "./labels";
-import { NodeGraphic, NodesContainer } from "./nodes";
+import { NodeGraphic, NodesContainer, type DrawnText } from "./nodes";
 import {
   ConnectionLine,
   ConnectorsLayer,
@@ -48,9 +48,19 @@ export interface SceneSnapshot {
   viewport: { x: number; y: number; scale: number };
   /** The level of detail the scene draws at. */
   level: Level;
-  /** Every node drawn, by a view or, at the far level, as a particle; `title` is the text a view
-   *  draws, which a particle does not. */
-  nodes: { id: string; x: number; y: number; width: number; height: number; title?: string }[];
+  /** Every node drawn, by a view or, at the far level, as a particle, at the height its content
+   *  lays out to; `texts` are the texts a view draws, each placed relative to its node, with the
+   *  width its text object draws at, and
+   *  `title` the text of the first of role title, which a particle draws none of. */
+  nodes: {
+    id: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    title?: string;
+    texts?: (DrawnText & { drawnWidth: number })[];
+  }[];
   /** How many nodes are drawn as particles. */
   particles: number;
   /** How many text objects are bound. */
@@ -153,9 +163,10 @@ export class Scene {
     pointer: { readonly x: number; readonly y: number },
   ): void {
     if (!this.covers(state)) this.query(state, bridge);
-    const positions = bridge.positions();
-    this.connectors.sync(state, positions, this.origin, this.level === "far");
-    this.connection.sync(state, positions, pointer);
+    // Both views of one call, since a call into the engine may detach the views of the last.
+    const { positions, sizes } = bridge.nodeBuffers();
+    this.connectors.sync(state, positions, sizes, this.origin, this.level === "far");
+    this.connection.sync(state, positions, sizes, pointer);
     // In f64 here, so that the world's transform on the GPU holds no far coordinate.
     const at = toScreen(state.viewport, this.origin.x, this.origin.y);
     this.world.position.set(at.x, at.y);
@@ -196,8 +207,16 @@ export class Scene {
     this.origin = origin;
     this.nodes.position.set(-origin.x, -origin.y);
     this.particles.position.set(-origin.x, -origin.y);
-    this.nodes.sync(state, far ? NONE : visible.nodes, visible.positions);
-    this.particles.sync(state, far ? visible.nodes : NONE, visible.positions);
+    const { positions, sizes, content } = visible;
+    this.nodes.sync(
+      state,
+      far ? NONE : visible.nodes,
+      positions,
+      sizes,
+      content,
+      level === "middle",
+    );
+    this.particles.sync(state, far ? visible.nodes : NONE, positions, sizes);
     this.edges.sync(visible);
     this.detail = visible.detail;
     this.labels.sync(state, visible, level === "near", bridge);
@@ -253,7 +272,8 @@ export class Scene {
           ...(view as NodeGraphic).size,
           x: view.x,
           y: view.y,
-          title: (view as NodeGraphic).drawnText,
+          title: (view as NodeGraphic).drawnTitle,
+          texts: (view as NodeGraphic).inspected(),
         })),
         ...this.particles.drawn(),
       ],

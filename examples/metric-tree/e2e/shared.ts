@@ -2,9 +2,9 @@
 // what Comb tells, and reading and moving its canvas.
 import type { Page } from "@playwright/test";
 import type { GraphData, NodeData } from "comb";
-import { NODE_HEIGHT, NODE_WIDTH } from "../src/graph";
+import { NODE_HEIGHT, NODE_WIDTH, titled } from "../src/graph";
 
-export { NODE_HEIGHT, NODE_WIDTH };
+export { NODE_HEIGHT, NODE_WIDTH, titled };
 
 declare global {
   interface Window {
@@ -27,12 +27,15 @@ export async function open(page: Page, query = ""): Promise<void> {
   // The example sets loadReport after a top-level await, which the load event does not wait for.
   await page.waitForFunction(() => "loadReport" in window);
   await page.evaluate(() => window.loadReport);
-  await page.evaluate(
-    ([width, height]) => {
-      window.node = (id, x = 0, y = 0) => ({ id, title: id, x, y, width, height });
-    },
-    [NODE_WIDTH, NODE_HEIGHT] as const,
-  );
+  await page.evaluate((width) => {
+    window.node = (id, x = 0, y = 0) => ({
+      id,
+      x,
+      y,
+      width,
+      content: [[{ kind: "text", role: "title", text: id }]],
+    });
+  }, NODE_WIDTH);
 }
 
 /** The screen point at the centre of a drawn node. */
@@ -108,15 +111,14 @@ export async function strokeOf(page: Page, color: number) {
   return stroke;
 }
 
-/** A node of the example's size at `x, y`, titled by its identifier; `window.node` makes the same
- *  in the page. */
+/** A node of the example's width at `x, y`, of one title, its identifier, which Comb lays out to
+ *  the example's height; `window.node` makes the same in the page. */
 export const node = (id: string, x = 0, y = 0): NodeData => ({
   id,
-  title: id,
   x,
   y,
   width: NODE_WIDTH,
-  height: NODE_HEIGHT,
+  content: titled(id),
 });
 
 /** Starts recording every change `onChange` tells into `window.told` and every selection

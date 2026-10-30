@@ -10,6 +10,7 @@ import {
   type EdgePatch,
   type GraphState,
   type GraphStore,
+  type NodeContent,
   type NodeData,
   type Selection,
   type StoreChange,
@@ -118,6 +119,19 @@ function edgeDeliveryOf(
   };
 }
 
+/** A copy of `content`, which the store keeps, for the host application (`docs/CONVENTIONS.md`,
+ *  *Hand the host copies*). */
+function contentCopy(content: NodeContent): NodeContent {
+  return content.map((row) => row.map((element) => ({ ...element })));
+}
+
+/** The change `nodeUpdated` as `onChange` delivers it, its content copied. */
+function nodeUpdatedOf(change: Extract<StoreChange, { kind: "nodeUpdated" }>): GraphChange {
+  const { content } = change.patch;
+  const patch = content ? { content: contentCopy(content) } : {};
+  return { kind: change.kind, by: change.by, id: change.id, patch };
+}
+
 /** The change of the graph `change` names, as `onChange` delivers it: what it carries read from
  *  `state` and, for a position, from the engine's buffer as it is now. */
 function deliveryOf(change: StoreChange, state: GraphState, bridge: Bridge): GraphChange {
@@ -125,7 +139,7 @@ function deliveryOf(change: StoreChange, state: GraphState, bridge: Bridge): Gra
     case "loaded":
       return { kind: change.kind, by: change.by };
     case "nodeUpdated":
-      return { kind: change.kind, by: change.by, id: change.id, patch: { ...change.patch } };
+      return nodeUpdatedOf(change);
     case "nodeMoved": {
       const { x, y } = positionAt(bridge.positions(), state.slots.get(change.id)!);
       return { kind: change.kind, by: change.by, id: change.id, x, y };
@@ -148,9 +162,10 @@ function deliveryOf(change: StoreChange, state: GraphState, bridge: Bridge): Gra
     }
     case "nodeAdded": {
       const slot = state.slots.get(change.id)!;
-      const { id, title, width, height } = state.nodes[slot]!;
+      const { id, width, content } = state.nodes[slot]!;
       const { x, y } = positionAt(bridge.positions(), slot);
-      return { kind: change.kind, by: change.by, node: { id, title, x, y, width, height } };
+      const node = { id, x, y, width, content: contentCopy(content) };
+      return { kind: change.kind, by: change.by, node };
     }
   }
 }

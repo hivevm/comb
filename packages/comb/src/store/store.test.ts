@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { createGraphStore, type GraphData, type GraphState } from ".";
+import { createGraphStore, type GraphData, type GraphState, type NodeContent } from ".";
+
+/** One row of one title, `title`. */
+const titled = (title: string): NodeContent => [[{ kind: "text", role: "title", text: title }]];
 
 const graph: GraphData = {
   nodes: [
-    { id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 },
-    { id: "b", title: "B", x: 200, y: 0, width: 100, height: 40 },
+    { id: "a", x: 0, y: 0, width: 100, content: titled("A") },
+    { id: "b", x: 200, y: 0, width: 100, content: titled("B") },
   ],
   edges: [{ id: "a-b", source: "a", target: "b" }],
 };
@@ -21,7 +24,7 @@ describe("graph store", () => {
       ["a", 0],
       ["b", 1],
     ]);
-    expect(state.nodes[0]).toEqual({ id: "a", title: "A", width: 100, height: 40 });
+    expect(state.nodes[0]).toEqual({ id: "a", width: 100, content: titled("A") });
   });
 
   test("moving positions bumps the counter and leaves the graph untouched", () => {
@@ -40,10 +43,10 @@ describe("graph store", () => {
     const store = createGraphStore();
     store.getState().load(graph, units);
     const before = store.getState().nodes;
-    store.getState().updateNode("b", { title: "Renamed" });
+    store.getState().updateNode("b", { content: titled("Renamed") });
     const after = store.getState().nodes;
     expect(after[0]).toBe(before[0]);
-    expect(after[1]?.title).toBe("Renamed");
+    expect(after[1]?.content).toEqual(titled("Renamed"));
   });
 
   test("an added node takes its slot in the map and the lists, and the change names it", () => {
@@ -53,10 +56,10 @@ describe("graph store", () => {
     const { nodes, positionsVersion, idUnits } = store.getState();
     expect(idUnits).toBe("a".length + "b".length + "a-b".length + 2);
     expect(store.getState().change).toEqual({ kind: "loaded", by: "host" });
-    store.getState().addNode({ id: "cc", title: "C", x: 5, y: 6, width: 10, height: 20 }, 2);
+    store.getState().addNode({ id: "cc", x: 5, y: 6, width: 10, content: titled("C") }, 2);
     const state = store.getState();
     expect(state.nodes).not.toBe(nodes);
-    expect(state.nodes[2]).toEqual({ id: "cc", title: "C", width: 10, height: 20 });
+    expect(state.nodes[2]).toEqual({ id: "cc", width: 10, content: titled("C") });
     expect(state.slots.get("cc")).toBe(2);
     expect(state.idUnits).toBe(idUnits + 2);
     expect(state.positionsVersion).toBe(positionsVersion + 1);
@@ -76,7 +79,7 @@ describe("graph store removals", () => {
     const { idUnits } = store.getState();
     store.getState().removeNodes([0], [0], "host");
     const state = store.getState();
-    expect(state.nodes).toEqual([undefined, { id: "b", title: "B", width: 100, height: 40 }]);
+    expect(state.nodes).toEqual([undefined, { id: "b", width: 100, content: titled("B") }]);
     expect(state.edges).toEqual([undefined]);
     expect([...state.slots]).toEqual([["b", 1]]);
     expect([...state.edgeSlots]).toEqual([]);

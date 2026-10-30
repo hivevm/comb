@@ -3,10 +3,11 @@
 // that the bridge checks it and the store keeps it, and no value of the host application, nor any
 // of its code, reaches the engine; a load's nodes and edges are handed over as columns besides
 // (ADR-0034). A value of another type is replaced by `false`, which the bridge refuses naming the
-// node or edge and the field; a title, a label text, and the arrow are handed
-// over no longer than one code unit beyond the bridge's limit for texts, and an identifier no
-// longer than one beyond its limit for identifiers, so that a string of any length costs at most
-// that much to check. The code units of all identifiers are counted while they are read, and
+// node or edge and the field; a text of content, a label text, and the arrow are handed over no
+// longer than one code unit beyond the bridge's limit for texts, an identifier no longer than one
+// beyond its limit for identifiers, and a node's content no more rows, nor a row more columns,
+// than one beyond the bridge's limits, so that a value of any size costs at most that much to
+// check. The code units of all identifiers are counted while they are read, and
 // reading stops once they exceed the bridge's budget, whose check then refuses the load. What
 // cannot be read at all throws an `UnreadableError`.
 import {
@@ -46,18 +47,23 @@ export function isUnreadable(error: unknown): error is UnreadableError {
 type Fields = Record<PropertyKey, unknown>;
 
 /** The bridge's limits the snapshot cuts by: the most code units of a text and of an
- *  identifier, and of all identifiers of one load together. */
+ *  identifier, and of all identifiers of one load together, and the most rows of a node's
+ *  content and columns of a row. */
 export interface Limits {
   text: number;
   id: number;
   idBudget: number;
+  rows: number;
+  columns: number;
 }
 
-/** What a field expects: a number, a text, or an identifier, each of its type or absent. */
+/** What a field expects: a number, a text, an identifier, or a node's content, each of its type
+ *  or absent. */
 interface Reader {
   number(value: unknown): unknown;
   text(value: unknown): unknown;
   id(value: unknown): unknown;
+  content(value: unknown): unknown;
   /** The code units of the identifiers read so far. */
   idUnits: number;
 }
@@ -87,9 +93,49 @@ function readerOf(limits: Limits): Reader {
       if (id !== false) reader.idUnits += id.length;
       return id;
     },
+    content: (value) => (Array.isArray(value) ? contentOf(reader, value, limits) : falseOr(value)),
     idUnits: 0,
   };
   return reader;
+}
+
+/** `value` where it stands for a field left out, null or undefined, else `false`. */
+const falseOr = (value: unknown) => (value === undefined || value === null ? value : false);
+
+/** A node's content as plain data, read by `read`: at most one row beyond `limits.rows`, each a
+ *  list of at most one element beyond `limits.columns` or `false`, each element an object of its
+ *  kind, role, text, and weight where one is given, or `false` where it is no object. A list is
+ *  no object here: an element is a description, never a list. */
+function contentOf(read: Reader, rows: readonly unknown[], limits: Limits) {
+  const count = Math.min(rows.length, limits.rows + 1);
+  const content: unknown[] = [];
+  for (let r = 0; r < count; r++) {
+    const row: unknown = rows[r];
+    if (!Array.isArray(row)) {
+      content.push(false);
+      continue;
+    }
+    const columns = Math.min(row.length, limits.columns + 1);
+    const elements: unknown[] = [];
+    for (let c = 0; c < columns; c++) elements.push(elementOf(read, row[c]));
+    content.push(elements);
+  }
+  return content;
+}
+
+/** An element of content as plain data, or `false` where it is no object. */
+function elementOf(read: Reader, value: unknown) {
+  const fields = objectOf(value);
+  if (!fields || Array.isArray(value)) return false;
+  const { kind, role, text, weight } = fields;
+  const element: Record<string, unknown> = {
+    kind: read.text(kind),
+    role: read.text(role),
+    text: read.text(text),
+  };
+  // No key for a weight left out, which the bridge reads as 1, so that Comb keeps none either.
+  if (weight !== undefined && weight !== null) element.weight = read.number(weight);
+  return element;
 }
 
 /** `value` as an object to read fields of, or none where it is no object. */
@@ -141,14 +187,13 @@ function copied<T>(
 }
 
 function nodeOf(read: Reader, node: Fields) {
-  const { id, title, x, y, width, height } = node;
+  const { id, x, y, width, content } = node;
   return {
     id: read.id(id),
-    title: read.text(title),
     x: read.number(x),
     y: read.number(y),
     width: read.number(width),
-    height: read.number(height),
+    content: read.content(content),
   };
 }
 
@@ -225,7 +270,7 @@ export function snapshotOf(lists: Lists, limits: Limits) {
         return false;
       }
       const node = nodeOf(read, item);
-      columns.node(node.id, node.title, node.x, node.y, node.width, node.height);
+      columns.node(node.id, node.x, node.y, node.width, node.content);
       return node;
     },
     done,
@@ -305,10 +350,10 @@ export function edgePatchOf(patch: unknown, limits: Limits): PlainEdgePatch {
 }
 
 /** The patch of `updateNode` as plain data: the own fields of a plain object, enumerable or not,
- *  up to the first other than `title`, each a primitive, a string one as a text cut by
- *  `limits`, and the name of that other field no longer than one code unit beyond the limit for
- *  texts. A patch that is no plain object, a `Map` or an array among them, or that has a key that
- *  is no string, cannot be read. */
+ *  up to the first other than `content`, its content read as a load reads a node's, and the name
+ *  of that other field no longer than one code unit beyond the limit for texts. A patch that is
+ *  no plain object, a `Map` or an array among them, or that has a key that is no string, cannot
+ *  be read. */
 export function patchOf(patch: unknown, limits: Limits): PlainPatch {
   const fields = objectOf(patch);
   if (!fields || Object.getPrototypeOf(fields) !== Object.prototype)
@@ -317,15 +362,14 @@ export function patchOf(patch: unknown, limits: Limits): PlainPatch {
   const plain: Record<string, unknown> = Object.create(null);
   for (const key of Reflect.ownKeys(fields)) {
     if (typeof key !== "string") throw new UnreadableError("the patch has a key that is no string");
-    if (key !== "title") {
+    if (key !== "content") {
       // The first other field, which the bridge refuses by name: its name cut like a text but
       // otherwise as written, a lone surrogate too, which the bridge names as U+FFFD; its value
       // not read, and no field after it.
       plain[key.slice(0, limits.text + 1)] = false;
       break;
     }
-    const value = fields[key];
-    plain[key] = typeof value === "string" ? read.text(value) : read.number(value);
+    plain[key] = read.content(fields[key]);
   }
   return plain as PlainPatch;
 }

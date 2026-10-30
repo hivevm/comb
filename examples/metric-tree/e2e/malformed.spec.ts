@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import type { GraphData, GraphDataProblem } from "comb";
-import { drawnGraph, node, open, setViewport } from "./shared";
+import type { GraphData, GraphDataProblem, NodeContent, NodePatch } from "comb";
+import { drawnGraph, node, open, setViewport, titled } from "./shared";
 
 const edge = (id: string, source: string, target: string) => ({ id, source, target });
 /** Nodes `a` and `b` and an edge `e` between them whose label lies in view at the near level,
@@ -67,8 +67,11 @@ const MALFORMED: { name: string; graph: GraphData; problem: unknown }[] = [
   // Verifies: ADR-0028
   {
     name: "a title that is not a string",
-    graph: { nodes: [node("a"), { ...node("b", 300), title: wrong<string>(5) }], edges: [] },
-    problem: { kind: "invalidTitle", node: "b" },
+    graph: {
+      nodes: [node("a"), { ...node("b", 300), content: titled(wrong<string>(5)) }],
+      edges: [],
+    },
+    problem: { kind: "invalidContentText", node: "b", row: 0, column: 0, field: "text" },
   },
   {
     name: "a label text that is not a string",
@@ -92,8 +95,18 @@ const MALFORMED: { name: string; graph: GraphData; problem: unknown }[] = [
   },
   {
     name: "a title of 1,001 characters",
-    graph: { nodes: [node("a"), { ...node("b", 300), title: "x".repeat(1001) }], edges: [] },
-    problem: { kind: "titleTooLong", node: "b", limit: 1000 },
+    graph: {
+      nodes: [node("a"), { ...node("b", 300), content: titled("x".repeat(1001)) }],
+      edges: [],
+    },
+    problem: {
+      kind: "contentTextTooLong",
+      node: "b",
+      row: 0,
+      column: 0,
+      field: "text",
+      limit: 1000,
+    },
   },
   {
     name: "a label text of 1,001 UTF-16 code units",
@@ -119,6 +132,9 @@ const COLOR = "an integer from 0 to 0xFFFFFF";
 const DASH = "a list of two finite numbers, or none";
 const ID = "a well-formed string of at most 256 code units";
 const SIDE = '"top", "right", "bottom", or "left"';
+const ROWS = "a list of rows";
+/** A text element of node `b`'s content where it lies, as a problem of its text names it. */
+const TEXT_AT = { node: "b", row: 0, column: 0, field: "text" };
 
 /** Nodes `a` and `b` and an edge `e` between them, with `change` made to `b` or to `e`. */
 function changed(item: "b" | "e", change: (fields: Record<string, unknown>) => void): GraphData {
@@ -137,7 +153,7 @@ const FIELDS: { name: string; graph: GraphData; problem: unknown }[] = [
   ...[
     ["a coordinate that is a string", (b: Record<string, unknown>) => (b.x = "1"), "x", NUMBER],
     ["a missing width", (b: Record<string, unknown>) => delete b.width, "width", SIZE],
-    ["a height that is null", (b: Record<string, unknown>) => (b.height = null), "height", SIZE],
+    ["content that is null", (b: Record<string, unknown>) => (b.content = null), "content", ROWS],
   ].map(([name, change, field, expected]) => ({
     name: name as string,
     graph: changed("b", change as (b: Record<string, unknown>) => void),
@@ -203,7 +219,7 @@ const NODE_REFUSALS: { kind: string; problem: unknown }[] = [
       ["stringX", "x", NUMBER],
       ["missingY", "y", NUMBER],
       ["nullWidth", "width", SIZE],
-      ["booleanHeight", "height", SIZE],
+      ["booleanContent", "content", ROWS],
     ] as const
   ).map(([kind, field, expected]) => {
     const problem = { kind: "invalidField", list: "nodes", index: 1, id: "b", field, expected };
@@ -214,13 +230,13 @@ const NODE_REFUSALS: { kind: string; problem: unknown }[] = [
     kind: "noObject",
     problem: { kind: "malformed", message: "the value does not have the shape the bridge expects" },
   },
-  { kind: "missingTitle", problem: { kind: "invalidTitle", node: "b" } },
-  { kind: "loneSurrogateTitle", problem: { kind: "invalidTitle", node: "b" } },
+  { kind: "missingTitle", problem: { kind: "invalidContentText", ...TEXT_AT } },
+  { kind: "loneSurrogateTitle", problem: { kind: "invalidContentText", ...TEXT_AT } },
   {
     kind: "longId",
     problem: { kind: "idTooLong", list: "nodes", index: 1, field: "id", limit: 256 },
   },
-  { kind: "longTitle", problem: { kind: "titleTooLong", node: "b", limit: 1000 } },
+  { kind: "longTitle", problem: { kind: "contentTextTooLong", ...TEXT_AT, limit: 1000 } },
   { kind: "duplicate", problem: { kind: "duplicateNode", node: "a" } },
   {
     kind: "beyondWorld",
@@ -241,15 +257,15 @@ function nodeRefusal(kind: string) {
     stringX: () => (b.x = "1"),
     missingY: () => delete b.y,
     nullWidth: () => (b.width = null),
-    booleanHeight: () => (b.height = true),
-    missingTitle: () => delete b.title,
-    loneSurrogateTitle: () => (b.title = "b\uDC00"),
+    booleanContent: () => (b.content = true),
+    missingTitle: () => (b.content = [[{ kind: "text", role: "title" }]]),
+    loneSurrogateTitle: () => (b.content = [[{ kind: "text", role: "title", text: "b\uDC00" }]]),
     longId: () => (b.id = "b".repeat(257)),
-    longTitle: () => (b.title = "b".repeat(1001)),
+    longTitle: () => (b.content = [[{ kind: "text", role: "title", text: "b".repeat(1001) }]]),
     duplicate: () => (b.id = "a"),
     beyondWorld: () => (b.x = 2 ** 121),
     nonFinite: () => (b.x = Number.NEGATIVE_INFINITY),
-    negativeSize: () => (b.height = -1),
+    negativeSize: () => (b.width = -1),
   };
   const nodes: unknown[] = [window.node("a"), b];
   if (kind === "noObject") nodes[1] = 5;
@@ -458,7 +474,9 @@ test("updateNode with an identifier the graph does not hold throws a GraphDataEr
     const renders = window.renderCount();
     let refused = null;
     try {
-      window.comb.updateNode("no-such-node", { title: "Renamed" });
+      window.comb.updateNode("no-such-node", {
+        content: [[{ kind: "text", role: "title", text: "Renamed" }]],
+      });
     } catch (error) {
       const { name, problem } = error as Error & { problem: unknown };
       refused = { name, problem };
@@ -478,9 +496,22 @@ test("updateNode with an identifier the graph does not hold throws a GraphDataEr
 const PATCHES: { patch: unknown; problem: unknown }[] = [
   { patch: { id: "b" }, problem: { kind: "unknownPatchField", node: "a", field: "id" } },
   { patch: { width: -1 }, problem: { kind: "unknownPatchField", node: "a", field: "width" } },
-  { patch: { title: 5 }, problem: { kind: "invalidTitle", node: "a" } },
-  { patch: { title: null }, problem: { kind: "invalidTitle", node: "a" } },
-  { patch: [["title", "a"]], problem: expect.objectContaining({ kind: "malformed" }) },
+  {
+    patch: { content: [[{ kind: "text", role: "title", text: 5 }]] },
+    problem: { kind: "invalidContentText", node: "a", row: 0, column: 0, field: "text" },
+  },
+  {
+    patch: { content: null },
+    problem: {
+      kind: "invalidField",
+      list: "nodes",
+      index: 0,
+      id: "a",
+      field: "content",
+      expected: ROWS,
+    },
+  },
+  { patch: [["content", titled("a")]], problem: expect.objectContaining({ kind: "malformed" }) },
 ];
 
 for (const { patch, problem } of PATCHES) {
@@ -507,7 +538,7 @@ for (const { patch, problem } of PATCHES) {
       const renders = window.renderCount();
       let refused = null;
       try {
-        window.comb.updateNode("a", changes as { title: string });
+        window.comb.updateNode("a", changes as NodePatch);
       } catch (error) {
         const { name, problem: found } = error as Error & { problem: unknown };
         refused = { name, problem: found };
@@ -544,6 +575,8 @@ function installGenerator(): void {
   const fail = () => {
     throw new Error("host code");
   };
+  /** One row of one title, `text`. */
+  const title = (text: unknown) => [[{ kind: "text", role: "title", text }]];
   let deep: unknown[] = [];
   for (let i = 0; i < 200_000; i++) deep = [deep];
   const odd = [
@@ -559,11 +592,10 @@ function installGenerator(): void {
     const ids = Array.from({ length: 1 + Math.floor(random() * 3) }, (_, k) => `n${k}`);
     const nodes = ids.map((id) => ({
       id: mostly(() => id, ["n0", ...odd]),
-      title: mostly(() => pick(["", "Revenue", "\u{1F600}"]), odd),
+      content: mostly(() => title(mostly(() => pick(["", "Revenue", "\u{1F600}"]), odd)), odd),
       x: mostly(() => random() * 600 - 100, odd),
       y: mostly(() => random() * 300 - 100, odd),
       width: mostly(() => random() * 220, odd),
-      height: mostly(() => random() * 64, odd),
     }));
     const label = () => ({
       text: mostly(() => pick(["", "ok", "x".repeat(40)]), odd),
@@ -581,7 +613,7 @@ function installGenerator(): void {
       label: mostly(label, [undefined, null]),
     }));
     const patch = mostly(
-      () => ({ title: mostly(() => "Renamed", odd) }),
+      () => ({ content: mostly(() => title("Renamed"), odd) }),
       [{ id: "z" }, { width: -1 }, {}],
     );
     return { graph: { nodes, edges } as unknown as GraphData, patch };
@@ -620,7 +652,7 @@ async function runCases(cases: number) {
       continue;
     }
     try {
-      comb.updateNode(graph.nodes[0]!.id, patch as { title: string });
+      comb.updateNode(graph.nodes[0]!.id, patch as NodePatch);
     } catch (error) {
       if ((error as Error).name !== "GraphDataError")
         tally.other.push(`updateNode ${i}: ${String(error)}`);
@@ -693,7 +725,7 @@ test("load reads the host's graph data once and keeps what the bridge checked", 
  *  what `updateNode` does with it. */
 const READ_ONCE: { name: string; kind: "turning" | "map" | "throwing"; expected: Read }[] = [
   {
-    name: "a title that turns into a number on its second read",
+    name: "content that turns into a number on its second read",
     kind: "turning",
     expected: { refused: null, reads: 1, titles: ["Renamed"] },
   },
@@ -724,17 +756,18 @@ async function patchOnce(kind: (typeof READ_ONCE)[number]["kind"]): Promise<Read
     edges: [],
   });
   let reads = 0;
+  const renamed: NodeContent = [[{ kind: "text", role: "title", text: "Renamed" }]];
   const patches = {
     turning: () => ({
-      get title() {
-        return reads++ === 0 ? "Renamed" : (5 as unknown as string);
+      get content() {
+        return reads++ === 0 ? renamed : (5 as unknown as NodeContent);
       },
     }),
-    map: () => new Map([["title", "Renamed"]]) as unknown as { title: string },
+    map: () => new Map([["content", renamed]]) as unknown as NodePatch,
     throwing: () => ({
-      get title(): string {
+      get content(): NodeContent {
         reads++;
-        throw new Error("no title");
+        throw new Error("no content");
       },
     }),
   };
@@ -771,14 +804,14 @@ test("load copies nodes out of a list whose own map would hand over the host's o
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
   const read: Read = await page.evaluate(async () => {
-    // A title that is a string on its first read and a number after it, in a list whose `map`
-    // returns the host's own node, not the copy it was asked for.
+    // Content that is a list of rows on its first read and a number after it, in a list whose
+    // `map` returns the host's own node, not the copy it was asked for.
     let reads = 0;
-    const { id, x, y, width, height } = window.node("a");
-    const nodeAt = { id, x, y, width, height };
-    Object.defineProperty(nodeAt, "title", {
+    const { id, x, y, width, content } = window.node("a");
+    const nodeAt = { id, x, y, width };
+    Object.defineProperty(nodeAt, "content", {
       enumerable: true,
-      get: () => (reads++ === 0 ? "a" : 5),
+      get: () => (reads++ === 0 ? content : 5),
     });
     const nodes = [nodeAt];
     Object.defineProperty(nodes, "map", { value: () => [nodeAt] });
@@ -807,15 +840,17 @@ test("updateNode refuses thousands of patches whose getter throws, and the engin
     for (let i = 0; i < 5000; i++) {
       try {
         window.comb.updateNode("a", {
-          get title(): string {
-            throw new Error("no title");
+          get content(): NodeContent {
+            throw new Error("no content");
           },
         });
       } catch (error) {
         kinds.add((error as Error & { problem: { kind: string } }).problem.kind);
       }
     }
-    window.comb.updateNode("a", { title: "Renamed" });
+    window.comb.updateNode("a", {
+      content: [[{ kind: "text", role: "title", text: "Renamed" }]],
+    });
     await window.comb.whenRendered();
     return { kinds: [...kinds], titles: window.inspect().nodes.map(({ title }) => title) };
   });
@@ -837,7 +872,7 @@ test("load draws a title and a label text of 1,000 UTF-16 code units", async ({ 
     },
     {
       ...labelled({ text: "\u{1F600}".repeat(500) }),
-      nodes: [{ ...node("a"), title }, node("b", 300)],
+      nodes: [{ ...node("a"), content: titled(title) }, node("b", 300)],
     },
   );
   await frames(page);
@@ -927,7 +962,11 @@ async function hostile([kind, place]: [(typeof HOSTILE)[number], (typeof PLACES)
   const label = { text: "e", t: 0.5, offset: 0 };
   const anEdge = { id: "e", source: "a", target: "b", label };
   const calls = {
-    title: () => window.comb.load({ nodes: [{ ...nodeAt("a"), title: value }], edges: [] }),
+    title: () =>
+      window.comb.load({
+        nodes: [{ ...nodeAt("a"), content: [[{ kind: "text", role: "title", text: value }]] }],
+        edges: [],
+      }),
     id: () => window.comb.load({ nodes: [{ ...nodeAt("a"), id: value }], edges: [] }),
     x: () => window.comb.load({ nodes: [{ ...nodeAt("a"), x: value }], edges: [] }),
     text: () =>
@@ -943,7 +982,8 @@ async function hostile([kind, place]: [(typeof HOSTILE)[number], (typeof PLACES)
     nodes: () => window.comb.load({ nodes: value, edges: [] }),
     graph: () => window.comb.load(value),
     patch: () => window.comb.updateNode("a", value),
-    patchTitle: () => window.comb.updateNode("a", { title: value }),
+    patchTitle: () =>
+      window.comb.updateNode("a", { content: [[{ kind: "text", role: "title", text: value }]] }),
   };
   window.comb.load({ nodes: [nodeAt("a")], edges: [] });
   let first: unknown = "accepted";
@@ -998,6 +1038,7 @@ async function refusal(kind: RefusalKind) {
   const nodeAt = (id: string) => window.node(id);
   window.comb.load({ nodes: [nodeAt("a")], edges: [] });
   const big = "\u4e00".repeat(50_000_000);
+  const textOf = (text: string) => [[{ kind: "text" as const, role: "title" as const, text }]];
   // A thrown value whose prototype chain runs the host's code.
   const thrown = new Proxy(
     {},
@@ -1011,7 +1052,10 @@ async function refusal(kind: RefusalKind) {
     bigX: () => window.comb.load({ nodes: [{ ...nodeAt("a"), x: big as never }], edges: [] }),
     sharedTitle: () =>
       window.comb.load({
-        nodes: Array.from({ length: 10_000 }, (_, i) => ({ ...nodeAt(`n${i}`), title: big })),
+        nodes: Array.from({ length: 10_000 }, (_, i) => ({
+          ...nodeAt(`n${i}`),
+          content: textOf(big),
+        })),
         edges: [],
       }),
     symbolKey: () => window.comb.updateNode("a", { [Symbol("extra")]: 1 } as never),
@@ -1023,12 +1067,12 @@ async function refusal(kind: RefusalKind) {
         nodes: [nodeAt("a\uD800"), nodeAt("b")],
         edges: [{ id: "e", source: "a\uD801", target: "b" }],
       }),
-    loneSurrogateTitle: () => window.comb.updateNode("a", { title: "x\uDC00" }),
+    loneSurrogateTitle: () => window.comb.updateNode("a", { content: textOf("x\uDC00") }),
     loneSurrogateKey: () => window.comb.updateNode("a", { "x\uDC00": 1 } as never),
     thrownProxy: () =>
       window.comb.load({
         nodes: [
-          Object.defineProperty(nodeAt("a"), "title", {
+          Object.defineProperty(nodeAt("a"), "content", {
             get: () => {
               throw thrown;
             },
@@ -1069,7 +1113,14 @@ const REFUSALS: { name: string; kind: RefusalKind; problem: unknown }[] = [
   {
     name: "a title of 50 million characters shared by 10,000 nodes",
     kind: "sharedTitle",
-    problem: { kind: "titleTooLong", node: "n0", limit: 1000 },
+    problem: {
+      kind: "contentTextTooLong",
+      node: "n0",
+      row: 0,
+      column: 0,
+      field: "text",
+      limit: 1000,
+    },
   },
   {
     name: "a patch with a Symbol key",
@@ -1100,7 +1151,7 @@ const REFUSALS: { name: string; kind: RefusalKind; problem: unknown }[] = [
   {
     name: "a title with a lone surrogate",
     kind: "loneSurrogateTitle",
-    problem: { kind: "invalidTitle", node: "a" },
+    problem: { kind: "invalidContentText", node: "a", row: 0, column: 0, field: "text" },
   },
   {
     // The bridge crate reads the lone surrogate as U+FFFD, so the field names the key as a Rust
@@ -1198,7 +1249,7 @@ test("load takes a million edges whose identifiers hold 63 million code units, a
   expect(beyond.ms).toBeLessThan(within.ms / 2);
 });
 
-/** In the page: loads 600,000 nodes whose titles hold 1,000 code units each, or, with `edges`,
+/** In the page: loads 600,000 nodes, each with one text of 1,000 code units, or, with `edges`,
  *  two nodes and 600,000 edges between them whose label texts hold 1,000 each, a column of
  *  600,000,000 code units beyond V8's longest string; then a graph of one node. Reports the
  *  problem of the first load, whether the canvas drew its nodes, and the time it took. */
@@ -1219,7 +1270,7 @@ async function atTheTextLimit(edges: boolean) {
     : {
         nodes: Array.from({ length: count }, (_, i) => ({
           ...nodeAt(`n${i}`, i * 200),
-          title: text,
+          content: [[{ kind: "text" as const, role: "title" as const, text }]],
         })),
         edges: [],
       };
@@ -1257,24 +1308,32 @@ test("load takes 600,000 titles and 600,000 label texts of 1,000 code units, the
 
 /** In the page: provokes each kind of `GraphDataProblem` through `load` or `updateNode`, one call
  *  each after a valid load, and reports the kind of problem each threw. Its table is typed by the
- *  kinds, so that a kind the union gains or loses fails the type check. */
+ *  kinds, so that a kind the union gains or loses fails the type check; it leaves out
+ *  `contentBudgetExceeded`, more text than a browser test holds, which the bridge crate's tests
+ *  decide. */
 async function everyKind() {
   const nodeAt = (id: string) => window.node(id);
-  const two = [nodeAt("a"), nodeAt("b")];
-  const anEdge = { id: "e", source: "a", target: "b" };
-  const label = { text: "e", t: 0.5, offset: 0 };
+  const [two, anEdge] = [[nodeAt("a"), nodeAt("b")], { id: "e", source: "a", target: "b" }];
+  const [label, long] = [{ text: "e", t: 0.5, offset: 0 }, "x".repeat(256)];
   const load = (graph: unknown) => () => window.comb.load(graph as GraphData);
   const nodes = (fields: object) => load({ nodes: [{ ...nodeAt("a"), ...fields }], edges: [] });
   const edges = (fields: object) => load({ nodes: two, edges: [{ ...anEdge, ...fields }] });
-  const long = "x".repeat(256);
-  const calls: Record<GraphDataProblem["kind"], () => void> = {
+  const title = { kind: "text", role: "title", text: "a" };
+  const element = (fields: object) => nodes({ content: [[{ ...title, ...fields }]] });
+  const calls: Record<Exclude<GraphDataProblem["kind"], "contentBudgetExceeded">, () => void> = {
     malformed: load(null),
     invalidField: nodes({ x: "1" }),
     nonFiniteCoordinate: nodes({ x: Number.POSITIVE_INFINITY }),
     beyondWorld: nodes({ x: 3e38, width: 3e38 }),
     invalidSize: nodes({ width: -1 }),
-    invalidTitle: nodes({ title: 5 }),
-    titleTooLong: nodes({ title: "x".repeat(1001) }),
+    invalidContentShape: nodes({ content: [5] }),
+    tooManyRows: nodes({ content: Array.from({ length: 9 }, () => [title]) }),
+    tooManyColumns: nodes({ content: [Array.from({ length: 7 }, () => title)] }),
+    invalidElementKind: element({ kind: "badge" }),
+    invalidWeight: element({ weight: 0 }),
+    invalidRole: element({ role: "headline" }),
+    invalidContentText: element({ text: 5 }),
+    contentTextTooLong: element({ text: "x".repeat(1001) }),
     unknownPatchField: () => window.comb.updateNode("a", { id: "b" } as never),
     duplicateNode: load({ nodes: [nodeAt("a"), nodeAt("a")], edges: [] }),
     duplicateEdge: load({ nodes: two, edges: [anEdge, anEdge] }),
@@ -1288,16 +1347,12 @@ async function everyKind() {
     tooMany: load({ nodes: new Array(1_000_001), edges: [] }),
     idTooLong: nodes({ id: long + "x" }),
     // 250,001 identifiers of 256 code units hold more than 64,000,000 together.
-    idBudgetExceeded: load({
-      nodes: Array.from({ length: 250_001 }, () => nodeAt(long)),
-      edges: [],
-    }),
-    unknownNode: () => window.comb.updateNode("z", { title: "Z" }),
+    idBudgetExceeded: load({ nodes: new Array(250_001).fill(nodeAt(long)), edges: [] }),
+    unknownNode: () => window.comb.updateNode("z", { content: [] }),
     unknownEdge: () => window.comb.removeEdges(["z"]),
     selfEdge: () => window.comb.addEdge({ id: "e", source: "a", target: "a" }),
     unknownEdgePatchField: () => {
-      window.comb.addNode(nodeAt("b"));
-      window.comb.addEdge({ id: "e", source: "a", target: "b" });
+      load({ nodes: two, edges: [anEdge] })();
       window.comb.updateEdge("e", { width: 2 } as never);
     },
   };
@@ -1327,5 +1382,5 @@ test("load and the methods that edit the graph throw every kind of GraphDataProb
   const thrown = await page.evaluate(everyKind);
   expect(errors).toEqual([]);
   expect(thrown).toEqual(Object.fromEntries(Object.keys(thrown).map((kind) => [kind, kind])));
-  expect(Object.keys(thrown).length).toBe(24);
+  expect(Object.keys(thrown).length).toBe(30);
 });

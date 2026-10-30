@@ -17,7 +17,7 @@ import type {
   GraphState,
   GraphStore,
   NodeData,
-  NodeView,
+  NodePatch,
 } from "../store";
 import {
   edgePatchOf,
@@ -157,17 +157,19 @@ function load({ store, bridge, limits }: Editing, graph: GraphData): void {
   });
 }
 
-/** `updateNode`: a node the graph does not hold refused, and only the fields the bridge returns
- *  as checked merged. */
+/** `updateNode`: a node the graph does not hold refused, and the patch merged once the bridge
+ *  has checked it and the engine laid the node's new content out (ADR-0013). */
 function updateNode({ store, bridge, limits }: Editing, id: string, patch: unknown): void {
   edit(store, bridge, {
     read: () => patchOf(patch, limits),
     resolve(plain, state) {
-      if (!state.slots.has(id)) throw new GraphDataError({ kind: "unknownNode", node: id });
-      return plain;
+      const slot = state.slots.get(id);
+      if (slot === undefined) throw new GraphDataError({ kind: "unknownNode", node: id });
+      return { slot, plain };
     },
-    engine: (plain) => bridge.checkNodePatch(id, plain),
-    record: (state, _, fields) => state.updateNode(id, fields),
+    engine: ({ slot, plain }) => bridge.updateNode(slot, id, plain),
+    // The bridge took the patch, so it holds content of the type it expects, or none.
+    record: (state, { plain }) => state.updateNode(id, plain as unknown as NodePatch),
   });
 }
 
@@ -313,8 +315,7 @@ export function editorsOf(store: GraphStore, bridge: Bridge, limits: Limits, vet
   const editing: Editing = { store, bridge, limits };
   const host = {
     load: (graph: GraphData) => load(editing, graph),
-    updateNode: (id: string, patch: Partial<Pick<NodeView, "title">>) =>
-      updateNode(editing, id, patch),
+    updateNode: (id: string, patch: NodePatch) => updateNode(editing, id, patch),
     addNode: (node: NodeData) => addNode(editing, node),
     addEdge: (edge: EdgeData) => addEdge(editing, edge, "host"),
     updateEdge: (id: string, patch: EdgePatch) => updateEdge(editing, id, patch),

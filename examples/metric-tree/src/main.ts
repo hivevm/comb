@@ -28,7 +28,7 @@ import {
   work,
   type SceneSnapshot,
 } from "comb/testing";
-import { metricTree, NODE_HEIGHT, NODE_WIDTH } from "./graph";
+import { metricTree, NODE_HEIGHT, NODE_WIDTH, titled, titleOf } from "./graph";
 
 /** The type of the data a palette item carries in a drag. */
 const PALETTE_TYPE = "application/x-metric-tree-kind";
@@ -181,7 +181,7 @@ function show(next: Selection): void {
   selection.hidden = !node;
   edgeSelection.hidden = !selectedEdge;
   empty.hidden = !!node || !!selectedEdge;
-  if (node) title.value = node.title;
+  if (node) title.value = titleOf(node);
   if (selectedEdge) showEdge(selectedEdge);
 }
 
@@ -280,11 +280,10 @@ function drop(kind: string, clientX: number, clientY: number): void {
   try {
     comb.addNode({
       id: `${kind}-${dropped}`,
-      title: kindTitle,
       x: x - NODE_WIDTH / 2,
       y: y - NODE_HEIGHT / 2,
       width: NODE_WIDTH,
-      height: NODE_HEIGHT,
+      content: titled(kindTitle),
     });
   } catch (error) {
     // A lost engine, or a node past the limits of a load: the drop adds nothing.
@@ -312,7 +311,8 @@ copies.addEventListener("change", () => {
 });
 title.addEventListener("input", () => {
   // The copy follows from the `nodeUpdated` Comb tells.
-  if (selected !== null && nodeOf(selected)) comb.updateNode(selected, { title: title.value });
+  if (selected !== null && nodeOf(selected))
+    comb.updateNode(selected, { content: titled(title.value) });
 });
 edgeColor.addEventListener("input", () =>
   changeEdge({ color: Number.parseInt(edgeColor.value.slice(1), 16) }),

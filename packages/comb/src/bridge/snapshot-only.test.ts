@@ -3,7 +3,7 @@
 // and must not compile; `tsc` fails on a `@ts-expect-error` that has no error to expect.
 import { expect, test } from "bun:test";
 import type { Bridge } from ".";
-import type { EdgeData, EdgePatch, GraphData, NodeData } from "../store";
+import type { EdgeData, EdgePatch, GraphData, NodeData, NodePatch } from "../store";
 import type { Engine } from "../../wasm/engine.js";
 
 /** Whether `A` and `B` are the same type. */
@@ -12,22 +12,29 @@ type Same<A, B> =
 
 // The engine's `loadGraph` takes a load's nodes and edges as columns, strings in pieces and typed
 // arrays its glue copies whole, and no `GraphBatch` and no `EdgeList` (ADR-0034): its generated
-// parameters, pinned. A refused field crosses as the code of its `NodeField` or `EdgeField`, a
-// plain number.
+// parameters, pinned, the content columns of `text` among them and no title or height column. A
+// refused field crosses as the code of its `NodeField` or `EdgeField`, a plain number, and a shape
+// of content with its row and column.
 const columns: Same<
   Parameters<Engine["loadGraph"]>,
   [
     ids: string[],
     idBounds: Uint32Array,
-    titles: string[],
-    titleBounds: Uint32Array,
-    titleTexts: Uint8Array,
     x: Float64Array,
     y: Float64Array,
     width: Float64Array,
-    height: Float64Array,
+    rowBounds: Uint32Array,
+    elementBounds: Uint32Array,
+    kinds: Uint8Array,
+    weights: Float64Array,
+    roles: Uint8Array,
+    texts: string[],
+    textBounds: Uint32Array,
+    textValid: Uint8Array,
     refusedAt: number | null | undefined,
     refusedField: number | null | undefined,
+    refusedRow: number | null | undefined,
+    refusedColumn: number | null | undefined,
     edgeIds: string[],
     edgeIdBounds: Uint32Array,
     sources: string[],
@@ -57,7 +64,7 @@ const columns: Same<
 function handsOver(
   bridge: Bridge,
   graph: GraphData,
-  patch: { title?: string },
+  patch: NodePatch,
   node: NodeData,
   edge: EdgeData,
   edgePatch: EdgePatch,
@@ -68,9 +75,9 @@ function handsOver(
   // @ts-expect-error graph data of the bridge's own shape is no snapshot either
   bridge.loadGraph({ nodes: [], edges: [] });
   // @ts-expect-error the host application's patch is no plain patch
-  bridge.checkNodePatch("a", patch);
+  bridge.updateNode(0, "a", patch);
   // @ts-expect-error an object literal is no plain patch either
-  bridge.checkNodePatch("a", { title: "a" });
+  bridge.updateNode(0, "a", { content: [] });
   // @ts-expect-error the host application's node is no snapshot of one
   bridge.addNode(node);
   // @ts-expect-error the host application's edge is no snapshot of one
@@ -88,5 +95,7 @@ test("the bridge refuses graph data and patches that are no snapshot at compile 
 
 test("the engine takes a load's nodes and edges as columns, pinned at compile time", () => {
   // Verifies: ADR-0034
+  // The type of a title or height column among them would make `columns` false, which no `true`
+  // is assignable to.
   expect(columns).toBe(true);
 });
