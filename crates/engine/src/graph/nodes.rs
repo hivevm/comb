@@ -140,7 +140,7 @@ impl Graph {
 }
 
 /// Moves the nodes in `slots`, slots that hold a node, by `(dx, dy)` within `positions`, `x, y`
-/// per node slot (ADR-0033), each as far as keeps it, of the size `sizes` holds for it, within
+/// per node slot (ADR-0034), each as far as keeps it, of the size `sizes` holds for it, within
 /// `limit` of the origin on each axis, as `f32` rounds it. Nothing is written unless the delta is
 /// finite, so a refused move leaves the buffer as it was.
 fn translate_positions(

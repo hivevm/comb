@@ -13,8 +13,8 @@ the first frame of before (378.6 ms) and stays as it is. The first frame on that
 against it again and passes: should its first frame have been exempted, or its baseline moved,
 while the load was slow, this ticket undoes that.
 
-The comparison step of `.github/workflows/benchmark.yml` then carries the marker ADR-0033's
-*Enforcement* names, `Verifies: ADR-0033, ADR-0008`. It cites no Q-2: Q-2 is defined on the
+The comparison step of `.github/workflows/benchmark.yml` then carries the marker ADR-0034's
+*Enforcement* names, `Verifies: ADR-0034, ADR-0008`. It cites no Q-2: Q-2 is defined on the
 reference machine, and
 `docs/plan/revision-2026-10-18/16-measure-q1-q2-on-the-reference-machine.md` keeps that marker.
 
@@ -30,7 +30,7 @@ reference machine, and
       `bench/baselines/amd-epyc-9v74-80-core-processor.json`, then its first frame is below the
       365.3 ms it replaces, and the pull request links the run and says why.
 - [x] Given `.github/workflows/benchmark.yml`, when it is searched with
-      `grep -n 'Verifies: ADR-0033, ADR-0008' .github/workflows/benchmark.yml`, then the one line
+      `grep -n 'Verifies: ADR-0034, ADR-0008' .github/workflows/benchmark.yml`, then the one line
       found is a comment of the comparison step; and `scripts/check-traceability.sh` passes.
 
 ## Where it stands
@@ -45,7 +45,7 @@ reference machine, and
 ## Read first
 
 - `docs/plan/first-frame/spec.md`.
-- ADR-0008 (*Benchmark*), ADR-0033 (*Enforcement*), `docs/SPECIFICATION.md` Q-2.
+- ADR-0008 (*Benchmark*), ADR-0034 (*Enforcement*), `docs/SPECIFICATION.md` Q-2.
 - `README.md` (**Benchmark**), `bench/compare.ts`, `.github/workflows/benchmark.yml`.
 
 ## Blocked by

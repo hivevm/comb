@@ -70,7 +70,7 @@ UTF-16 code units, each ending where a value ends, with its boundaries in UTF-16
 all pieces, per title and label text whether it is a text, the numbers as
 `Float64Array`, an arrowhead and the sides as byte codes, whether a label, its background, and a
 dash are present as bytes, and the first value refused by its type as its position
-([ADR-0033](adr/0033-a-string-column-crosses-in-pieces.md)); serde-wasm-bindgen converts
+([ADR-0034](adr/0034-node-content-crosses-as-columns.md)); serde-wasm-bindgen converts
 nothing of a load. A string with a lone surrogate, which the bridge would read as U+FFFD,
 `api` hands over as `false`, so that it is refused. `updateNode` and `updateEdge` read their patch
 the same way, every own key of a plain object, before they look up the item it names, and merge only
@@ -151,7 +151,7 @@ The functional core and its shell follow
   the near level only), the found edge slots, and the edge mesh into buffers the engine owns, the
   label points and the mesh's positions relative to the query's origin, which `originX` and
   `originY` read
-  ([ADR-0033](adr/0033-a-string-column-crosses-in-pieces.md)), and returns the mesh's detail,
+  ([ADR-0034](adr/0034-node-content-crosses-as-columns.md)), and returns the mesh's detail,
   complete or coarsened, and refuses a pixel that is not a finite number above zero; `drawnEdges`
   computes the ends of the found edges when inspection asks, as they lie then, and `hit` names what
   a press at a point hits, a connector where the shell asks for connectors, a label, a node, or an
@@ -178,7 +178,7 @@ The functional core and its shell follow
   identifiers only once their lengths are checked
   ([ADR-0028](adr/0028-the-graph-lies-within-a-world.md)); `packages/comb/src/bridge` is the one
   module that imports the WebAssembly package and reads those buffers through fresh typed-array
-  views per read ([ADR-0033](adr/0033-a-string-column-crosses-in-pieces.md)).
+  views per read ([ADR-0034](adr/0034-node-content-crosses-as-columns.md)).
 - **Store** (`packages/comb/src/store`) — a vanilla Zustand store with the graph's structure, its
   nodes and edges by slot with holes at free slots, which every reader skips, the maps from node and
   edge identifiers to slots, the code units of the identifiers it holds, counted for a node and for
@@ -444,13 +444,13 @@ constant `comb/testing` exports (ADR-0001), and where it reads no names from one
 file reach the 300 kB of Q-3, when no engine file is measured, when the JavaScript inlines the
 engine (ADR-0019), and when the bundle carries either seam of the bridge's test mode, each by a mark
 of its own the bridge's source names once, `DETACHING_MARK` in the message of `detaching` and
-`TRAP_EXPORT`, the name of the trap's export (ADR-0033, ADR-0021); it fails too when it does not
+`TRAP_EXPORT`, the name of the trap's export (ADR-0034, ADR-0021); it fails too when it does not
 recognise each in the library built in test mode, and the trap in the engine of
 `packages/comb/wasm/test-mode/`, and when that engine's generated glue differs from the production
 engine's, which the example hands it over with. The benchmark and the browser test of the built
 example fail where `testMode()` says the build runs the bridge in test mode.
 `scripts/check-dependencies.sh` fails on a lockfile of another package manager beside `bun.lock`
-(ADR-0008), on tsify's default or `json` features or `serde_json` in the bridge crate (ADR-0033), in
+(ADR-0008), on tsify's default or `json` features or `serde_json` in the bridge crate (ADR-0034), in
 whatever form the entry takes, and on a listed state library other than zustand in the library's
 dependency lists (ADR-0029). The type checker does the rest for the render layer: `GraphView` has no
 action to call. ESLint forbids the DOM markup sinks (Q-5) and `eval`, implied eval, and `new

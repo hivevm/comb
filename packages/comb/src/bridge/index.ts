@@ -2,7 +2,7 @@
 // generated types through serde-wasm-bindgen, but for a load's nodes and edges, which cross as
 // columns of strings in pieces or one typed array each; node positions and the results of a
 // viewport query are read through views on the engine's buffers, created anew on every read
-// because growing memory detaches older views (ADR-0033).
+// because growing memory detaches older views (ADR-0034).
 import init, {
   ArrowCode,
   checkGraphSize,
@@ -53,10 +53,10 @@ export type TranslateError = NumberError;
 declare const read: unique symbol;
 
 /** The most UTF-16 code units of a piece of a string column the snapshot hands the engine
- *  (ADR-0033): half of V8's maximum string length, the smallest of the evergreen engines'. */
+ *  (ADR-0034): half of V8's maximum string length, the smallest of the evergreen engines'. */
 export const PIECE_BOUND = 2 ** 28;
 
-/** The nodes of a load as the engine's `loadGraph` takes them (ADR-0033), each column in slot
+/** The nodes of a load as the engine's `loadGraph` takes them (ADR-0034), each column in slot
  *  order: the identifiers and the titles each as the values concatenated and cut into pieces,
  *  each ending where a value ends, with their boundaries in UTF-16 code units across all pieces,
  *  one more than there are nodes, a refused value empty; per
@@ -182,7 +182,7 @@ export function nodeColumns(count: number, bound: number): NodeColumnWriter {
   };
 }
 
-/** The edges of a load as the engine's `loadGraph` takes them (ADR-0033), each column in slot
+/** The edges of a load as the engine's `loadGraph` takes them (ADR-0034), each column in slot
  *  order: the identifiers, sources, targets, and label texts each as the values concatenated and
  *  cut into pieces, each ending where a value ends, with their boundaries in UTF-16 code units
  *  across all pieces, one more than there are edges, a refused or absent value empty; per label
@@ -458,7 +458,7 @@ const DETAILS: Record<MeshDetail, Detail> = {
  *  found edge label, the mesh of the found edges and its detail, and the positions buffer, all
  *  read after the same call. The label points and the mesh's positions are relative to `origin`,
  *  a world point near the query's rectangle, so that `f32` rounds them by their distance from it
- *  (ADR-0033); the positions buffer is not. */
+ *  (ADR-0034); the positions buffer is not. */
 export interface Visible {
   positions: Float32Array;
   nodes: Uint32Array;
@@ -588,7 +588,7 @@ function each(
 
 /** `bridge` with the engine's memory grown by a page before each of its calls, so that a view
  *  kept across a call is detached and reads empty in tests, not only when memory happens to grow
- *  (ADR-0033). The message of its error carries `DETACHING_MARK`. */
+ *  (ADR-0034). The message of its error carries `DETACHING_MARK`. */
 function detaching(bridge: Bridge, memory: WebAssembly.Memory): Bridge {
   return each(bridge, (call) => (...args) => {
     try {
@@ -617,7 +617,7 @@ const lostListeners = new Set<(error: EngineLostError) => void>();
 
 /** Whether `error`, thrown from a call of the engine, is a trap: WebAssembly's own, or the glue's
  *  refusal of an object a trapped call left borrowed, which only a trap no guard saw leaves. Errors the bridge returns as values are
- *  plain objects, never traps (ADR-0033). */
+ *  plain objects, never traps (ADR-0034). */
 function isTrap(error: unknown): boolean {
   return (
     error instanceof WebAssembly.RuntimeError ||

@@ -1,6 +1,6 @@
 # ADR-0033: Structured data crosses the bridge through serde-wasm-bindgen with generated types, a load's graph data as columns whose strings cross in pieces, coordinate streams through typed-array views on engine-owned buffers
 
-- **Status:** 🟢 accepted
+- **Status:** ⚪ superseded by [ADR-0034](0034-node-content-crosses-as-columns.md)
 - **Date:** 2026-10-29
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/engine-wasm/`, `packages/comb/src/bridge/`, the snapshot of a load in `packages/comb/src/api/snapshot.ts`, and every value that crosses between them

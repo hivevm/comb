@@ -1,6 +1,6 @@
 //! The loaded graph as the engine keeps it: node positions and sizes per node slot, edges per edge
 //! slot, a rank per node slot that orders drawing and hitting, and a spatial index over both that
-//! loads, additions, and moves keep current (ADR-0033, ADR-0022, ADR-0027).
+//! loads, additions, and moves keep current (ADR-0034, ADR-0022, ADR-0027).
 //!
 //! A query answers which node slots, edge slots, and edge labels a rectangle meets, and writes
 //! those slots, the points of the labels, and the mesh of the edges into buffers the caller reads;

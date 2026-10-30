@@ -6,7 +6,7 @@
 //! of it alone is, and the patch of `updateEdge`, refused exactly as a load of the edge it makes.
 //!
 //! The data starts as a value of any shape, as the host application hands it over. A load's nodes
-//! and edges cross as the columns the snapshot of `api` builds of it (ADR-0033), its strings in
+//! and edges cross as the columns the snapshot of `api` builds of it (ADR-0034), its strings in
 //! pieces of a bound generated with it, each node read as the node of `addNode` is and each edge
 //! as the edge of `addEdge` is, but for an arrowhead and the sides, any string of which crosses as
 //! its code, so that a value of the wrong type or a missing field at any position among them, a
@@ -16,7 +16,7 @@
 //! or of another type, and whether the value has the shape of graph data at all: the bridge names
 //! such a field (`invalidField`), and refuses as malformed only what has no such shape, and no
 //! message names a Rust type or crate.
-// Verifies: Q-7, ADR-0028, ADR-0033
+// Verifies: Q-7, ADR-0028, ADR-0034
 
 use proptest::prelude::*;
 use serde::Deserialize;
@@ -748,7 +748,7 @@ fn two_nodes(edges: Vec<Value>) -> Value {
     ])
 }
 
-/// The bound on a piece of a string column (ADR-0033): mostly a few code units, so that a column
+/// The bound on a piece of a string column (ADR-0034): mostly a few code units, so that a column
 /// crosses in many pieces, now and then around the longest values, and now and then the
 /// snapshot's.
 fn piece_bound() -> impl Strategy<Value = usize> {
@@ -998,7 +998,7 @@ proptest! {
         value in graph_data(),
         bound in piece_bound(),
     ) {
-        // Verifies: ADR-0033
+        // Verifies: ADR-0034
         // A panic anywhere below fails the case; the runner catches it and shrinks the input.
         // The load crosses as columns, its strings in pieces of the bound generated with it, and
         // is held to the oracles of the value it was built of.
