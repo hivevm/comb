@@ -18,6 +18,9 @@
 
 mod graph_data;
 
+use std::collections::HashMap;
+
+use comb_engine::content::{Cell, Font, Fonts, Placed};
 use comb_engine::geometry::Point;
 use comb_engine::geometry::Rect;
 use comb_engine::graph::{
@@ -29,14 +32,16 @@ use tsify::{Ts, Tsify};
 use wasm_bindgen::prelude::*;
 
 pub use graph_data::{
-    Arrow, ArrowCode, CheckedPatch, EdgeField, EdgeInput, EdgePatch, Field, GraphDataProblem,
-    GraphList, LabelInput, MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_TEXT, NodeField, NodeInput,
-    NodePatch, Pair, Side, SideCode, Text,
+    Arrow, ArrowCode, ContentElement, EdgeField, EdgeInput, EdgePatch, Field, GraphDataProblem,
+    GraphList, KindCode, LabelInput, MAX_COLUMNS, MAX_CONTENT_UNITS, MAX_ID, MAX_ID_UNITS,
+    MAX_ITEMS, MAX_ROWS, MAX_TEXT, NodeContent, NodeField, NodeInput, NodePatch, Pair, RoleCode,
+    Side, SideCode, TextRole,
 };
 
 use graph_data::{
-    EdgeColumns, EdgeRefusal, ID_LIMIT, NodeColumns, TEXT_LIMIT, add_edge_to, add_node_to,
-    edge_refused_of, load_of, malformed, patch_of, refused_of, slot, unshaped, update_edge_in,
+    COLUMN_LIMIT, ContentColumns, ContentData, EdgeColumns, EdgeRefusal, ID_LIMIT, NodeColumns,
+    ROW_LIMIT, TEXT_LIMIT, add_edge_to, add_node_to, edge_refused_of, load_of, malformed, patch_of,
+    refused_of, slot, unshaped, update_edge_in,
 };
 
 /// A number the shell computed that an export cannot take: the shell's own mistake, never one of
@@ -50,6 +55,9 @@ pub enum NumberError {
     InvalidPixel,
     /// A delta of `translate` that is NaN or infinite.
     NonFiniteDelta,
+    /// A font of `setFont` whose role names none, or whose metrics do not pair up or are not
+    /// finite numbers from 0 to 1,024.
+    InvalidFont,
 }
 
 /// The refusal of `translate`'s delta, under the name it had before `NumberError` held it. A slot
@@ -197,8 +205,9 @@ fn checked_point(x: f64, y: f64) -> Result<Point, NumberError> {
     }
 }
 
-/// The most UTF-16 code units of a title or a label text, `MAX_TEXT`: the shell hands over no
-/// more than one beyond it, so that a text of any length costs at most that much to check.
+/// The most UTF-16 code units of a text of node content or a label text, `MAX_TEXT`: the shell
+/// hands over no more than one beyond it, so that a text of any length costs at most that much to
+/// check.
 #[wasm_bindgen(js_name = textLimit)]
 pub fn text_limit() -> u32 {
     TEXT_LIMIT
@@ -231,15 +240,18 @@ pub fn check_graph_size(nodes: f64, edges: f64) -> Result<(), GraphDataProblem> 
     graph_data::check_graph_size(nodes, edges)
 }
 
-/// Checks the patch `updateNode` hands over for the node `node`, reading it once, and returns
-/// the fields it changes, which the store merges in its place; the engine keeps nothing of it.
-#[wasm_bindgen(js_name = checkNodePatch)]
-pub fn check_node_patch(
-    node: &str,
-    patch: Ts<NodePatch>,
-) -> Result<Ts<CheckedPatch>, GraphDataProblem> {
-    let checked = patch_of(node, patch.to_rust().map_err(unshaped)?)?;
-    Ts::from_rust(&checked).map_err(|_| malformed("the checked patch could not be handed back"))
+/// The most rows of a node's content, `MAX_ROWS`: the shell hands over no more than one beyond
+/// it.
+#[wasm_bindgen(js_name = rowLimit)]
+pub fn row_limit() -> u32 {
+    ROW_LIMIT
+}
+
+/// The most columns of a row of a node's content, `MAX_COLUMNS`: the shell hands over no more
+/// than one beyond it.
+#[wasm_bindgen(js_name = columnLimit)]
+pub fn column_limit() -> u32 {
+    COLUMN_LIMIT
 }
 
 /// What a press hits (ADR-0025): a connector by the slot of its node and its side, a label by the
@@ -333,13 +345,28 @@ mod trap {
     pub const fn spring() {}
 }
 
-/// The engine's state as the shell sees it: the loaded graph, and what the last query found.
+/// The engine's state as the shell sees it: the loaded graph, the content of its nodes and the
+/// fonts it is laid out in (ADR-0013), and what the last query found.
 #[wasm_bindgen]
 #[derive(Default)]
 pub struct Engine {
     graph: Graph,
     visible: Visible,
     ends: Vec<f32>,
+    fonts: Fonts,
+    /// The content of the nodes of the last load, by slot.
+    content: ContentData,
+    /// The content of each node slot an addition or a patch gave content since the load.
+    edited: HashMap<u32, ContentData>,
+    /// Of the nodes the last query found at the near or middle level, in its order, the
+    /// boundaries of each one's elements in `placed`.
+    content_bounds: Vec<u32>,
+    placed: Vec<Placed>,
+    /// `placed` as the buffers the shell reads: `x, y, width, height` per element, the code units
+    /// of its text drawn, and whether an ellipsis follows them.
+    content_rects: Vec<f32>,
+    content_kept: Vec<u32>,
+    content_ellipsis: Vec<u8>,
 }
 
 #[wasm_bindgen]
@@ -352,11 +379,13 @@ impl Engine {
     /// Replaces the graph with a load, node slot `i` for its node `i` and edge slot `i` for its
     /// edge `i`, and returns the number of node slots. The nodes and the edges cross as columns
     /// (ADR-0034), each in slot order, and serde-wasm-bindgen converts nothing of a load. Of the
-    /// nodes: the identifiers and the titles each as pieces of at most 2^28 UTF-16 code units, each
-    /// ending where a value ends, with the boundaries across all pieces in UTF-16 code units, per
-    /// title whether it is a text, the numbers as `Float64Array`, and the first value
-    /// the shell refused by its type, the index of its node and the code of its `NodeField`, or
-    /// none. Of the edges: the identifiers, sources, targets, and label texts each as pieces with
+    /// nodes: the identifiers as pieces of at most 2^28 UTF-16 code units, each ending where a
+    /// value ends, with the boundaries across all pieces in UTF-16 code units, the numbers as
+    /// `Float64Array`, the content as the columns of `ContentColumns`, its texts in pieces as the
+    /// identifiers are, with per text whether it is a text, and the first value the shell refused
+    /// by its type, the index of its node, the code of its `NodeField`, and for a shape of content
+    /// its row and column, or none. Each node is as high as its content lays out to in the fonts
+    /// `setFont` handed over (ADR-0013). Of the edges: the identifiers, sources, targets, and label texts each as pieces with
     /// their boundaries, per label text whether it is a text; whether a label, its background,
     /// and a dash are present, as bytes; the label's `t` and offset, the background, the colour,
     /// and the dash and gap as `Float64Array`; the arrowhead and the sides as the codes of
@@ -377,15 +406,21 @@ impl Engine {
         &mut self,
         ids: Vec<String>,
         id_bounds: &[u32],
-        titles: Vec<String>,
-        title_bounds: &[u32],
-        title_texts: &[u8],
         x: &[f64],
         y: &[f64],
         width: &[f64],
-        height: &[f64],
+        row_bounds: &[u32],
+        element_bounds: &[u32],
+        kinds: &[u8],
+        weights: &[f64],
+        roles: &[u8],
+        texts: Vec<String>,
+        text_bounds: &[u32],
+        text_valid: &[u8],
         refused_at: Option<u32>,
         refused_field: Option<u32>,
+        refused_row: Option<u32>,
+        refused_column: Option<u32>,
         edge_ids: Vec<String>,
         edge_id_bounds: &[u32],
         sources: Vec<String>,
@@ -411,7 +446,7 @@ impl Engine {
         edge_refused_field: Option<u32>,
     ) -> Result<u32, GraphDataProblem> {
         trap::spring();
-        let refused = refused_of(refused_at, refused_field)?;
+        let refused = refused_of(refused_at, refused_field, refused_row, refused_column)?;
         let edges = EdgeColumns {
             ids: &edge_ids,
             id_bounds: edge_id_bounds,
@@ -436,21 +471,64 @@ impl Engine {
             target_side,
             refused: edge_refused_of(edge_refused_at, edge_refused_field)?,
         };
+        let content = ContentColumns {
+            row_bounds,
+            element_bounds,
+            kinds,
+            weights,
+            roles,
+            texts: &texts,
+            text_bounds,
+            text_valid,
+        };
         let nodes = NodeColumns {
             ids: &ids,
             id_bounds,
-            titles: &titles,
-            title_bounds,
-            title_texts,
             x,
             y,
             width,
-            height,
+            content,
             refused,
         };
-        self.graph = load_of(&nodes, &edges)?;
+        let loaded = load_of(&nodes, &edges, &self.fonts)?;
+        self.graph = loaded.graph;
+        self.content = ContentData {
+            row_bounds: row_bounds.to_vec(),
+            element_bounds: element_bounds.to_vec(),
+            kinds: kinds.to_vec(),
+            weights: weights.to_vec(),
+            roles: roles.to_vec(),
+            text_bounds: text_bounds.to_vec(),
+            text_valid: text_valid.to_vec(),
+            texts,
+            spans: loaded.spans,
+        };
+        self.edited.clear();
         self.visible = Visible::default();
         slot(x.len())
+    }
+
+    /// Hands over the metrics of the font the shell draws the texts of the role `role`, a
+    /// `RoleCode`, with: the advance of the glyph of each code point of `codes` in `advances`,
+    /// that of every other character, `fallback`, and its line height, all in world units. Every
+    /// layout from then on uses it; the shell hands each over once, before the first load
+    /// (ADR-0013). A role that names none, or metrics that do not pair up or are not finite
+    /// numbers from 0 to 1,024, are refused with a `NumberError`, and nothing changes.
+    #[wasm_bindgen(js_name = setFont)]
+    pub fn set_font(
+        &mut self,
+        role: u8,
+        codes: &[u32],
+        advances: &[f64],
+        fallback: f64,
+        line_height: f64,
+    ) -> Result<(), CallRefusal> {
+        trap::spring();
+        let role = graph_data::role_of(role).ok_or(NumberError::InvalidFont)?;
+        let font = Font::new(codes, advances, fallback, line_height)
+            .map_err(|_| NumberError::InvalidFont)?;
+        self.fonts.set(role, font);
+        Ok(())
     }
 
     /// Checks the node `addNode` hands over as a load checks a node and adds it, drawn and hit
@@ -460,7 +538,30 @@ impl Engine {
     pub fn add_node(&mut self, node: Ts<NodeInput>) -> Result<u32, GraphDataProblem> {
         trap::spring();
         let node = node.to_rust().map_err(unshaped)?;
-        add_node_to(&mut self.graph, &node)
+        let (slot, content) = add_node_to(&mut self.graph, &node, &self.fonts)?;
+        self.edited.insert(slot, content);
+        Ok(slot)
+    }
+
+    /// Checks the patch `updateNode` hands over for the node `id` in `slot`, reading it once, as a
+    /// load checks a node's content, and gives the node its new content and the height it lays out
+    /// to, its edges re-placed (ADR-0013); the store merges the patch. A refused patch changes
+    /// nothing; a slot that holds no node throws a `SlotError`.
+    #[wasm_bindgen(js_name = updateNode)]
+    pub fn update_node(
+        &mut self,
+        slot: u32,
+        id: &str,
+        patch: Ts<NodePatch>,
+    ) -> Result<(), CallRefusal> {
+        trap::spring();
+        let patch = patch.to_rust().map_err(unshaped)?;
+        let Some((content, height)) = patch_of(id, &patch, &self.fonts)? else {
+            return Ok(());
+        };
+        self.graph.resize_node(slot, height)?;
+        self.edited.insert(slot, content);
+        Ok(())
     }
 
     /// Checks the edge `addEdge` hands over as a load checks an edge, refuses one from a node to
@@ -545,7 +646,11 @@ impl Engine {
     #[wasm_bindgen(js_name = removeNodes)]
     pub fn remove_nodes(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
         trap::spring();
-        Ok(self.graph.remove_nodes(slots)?)
+        let edges = self.graph.remove_nodes(slots)?;
+        for slot in slots {
+            self.edited.remove(slot);
+        }
+        Ok(edges)
     }
 
     /// Removes the edges in `slots`; the slots go onto the free list (ADR-0022). A slot that holds
@@ -635,7 +740,41 @@ impl Engine {
         let rect = Rect::new(rect.min_x, rect.min_y, rect.max_x, rect.max_y);
         self.graph
             .query(&rect, level.into(), pixel, label_reach, &mut self.visible);
+        self.lay_out_found(level);
         Ok(self.visible.mesh.detail.into())
+    }
+
+    /// Lays out the content of the nodes the last query found, at the near and the middle level,
+    /// into the buffers of placed elements; at the far level, none (ADR-0013, ADR-0027).
+    fn lay_out_found(&mut self, level: DetailLevel) {
+        self.content_bounds.clear();
+        self.placed.clear();
+        if level != DetailLevel::Far {
+            self.content_bounds.push(0);
+            let mut cells: Vec<Cell> = Vec::new();
+            let mut rows = Vec::new();
+            let sizes = self.graph.sizes();
+            for &slot in &self.visible.nodes {
+                let width = sizes[slot as usize * 2];
+                let (content, node) = match self.edited.get(&slot) {
+                    Some(content) => (content, 0),
+                    None => (&self.content, slot as usize),
+                };
+                let fonts = &self.fonts;
+                content.lay_out(node, width, fonts, &mut cells, &mut rows, &mut self.placed);
+                self.content_bounds
+                    .push(graph_data::numbered(self.placed.len()));
+            }
+        }
+        self.content_rects.clear();
+        self.content_kept.clear();
+        self.content_ellipsis.clear();
+        for placed in &self.placed {
+            let rect = [placed.x, placed.y, placed.width, placed.height];
+            self.content_rects.extend(rect);
+            self.content_kept.push(placed.kept);
+            self.content_ellipsis.push(u8::from(placed.ellipsis));
+        }
     }
 }
 
@@ -653,6 +792,73 @@ impl Engine {
     #[wasm_bindgen(js_name = positionsLen)]
     pub fn positions_len(&self) -> usize {
         self.graph.positions().len()
+    }
+
+    /// Where the sizes buffer starts, which `loadGraph`, `addNode`, and `updateNode` write:
+    /// `width, height` per node slot, the height the node's content lays out to (ADR-0013).
+    #[wasm_bindgen(js_name = sizesPtr)]
+    pub fn sizes_ptr(&self) -> *const f32 {
+        self.graph.sizes().as_ptr()
+    }
+
+    /// How many values the sizes buffer holds: two per node slot.
+    #[wasm_bindgen(js_name = sizesLen)]
+    pub fn sizes_len(&self) -> usize {
+        self.graph.sizes().len()
+    }
+
+    /// Where the buffer starts that `query` writes, at the near and the middle level, the
+    /// boundaries of the placed elements of each node it found into, one more than it found, in
+    /// the order of the found node slots; at the far level it holds none.
+    #[wasm_bindgen(js_name = contentBoundsPtr)]
+    pub fn content_bounds_ptr(&self) -> *const u32 {
+        self.content_bounds.as_ptr()
+    }
+
+    /// How many boundaries the buffer of placed elements' boundaries holds.
+    #[wasm_bindgen(js_name = contentBoundsLen)]
+    pub fn content_bounds_len(&self) -> usize {
+        self.content_bounds.len()
+    }
+
+    /// Where the buffer starts that `query` writes each placed element's rectangle into, `x, y,
+    /// width, height` relative to its node's top-left corner, its node's elements in the order of
+    /// its rows and theirs.
+    #[wasm_bindgen(js_name = contentRectsPtr)]
+    pub fn content_rects_ptr(&self) -> *const f32 {
+        self.content_rects.as_ptr()
+    }
+
+    /// How many values the buffer of placed elements' rectangles holds: four per element.
+    #[wasm_bindgen(js_name = contentRectsLen)]
+    pub fn content_rects_len(&self) -> usize {
+        self.content_rects.len()
+    }
+
+    /// Where the buffer starts that `query` writes, per placed text, how many of its UTF-16 code
+    /// units are drawn into.
+    #[wasm_bindgen(js_name = contentKeptPtr)]
+    pub fn content_kept_ptr(&self) -> *const u32 {
+        self.content_kept.as_ptr()
+    }
+
+    /// How many values the buffer of drawn code units holds: one per placed element.
+    #[wasm_bindgen(js_name = contentKeptLen)]
+    pub fn content_kept_len(&self) -> usize {
+        self.content_kept.len()
+    }
+
+    /// Where the buffer starts that `query` writes, per placed text, whether an ellipsis follows
+    /// what is drawn of it, 1 or 0, into.
+    #[wasm_bindgen(js_name = contentEllipsisPtr)]
+    pub fn content_ellipsis_ptr(&self) -> *const u8 {
+        self.content_ellipsis.as_ptr()
+    }
+
+    /// How many values the buffer of ellipses holds: one per placed element.
+    #[wasm_bindgen(js_name = contentEllipsisLen)]
+    pub fn content_ellipsis_len(&self) -> usize {
+        self.content_ellipsis.len()
     }
 
     /// Where the buffer starts that `query` writes the node slots it found into.
@@ -854,6 +1060,153 @@ mod tests {
             );
         }
         assert_eq!(engine.graph.positions(), [0.0, 0.0, 300.0, 0.0]);
+    }
+
+    /// An engine whose titles advance by 7 a glyph and whose ellipsis by 10, the body by 6, in
+    /// lines 18 and 16 high.
+    fn fonted() -> Engine {
+        let mut engine = Engine::new();
+        let ellipsis = [u32::from(comb_engine::content::ELLIPSIS)];
+        let title = RoleCode::Title as u8;
+        assert_eq!(
+            engine.set_font(title, &ellipsis, &[10.0], 7.0, 18.0),
+            Ok(())
+        );
+        let body = RoleCode::Body as u8;
+        assert_eq!(engine.set_font(body, &ellipsis, &[9.0], 6.0, 16.0), Ok(()));
+        engine
+    }
+
+    /// The query of the near level over `rect` on `engine`, where a pixel is a world unit.
+    fn near(engine: &mut Engine, rect: [f64; 4]) {
+        let [min_x, min_y, max_x, max_y] = rect;
+        let rect = RectInput {
+            min_x,
+            min_y,
+            max_x,
+            max_y,
+        };
+        engine
+            .query_rect(&rect, DetailLevel::Near, 1.0, 0.0)
+            .unwrap();
+    }
+
+    #[test]
+    fn nodes_of_different_content_are_as_high_as_their_rows_and_are_hit_and_joined_there() {
+        // Verifies: ADR-0013, ADR-0025
+        // Node `a`, 100 wide at (0, 0), holds one title; `b`, at (300, 0), five rows: a title and
+        // four bodies, 10 + 18 + 4 * 16 + 10 = 102 high, and the edge from `a` enters it there.
+        use graph_data::tests::{TITLE, b_of, load_into, text};
+        let body = text(RoleCode::Body, "b");
+        let mut engine = fonted();
+        let mut nodes = b_of(&[&[TITLE], &[body], &[body], &[body], &[body]]);
+        let edges = graph_data::OwnedEdgeColumns::of([Some(&graph_data::EdgeCells::from(
+            &batch(&[], &[("e", "a", "b")]).edges[0],
+        ))]);
+        nodes.content.weights.iter_mut().for_each(|w| *w = 1.0);
+        assert_eq!(load_into(&mut engine, &nodes, &edges), Ok(2));
+        assert_eq!(engine.graph.sizes(), [100.0, 64.0, 100.0, 102.0]);
+        let hit = |engine: &mut Engine, x, y| {
+            engine
+                .graph
+                .hit_at(Point::new(x, y), 1.0, Level::Near, false)
+        };
+        // Below `a`'s bottom, nothing; at the same height in `b`, `b`.
+        assert_eq!(hit(&mut engine, 50.0, 90.0), None);
+        assert_eq!(hit(&mut engine, 350.0, 90.0), Some(Target::Node(1)));
+        assert_eq!(hit(&mut engine, 350.0, 103.0), None);
+        let mut ends = Vec::new();
+        engine.graph.edge_ends(&[0], &mut ends);
+        assert_eq!(ends, [100.0, 32.0, 300.0, 51.0]);
+        // The near level places every text, each relative to its node.
+        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
+        assert_eq!(engine.content_bounds, [0, 1, 6]);
+        assert_eq!(
+            engine.content_rects[..8],
+            [12.0, 10.0, 76.0, 18.0, 12.0, 10.0, 76.0, 18.0]
+        );
+        assert_eq!(engine.content_rects[8..12], [12.0, 28.0, 76.0, 16.0]);
+        assert_eq!(engine.content_kept, [1; 6]);
+        assert_eq!(engine.content_ellipsis, [0; 6]);
+    }
+
+    #[test]
+    fn a_patch_of_content_lays_the_node_out_anew_and_a_refused_one_changes_nothing() {
+        // Verifies: ADR-0013, ADR-0030
+        use graph_data::tests::{TITLE, b_of, content, load_into, text};
+        let mut engine = fonted();
+        let nodes = b_of(&[&[TITLE]]);
+        let none = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
+        let body = text(RoleCode::Body, "b");
+        let long = text(RoleCode::Title, "abcdefghijklmnopqrst");
+        let rows = content(&[&[long], &[body], &[body], &[body], &[body]]);
+        let patch = NodePatch(vec![("content".to_owned(), rows.into())]);
+        let slot = 1;
+        let (checked, height) = patch_of("b", &patch, &engine.fonts).unwrap().unwrap();
+        engine.graph.resize_node(slot, height).unwrap();
+        engine.edited.insert(slot, checked);
+        assert_eq!(engine.graph.sizes()[2..], [100.0, 102.0]);
+        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
+        // The long title is cut to 9 glyphs and an ellipsis within its column of 76.
+        assert_eq!(engine.content_kept[1], 9);
+        assert_eq!(engine.content_ellipsis[1], 1);
+        // A refused patch leaves the node as it was.
+        let refused = NodePatch(vec![(
+            "content".to_owned(),
+            content(&[&[(KindCode::Unnamed, 1.0, RoleCode::Title, None)]]).into(),
+        )]);
+        assert!(patch_of("b", &refused, &engine.fonts).is_err());
+        assert_eq!(engine.graph.sizes()[2..], [100.0, 102.0]);
+        // A slot that holds no node is the shell's mistake.
+        assert_eq!(
+            engine.graph.resize_node(7, 64.0),
+            Err(comb_engine::graph::SlotError::NoNode { slot: 7 })
+        );
+    }
+
+    #[test]
+    fn a_load_whose_texts_are_all_empty_and_a_node_of_no_rows_lay_out() {
+        // Verifies: ADR-0034
+        // Every text empty: the column of texts crosses in no piece at all.
+        use graph_data::tests::{content, load_into, text};
+        let empty = || content(&[&[text(RoleCode::Title, "")]]);
+        let mut nodes = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]).nodes;
+        for node in &mut nodes {
+            node.content = empty().into();
+        }
+        let columns = graph_data::OwnedColumns::of(nodes.iter().map(Some));
+        let mut engine = Engine::new();
+        let none = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &columns, &none), Ok(2));
+        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
+        assert_eq!(engine.content_kept, [0, 0]);
+        // A node patched to no rows at all lays out to none, the least height high.
+        let patch = NodePatch(vec![("content".to_owned(), content(&[]).into())]);
+        let (checked, height) = patch_of("b", &patch, &engine.fonts).unwrap().unwrap();
+        engine.graph.resize_node(1, height).unwrap();
+        engine.edited.insert(1, checked);
+        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
+        assert_eq!(engine.content_bounds, [0, 1, 1]);
+        assert_eq!(engine.graph.sizes()[3], 64.0);
+    }
+
+    #[test]
+    fn a_font_whose_role_or_metrics_the_engine_cannot_take_is_refused_and_nothing_changes() {
+        // Verifies: ADR-0031
+        let mut engine = Engine::new();
+        let refused = Err(CallRefusal::Number(NumberError::InvalidFont));
+        assert_eq!(
+            engine.set_font(RoleCode::Unnamed as u8, &[], &[], 1.0, 1.0),
+            refused
+        );
+        assert_eq!(engine.set_font(9, &[], &[], 1.0, 1.0), refused);
+        assert_eq!(engine.set_font(0, &[65], &[], 1.0, 1.0), refused);
+        assert_eq!(engine.set_font(0, &[], &[], f64::NAN, 1.0), refused);
+        assert_eq!(engine.set_font(0, &[], &[], 1.0, -1.0), refused);
+        assert_eq!(engine.fonts, Fonts::default());
+        assert_eq!(engine.set_font(0, &[], &[], 1.0, 20.0), Ok(()));
+        assert_ne!(engine.fonts, Fonts::default());
     }
 
     #[test]
