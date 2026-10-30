@@ -65,8 +65,9 @@ of nodes and edges before anything is copied, then the code units of the identif
 the snapshot is read and read no further once they exceed the budget, then the snapshot, and the
 store keeps the snapshot's nodes and edges. A load's nodes and edges cross as columns the snapshot
 writes while it reads them, through the bridge's `nodeColumns` and `edgeColumns`: each string
-field, the identifiers, sources, targets, titles, and label texts, as one string with its
-boundaries in UTF-16 code units, per title and label text whether it is a text, the numbers as
+field, the identifiers, sources, targets, titles, and label texts, as pieces of at most 2^28
+UTF-16 code units, each ending where a value ends, with its boundaries in UTF-16 code units across
+all pieces, per title and label text whether it is a text, the numbers as
 `Float64Array`, an arrowhead and the sides as byte codes, whether a label, its background, and a
 dash are present as bytes, and the first value refused by its type as its position
 ([ADR-0033](adr/0033-a-string-column-crosses-in-pieces.md)); serde-wasm-bindgen converts

@@ -1,9 +1,9 @@
 //! The bridge between the shell and the engine (ADR-0033).
 //!
 //! Structured data crosses through serde-wasm-bindgen as `Ts<T>`, with TypeScript types tsify
-//! generates; the graph data of a load crosses as columns, each one string or one typed array;
-//! node positions and the results of a viewport query cross as buffers the engine owns, which
-//! the shell reads as typed-array views created anew after every call.
+//! generates; the graph data of a load crosses as columns, each a string in pieces or one typed
+//! array; node positions and the results of a viewport query cross as buffers the engine owns,
+//! which the shell reads as typed-array views created anew after every call.
 //!
 //! This root holds the exports and their conversions; the reading and checking of graph data,
 //! which the bridge alone does (ADR-0028), is the module `graph_data`.
@@ -352,11 +352,12 @@ impl Engine {
     /// Replaces the graph with a load, node slot `i` for its node `i` and edge slot `i` for its
     /// edge `i`, and returns the number of node slots. The nodes and the edges cross as columns
     /// (ADR-0033), each in slot order, and serde-wasm-bindgen converts nothing of a load. Of the
-    /// nodes: the identifiers and the titles each as one string with its boundaries in UTF-16 code
-    /// units, per title whether it is a text, the numbers as `Float64Array`, and the first value
+    /// nodes: the identifiers and the titles each as pieces of at most 2^28 UTF-16 code units, each
+    /// ending where a value ends, with the boundaries across all pieces in UTF-16 code units, per
+    /// title whether it is a text, the numbers as `Float64Array`, and the first value
     /// the shell refused by its type, the index of its node and the code of its `NodeField`, or
-    /// none. Of the edges: the identifiers, sources, targets, and label texts each as one string
-    /// with its boundaries, per label text whether it is a text; whether a label, its background,
+    /// none. Of the edges: the identifiers, sources, targets, and label texts each as pieces with
+    /// their boundaries, per label text whether it is a text; whether a label, its background,
     /// and a dash are present, as bytes; the label's `t` and offset, the background, the colour,
     /// and the dash and gap as `Float64Array`; the arrowhead and the sides as the codes of
     /// `ArrowCode` and `SideCode`; and the first value the shell refused by its type, the index
@@ -365,14 +366,18 @@ impl Engine {
     #[wasm_bindgen(js_name = loadGraph)]
     #[expect(
         clippy::too_many_arguments,
-        reason = "one parameter per column, each a type wasm-bindgen hands over in one copy \
-                  (ADR-0033)"
+        reason = "one parameter per column, each a type wasm-bindgen hands over in one copy, \
+                  or one per piece (ADR-0033)"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "wasm-bindgen hands a list of strings over as an owned `Vec<String>` only"
     )]
     pub fn load_graph(
         &mut self,
-        ids: &str,
+        ids: Vec<String>,
         id_bounds: &[u32],
-        titles: &str,
+        titles: Vec<String>,
         title_bounds: &[u32],
         title_texts: &[u8],
         x: &[f64],
@@ -381,14 +386,14 @@ impl Engine {
         height: &[f64],
         refused_at: Option<u32>,
         refused_field: Option<u32>,
-        edge_ids: &str,
+        edge_ids: Vec<String>,
         edge_id_bounds: &[u32],
-        sources: &str,
+        sources: Vec<String>,
         source_bounds: &[u32],
-        targets: &str,
+        targets: Vec<String>,
         target_bounds: &[u32],
         has_label: &[u8],
-        labels: &str,
+        labels: Vec<String>,
         label_bounds: &[u32],
         label_texts: &[u8],
         label_t: &[f64],
@@ -408,14 +413,14 @@ impl Engine {
         trap::spring();
         let refused = refused_of(refused_at, refused_field)?;
         let edges = EdgeColumns {
-            ids: edge_ids,
+            ids: &edge_ids,
             id_bounds: edge_id_bounds,
-            sources,
+            sources: &sources,
             source_bounds,
-            targets,
+            targets: &targets,
             target_bounds,
             has_label,
-            labels,
+            labels: &labels,
             label_bounds,
             label_texts,
             label_t,
@@ -432,9 +437,9 @@ impl Engine {
             refused: edge_refused_of(edge_refused_at, edge_refused_field)?,
         };
         let nodes = NodeColumns {
-            ids,
+            ids: &ids,
             id_bounds,
-            titles,
+            titles: &titles,
             title_bounds,
             title_texts,
             x,

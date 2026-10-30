@@ -6,11 +6,12 @@
 //! of it alone is, and the patch of `updateEdge`, refused exactly as a load of the edge it makes.
 //!
 //! The data starts as a value of any shape, as the host application hands it over. A load's nodes
-//! and edges cross as the columns the snapshot of `api` builds of it (ADR-0033), each node read as
-//! the node of `addNode` is and each edge as the edge of `addEdge` is, but for an arrowhead and the
-//! sides, any string of which crosses as its code, so that a value of the wrong type or a missing
-//! field at any position among them, a string that names no arrowhead or side, and an item that is
-//! no object, reach the bridge as the shell hands them over. A
+//! and edges cross as the columns the snapshot of `api` builds of it (ADR-0033), its strings in
+//! pieces of a bound generated with it, each node read as the node of `addNode` is and each edge
+//! as the edge of `addEdge` is, but for an arrowhead and the sides, any string of which crosses as
+//! its code, so that a value of the wrong type or a missing field at any position among them, a
+//! string that names no arrowhead or side, and an item that is no object, reach the bridge as the
+//! shell hands them over. A
 //! second oracle, written on that value alone, says which field of which node or edge is missing
 //! or of another type, and whether the value has the shape of graph data at all: the bridge names
 //! such a field (`invalidField`), and refuses as malformed only what has no such shape, and no
@@ -747,13 +748,24 @@ fn two_nodes(edges: Vec<Value>) -> Value {
     ])
 }
 
+/// The bound on a piece of a string column (ADR-0033): mostly a few code units, so that a column
+/// crosses in many pieces, now and then around the longest values, and now and then the
+/// snapshot's.
+fn piece_bound() -> impl Strategy<Value = usize> {
+    prop_oneof![
+        6 => 1..=8_usize,
+        3 => 1..=1_100_usize,
+        1 => Just(1_usize << 28),
+    ]
+}
+
 /// The graph a load of `data` builds, or why the load was refused, as the shell hands it to the
-/// bridge: graph data that is no object, or whose nodes or edges are no list, the snapshot of
+/// bridge, each string column in pieces of at most `bound` code units, or of its longest value: graph data that is no object, or whose nodes or edges are no list, the snapshot of
 /// `api` cannot read and refuses as malformed itself; the nodes cross as the columns it builds,
 /// each node read as the node of `addNode` is, and one that is no object, nor a list, which is an
 /// object without the fields, named as such; the edges as columns too, each read as the edge of
 /// `addEdge` is but for its arrowhead and sides, which cross as their codes.
-fn loaded(data: Value) -> Result<comb_engine::graph::Graph, GraphDataProblem> {
+fn loaded(bound: usize, data: Value) -> Result<comb_engine::graph::Graph, GraphDataProblem> {
     let (nodes, edges) = match &data {
         Value::Object(fields) => (get(fields, "nodes"), get(fields, "edges")),
         _ => (None, None),
@@ -773,8 +785,8 @@ fn loaded(data: Value) -> Result<comb_engine::graph::Graph, GraphDataProblem> {
     }
     let nodes: Vec<Option<NodeInput>> = read(nodes);
     let edges: Vec<Option<EdgeCells>> = read(edges);
-    let nodes = OwnedColumns::of(nodes.iter().map(Option::as_ref));
-    let edges = OwnedEdgeColumns::of(edges.iter().map(Option::as_ref));
+    let nodes = OwnedColumns::in_pieces(bound, nodes.iter().map(Option::as_ref));
+    let edges = OwnedEdgeColumns::in_pieces(bound, edges.iter().map(Option::as_ref));
     load_of(&nodes.view(), &edges.view())
 }
 
@@ -848,9 +860,10 @@ proptest! {
     #[test]
     fn an_added_edge_is_refused_exactly_as_a_load_of_it_alone_and_a_self_edge_besides(
         value in prop_oneof![9 => edge(true, 0, 2), 1 => anything()],
+        bound in piece_bound(),
     ) {
         // Verifies: ADR-0028, ADR-0024, Q-7
-        let as_load = loaded(two_nodes(vec![value.clone()]));
+        let as_load = loaded(bound, two_nodes(vec![value.clone()]));
         // An end the graph does not hold is `api`'s to refuse, against its map.
         prop_assume!(!matches!(as_load, Err(GraphDataProblem::MissingNode { .. })));
         let end = |name: &str| match &value {
@@ -862,7 +875,7 @@ proptest! {
         };
         let (source, target) = (end("source"), end("target"));
         let slot_of = |end: &Option<String>| u32::from(end.as_deref() == Some("n1"));
-        let mut graph = loaded(two_nodes(Vec::new())).unwrap();
+        let mut graph = loaded(bound, two_nodes(Vec::new())).unwrap();
         let added = reading(|| EdgeInput::deserialize(value.clone()))
             .map_err(|error| EdgeRefusal::Data(unshaped(error)))
             .and_then(|edge| add_edge_to(&mut graph, &edge, slot_of(&source), slot_of(&target)));
@@ -898,9 +911,10 @@ proptest! {
     #[test]
     fn an_edge_patch_is_refused_exactly_as_a_load_of_the_edge_it_makes_and_the_edge_kept(
         patch in edge_patch(),
+        bound in piece_bound(),
     ) {
         // Verifies: ADR-0028, ADR-0030, Q-7
-        let mut graph = loaded(two_nodes(vec![Value::Object(base_edge())])).unwrap();
+        let mut graph = loaded(bound, two_nodes(vec![Value::Object(base_edge())])).unwrap();
         let before = graph.edge(0);
         let other = patch
             .iter()
@@ -924,7 +938,7 @@ proptest! {
         }
         // Held to the oracle on its own too, as an added edge is.
         prop_assert_eq!(updated.is_ok(), accepted_alone(Value::Object(merged.clone())), "{:?}", updated);
-        match (updated, loaded(two_nodes(vec![Value::Object(merged)]))) {
+        match (updated, loaded(bound, two_nodes(vec![Value::Object(merged)]))) {
             (Ok(()), Ok(expected)) => prop_assert_eq!(graph.edge(0), expected.edge(0)),
             (Err(error), Err(expected)) => {
                 prop_assert_eq!(error, EdgeRefusal::Data(expected));
@@ -937,6 +951,7 @@ proptest! {
     #[test]
     fn an_added_node_is_refused_exactly_as_a_load_of_it_alone_and_the_graph_kept(
         value in added_node(),
+        bound in piece_bound(),
     ) {
         // Verifies: ADR-0028, ADR-0022, Q-7
         let with_a = || {
@@ -958,7 +973,7 @@ proptest! {
             ("nodes".to_owned(), Value::List(vec![value.clone()])),
             ("edges".to_owned(), Value::List(Vec::new())),
         ]);
-        let as_load = loaded(alone).map(|graph| graph.positions().to_vec());
+        let as_load = loaded(bound, alone).map(|graph| graph.positions().to_vec());
         let mut graph = with_a();
         let added = reading(|| NodeInput::deserialize(value))
             .map_err(unshaped)
@@ -978,13 +993,17 @@ proptest! {
     }
 
     #[test]
-    fn any_graph_data_ends_in_a_typed_error_or_a_graph(value in graph_data()) {
+    fn any_graph_data_ends_in_a_typed_error_or_a_graph(
+        value in graph_data(),
+        bound in piece_bound(),
+    ) {
         // Verifies: ADR-0033
         // A panic anywhere below fails the case; the runner catches it and shrinks the input.
-        // The load crosses as columns, and is held to the oracles of the value it was built of.
+        // The load crosses as columns, its strings in pieces of the bound generated with it, and
+        // is held to the oracles of the value it was built of.
         let named = named_fields(&value);
         let batch = || reading(|| GraphBatch::deserialize(value.clone())).ok();
-        match loaded(value.clone()) {
+        match loaded(bound, value.clone()) {
             // A value without the shape of graph data is refused before any check of the
             // bridge's own, as malformed.
             Err(error @ GraphDataProblem::Malformed { .. }) => {

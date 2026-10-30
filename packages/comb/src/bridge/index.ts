@@ -1,6 +1,6 @@
 // The one module that imports the WebAssembly package (ADR-0028). Structured data crosses as
 // generated types through serde-wasm-bindgen, but for a load's nodes and edges, which cross as
-// columns of one string or one typed array each; node positions and the results of a viewport
+// columns of strings in pieces or one typed array each; node positions and the results of a viewport
 // query are read through views on the engine's buffers, created anew on every read because
 // growing memory detaches older views (ADR-0033).
 import init, {
@@ -52,16 +52,21 @@ export type TranslateError = NumberError;
  *  application, which may hold a getter or a Proxy, takes a cast a reviewer sees. */
 declare const read: unique symbol;
 
+/** The most UTF-16 code units of a piece of a string column the snapshot hands the engine
+ *  (ADR-0033): half of V8's maximum string length, the smallest of the evergreen engines'. */
+export const PIECE_BOUND = 2 ** 28;
+
 /** The nodes of a load as the engine's `loadGraph` takes them (ADR-0033), each column in slot
- *  order: the identifiers and the titles each as one string, the values concatenated, with their
- *  boundaries in UTF-16 code units, one more than there are nodes, a refused value empty; per
+ *  order: the identifiers and the titles each as the values concatenated and cut into pieces,
+ *  each ending where a value ends, with their boundaries in UTF-16 code units across all pieces,
+ *  one more than there are nodes, a refused value empty; per
  *  title whether it is a text, 1 or 0; the numbers as the host application handed them; and the
  *  first value the engine's first pass refuses by its type, the index of its node and its field,
  *  `item` for a node that is no object. */
 export interface NodeColumns {
-  readonly ids: string;
+  readonly ids: string[];
   readonly idBounds: Uint32Array;
-  readonly titles: string;
+  readonly titles: string[];
   readonly titleBounds: Uint32Array;
   readonly titleTexts: Uint8Array;
   readonly x: Float64Array;
@@ -83,34 +88,53 @@ export interface NodeColumnWriter {
   columns(): NodeColumns;
 }
 
-/** A column of at most `count` strings: the values concatenated, and their boundaries in UTF-16
- *  code units, one more than there are values. */
-function stringColumn(count: number) {
-  const values: string[] = [];
+/** A column of at most `count` strings: the values concatenated and cut into pieces of at most
+ *  `bound` UTF-16 code units, each ending where a value ends, so that no value is split between
+ *  two pieces, a column of no code units in none; and the values' boundaries in UTF-16 code units
+ *  across all pieces, one more than there are values. */
+function stringColumn(count: number, bound: number) {
+  const pieces: string[] = [];
+  let values: string[] = [];
   const bounds = new Uint32Array(count + 1);
   let units = 0;
+  let pieceUnits = 0;
+  const cut = () => {
+    if (pieceUnits > 0) pieces.push(values.join(""));
+    values = [];
+    pieceUnits = 0;
+  };
   return {
     /** Ends the value at `at` with `value` where it is a string, else empty; returns whether it
-     *  is one. */
+     *  is one. A value longer than `bound` fits in no piece, and is refused by a throw. */
     add(at: number, value: unknown): boolean {
       const text = typeof value === "string";
       if (text) {
+        const { length } = value;
+        if (pieceUnits + length > bound) {
+          if (length > bound) throw new RangeError(`comb: a value longer than a piece of ${bound}`);
+          cut();
+        }
         values.push(value);
-        units += value.length;
+        pieceUnits += length;
+        units += length;
       }
       bounds[at + 1] = units;
       return text;
     },
-    joined: () => values.join(""),
+    pieces: () => {
+      cut();
+      return pieces;
+    },
     bounds: (written: number) => bounds.subarray(0, written + 1),
   };
 }
 
-/** A writer of the columns of at most `count` nodes. It looks at a value by `typeof` and at a
- *  string's length only, so that no value it is handed runs code. */
-export function nodeColumns(count: number): NodeColumnWriter {
-  const ids = stringColumn(count);
-  const titles = stringColumn(count);
+/** A writer of the columns of at most `count` nodes, its strings in pieces of at most `bound` code
+ *  units. It looks at a value by `typeof` and at a string's length only, so that no value it is
+ *  handed runs code. */
+export function nodeColumns(count: number, bound: number): NodeColumnWriter {
+  const ids = stringColumn(count, bound);
+  const titles = stringColumn(count, bound);
   const titleTexts = new Uint8Array(count);
   const x = new Float64Array(count);
   const y = new Float64Array(count);
@@ -142,9 +166,9 @@ export function nodeColumns(count: number): NodeColumnWriter {
       at++;
     },
     columns: () => ({
-      ids: ids.joined(),
+      ids: ids.pieces(),
       idBounds: ids.bounds(at),
-      titles: titles.joined(),
+      titles: titles.pieces(),
       titleBounds: titles.bounds(at),
       titleTexts: titleTexts.subarray(0, at),
       x: x.subarray(0, at),
@@ -157,22 +181,22 @@ export function nodeColumns(count: number): NodeColumnWriter {
 }
 
 /** The edges of a load as the engine's `loadGraph` takes them (ADR-0033), each column in slot
- *  order: the identifiers, sources, targets, and label texts each as one string, the values
- *  concatenated, with their boundaries in UTF-16 code units, one more than there are edges, a
- *  refused or absent value empty; per label text whether it is a text, 1 or 0; whether a label,
+ *  order: the identifiers, sources, targets, and label texts each as the values concatenated and
+ *  cut into pieces, each ending where a value ends, with their boundaries in UTF-16 code units
+ *  across all pieces, one more than there are edges, a refused or absent value empty; per label text whether it is a text, 1 or 0; whether a label,
  *  its background, and a dash are present, 1 or 0; the numbers as the host application handed
  *  them, a background of another type NaN; the arrowhead and the sides as codes, one for a string
  *  that names none; and the first value the engine's first pass refuses by its type, the index of
  *  its edge and its field, `item` for an edge that is no object. */
 export interface EdgeColumns {
-  readonly ids: string;
+  readonly ids: string[];
   readonly idBounds: Uint32Array;
-  readonly sources: string;
+  readonly sources: string[];
   readonly sourceBounds: Uint32Array;
-  readonly targets: string;
+  readonly targets: string[];
   readonly targetBounds: Uint32Array;
   readonly hasLabel: Uint8Array;
-  readonly labels: string;
+  readonly labels: string[];
   readonly labelBounds: Uint32Array;
   readonly labelTexts: Uint8Array;
   readonly labelT: Float64Array;
@@ -236,8 +260,8 @@ const absent = (value: unknown) => value === undefined || value === null;
 
 /** The columns of at most `count` labels: whether each edge has one, its text, `t`, offset, and
  *  background. */
-function labelColumns(count: number) {
-  const texts = stringColumn(count);
+function labelColumns(count: number, bound: number) {
+  const texts = stringColumn(count, bound);
   const hasLabel = new Uint8Array(count);
   const labelTexts = new Uint8Array(count);
   const labelT = new Float64Array(count);
@@ -267,7 +291,7 @@ function labelColumns(count: number) {
     },
     columns: (written: number) => ({
       hasLabel: hasLabel.subarray(0, written),
-      labels: texts.joined(),
+      labels: texts.pieces(),
       labelBounds: texts.bounds(written),
       labelTexts: labelTexts.subarray(0, written),
       labelT: labelT.subarray(0, written),
@@ -324,12 +348,15 @@ function codeColumn<C extends number>(
   };
 }
 
-/** A writer of the columns of at most `count` edges. It looks at a value by `typeof` and at a
- *  string's length, and reads the fields of a label and the items of a dash, which are the
- *  snapshot's own plain data, so that no value of the host application it is handed runs code. */
-export function edgeColumns(count: number): EdgeColumnWriter {
-  const [ids, sources, targets] = [stringColumn(count), stringColumn(count), stringColumn(count)];
-  const labels = labelColumns(count);
+/** A writer of the columns of at most `count` edges, its strings in pieces of at most `bound` code
+ *  units. It looks at a value by `typeof` and at a string's length, and reads the fields of a
+ *  label and the items of a dash, which are the snapshot's own plain data, so that no value of
+ *  the host application it is handed runs code. */
+export function edgeColumns(count: number, bound: number): EdgeColumnWriter {
+  const ids = stringColumn(count, bound);
+  const sources = stringColumn(count, bound);
+  const targets = stringColumn(count, bound);
+  const labels = labelColumns(count, bound);
   const color = new Float64Array(count);
   const dashes = dashColumns(count);
   const arrows = codeColumn(count, ARROWS, ArrowCode.Unnamed);
@@ -361,11 +388,11 @@ export function edgeColumns(count: number): EdgeColumnWriter {
       at++;
     },
     columns: () => ({
-      ids: ids.joined(),
+      ids: ids.pieces(),
       idBounds: ids.bounds(at),
-      sources: sources.joined(),
+      sources: sources.pieces(),
       sourceBounds: sources.bounds(at),
-      targets: targets.joined(),
+      targets: targets.pieces(),
       targetBounds: targets.bounds(at),
       ...labels.columns(at),
       color: color.subarray(0, at),

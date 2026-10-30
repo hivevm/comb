@@ -328,15 +328,16 @@ pub enum NodeField {
 }
 
 /// The nodes of one load as columns (ADR-0033), each in slot order. The identifiers and the
-/// titles are each one string, the values concatenated, with their boundaries in UTF-16 code
-/// units, one more than there are nodes, a refused value empty; `title_texts` holds per node
+/// titles are each the values concatenated and cut into pieces, each ending where a value ends,
+/// with their boundaries in UTF-16 code units across all pieces, one more than there are nodes, a
+/// refused value empty; `title_texts` holds per node
 /// whether its title is a text, 1 or 0. The numbers are as the host application handed them.
 /// `refused` is the first value the shell read that the first pass refuses, its node's index and
 /// its field, or none.
 pub struct NodeColumns<'a> {
-    pub ids: &'a str,
+    pub ids: &'a [String],
     pub id_bounds: &'a [u32],
-    pub titles: &'a str,
+    pub titles: &'a [String],
     pub title_bounds: &'a [u32],
     pub title_texts: &'a [u8],
     pub x: &'a [f64],
@@ -414,13 +415,25 @@ pub(crate) fn edge_refused_of(
     refused_by(at, field, &EdgeField::ALL, unfit_edges)
 }
 
-/// Whether `bounds` are the boundaries of `count` values of a string of `units` UTF-16 code
-/// units: one more than there are values, from 0, never falling, and ending at its end.
-fn bounds_fit(bounds: &[u32], count: usize, units: usize) -> bool {
-    bounds.len() == count + 1
-        && bounds.first() == Some(&0)
-        && bounds.windows(2).all(|pair| pair[0] <= pair[1])
-        && bounds.last().map(|&end| end as usize) == Some(units)
+/// Whether `bounds` are the boundaries of `count` values of a string column in `pieces`: one more
+/// than there are values, from 0, never falling, each piece ending where a value ends, and the
+/// pieces' lengths summing to the last boundary.
+fn bounds_fit(bounds: &[u32], count: usize, pieces: &[String]) -> bool {
+    if bounds.len() != count + 1
+        || bounds.first() != Some(&0)
+        || !bounds.windows(2).all(|pair| pair[0] <= pair[1])
+    {
+        return false;
+    }
+    let mut end = 0;
+    for piece in pieces {
+        end += utf16_length(piece);
+        let ends_a_value = u32::try_from(end).is_ok_and(|end| bounds.binary_search(&end).is_ok());
+        if !ends_a_value {
+            return false;
+        }
+    }
+    bounds.last().map(|&last| last as usize) == Some(end)
 }
 
 /// The lengths of the values of a string column, read off its boundaries.
@@ -428,17 +441,33 @@ fn lengths(bounds: &[u32]) -> impl Iterator<Item = usize> + '_ {
     bounds.windows(2).map(|pair| (pair[1] - pair[0]) as usize)
 }
 
-/// The value at `index` of a string column, with a character a boundary cuts in two given as
-/// U+FFFD at each side, as the shell's string of the value alone would have crossed: to name a
-/// node before its column is mapped, which takes no boundary as falling between characters.
-fn value_at(text: &str, bounds: &[u32], index: usize) -> String {
+/// The value at `index` of a string column in `pieces`, with a character a boundary cuts in two
+/// given as U+FFFD at each side, as the shell's string of the value alone would have crossed: to
+/// name a node before its column is mapped, which takes no boundary as falling between
+/// characters. Called only on a column whose pieces fit its boundaries.
+fn value_at(pieces: &[String], bounds: &[u32], index: usize) -> String {
     let (start, end) = (bounds[index] as usize, bounds[index + 1] as usize);
     let mut value = String::new();
     if start == end {
         return value;
     }
+    // The piece the value lies in: the first that ends at or after its end.
+    let mut base = 0;
+    let mut holding = None;
+    for piece in pieces {
+        let units = utf16_length(piece);
+        if end <= base + units {
+            holding = Some(piece);
+            break;
+        }
+        base += units;
+    }
+    let Some(piece) = holding else {
+        return value;
+    };
+    let (start, end) = (start - base, end - base);
     let mut units = 0;
-    for character in text.chars() {
+    for character in piece.chars() {
         let next = units + character.len_utf16();
         if next > start && units < end {
             let whole = units >= start && next <= end;
@@ -452,16 +481,41 @@ fn value_at(text: &str, bounds: &[u32], index: usize) -> String {
     value
 }
 
-/// The values of a string column as slices of `text`, or a refusal as malformed where a boundary
-/// falls inside a character. Called only once every value's length is checked: a value the shell
-/// cut one code unit beyond its limit may end in half a surrogate pair, and two such values side
-/// by side make one character across their boundary.
-fn values<'a>(text: &'a str, bounds: &[u32]) -> Result<Vec<&'a str>, GraphDataProblem> {
+/// The values of a string column in `pieces` as slices of them, or a refusal as malformed where a
+/// boundary falls inside a character, mapped piece by piece. Called only once the pieces fit the
+/// boundaries and every value's length is checked: a value the shell cut one code unit beyond its
+/// limit may end in half a surrogate pair, and two such values side by side in one piece make one
+/// character across their boundary.
+fn values<'a>(pieces: &'a [String], bounds: &[u32]) -> Result<Vec<&'a str>, GraphDataProblem> {
+    let mut values = Vec::with_capacity(bounds.len() - 1);
+    let (mut first, mut base) = (0, 0);
+    for piece in pieces {
+        let end = base + utf16_length(piece);
+        // The piece's values run from the boundary at its start to the last one at its end, so
+        // that an empty value where two pieces meet is the earlier one's.
+        let last = first + bounds[first..].partition_point(|&bound| bound as usize <= end) - 1;
+        piece_values(piece, &bounds[first..=last], base, &mut values)?;
+        (first, base) = (last, end);
+    }
+    // Past the last piece, or in a column of no pieces, every value is empty.
+    values.resize(bounds.len() - 1, "");
+    Ok(values)
+}
+
+/// Pushes the values of one piece of a string column onto `values`, its boundaries `bounds`
+/// counted from the column's start and the piece starting at `base`.
+fn piece_values<'a>(
+    text: &'a str,
+    bounds: &[u32],
+    base: usize,
+    values: &mut Vec<&'a str>,
+) -> Result<(), GraphDataProblem> {
+    let units = bounds.iter().map(|&bound| bound as usize - base);
     let offsets: Vec<usize> = if text.is_ascii() {
-        bounds.iter().map(|&bound| bound as usize).collect()
+        units.collect()
     } else {
         let mut offsets = Vec::with_capacity(bounds.len());
-        let mut next = bounds.iter().map(|&bound| bound as usize).peekable();
+        let mut next = units.peekable();
         let mut units = 0;
         for (byte, character) in text.char_indices() {
             while next.next_if_eq(&units).is_some() {
@@ -475,7 +529,8 @@ fn values<'a>(text: &'a str, bounds: &[u32]) -> Result<Vec<&'a str>, GraphDataPr
         offsets.extend(next.map(|_| text.len()));
         offsets
     };
-    Ok(offsets.windows(2).map(|at| &text[at[0]..at[1]]).collect())
+    values.extend(offsets.windows(2).map(|at| &text[at[0]..at[1]]));
+    Ok(())
 }
 
 impl NodeColumns<'_> {
@@ -486,8 +541,8 @@ impl NodeColumns<'_> {
         let fit = numbers.iter().all(|&len| len == count)
             && self.title_texts.len() == count
             && self.title_texts.iter().all(|&text| text <= 1)
-            && bounds_fit(self.id_bounds, count, utf16_length(self.ids))
-            && bounds_fit(self.title_bounds, count, utf16_length(self.titles))
+            && bounds_fit(self.id_bounds, count, self.ids)
+            && bounds_fit(self.title_bounds, count, self.titles)
             && self
                 .refused
                 .is_none_or(|(index, _)| (index as usize) < count);
@@ -651,8 +706,9 @@ fn side_of(code: u8) -> Option<graph_side::Side> {
 }
 
 /// The edges of one load as columns (ADR-0033), each in slot order. The identifiers, sources,
-/// targets, and label texts are each one string, the values concatenated, with their boundaries
-/// in UTF-16 code units, one more than there are edges, a refused or absent value empty;
+/// targets, and label texts are each the values concatenated and cut into pieces, each ending
+/// where a value ends, with their boundaries in UTF-16 code units across all pieces, one more
+/// than there are edges, a refused or absent value empty;
 /// `label_texts` holds per edge whether its label's text is a text, 1 or 0. `has_label`,
 /// `has_background`, and `has_dash` hold per edge whether it has one, 1 or 0; where it has none,
 /// the columns of its values hold anything. The numbers are as the host application handed them,
@@ -661,14 +717,14 @@ fn side_of(code: u8) -> Option<graph_side::Side> {
 /// its field, or none; an arrowhead or a side whose string names none is no such value, and the
 /// first pass finds its code.
 pub struct EdgeColumns<'a> {
-    pub ids: &'a str,
+    pub ids: &'a [String],
     pub id_bounds: &'a [u32],
-    pub sources: &'a str,
+    pub sources: &'a [String],
     pub source_bounds: &'a [u32],
-    pub targets: &'a str,
+    pub targets: &'a [String],
     pub target_bounds: &'a [u32],
     pub has_label: &'a [u8],
-    pub labels: &'a str,
+    pub labels: &'a [String],
     pub label_bounds: &'a [u32],
     pub label_texts: &'a [u8],
     pub label_t: &'a [f64],
@@ -720,7 +776,7 @@ impl EdgeColumns<'_> {
                 .all(|column| column.iter().all(|&flag| flag <= 1))
             && strings
                 .iter()
-                .all(|&(text, bounds)| bounds_fit(bounds, count, utf16_length(text)))
+                .all(|&(pieces, bounds)| bounds_fit(bounds, count, pieces))
             && self
                 .arrow
                 .iter()
@@ -1743,13 +1799,52 @@ pub(crate) struct GraphBatch {
     pub edges: Vec<EdgeInput>,
 }
 
+/// The bound on a piece of a string column the snapshot of `api` passes its writer (ADR-0033).
+#[cfg(test)]
+const SNAPSHOT_PIECE: usize = 1 << 28;
+
+/// Ends a value of a string column, one value per item while the tests write it: `value`, its
+/// boundary the last one and its length, so that a million items cost no count of the column
+/// written so far.
+#[cfg(test)]
+fn push_value(values: &mut Vec<String>, bounds: &mut Vec<u32>, value: String) {
+    bounds.push(bounds[bounds.len() - 1] + utf16_length(&value) as u32);
+    values.push(value);
+}
+
+/// The pieces a string column of `values` crosses in, cut as the shell's writer cuts it: each
+/// value appended to the piece before it while that piece stays within `bound` UTF-16 code units,
+/// else starting a piece, and a column of no code units in none. The writer refuses a value
+/// longer than its bound; the bound is raised here to the longest value, so that a test may give
+/// any bound for any column.
+#[cfg(test)]
+pub(crate) fn pieces_of(values: &[String], bound: usize) -> Vec<String> {
+    let longest = values.iter().map(|value| utf16_length(value)).max();
+    let bound = longest.unwrap_or(0).max(bound);
+    let mut pieces = Vec::new();
+    let (mut piece, mut units) = (String::new(), 0);
+    for value in values {
+        let length = utf16_length(value);
+        if units + length > bound {
+            pieces.push(std::mem::take(&mut piece));
+            units = 0;
+        }
+        piece.push_str(value);
+        units += length;
+    }
+    if units > 0 {
+        pieces.push(piece);
+    }
+    pieces
+}
+
 /// The columns of a load's nodes, owned: what the snapshot of `api` builds, for the tests.
 #[cfg(test)]
 #[derive(Default)]
 pub(crate) struct OwnedColumns {
-    ids: String,
+    ids: Vec<String>,
     id_bounds: Vec<u32>,
-    titles: String,
+    titles: Vec<String>,
     title_bounds: Vec<u32>,
     title_texts: Vec<u8>,
     x: Vec<f64>,
@@ -1763,8 +1858,17 @@ pub(crate) struct OwnedColumns {
 impl OwnedColumns {
     /// The columns of `nodes` as the snapshot builds them, `None` for an item that is no object: a
     /// field missing or of another type empty or NaN, and the first such one named; a title of
-    /// the length a node holds.
+    /// the length a node holds; each string column in pieces of at most 2^28 UTF-16 code units.
     pub(crate) fn of<'n>(nodes: impl IntoIterator<Item = Option<&'n NodeInput>>) -> Self {
+        Self::in_pieces(SNAPSHOT_PIECE, nodes)
+    }
+
+    /// The columns of `nodes` as `of` builds them, each string column cut into pieces by
+    /// `pieces_of` with a bound of `bound` code units.
+    pub(crate) fn in_pieces<'n>(
+        bound: usize,
+        nodes: impl IntoIterator<Item = Option<&'n NodeInput>>,
+    ) -> Self {
         let mut columns = Self {
             id_bounds: vec![0],
             title_bounds: vec![0],
@@ -1774,10 +1878,12 @@ impl OwnedColumns {
             let index = index as u32;
             let Some(node) = node else {
                 columns.refused.get_or_insert((index, NodeField::Item));
-                columns.id_bounds.push(utf16_length(&columns.ids) as u32);
-                columns
-                    .title_bounds
-                    .push(utf16_length(&columns.titles) as u32);
+                for (values, bounds) in [
+                    (&mut columns.ids, &mut columns.id_bounds),
+                    (&mut columns.titles, &mut columns.title_bounds),
+                ] {
+                    push_value(values, bounds, String::new());
+                }
                 columns.title_texts.push(0);
                 for numbers in [
                     &mut columns.x,
@@ -1789,10 +1895,11 @@ impl OwnedColumns {
                 }
                 continue;
             };
-            match &node.id.0 {
-                Some(id) => columns.ids.push_str(id),
-                None => _ = columns.refused.get_or_insert((index, NodeField::Id)),
+            if node.id.0.is_none() {
+                columns.refused.get_or_insert((index, NodeField::Id));
             }
+            let id = node.id.0.clone().unwrap_or_default();
+            push_value(&mut columns.ids, &mut columns.id_bounds, id);
             let numbers = [
                 (NodeField::X, node.x, &mut columns.x),
                 (NodeField::Y, node.y, &mut columns.y),
@@ -1805,17 +1912,14 @@ impl OwnedColumns {
                 }
                 column.push(value.0.unwrap_or(f64::NAN));
             }
-            if let Some(length) = node.title_length {
-                columns.titles.push_str(&"x".repeat(length));
-            }
+            let title = "x".repeat(node.title_length.unwrap_or(0));
+            push_value(&mut columns.titles, &mut columns.title_bounds, title);
             columns
                 .title_texts
                 .push(u8::from(node.title_length.is_some()));
-            columns.id_bounds.push(utf16_length(&columns.ids) as u32);
-            columns
-                .title_bounds
-                .push(utf16_length(&columns.titles) as u32);
         }
+        columns.ids = pieces_of(&columns.ids, bound);
+        columns.titles = pieces_of(&columns.titles, bound);
         columns
     }
 
@@ -1914,14 +2018,14 @@ impl From<&EdgeInput> for EdgeCells {
 #[cfg(test)]
 #[derive(Default)]
 pub(crate) struct OwnedEdgeColumns {
-    ids: String,
+    ids: Vec<String>,
     id_bounds: Vec<u32>,
-    sources: String,
+    sources: Vec<String>,
     source_bounds: Vec<u32>,
-    targets: String,
+    targets: Vec<String>,
     target_bounds: Vec<u32>,
     has_label: Vec<u8>,
-    labels: String,
+    labels: Vec<String>,
     label_bounds: Vec<u32>,
     label_texts: Vec<u8>,
     label_t: Vec<f64>,
@@ -1943,8 +2047,18 @@ impl OwnedEdgeColumns {
     /// The columns of `edges` as the snapshot builds them, `None` for an item that is no object:
     /// a field missing or of another type empty, NaN, or absent, and the first such one named; a
     /// label text of the length a label holds; an arrowhead or a side by its code, one whose
-    /// string names none `Unnamed`.
+    /// string names none `Unnamed`; each string column in pieces of at most 2^28 UTF-16 code
+    /// units.
     pub(crate) fn of<'e>(edges: impl IntoIterator<Item = Option<&'e EdgeCells>>) -> Self {
+        Self::in_pieces(SNAPSHOT_PIECE, edges)
+    }
+
+    /// The columns of `edges` as `of` builds them, each string column cut into pieces by
+    /// `pieces_of` with a bound of `bound` code units.
+    pub(crate) fn in_pieces<'e>(
+        bound: usize,
+        edges: impl IntoIterator<Item = Option<&'e EdgeCells>>,
+    ) -> Self {
         let mut columns = Self {
             id_bounds: vec![0],
             source_bounds: vec![0],
@@ -1959,15 +2073,20 @@ impl OwnedEdgeColumns {
             }
             columns.push(edge.unwrap_or(&EdgeCells::default()));
         }
+        for column in [
+            &mut columns.ids,
+            &mut columns.sources,
+            &mut columns.targets,
+            &mut columns.labels,
+        ] {
+            *column = pieces_of(column, bound);
+        }
         columns
     }
 
-    /// Writes `edge` into the columns.
+    /// Writes `edge` into the columns, each string column a value per edge until `in_pieces` cuts
+    /// it.
     fn push(&mut self, edge: &EdgeCells) {
-        // Each boundary the last one and the value's length, so that a million edges cost no
-        // count of the string written so far.
-        let end =
-            |bounds: &[u32], value: &str| bounds[bounds.len() - 1] + utf16_length(value) as u32;
         let label = edge.label.0.flatten();
         let text_length = label.and_then(|label| label.text_length);
         let text = |field: &Field<String>| field.0.clone().unwrap_or_default();
@@ -1989,8 +2108,7 @@ impl OwnedEdgeColumns {
                 "x".repeat(text_length.unwrap_or(0)),
             ),
         ] {
-            column.push_str(&value);
-            bounds.push(end(bounds, &value));
+            push_value(column, bounds, value);
         }
         self.label_texts.push(u8::from(text_length.is_some()));
         self.has_label.push(u8::from(label.is_some()));
@@ -2755,7 +2873,7 @@ pub(crate) mod tests {
         let count = bounds.len() - 1;
         let nodes = batch(&vec![("", 0.0, 0.0); count], &[]).nodes;
         let mut columns = OwnedColumns::of(nodes.iter().map(Some));
-        columns.ids = ids.to_owned();
+        columns.ids = vec![ids.to_owned()];
         columns.id_bounds = bounds.to_vec();
         columns.refused = refused;
         columns
@@ -2805,7 +2923,7 @@ pub(crate) mod tests {
             |c| _ = c.id_bounds.pop(),
             |c| c.id_bounds[0] = 1,
             |c| c.id_bounds = vec![0, 2, 1],
-            |c| c.titles.push('x'),
+            |c| c.titles.push("x".to_owned()),
             |c| c.refused = Some((2, NodeField::X)),
         ];
         for change in changes {
@@ -3087,7 +3205,7 @@ pub(crate) mod tests {
             |c| _ = c.target_side.pop(),
             |c| _ = c.source_bounds.pop(),
             |c| c.target_bounds = vec![0, 2, 1],
-            |c| c.labels.push('x'),
+            |c| c.labels.push("x".to_owned()),
             |c| c.arrow[0] = ArrowCode::Unnamed as u8 + 1,
             |c| c.source_side[1] = SideCode::Unnamed as u8 + 1,
             |c| c.refused = Some((2, EdgeField::Id)),
@@ -3099,7 +3217,7 @@ pub(crate) mod tests {
         }
         // A source and a target are identifiers, never mapped inside a character.
         let mut columns = d_and(|_| {});
-        columns.sources = "\u{1F600}".to_owned();
+        columns.sources = vec!["\u{1F600}".to_owned()];
         columns.source_bounds = vec![0, 1, 2];
         assert_eq!(
             load_edges(&columns).err(),
@@ -3117,6 +3235,98 @@ pub(crate) mod tests {
         for code in [12, 255, u32::MAX] {
             assert_eq!(edge_refused_of(Some(0), Some(code)), Err(unfit_edges()));
         }
+    }
+
+    /// A load of `nodes` and `edges` through the engine's `loadGraph`, as the shell hands it
+    /// over.
+    fn load_into(
+        engine: &mut crate::Engine,
+        nodes: &OwnedColumns,
+        edges: &OwnedEdgeColumns,
+    ) -> Result<u32, GraphDataProblem> {
+        let (n, e) = (nodes, edges);
+        engine.load_graph(
+            n.ids.clone(),
+            &n.id_bounds,
+            n.titles.clone(),
+            &n.title_bounds,
+            &n.title_texts,
+            &n.x,
+            &n.y,
+            &n.width,
+            &n.height,
+            n.refused.map(|(at, _)| at),
+            n.refused.map(|(_, field)| field.into()),
+            e.ids.clone(),
+            &e.id_bounds,
+            e.sources.clone(),
+            &e.source_bounds,
+            e.targets.clone(),
+            &e.target_bounds,
+            &e.has_label,
+            e.labels.clone(),
+            &e.label_bounds,
+            &e.label_texts,
+            &e.label_t,
+            &e.label_offset,
+            &e.has_background,
+            &e.background,
+            &e.color,
+            &e.has_dash,
+            &e.dash,
+            &e.gap,
+            &e.arrow,
+            &e.source_side,
+            &e.target_side,
+            e.refused.map(|(at, _)| at),
+            e.refused.map(|(_, field)| field.into()),
+        )
+    }
+
+    /// `values` as the pieces of a string column.
+    fn pieces(values: &[&str]) -> Vec<String> {
+        values.iter().map(|&value| value.to_owned()).collect()
+    }
+
+    #[test]
+    fn pieces_that_miss_the_last_boundary_or_end_inside_a_value_are_refused_as_malformed() {
+        // Verifies: ADR-0033
+        // Nodes `ab` and `cd`, and edges `d` and `e` with label texts of 1 and 3 code units.
+        let nodes = |ids: &[&str]| {
+            let mut columns = cut("abcd", &[0, 2, 4], None);
+            columns.ids = pieces(ids);
+            columns
+        };
+        let edges = |labels: &[&str]| {
+            let mut columns = d_and(|e| label_in(e).text_length = Some(3));
+            columns.labels = pieces(labels);
+            columns
+        };
+        let no_edges = OwnedEdgeColumns::of([]);
+        let mut engine = crate::Engine::new();
+        // Pieces that end where values end, an empty one among them, map piece by piece.
+        for ids in [&["abcd"][..], &["ab", "cd"], &["ab", "", "cd"]] {
+            assert_eq!(load_into(&mut engine, &nodes(ids), &no_edges), Ok(2));
+        }
+        assert_eq!(engine.positions_len(), 4);
+        for labels in [&["xxxx"][..], &["x", "xxx"]] {
+            assert!(load_edges(&edges(labels)).is_ok(), "{labels:?}");
+        }
+        // Lengths that sum short of the last boundary, or past it, or no piece at all.
+        let short: [&[&str]; 3] = [&["ab"], &["ab", "cd", "x"], &[]];
+        // A piece that ends inside a value, the lengths summing to the last boundary.
+        let inside: [&[&str]; 3] = [&["a", "bcd"], &["abc", "d"], &["a", "b", "cd"]];
+        for ids in short.into_iter().chain(inside) {
+            let refused = load_into(&mut engine, &nodes(ids), &no_edges);
+            assert_eq!(refused, Err(unfit()), "{ids:?}");
+        }
+        assert_eq!(load_edges(&edges(&["x"])).err(), Some(unfit_edges()));
+        assert_eq!(load_edges(&edges(&["xx", "xx"])).err(), Some(unfit_edges()));
+        // The engine keeps the graph it held, and takes the next load.
+        assert_eq!(engine.positions_len(), 4);
+        let one = OwnedColumns::of(batch(&[("a", 0.0, 0.0)], &[]).nodes.iter().map(Some));
+        assert_eq!(load_into(&mut engine, &one, &no_edges), Ok(1));
+        assert_eq!(engine.positions_len(), 2);
     }
 
     #[test]

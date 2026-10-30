@@ -1198,6 +1198,63 @@ test("load takes a million edges whose identifiers hold 63 million code units, a
   expect(beyond.ms).toBeLessThan(within.ms / 2);
 });
 
+/** In the page: loads 600,000 nodes whose titles hold 1,000 code units each, or, with `edges`,
+ *  two nodes and 600,000 edges between them whose label texts hold 1,000 each, a column of
+ *  600,000,000 code units beyond V8's longest string; then a graph of one node. Reports the
+ *  problem of the first load, whether the canvas drew its nodes, and the time it took. */
+async function atTheTextLimit(edges: boolean) {
+  const count = 600_000;
+  const text = "x".repeat(1000);
+  const nodeAt = (id: string, x: number) => window.node(id, x);
+  const graph = edges
+    ? {
+        nodes: [nodeAt("a", 0), nodeAt("b", 300)],
+        edges: Array.from({ length: count }, (_, i) => ({
+          id: `e${i}`,
+          source: "a",
+          target: "b",
+          label: { text, t: 0.5, offset: 0 },
+        })),
+      }
+    : {
+        nodes: Array.from({ length: count }, (_, i) => ({
+          ...nodeAt(`n${i}`, i * 200),
+          title: text,
+        })),
+        edges: [],
+      };
+  const start = performance.now();
+  let problem: unknown = null;
+  try {
+    window.comb.load(graph);
+  } catch (error) {
+    problem = (error as Error & { problem?: unknown }).problem ?? String(error);
+  }
+  const ms = performance.now() - start;
+  const drawn = window.inspect().nodes.length > 0;
+  window.comb.load({ nodes: [nodeAt("ok", 0)], edges: [] });
+  await window.comb.whenRendered();
+  return { problem, drawn, ms };
+}
+
+test("load takes 600,000 titles and 600,000 label texts of 1,000 code units, their columns in pieces", async ({
+  page,
+}) => {
+  // Verifies: ADR-0033
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page);
+  const titles = await page.evaluate(atTheTextLimit, false);
+  const labels = await page.evaluate(atTheTextLimit, true);
+  console.log(
+    `600,000 texts of 1,000: ${titles.ms.toFixed(0)} ms titles, ${labels.ms.toFixed(0)} ms labels`,
+  );
+  expect(errors).toEqual([]);
+  expect(titles).toEqual({ problem: null, drawn: true, ms: titles.ms });
+  expect(labels).toEqual({ problem: null, drawn: true, ms: labels.ms });
+});
+
 /** In the page: provokes each kind of `GraphDataProblem` through `load` or `updateNode`, one call
  *  each after a valid load, and reports the kind of problem each threw. Its table is typed by the
  *  kinds, so that a kind the union gains or loses fails the type check. */
