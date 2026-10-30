@@ -1,4 +1,4 @@
-//! The bridge between the shell and the engine (ADR-0033).
+//! The bridge between the shell and the engine (ADR-0034).
 //!
 //! Structured data crosses through serde-wasm-bindgen as `Ts<T>`, with TypeScript types tsify
 //! generates; the graph data of a load crosses as columns, each a string in pieces or one typed
@@ -243,7 +243,7 @@ pub fn check_node_patch(
 }
 
 /// What a press hits (ADR-0025): a connector by the slot of its node and its side, a label by the
-/// slot of its edge, a node or an edge by its slot, or nothing; one generated value (ADR-0033).
+/// slot of its edge, a node or an edge by its slot, or nothing; one generated value (ADR-0034).
 #[derive(Tsify, Serialize, Debug, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Hit {
@@ -351,7 +351,7 @@ impl Engine {
 
     /// Replaces the graph with a load, node slot `i` for its node `i` and edge slot `i` for its
     /// edge `i`, and returns the number of node slots. The nodes and the edges cross as columns
-    /// (ADR-0033), each in slot order, and serde-wasm-bindgen converts nothing of a load. Of the
+    /// (ADR-0034), each in slot order, and serde-wasm-bindgen converts nothing of a load. Of the
     /// nodes: the identifiers and the titles each as pieces of at most 2^28 UTF-16 code units, each
     /// ending where a value ends, with the boundaries across all pieces in UTF-16 code units, per
     /// title whether it is a text, the numbers as `Float64Array`, and the first value
@@ -367,7 +367,7 @@ impl Engine {
     #[expect(
         clippy::too_many_arguments,
         reason = "one parameter per column, each a type wasm-bindgen hands over in one copy, \
-                  or one per piece (ADR-0033)"
+                  or one per piece (ADR-0034)"
     )]
     #[expect(
         clippy::needless_pass_by_value,
@@ -718,14 +718,14 @@ impl Engine {
     }
 
     /// The `x` of the origin the last `query` wrote its vertex positions and label points
-    /// relative to (ADR-0033).
+    /// relative to (ADR-0034).
     #[wasm_bindgen(js_name = originX)]
     pub fn origin_x(&self) -> f64 {
         self.visible.origin.x
     }
 
     /// The `y` of the origin the last `query` wrote its vertex positions and label points
-    /// relative to (ADR-0033).
+    /// relative to (ADR-0034).
     #[wasm_bindgen(js_name = originY)]
     pub fn origin_y(&self) -> f64 {
         self.visible.origin.y
@@ -881,7 +881,7 @@ mod tests {
 
     #[test]
     fn a_small_graph_queries_complete_and_a_million_curved_edges_whole_far_coarsened() {
-        // Verifies: ADR-0033
+        // Verifies: ADR-0034
         let small = batch(&[("a", 0.0, 0.0), ("b", 300.0, 100.0)], &[("e", "a", "b")]);
         let rect = [-100.0, -100.0, 500.0, 300.0];
         let engine = detail_of(&small, rect, DetailLevel::Near, 1.0);

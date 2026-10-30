@@ -58,7 +58,7 @@ jobs:
             bun --bun bench/run.ts
             cp bench-results/latest.json "bench-results/run-$i.json"
           done
-      # Verifies: ADR-0033, ADR-0008 — the median first frame of the runner's kind stays within the
+      # Verifies: ADR-0034, ADR-0008 — the median first frame of the runner's kind stays within the
       # margin of its baseline, so a load that grows slow again is found at the next run.
       - name: Compare the median with the baseline of the runner's kind
         run: bun bench/compare.ts bench/baselines bench-results/run-*.json

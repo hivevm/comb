@@ -62,7 +62,7 @@ query keep crossing as they do.
   columns replace that code; and the store builds its two maps from identifiers to slots in one
   loop each, while the snapshot sets an edge's label and dash where present instead of spreading
   them; a test for any surrogate before the search for a lone one measured no gain in V8.
-- The columns are the decision of ADR-0033: strings in pieces of at most 2^28 code units with UTF-16
+- The columns are the decision of ADR-0034: strings in pieces of at most 2^28 code units with UTF-16
   boundaries, numbers as 64-bit floats, enumerations and presence as bytes, a title's and a label
   text's validity per item, and the first value refused by its type as its position.
 - Nodes go first, as the tracer bullet through every layer, with every refusal of a node; edges
@@ -90,7 +90,7 @@ query keep crossing as they do.
 
 ## ADR impact
 
-- ADR-0033 decides the columns; the specification's constraint on the
+- ADR-0034 decides the columns; the specification's constraint on the
   bridge excepts the graph data of a load from serde-wasm-bindgen.
 - Binding beside it: ADR-0028 (validation in the bridge crate, what `api` decides), ADR-0024 (the
   sides and their defaults), ADR-0022 and ADR-0029 (the store's maps), ADR-0008 (the Benchmark),

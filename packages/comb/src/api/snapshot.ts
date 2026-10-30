@@ -2,7 +2,7 @@
 // JavaScript, into plain data whose every field is a primitive of the type the field expects, so
 // that the bridge checks it and the store keeps it, and no value of the host application, nor any
 // of its code, reaches the engine; a load's nodes and edges are handed over as columns besides
-// (ADR-0033). A value of another type is replaced by `false`, which the bridge refuses naming the
+// (ADR-0034). A value of another type is replaced by `false`, which the bridge refuses naming the
 // node or edge and the field; a title, a label text, and the arrow are handed
 // over no longer than one code unit beyond the bridge's limit for texts, and an identifier no
 // longer than one beyond its limit for identifiers, so that a string of any length costs at most

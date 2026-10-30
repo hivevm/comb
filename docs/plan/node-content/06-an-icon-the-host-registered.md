@@ -6,7 +6,8 @@
 `ImageBitmap`, an `HTMLImageElement` that has loaded, or a canvas) and makes it a texture; the
 `icon` element names it and is drawn as a square of the row's line height at the near level. An
 icon named but not registered draws nothing and is no error; registered later, it appears. Comb
-never fetches an image (Q-6).
+never fetches an image (Q-6). A load's `icon` fills the column ADR-0034 gives it, its registered
+name among the names.
 
 ## Acceptance criteria
 

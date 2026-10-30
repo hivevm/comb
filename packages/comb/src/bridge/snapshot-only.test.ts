@@ -11,7 +11,7 @@ type Same<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 
 // The engine's `loadGraph` takes a load's nodes and edges as columns, strings in pieces and typed
-// arrays its glue copies whole, and no `GraphBatch` and no `EdgeList` (ADR-0033): its generated
+// arrays its glue copies whole, and no `GraphBatch` and no `EdgeList` (ADR-0034): its generated
 // parameters, pinned. A refused field crosses as the code of its `NodeField` or `EdgeField`, a
 // plain number.
 const columns: Same<
@@ -87,6 +87,6 @@ test("the bridge refuses graph data and patches that are no snapshot at compile 
 });
 
 test("the engine takes a load's nodes and edges as columns, pinned at compile time", () => {
-  // Verifies: ADR-0033
+  // Verifies: ADR-0034
   expect(columns).toBe(true);
 });

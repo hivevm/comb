@@ -140,6 +140,9 @@ describes them, and its sidebar edits them.
   accepted after its implementation and tests are reviewed.
 - ADR-0027 (levels of detail, text as `BitmapText`, pools), ADR-0025 (one hit test, now down to
   the element), ADR-0028 (the bridge checks, the shell refuses what its map knows), ADR-0030
-  (`nodeUpdated` carries content), ADR-0033 (bulk geometry as typed-array views), ADR-0029 (no
+  (`nodeUpdated` carries content), ADR-0034 (bulk geometry as typed-array views), ADR-0029 (no
   coordinates in the store), and ADR-0020 (no eval) bind it as they stand.
-- No new ADR: `registerIcon` and `onContentClick` are public interface that ADR-0013 decides.
+- ADR-0034 (proposed) decides how a load's content crosses the bridge: as columns, the first
+  ticket building those of `text` and each kind's ticket those of its kind.
+- No other new ADR: `registerIcon` and `onContentClick` are public interface that ADR-0013
+  decides.
