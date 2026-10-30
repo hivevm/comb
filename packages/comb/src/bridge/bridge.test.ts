@@ -5,6 +5,7 @@ import {
   nodeColumns,
   PIECE_BOUND,
   type Bridge,
+  type NodeColumnWriter,
   type GraphSnapshot,
   type NodePatch,
   type EdgeSnapshot,
@@ -47,13 +48,33 @@ const edge = (id: string, source: string, target: string) => ({
 // that module and hand it plain data of their own, the nodes and edges written into columns as
 // it writes them (ADR-0034).
 type PlainNode = ReturnType<typeof node>;
+/** Writes the plain content `content` of the node just started into `columns`, as the snapshot
+ *  writes a node's content. */
+function writeContent(columns: NodeColumnWriter, content: unknown) {
+  if (!Array.isArray(content)) return columns.noContent();
+  for (const cells of content as unknown[]) {
+    if (!Array.isArray(cells)) columns.noRow();
+    else if (cells.length === 0) columns.endRow();
+    else
+      cells.forEach((element: unknown, c) => {
+        const last = c === cells.length - 1;
+        if (typeof element !== "object" || element === null || Array.isArray(element))
+          columns.noElement(last);
+        else {
+          const { kind, role, weight, text } = element as Record<string, unknown>;
+          columns.element(kind, role, weight, text, last);
+        }
+      });
+  }
+}
 const graph = (nodes: readonly PlainNode[], edges: readonly object[] = [], bound = PIECE_BOUND) => {
   const columns = nodeColumns(nodes.length, bound);
   for (const n of nodes as readonly unknown[]) {
     if (typeof n !== "object" || n === null) columns.noObject();
     else {
       const { id, x, y, width, content } = n as Record<string, unknown>;
-      columns.node(id, x, y, width, content);
+      columns.node(id, x, y, width);
+      writeContent(columns, content);
     }
   }
   const written = edgeColumns(edges.length, bound);
@@ -109,6 +130,7 @@ describe("bridge views", () => {
       ["updateNode", () => bridge.updateNode(0, "n0", plain({ content: titled("A") }))],
       ["addNode", () => bridge.addNode(added(node("c", 5, 6)))],
       ["nodeBuffers", () => bridge.nodeBuffers()],
+      ["content", () => bridge.content(0)],
       ["setFont", () => bridge.setFont("body", FONT)],
       ["translate", () => bridge.translate(new Uint32Array([0]), 0, 0)],
       ["positions", () => bridge.positions()],
@@ -390,9 +412,11 @@ describe("bridge columns of a load", () => {
     const nodes = ids.map((id, i) => ({ ...node(id, i * 300, 0), content: titled(titles[i]!) }));
     const edges = [edge("e0", ids[1]!, ids[2]!), edge("e1", ids[3]!, ids[0]!)];
     const { kept, snapshot } = snapshotted(nodes, edges);
-    const title = (n: (typeof kept.nodes)[number]) => n.content[0]![0]!.text;
-    expect(kept.nodes.map((n) => [n.id, title(n)])).toEqual(ids.map((id, i) => [id, titles[i]!]));
+    expect(kept.nodes.map((n) => n.id)).toEqual(ids);
     expect(bridge.loadGraph(snapshot)).toBe(4);
+    // The engine keeps the titles, and hands each back as it was given.
+    const title = (slot: number) => bridge.content(slot)[0]![0]!.text;
+    expect([0, 1, 2, 3].map(title)).toEqual(titles);
     // Each edge's ends resolve to the slots of exactly the identifiers it names.
     expect([...bridge.edgesAt(new Uint32Array([1]))]).toEqual([0]);
     expect([...bridge.edgesAt(new Uint32Array([2]))]).toEqual([0]);
@@ -498,8 +522,10 @@ describe("bridge pieces of a string column", () => {
 
   test("a value longer than the bound on a piece fits in none, and the writer refuses it", () => {
     // Verifies: ADR-0034
-    expect(() => nodeColumns(1, 16).node("x".repeat(17), 0, 0, 1, [])).toThrow(RangeError);
-    expect(() => nodeColumns(1, 16).node("x", 0, 0, 1, titled("x".repeat(17)))).toThrow(RangeError);
+    expect(() => nodeColumns(1, 16).node("x".repeat(17), 0, 0, 1)).toThrow(RangeError);
+    expect(() => nodeColumns(1, 16).element("text", "title", 1, "x".repeat(17), true)).toThrow(
+      RangeError,
+    );
     expect(() =>
       edgeColumns(1, 16).edge(
         "e",
@@ -670,7 +696,9 @@ describe("bridge content that does not fit, and its layout", () => {
     }
     expect(bridge.loadGraph(graph(two()))).toBe(2);
   });
+});
 
+describe("bridge layout of content", () => {
   test("a query lays the content out at the near and middle level, and a patch lays it out anew", () => {
     // Verifies: ADR-0013
     bridge.setFont("title", { ...FONT, lineHeight: 18 });
@@ -682,8 +710,14 @@ describe("bridge content that does not fit, and its layout", () => {
     expect([...near.content.bounds]).toEqual([0, 1, 2]);
     expect([...near.content.rects]).toEqual([12, 10, 76, 18, 12, 10, 76, 18]);
     // Sixteen glyphs of 7 pass 76: nine fit beside the ellipsis, which advances by 7 too.
-    expect([...near.content.kept]).toEqual([1, 9]);
-    expect([...near.content.ellipsis]).toEqual([0, 1]);
+    const { texts, textBounds, roles } = near.content;
+    expect(texts).toBe("aabcdefghi\u2026");
+    expect([...textBounds]).toEqual([0, 1, 11]);
+    expect([...roles]).toEqual([RoleCode.Title, RoleCode.Title]);
+    // The content as it was given, each weight as the engine keeps it.
+    expect(bridge.content(1)).toEqual([
+      [{ kind: "text", role: "title", text: "abcdefghijklmnop", weight: 1 }],
+    ]);
     expect([...bridge.query(everywhere, "middle", 1, 0).content.bounds]).toEqual([0, 1, 2]);
     expect([...bridge.query(everywhere, "far", 1, 0).content.bounds]).toEqual([]);
     // Five rows: 10 + 18 + 4 * 16 + 10 = 102.
@@ -695,6 +729,7 @@ describe("bridge content that does not fit, and its layout", () => {
     const patched = bridge.query(everywhere, "near", 1, 0);
     expect([...patched.content.bounds]).toEqual([0, 1, 6]);
     expect([...patched.content.rects.subarray(8, 12)]).toEqual([12, 28, 76, 16]);
+    expect(patched.content.texts).toBe("atbbbb");
     expect(outcome(() => bridge.updateNode(7, "c", plain({ content: titled("x") })))).toEqual({
       kind: "noNode",
       slot: 7,

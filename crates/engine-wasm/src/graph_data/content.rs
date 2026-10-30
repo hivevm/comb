@@ -12,7 +12,10 @@ use serde::de::{self, IgnoredAny, Visitor};
 use serde::{Deserialize, Deserializer};
 use wasm_bindgen::prelude::wasm_bindgen;
 
-use super::{GraphDataProblem, TEXT_LIMIT, bounds_fit, numbered, utf16_length};
+use super::{
+    ContentElement, GraphDataProblem, NodeContent, TEXT_LIMIT, TextRole, bounds_fit, numbered,
+    utf16_length,
+};
 
 /// The most rows of one node's content.
 pub const MAX_ROWS: usize = ROW_LIMIT as usize;
@@ -315,7 +318,8 @@ pub struct ContentData {
     pub(crate) texts: Vec<String>,
     pub(crate) text_bounds: Vec<u32>,
     pub(crate) text_valid: Vec<u8>,
-    /// Per text, its piece and the byte range it holds there, once mapped.
+    /// Per text, its piece and the byte range it holds there, once mapped; none where every
+    /// piece is ASCII, whose texts lie at their code units.
     pub(crate) spans: Vec<(u32, u32, u32)>,
 }
 
@@ -337,17 +341,40 @@ impl ContentData {
     /// Maps every text onto the string Rust holds, or refuses as malformed where a boundary falls
     /// inside a character. Called only once every text's length has been checked (ADR-0034).
     pub(crate) fn map(&mut self) -> Result<(), GraphDataProblem> {
-        self.spans = super::spans(&self.texts, &self.text_bounds, super::TEXT_INSIDE)?;
+        self.spans = super::text_spans(&self.texts, &self.text_bounds)?;
         Ok(())
     }
 
     /// The text at `index`, once mapped.
     pub(crate) fn text(&self, index: usize) -> &str {
+        if self.spans.is_empty() {
+            return self.ascii_text(index);
+        }
         let (piece, start, end) = self.spans[index];
         // An empty text past the last piece, or in a column of no pieces, lies in none.
         self.texts
             .get(piece as usize)
             .map_or("", |piece| &piece[start as usize..end as usize])
+    }
+
+    /// The text at `index` of ASCII pieces, at its code units in the piece it lies in.
+    fn ascii_text(&self, index: usize) -> &str {
+        let (start, end) = (
+            self.text_bounds[index] as usize,
+            self.text_bounds[index + 1] as usize,
+        );
+        let mut base = 0;
+        for piece in &self.texts {
+            // A text no longer than nothing lies in no piece; any other lies whole in one.
+            if start == end {
+                break;
+            }
+            if end <= base + piece.len() {
+                return &piece[start - base..end - base];
+            }
+            base += piece.len();
+        }
+        ""
     }
 
     /// Lays out the content of the node at `node`, `width` wide, in `fonts`, and pushes where its
@@ -385,6 +412,84 @@ impl ContentData {
             }
         }
         layout::lay_out(cells, rows, width, fonts, out);
+    }
+}
+
+/// The texts of the elements a query placed, as the shell draws them (ADR-0013): per element its
+/// role's code and what is drawn of its text, the text or as much of it as fits followed by an
+/// ellipsis, those strings one after another in `texts`, with their boundaries in UTF-16 code
+/// units in `bounds`, one more than there are elements.
+#[derive(Debug, Default)]
+pub struct Drawn {
+    pub roles: Vec<u8>,
+    pub texts: String,
+    pub bounds: Vec<u32>,
+    units: u32,
+}
+
+impl Drawn {
+    /// Starts the texts of a query anew.
+    pub(crate) fn clear(&mut self) {
+        self.roles.clear();
+        self.texts.clear();
+        self.bounds.clear();
+        self.bounds.push(0);
+        self.units = 0;
+    }
+}
+
+impl ContentData {
+    /// Pushes onto `drawn` the role and the drawn text of each element of the node at `node`,
+    /// which `placed` holds in the order of its rows and theirs, as `lay_out` placed them.
+    pub(crate) fn draw(&self, node: usize, placed: &[Placed], drawn: &mut Drawn) {
+        if node + 1 >= self.row_bounds.len() {
+            return;
+        }
+        let view = self.view();
+        let elements = view.rows(node).flat_map(|row| view.elements(row));
+        for (element, at) in elements.zip(placed) {
+            drawn.roles.push(self.roles[element]);
+            let text = self.text(element);
+            let mut units = 0;
+            let end = text
+                .char_indices()
+                .find(|&(_, character)| {
+                    let past = units >= at.kept;
+                    units += numbered(character.len_utf16());
+                    past
+                })
+                .map_or(text.len(), |(byte, _)| byte);
+            drawn.texts.push_str(&text[..end]);
+            drawn.units += at.kept.min(units);
+            if at.ellipsis {
+                drawn.texts.push(layout::ELLIPSIS);
+                drawn.units += 1;
+            }
+            drawn.bounds.push(drawn.units);
+        }
+    }
+
+    /// The content of the node at `node`, as the host application's type describes it: what
+    /// inspection and the changes Comb tells report, built when asked.
+    pub(crate) fn content_of(&self, node: usize) -> NodeContent {
+        if node + 1 >= self.row_bounds.len() {
+            return NodeContent(Vec::new());
+        }
+        let view = self.view();
+        let row = |row| {
+            view.elements(row)
+                .map(|element| ContentElement::Text {
+                    role: match role_of(self.roles[element]) {
+                        Some(Role::Title) => TextRole::Title,
+                        Some(Role::Caption) => TextRole::Caption,
+                        _ => TextRole::Body,
+                    },
+                    text: self.text(element).to_owned(),
+                    weight: Some(self.weights[element]),
+                })
+                .collect()
+        };
+        NodeContent(view.rows(node).map(row).collect())
     }
 }
 

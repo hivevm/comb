@@ -70,9 +70,12 @@ snapshot's functions return, so that the type checker refuses the host's graph d
 patch handed to the bridge directly (`bridge/snapshot-only.test.ts`). The bridge checks the counts
 of nodes and edges before anything is copied, then the code units of the identifiers, counted while
 the snapshot is read and read no further once they exceed the budget, then the snapshot, and the
-store keeps the snapshot's nodes and edges. A load's nodes and edges cross as columns the snapshot
-writes while it reads them, through the bridge's `nodeColumns` and `edgeColumns`: each string
-field, the identifiers, sources, targets, label texts, and the texts of content, as pieces of at
+store keeps the snapshot's edges and of each node its identifier and width; a node's content is the
+engine's alone, which the snapshot of a load writes straight into its columns, and which the
+engine's `content` builds when inspection or a change Comb tells asks for it. A load's nodes and
+edges cross as columns the snapshot writes while it reads them, through the bridge's
+`nodeColumns` and `edgeColumns`: each string field, the identifiers, sources, targets, label texts,
+and the texts of content, as pieces of at
 most 2^28 UTF-16 code units, each ending where a value ends, with its boundaries in UTF-16 code
 units across all pieces, per label text and text of content whether it is a text, the numbers as
 `Float64Array`, an arrowhead, the sides, an element's kind, and a text's role as byte codes, the
@@ -170,9 +173,10 @@ The functional core and its shell follow
   the size of a screen pixel, at most 2^114 world units for a stroke, and how far an edge label's
   pill reaches from its point, and writes the found node slots, the edge-label slots and points (at
   the near level only), at the near and the middle level where the elements of each found node lie
-  and how much of each text is drawn (`contentBounds…`, `contentRects…`, `contentKept…`,
-  `contentEllipsis…`), the found edge slots, and the edge mesh into buffers the engine owns, the
-  label points and the mesh's positions relative to the query's origin, which `originX` and
+  and their roles (`contentBounds…`, `contentRects…`, `contentRoles…`), what of each text is drawn
+  as one string `contentTexts` returns, cut by `contentTextBounds…`, the found edge slots, and the
+  edge mesh into buffers the engine owns, the label points and the mesh's positions relative to the
+  query's origin, which `originX` and
   `originY` read
   ([ADR-0034](adr/0034-node-content-crosses-as-columns.md)), and returns the mesh's detail,
   complete or coarsened, and refuses a pixel that is not a finite number above zero; `drawnEdges`
@@ -274,7 +278,9 @@ The functional core and its shell follow
   `Graphics`, one fill per run of one colour, dash patterns solid. A node view draws its box and its
   content ([ADR-0013](adr/0013-node-content-model.md)): each text a pooled `BitmapText` of its
   role's style where the query placed it, cut where the engine cut it and followed by an ellipsis,
-  every text at the near level and those of role title alone at the middle level;
+  every text at the near level and those of role title alone at the middle level, what the query
+  placed; a view draws anew only where its node, which the store replaces when its content changes,
+  its size, its selection, or the level changed;
   `fontMetricsOf` of `nodes.ts` measures each role's glyph advances, which `createComb` hands the
   engine once, before the first load, with the line height of each role, which the render layer
   states rather than measures.
@@ -300,8 +306,9 @@ The functional core and its shell follow
   drawn, with one render per animation frame scheduled by `api/frames.ts`. `api/scenes.ts` is the
   one way from a `Comb` to its scene and to the hit test its presses ask, for the testing entry.
 - **Testing entry** (`comb/testing`, `packages/comb/src/testing.ts`) — `inspect` returns what the
-  scene draws, each node view's texts with where they lie and what of them is drawn, the text of its
-  first title, and the labels drawn included, the connectors drawn with where
+  scene draws, each node view's texts with where they lie and what of them is drawn, its content and
+  the text of its first title, which the engine builds when asked (`content`), and the labels drawn
+  included, the connectors drawn with where
   each is centred and how often the layer drew them anew, and the size and detail of the edge mesh,
   which the host application is not told; `viewport` and `renderCount`, cheap enough for every
   frame, return its transform and how often it rendered; `screenPoint` and `visibleRect` apply the

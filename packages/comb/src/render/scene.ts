@@ -15,7 +15,7 @@
 // the world's origin the viewport lies; the particles, whose shader takes their container's whole
 // transform, keep the rounding they had.
 import { Application, BitmapText, Container } from "pixi.js";
-import type { Bridge, Detail, Level, Rect } from "../bridge";
+import type { Bridge, Detail, Level, NodeContent, Rect } from "../bridge";
 import type { GraphView } from "../store";
 import { EdgesContainer, type MeshSize } from "./edges";
 import { EdgeFill } from "./edges-canvas";
@@ -50,8 +50,8 @@ export interface SceneSnapshot {
   level: Level;
   /** Every node drawn, by a view or, at the far level, as a particle, at the height its content
    *  lays out to; `texts` are the texts a view draws, each placed relative to its node, with the
-   *  width its text object draws at, and
-   *  `title` the text of the first of role title, which a particle draws none of. */
+   *  width its text object draws at, `content` the node's content as the engine keeps it, built
+   *  when asked, and `title` the text of its first title; a particle draws none of them. */
   nodes: {
     id: string;
     x: number;
@@ -59,6 +59,7 @@ export interface SceneSnapshot {
     width: number;
     height: number;
     title?: string;
+    content?: NodeContent;
     texts?: (DrawnText & { drawnWidth: number })[];
   }[];
   /** How many nodes are drawn as particles. */
@@ -254,6 +255,15 @@ export class Scene {
     return slot >= 0 && bridge.drawnEdges().slots.includes(slot);
   }
 
+  /** The content of the node in `slot`, which the engine builds when asked, and the text of its
+   *  first title. */
+  private contentOf(slot: number): { content?: NodeContent; title?: string } {
+    if (!this.source) return {};
+    const content = this.source.bridge.content(slot);
+    const title = content.flat().find((element) => element.role === "title")?.text;
+    return { content, ...(title === undefined ? {} : { title }) };
+  }
+
   /** The viewport the world is drawn through: its transform less the origin's screen point. */
   drawnViewport(): SceneSnapshot["viewport"] {
     const { x, y } = this.world;
@@ -272,7 +282,7 @@ export class Scene {
           ...(view as NodeGraphic).size,
           x: view.x,
           y: view.y,
-          title: (view as NodeGraphic).drawnTitle,
+          ...this.contentOf((view as NodeGraphic).slot),
           texts: (view as NodeGraphic).inspected(),
         })),
         ...this.particles.drawn(),

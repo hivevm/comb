@@ -168,8 +168,7 @@ function updateNode({ store, bridge, limits }: Editing, id: string, patch: unkno
       return { slot, plain };
     },
     engine: ({ slot, plain }) => bridge.updateNode(slot, id, plain),
-    // The bridge took the patch, so it holds content of the type it expects, or none.
-    record: (state, { plain }) => state.updateNode(id, plain as unknown as NodePatch),
+    record: (state, { plain }) => state.updateNode(id, "content" in plain),
   });
 }
 

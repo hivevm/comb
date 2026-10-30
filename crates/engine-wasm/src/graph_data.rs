@@ -23,7 +23,7 @@ mod content;
 
 use comb_engine::content::Fonts;
 use content::Cursor;
-pub(crate) use content::{COLUMN_LIMIT, ROW_LIMIT, role_of};
+pub(crate) use content::{COLUMN_LIMIT, Drawn, ROW_LIMIT, role_of};
 pub use content::{
     ContentColumns, ContentData, ContentInput, KindCode, MAX_COLUMNS, MAX_CONTENT_UNITS, MAX_ROWS,
     RoleCode,
@@ -204,7 +204,7 @@ pub enum TextRole {
 /// row's width by `weight`, 1 where it is left out. Of the closed set of ADR-0013, only `text` is
 /// built so far; this type names exactly the kinds the bridge accepts. Its reading is
 /// `ContentInput`'s, which takes any value, so that what it refuses is named.
-#[derive(Tsify, Serialize)]
+#[derive(Tsify, Serialize, Debug, PartialEq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ContentElement {
     Text {
@@ -216,7 +216,7 @@ pub enum ContentElement {
 }
 
 /// What a node shows: rows of weighted columns, each holding one element (ADR-0013).
-#[derive(Tsify, Serialize)]
+#[derive(Tsify, Serialize, Debug, PartialEq)]
 pub struct NodeContent(pub Vec<Vec<ContentElement>>);
 
 /// An edge label: its text, where it sits by path parameter `t` and label offset in pixels
@@ -1642,6 +1642,19 @@ fn edge_ids_of(index: usize, lengths: [usize; 3]) -> Result<usize, GraphDataProb
     Ok(units)
 }
 
+/// Where each text of content lies in its piece, as `spans` maps them, or none where every piece
+/// is ASCII, in which a text's code units are its bytes and no boundary falls inside a
+/// character, so that a load of ASCII texts maps none of them.
+pub(crate) fn text_spans(
+    pieces: &[String],
+    bounds: &[u32],
+) -> Result<Vec<(u32, u32, u32)>, GraphDataProblem> {
+    if pieces.iter().all(|piece| piece.is_ascii()) {
+        return Ok(Vec::new());
+    }
+    spans(pieces, bounds, TEXT_INSIDE)
+}
+
 /// The refusal of a boundary of a text of content that falls inside a character.
 pub(crate) const TEXT_INSIDE: &str = "a text of content ends inside a character";
 
@@ -1674,7 +1687,7 @@ pub(crate) fn load_of(
     };
     let content = &nodes.content;
     let nodes = nodes_of(&batch, content, fonts)?;
-    let spans = spans(content.texts, content.text_bounds, TEXT_INSIDE)?;
+    let spans = text_spans(content.texts, content.text_bounds)?;
     let edges = edges_of(&batch, &nodes.slots)?;
     Ok(Loaded {
         graph: Graph::new(nodes.positions, nodes.sizes, edges)?,
@@ -3850,14 +3863,14 @@ pub(crate) mod tests {
             &n.x,
             &n.y,
             &n.width,
-            &c.row_bounds,
-            &c.element_bounds,
-            &c.kinds,
-            &c.weights,
-            &c.roles,
+            c.row_bounds.clone(),
+            c.element_bounds.clone(),
+            c.kinds.clone(),
+            c.weights.clone(),
+            c.roles.clone(),
             c.texts.clone(),
-            &c.text_bounds,
-            &c.text_valid,
+            c.text_bounds.clone(),
+            c.text_valid.clone(),
             n.refused.map(|r| r.index),
             n.refused.map(|r| r.field.into()),
             n.refused.and_then(|r| r.row),

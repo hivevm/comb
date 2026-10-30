@@ -973,9 +973,20 @@ fn loaded(bound: usize, data: Value) -> Result<comb_engine::graph::Graph, GraphD
     let mut content = nodes.content.clone();
     content.spans = loaded.spans;
     let (mut cells, mut rows, mut placed) = (Vec::new(), Vec::new(), Vec::new());
+    let mut drawn = super::Drawn::default();
+    drawn.clear();
     for node in 0..loaded.graph.nodes_in_use() as usize {
         let width = loaded.graph.sizes()[node * 2];
+        let start = placed.len();
         content.lay_out(node, width, &fonts, &mut cells, &mut rows, &mut placed);
+        content.draw(node, &placed[start..], &mut drawn);
+        content.content_of(node);
+    }
+    assert_eq!(drawn.bounds.len(), placed.len() + 1);
+    // Each text is read back as the column holds it, mapped or not.
+    let texts = super::values(&content.texts, &content.text_bounds).expect("mapped texts");
+    for (index, text) in texts.into_iter().enumerate() {
+        assert_eq!(content.text(index), text);
     }
     Ok(loaded.graph)
 }

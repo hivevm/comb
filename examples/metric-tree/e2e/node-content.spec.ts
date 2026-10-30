@@ -44,7 +44,6 @@ test("a node of one title shows one text view where its title was drawn", async 
   expect(drawn!.texts).toEqual([
     expect.objectContaining({
       role: "title",
-      text: "Launch push notifications",
       drawn: "Launch push notifications",
       x: 12,
       y: 10,
@@ -98,8 +97,9 @@ test("a text wider than its column is cut with an ellipsis within the column", a
   await open(page);
   const long = "An input metric whose name runs on far past the width of its node";
   await loaded(page, { nodes: [{ ...node("a"), content: [[text("title", long)]] }], edges: [] });
-  const [drawn] = (await drawnNode(page, "a"))!.texts!;
-  expect(drawn!.text).toBe(long);
+  const shown = await drawnNode(page, "a");
+  expect(shown!.title).toBe(long);
+  const [drawn] = shown!.texts!;
   expect(drawn!.drawn.endsWith("…")).toBe(true);
   expect(long.startsWith(drawn!.drawn.slice(0, -1))).toBe(true);
   expect(drawn!.drawn.length).toBeGreaterThan(10);
@@ -146,12 +146,14 @@ test("updateNode replaces the content, the canvas shows it, the node's height fo
     "Second",
     "Third",
   ]);
+  // The content as Comb keeps it, each weight given, 1 where it was left out.
+  const weighted = TALL.map((row) => row.map((element) => ({ weight: 1, ...element })));
   expect(await told(page)).toEqual([
-    { kind: "nodeUpdated", by: "host", id: "a", patch: { content: TALL } },
+    { kind: "nodeUpdated", by: "host", id: "a", patch: { content: weighted } },
   ]);
   // The example's sidebar shows the title, which its copy of the graph follows.
   const copy = await page.evaluate(() => window.exampleGraph().nodes[0]);
-  expect((copy as NodeData).content).toEqual(TALL);
+  expect((copy as NodeData).content).toEqual(weighted);
 });
 
 test("content past a limit or malformed is refused naming the node, and the graph stays as it was", async ({

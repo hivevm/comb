@@ -20,7 +20,7 @@ impl Graph {
     }
 
     /// Whether `slot` holds a node: a slot below the slots and not free.
-    pub(super) fn holds_node(&self, slot: u32) -> bool {
+    pub fn holds_node(&self, slot: u32) -> bool {
         self.node_slots.holds(slot)
     }
 

@@ -69,8 +69,16 @@ export interface EdgePatch {
   label?: EdgeLabelData | null;
 }
 
-/** A node as the store keeps it: everything but its position; its height is the engine's. */
-export type NodeView = Omit<NodeData, "x" | "y">;
+/** A node as the store keeps it: its identifier and its width. Its position, its content, and
+ *  its height are the engine's (ADR-0029, ADR-0013); a new object for every change of its
+ *  content, so that a view tells the change by identity. */
+export type NodeView = Pick<NodeData, "id" | "width">;
+
+/** A graph as the store takes it once the bridge took it: of each node what the store keeps. */
+export interface KeptGraph {
+  nodes: readonly NodeView[];
+  edges: EdgeData[];
+}
 
 /** What `updateNode` may change of a node: its content, which it replaces whole (ADR-0013). */
 export interface NodePatch {
@@ -107,7 +115,8 @@ export type StoreChange =
       readonly kind: "nodeUpdated";
       readonly by: "host";
       readonly id: string;
-      readonly patch: Readonly<NodePatch>;
+      /** Whether the patch set the node's content, which the engine keeps. */
+      readonly content: boolean;
     };
 
 /** A connection the user drags from the connector `side` of the node in slot `source` (ADR-0024):
@@ -155,10 +164,12 @@ export interface GraphView {
 export interface GraphState extends GraphView {
   /** Replaces the graph by `graph`, whose identifiers hold `idUnits` UTF-16 code units, as the
    *  snapshot counted them while it read them. */
-  load(graph: GraphData, idUnits: number): void;
+  load(graph: KeptGraph, idUnits: number): void;
   /** Keeps `node`, which the engine took into `slot`, without its position. */
   addNode(node: NodeData, slot: number): void;
-  updateNode(id: string, patch: NodePatch): void;
+  /** Records that the engine took a patch of the node `id`, which set its content where
+   *  `content`. */
+  updateNode(id: string, content: boolean): void;
   select(selection: Selection): void;
   setViewport(viewport: Viewport): void;
   positionsMoved(): void;
@@ -242,13 +253,13 @@ function hoveredAndConnectionWithout(
 /** What `load` changes of `state`: the graph replaced, whose identifiers hold `idUnits` code
  *  units, and the selection and the node under the pointer cleared; a connection is ended by its
  *  gesture. */
-function loadedFrom(state: GraphView, graph: GraphData, idUnits: number): Partial<GraphView> {
+function loadedFrom(state: GraphView, graph: KeptGraph, idUnits: number): Partial<GraphView> {
   const slots = new Map<string, number>();
   for (let slot = 0; slot < graph.nodes.length; slot++) slots.set(graph.nodes[slot]!.id, slot);
   const edgeSlots = new Map<string, number>();
   for (let slot = 0; slot < graph.edges.length; slot++) edgeSlots.set(graph.edges[slot]!.id, slot);
   return {
-    nodes: graph.nodes.map(({ id, width, content }) => ({ id, width, content })),
+    nodes: graph.nodes.map(({ id, width }) => ({ id, width })),
     slots,
     edgeSlots,
     edges: graph.edges,
@@ -339,6 +350,15 @@ function patched(edge: EdgeView, patch: EdgePatch): EdgeView {
   };
 }
 
+/** What `updateNode` changes of `state`: the node `id` a new object where its content changed, so
+ *  that a view tells the change by identity, and the change recorded. */
+function updatedFrom(state: GraphView, id: string, content: boolean): Partial<GraphView> {
+  const nodes = content
+    ? state.nodes.map((node) => (node?.id === id ? { ...node } : node))
+    : state.nodes;
+  return { nodes, change: { kind: "nodeUpdated", by: "host", id, content } };
+}
+
 /** What `addEdge` changes of `state`: `edge` kept in `slot`, and its identifiers counted. */
 function withEdge(state: GraphView, edge: EdgeData, slot: number, by: By): Partial<GraphView> {
   const edges = state.edges.slice();
@@ -366,10 +386,10 @@ export function createGraphStore() {
     positionsVersion: 0,
     pointerVersion: 0,
     load: (graph, idUnits) => set((state) => loadedFrom(state, graph, idUnits)),
-    addNode: ({ id, width, content }, slot) =>
+    addNode: ({ id, width }, slot) =>
       set((state) => {
         const nodes = state.nodes.slice();
-        nodes[slot] = { id, width, content };
+        nodes[slot] = { id, width };
         return {
           nodes,
           slots: new Map(state.slots).set(id, slot),
@@ -379,11 +399,7 @@ export function createGraphStore() {
           positionsVersion: state.positionsVersion + 1,
         };
       }),
-    updateNode: (id, patch) =>
-      set((state) => ({
-        nodes: state.nodes.map((node) => (node?.id === id ? { ...node, ...patch } : node)),
-        change: { kind: "nodeUpdated", by: "host", id, patch },
-      })),
+    updateNode: (id, content) => set((state) => updatedFrom(state, id, content)),
     select: (selection) => set({ selection }),
     setViewport: (viewport) => set({ viewport }),
     positionsMoved: () => set((state) => ({ positionsVersion: state.positionsVersion + 1 })),

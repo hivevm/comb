@@ -14,6 +14,7 @@ import {
   edgeColumns,
   nodeColumns,
   PIECE_BOUND,
+  type NodeColumnWriter,
   type EdgeSnapshot,
   type GraphSnapshot,
   type NodeSnapshot,
@@ -21,7 +22,7 @@ import {
   type PlainPatch,
 } from "../bridge";
 import { EDGE_ARROW, edgeColor } from "../render/edges";
-import type { GraphData } from "../store";
+import type { GraphData, KeptGraph } from "../store";
 
 /** The errors this module throws, told from what the host application throws without reading
  *  the thrown value, which may run its code. */
@@ -208,6 +209,44 @@ function nodeOf(read: Reader, node: Fields) {
   };
 }
 
+/** Writes the node `node` into `columns`, read once by `read`, its content straight into its
+ *  columns, cut by `limits` as `contentOf` cuts it, and returns what the store keeps of it: its
+ *  identifier and its width, no copy of its content (ADR-0013). */
+function written(read: Reader, node: Fields, columns: NodeColumnWriter, limits: Limits) {
+  const { id, x, y, width, content } = node;
+  const kept = { id: read.id(id), width: read.number(width) };
+  columns.node(kept.id, read.number(x), read.number(y), kept.width);
+  if (!Array.isArray(content)) columns.noContent();
+  else {
+    const rows = content.length > limits.rows ? limits.rows + 1 : content.length;
+    for (let r = 0; r < rows; r++) {
+      const row: unknown = content[r];
+      if (!Array.isArray(row)) columns.noRow();
+      else writeRow(read, row, columns, limits);
+    }
+  }
+  return kept;
+}
+
+/** Writes the elements of `row`, a list, into `columns`, read once by `read`, at most one beyond
+ *  `limits.columns`, the last of them ending the row. */
+function writeRow(read: Reader, row: unknown[], columns: NodeColumnWriter, limits: Limits) {
+  const count = row.length > limits.columns ? limits.columns + 1 : row.length;
+  if (count === 0) columns.endRow();
+  for (let c = 0; c < count; c++) {
+    const value: unknown = row[c];
+    const last = c === count - 1;
+    if (typeof value !== "object" || value === null || Array.isArray(value))
+      columns.noElement(last);
+    else {
+      const { kind, role, weight, text } = value as Fields;
+      // The kind, the role, and the weight cross as codes and a number, which the writer takes
+      // by `typeof` and by comparing a string with a name.
+      columns.element(kind, role, weight, read.text(text), last);
+    }
+  }
+}
+
 /** A label: absent where null or undefined, `false` where no object. */
 function labelOf(read: Reader, label: unknown) {
   if (label === undefined || label === null) return undefined;
@@ -280,9 +319,7 @@ export function snapshotOf(lists: Lists, limits: Limits) {
         columns.noObject();
         return false;
       }
-      const node = nodeOf(read, item);
-      columns.node(node.id, node.x, node.y, node.width, node.content);
-      return node;
+      return written(read, item, columns, limits);
     },
     done,
   );
@@ -303,7 +340,7 @@ export function snapshotOf(lists: Lists, limits: Limits) {
     },
     done,
   );
-  const kept = { nodes, edges } as GraphData;
+  const kept = { nodes, edges } as KeptGraph;
   const snapshot = { nodes: columns.columns(), edges: edgeWriter.columns() } as GraphSnapshot;
   return { kept, snapshot, idUnits: read.idUnits };
 }

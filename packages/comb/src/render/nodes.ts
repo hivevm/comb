@@ -10,8 +10,8 @@ import {
   TextStyle,
   type TextStyleOptions,
 } from "pixi.js";
-import type { FontMetrics, Placed, TextRole } from "../bridge";
-import type { ContentElement, GraphView, NodeView } from "../store";
+import { ROLE_NAMES, type FontMetrics, type Placed, type TextRole } from "../bridge";
+import type { GraphView, NodeView } from "../store";
 import { Bindings } from "./bindings";
 
 const NODE_FILL = 0xffffff;
@@ -36,7 +36,7 @@ export const LINE_HEIGHTS: Readonly<Record<TextRole, number>> = {
   caption: 14,
 };
 
-/** The character drawn after a cut text, as the engine reserves room for it. */
+/** The character the engine draws after a cut text, whose advance it is handed. */
 export const ELLIPSIS = "…";
 
 /** The characters whose advances the engine is handed: printable ASCII, the Latin-1 supplement,
@@ -62,12 +62,10 @@ export function fontMetricsOf(role: TextRole): FontMetrics {
   return { codes, advances, fallback, lineHeight: LINE_HEIGHTS[role] };
 }
 
-/** One text a view draws: where the engine placed it in its node, and what of it is drawn. */
+/** One text a view draws: where the engine placed it in its node, and what of it is drawn, the
+ *  text or as much of it as fits followed by an ellipsis. */
 export interface DrawnText {
   role: TextRole;
-  /** The text of the content element. */
-  text: string;
-  /** What the view draws of it: the text, or as much as fits followed by an ellipsis. */
   drawn: string;
   x: number;
   y: number;
@@ -75,38 +73,16 @@ export interface DrawnText {
   height: number;
 }
 
-/** The texts of the elements `start` to `end` of `placed`, the elements of `content` in the
- *  order of its rows and theirs; at the middle level those of role title alone. */
-function textsOf(
-  content: NodeView["content"],
-  placed: Placed,
-  start: number,
-  end: number,
-  titlesOnly: boolean,
-): DrawnText[] {
+/** The texts of the elements `start` to `end` of `placed`; at the middle level those of role
+ *  title alone. */
+function textsOf(placed: Placed, start: number, end: number, titlesOnly: boolean): DrawnText[] {
   const texts: DrawnText[] = [];
-  let at = start;
-  for (const row of content) {
-    for (const element of row as readonly ContentElement[]) {
-      if (at >= end) return texts;
-      const i = at++;
-      if (titlesOnly && element.role !== "title") continue;
-      const kept = placed.kept[i]!;
-      const ellipsis = placed.ellipsis[i] === 1;
-      const { text } = element;
-      const drawn =
-        kept >= text.length && !ellipsis ? text : text.slice(0, kept) + (ellipsis ? ELLIPSIS : "");
-      const r = placed.rects.subarray(i * 4, i * 4 + 4);
-      texts.push({
-        role: element.role,
-        text,
-        drawn,
-        x: r[0]!,
-        y: r[1]!,
-        width: r[2]!,
-        height: r[3]!,
-      });
-    }
+  for (let i = start; i < end; i++) {
+    const role = ROLE_NAMES[placed.roles[i]!]!;
+    if (titlesOnly && role !== "title") continue;
+    const drawn = placed.texts.slice(placed.textBounds[i], placed.textBounds[i + 1]);
+    const r = placed.rects.subarray(i * 4, i * 4 + 4);
+    texts.push({ role, drawn, x: r[0]!, y: r[1]!, width: r[2]!, height: r[3]! });
   }
   return texts;
 }
@@ -119,14 +95,15 @@ export class NodeGraphic extends Container {
   /** The node the view shows. */
   nodeId = "";
   /** What the view last drew, compared by content, since a pooled view shows another node from
-   *  one binding to the next: the content by identity, which the store replaces on a change. */
+   *  one binding to the next: the node by identity, which the store replaces where its content
+   *  changes. */
   private drawn: {
-    content: NodeView["content"] | null;
+    node: Readonly<NodeView> | null;
     width: number;
     height: number;
     selected: boolean;
     titlesOnly: boolean;
-  } = { content: null, width: -1, height: -1, selected: false, titlesOnly: false };
+  } = { node: null, width: -1, height: -1, selected: false, titlesOnly: false };
   /** The texts the view draws, for inspection. */
   texts: DrawnText[] = [];
 
@@ -149,11 +126,6 @@ export class NodeGraphic extends Container {
     return this.texts.map((text, i) => ({ ...text, drawnWidth: this.pool[i]!.view.width }));
   }
 
-  /** The text of the first title the view draws, if it draws one. */
-  get drawnTitle(): string | undefined {
-    return this.texts.find((text) => text.role === "title")?.text;
-  }
-
   /** The size the node was last drawn at. */
   size = { width: 0, height: 0 };
 
@@ -170,23 +142,23 @@ export class NodeGraphic extends Container {
   ): void {
     this.nodeId = node.id;
     const { drawn } = this;
-    const { width, content } = node;
+    const { width } = node;
     if (
-      drawn.content === content &&
+      drawn.node === node &&
       drawn.width === width &&
       drawn.height === height &&
       drawn.selected === selected &&
       drawn.titlesOnly === titlesOnly
     )
       return;
-    this.drawn = { content, width, height, selected, titlesOnly };
+    this.drawn = { node, width, height, selected, titlesOnly };
     this.size = { width, height };
     this.box
       .clear()
       .roundRect(0, 0, width, height, 6)
       .fill({ color: NODE_FILL })
       .stroke({ color: selected ? SELECTED_STROKE : NODE_STROKE, width: selected ? 2 : 1 });
-    this.showTexts(textsOf(content, placed, start, end, titlesOnly));
+    this.showTexts(textsOf(placed, start, end, titlesOnly));
   }
 
   /** Draws `texts`, taking text objects from the view's pool and leaving the rest out. */

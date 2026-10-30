@@ -24,7 +24,7 @@ describe("graph store", () => {
       ["a", 0],
       ["b", 1],
     ]);
-    expect(state.nodes[0]).toEqual({ id: "a", width: 100, content: titled("A") });
+    expect(state.nodes[0]).toEqual({ id: "a", width: 100 });
   });
 
   test("moving positions bumps the counter and leaves the graph untouched", () => {
@@ -43,10 +43,19 @@ describe("graph store", () => {
     const store = createGraphStore();
     store.getState().load(graph, units);
     const before = store.getState().nodes;
-    store.getState().updateNode("b", { content: titled("Renamed") });
+    store.getState().updateNode("b", true);
     const after = store.getState().nodes;
     expect(after[0]).toBe(before[0]);
-    expect(after[1]?.content).toEqual(titled("Renamed"));
+    // A node of new content is a new object, which a view tells by identity; the engine keeps
+    // the content.
+    expect(after[1]).not.toBe(before[1]);
+    expect(after[1]).toEqual({ id: "b", width: 100 });
+    expect(store.getState().change).toEqual({
+      kind: "nodeUpdated",
+      by: "host",
+      id: "b",
+      content: true,
+    });
   });
 
   test("an added node takes its slot in the map and the lists, and the change names it", () => {
@@ -59,7 +68,7 @@ describe("graph store", () => {
     store.getState().addNode({ id: "cc", x: 5, y: 6, width: 10, content: titled("C") }, 2);
     const state = store.getState();
     expect(state.nodes).not.toBe(nodes);
-    expect(state.nodes[2]).toEqual({ id: "cc", width: 10, content: titled("C") });
+    expect(state.nodes[2]).toEqual({ id: "cc", width: 10 });
     expect(state.slots.get("cc")).toBe(2);
     expect(state.idUnits).toBe(idUnits + 2);
     expect(state.positionsVersion).toBe(positionsVersion + 1);
@@ -79,7 +88,7 @@ describe("graph store removals", () => {
     const { idUnits } = store.getState();
     store.getState().removeNodes([0], [0], "host");
     const state = store.getState();
-    expect(state.nodes).toEqual([undefined, { id: "b", width: 100, content: titled("B") }]);
+    expect(state.nodes).toEqual([undefined, { id: "b", width: 100 }]);
     expect(state.edges).toEqual([undefined]);
     expect([...state.slots]).toEqual([["b", 1]]);
     expect([...state.edgeSlots]).toEqual([]);

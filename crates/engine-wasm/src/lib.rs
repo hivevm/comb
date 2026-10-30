@@ -39,8 +39,8 @@ pub use graph_data::{
 };
 
 use graph_data::{
-    COLUMN_LIMIT, ContentColumns, ContentData, EdgeColumns, EdgeRefusal, ID_LIMIT, NodeColumns,
-    ROW_LIMIT, TEXT_LIMIT, add_edge_to, add_node_to, edge_refused_of, load_of, malformed, patch_of,
+    COLUMN_LIMIT, ContentData, Drawn, EdgeColumns, EdgeRefusal, ID_LIMIT, NodeColumns, ROW_LIMIT,
+    TEXT_LIMIT, add_edge_to, add_node_to, edge_refused_of, load_of, malformed, patch_of,
     refused_of, slot, unshaped, update_edge_in,
 };
 
@@ -362,11 +362,10 @@ pub struct Engine {
     /// boundaries of each one's elements in `placed`.
     content_bounds: Vec<u32>,
     placed: Vec<Placed>,
-    /// `placed` as the buffers the shell reads: `x, y, width, height` per element, the code units
-    /// of its text drawn, and whether an ellipsis follows them.
+    /// `x, y, width, height` of each element of `placed`, as the shell reads them.
     content_rects: Vec<f32>,
-    content_kept: Vec<u32>,
-    content_ellipsis: Vec<u8>,
+    /// The role and the drawn text of each element of `placed`.
+    drawn: Drawn,
 }
 
 #[wasm_bindgen]
@@ -409,14 +408,14 @@ impl Engine {
         x: &[f64],
         y: &[f64],
         width: &[f64],
-        row_bounds: &[u32],
-        element_bounds: &[u32],
-        kinds: &[u8],
-        weights: &[f64],
-        roles: &[u8],
+        row_bounds: Vec<u32>,
+        element_bounds: Vec<u32>,
+        kinds: Vec<u8>,
+        weights: Vec<f64>,
+        roles: Vec<u8>,
         texts: Vec<String>,
-        text_bounds: &[u32],
-        text_valid: &[u8],
+        text_bounds: Vec<u32>,
+        text_valid: Vec<u8>,
         refused_at: Option<u32>,
         refused_field: Option<u32>,
         refused_row: Option<u32>,
@@ -471,15 +470,17 @@ impl Engine {
             target_side,
             refused: edge_refused_of(edge_refused_at, edge_refused_field)?,
         };
-        let content = ContentColumns {
+        // The content's columns, which the engine keeps as they crossed, owned without a copy.
+        let mut content = ContentData {
             row_bounds,
             element_bounds,
             kinds,
             weights,
             roles,
-            texts: &texts,
+            texts,
             text_bounds,
             text_valid,
+            spans: Vec::new(),
         };
         let nodes = NodeColumns {
             ids: &ids,
@@ -487,25 +488,41 @@ impl Engine {
             x,
             y,
             width,
-            content,
+            content: content.view(),
             refused,
         };
         let loaded = load_of(&nodes, &edges, &self.fonts)?;
         self.graph = loaded.graph;
-        self.content = ContentData {
-            row_bounds: row_bounds.to_vec(),
-            element_bounds: element_bounds.to_vec(),
-            kinds: kinds.to_vec(),
-            weights: weights.to_vec(),
-            roles: roles.to_vec(),
-            text_bounds: text_bounds.to_vec(),
-            text_valid: text_valid.to_vec(),
-            texts,
-            spans: loaded.spans,
-        };
+        content.spans = loaded.spans;
+        self.content = content;
         self.edited.clear();
         self.visible = Visible::default();
         slot(x.len())
+    }
+
+    /// The texts the last `query` placed, as the shell draws them, one after another, which the
+    /// boundaries of `contentTextBounds…` cut: each text, or as much of it as fits followed by an
+    /// ellipsis (ADR-0013). One copy per query, of the texts of the nodes it found alone.
+    #[wasm_bindgen(js_name = contentTexts)]
+    pub fn content_texts(&mut self) -> String {
+        trap::spring();
+        self.drawn.texts.clone()
+    }
+
+    /// The content of the node in `slot`, as the host application's type describes it: built when
+    /// inspection or a change Comb tells asks for it, since the shell keeps none (ADR-0013). A slot
+    /// that holds no node throws a `SlotError`.
+    pub fn content(&mut self, slot: u32) -> Result<Ts<NodeContent>, CallRefusal> {
+        trap::spring();
+        if !self.graph.holds_node(slot) {
+            return Err(CallRefusal::Slot(SlotError::NoNode { slot }));
+        }
+        let content = match self.edited.get(&slot) {
+            Some(content) => content.content_of(0),
+            None => self.content.content_of(slot as usize),
+        };
+        Ts::from_rust(&content)
+            .map_err(|_| malformed("the content could not be handed back").into())
     }
 
     /// Hands over the metrics of the font the shell draws the texts of the role `role`, a
@@ -749,6 +766,7 @@ impl Engine {
     fn lay_out_found(&mut self, level: DetailLevel) {
         self.content_bounds.clear();
         self.placed.clear();
+        self.drawn.clear();
         if level != DetailLevel::Far {
             self.content_bounds.push(0);
             let mut cells: Vec<Cell> = Vec::new();
@@ -761,19 +779,17 @@ impl Engine {
                     None => (&self.content, slot as usize),
                 };
                 let fonts = &self.fonts;
+                let start = self.placed.len();
                 content.lay_out(node, width, fonts, &mut cells, &mut rows, &mut self.placed);
+                content.draw(node, &self.placed[start..], &mut self.drawn);
                 self.content_bounds
                     .push(graph_data::numbered(self.placed.len()));
             }
         }
         self.content_rects.clear();
-        self.content_kept.clear();
-        self.content_ellipsis.clear();
         for placed in &self.placed {
             let rect = [placed.x, placed.y, placed.width, placed.height];
             self.content_rects.extend(rect);
-            self.content_kept.push(placed.kept);
-            self.content_ellipsis.push(u8::from(placed.ellipsis));
         }
     }
 }
@@ -835,30 +851,30 @@ impl Engine {
         self.content_rects.len()
     }
 
-    /// Where the buffer starts that `query` writes, per placed text, how many of its UTF-16 code
-    /// units are drawn into.
-    #[wasm_bindgen(js_name = contentKeptPtr)]
-    pub fn content_kept_ptr(&self) -> *const u32 {
-        self.content_kept.as_ptr()
+    /// Where the buffer starts that `query` writes, per placed element, the code of its text's
+    /// `RoleCode` into.
+    #[wasm_bindgen(js_name = contentRolesPtr)]
+    pub fn content_roles_ptr(&self) -> *const u8 {
+        self.drawn.roles.as_ptr()
     }
 
-    /// How many values the buffer of drawn code units holds: one per placed element.
-    #[wasm_bindgen(js_name = contentKeptLen)]
-    pub fn content_kept_len(&self) -> usize {
-        self.content_kept.len()
+    /// How many values the buffer of roles holds: one per placed element.
+    #[wasm_bindgen(js_name = contentRolesLen)]
+    pub fn content_roles_len(&self) -> usize {
+        self.drawn.roles.len()
     }
 
-    /// Where the buffer starts that `query` writes, per placed text, whether an ellipsis follows
-    /// what is drawn of it, 1 or 0, into.
-    #[wasm_bindgen(js_name = contentEllipsisPtr)]
-    pub fn content_ellipsis_ptr(&self) -> *const u8 {
-        self.content_ellipsis.as_ptr()
+    /// Where the buffer starts that `query` writes the boundaries of the drawn texts in
+    /// `contentTexts`, in UTF-16 code units, into: one more than there are placed elements.
+    #[wasm_bindgen(js_name = contentTextBoundsPtr)]
+    pub fn content_text_bounds_ptr(&self) -> *const u32 {
+        self.drawn.bounds.as_ptr()
     }
 
-    /// How many values the buffer of ellipses holds: one per placed element.
-    #[wasm_bindgen(js_name = contentEllipsisLen)]
-    pub fn content_ellipsis_len(&self) -> usize {
-        self.content_ellipsis.len()
+    /// How many boundaries the buffer of drawn texts' boundaries holds.
+    #[wasm_bindgen(js_name = contentTextBoundsLen)]
+    pub fn content_text_bounds_len(&self) -> usize {
+        self.drawn.bounds.len()
     }
 
     /// Where the buffer starts that `query` writes the node slots it found into.
@@ -1126,8 +1142,11 @@ mod tests {
             [12.0, 10.0, 76.0, 18.0, 12.0, 10.0, 76.0, 18.0]
         );
         assert_eq!(engine.content_rects[8..12], [12.0, 28.0, 76.0, 16.0]);
-        assert_eq!(engine.content_kept, [1; 6]);
-        assert_eq!(engine.content_ellipsis, [0; 6]);
+        // Each text drawn whole, with its role: `a`'s title "x", `b`'s title "t" and four bodies.
+        assert_eq!(engine.drawn.texts, "xtbbbb");
+        assert_eq!(engine.drawn.bounds, [0, 1, 2, 3, 4, 5, 6]);
+        let (title, body) = (RoleCode::Title as u8, RoleCode::Body as u8);
+        assert_eq!(engine.drawn.roles, [title, title, body, body, body, body]);
     }
 
     #[test]
@@ -1149,8 +1168,23 @@ mod tests {
         assert_eq!(engine.graph.sizes()[2..], [100.0, 102.0]);
         near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
         // The long title is cut to 9 glyphs and an ellipsis within its column of 76.
-        assert_eq!(engine.content_kept[1], 9);
-        assert_eq!(engine.content_ellipsis[1], 1);
+        let long = &engine.drawn.texts[engine.drawn.bounds[1] as usize..];
+        assert!(long.starts_with("abcdefghi\u{2026}b"), "{long}");
+        assert_eq!(engine.drawn.bounds[2] - engine.drawn.bounds[1], 10);
+        // Its content, built when asked, is the patch's, each weight as the engine keeps it.
+        let text = |role, text: &str| ContentElement::Text {
+            role,
+            text: text.to_owned(),
+            weight: Some(1.0),
+        };
+        let rows = engine.edited[&slot].content_of(0).0;
+        assert_eq!(rows.len(), 5);
+        assert_eq!(rows[0], [text(TextRole::Title, "abcdefghijklmnopqrst")]);
+        assert_eq!(rows[4], [text(TextRole::Body, "b")]);
+        assert_eq!(
+            engine.content.content_of(0).0,
+            [[text(TextRole::Title, "x")]]
+        );
         // A refused patch leaves the node as it was.
         let refused = NodePatch(vec![(
             "content".to_owned(),
@@ -1180,7 +1214,8 @@ mod tests {
         let none = graph_data::OwnedEdgeColumns::of([]);
         assert_eq!(load_into(&mut engine, &columns, &none), Ok(2));
         near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
-        assert_eq!(engine.content_kept, [0, 0]);
+        assert_eq!(engine.drawn.texts, "");
+        assert_eq!(engine.drawn.bounds, [0, 0, 0]);
         // A node patched to no rows at all lays out to none, the least height high.
         let patch = NodePatch(vec![("content".to_owned(), content(&[]).into())]);
         let (checked, height) = patch_of("b", &patch, &engine.fonts).unwrap().unwrap();
