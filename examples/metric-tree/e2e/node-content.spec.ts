@@ -198,3 +198,62 @@ test("content past a limit or malformed is refused naming the node, and the grap
   expect(drawn).toMatchObject({ height: NODE_HEIGHT, title: "a" });
   expect(drawn!.texts).toHaveLength(1);
 });
+
+test("a text of characters beyond the measured ones is cut within its column", async ({ page }) => {
+  // Verifies: ADR-0013
+  await open(page);
+  const texts = [
+    "数据驱动的增长指标与留存率的关系",
+    "📈🚀🔥💡✨🎯📊🧭🌍🔔",
+    "Δ 漢字 😀 mixed 文字 🚀 text",
+  ];
+  await loaded(page, {
+    nodes: texts.map((value, i) => ({
+      ...node(`n${i}`, 0, i * 100),
+      width: 120,
+      content: [[text("title", value)]],
+    })),
+    edges: [],
+  });
+  for (let i = 0; i < texts.length; i++) {
+    const [drawn] = (await drawnNode(page, `n${i}`))!.texts!;
+    expect(drawn!.drawn.endsWith("…")).toBe(true);
+    expect(drawn!.drawnWidth).toBeLessThanOrEqual(drawn!.width);
+  }
+});
+
+test("a node's connectors follow the height its content lays out to", async ({ page }) => {
+  // Verifies: ADR-0013, ADR-0024
+  await open(page);
+  await loaded(page, { nodes: [{ ...node("b"), content: TALL }], edges: [] });
+  /** The connectors drawn while the pointer is over the node, by side. */
+  const connectors = async () => {
+    const at = await page.evaluate(() => {
+      const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();
+      const point = window.screenPoint(110, 20);
+      return { x: rect.left + point.x, y: rect.top + point.y };
+    });
+    await page.mouse.move(at.x, at.y);
+    return page.evaluate(async () => {
+      await window.comb.whenRendered();
+      const points = window.inspect().connectorPoints;
+      return Object.fromEntries(points.map(({ side, x, y }) => [side, [x, y]]));
+    });
+  };
+  expect(await connectors()).toEqual({
+    top: [110, 0],
+    right: [NODE_WIDTH, TALL_HEIGHT / 2],
+    bottom: [110, TALL_HEIGHT],
+    left: [0, TALL_HEIGHT / 2],
+  });
+  await page.evaluate(() =>
+    window.comb.updateNode("b", { content: [[{ kind: "text", role: "title", text: "b" }]] }),
+  );
+  await page.mouse.move(0, 0);
+  expect(await connectors()).toEqual({
+    top: [110, 0],
+    right: [NODE_WIDTH, NODE_HEIGHT / 2],
+    bottom: [110, NODE_HEIGHT],
+    left: [0, NODE_HEIGHT / 2],
+  });
+});

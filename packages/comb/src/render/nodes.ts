@@ -48,17 +48,28 @@ const MEASURED = (() => {
   return chars + ELLIPSIS;
 })();
 
+/** Wide characters beyond the measured ones, of the scripts and symbols a node most likely holds,
+ *  whose widest the engine takes as the advance of every character it has none for: ideographs,
+ *  full-width forms, Hangul, and emoji. */
+const WIDE = "漢字ＷＭ한글😀📈🚀🔥💡🎯🧭🌍";
+
 /** The metrics of the font `role`'s texts are drawn in, as the `BitmapText` of PixiJS lays a
  *  line out: each measured glyph's advance at the font's size, the widest for every other
  *  character, and the role's line height (ADR-0013). */
 export function fontMetricsOf(role: TextRole): FontMetrics {
   const style = TEXT_STYLES[role];
-  const font = BitmapFontManager.getFont(MEASURED, new TextStyle(style));
+  const font = BitmapFontManager.getFont(MEASURED + WIDE, new TextStyle(style));
   const scale = (style.fontSize as number) / font.baseMeasurementFontSize;
+  const advance = (char: string) => (font.chars[char]?.xAdvance ?? 0) * scale;
   const chars = [...MEASURED];
   const codes = Uint32Array.from(chars, (char) => char.codePointAt(0)!);
-  const advances = Float64Array.from(chars, (char) => (font.chars[char]?.xAdvance ?? 0) * scale);
-  const fallback = advances.reduce((widest, advance) => Math.max(widest, advance), 0);
+  const advances = Float64Array.from(chars, advance);
+  // Every other character advances as the widest measured one, wide ones among them, so that a
+  // text of them is cut too early rather than past its column.
+  const fallback = [...MEASURED, ...WIDE].reduce(
+    (widest, char) => Math.max(widest, advance(char)),
+    0,
+  );
   return { codes, advances, fallback, lineHeight: LINE_HEIGHTS[role] };
 }
 
