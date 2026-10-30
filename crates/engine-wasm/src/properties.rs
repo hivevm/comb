@@ -23,7 +23,7 @@ use serde::Deserialize;
 use serde::de::value::{MapDeserializer, SeqDeserializer};
 use serde::de::{self, IntoDeserializer, Visitor};
 
-use comb_engine::content::Fonts;
+use comb_engine::content::{Font, Fonts, MAX_METRIC, Role};
 
 use super::{
     ContentInput, EdgeCells, EdgeInput, EdgePatch, EdgeRefusal, GraphBatch, GraphDataProblem,
@@ -480,9 +480,49 @@ fn accepted_alone(edge: Value) -> bool {
 }
 
 /// Whether nothing in `batch`, read of `data`, is to be refused, by brute force over the batch
-/// and, for the content of its nodes, over `data` itself.
+/// and, for the content of its nodes, over `data` itself, in the fonts of no font handed over.
 fn acceptable(batch: &GraphBatch, data: &Value) -> bool {
-    accepts(batch).unwrap_or(false) && nodes_of_data(data).iter().all(content_ok)
+    acceptable_in(batch, data, LINES)
+}
+
+/// The line heights of the title, the body, and the caption before a font is handed over.
+const LINES: [f64; 3] = [18.0, 16.0, 14.0];
+
+/// Whether nothing in `batch`, read of `data`, is to be refused where the roles' lines are
+/// `lines` high: `acceptable`, and each node's far side, at the height its rows and padding make,
+/// at least 64, within the world's limit.
+fn acceptable_in(batch: &GraphBatch, data: &Value, lines: [f64; 3]) -> bool {
+    accepts(batch).unwrap_or(false)
+        && nodes_of_data(data)
+            .iter()
+            .all(|node| content_ok(node) && far_side_ok(node, lines))
+}
+
+/// Whether the far side of `node`, its content well formed, lies within the world's limit: its
+/// `y`, as `f32` holds it, and the height of its rows, each as high as its tallest text, and its
+/// padding of 10 above and below, at least 64.
+fn far_side_ok(node: &Value, lines: [f64; 3]) -> bool {
+    let Some(fields) = fields_of(node) else {
+        return true;
+    };
+    let (Some(Value::Number(y)), Some(Value::List(rows))) =
+        (get(fields, "y"), get(fields, "content"))
+    else {
+        return true;
+    };
+    let line = |element: &Value| match fields_of(element).and_then(|fields| get(fields, "role")) {
+        Some(Value::Text(role)) if role == "title" => lines[0],
+        Some(Value::Text(role)) if role == "body" => lines[1],
+        _ => lines[2],
+    };
+    let row = |row: &Value| match row {
+        Value::List(elements) => elements.iter().map(line).fold(0.0, f64::max),
+        _ => 0.0,
+    };
+    let height = (20.0 + rows.iter().map(row).sum::<f64>()).max(64.0);
+    let height = f64::from(height as f32);
+    // NaN beside a coordinate the oracle names elsewhere: within, as `<=` reads it here.
+    (height <= 2f64.powi(120) - f64::from(*y as f32)) || y.is_nan()
 }
 
 /// The nodes of graph data `data`, none where it holds no list of them.
@@ -946,6 +986,18 @@ fn piece_bound() -> impl Strategy<Value = usize> {
 /// the fields, named as such; the edges as columns too, each read as the edge of `addEdge` is but
 /// for its arrowhead and sides, which cross as their codes.
 fn loaded(bound: usize, data: Value) -> Result<comb_engine::graph::Graph, GraphDataProblem> {
+    loaded_in(bound, data, &Fonts::default())
+}
+
+/// The graph a load of `data` builds, as `loaded` builds it, laid out in `fonts`; every node of a
+/// load the bridge accepts is laid out and drawn as a query at the near level does, and held to
+/// its node: every placed rectangle finite and inside the node's width and height, and each
+/// drawn text a prefix of its text, followed by an ellipsis where it was cut.
+fn loaded_in(
+    bound: usize,
+    data: Value,
+    fonts: &Fonts,
+) -> Result<comb_engine::graph::Graph, GraphDataProblem> {
     let (nodes, edges) = match &data {
         Value::Object(fields) => (get(fields, "nodes"), get(fields, "edges")),
         _ => (None, None),
@@ -967,28 +1019,93 @@ fn loaded(bound: usize, data: Value) -> Result<comb_engine::graph::Graph, GraphD
     let edges: Vec<Option<EdgeCells>> = read(edges);
     let nodes = OwnedColumns::in_pieces(bound, nodes.iter().map(Option::as_ref));
     let edges = OwnedEdgeColumns::in_pieces(bound, edges.iter().map(Option::as_ref));
-    let fonts = Fonts::default();
-    let loaded = load_of(&nodes.view(), &edges.view(), &fonts)?;
-    // Every node of a load the bridge accepted lays out, as a query at the near level lays it out.
+    let loaded = load_of(&nodes.view(), &edges.view(), fonts)?;
     let mut content = nodes.content.clone();
     content.spans = loaded.spans;
     let (mut cells, mut rows, mut placed) = (Vec::new(), Vec::new(), Vec::new());
     let mut drawn = super::Drawn::default();
     drawn.clear();
     for node in 0..loaded.graph.nodes_in_use() as usize {
-        let width = loaded.graph.sizes()[node * 2];
+        let [width, height] = [0, 1].map(|axis| f64::from(loaded.graph.sizes()[node * 2 + axis]));
         let start = placed.len();
-        content.lay_out(node, width, &fonts, &mut cells, &mut rows, &mut placed);
+        content.lay_out(
+            node,
+            width as f32,
+            fonts,
+            &mut cells,
+            &mut rows,
+            &mut placed,
+        );
         content.draw(node, &placed[start..], &mut drawn);
+        for at in &placed[start..] {
+            let [x, y, w, h] = [at.x, at.y, at.width, at.height].map(f64::from);
+            assert!(
+                [x, y, w, h].iter().all(|v| v.is_finite() && *v >= 0.0),
+                "{at:?}"
+            );
+            assert!(
+                x + w <= width && y + h <= height,
+                "{at:?} in {width} x {height}"
+            );
+        }
         content.content_of(node);
     }
     assert_eq!(drawn.bounds.len(), placed.len() + 1);
+    // Each drawn text a prefix of its text, an ellipsis after it where it was cut.
+    let shown = split_utf16(&drawn.texts, &drawn.bounds);
+    for (index, (shown, at)) in shown.iter().zip(&placed).enumerate() {
+        let text = content.text(index);
+        let prefix = if at.ellipsis {
+            shown
+                .strip_suffix('\u{2026}')
+                .expect("an ellipsis after a cut text")
+        } else {
+            shown
+        };
+        assert!(text.starts_with(prefix), "{shown:?} of {text:?}");
+    }
     // Each text is read back as the column holds it, mapped or not.
     let texts = super::values(&content.texts, &content.text_bounds).expect("mapped texts");
     for (index, text) in texts.into_iter().enumerate() {
         assert_eq!(content.text(index), text);
     }
     Ok(loaded.graph)
+}
+
+/// `text` cut at `bounds`, in UTF-16 code units.
+fn split_utf16<'t>(text: &'t str, bounds: &[u32]) -> Vec<&'t str> {
+    let mut offsets = Vec::with_capacity(bounds.len());
+    let mut units = 0;
+    let mut next = bounds.iter().peekable();
+    for (byte, character) in text.char_indices() {
+        while next.next_if(|&&bound| bound as usize == units).is_some() {
+            offsets.push(byte);
+        }
+        units += character.len_utf16();
+    }
+    offsets.extend(next.map(|_| text.len()));
+    offsets.windows(2).map(|at| &text[at[0]..at[1]]).collect()
+}
+
+/// Fonts of any metrics: per role a glyph advance, an ellipsis's, and a line height, mostly of an
+/// ordinary font, now and then of none or of the largest, so that texts are cut and rows tall.
+fn fonts() -> impl Strategy<Value = (Fonts, [f64; 3])> {
+    let metric = || prop::sample::select(vec![0.0, 1.0, 6.5, 9.0, 30.0, MAX_METRIC]);
+    let role = (metric(), metric(), metric());
+    (role.clone(), role.clone(), role).prop_map(|roles| {
+        let mut fonts = Fonts::default();
+        let mut lines = [0.0; 3];
+        let ellipsis = [u32::from(comb_engine::content::ELLIPSIS)];
+        for (i, (role, (advance, dots, line))) in [Role::Title, Role::Body, Role::Caption]
+            .into_iter()
+            .zip([roles.0, roles.1, roles.2])
+            .enumerate()
+        {
+            fonts.set(role, Font::new(&ellipsis, &[dots], advance, line).unwrap());
+            lines[i] = line;
+        }
+        (fonts, lines)
+    })
 }
 
 /// The edge `e0` from `n0` to `n1`, styled, dashed, and labelled, which a patch of `updateEdge`
@@ -1198,6 +1315,7 @@ proptest! {
     fn any_graph_data_ends_in_a_typed_error_or_a_graph(
         value in graph_data(),
         bound in piece_bound(),
+        (fonts, lines) in fonts(),
     ) {
         // Verifies: ADR-0034
         // A panic anywhere below fails the case; the runner catches it and shrinks the input.
@@ -1205,7 +1323,7 @@ proptest! {
         // is held to the oracles of the value it was built of.
         let named = named_fields(&value);
         let batch = || reading(|| GraphBatch::deserialize(value.clone())).ok();
-        match loaded(bound, value.clone()) {
+        match loaded_in(bound, value.clone(), &fonts) {
             // A value without the shape of graph data is refused before any check of the
             // bridge's own, as malformed.
             Err(error @ GraphDataProblem::Malformed { .. }) => {
@@ -1215,7 +1333,7 @@ proptest! {
             Ok(graph) => {
                 prop_assert!(shaped(&value));
                 let batch = batch().expect("graph data of its shape reads as a batch");
-                prop_assert!(named.is_empty() && acceptable(&batch, &value));
+                prop_assert!(named.is_empty() && acceptable_in(&batch, &value, lines));
                 prop_assert_eq!(graph.positions().len(), 2 * batch.nodes.len());
             }
             Err(error) => {
@@ -1238,7 +1356,7 @@ proptest! {
                     _ => {
                         let batch = batch().expect("graph data of its shape reads as a batch");
                         prop_assert!(named.is_empty(), "refused {:?}, not {:?}", error, named);
-                        prop_assert!(!acceptable(&batch, &value), "refused {:?}", error);
+                        prop_assert!(!acceptable_in(&batch, &value, lines), "refused {:?}", error);
                     }
                 }
             }
