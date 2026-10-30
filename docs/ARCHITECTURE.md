@@ -69,7 +69,9 @@ code reaches the engine, and a text of any length costs no more than that to che
 snapshot's functions return, so that the type checker refuses the host's graph data, node, edge, or
 patch handed to the bridge directly (`bridge/snapshot-only.test.ts`). The bridge checks the counts
 of nodes and edges before anything is copied, then the code units of the identifiers, counted while
-the snapshot is read and read no further once they exceed the budget, then the snapshot, and the
+the snapshot is read and read no further once they exceed the budget, then the code units of the
+texts of content, counted and stopped at their budget alike (`checkContentBudget`, naming the node
+whose text passed it), then the snapshot, and the
 store keeps the snapshot's edges and of each node its identifier and width; a node's content is the
 engine's alone, which the snapshot of a load writes straight into its columns, and which the
 engine's `content` builds when inspection or a change Comb tells asks for it. A load's nodes and
@@ -160,7 +162,8 @@ The functional core and its shell follow
 - **Bridge** — `crates/engine-wasm` holds every WebAssembly export: `loadGraph` checks graph data
   and resolves edge ends to slots, keeps the content of the nodes, and makes each node as high as
   its content lays out to in the fonts `setFont` handed over, which the sizes buffer holds beside
-  the positions buffer, `updateNode` checks a patch of a
+  the positions buffer, and a font handed over later lays every node out anew; a node whose far
+  side, by that height, lies past the world's limit is refused; `updateNode` checks a patch of a
   node's content as a load checks it and gives the node the new content and its height, `addNode`
   checks one node as a load would and returns the slot the engine chose for it, `addEdge` checks one
   edge as a load would, refuses one from a node to
