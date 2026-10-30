@@ -1306,12 +1306,14 @@ test("load takes 600,000 titles and 600,000 label texts of 1,000 code units, the
   expect(labels).toEqual({ problem: null, drawn: true, ms: labels.ms });
 });
 
-/** In the page: provokes each kind of `GraphDataProblem` through `load` or `updateNode`, one call
- *  each after a valid load, and reports the kind of problem each threw. Its table is typed by the
- *  kinds, so that a kind the union gains or loses fails the type check; it leaves out
- *  `contentBudgetExceeded`, more text than a browser test holds, which the bridge crate's tests
- *  decide. */
-async function everyKind() {
+/** The calls `installKinds` leaves in the page, one per kind of `GraphDataProblem`. */
+type Kinds = Window & { kindCalls: Record<string, () => void> };
+
+/** In the page: installs a call that provokes each kind of `GraphDataProblem` through `load` or an
+ *  edit, which `everyKind` makes. Its table is typed by the kinds, so that a kind the union gains
+ *  or loses fails the type check; it leaves out `contentBudgetExceeded`, more text than a browser
+ *  test holds, which the bridge crate's tests decide. */
+function installKinds() {
   const nodeAt = (id: string) => window.node(id);
   const [two, anEdge] = [[nodeAt("a"), nodeAt("b")], { id: "e", source: "a", target: "b" }];
   const [label, long] = [{ text: "e", t: 0.5, offset: 0 }, "x".repeat(256)];
@@ -1347,17 +1349,28 @@ async function everyKind() {
     tooMany: load({ nodes: new Array(1_000_001), edges: [] }),
     idTooLong: nodes({ id: long + "x" }),
     // 250,001 identifiers of 256 code units hold more than 64,000,000 together.
-    idBudgetExceeded: load({ nodes: new Array(250_001).fill(nodeAt(long)), edges: [] }),
+    idBudgetExceeded: load({
+      nodes: Array.from({ length: 250_001 }, () => nodeAt(long)),
+      edges: [],
+    }),
     unknownNode: () => window.comb.updateNode("z", { content: [] }),
     unknownEdge: () => window.comb.removeEdges(["z"]),
     selfEdge: () => window.comb.addEdge({ id: "e", source: "a", target: "a" }),
     unknownEdgePatchField: () => {
-      load({ nodes: two, edges: [anEdge] })();
+      window.comb.addNode(nodeAt("b"));
+      window.comb.addEdge({ id: "e", source: "a", target: "b" });
       window.comb.updateEdge("e", { width: 2 } as never);
     },
   };
+  (window as unknown as Kinds).kindCalls = calls;
+}
+
+/** In the page: makes each call `installKinds` left, one after a valid load each, and reports the
+ *  kind of problem each threw. */
+function everyKind() {
+  const nodeAt = (id: string) => window.node(id);
   const thrown: Record<string, unknown> = {};
-  for (const [kind, call] of Object.entries(calls)) {
+  for (const [kind, call] of Object.entries((window as unknown as Kinds).kindCalls)) {
     window.comb.load({ nodes: [nodeAt("a")], edges: [] });
     try {
       call();
@@ -1379,6 +1392,7 @@ test("load and the methods that edit the graph throw every kind of GraphDataProb
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
+  await page.evaluate(installKinds);
   const thrown = await page.evaluate(everyKind);
   expect(errors).toEqual([]);
   expect(thrown).toEqual(Object.fromEntries(Object.keys(thrown).map((kind) => [kind, kind])));
