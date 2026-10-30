@@ -64,6 +64,8 @@ interface Reader {
   text(value: unknown): unknown;
   id(value: unknown): unknown;
   content(value: unknown): unknown;
+  /** The most code units of a text. */
+  textLimit: number;
   /** The code units of the identifiers read so far. */
   idUnits: number;
 }
@@ -94,6 +96,7 @@ function readerOf(limits: Limits): Reader {
       return id;
     },
     content: (value) => (Array.isArray(value) ? contentOf(reader, value, limits) : falseOr(value)),
+    textLimit: limits.text,
     idUnits: 0,
   };
   return reader;
@@ -123,14 +126,22 @@ function contentOf(read: Reader, rows: readonly unknown[], limits: Limits) {
   return content;
 }
 
+/** A name of an element's kind or a text's role, which the bridge reads as a code: a string as
+ *  `read` reads a text but not searched for a lone surrogate, since a name with one names no
+ *  kind or role and is refused as such. */
+function nameOf(value: unknown, read: Reader): unknown {
+  if (typeof value !== "string") return read.text(value);
+  return value.length > read.textLimit ? value.slice(0, read.textLimit + 1) : value;
+}
+
 /** An element of content as plain data, or `false` where it is no object. */
 function elementOf(read: Reader, value: unknown) {
   const fields = objectOf(value);
   if (!fields || Array.isArray(value)) return false;
   const { kind, role, text, weight } = fields;
   const element: Record<string, unknown> = {
-    kind: read.text(kind),
-    role: read.text(role),
+    kind: nameOf(kind, read),
+    role: nameOf(role, read),
     text: read.text(text),
   };
   // No key for a weight left out, which the bridge reads as 1, so that Comb keeps none either.

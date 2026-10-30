@@ -126,8 +126,8 @@ export interface NodeColumnWriter {
 function stringColumn(count: number, bound: number) {
   const pieces: string[] = [];
   let values: string[] = [];
-  const bounds = growing(Uint32Array, count + 1);
-  bounds.push(0);
+  let bounds = new Uint32Array(count + 1);
+  let written = 0;
   let units = 0;
   let pieceUnits = 0;
   const cut = () => {
@@ -152,39 +152,19 @@ function stringColumn(count: number, bound: number) {
         pieceUnits += length;
         units += length;
       }
-      bounds.push(units);
+      if (written + 1 === bounds.length) bounds = grown(bounds);
+      bounds[++written] = units;
       return text;
     },
     pieces: () => {
       cut();
       return pieces;
     },
-    bounds: () => bounds.values(),
+    bounds: () => bounds.subarray(0, written + 1),
   };
 }
 
 type Typed = Uint8Array | Uint32Array | Float64Array;
-
-/** A typed array of `T` that values are pushed onto, which grows by doubling, starting with room
- *  for `capacity`. */
-function growing<T extends Typed>(of: new (length: number) => T, capacity: number) {
-  let array = new of(Math.max(capacity, 16));
-  let length = 0;
-  return {
-    push(value: number) {
-      if (length === array.length) {
-        const grown = new of(array.length * 2);
-        grown.set(array);
-        array = grown;
-      }
-      array[length++] = value;
-    },
-    get length() {
-      return length;
-    },
-    values: () => array.subarray(0, length) as T,
-  };
-}
 
 /** The code of each kind of element and each role by its name, typed by the generated names so
  *  that a kind or a role added in the engine fails here until it has its code (ADR-0034). */
@@ -205,66 +185,102 @@ const WEIGHT = 1;
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** A writer of the content columns of at most about `count` nodes, its texts in pieces of at most
- *  `bound` code units; `refuse` names the first shape it cannot read. */
-function contentColumns(
-  count: number,
-  bound: number,
-  refuse: (field: NodeField, row?: number, column?: number) => void,
-) {
-  const rowBounds = growing(Uint32Array, count + 1);
-  const elementBounds = growing(Uint32Array, count + 1);
-  const kinds = growing(Uint8Array, count);
-  const weights = growing(Float64Array, count);
-  const roles = growing(Uint8Array, count);
-  const texts = stringColumn(count, bound);
-  const textValid = growing(Uint8Array, count);
-  rowBounds.push(0);
-  elementBounds.push(0);
-  const element = (value: unknown, row: number, column: number) => {
+/** A writer of the content columns of about `count` nodes of one row of one element each, which
+ *  grows past that, its texts in pieces of at most `bound` code units; `refuse` names the first
+ *  shape it cannot read. Each value is written into its typed array in place, without a call per
+ *  value, since a load writes several per node. */
+class ContentWriter {
+  private rowBounds: Uint32Array;
+  private elementBounds: Uint32Array;
+  private kinds: Uint8Array;
+  private weights: Float64Array;
+  private roles: Uint8Array;
+  private textValid: Uint8Array;
+  private readonly texts: ReturnType<typeof stringColumn>;
+  private nodes = 0;
+  private rows = 0;
+  private elements = 0;
+  private valid = 0;
+
+  constructor(
+    count: number,
+    bound: number,
+    private readonly refuse: (field: NodeField, row?: number, column?: number) => void,
+  ) {
+    this.rowBounds = new Uint32Array(count + 1);
+    this.elementBounds = new Uint32Array(count + 1);
+    this.kinds = new Uint8Array(count);
+    this.weights = new Float64Array(count);
+    this.roles = new Uint8Array(count);
+    this.textValid = new Uint8Array(count);
+    this.texts = stringColumn(count, bound);
+  }
+
+  /** Writes the content of the next node: no rows where it is no list, which `refuse` names. */
+  add(content: unknown): void {
+    if (!Array.isArray(content)) this.refuse(NodeField.Content);
+    else {
+      for (let r = 0; r < content.length; r++) {
+        const row: unknown = content[r];
+        if (!Array.isArray(row)) this.refuse(NodeField.Row, r);
+        else for (let c = 0; c < row.length; c++) this.element(row[c], r, c);
+        if (this.rows + 1 === this.elementBounds.length)
+          this.elementBounds = grown(this.elementBounds);
+        this.elementBounds[++this.rows] = this.elements;
+      }
+    }
+    if (this.nodes + 1 === this.rowBounds.length) this.rowBounds = grown(this.rowBounds);
+    this.rowBounds[++this.nodes] = this.rows;
+  }
+
+  /** Writes the element `value` at `column` of `row`: of no kind where it is no object, which
+   *  `refuse` names. */
+  private element(value: unknown, row: number, column: number): void {
+    const at = this.elements++;
+    if (at === this.kinds.length) {
+      this.kinds = grown(this.kinds);
+      this.weights = grown(this.weights);
+      this.roles = grown(this.roles);
+      this.textValid = grown(this.textValid);
+    }
     if (!isObject(value)) {
-      refuse(NodeField.Element, row, column);
-      kinds.push(KindCode.Unnamed);
-      weights.push(Number.NaN);
-      roles.push(0);
+      this.refuse(NodeField.Element, row, column);
+      [this.kinds[at], this.weights[at], this.roles[at]] = [KindCode.Unnamed, Number.NaN, 0];
       return;
     }
     const { kind, role, weight, text } = value;
     const code = codeOf(KINDS, kind, KindCode.Unnamed) ?? KindCode.Unnamed;
-    kinds.push(code);
-    weights.push(absent(weight) ? WEIGHT : typeof weight === "number" ? weight : Number.NaN);
+    this.kinds[at] = code;
+    this.weights[at] = absent(weight) ? WEIGHT : typeof weight === "number" ? weight : Number.NaN;
     if (code !== KindCode.Text) {
-      roles.push(0);
+      this.roles[at] = 0;
       return;
     }
-    roles.push(codeOf(ROLES, role, RoleCode.Unnamed) ?? RoleCode.Unnamed);
-    textValid.push(Number(texts.add(text)));
-  };
-  return {
-    /** Writes the content of the next node: no rows where it is no list, which `refuse` names. */
-    add(content: unknown) {
-      if (!Array.isArray(content)) refuse(NodeField.Content);
-      else {
-        for (let r = 0; r < content.length; r++) {
-          const row: unknown = content[r];
-          if (!Array.isArray(row)) refuse(NodeField.Row, r);
-          else for (let c = 0; c < row.length; c++) element(row[c], r, c);
-          elementBounds.push(kinds.length);
-        }
-      }
-      rowBounds.push(elementBounds.length - 1);
-    },
-    columns: (): ContentColumns => ({
-      rowBounds: rowBounds.values(),
-      elementBounds: elementBounds.values(),
-      kinds: kinds.values(),
-      weights: weights.values(),
-      roles: roles.values(),
-      texts: texts.pieces(),
-      textBounds: texts.bounds(),
-      textValid: textValid.values(),
-    }),
-  };
+    this.roles[at] = codeOf(ROLES, role, RoleCode.Unnamed) ?? RoleCode.Unnamed;
+    this.textValid[this.valid++] = Number(this.texts.add(text));
+  }
+
+  columns(): ContentColumns {
+    return {
+      rowBounds: this.rowBounds.subarray(0, this.nodes + 1),
+      elementBounds: this.elementBounds.subarray(0, this.rows + 1),
+      kinds: this.kinds.subarray(0, this.elements),
+      weights: this.weights.subarray(0, this.elements),
+      roles: this.roles.subarray(0, this.elements),
+      texts: this.texts.pieces(),
+      textBounds: this.texts.bounds(),
+      textValid: this.textValid.subarray(0, this.valid),
+    };
+  }
+}
+
+/** `array` with its values in one twice as long. */
+function grown<T extends Typed>(array: T): T {
+  const twice = new (array.constructor as new (length: number) => T)(
+    Math.max(16, array.length * 2),
+  );
+  twice.set(array);
+  return twice;
 }
 
 /** A writer of the columns of at most `count` nodes, its strings in pieces of at most `bound` code
@@ -280,7 +296,7 @@ export function nodeColumns(count: number, bound: number): NodeColumnWriter {
   const refuse = (field: NodeField, row?: number, column?: number) => {
     refused ??= { index: at, field, row, column };
   };
-  const content = contentColumns(count, bound, refuse);
+  const content = new ContentWriter(count, bound, refuse);
   const number = (column: Float64Array, value: unknown, field: NodeField) => {
     if (typeof value === "number") column[at] = value;
     else refuse(field);
