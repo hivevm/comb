@@ -35,7 +35,7 @@ registers and colours given as numbers.
 
 - **Elements:** `text` with a role of title, body, or caption; `icon` by registered name;
   `progress` as segments, each a fraction and a colour; `badge` as text on a colour; `metric` as a
-  caption, a value, and a trend with a direction and a colour; `action` as text with an
+  caption, a value, and a trend with a text, a direction, and a colour; `action` as text with an
   identifier.
 - **Content replaces the title and the height:** a node is its identifier, its position, its
   width, and its content; its title is a `text` of role title, and the engine computes its height.
