@@ -10,15 +10,16 @@ import type { Engine } from "../../wasm/engine.js";
 type Same<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 
-// The engine's `loadGraph` takes a load's nodes and edges as columns, strings and typed arrays its
-// glue copies whole, and no `GraphBatch` and no `EdgeList` (ADR-0033): its generated parameters,
-// pinned. A refused field crosses as the code of its `NodeField` or `EdgeField`, a plain number.
+// The engine's `loadGraph` takes a load's nodes and edges as columns, strings in pieces and typed
+// arrays its glue copies whole, and no `GraphBatch` and no `EdgeList` (ADR-0033): its generated
+// parameters, pinned. A refused field crosses as the code of its `NodeField` or `EdgeField`, a
+// plain number.
 const columns: Same<
   Parameters<Engine["loadGraph"]>,
   [
-    ids: string,
+    ids: string[],
     idBounds: Uint32Array,
-    titles: string,
+    titles: string[],
     titleBounds: Uint32Array,
     titleTexts: Uint8Array,
     x: Float64Array,
@@ -27,14 +28,14 @@ const columns: Same<
     height: Float64Array,
     refusedAt: number | null | undefined,
     refusedField: number | null | undefined,
-    edgeIds: string,
+    edgeIds: string[],
     edgeIdBounds: Uint32Array,
-    sources: string,
+    sources: string[],
     sourceBounds: Uint32Array,
-    targets: string,
+    targets: string[],
     targetBounds: Uint32Array,
     hasLabel: Uint8Array,
-    labels: string,
+    labels: string[],
     labelBounds: Uint32Array,
     labelTexts: Uint8Array,
     labelT: Float64Array,

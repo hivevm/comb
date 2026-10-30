@@ -3,6 +3,7 @@ import {
   createBridgeSync,
   edgeColumns,
   nodeColumns,
+  PIECE_BOUND,
   type NodeField,
   type Bridge,
   type GraphSnapshot,
@@ -43,8 +44,8 @@ const edge = (id: string, source: string, target: string) => ({
 // that module and hand it plain data of their own, the nodes and edges written into columns as
 // it writes them (ADR-0033).
 type PlainNode = ReturnType<typeof node>;
-const graph = (nodes: readonly PlainNode[], edges: readonly object[] = []) => {
-  const columns = nodeColumns(nodes.length);
+const graph = (nodes: readonly PlainNode[], edges: readonly object[] = [], bound = PIECE_BOUND) => {
+  const columns = nodeColumns(nodes.length, bound);
   for (const n of nodes as readonly unknown[]) {
     if (typeof n !== "object" || n === null) columns.noObject();
     else {
@@ -52,7 +53,7 @@ const graph = (nodes: readonly PlainNode[], edges: readonly object[] = []) => {
       columns.node(id, title, x, y, width, height);
     }
   }
-  const written = edgeColumns(edges.length);
+  const written = edgeColumns(edges.length, bound);
   for (const e of edges as readonly unknown[]) {
     if (typeof e !== "object" || e === null) written.noObject();
     else {
@@ -345,7 +346,7 @@ describe("bridge columns of a load", () => {
     expect([first.length, second.length]).toEqual([300, 300]);
     const { snapshot } = snapshotted([node(first, 0, 0), node(second, 300, 0)]);
     expect([...snapshot.nodes.idBounds]).toEqual([0, 257, 514]);
-    expect(snapshot.nodes.ids.codePointAt(256)).toBe(0x1f600);
+    expect(snapshot.nodes.ids[0]!.codePointAt(256)).toBe(0x1f600);
     expect(outcome(() => bridge.loadGraph(snapshot))).toStrictEqual({
       kind: "idTooLong",
       list: "nodes",
@@ -391,6 +392,101 @@ describe("bridge columns of a load", () => {
     expect(
       outcome(() => bridge.loadGraph(longer({ ...nodes[0]!, title: titles[0] + "x" }))),
     ).toEqual({ kind: "titleTooLong", node: ids[0], limit: 1000 });
+  });
+});
+
+// Identifiers of 0 to 16 code units, characters beyond the basic plane among them; titles and
+// label texts of none, columns of no code units.
+const PIECED_IDS = [
+  "",
+  "a",
+  "\u{1F600}",
+  "x".repeat(16),
+  "\u{1F600}".repeat(8),
+  "ab\u{1D49C}",
+  "y".repeat(15),
+  "\u{10FFFF}z",
+  "\u{1D49C}".repeat(7) + "q",
+];
+
+/** Asserts that `pieces` hold at most `bound` code units each, none empty, that each ends on one of
+ *  `bounds`, that their lengths sum to the last, and that `values` are read back exactly. */
+function expectPieces(
+  pieces: readonly string[],
+  bounds: Uint32Array,
+  values: readonly string[],
+  bound: number,
+) {
+  const ends = new Set(bounds);
+  let end = 0;
+  for (const piece of pieces) {
+    expect(piece.length).toBeGreaterThan(0);
+    expect(piece.length).toBeLessThanOrEqual(bound);
+    end += piece.length;
+    expect(ends.has(end)).toBe(true);
+  }
+  expect(end).toBe(bounds[bounds.length - 1]!);
+  const joined = pieces.join("");
+  expect(values.map((_, i) => joined.slice(bounds[i], bounds[i + 1]))).toEqual([...values]);
+}
+
+describe("bridge pieces of a string column", () => {
+  test("a column cut with a small bound crosses in pieces that end where values end, read back exactly", () => {
+    // Verifies: ADR-0033
+    const bound = 16;
+    const ids = PIECED_IDS;
+    const nodes = ids.map((id, i) => ({ ...node(id, i * 300, 0), title: "" }));
+    const edges = ids.slice(1).map((id, i) => edge(id, ids[i]!, id));
+    const snapshot = graph(nodes, edges, bound);
+    const n = snapshot.nodes;
+    const e = snapshot.edges;
+    const columns: [string[], Uint32Array, readonly string[]][] = [
+      [n.ids, n.idBounds, ids],
+      [n.titles, n.titleBounds, ids.map(() => "")],
+      [e.ids, e.idBounds, ids.slice(1)],
+      [e.sources, e.sourceBounds, ids.slice(0, -1)],
+      [e.targets, e.targetBounds, ids.slice(1)],
+      [e.labels, e.labelBounds, ids.slice(1).map(() => "")],
+    ];
+    for (const [pieces, bounds, values] of columns) expectPieces(pieces, bounds, values, bound);
+    expect([n.ids.length, e.sources.length, n.titles.length, e.labels.length]).toEqual([
+      7, 6, 0, 0,
+    ]);
+    // The engine maps every identifier exactly: each edge's ends resolve to the slots of the
+    // identifiers it names, and a node or an edge refused in the first pass is named by its own.
+    expect(bridge.loadGraph(snapshot)).toBe(ids.length);
+    for (let slot = 0; slot < ids.length; slot++) {
+      const touching = [slot - 1, slot].filter((at) => at >= 0 && at < edges.length);
+      expect([...bridge.edgesAt(new Uint32Array([slot]))]).toEqual(touching);
+    }
+    ids.forEach((id, index) => {
+      const refused = nodes.map((each, i) => (i === index ? { ...each, x: "0" } : each));
+      const problem = outcome(() => bridge.loadGraph(graph(refused as never, edges, bound)));
+      expect(problem).toMatchObject({ kind: "invalidField", list: "nodes", index, id, field: "x" });
+    });
+    edges.forEach(({ id }, index) => {
+      const refused = edges.map((each, i) => (i === index ? { ...each, color: "red" } : each));
+      const problem = outcome(() => bridge.loadGraph(graph(nodes, refused, bound)));
+      expect(problem).toMatchObject({ kind: "invalidField", list: "edges", index, id });
+    });
+  });
+
+  test("a value longer than the bound on a piece fits in none, and the writer refuses it", () => {
+    // Verifies: ADR-0033
+    expect(() => nodeColumns(1, 16).node("x".repeat(17), "", 0, 0, 1, 1)).toThrow(RangeError);
+    expect(() =>
+      edgeColumns(1, 16).edge(
+        "e",
+        "a",
+        "b",
+        { text: "x".repeat(17) },
+        0,
+        null,
+        "end",
+        "right",
+        "left",
+      ),
+    ).toThrow(RangeError);
   });
 });
 

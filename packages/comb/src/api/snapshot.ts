@@ -12,6 +12,7 @@
 import {
   edgeColumns,
   nodeColumns,
+  PIECE_BOUND,
   type EdgeSnapshot,
   type GraphSnapshot,
   type NodeSnapshot,
@@ -213,7 +214,7 @@ function edgeOf(read: Reader, edge: Fields) {
 export function snapshotOf(lists: Lists, limits: Limits) {
   const read = readerOf(limits);
   const done = () => read.idUnits > limits.idBudget;
-  const columns = nodeColumns(lists.nodeCount);
+  const columns = nodeColumns(lists.nodeCount, PIECE_BOUND);
   const nodes = copied(
     lists.nodes,
     lists.nodeCount,
@@ -229,7 +230,7 @@ export function snapshotOf(lists: Lists, limits: Limits) {
     },
     done,
   );
-  const edgeWriter = edgeColumns(lists.edgeCount);
+  const edgeWriter = edgeColumns(lists.edgeCount, PIECE_BOUND);
   const edges = copied(
     lists.edges,
     lists.edgeCount,

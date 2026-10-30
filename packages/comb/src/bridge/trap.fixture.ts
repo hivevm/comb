@@ -7,6 +7,7 @@ import {
   onEngineLost,
   edgeColumns,
   nodeColumns,
+  PIECE_BOUND,
   trapNextCall,
   type GraphSnapshot,
 } from ".";
@@ -15,9 +16,9 @@ const url = new URL("../../wasm/test-mode/engine_bg.wasm", import.meta.url);
 const bridge = createBridgeSync(await Bun.file(url).arrayBuffer());
 // Plain data of its own in place of a snapshot of `api/snapshot.ts` (ADR-0028), its node and its
 // edges, none, written into columns (ADR-0033).
-const columns = nodeColumns(1);
+const columns = nodeColumns(1, PIECE_BOUND);
 columns.node("a", "a", 0, 0, 100, 50);
-const edges = edgeColumns(0).columns();
+const edges = edgeColumns(0, PIECE_BOUND).columns();
 const graph = { nodes: columns.columns(), edges } as GraphSnapshot;
 
 /** How `call` ended: `ok`, the name of a typed error with the name of its cause, or the message
