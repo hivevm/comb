@@ -330,10 +330,9 @@ pub enum NodeField {
 /// The nodes of one load as columns (ADR-0033), each in slot order. The identifiers and the
 /// titles are each the values concatenated and cut into pieces, each ending where a value ends,
 /// with their boundaries in UTF-16 code units across all pieces, one more than there are nodes, a
-/// refused value empty; `title_texts` holds per node
-/// whether its title is a text, 1 or 0. The numbers are as the host application handed them.
-/// `refused` is the first value the shell read that the first pass refuses, its node's index and
-/// its field, or none.
+/// refused value empty; `title_texts` holds per node whether its title is a text, 1 or 0. The
+/// numbers are as the host application handed them. `refused` is the first value the shell read
+/// that the first pass refuses, its node's index and its field, or none.
 pub struct NodeColumns<'a> {
     pub ids: &'a [String],
     pub id_bounds: &'a [u32],
@@ -485,7 +484,9 @@ fn value_at(pieces: &[String], bounds: &[u32], index: usize) -> String {
 /// boundary falls inside a character, mapped piece by piece. Called only once the pieces fit the
 /// boundaries and every value's length is checked: a value the shell cut one code unit beyond its
 /// limit may end in half a surrogate pair, and two such values side by side in one piece make one
-/// character across their boundary.
+/// character across their boundary. With a small bound, a piece boundary between two lone
+/// surrogates turns each into U+FFFD rather than joining them; at 2^28 the identifier column is
+/// always one piece.
 fn values<'a>(pieces: &'a [String], bounds: &[u32]) -> Result<Vec<&'a str>, GraphDataProblem> {
     let mut values = Vec::with_capacity(bounds.len() - 1);
     let (mut first, mut base) = (0, 0);

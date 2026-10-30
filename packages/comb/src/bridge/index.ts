@@ -1,8 +1,8 @@
 // The one module that imports the WebAssembly package (ADR-0028). Structured data crosses as
 // generated types through serde-wasm-bindgen, but for a load's nodes and edges, which cross as
-// columns of strings in pieces or one typed array each; node positions and the results of a viewport
-// query are read through views on the engine's buffers, created anew on every read because
-// growing memory detaches older views (ADR-0033).
+// columns of strings in pieces or one typed array each; node positions and the results of a
+// viewport query are read through views on the engine's buffers, created anew on every read
+// because growing memory detaches older views (ADR-0033).
 import init, {
   ArrowCode,
   checkGraphSize,
@@ -105,7 +105,9 @@ function stringColumn(count: number, bound: number) {
   };
   return {
     /** Ends the value at `at` with `value` where it is a string, else empty; returns whether it
-     *  is one. A value longer than `bound` fits in no piece, and is refused by a throw. */
+     *  is one. A value longer than `bound` fits in no piece, and is refused by a throw; the
+     *  snapshot cuts every value to its limit plus one, far below `PIECE_BOUND`, so only a test's
+     *  small bound reaches it. */
     add(at: number, value: unknown): boolean {
       const text = typeof value === "string";
       if (text) {
@@ -183,11 +185,12 @@ export function nodeColumns(count: number, bound: number): NodeColumnWriter {
 /** The edges of a load as the engine's `loadGraph` takes them (ADR-0033), each column in slot
  *  order: the identifiers, sources, targets, and label texts each as the values concatenated and
  *  cut into pieces, each ending where a value ends, with their boundaries in UTF-16 code units
- *  across all pieces, one more than there are edges, a refused or absent value empty; per label text whether it is a text, 1 or 0; whether a label,
- *  its background, and a dash are present, 1 or 0; the numbers as the host application handed
- *  them, a background of another type NaN; the arrowhead and the sides as codes, one for a string
- *  that names none; and the first value the engine's first pass refuses by its type, the index of
- *  its edge and its field, `item` for an edge that is no object. */
+ *  across all pieces, one more than there are edges, a refused or absent value empty; per label
+ *  text whether it is a text, 1 or 0; whether a label, its background, and a dash are present, 1
+ *  or 0; the numbers as the host application handed them, a background of another type NaN; the
+ *  arrowhead and the sides as codes, one for a string that names none; and the first value the
+ *  engine's first pass refuses by its type, the index of its edge and its field, `item` for an
+ *  edge that is no object. */
 export interface EdgeColumns {
   readonly ids: string[];
   readonly idBounds: Uint32Array;

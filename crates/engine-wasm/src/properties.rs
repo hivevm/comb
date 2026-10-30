@@ -760,11 +760,12 @@ fn piece_bound() -> impl Strategy<Value = usize> {
 }
 
 /// The graph a load of `data` builds, or why the load was refused, as the shell hands it to the
-/// bridge, each string column in pieces of at most `bound` code units, or of its longest value: graph data that is no object, or whose nodes or edges are no list, the snapshot of
-/// `api` cannot read and refuses as malformed itself; the nodes cross as the columns it builds,
-/// each node read as the node of `addNode` is, and one that is no object, nor a list, which is an
-/// object without the fields, named as such; the edges as columns too, each read as the edge of
-/// `addEdge` is but for its arrowhead and sides, which cross as their codes.
+/// bridge, each string column in pieces of at most `bound` code units, or of its longest value:
+/// graph data that is no object, or whose nodes or edges are no list, the snapshot of `api` cannot
+/// read and refuses as malformed itself; the nodes cross as the columns it builds, each node read
+/// as the node of `addNode` is, and one that is no object, nor a list, which is an object without
+/// the fields, named as such; the edges as columns too, each read as the edge of `addEdge` is but
+/// for its arrowhead and sides, which cross as their codes.
 fn loaded(bound: usize, data: Value) -> Result<comb_engine::graph::Graph, GraphDataProblem> {
     let (nodes, edges) = match &data {
         Value::Object(fields) => (get(fields, "nodes"), get(fields, "edges")),
