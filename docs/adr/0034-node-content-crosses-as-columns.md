@@ -92,9 +92,9 @@ pay the cost per field that made the first frame on the 7763 grow by 27 %; the l
 no place for content, a title column and a height column aside. The fields of each kind are those
 of ADR-0013's *Elements*, read with the spec of node content and its tickets: a text's role and
 its text, an icon's registered name, a progress bar's segments of a fraction and a colour each, a
-badge's text and colour, a metric's caption, value, and trend of a direction and a colour, and an
-action's text and identifier. A string column of the texts of a load would hold the titles of
-today and more, so it needs the pieces as much as the titles do.
+badge's text and colour, a metric's caption, value, and trend of a text, a direction, and a
+colour, and an action's text and identifier. A string column of the texts of a load would hold
+the titles of today and more, so it needs the pieces as much as the titles do.
 
 This ADR carries ADR-0033 over whole and changes its clause *Graph data of a load* in one point:
 a node's content crosses a load as columns too, and the title and height columns leave it. New
@@ -204,14 +204,14 @@ reads and writes as typed-array views created anew after every engine call.
     - per element, the boundaries of a progress bar's segments, a `Uint32Array` of one more than
       there are elements, and per segment its fraction and its colour, each a `Float64Array`;
     - the *texts*, one string column with its validity bytes, which holds every string an element
-      shows: a text's text, a badge's text, an action's text, and a metric's caption and value, in
-      that order within the element;
+      shows: a text's text, a badge's text, an action's text, and a metric's caption, value,
+      and trend's text, in that order within the element;
     - the *names*, one string column with its validity bytes, which holds every string an element
       names and does not show: an icon's registered name and an action's identifier.
 
     Each kind fills only its own: a `text` its role and one text; an `icon` one name; a
     `progress` its segments; a `badge` its colour and one text; a `metric` its direction, its
-    colour, and two texts; an `action` one text and one name. An element of another kind holds
+    colour, and three texts; an `action` one text and one name. An element of another kind holds
     no segments and no string there, 0 for a code and NaN for a number, which the bridge crate
     does not read; an element of no kind holds none of them. The bridge crate refuses as
     malformed columns whose lengths do not follow from the boundaries and the kinds: a

@@ -61,8 +61,8 @@ describes them, and its sidebar edits them.
 5. As a host developer, I want a badge as text on a colour, so that a status reads at a glance.
 6. As a host developer, I want a progress bar in coloured segments, so that an epic shows how far
    it has come.
-7. As a host developer, I want a value with a caption and a trend whose direction and colour I
-   give, so that a metric shows whether it improves.
+7. As a host developer, I want a value with a caption and a trend whose text, direction, and
+   colour I give, so that a metric shows whether it improves.
 8. As a host developer, I want to register icons by name from images I have already loaded, so
    that a node shows its kind without Comb fetching anything.
 9. As a host developer, I want an action element, a text with an identifier, so that a node can
