@@ -6,8 +6,10 @@
 import init, {
   ArrowCode,
   checkGraphSize,
+  checkContentBudget,
   checkIdBudget,
   columnLimit,
+  contentBudget,
   DetailLevel,
   EdgeField,
   idBudget,
@@ -760,6 +762,11 @@ export interface Bridge {
   /** Checks how many UTF-16 code units the identifiers of one load hold. Throws a
    *  `GraphDataProblem`. */
   checkIdBudget(units: number): void;
+  /** The most UTF-16 code units of the texts of content of one load the bridge accepts. */
+  contentBudget(): number;
+  /** Checks how many UTF-16 code units the texts of content of one load hold, the node `node`
+   *  the one whose text passed the budget. Throws a `GraphDataProblem`. */
+  checkContentBudget(units: number, node: string): void;
   /** Checks how many nodes and edges a graph holds, before any is copied. Throws a
    *  `GraphDataProblem`. */
   checkGraphSize(nodes: number, edges: number): void;
@@ -1091,6 +1098,8 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
     idLimit,
     idBudget,
     checkIdBudget,
+    contentBudget,
+    checkContentBudget,
     checkGraphSize,
     removeNodes: (slots) => engine.removeNodes(slots),
     removeEdges: (slots) => engine.removeEdges(slots),

@@ -29,7 +29,14 @@ function selected(canDelete?: (deletion: unknown) => unknown) {
     removeNodes: () => (calls.push("removeNodes"), Uint32Array.of(0)),
     removeEdges: () => calls.push("removeEdges"),
   } as unknown as Bridge;
-  const limits = { text: 1000, id: 256, idBudget: 64_000_000, rows: 8, columns: 6 };
+  const limits = {
+    text: 1000,
+    id: 256,
+    idBudget: 64_000_000,
+    contentBudget: 1e9,
+    rows: 8,
+    columns: 6,
+  };
   const remove = editorsOf(store, bridge, limits, { canDelete }).user.delete;
   return { store, bridge, remove, calls };
 }

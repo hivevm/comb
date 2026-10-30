@@ -4,7 +4,14 @@
 import { expect, test } from "bun:test";
 import { edgeSnapshotOf } from "./snapshot";
 
-const limits = { text: 1000, id: 256, idBudget: 64_000_000, rows: 8, columns: 6 };
+const limits = {
+  text: 1000,
+  id: 256,
+  idBudget: 64_000_000,
+  contentBudget: 1e9,
+  rows: 8,
+  columns: 6,
+};
 
 test("an edge read once fills its defaults and keeps no key for a field left out", () => {
   // Verifies: ADR-0028, ADR-0024

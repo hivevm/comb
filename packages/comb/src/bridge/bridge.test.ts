@@ -366,6 +366,7 @@ const limits = () => ({
   text: bridge.textLimit(),
   id: bridge.idLimit(),
   idBudget: bridge.idBudget(),
+  contentBudget: bridge.contentBudget(),
   rows: bridge.rowLimit(),
   columns: bridge.columnLimit(),
 });
@@ -733,6 +734,21 @@ describe("bridge layout of content", () => {
     expect(outcome(() => bridge.updateNode(7, "c", plain({ content: titled("x") })))).toEqual({
       kind: "noNode",
       slot: 7,
+    });
+  });
+
+  test("the texts of content of a load past the budget are refused naming the node that passes it", () => {
+    // Verifies: ADR-0034, Q-7
+    const budget = bridge.contentBudget();
+    expect(budget).toBe(1_000_000_000);
+    expect(outcome(() => bridge.checkContentBudget(budget, "n7"))).toBe("accepted");
+    expect(outcome(() => bridge.checkContentBudget(budget + 1, "n7"))).toEqual({
+      kind: "contentBudgetExceeded",
+      node: "n7",
+      limit: budget,
+    });
+    expect(outcome(() => bridge.checkContentBudget(Number.NaN, "n7"))).toMatchObject({
+      kind: "malformed",
     });
   });
 

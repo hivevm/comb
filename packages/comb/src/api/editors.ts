@@ -152,7 +152,16 @@ function load({ store, bridge, limits }: Editing, graph: GraphData): void {
     },
     resolve: (plain) => plain,
     idUnits: (plain) => plain.idUnits,
-    engine: ({ snapshot }) => bridge.loadGraph(snapshot),
+    engine({ snapshot, content }) {
+      // A load whose texts of content pass the budget the snapshot stopped reading at, refused
+      // naming the node that passed it before anything crosses.
+      if (content.past !== undefined) {
+        bridge.checkContentBudget(content.units, content.past);
+        // A snapshot read short is never loaded, whatever the bridge's budget holds.
+        throw { kind: "malformed", message: "comb: graph data was read short of its content" };
+      }
+      return bridge.loadGraph(snapshot);
+    },
     record: (state, { kept, idUnits }) => state.load(kept, idUnits),
   });
 }

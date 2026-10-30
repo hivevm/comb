@@ -192,6 +192,7 @@ function limitsOf(bridge: Bridge): Limits {
     text: bridge.textLimit(),
     id: bridge.idLimit(),
     idBudget: bridge.idBudget(),
+    contentBudget: bridge.contentBudget(),
     rows: bridge.rowLimit(),
     columns: bridge.columnLimit(),
   };

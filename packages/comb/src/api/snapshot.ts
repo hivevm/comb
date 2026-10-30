@@ -54,6 +54,7 @@ export interface Limits {
   text: number;
   id: number;
   idBudget: number;
+  contentBudget: number;
   rows: number;
   columns: number;
 }
@@ -69,6 +70,10 @@ interface Reader {
   textLimit: number;
   /** The code units of the identifiers read so far. */
   idUnits: number;
+  /** The code units of the texts of content of a load read so far, and the identifier of the
+   *  node whose text passed the content budget, once one has. */
+  contentUnits: number;
+  contentPast: string | undefined;
 }
 
 /** A UTF-16 code unit of a surrogate pair without its other half. */
@@ -99,6 +104,8 @@ function readerOf(limits: Limits): Reader {
     content: (value) => (Array.isArray(value) ? contentOf(reader, value, limits) : falseOr(value)),
     textLimit: limits.text,
     idUnits: 0,
+    contentUnits: 0,
+    contentPast: undefined,
   };
   return reader;
 }
@@ -222,15 +229,29 @@ function written(read: Reader, node: Fields, columns: NodeColumnWriter, limits: 
     for (let r = 0; r < rows; r++) {
       const row: unknown = content[r];
       if (!Array.isArray(row)) columns.noRow();
-      else writeRow(read, row, columns, limits);
+      else writeRow(read, row, columns, limits, kept.id);
     }
   }
   return kept;
 }
 
+/** Counts `units` more code units of the texts of content of a load, of the node `node`, and
+ *  names that node where they pass the bridge's budget, after which reading stops. */
+function counted(read: Reader, units: number, node: unknown, limits: Limits) {
+  read.contentUnits += units;
+  if (read.contentUnits > limits.contentBudget && read.contentPast === undefined)
+    read.contentPast = typeof node === "string" ? node : "";
+}
+
 /** Writes the elements of `row`, a list, into `columns`, read once by `read`, at most one beyond
  *  `limits.columns`, the last of them ending the row. */
-function writeRow(read: Reader, row: unknown[], columns: NodeColumnWriter, limits: Limits) {
+function writeRow(
+  read: Reader,
+  row: unknown[],
+  columns: NodeColumnWriter,
+  limits: Limits,
+  node: unknown,
+) {
   const count = row.length > limits.columns ? limits.columns + 1 : row.length;
   if (count === 0) columns.endRow();
   for (let c = 0; c < count; c++) {
@@ -242,7 +263,9 @@ function writeRow(read: Reader, row: unknown[], columns: NodeColumnWriter, limit
       const { kind, role, weight, text } = value as Fields;
       // The kind, the role, and the weight cross as codes and a number, which the writer takes
       // by `typeof` and by comparing a string with a name.
-      columns.element(kind, role, weight, read.text(text), last);
+      const shown = read.text(text);
+      columns.element(kind, role, weight, shown, last);
+      if (typeof shown === "string") counted(read, shown.length, node, limits);
     }
   }
 }
@@ -308,7 +331,9 @@ function edgeOf(read: Reader, edge: Fields) {
  *  snapshot unfinished, once they exceed the budget. */
 export function snapshotOf(lists: Lists, limits: Limits) {
   const read = readerOf(limits);
-  const done = () => read.idUnits > limits.idBudget;
+  // Reading stops once the identifiers or the texts of content pass their budget, which the
+  // bridge then refuses, so that a load of shared long strings builds no more than that.
+  const done = () => read.idUnits > limits.idBudget || read.contentPast !== undefined;
   const columns = nodeColumns(lists.nodeCount, PIECE_BOUND);
   const nodes = copied(
     lists.nodes,
@@ -342,7 +367,8 @@ export function snapshotOf(lists: Lists, limits: Limits) {
   );
   const kept = { nodes, edges } as KeptGraph;
   const snapshot = { nodes: columns.columns(), edges: edgeWriter.columns() } as GraphSnapshot;
-  return { kept, snapshot, idUnits: read.idUnits };
+  const content = { units: read.contentUnits, past: read.contentPast };
+  return { kept, snapshot, idUnits: read.idUnits, content };
 }
 
 /** The node of `addNode` read once as a load reads one, its identifier cut by `limits`, or `false`
