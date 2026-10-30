@@ -240,6 +240,21 @@ pub fn check_graph_size(nodes: f64, edges: f64) -> Result<(), GraphDataProblem> 
     graph_data::check_graph_size(nodes, edges)
 }
 
+/// The most UTF-16 code units of the strings of all content of one load, `MAX_CONTENT_UNITS`: the
+/// shell stops reading a graph whose content holds more, and hands over their count.
+#[wasm_bindgen(js_name = contentBudget)]
+pub fn content_budget() -> u32 {
+    MAX_CONTENT_UNITS
+}
+
+/// Checks how many UTF-16 code units the strings of content of one load hold together, `units`,
+/// as the shell counted them while it read them, and names the node `node` whose string passed
+/// the budget (ADR-0034).
+#[wasm_bindgen(js_name = checkContentBudget)]
+pub fn check_content_budget(units: f64, node: &str) -> Result<(), GraphDataProblem> {
+    graph_data::check_content_budget(node, units)
+}
+
 /// The most rows of a node's content, `MAX_ROWS`: the shell hands over no more than one beyond
 /// it.
 #[wasm_bindgen(js_name = rowLimit)]
@@ -545,6 +560,7 @@ impl Engine {
         let font = Font::new(codes, advances, fallback, line_height)
             .map_err(|_| NumberError::InvalidFont)?;
         self.fonts.set(role, font);
+        self.lay_out_heights();
         Ok(())
     }
 
@@ -576,6 +592,10 @@ impl Engine {
         let Some((content, height)) = patch_of(id, &patch, &self.fonts)? else {
             return Ok(());
         };
+        if !self.graph.holds_node(slot) {
+            return Err(CallRefusal::Slot(SlotError::NoNode { slot }));
+        }
+        graph_data::within_by_height(id, self.graph.positions()[slot as usize * 2 + 1], height)?;
         self.graph.resize_node(slot, height)?;
         self.edited.insert(slot, content);
         Ok(())
@@ -759,6 +779,25 @@ impl Engine {
             .query(&rect, level.into(), pixel, label_reach, &mut self.visible);
         self.lay_out_found(level);
         Ok(self.visible.mesh.detail.into())
+    }
+
+    /// Gives every node the height its content lays out to in the fonts as they are now, its edges
+    /// and its place in the index moved along where it changed (ADR-0013).
+    fn lay_out_heights(&mut self) {
+        let slots = graph_data::numbered(self.graph.sizes().len() / 2);
+        for slot in 0..slots {
+            if !self.graph.holds_node(slot) {
+                continue;
+            }
+            let height = match self.edited.get(&slot) {
+                Some(content) => content.height(0, &self.fonts),
+                None => self.content.height(slot as usize, &self.fonts),
+            };
+            if self.graph.sizes()[slot as usize * 2 + 1] != height {
+                // A slot that holds a node, as the check above found, which no resize refuses.
+                let _ = self.graph.resize_node(slot, height);
+            }
+        }
     }
 
     /// Lays out the content of the nodes the last query found, at the near and the middle level,
@@ -1224,6 +1263,36 @@ mod tests {
         near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
         assert_eq!(engine.content_bounds, [0, 1, 1]);
         assert_eq!(engine.graph.sizes()[3], 64.0);
+    }
+
+    #[test]
+    fn a_font_handed_over_after_a_load_lays_every_node_out_anew_and_moves_its_edges() {
+        // Verifies: ADR-0013
+        // Two nodes of one title, joined by an edge: a title line of 60 makes each 10 + 60 + 10 =
+        // 80 high, and the edge leaves and enters at their middles, 40 down.
+        use graph_data::tests::load_into;
+        let mut engine = Engine::new();
+        let nodes = graph_data::OwnedColumns::of(
+            batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[])
+                .nodes
+                .iter()
+                .map(Some),
+        );
+        let edges = graph_data::OwnedEdgeColumns::of([Some(&graph_data::EdgeCells::from(
+            &batch(&[], &[("e", "a", "b")]).edges[0],
+        ))]);
+        assert_eq!(load_into(&mut engine, &nodes, &edges), Ok(2));
+        assert_eq!(engine.graph.sizes(), [100.0, 64.0, 100.0, 64.0]);
+        let title = RoleCode::Title as u8;
+        assert_eq!(engine.set_font(title, &[], &[], 7.0, 60.0), Ok(()));
+        assert_eq!(engine.graph.sizes(), [100.0, 80.0, 100.0, 80.0]);
+        let mut ends = Vec::new();
+        engine.graph.edge_ends(&[0], &mut ends);
+        assert_eq!(ends, [100.0, 40.0, 300.0, 40.0]);
+        let hit = engine
+            .graph
+            .hit_at(Point::new(350.0, 75.0), 1.0, Level::Near, false);
+        assert_eq!(hit, Some(Target::Node(1)));
     }
 
     #[test]

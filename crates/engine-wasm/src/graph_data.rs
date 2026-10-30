@@ -23,7 +23,7 @@ mod content;
 
 use comb_engine::content::Fonts;
 use content::Cursor;
-pub(crate) use content::{COLUMN_LIMIT, Drawn, ROW_LIMIT, role_of};
+pub(crate) use content::{COLUMN_LIMIT, Drawn, ROW_LIMIT, check_content_budget, role_of};
 pub use content::{
     ContentColumns, ContentData, ContentInput, KindCode, MAX_COLUMNS, MAX_CONTENT_UNITS, MAX_ROWS,
     RoleCode,
@@ -442,6 +442,10 @@ pub(crate) fn refused_of(
     column: Option<u32>,
 ) -> Result<Option<Refused>, GraphDataProblem> {
     let refused = refused_by(at, field, &NodeField::ALL, unfit)?;
+    // A row or a column names a place in the content of a refused node only.
+    if refused.is_none() && (row.is_some() || column.is_some()) {
+        return Err(unfit());
+    }
     Ok(refused.map(|(index, field)| Refused {
         index,
         field,
@@ -1427,13 +1431,32 @@ fn checked_node(node: &Node) -> Result<([f32; 2], f32), GraphDataProblem> {
     Ok(([x, y], width))
 }
 
+/// Refuses the node `id` at `y` whose far side, `y + height`, its height the one its content lays
+/// out to, lies past the world's limit (ADR-0028), naming the field `height`, as the world's
+/// limit refuses a far side `x + width`.
+pub(crate) fn within_by_height(id: &str, y: f32, height: f32) -> Result<(), GraphDataProblem> {
+    // `y` lies within the limit and the height is not negative, so only the far side past the
+    // positive limit is beyond. Compared as `height > limit - y`, which `f64` holds exactly where
+    // it matters: a height of hundreds of units past a `y` on the limit, which `y + height` would
+    // round back onto it.
+    if f64::from(height) > WORLD_LIMIT - f64::from(y) {
+        return Err(GraphDataProblem::BeyondWorld {
+            list: GraphList::Nodes,
+            id: id.to_owned(),
+            field: "height".to_owned(),
+            limit: WORLD_LIMIT,
+        });
+    }
+    Ok(())
+}
+
 /// `height`, the height of a node's content as the layout computes it, as the `f32` the engine
 /// keeps.
 #[expect(
     clippy::cast_possible_truncation,
     reason = "the padding and at most MAX_ROWS rows of a line height of at most MAX_METRIC"
 )]
-const fn kept_height(height: f64) -> f32 {
+pub(crate) const fn kept_height(height: f64) -> f32 {
     height as f32
 }
 
@@ -1451,13 +1474,15 @@ fn nodes_of<'a>(
     for (index, node) in batch.nodes.iter().enumerate() {
         let (position, width) = checked_node(node)?;
         let height = content.check(index, node.id, &mut cursor, fonts)?;
+        let height = kept_height(height);
+        within_by_height(node.id, position[1], height)?;
         if slots.insert(node.id, slot(index)?).is_some() {
             return Err(GraphDataProblem::DuplicateNode {
                 node: node.id.to_owned(),
             });
         }
         positions.extend(position);
-        sizes.extend([width, kept_height(height)]);
+        sizes.extend([width, height]);
     }
     Ok(Nodes {
         positions,
@@ -1724,6 +1749,7 @@ pub(crate) fn add_node_to(
     id_length("nodes", 0, "id", node.id)?;
     let ([x, y], width) = checked_node(&node)?;
     let (content, height) = checked_content(node.id, content, fonts)?;
+    within_by_height(node.id, y, height)?;
     Ok((graph.add_node(x, y, width, height)?, content))
 }
 
@@ -2652,9 +2678,50 @@ pub(crate) mod tests {
                 beyond(GraphList::Nodes, "a", field)
             );
         }
-        // At the limit, it is taken; its height is its content's, which `f32` rounds away there.
-        let data = batch(&[("a", -WORLD_LIMIT, WORLD_LIMIT - 64.0)], &[]);
+        // On the limit, its far side past it by the height its content lays out to, 64, is refused
+        // by that height; on the limit at the other side, its far side lies within, and it is
+        // taken.
+        let data = batch(&[("a", 0.0, WORLD_LIMIT)], &[]);
+        assert_eq!(
+            graph_of(&data).unwrap_err(),
+            beyond(GraphList::Nodes, "a", "height")
+        );
+        let data = batch(&[("a", -WORLD_LIMIT, -WORLD_LIMIT)], &[]);
         assert!(graph_of(&data).is_ok());
+        // So is a node `addNode` hands over.
+        let mut graph = graph_of(&batch(&[("b", 0.0, 0.0)], &[])).unwrap();
+        assert_eq!(
+            add(&mut graph, &added(0.0, WORLD_LIMIT, |_| {})),
+            Err(beyond(GraphList::Nodes, "n", "height"))
+        );
+        assert_eq!(graph.nodes_in_use(), 1);
+    }
+
+    #[test]
+    fn a_load_whose_strings_of_content_pass_the_budget_is_refused_at_the_node_that_passes_it() {
+        // Verifies: ADR-0034, Q-7
+        // The budget lowered to 5 code units: node `a`'s two texts of 2 and 3 hold it, and `b`'s
+        // text of 1 passes it.
+        content::TEST_BUDGET.set(Some(5));
+        let two =
+            |a: &str, b: &str| content(&[&[text(RoleCode::Title, a), text(RoleCode::Body, b)]]);
+        let load = |b_text: &str| {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+            data.nodes[0].content = two("aa", "aaa").into();
+            data.nodes[1].content = titled(b_text);
+            graph_of(&data)
+        };
+        let held = load("");
+        let passed = load("b");
+        content::TEST_BUDGET.set(None);
+        assert!(held.is_ok(), "{:?}", held.err());
+        assert_eq!(
+            passed.err(),
+            Some(GraphDataProblem::ContentBudgetExceeded {
+                node: "b".into(),
+                limit: MAX_CONTENT_UNITS
+            })
+        );
     }
 
     #[test]
@@ -3332,11 +3399,11 @@ pub(crate) mod tests {
         );
         // The budget's own refusal, at the node whose string passes it.
         assert_eq!(
-            check_content_budget("n9", u64::from(MAX_CONTENT_UNITS)),
+            check_content_budget("n9", f64::from(MAX_CONTENT_UNITS)),
             Ok(())
         );
         assert_eq!(
-            check_content_budget("n9", u64::from(MAX_CONTENT_UNITS) + 1),
+            check_content_budget("n9", f64::from(MAX_CONTENT_UNITS) + 1.0),
             Err(GraphDataProblem::ContentBudgetExceeded {
                 node: "n9".into(),
                 limit: 1_000_000_000
@@ -3549,6 +3616,9 @@ pub(crate) mod tests {
             Err(unfit())
         );
         assert_eq!(refused_of(None, None, None, None), Ok(None));
+        // A row or a column without a refused field names no place.
+        assert_eq!(refused_of(None, None, Some(0), None), Err(unfit()));
+        assert_eq!(refused_of(None, None, None, Some(0)), Err(unfit()));
         // Every field by its code, and a code no field has refused as malformed.
         for field in NodeField::ALL {
             let refused = refused_of(Some(1), Some(field as u32), None, None);

@@ -113,11 +113,38 @@ fn runs_fit(bounds: &[u32], count: usize, total: usize) -> bool {
 }
 
 /// What a content check carries from one node to the next: the next text, and the code units of
-/// the strings of content so far.
-#[derive(Default)]
+/// the strings of content so far, against the budget.
 pub(crate) struct Cursor {
     text: usize,
     units: u64,
+    budget: u64,
+}
+
+impl Default for Cursor {
+    fn default() -> Self {
+        Self {
+            text: 0,
+            units: 0,
+            budget: budget(),
+        }
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// A budget of a load's strings of content the tests lower, so that a load of a few texts
+    /// passes it; none for `MAX_CONTENT_UNITS`.
+    pub(crate) static TEST_BUDGET: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+}
+
+/// The budget of a load's strings of content: `MAX_CONTENT_UNITS`, or in the tests the one they
+/// lowered it to.
+fn budget() -> u64 {
+    #[cfg(test)]
+    if let Some(budget) = TEST_BUDGET.get() {
+        return budget;
+    }
+    u64::from(MAX_CONTENT_UNITS)
 }
 
 /// The element at `column` of `row` of the node `node`, for a refusal that names it.
@@ -289,14 +316,27 @@ impl ContentColumns<'_> {
             });
         }
         cursor.units += length as u64;
-        check_content_budget(at.node, cursor.units)
+        if cursor.units > cursor.budget {
+            return Err(GraphDataProblem::ContentBudgetExceeded {
+                node: at.node(),
+                limit: MAX_CONTENT_UNITS,
+            });
+        }
+        Ok(())
     }
 }
 
-/// Refuses the code units of a load's strings of content counted so far, `units`, where they pass
-/// `MAX_CONTENT_UNITS`, at the node `node` whose string passed it.
-pub(crate) fn check_content_budget(node: &str, units: u64) -> Result<(), GraphDataProblem> {
-    if units > u64::from(MAX_CONTENT_UNITS) {
+/// Refuses the code units of a load's strings of content, `units`, as the snapshot counted them
+/// while it read them, where they pass `MAX_CONTENT_UNITS`, at the node `node` whose string passed
+/// it: the check behind the export `checkContentBudget`, so that a load past the budget is refused
+/// before its strings are copied. A count that is no count is malformed.
+pub(crate) fn check_content_budget(node: &str, units: f64) -> Result<(), GraphDataProblem> {
+    if units.is_nan() || units < 0.0 {
+        return Err(super::malformed(
+            "the count of code units of content is no count",
+        ));
+    }
+    if units > f64::from(MAX_CONTENT_UNITS) {
         return Err(GraphDataProblem::ContentBudgetExceeded {
             node: node.to_owned(),
             limit: MAX_CONTENT_UNITS,
@@ -469,6 +509,23 @@ impl ContentData {
         }
     }
 
+    /// The height the content of the node at `node` lays out to in `fonts`, as the `f32` the engine
+    /// keeps; that of no rows for a node without content, as only the tests build one.
+    pub(crate) fn height(&self, node: usize, fonts: &Fonts) -> f32 {
+        let view = self.view();
+        let rows = (node + 1 < self.row_bounds.len())
+            .then(|| view.rows(node))
+            .into_iter()
+            .flatten();
+        let heights = rows.map(|row| {
+            view.elements(row)
+                .filter_map(|element| role_of(self.roles[element]))
+                .map(|role| fonts.of(role).line_height())
+                .fold(0.0, f64::max)
+        });
+        super::kept_height(layout::node_height(heights))
+    }
+
     /// The content of the node at `node`, as the host application's type describes it: what
     /// inspection and the changes Comb tells report, built when asked.
     pub(crate) fn content_of(&self, node: usize) -> NodeContent {
@@ -596,7 +653,8 @@ impl<'de> Visitor<'de> for RowsVisitor {
     fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<ContentInput, A::Error> {
         let mut content = ContentInput::new();
         let mut row = 0;
-        // Rows past the limit are read as rows of no elements, so that their count is refused.
+        // Every row is read, past the limit too, so that their count is refused; the snapshot
+        // hands over at most one row beyond it.
         while let Some(read) = seq.next_element_seed(RowSeed(&mut content, row))? {
             if !read {
                 content.shape.get_or_insert((row, None));
