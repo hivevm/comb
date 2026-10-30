@@ -11,6 +11,10 @@ connectors, the edge ends, and the hit test. The near level draws every text, th
 texts of role title, the far level the particles sized by the derived height. `updateNode` replaces
 `content` whole and `nodeUpdated` carries it. The bridge refuses malformed content and states the
 limits: rows per node, columns per row, code units per text, and code units of all texts in a load.
+A load's content crosses the bridge as the columns of `text` ADR-0034 decides: the boundaries of
+each node's rows and each row's elements, the kinds, the weights, the roles, and the texts in
+pieces with their validity bytes, and the position of a shape the snapshot cannot flatten; the
+title and height columns leave the load.
 
 Every test, the example, and the benchmark's graph move to content in this ticket: a node of
 today becomes one row holding one text of role title.
@@ -35,6 +39,23 @@ today becomes one row holding one text of role title.
 - [ ] Given content past any limit, or malformed (a row that is no array, an unknown kind, a
       weight that is not a positive finite number, a text that is no string), when it is loaded or
       patched, then a typed problem names the node and the graph stays as it was (Q-7).
+- [ ] Given a load whose nodes hold rows of several texts, strings outside the Basic Multilingual
+      Plane among them, when `bridge.test.ts` cuts its content columns, then the boundaries, the
+      kinds, the weights, the roles, and the texts are read back exactly per node, row, and
+      element (`Verifies: ADR-0034`).
+- [ ] Given content past each limit, an unknown kind, a weight that is not a positive finite
+      number, an unknown role, and a text that is missing, of another type, or holds a lone
+      surrogate, when `graph_data.rs` loads it as columns, then each is refused with its own
+      problem kind naming the node, row, and column, at and past each bound, and content columns
+      that do not fit together are refused as malformed (`Verifies: ADR-0034`).
+- [ ] Given a row that is no list or an element that is no object, when the snapshot flattens the
+      load, then it hands over the node, row, and column of the first such value, the bridge crate
+      refuses it as `invalidContentShape` naming them, and a position that names no row or column
+      is refused as malformed (`Verifies: ADR-0034`).
+- [ ] Given the type test in `snapshot-only.test.ts`, when it is checked, then it pins the content
+      columns among the parameter types of `loadGraph`, and no title or height column.
+- [ ] Given `metricTree(3334)`, when the load is timed against `main`, then no step's median is
+      above main's by more than 1 ms.
 - [ ] Given any content the bridge accepts, when a property test lays it out, then every rectangle
       is finite and inside the node.
 - [ ] Given the generated TypeScript type of content, when it is checked, then it admits `text`
@@ -43,8 +64,8 @@ today becomes one row holding one text of role title.
 ## Read first
 
 - ADR-0013 (the model), ADR-0027 (levels of detail, `BitmapText`, pools), ADR-0025 (hit test),
-  ADR-0028 (where validation lives), ADR-0034 (typed-array views), ADR-0029 (the store), ADR-0030
-  (`nodeUpdated`).
+  ADR-0028 (where validation lives), ADR-0034 (typed-array views, and the content columns of a
+  load), ADR-0029 (the store), ADR-0030 (`nodeUpdated`).
 - `docs/GLOSSARY.md`: node content, content element, level of detail.
 - `docs/ARCHITECTURE.md`, the golden path of a load and of a query; the geometry tests of
   `crates/engine` as the pattern of the layout's reference test; `levels-of-detail.spec.ts` and
@@ -56,6 +77,7 @@ today becomes one row holding one text of role title.
 
 ## Mode
 
-with the human: it changes the public interface (`packages/comb/src/api/`, `index.ts`), the
-bridge crate's validation (`crates/engine-wasm/`), and the engine's graph
-(`crates/engine/src/graph.rs`), protected parts of ADR-0007.
+with the human: it implements ADR-0034 and ADR-0013 while they are proposed, and it changes the
+public interface (`packages/comb/src/api/`, `index.ts`), the bridge crate's validation
+(`crates/engine-wasm/`), and the engine's graph (`crates/engine/src/graph.rs`), protected parts of
+ADR-0007.

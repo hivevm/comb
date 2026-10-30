@@ -4,7 +4,9 @@
 
 The `metric` element: a caption above a value, beside it a trend with a direction (up, down,
 flat) drawn as an arrow, and a text, in the colour the host gives. Laid out by the engine as two
-lines in its column; drawn at the near level.
+lines in its column; drawn at the near level. A load's `metric` fills the columns ADR-0034 gives
+it, its caption and value among the texts and its trend's direction and colour in the columns per
+element; a trend's text crosses only once ADR-0013 names it.
 
 ## Acceptance criteria
 

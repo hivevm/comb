@@ -4,7 +4,9 @@
 
 The `progress` element: a bar the width of its column, divided into segments, each a fraction
 and a colour, drawn at the near level. Fractions that sum past 1 are refused; the rest of the bar
-is drawn in the track colour.
+is drawn in the track colour. A load's `progress` fills the columns ADR-0034 gives it, the
+boundaries of its segments and their fractions and colours, and the snapshot hands over segments
+that are no list and a segment that is no object as shapes it cannot flatten.
 
 ## Acceptance criteria
 

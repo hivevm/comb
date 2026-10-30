@@ -4,7 +4,8 @@
 
 The `badge` element: a text on a rounded pill of the colour the host gives, laid out by the engine
 like a text whose rectangle includes the pill's padding, drawn at the near level from pooled,
-batched views.
+batched views. A load's `badge` fills the columns ADR-0034 gives it, its text among the texts and
+its colour in the column of colours per element, with that column itself and the kind's code.
 
 ## Acceptance criteria
 

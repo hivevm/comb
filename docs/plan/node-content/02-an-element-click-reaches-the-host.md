@@ -6,7 +6,9 @@ The engine's hit test answers, within a node, which element lies under a point. 
 that is released without a drag reports `onContentClick` with the node's identifier, the element's
 row, column, and kind, and selects the node as today. The `action` element, a text with an
 identifier, joins the kinds, drawn as a text in the link colour, and its click report carries its
-identifier. A press that drags moves the node and reports no click.
+identifier. A press that drags moves the node and reports no click. A load's `action` fills the
+columns ADR-0034 gives it, its text among the texts and its identifier among the names, with the
+name column itself and the kind's code.
 
 ## Acceptance criteria
 
