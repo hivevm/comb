@@ -14,8 +14,8 @@ function selected(canDelete?: (deletion: unknown) => unknown) {
   store.getState().load(
     {
       nodes: [
-        { id: "a", title: "A", x: 0, y: 0, width: 100, height: 40 },
-        { id: "b", title: "B", x: 300, y: 0, width: 100, height: 40 },
+        { id: "a", width: 100 },
+        { id: "b", width: 100 },
       ],
       edges: [{ id: "a-b", source: "a", target: "b" }],
     },
@@ -29,7 +29,14 @@ function selected(canDelete?: (deletion: unknown) => unknown) {
     removeNodes: () => (calls.push("removeNodes"), Uint32Array.of(0)),
     removeEdges: () => calls.push("removeEdges"),
   } as unknown as Bridge;
-  const limits = { text: 1000, id: 256, idBudget: 64_000_000 };
+  const limits = {
+    text: 1000,
+    id: 256,
+    idBudget: 64_000_000,
+    contentBudget: 1e9,
+    rows: 8,
+    columns: 6,
+  };
   const remove = editorsOf(store, bridge, limits, { canDelete }).user.delete;
   return { store, bridge, remove, calls };
 }
@@ -51,7 +58,7 @@ describe("deleting the selection", () => {
   test("a veto that changes the graph itself refuses the deletion", () => {
     // Verifies: ADR-0030
     const { store, bridge, remove, calls } = selected(() => {
-      store.getState().updateNode("b", { title: "B2" });
+      store.getState().updateNode("b", true);
       return true;
     });
     deleteSelection(store, bridge, remove);

@@ -1,7 +1,7 @@
 // The example keeps its own copy of the graph from what `onChange` tells, as a host application
 // that persists would (ADR-0030): a node dragged, retitled, and an edge restyled are in the copy.
 import { expect, test } from "@playwright/test";
-import { open, screenCentre } from "./shared";
+import { open, screenCentre, titled } from "./shared";
 
 test("the example's copy holds a dragged node's position, its new title, and its edge's new style", async ({
   page,
@@ -31,7 +31,9 @@ test("the example's copy holds a dragged node's position, its new title, and its
   // Retitled through Comb, as any host would, not through the sidebar's own handler.
   await page.evaluate(
     ({ northStar: star, edge: edgeId }) => {
-      window.comb.updateNode(star, { title: "North star" });
+      window.comb.updateNode(star, {
+        content: [[{ kind: "text", role: "title", text: "North star" }]],
+      });
       window.comb.updateEdge(edgeId, { color: 0x3366cc, dash: [6, 4], label: null });
     },
     { northStar, edge },
@@ -47,7 +49,7 @@ test("the example's copy holds a dragged node's position, its new title, and its
     },
     { northStar, edge },
   );
-  expect(copy.node).toMatchObject({ x: drawn.x, y: drawn.y, title: "North star" });
+  expect(copy.node).toMatchObject({ x: drawn.x, y: drawn.y, content: titled("North star") });
   expect(copy.edge).toMatchObject({ color: 0x3366cc, dash: [6, 4] });
   expect(copy.edge?.label).toBeUndefined();
 });

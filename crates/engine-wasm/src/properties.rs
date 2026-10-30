@@ -1,7 +1,7 @@
 //! The property test of the bridge's validation (Q-7, ADR-0028): graph data of any shape, well
 //! formed or not, ends in a typed error or a graph, never in a panic, and in a graph exactly when
 //! an oracle written apart from the bridge finds nothing to refuse. Every field crosses, those the
-//! engine does not keep among them: titles, label texts and backgrounds, the patch of
+//! engine does not keep among them: node content, label texts and backgrounds, the patch of
 //! `updateNode`, the node of `addNode` and the edge of `addEdge`, each refused exactly as a load
 //! of it alone is, and the patch of `updateEdge`, refused exactly as a load of the edge it makes.
 //!
@@ -23,9 +23,11 @@ use serde::Deserialize;
 use serde::de::value::{MapDeserializer, SeqDeserializer};
 use serde::de::{self, IntoDeserializer, Visitor};
 
+use comb_engine::content::{Font, Fonts, MAX_METRIC, Role};
+
 use super::{
-    EdgeCells, EdgeInput, EdgePatch, EdgeRefusal, GraphBatch, GraphDataProblem, GraphList,
-    NodeInput, OwnedColumns, OwnedEdgeColumns,
+    ContentInput, EdgeCells, EdgeInput, EdgePatch, EdgeRefusal, GraphBatch, GraphDataProblem,
+    GraphList, KindCode, NodeInput, OwnedColumns, OwnedEdgeColumns,
 };
 use super::{
     NodePatch, add_edge_to, add_node_to, graph_of, load_of, patch_of, reading, unshaped,
@@ -288,12 +290,91 @@ fn num() -> impl Strategy<Value = Value> {
 fn node(loose: bool, i: usize) -> impl Strategy<Value = Value> {
     object(vec![
         field("id", nth("n", i), loose),
-        field("title", text(loose), loose),
         field("x", num(), loose),
         field("y", num(), loose),
         field("width", size(), loose),
-        field("height", size(), loose),
+        field("content", content(loose), loose),
     ])
+}
+
+/// Mostly a weight, now and then null, which is 1, or one the bridge refuses or of another type.
+fn weight() -> BoxedStrategy<Value> {
+    let bad = prop::sample::select(vec![
+        Value::Number(0.0),
+        Value::Number(-1.0),
+        Value::Number(f64::NAN),
+        Value::Number(f64::INFINITY),
+        Value::Bool(false),
+    ]);
+    let good = prop_oneof![
+        10 => Just(1.0),
+        10 => 0.01..100.0f64,
+        1 => Just(f64::MAX),
+        1 => Just(f64::MIN_POSITIVE),
+    ];
+    prop_oneof![20 => good.prop_map(Value::Number), 1 => Just(Value::Null), 1 => bad].boxed()
+}
+
+/// An element of content: mostly a text in a role, now and then of a kind or a role the bridge
+/// refuses, without a field, or no object.
+fn element(loose: bool) -> BoxedStrategy<Value> {
+    let named = |name: &str| Value::Text(name.to_owned());
+    let kind = one_of(
+        vec![named("text")],
+        vec![named("badge"), named(""), Value::Number(1.0)],
+        true,
+    );
+    let roles = ["title", "body", "caption"].map(named).to_vec();
+    let role = one_of(roles, vec![named("headline"), Value::Bool(true)], true);
+    let text_element = object(vec![
+        field("kind", kind, false),
+        field("role", role, false),
+        // Loose, so that a weight is now and then left out, which is 1.
+        field("weight", weight(), true),
+        field("text", text(loose), false),
+    ]);
+    let odd = prop::sample::select(vec![
+        Value::Bool(false),
+        Value::Number(3.0),
+        Value::List(Vec::new()),
+        Value::Text("text".to_owned()),
+        Value::Object(Vec::new()),
+    ]);
+    prop_oneof![30 => text_element, 1 => odd].boxed()
+}
+
+/// The content of a node: mostly a row or two of a text or two, now and then rows and columns at
+/// and past the bridge's limits of 8 and 6, a row that is no list, or none.
+fn content(loose: bool) -> BoxedStrategy<Value> {
+    let row = move || {
+        let columns = prop_oneof![20 => 1..=2_usize, 1 => 0..=7_usize];
+        let elements = columns
+            .prop_flat_map(move |n| prop::collection::vec(element(loose), n))
+            .prop_map(Value::List);
+        let odd = prop::sample::select(vec![
+            Value::Bool(false),
+            Value::Null,
+            Value::Object(Vec::new()),
+        ]);
+        prop_oneof![30 => elements, 1 => odd]
+    };
+    let rows = prop_oneof![20 => 1..=2_usize, 1 => 0..=9_usize];
+    let any = rows
+        .prop_flat_map(move |n| prop::collection::vec(row(), n))
+        .prop_map(Value::List);
+    // Well-formed titles, as many rows or columns as the limits allow and one more.
+    let title = || match titled("t") {
+        Value::List(rows) => rows[0].clone(),
+        _ => unreachable!(),
+    };
+    let tall = (8..=9_usize).prop_map(move |n| Value::List(vec![title(); n]));
+    let wide = (6..=7_usize).prop_map(move |n| {
+        let Value::List(elements) = title() else {
+            unreachable!()
+        };
+        Value::List(vec![Value::List(vec![elements[0].clone(); n])])
+    });
+    prop_oneof![20 => any, 1 => tall, 1 => wide].boxed()
 }
 
 /// One of `good` and, loose, now and then one of `bad`.
@@ -394,12 +475,111 @@ fn finite32(v: f64) -> bool {
 fn accepted_alone(edge: Value) -> bool {
     let data = two_nodes(vec![edge]);
     named_fields(&data).is_empty()
-        && reading(|| GraphBatch::deserialize(data)).is_ok_and(|batch| acceptable(&batch))
+        && reading(|| GraphBatch::deserialize(data.clone()))
+            .is_ok_and(|batch| acceptable(&batch, &data))
 }
 
-/// Whether nothing in `batch` is to be refused, by brute force over the batch alone.
-fn acceptable(batch: &GraphBatch) -> bool {
+/// Whether nothing in `batch`, read of `data`, is to be refused, by brute force over the batch
+/// and, for the content of its nodes, over `data` itself, in the fonts of no font handed over.
+fn acceptable(batch: &GraphBatch, data: &Value) -> bool {
+    acceptable_in(batch, data, LINES)
+}
+
+/// The line heights of the title, the body, and the caption before a font is handed over.
+const LINES: [f64; 3] = [18.0, 16.0, 14.0];
+
+/// Whether nothing in `batch`, read of `data`, is to be refused where the roles' lines are
+/// `lines` high: `acceptable`, and each node's far side, at the height its rows and padding make,
+/// at least 64, within the world's limit.
+fn acceptable_in(batch: &GraphBatch, data: &Value, lines: [f64; 3]) -> bool {
     accepts(batch).unwrap_or(false)
+        && nodes_of_data(data)
+            .iter()
+            .all(|node| content_ok(node) && far_side_ok(node, lines))
+}
+
+/// Whether the far side of `node`, its content well formed, lies within the world's limit: its
+/// `y`, as `f32` holds it, and the height of its rows, each as high as its tallest text, and its
+/// padding of 10 above and below, at least 64.
+fn far_side_ok(node: &Value, lines: [f64; 3]) -> bool {
+    let Some(fields) = fields_of(node) else {
+        return true;
+    };
+    let (Some(Value::Number(y)), Some(Value::List(rows))) =
+        (get(fields, "y"), get(fields, "content"))
+    else {
+        return true;
+    };
+    let line = |element: &Value| match fields_of(element).and_then(|fields| get(fields, "role")) {
+        Some(Value::Text(role)) if role == "title" => lines[0],
+        Some(Value::Text(role)) if role == "body" => lines[1],
+        _ => lines[2],
+    };
+    let row = |row: &Value| match row {
+        Value::List(elements) => elements.iter().map(line).fold(0.0, f64::max),
+        _ => 0.0,
+    };
+    let height = (20.0 + rows.iter().map(row).sum::<f64>()).max(64.0);
+    let height = f64::from(height as f32);
+    // NaN beside a coordinate the oracle names elsewhere: within, as `<=` reads it here.
+    (height <= 2f64.powi(120) - f64::from(*y as f32)) || y.is_nan()
+}
+
+/// The nodes of graph data `data`, none where it holds no list of them.
+fn nodes_of_data(data: &Value) -> &[Value] {
+    match fields_of(data).and_then(|fields| get(fields, "nodes")) {
+        Some(Value::List(nodes)) => nodes,
+        _ => &[],
+    }
+}
+
+/// Whether the content of `node` is to be refused by nothing, by brute force over the value: a
+/// list of at most 8 rows, each a list of at most 6 elements, each an object of the kind `text`,
+/// a positive finite weight, a role of the three, and a text of at most 1,000 UTF-16 code units.
+fn content_ok(node: &Value) -> bool {
+    let Some(Value::List(rows)) = fields_of(node).and_then(|fields| get(fields, "content")) else {
+        return false;
+    };
+    let units = |text: &str| text.chars().map(char::len_utf16).sum::<usize>();
+    let element_ok = |element: &Value| {
+        let Value::Object(fields) = element else {
+            return false;
+        };
+        let named = |name, values: &[&str]| matches!(get(fields, name), Some(Value::Text(v)) if values.contains(&v.as_str()));
+        // A weight left out, or null, is 1.
+        let weight = match get(fields, "weight") {
+            None | Some(Value::Null) => true,
+            Some(Value::Number(w)) => w.is_finite() && *w > 0.0,
+            Some(_) => false,
+        };
+        let text = matches!(get(fields, "text"), Some(Value::Text(t)) if units(t) <= 1_000);
+        named("kind", &["text"]) && named("role", &["title", "body", "caption"]) && weight && text
+    };
+    rows.len() <= 8
+        && rows.iter().all(|row| match row {
+            Value::List(elements) => elements.len() <= 6 && elements.iter().all(element_ok),
+            _ => false,
+        })
+}
+
+/// The position of the first shape of the content of a node, `fields`, that the snapshot cannot
+/// flatten: a row that is no list, or an element that is no object; or none.
+fn first_shape(fields: &Fields) -> Option<(u32, Option<u32>)> {
+    let Some(Value::List(rows)) = get(fields, "content") else {
+        return None;
+    };
+    for (r, row) in rows.iter().enumerate() {
+        let Value::List(elements) = row else {
+            return Some((r as u32, None));
+        };
+        if let Some(c) = elements
+            .iter()
+            .position(|element| !matches!(element, Value::Object(_)))
+        {
+            return Some((r as u32, Some(c as u32)));
+        }
+    }
+    None
 }
 
 /// Whether nothing in `batch` is to be refused, or none where a field is missing or of another
@@ -429,18 +609,13 @@ fn accepts(batch: &GraphBatch) -> Option<bool> {
     let world = 2f64.powi(120);
     let as_f32 = |v: f64| f64::from(v as f32);
     let node_ok = |n: &NodeInput| {
-        let [x, y, width, height] = [n.x.0?, n.y.0?, n.width.0?, n.height.0?];
-        let within = [x, y, x, y]
+        let [x, y, width] = [n.x.0?, n.y.0?, n.width.0?];
+        n.content.0.as_ref()?;
+        let within = [x, y, x]
             .into_iter()
-            .zip([0.0, 0.0, width, height])
+            .zip([0.0, 0.0, width])
             .all(|(at, size)| (as_f32(at) + as_f32(size)).abs() <= world);
-        Some(
-            n.title_length.is_some_and(|l| l <= 1_000)
-                && [x, y, width, height].into_iter().all(finite32)
-                && width as f32 >= 0.0
-                && height as f32 >= 0.0
-                && within,
-        )
+        Some([x, y, width].into_iter().all(finite32) && width as f32 >= 0.0 && within)
     };
     let edge_ok = |e: &EdgeInput| {
         let label_ok = match e.label.0? {
@@ -541,9 +716,14 @@ fn mistyped(list: GraphList, item: &Fields) -> Vec<&'static str> {
     match list {
         GraphList::Nodes => {
             check("id", text("id"));
-            for name in ["x", "y", "width", "height"] {
+            for name in ["x", "y", "width"] {
                 check(name, number(item, name));
             }
+            check(
+                "content",
+                matches!(get(item, "content"), Some(Value::List(_))),
+            );
+            check("content.shape", first_shape(item).is_none());
         }
         GraphList::Edges => {
             for name in ["id", "source", "target"] {
@@ -648,18 +828,15 @@ fn messages(error: &GraphDataProblem) -> Vec<&str> {
 #[test]
 fn the_items_after_one_with_a_refused_field_are_left_unread() {
     let node = |x: Value| {
-        let entries = [
-            ("id", Value::Text("a".into())),
-            ("title", Value::Text("A".into())),
-        ];
+        let entries = [("id", Value::Text("a".into()))];
         let mut node: Vec<_> = entries
             .into_iter()
             .map(|(k, v)| (k.to_owned(), v))
             .collect();
-        let size = [("y", 0.0), ("width", 1.0), ("height", 1.0)]
-            .map(|(k, v)| (k.to_owned(), Value::Number(v)));
+        let size = [("y", 0.0), ("width", 1.0)].map(|(k, v)| (k.to_owned(), Value::Number(v)));
         node.push(("x".to_owned(), x));
         node.extend(size);
+        node.push(("content".to_owned(), titled("A")));
         Value::Object(node)
     };
     // The second node is no object, which the bridge leaves unread after the first is refused.
@@ -688,6 +865,34 @@ fn the_items_after_one_with_a_refused_field_are_left_unread() {
 }
 
 #[test]
+fn content_read_through_serde_names_its_first_shape_and_reads_the_rest() {
+    // Verifies: ADR-0034
+    // A row that is no list and an element that is no object, as `addNode` and `updateNode`
+    // read content: the first named, each read as empty in its place.
+    let read = |rows: Vec<Value>| ContentInput::deserialize(Value::List(rows)).unwrap();
+    let Value::List(rows) = titled("t") else {
+        unreachable!()
+    };
+    let Value::List(elements) = rows[0].clone() else {
+        unreachable!()
+    };
+    let title = || elements[0].clone();
+    let shaped = read(vec![
+        Value::List(vec![title(), Value::Bool(false)]),
+        Value::Number(3.0),
+    ]);
+    assert_eq!(shaped.shape, Some((0, Some(1))));
+    assert_eq!(shaped.data.element_bounds, [0, 2, 2]);
+    assert_eq!(
+        shaped.data.kinds,
+        [KindCode::Text as u8, KindCode::Unnamed as u8]
+    );
+    let list = Value::List(vec![title()]);
+    assert_eq!(read(vec![Value::Null, list.clone()]).shape, Some((0, None)));
+    assert_eq!(read(vec![list.clone(), list]).shape, None);
+}
+
+#[test]
 fn the_check_for_rust_names_finds_them() {
     let message = "Failed to deserialize JsValue into type `comb_engine_wasm::GraphBatch`: \
                    Error: invalid type: string \"1\", expected f64";
@@ -706,11 +911,26 @@ fn the_check_for_rust_names_finds_them() {
     ));
 }
 
-/// A patch of `updateNode`: mostly a title of any value, now and then another field of a node or
+/// The content of a node of the time before content: one row of one title, `title`.
+fn titled(title: &str) -> Value {
+    let text = |value: &str| Value::Text(value.to_owned());
+    let element = Value::Object(vec![
+        ("kind".to_owned(), text("text")),
+        ("role".to_owned(), text("title")),
+        ("weight".to_owned(), Value::Number(1.0)),
+        ("text".to_owned(), text(title)),
+    ]);
+    Value::List(vec![Value::List(vec![element])])
+}
+
+/// A patch of `updateNode`: mostly content of any value, now and then another field of a node or
 /// none, and now and then a value of any shape at all.
 fn patch() -> impl Strategy<Value = Value> {
-    let key = prop::sample::select(vec!["title", "title", "title", "id", "width", "x", ""]);
-    let entries = prop::collection::vec((key.prop_map(str::to_owned), text(true)), 0..3);
+    let key = prop::sample::select(vec![
+        "content", "content", "content", "id", "width", "x", "",
+    ]);
+    let value = prop_oneof![8 => content(true), 1 => anything()];
+    let entries = prop::collection::vec((key.prop_map(str::to_owned), value), 0..3);
     prop_oneof![
         8 => entries.prop_map(Value::Object),
         1 => anything(),
@@ -732,11 +952,10 @@ fn two_nodes(edges: Vec<Value>) -> Value {
     let node = |id: &str| {
         Value::Object(vec![
             ("id".to_owned(), Value::Text(id.to_owned())),
-            ("title".to_owned(), Value::Text(id.to_owned())),
             ("x".to_owned(), Value::Number(0.0)),
             ("y".to_owned(), Value::Number(0.0)),
             ("width".to_owned(), Value::Number(1.0)),
-            ("height".to_owned(), Value::Number(1.0)),
+            ("content".to_owned(), titled(id)),
         ])
     };
     Value::Object(vec![
@@ -767,6 +986,18 @@ fn piece_bound() -> impl Strategy<Value = usize> {
 /// the fields, named as such; the edges as columns too, each read as the edge of `addEdge` is but
 /// for its arrowhead and sides, which cross as their codes.
 fn loaded(bound: usize, data: Value) -> Result<comb_engine::graph::Graph, GraphDataProblem> {
+    loaded_in(bound, data, &Fonts::default())
+}
+
+/// The graph a load of `data` builds, as `loaded` builds it, laid out in `fonts`; every node of a
+/// load the bridge accepts is laid out and drawn as a query at the near level does, and held to
+/// its node: every placed rectangle finite and inside the node's width and height, and each
+/// drawn text a prefix of its text, followed by an ellipsis where it was cut.
+fn loaded_in(
+    bound: usize,
+    data: Value,
+    fonts: &Fonts,
+) -> Result<comb_engine::graph::Graph, GraphDataProblem> {
     let (nodes, edges) = match &data {
         Value::Object(fields) => (get(fields, "nodes"), get(fields, "edges")),
         _ => (None, None),
@@ -788,7 +1019,93 @@ fn loaded(bound: usize, data: Value) -> Result<comb_engine::graph::Graph, GraphD
     let edges: Vec<Option<EdgeCells>> = read(edges);
     let nodes = OwnedColumns::in_pieces(bound, nodes.iter().map(Option::as_ref));
     let edges = OwnedEdgeColumns::in_pieces(bound, edges.iter().map(Option::as_ref));
-    load_of(&nodes.view(), &edges.view())
+    let loaded = load_of(&nodes.view(), &edges.view(), fonts)?;
+    let mut content = nodes.content.clone();
+    content.spans = loaded.spans;
+    let (mut cells, mut rows, mut placed) = (Vec::new(), Vec::new(), Vec::new());
+    let mut drawn = super::Drawn::default();
+    drawn.clear();
+    for node in 0..loaded.graph.nodes_in_use() as usize {
+        let [width, height] = [0, 1].map(|axis| f64::from(loaded.graph.sizes()[node * 2 + axis]));
+        let start = placed.len();
+        content.lay_out(
+            node,
+            width as f32,
+            fonts,
+            &mut cells,
+            &mut rows,
+            &mut placed,
+        );
+        content.draw(node, &placed[start..], &mut drawn);
+        for at in &placed[start..] {
+            let [x, y, w, h] = [at.x, at.y, at.width, at.height].map(f64::from);
+            assert!(
+                [x, y, w, h].iter().all(|v| v.is_finite() && *v >= 0.0),
+                "{at:?}"
+            );
+            assert!(
+                x + w <= width && y + h <= height,
+                "{at:?} in {width} x {height}"
+            );
+        }
+        content.content_of(node);
+    }
+    assert_eq!(drawn.bounds.len(), placed.len() + 1);
+    // Each drawn text a prefix of its text, an ellipsis after it where it was cut.
+    let shown = split_utf16(&drawn.texts, &drawn.bounds);
+    for (index, (shown, at)) in shown.iter().zip(&placed).enumerate() {
+        let text = content.text(index);
+        let prefix = if at.ellipsis {
+            shown
+                .strip_suffix('\u{2026}')
+                .expect("an ellipsis after a cut text")
+        } else {
+            shown
+        };
+        assert!(text.starts_with(prefix), "{shown:?} of {text:?}");
+    }
+    // Each text is read back as the column holds it, mapped or not.
+    let texts = super::values(&content.texts, &content.text_bounds).expect("mapped texts");
+    for (index, text) in texts.into_iter().enumerate() {
+        assert_eq!(content.text(index), text);
+    }
+    Ok(loaded.graph)
+}
+
+/// `text` cut at `bounds`, in UTF-16 code units.
+fn split_utf16<'t>(text: &'t str, bounds: &[u32]) -> Vec<&'t str> {
+    let mut offsets = Vec::with_capacity(bounds.len());
+    let mut units = 0;
+    let mut next = bounds.iter().peekable();
+    for (byte, character) in text.char_indices() {
+        while next.next_if(|&&bound| bound as usize == units).is_some() {
+            offsets.push(byte);
+        }
+        units += character.len_utf16();
+    }
+    offsets.extend(next.map(|_| text.len()));
+    offsets.windows(2).map(|at| &text[at[0]..at[1]]).collect()
+}
+
+/// Fonts of any metrics: per role a glyph advance, an ellipsis's, and a line height, mostly of an
+/// ordinary font, now and then of none or of the largest, so that texts are cut and rows tall.
+fn fonts() -> impl Strategy<Value = (Fonts, [f64; 3])> {
+    let metric = || prop::sample::select(vec![0.0, 1.0, 6.5, 9.0, 30.0, MAX_METRIC]);
+    let role = (metric(), metric(), metric());
+    (role.clone(), role.clone(), role).prop_map(|roles| {
+        let mut fonts = Fonts::default();
+        let mut lines = [0.0; 3];
+        let ellipsis = [u32::from(comb_engine::content::ELLIPSIS)];
+        for (i, (role, (advance, dots, line))) in [Role::Title, Role::Body, Role::Caption]
+            .into_iter()
+            .zip([roles.0, roles.1, roles.2])
+            .enumerate()
+        {
+            fonts.set(role, Font::new(&ellipsis, &[dots], advance, line).unwrap());
+            lines[i] = line;
+        }
+        (fonts, lines)
+    })
 }
 
 /// The edge `e0` from `n0` to `n1`, styled, dashed, and labelled, which a patch of `updateEdge`
@@ -958,11 +1275,10 @@ proptest! {
         let with_a = || {
             let a = Value::Object(vec![
                 ("id".to_owned(), Value::Text("a".to_owned())),
-                ("title".to_owned(), Value::Text("A".to_owned())),
                 ("x".to_owned(), Value::Number(0.0)),
                 ("y".to_owned(), Value::Number(0.0)),
                 ("width".to_owned(), Value::Number(1.0)),
-                ("height".to_owned(), Value::Number(1.0)),
+                ("content".to_owned(), titled("A")),
             ]);
             let data = Value::Object(vec![
                 ("nodes".to_owned(), Value::List(vec![a])),
@@ -974,15 +1290,17 @@ proptest! {
             ("nodes".to_owned(), Value::List(vec![value.clone()])),
             ("edges".to_owned(), Value::List(Vec::new())),
         ]);
-        let as_load = loaded(bound, alone).map(|graph| graph.positions().to_vec());
+        let as_load = loaded(bound, alone)
+            .map(|graph| (graph.positions().to_vec(), graph.sizes().to_vec()));
         let mut graph = with_a();
         let added = reading(|| NodeInput::deserialize(value))
             .map_err(unshaped)
-            .and_then(|node| add_node_to(&mut graph, &node));
+            .and_then(|node| add_node_to(&mut graph, &node, &Fonts::default()));
         match (added, as_load) {
-            (Ok(slot), Ok(positions)) => {
+            (Ok((slot, _)), Ok((positions, sizes))) => {
                 prop_assert_eq!(slot, 1);
                 prop_assert_eq!(&graph.positions()[2..], &positions[..]);
+                prop_assert_eq!(&graph.sizes()[2..], &sizes[..]);
             }
             (Err(error), Err(expected)) => {
                 prop_assert_eq!(error, expected);
@@ -997,6 +1315,7 @@ proptest! {
     fn any_graph_data_ends_in_a_typed_error_or_a_graph(
         value in graph_data(),
         bound in piece_bound(),
+        (fonts, lines) in fonts(),
     ) {
         // Verifies: ADR-0034
         // A panic anywhere below fails the case; the runner catches it and shrinks the input.
@@ -1004,7 +1323,7 @@ proptest! {
         // is held to the oracles of the value it was built of.
         let named = named_fields(&value);
         let batch = || reading(|| GraphBatch::deserialize(value.clone())).ok();
-        match loaded(bound, value.clone()) {
+        match loaded_in(bound, value.clone(), &fonts) {
             // A value without the shape of graph data is refused before any check of the
             // bridge's own, as malformed.
             Err(error @ GraphDataProblem::Malformed { .. }) => {
@@ -1014,7 +1333,7 @@ proptest! {
             Ok(graph) => {
                 prop_assert!(shaped(&value));
                 let batch = batch().expect("graph data of its shape reads as a batch");
-                prop_assert!(named.is_empty() && acceptable(&batch));
+                prop_assert!(named.is_empty() && acceptable_in(&batch, &value, lines));
                 prop_assert_eq!(graph.positions().len(), 2 * batch.nodes.len());
             }
             Err(error) => {
@@ -1026,10 +1345,18 @@ proptest! {
                         let at = (*list, *index, id.clone(), field.clone());
                         prop_assert!(named.contains(&at), "refused {:?}", error);
                     }
+                    // So is a shape of content the snapshot cannot flatten, at its position.
+                    GraphDataProblem::InvalidContentShape { index, id, row, column, .. } => {
+                        let at = (GraphList::Nodes, *index, id.clone(), "content.shape".to_owned());
+                        prop_assert!(named.contains(&at), "refused {:?}", error);
+                        let node = &nodes_of_data(&value)[*index as usize];
+                        let shape = fields_of(node).and_then(first_shape);
+                        prop_assert_eq!(shape, Some((*row, *column)));
+                    }
                     _ => {
                         let batch = batch().expect("graph data of its shape reads as a batch");
                         prop_assert!(named.is_empty(), "refused {:?}, not {:?}", error, named);
-                        prop_assert!(!acceptable(&batch), "refused {:?}", error);
+                        prop_assert!(!acceptable_in(&batch, &value, lines), "refused {:?}", error);
                     }
                 }
             }
@@ -1038,17 +1365,27 @@ proptest! {
 
     #[test]
     fn any_patch_ends_in_a_typed_error_or_is_accepted(value in patch()) {
+        // Verifies: ADR-0013, Q-7
+        // A patch is accepted exactly where each of its fields is content a load of the node
+        // accepts, up to the first field of another name, after which nothing is read.
+        let entries = match &value {
+            Value::Object(entries) => Some(entries.clone()),
+            _ => None,
+        };
         match NodePatch::deserialize(value).map_err(unshaped) {
             Err(error) => prop_assert!(!messages(&error).into_iter().any(names_rust)),
             Ok(patch) => {
-                let units = |t: &str| t.chars().map(char::len_utf16).sum::<usize>();
-                let fine = patch.0.iter().all(|(k, v)| {
-                    k == "title" && v.0.as_deref().is_some_and(|t| units(t) <= 1_000)
+                let entries = entries.expect("a patch read of an object");
+                let read: Vec<_> = entries.iter().scan(false, |done, (key, value)| {
+                    (!*done).then(|| { *done = key != "content"; (key, value) })
+                }).collect();
+                let fine = read.iter().all(|(key, value)| {
+                    let node = Value::Object(vec![("content".to_owned(), (*value).clone())]);
+                    *key == "content" && content_ok(&node)
                 });
-                let title = patch.0.iter().rev().find(|(k, _)| k == "title").and_then(|(_, v)| v.0.clone());
-                match patch_of("n", patch) {
-                    // What the store merges is the title it was handed, and nothing else.
-                    Ok(checked) => prop_assert!(fine && checked.title == title),
+                let sets = read.iter().any(|(key, _)| *key == "content");
+                match patch_of("n", &patch, &Fonts::default()) {
+                    Ok(checked) => prop_assert!(fine && checked.is_some() == sets),
                     Err(error) => {
                         prop_assert!(!fine);
                         prop_assert!(!messages(&error).into_iter().any(names_rust));

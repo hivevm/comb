@@ -8,6 +8,7 @@
     )
 )]
 
+pub mod content;
 pub mod geometry;
 pub mod graph;
 mod spatial;

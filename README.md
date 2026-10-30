@@ -118,8 +118,8 @@ const comb = await createComb(document.getElementById("canvas")!, {
 });
 comb.load({
   nodes: [
-    { id: "a", title: "Premium trial users", x: 0, y: 0, width: 220, height: 64 },
-    { id: "b", title: "Time spent listening", x: 320, y: 0, width: 220, height: 64 },
+    { id: "a", x: 0, y: 0, width: 220, content: [[{ kind: "text", role: "title", text: "Premium trial users" }]] },
+    { id: "b", x: 320, y: 0, width: 220, content: [[{ kind: "text", role: "title", text: "Time spent listening" }]] },
   ],
   edges: [
     {
@@ -136,8 +136,22 @@ comb.onSelectionChange((selection) => console.log(selection)); // fill the sideb
 comb.onChange((change) => {
   if (change.kind === "nodeAdded") console.log(change.node.id, change.by); // "c", "host"
 });
-comb.addNode({ id: "c", title: "Churned users", x: 640, y: 0, width: 220, height: 64 });
+comb.addNode({
+  id: "c",
+  x: 640,
+  y: 0,
+  width: 220,
+  content: [
+    [{ kind: "text", role: "title", text: "Churned users" }],
+    [{ kind: "text", role: "body", text: "Users who cancelled" }, { kind: "text", role: "caption", text: "monthly", weight: 2 }],
+  ],
+});
 ```
+
+A node's `content` is rows of weighted columns, each a `text` of role `title`, `body`, or
+`caption` (its `weight`, 1 where left out, shares out the row's width); Comb lays the rows out
+inside the node's `width`, cuts a text too long for its column with an ellipsis, and makes the node
+as high as its rows, at least 64. `updateNode(id, { content })` replaces a node's content whole.
 
 `addNode` adds one node at its `x` and `y` without a load, drawn above every node it overlaps. For a
 node dropped from the host application's palette, `comb.worldPointAt(event.clientX, event.clientY)`
@@ -245,7 +259,8 @@ const comb = await createComb(host, { engine: fetch(engineUrl), allowCanvasFallb
 [`examples/metric-tree/`](examples/metric-tree/) is a complete host application with a sidebar and a
 palette, whose kinds the user drags onto the canvas to add a node under the drop. A click on a node
 or an edge selects it, an edge within 4 screen pixels of its path, a drag from an edge beyond 4
-pixels pans, and the sidebar edits a node's title or an edge's colour, line, arrowhead, and label.
+pixels pans, and the sidebar edits a node's title text or an edge's colour, line, arrowhead, and
+label.
 With the canvas focused, which a press on it does, Delete or Backspace deletes the selection, a node
 with every edge at it, once `CombOptions.canDelete` returns `true` for the identifiers of everything
 that would go; without `canDelete` a deletion is allowed, and the host application's own

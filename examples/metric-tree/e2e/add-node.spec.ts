@@ -4,7 +4,7 @@
 // an identifier the graph holds already, is refused, and nothing changes (ADR-0028, Q-7).
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphChange } from "comb";
-import { drawnGraph, loaded, node, open, screenCentre, selections } from "./shared";
+import { drawnGraph, loaded, node, open, screenCentre, selections, titled } from "./shared";
 
 /** The identifiers and places of the nodes the canvas draws, bottom to top, once it has drawn. */
 async function drawn(page: Page) {
@@ -94,7 +94,7 @@ test("onChange receives one nodeAdded before addNode returns, and one loaded for
       const afterLoad = told.length;
       comb.addNode(nodes.b);
       const afterAdd = told.length;
-      comb.updateNode("b", { title: "B" });
+      comb.updateNode("b", { content: [[{ kind: "text", role: "title", text: "B" }]] });
       return { told, afterLoad, afterAdd };
     },
     { a: node("a"), b: node("b", 300.5, -40.25) },
@@ -102,8 +102,18 @@ test("onChange receives one nodeAdded before addNode returns, and one loaded for
   expect(result).toEqual({
     told: [
       { kind: "loaded", by: "host" },
-      { kind: "nodeAdded", by: "host", node: node("b", 300.5, -40.25) },
-      { kind: "nodeUpdated", by: "host", id: "b", patch: { title: "B" } },
+      // Its content as Comb keeps it, each weight given.
+      {
+        kind: "nodeAdded",
+        by: "host",
+        node: { ...node("b", 300.5, -40.25), content: [[{ ...titled("b")[0]![0]!, weight: 1 }]] },
+      },
+      {
+        kind: "nodeUpdated",
+        by: "host",
+        id: "b",
+        patch: { content: [[{ ...titled("B")[0]![0]!, weight: 1 }]] },
+      },
     ],
     afterLoad: 1,
     afterAdd: 2,
@@ -144,13 +154,20 @@ const REFUSED: { name: string; added: unknown; problem: unknown }[] = [
   },
   {
     name: "a title of the wrong type",
-    added: { ...node("c"), title: 5 },
-    problem: { kind: "invalidTitle", node: "c" },
+    added: { ...node("c"), content: titled(5 as never) },
+    problem: { kind: "invalidContentText", node: "c", row: 0, column: 0, field: "text" },
   },
   {
     name: "a title of 1,001 characters",
-    added: { ...node("c"), title: "x".repeat(1001) },
-    problem: { kind: "titleTooLong", node: "c", limit: 1000 },
+    added: { ...node("c"), content: titled("x".repeat(1001)) },
+    problem: {
+      kind: "contentTextTooLong",
+      node: "c",
+      row: 0,
+      column: 0,
+      field: "text",
+      limit: 1000,
+    },
   },
   {
     name: "a negative width",
@@ -267,7 +284,7 @@ test("addNode reads each field of the node once, and a getter that throws refuse
     return { reads, refused };
   });
   expect(result).toEqual({
-    reads: { id: 1, title: 1, x: 1, y: 1, width: 1, height: 1 },
+    reads: { id: 1, x: 1, y: 1, width: 1, content: 1 },
     refused: { name: "GraphDataError", kind: "malformed" },
   });
   expect((await drawn(page)).map(({ id }) => id)).toEqual(["a", "c"]);
@@ -281,11 +298,10 @@ test("addNode refuses a node past the limit of a load, and nothing changes", asy
     // A million nodes, far from the viewport, so that no frame binds a view to them.
     const nodes = Array.from({ length: 1_000_000 }, (_, i) => ({
       id: `n${i}`,
-      title: "",
       x: 1e6 + (i % 1000) * 10,
       y: 1e6 + Math.floor(i / 1000) * 10,
       width: 5,
-      height: 5,
+      content: [[{ kind: "text" as const, role: "title" as const, text: "" }]],
     }));
     window.comb.load({ nodes, edges: [] });
     const told: string[] = [];
@@ -321,11 +337,10 @@ test("addNode refuses a node whose identifier passes the budget of a load, and n
     // 250,000 identifiers of 256 code units hold the 64,000,000 of the budget exactly.
     const nodes = Array.from({ length: 250_000 }, (_, i) => ({
       id: String(i).padStart(256, "x"),
-      title: "",
       x: 1e6 + (i % 500) * 10,
       y: 1e6 + Math.floor(i / 500) * 10,
       width: 5,
-      height: 5,
+      content: [[{ kind: "text" as const, role: "title" as const, text: "" }]],
     }));
     window.comb.load({ nodes, edges: [] });
     const told: string[] = [];
@@ -413,9 +428,9 @@ test("a getter of updateNode's patch that removes the node refuses the patch as 
     const told: string[] = [];
     window.comb.onChange((change) => told.push(change.kind));
     const patch = {
-      get title() {
+      get content() {
         window.comb.removeNodes(["a"]);
-        return "A";
+        return [[{ kind: "text" as const, role: "title" as const, text: "A" }]];
       },
     };
     let problem = null;

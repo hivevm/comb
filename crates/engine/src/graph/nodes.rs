@@ -20,7 +20,7 @@ impl Graph {
     }
 
     /// Whether `slot` holds a node: a slot below the slots and not free.
-    pub(super) fn holds_node(&self, slot: u32) -> bool {
+    pub fn holds_node(&self, slot: u32) -> bool {
         self.node_slots.holds(slot)
     }
 
@@ -137,6 +137,28 @@ impl Graph {
         self.keep_index();
         Ok(())
     }
+
+    /// Gives the node in `slot` the height `height`, which its content lays out to (ADR-0013),
+    /// and re-places its edges and its place in the index. A slot that holds no node refuses the
+    /// call, which then changes nothing.
+    pub fn resize_node(&mut self, slot: u32, height: f32) -> Result<(), SlotError> {
+        self.nodes_held(&[slot])?;
+        self.sizes[slot as usize * 2 + 1] = height;
+        let bounds = self.node_bounds(slot);
+        self.node_grid.set(slot, &bounds);
+        let edges = std::mem::take(&mut self.incident[slot as usize]);
+        for &edge in &edges {
+            self.place_edge(edge);
+        }
+        self.incident[slot as usize] = edges;
+        self.keep_index();
+        Ok(())
+    }
+
+    /// The node sizes, `width, height` per slot.
+    pub fn sizes(&self) -> &[f32] {
+        &self.sizes
+    }
 }
 
 /// Moves the nodes in `slots`, slots that hold a node, by `(dx, dy)` within `positions`, `x, y`
@@ -215,6 +237,39 @@ mod tests {
         );
         assert_eq!(out.nodes, [1]);
         assert_eq!(out.edges, [0, 1]);
+    }
+
+    #[test]
+    fn a_resized_node_takes_its_edges_and_its_place_in_the_index_along() {
+        // Verifies: ADR-0013
+        // Node 1, 100 × 50 at (300, 0), grows to 150 high: the edge from node 0 enters it at the
+        // middle of its left side, now 75 down, and a query below its old bottom finds it.
+        let mut graph = Graph::new(
+            vec![0.0, 0.0, 300.0, 0.0],
+            vec![100.0, 50.0, 100.0, 50.0],
+            vec![EdgeSpec {
+                sides: Sides::default(),
+                source: 0,
+                target: 1,
+                label: None,
+                style: EdgeStyle::unstyled(),
+            }],
+        )
+        .unwrap();
+        graph.resize_node(1, 150.0).unwrap();
+        assert_eq!(graph.sizes(), [100.0, 50.0, 100.0, 150.0]);
+        let mut ends = Vec::new();
+        graph.edge_ends(&[0], &mut ends);
+        assert_eq!(ends, [100.0, 25.0, 300.0, 75.0]);
+        let mut out = Visible::default();
+        let below = Rect::new(310.0, 100.0, 320.0, 140.0);
+        graph.query(&below, Level::Near, 4.0, 0.0, &mut out);
+        assert_eq!(out.nodes, [1]);
+        assert_eq!(graph.node_at(Point::new(350.0, 140.0)), Some(1));
+        assert_eq!(
+            graph.resize_node(2, 1.0),
+            Err(SlotError::NoNode { slot: 2 })
+        );
     }
 
     #[test]

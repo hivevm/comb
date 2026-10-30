@@ -190,9 +190,10 @@ test("addEdge refuses an edge past the limit of a load as tooMany", async ({ pag
   test.setTimeout(120_000);
   await open(page);
   const result = await page.evaluate(() => {
+    const content = [[{ kind: "text" as const, role: "title" as const, text: "" }]];
     const nodes = [
-      { id: "a", title: "", x: 1e6, y: 1e6, width: 5, height: 5 },
-      { id: "b", title: "", x: 1e6 + 10, y: 1e6, width: 5, height: 5 },
+      { id: "a", x: 1e6, y: 1e6, width: 5, content },
+      { id: "b", x: 1e6 + 10, y: 1e6, width: 5, content },
     ];
     const edges = Array.from({ length: 1_000_000 }, (_, i) => ({
       id: `e${i}`,

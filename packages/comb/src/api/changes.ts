@@ -11,6 +11,7 @@ import {
   type GraphState,
   type GraphStore,
   type NodeData,
+  type NodePatch,
   type Selection,
   type StoreChange,
 } from "../store";
@@ -30,12 +31,12 @@ export type GraphChange =
   | { readonly kind: "loaded"; readonly by: "host" }
   /** `addNode` added `node`, as Comb took it. */
   | { readonly kind: "nodeAdded"; readonly by: "host"; readonly node: Readonly<NodeData> }
-  /** `updateNode` changed the node `id` by `patch`, as Comb merged it. */
+  /** `updateNode` changed the node `id` by `patch`, its content as Comb keeps it. */
   | {
       readonly kind: "nodeUpdated";
       readonly by: "host";
       readonly id: string;
-      readonly patch: Extract<StoreChange, { kind: "nodeUpdated" }>["patch"];
+      readonly patch: Readonly<NodePatch>;
     }
   /** A drag left the node `id` at `x`, `y`. */
   | {
@@ -118,6 +119,17 @@ function edgeDeliveryOf(
   };
 }
 
+/** The change `nodeUpdated` as `onChange` delivers it, with the content the engine keeps, built
+ *  for this delivery, where the patch set it. */
+function nodeUpdatedOf(
+  change: Extract<StoreChange, { kind: "nodeUpdated" }>,
+  state: GraphState,
+  bridge: Bridge,
+): GraphChange {
+  const patch = change.content ? { content: bridge.content(state.slots.get(change.id)!) } : {};
+  return { kind: change.kind, by: change.by, id: change.id, patch };
+}
+
 /** The change of the graph `change` names, as `onChange` delivers it: what it carries read from
  *  `state` and, for a position, from the engine's buffer as it is now. */
 function deliveryOf(change: StoreChange, state: GraphState, bridge: Bridge): GraphChange {
@@ -125,7 +137,7 @@ function deliveryOf(change: StoreChange, state: GraphState, bridge: Bridge): Gra
     case "loaded":
       return { kind: change.kind, by: change.by };
     case "nodeUpdated":
-      return { kind: change.kind, by: change.by, id: change.id, patch: { ...change.patch } };
+      return nodeUpdatedOf(change, state, bridge);
     case "nodeMoved": {
       const { x, y } = positionAt(bridge.positions(), state.slots.get(change.id)!);
       return { kind: change.kind, by: change.by, id: change.id, x, y };
@@ -148,9 +160,10 @@ function deliveryOf(change: StoreChange, state: GraphState, bridge: Bridge): Gra
     }
     case "nodeAdded": {
       const slot = state.slots.get(change.id)!;
-      const { id, title, width, height } = state.nodes[slot]!;
+      const { id, width } = state.nodes[slot]!;
       const { x, y } = positionAt(bridge.positions(), slot);
-      return { kind: change.kind, by: change.by, node: { id, title, x, y, width, height } };
+      const node = { id, x, y, width, content: bridge.content(slot) };
+      return { kind: change.kind, by: change.by, node };
     }
   }
 }

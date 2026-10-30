@@ -6,12 +6,17 @@
 import init, {
   ArrowCode,
   checkGraphSize,
+  checkContentBudget,
   checkIdBudget,
-  checkNodePatch,
+  columnLimit,
+  contentBudget,
   DetailLevel,
   EdgeField,
   idBudget,
   idLimit,
+  KindCode,
+  rowLimit,
+  RoleCode,
   textLimit,
   Engine,
   initSync,
@@ -19,29 +24,33 @@ import init, {
   NodeField,
   SideCode,
   type Arrow,
+  type ContentElement,
   type InitOutput,
-  type CheckedPatch,
   type EdgeInput,
   type EdgePatch,
   type Hit,
   type GraphDataProblem,
+  type NodeContent,
   type NodeInput,
   type NodePatch,
   type NumberError,
   type Side,
   type SlotError,
+  type TextRole,
 } from "../../wasm/engine.js";
 
 export type {
-  CheckedPatch,
+  ContentElement,
   EdgeField,
   GraphDataProblem,
+  NodeContent,
   NodeField,
   Hit,
   NodeInput,
   NodePatch,
   NumberError,
   SlotError,
+  TextRole,
 };
 
 /** The refusal of `translate`'s delta, under the name it had before `NumberError` held it. */
@@ -56,32 +65,66 @@ declare const read: unique symbol;
  *  (ADR-0034): half of V8's maximum string length, the smallest of the evergreen engines'. */
 export const PIECE_BOUND = 2 ** 28;
 
+/** The content of a load's nodes as the engine's `loadGraph` takes it (ADR-0034), the nodes'
+ *  elements in slot order, each node's rows in their order and each row's elements in theirs:
+ *  the boundaries of each node's rows, one more than there are nodes; of each row's elements,
+ *  one more than there are rows; per element its kind's code, its weight, NaN for one of another
+ *  type, and a text's role's code, 0 for another kind; and the texts, every string an element
+ *  shows, as a string column with per text whether it is a text, 1 or 0. */
+export interface ContentColumns {
+  readonly rowBounds: Uint32Array;
+  readonly elementBounds: Uint32Array;
+  readonly kinds: Uint8Array;
+  readonly weights: Float64Array;
+  readonly roles: Uint8Array;
+  readonly texts: string[];
+  readonly textBounds: Uint32Array;
+  readonly textValid: Uint8Array;
+}
+
 /** The nodes of a load as the engine's `loadGraph` takes them (ADR-0034), each column in slot
- *  order: the identifiers and the titles each as the values concatenated and cut into pieces,
- *  each ending where a value ends, with their boundaries in UTF-16 code units across all pieces,
- *  one more than there are nodes, a refused value empty; per
- *  title whether it is a text, 1 or 0; the numbers as the host application handed them; and the
- *  first value the engine's first pass refuses by its type, the index of its node and its field,
- *  `item` for a node that is no object. */
+ *  order: the identifiers as the values concatenated and cut into pieces, each ending where a
+ *  value ends, with their boundaries in UTF-16 code units across all pieces, one more than there
+ *  are nodes, a refused value empty; the numbers as the host application handed them; the
+ *  content as its columns; and the first value the engine's first pass refuses by its type, the
+ *  index of its node and its field, `item` for a node that is no object, and for a shape of
+ *  content its row and, below a row, its column. */
 export interface NodeColumns {
   readonly ids: string[];
   readonly idBounds: Uint32Array;
-  readonly titles: string[];
-  readonly titleBounds: Uint32Array;
-  readonly titleTexts: Uint8Array;
   readonly x: Float64Array;
   readonly y: Float64Array;
   readonly width: Float64Array;
-  readonly height: Float64Array;
-  readonly refused: { readonly index: number; readonly field: NodeField } | undefined;
+  readonly content: ContentColumns;
+  readonly refused:
+    | {
+        readonly index: number;
+        readonly field: NodeField;
+        readonly row?: number | undefined;
+        readonly column?: number | undefined;
+      }
+    | undefined;
 }
 
-/** What writes the columns of a load's nodes, one node after another in slot order. */
+/** What writes the columns of a load's nodes, one node after another in slot order, from the
+ *  primitives `api/snapshot.ts` reads of each: `node`, then its content row by row, each row's
+ *  elements, the last of which ends the row, or `endRow` for a row of none. */
 export interface NodeColumnWriter {
-  /** The next node, from the primitives `api/snapshot.ts` read of it: an identifier or a title
-   *  that is a string is one, a number that is a number is one, and any other value is refused by
-   *  its type, the first of them named, a title at its rule. */
-  node(id: unknown, title: unknown, x: unknown, y: unknown, width: unknown, height: unknown): void;
+  /** Starts the next node: an identifier that is a string is one, a number that is a number is
+   *  one, and any other value is refused by its type, the first of them named. */
+  node(id: unknown, x: unknown, y: unknown, width: unknown): void;
+  /** The node's content is no list: refused by its type, and the node holds no rows. */
+  noContent(): void;
+  /** The next element of the row: an element's kind and role cross as their codes, its weight as
+   *  given, 1 where it is absent, NaN where it is of another type, and a text that is no string
+   *  as no text, each refused at its rule. */
+  element(kind: unknown, role: unknown, weight: unknown, text: unknown, endsRow: boolean): void;
+  /** The next element of the row is no object: it crosses as one of no kind, its place named. */
+  noElement(endsRow: boolean): void;
+  /** The row is no list: it crosses as a row of no elements, its place named, and ends. */
+  noRow(): void;
+  /** Ends a row of no elements. */
+  endRow(): void;
   /** The next node, which is no object, refused as malformed unless a value before it was. */
   noObject(): void;
   /** The columns of the nodes written so far. */
@@ -95,7 +138,8 @@ export interface NodeColumnWriter {
 function stringColumn(count: number, bound: number) {
   const pieces: string[] = [];
   let values: string[] = [];
-  const bounds = new Uint32Array(count + 1);
+  let bounds = new Uint32Array(count + 1);
+  let written = 0;
   let units = 0;
   let pieceUnits = 0;
   const cut = () => {
@@ -104,11 +148,11 @@ function stringColumn(count: number, bound: number) {
     pieceUnits = 0;
   };
   return {
-    /** Ends the value at `at` with `value` where it is a string, else empty; returns whether it
-     *  is one. A value longer than `bound` fits in no piece, and is refused by a throw; the
-     *  snapshot cuts every value to its limit plus one, far below `PIECE_BOUND`, so only a test's
-     *  small bound reaches it. */
-    add(at: number, value: unknown): boolean {
+    /** Ends the next value with `value` where it is a string, else empty; returns whether it is
+     *  one. A value longer than `bound` fits in no piece, and is refused by a throw; the snapshot
+     *  cuts every value to its limit plus one, far below `PIECE_BOUND`, so only a test's small
+     *  bound reaches it. */
+    add(value: unknown): boolean {
       const text = typeof value === "string";
       if (text) {
         const { length } = value;
@@ -120,66 +164,231 @@ function stringColumn(count: number, bound: number) {
         pieceUnits += length;
         units += length;
       }
-      bounds[at + 1] = units;
+      if (written + 1 === bounds.length) bounds = grown(bounds);
+      bounds[++written] = units;
       return text;
     },
     pieces: () => {
       cut();
       return pieces;
     },
-    bounds: (written: number) => bounds.subarray(0, written + 1),
+    bounds: () => bounds.subarray(0, written + 1),
   };
+}
+
+type Typed = Uint8Array | Uint32Array | Float64Array;
+
+/** The code of each kind of element and each role by its name, typed by the generated names so
+ *  that a kind or a role added in the engine fails here until it has its code (ADR-0034). */
+const KINDS: Readonly<Record<ContentElement["kind"], KindCode>> = { text: KindCode.Text };
+const ROLES: Readonly<Record<TextRole, RoleCode>> = {
+  title: RoleCode.Title,
+  body: RoleCode.Body,
+  caption: RoleCode.Caption,
+};
+
+/** The code of the kind `kind` names, `Unnamed` for any other value: compared with each name,
+ *  which `KINDS` holds, so that a value is looked at by equality alone. */
+function kindCode(kind: unknown): KindCode {
+  return kind === "text" ? KINDS.text : KindCode.Unnamed;
+}
+
+/** The code of the role `role` names, `Unnamed` for any other value, as `kindCode` finds it. */
+function roleCode(role: unknown): RoleCode {
+  switch (role) {
+    case "title":
+      return ROLES.title;
+    case "body":
+      return ROLES.body;
+    case "caption":
+      return ROLES.caption;
+    default:
+      return RoleCode.Unnamed;
+  }
+}
+
+/** Whether `value` stands for a field left out: null or undefined. */
+const absent = (value: unknown) => value === undefined || value === null;
+
+/** The weight of a column left out (ADR-0013). */
+const WEIGHT = 1;
+
+/** A writer of the columns of `count` nodes, their content of about one row of one element each,
+ *  which grows past that, its strings in pieces of at most `bound` code units; it names the first
+ *  value refused by its type. Each value is written into its typed array in place, without a call
+ *  per value, since a load writes several per node. It looks at a value by `typeof` and at a
+ *  string's length and its equality with a name only, so that no value it is handed runs code. */
+class NodeWriter implements NodeColumnWriter {
+  private readonly ids: ReturnType<typeof stringColumn>;
+  private readonly x: Float64Array;
+  private readonly y: Float64Array;
+  private readonly width: Float64Array;
+  /** The index of the node being written, and whether one is. */
+  private at = 0;
+  private open = false;
+  private refused: NodeColumns["refused"];
+  private rowBounds: Uint32Array;
+  private elementBounds: Uint32Array;
+  private kinds: Uint8Array;
+  private weights: Float64Array;
+  private roles: Uint8Array;
+  private textValid: Uint8Array;
+  private readonly texts: ReturnType<typeof stringColumn>;
+  private nodes = 0;
+  private rows = 0;
+  private elements = 0;
+  private valid = 0;
+
+  constructor(count: number, bound: number) {
+    this.ids = stringColumn(count, bound);
+    this.x = new Float64Array(count);
+    this.y = new Float64Array(count);
+    this.width = new Float64Array(count);
+    this.rowBounds = new Uint32Array(count + 1);
+    this.elementBounds = new Uint32Array(count + 1);
+    this.kinds = new Uint8Array(count);
+    this.weights = new Float64Array(count);
+    this.roles = new Uint8Array(count);
+    this.textValid = new Uint8Array(count);
+    this.texts = stringColumn(count, bound);
+  }
+
+  /** The row and column of the next element within its node. */
+  private row = 0;
+  private column = 0;
+
+  /** Names the first value refused by its type, of the node being written. */
+  private refuse(field: NodeField, row?: number, column?: number): void {
+    this.refused ??= { index: this.at, field, row, column };
+  }
+
+  /** `value` into `column` where it is a number, else refused as `field`. */
+  private number(column: Float64Array, value: unknown, field: NodeField): void {
+    if (typeof value === "number") column[this.at] = value;
+    else this.refuse(field);
+  }
+
+  node(id: unknown, x: unknown, y: unknown, width: unknown): void {
+    if (this.open) this.endNode();
+    this.open = true;
+    if (!this.ids.add(id)) this.refuse(NodeField.Id);
+    this.number(this.x, x, NodeField.X);
+    this.number(this.y, y, NodeField.Y);
+    this.number(this.width, width, NodeField.Width);
+  }
+
+  noObject(): void {
+    if (this.open) this.endNode();
+    this.refuse(NodeField.Item);
+    this.ids.add(undefined);
+    // No rows, without a refusal of its own: the node is named as no object already.
+    this.endNode();
+  }
+
+  /** The node's content is no list. */
+  noContent(): void {
+    this.refuse(NodeField.Content);
+  }
+
+  /** The row is no list. */
+  noRow(): void {
+    this.refuse(NodeField.Row, this.row);
+    this.endRow();
+  }
+
+  /** Ends the row. */
+  endRow(): void {
+    if (this.rows + 1 === this.elementBounds.length) this.elementBounds = grown(this.elementBounds);
+    this.elementBounds[++this.rows] = this.elements;
+    this.row++;
+    this.column = 0;
+  }
+
+  /** Ends the node being written. */
+  private endNode(): void {
+    this.open = false;
+    if (this.nodes + 1 === this.rowBounds.length) this.rowBounds = grown(this.rowBounds);
+    this.rowBounds[++this.nodes] = this.rows;
+    this.row = 0;
+    this.at++;
+  }
+
+  /** Room for one more element, of the next index, which it returns. */
+  private next(): number {
+    const at = this.elements++;
+    if (at === this.kinds.length) {
+      this.kinds = grown(this.kinds);
+      this.weights = grown(this.weights);
+      this.roles = grown(this.roles);
+      this.textValid = grown(this.textValid);
+    }
+    this.column++;
+    return at;
+  }
+
+  /** The next element is no object. */
+  noElement(endsRow: boolean): void {
+    this.refuse(NodeField.Element, this.row, this.column);
+    const at = this.next();
+    [this.kinds[at], this.weights[at], this.roles[at]] = [KindCode.Unnamed, Number.NaN, 0];
+    if (endsRow) this.endRow();
+  }
+
+  /** The next element, of the fields read of it. */
+  element(kind: unknown, role: unknown, weight: unknown, text: unknown, endsRow: boolean): void {
+    const at = this.next();
+    const code = kindCode(kind);
+    this.kinds[at] = code;
+    this.weights[at] = absent(weight) ? WEIGHT : typeof weight === "number" ? weight : Number.NaN;
+    if (code !== KindCode.Text) this.roles[at] = 0;
+    else {
+      this.roles[at] = roleCode(role);
+      this.textValid[this.valid++] = Number(this.texts.add(text));
+    }
+    if (endsRow) this.endRow();
+  }
+
+  columns(): NodeColumns {
+    if (this.open) this.endNode();
+    return {
+      ids: this.ids.pieces(),
+      idBounds: this.ids.bounds(),
+      x: this.x.subarray(0, this.at),
+      y: this.y.subarray(0, this.at),
+      width: this.width.subarray(0, this.at),
+      content: this.contentColumns(),
+      refused: this.refused,
+    };
+  }
+
+  private contentColumns(): ContentColumns {
+    return {
+      rowBounds: this.rowBounds.subarray(0, this.nodes + 1),
+      elementBounds: this.elementBounds.subarray(0, this.rows + 1),
+      kinds: this.kinds.subarray(0, this.elements),
+      weights: this.weights.subarray(0, this.elements),
+      roles: this.roles.subarray(0, this.elements),
+      texts: this.texts.pieces(),
+      textBounds: this.texts.bounds(),
+      textValid: this.textValid.subarray(0, this.valid),
+    };
+  }
+}
+
+/** `array` with its values in one twice as long. */
+function grown<T extends Typed>(array: T): T {
+  const twice = new (array.constructor as new (length: number) => T)(
+    Math.max(16, array.length * 2),
+  );
+  twice.set(array);
+  return twice;
 }
 
 /** A writer of the columns of at most `count` nodes, its strings in pieces of at most `bound` code
  *  units. It looks at a value by `typeof` and at a string's length only, so that no value it is
  *  handed runs code. */
 export function nodeColumns(count: number, bound: number): NodeColumnWriter {
-  const ids = stringColumn(count, bound);
-  const titles = stringColumn(count, bound);
-  const titleTexts = new Uint8Array(count);
-  const x = new Float64Array(count);
-  const y = new Float64Array(count);
-  const width = new Float64Array(count);
-  const height = new Float64Array(count);
-  let at = 0;
-  let refused: NodeColumns["refused"];
-  const refuse = (field: NodeField) => {
-    refused ??= { index: at, field };
-  };
-  const number = (column: Float64Array, value: unknown, field: NodeField) => {
-    if (typeof value === "number") column[at] = value;
-    else refuse(field);
-  };
-  return {
-    node(id, title, xOf, yOf, widthOf, heightOf) {
-      if (!ids.add(at, id)) refuse(NodeField.Id);
-      number(x, xOf, NodeField.X);
-      number(y, yOf, NodeField.Y);
-      number(width, widthOf, NodeField.Width);
-      number(height, heightOf, NodeField.Height);
-      titleTexts[at] = Number(titles.add(at, title));
-      at++;
-    },
-    noObject() {
-      refuse(NodeField.Item);
-      ids.add(at, undefined);
-      titles.add(at, undefined);
-      at++;
-    },
-    columns: () => ({
-      ids: ids.pieces(),
-      idBounds: ids.bounds(at),
-      titles: titles.pieces(),
-      titleBounds: titles.bounds(at),
-      titleTexts: titleTexts.subarray(0, at),
-      x: x.subarray(0, at),
-      y: y.subarray(0, at),
-      width: width.subarray(0, at),
-      height: height.subarray(0, at),
-      refused,
-    }),
-  };
+  return new NodeWriter(count, bound);
 }
 
 /** The edges of a load as the engine's `loadGraph` takes them (ADR-0034), each column in slot
@@ -258,9 +467,6 @@ function codeOf<C>(codes: Readonly<Record<string, C>>, name: unknown, unnamed: C
   return Object.hasOwn(codes, name) ? codes[name] : unnamed;
 }
 
-/** Whether `value` stands for a field left out: null or undefined. */
-const absent = (value: unknown) => value === undefined || value === null;
-
 /** The columns of at most `count` labels: whether each edge has one, its text, `t`, offset, and
  *  background. */
 function labelColumns(count: number, bound: number) {
@@ -276,12 +482,12 @@ function labelColumns(count: number, bound: number) {
      *  type, or none. */
     add(at: number, label: unknown): EdgeField | undefined {
       if (typeof label !== "object" || label === null) {
-        texts.add(at, undefined);
+        texts.add(undefined);
         return absent(label) ? undefined : EdgeField.Label;
       }
       const fields = label as Record<string, unknown>;
       hasLabel[at] = 1;
-      labelTexts[at] = Number(texts.add(at, fields.text));
+      labelTexts[at] = Number(texts.add(fields.text));
       if (!absent(fields.background)) {
         hasBackground[at] = 1;
         background[at] = typeof fields.background === "number" ? fields.background : Number.NaN;
@@ -295,7 +501,7 @@ function labelColumns(count: number, bound: number) {
     columns: (written: number) => ({
       hasLabel: hasLabel.subarray(0, written),
       labels: texts.pieces(),
-      labelBounds: texts.bounds(written),
+      labelBounds: texts.bounds(),
       labelTexts: labelTexts.subarray(0, written),
       labelT: labelT.subarray(0, written),
       labelOffset: labelOffset.subarray(0, written),
@@ -372,9 +578,9 @@ export function edgeColumns(count: number, bound: number): EdgeColumnWriter {
   };
   return {
     edge(id, source, target, label, colorOf, dash, arrow, sourceSide, targetSide) {
-      if (!ids.add(at, id)) refuse(EdgeField.Id);
-      if (!sources.add(at, source)) refuse(EdgeField.Source);
-      if (!targets.add(at, target)) refuse(EdgeField.Target);
+      if (!ids.add(id)) refuse(EdgeField.Id);
+      if (!sources.add(source)) refuse(EdgeField.Source);
+      if (!targets.add(target)) refuse(EdgeField.Target);
       refuse(labels.add(at, label));
       if (typeof colorOf === "number") color[at] = colorOf;
       else refuse(EdgeField.Color);
@@ -386,17 +592,17 @@ export function edgeColumns(count: number, bound: number): EdgeColumnWriter {
     },
     noObject() {
       refuse(EdgeField.Item);
-      for (const column of [ids, sources, targets]) column.add(at, undefined);
+      for (const column of [ids, sources, targets]) column.add(undefined);
       labels.add(at, undefined);
       at++;
     },
     columns: () => ({
       ids: ids.pieces(),
-      idBounds: ids.bounds(at),
+      idBounds: ids.bounds(),
       sources: sources.pieces(),
-      sourceBounds: sources.bounds(at),
+      sourceBounds: sources.bounds(),
       targets: targets.pieces(),
-      targetBounds: targets.bounds(at),
+      targetBounds: targets.bounds(),
       ...labels.columns(at),
       color: color.subarray(0, at),
       ...dashes.columns(at),
@@ -454,14 +660,36 @@ const DETAILS: Record<MeshDetail, Detail> = {
   [MeshDetail.Coarsened]: "coarsened",
 };
 
+/** Where the elements of the content of the nodes a query found lie and what they draw
+ *  (ADR-0013), at the near and the middle level: per found node, in their order, the boundaries
+ *  of its elements in the other columns, one more than there are found nodes; per element, its
+ *  node's elements in the order of its rows and theirs, its rectangle `x, y, width, height`
+ *  relative to its node's top-left corner, its text's role, and what is drawn of its text, the
+ *  text or as much of it as fits followed by an ellipsis, those strings one after another in
+ *  `texts`, cut by `textBounds`. At the far level it holds no node. */
+export interface Placed {
+  bounds: Uint32Array;
+  rects: Float32Array;
+  roles: Uint8Array;
+  texts: string;
+  textBounds: Uint32Array;
+}
+
+/** The role of each code of `RoleCode`, by the code. */
+export const ROLE_NAMES: Readonly<Record<number, TextRole>> = Object.fromEntries(
+  Object.entries(ROLES).map(([name, code]) => [code, name as TextRole]),
+);
+
 /** What a viewport query found: node slots in ascending order, the edge slot and point of each
- *  found edge label, the mesh of the found edges and its detail, and the positions buffer, all
- *  read after the same call. The label points and the mesh's positions are relative to `origin`,
- *  a world point near the query's rectangle, so that `f32` rounds them by their distance from it
- *  (ADR-0034); the positions buffer is not. */
+ *  found edge label, the mesh of the found edges and its detail, where the found nodes' content
+ *  lies, and the positions and sizes buffers, all read after the same call. The label points and
+ *  the mesh's positions are relative to `origin`, a world point near the query's rectangle, so
+ *  that `f32` rounds them by their distance from it (ADR-0034); the positions buffer is not. */
 export interface Visible {
   positions: Float32Array;
+  sizes: Float32Array;
   nodes: Uint32Array;
+  content: Placed;
   labels: Uint32Array;
   labelPoints: Float32Array;
   mesh: EdgeMesh;
@@ -486,6 +714,16 @@ export interface DrawnEdges {
   ends: Float32Array;
 }
 
+/** The metrics of a font the shell draws the texts of a role with, in world units: the advance
+ *  of the glyph of each code point of `codes` in `advances`, of every other character
+ *  `fallback`, and the height of a line (ADR-0013). */
+export interface FontMetrics {
+  codes: Uint32Array;
+  advances: Float64Array;
+  fallback: number;
+  lineHeight: number;
+}
+
 export interface Bridge {
   /** Replaces the graph; node slot `i` is the batch's node `i`, edge slot `i` its edge `i`.
    *  Throws a `GraphDataProblem`. */
@@ -503,8 +741,20 @@ export interface Bridge {
    *  its new style and label placement. Throws a `GraphDataProblem`, and a `SlotError` where
    *  `slot` holds no edge, the graph as it was. */
   updateEdge(slot: number, id: string, patch: PlainEdgePatch): void;
-  /** The most UTF-16 code units of a title or a label text the bridge accepts. */
+  /** Checks the patch of the node `id` in `slot` as a load checks a node's content and gives the
+   *  node its new content and the height it lays out to (ADR-0013). Throws a `GraphDataProblem`,
+   *  and a `SlotError` where `slot` holds no node, the graph as it was. */
+  updateNode(slot: number, id: string, patch: PlainPatch): void;
+  /** Hands over the metrics of the font the texts of `role` are drawn with, for every layout
+   *  from then on (ADR-0013). Throws a `NumberError` `invalidFont` for metrics the engine cannot
+   *  take. */
+  setFont(role: TextRole, font: FontMetrics): void;
+  /** The most UTF-16 code units of a text of content or a label text the bridge accepts. */
   textLimit(): number;
+  /** The most rows of a node's content the bridge accepts. */
+  rowLimit(): number;
+  /** The most columns of a row the bridge accepts. */
+  columnLimit(): number;
   /** The most UTF-16 code units of an identifier the bridge accepts. */
   idLimit(): number;
   /** The most UTF-16 code units of all identifiers of one load the bridge accepts. */
@@ -512,12 +762,14 @@ export interface Bridge {
   /** Checks how many UTF-16 code units the identifiers of one load hold. Throws a
    *  `GraphDataProblem`. */
   checkIdBudget(units: number): void;
+  /** The most UTF-16 code units of the texts of content of one load the bridge accepts. */
+  contentBudget(): number;
+  /** Checks how many UTF-16 code units the texts of content of one load hold, the node `node`
+   *  the one whose text passed the budget. Throws a `GraphDataProblem`. */
+  checkContentBudget(units: number, node: string): void;
   /** Checks how many nodes and edges a graph holds, before any is copied. Throws a
    *  `GraphDataProblem`. */
   checkGraphSize(nodes: number, edges: number): void;
-  /** Checks the patch `updateNode` hands over for the node `node`, reading it once, and returns
-   *  the fields it changes; the engine keeps nothing of it. Throws a `GraphDataProblem`. */
-  checkNodePatch(node: string, patch: PlainPatch): CheckedPatch;
   /** Removes the nodes in `slots` and every edge at them, and returns the slots of those edges in
    *  ascending order (ADR-0022). Throws a `SlotError`, a mistake of the shell's, never one of
    *  graph data, the graph as it was. */
@@ -545,9 +797,17 @@ export interface Bridge {
   translate(slots: Uint32Array, dx: number, dy: number): void;
   /** A fresh view on the positions buffer, `x, y` per slot. Do not keep it across calls. */
   positions(): Float32Array;
+  /** The content of the node in `slot`, built when asked, since the shell keeps none (ADR-0013).
+   *  Throws a `SlotError` where `slot` holds no node. */
+  content(slot: number): NodeContent;
+  /** Fresh views on the positions buffer and on the sizes buffer, `width, height` per slot, the
+   *  height each node's content lays out to (ADR-0013), both read after the same call. Do not
+   *  keep them across calls. */
+  nodeBuffers(): { positions: Float32Array; sizes: Float32Array };
   /** The nodes and edges that meet `rect` and the mesh of the edges for `level`, where a screen
    *  pixel is `pixel` world units, within the engine's mesh budget, and the mesh's detail; at the
-   *  near level also the edge labels whose point lies within `labelReach` of it. Fresh views; do
+   *  near and the middle level where the found nodes' content lies; at the near level also the
+   *  edge labels whose point lies within `labelReach` of it. Fresh views; do
    *  not keep them across calls. Throws a `NumberError` `invalidPixel` for a pixel that is not a
    *  finite number above zero (ADR-0031). */
   query(rect: Rect, level: Level, pixel: number, labelReach: number): Visible;
@@ -724,8 +984,22 @@ function wrap(exports: InitOutput): Bridge {
 
 /** Hands `engine` the load of `snapshot`, a parameter per column. */
 function load(engine: Engine, { nodes, edges }: GraphSnapshot): number {
-  const { ids, idBounds, titles, titleBounds, titleTexts, x, y, width, height, refused } = nodes;
-  const columns = [ids, idBounds, titles, titleBounds, titleTexts, x, y, width, height] as const;
+  const { ids, idBounds, x, y, width, content: c, refused } = nodes;
+  const columns = [
+    ids,
+    idBounds,
+    x,
+    y,
+    width,
+    c.rowBounds,
+    c.elementBounds,
+    c.kinds,
+    c.weights,
+    c.roles,
+    c.texts,
+    c.textBounds,
+    c.textValid,
+  ] as const;
   const e = edges;
   const edgeColumnValues = [
     e.ids,
@@ -754,10 +1028,55 @@ function load(engine: Engine, { nodes, edges }: GraphSnapshot): number {
     ...columns,
     refused?.index,
     refused?.field,
+    refused?.row,
+    refused?.column,
     ...edgeColumnValues,
     e.refused?.index,
     e.refused?.field,
   );
+}
+
+/** The results of a query of `engine` for `rect` at `level`, as `Bridge.query` returns them, read
+ *  through fresh views on `memory`. */
+function queried(
+  engine: Engine,
+  memory: WebAssembly.Memory,
+  rect: Rect,
+  level: Level,
+  pixel: number,
+  labelReach: number,
+): Visible {
+  const u32 = (ptr: number, len: number) => new Uint32Array(memory.buffer, ptr, len);
+  const f32 = (ptr: number, len: number) => new Float32Array(memory.buffer, ptr, len);
+  const u8 = (ptr: number, len: number) => new Uint8Array(memory.buffer, ptr, len);
+  const detail = DETAILS[engine.query(rect, LEVELS[level], pixel, labelReach)];
+  // Read before the views: each is a call into the engine.
+  const origin = { x: engine.originX(), y: engine.originY() };
+  // The texts only where the query placed any, which it does at the near and middle level.
+  const texts = engine.contentTextBoundsLen() > 1 ? engine.contentTexts() : "";
+  return {
+    positions: f32(engine.positionsPtr(), engine.positionsLen()),
+    sizes: f32(engine.sizesPtr(), engine.sizesLen()),
+    nodes: u32(engine.visibleNodesPtr(), engine.visibleNodesLen()),
+    content: {
+      bounds: u32(engine.contentBoundsPtr(), engine.contentBoundsLen()),
+      rects: f32(engine.contentRectsPtr(), engine.contentRectsLen()),
+      roles: u8(engine.contentRolesPtr(), engine.contentRolesLen()),
+      texts,
+      textBounds: u32(engine.contentTextBoundsPtr(), engine.contentTextBoundsLen()),
+    },
+    labels: u32(engine.visibleLabelsPtr(), engine.visibleLabelsLen()),
+    labelPoints: f32(engine.labelPointsPtr(), engine.labelPointsLen()),
+    mesh: {
+      positions: f32(engine.meshPositionsPtr(), engine.meshPositionsLen()),
+      distances: f32(engine.meshDistancesPtr(), engine.meshDistancesLen()),
+      colors: u32(engine.meshColorsPtr(), engine.meshColorsLen()),
+      dashes: f32(engine.meshDashesPtr(), engine.meshDashesLen()),
+      indices: u32(engine.meshIndicesPtr(), engine.meshIndicesLen()),
+    },
+    detail,
+    origin,
+  };
 }
 
 function engineBridge(memory: WebAssembly.Memory): Bridge {
@@ -767,14 +1086,21 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
   return {
     loadGraph: (snapshot) => load(engine, snapshot),
     addNode: (node) => engine.addNode(node),
+    updateNode: (slot, id, patch) => engine.updateNode(slot, id, patch),
+    content: (slot) => engine.content(slot),
+    setFont: (role, { codes, advances, fallback, lineHeight }) =>
+      engine.setFont(ROLES[role], codes, advances, fallback, lineHeight),
     addEdge: (edge, source, target) => engine.addEdge(edge, source, target),
     updateEdge: (slot, id, patch) => engine.updateEdge(slot, id, patch),
     textLimit,
+    rowLimit,
+    columnLimit,
     idLimit,
     idBudget,
     checkIdBudget,
+    contentBudget,
+    checkContentBudget,
     checkGraphSize,
-    checkNodePatch,
     removeNodes: (slots) => engine.removeNodes(slots),
     removeEdges: (slots) => engine.removeEdges(slots),
     edgesAt: (slots) => engine.edgesAt(slots),
@@ -789,6 +1115,10 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
     },
     translate: (slots, dx, dy) => engine.translate(slots, dx, dy),
     positions: () => f32(engine.positionsPtr(), engine.positionsLen()),
+    nodeBuffers: () => ({
+      positions: f32(engine.positionsPtr(), engine.positionsLen()),
+      sizes: f32(engine.sizesPtr(), engine.sizesLen()),
+    }),
     hit: (x, y, pixel, level, connectors) => engine.hit(x, y, pixel, LEVELS[level], connectors),
     drawnEdges() {
       engine.drawnEdges();
@@ -797,26 +1127,8 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
         ends: f32(engine.edgeEndsPtr(), engine.edgeEndsLen()),
       };
     },
-    query(rect, level, pixel, labelReach) {
-      const detail = DETAILS[engine.query(rect, LEVELS[level], pixel, labelReach)];
-      // Read before the views: each is a call into the engine.
-      const origin = { x: engine.originX(), y: engine.originY() };
-      return {
-        positions: f32(engine.positionsPtr(), engine.positionsLen()),
-        nodes: u32(engine.visibleNodesPtr(), engine.visibleNodesLen()),
-        labels: u32(engine.visibleLabelsPtr(), engine.visibleLabelsLen()),
-        labelPoints: f32(engine.labelPointsPtr(), engine.labelPointsLen()),
-        mesh: {
-          positions: f32(engine.meshPositionsPtr(), engine.meshPositionsLen()),
-          distances: f32(engine.meshDistancesPtr(), engine.meshDistancesLen()),
-          colors: u32(engine.meshColorsPtr(), engine.meshColorsLen()),
-          dashes: f32(engine.meshDashesPtr(), engine.meshDashesLen()),
-          indices: u32(engine.meshIndicesPtr(), engine.meshIndicesLen()),
-        },
-        detail,
-        origin,
-      };
-    },
+    query: (rect, level, pixel, labelReach) =>
+      queried(engine, memory, rect, level, pixel, labelReach),
   };
 }
 

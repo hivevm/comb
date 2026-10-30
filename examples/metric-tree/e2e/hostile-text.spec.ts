@@ -43,7 +43,7 @@ async function drawWatched(hostile: string[]) {
   comb.load({
     nodes: hostile.map((title, i) => ({
       ...window.node(`n${i}`, (i % 4) * 300, Math.floor(i / 4) * 150),
-      title,
+      content: [[{ kind: "text" as const, role: "title" as const, text: title }]],
     })),
     edges: hostile.map((text, i) => ({
       id: `e${i}`,

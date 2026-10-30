@@ -13,8 +13,10 @@ export const FAR_SELECTED_COLOR = 0x3b82f6;
 export class NodeParticles extends ParticleContainer {
   private readonly pool: Particle[] = [];
   private madeCount = 0;
-  /** The slots the particles stand for, in their order; grown as needed, never shrunk. */
+  /** The slots the particles stand for, in their order, and the heights they were drawn at;
+   *  grown as needed, never shrunk. */
   private slots = new Uint32Array(1024);
+  private heights = new Float32Array(1024);
   private nodes: GraphView["nodes"] = [];
   /** The node the last sync tinted as selected, if it drew it. */
   highlighted: string | null = null;
@@ -32,11 +34,14 @@ export class NodeParticles extends ParticleContainer {
     });
   }
 
-  /** Places a particle at each of `slots`, sized as its node and tinted where it is selected,
-   *  and none elsewhere. */
-  sync(state: GraphView, slots: Uint32Array, positions: Float32Array): void {
+  /** Places a particle at each of `slots`, sized as its node in `sizes`, its height the one its
+   *  content lays out to (ADR-0013), and tinted where it is selected, and none elsewhere. */
+  sync(state: GraphView, slots: Uint32Array, positions: Float32Array, sizes: Float32Array): void {
     const particles = this.particleChildren;
-    if (this.slots.length < slots.length) this.slots = new Uint32Array(slots.length * 2);
+    if (this.slots.length < slots.length) {
+      this.slots = new Uint32Array(slots.length * 2);
+      this.heights = new Float32Array(slots.length * 2);
+    }
     const selected = state.selection?.kind === "node" ? state.selection.id : null;
     this.highlighted = null;
     particles.length = 0;
@@ -51,8 +56,10 @@ export class NodeParticles extends ParticleContainer {
       particle.tint = isSelected ? FAR_SELECTED_COLOR : FAR_NODE_COLOR;
       particle.x = positions[slot * 2]!;
       particle.y = positions[slot * 2 + 1]!;
+      const height = sizes[slot * 2 + 1]!;
+      this.heights[i] = height;
       particle.scaleX = node.width / Texture.WHITE.width;
-      particle.scaleY = node.height / Texture.WHITE.height;
+      particle.scaleY = height / Texture.WHITE.height;
       particles.push(particle);
     }
     this.update();
@@ -82,7 +89,7 @@ export class NodeParticles extends ParticleContainer {
       const node = this.nodes[this.slots[i]!];
       if (!node) return [];
       return [
-        { id: node.id, x: particle.x, y: particle.y, width: node.width, height: node.height },
+        { id: node.id, x: particle.x, y: particle.y, width: node.width, height: this.heights[i]! },
       ];
     });
   }

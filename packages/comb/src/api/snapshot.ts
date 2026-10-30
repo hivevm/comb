@@ -3,16 +3,18 @@
 // that the bridge checks it and the store keeps it, and no value of the host application, nor any
 // of its code, reaches the engine; a load's nodes and edges are handed over as columns besides
 // (ADR-0034). A value of another type is replaced by `false`, which the bridge refuses naming the
-// node or edge and the field; a title, a label text, and the arrow are handed
-// over no longer than one code unit beyond the bridge's limit for texts, and an identifier no
-// longer than one beyond its limit for identifiers, so that a string of any length costs at most
-// that much to check. The code units of all identifiers are counted while they are read, and
+// node or edge and the field; a text of content, a label text, and the arrow are handed over no
+// longer than one code unit beyond the bridge's limit for texts, an identifier no longer than one
+// beyond its limit for identifiers, and a node's content no more rows, nor a row more columns,
+// than one beyond the bridge's limits, so that a value of any size costs at most that much to
+// check. The code units of all identifiers are counted while they are read, and
 // reading stops once they exceed the bridge's budget, whose check then refuses the load. What
 // cannot be read at all throws an `UnreadableError`.
 import {
   edgeColumns,
   nodeColumns,
   PIECE_BOUND,
+  type NodeColumnWriter,
   type EdgeSnapshot,
   type GraphSnapshot,
   type NodeSnapshot,
@@ -20,7 +22,7 @@ import {
   type PlainPatch,
 } from "../bridge";
 import { EDGE_ARROW, edgeColor } from "../render/edges";
-import type { GraphData } from "../store";
+import type { GraphData, KeptGraph } from "../store";
 
 /** The errors this module throws, told from what the host application throws without reading
  *  the thrown value, which may run its code. */
@@ -46,20 +48,32 @@ export function isUnreadable(error: unknown): error is UnreadableError {
 type Fields = Record<PropertyKey, unknown>;
 
 /** The bridge's limits the snapshot cuts by: the most code units of a text and of an
- *  identifier, and of all identifiers of one load together. */
+ *  identifier, and of all identifiers of one load together, and the most rows of a node's
+ *  content and columns of a row. */
 export interface Limits {
   text: number;
   id: number;
   idBudget: number;
+  contentBudget: number;
+  rows: number;
+  columns: number;
 }
 
-/** What a field expects: a number, a text, or an identifier, each of its type or absent. */
+/** What a field expects: a number, a text, an identifier, or a node's content, each of its type
+ *  or absent. */
 interface Reader {
   number(value: unknown): unknown;
   text(value: unknown): unknown;
   id(value: unknown): unknown;
+  content(value: unknown): unknown;
+  /** The most code units of a text. */
+  textLimit: number;
   /** The code units of the identifiers read so far. */
   idUnits: number;
+  /** The code units of the texts of content of a load read so far, and the identifier of the
+   *  node whose text passed the content budget, once one has. */
+  contentUnits: number;
+  contentPast: string | undefined;
 }
 
 /** A UTF-16 code unit of a surrogate pair without its other half. */
@@ -87,9 +101,60 @@ function readerOf(limits: Limits): Reader {
       if (id !== false) reader.idUnits += id.length;
       return id;
     },
+    content: (value) => (Array.isArray(value) ? contentOf(reader, value, limits) : falseOr(value)),
+    textLimit: limits.text,
     idUnits: 0,
+    contentUnits: 0,
+    contentPast: undefined,
   };
   return reader;
+}
+
+/** `value` where it stands for a field left out, null or undefined, else `false`. */
+const falseOr = (value: unknown) => (value === undefined || value === null ? value : false);
+
+/** A node's content as plain data, read by `read`: at most one row beyond `limits.rows`, each a
+ *  list of at most one element beyond `limits.columns` or `false`, each element an object of its
+ *  kind, role, text, and weight where one is given, or `false` where it is no object. A list is
+ *  no object here: an element is a description, never a list. */
+function contentOf(read: Reader, rows: readonly unknown[], limits: Limits) {
+  const count = Math.min(rows.length, limits.rows + 1);
+  const content: unknown[] = [];
+  for (let r = 0; r < count; r++) {
+    const row: unknown = rows[r];
+    if (!Array.isArray(row)) {
+      content.push(false);
+      continue;
+    }
+    const columns = Math.min(row.length, limits.columns + 1);
+    const elements: unknown[] = [];
+    for (let c = 0; c < columns; c++) elements.push(elementOf(read, row[c]));
+    content.push(elements);
+  }
+  return content;
+}
+
+/** A name of an element's kind or a text's role, which the bridge reads as a code: a string as
+ *  `read` reads a text but not searched for a lone surrogate, since a name with one names no
+ *  kind or role and is refused as such. */
+function nameOf(value: unknown, read: Reader): unknown {
+  if (typeof value !== "string") return read.text(value);
+  return value.length > read.textLimit ? value.slice(0, read.textLimit + 1) : value;
+}
+
+/** An element of content as plain data, or `false` where it is no object. */
+function elementOf(read: Reader, value: unknown) {
+  const fields = objectOf(value);
+  if (!fields || Array.isArray(value)) return false;
+  const { kind, role, text, weight } = fields;
+  const element: Record<string, unknown> = {
+    kind: nameOf(kind, read),
+    role: nameOf(role, read),
+    text: read.text(text),
+  };
+  // No key for a weight left out, which the bridge reads as 1, so that Comb keeps none either.
+  if (weight !== undefined && weight !== null) element.weight = read.number(weight);
+  return element;
 }
 
 /** `value` as an object to read fields of, or none where it is no object. */
@@ -141,15 +206,68 @@ function copied<T>(
 }
 
 function nodeOf(read: Reader, node: Fields) {
-  const { id, title, x, y, width, height } = node;
+  const { id, x, y, width, content } = node;
   return {
     id: read.id(id),
-    title: read.text(title),
     x: read.number(x),
     y: read.number(y),
     width: read.number(width),
-    height: read.number(height),
+    content: read.content(content),
   };
+}
+
+/** Writes the node `node` into `columns`, read once by `read`, its content straight into its
+ *  columns, cut by `limits` as `contentOf` cuts it, and returns what the store keeps of it: its
+ *  identifier and its width, no copy of its content (ADR-0013). */
+function written(read: Reader, node: Fields, columns: NodeColumnWriter, limits: Limits) {
+  const { id, x, y, width, content } = node;
+  const kept = { id: read.id(id), width: read.number(width) };
+  columns.node(kept.id, read.number(x), read.number(y), kept.width);
+  if (!Array.isArray(content)) columns.noContent();
+  else {
+    const rows = content.length > limits.rows ? limits.rows + 1 : content.length;
+    for (let r = 0; r < rows; r++) {
+      const row: unknown = content[r];
+      if (!Array.isArray(row)) columns.noRow();
+      else writeRow(read, row, columns, limits, kept.id);
+    }
+  }
+  return kept;
+}
+
+/** Counts `units` more code units of the texts of content of a load, of the node `node`, and
+ *  names that node where they pass the bridge's budget, after which reading stops. */
+function counted(read: Reader, units: number, node: unknown, limits: Limits) {
+  read.contentUnits += units;
+  if (read.contentUnits > limits.contentBudget && read.contentPast === undefined)
+    read.contentPast = typeof node === "string" ? node : "";
+}
+
+/** Writes the elements of `row`, a list, into `columns`, read once by `read`, at most one beyond
+ *  `limits.columns`, the last of them ending the row. */
+function writeRow(
+  read: Reader,
+  row: unknown[],
+  columns: NodeColumnWriter,
+  limits: Limits,
+  node: unknown,
+) {
+  const count = row.length > limits.columns ? limits.columns + 1 : row.length;
+  if (count === 0) columns.endRow();
+  for (let c = 0; c < count; c++) {
+    const value: unknown = row[c];
+    const last = c === count - 1;
+    if (typeof value !== "object" || value === null || Array.isArray(value))
+      columns.noElement(last);
+    else {
+      const { kind, role, weight, text } = value as Fields;
+      // The kind, the role, and the weight cross as codes and a number, which the writer takes
+      // by `typeof` and by comparing a string with a name.
+      const shown = read.text(text);
+      columns.element(kind, role, weight, shown, last);
+      if (typeof shown === "string") counted(read, shown.length, node, limits);
+    }
+  }
 }
 
 /** A label: absent where null or undefined, `false` where no object. */
@@ -213,7 +331,9 @@ function edgeOf(read: Reader, edge: Fields) {
  *  snapshot unfinished, once they exceed the budget. */
 export function snapshotOf(lists: Lists, limits: Limits) {
   const read = readerOf(limits);
-  const done = () => read.idUnits > limits.idBudget;
+  // Reading stops once the identifiers or the texts of content pass their budget, which the
+  // bridge then refuses, so that a load of shared long strings builds no more than that.
+  const done = () => read.idUnits > limits.idBudget || read.contentPast !== undefined;
   const columns = nodeColumns(lists.nodeCount, PIECE_BOUND);
   const nodes = copied(
     lists.nodes,
@@ -224,9 +344,7 @@ export function snapshotOf(lists: Lists, limits: Limits) {
         columns.noObject();
         return false;
       }
-      const node = nodeOf(read, item);
-      columns.node(node.id, node.title, node.x, node.y, node.width, node.height);
-      return node;
+      return written(read, item, columns, limits);
     },
     done,
   );
@@ -247,9 +365,10 @@ export function snapshotOf(lists: Lists, limits: Limits) {
     },
     done,
   );
-  const kept = { nodes, edges } as GraphData;
+  const kept = { nodes, edges } as KeptGraph;
   const snapshot = { nodes: columns.columns(), edges: edgeWriter.columns() } as GraphSnapshot;
-  return { kept, snapshot, idUnits: read.idUnits };
+  const content = { units: read.contentUnits, past: read.contentPast };
+  return { kept, snapshot, idUnits: read.idUnits, content };
 }
 
 /** The node of `addNode` read once as a load reads one, its identifier cut by `limits`, or `false`
@@ -305,10 +424,10 @@ export function edgePatchOf(patch: unknown, limits: Limits): PlainEdgePatch {
 }
 
 /** The patch of `updateNode` as plain data: the own fields of a plain object, enumerable or not,
- *  up to the first other than `title`, each a primitive, a string one as a text cut by
- *  `limits`, and the name of that other field no longer than one code unit beyond the limit for
- *  texts. A patch that is no plain object, a `Map` or an array among them, or that has a key that
- *  is no string, cannot be read. */
+ *  up to the first other than `content`, its content read as a load reads a node's, and the name
+ *  of that other field no longer than one code unit beyond the limit for texts. A patch that is
+ *  no plain object, a `Map` or an array among them, or that has a key that is no string, cannot
+ *  be read. */
 export function patchOf(patch: unknown, limits: Limits): PlainPatch {
   const fields = objectOf(patch);
   if (!fields || Object.getPrototypeOf(fields) !== Object.prototype)
@@ -317,15 +436,14 @@ export function patchOf(patch: unknown, limits: Limits): PlainPatch {
   const plain: Record<string, unknown> = Object.create(null);
   for (const key of Reflect.ownKeys(fields)) {
     if (typeof key !== "string") throw new UnreadableError("the patch has a key that is no string");
-    if (key !== "title") {
+    if (key !== "content") {
       // The first other field, which the bridge refuses by name: its name cut like a text but
       // otherwise as written, a lone surrogate too, which the bridge names as U+FFFD; its value
       // not read, and no field after it.
       plain[key.slice(0, limits.text + 1)] = false;
       break;
     }
-    const value = fields[key];
-    plain[key] = typeof value === "string" ? read.text(value) : read.number(value);
+    plain[key] = read.content(fields[key]);
   }
   return plain as PlainPatch;
 }

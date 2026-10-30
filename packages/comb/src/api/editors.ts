@@ -17,7 +17,7 @@ import type {
   GraphState,
   GraphStore,
   NodeData,
-  NodeView,
+  NodePatch,
 } from "../store";
 import {
   edgePatchOf,
@@ -152,22 +152,32 @@ function load({ store, bridge, limits }: Editing, graph: GraphData): void {
     },
     resolve: (plain) => plain,
     idUnits: (plain) => plain.idUnits,
-    engine: ({ snapshot }) => bridge.loadGraph(snapshot),
+    engine({ snapshot, content }) {
+      // A load whose texts of content pass the budget the snapshot stopped reading at, refused
+      // naming the node that passed it before anything crosses.
+      if (content.past !== undefined) {
+        bridge.checkContentBudget(content.units, content.past);
+        // A snapshot read short is never loaded, whatever the bridge's budget holds.
+        throw { kind: "malformed", message: "comb: graph data was read short of its content" };
+      }
+      return bridge.loadGraph(snapshot);
+    },
     record: (state, { kept, idUnits }) => state.load(kept, idUnits),
   });
 }
 
-/** `updateNode`: a node the graph does not hold refused, and only the fields the bridge returns
- *  as checked merged. */
+/** `updateNode`: a node the graph does not hold refused, and the patch merged once the bridge
+ *  has checked it and the engine laid the node's new content out (ADR-0013). */
 function updateNode({ store, bridge, limits }: Editing, id: string, patch: unknown): void {
   edit(store, bridge, {
     read: () => patchOf(patch, limits),
     resolve(plain, state) {
-      if (!state.slots.has(id)) throw new GraphDataError({ kind: "unknownNode", node: id });
-      return plain;
+      const slot = state.slots.get(id);
+      if (slot === undefined) throw new GraphDataError({ kind: "unknownNode", node: id });
+      return { slot, plain };
     },
-    engine: (plain) => bridge.checkNodePatch(id, plain),
-    record: (state, _, fields) => state.updateNode(id, fields),
+    engine: ({ slot, plain }) => bridge.updateNode(slot, id, plain),
+    record: (state, { plain }) => state.updateNode(id, "content" in plain),
   });
 }
 
@@ -313,8 +323,7 @@ export function editorsOf(store: GraphStore, bridge: Bridge, limits: Limits, vet
   const editing: Editing = { store, bridge, limits };
   const host = {
     load: (graph: GraphData) => load(editing, graph),
-    updateNode: (id: string, patch: Partial<Pick<NodeView, "title">>) =>
-      updateNode(editing, id, patch),
+    updateNode: (id: string, patch: NodePatch) => updateNode(editing, id, patch),
     addNode: (node: NodeData) => addNode(editing, node),
     addEdge: (edge: EdgeData) => addEdge(editing, edge, "host"),
     updateEdge: (id: string, patch: EdgePatch) => updateEdge(editing, id, patch),

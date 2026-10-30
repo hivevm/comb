@@ -34,11 +34,17 @@ missing or holds a value of another type, naming the node or edge by index, and 
 it has one, the field, and what the field expects in plain words (`invalidField`); graph data that
 is no object of node and edge lists of objects, as malformed; coordinates, sizes, and dash patterns
 that are not finite as the engine keeps them (`f32`), negative sizes, a dash that is not positive or
-a negative gap, a node whose coordinate or far side (`x + width`, `y + height`) lies more than the
+a negative gap, a node whose coordinate or far side (`x + width`) lies more than the
 world's limit, 2^120 world units, from the origin, and a label offset beyond it (`beyondWorld`),
 naming the node or edge and the field, duplicate node or edge identifiers, edges to missing nodes,
-non-finite label placements, a colour that is not an integer from `0` to `0xFFFFFF`, a title or
-label text that is not a string or longer than 1,000 UTF-16 code units, a label background that is
+non-finite label placements, a colour that is not an integer from `0` to `0xFFFFFF`, a text of
+node content or a label text that is not a string or longer than 1,000 UTF-16 code units, node
+content that is no list of rows, a row that is no list or an element that is no object
+(`invalidContentShape`, naming the node, row, and column), more than 8 rows or a row of more than
+6 columns, an element of a kind other than `text`, a weight that is not a positive finite number,
+a role other than `title`, `body`, and `caption`, the texts of a load's content holding more than
+1,000,000,000 code units together, each naming the node and, where it has them, the row and
+column, a label background that is
 not an integer from `0` to `0xFFFFFF`, more than 1,000,000 nodes or edges, an identifier, source, or
 target longer than 256 UTF-16 code units, and identifiers of one load that hold more than 64,000,000
 code units together, and an edge side other than `top`, `right`, `bottom`, and `left`. `api`
@@ -49,27 +55,36 @@ names (`unknownEdge`), one `addNode`, `addEdge`, or a user's connection adds tha
 The bridge crate checks the node `addNode` and the edge `addEdge` hand over as a load checks one,
 refuses an edge from a node to itself (`selfEdge`) and an addition past the 1,000,000 nodes or edges
 a load may hold, and `api` has it check the code units of identifiers the store counts with the new
-ones; it refuses a patch of `updateNode` that holds a field other than a title, a patch of
+ones; it refuses a patch of `updateNode` that holds a field other than `content`, a patch of
 `updateEdge` that holds a field other than a colour, dash, arrowhead, label, or side
-(`unknownEdgePatchField`), and a field it would refuse in a load. Titles, label texts, and label
-backgrounds are checked there but not kept by the engine. `api` reads the host's graph data once, in
-JavaScript, into a snapshot (`api/snapshot.ts`) of plain data whose every field is a primitive of
+(`unknownEdgePatchField`), and a field it would refuse in a load. Label texts and label backgrounds
+are checked there but not kept by the engine; the content of a node it keeps, to lay it out. `api`
+reads the host's graph data once, in JavaScript, into a snapshot (`api/snapshot.ts`) of plain data
+whose every field is a primitive of
 the type it expects, any other value replaced by `false`, and whose texts and identifiers are cut
 one code unit beyond the bridge's limits, so that no value of the host application and none of its
 code reaches the engine, and a text of any length costs no more than that to check. The bridge's
-`loadGraph`, `addNode`, `checkNodePatch`, `addEdge`, and `updateEdge` take only the types
+`loadGraph`, `addNode`, `updateNode`, `addEdge`, and `updateEdge` take only the types
 `GraphSnapshot`, `NodeSnapshot`, `PlainPatch`, `EdgeSnapshot`, and `PlainEdgePatch` that the
 snapshot's functions return, so that the type checker refuses the host's graph data, node, edge, or
 patch handed to the bridge directly (`bridge/snapshot-only.test.ts`). The bridge checks the counts
 of nodes and edges before anything is copied, then the code units of the identifiers, counted while
-the snapshot is read and read no further once they exceed the budget, then the snapshot, and the
-store keeps the snapshot's nodes and edges. A load's nodes and edges cross as columns the snapshot
-writes while it reads them, through the bridge's `nodeColumns` and `edgeColumns`: each string
-field, the identifiers, sources, targets, titles, and label texts, as pieces of at most 2^28
-UTF-16 code units, each ending where a value ends, with its boundaries in UTF-16 code units across
-all pieces, per title and label text whether it is a text, the numbers as
-`Float64Array`, an arrowhead and the sides as byte codes, whether a label, its background, and a
-dash are present as bytes, and the first value refused by its type as its position
+the snapshot is read and read no further once they exceed the budget, then the code units of the
+texts of content, counted and stopped at their budget alike (`checkContentBudget`, naming the node
+whose text passed it), then the snapshot, and the
+store keeps the snapshot's edges and of each node its identifier and width; a node's content is the
+engine's alone, which the snapshot of a load writes straight into its columns, and which the
+engine's `content` builds when inspection or a change Comb tells asks for it. A load's nodes and
+edges cross as columns the snapshot writes while it reads them, through the bridge's
+`nodeColumns` and `edgeColumns`: each string field, the identifiers, sources, targets, label texts,
+and the texts of content, as pieces of at
+most 2^28 UTF-16 code units, each ending where a value ends, with its boundaries in UTF-16 code
+units across all pieces, per label text and text of content whether it is a text, the numbers as
+`Float64Array`, an arrowhead, the sides, an element's kind, and a text's role as byte codes, the
+boundaries of each node's rows and each row's elements as `Uint32Array`, whether a label, its
+background, and a dash are present as bytes, and the first value refused by its type as its
+position, a shape of
+content the snapshot cannot flatten with its row and column
 ([ADR-0034](adr/0034-node-content-crosses-as-columns.md)); serde-wasm-bindgen converts
 nothing of a load. A string with a lone surrogate, which the bridge would read as U+FFFD,
 `api` hands over as `false`, so that it is refused. `updateNode` and `updateEdge` read their patch
@@ -132,14 +147,26 @@ The functional core and its shell follow
   reserved first, edges are meshed in full in slot order while each fits beside the floors of those
   after it, and from the first that does not, every edge is drawn as its floor and the mesh is
   coarsened; its vectors grow by `try_reserve`, so that memory running short coarsens the mesh
-  instead of trapping. It depends on no crate that reaches the browser. `graph` keeps each edge's
-  path and its bounds as of its last move, so that a query computes no bounds; `graph::slot` is the
+  instead of trapping. `content` lays a node's content out
+  ([ADR-0013](adr/0013-node-content-model.md)): from each role's font, the glyph advances and the
+  line height the shell hands over, a row as high as its tallest element, the columns of a row
+  sharing the width inside a padding of 12 less gaps of 8 by their weights, each text cut before an
+  ellipsis where it passes its column, and the node as high as the padding of 10 above and below
+  and its rows, at least 64; `graph`'s `resize_node` gives a node a new height and re-places its
+  edges and its place in the index. It depends on no crate that reaches the browser. `graph` keeps
+  each edge's path and its bounds as of its last move, so that a query computes no bounds;
+  `graph::slot` is the
   one conversion of a count to slots, which the bridge uses too. Only what the bridge uses is
   public; the rest is private to the crate, so that the `dead_code` lint finds what only tests
   reach.
 - **Bridge** — `crates/engine-wasm` holds every WebAssembly export: `loadGraph` checks graph data
-  and resolves edge ends to slots, `addNode` checks one node as a load would and returns the slot
-  the engine chose for it, `addEdge` checks one edge as a load would, refuses one from a node to
+  and resolves edge ends to slots, keeps the content of the nodes, and makes each node as high as
+  its content lays out to in the fonts `setFont` handed over, which the sizes buffer holds beside
+  the positions buffer, and a font handed over later lays every node out anew; a node whose far
+  side, by that height, lies past the world's limit is refused; `updateNode` checks a patch of a
+  node's content as a load checks it and gives the node the new content and its height, `addNode`
+  checks one node as a load would and returns the slot the engine chose for it, `addEdge` checks one
+  edge as a load would, refuses one from a node to
   itself, and adds it between the node slots `api` resolved, `updateEdge` checks a patch of an
   edge's colour, dash, arrowhead, label, and sides as a load checks those fields and restyles and
   re-places the edge, `edgesAt` names the edges at given nodes without removing anything,
@@ -148,8 +175,11 @@ The functional core and its shell follow
   every point the engine derives stays within `f32`, `query` takes a rectangle, a level of detail,
   the size of a screen pixel, at most 2^114 world units for a stroke, and how far an edge label's
   pill reaches from its point, and writes the found node slots, the edge-label slots and points (at
-  the near level only), the found edge slots, and the edge mesh into buffers the engine owns, the
-  label points and the mesh's positions relative to the query's origin, which `originX` and
+  the near level only), at the near and the middle level where the elements of each found node lie
+  and their roles (`contentBounds…`, `contentRects…`, `contentRoles…`), what of each text is drawn
+  as one string `contentTexts` returns, cut by `contentTextBounds…`, the found edge slots, and the
+  edge mesh into buffers the engine owns, the label points and the mesh's positions relative to the
+  query's origin, which `originX` and
   `originY` read
   ([ADR-0034](adr/0034-node-content-crosses-as-columns.md)), and returns the mesh's detail,
   complete or coarsened, and refuses a pixel that is not a finite number above zero; `drawnEdges`
@@ -248,8 +278,15 @@ The functional core and its shell follow
   on the Canvas 2D renderer a host application opts into
   ([ADR-0018](adr/0018-webgl2-or-an-opted-in-canvas-fallback.md)), which runs no shader, `EdgeFill`
   (`render/edges-canvas.ts`) takes its place, builds no mesh, and fills the same triangles into one
-  `Graphics`, one fill per run of one colour, dash patterns solid. Not built yet: the node content
-  of [ADR-0013](adr/0013-node-content-model.md).
+  `Graphics`, one fill per run of one colour, dash patterns solid. A node view draws its box and its
+  content ([ADR-0013](adr/0013-node-content-model.md)): each text a pooled `BitmapText` of its
+  role's style where the query placed it, cut where the engine cut it and followed by an ellipsis,
+  every text at the near level and those of role title alone at the middle level, what the query
+  placed; a view draws anew only where its node, which the store replaces when its content changes,
+  its size, its selection, or the level changed;
+  `fontMetricsOf` of `nodes.ts` measures each role's glyph advances, which `createComb` hands the
+  engine once, before the first load, with the line height of each role, which the render layer
+  states rather than measures.
 - **API** (`packages/comb/src/api`) — `api/index.ts` imports `pixi.js/unsafe-eval` before PixiJS, so
   that no PixiJS renderer on the page generates code with eval
   ([ADR-0020](adr/0020-pixijs-without-eval.md)); `createComb`, which takes the engine's WebAssembly
@@ -272,7 +309,9 @@ The functional core and its shell follow
   drawn, with one render per animation frame scheduled by `api/frames.ts`. `api/scenes.ts` is the
   one way from a `Comb` to its scene and to the hit test its presses ask, for the testing entry.
 - **Testing entry** (`comb/testing`, `packages/comb/src/testing.ts`) — `inspect` returns what the
-  scene draws, the text of the titles and labels drawn included, the connectors drawn with where
+  scene draws, each node view's texts with where they lie and what of them is drawn, its content and
+  the text of its first title, which the engine builds when asked (`content`), and the labels drawn
+  included, the connectors drawn with where
   each is centred and how often the layer drew them anew, and the size and detail of the edge mesh,
   which the host application is not told; `viewport` and `renderCount`, cheap enough for every
   frame, return its transform and how often it rendered; `screenPoint` and `visibleRect` apply the
@@ -290,8 +329,9 @@ The functional core and its shell follow
   in `f32`; for tests, the benchmark, and tooling.
   Its shape follows the scene and is outside the stable interface of `comb`.
 - **Example** (`examples/metric-tree`) — a host application with a metric tree and an HTML sidebar
-  (G-9) that edits the selected node's title or the selected edge's colour, dash, arrowhead, and
-  label, with a palette whose kinds HTML drag and drop puts onto the canvas, where the example adds
+  (G-9) that edits the selected node's title, the text of its one title, or the selected edge's
+  colour, dash, arrowhead, and label, with a palette whose kinds HTML drag and drop puts onto the
+  canvas, where the example adds
   a node centred on `worldPointAt` of the drop (G-1); it keeps its own copy of the graph from every
   kind of change `onChange` tells, in one table by kind, the sidebar's edits following from the
   changes Comb tells, and `window.exampleGraph` hands a browser test that copy; it names each edge

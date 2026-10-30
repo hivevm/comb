@@ -185,11 +185,10 @@ async function installEdits(page: Page, near: string): Promise<void> {
         if (kind === 0)
           comb.addNode({
             id: node,
-            title: "edit",
             x: corner.x + 40,
             y: corner.y + 90,
             width: 160,
-            height: 48,
+            content: [[{ kind: "text", role: "title", text: "edit" }]],
           });
         else if (kind === 1) comb.addEdge({ id: edge, source, target: node });
         else if (kind === 2) comb.removeEdges([edge]);

@@ -17,12 +17,16 @@ export type {
   GraphDataProblem,
 } from "./api";
 export type {
+  ContentElement,
   EdgeData,
   EdgeLabelData,
   EdgePatch,
   GraphData,
+  NodeContent,
   NodeData,
+  NodePatch,
   Selection,
   Side,
+  TextRole,
   Viewport,
 } from "./store";

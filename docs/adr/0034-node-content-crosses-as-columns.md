@@ -117,14 +117,23 @@ reads and writes as typed-array views created anew after every engine call.
 
 - **Structured data (changed):** node content outside a load, edge appearance, selection, errors,
   and the graph data of every export but `loadGraph`: the node of `addNode`, the edge of
-  `addEdge`, the patch of `checkNodePatch`, which `updateNode` hands over, and the patch of
-  `updateEdge`. Each type derives `Serialize`, `Deserialize`, and `Tsify`; its TypeScript
-  definition is the generated one, never written by hand.
+  `addEdge`, the patch of `updateNode(slot, id, patch)`, which checks a node's new content as a
+  load checks it and lays the node out anew, and the patch of `updateEdge`; and the content
+  `content(slot)` builds of a node when inspection or a change Comb tells asks for it, since the
+  shell keeps none, each weight as the engine keeps it. Each type derives `Serialize`,
+  `Deserialize`, and `Tsify`; its TypeScript definition is the generated one, never written by
+  hand. The metrics of a role's font cross once, before the first load, through `setFont(role,
+  codes, advances, fallback, lineHeight)`, the role's code, a `Uint32Array` of code points, a
+  `Float64Array` of their advances, and two numbers; `textLimit`, `rowLimit`, and `columnLimit`
+  hand the snapshot the limits it cuts a load by.
 - **Graph data of a load (changed):** `loadGraph` takes its nodes and edges as columns, one per
   field, each in slot order, which `api`'s snapshot builds while it reads the host application's
   graph data once (ADR-0028). A node crosses as its identifier, `x`, `y`, `width`, and its content
-  (ADR-0013); a load has no title column and no height column. A load checks in two passes, and
-  the columns keep both:
+  (ADR-0013); a load has no title column and no height column. The snapshot writes a node's
+  content straight into its columns and keeps no copy of it: the store keeps a node's identifier
+  and width, and the engine owns the content's columns as they crossed, taken as `Vec`s without a
+  second copy, mapping its texts onto the strings Rust holds only where a piece is not ASCII. A
+  load checks in two passes, and the columns keep both:
   - **The first pass** names the first value, nodes before edges and each item's fields in their
     order, that a load refuses before any rule: a field read as `Field<T>` that is missing or of
     another type, the identifier, the source, and the target, which hold `false` for a lone
@@ -171,10 +180,11 @@ reads and writes as typed-array views created anew after every engine call.
     to state (ADR-0013). The budget of a load's strings of content admits at least the titles a
     load holds today, 1,000 code units for each of 1,000,000 nodes, so that no load the bridge
     accepted with titles is refused for it, and stays below 2^32, so that every boundary fits a
-    `Uint32Array`. The title and the height leave a load with their columns: `invalidTitle` and
-    `titleTooLong`, and `height` as the field `invalidField` and `beyondWorld` name and as a size
-    `invalidSize` refuses, are no longer refusals of a load, since the first pass and the rules
-    read neither.
+    `Uint32Array`. The title and the height as fields a load hands over leave it with their
+    columns: `invalidTitle` and `titleTooLong`, and `height` as the field `invalidField` names and
+    as a size `invalidSize` refuses, are no longer refusals of a load, since the first pass and the
+    rules read neither. A node's far side past the world's limit stays refused as `beyondWorld`
+    naming `height` (ADR-0028), by the height its content lays out to.
   - A string field, an identifier, a source, a target, a label's text, or a string of content,
     crosses as the field's values concatenated in slot order and cut into pieces, each one
     JavaScript string of at most 2^28 UTF-16 code units that ends where a value ends, so that no
@@ -233,9 +243,17 @@ reads and writes as typed-array views created anew after every engine call.
 - **Errors:** every export that receives graph data returns `Result<_, _>` with a typed error that
   names the offending node, edge, or field; no export panics on malformed input.
 - **Streams:** every buffer the shell reads is one of these:
-  - node positions as `Float32Array`, with `x, y` per node slot;
+  - node positions as `Float32Array`, with `x, y` per node slot, and node sizes, the sizes buffer,
+    as `Float32Array`, with `width, height` per node slot, the height the node's content lays out
+    to (ADR-0013);
   - the results of a viewport query: the found node slots and edge-label slots as `Uint32Array`,
     and the point of each found label as `Float32Array`;
+  - at the near and the middle level, where the content of the found nodes lies: per found node,
+    in their order, the boundaries of its placed elements as `Uint32Array`; per placed element its
+    rectangle relative to its node as `Float32Array` and its role's code as `Uint8Array`; and what
+    is drawn of each text, the text or as much of it as fits followed by an ellipsis, as one
+    string `contentTexts` returns in one copy per query, with the boundaries of the texts in it as
+    `Uint32Array`;
   - the edge mesh of that query: vertex positions, distances along the path, and dash patterns as
     `Float32Array`, colours as RGBA bytes in `Uint32Array`, and triangle indices as `Uint32Array`;
   - for inspection, the slots of the edges the query found as `Uint32Array`, with the ends of each
@@ -588,7 +606,12 @@ Each test below cites this ADR with `Verifies: ADR-0034`.
   past its bound; and content columns that do not fit together, a presence or validity byte above
   1, and a code that is no code, refused as malformed. The type test in
   `packages/comb/src/bridge/snapshot-only.test.ts` pins the content columns among the parameter
-  types of `loadGraph`. Each kind's tests arrive with the ticket that builds its columns.
+  types of `loadGraph`. Tests of `crates/engine-wasm/src/lib.rs` and
+  `packages/comb/src/bridge/bridge.test.ts` assert the sizes, the placed rectangles, the roles, and
+  the drawn texts a query hands back, a patch of `updateNode` laid out anew, and the content
+  `content` builds; the property tests of `crates/engine-wasm/src/properties.rs` lay out and draw
+  every load they accept and read each of its texts back. Each kind's tests arrive with the ticket
+  that builds its columns.
 - **Views:** a test in `packages/comb/src/bridge/bridge.test.ts` grows the engine's memory between
   two calls and asserts that the positions read afterwards are the ones written.
 - **tsify:** `scripts/check-dependencies.sh` fails when `crates/engine-wasm/Cargo.toml` enables

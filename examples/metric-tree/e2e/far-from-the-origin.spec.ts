@@ -182,9 +182,12 @@ test("a viewport around 1e300 draws nothing infinite, loses no engine, and draws
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
-  // A node at the world's limit, 2^120, with an edge back to one near the origin.
+  // A node at the world's limit, 2^120, with an edge back to one near the origin. Its top lies on
+  // the 32-bit float below the limit, 2^120 - 2^96, so that its far side, by the height its content
+  // lays out to, lies within it: 2^120 - 64, which a float rounds onto the limit itself, would put
+  // the far side past it, which a load refuses.
   await loaded(page, {
-    nodes: [node("a"), node("b", 2 ** 120 - NODE_WIDTH, 2 ** 120 - NODE_HEIGHT)],
+    nodes: [node("a"), node("b", 2 ** 120 - NODE_WIDTH, 2 ** 120 - 2 ** 96)],
     edges: [{ id: "a-b", source: "a", target: "b", label: { text: "far", t: 0.5, offset: 0 } }],
   });
   const finite = (snapshot: ReturnType<typeof window.inspect>) =>
