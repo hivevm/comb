@@ -295,9 +295,10 @@ The functional core and its shell follow
   content ([ADR-0013](adr/0013-node-content-model.md)): each text a pooled `BitmapText` of its
   role's style where the query placed it, cut where the engine cut it and followed by an ellipsis,
   a badge's on its pill, which one `Graphics` per view draws of the colour the query hands over,
-  in white or near-black by WCAG contrast (`badgeTextColor`), every text at the near level and those of role title alone at the middle level, what the query
-  placed; a view draws anew only where its node, which the store replaces when its content changes,
-  its size, its selection, or the level changed;
+  in white or near-black by WCAG contrast (`badgeTextColor`), every text at the near level and
+  those of role title alone at the middle level, what the query placed; a view draws anew only
+  where its node, which the store replaces when its content changes, its size, its selection, or
+  the level changed;
   `fontMetricsOf` of `nodes.ts` measures each role's glyph advances, which `createComb` hands the
   engine once, before the first load, with the line height of each role, which the render layer
   states rather than measures.
