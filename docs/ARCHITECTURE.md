@@ -429,13 +429,14 @@ lowered; the hit test held to one scan of every kind, whose oracle, `Model` of `
 computes bounds, connectors, paths, and label points from the inputs the test gave the graph and
 reads nothing of it; Bun tests beside their module as `*.test.ts`, the bridge's against the built
 WebAssembly module, the lint's rules for Comb's library sources in `packages/comb/src/lint.test.ts`,
-and those of `bench/compare.ts` and `bench/chromium.ts` beside them; browser tests under
-`examples/*/e2e`, a file for the golden path and one for each concern they verify, sharing their
-helpers through `e2e/shared.ts` (a graph loaded as the example's own through `useGraph` with what
-Comb tells recorded, the one read of the drawn nodes and edges each spec narrows, a node of the size
-the example's source states, also in the page as `window.node`, and the page point of a world point,
-a click and a drag there), run by Playwright on Bun against the example, reading what is drawn
-through `comb/testing` rather than pixels, apart from one reference image of the edges alone.
+and those of `bench/compare.ts`, `bench/chromium.ts`, and `bench/fitted.ts` beside them; browser
+tests under `examples/*/e2e`, a file for the golden path and one for each concern they verify,
+sharing their helpers through `e2e/shared.ts` (a graph loaded as the example's own through
+`useGraph` with what Comb tells recorded, the one read of the drawn nodes and edges each spec
+narrows, a node of the size the example's source states, also in the page as `window.node`, and the
+page point of a world point, a click and a drag there), run by Playwright on Bun against the
+example, reading what is drawn through `comb/testing` rather than pixels, apart from one reference
+image of the edges alone.
 
 The Bun tests and the browser tests on the development server run the bridge in test mode, which
 grows the engine's memory before each of its calls, so a view kept across a call reads empty. The
