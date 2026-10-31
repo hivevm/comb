@@ -38,6 +38,28 @@ interface Gesture {
   truncated?: boolean;
 }
 
+/** The levels of detail (ADR-0027), in the order a run lists them. */
+export const LEVELS = ["near", "middle", "far"] as const;
+
+/** The gestures timed at a level of detail, in the order a run lists them. An older run timed
+ *  the pan alone, at the near and the middle level. */
+interface AtLevel<G> {
+  pan: G;
+  drag?: G;
+  zoom?: G;
+  edit?: G;
+}
+
+/** The gestures of a run at each level of detail. Where the fitted view the example opens with
+ *  draws far, its gestures are far's, and far holds the zoom alone. */
+type Levels<G> = { near: AtLevel<G>; middle: AtLevel<G>; far?: Partial<AtLevel<G>> };
+
+/** The content a run loaded, as the example counts it: nodes by type, elements by kind. */
+export interface Content {
+  nodes: Record<string, number>;
+  elements: Record<string, number>;
+}
+
 /** The parts of a run of bench/run.ts that are compared. */
 export interface Run {
   copies: number;
@@ -48,36 +70,40 @@ export interface Run {
   gpu?: string;
   /** The reference workload of the run, in milliseconds; absent in a run recorded without it. */
   reference?: Reference;
-  load: { nodes: number; firstFrameMs: number };
+  /** The content is absent in a run recorded before it was named. */
+  load: { nodes: number; firstFrameMs: number; content?: Content };
   drag: Gesture;
   pan: Gesture;
   zoom: Gesture;
-  levels?: { near: { pan: Gesture }; middle: { pan: Gesture } };
+  levels?: Levels<Gesture>;
   /** Edits, one a frame: a node and an edge added and removed again (ADR-0022); absent in a run
    *  recorded before the gesture, whose baseline then reports it unjudged. */
   edit?: Gesture;
 }
 
-/** The gestures of a run, by the names bench/run.ts prints and a comparison reports. */
+/** The gestures of a run, by the names bench/run.ts prints and a comparison reports: those at
+ *  the view the example opens with by their own names, and those at a level of detail by the
+ *  gesture's name and the level's, such as `drag near`; each where the run timed it. */
 export function gestures<G extends Gesture>(run: {
   drag: G;
   pan: G;
   zoom: G;
-  levels?: { near: { pan: G }; middle: { pan: G } };
+  levels?: Levels<G>;
   edit?: G;
 }): [string, G][] {
-  return [
+  const named: [string, G | undefined][] = [
     ["drag", run.drag],
     ["pan", run.pan],
     ["zoom", run.zoom],
-    ...(run.levels
-      ? ([
-          ["pan near", run.levels.near.pan],
-          ["pan middle", run.levels.middle.pan],
-        ] as [string, G][])
-      : []),
-    ...(run.edit ? ([["edit", run.edit]] as [string, G][]) : []),
+    ["edit", run.edit],
   ];
+  for (const level of LEVELS) {
+    const at = run.levels?.[level];
+    for (const gesture of ["drag", "pan", "zoom", "edit"] as const) {
+      named.push([`${gesture} ${level}`, at?.[gesture]]);
+    }
+  }
+  return named.filter((entry): entry is [string, G] => entry[1] !== undefined);
 }
 
 /** The numbers compared, by the name a regression reports. */
@@ -91,6 +117,16 @@ function numbers(run: Run): Record<string, number> {
 /** The size, mode, and GPU of a run, which a comparison and a median require to be the same. */
 const setting = (run: Run) =>
   `${run.load.nodes} nodes (${run.copies} copies), ${run.headed ? "headed" : "headless"}, on ${run.gpu}`;
+
+/** The content a run names, as bench/run.ts prints it: nodes by type, then elements by kind. */
+export const contentOf = ({ nodes, elements }: Content) =>
+  [nodes, elements]
+    .map((counts) =>
+      Object.entries(counts)
+        .map(([name, count]) => `${count} ${name}`)
+        .join(", "),
+    )
+    .join("; ");
 
 /** The runner kind of a run, as a comparison names it. */
 const on = (run: Run) => (run.cpu ? `on ${run.cpu}` : "on no CPU model");
@@ -153,6 +189,23 @@ function gestureMedian(runs: Run[], pick: (run: Run) => Gesture): Gesture {
   };
 }
 
+/** The median of the gestures at each level over `runs`: a level, and a gesture at it, only where
+ *  every run timed it; none where the near or the middle level is missing. */
+function levelsMedian(runs: Run[]): Levels<Gesture> | undefined {
+  const atLevel = (level: (typeof LEVELS)[number]) => {
+    if (!runs.every((run) => run.levels?.[level])) return undefined;
+    const at = (run: Run) => run.levels![level]!;
+    const kept = (["drag", "pan", "zoom", "edit"] as const).filter((name) =>
+      runs.every((run) => at(run)[name]),
+    );
+    return Object.fromEntries(
+      kept.map((name) => [name, gestureMedian(runs, (run) => at(run)[name]!)]),
+    ) as unknown as AtLevel<Gesture>;
+  };
+  const [near, between, far] = LEVELS.map(atLevel);
+  return near && between ? { near, middle: between, ...(far && { far }) } : undefined;
+}
+
 /** The run whose every number is the median of that number over `runs`, which must all be of
  *  one kind, size, and mode; or why they are not. */
 export function median(runs: Run[]): Run | string {
@@ -163,12 +216,7 @@ export function median(runs: Run[]): Run | string {
   const referenced = Boolean(first.reference);
   const of = (pick: (run: Run) => number) => middle(runs.map(pick));
   const gesture = (pick: (run: Run) => Gesture) => gestureMedian(runs, pick);
-  const levels = runs.every((run) => run.levels)
-    ? {
-        near: { pan: gesture((run) => run.levels!.near.pan) },
-        middle: { pan: gesture((run) => run.levels!.middle.pan) },
-      }
-    : undefined;
+  const levels = levelsMedian(runs);
   return {
     copies: first.copies,
     headed: first.headed ?? false,
@@ -179,7 +227,11 @@ export function median(runs: Run[]): Run | string {
         PARTS.map(([, key]) => [key, of((run) => run.reference![key])]),
       ) as unknown as Reference,
     }),
-    load: { nodes: first.load.nodes, firstFrameMs: of((run) => run.load.firstFrameMs) },
+    load: {
+      nodes: first.load.nodes,
+      firstFrameMs: of((run) => run.load.firstFrameMs),
+      ...(first.load.content && { content: first.load.content }),
+    },
     drag: gesture((run) => run.drag),
     pan: gesture((run) => run.pan),
     zoom: gesture((run) => run.zoom),
@@ -260,7 +312,8 @@ function mismatch(run: Run, baseline: Run): string | null {
 }
 
 /** Every number of `run` against `baseline`: a regression where it exceeds the baseline by more
- *  than `margin`. A number the baseline lacks is reported and not compared. The runner kind comes
+ *  than `margin`. A number the baseline lacks, as a gesture newer than the baseline, is reported
+ *  and not compared, and the gestures it belongs to are listed as new. The runner kind comes
  *  first: a run is compared only with a baseline of the same CPU model. The runner gate follows:
  *  a run whose reference differs from the baseline's by more than `margin` in any part is
  *  refused, since its numbers would judge the runner. */
@@ -280,6 +333,10 @@ export function compare(run: Run, baseline: Run, margin = MARGIN): Verdict {
   const truncated = gestures(run)
     .filter(([, gesture]) => gesture.truncated)
     .map(([name]) => name);
+  const known = new Set(gestures(baseline).map(([name]) => name));
+  const fresh = gestures(run)
+    .map(([name]) => name)
+    .filter((name) => !known.has(name));
   return {
     kind: "compared",
     regressions: judged.filter((j) => j.regressed).map((j) => j.line),
@@ -287,6 +344,7 @@ export function compare(run: Run, baseline: Run, margin = MARGIN): Verdict {
       ...gated.lines,
       ...judged.map((j) => j.line),
       ...(truncated.length ? [`truncated by the time budget: ${truncated.join(", ")}`] : []),
+      ...(fresh.length ? [`new, not in the baseline: ${fresh.join(", ")}`] : []),
     ],
     ...(gated.notice && { notice: `${gated.notice}; the runner gate is not checked` }),
   };

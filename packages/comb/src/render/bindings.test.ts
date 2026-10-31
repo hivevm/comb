@@ -38,4 +38,25 @@ describe("bindings", () => {
     // views return to the pool only at its end, and 9 took a released one.
     expect(bindings.created).toBe(6);
   });
+
+  test("each view a render returns to the pool is released once, after the render's bindings", () => {
+    // Verifies: ADR-0027
+    const layer = new Container();
+    const released: number[][] = [];
+    const bindings = new Bindings(
+      layer,
+      () => new View(),
+      (view) => released.at(-1)!.push(view.slot),
+    );
+    for (const slots of [[1, 2, 3], [2, 4], [2, 4], []]) {
+      released.push([]);
+      bindings.begin();
+      for (const slot of slots) bindings.bind(slot);
+      // Nothing is released while the render binds, so a view kept holds what it draws.
+      expect(released.at(-1)).toEqual([]);
+      bindings.end();
+    }
+    expect(released).toEqual([[], [1, 3], [], [2, 4]]);
+    expect(layer.children).toEqual([]);
+  });
 });

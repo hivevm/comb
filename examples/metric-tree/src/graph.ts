@@ -324,3 +324,33 @@ export function metricTree(copies: number): { graph: GraphData; fields: Map<stri
     fields,
   };
 }
+
+/** What a graph holds as content, as the benchmark names what it loaded: its nodes by type, those
+ *  without fields as `untyped`, and their content's elements by kind, each in a fixed order. */
+export interface ContentCount {
+  nodes: Partial<Record<NodeType | "untyped", number>>;
+  elements: Partial<Record<ContentElement["kind"], number>>;
+}
+
+/** Counts the content of `graph` by the fields of its nodes in `fields`. */
+export function countContent(graph: GraphData, fields: Map<string, Fields>): ContentCount {
+  const nodes: Record<string, number> = {};
+  const elements: Record<string, number> = {};
+  for (const node of graph.nodes) {
+    const type = fields.get(node.id)?.type ?? "untyped";
+    nodes[type] = (nodes[type] ?? 0) + 1;
+    for (const element of node.content.flat()) {
+      elements[element.kind] = (elements[element.kind] ?? 0) + 1;
+    }
+  }
+  const sorted = (counts: Record<string, number>, order: string[]) =>
+    Object.fromEntries(
+      Object.entries(counts).sort(
+        ([a], [b]) => order.indexOf(a) - order.indexOf(b) || a.localeCompare(b),
+      ),
+    );
+  return {
+    nodes: sorted(nodes, [...Object.keys(TYPES), "untyped"]),
+    elements: sorted(elements, []),
+  };
+}

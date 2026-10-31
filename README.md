@@ -58,9 +58,15 @@ most 300 kB gzipped without PixiJS).
 - **Lint:** `bun run lint` — rustfmt, clippy, ESLint, and Prettier
 - **Run:** `bun run example`, or the launch configuration **Example: metric tree** in VS Code,
   which opens the example in the host's browser; `?copies=3334` opens it with 50,010 nodes
-- **Benchmark:** `bun run bench` — the example at 50,010 nodes and edges in Chromium: time to the
-  first frame and p95 frame times of drag, pan, and zoom against Q-1 and Q-2, written to
-  `bench-results/latest.json`. `BENCH_HEADED=1` opens a window that uses the machine's GPU, which
+- **Benchmark:** `bun run bench` — the example at 50,010 nodes and edges, each node with the
+  content of its type, in Chromium: time to the first frame and p95 frame times of drag, pan,
+  zoom, and edits against Q-1 and Q-2, at the fitted view the example opens with and at each level
+  of detail (`drag near` … `edit middle`), written with the content loaded, nodes by type and
+  elements by kind, to `bench-results/latest.json`. At 50,010 nodes the fitted view draws the far
+  level, so `drag`, `pan`, and `edit` are far's and far adds only `zoom far`; `fitted` in the
+  result names the level the fitted view draws, and a smaller graph whose fitted view is nearer
+  times all four gestures at far as well. A gesture the kind's baseline lacks is reported as new
+  and not judged. `BENCH_HEADED=1` opens a window that uses the machine's GPU, which
   is how the numbers on the reference machine are taken; `BENCH_COPIES` sets another size.
   After the load and the first frame, before the gestures, each run times a fixed reference
   workload in the same page (`bench/reference.ts`: a JavaScript loop, a WebAssembly loop, and a

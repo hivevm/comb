@@ -2,7 +2,16 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { baselineName, compare, gestures, MARGIN, median, usable, type Run } from "./compare";
+import {
+  baselineName,
+  compare,
+  contentOf,
+  gestures,
+  MARGIN,
+  median,
+  usable,
+  type Run,
+} from "./compare";
 import { PARTS, type Reference } from "./reference";
 
 const SWIFTSHADER =
@@ -552,5 +561,128 @@ describe("the edit gesture", () => {
         { ...run(200, 100), edit: { p95: 70 } },
       ]),
     ).toMatchObject({ edit: { p95: 60 } });
+  });
+});
+
+/** `run` with every gesture timed at every level of detail, each at `p95`, as at 50,010 nodes,
+ *  whose fitted view draws far: its gestures are far's, and far adds the zoom alone; or, where
+ *  `small`, as a graph whose fitted view is nearer, every gesture at far as well. */
+function everyLevel(base: Run, p95: number, small = false): Run {
+  const at = () => ({ drag: { p95 }, pan: { p95 }, zoom: { p95 }, edit: { p95 } });
+  const far = small ? at() : { zoom: { p95 } };
+  return { ...base, edit: { p95 }, levels: { near: at(), middle: at(), far } };
+}
+
+/** The content of the example's metric tree at 3,334 copies, as it counts it. */
+const CONTENT = {
+  nodes: { bet: 6668, epic: 16670, "input-metric": 13336, "north-star": 3334, kpi: 10002 },
+  elements: {
+    action: 50010,
+    badge: 23338,
+    icon: 50010,
+    metric: 53344,
+    progress: 16670,
+    text: 100020,
+  },
+};
+
+describe("the gestures at each level of detail", () => {
+  test("are named by gesture and level, after those at the view the example opens with", () => {
+    // Verifies: ADR-0008, ADR-0027
+    const each = (level: string) =>
+      ["drag", "pan", "zoom", "edit"].map((gesture) => `${gesture} ${level}`);
+    expect(gestures(everyLevel(run(200, 100), 100)).map(([name]) => name)).toEqual([
+      "drag",
+      "pan",
+      "zoom",
+      "edit",
+      ...each("near"),
+      ...each("middle"),
+      "zoom far",
+    ]);
+    expect(gestures(everyLevel(run(200, 100), 100, true)).map(([name]) => name)).toEqual([
+      "drag",
+      "pan",
+      "zoom",
+      "edit",
+      ...each("near"),
+      ...each("middle"),
+      ...each("far"),
+    ]);
+  });
+
+  test("a gesture the baseline lacks is reported as new, never as a regression", () => {
+    // Verifies: ADR-0008
+    const verdict = compare(everyLevel(run(200, 100), 1000), run(200, 1000));
+    expect(verdict).toMatchObject({ kind: "compared", regressions: [] });
+    const { lines } = verdict as { lines: string[] };
+    expect(lines).toContain("zoom far p95 (ms): 1000.0, no baseline");
+    expect(lines).toContain(
+      "new, not in the baseline: edit, drag near, zoom near, edit near, drag middle, " +
+        "zoom middle, edit middle, zoom far",
+    );
+    // The gestures the baseline has are judged as before.
+    const slower = compare(everyLevel(run(200, 1300), 1300), run(200, 1000));
+    expect((slower as { regressions: string[] }).regressions).toHaveLength(5);
+    // Against a baseline that has them, none is new and each is judged.
+    const judged = compare(everyLevel(run(200, 100), 130), everyLevel(run(200, 100), 100));
+    // The edits, four gestures at near and at middle each, and the zoom at far.
+    expect((judged as { regressions: string[] }).regressions).toHaveLength(10);
+    expect((judged as { lines: string[] }).lines.join("\n")).not.toContain("new, not in");
+  });
+
+  test("a run of the full content compares with each kind's baseline as recorded", async () => {
+    // Verifies: ADR-0008 — the baselines of today were recorded before the gestures at each level
+    // and the content were named.
+    const baselines = join(import.meta.dir, "baselines");
+    for (const name of readdirSync(baselines)) {
+      const baseline = (await Bun.file(join(baselines, name)).json()) as Run;
+      const current = everyLevel({ ...baseline, load: { ...baseline.load, content: CONTENT } }, 1);
+      // Every gesture of the baseline is timed again, under its own name.
+      const names = gestures(current).map(([gesture]) => gesture);
+      for (const [gesture] of gestures(baseline)) expect(names).toContain(gesture);
+      const verdict = compare(current, baseline);
+      expect({ name, kind: verdict.kind }).toEqual({ name, kind: "compared" });
+      const { lines } = verdict as { lines: string[] };
+      expect(lines.find((line) => line.startsWith("new, not in the baseline:"))).toContain(
+        "drag near",
+      );
+    }
+  });
+});
+
+describe("the median of the gestures at each level", () => {
+  test("the median keeps a level and a gesture at it only where every run timed it", () => {
+    // Verifies: ADR-0008
+    const full = everyLevel(run(200, 100), 50);
+    const other = everyLevel(run(200, 100), 70);
+    const result = median([full, other]) as Run;
+    expect(result.levels!.far!.zoom).toMatchObject({ p95: 60 });
+    expect(result.levels!.near.drag).toMatchObject({ p95: 60 });
+    const lacking = everyLevel(run(200, 100), 70);
+    delete lacking.levels!.far;
+    delete lacking.levels!.near.drag;
+    const kept = median([full, lacking]) as Run;
+    expect(kept.levels!.far).toBeUndefined();
+    expect(kept.levels!.near.drag).toBeUndefined();
+    expect(kept.levels!.near.pan).toMatchObject({ p95: 60 });
+  });
+});
+
+describe("the content a run loaded", () => {
+  test("is named, kept in the median, and decides no comparison", () => {
+    // Verifies: ADR-0008
+    const loaded = (content = CONTENT): Run => {
+      const r = run(200, 100);
+      return { ...r, load: { ...r.load, content } };
+    };
+    expect(contentOf(CONTENT)).toBe(
+      "6668 bet, 16670 epic, 13336 input-metric, 3334 north-star, 10002 kpi; " +
+        "50010 action, 23338 badge, 50010 icon, 53344 metric, 16670 progress, 100020 text",
+    );
+    expect((median([loaded(), loaded()]) as Run).load.content).toEqual(CONTENT);
+    expect(compare(loaded(), loaded())).toMatchObject({ kind: "compared", regressions: [] });
+    // A baseline recorded before the content was named is compared as before.
+    expect(compare(loaded(), run(200, 100))).toMatchObject({ kind: "compared", regressions: [] });
   });
 });
