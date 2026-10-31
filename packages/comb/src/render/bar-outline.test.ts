@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { pieceOutline } from "./nodes";
 
 /** The points of `outline` as pairs `[x, y]`. */
-const pairs = (outline: number[]) =>
+const pairs = (outline: number[]): [number, number][] =>
   Array.from({ length: outline.length / 2 }, (_, i) => [outline[2 * i]!, outline[2 * i + 1]!]);
 
 describe("the outline of a piece of a progress bar", () => {
@@ -11,9 +11,8 @@ describe("the outline of a piece of a progress bar", () => {
     // A bar from 12 to 208, 8 high from 32, its ends rounded by 4: a segment from 12 to 70.8, a
     // segment from 70.8 to 110, and the track from 110 to 208.
     const piece = (x: number, width: number) => ({ x, y: 32, width, height: 8, color: 0 });
-    const [first, middle, track] = [piece(12, 58.8), piece(70.8, 39.2), piece(110, 98)].map(
-      (each) => pairs(pieceOutline(each, 12, 208, 4)),
-    );
+    const outline = (x: number, width: number) => pairs(pieceOutline(piece(x, width), 12, 208, 4));
+    const [first, middle, track] = [outline(12, 58.8), outline(70.8, 39.2), outline(110, 98)];
     // A piece between the ends is its rectangle.
     expect(middle).toEqual([
       [70.8, 32],

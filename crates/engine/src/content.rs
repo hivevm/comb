@@ -302,11 +302,11 @@ pub fn node_height(rows: impl IntoIterator<Item = f64>) -> f64 {
 /// The largest `f32` of at most `value` whose sum with `x` stays within `end`, both sums taken
 /// exactly in `f64`, and 0 where none does.
 fn within(x: f32, value: f64, end: f32) -> f32 {
-    fit(x, value, f64::from(end))
+    within_f64(x, value, f64::from(end))
 }
 
 /// `within` for an end that `f64` holds and `f32` may not.
-fn fit(x: f32, value: f64, end: f64) -> f32 {
+fn within_f64(x: f32, value: f64, end: f64) -> f32 {
     let room = (end - f64::from(x)).min(value).max(0.0);
     #[expect(
         clippy::cast_possible_truncation,
@@ -469,12 +469,17 @@ pub fn bar(at: &Placed, fractions: &[f64], out: &mut Vec<[f32; 4]>) {
         out.push([
             from,
             y,
-            fit(from, f64::from(to) - f64::from(from), end),
+            within_f64(from, f64::from(to) - f64::from(from), end),
             height,
         ]);
         from = to;
     }
-    out.push([from, y, fit(from, end - f64::from(from), end), height]);
+    out.push([
+        from,
+        y,
+        within_f64(from, end - f64::from(from), end),
+        height,
+    ]);
 }
 
 /// The index of the element of `cells`, which `lay_out` placed at `placed`, whose rectangle holds
