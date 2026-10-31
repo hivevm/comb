@@ -132,7 +132,29 @@ mod tests {
     use super::super::{EdgeSpec, LabelPlacement};
     use super::*;
     use crate::geometry::{Side, Sides, WORLD_LIMIT};
-    use crate::stroke::EdgeStyle;
+    use crate::stroke::{Detail, EdgeStyle};
+
+    #[test]
+    fn a_graph_that_never_loaded_finds_nothing_at_every_level() {
+        // Verifies: Q-7
+        let mut graph = Graph::default();
+        let mut out = Visible::default();
+        for level in [Level::Near, Level::Middle, Level::Far] {
+            for rect in [
+                Rect::new(0.0, 0.0, 800.0, 600.0),
+                Rect::new(-1e300, -1e300, 1e300, 1e300),
+            ] {
+                graph.query(&rect, level, 1.0, 8.0, &mut out);
+                assert!(out.nodes.is_empty() && out.edges.is_empty() && out.labels.is_empty());
+                assert!(out.mesh.indices.is_empty(), "{level:?} {rect:?}");
+                assert_eq!(out.mesh.detail, Detail::Complete, "{level:?} {rect:?}");
+            }
+            for connectors in [false, true] {
+                let target = graph.hit_at(Point::new(10.0, 10.0), 1.0, level, connectors);
+                assert_eq!(target, None, "{level:?}");
+            }
+        }
+    }
 
     #[test]
     fn a_query_returns_slots_and_label_points_and_its_edges_have_ends() {
