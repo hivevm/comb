@@ -6,8 +6,8 @@
 // node or edge and the field; a text of content, a label text, and the arrow are handed over no
 // longer than one code unit beyond the bridge's limit for texts, an identifier no longer than one
 // beyond its limit for identifiers, and a node's content no more rows, nor a row more columns, nor
-// a progress bar more segments, than one beyond the bridge's limits, so that a value of any size costs at most that much to
-// check. The code units of all identifiers are counted while they are read, and
+// a progress bar more segments, than one beyond the bridge's limits, so that a value of any size
+// costs at most that much to check. The code units of all identifiers are counted while they are read, and
 // reading stops once they exceed the bridge's budget, whose check then refuses the load. What
 // cannot be read at all throws an `UnreadableError`.
 import {
@@ -144,20 +144,23 @@ function nameOf(value: unknown, read: Reader): unknown {
 }
 
 /** An element of content as plain data, or `false` where it is no object; an action's identifier
- *  read as a text is, a badge's colour as a number is, and a progress bar's segments as
- *  `segmentsOf` reads them, each read of no other kind. */
+ *  read as a text is, a badge's colour as a number is, each read of no other kind, and a progress
+ *  bar of its kind, its weight, and its segments as `segmentsOf` reads them alone, since it shows
+ *  no text and has no role. */
 function elementOf(read: Reader, value: unknown, limits: Limits) {
   const fields = objectOf(value);
   if (!fields || Array.isArray(value)) return false;
-  const { kind, role, text, weight } = fields;
-  const element: Record<string, unknown> = {
-    kind: nameOf(kind, read),
-    role: nameOf(role, read),
-    text: read.text(text),
-  };
+  const kind = fields.kind;
+  const element: Record<string, unknown> = { kind: nameOf(kind, read) };
+  if (kind === "progress") element.segments = segmentsOf(read, fields.segments, limits);
+  else {
+    const { role, text } = fields;
+    element.role = nameOf(role, read);
+    element.text = read.text(text);
+  }
   if (kind === "action") element.id = read.text(fields.id);
   if (kind === "badge") element.color = read.number(fields.color);
-  if (kind === "progress") element.segments = segmentsOf(read, fields.segments, limits);
+  const weight = fields.weight;
   // No key for a weight left out, which the bridge reads as 1, so that Comb keeps none either.
   if (weight !== undefined && weight !== null) element.weight = read.number(weight);
   return element;
@@ -301,11 +304,12 @@ function writeElement(
   node: unknown,
   last: boolean,
 ) {
-  const { kind, role, weight, text } = element;
+  const kind = element.kind;
   if (kind === "progress") {
-    writeProgress(read, element, columns, limits, last);
+    writeProgress(read, element.weight, element.segments, columns, limits, last);
     return;
   }
+  const { role, weight, text } = element;
   // The kind, the role, the weight, and a badge's colour cross as codes and numbers, which the
   // writer takes by `typeof` and by comparing a string with a name; an action's identifier is
   // read as a text is, and counted with the texts.
@@ -317,18 +321,18 @@ function writeElement(
   if (typeof id === "string") counted(read, id.length, node, limits);
 }
 
-/** Writes `element`, a progress bar, into `columns`, read once by `read`: it shows no text, and
- *  its segments follow it, at most one beyond `limits.segments`, before its row ends where
- *  `last`. */
+/** Writes a progress bar of `weight` and `segments`, each read once already, into `columns`, the
+ *  segments' items and fields read once by `read`: it shows no text and has no role, and its
+ *  segments follow it, at most one beyond `limits.segments`, before its row ends where `last`. */
 function writeProgress(
   read: Reader,
-  element: Fields,
+  weight: unknown,
+  segments: unknown,
   columns: NodeColumnWriter,
   limits: Limits,
   last: boolean,
 ) {
-  columns.element("progress", element.role, element.weight, undefined, undefined, undefined, false);
-  const segments: unknown = element.segments;
+  columns.element("progress", undefined, weight, undefined, undefined, undefined, false);
   if (!Array.isArray(segments)) columns.noSegments();
   else {
     const count = segments.length > limits.segments ? limits.segments + 1 : segments.length;

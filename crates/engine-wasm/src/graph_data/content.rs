@@ -315,6 +315,17 @@ impl ContentColumns<'_> {
         column.is_none_or(|column| (column as usize) < self.elements(row).len())
     }
 
+    /// Whether the node at `node` holds a progress bar at `column` of row `row`: a position the
+    /// snapshot names a shape of a progress bar's segments at.
+    pub(crate) fn holds_progress(&self, node: usize, row: u32, column: u32) -> bool {
+        let Some(row) = self.rows(node).nth(row as usize) else {
+            return false;
+        };
+        self.elements(row)
+            .nth(column as usize)
+            .is_some_and(|element| self.kinds[element] == KindCode::Progress as u8)
+    }
+
     /// Checks the content of the node at `node`, named `id`, by the rules of ADR-0034 in their
     /// order, the texts from `cursor` on and the budget counted on from it, and returns the
     /// height its rows lay out to in `fonts`. Reads lengths off the boundaries and maps no text.
@@ -1110,8 +1121,8 @@ impl ContentInput {
         data.row_bounds[1] += 1;
     }
 
-    /// Adds an element of `kind`, `weight`, and `role`, the role crossing as 0 for an action and a
-    /// badge, and of the colour `color`, NaN for a kind other than `badge`; where it is a
+    /// Adds an element of `kind`, `weight`, and `role`, the role crossing as 0 for an action, a
+    /// badge, and a progress bar, and of the colour `color`, NaN for a kind other than `badge`; where it is a
     /// `text`, an `action`, or a `badge`, its text, and where it is an `action`, its identifier
     /// `id`, each none for one of another type, which crosses empty and marked as no string.
     pub(crate) fn push(
@@ -1126,12 +1137,16 @@ impl ContentInput {
         let data = &mut self.data;
         data.kinds.push(kind as u8);
         data.weights.push(weight);
-        data.roles
-            .push(if matches!(kind, KindCode::Action | KindCode::Badge) {
+        data.roles.push(
+            if matches!(
+                kind,
+                KindCode::Action | KindCode::Badge | KindCode::Progress
+            ) {
                 0
             } else {
                 role
-            });
+            },
+        );
         data.colors.push(if kind == KindCode::Badge {
             color
         } else {

@@ -1367,7 +1367,6 @@ mod tests {
         engine.element_at(slot, Point::new(x, y), level)
     }
 
-    /// The element hit at `row` and `column`, of `kind`, naming `action`.
     /// Asserts that `got` holds `expected`, each within 1e-4.
     fn assert_close(got: &[f32], expected: &[f64]) {
         assert_eq!(got.len(), expected.len(), "{got:?}");
@@ -1378,6 +1377,7 @@ mod tests {
         assert!(close, "{got:?} against {expected:?}");
     }
 
+    /// The element hit at `row` and `column`, of `kind`, naming `action`.
     fn hit(row: u32, column: u32, kind: ElementKind, action: Option<&str>) -> Option<ElementHit> {
         Some(ElementHit {
             row,

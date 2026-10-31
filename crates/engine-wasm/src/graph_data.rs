@@ -652,17 +652,24 @@ fn piece_values(
 }
 
 /// Whether `refused` names a position the content of its node holds: a row that is no list by
-/// its row alone, an element that is no object and a progress bar's segments or a segment that
-/// are no list or no object by its row and column, and every other field by neither.
+/// its row alone, an element that is no object by its row and column, a progress bar's segments
+/// or a segment that are no list or no object by the row and column of a progress bar, and every
+/// other field by neither.
 fn refused_fits(refused: &Refused, content: &ContentColumns) -> bool {
     let node = refused.index as usize;
-    let below_a_row = [NodeField::Element, NodeField::Segments, NodeField::Segment];
+    let segments = [NodeField::Segments, NodeField::Segment];
     match (refused.field, refused.row, refused.column) {
         (NodeField::Row, Some(row), None) => content.holds(node, row, None),
-        (field, Some(row), Some(column)) if below_a_row.contains(&field) => {
-            content.holds(node, row, Some(column))
+        (NodeField::Element, Some(row), Some(column)) => content.holds(node, row, Some(column)),
+        (field, Some(row), Some(column)) if segments.contains(&field) => {
+            content.holds_progress(node, row, column)
         }
-        (field, ..) if field == NodeField::Row || below_a_row.contains(&field) => false,
+        (field, ..)
+            if matches!(field, NodeField::Row | NodeField::Element)
+                || segments.contains(&field) =>
+        {
+            false
+        }
         (_, row, column) => row.is_none() && column.is_none(),
     }
 }
@@ -3181,8 +3188,17 @@ pub(crate) mod tests {
             column: Some(column),
             expected: expected.into(),
         };
+        // Node `b`: a title row, then a title beside a progress bar of no segments, at row 1,
+        // column 1.
         let at = |field, row, column| {
-            let mut columns = b_of(&[&[TITLE], &[TITLE, TITLE]]);
+            let mut b = ContentInput::new();
+            let title = (KindCode::Text, 1.0, RoleCode::Title as u8, f64::NAN);
+            b.push(title.0, title.1, title.2, title.3, Some("t"), None);
+            b.end_row();
+            b.push(title.0, title.1, title.2, title.3, Some("t"), None);
+            b.push(KindCode::Progress, 1.0, 0, f64::NAN, None, None);
+            b.end_row();
+            let mut columns = a_and(|n| n.content = b.into());
             columns.refused = Some(Refused {
                 index: 1,
                 field,
@@ -3196,15 +3212,18 @@ pub(crate) mod tests {
             Some(shape(1, A_SEGMENT_LIST))
         );
         assert_eq!(
-            at(NodeField::Segment, Some(1), Some(0)),
-            Some(shape(0, AN_ELEMENT))
+            at(NodeField::Segment, Some(1), Some(1)),
+            Some(shape(1, AN_ELEMENT))
         );
-        // A position that names no element of the columns is malformed.
+        // A position that names no element of the columns, or an element that is no progress
+        // bar, is malformed.
         for (field, row, column) in [
             (NodeField::Segments, Some(1), None),
-            (NodeField::Segments, Some(0), Some(1)),
-            (NodeField::Segment, None, Some(0)),
-            (NodeField::Segment, Some(2), Some(0)),
+            (NodeField::Segments, Some(1), Some(2)),
+            (NodeField::Segments, Some(1), Some(0)),
+            (NodeField::Segment, Some(0), Some(0)),
+            (NodeField::Segment, None, Some(1)),
+            (NodeField::Segment, Some(2), Some(1)),
         ] {
             assert_eq!(at(field, row, column), Some(unfit()), "{field:?}");
         }

@@ -30,7 +30,7 @@ const TEXT_COLOR = 0x1f2430;
 const CAPTION_COLOR = 0x6b7280;
 const LINK_COLOR = 0x2563eb;
 /** The colour of the rest of a progress bar, past its segments. */
-export const TRACK_COLOR = 0xe5e7eb;
+const TRACK_COLOR = 0xe5e7eb;
 /** The radius of a progress bar's ends, at most half its height and half its length. */
 const BAR_RADIUS = 4;
 /** How many points a quarter of a bar's rounded end is drawn with. */
