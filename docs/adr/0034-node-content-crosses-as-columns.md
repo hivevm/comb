@@ -153,7 +153,8 @@ reads and writes as typed-array views created anew after every engine call.
     segments as none, and a segment as one whose fraction and colour are NaN. The bridge crate
     refuses a shape of content as `invalidContentShape`, naming the node by its index and, where
     its identifier was read, by it, the row, the column, and in words what the value should be; a
-    position that names no row or column of the columns is refused as malformed. An arrowhead or
+    position that names no row or column of the columns, or segments or a segment at an element
+    that is no progress bar, is refused as malformed. An arrowhead or
     a side that is a string naming no value crosses as its code, and the bridge crate finds it in
     its first pass at its place in that order.
   - **The rules** follow, in the same order: the identifiers' lengths and their budget, then each
