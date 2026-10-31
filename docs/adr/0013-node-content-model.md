@@ -1,9 +1,10 @@
 # ADR-0013: Node content is a closed set of elements in rows, laid out by the engine
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-17
 - **Deciders:** Markus Brigl
 - **Applies to:** the node-content types of `crates/engine` and `crates/engine-wasm`, their generated TypeScript definitions in `packages/comb`, the layout functions of the engine, the drawing of node content in `packages/comb/src/render/`, the report of a click on a content element in `packages/comb/src/api/`, the hit test of `crates/engine/src/graph.rs` and its export in `crates/engine-wasm/`, the label extents the render layer of `packages/comb/src/render/` hands the engine, and the press and hover of `packages/comb/src/interaction/`
+- **Supersedes:** [ADR-0025](0025-the-engine-answers-every-hit-test.md)
 
 ## Context
 
@@ -140,8 +141,7 @@ registers and colours given as numbers.
 - **No URLs in graph data:** an icon is named, never located; an `action` carries an identifier,
   never a link. The host application turns either into whatever it means. It registers an icon's
   image as an object it has already loaded, never as a URL Comb would fetch (Q-6).
-- **Hit test:** this ADR takes over the clauses of ADR-0025 below and supersedes it on its
-  acceptance. The engine answers every hit test from its spatial index, in one call that takes a
+- **Hit test:** this ADR carries the clauses of ADR-0025, which it supersedes. The engine answers every hit test from its spatial index, in one call that takes a
   world point, the size of a screen pixel, the level of detail, and whether to look for
   connectors, and returns the target drawn on top there: a connector, else an edge label, else a
   node, with the element of its content under the point, else an edge, else none.
