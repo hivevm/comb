@@ -833,6 +833,10 @@ impl Engine {
     /// The element of the content of the node in `slot` whose rectangle holds `point`, of those
     /// drawn at `level`, by the rule the query places them by (`drawn_at`, ADR-0013).
     fn element_at(&self, slot: u32, point: Point, level: DetailLevel) -> Option<ElementHit> {
+        // The far level draws no element (`drawn_at`): no node is laid out for nothing.
+        if level == DetailLevel::Far {
+            return None;
+        }
         let at = slot as usize * 2;
         let [x, y] = [0, 1].map(|axis| f64::from(self.graph.positions()[at + axis]));
         let width = self.graph.sizes()[at];

@@ -686,8 +686,9 @@ pub fn metric_parts(
 }
 
 /// Whether `element` is drawn at `level` (ADR-0013): at the near level every element, at the
-/// middle level the texts of role title, at the place the near level gives them, and at the far
-/// level none. The query hands over and the hit test names only the elements drawn.
+/// middle level the texts of role title, and at the far level none; a level keeps a subset of the
+/// near level's. Which elements are kept, not where: the query lays a node out alike at every
+/// level, and hands over and the hit test names only the elements kept.
 pub const fn drawn_at(element: &Element, level: Level) -> bool {
     match level {
         Level::Near => true,
@@ -1105,6 +1106,31 @@ mod tests {
         assert_eq!(at(20.0, 45.0), None);
         // At the middle level no badge is hit.
         assert_eq!(element_at(&cells, &placed, 80.0, 35.0, Level::Middle), None);
+    }
+
+    #[test]
+    fn every_level_draws_a_subset_of_the_near_levels_elements_and_the_far_level_none() {
+        // Verifies: ADR-0013
+        let roles = [Role::Title, Role::Body, Role::Caption];
+        let texts = roles.map(|role| Element::Text { role, text: "t" });
+        let others = [
+            Element::Icon,
+            Element::Action { text: "a" },
+            Element::Badge { text: "b" },
+            Element::Progress,
+            Element::Metric {
+                caption: "c",
+                value: "v",
+                trend: "t",
+            },
+        ];
+        for element in texts.iter().chain(&others) {
+            assert!(drawn_at(element, Level::Near), "{element:?}");
+            assert!(!drawn_at(element, Level::Far), "{element:?}");
+            let middle = drawn_at(element, Level::Middle);
+            assert!(!middle || drawn_at(element, Level::Near), "{element:?}");
+            assert_eq!(middle, *element == texts[0], "{element:?}");
+        }
     }
 
     #[test]

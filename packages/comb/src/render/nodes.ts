@@ -4,8 +4,8 @@
 // link colour, a badge's on its pill, each progress bar as the segments and the track the engine
 // cut its bar into, and each metric as its caption, its value, and its trend's text and arrow, the
 // last two in the trend's colour, and each icon as a sprite of the texture the host application
-// registered under its name, fitted into its square: near every element, middle the texts of role
-// title alone, at the place near gives them.
+// registered under its name, fitted into its square. It draws what the query placed, which elements
+// a level of detail keeps being the engine's to decide.
 import {
   BitmapFontManager,
   BitmapText,
