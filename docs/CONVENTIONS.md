@@ -60,6 +60,11 @@ skimmed. The design revision drops what prevented nothing
   and edges far from the world's origin and far longer than the viewport, where `f32` rounds by
   more than a pixel; distances are measured to the segment, not to its line. The easy forward
   curve near the origin hides the errors that matter.
+- **A bulk path is tried at the limits of a load.** A format or a path that carries a whole load,
+  a column, a buffer, a budget's count, is run once at the most a load may hold (the counts,
+  lengths, and budgets the bridge crate states), not only at the benchmark's size, before its
+  ADR is accepted: what fits 50,010 nodes can pass a length an engine allows at 1,000,000, and the
+  load then fails for a host application whose graph the bridge accepts.
 - **Check a value as the engine keeps it.** Graph data is judged in the type the engine stores it
   in, not the type it arrived in: `1e300` is a finite `f64` and an infinite `f32`, so a check of
   the wider type lets through what the engine then holds as infinity. Narrow first, then check.
