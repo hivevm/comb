@@ -233,8 +233,11 @@ The functional core and its shell follow
   data, the one place that does, each rule of an edge through one function that a load,
   `addEdge`, and `updateEdge` reach alike, and a node and an edge of a load's columns by the checks
   of the node of `addNode` and the edge of `addEdge`, mapping the columns' boundaries onto the
-  identifiers only once their lengths are checked
-  ([ADR-0028](adr/0028-the-graph-lies-within-a-world.md)); `packages/comb/src/bridge` is the one
+  identifiers and the texts of content only once their lengths are checked
+  ([ADR-0028](adr/0028-the-graph-lies-within-a-world.md)); its module `graph_data/content` holds
+  node content: its codes and limits, the one check of a load's content columns and of a single
+  node's content, the content the engine keeps and lays out, and the buffers of what a query
+  places of it (`Drawn`); `packages/comb/src/bridge` is the one
   module that imports the WebAssembly package and reads those buffers through fresh typed-array
   views per read ([ADR-0034](adr/0034-node-content-crosses-as-columns.md)).
 - **Store** (`packages/comb/src/store`) — a vanilla Zustand store with the graph's structure, its
