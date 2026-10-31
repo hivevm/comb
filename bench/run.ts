@@ -5,7 +5,8 @@
 // and the graph edited one edit a frame, a node and an edge added and removed again (ADR-0022).
 // It times them first at the view the example opens with, the whole graph fitted, as the
 // baselines recorded before the levels were measured did, the zoom from there crossing every
-// level; then at each level of detail (ADR-0027), centred in the graph, the pans first: near and
+// level, the edits from the fitted view again wherever the zoom stopped, recording their scale;
+// then at each level of detail (ADR-0027), centred in the graph, the pans first: near and
 // middle at the scale where each begins, the least it draws at and so the most it binds. Where
 // the fitted view draws the far level, as at 50,000 nodes, its drag, pan, and edits are far's and
 // far adds only its zoom; otherwise every gesture is timed at far as well. The zoom at a level
@@ -27,6 +28,7 @@ import { cpus } from "node:os";
 import type { LoadReport } from "../examples/metric-tree/src/main";
 import { chromiumEnv } from "./chromium";
 import { contentOf, gestures, type LEVELS, type Run } from "./compare";
+import { gesturesAtFitted, type View } from "./fitted";
 import { PARTS, referenceWorkload } from "./reference";
 
 const PORT = 4173;
@@ -283,17 +285,19 @@ async function graphMiddle(page: Page): Promise<Point> {
 /** Shows `middle` in the middle of the canvas at `scale` and waits until it is drawn. */
 async function centreAt(page: Page, middle: Point, scale: number): Promise<void> {
   const box = (await page.locator("#canvas canvas").boundingBox())!;
-  await page.evaluate(
-    async ({ middle: at, scale: wanted, width, height }) => {
-      window.comb.setViewport({
-        x: width / 2 - at.x * wanted,
-        y: height / 2 - at.y * wanted,
-        scale: wanted,
-      });
-      await window.comb.whenRendered();
-    },
-    { middle, scale, width: box.width, height: box.height },
-  );
+  await show(page, {
+    x: box.width / 2 - middle.x * scale,
+    y: box.height / 2 - middle.y * scale,
+    scale,
+  });
+}
+
+/** Shows `view` and waits until it is drawn. */
+async function show(page: Page, view: View): Promise<void> {
+  await page.evaluate(async (wanted) => {
+    window.comb.setViewport(wanted);
+    await window.comb.whenRendered();
+  }, view);
 }
 
 /** A level of detail as the benchmark times it: the scale its gestures start at, and the bounds
@@ -395,27 +399,39 @@ async function emptyPoint(page: Page): Promise<Point> {
   });
 }
 
-/** The gestures at the view the example opens with, as the baselines recorded before the levels
- *  timed them: the drag of the node nearest the centre, the pan from the canvas's top left, the
- *  zoom around its centre, and the edits. */
-async function atFittedView(page: Page) {
+/** The gestures at the view the example opens with, `fitted`, as the baselines recorded before the
+ *  levels timed them: the drag of the node nearest the centre, the pan from the canvas's top left,
+ *  the zoom around its centre, and the edits, which begin at `fitted` again (bench/fitted.ts). */
+async function atFittedView(page: Page, fitted: View) {
   const node = await nodeNearCentre(page);
-  const before = await drawnNode(page, node.id);
-  const dragged = await frameTimes(page, () => drag(page, node.at, 0, 120));
-  const after = await drawnNode(page, node.id);
-  expectEffect(after.y !== before.y, `drag of node ${node.id}`);
-  console.log(`drag: ${dragged.frames} frames, p95 ${dragged.p95.toFixed(1)} ms`);
-
   const box = (await page.locator("#canvas canvas").boundingBox())!;
-  const panFrom = await viewport(page);
-  const pan = await frameTimes(page, () => drag(page, { x: box.x + 4, y: box.y + 4 }, 200, 100));
-  const panTo = await viewport(page);
-  expectEffect(panTo.x !== panFrom.x || panTo.y !== panFrom.y, "pan");
-  console.log(`pan: ${pan.frames} frames, p95 ${pan.p95.toFixed(1)} ms`);
-
-  const zoomed = await zoomGesture(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
-  const edited = await editGesture(page);
-  return { node, dragged, pan, zoomed, edited };
+  const shown = {
+    read: () => viewport(page),
+    show: (view: View) => show(page, view),
+  };
+  const measured = await gesturesAtFitted(shown, fitted, {
+    drag: async () => {
+      const before = await drawnNode(page, node.id);
+      const dragged = await frameTimes(page, () => drag(page, node.at, 0, 120));
+      const after = await drawnNode(page, node.id);
+      expectEffect(after.y !== before.y, `drag of node ${node.id}`);
+      console.log(`drag: ${dragged.frames} frames, p95 ${dragged.p95.toFixed(1)} ms`);
+      return dragged;
+    },
+    pan: async () => {
+      const panFrom = await viewport(page);
+      const pan = await frameTimes(page, () =>
+        drag(page, { x: box.x + 4, y: box.y + 4 }, 200, 100),
+      );
+      const panTo = await viewport(page);
+      expectEffect(panTo.x !== panFrom.x || panTo.y !== panFrom.y, "pan");
+      console.log(`pan: ${pan.frames} frames, p95 ${pan.p95.toFixed(1)} ms`);
+      return pan;
+    },
+    zoom: () => zoomGesture(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 }),
+    edit: () => editGesture(page),
+  });
+  return { node, ...measured };
 }
 
 /** The gestures at each level of detail, centred on `middle`, the pans first, so that the pans at
@@ -486,7 +502,7 @@ async function measure(page: Page) {
   // The view the example opens with, the whole graph fitted, which draws the far level.
   const fitted = await viewport(page);
   const middle = await graphMiddle(page);
-  const { node, dragged, pan, zoomed, edited } = await atFittedView(page);
+  const atFitted = await atFittedView(page, fitted);
   const { fittedIsFar, levels } = await atEveryLevel(page, middle, fitted.scale);
   if (errors.length) throw new Error(`the example failed: ${errors.join("; ")}`);
   return {
@@ -496,12 +512,12 @@ async function measure(page: Page) {
     // of the far level, or another, for a graph small enough.
     fitted: { scale: fitted.scale, level: fittedIsFar ? "far" : "nearer than far" },
     reference,
-    node: node.id,
-    drag: dragged,
-    pan,
-    zoom: zoomed,
+    node: atFitted.node.id,
+    drag: atFitted.drag,
+    pan: atFitted.pan,
+    zoom: atFitted.zoom,
     levels,
-    edit: edited,
+    edit: atFitted.edit,
   };
 }
 
