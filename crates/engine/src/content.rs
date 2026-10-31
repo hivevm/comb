@@ -242,12 +242,45 @@ pub fn element_height(element: &Element, fonts: &Fonts) -> f64 {
     }
 }
 
-/// The height of a row of `cells`: that of its tallest element, none for a row of no elements.
+/// How far below its row's top an element lies in a row that holds a badge where `badged`: every
+/// element but a badge by the badge's padding above its text, so that the texts of the row share
+/// one line; nothing in a row without a badge.
+pub const fn row_offset(element: &Element, badged: bool) -> f64 {
+    match element {
+        Element::Badge { .. } => 0.0,
+        _ if badged => BADGE_PADDING_Y,
+        _ => 0.0,
+    }
+}
+
+/// The height of a row of elements, each given as whether it is a badge and its height: as deep
+/// as its deepest element reaches, each other than a badge lying `BADGE_PADDING_Y` lower in a row
+/// that holds a badge; none for a row of no elements.
+pub fn row_height_of(elements: impl IntoIterator<Item = (bool, f64)>) -> f64 {
+    let (mut badges, mut others) = (None::<f64>, 0.0_f64);
+    for (badge, height) in elements {
+        if badge {
+            badges = Some(badges.map_or(height, |deepest| deepest.max(height)));
+        } else {
+            others = others.max(height);
+        }
+    }
+    badges.map_or(others, |badges| badges.max(others + BADGE_PADDING_Y))
+}
+
+/// The height of a row of `cells`, as `row_height_of` finds it.
 pub fn row_height(cells: &[Cell], fonts: &Fonts) -> f64 {
+    row_height_of(cells.iter().map(|cell| {
+        let badge = matches!(cell.element, Element::Badge { .. });
+        (badge, element_height(&cell.element, fonts))
+    }))
+}
+
+/// Whether `cells` hold a badge.
+fn badged(cells: &[Cell]) -> bool {
     cells
         .iter()
-        .map(|cell| element_height(&cell.element, fonts))
-        .fold(0.0, f64::max)
+        .any(|cell| matches!(cell.element, Element::Badge { .. }))
 }
 
 /// The height of a node whose rows are `rows` high: the padding above and below and the rows
@@ -330,7 +363,8 @@ fn drawn_width(text: &str, (kept, ellipsis): (u32, bool), font: &Font) -> f64 {
 /// `width` wide, and pushes onto `out` where each element lies, in the order of `cells`; returns
 /// the node's height. Each row's columns share the width inside the padding, less the gaps
 /// between them, by their weights; the padding and the gaps shrink where the width leaves no room
-/// for them, so that no element reaches past the node.
+/// for them, so that no element reaches past the node. In a row that holds a badge, every other
+/// element lies the badge's padding lower, its text on the line of the badge's (`row_offset`).
 pub fn lay_out(
     cells: &[Cell],
     rows: &[u32],
@@ -353,6 +387,7 @@ pub fn lay_out(
             0.0
         };
         let room = (inner - gap * (count - 1.0)).max(0.0);
+        let badged = badged(row);
         // Weights taken relative to the largest, so that their sum cannot overflow.
         let largest = row.iter().map(|cell| cell.weight).fold(0.0, f64::max);
         let total: f64 = row.iter().map(|cell| cell.weight / largest).sum();
@@ -378,7 +413,7 @@ pub fn lay_out(
             };
             out.push(Placed {
                 x,
-                y: place(top),
+                y: place(top + row_offset(&element, badged)),
                 width,
                 height: place(height),
                 kept,
@@ -631,7 +666,7 @@ mod tests {
         // column is 141 wide from 67; its pill lies at the column's left, the text's advance, four
         // body glyphs of 6, and 8 either side wide: 40; and 22 high, the body's line of 16 and 3
         // above and below, which makes the row 22 high and the node 10 + 18 + 22 + 10 = 60, the
-        // least height 64.
+        // least height 64. The caption beside it lies 3 lower, on the line of the badge's text.
         let cells = [
             text(Role::Title, "Bet", 1.0),
             text(Role::Caption, "c", 1.0),
@@ -642,7 +677,7 @@ mod tests {
             &placed,
             &[
                 [12.0, 10.0, 196.0, 18.0],
-                [12.0, 28.0, 47.0, 14.0],
+                [12.0, 31.0, 47.0, 14.0],
                 [67.0, 28.0, 40.0, 22.0],
             ],
         );
@@ -683,6 +718,97 @@ mod tests {
     }
 
     #[test]
+    fn the_elements_beside_a_badge_lie_on_its_text_s_line_and_a_row_without_one_is_unchanged() {
+        // Verifies: ADR-0013, Q-4
+        // At 220, a title row, then a row of a body, an action, and a badge, three columns of 60
+        // from 12, 80, and 148, then a row of a body and an action alone. Beside the badge the
+        // body and the action lie 3 below the row's top, 28, on the line of the badge's text; the
+        // row is 22 high, from 28 to 50, and the row below lies from 50 unshifted. The node is
+        // 10 + 18 + 22 + 16 + 10 = 76 high.
+        let action = |text| Cell {
+            weight: 1.0,
+            element: Element::Action { text },
+        };
+        let cells = [
+            text(Role::Title, "Bet", 1.0),
+            text(Role::Body, "b", 1.0),
+            action("Open"),
+            badge("Done", 1.0),
+            text(Role::Body, "b", 1.0),
+            action("Open"),
+        ];
+        let (placed, height) = laid_out(&cells, &[1, 3, 2], 220.0);
+        assert_near(
+            &placed,
+            &[
+                [12.0, 10.0, 196.0, 18.0],
+                [12.0, 31.0, 60.0, 16.0],
+                [80.0, 31.0, 60.0, 16.0],
+                [148.0, 28.0, 40.0, 22.0],
+                [12.0, 50.0, 94.0, 16.0],
+                [114.0, 50.0, 94.0, 16.0],
+            ],
+        );
+        assert_eq!(height, 76.0);
+        // A title beside a badge reaches 3 + 18 = 21 into its row, within the pill's 22; in a
+        // title font of lines 30, 33, which the row takes: 10 + 33 + 10 = 53, the least height 64,
+        // and with a second row of a title, 10 + 33 + 30 + 10 = 83.
+        let mut fonts = fonts();
+        let tall = Font::new(&[u32::from(ELLIPSIS)], &[10.0], 7.0, 30.0).unwrap();
+        fonts.set(Role::Title, tall);
+        let cells = [
+            text(Role::Title, "Bet", 1.0),
+            badge("Done", 1.0),
+            text(Role::Title, "Next", 1.0),
+        ];
+        let mut out = Vec::new();
+        let height = lay_out(&cells, &[2, 1], 220.0, &fonts, &mut out);
+        assert_near(
+            &out,
+            &[
+                [12.0, 13.0, 94.0, 30.0],
+                [114.0, 10.0, 40.0, 22.0],
+                [12.0, 43.0, 196.0, 30.0],
+            ],
+        );
+        assert_eq!(height, 83.0);
+        assert_eq!(row_height(&cells[..2], &fonts), 33.0);
+        assert_eq!(row_height(&cells[2..], &fonts), 30.0);
+    }
+
+    #[test]
+    fn rows_mixing_badges_and_texts_lay_out_inside_their_node() {
+        // Verifies: ADR-0013, Q-4
+        // Rows of badges beside texts of every role, in fonts of any line, at widths from none to
+        // the largest: every element within the node's width and height.
+        let roles = [Role::Title, Role::Body, Role::Caption];
+        let mut rng = Lcg(13);
+        for _ in 0..2_000 {
+            let mut fonts = Fonts::default();
+            for role in roles {
+                let metric = |rng: &mut Lcg| [0.0, 1.0, 7.5, MAX_METRIC][rng.below(4)];
+                let font = Font::new(&[], &[], metric(&mut rng), metric(&mut rng)).unwrap();
+                fonts.set(role, font);
+            }
+            let rows: Vec<u32> = (0..rng.below(9)).map(|_| rng.below(7) as u32).collect();
+            let cells: Vec<Cell> = (0..rows.iter().sum::<u32>())
+                .map(|_| match rng.below(4) {
+                    3 => badge("Done", 1.0),
+                    role => text(roles[role], "w", 1.0),
+                })
+                .collect();
+            let width = [0.0, 23.0, 220.0, 1.3e36][rng.below(4)];
+            let mut placed = Vec::new();
+            let height = lay_out(&cells, &rows, width, &fonts, &mut placed);
+            for p in &placed {
+                let [x, y, w, h] = [p.x, p.y, p.width, p.height].map(f64::from);
+                assert!(x + w <= f64::from(width), "{p:?} in {width}");
+                assert!(y + h <= height, "{p:?} in {height}");
+            }
+        }
+    }
+
+    #[test]
     fn a_point_beside_a_badge_s_pill_in_its_column_hits_no_element() {
         // Verifies: ADR-0013
         // The badge "Done" at 220: its pill from (67, 28) 40 × 22, in a column 141 wide.
@@ -697,9 +823,12 @@ mod tests {
         assert_eq!(at(106.9, 49.9), Some(2));
         assert_eq!(at(107.0, 35.0), None);
         assert_eq!(at(180.0, 35.0), None);
-        // The caption's cell ends at its line, 14 high, though its row is 22.
-        assert_eq!(at(20.0, 41.0), Some(1));
-        assert_eq!(at(20.0, 43.0), None);
+        // The caption's cell, 3 below its row's top, ends at its line, 14 high, though its row
+        // is 22: from 31 to 45.
+        assert_eq!(at(20.0, 30.0), None);
+        assert_eq!(at(20.0, 31.0), Some(1));
+        assert_eq!(at(20.0, 44.9), Some(1));
+        assert_eq!(at(20.0, 45.0), None);
         // At the middle level no badge is hit.
         assert_eq!(element_at(&cells, &placed, 80.0, 35.0, true), None);
     }

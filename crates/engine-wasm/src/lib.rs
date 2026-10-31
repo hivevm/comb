@@ -255,6 +255,20 @@ pub fn check_content_budget(units: f64, node: &str) -> Result<(), GraphDataProbl
     graph_data::check_content_budget(node, units)
 }
 
+/// The space between a badge's text and its pill's left and right sides, in world units: the
+/// engine's, by which the shell places the text on the pill the engine laid out (ADR-0013).
+#[wasm_bindgen(js_name = badgePaddingX)]
+pub fn badge_padding_x() -> f64 {
+    comb_engine::content::BADGE_PADDING_X
+}
+
+/// The space between a badge's text and its pill's top and bottom, in world units, as
+/// `badgePaddingX`.
+#[wasm_bindgen(js_name = badgePaddingY)]
+pub fn badge_padding_y() -> f64 {
+    comb_engine::content::BADGE_PADDING_Y
+}
+
 /// The most rows of a node's content, `MAX_ROWS`: the shell hands over no more than one beyond
 /// it.
 #[wasm_bindgen(js_name = rowLimit)]

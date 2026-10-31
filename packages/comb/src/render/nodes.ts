@@ -40,10 +40,6 @@ export const TEXT_STYLES: Readonly<Record<TextRole, TextStyleOptions>> = {
  *  the link colour. */
 export const ACTION_STYLE: TextStyleOptions = { ...TEXT_STYLES.body, fill: LINK_COLOR };
 
-/** The space between a badge's text and its pill's left side, and its top, in world units: the
- *  engine's, which lays the pill out around the text (ADR-0013). */
-export const BADGE_PADDING = { x: 8, y: 3 };
-
 /** The styles a badge's text is drawn in: the body's font, white or near-black on its pill. */
 const BADGE_STYLES: Readonly<Record<number, TextStyleOptions>> = {
   [0xffffff]: { ...TEXT_STYLES.body, fill: 0xffffff },
@@ -121,7 +117,8 @@ export function fontMetricsOf(role: TextRole): FontMetrics {
 
 /** One text a view draws: where the engine placed its element in its node, and what of it is
  *  drawn, the text or as much of it as fits followed by an ellipsis; of a badge, the pill the
- *  rectangle is, of its colour, and the colour its text is drawn in on it. */
+ *  rectangle is, of its colour, the colour its text is drawn in on it, and where its text lies,
+ *  inside the engine's padding. */
 export interface DrawnText {
   kind: ContentElement["kind"];
   role: TextRole;
@@ -130,7 +127,16 @@ export interface DrawnText {
   y: number;
   width: number;
   height: number;
-  pill?: { color: number; textColor: number };
+  pill?: { color: number; textColor: number; textX: number; textY: number };
+}
+
+/** A pill a view drew, as its `Graphics` holds it: its rectangle in its node and its colour. */
+export interface DrawnPill {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color: number;
 }
 
 /** The texts of the elements `start` to `end` of `placed`; at the middle level the texts of role
@@ -146,7 +152,8 @@ function textsOf(placed: Placed, start: number, end: number, titlesOnly: boolean
     const text: DrawnText = { kind, role, drawn, x: r[0]!, y: r[1]!, width: r[2]!, height: r[3]! };
     if (kind === "badge") {
       const color = placed.colors[i]!;
-      text.pill = { color, textColor: badgeTextColor(color) };
+      const { x, y } = placed.badgePadding;
+      text.pill = { color, textColor: badgeTextColor(color), textX: r[0]! + x, textY: r[1]! + y };
     }
     texts.push(text);
   }
@@ -190,9 +197,33 @@ export class NodeGraphic extends Container {
     this.eventMode = "none";
   }
 
-  /** The texts the view draws, each with the width its text object draws it at. */
-  inspected(): (DrawnText & { drawnWidth: number })[] {
-    return this.texts.map((text, i) => ({ ...text, drawnWidth: this.pool[i]!.view.width }));
+  /** The texts the view draws, each with the width and the fill its text object draws it in. */
+  inspected(): (Omit<DrawnText, "pill"> & { drawnWidth: number; fill: unknown })[] {
+    return this.texts.map((text, i) => {
+      const { view } = this.pool[i]!;
+      const { kind, role, drawn, x, y, width, height } = text;
+      return {
+        kind,
+        role,
+        drawn,
+        x,
+        y,
+        width,
+        height,
+        drawnWidth: view.width,
+        fill: view.style.fill,
+      };
+    });
+  }
+
+  /** The pills the view's `Graphics` draws, read from its fill instructions. */
+  drawnPills(): DrawnPill[] {
+    return this.pills.context.instructions.flatMap((instruction) => {
+      if (instruction.action !== "fill") return [];
+      const { path, style } = instruction.data;
+      const { minX, minY, width, height } = path.bounds;
+      return [{ x: minX, y: minY, width, height, color: style.color }];
+    });
   }
 
   /** The size the node was last drawn at. */
@@ -251,7 +282,7 @@ export class NodeGraphic extends Container {
         this.pills
           .roundRect(x, y, width, height, Math.min(width, height) / 2)
           .fill({ color: text.pill.color });
-        pooled.view.position.set(x + BADGE_PADDING.x, y + BADGE_PADDING.y);
+        pooled.view.position.set(text.pill.textX, text.pill.textY);
       } else pooled.view.position.set(text.x, text.y);
       if (pooled.view.parent !== this) this.addChild(pooled.view);
     });

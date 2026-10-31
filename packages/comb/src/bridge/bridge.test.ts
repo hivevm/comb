@@ -517,6 +517,8 @@ describe("bridge badges", () => {
     expect([...near.roles]).toEqual([RoleCode.Title, RoleCode.Title, RoleCode.Body]);
     expect([...near.colors]).toEqual([0, 0, 0x22c55e]);
     expect([...near.rects.subarray(8, 12)]).toEqual([12, 28, 44, 22]);
+    // The padding the pill was laid out with, by which the shell places the text on it.
+    expect(near.badgePadding).toEqual({ x: 8, y: 3 });
     expect(near.texts).toBe("aBetDone");
     expect(bridge.nodeBuffers().sizes[3]).toBe(64);
     expect(bridge.content(1)[1]).toEqual([

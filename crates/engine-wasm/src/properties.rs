@@ -543,8 +543,14 @@ fn far_side_ok(node: &Value, lines: [f64; 3]) -> bool {
             _ => lines[2],
         }
     };
+    // In a row that holds a badge, every other element lies 3 lower.
+    let badge = |element: &Value| matches!(fields_of(element).and_then(|fields| get(fields, "kind")), Some(Value::Text(kind)) if kind == "badge");
     let row = |row: &Value| match row {
-        Value::List(elements) => elements.iter().map(line).fold(0.0, f64::max),
+        Value::List(elements) => {
+            let shift = if elements.iter().any(badge) { 3.0 } else { 0.0 };
+            let reach = |e: &Value| line(e) + if badge(e) { 0.0 } else { shift };
+            elements.iter().map(reach).fold(0.0, f64::max)
+        }
         _ => 0.0,
     };
     let height = (20.0 + rows.iter().map(row).sum::<f64>()).max(64.0);

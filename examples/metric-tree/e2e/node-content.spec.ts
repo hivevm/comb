@@ -147,40 +147,42 @@ test("a badge is drawn near as a pill of its colour around its text, and the mid
   await loaded(page, { nodes: [{ ...node("b"), content }], edges: [] });
   await setViewport(page, { x: 100, y: 100, scale: 1 });
   const drawn = (await drawnNode(page, "b"))!;
+  // The pills as the view's `Graphics` draws them, and the texts on them.
+  const [donePill, blockedPill] = drawn.pills!;
+  expect(drawn.pills).toHaveLength(2);
+  expect(donePill).toMatchObject({ x: 12, y: 28, height: 22, color: 0x22c55e });
+  expect(blockedPill).toMatchObject({ x: 114, y: 28, height: 22, color: 0x2563eb });
   const [, done, blocked] = drawn.texts!;
-  expect(done).toMatchObject({
-    kind: "badge",
-    role: "body",
-    drawn: "Done",
-    x: 12,
-    y: 28,
-    height: 22,
-    pill: { color: 0x22c55e, textColor: 0x1f2430 },
-  });
-  expect(blocked).toMatchObject({
-    kind: "badge",
-    x: 114,
-    y: 28,
-    height: 22,
-    pill: { color: 0x2563eb, textColor: 0xffffff },
-  });
+  expect(done).toMatchObject({ kind: "badge", role: "body", drawn: "Done", fill: 0x1f2430 });
+  expect(blocked).toMatchObject({ kind: "badge", role: "body", fill: 0xffffff });
   // Each pill as wide as its text is drawn and the padding, within Q-4, and within its column:
   // the long text cut with an ellipsis inside the padding.
-  for (const pill of [done!, blocked!]) {
-    expect(Math.abs(pill.width - (pill.drawnWidth + 16))).toBeLessThanOrEqual(0.5);
+  for (const [pill, onIt] of [
+    [donePill!, done!],
+    [blockedPill!, blocked!],
+  ] as const) {
+    expect(Math.abs(pill.width - (onIt.drawnWidth + 16))).toBeLessThanOrEqual(0.5);
     expect(pill.width).toBeLessThanOrEqual(94);
   }
   expect(blocked!.drawn.endsWith("…")).toBe(true);
   expect(drawn.height).toBe(64);
   const at = async (scale: number) => {
     await setViewport(page, { x: 100, y: 100, scale });
-    return page.evaluate(() => {
+    return page.evaluate(async () => {
+      await window.comb.whenRendered();
       const { level, nodes, texts } = window.inspect();
-      return { level, texts, kinds: nodes[0]?.texts?.map(({ kind }) => kind) };
+      const [shown] = nodes;
+      return { level, texts, kinds: shown?.texts?.map(({ kind }) => kind), pills: shown?.pills };
     });
   };
-  expect(await at(0.5)).toEqual({ level: "middle", texts: 1, kinds: ["text"] });
-  expect(await at(0.2)).toEqual({ level: "far", texts: 0, kinds: undefined });
+  expect(await at(0.5)).toEqual({ level: "middle", texts: 1, kinds: ["text"], pills: [] });
+  expect(await at(0.2)).toEqual({ level: "far", texts: 0, kinds: undefined, pills: undefined });
+  // Near again the pills are drawn; once updateNode takes the badges away, none.
+  expect((await at(1)).pills).toHaveLength(2);
+  await page.evaluate(() =>
+    window.comb.updateNode("b", { content: [[{ kind: "text", role: "title", text: "Bet" }]] }),
+  );
+  expect(await at(1)).toEqual({ level: "near", texts: 1, kinds: ["text"], pills: [] });
 });
 
 test("updateNode replaces the content, the canvas shows it, the node's height follows, and nodeUpdated carries it", async ({

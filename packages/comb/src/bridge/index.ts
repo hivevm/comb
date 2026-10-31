@@ -7,6 +7,8 @@ import init, {
   ArrowCode,
   checkGraphSize,
   checkContentBudget,
+  badgePaddingX,
+  badgePaddingY,
   checkIdBudget,
   columnLimit,
   contentBudget,
@@ -734,6 +736,8 @@ export interface Placed {
   colors: Uint32Array;
   texts: string;
   textBounds: Uint32Array;
+  /** The space between a badge's text and its pill's left side and its top, the engine's. */
+  badgePadding: { x: number; y: number };
 }
 
 /** The kind of each code of `KindCode` the bridge accepts, by the code. */
@@ -1122,6 +1126,7 @@ function queried(
   const detail = DETAILS[engine.query(rect, LEVELS[level], pixel, labelReach)];
   // Read before the views: each is a call into the engine.
   const origin = { x: engine.originX(), y: engine.originY() };
+  const badgePadding = { x: badgePaddingX(), y: badgePaddingY() };
   // The texts only where the query placed any, which it does at the near and middle level.
   const texts = engine.contentTextBoundsLen() > 1 ? engine.contentTexts() : "";
   return {
@@ -1136,6 +1141,7 @@ function queried(
       colors: u32(engine.contentColorsPtr(), engine.contentColorsLen()),
       texts,
       textBounds: u32(engine.contentTextBoundsPtr(), engine.contentTextBoundsLen()),
+      badgePadding,
     },
     labels: u32(engine.visibleLabelsPtr(), engine.visibleLabelsLen()),
     labelPoints: f32(engine.labelPointsPtr(), engine.labelPointsLen()),

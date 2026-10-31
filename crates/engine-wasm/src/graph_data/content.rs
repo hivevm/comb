@@ -314,16 +314,17 @@ impl ContentColumns<'_> {
                     limit: COLUMN_LIMIT,
                 });
             }
-            let mut height: f64 = 0.0;
-            for (c, element) in elements.enumerate() {
+            let mut checked = [(false, 0.0); MAX_COLUMNS];
+            for (c, element) in elements.clone().enumerate() {
                 let at = At {
                     node: id,
                     row: numbered(r),
                     column: numbered(c),
                 };
-                height = height.max(self.check_element(element, &at, cursor, fonts)?);
+                let height = self.check_element(element, &at, cursor, fonts)?;
+                checked[c] = (self.kinds[element] == KindCode::Badge as u8, height);
             }
-            heights += height;
+            heights += layout::row_height_of(checked[..elements.len()].iter().copied());
         }
         Ok(layout::node_height([heights]))
     }
@@ -763,9 +764,11 @@ impl ContentData {
             .into_iter()
             .flatten();
         let heights = rows.map(|row| {
-            view.elements(row)
-                .map(|element| layout::element_height(&self.element(element), fonts))
-                .fold(0.0, f64::max)
+            layout::row_height_of(view.elements(row).map(|element| {
+                let element = self.element(element);
+                let badge = matches!(element, Element::Badge { .. });
+                (badge, layout::element_height(&element, fonts))
+            }))
         });
         super::kept_height(layout::node_height(heights))
     }

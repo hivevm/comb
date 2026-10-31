@@ -154,8 +154,8 @@ The functional core and its shell follow
   ([ADR-0013](adr/0013-node-content-model.md)): from each role's font, the glyph advances and the
   line height the shell hands over, an action in the font of role body, a badge in it on a pill
   at its column's left that hugs the drawn text with 8 either side and 3 above and below, the
-  pill being the badge's rectangle, a row as high as its
-  tallest element, the columns of a row
+  pill being the badge's rectangle and every other element of its row 3 lower, a row as deep as
+  its deepest element, the columns of a row
   sharing the width inside a padding of 12 less gaps of 8 by their weights, each text cut before an
   ellipsis where it passes its column, and the node as high as the padding of 10 above and below
   and its rows, at least 64; `element_at` finds the element whose rectangle holds a point of the
@@ -295,7 +295,9 @@ The functional core and its shell follow
   content ([ADR-0013](adr/0013-node-content-model.md)): each text a pooled `BitmapText` of its
   role's style where the query placed it, cut where the engine cut it and followed by an ellipsis,
   a badge's on its pill, which one `Graphics` per view draws of the colour the query hands over,
-  in white or near-black by WCAG contrast (`badgeTextColor`), every text at the near level and
+  placed by the padding the engine states (`badgePaddingX`, `badgePaddingY`), in white or
+  near-black by WCAG contrast (`badgeTextColor`), inspection reading the pills back from that
+  `Graphics`, every text at the near level and
   those of role title alone at the middle level, what the query placed; a view draws anew only
   where its node, which the store replaces when its content changes, its size, its selection, or
   the level changed;
