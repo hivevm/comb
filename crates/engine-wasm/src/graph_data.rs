@@ -60,7 +60,7 @@ pub use problem::{GraphDataProblem, GraphList};
 pub(crate) use problem::{malformed, slot, unshaped};
 #[cfg(test)]
 pub(crate) use snapshot::{EdgeCells, GraphBatch, OwnedColumns, OwnedEdgeColumns};
-use strings::{bounds_fit, lengths, string_at, value_at, values};
+use strings::{bounds_fit, lengths, runs_fit, string_at, value_at, values};
 pub(crate) use strings::{numbered, text_spans, utf16_length};
 
 /// The value of `values` whose code, its discriminant, is `code`, or none for a code none has.

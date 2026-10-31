@@ -7,7 +7,7 @@ use comb_engine::content::{self as layout, Fonts, Kind, Role};
 use super::codes::{COLUMN_LIMIT, ROW_LIMIT, SEGMENT_LIMIT, direction_of, filled};
 use super::{
     ContentData, DirectionCode, GraphDataProblem, KindCode, MAX_COLUMNS, MAX_CONTENT_UNITS,
-    MAX_ROWS, MAX_SEGMENTS, RoleCode, TEXT_LIMIT, bounds_fit, numbered, rgb, role_of,
+    MAX_ROWS, MAX_SEGMENTS, RoleCode, TEXT_LIMIT, bounds_fit, numbered, rgb, role_of, runs_fit,
 };
 
 /// How far past 1 the fractions of a progress bar may sum, so that fractions a host application
@@ -54,15 +54,6 @@ pub struct ContentColumns<'a> {
 struct Strings<'a> {
     bounds: &'a [u32],
     valid: &'a [u8],
-}
-
-/// Whether `bounds` are the boundaries of `count` runs of a column `total` long: one more than
-/// there are runs, from 0, never falling, ending at `total`.
-fn runs_fit(bounds: &[u32], count: usize, total: usize) -> bool {
-    bounds.len() == count + 1
-        && bounds.first() == Some(&0)
-        && bounds.windows(2).all(|pair| pair[0] <= pair[1])
-        && bounds.last().map(|&last| last as usize) == Some(total)
 }
 
 /// What a content check carries from one node to the next: the next text and the next name, and

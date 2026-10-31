@@ -14,25 +14,25 @@ pub(crate) fn utf16_length(text: &str) -> usize {
     }
 }
 
-/// Whether `bounds` are the boundaries of `count` values of a string column in `pieces`: one more
-/// than there are values, from 0, never falling, each piece ending where a value ends, and the
-/// pieces' lengths summing to the last boundary.
+/// Whether `bounds` are the boundaries of `count` runs of a column `total` long: one more than
+/// there are runs, from 0, never falling, ending at `total`.
+pub(super) fn runs_fit(bounds: &[u32], count: usize, total: usize) -> bool {
+    bounds.len() == count + 1
+        && bounds.first() == Some(&0)
+        && bounds.windows(2).all(|pair| pair[0] <= pair[1])
+        && bounds.last().map(|&last| last as usize) == Some(total)
+}
+
+/// Whether `bounds` are the boundaries of `count` values of a string column in `pieces`: each
+/// piece ending where a value ends, and the boundaries those of `count` runs as long as the
+/// pieces together (`runs_fit`).
 pub(super) fn bounds_fit(bounds: &[u32], count: usize, pieces: &[String]) -> bool {
-    if bounds.len() != count + 1
-        || bounds.first() != Some(&0)
-        || !bounds.windows(2).all(|pair| pair[0] <= pair[1])
-    {
-        return false;
-    }
     let mut end = 0;
-    for piece in pieces {
+    let pieces_end_values = pieces.iter().all(|piece| {
         end += utf16_length(piece);
-        let ends_a_value = u32::try_from(end).is_ok_and(|end| bounds.binary_search(&end).is_ok());
-        if !ends_a_value {
-            return false;
-        }
-    }
-    bounds.last().map(|&last| last as usize) == Some(end)
+        u32::try_from(end).is_ok_and(|end| bounds.binary_search(&end).is_ok())
+    });
+    pieces_end_values && runs_fit(bounds, count, end)
 }
 
 /// The lengths of the values of a string column, read off its boundaries.
