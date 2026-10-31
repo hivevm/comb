@@ -178,11 +178,9 @@ export interface DrawnPill {
  *  colours and its track, the last, in the track colour, each relative to its node. */
 type DrawnBar = DrawnPill[];
 
-/** The bars of the progress bars among the elements `start` to `end` of `placed`; none at the
- *  middle level. */
-function barsOf(placed: Placed, start: number, end: number, titlesOnly: boolean): DrawnBar[] {
+/** The bars of the progress bars among the elements `start` to `end` of `placed`. */
+function barsOf(placed: Placed, start: number, end: number): DrawnBar[] {
   const bars: DrawnBar[] = [];
-  if (titlesOnly) return bars;
   for (let i = start; i < end; i++) {
     const [first, last] = [placed.barBounds[i]!, placed.barBounds[i + 1]!];
     if (first === last) continue;
@@ -223,14 +221,12 @@ export function pieceOutline(piece: DrawnPill, left: number, right: number, radi
   return points;
 }
 
-/** The texts of the elements `start` to `end` of `placed`; at the middle level the texts of role
- *  title alone, no action among them. */
-function textsOf(placed: Placed, start: number, end: number, titlesOnly: boolean): DrawnText[] {
+/** The texts of the elements `start` to `end` of `placed`. */
+function textsOf(placed: Placed, start: number, end: number): DrawnText[] {
   const texts: DrawnText[] = [];
   for (let i = start; i < end; i++) {
     const kind = KIND_NAMES[placed.kinds[i]!]!;
     const role = ROLE_NAMES[placed.roles[i]!]!;
-    if (titlesOnly && (kind !== "text" || role !== "title")) continue;
     // A progress bar shows no text: its bar is drawn of its pieces; an icon's text is its name.
     if (kind === "progress" || kind === "icon") continue;
     if (kind === "metric") {
@@ -276,11 +272,9 @@ function metricTexts(placed: Placed, i: number): DrawnText[] {
   return texts;
 }
 
-/** The arrows of the metrics among the elements `start` to `end` of `placed`; none at the middle
- *  level. */
-function arrowsOf(placed: Placed, start: number, end: number, titlesOnly: boolean): DrawnArrow[] {
+/** The arrows of the metrics among the elements `start` to `end` of `placed`. */
+function arrowsOf(placed: Placed, start: number, end: number): DrawnArrow[] {
   const arrows: DrawnArrow[] = [];
-  if (titlesOnly) return arrows;
   for (let i = start; i < end; i++) {
     for (let a = placed.arrowBounds[i]!; a < placed.arrowBounds[i + 1]!; a++) {
       const points = [...placed.arrows.subarray(a * 6, a * 6 + 6)];
@@ -310,11 +304,9 @@ export interface DrawnSprite {
   height: number;
 }
 
-/** The icons among the elements `start` to `end` of `placed`, each its name and its square; none
- *  at the middle level. */
-function iconsOf(placed: Placed, start: number, end: number, titlesOnly: boolean): DrawnIcon[] {
+/** The icons among the elements `start` to `end` of `placed`, each its name and its square. */
+function iconsOf(placed: Placed, start: number, end: number): DrawnIcon[] {
   const icons: DrawnIcon[] = [];
-  if (titlesOnly) return icons;
   for (let i = start; i < end; i++) {
     if (KIND_NAMES[placed.kinds[i]!] !== "icon") continue;
     const name = placed.texts.slice(placed.textBounds[i], placed.textBounds[i + 1]);
@@ -377,15 +369,17 @@ export class NodeGraphic extends Container {
   nodeId = "";
   /** What the view last drew, compared by content, since a pooled view shows another node from
    *  one binding to the next: the node by identity, which the store replaces where its content
-   *  changes. */
+   *  changes; and how many elements the query placed of it, which differ where the elements
+   *  placed do for the same node, since a level of detail places a subset of the near level's,
+   *  each where the near level places it. */
   private drawn: {
     node: Readonly<NodeView> | null;
     width: number;
     height: number;
     selected: boolean;
-    titlesOnly: boolean;
+    elements: number;
     icons: number;
-  } = { node: null, width: -1, height: -1, selected: false, titlesOnly: false, icons: -1 };
+  } = { node: null, width: -1, height: -1, selected: false, elements: -1, icons: -1 };
   /** The texts the view draws, for inspection. */
   texts: DrawnText[] = [];
 
@@ -466,7 +460,6 @@ export class NodeGraphic extends Container {
     node: Readonly<NodeView>,
     selected: boolean,
     height: number,
-    titlesOnly: boolean,
     placed: Placed,
     start: number,
     end: number,
@@ -480,21 +473,21 @@ export class NodeGraphic extends Container {
       drawn.width === width &&
       drawn.height === height &&
       drawn.selected === selected &&
-      drawn.titlesOnly === titlesOnly &&
+      drawn.elements === end - start &&
       drawn.icons === icons.version
     )
       return;
-    this.drawn = { node, width, height, selected, titlesOnly, icons: icons.version };
+    this.drawn = { node, width, height, selected, elements: end - start, icons: icons.version };
     this.size = { width, height };
     this.box
       .clear()
       .roundRect(0, 0, width, height, 6)
       .fill({ color: NODE_FILL })
       .stroke({ color: selected ? SELECTED_STROKE : NODE_STROKE, width: selected ? 2 : 1 });
-    this.showTexts(textsOf(placed, start, end, titlesOnly));
-    this.showBars(barsOf(placed, start, end, titlesOnly));
-    this.showArrows(arrowsOf(placed, start, end, titlesOnly));
-    this.showIcons(iconsOf(placed, start, end, titlesOnly), icons);
+    this.showTexts(textsOf(placed, start, end));
+    this.showBars(barsOf(placed, start, end));
+    this.showArrows(arrowsOf(placed, start, end));
+    this.showIcons(iconsOf(placed, start, end), icons);
   }
 
   /** Returns the view's texts and sprites to the layer's element pool, once the view is released;
@@ -625,15 +618,14 @@ export class NodesContainer extends Container {
   }
 
   /** Binds a view to each of `slots`, the nodes a query found, at their places in `positions` and
-   *  of their sizes in `sizes`, their content placed by `placed`, their icons of `icons`; at the
-   *  middle level, where `titlesOnly`, the texts of role title alone. */
+   *  of their sizes in `sizes`, their content as the query placed it in `placed`, the elements
+   *  drawn at its level alone, their icons of `icons`. */
   sync(
     state: GraphView,
     slots: Uint32Array,
     positions: Float32Array,
     sizes: Float32Array,
     placed: Placed,
-    titlesOnly: boolean,
     icons: Icons,
   ): void {
     const selected = state.selection?.kind === "node" ? state.selection.id : null;
@@ -644,7 +636,7 @@ export class NodesContainer extends Container {
       const view = this.views.bind(slot);
       const [start, end] = [placed.bounds[i]!, placed.bounds[i + 1]!];
       const height = sizes[slot * 2 + 1]!;
-      view.bind(node, node.id === selected, height, titlesOnly, placed, start, end, icons);
+      view.bind(node, node.id === selected, height, placed, start, end, icons);
       view.position.set(positions[slot * 2], positions[slot * 2 + 1]);
     });
     this.views.end();

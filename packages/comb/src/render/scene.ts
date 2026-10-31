@@ -240,15 +240,7 @@ export class Scene {
     this.nodes.position.set(-origin.x, -origin.y);
     this.particles.position.set(-origin.x, -origin.y);
     const { positions, sizes, content } = visible;
-    this.nodes.sync(
-      state,
-      far ? NONE : visible.nodes,
-      positions,
-      sizes,
-      content,
-      level === "middle",
-      this.icons,
-    );
+    this.nodes.sync(state, far ? NONE : visible.nodes, positions, sizes, content, this.icons);
     this.particles.sync(state, far ? visible.nodes : NONE, positions, sizes);
     this.edges.sync(visible);
     this.detail = visible.detail;

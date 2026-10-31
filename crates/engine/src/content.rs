@@ -20,6 +20,8 @@
 //! that (`metric_parts`); the trend's direction picks the arrow, and its colour is the bridge's to
 //! keep.
 
+use crate::graph::Level;
+
 /// The space between a node's left and right sides and its columns, in world units.
 pub const PADDING_X: f64 = 12.0;
 
@@ -683,30 +685,39 @@ pub fn metric_parts(
     }
 }
 
-/// The index of the element of `cells`, which `lay_out` placed at `placed`, whose rectangle holds
-/// the point `(x, y)` relative to its node's top-left corner, each rectangle taken with its left
-/// and top sides and without its right and bottom ones, so that two elements that touch never both
-/// hold a point; none on the padding, in a gap, or below a shorter element of its row. Where
-/// `titles_only`, as at the middle level, only a text of role title is hit, the one drawn there
-/// (ADR-0013).
+/// Whether `element` is drawn at `level` (ADR-0013): at the near level every element, at the
+/// middle level the texts of role title, at the place the near level gives them, and at the far
+/// level none. The query hands over and the hit test names only the elements drawn.
+pub const fn drawn_at(element: &Element, level: Level) -> bool {
+    match level {
+        Level::Near => true,
+        Level::Middle => matches!(
+            element,
+            Element::Text {
+                role: Role::Title,
+                ..
+            }
+        ),
+        Level::Far => false,
+    }
+}
+
+/// The index of the element of `cells`, which `lay_out` placed at `placed`, drawn at `level`
+/// (`drawn_at`) whose rectangle holds the point `(x, y)` relative to its node's top-left corner,
+/// each rectangle taken with its left and top sides and without its right and bottom ones, so
+/// that two elements that touch never both hold a point; none on the padding, in a gap, or below a
+/// shorter element of its row.
 pub fn element_at(
     cells: &[Cell],
     placed: &[Placed],
     x: f64,
     y: f64,
-    titles_only: bool,
+    level: Level,
 ) -> Option<usize> {
     cells.iter().zip(placed).position(|(cell, at)| {
-        let drawn = !titles_only
-            || matches!(
-                cell.element,
-                Element::Text {
-                    role: Role::Title,
-                    ..
-                }
-            );
         let [left, top, width, height] = [at.x, at.y, at.width, at.height].map(f64::from);
-        drawn && left <= x && x < left + width && top <= y && y < top + height
+        let inside = left <= x && x < left + width && top <= y && y < top + height;
+        inside && drawn_at(&cell.element, level)
     })
 }
 
@@ -1081,7 +1092,7 @@ mod tests {
             badge("Done", 3.0),
         ];
         let (placed, _) = laid_out(&cells, &[1, 2], 220.0);
-        let at = |x, y| element_at(&cells, &placed, x, y, false);
+        let at = |x, y| element_at(&cells, &placed, x, y, Level::Near);
         assert_eq!(at(67.0, 28.0), Some(2));
         assert_eq!(at(106.9, 49.9), Some(2));
         assert_eq!(at(107.0, 35.0), None);
@@ -1093,7 +1104,7 @@ mod tests {
         assert_eq!(at(20.0, 44.9), Some(1));
         assert_eq!(at(20.0, 45.0), None);
         // At the middle level no badge is hit.
-        assert_eq!(element_at(&cells, &placed, 80.0, 35.0, true), None);
+        assert_eq!(element_at(&cells, &placed, 80.0, 35.0, Level::Middle), None);
     }
 
     #[test]
@@ -1286,13 +1297,16 @@ mod tests {
         // the middle of it; a press anywhere in the cell hits it, above or below the bar too.
         let cells = [text(Role::Title, "Bet", 1.0), progress(1.0)];
         let (placed, _) = laid_out(&cells, &[1, 1], 220.0);
-        let at = |x, y| element_at(&cells, &placed, x, y, false);
+        let at = |x, y| element_at(&cells, &placed, x, y, Level::Near);
         assert_eq!(at(12.0, 28.0), Some(1));
         assert_eq!(at(200.0, 30.0), Some(1));
         assert_eq!(at(207.9, 43.9), Some(1));
         assert_eq!(at(208.0, 35.0), None);
         assert_eq!(at(100.0, 44.0), None);
-        assert_eq!(element_at(&cells, &placed, 100.0, 35.0, true), None);
+        assert_eq!(
+            element_at(&cells, &placed, 100.0, 35.0, Level::Middle),
+            None
+        );
     }
 
     fn metric(caption: &'static str, value: &'static str, trend: &'static str) -> Cell<'static> {
@@ -1468,12 +1482,15 @@ mod tests {
             metric("Revenue", "42", "+3%"),
         ];
         let (placed, _) = laid_out(&cells, &[1, 1], 220.0);
-        let at = |x, y| element_at(&cells, &placed, x, y, false);
+        let at = |x, y| element_at(&cells, &placed, x, y, Level::Near);
         assert_eq!(at(150.0, 30.0), Some(1));
         assert_eq!(at(28.0, 50.0), Some(1));
         assert_eq!(at(207.9, 57.9), Some(1));
         assert_eq!(at(100.0, 58.0), None);
-        assert_eq!(element_at(&cells, &placed, 100.0, 40.0, true), None);
+        assert_eq!(
+            element_at(&cells, &placed, 100.0, 40.0, Level::Middle),
+            None
+        );
     }
 
     /// The fonts of `fonts`, but a body whose `W` advances by 11, `-` by 4, the ellipsis by 9, and
@@ -1704,7 +1721,7 @@ mod tests {
         // An icon alone in a column 196 wide at 220: its square from (12, 10), 16 × 16.
         let cells = [icon(1.0), text(Role::Body, "b", 1.0)];
         let (placed, _) = laid_out(&cells, &[1, 1], 220.0);
-        let at = |x, y| element_at(&cells, &placed, x, y, false);
+        let at = |x, y| element_at(&cells, &placed, x, y, Level::Near);
         assert_eq!(at(12.0, 10.0), Some(0));
         assert_eq!(at(27.9, 25.9), Some(0));
         // Beside the square in its column, and below it, no element.
@@ -1712,7 +1729,7 @@ mod tests {
         assert_eq!(at(150.0, 15.0), None);
         assert_eq!(at(20.0, 26.0), Some(1));
         // At the middle level no icon is hit.
-        assert_eq!(element_at(&cells, &placed, 20.0, 15.0, true), None);
+        assert_eq!(element_at(&cells, &placed, 20.0, 15.0, Level::Middle), None);
     }
 
     #[test]
@@ -1765,7 +1782,7 @@ mod tests {
             },
         ];
         let (placed, _) = laid_out(&cells, &[1, 2], 220.0);
-        let at = |x, y| element_at(&cells, &placed, x, y, false);
+        let at = |x, y| element_at(&cells, &placed, x, y, Level::Near);
         assert_eq!(at(12.0, 10.0), Some(0));
         assert_eq!(at(207.9, 27.9), Some(0));
         // The title's bottom is the body's top: the point is the row below's.
@@ -1783,12 +1800,18 @@ mod tests {
             assert_eq!(at(x, y), None, "({x}, {y})");
         }
         // At the middle level only the title is hit, where it is drawn.
-        assert_eq!(element_at(&cells, &placed, 100.0, 15.0, true), Some(0));
-        assert_eq!(element_at(&cells, &placed, 100.0, 35.0, true), None);
-        assert_eq!(element_at(&cells, &placed, 20.0, 35.0, true), None);
+        assert_eq!(
+            element_at(&cells, &placed, 100.0, 15.0, Level::Middle),
+            Some(0)
+        );
+        assert_eq!(
+            element_at(&cells, &placed, 100.0, 35.0, Level::Middle),
+            None
+        );
+        assert_eq!(element_at(&cells, &placed, 20.0, 35.0, Level::Middle), None);
         // A column with no width holds no point.
         let (squeezed, _) = laid_out(&cells, &[1, 2], 16.0);
-        assert_eq!(element_at(&cells, &squeezed, 8.0, 35.0, false), None);
+        assert_eq!(element_at(&cells, &squeezed, 8.0, 35.0, Level::Near), None);
     }
 
     #[test]

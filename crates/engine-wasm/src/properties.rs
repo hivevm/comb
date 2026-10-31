@@ -25,6 +25,7 @@ use serde::de::value::{MapDeserializer, SeqDeserializer};
 use serde::de::{self, IntoDeserializer, Visitor};
 
 use comb_engine::content::{Font, Fonts, MAX_METRIC, Role};
+use comb_engine::graph::Level;
 
 use super::{
     ContentInput, DirectionCode, EdgeCells, EdgeInput, EdgePatch, EdgeRefusal, GraphBatch,
@@ -1374,7 +1375,8 @@ fn loaded_in(
             &mut rows,
             &mut placed,
         );
-        content.draw(node, &placed[start..], fonts, &mut drawn);
+        let laid = &placed[start..];
+        content.draw(node, &cells, laid, Level::Near, fonts, &mut drawn);
         for (_, _, element, at) in content.elements_of(node) {
             let kind = content.kinds[element];
             texts.push(if kind == KindCode::Progress as u8 {
