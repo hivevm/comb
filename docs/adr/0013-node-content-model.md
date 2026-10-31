@@ -84,17 +84,23 @@ registers and colours given as numbers.
   badge, as every element but a badge does. Its cell is its square, so that a press beside it in
   its column hits no element, as beside a badge's pill. The shell draws the image registered under
   its name as a sprite fitted into the square with its aspect kept and centred in it; an icon
-  whose name none registers draws nothing and is no error. Its name is checked as a text of
+  whose name none registers draws nothing and is no error, and its square is still its cell, hit
+  and reported as kind `icon`. Its name is checked as a text of
   content is, as the field `name`, and counts toward the budget of a load's strings.
 - **Icons:** `Comb.registerIcon(name, image)` takes an `ImageBitmap`, an `HTMLImageElement` that
-  has loaded, or an `HTMLCanvasElement` the host application holds, and makes it the texture of
-  the icon `name`, drawn from the next frame on by every icon that names it, without a load.
+  has loaded, or an `HTMLCanvasElement` the host application holds, copies it at registration, at
+  its natural size, into a canvas Comb owns, and makes that copy the texture of the icon `name`,
+  drawn by every icon that names it, without a load. A later change to the host application's
+  image, or closing an `ImageBitmap`, changes no icon; a change takes a new `registerIcon`.
   Registering a name again draws the new image wherever the old one was drawn and destroys the
-  old texture once the views have taken the new one; nothing unregisters a name. It throws an
-  `IconError`, and registers nothing, where the name is no string, holds a lone surrogate, or is
-  longer than a text of content may be, or where the image is a string, a `URL`, or a `Request`,
-  none of the three, or one that holds no pixels, an image that has not loaded or failed to, a
-  closed `ImageBitmap`, or a canvas of no size; it never fetches.
+  old texture once the views have taken the new one, which they do as it is registered, the
+  engine lost or not; nothing unregisters a name. It throws an `IconError`, and registers nothing,
+  where the name is no string, holds a lone surrogate, or is longer than a text of content may be,
+  or where the image is a string, a `URL`, or a `Request`, none of the three, or one that holds no
+  pixels, an image that has not loaded or failed to, a closed `ImageBitmap`, or a canvas of no
+  size, or one of another origin whose pixels the page may not read (`crossOrigin`), which a read
+  of one pixel of the copy finds, since the GPU could not take it either; it never fetches. After
+  `destroy` it checks its arguments as before and keeps nothing.
 - **Content replaces the title and the height:** a node is its identifier, its position, its
   width, and its content; its title is a `text` of role title, and the engine computes its height.
   `updateNode` replaces a node's content as a whole, checked as a load checks it.
