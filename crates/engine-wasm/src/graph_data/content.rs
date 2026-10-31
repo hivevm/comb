@@ -26,8 +26,9 @@ pub const MAX_ROWS: usize = ROW_LIMIT as usize;
 pub const MAX_COLUMNS: usize = COLUMN_LIMIT as usize;
 
 /// The most UTF-16 code units of the strings of all content in one load together, the texts and
-/// the names alike: at least the titles a load held before content, 1,000 code units for each of
-/// 1,000,000 nodes, and below 2^32, so that every boundary fits a `Uint32Array` (ADR-0034).
+/// the names alike, and of all content the graph holds after every edit: at least the titles a
+/// load held before content, 1,000 code units for each of 1,000,000 nodes, and below 2^32, so
+/// that every boundary fits a `Uint32Array` (ADR-0034).
 pub const MAX_CONTENT_UNITS: u32 = 1_000_000_000;
 
 /// `MAX_ROWS` as the `u32` a refusal and `rowLimit` name.
@@ -248,15 +249,32 @@ impl Default for Cursor {
     }
 }
 
+impl Cursor {
+    /// A cursor whose count of the strings of content starts at `held`, the code units of content
+    /// the graph holds besides the node an edit checks, so that `addNode` and `updateNode` count
+    /// on against the budget as a load does.
+    pub(crate) fn holding(held: u64) -> Self {
+        Self {
+            units: held,
+            ..Self::default()
+        }
+    }
+
+    /// The code units of the strings of content counted so far.
+    pub(crate) const fn units(&self) -> u64 {
+        self.units
+    }
+}
+
 #[cfg(test)]
 thread_local! {
-    /// A budget of a load's strings of content the tests lower, so that a load of a few texts
-    /// passes it; none for `MAX_CONTENT_UNITS`.
+    /// A budget of the strings of content the tests lower, so that a load or an edit of a few
+    /// texts passes it; none for `MAX_CONTENT_UNITS`.
     pub(crate) static TEST_BUDGET: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
 }
 
-/// The budget of a load's strings of content: `MAX_CONTENT_UNITS`, or in the tests the one they
-/// lowered it to.
+/// The budget of the strings of content the graph holds, after a load or an edit:
+/// `MAX_CONTENT_UNITS`, or in the tests the one they lowered it to.
 fn budget() -> u64 {
     #[cfg(test)]
     if let Some(budget) = TEST_BUDGET.get() {
@@ -783,6 +801,21 @@ impl ContentData {
                 .sum::<usize>();
         }
         starts
+    }
+
+    /// The code units of the strings of content of the node at `node`, the texts and the names
+    /// alike, as a check of it counts them against the budget; none for a slot it holds no
+    /// content of.
+    pub(crate) fn units_of(&self, node: usize) -> u64 {
+        let length = |bounds: &[u32], index: usize| u64::from(bounds[index + 1] - bounds[index]);
+        self.elements_of(node)
+            .map(|(_, _, element, at)| {
+                let (texts, names) = filled(self.kinds[element]);
+                let texts = (at.text..at.text + texts).map(|t| length(&self.text_bounds, t));
+                let names = (at.name..at.name + names).map(|n| length(&self.name_bounds, n));
+                texts.chain(names).sum::<u64>()
+            })
+            .sum()
     }
 
     /// The text at `index`, once mapped.

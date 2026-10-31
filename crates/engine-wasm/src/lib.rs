@@ -408,6 +408,9 @@ pub struct Engine {
     content: ContentData,
     /// The content of each node slot an addition or a patch gave content since the load.
     edited: HashMap<u32, ContentData>,
+    /// The code units of the strings of content of the nodes the graph holds, the texts and the
+    /// names alike, which every edit holds to the budget a load is held to (ADR-0013).
+    content_units: u64,
     /// Of the nodes the last query found at the near or middle level, in its order, the
     /// boundaries of each one's elements in `placed`.
     content_bounds: Vec<u32>,
@@ -564,6 +567,7 @@ impl Engine {
         content.index_strings();
         self.content = content;
         self.edited.clear();
+        self.content_units = loaded.units;
         self.visible = Visible::default();
         slot(x.len())
     }
@@ -619,21 +623,21 @@ impl Engine {
         Ok(())
     }
 
-    /// Checks the node `addNode` hands over as a load checks a node and adds it, drawn and hit
+    /// Checks the node `addNode` hands over as a load checks a node, its strings of content
+    /// counted against the budget on from those the graph holds, and adds it, drawn and hit
     /// above every other node, and returns the slot the engine chose for it: the free slot freed
     /// last, or a new one after the highest (ADR-0022). A refused node leaves the graph as it was.
     #[wasm_bindgen(js_name = addNode)]
     pub fn add_node(&mut self, node: Ts<NodeInput>) -> Result<u32, GraphDataProblem> {
         trap::spring();
         let node = node.to_rust().map_err(unshaped)?;
-        let (slot, content) = add_node_to(&mut self.graph, &node, &self.fonts)?;
-        self.edited.insert(slot, content);
-        Ok(slot)
+        self.add(&node)
     }
 
     /// Checks the patch `updateNode` hands over for the node `id` in `slot`, reading it once, as a
-    /// load checks a node's content, and gives the node its new content and the height it lays out
-    /// to, its edges re-placed (ADR-0013); the store merges the patch. A refused patch changes
+    /// load checks a node's content, its strings counted against the budget on from those the
+    /// graph holds besides the node's, and gives the node its new content and the height it lays
+    /// out to, its edges re-placed (ADR-0013); the store merges the patch. A refused patch changes
     /// nothing; a slot that holds no node throws a `SlotError`.
     #[wasm_bindgen(js_name = updateNode)]
     pub fn update_node(
@@ -644,16 +648,7 @@ impl Engine {
     ) -> Result<(), CallRefusal> {
         trap::spring();
         let patch = patch.to_rust().map_err(unshaped)?;
-        let Some((content, height)) = patch_of(id, &patch, &self.fonts)? else {
-            return Ok(());
-        };
-        if !self.graph.holds_node(slot) {
-            return Err(CallRefusal::Slot(SlotError::NoNode { slot }));
-        }
-        graph_data::within_by_height(id, self.graph.positions()[slot as usize * 2 + 1], height)?;
-        self.graph.resize_node(slot, height)?;
-        self.edited.insert(slot, content);
-        Ok(())
+        self.update(slot, id, &patch)
     }
 
     /// Checks the edge `addEdge` hands over as a load checks an edge, refuses one from a node to
@@ -738,10 +733,16 @@ impl Engine {
     #[wasm_bindgen(js_name = removeNodes)]
     pub fn remove_nodes(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
         trap::spring();
+        // A slot named twice is removed once, and its content leaves the count once.
+        let mut removed = slots.to_vec();
+        removed.sort_unstable();
+        removed.dedup();
+        let units: u64 = removed.iter().map(|&slot| self.units_of(slot)).sum();
         let edges = self.graph.remove_nodes(slots)?;
         for slot in slots {
             self.edited.remove(slot);
         }
+        self.content_units -= units;
         Ok(edges)
     }
 
@@ -826,6 +827,42 @@ impl Engine {
 }
 
 impl Engine {
+    /// `addNode` of `node`, read: its strings of content counted on from those the graph holds.
+    fn add(&mut self, node: &NodeInput) -> Result<u32, GraphDataProblem> {
+        let (slot, content) = add_node_to(&mut self.graph, node, &self.fonts, self.content_units)?;
+        self.content_units += content.units_of(0);
+        self.edited.insert(slot, content);
+        Ok(slot)
+    }
+
+    /// `updateNode` of the node `id` in `slot` by `patch`, read: its strings of content counted on
+    /// from those the graph holds besides the node's.
+    fn update(&mut self, slot: u32, id: &str, patch: &NodePatch) -> Result<(), CallRefusal> {
+        let held = self.content_units - self.units_of(slot);
+        let Some((content, height)) = patch_of(id, patch, &self.fonts, held)? else {
+            return Ok(());
+        };
+        if !self.graph.holds_node(slot) {
+            return Err(CallRefusal::Slot(SlotError::NoNode { slot }));
+        }
+        graph_data::within_by_height(id, self.graph.positions()[slot as usize * 2 + 1], height)?;
+        self.graph.resize_node(slot, height)?;
+        self.content_units = held + content.units_of(0);
+        self.edited.insert(slot, content);
+        Ok(())
+    }
+
+    /// The code units of the strings of content of the node in `slot`, none where it holds none.
+    fn units_of(&self, slot: u32) -> u64 {
+        if !self.graph.holds_node(slot) {
+            return 0;
+        }
+        match self.edited.get(&slot) {
+            Some(content) => content.units_of(0),
+            None => self.content.units_of(slot as usize),
+        }
+    }
+
     /// The element of the content of the node in `slot` whose rectangle holds `point`, of those
     /// drawn at `level` (ADR-0013).
     fn element_at(&self, slot: u32, point: Point, level: DetailLevel) -> Option<ElementHit> {
@@ -1486,7 +1523,7 @@ mod tests {
             "content".to_owned(),
             named_content(&[&[action("Next", "next")]]).into(),
         )]);
-        let (checked, height) = patch_of("b", &patch, &engine.fonts).unwrap().unwrap();
+        let (checked, height) = patch_of("b", &patch, &engine.fonts, 0).unwrap().unwrap();
         engine.graph.resize_node(1, height).unwrap();
         engine.edited.insert(1, checked);
         assert_eq!(
@@ -1824,7 +1861,7 @@ mod tests {
         let rows = content(&[&[long], &[body], &[body], &[body], &[body]]);
         let patch = NodePatch(vec![("content".to_owned(), rows.into())]);
         let slot = 1;
-        let (checked, height) = patch_of("b", &patch, &engine.fonts).unwrap().unwrap();
+        let (checked, height) = patch_of("b", &patch, &engine.fonts, 0).unwrap().unwrap();
         engine.graph.resize_node(slot, height).unwrap();
         engine.edited.insert(slot, checked);
         assert_eq!(engine.graph.sizes()[2..], [100.0, 102.0]);
@@ -1852,7 +1889,7 @@ mod tests {
             "content".to_owned(),
             content(&[&[(KindCode::Unnamed, 1.0, RoleCode::Title, None)]]).into(),
         )]);
-        assert!(patch_of("b", &refused, &engine.fonts).is_err());
+        assert!(patch_of("b", &refused, &engine.fonts, 0).is_err());
         assert_eq!(engine.graph.sizes()[2..], [100.0, 102.0]);
         // A slot that holds no node is the shell's mistake.
         assert_eq!(
@@ -1880,7 +1917,7 @@ mod tests {
         assert_eq!(engine.drawn.bounds, [0, 0, 0]);
         // A node patched to no rows at all lays out to none, the least height high.
         let patch = NodePatch(vec![("content".to_owned(), content(&[]).into())]);
-        let (checked, height) = patch_of("b", &patch, &engine.fonts).unwrap().unwrap();
+        let (checked, height) = patch_of("b", &patch, &engine.fonts, 0).unwrap().unwrap();
         engine.graph.resize_node(1, height).unwrap();
         engine.edited.insert(1, checked);
         near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
