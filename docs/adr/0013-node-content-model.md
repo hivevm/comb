@@ -59,7 +59,24 @@ registers and colours given as numbers.
   segments and the track abutting square. A progress bar holds at most 8 segments; a fraction is
   finite and not negative, a segment's colour is a badge's, and the fractions sum to at most 1
   and 1e-9 beyond it, so that fractions that sum to 1 in exact arithmetic are not refused for
-  their rounding.
+  their rounding. A `metric`, its fields `caption`, `value`, and `trend`, the trend its `text`, its
+  `direction`, `up`, `down`, or `flat`, and its `color`, a badge's, is laid out in two lines in its
+  column, the caption's line in the font of role caption and below it, with no space between, the
+  value's line in the body's: 30 high with lines of 14 and 16, its cell, and so what a press hits,
+  the column and both lines. The caption fills its line, cut to the column as a text is. On the
+  value's line the value lies at the column's left, as wide as it is drawn; the trend's arrow 8
+  after it, the gap between columns; and the trend's text 4 after the arrow, to the column's end.
+  The arrow fills a square 10 wide in the middle of the value's line, 3 below its top with a line
+  of 16, and is one triangle turned by its direction, its base one side of the square and its
+  apex the middle of the opposite side: ▲ its base below, ▼ above, ▶ at the left. Where the
+  column is too narrow, the trend's text is cut first, to what the value, both gaps, and the arrow
+  leave; where they leave none, the trend's text is cut to nothing and the value to the column
+  less the gap before the arrow and the arrow, the gap shrinking where even that leaves no room,
+  so that the arrow ends at the column's end; a column narrower than the arrow draws none. The
+  engine places each part and the arrow's three points, and the shell draws the caption in the
+  caption's colour, `0x6B7280`, the value in the near-black of the node's texts, `0x1F2430`, and
+  the arrow and the trend's text in the trend's colour. A metric lies at its row's top as every
+  element does, and in a row that holds a badge 3 lower, as every element but a badge does.
 - **Content replaces the title and the height:** a node is its identifier, its position, its
   width, and its content; its title is a `text` of role title, and the engine computes its height.
   `updateNode` replaces a node's content as a whole, checked as a load checks it.
@@ -85,8 +102,8 @@ registers and colours given as numbers.
   the size of the nodes before content. The engine states the padding, the gap between columns,
   and the least height; the shell states each role's line height.
 - **Levels of detail (ADR-0027):** *near* draws every element; *middle* draws the box and the
-  texts of role title, at the place near gives them, and no action, badge, or progress bar; *far*
-  draws no element.
+  texts of role title, at the place near gives them, and no action, badge, progress bar, or
+  metric; *far* draws no element.
 - **Limits (Q-7):** the bridge refuses a node with more rows, a row with more columns, a progress
   bar with more segments, a text longer, or a load whose texts hold more code units in all than
   limits it states, each with a typed problem that names the node.
