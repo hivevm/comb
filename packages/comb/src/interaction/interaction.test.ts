@@ -202,6 +202,76 @@ describe("interaction ends a drag the graph took its node from", () => {
   });
 });
 
+describe("interaction tells a click on an element of a node's content", () => {
+  /** A store holding node `a`, with interaction attached over a bridge that hits `element` of
+   *  `a` everywhere; `clicks` lists every click told, `moves` every move of the node. */
+  function pressed(element?: { row: number; column: number; kind: string; action?: string }) {
+    const store = createGraphStore();
+    load(store, {
+      nodes: [{ id: "a", x: 0, y: 0, width: 100, content: titled("A") }],
+      edges: [],
+    });
+    const { app, emit } = fakeApp();
+    const { bridge, moves } = fakeBridge({ kind: "node", slot: 0, ...(element && { element }) });
+    const clicks: unknown[] = [];
+    attachInteraction(app, store, bridge, undefined, (click) => clicks.push(click));
+    return { store, emit, clicks, moves };
+  }
+  const action = { row: 1, column: 0, kind: "action", action: "details" };
+
+  test("a release within 4 pixels of the press on an element tells it and selects the node", () => {
+    // Verifies: ADR-0013
+    const { store, emit, clicks, moves } = pressed(action);
+    emit("pointerdown", 10, 10);
+    emit("globalpointermove", 13, 12);
+    emit("pointerup", 13, 12);
+    expect(clicks).toEqual([{ node: "a", row: 1, column: 0, kind: "action", action: "details" }]);
+    expect(moves).toEqual([]);
+    expect(store.getState().selection).toEqual({ kind: "node", id: "a" });
+  });
+
+  test("a press that moves beyond 4 pixels drags the node from the press and tells no click", () => {
+    // Verifies: ADR-0013, ADR-0030
+    const { store, emit, clicks, moves } = pressed(action);
+    const changes: unknown[] = [];
+    store.subscribe((state, previous) => {
+      if (state.change !== previous.change) changes.push(state.change);
+    });
+    emit("pointerdown", 10, 10);
+    emit("globalpointermove", 13, 12);
+    expect(moves).toEqual([]);
+    emit("globalpointermove", 16, 10);
+    // Back within the slop, the drag goes on.
+    emit("globalpointermove", 12, 10);
+    emit("pointerup", 12, 10);
+    expect(moves).toEqual([
+      { slots: [0], dx: 6, dy: 0 },
+      { slots: [0], dx: -4, dy: 0 },
+    ]);
+    expect(clicks).toEqual([]);
+    expect(changes).toEqual([{ kind: "nodeMoved", by: "user", id: "a" }]);
+  });
+
+  test("a press beside every element selects the node and tells no click", () => {
+    // Verifies: ADR-0013
+    const { store, emit, clicks } = pressed();
+    emit("pointerdown", 10, 10);
+    emit("pointerup", 10, 10);
+    expect(clicks).toEqual([]);
+    expect(store.getState().selection).toEqual({ kind: "node", id: "a" });
+  });
+
+  test("a press ended by a later press, its release never having come, tells no click", () => {
+    // Verifies: ADR-0013
+    const { emit, clicks } = pressed(action);
+    emit("pointerdown", 10, 10);
+    emit("pointerdown", 10, 10);
+    expect(clicks).toEqual([]);
+    emit("pointerup", 10, 10);
+    expect(clicks).toHaveLength(1);
+  });
+});
+
 describe("interaction on an edge", () => {
   test("a press on an edge selects it, pans once the pointer moves beyond 4 pixels, and shows a pointer", () => {
     // Verifies: ADR-0025

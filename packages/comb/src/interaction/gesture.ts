@@ -1,9 +1,18 @@
 // What every gesture of the pointer is to the dispatcher in `index.ts`: how it moves, how it ends
 // at a release or at a later press, and whether a change of the graph takes its subject from
 // under it. Each gesture is a module of its own; this one holds what they share.
-import type { Bridge, Hit } from "../bridge";
+import type { Bridge, ElementHit, Hit } from "../bridge";
 import type { GraphState, GraphStore } from "../store";
 import { levelAt, toWorld } from "../store/viewport";
+
+/** How far, in screen pixels, the pointer moves after a press on an edge or a node before the
+ *  press pans or drags: within it, the press stays a selection, and on a node a click
+ *  (ADR-0025, ADR-0013). */
+export const SLOP = 4;
+
+/** A click on an element of a node's content, as the host application hears it (ADR-0013): the
+ *  node's identifier, the element's row, column, and kind, and an action's identifier. */
+export type ContentClick = Readonly<{ node: string } & ElementHit>;
 
 /** What a gesture works on: the store, the bridge to the engine, the world point a connection is
  *  dragged to, which the store does not hold (ADR-0029), and the one hit test, which the press,
@@ -15,6 +24,8 @@ export interface Context {
   /** What lies under the screen point `(x, y)`, connectors where the host lets the user
    *  connect. */
   readonly hitAt: (x: number, y: number) => Hit;
+  /** Tells the host application of a click on an element of a node's content. */
+  readonly click: (click: ContentClick) => void;
 }
 
 /** A gesture in progress, begun by a press. */

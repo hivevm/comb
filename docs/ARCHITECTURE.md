@@ -38,13 +38,14 @@ a negative gap, a node whose coordinate or far side (`x + width`) lies more than
 world's limit, 2^120 world units, from the origin, and a label offset beyond it (`beyondWorld`),
 naming the node or edge and the field, duplicate node or edge identifiers, edges to missing nodes,
 non-finite label placements, a colour that is not an integer from `0` to `0xFFFFFF`, a text of
-node content or a label text that is not a string or longer than 1,000 UTF-16 code units, node
+node content, an action's identifier (`id`), or a label text that is not a string or longer than
+1,000 UTF-16 code units, node
 content that is no list of rows, a row that is no list or an element that is no object
 (`invalidContentShape`, naming the node, row, and column), more than 8 rows or a row of more than
-6 columns, an element of a kind other than `text`, a weight that is not a positive finite number,
-a role other than `title`, `body`, and `caption`, the texts of a load's content holding more than
-1,000,000,000 code units together, each naming the node and, where it has them, the row and
-column, a label background that is
+6 columns, an element of a kind other than `text` and `action`, a weight that is not a positive
+finite number, a role of a text other than `title`, `body`, and `caption`, the texts and the
+actions' identifiers of a load's content holding more than 1,000,000,000 code units together,
+each naming the node and, where it has them, the row and column, a label background that is
 not an integer from `0` to `0xFFFFFF`, more than 1,000,000 nodes or edges, an identifier, source, or
 target longer than 256 UTF-16 code units, and identifiers of one load that hold more than 64,000,000
 code units together, and an edge side other than `top`, `right`, `bottom`, and `left`. `api`
@@ -77,9 +78,10 @@ engine's alone, which the snapshot of a load writes straight into its columns, a
 engine's `content` builds when inspection or a change Comb tells asks for it. A load's nodes and
 edges cross as columns the snapshot writes while it reads them, through the bridge's
 `nodeColumns` and `edgeColumns`: each string field, the identifiers, sources, targets, label texts,
-and the texts of content, as pieces of at
+the texts of content, and its names, the actions' identifiers, as pieces of at
 most 2^28 UTF-16 code units, each ending where a value ends, with its boundaries in UTF-16 code
-units across all pieces, per label text and text of content whether it is a text, the numbers as
+units across all pieces, per label text, text, and name of content whether it is a string, the
+numbers as
 `Float64Array`, an arrowhead, the sides, an element's kind, and a text's role as byte codes, the
 boundaries of each node's rows and each row's elements as `Uint32Array`, whether a label, its
 background, and a dash are present as bytes, and the first value refused by its type as its
@@ -149,10 +151,13 @@ The functional core and its shell follow
   coarsened; its vectors grow by `try_reserve`, so that memory running short coarsens the mesh
   instead of trapping. `content` lays a node's content out
   ([ADR-0013](adr/0013-node-content-model.md)): from each role's font, the glyph advances and the
-  line height the shell hands over, a row as high as its tallest element, the columns of a row
+  line height the shell hands over, an action in the font of role body, a row as high as its
+  tallest element, the columns of a row
   sharing the width inside a padding of 12 less gaps of 8 by their weights, each text cut before an
   ellipsis where it passes its column, and the node as high as the padding of 10 above and below
-  and its rows, at least 64; `graph`'s `resize_node` gives a node a new height and re-places its
+  and its rows, at least 64; `element_at` finds the element whose rectangle holds a point of the
+  node, of those drawn at a level, which the bridge's `hit` names beside the node it hits;
+  `graph`'s `resize_node` gives a node a new height and re-places its
   edges and its place in the index. It depends on no crate that reaches the browser. `graph` keeps
   each edge's path and its bounds as of its last move, so that a query computes no bounds;
   `graph::slot` is the
@@ -176,7 +181,8 @@ The functional core and its shell follow
   the size of a screen pixel, at most 2^114 world units for a stroke, and how far an edge label's
   pill reaches from its point, and writes the found node slots, the edge-label slots and points (at
   the near level only), at the near and the middle level where the elements of each found node lie
-  and their roles (`contentBounds…`, `contentRects…`, `contentRoles…`), what of each text is drawn
+  and their kinds and roles (`contentBounds…`, `contentRects…`, `contentKinds…`,
+  `contentRoles…`), what of each text is drawn
   as one string `contentTexts` returns, cut by `contentTextBounds…`, the found edge slots, and the
   edge mesh into buffers the engine owns, the label points and the mesh's positions relative to the
   query's origin, which `originX` and
@@ -229,9 +235,12 @@ The functional core and its shell follow
   a module of its own behind the `Gesture` of `gesture.ts`, which says how it moves, how it ends at
   a release or at a later press, and whether a change of the graph takes its subject, which ends it
   without a word; `guard.ts` holds the guard every handler runs under once the engine is lost.
-  `node-drag.ts` selects a node on press and drags it, `pan.ts` selects an edge on press and pans
-  once the pointer has moved more than 4 screen pixels, or clears the selection on the empty canvas
-  and pans; `index.ts` zooms around the pointer and sets the cursor over what a press would hit;
+  `node-drag.ts` selects a node on press and drags it once the pointer has moved more than the
+  slop of 4 screen pixels (`SLOP` of `gesture.ts`), and on a release within it tells a click on
+  the element of the node's content the hit named, through the `click` of the gestures' `Context`;
+  `pan.ts` selects an edge on press and pans once the pointer has moved beyond the same slop, or
+  clears the selection on the empty canvas and pans; `index.ts` zooms around the pointer and sets
+  the cursor over what a press would hit;
   `connect.ts` begins a connection on a press on a connector, where `CombOptions.canConnect` is set,
   follows the pointer with it, marks compatible the connectors of a node the source does not reach
   yet, and proposes the edge on a release over one, through the connection `api` hands it;
@@ -301,7 +310,8 @@ The functional core and its shell follow
   after its veto, `CombOptions.canConnect` or `CombOptions.canDelete`, the
   viewport (`fitView`, `setViewport`, `viewport`, and `worldPointAt`, the world point
   under a point of the page, which needs no engine), the events to the host application (`onChange`,
-  `onSelectionChange`, `onEngineLost`), and `destroy`; `onChange` delivers each change the store
+  `onSelectionChange`, `onContentClick`, which interaction tells of each click on an element,
+  `onEngineLost`), and `destroy`; `onChange` delivers each change the store
   records as a `GraphChange`
   ([ADR-0030](adr/0030-a-veto-that-changes-the-graph-ends-its-gesture.md)), its positions read
   from the engine's buffer, synchronously from one subscription to the store that tells a change

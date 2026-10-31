@@ -32,10 +32,10 @@ use tsify::{Ts, Tsify};
 use wasm_bindgen::prelude::*;
 
 pub use graph_data::{
-    Arrow, ArrowCode, ContentElement, EdgeField, EdgeInput, EdgePatch, Field, GraphDataProblem,
-    GraphList, KindCode, LabelInput, MAX_COLUMNS, MAX_CONTENT_UNITS, MAX_ID, MAX_ID_UNITS,
-    MAX_ITEMS, MAX_ROWS, MAX_TEXT, NodeContent, NodeField, NodeInput, NodePatch, Pair, RoleCode,
-    Side, SideCode, TextRole,
+    Arrow, ArrowCode, ContentElement, EdgeField, EdgeInput, EdgePatch, ElementHit, ElementKind,
+    Field, GraphDataProblem, GraphList, KindCode, LabelInput, MAX_COLUMNS, MAX_CONTENT_UNITS,
+    MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_ROWS, MAX_TEXT, NodeContent, NodeField, NodeInput,
+    NodePatch, Pair, RoleCode, Side, SideCode, TextRole,
 };
 
 use graph_data::{
@@ -270,15 +270,28 @@ pub fn column_limit() -> u32 {
 }
 
 /// What a press hits (ADR-0025): a connector by the slot of its node and its side, a label by the
-/// slot of its edge, a node or an edge by its slot, or nothing; one generated value (ADR-0034).
+/// slot of its edge, a node by its slot and the element of its content drawn there, where one is
+/// (ADR-0013), an edge by its slot, or nothing; one generated value (ADR-0034).
 #[derive(Tsify, Serialize, Debug, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Hit {
     None,
-    Connector { slot: u32, side: Side },
-    Label { slot: u32 },
-    Node { slot: u32 },
-    Edge { slot: u32 },
+    Connector {
+        slot: u32,
+        side: Side,
+    },
+    Label {
+        slot: u32,
+    },
+    Node {
+        slot: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[tsify(optional)]
+        element: Option<ElementHit>,
+    },
+    Edge {
+        slot: u32,
+    },
 }
 
 /// A rectangle in world coordinates, as a query asks for it.
@@ -431,6 +444,9 @@ impl Engine {
         texts: Vec<String>,
         text_bounds: Vec<u32>,
         text_valid: Vec<u8>,
+        names: Vec<String>,
+        name_bounds: Vec<u32>,
+        name_valid: Vec<u8>,
         refused_at: Option<u32>,
         refused_field: Option<u32>,
         refused_row: Option<u32>,
@@ -495,7 +511,10 @@ impl Engine {
             texts,
             text_bounds,
             text_valid,
-            spans: Vec::new(),
+            names,
+            name_bounds,
+            name_valid,
+            ..ContentData::default()
         };
         let nodes = NodeColumns {
             ids: &ids,
@@ -509,6 +528,8 @@ impl Engine {
         let loaded = load_of(&nodes, &edges, &self.fonts)?;
         self.graph = loaded.graph;
         content.spans = loaded.spans;
+        content.name_spans = loaded.name_spans;
+        content.index_names();
         self.content = content;
         self.edited.clear();
         self.visible = Visible::default();
@@ -737,8 +758,11 @@ impl Engine {
     /// at `level`: where `connectors` asks for them, at the near and middle level, a connector
     /// within 8 screen pixels, of the node drawn on top; else, at the near level, the label whose
     /// measured pill holds the point; else the node drawn on top there, else the edge drawn on top
-    /// within 4 screen pixels of its path, else nothing (ADR-0025). A pixel is checked as `query`
-    /// checks it, and a point that is not finite is refused, both with a `NumberError`.
+    /// within 4 screen pixels of its path, else nothing (ADR-0025). Of a node, the element of its
+    /// content whose rectangle holds the point, of those drawn at `level`: at the near level every
+    /// element, at the middle level the texts of role title, at the far level none (ADR-0013). A
+    /// pixel is checked as `query` checks it, and a point that is not finite is refused, both with
+    /// a `NumberError`.
     pub fn hit(
         &mut self,
         x: f64,
@@ -756,7 +780,10 @@ impl Engine {
                 side: side.into(),
             },
             Some(Target::Label(slot)) => Hit::Label { slot },
-            Some(Target::Node(slot)) => Hit::Node { slot },
+            Some(Target::Node(slot)) => Hit::Node {
+                slot,
+                element: self.element_at(slot, point, level),
+            },
             Some(Target::Edge(slot)) => Hit::Edge { slot },
             None => Hit::None,
         };
@@ -765,6 +792,32 @@ impl Engine {
 }
 
 impl Engine {
+    /// The element of the content of the node in `slot` whose rectangle holds `point`, of those
+    /// drawn at `level` (ADR-0013).
+    fn element_at(&self, slot: u32, point: Point, level: DetailLevel) -> Option<ElementHit> {
+        if level == DetailLevel::Far {
+            return None;
+        }
+        let at = slot as usize * 2;
+        let [x, y] = [0, 1].map(|axis| f64::from(self.graph.positions()[at + axis]));
+        let width = self.graph.sizes()[at];
+        let (content, node) = match self.edited.get(&slot) {
+            Some(content) => (content, 0),
+            None => (&self.content, slot as usize),
+        };
+        let (mut cells, mut rows, mut placed) = (Vec::new(), Vec::new(), Vec::new());
+        content.element_at(
+            node,
+            width,
+            &self.fonts,
+            (point.x - x, point.y - y),
+            level == DetailLevel::Middle,
+            &mut cells,
+            &mut rows,
+            &mut placed,
+        )
+    }
+
     /// `query` of a rectangle already converted.
     fn query_rect(
         &mut self,
@@ -890,8 +943,21 @@ impl Engine {
         self.content_rects.len()
     }
 
-    /// Where the buffer starts that `query` writes, per placed element, the code of its text's
-    /// `RoleCode` into.
+    /// Where the buffer starts that `query` writes, per placed element, the code of its
+    /// `KindCode` into, which says how the shell draws it (ADR-0013).
+    #[wasm_bindgen(js_name = contentKindsPtr)]
+    pub fn content_kinds_ptr(&self) -> *const u8 {
+        self.drawn.kinds.as_ptr()
+    }
+
+    /// How many values the buffer of kinds holds: one per placed element.
+    #[wasm_bindgen(js_name = contentKindsLen)]
+    pub fn content_kinds_len(&self) -> usize {
+        self.drawn.kinds.len()
+    }
+
+    /// Where the buffer starts that `query` writes, per placed element, the code of the
+    /// `RoleCode` whose font draws its text into, body for an action.
     #[wasm_bindgen(js_name = contentRolesPtr)]
     pub fn content_roles_ptr(&self) -> *const u8 {
         self.drawn.roles.as_ptr()
@@ -1186,6 +1252,119 @@ mod tests {
         assert_eq!(engine.drawn.bounds, [0, 1, 2, 3, 4, 5, 6]);
         let (title, body) = (RoleCode::Title as u8, RoleCode::Body as u8);
         assert_eq!(engine.drawn.roles, [title, title, body, body, body, body]);
+    }
+
+    /// An engine of `a`, 100 wide at (0, 0), of one action, and `b` at (300, 0), of a title row and
+    /// a row of a body beside an action, each 34 wide with a gap of 8: the body from x = 12, the
+    /// action from 54, both from y = 28 to 44.
+    fn with_actions() -> Engine {
+        use graph_data::tests::{TITLE, action, load_into, named_content, text};
+        let mut engine = fonted();
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+        data.nodes[0].content = named_content(&[&[action("Open", "first")]]).into();
+        let body = (text(RoleCode::Body, "b"), None);
+        let b = [
+            [(TITLE, None)].as_slice(),
+            &[body, action("Details", "details")],
+        ];
+        data.nodes[1].content = named_content(&b).into();
+        let nodes = graph_data::OwnedColumns::of(data.nodes.iter().map(Some));
+        let none = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
+        engine
+    }
+
+    /// The element `engine` hits in the node in `slot` at `(x, y)` at `level`.
+    fn element(
+        engine: &Engine,
+        slot: u32,
+        x: f64,
+        y: f64,
+        level: DetailLevel,
+    ) -> Option<ElementHit> {
+        engine.element_at(slot, Point::new(x, y), level)
+    }
+
+    /// The element hit at `row` and `column`, of `kind`, naming `action`.
+    fn hit(row: u32, column: u32, kind: ElementKind, action: Option<&str>) -> Option<ElementHit> {
+        Some(ElementHit {
+            row,
+            column,
+            kind,
+            action: action.map(str::to_owned),
+        })
+    }
+
+    #[test]
+    fn actions_are_drawn_in_the_bodys_font_kept_as_given_and_a_patchs_hit_as_it_lays_out() {
+        // Verifies: ADR-0013
+        use graph_data::tests::{action, named_content};
+        let mut engine = with_actions();
+        // The near level draws the actions as actions, in the body's font.
+        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
+        let (t, a) = (KindCode::Text as u8, KindCode::Action as u8);
+        assert_eq!(engine.drawn.kinds, [a, t, t, a]);
+        let (title, body) = (RoleCode::Title as u8, RoleCode::Body as u8);
+        assert_eq!(engine.drawn.roles, [body, title, body, body]);
+        // "Details" in a column of 34 keeps four of the body's glyphs of 6 beside its ellipsis of 9.
+        assert_eq!(engine.drawn.texts, "OpentbDeta\u{2026}");
+        // Its content, built when asked, holds the action as the host application gave it.
+        let details = ContentElement::Action {
+            text: "Details".to_owned(),
+            id: "details".to_owned(),
+            weight: Some(1.0),
+        };
+        assert_eq!(engine.content.content_of(1).0[1][1], details);
+        // A patch's content is hit as it lays out, its names its own.
+        let patch = NodePatch(vec![(
+            "content".to_owned(),
+            named_content(&[&[action("Next", "next")]]).into(),
+        )]);
+        let (checked, height) = patch_of("b", &patch, &engine.fonts).unwrap().unwrap();
+        engine.graph.resize_node(1, height).unwrap();
+        engine.edited.insert(1, checked);
+        assert_eq!(
+            element(&engine, 1, 320.0, 15.0, DetailLevel::Near),
+            hit(0, 0, ElementKind::Action, Some("next"))
+        );
+    }
+
+    #[test]
+    fn a_point_in_a_node_hits_the_element_drawn_there_and_an_action_its_identifier() {
+        // Verifies: ADR-0013
+        let engine = with_actions();
+        let at = |slot, x, y, level| element(&engine, slot, x, y, level);
+        let close = DetailLevel::Near;
+        assert_eq!(
+            at(1, 370.0, 30.0, close),
+            hit(1, 1, ElementKind::Action, Some("details"))
+        );
+        assert_eq!(
+            at(1, 320.0, 30.0, close),
+            hit(1, 0, ElementKind::Text, None)
+        );
+        assert_eq!(
+            at(1, 320.0, 15.0, close),
+            hit(0, 0, ElementKind::Text, None)
+        );
+        // The gap between the body and the action, the padding, and below the rows: none.
+        for (x, y) in [(350.0, 30.0), (305.0, 15.0), (320.0, 50.0)] {
+            assert_eq!(at(1, x, y, close), None, "({x}, {y})");
+        }
+        // `a`'s action names its own identifier, before `b`'s in the column of names.
+        assert_eq!(
+            at(0, 50.0, 15.0, close),
+            hit(0, 0, ElementKind::Action, Some("first"))
+        );
+        // The middle level draws the title alone, and the far level nothing.
+        let middle = DetailLevel::Middle;
+        assert_eq!(
+            at(1, 320.0, 15.0, middle),
+            hit(0, 0, ElementKind::Text, None)
+        );
+        assert_eq!(at(1, 370.0, 30.0, middle), None);
+        assert_eq!(at(0, 50.0, 15.0, middle), None);
+        assert_eq!(at(1, 320.0, 15.0, DetailLevel::Far), None);
     }
 
     #[test]

@@ -9,6 +9,7 @@ export {
 export type {
   Comb,
   CombOptions,
+  ContentClick,
   Deletion,
   Proposal,
   EngineSource,

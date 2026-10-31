@@ -17,6 +17,7 @@ import {
   attachDeletion,
   attachInteraction,
   canvasPointAt,
+  type ContentClick,
   type Deletion,
   type Proposal,
 } from "../interaction";
@@ -49,7 +50,7 @@ export { EngineSourceError } from "./engine";
 export type { GraphChange } from "./changes";
 export type { EngineSource, EngineSourceProblem } from "./engine";
 export type { GraphDataProblem } from "../bridge";
-export type { Deletion, Proposal } from "../interaction";
+export type { ContentClick, Deletion, Proposal } from "../interaction";
 
 export interface CombOptions {
   /** The engine's WebAssembly, the file `comb/engine.wasm`, as the host application loads it:
@@ -143,6 +144,14 @@ export interface Comb {
    *  the selection, before `onSelectionChange` reports it. Returns the unsubscribe function
    *  (ADR-0030). */
   onChange(listener: (change: GraphChange) => void): () => void;
+  /** Calls `listener` when the user clicks an element of a node's content: presses on it and
+   *  releases within 4 screen pixels of the press, which selects the node, after
+   *  `onSelectionChange` reports that. It hears the node's identifier, the element's row and
+   *  column, its kind, and for an action its identifier. An element is clicked only where it is
+   *  drawn: at the near level every element, at the middle level the texts of role title, at the
+   *  far level none; a press that moves further drags the node and clicks nothing. Returns the
+   *  unsubscribe function (ADR-0013). */
+  onContentClick(listener: (click: ContentClick) => void): () => void;
   /** Calls `listener` once, with the `EngineLostError`, when the engine is lost for the page, and
    *  at once where it is lost already; returns the unsubscribe function. The page recovers only
    *  by being loaded anew (ADR-0021). */
@@ -210,6 +219,35 @@ function worldPointerOf(store: GraphStore, app: Application): Comb["worldPointAt
   };
 }
 
+/** `onContentClick` of one Comb, and the function that tells its listeners of a click: each is
+ *  told, a listener that throws keeping no other from being told, and the first error is thrown
+ *  on once all were. */
+function contentClicksOf(): {
+  onContentClick: Comb["onContentClick"];
+  tell(click: ContentClick): void;
+} {
+  const listeners = new Set<(click: ContentClick) => void>();
+  return {
+    onContentClick(listener) {
+      // A registration of its own, so that one listener registered twice is told twice.
+      const registration = (click: ContentClick) => listener(click);
+      listeners.add(registration);
+      return () => void listeners.delete(registration);
+    },
+    tell(click) {
+      const failed: unknown[] = [];
+      for (const listener of [...listeners]) {
+        try {
+          listener(click);
+        } catch (error) {
+          failed.push(error);
+        }
+      }
+      if (failed.length > 0) throw failed[0];
+    },
+  };
+}
+
 /** `onEngineLost` of one Comb, and the removal of its listeners, which its `destroy` calls. */
 function engineLostOf(): { onEngineLost: Comb["onEngineLost"]; removeAll(): void } {
   const removers = new Set<() => void>();
@@ -229,6 +267,24 @@ function engineLostOf(): { onEngineLost: Comb["onEngineLost"]; removeAll(): void
   };
 }
 
+/** The PixiJS application of a canvas that fills `host`, in `options.background`; throws a
+ *  `RendererUnavailableError` where it draws with a renderer `options` do not allow. */
+async function applicationOf(host: HTMLElement, options: CombOptions): Promise<Application> {
+  const app = new Application();
+  await app.init({
+    resizeTo: host,
+    background: options.background ?? 0xf7f8fa,
+    antialias: true,
+    preference: preferenceFor(options),
+  });
+  if (!drawsWith(options, app.renderer.name)) {
+    const renderer = app.renderer.name;
+    app.destroy(true);
+    throw new RendererUnavailableError(renderer);
+  }
+  return app;
+}
+
 /** Creates a Comb canvas that fills `host`, with the engine `options.engine`. Throws an
  *  `EngineSourceError` before it touches `host` where the engine is missing, a string, `URL`, or
  *  `Request`, or none of a `Response`, a `WebAssembly.Module`, and the bytes, and a
@@ -246,18 +302,7 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
   // The metrics of the fonts the texts are drawn with, once, before the first layout (ADR-0013).
   for (const role of ["title", "body", "caption"] as const)
     bridge.setFont(role, fontMetricsOf(role));
-  const app = new Application();
-  await app.init({
-    resizeTo: host,
-    background: options.background ?? 0xf7f8fa,
-    antialias: true,
-    preference: preferenceFor(options),
-  });
-  if (!drawsWith(options, app.renderer.name)) {
-    const renderer = app.renderer.name;
-    app.destroy(true);
-    throw new RendererUnavailableError(renderer);
-  }
+  const app = await applicationOf(host, options);
   host.appendChild(app.canvas);
 
   const store = createGraphStore();
@@ -266,7 +311,8 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
   // Interaction subscribes before the listeners, and the frames read the store only on the next
   // frame, so that a gesture a change takes, a connection among them, is over before anything
   // reads the store after that change.
-  const interaction = attachInteraction(app, store, bridge, user.connect);
+  const clicks = contentClicksOf();
+  const interaction = attachInteraction(app, store, bridge, user.connect, clicks.tell);
   const frames = createFrames(() => scene.render(store.getState(), bridge, interaction.pointer));
   const unsubscribe = store.subscribe(frames.schedule);
   // A larger canvas shows more of the world, so what is culled changes with its size.
@@ -291,6 +337,7 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
     worldPointAt: worldPointerOf(store, app),
     onSelectionChange: listeners.onSelectionChange,
     onChange: listeners.onChange,
+    onContentClick: clicks.onContentClick,
     onEngineLost: lost.onEngineLost,
     whenRendered: frames.whenRendered,
     destroy() {

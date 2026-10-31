@@ -9,7 +9,7 @@ import type { Application, FederatedPointerEvent } from "pixi.js";
 import type { Bridge, Hit } from "../bridge";
 import type { GraphStore } from "../store";
 import { connection, type Connect } from "./connect";
-import { targetAt, type Context, type Gesture } from "./gesture";
+import { targetAt, type ContentClick, type Context, type Gesture } from "./gesture";
 import { untilLost } from "./guard";
 import { labelDrag } from "./label-drag";
 import { nodeDrag } from "./node-drag";
@@ -18,6 +18,7 @@ import { levelAt, zoomAt } from "../store/viewport";
 
 export { attachDeletion, type Delete, type Deletion } from "./delete";
 export type { Connect, Proposal } from "./connect";
+export type { ContentClick } from "./gesture";
 
 const WHEEL_STEP = 1.0015;
 
@@ -33,8 +34,9 @@ const CURSORS: Record<Hit["kind"], string> = {
 
 /** Begins what a press at the screen point `(x, y)` does where the context's `hitAt` says it hits
  *  (ADR-0025): on a connector, where the host lets the user connect, a connection; on an edge
- *  label, a drag of it, its edge selected; on a node, a drag of it, the node selected; on an edge,
- *  a pan that waits for the slop, the edge selected; on nothing, a pan, the selection cleared. */
+ *  label, a drag of it, its edge selected; on a node, a drag of it that waits for the slop, or
+ *  within it a click, the node selected; on an edge, a pan that waits for the slop, the edge
+ *  selected; on nothing, a pan, the selection cleared. */
 function begin(context: Context, x: number, y: number, connect?: Connect): Gesture {
   const hit = context.hitAt(x, y);
   return (
@@ -100,19 +102,20 @@ export interface Interaction {
   detach(): void;
 }
 
-/** Wires pointer and wheel input on the canvas. */
+/** Wires pointer and wheel input on the canvas; a click on an element of a node's content is told
+ *  to `click`. */
 export function attachInteraction(
   app: Application,
   store: GraphStore,
   bridge: Bridge,
   connect?: Connect,
+  click: (click: ContentClick) => void = () => {},
 ): Interaction {
   const connecting = connect !== undefined;
   const hitAt = (x: number, y: number) => targetAt({ store, bridge }, x, y, connecting);
-  const context: Context = { store, bridge, pointer: { x: 0, y: 0 }, hitAt };
+  const context: Context = { store, bridge, pointer: { x: 0, y: 0 }, hitAt, click };
   let gesture: Gesture | null = null;
-  app.stage.eventMode = "static";
-  app.stage.hitArea = app.screen;
+  Object.assign(app.stage, { eventMode: "static", hitArea: app.screen });
   // The cursor shows what a press would do, and the connectors of the node under the pointer show
   // where a connection may begin, where the host lets the user connect.
   const hover = untilLost((event: FederatedPointerEvent) =>

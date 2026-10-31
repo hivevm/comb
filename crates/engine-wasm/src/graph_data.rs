@@ -25,8 +25,8 @@ use comb_engine::content::Fonts;
 use content::Cursor;
 pub(crate) use content::{COLUMN_LIMIT, Drawn, ROW_LIMIT, check_content_budget, role_of};
 pub use content::{
-    ContentColumns, ContentData, ContentInput, KindCode, MAX_COLUMNS, MAX_CONTENT_UNITS, MAX_ROWS,
-    RoleCode,
+    ContentColumns, ContentData, ContentInput, ElementHit, ElementKind, KindCode, MAX_COLUMNS,
+    MAX_CONTENT_UNITS, MAX_ROWS, RoleCode,
 };
 
 /// The most UTF-16 code units, the length JavaScript gives a string, of a text of node content or
@@ -200,9 +200,10 @@ pub enum TextRole {
     Caption,
 }
 
-/// One element of node content (ADR-0013): a text in a role, whose column takes its share of the
-/// row's width by `weight`, 1 where it is left out. Of the closed set of ADR-0013, only `text` is
-/// built so far; this type names exactly the kinds the bridge accepts. Its reading is
+/// One element of node content (ADR-0013): a text in a role, or an action, a text whose click
+/// reports its identifier `id` to the host application, each in a column that takes its share of
+/// the row's width by `weight`, 1 where it is left out. Of the closed set of ADR-0013, `text` and
+/// `action` are built so far; this type names exactly the kinds the bridge accepts. Its reading is
 /// `ContentInput`'s, which takes any value, so that what it refuses is named.
 #[derive(Tsify, Serialize, Debug, PartialEq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -210,6 +211,12 @@ pub enum ContentElement {
     Text {
         role: TextRole,
         text: String,
+        #[tsify(optional)]
+        weight: Option<f64>,
+    },
+    Action {
+        text: String,
+        id: String,
         #[tsify(optional)]
         weight: Option<f64>,
     },
@@ -1688,6 +1695,7 @@ pub(crate) const TEXT_INSIDE: &str = "a text of content ends inside a character"
 pub(crate) struct Loaded {
     pub graph: Graph,
     pub spans: Vec<(u32, u32, u32)>,
+    pub name_spans: Vec<(u32, u32, u32)>,
 }
 
 /// Checks a load and builds the engine's graph from it, its nodes and its edges as columns, each
@@ -1713,10 +1721,12 @@ pub(crate) fn load_of(
     let content = &nodes.content;
     let nodes = nodes_of(&batch, content, fonts)?;
     let spans = text_spans(content.texts, content.text_bounds)?;
+    let name_spans = text_spans(content.names, content.name_bounds)?;
     let edges = edges_of(&batch, &nodes.slots)?;
     Ok(Loaded {
         graph: Graph::new(nodes.positions, nodes.sizes, edges)?,
         spans,
+        name_spans,
     })
 }
 
@@ -2115,11 +2125,13 @@ impl OwnedColumns {
                 row_bounds: vec![0],
                 element_bounds: vec![0],
                 text_bounds: vec![0],
+                name_bounds: vec![0],
                 ..ContentData::default()
             },
             ..Self::default()
         };
         let mut texts = Vec::new();
+        let mut names = Vec::new();
         for (index, node) in nodes.into_iter().enumerate() {
             let index = index as u32;
             let mut refuse = |field, row, column| {
@@ -2160,11 +2172,12 @@ impl OwnedColumns {
                 }
                 column.push(value.0.unwrap_or(f64::NAN));
             }
-            columns.push_content(index, node.content.0.as_ref(), &mut texts);
+            columns.push_content(index, node.content.0.as_ref(), &mut texts, &mut names);
             columns.content.end_node();
         }
         columns.ids = pieces_of(&columns.ids, bound);
         columns.content.texts = pieces_of(&texts, bound);
+        columns.content.names = pieces_of(&names, bound);
         columns
     }
 
@@ -2175,6 +2188,7 @@ impl OwnedColumns {
         index: u32,
         content: Option<&ContentInput>,
         texts: &mut Vec<String>,
+        names: &mut Vec<String>,
     ) {
         let Some(content) = content else {
             self.refused.get_or_insert(Refused {
@@ -2198,7 +2212,7 @@ impl OwnedColumns {
                 column,
             });
         }
-        self.content.append(&content.data, texts);
+        self.content.append(&content.data, texts, names);
     }
 
     pub(crate) fn view(&self) -> NodeColumns<'_> {
@@ -2505,16 +2519,38 @@ pub(crate) mod tests {
         (KindCode::Text, 1.0, role, Some(text))
     }
 
+    /// An element of content with an identifier, as the tests write an action: the cell, and its
+    /// identifier, none for one of another type.
+    pub(crate) type Named<'a> = (Cell<'a>, Option<&'a str>);
+
     /// Content of `rows`, as the node of `addNode` crosses it.
     pub(crate) fn content(rows: &[&[Cell]]) -> ContentInput {
+        let rows: Vec<Vec<Named>> = rows
+            .iter()
+            .map(|row| row.iter().map(|&cell| (cell, None)).collect())
+            .collect();
+        let rows: Vec<&[Named]> = rows.iter().map(Vec::as_slice).collect();
+        named_content(&rows)
+    }
+
+    /// Content of `rows` of elements with identifiers, as the node of `addNode` crosses it.
+    pub(crate) fn named_content(rows: &[&[Named]]) -> ContentInput {
         let mut content = ContentInput::new();
         for row in rows {
-            for &(kind, weight, role, text) in *row {
-                content.push(kind, weight, role as u8, text);
+            for &((kind, weight, role, text), id) in *row {
+                content.push(kind, weight, role as u8, text, id);
             }
             content.end_row();
         }
         content
+    }
+
+    /// An action of weight 1 showing `text` and naming `id`.
+    pub(crate) const fn action<'a>(text: &'a str, id: &'a str) -> Named<'a> {
+        (
+            (KindCode::Action, 1.0, RoleCode::Title, Some(text)),
+            Some(id),
+        )
     }
 
     /// The content of a node of the time before content: one row of one title, `title`.
@@ -2770,6 +2806,100 @@ pub(crate) mod tests {
         let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
         data.nodes[1].content = content(&[&[(KindCode::Text, 1.0, RoleCode::Title, None)]]).into();
         assert_eq!(graph_of(&data).unwrap_err(), invalid_text("b", 0, 0));
+    }
+
+    #[test]
+    fn an_action_whose_identifier_is_no_string_or_too_long_names_its_node() {
+        // Verifies: ADR-0013, ADR-0034, Q-7
+        // A title and an action beside it, whose identifier is checked as a string of content is,
+        // against the limit of a text, after the action's text; through a load and through
+        // `addNode` alike.
+        let long = "d".repeat(MAX_TEXT + 1);
+        let held = "d".repeat(MAX_TEXT);
+        let with = |id: Option<&str>| {
+            let action = (
+                (KindCode::Action, 1.0, RoleCode::Title, Some("Details")),
+                id,
+            );
+            named_content(&[&[(text(RoleCode::Title, "Bet"), None), action]])
+        };
+        let field = |problem: GraphDataProblem| match problem {
+            GraphDataProblem::InvalidContentText {
+                node,
+                row,
+                column,
+                field,
+            } => (node, row, column, field, None),
+            GraphDataProblem::ContentTextTooLong {
+                node,
+                row,
+                column,
+                field,
+                limit,
+            } => (node, row, column, field, Some(limit)),
+            other => panic!("{other:?}"),
+        };
+        let cases = [(None, None), (Some(long.as_str()), Some(TEXT_LIMIT))];
+        for (id, limit) in cases {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+            data.nodes[1].content = with(id).into();
+            let refused = field(graph_of(&data).unwrap_err());
+            assert_eq!(refused, ("b".into(), 0, 1, "id".into(), limit));
+            let mut graph = graph_of(&batch(&[("a", 0.0, 0.0)], &[])).unwrap();
+            let node = added(0.0, 0.0, |node| node.content = with(id).into());
+            let refused = field(add(&mut graph, &node).unwrap_err());
+            assert_eq!(refused, ("n".into(), 0, 1, "id".into(), limit));
+        }
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+        data.nodes[1].content = with(Some(&held)).into();
+        assert!(graph_of(&data).is_ok());
+        // Its text is a text's: missing, it is refused as the field `text`.
+        let mut data = batch(&[("a", 0.0, 0.0)], &[]);
+        let no_text = ((KindCode::Action, 1.0, RoleCode::Title, None), Some("d"));
+        data.nodes[0].content = named_content(&[&[no_text]]).into();
+        assert_eq!(graph_of(&data).unwrap_err(), invalid_text("a", 0, 0));
+    }
+
+    #[test]
+    fn an_actions_identifier_counts_against_the_budget_of_a_loads_strings_of_content() {
+        // Verifies: ADR-0034, Q-7
+        // The budget lowered to 5 code units: `a`'s action of the text "ab" and the identifier
+        // "cde" holds it, and `b`'s title of 1 passes it.
+        content::TEST_BUDGET.set(Some(5));
+        let load = |b_text: &str| {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+            data.nodes[0].content = named_content(&[&[action("ab", "cde")]]).into();
+            data.nodes[1].content = titled(b_text);
+            graph_of(&data)
+        };
+        let held = load("");
+        let passed = load("b");
+        content::TEST_BUDGET.set(None);
+        assert!(held.is_ok(), "{:?}", held.err());
+        assert_eq!(
+            passed.err(),
+            Some(GraphDataProblem::ContentBudgetExceeded {
+                node: "b".into(),
+                limit: MAX_CONTENT_UNITS
+            })
+        );
+    }
+
+    #[test]
+    fn columns_of_names_that_do_not_follow_from_the_kinds_are_malformed() {
+        // Verifies: ADR-0034
+        // One action fills one text and one name: a name too many, or none, does not fit.
+        let mut columns = OwnedColumns::of([Some(&added(0.0, 0.0, |node| {
+            node.content = named_content(&[&[action("Details", "d")]]).into();
+        }))]);
+        assert!(columns.content.view().fit(1));
+        columns.content.name_valid.push(1);
+        columns.content.name_bounds.push(1);
+        assert!(!columns.content.view().fit(1));
+        columns.content.name_valid.clear();
+        columns.content.name_bounds = vec![0];
+        columns.content.names.clear();
+        assert!(!columns.content.view().fit(1));
     }
 
     /// The refusal of the text at `row` and `column` of the node `node` as no text.
@@ -3379,6 +3509,9 @@ pub(crate) mod tests {
                 texts: &[],
                 text_bounds: &text_bounds,
                 text_valid: &vec![1; count as usize],
+                names: &[],
+                name_bounds: &[0],
+                name_valid: &[],
             };
             let mut cursor = Cursor::default();
             let fonts = Fonts::default();
@@ -3941,6 +4074,9 @@ pub(crate) mod tests {
             c.texts.clone(),
             c.text_bounds.clone(),
             c.text_valid.clone(),
+            c.names.clone(),
+            c.name_bounds.clone(),
+            c.name_valid.clone(),
             n.refused.map(|r| r.index),
             n.refused.map(|r| r.field.into()),
             n.refused.and_then(|r| r.row),
