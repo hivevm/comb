@@ -43,7 +43,7 @@ const CASES: u32 = 10_000;
 
 /// A value as JavaScript hands it over: of any shape, whatever the field expects.
 #[derive(Clone, Debug)]
-enum Value {
+pub(super) enum Value {
     Null,
     Bool(bool),
     Number(f64),
@@ -1245,7 +1245,7 @@ fn the_check_for_rust_names_finds_them() {
 }
 
 /// The content of a node of the time before content: one row of one title, `title`.
-fn titled(title: &str) -> Value {
+pub(super) fn titled(title: &str) -> Value {
     let text = |value: &str| Value::Text(value.to_owned());
     let element = Value::Object(vec![
         ("kind".to_owned(), text("text")),

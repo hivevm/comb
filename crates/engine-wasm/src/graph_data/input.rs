@@ -13,6 +13,7 @@ use super::{ContentInput, Field};
 
 /// A node as the host application hands it over: its identifier, the position of its top-left
 /// corner, its width, and its content, from which the engine computes its height (ADR-0013).
+// The tests read each `Field` of it through `Refusable` in `snapshot`, which names them all.
 #[derive(Tsify, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeInput {
@@ -117,6 +118,7 @@ pub struct NodeContent(pub Vec<Vec<ContentElement>>);
 
 /// An edge label: its text, where it sits by path parameter `t` and label offset in pixels
 /// (G-6), and the colour of its background as `0xRRGGBB`, the edge's own without one.
+// The tests read each `Field` of it through `Refusable` in `snapshot`, which names them all.
 #[derive(Tsify, Deserialize, Clone, Copy)]
 pub struct LabelInput {
     #[tsify(type = "string")]
@@ -174,6 +176,7 @@ impl From<Side> for graph_side::Side {
 /// An edge between two nodes, named by their identifiers, with the style it is drawn with: its
 /// colour as `0xRRGGBB`, its dash pattern as dash and gap lengths in world units (none for a
 /// solid line), and whether an arrowhead marks its end (G-11).
+// The tests read each `Field` of it through `Refusable` in `snapshot`, which names them all.
 #[derive(Tsify, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct EdgeInput {

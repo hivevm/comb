@@ -517,3 +517,168 @@ impl ContentData {
         self.name_valid.extend(&node.name_valid);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::properties::{Value, titled};
+    use super::*;
+
+    /// `fields` as an object.
+    fn object(fields: &[(&str, Value)]) -> Value {
+        let owned = fields
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), value.clone()));
+        Value::Object(owned.collect())
+    }
+
+    /// `T` read of `fields` as an object.
+    fn read<T: for<'de> Deserialize<'de>>(fields: &[(&str, Value)]) -> T {
+        T::deserialize(object(fields)).unwrap_or_else(|error| panic!("an object refused: {error}"))
+    }
+
+    /// `fields` with the field `name` holding a value of another type, `false`.
+    fn wrong<'a>(fields: &[(&'a str, Value)], name: &str) -> Vec<(&'a str, Value)> {
+        let wrong = |(field, value): &(&'a str, Value)| {
+            let value = if *field == name {
+                Value::Bool(false)
+            } else {
+                value.clone()
+            };
+            (*field, value)
+        };
+        fields.iter().map(wrong).collect()
+    }
+
+    /// `fields` without the field `name`.
+    fn without<'a>(fields: &[(&'a str, Value)], name: &str) -> Vec<(&'a str, Value)> {
+        let kept = fields.iter().filter(|(field, _)| *field != name);
+        kept.cloned().collect()
+    }
+
+    /// Asserts that `T` read of `fields` holds no refused field, and that it holds one where any
+    /// field of `refusable` holds a value of another type or, where it is required, is left out.
+    fn assert_refusable<T: Refusable + for<'de> Deserialize<'de>>(
+        fields: &[(&str, Value)],
+        refusable: &[(&str, bool)],
+    ) {
+        assert!(!read::<T>(fields).refused());
+        for &(name, required) in refusable {
+            assert!(
+                read::<T>(&wrong(fields, name)).refused(),
+                "{name} of another type"
+            );
+            if required {
+                assert!(
+                    read::<T>(&without(fields, name)).refused(),
+                    "{name} left out"
+                );
+            }
+        }
+    }
+
+    /// An edge read as `addEdge` reads one, of the label `label`.
+    fn edge(label: Value) -> [(&'static str, Value); 9] {
+        let text = |value: &str| Value::Text(value.to_owned());
+        [
+            ("id", text("e")),
+            ("source", text("a")),
+            ("target", text("b")),
+            ("label", label),
+            ("color", Value::Number(0.0)),
+            (
+                "dash",
+                Value::List(vec![Value::Number(4.0), Value::Number(2.0)]),
+            ),
+            ("arrow", text("end")),
+            ("sourceSide", text("right")),
+            ("targetSide", text("left")),
+        ]
+    }
+
+    /// A label of a text, a place, and a background.
+    fn label() -> [(&'static str, Value); 4] {
+        [
+            ("text", Value::Text("l".to_owned())),
+            ("t", Value::Number(0.5)),
+            ("offset", Value::Number(0.0)),
+            ("background", Value::Number(0.0)),
+        ]
+    }
+
+    // A field added to an input fails to compile in the tests below until they and `Refusable`
+    // name it.
+
+    #[test]
+    fn every_field_of_a_node_is_refusable() {
+        let NodeInput {
+            id: _,
+            x: _,
+            y: _,
+            width: _,
+            content: _,
+        } = NodeInput::default();
+        let node = [
+            ("id", Value::Text("n".to_owned())),
+            ("x", Value::Number(0.0)),
+            ("y", Value::Number(0.0)),
+            ("width", Value::Number(100.0)),
+            ("content", titled("A")),
+        ];
+        let required = ["id", "x", "y", "width", "content"].map(|name| (name, true));
+        assert_refusable::<NodeInput>(&node, &required);
+    }
+
+    #[test]
+    fn every_field_of_an_edge_is_refusable() {
+        let EdgeInput {
+            id: _,
+            source: _,
+            target: _,
+            label: _,
+            color: _,
+            dash: _,
+            arrow: _,
+            source_side: _,
+            target_side: _,
+        } = EdgeInput::default();
+        // The label and the dash may be left out: none is no refused value.
+        let required = [
+            ("id", true),
+            ("source", true),
+            ("target", true),
+            ("label", false),
+            ("color", true),
+            ("dash", false),
+            ("arrow", true),
+            ("sourceSide", true),
+            ("targetSide", true),
+        ];
+        assert_refusable::<EdgeInput>(&edge(object(&label())), &required);
+    }
+
+    #[test]
+    fn the_place_of_an_edges_label_is_refusable_and_its_text_and_background_are_not() {
+        let read_with = |label: &[(&str, Value)]| read::<EdgeInput>(&edge(object(label)));
+        let LabelInput {
+            text_length: _,
+            t: _,
+            offset: _,
+            background: _,
+        } = read_with(&label()).label.0.flatten().expect("a label");
+        // A label's text and background are checked by its rules, not refused by their type.
+        let fields = [
+            ("t", true),
+            ("offset", true),
+            ("text", false),
+            ("background", false),
+        ];
+        for (name, refused) in fields {
+            let typed = read_with(&wrong(&label(), name)).refused();
+            assert_eq!(typed, refused, "label.{name} of another type");
+            if refused {
+                let left_out = read_with(&without(&label(), name)).refused();
+                assert!(left_out, "label.{name} left out");
+            }
+        }
+    }
+}
