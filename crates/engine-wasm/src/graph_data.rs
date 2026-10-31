@@ -24,7 +24,8 @@ mod content;
 use comb_engine::content::Fonts;
 use content::Cursor;
 pub(crate) use content::{
-    COLUMN_LIMIT, Drawn, ROW_LIMIT, SEGMENT_LIMIT, check_content_budget, role_of,
+    COLUMN_LIMIT, Checked, ContentStore, Drawn, ROW_LIMIT, SEGMENT_LIMIT, check_content_budget,
+    role_of,
 };
 pub use content::{
     ContentColumns, ContentData, ContentInput, DirectionCode, ElementHit, ElementKind, KindCode,
@@ -1861,27 +1862,23 @@ fn checked_content(
     content: &ContentData,
     fonts: &Fonts,
     held: u64,
-) -> Result<(ContentData, f32), GraphDataProblem> {
-    let height = content
-        .view()
-        .check(0, id, &mut Cursor::holding(held), fonts)?;
-    let mut kept = content.clone();
-    kept.map()?;
-    Ok((kept, kept_height(height)))
+) -> Result<(Checked, f32), GraphDataProblem> {
+    let (checked, height) = Checked::of(id, content, fonts, held)?;
+    Ok((checked, kept_height(height)))
 }
 
 /// Checks the node `addNode` hands over as a load checks a node, the only one of its batch at
 /// index 0, and adds it to `graph`, whose nodes in use stay within `MAX_ITEMS`, as high as its
 /// content lays out to in `fonts`, its strings of content counted against the budget on from
 /// `held`, the code units of content the graph holds; returns the slot the engine chose and the
-/// content it keeps. A refused node leaves the graph as it was. That the graph holds no node of
-/// its identifier is `api`'s to check, against the map only it keeps (ADR-0028).
+/// content it keeps, with its count. A refused node leaves the graph as it was. That the graph
+/// holds no node of its identifier is `api`'s to check, against the map only it keeps (ADR-0028).
 pub(crate) fn add_node_to(
     graph: &mut Graph,
     node: &NodeInput,
     fonts: &Fonts,
     held: u64,
-) -> Result<(u32, ContentData), GraphDataProblem> {
+) -> Result<(u32, Checked), GraphDataProblem> {
     let nodes = f64::from(graph.nodes_in_use()) + 1.0;
     check_graph_size(nodes, 0.0)?;
     let (node, content) = node_of(0, node)?;
@@ -2153,7 +2150,7 @@ pub(crate) fn patch_of(
     patch: &NodePatch,
     fonts: &Fonts,
     held: u64,
-) -> Result<Option<(ContentData, f32)>, GraphDataProblem> {
+) -> Result<Option<(Checked, f32)>, GraphDataProblem> {
     let mut checked = None;
     for (field, value) in &patch.0 {
         if field != "content" {
@@ -2955,7 +2952,7 @@ pub(crate) mod tests {
         let nodes = OwnedColumns::of(data.nodes.iter().map(Some));
         let none = OwnedEdgeColumns::of([]);
         assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
-        assert_eq!(engine.content_units, 6);
+        assert_eq!(engine.content.units(), 6);
         engine
     }
 
@@ -2995,8 +2992,8 @@ pub(crate) mod tests {
         assert_eq!(added, Err(past_budget("c")));
         assert_eq!(none, Ok(2));
         assert_eq!(engine.graph.nodes_in_use(), 3);
-        assert_eq!(engine.content_units, 6);
-        assert_eq!(engine.edited.keys().collect::<Vec<_>>(), [&2]);
+        assert_eq!(engine.content.units(), 6);
+        assert_eq!(engine.content.edited_slots(), [2]);
     }
 
     #[test]
@@ -3008,13 +3005,13 @@ pub(crate) mod tests {
         let grown = engine.update(1, "b", &patch_to(named_content(&[&[action("dex", "f")]])));
         let kept = (
             engine.graph.sizes().to_vec(),
-            engine.edited.len(),
-            engine.content_units,
+            engine.content.edited_slots().len(),
+            engine.content.units(),
         );
         // Two rows of as many code units, and then of fewer: taken.
         let rows = content(&[&[text(RoleCode::Title, "d")], &[text(RoleCode::Body, "ef")]]);
         let as_many = engine.update(1, "b", &patch_to(rows));
-        let after_as_many = engine.content_units;
+        let after_as_many = engine.content.units();
         let fewer = engine.update(1, "b", &patch_to(content(&[&[text(RoleCode::Title, "d")]])));
         // A patch of `a`, a loaded node, counts on from what the others hold: 4 of 3 + 1 = 6 fits.
         let a = engine.update(
@@ -3035,13 +3032,13 @@ pub(crate) mod tests {
         assert_eq!(fewer, Ok(()));
         assert_eq!(a, Ok(()));
         assert_eq!(past, Err(crate::CallRefusal::Data(past_budget("a"))));
-        assert_eq!(engine.content_units, 5);
+        assert_eq!(engine.content.units(), 5);
         let abcd = ContentElement::Text {
             role: TextRole::Title,
             text: "abcd".into(),
             weight: Some(1.0),
         };
-        assert_eq!(engine.edited[&0].content_of(0).0, [[abcd]]);
+        assert_eq!(engine.content.content_of(0).0, [[abcd]]);
     }
 
     #[test]
@@ -3051,10 +3048,10 @@ pub(crate) mod tests {
         // A removal that names a slot holding no node is refused and leaves the count.
         let no_node = Err(crate::SlotError::NoNode { slot: 99 });
         assert_eq!(engine.remove_nodes(&[0, 99]), no_node);
-        assert_eq!(engine.content_units, 6);
+        assert_eq!(engine.content.units(), 6);
         // `a` named twice leaves the count once.
         assert_eq!(engine.remove_nodes(&[0, 0]), Ok(Vec::new()));
-        let units = engine.content_units;
+        let units = engine.content.units();
         let three = engine.add(&node_of("c", content(&[&[text(RoleCode::Title, "xyz")]])));
         let one = engine.add(&node_of("d", content(&[&[text(RoleCode::Title, "x")]])));
         // An added node deleted frees its code units too.
@@ -3065,7 +3062,7 @@ pub(crate) mod tests {
         assert_eq!(three, Ok(0));
         assert_eq!(one, Err(past_budget("d")));
         assert_eq!(again, Ok(0));
-        assert_eq!(engine.content_units, 4);
+        assert_eq!(engine.content.units(), 4);
     }
 
     #[test]

@@ -18,8 +18,6 @@
 
 mod graph_data;
 
-use std::collections::HashMap;
-
 use comb_engine::content::{Cell, Font, Fonts, Placed};
 use comb_engine::geometry::Point;
 use comb_engine::geometry::Rect;
@@ -40,9 +38,9 @@ pub use graph_data::{
 };
 
 use graph_data::{
-    COLUMN_LIMIT, ContentData, Drawn, EdgeColumns, EdgeRefusal, ID_LIMIT, NodeColumns, ROW_LIMIT,
-    SEGMENT_LIMIT, TEXT_LIMIT, add_edge_to, add_node_to, edge_refused_of, load_of, malformed,
-    patch_of, refused_of, slot, unshaped, update_edge_in,
+    COLUMN_LIMIT, ContentData, ContentStore, Drawn, EdgeColumns, EdgeRefusal, ID_LIMIT,
+    NodeColumns, ROW_LIMIT, SEGMENT_LIMIT, TEXT_LIMIT, add_edge_to, add_node_to, edge_refused_of,
+    load_of, malformed, patch_of, refused_of, slot, unshaped, update_edge_in,
 };
 
 /// A number the shell computed that an export cannot take: the shell's own mistake, never one of
@@ -404,13 +402,8 @@ pub struct Engine {
     visible: Visible,
     ends: Vec<f32>,
     fonts: Fonts,
-    /// The content of the nodes of the last load, by slot.
-    content: ContentData,
-    /// The content of each node slot an addition or a patch gave content since the load.
-    edited: HashMap<u32, ContentData>,
-    /// The code units of the strings of content of the nodes the graph holds, the texts and the
-    /// names alike, which every edit holds to the budget a load is held to (ADR-0013).
-    content_units: u64,
+    /// The content of the nodes the graph holds and the code units of its strings (ADR-0013).
+    content: ContentStore,
     /// Of the nodes the last query found at the near or middle level, in its order, the
     /// boundaries of each one's elements in `placed`.
     content_bounds: Vec<u32>,
@@ -565,9 +558,7 @@ impl Engine {
         content.spans = loaded.spans;
         content.name_spans = loaded.name_spans;
         content.index_strings();
-        self.content = content;
-        self.edited.clear();
-        self.content_units = loaded.units;
+        self.content = ContentStore::of_load(content, loaded.units);
         self.visible = Visible::default();
         slot(x.len())
     }
@@ -591,11 +582,7 @@ impl Engine {
         if !self.graph.holds_node(slot) {
             return Err(CallRefusal::Slot(SlotError::NoNode { slot }));
         }
-        let content = match self.edited.get(&slot) {
-            Some(content) => content.content_of(0),
-            None => self.content.content_of(slot as usize),
-        };
-        Ts::from_rust(&content)
+        Ts::from_rust(&self.content.content_of(slot))
             .map_err(|_| malformed("the content could not be handed back").into())
     }
 
@@ -733,16 +720,8 @@ impl Engine {
     #[wasm_bindgen(js_name = removeNodes)]
     pub fn remove_nodes(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
         trap::spring();
-        // A slot named twice is removed once, and its content leaves the count once.
-        let mut removed = slots.to_vec();
-        removed.sort_unstable();
-        removed.dedup();
-        let units: u64 = removed.iter().map(|&slot| self.units_of(slot)).sum();
         let edges = self.graph.remove_nodes(slots)?;
-        for slot in slots {
-            self.edited.remove(slot);
-        }
-        self.content_units -= units;
+        self.content.remove(slots);
         Ok(edges)
     }
 
@@ -829,16 +808,16 @@ impl Engine {
 impl Engine {
     /// `addNode` of `node`, read: its strings of content counted on from those the graph holds.
     fn add(&mut self, node: &NodeInput) -> Result<u32, GraphDataProblem> {
-        let (slot, content) = add_node_to(&mut self.graph, node, &self.fonts, self.content_units)?;
-        self.content_units += content.units_of(0);
-        self.edited.insert(slot, content);
+        let (slot, content) =
+            add_node_to(&mut self.graph, node, &self.fonts, self.content.units())?;
+        self.content.set(slot, content);
         Ok(slot)
     }
 
     /// `updateNode` of the node `id` in `slot` by `patch`, read: its strings of content counted on
     /// from those the graph holds besides the node's.
     fn update(&mut self, slot: u32, id: &str, patch: &NodePatch) -> Result<(), CallRefusal> {
-        let held = self.content_units - self.units_of(slot);
+        let held = self.content.held_besides(slot);
         let Some((content, height)) = patch_of(id, patch, &self.fonts, held)? else {
             return Ok(());
         };
@@ -847,20 +826,8 @@ impl Engine {
         }
         graph_data::within_by_height(id, self.graph.positions()[slot as usize * 2 + 1], height)?;
         self.graph.resize_node(slot, height)?;
-        self.content_units = held + content.units_of(0);
-        self.edited.insert(slot, content);
+        self.content.set(slot, content);
         Ok(())
-    }
-
-    /// The code units of the strings of content of the node in `slot`, none where it holds none.
-    fn units_of(&self, slot: u32) -> u64 {
-        if !self.graph.holds_node(slot) {
-            return 0;
-        }
-        match self.edited.get(&slot) {
-            Some(content) => content.units_of(0),
-            None => self.content.units_of(slot as usize),
-        }
     }
 
     /// The element of the content of the node in `slot` whose rectangle holds `point`, of those
@@ -872,10 +839,7 @@ impl Engine {
         let at = slot as usize * 2;
         let [x, y] = [0, 1].map(|axis| f64::from(self.graph.positions()[at + axis]));
         let width = self.graph.sizes()[at];
-        let (content, node) = match self.edited.get(&slot) {
-            Some(content) => (content, 0),
-            None => (&self.content, slot as usize),
-        };
+        let (content, node) = self.content.of(slot);
         let (mut cells, mut rows, mut placed) = (Vec::new(), Vec::new(), Vec::new());
         content.element_at(
             node,
@@ -913,10 +877,8 @@ impl Engine {
             if !self.graph.holds_node(slot) {
                 continue;
             }
-            let height = match self.edited.get(&slot) {
-                Some(content) => content.height(0, &self.fonts),
-                None => self.content.height(slot as usize, &self.fonts),
-            };
+            let (content, node) = self.content.of(slot);
+            let height = content.height(node, &self.fonts);
             if self.graph.sizes()[slot as usize * 2 + 1] != height {
                 // A slot that holds a node, as the check above found, which no resize refuses.
                 let _ = self.graph.resize_node(slot, height);
@@ -937,10 +899,7 @@ impl Engine {
             let sizes = self.graph.sizes();
             for &slot in &self.visible.nodes {
                 let width = sizes[slot as usize * 2];
-                let (content, node) = match self.edited.get(&slot) {
-                    Some(content) => (content, 0),
-                    None => (&self.content, slot as usize),
-                };
+                let (content, node) = self.content.of(slot);
                 let fonts = &self.fonts;
                 let start = self.placed.len();
                 content.lay_out(node, width, fonts, &mut cells, &mut rows, &mut self.placed);
@@ -1526,7 +1485,7 @@ mod tests {
         )]);
         let (checked, height) = patch_of("b", &patch, &engine.fonts, 0).unwrap().unwrap();
         engine.graph.resize_node(1, height).unwrap();
-        engine.edited.insert(1, checked);
+        engine.content.set(1, checked);
         assert_eq!(
             element(&engine, 1, 320.0, 15.0, DetailLevel::Near),
             hit(0, 0, ElementKind::Action, Some("next"))
@@ -1864,7 +1823,7 @@ mod tests {
         let slot = 1;
         let (checked, height) = patch_of("b", &patch, &engine.fonts, 0).unwrap().unwrap();
         engine.graph.resize_node(slot, height).unwrap();
-        engine.edited.insert(slot, checked);
+        engine.content.set(slot, checked);
         assert_eq!(engine.graph.sizes()[2..], [100.0, 102.0]);
         near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
         // The long title is cut to 9 glyphs and an ellipsis within its column of 76.
@@ -1877,7 +1836,7 @@ mod tests {
             text: text.to_owned(),
             weight: Some(1.0),
         };
-        let rows = engine.edited[&slot].content_of(0).0;
+        let rows = engine.content.content_of(slot).0;
         assert_eq!(rows.len(), 5);
         assert_eq!(rows[0], [text(TextRole::Title, "abcdefghijklmnopqrst")]);
         assert_eq!(rows[4], [text(TextRole::Body, "b")]);
@@ -1920,7 +1879,7 @@ mod tests {
         let patch = NodePatch(vec![("content".to_owned(), content(&[]).into())]);
         let (checked, height) = patch_of("b", &patch, &engine.fonts, 0).unwrap().unwrap();
         engine.graph.resize_node(1, height).unwrap();
-        engine.edited.insert(1, checked);
+        engine.content.set(1, checked);
         near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
         assert_eq!(engine.content_bounds, [0, 1, 1]);
         assert_eq!(engine.graph.sizes()[3], 64.0);

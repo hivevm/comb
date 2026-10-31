@@ -2031,7 +2031,7 @@ proptest! {
                 }
             }
             let total: u64 = held.iter().map(|&(_, units)| units).sum();
-            prop_assert_eq!(engine.content_units, total);
+            prop_assert_eq!(engine.content.units(), total);
             prop_assert_eq!(engine.graph.nodes_in_use() as usize, held.len());
         }
         TEST_BUDGET.set(None);
