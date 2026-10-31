@@ -1,0 +1,58 @@
+{
+  "copies": 3334,
+  "headed": false,
+  "cpu": "Intel(R) Xeon(R) 6975P-C",
+  "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+  "reference": {
+    "ms": 577.0999999999767,
+    "js": 103.80000000004657,
+    "wasm": 103.70000000001164,
+    "gpu": 369.69999999995343
+  },
+  "load": {
+    "nodes": 50010,
+    "firstFrameMs": 336.29999999998836
+  },
+  "drag": {
+    "p95": 266.7999999999993,
+    "steps": 32,
+    "frames": 29,
+    "truncated": true
+  },
+  "pan": {
+    "p95": 233.3000000000029,
+    "steps": 36,
+    "frames": 37,
+    "truncated": true
+  },
+  "zoom": {
+    "p95": 216.60000000000582,
+    "steps": 49,
+    "frames": 49,
+    "truncated": true
+  },
+  "levels": {
+    "near": {
+      "pan": {
+        "p95": 133.40000000002328,
+        "steps": 61,
+        "frames": 62,
+        "truncated": true
+      }
+    },
+    "middle": {
+      "pan": {
+        "p95": 200,
+        "steps": 56,
+        "frames": 57,
+        "truncated": true
+      }
+    }
+  },
+  "edit": {
+    "p95": 100,
+    "steps": 120,
+    "frames": 120,
+    "truncated": false
+  }
+}
