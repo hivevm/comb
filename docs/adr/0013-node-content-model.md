@@ -50,7 +50,11 @@ registers and colours given as numbers.
   the pointer has moved beyond it, the node is dragged from the press and no click is reported.
   The engine's hit test names the element whose rectangle holds the point, of those drawn at the
   level of detail: at *near* every element, at *middle* the texts of role title, at *far* none; a
-  press on the padding or between elements selects the node and reports no click.
+  press on the padding or between elements selects the node and reports no click. An element is
+  hit across the whole rectangle of its cell, not only where its glyphs are drawn. The element
+  reported is the one under the release, asked anew, since the host application may change the
+  node's content when it hears of the selection; a release off that node or off its elements, a
+  release outside the canvas, and a cancelled pointer report none.
 - **Layout:** the host application gives a node's width; the engine computes each row's height,
   each element's rectangle, and where each text is truncated, and the node's height from its rows.
   A row is as high as its tallest element, and a row's columns share its width by their weights,
