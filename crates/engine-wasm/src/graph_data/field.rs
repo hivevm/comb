@@ -1,6 +1,5 @@
 //! The lenient reading of a field the host application hands over: a value of another type is
-//! kept as none, so that the bridge refuses it by name rather than as malformed data, and a value
-//! of another shape than a reader of content reads, a list or an object, read as none too.
+//! kept as none, so that the bridge refuses it by name rather than as malformed data.
 
 #[cfg(test)]
 use std::fmt;
@@ -10,58 +9,6 @@ use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer};
 
 use super::utf16_length;
-
-/// The methods of a lenient visitor for every shape but the one it reads, a list or an object,
-/// each read as `$other` of the type `$value`: a boolean, a number, a string, null, and undefined,
-/// and the list or the object, `$drained`, `seq` or `map`, whose items it reads past unread. A
-/// value of `Option` is read for what it holds.
-macro_rules! other_shapes {
-    ($de:lifetime, $value:ty, $other:expr, $drained:ident) => {
-        fn visit_bool<E>(self, _: bool) -> Result<$value, E> {
-            Ok($other)
-        }
-        fn visit_i64<E>(self, _: i64) -> Result<$value, E> {
-            Ok($other)
-        }
-        fn visit_u64<E>(self, _: u64) -> Result<$value, E> {
-            Ok($other)
-        }
-        fn visit_f64<E>(self, _: f64) -> Result<$value, E> {
-            Ok($other)
-        }
-        fn visit_str<E>(self, _: &str) -> Result<$value, E> {
-            Ok($other)
-        }
-        fn visit_unit<E>(self) -> Result<$value, E> {
-            Ok($other)
-        }
-        fn visit_none<E>(self) -> Result<$value, E> {
-            Ok($other)
-        }
-        fn visit_some<D: serde::Deserializer<$de>>(
-            self,
-            deserializer: D,
-        ) -> Result<$value, D::Error> {
-            deserializer.deserialize_any(self)
-        }
-        other_shapes!(@drain $de, $value, $other, $drained);
-    };
-    (@drain $de:lifetime, $value:ty, $other:expr, seq) => {
-        fn visit_seq<A: serde::de::SeqAccess<$de>>(self, mut seq: A) -> Result<$value, A::Error> {
-            while seq.next_element::<serde::de::IgnoredAny>()?.is_some() {}
-            Ok($other)
-        }
-    };
-    (@drain $de:lifetime, $value:ty, $other:expr, map) => {
-        fn visit_map<A: serde::de::MapAccess<$de>>(self, mut map: A) -> Result<$value, A::Error> {
-            use serde::de::IgnoredAny;
-            while map.next_entry::<IgnoredAny, IgnoredAny>()?.is_some() {}
-            Ok($other)
-        }
-    };
-}
-
-pub(super) use other_shapes;
 
 /// The length in UTF-16 code units of a field the engine does not keep, or none where it holds
 /// no string. A value of another type is refused naming its node or edge and the field, not as

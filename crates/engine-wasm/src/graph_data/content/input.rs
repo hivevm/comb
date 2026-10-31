@@ -10,7 +10,56 @@ use serde::{Deserialize, Deserializer};
 use super::codes::{direction_code, filled, kind_code, role_code};
 use super::{ContentData, DirectionCode, KindCode, RoleCode, numbered, utf16_length};
 use crate::graph_data::Field;
-use crate::graph_data::field::other_shapes;
+
+/// The methods of a lenient visitor for every shape but the one it reads, a list or an object,
+/// each read as `$other` of the type `$value`: a boolean, a number, a string, null, and undefined,
+/// and the list or the object, `$drained`, `seq` or `map`, whose items it reads past unread. A
+/// value of `Option` is read for what it holds.
+macro_rules! other_shapes {
+    ($de:lifetime, $value:ty, $other:expr, $drained:ident) => {
+        fn visit_bool<E>(self, _: bool) -> Result<$value, E> {
+            Ok($other)
+        }
+        fn visit_i64<E>(self, _: i64) -> Result<$value, E> {
+            Ok($other)
+        }
+        fn visit_u64<E>(self, _: u64) -> Result<$value, E> {
+            Ok($other)
+        }
+        fn visit_f64<E>(self, _: f64) -> Result<$value, E> {
+            Ok($other)
+        }
+        fn visit_str<E>(self, _: &str) -> Result<$value, E> {
+            Ok($other)
+        }
+        fn visit_unit<E>(self) -> Result<$value, E> {
+            Ok($other)
+        }
+        fn visit_none<E>(self) -> Result<$value, E> {
+            Ok($other)
+        }
+        fn visit_some<D: serde::Deserializer<$de>>(
+            self,
+            deserializer: D,
+        ) -> Result<$value, D::Error> {
+            deserializer.deserialize_any(self)
+        }
+        other_shapes!(@drain $de, $value, $other, $drained);
+    };
+    (@drain $de:lifetime, $value:ty, $other:expr, seq) => {
+        fn visit_seq<A: serde::de::SeqAccess<$de>>(self, mut seq: A) -> Result<$value, A::Error> {
+            while seq.next_element::<serde::de::IgnoredAny>()?.is_some() {}
+            Ok($other)
+        }
+    };
+    (@drain $de:lifetime, $value:ty, $other:expr, map) => {
+        fn visit_map<A: serde::de::MapAccess<$de>>(self, mut map: A) -> Result<$value, A::Error> {
+            use serde::de::IgnoredAny;
+            while map.next_entry::<IgnoredAny, IgnoredAny>()?.is_some() {}
+            Ok($other)
+        }
+    };
+}
 
 /// Where the snapshot found a shape of content it cannot flatten in a node: the row, and below a
 /// row the column, of a row that is no list, an element that is no object, or a progress bar's
