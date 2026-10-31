@@ -47,21 +47,7 @@ pub(super) fn lengths(bounds: &[u32]) -> impl Iterator<Item = usize> + '_ {
 pub(super) fn value_at(pieces: &[String], bounds: &[u32], index: usize) -> String {
     let (start, end) = (bounds[index] as usize, bounds[index + 1] as usize);
     let mut value = String::new();
-    if start == end {
-        return value;
-    }
-    // The piece the value lies in: the first that ends at or after its end.
-    let mut base = 0;
-    let mut holding = None;
-    for piece in pieces {
-        let units = utf16_length(piece);
-        if end <= base + units {
-            holding = Some(piece);
-            break;
-        }
-        base += units;
-    }
-    let Some(piece) = holding else {
+    let Some((piece, base)) = holding(pieces, (start, end), utf16_length) else {
         return value;
     };
     let (start, end) = (start - base, end - base);
@@ -94,10 +80,7 @@ pub(super) fn values<'a>(
     let spans = spans(pieces, bounds, "an identifier ends inside a character")?;
     Ok(spans
         .into_iter()
-        .map(|(piece, start, end)| match pieces.get(piece as usize) {
-            Some(text) => &text[start as usize..end as usize],
-            None => "",
-        })
+        .map(|span| spanned(pieces, span))
         .collect())
 }
 
@@ -195,8 +178,12 @@ pub(super) fn string_at<'a>(
     if spans.is_empty() {
         return ascii_at(pieces, bounds, index);
     }
-    let (piece, start, end) = spans[index];
-    // An empty string past the last piece, or in a column of no pieces, lies in none.
+    spanned(pieces, spans[index])
+}
+
+/// The string `span` names, its piece and its byte range there; an empty string past the last
+/// piece, or in a column of no pieces, lies in none.
+fn spanned(pieces: &[String], (piece, start, end): (u32, u32, u32)) -> &str {
     pieces
         .get(piece as usize)
         .map_or("", |piece| &piece[start as usize..end as usize])
@@ -205,18 +192,30 @@ pub(super) fn string_at<'a>(
 /// The string at `index` of ASCII pieces, at its code units in the piece it lies in.
 fn ascii_at<'a>(pieces: &'a [String], bounds: &[u32], index: usize) -> &'a str {
     let (start, end) = (bounds[index] as usize, bounds[index + 1] as usize);
+    holding(pieces, (start, end), str::len)
+        .map_or("", |(piece, base)| &piece[start - base..end - base])
+}
+
+/// The piece a value of a string column from `start` to `end` lies in, the first that ends at or
+/// after its end, each piece as long as `units` counts it, and where the piece starts in the
+/// column; none for an empty value, which lies in no piece, and for one past the last piece.
+fn holding(
+    pieces: &[String],
+    (start, end): (usize, usize),
+    units: impl Fn(&str) -> usize,
+) -> Option<(&str, usize)> {
+    if start == end {
+        return None;
+    }
     let mut base = 0;
     for piece in pieces {
-        // A string no longer than nothing lies in no piece; any other lies whole in one.
-        if start == end {
-            break;
+        let length = units(piece);
+        if end <= base + length {
+            return Some((piece, base));
         }
-        if end <= base + piece.len() {
-            return &piece[start - base..end - base];
-        }
-        base += piece.len();
+        base += length;
     }
-    ""
+    None
 }
 
 // The malformed-data tests of graph data verify ADR-0034 (see `graph_data::tests`).
