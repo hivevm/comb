@@ -72,9 +72,38 @@ registers and colours given as numbers.
 - **No URLs in graph data:** an icon is named, never located; an `action` carries an identifier,
   never a link. The host application turns either into whatever it means. It registers an icon's
   image as an object it has already loaded, never as a URL Comb would fetch (Q-6).
+- **Hit test:** this ADR takes over the clauses of ADR-0025 below and supersedes it on its
+  acceptance. The engine answers every hit test from its spatial index, in one call that takes a
+  world point, the size of a screen pixel, the level of detail, and whether to look for
+  connectors, and returns the target drawn on top there: a connector, else an edge label, else a
+  node, with the element of its content under the point, else an edge, else none.
+  - **Connector:** within 8 screen pixels of its point, at the near and the middle level, the
+    node and side it belongs to (ADR-0024). The shell asks for connectors only where a connection
+    can begin, where `CombOptions.canConnect` is set (ADR-0023); otherwise the call hits none, and
+    a press there finds what lies beneath.
+  - **Edge label:** at the near level only, where labels are drawn, the label whose pill holds
+    the point. The shell hands the engine the half width and half height of each label's pill, in
+    world units, when it draws the label's text and whenever that text changes; a label the shell
+    has not measured is not hit.
+  - **Node:** inside its bounds, at every level, and of its content the element drawn there
+    (*Clicks*).
+  - **Edge:** within 4 screen pixels of its path as the stroke flattens it at the current zoom,
+    at every level.
+  - **On top:** within one kind, the item drawn last: the node of the highest rank (ADR-0022),
+    and the edge or label in the highest slot.
+  - **One call:** the result crosses as one generated structured value (ADR-0010) naming the kind
+    and the slot, for a connector its side, and for a node the element hit. Interaction calls it
+    on press, on hover, and on the release of a press on a node, and draws the cursor from it.
+  - **What a press does:** on a connector it begins a connection; on an edge label it selects the
+    label's edge and begins a drag of the label; on a node it selects the node, and once the
+    pointer has moved more than 4 screen pixels from the press, begins a drag of it, a release
+    before that being a click (*Clicks*); on an edge it selects the edge, and once the pointer has
+    moved more than 4 screen pixels from the press, begins a pan from it, so that a canvas dense
+    with edges still pans by dragging; on none it clears the selection and begins a pan.
 
 **Out of scope:** elements beyond the six, each a revision of this ADR; a callback in which the
-host application draws; styling beyond colours and roles, such as fonts per node.
+host application draws; styling beyond colours and roles, such as fonts per node; a selection of
+more than one item; hitting an edge's arrowhead apart from its path.
 
 ## Alternatives considered
 
@@ -120,3 +149,21 @@ node's content. A test in `packages/comb/src/content-types.test.ts` asserts that
 TypeScript type of node content admits exactly the element kinds built, each kind's ticket adding
 its own until it admits the six. Each cites this ADR with `Verifies:
 ADR-0013`, and the first also `Verifies: Q-4`.
+
+The tests of the hit test verify its clauses here too; they cite `Verifies: ADR-0025` until this
+ADR supersedes it:
+
+- **Against a scan:** a test of `crates/engine/src/graph.rs` hits random points of random graphs
+  with labels and connectors, at each level, and asserts the target a brute-force scan finds in
+  the order of the decision, the distance to an edge measured to its flattened path.
+- **Precedence:** browser tests in `examples/metric-tree/e2e/` press on a label above a node, on
+  a connector on a node, on a node above an edge, on an edge, and on the empty canvas, and assert
+  what is selected or dragged; they also `Verifies: G-5, G-6`.
+- **Connectors asked for:** a browser test asserts that a press on a connector without
+  `canConnect` begins no connection, and one asks `hitKind` beside a connector with and without
+  connectors and asserts a connector only where they are asked for.
+- **Unmeasured labels:** a test asserts that a label without extents is not hit, and one with
+  them is hit inside its pill and not beyond it.
+- **The slop of a press:** `packages/comb/src/interaction/interaction.test.ts` asserts that a
+  press on an edge pans and a press on a node drags only beyond 4 screen pixels, and
+  `examples/metric-tree/e2e/content-click.spec.ts` that a release within them clicks.
