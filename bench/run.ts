@@ -5,16 +5,17 @@
 // and the graph edited one edit a frame, a node and an edge added and removed again (ADR-0022).
 // It times them first at the view the example opens with, the whole graph fitted, as the
 // baselines recorded before the levels were measured did, the zoom from there crossing every
-// level; then at each level of detail (ADR-0027), centred in the graph: near and middle at the
-// scale where each begins, the least it draws at and so the most it binds, and far at the fitted
-// view's, where every node is in view; the zoom at a level stays within it. Only frames in which
-// Comb rendered count; each action is checked for its effect, so a gesture that missed fails the
-// run instead of measuring idle frames. Before the gestures it times the reference workload of
-// bench/reference.ts in the same page, by which bench/compare.ts tells whether the runner is in
-// the state its kind's baseline was taken in; the CPU model it records names the runner's kind,
-// the content the example counts names what was loaded, and each gesture records the steps it
-// sent and the frames Comb rendered. The numbers go to bench-results/latest.json and are printed
-// beside the targets.
+// level; then at each level of detail (ADR-0027), centred in the graph, the pans first: near and
+// middle at the scale where each begins, the least it draws at and so the most it binds. Where
+// the fitted view draws the far level, as at 50,000 nodes, its drag, pan, and edits are far's and
+// far adds only its zoom; otherwise every gesture is timed at far as well. The zoom at a level
+// stays within it. Only frames in which Comb rendered count; each action is checked for its
+// effect, so a gesture that missed fails the run instead of measuring idle frames. Before the
+// gestures it times the reference workload of bench/reference.ts in the same page, by which
+// bench/compare.ts tells whether the runner is in the state its kind's baseline was taken in; the
+// CPU model it records names the runner's kind, the content the example counts names what was
+// loaded, and each gesture records the steps it sent and the frames Comb rendered. The numbers go
+// to bench-results/latest.json and are printed beside the targets.
 //
 //   bun run bench                   headless Chromium, software WebGL
 //   BENCH_HEADED=1 bun run bench    a visible window, which uses the machine's GPU
@@ -340,18 +341,24 @@ async function wheelFor(page: Page, at: Point, factor: number): Promise<number> 
   return (WHEEL * Math.log(factor)) / Math.log(by) / (STEPS / 2);
 }
 
-/** Every gesture at `level`, each from the level's scale, centred on `middle`: the pan first, as
- *  the baselines recorded before the other gestures at a level timed it alone, then the drag, the
- *  zoom, in from just above the level's scale towards its upper bound and out again, and the
- *  edits. */
-async function atLevel(page: Page, middle: Point, level: Level) {
-  const { name, scale, within } = level;
+/** Shows `middle` at `level`'s scale, checked for drawing that level. */
+async function toLevel(page: Page, middle: Point, { name, scale }: Level): Promise<void> {
   await centreAt(page, middle, scale);
   const drawn = await page.evaluate(() => window.inspect().level);
   if (drawn !== name) throw new Error(`at scale ${scale} the scene draws ${drawn}, not ${name}`);
-  const pan = await panGesture(page, `pan ${name}`);
-  await centreAt(page, middle, scale);
-  const dragged = await dragGesture(page, `drag ${name}`);
+}
+
+/** The pan at `level`, from the level's scale, centred on `middle`. */
+async function panAtLevel(page: Page, middle: Point, level: Level): Promise<Measure> {
+  await toLevel(page, middle, level);
+  return panGesture(page, `pan ${level.name}`);
+}
+
+/** The zoom at `level`, in from just above the level's scale towards its upper bound and out
+ *  again, around the centre of the canvas, centred on `middle`. */
+async function zoomAtLevel(page: Page, middle: Point, level: Level): Promise<Measure> {
+  const { name, scale, within } = level;
+  await toLevel(page, middle, level);
   // Off the level's lower bound by a hundredth and short of its upper one by a twentieth, so that
   // the rounding of the way in and out again cannot leave the level.
   const from = Math.max(scale, within[0] * 1.01);
@@ -359,10 +366,18 @@ async function atLevel(page: Page, middle: Point, level: Level) {
   const box = (await page.locator("#canvas canvas").boundingBox())!;
   const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   const wheel = await wheelFor(page, centre, (within[1] * 0.95) / from);
-  const zoomed = await zoomGesture(page, centre, `zoom ${name}`, wheel, within);
-  await centreAt(page, middle, scale);
-  const edited = await editGesture(page, `edit ${name}`);
-  return { scale, pan, drag: dragged, zoom: zoomed, edit: edited };
+  return zoomGesture(page, centre, `zoom ${name}`, wheel, within);
+}
+
+/** The drag, the zoom, and the edits at `level`, each from the level's scale, centred on
+ *  `middle`. */
+async function restAtLevel(page: Page, middle: Point, level: Level) {
+  await toLevel(page, middle, level);
+  const dragged = await dragGesture(page, `drag ${level.name}`);
+  const zoomed = await zoomAtLevel(page, middle, level);
+  await toLevel(page, middle, level);
+  const edited = await editGesture(page, `edit ${level.name}`);
+  return { drag: dragged, zoom: zoomed, edit: edited };
 }
 
 /** A point on the canvas, near its top left, where a press hits nothing, no connector, label,
@@ -403,26 +418,40 @@ async function atFittedView(page: Page) {
   return { node, dragged, pan, zoomed, edited };
 }
 
-/** The gestures at each level of detail, centred on `middle`. Near reaches up to the largest
- *  scale Comb zooms to, and four times where it begins stays below it; far is timed at the scale
- *  of the fitted view, `fitted`, where every node is in view, or at half where far begins for a
- *  graph whose fitted view is nearer. */
+/** The gestures at each level of detail, centred on `middle`, the pans first, so that the pans at
+ *  near and middle follow the gestures at the fitted view, as when their baselines were taken.
+ *  Near reaches up to the largest scale Comb zooms to, and four times where it begins stays below
+ *  it. Where the fitted view, of scale `fitted`, draws the far level, the gestures at the fitted
+ *  view are those of far, and far adds only its zoom, which stays within far; otherwise, for a
+ *  graph whose fitted view is nearer, every gesture is timed at far at half where far begins. */
 async function atEveryLevel(page: Page, middle: Point, fitted: number) {
   const begins = await page.evaluate(() => window.sceneNumbers());
-  const far = Math.min(fitted, begins.far / 2);
-  return {
-    near: await atLevel(page, middle, {
-      name: "near",
-      scale: begins.near,
-      within: [begins.near, begins.near * 4],
-    }),
-    middle: await atLevel(page, middle, {
-      name: "middle",
-      scale: begins.far,
-      within: [begins.far, begins.near],
-    }),
-    far: await atLevel(page, middle, { name: "far", scale: far, within: [far, begins.far] }),
+  const fittedIsFar = fitted < begins.far;
+  const farScale = fittedIsFar ? fitted : begins.far / 2;
+  const near: Level = { name: "near", scale: begins.near, within: [begins.near, begins.near * 4] };
+  const middleLevel: Level = {
+    name: "middle",
+    scale: begins.far,
+    within: [begins.far, begins.near],
   };
+  const far: Level = { name: "far", scale: farScale, within: [farScale, begins.far] };
+  const pans = {
+    near: await panAtLevel(page, middle, near),
+    middle: await panAtLevel(page, middle, middleLevel),
+    far: fittedIsFar ? undefined : await panAtLevel(page, middle, far),
+  };
+  const levels = {
+    near: { scale: near.scale, pan: pans.near, ...(await restAtLevel(page, middle, near)) },
+    middle: {
+      scale: middleLevel.scale,
+      pan: pans.middle,
+      ...(await restAtLevel(page, middle, middleLevel)),
+    },
+    far: fittedIsFar
+      ? { scale: far.scale, zoom: await zoomAtLevel(page, middle, far) }
+      : { scale: far.scale, pan: pans.far, ...(await restAtLevel(page, middle, far)) },
+  };
+  return { fittedIsFar, levels };
 }
 
 async function measure(page: Page) {
@@ -458,11 +487,14 @@ async function measure(page: Page) {
   const fitted = await viewport(page);
   const middle = await graphMiddle(page);
   const { node, dragged, pan, zoomed, edited } = await atFittedView(page);
-  const levels = await atEveryLevel(page, middle, fitted.scale);
+  const { fittedIsFar, levels } = await atEveryLevel(page, middle, fitted.scale);
   if (errors.length) throw new Error(`the example failed: ${errors.join("; ")}`);
   return {
     load,
     gpu,
+    // The scale of the fitted view, and the level it draws: far, its drag, pan, and edits those
+    // of the far level, or another, for a graph small enough.
+    fitted: { scale: fitted.scale, level: fittedIsFar ? "far" : "nearer than far" },
     reference,
     node: node.id,
     drag: dragged,
@@ -494,10 +526,14 @@ function report(result: Awaited<ReturnType<typeof measure>>): void {
   ];
   console.log(`${result.load.nodes} nodes, ${result.load.edges} edges — GPU: ${result.gpu}`);
   console.log(`content: ${contentOf(result.load.content)}`);
-  const { near, middle, far } = result.levels;
+  const { fitted, levels } = result;
+  const draws =
+    fitted.level === "far" ? "the far level: drag, pan, and edit are far's" : "nearer than far";
   console.log(
-    "drag, pan, zoom, and edit at the fitted view, then at each level: " +
-      `near at scale ${near.scale}, middle at ${middle.scale}, far at ${far.scale.toPrecision(3)}`,
+    `drag, pan, zoom, and edit at the fitted view, scale ${fitted.scale.toPrecision(3)}, ` +
+      `which draws ${draws}; ` +
+      `near at scale ${levels.near.scale}, middle at ${levels.middle.scale}, ` +
+      `far at ${levels.far.scale.toPrecision(3)}`,
   );
   for (const [name, value, target, m] of rows) {
     const note = m?.truncated

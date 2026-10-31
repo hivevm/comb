@@ -50,8 +50,9 @@ interface AtLevel<G> {
   edit?: G;
 }
 
-/** The gestures of a run, at the view the example opens with and at each level of detail. */
-type Levels<G> = { near: AtLevel<G>; middle: AtLevel<G>; far?: AtLevel<G> };
+/** The gestures of a run at each level of detail. Where the fitted view the example opens with
+ *  draws far, its gestures are far's, and far holds the zoom alone. */
+type Levels<G> = { near: AtLevel<G>; middle: AtLevel<G>; far?: Partial<AtLevel<G>> };
 
 /** The content a run loaded, as the example counts it: nodes by type, elements by kind. */
 export interface Content {

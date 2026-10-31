@@ -564,10 +564,13 @@ describe("the edit gesture", () => {
   });
 });
 
-/** `run` with every gesture timed at every level of detail, each at `p95`. */
-function everyLevel(base: Run, p95: number): Run {
+/** `run` with every gesture timed at every level of detail, each at `p95`, as at 50,010 nodes,
+ *  whose fitted view draws far: its gestures are far's, and far adds the zoom alone; or, where
+ *  `small`, as a graph whose fitted view is nearer, every gesture at far as well. */
+function everyLevel(base: Run, p95: number, small = false): Run {
   const at = () => ({ drag: { p95 }, pan: { p95 }, zoom: { p95 }, edit: { p95 } });
-  return { ...base, edit: { p95 }, levels: { near: at(), middle: at(), far: at() } };
+  const far = small ? at() : { zoom: { p95 } };
+  return { ...base, edit: { p95 }, levels: { near: at(), middle: at(), far } };
 }
 
 /** The content of the example's metric tree at 3,334 copies, as it counts it. */
@@ -586,14 +589,25 @@ const CONTENT = {
 describe("the gestures at each level of detail", () => {
   test("are named by gesture and level, after those at the view the example opens with", () => {
     // Verifies: ADR-0008, ADR-0027
+    const each = (level: string) =>
+      ["drag", "pan", "zoom", "edit"].map((gesture) => `${gesture} ${level}`);
     expect(gestures(everyLevel(run(200, 100), 100)).map(([name]) => name)).toEqual([
       "drag",
       "pan",
       "zoom",
       "edit",
-      ...["near", "middle", "far"].flatMap((level) =>
-        ["drag", "pan", "zoom", "edit"].map((gesture) => `${gesture} ${level}`),
-      ),
+      ...each("near"),
+      ...each("middle"),
+      "zoom far",
+    ]);
+    expect(gestures(everyLevel(run(200, 100), 100, true)).map(([name]) => name)).toEqual([
+      "drag",
+      "pan",
+      "zoom",
+      "edit",
+      ...each("near"),
+      ...each("middle"),
+      ...each("far"),
     ]);
   });
 
@@ -602,17 +616,18 @@ describe("the gestures at each level of detail", () => {
     const verdict = compare(everyLevel(run(200, 100), 1000), run(200, 1000));
     expect(verdict).toMatchObject({ kind: "compared", regressions: [] });
     const { lines } = verdict as { lines: string[] };
-    expect(lines).toContain("drag far p95 (ms): 1000.0, no baseline");
+    expect(lines).toContain("zoom far p95 (ms): 1000.0, no baseline");
     expect(lines).toContain(
       "new, not in the baseline: edit, drag near, zoom near, edit near, drag middle, " +
-        "zoom middle, edit middle, drag far, pan far, zoom far, edit far",
+        "zoom middle, edit middle, zoom far",
     );
     // The gestures the baseline has are judged as before.
     const slower = compare(everyLevel(run(200, 1300), 1300), run(200, 1000));
     expect((slower as { regressions: string[] }).regressions).toHaveLength(5);
     // Against a baseline that has them, none is new and each is judged.
     const judged = compare(everyLevel(run(200, 100), 130), everyLevel(run(200, 100), 100));
-    expect((judged as { regressions: string[] }).regressions).toHaveLength(13);
+    // The edits, four gestures at near and at middle each, and the zoom at far.
+    expect((judged as { regressions: string[] }).regressions).toHaveLength(10);
     expect((judged as { lines: string[] }).lines.join("\n")).not.toContain("new, not in");
   });
 
@@ -634,7 +649,9 @@ describe("the gestures at each level of detail", () => {
       );
     }
   });
+});
 
+describe("the median of the gestures at each level", () => {
   test("the median keeps a level and a gesture at it only where every run timed it", () => {
     // Verifies: ADR-0008
     const full = everyLevel(run(200, 100), 50);
