@@ -1181,8 +1181,8 @@ pub enum GraphDataProblem {
     /// `node` is the node whose string passed it.
     #[serde(rename_all = "camelCase")]
     ContentBudgetExceeded { node: String, limit: u32 },
-    /// The colour of a badge or of a metric's trend of a node's content, or of the segment at `segment` of a progress
-    /// bar, is not an integer from `0` to `0xFFFFFF`.
+    /// The colour of a badge or of a metric's trend of a node's content, or of the segment at
+    /// `segment` of a progress bar, is not an integer from `0` to `0xFFFFFF`.
     #[serde(rename_all = "camelCase")]
     InvalidContentColor {
         node: String,

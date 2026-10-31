@@ -4,18 +4,18 @@
 //! element's rectangle, where each text is cut and an ellipsis drawn after it, and the node's
 //! height from its rows; the rest of the engine takes that height as the node's.
 //!
-//! The elements `text`, `action`, `badge`, `progress`, and `metric` exist so far; each further
-//! kind of ADR-0013 joins `Element` with the ticket that builds it. An action is a text in the font of role
-//! body; what it names is the bridge's to keep, since the layout reads none of it. A badge is a
-//! text in the font of role body on a pill, whose rectangle is the badge's: it hugs the text as far
-//! as it is drawn, padded as an edge label's pill is, and stays within its column; its colour is
-//! the bridge's to keep. A progress bar fills its column and a line of the body's height, its
+//! The elements `text`, `action`, `badge`, `progress`, and `metric` exist so far; each further kind
+//! of ADR-0013 joins `Element` with the ticket that builds it. An action is a text in the font of
+//! role body; what it names is the bridge's to keep, since the layout reads none of it. A badge is
+//! a text in the font of role body on a pill, whose rectangle is the badge's: it hugs the text as
+//! far as it is drawn, padded as an edge label's pill is, and stays within its column; its colour
+//! is the bridge's to keep. A progress bar fills its column and a line of the body's height, its
 //! cell, and its bar, `BAR_HEIGHT` high, lies in the middle of that line, cut into its segments
 //! from the column's left by their fractions and the rest of the bar its track (`bar`); the
-//! segments' colours are the bridge's to keep. A metric fills its column and two lines, its
-//! cell: the caption's line in the font of role caption, and below it the value's in the body's,
-//! which holds the value at the column's left, its trend's arrow after it, and the trend's text
-//! after that (`metric_parts`); the trend's direction picks the arrow, and its colour is the bridge's to
+//! segments' colours are the bridge's to keep. A metric fills its column and two lines, its cell:
+//! the caption's line in the font of role caption, and below it the value's in the body's, which
+//! holds the value at the column's left, its trend's arrow after it, and the trend's text after
+//! that (`metric_parts`); the trend's direction picks the arrow, and its colour is the bridge's to
 //! keep.
 
 /// The space between a node's left and right sides and its columns, in world units.
@@ -225,8 +225,8 @@ pub enum Element<'a> {
     },
     /// A bar the width of its column in a line of the body's height, which shows no text.
     Progress,
-    /// A caption above a value and its trend's text, each cut on its own line (`metric_parts`); as one
-    /// element it shows no text of its own.
+    /// A caption above a value and its trend's text, each cut on its own line (`metric_parts`); as
+    /// one element it shows no text of its own.
     Metric {
         caption: &'a str,
         value: &'a str,
@@ -539,13 +539,13 @@ pub struct MetricParts {
 /// The parts of a metric placed at `at`, its cell, that shows `caption`, `value`, and the text
 /// `trend` of a trend of `direction`, in `fonts` (ADR-0013). The caption fills the cell's first
 /// line, the caption's, cut to the column. On the line below it, the body's, the value lies at
-/// the column's left as wide as it is drawn; the arrow, a square `ARROW_SIZE` wide in the middle
-/// of the line, `VALUE_GAP` after the value; and the trend's text `ARROW_GAP` after the arrow, to
-/// the column's end. Where the column is too narrow, the trend's text is cut first, to what the
-/// value, the gaps, and the arrow leave; where the value and both gaps and the arrow do not fit,
-/// the trend's text is cut to nothing and the value to the column less `VALUE_GAP` and the
-/// arrow, the gap before the arrow shrinking where even that leaves no room; and a column
-/// narrower than the arrow draws none.
+/// the column's left as wide as it is drawn; the arrow, a square `ARROW_SIZE` wide and at most as
+/// high as the line, in the middle of the line, `VALUE_GAP` after the value; and the trend's text
+/// `ARROW_GAP` after the arrow, to the column's end. Where the column is too narrow, the trend's
+/// text is cut first, to what the value, the gaps, and the arrow leave; where the value and both
+/// gaps and the arrow do not fit, the trend's text shows nothing and the value is cut to the
+/// column less `VALUE_GAP` and the arrow, the gap before the arrow shrinking where even that
+/// leaves no room; and a column narrower than the arrow, or a line of no height, draws none.
 pub fn metric_parts(
     at: &Placed,
     [caption, value, trend]: [&str; 3],
@@ -566,12 +566,13 @@ pub fn metric_parts(
     let y = f64::from(at.y) + caption_line;
     let line = body.line_height();
     // The value whole where it leaves room for both gaps and the arrow, else cut beside the arrow.
+    let size = ARROW_SIZE.min(line);
     let whole = cut(value, f64::INFINITY, body);
-    let beside = VALUE_GAP + ARROW_SIZE + ARROW_GAP;
-    let value_cut = if drawn_width(value, whole, body) + beside <= column {
+    let fits = drawn_width(value, whole, body) + VALUE_GAP + size + ARROW_GAP <= column;
+    let value_cut = if fits {
         whole
     } else {
-        cut(value, (column - VALUE_GAP - ARROW_SIZE).max(0.0), body)
+        cut(value, (column - VALUE_GAP - size).max(0.0), body)
     };
     let value_width = drawn_width(value, value_cut, body);
     let value = Placed {
@@ -583,11 +584,12 @@ pub fn metric_parts(
         ellipsis: value_cut.1,
     };
     let arrow_x =
-        (column >= ARROW_SIZE).then(|| left + (value_width + VALUE_GAP).min(column - ARROW_SIZE));
+        (size > 0.0 && column >= size).then(|| left + (value_width + VALUE_GAP).min(column - size));
+    let line_end = y + line;
     let arrow = arrow_x.map(|x| {
-        let top = y + (line - ARROW_SIZE) / 2.0;
-        let (bottom, middle) = (top + ARROW_SIZE, top + ARROW_SIZE / 2.0);
-        let (right, apex) = (x + ARROW_SIZE, x + ARROW_SIZE / 2.0);
+        let top = y + (line - size) / 2.0;
+        let (bottom, middle) = (top + size, top + size / 2.0);
+        let (right, apex) = (x + size, x + size / 2.0);
         let points = match direction {
             Direction::Up => [x, bottom, right, bottom, apex, top],
             Direction::Down => [x, top, right, top, apex, bottom],
@@ -595,16 +597,18 @@ pub fn metric_parts(
         };
         let mut out = [0.0; 6];
         for (i, point) in points.into_iter().enumerate() {
-            out[i] = if i % 2 == 0 {
-                at_most(point, end)
-            } else {
-                place(point)
-            };
+            out[i] = at_most(point, if i % 2 == 0 { end } else { line_end });
         }
         out
     });
-    let trend_left = arrow_x.map_or(end, |x| (x + ARROW_SIZE + ARROW_GAP).min(end));
-    let (kept, ellipsis) = cut(trend, end - trend_left, body);
+    let trend_left = arrow_x.map_or(end, |x| (x + size + ARROW_GAP).min(end));
+    // Once the value is cut, the trend's text shows nothing, though a glyph of it might fit the
+    // room the value's cut leaves.
+    let (kept, ellipsis) = if fits {
+        cut(trend, end - trend_left, body)
+    } else {
+        (0, false)
+    };
     let x = at_most(trend_left, end);
     let trend = Placed {
         x,
@@ -1409,28 +1413,145 @@ mod tests {
         assert_eq!(element_at(&cells, &placed, 100.0, 40.0, true), None);
     }
 
+    /// The fonts of `fonts`, but a body whose `W` advances by 11, `-` by 4, the ellipsis by 9, and
+    /// every other glyph by 6, with lines `line` high.
+    fn uneven_body(line: f64) -> Fonts {
+        let mut fonts = fonts();
+        let codes = ['W', '-', ELLIPSIS].map(u32::from);
+        fonts.set(
+            Role::Body,
+            Font::new(&codes, &[11.0, 4.0, 9.0], 6.0, line).unwrap(),
+        );
+        fonts
+    }
+
+    #[test]
+    fn a_metric_whose_value_is_cut_shows_none_of_its_trend_s_text_though_a_glyph_would_fit() {
+        // Verifies: ADR-0013, Q-4
+        // A metric alone in a column of 46 from (12, 10): its value "WWWWWW", 66, does not fit with
+        // both gaps and the arrow, so it is cut to 46 less 18, beside the ellipsis of 9 to one W,
+        // 20 wide; the arrow 8 after it from 40 to 50, 3 below the value's line at 24; and the
+        // trend's text from 54, 4 to the column's end at 58. Its "-", 4, would fit there, but a
+        // trend is cut before its value: it shows nothing. Likewise in a column of 48, 6 left.
+        let fonts = uneven_body(16.0);
+        for (width, room) in [(70.0, 4.0), (72.0, 6.0)] {
+            let cells = [metric("Cap", "WWWWWW", "-")];
+            let mut placed = Vec::new();
+            lay_out(&cells, &[1], width, &fonts, &mut placed);
+            let parts = metric_parts(&placed[0], ["Cap", "WWWWWW", "-"], Direction::Up, &fonts);
+            assert_near(
+                &[parts.value, parts.trend],
+                &[[12.0, 24.0, 20.0, 16.0], [54.0, 24.0, room, 16.0]],
+            );
+            assert_eq!(kept_of(&parts)[1..], [(1, true), (0, false)]);
+            assert_arrow(parts.arrow, [40.0, 37.0, 50.0, 37.0, 45.0, 27.0]);
+        }
+    }
+
+    #[test]
+    fn an_arrow_is_no_higher_than_the_value_s_line() {
+        // Verifies: ADR-0013, Q-4
+        // With a body's line of 6, the arrow's square is 6 too, in the line from 24 to 30: its
+        // value "42", 12, from 12, the arrow 8 after it from 32 to 38, and the trend's text 4
+        // after it from 42. With a line of no height, no arrow is drawn.
+        let fonts = uneven_body(6.0);
+        let cells = [metric("Cap", "42", "+3%")];
+        let mut placed = Vec::new();
+        lay_out(&cells, &[1], 220.0, &fonts, &mut placed);
+        let parts = metric_parts(&placed[0], ["Cap", "42", "+3%"], Direction::Down, &fonts);
+        assert_arrow(parts.arrow, [32.0, 24.0, 38.0, 24.0, 35.0, 30.0]);
+        assert_near(&[parts.trend], &[[42.0, 24.0, 166.0, 6.0]]);
+        let flat = uneven_body(0.0);
+        placed.clear();
+        lay_out(&cells, &[1], 220.0, &flat, &mut placed);
+        let parts = metric_parts(&placed[0], ["Cap", "42", "+3%"], Direction::Down, &flat);
+        assert_eq!(parts.arrow, None);
+    }
+
+    /// Asserts that the parts of the metric `parts`, placed at `at` and showing `value` in a body's
+    /// line `line` high, lie inside its cell, the arrow in the value's line, without overlapping,
+    /// and that a value cut leaves the trend's text nothing.
+    fn assert_parts_inside(at: &Placed, parts: &MetricParts, value: &str, line: f64) {
+        let [left, top, width, height] = [at.x, at.y, at.width, at.height].map(f64::from);
+        let (end, bottom) = (left + width, top + height);
+        let tolerance = 1e-6 * (end.abs() + 1.0);
+        for p in [parts.caption, parts.value, parts.trend] {
+            let [x, y, w, h] = [p.x, p.y, p.width, p.height].map(f64::from);
+            assert!(
+                [x, y, w, h].iter().all(|v| v.is_finite() && *v >= 0.0),
+                "{p:?}"
+            );
+            assert!(x >= left && x + w <= end, "{p:?} in {at:?}");
+            assert!(y >= top && y + h <= bottom, "{p:?} in {at:?}");
+        }
+        let units = value.encode_utf16().count();
+        if parts.value.ellipsis || (parts.value.kept as usize) < units {
+            assert_eq!(kept_of(parts)[2], (0, false), "{parts:?}");
+        }
+        let size = ARROW_SIZE.min(line);
+        assert_eq!(
+            parts.arrow.is_some(),
+            size > 0.0 && width >= size,
+            "{parts:?}"
+        );
+        let Some(arrow) = parts.arrow else {
+            return;
+        };
+        let [line_top, line_bottom] = [parts.value.y, parts.value.y + parts.value.height];
+        for (i, &v) in arrow.iter().enumerate() {
+            let inside = if i % 2 == 0 {
+                v >= at.x && f64::from(v) <= end
+            } else {
+                v >= line_top && v <= line_bottom
+            };
+            assert!(inside, "{arrow:?} in {at:?}");
+        }
+        let arrow_left = f64::from(arrow[0].min(arrow[2]).min(arrow[4]));
+        let arrow_right = f64::from(arrow[0].max(arrow[2]).max(arrow[4]));
+        let value_right = f64::from(parts.value.x) + f64::from(parts.value.width);
+        assert!(value_right <= arrow_left + tolerance, "{parts:?}");
+        if f64::from(parts.value.width) + VALUE_GAP + size <= width {
+            assert!(
+                value_right + VALUE_GAP <= arrow_left + tolerance,
+                "{parts:?}"
+            );
+        }
+        assert!(
+            arrow_right <= f64::from(parts.trend.x) + tolerance,
+            "{parts:?}"
+        );
+    }
+
     #[test]
     fn any_metric_s_parts_lie_inside_its_column_and_its_node() {
         // Verifies: ADR-0013, Q-4
-        // Metrics of any texts, at any width, in fonts of any metric: every part lies inside the
-        // metric's column, every text's rectangle inside its cell, and the arrow is drawn only
-        // where the column holds it.
-        const WIDTHS: [f32; 7] = [0.0, 1.0, 23.0, 36.0, 60.0, 220.0, 1e6];
+        // Metrics of any texts, at any width, in fonts of any metric, glyphs of the body's of
+        // uneven advances among them: every part lies inside the metric's cell, the arrow in the
+        // value's line, drawn only where the column holds it, the parts in order without
+        // overlapping, and a value cut leaves the trend's text nothing.
+        const WIDTHS: [f32; 9] = [0.0, 1.0, 8.0, 23.0, 36.0, 46.0, 60.0, 220.0, 1e6];
         let texts = [
             "",
             "x",
+            "-",
             "1234",
+            "WWWWWW",
+            "W-W-",
             &"w".repeat(1_000),
             &"\u{1F600}".repeat(500),
         ];
         let directions = [Direction::Up, Direction::Down, Direction::Flat];
+        let codes = ['W', '-', ELLIPSIS].map(u32::from);
         let mut rng = Lcg(11);
         let (mut arrows, mut cut_values) = (0, 0);
-        for _ in 0..3_000 {
+        for _ in 0..5_000 {
             let mut fonts = Fonts::default();
             for role in [Role::Title, Role::Body, Role::Caption] {
-                let metric = |rng: &mut Lcg| [0.0, 1.0, 7.5, 30.0, MAX_METRIC][rng.below(5)];
-                let font = Font::new(&[], &[], metric(&mut rng), metric(&mut rng)).unwrap();
+                let metric =
+                    |rng: &mut Lcg| [0.0, 1.0, 4.0, 7.5, 11.0, 30.0, MAX_METRIC][rng.below(7)];
+                let advances = [metric(&mut rng), metric(&mut rng), metric(&mut rng)];
+                let line = [0.0, 6.0, 9.5, 16.0, 30.0, MAX_METRIC][rng.below(6)];
+                let font = Font::new(&codes, &advances, metric(&mut rng), line).unwrap();
                 fonts.set(role, font);
             }
             let pick = |rng: &mut Lcg| texts[rng.below(texts.len())];
@@ -1445,34 +1566,16 @@ mod tests {
             }];
             let width = WIDTHS[rng.below(WIDTHS.len())];
             let mut placed = Vec::new();
-            let height = lay_out(&cells, &[1], width, &fonts, &mut placed);
-            let at = placed[0];
+            lay_out(&cells, &[1], width, &fonts, &mut placed);
             let direction = directions[rng.below(3)];
-            let parts = metric_parts(&at, strings, direction, &fonts);
-            let end = f64::from(at.x) + f64::from(at.width);
-            let bottom = f64::from(at.y) + f64::from(at.height);
-            for p in [parts.caption, parts.value, parts.trend] {
-                let [x, y, w, h] = [p.x, p.y, p.width, p.height].map(f64::from);
-                assert!(
-                    [x, y, w, h].iter().all(|v| v.is_finite() && *v >= 0.0),
-                    "{p:?}"
-                );
-                assert!(x >= f64::from(at.x) && x + w <= end, "{p:?} in {at:?}");
-                assert!(y >= f64::from(at.y) && y + h <= bottom, "{p:?} in {at:?}");
-            }
-            assert_eq!(parts.arrow.is_some(), f64::from(at.width) >= ARROW_SIZE);
-            if let Some(arrow) = parts.arrow {
-                arrows += 1;
-                for (i, &v) in arrow.iter().enumerate() {
-                    let v = f64::from(v);
-                    let inside = if i % 2 == 0 {
-                        v >= f64::from(at.x) && v <= end
-                    } else {
-                        v >= 0.0 && v <= height
-                    };
-                    assert!(inside, "{arrow:?} in {at:?} of a node {height} high");
-                }
-            }
+            let parts = metric_parts(&placed[0], strings, direction, &fonts);
+            assert_parts_inside(
+                &placed[0],
+                &parts,
+                strings[1],
+                fonts.of(Role::Body).line_height(),
+            );
+            arrows += usize::from(parts.arrow.is_some());
             cut_values += usize::from(parts.value.ellipsis);
         }
         assert!(arrows > 100 && cut_values > 100, "{arrows} {cut_values}");

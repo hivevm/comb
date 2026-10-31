@@ -379,6 +379,42 @@ test("the middle and far level draw no metric, and near draws it until updateNod
   expect(await at(1)).toEqual({ level: "near", kinds: ["text"], arrows: [] });
 });
 
+test("a trend's text takes each new colour on its pooled text object, and no text object is made for one", async ({
+  page,
+}) => {
+  // Verifies: ADR-0013
+  // One metric whose trend's colour changes 200 times: its pooled text object is drawn in each
+  // colour in turn, and no further text object is bound for any of them.
+  await open(page);
+  await loaded(page, { nodes: [{ ...node("b"), content: METRICS }], edges: [] });
+  await setViewport(page, { x: 100, y: 100, scale: 1 });
+  const drawn = await page.evaluate(async () => {
+    const seen: { fill: unknown; texts: number }[] = [];
+    for (let i = 0; i < 200; i++) {
+      const color = 0x010203 * (i + 1);
+      window.comb.updateNode("b", {
+        content: [
+          [{ kind: "text", role: "title", text: "Bet" }],
+          [
+            {
+              kind: "metric",
+              caption: "c",
+              value: "1",
+              trend: { text: "t", direction: "up", color },
+            },
+          ],
+        ],
+      });
+      await window.comb.whenRendered();
+      const { nodes, texts } = window.inspect();
+      seen.push({ fill: nodes[0]!.texts!.at(-1)!.fill, texts });
+    }
+    return seen;
+  });
+  expect(drawn.map(({ fill }) => fill)).toEqual(drawn.map((_, i) => 0x010203 * (i + 1)));
+  expect(new Set(drawn.map(({ texts }) => texts)).size).toBe(1);
+});
+
 test("updateNode replaces the content, the canvas shows it, the node's height follows, and nodeUpdated carries it", async ({
   page,
 }) => {

@@ -2,8 +2,8 @@
 //! content crosses as and the content of a single node read through serde-wasm-bindgen, both
 //! checked by the one function below, and the content the engine keeps to lay out.
 //!
-//! `text`, `action`, `badge`, `progress`, and `metric` have columns and a code so far; each further kind of
-//! ADR-0013 adds its own with its ticket, in the places ADR-0034 gives them.
+//! `text`, `action`, `badge`, `progress`, and `metric` have columns and a code so far; each further
+//! kind of ADR-0013 adds its own with its ticket, in the places ADR-0034 gives them.
 
 use std::fmt;
 
@@ -835,19 +835,12 @@ impl ContentData {
         self.element_with(element, self.text(text))
     }
 
-    /// The element at `element` as the layout reads it, showing `text` where it shows one, a
-    /// metric `text` in each of its three.
+    /// The element at `element` as the layout reads it, showing `text` where it shows one; of a
+    /// kind other than `metric`, whose three texts `element` reads.
     fn element_with<'t>(&self, element: usize, text: &'t str) -> Element<'t> {
         let kind = self.kinds[element];
         if kind == KindCode::Progress as u8 {
             return Element::Progress;
-        }
-        if kind == KindCode::Metric as u8 {
-            return Element::Metric {
-                caption: text,
-                value: text,
-                trend: text,
-            };
         }
         if kind == KindCode::Action as u8 {
             return Element::Action { text };
@@ -1111,7 +1104,15 @@ impl ContentData {
         // The height of an element is that of its kind and role, whatever its text.
         let heights = rows.map(|row| {
             layout::row_height_of(view.elements(row).map(|element| {
-                let element = self.element_with(element, "");
+                let element = if self.kinds[element] == KindCode::Metric as u8 {
+                    Element::Metric {
+                        caption: "",
+                        value: "",
+                        trend: "",
+                    }
+                } else {
+                    self.element_with(element, "")
+                };
                 let badge = matches!(element, Element::Badge { .. });
                 (badge, layout::element_height(&element, fonts))
             }))
@@ -1300,9 +1301,10 @@ impl ContentInput {
     }
 
     /// Adds an element of `kind`, `weight`, and `role`, the role crossing as 0 for an action, a
-    /// badge, a progress bar, and a metric, and of the colour `color`, NaN for a kind other than `badge`; where it is a
-    /// `text`, an `action`, or a `badge`, its text, and where it is an `action`, its identifier
-    /// `id`, each none for one of another type, which crosses empty and marked as no string.
+    /// badge, a progress bar, and a metric, and of the colour `color`, NaN for a kind other than
+    /// `badge`; where it is a `text`, an `action`, or a `badge`, its text, and where it is an
+    /// `action`, its identifier `id`, each none for one of another type, which crosses empty and
+    /// marked as no string.
     pub(crate) fn push(
         &mut self,
         kind: KindCode,
@@ -1562,8 +1564,6 @@ struct Fields {
     fraction: f64,
     text: Option<String>,
     id: Option<String>,
-    /// A trend's direction, read as a kind is.
-    direction: Option<String>,
     /// A metric's caption and value, read as a text is.
     caption: Option<String>,
     value: Option<String>,
@@ -1600,7 +1600,6 @@ impl<'de> Visitor<'de> for ElementVisitor {
             fraction: f64::NAN,
             text: None,
             id: None,
-            direction: None,
             caption: None,
             value: None,
             trend: None,
@@ -1624,13 +1623,9 @@ impl<'de> Visitor<'de> for ElementVisitor {
                 }
                 "text" => fields.text = map.next_value::<Lenient<String>>()?.0,
                 "id" => fields.id = map.next_value::<Lenient<String>>()?.0,
-                "direction" => fields.direction = map.next_value::<Lenient<String>>()?.0,
                 "caption" => fields.caption = map.next_value::<Lenient<String>>()?.0,
                 "value" => fields.value = map.next_value::<Lenient<String>>()?.0,
-                "trend" => {
-                    let trend = map.next_value::<ElementCells>()?.0;
-                    fields.trend = trend.map(|t| (t.text, t.direction, t.color));
-                }
+                "trend" => fields.trend = map.next_value::<TrendCells>()?.0,
                 "segments" => fields.segments = map.next_value::<SegmentsCells>()?.0,
                 _ => {
                     map.next_value::<IgnoredAny>()?;
@@ -1668,6 +1663,72 @@ impl<'de> Visitor<'de> for ElementVisitor {
     fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<ElementCells, A::Error> {
         while seq.next_element::<IgnoredAny>()?.is_some() {}
         Ok(ElementCells(None))
+    }
+}
+
+/// A metric's trend as the host application handed it over: its text, its direction, and its
+/// colour, each of its type or none, the colour NaN, every other field ignored; or none where it
+/// is no object.
+struct TrendCells(Option<Trend3>);
+
+impl<'de> Deserialize<'de> for TrendCells {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(TrendVisitor)
+    }
+}
+
+struct TrendVisitor;
+
+impl<'de> Visitor<'de> for TrendVisitor {
+    type Value = TrendCells;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("an object")
+    }
+
+    fn visit_map<A: de::MapAccess<'de>>(self, mut map: A) -> Result<TrendCells, A::Error> {
+        let (mut text, mut direction, mut color) = (None, None, f64::NAN);
+        while let Some(key) = map.next_key::<String>()? {
+            match key.as_str() {
+                "text" => text = map.next_value::<Lenient<String>>()?.0,
+                "direction" => direction = map.next_value::<Lenient<String>>()?.0,
+                "color" => color = map.next_value::<Lenient<f64>>()?.0.unwrap_or(f64::NAN),
+                _ => {
+                    map.next_value::<IgnoredAny>()?;
+                }
+            }
+        }
+        Ok(TrendCells(Some((text, direction, color))))
+    }
+
+    // Any other value is no object.
+    fn visit_bool<E>(self, _: bool) -> Result<TrendCells, E> {
+        Ok(TrendCells(None))
+    }
+    fn visit_i64<E>(self, _: i64) -> Result<TrendCells, E> {
+        Ok(TrendCells(None))
+    }
+    fn visit_u64<E>(self, _: u64) -> Result<TrendCells, E> {
+        Ok(TrendCells(None))
+    }
+    fn visit_f64<E>(self, _: f64) -> Result<TrendCells, E> {
+        Ok(TrendCells(None))
+    }
+    fn visit_str<E>(self, _: &str) -> Result<TrendCells, E> {
+        Ok(TrendCells(None))
+    }
+    fn visit_unit<E>(self) -> Result<TrendCells, E> {
+        Ok(TrendCells(None))
+    }
+    fn visit_none<E>(self) -> Result<TrendCells, E> {
+        Ok(TrendCells(None))
+    }
+    fn visit_some<D: Deserializer<'de>>(self, deserializer: D) -> Result<TrendCells, D::Error> {
+        deserializer.deserialize_any(self)
+    }
+    fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<TrendCells, A::Error> {
+        while seq.next_element::<IgnoredAny>()?.is_some() {}
+        Ok(TrendCells(None))
     }
 }
 

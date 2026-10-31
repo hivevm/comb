@@ -316,8 +316,8 @@ fn weight() -> BoxedStrategy<Value> {
 }
 
 /// An element of content: mostly a text in a role, an action with an identifier, a badge on a
-/// colour, a progress bar of segments, or a metric with its trend, now and then of a kind or a role the bridge refuses,
-/// without a field, or no object.
+/// colour, a progress bar of segments, or a metric with its trend, now and then of a kind or a role
+/// the bridge refuses, without a field, or no object.
 fn element(loose: bool) -> BoxedStrategy<Value> {
     let named = |name: &str| Value::Text(name.to_owned());
     let kind = one_of(
@@ -692,7 +692,9 @@ fn content_ok(node: &Value) -> bool {
             let Value::Object(trend) = trend else {
                 return false;
             };
-            let direction = matches!(get(trend, "direction"), Some(Value::Text(d)) if ["up", "down", "flat"].contains(&d.as_str()));
+            let directions = ["up", "down", "flat"];
+            let direction = matches!(get(trend, "direction"),
+                Some(Value::Text(d)) if directions.contains(&d.as_str()));
             let text = matches!(get(trend, "text"), Some(Value::Text(t)) if units(t) <= 1_000);
             let color = matches!(get(trend, "color"), Some(Value::Number(c)) if rgb(c));
             direction && text && color
@@ -1130,6 +1132,42 @@ fn a_metric_read_through_serde_fills_its_trend_and_a_trend_that_is_no_object_hol
     ]));
     assert_eq!(sideways.data.directions, [DirectionCode::Unnamed as u8]);
     assert!(sideways.data.colors[0].is_nan());
+}
+
+#[test]
+fn a_trend_read_through_serde_reads_its_text_direction_and_colour_alone() {
+    // Verifies: ADR-0034
+    // A trend that holds a trend of its own and segments, as a host application may hand one:
+    // read for its text, its direction, and its colour, the rest ignored and not read as content.
+    let text = |value: &str| Value::Text(value.to_owned());
+    let inner = Value::Object(vec![
+        ("text".to_owned(), text("inner")),
+        ("direction".to_owned(), text("down")),
+        ("color".to_owned(), Value::Number(1.0)),
+    ]);
+    let segment = Value::Object(vec![("fraction".to_owned(), Value::Number(0.5))]);
+    let trend = Value::Object(vec![
+        ("trend".to_owned(), inner),
+        ("segments".to_owned(), Value::List(vec![segment])),
+        ("kind".to_owned(), text("progress")),
+        ("text".to_owned(), text("+3%")),
+        ("direction".to_owned(), text("up")),
+        ("color".to_owned(), Value::Number(255.0)),
+    ]);
+    let metric = Value::Object(vec![
+        ("kind".to_owned(), text("metric")),
+        ("caption".to_owned(), text("Revenue")),
+        ("value".to_owned(), text("42")),
+        ("trend".to_owned(), trend),
+    ]);
+    let read = ContentInput::deserialize(Value::List(vec![Value::List(vec![metric])])).unwrap();
+    assert_eq!(read.shape, None);
+    assert_eq!(read.data.kinds, [KindCode::Metric as u8]);
+    assert_eq!(read.data.directions, [DirectionCode::Up as u8]);
+    assert_eq!(read.data.colors, [255.0]);
+    assert_eq!(read.data.text_bounds, [0, 7, 9, 12]);
+    assert_eq!(read.data.segment_bounds, [0, 0]);
+    assert!(read.data.fractions.is_empty());
 }
 
 #[test]

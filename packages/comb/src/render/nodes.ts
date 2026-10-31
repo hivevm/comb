@@ -55,19 +55,9 @@ const BADGE_STYLES: Readonly<Record<number, TextStyleOptions>> = {
   [TEXT_COLOR]: { ...TEXT_STYLES.body, fill: TEXT_COLOR },
 };
 
-/** The styles a metric's trend's text is drawn in, the body's font in the trend's colour, by the
- *  colour, so that a pooled text object keeps its style while its colour stays. */
-const trendStyles = new Map<number, TextStyleOptions>();
-
-/** The style a metric's trend's text of `color` is drawn in. */
-function trendStyle(color: number): TextStyleOptions {
-  let style = trendStyles.get(color);
-  if (!style) {
-    style = { ...TEXT_STYLES.body, fill: color };
-    trendStyles.set(color, style);
-  }
-  return style;
-}
+/** The style a metric's trend's text is drawn in: the body's font, its fill set on the pooled
+ *  text object's own style to the trend's colour, so that no style is kept per colour. */
+const TREND_STYLE: TextStyleOptions = { ...TEXT_STYLES.body };
 
 /** The relative luminance of `color`, `0xRRGGBB`, as WCAG 2 defines it. */
 function luminance(color: number): number {
@@ -95,7 +85,7 @@ const styleOf = ({ kind, role, pill, trend }: DrawnText) =>
     : pill
       ? BADGE_STYLES[pill.textColor]!
       : trend !== undefined
-        ? trendStyle(trend)
+        ? TREND_STYLE
         : TEXT_STYLES[role];
 
 /** The height of a line of each role, which the engine stacks rows by: given here rather than
@@ -297,7 +287,7 @@ function arrowsOf(placed: Placed, start: number, end: number, titlesOnly: boolea
   return arrows;
 }
 
-/** One node: its box, its badges' pills, its progress bars, and its texts. A pooled view, bound to
+/** One node: its box, its badges' pills, its progress bars, its metrics' arrows, and its texts. A pooled view, bound to
  *  one node slot at a time. */
 export class NodeGraphic extends Container {
   private readonly box = new Graphics();
@@ -454,6 +444,9 @@ export class NodeGraphic extends Container {
         pooled.style = style;
       }
       pooled.view.text = text.drawn;
+      // A trend's colour on the text object's own style, set only where it changed.
+      if (text.trend !== undefined && pooled.view.style.fill !== text.trend)
+        pooled.view.style.fill = text.trend;
       if (text.pill) {
         const { x, y, width, height } = text;
         this.pills

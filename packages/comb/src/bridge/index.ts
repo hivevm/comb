@@ -75,16 +75,16 @@ declare const read: unique symbol;
 export const PIECE_BOUND = 2 ** 28;
 
 /** The content of a load's nodes as the engine's `loadGraph` takes it (ADR-0034), the nodes'
- *  elements in slot order, each node's rows in their order and each row's elements in theirs:
- *  the boundaries of each node's rows, one more than there are nodes; of each row's elements,
- *  one more than there are rows; per element its kind's code, its weight, NaN for one of another
- *  type, a text's role's code and a trend's direction's code, each 0 for another kind, and a
- *  badge's or a trend's colour, NaN for one of another type and for another kind; per element the boundaries of a progress bar's segments, one more
- *  than there are elements, and per segment its fraction and its colour, NaN for one of another
- *  type; the texts, every string an element shows, a metric's caption, value, and trend's text in
- *  that order, as a string column with per text whether it
- *  is a text, 1 or 0; and the names, every string an element names and does not show, an
- *  action's identifier, as the texts. */
+ *  elements in slot order, each node's rows in their order and each row's elements in theirs: the
+ *  boundaries of each node's rows, one more than there are nodes; of each row's elements, one more
+ *  than there are rows; per element its kind's code, its weight, NaN for one of another type, a
+ *  text's role's code and a trend's direction's code, each 0 for another kind, and a badge's or a
+ *  trend's colour, NaN for one of another type and for another kind; per element the boundaries of
+ *  a progress bar's segments, one more than there are elements, and per segment its fraction and
+ *  its colour, NaN for one of another type; the texts, every string an element shows, a metric's
+ *  caption, value, and trend's text in that order, as a string column with per text whether it is a
+ *  text, 1 or 0; and the names, every string an element names and does not show, an action's
+ *  identifier, as the texts. */
 export interface ContentColumns {
   readonly rowBounds: Uint32Array;
   readonly elementBounds: Uint32Array;
