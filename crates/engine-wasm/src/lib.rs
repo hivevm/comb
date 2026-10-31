@@ -101,8 +101,8 @@ pub enum TranslateRefusal {
 }
 
 /// Why the engine refused a call that names slots: a slot that holds no node or no edge, beyond
-/// the slots or free. The shell's own mistake, never one of graph data, since `api` refuses an identifier the
-/// graph does not hold before it names a slot (ADR-0028).
+/// the slots or free. The shell's own mistake, never one of graph data, since `api` refuses an
+/// identifier the graph does not hold before it names a slot (ADR-0028).
 #[derive(Tsify, Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum SlotError {
@@ -437,13 +437,13 @@ impl Engine {
     /// identifiers are, with per text whether it is a text, and the first value the shell refused
     /// by its type, the index of its node, the code of its `NodeField`, and for a shape of content
     /// its row and column, or none. Each node is as high as its content lays out to in the fonts
-    /// `setFont` handed over (ADR-0013). Of the edges: the identifiers, sources, targets, and label texts each as pieces with
-    /// their boundaries, per label text whether it is a text; whether a label, its background,
-    /// and a dash are present, as bytes; the label's `t` and offset, the background, the colour,
-    /// and the dash and gap as `Float64Array`; the arrowhead and the sides as the codes of
-    /// `ArrowCode` and `SideCode`; and the first value the shell refused by its type, the index
-    /// of its edge and the code of its `EdgeField`, or none. A refused load leaves the loaded
-    /// graph as it was.
+    /// `setFont` handed over (ADR-0013). Of the edges: the identifiers, sources, targets, and label
+    /// texts each as pieces with their boundaries, per label text whether it is a text; whether a
+    /// label, its background, and a dash are present, as bytes; the label's `t` and offset, the
+    /// background, the colour, and the dash and gap as `Float64Array`; the arrowhead and the sides
+    /// as the codes of `ArrowCode` and `SideCode`; and the first value the shell refused by its
+    /// type, the index of its edge and the code of its `EdgeField`, or none. A refused load leaves
+    /// the loaded graph as it was.
     #[wasm_bindgen(js_name = loadGraph)]
     #[expect(
         clippy::too_many_arguments,
@@ -1509,7 +1509,8 @@ mod tests {
         assert_eq!(engine.drawn.kinds, [a, t, t, a]);
         let (title, body) = (RoleCode::Title as u8, RoleCode::Body as u8);
         assert_eq!(engine.drawn.roles, [body, title, body, body]);
-        // "Details" in a column of 34 keeps four of the body's glyphs of 6 beside its ellipsis of 9.
+        // "Details" in a column of 34 keeps four of the body's glyphs of 6 beside its
+        // ellipsis of 9.
         assert_eq!(engine.drawn.texts, "OpentbDeta\u{2026}");
         // Its content, built when asked, holds the action as the host application gave it.
         let details = ContentElement::Action {

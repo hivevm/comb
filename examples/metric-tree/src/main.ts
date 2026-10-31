@@ -63,7 +63,8 @@ export interface LoadReport {
 declare global {
   interface Window {
     comb: Comb;
-    /** Comb's factory, so that a browser test can watch the document while a second Comb is made. */
+    /** Comb's factory, so that a browser test can watch the document while a second Comb is
+     *  made. */
     createComb: typeof createComb;
     /** The URL of the engine file Vite emits, for a browser test that hands a second Comb its
      *  engine. */

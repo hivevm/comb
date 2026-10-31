@@ -15,8 +15,8 @@ fn stale(beyond: usize, items: usize) -> bool {
 
 impl Graph {
     /// Builds the index again where the rule of ADR-0022 asks for it, after every addition and
-    /// move: where the slots in use of a kind pass twice the count it was built for, or more than an
-    /// eighth of them, and at least 16, lie beyond its extent.
+    /// move: where the slots in use of a kind pass twice the count it was built for, or more than
+    /// an eighth of them, and at least 16, lie beyond its extent.
     pub(super) fn keep_index(&mut self) {
         #[cfg(test)]
         {

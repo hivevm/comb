@@ -193,7 +193,8 @@ export function work(comb: Comb): Work {
  *  transforms it hands the shader as `f32` uniforms, the world's and the mesh's within the world
  *  (ADR-0034). The shader multiplies the projection into clip space first, a scale and a shift
  *  by the canvas's size, which rounds by about 2^-24 of the canvas's size more; it is left out,
- *  since that cannot move a vertex by a quarter pixel. WebGL only: the Canvas 2D fallback has no such mesh. */
+ *  since that cannot move a vertex by a quarter pixel. WebGL only: the Canvas 2D fallback has no
+ *  such mesh. */
 export function edgeVertices(comb: Comb): Float64Array {
   const { app, edges, world } = sceneOf(comb);
   if (!(edges instanceof EdgesContainer)) {

@@ -812,13 +812,15 @@ export type GraphSnapshot = { readonly nodes: NodeColumns; readonly edges: EdgeC
   readonly [read]: "graph";
 };
 
-/** The node of `addNode` read once: what `nodeSnapshotOf` returns, and the node the bridge takes. */
+/** The node of `addNode` read once: what `nodeSnapshotOf` returns, and the node the bridge
+ *  takes. */
 export type NodeSnapshot = NodeInput & { readonly [read]: "node" };
 
 /** The plain patch of `updateNode`: what `patchOf` returns, and the patch the bridge takes. */
 export type PlainPatch = NodePatch & { readonly [read]: "patch" };
 
-/** The edge of `addEdge` read once: what `edgeSnapshotOf` returns, and the edge the bridge takes. */
+/** The edge of `addEdge` read once: what `edgeSnapshotOf` returns, and the edge the bridge
+ *  takes. */
 export type EdgeSnapshot = EdgeInput & { readonly [read]: "edge" };
 
 /** The plain patch of `updateEdge`: what `edgePatchOf` returns, and the patch the bridge takes. */
@@ -1101,8 +1103,8 @@ let trapped: { cause: unknown } | undefined;
 const lostListeners = new Set<(error: EngineLostError) => void>();
 
 /** Whether `error`, thrown from a call of the engine, is a trap: WebAssembly's own, or the glue's
- *  refusal of an object a trapped call left borrowed, which only a trap no guard saw leaves. Errors the bridge returns as values are
- *  plain objects, never traps (ADR-0034). */
+ *  refusal of an object a trapped call left borrowed, which only a trap no guard saw leaves. Errors
+ *  the bridge returns as values are plain objects, never traps (ADR-0034). */
 function isTrap(error: unknown): boolean {
   return (
     error instanceof WebAssembly.RuntimeError ||

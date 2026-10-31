@@ -7,9 +7,9 @@
 // longer than one code unit beyond the bridge's limit for texts, an identifier no longer than one
 // beyond its limit for identifiers, and a node's content no more rows, nor a row more columns, nor
 // a progress bar more segments, than one beyond the bridge's limits, so that a value of any size
-// costs at most that much to check. The code units of all identifiers are counted while they are read, and
-// reading stops once they exceed the bridge's budget, whose check then refuses the load. What
-// cannot be read at all throws an `UnreadableError`.
+// costs at most that much to check. The code units of all identifiers are counted while they are
+// read, and reading stops once they exceed the bridge's budget, whose check then refuses the load.
+// What cannot be read at all throws an `UnreadableError`.
 import {
   edgeColumns,
   nodeColumns,
@@ -310,7 +310,8 @@ function writeRow(
   }
 }
 
-/** Writes `element`, an object, into `columns`, read once by `read`, ending the row where `last`. */
+/** Writes `element`, an object, into `columns`, read once by `read`, ending the row where
+ *  `last`. */
 function writeElement(
   read: Reader,
   element: Fields,

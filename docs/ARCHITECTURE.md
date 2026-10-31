@@ -530,8 +530,9 @@ input handlers do nothing, so no trap escapes as a page error.
 
 **Holding the shape.** `scripts/check-code.sh`, which `scripts/check-all.sh` runs and the **Checks**
 workflow (`.github/workflows/checks.yml`) runs on every pull request, runs the structural, the
-dependency, and the overview checks below with their self-tests and the self-test of the engine
-check, then the build, the lint, and the tests, then the bundle check with its self-test.
+dependency, the overview, and the comment width checks below with their self-tests and the
+self-test of the engine check, then the build, the lint, and the tests, then the bundle check with
+its self-test.
 `scripts/check-engine.sh`, which `bun run test`, `bun run dev`, and the bundle check run first,
 fails when `engine_bg.wasm` of `packages/comb/wasm/` or of `packages/comb/wasm/test-mode/` is
 missing or older than a file under `crates/` other than those no build reads (the list of surviving
@@ -548,6 +549,10 @@ decides, which the check holds as its own rule and this overview describes.
 `scripts/check-overview.sh` fails, naming each, where this overview holds no code span of its own
 for a method or property of the `Comb` interface, an option of `CombOptions`, or a function or
 constant `comb/testing` exports (ADR-0001), and where it reads no names from one of those sources.
+`scripts/check-comment-width.sh` fails, naming the file and the line, on a comment line of a `.rs`
+or `.ts` file git lists that is wider than 100 columns, the width Prettier holds the code to, unless
+it cannot break, as a URL on a line of its own; it fails too where git lists no file of either
+language. No ADR decides it; the check holds it as its own rule and this overview describes it.
 `scripts/check-bundle.sh` builds the library and fails when its gzipped JavaScript and the engine
 file reach the 300 kB of Q-3, when no engine file is measured, when the JavaScript inlines the
 engine (ADR-0019), and when the bundle carries either seam of the bridge's test mode, each by a mark

@@ -1793,8 +1793,9 @@ mod tests {
     fn any_content_the_bridge_accepts_lays_out_finite_inside_its_node() {
         // Verifies: ADR-0013, Q-4
         // Up to the bridge's limits, 8 rows of 6 columns of texts and actions of up to 1,000 code
-        // units and icons, with weights from the smallest to the largest positive finite numbers, at widths
-        // from 0 to the largest the world holds, in fonts of any metric up to the largest.
+        // units and icons, with weights from the smallest to the largest positive finite numbers,
+        // at widths from 0 to the largest the world holds, in fonts of any metric up to the
+        // largest.
         const WEIGHTS: [f64; 6] = [f64::MIN_POSITIVE, 1e-300, 0.5, 1.0, 1e300, f64::MAX];
         const WIDTHS: [f32; 6] = [0.0, 1.0, 23.0, 220.0, 1e6, 1.3e36];
         let roles = [Role::Title, Role::Body, Role::Caption];

@@ -2724,9 +2724,9 @@ pub(crate) mod tests {
         content
     }
 
-    /// Content of a title row, "Bet", then a row of a metric of weight 1, its trend of the direction
-    /// code `direction` and the colour `color`, showing `texts`, its caption, value, and trend's
-    /// text, each none for one of another type.
+    /// Content of a title row, "Bet", then a row of a metric of weight 1, its trend of the
+    /// direction code `direction` and the colour `color`, showing `texts`, its caption, value, and
+    /// trend's text, each none for one of another type.
     pub(crate) fn metricked(direction: u8, color: f64, texts: [Option<&str>; 3]) -> ContentInput {
         let mut content = ContentInput::new();
         let title = (RoleCode::Title as u8, Some("Bet"));

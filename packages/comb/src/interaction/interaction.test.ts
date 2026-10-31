@@ -8,7 +8,8 @@ import { createGraphStore, type GraphData, type GraphStore, type NodeContent } f
 /** One row of one title, `title`. */
 const titled = (title: string): NodeContent => [[{ kind: "text", role: "title", text: title }]];
 
-/** Loads `graph` into `store` with the code units of its identifiers, as `api` hands a load over. */
+/** Loads `graph` into `store` with the code units of its identifiers, as `api` hands a load
+ *  over. */
 function load(store: GraphStore, graph: GraphData): void {
   const ids = [...graph.nodes, ...graph.edges].map((item) => item.id);
   const ends = graph.edges.flatMap((edge) => [edge.source, edge.target]);
