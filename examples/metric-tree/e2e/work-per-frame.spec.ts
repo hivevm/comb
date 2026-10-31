@@ -306,9 +306,9 @@ async function countWorldHitTests(page: Page): Promise<void> {
 test("a pointer moving across the edges and dragging a node hit-tests no layer of the world in PixiJS", async ({
   page,
 }) => {
-  // Verifies: ADR-0013
-  // The engine answers every hit test (ADR-0013, *Hit test*); interaction listens on the stage
-  // alone, so a hit test PixiJS runs on a layer of the world is one whose answer nothing reads.
+  // Decides no ADR clause and no criterion: work a frame need not redo, pinned by a count
+  // (docs/CONVENTIONS.md); the engine answers every hit test (ADR-0013), so PixiJS's test of the
+  // world is one nothing reads.
   await countWorldHitTests(page);
   await open(page, "?copies=100");
   const { width, height } = await canvasSize(page);

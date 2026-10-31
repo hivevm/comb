@@ -282,8 +282,8 @@ The functional core and its shell follow
   places on every move; its release, or a later press, records `labelMoved` once, and a load, a
   removal of its edge, or a label the host cleared ends the drag. A drag that moved its node records
   `nodeMoved` once, when the pointer is released on the canvas or outside it; a load ends a drag.
-  The engine's `hit` says what the pointer is on, at the level of detail of the scale; node views
-  and edges take no events.
+  The engine's `hit` says what the pointer is on, at the level of detail of the scale; the world's
+  layers take no events.
   `targetAt` of `gesture.ts` is the one hit test: `attachInteraction` asks it from the store's
   viewport, connectors only where `CombOptions.canConnect` is set, as `hitAt`, which the gestures'
   `Context` carries, for the press, the hover, and every move of a connection, and returns it, for
