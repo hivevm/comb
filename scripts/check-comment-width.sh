@@ -47,12 +47,14 @@ fail() {
   exit 1
 }
 
-listed="$(git -C "$ROOT" ls-files --cached --others --exclude-standard -- '*.rs' '*.ts' 2>/dev/null)" \
+git -C "$ROOT" rev-parse --is-inside-work-tree > /dev/null 2>&1 \
   || fail "$ROOT is not a git repository — git lists the files the check reads."
 
 files=()
 rust=0 typescript=0
-while IFS= read -r rel; do
+# The listing is NUL-separated, so that git does not quote a path that holds a character beyond
+# ASCII, which would then name no file.
+while IFS= read -r -d '' rel; do
   [[ -n "$rel" && -f "$ROOT/$rel" ]] || continue
   case "$(git -C "$ROOT" check-attr linguist-generated -- "$rel")" in
     *": set" | *": true") continue ;;
@@ -62,7 +64,7 @@ while IFS= read -r rel; do
     *.rs) rust=$((rust + 1)) ;;
     *.ts) typescript=$((typescript + 1)) ;;
   esac
-done < <(sort -u <<< "$listed")
+done < <(git -C "$ROOT" ls-files -z --cached --others --exclude-standard -- '*.rs' '*.ts' | sort -zu)
 
 ((rust)) || fail "git lists no .rs file under $ROOT, so no Rust comment is read."
 ((typescript)) || fail "git lists no .ts file under $ROOT, so no TypeScript comment is read."

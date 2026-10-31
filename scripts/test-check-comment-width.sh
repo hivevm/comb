@@ -6,13 +6,14 @@
 # mistake could have been caught, a comment line review found wider than the 100 columns the code
 # and the documents are held to.
 #
-# Each case builds a git repository in a temporary directory with a Rust and a TypeScript source
-# whose comments fit, adds one line, runs the check on it, and asserts the exit code and a line it
-# prints. A comment line of 101 columns fails naming the file and the line, in either language, as
-# a line comment, a doc comment, the line that opens a block comment, and a line inside one; one
-# of 100 columns passes, an em dash counted as one column. A URL or a Markdown link standing on a
-# line of its own passes, in a line comment and in a block comment, and a URL with prose after it
-# fails. A code line, a comment after code, and a string literal over 100 columns pass, as does a
+# Each case builds a git repository in a temporary directory with a Rust source in git's index and
+# a TypeScript source not yet in it, whose comments fit, adds one line, runs the check on it, and
+# asserts the exit code and a line it prints. A comment line of 101 columns fails naming the file
+# and the line, in either language, as a line comment, a doc comment, the line that opens a block
+# comment, and a line inside one, also as the last line without a final newline and in a file whose
+# name holds a character beyond ASCII; one of 100 columns passes, an em dash counted as one column.
+# A URL or a Markdown link standing on a line of its own passes, in a line comment and in a block
+# comment, and a URL with prose after it fails. A code line, a comment after code, and a string literal over 100 columns pass, as does a
 # code line after a block comment closed on the line that opens it or on a later one, and a file
 # git ignores or marks 'linguist-generated'; a file marked not generated is read. A directory that
 # is no git repository fails, as does a repository where git lists no `.rs` file or no `.ts` file.
@@ -32,13 +33,15 @@ trap 'rm -rf "$work"' EXIT
 failed=0
 passed=0
 
-# repo <name> — a repository with src/lib.rs and src/index.ts whose comments fit; prints its path.
+# repo <name> — a repository with src/lib.rs, staged, and src/index.ts, new, whose comments fit;
+# prints its path.
 repo() {
   local dir="$work/$1"
   mkdir -p "$dir/src"
   git -C "$dir" init -q
   printf '/// Adds one.\npub fn add(a: u8) -> u8 {\n    a + 1 // short\n}\n' > "$dir/src/lib.rs"
   printf '/** Adds one. */\nexport const add = (a: number) => a + 1; // short\n' > "$dir/src/index.ts"
+  git -C "$dir" add src/lib.rs
   echo "$dir"
 }
 
@@ -89,6 +92,15 @@ expect "a line inside a .ts block comment of 101 columns" 1 "src/index.ts:4: 101
 d="$(repo block-inside-rs)"
 { echo "/* Opens here."; line "   " 101; echo; echo "*/"; } >> "$d/src/lib.rs"
 expect "a line inside a .rs block comment without a star" 1 "src/lib.rs:6: 101 columns" "$d"
+
+d="$(repo last-line)"
+line "// " 101 >> "$d/src/index.ts"
+expect "a comment of 101 columns as the last line, without a final newline" 1 \
+  "src/index.ts:3: 101 columns" "$d"
+
+d="$(repo non-ascii-name)"
+line "// " 101 > "$d/src/ä.ts"; echo >> "$d/src/ä.ts"
+expect "a file whose name holds a character beyond ASCII" 1 "src/ä.ts:1: 101 columns" "$d"
 
 d="$(repo dashes)"
 printf '// %s — %s\n' "$(words_of 47)" "$(words_of 47)" >> "$d/src/index.ts"
