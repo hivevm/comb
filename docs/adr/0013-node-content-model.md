@@ -130,7 +130,11 @@ registers and colours given as numbers.
   or icon; *far* draws no element.
 - **Limits (Q-7):** the bridge refuses a node with more rows, a row with more columns, a progress
   bar with more segments, a text longer, or a load whose texts hold more code units in all than
-  limits it states, each with a typed problem that names the node.
+  limits it states, each with a typed problem that names the node. The budget of the code units
+  of content holds for the graph across every edit: the engine keeps their count, set by a load
+  and moved by each `addNode`, `updateNode`, and `removeNodes`, and refuses an addition or a
+  patch whose strings would pass it as `contentBudgetExceeded` naming the node, before anything
+  changes.
 - **Fonts:** the shell passes each `BitmapText` font's glyph advances and line height to the
   engine once, before the first layout that uses it.
 - **No URLs in graph data:** an icon is named, never located; an `action` carries an identifier,

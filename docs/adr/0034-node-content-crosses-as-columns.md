@@ -175,7 +175,9 @@ reads and writes as typed-array views created anew after every engine call.
       units per text, the field named as the element's type names it, a metric's as `caption`,
       `value`, and `trend.text`;
     - the code units of the strings of all content in the load (`contentBudgetExceeded`), counted
-      in slot order and refused at the node whose string passes the limit;
+      in slot order and refused at the node whose string passes the limit; the node of `addNode`
+      and the content of a patch of `updateNode` are counted the same way, on from the code units
+      of content the graph holds besides the node, every text and name alike;
     - a badge's, a trend's, and a segment's colour (`invalidContentColor`), which is an integer
       from 0 to 0xFFFFFF, as an edge's colour is;
     - a progress bar's number of segments (`tooManySegments`) against its limit, each segment's
@@ -634,7 +636,13 @@ Each test below cites this ADR with `Verifies: ADR-0034`.
   `invalidDirection`, `invalidContentText`, `contentTextTooLong`, `contentBudgetExceeded`,
   `invalidContentColor`, `tooManySegments`, `invalidFraction`, and `fractionsPastOne`, each at and
   past its bound; and content columns that do not fit together, a presence or validity byte above
-  1, and a code that is no code, refused as malformed. The type test in
+  1, and a code that is no code, refused as malformed. Tests there also assert that, with the
+  budget lowered, an `addNode` and an `updateNode` that would pass it are refused as
+  `contentBudgetExceeded` naming the node and change nothing, a patch of as many code units or
+  fewer is taken, and a removed node's code units are free for a node added after it; a property
+  test of `crates/engine-wasm/src/properties.rs` runs loads, additions, updates, and removals and
+  asserts after every step that the engine's count is the code units of content the graph holds.
+  The type test in
   `packages/comb/src/bridge/snapshot-only.test.ts` pins the content columns among the parameter
   types of `loadGraph`. Tests of `crates/engine-wasm/src/lib.rs` and
   `packages/comb/src/bridge/bridge.test.ts` assert the sizes, the placed rectangles, the roles, and
