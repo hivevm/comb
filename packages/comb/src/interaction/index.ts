@@ -9,7 +9,7 @@ import type { Application, FederatedPointerEvent } from "pixi.js";
 import type { Bridge, Hit } from "../bridge";
 import type { GraphStore } from "../store";
 import { connection, type Connect } from "./connect";
-import { targetAt, type Context, type Gesture } from "./gesture";
+import { targetAt, type ContentClick, type Context, type Gesture } from "./gesture";
 import { untilLost } from "./guard";
 import { labelDrag } from "./label-drag";
 import { nodeDrag } from "./node-drag";
@@ -18,6 +18,7 @@ import { levelAt, zoomAt } from "../store/viewport";
 
 export { attachDeletion, type Delete, type Deletion } from "./delete";
 export type { Connect, Proposal } from "./connect";
+export type { ContentClick } from "./gesture";
 
 const WHEEL_STEP = 1.0015;
 
@@ -33,8 +34,9 @@ const CURSORS: Record<Hit["kind"], string> = {
 
 /** Begins what a press at the screen point `(x, y)` does where the context's `hitAt` says it hits
  *  (ADR-0025): on a connector, where the host lets the user connect, a connection; on an edge
- *  label, a drag of it, its edge selected; on a node, a drag of it, the node selected; on an edge,
- *  a pan that waits for the slop, the edge selected; on nothing, a pan, the selection cleared. */
+ *  label, a drag of it, its edge selected; on a node, a drag of it that waits for the slop, or
+ *  within it a click, the node selected; on an edge, a pan that waits for the slop, the edge
+ *  selected; on nothing, a pan, the selection cleared. */
 function begin(context: Context, x: number, y: number, connect?: Connect): Gesture {
   const hit = context.hitAt(x, y);
   return (
@@ -100,19 +102,39 @@ export interface Interaction {
   detach(): void;
 }
 
-/** Wires pointer and wheel input on the canvas. */
+/** Ends the gesture `release` ends where the pointer is released: on the canvas with its point,
+ *  after which the cursor shows what lies under it, outside the canvas without one, and where the
+ *  pointer is cancelled, as a touch the browser takes over, as no release. */
+function attachRelease(
+  app: Application,
+  release: (released: boolean, at?: FederatedPointerEvent) => void,
+  hover: (event: FederatedPointerEvent) => void,
+): void {
+  app.stage.on("pointerup", (event) => {
+    try {
+      release(true, event);
+    } finally {
+      hover(event);
+    }
+  });
+  app.stage.on("pointerupoutside", () => release(true));
+  app.stage.on("pointercancel", () => release(false));
+}
+
+/** Wires pointer and wheel input on the canvas; a click on an element of a node's content is told
+ *  to `click`, and a connection proposed to `connect`, where the host lets the user connect. */
 export function attachInteraction(
   app: Application,
   store: GraphStore,
   bridge: Bridge,
-  connect?: Connect,
+  connect: Connect | undefined,
+  click: (click: ContentClick) => void,
 ): Interaction {
   const connecting = connect !== undefined;
   const hitAt = (x: number, y: number) => targetAt({ store, bridge }, x, y, connecting);
-  const context: Context = { store, bridge, pointer: { x: 0, y: 0 }, hitAt };
+  const context: Context = { store, bridge, pointer: { x: 0, y: 0 }, hitAt, click };
   let gesture: Gesture | null = null;
-  app.stage.eventMode = "static";
-  app.stage.hitArea = app.screen;
+  Object.assign(app.stage, { eventMode: "static", hitArea: app.screen });
   // The cursor shows what a press would do, and the connectors of the node under the pointer show
   // where a connection may begin, where the host lets the user connect.
   const hover = untilLost((event: FederatedPointerEvent) =>
@@ -120,11 +142,16 @@ export function attachInteraction(
   );
   // The gesture is over before its change is told, so that it stays over where a listener
   // throws, and also once the engine is lost, when nothing is told.
-  const tellEnd = untilLost((ended: Gesture | null, released: boolean) => ended?.end(released));
-  const release = (released = true) => {
+  const tellEnd = untilLost(
+    (ended: Gesture | null, released: boolean, at?: FederatedPointerEvent) =>
+      ended?.end(released, at && { x: at.global.x, y: at.global.y }),
+  );
+  // A release on the canvas ends with its point, one outside it without, and a cancelled pointer
+  // or a later press as no release, so that a cancelled touch neither drags nor clicks.
+  const release = (released = true, at?: FederatedPointerEvent) => {
     const ended = gesture;
     gesture = null;
-    tellEnd(ended, released);
+    tellEnd(ended, released, at);
   };
   app.stage.on(
     "pointerdown",
@@ -141,14 +168,7 @@ export function attachInteraction(
       gesture ? gesture.move(event.global.x, event.global.y) : hover(event),
     ),
   );
-  app.stage.on("pointerup", (event) => {
-    try {
-      release();
-    } finally {
-      hover(event);
-    }
-  });
-  app.stage.on("pointerupoutside", () => release());
+  attachRelease(app, release, hover);
   // A change that takes a gesture's subject from under it ends the gesture without a word: it
   // moves nothing that took the subject's slot, and tells nothing of what the user never moved.
   const unsubscribe = store.subscribe((state, previous) => {

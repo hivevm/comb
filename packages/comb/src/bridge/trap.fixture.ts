@@ -18,7 +18,7 @@ const bridge = createBridgeSync(await Bun.file(url).arrayBuffer());
 // edges, none, written into columns (ADR-0034).
 const columns = nodeColumns(1, PIECE_BOUND);
 columns.node("a", 0, 0, 100);
-columns.element("text", "title", 1, "a", true);
+columns.element("text", "title", 1, "a", undefined, true);
 const edges = edgeColumns(0, PIECE_BOUND).columns();
 const graph = { nodes: columns.columns(), edges } as GraphSnapshot;
 

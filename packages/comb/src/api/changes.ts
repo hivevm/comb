@@ -1,7 +1,9 @@
 // How a change the store records reaches the host application: `GraphChange`, what `onChange`
 // delivers, read from the store and the engine's buffer as copies no listener can reach into
-// (ADR-0030), and the listeners of `onChange` and `onSelectionChange` told from one subscription.
+// (ADR-0030), and the listeners of `onChange` and `onSelectionChange` told from one subscription;
+// and the listeners of `onContentClick`, told of each click on an element (ADR-0013).
 import { positionAt, type Bridge } from "../bridge";
+import type { ContentClick } from "../interaction";
 import {
   edgeNamed,
   type By,
@@ -209,4 +211,33 @@ export function listenersOf(store: GraphStore, bridge: Bridge) {
     if (failed.length > 0) throw failed[0];
   });
   return { onChange: add(changes), onSelectionChange: add(selections) };
+}
+
+/** `onContentClick` of one Comb, and the function that tells its listeners of a click: each is
+ *  told, a listener that throws keeping no other from being told, and the first error is thrown
+ *  on once all were. */
+export function contentClicksOf(): {
+  onContentClick(listener: (click: ContentClick) => void): () => void;
+  tell(click: ContentClick): void;
+} {
+  const listeners = new Set<(click: ContentClick) => void>();
+  return {
+    onContentClick(listener) {
+      // A registration of its own, so that one listener registered twice is told twice.
+      const registration = (click: ContentClick) => listener(click);
+      listeners.add(registration);
+      return () => void listeners.delete(registration);
+    },
+    tell(click) {
+      const failed: unknown[] = [];
+      for (const listener of [...listeners]) {
+        try {
+          listener(click);
+        } catch (error) {
+          failed.push(error);
+        }
+      }
+      if (failed.length > 0) throw failed[0];
+    },
+  };
 }

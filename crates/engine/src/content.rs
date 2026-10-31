@@ -4,8 +4,9 @@
 //! element's rectangle, where each text is cut and an ellipsis drawn after it, and the node's
 //! height from its rows; the rest of the engine takes that height as the node's.
 //!
-//! Only the element `text` exists so far; each further kind of ADR-0013 joins `Element` with the
-//! ticket that builds it.
+//! The elements `text` and `action` exist so far; each further kind of ADR-0013 joins `Element`
+//! with the ticket that builds it. An action is a text in the font of role body; what it names is
+//! the bridge's to keep, since the layout reads none of it.
 
 /// The space between a node's left and right sides and its columns, in world units.
 pub const PADDING_X: f64 = 12.0;
@@ -169,7 +170,31 @@ impl Fonts {
 /// One element of node content, as the layout reads it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Element<'a> {
-    Text { role: Role, text: &'a str },
+    Text {
+        role: Role,
+        text: &'a str,
+    },
+    /// A text whose click the host application gives a meaning, drawn in the font of role body.
+    Action {
+        text: &'a str,
+    },
+}
+
+impl Element<'_> {
+    /// The role whose font the element's text is drawn in.
+    pub const fn role(&self) -> Role {
+        match *self {
+            Self::Text { role, .. } => role,
+            Self::Action { .. } => Role::Body,
+        }
+    }
+
+    /// The text the element shows.
+    pub const fn text(&self) -> &str {
+        match *self {
+            Self::Text { text, .. } | Self::Action { text } => text,
+        }
+    }
 }
 
 /// One column of a row: its weight, a positive finite number the bridge checked, and its element.
@@ -194,9 +219,7 @@ pub struct Placed {
 
 /// The height of `element`'s line in `fonts`.
 pub fn element_height(element: &Element, fonts: &Fonts) -> f64 {
-    match *element {
-        Element::Text { role, .. } => fonts.of(role).line_height(),
-    }
+    fonts.of(element.role()).line_height()
 }
 
 /// The height of a row of `cells`: that of its tallest element, none for a row of no elements.
@@ -299,9 +322,8 @@ pub fn lay_out(
             let x = place(left.min(full));
             let column = within(x, span, place(full - pad));
             let height = element_height(&cell.element, fonts);
-            let (kept, ellipsis) = match cell.element {
-                Element::Text { role, text } => cut(text, f64::from(column), fonts.of(role)),
-            };
+            let element = cell.element;
+            let (kept, ellipsis) = cut(element.text(), f64::from(column), fonts.of(element.role()));
             out.push(Placed {
                 x,
                 y: place(top),
@@ -315,6 +337,33 @@ pub fn lay_out(
         top += row_height(row, fonts);
     }
     node_height(std::iter::once(top - PADDING_TOP))
+}
+
+/// The index of the element of `cells`, which `lay_out` placed at `placed`, whose rectangle holds
+/// the point `(x, y)` relative to its node's top-left corner, each rectangle taken with its left
+/// and top sides and without its right and bottom ones, so that two elements that touch never both
+/// hold a point; none on the padding, in a gap, or below a shorter element of its row. Where
+/// `titles_only`, as at the middle level, only a text of role title is hit, the one drawn there
+/// (ADR-0013).
+pub fn element_at(
+    cells: &[Cell],
+    placed: &[Placed],
+    x: f64,
+    y: f64,
+    titles_only: bool,
+) -> Option<usize> {
+    cells.iter().zip(placed).position(|(cell, at)| {
+        let drawn = !titles_only
+            || matches!(
+                cell.element,
+                Element::Text {
+                    role: Role::Title,
+                    ..
+                }
+            );
+        let [left, top, width, height] = [at.x, at.y, at.width, at.height].map(f64::from);
+        drawn && left <= x && x < left + width && top <= y && y < top + height
+    })
 }
 
 #[cfg(test)]
@@ -483,6 +532,80 @@ mod tests {
     }
 
     #[test]
+    fn an_action_lies_and_is_cut_as_a_text_of_role_body() {
+        // Verifies: ADR-0013, Q-4
+        // A title row, then a row of a body text beside an action weighted 1 and 3, at 220: the
+        // action takes the body's line, 16, and its column, 141 from 67.
+        let action = Cell {
+            weight: 3.0,
+            element: Element::Action {
+                text: "Details of the bet",
+            },
+        };
+        let cells = [
+            text(Role::Title, "Bet", 1.0),
+            text(Role::Body, "b", 1.0),
+            action,
+        ];
+        let (placed, height) = laid_out(&cells, &[1, 2], 220.0);
+        assert_near(
+            &placed,
+            &[
+                [12.0, 10.0, 196.0, 18.0],
+                [12.0, 28.0, 47.0, 16.0],
+                [67.0, 28.0, 141.0, 16.0],
+            ],
+        );
+        assert_eq!(height, 64.0);
+        // Eighteen glyphs of the body's 6 fit in 141; in 100 wide the action is cut beside the
+        // body's ellipsis of 9: in 51, seven glyphs, 42.
+        assert_eq!((placed[2].kept, placed[2].ellipsis), (18, false));
+        let (narrow, _) = laid_out(&cells, &[1, 2], 100.0);
+        assert_eq!(narrow[2].width, 51.0);
+        assert_eq!((narrow[2].kept, narrow[2].ellipsis), (7, true));
+    }
+
+    #[test]
+    fn a_point_hits_the_element_whose_rectangle_holds_it_and_none_between() {
+        // Verifies: ADR-0013
+        // The cells of the test above at 220: a title at (12, 10) 196 × 18, a body at (12, 28)
+        // 47 × 16, and an action at (67, 28) 141 × 16, in a node 64 high.
+        let cells = [
+            text(Role::Title, "Bet", 1.0),
+            text(Role::Body, "b", 1.0),
+            Cell {
+                weight: 3.0,
+                element: Element::Action { text: "Details" },
+            },
+        ];
+        let (placed, _) = laid_out(&cells, &[1, 2], 220.0);
+        let at = |x, y| element_at(&cells, &placed, x, y, false);
+        assert_eq!(at(12.0, 10.0), Some(0));
+        assert_eq!(at(207.9, 27.9), Some(0));
+        // The title's bottom is the body's top: the point is the row below's.
+        assert_eq!(at(20.0, 28.0), Some(1));
+        assert_eq!(at(100.0, 35.0), Some(2));
+        // The padding left and right, above the first row and below the last, and the gap of 8
+        // between the body and the action.
+        for (x, y) in [
+            (5.0, 20.0),
+            (214.0, 20.0),
+            (100.0, 5.0),
+            (100.0, 50.0),
+            (63.0, 35.0),
+        ] {
+            assert_eq!(at(x, y), None, "({x}, {y})");
+        }
+        // At the middle level only the title is hit, where it is drawn.
+        assert_eq!(element_at(&cells, &placed, 100.0, 15.0, true), Some(0));
+        assert_eq!(element_at(&cells, &placed, 100.0, 35.0, true), None);
+        assert_eq!(element_at(&cells, &placed, 20.0, 35.0, true), None);
+        // A column with no width holds no point.
+        let (squeezed, _) = laid_out(&cells, &[1, 2], 16.0);
+        assert_eq!(element_at(&cells, &squeezed, 8.0, 35.0, false), None);
+    }
+
+    #[test]
     fn a_font_refuses_metrics_that_are_not_finite_or_do_not_pair_up() {
         assert_eq!(Font::new(&[65], &[], 1.0, 1.0), Err(FontError::Unpaired));
         for bad in [f64::NAN, f64::INFINITY, -1.0, MAX_METRIC * 2.0] {
@@ -517,9 +640,9 @@ mod tests {
     #[test]
     fn any_content_the_bridge_accepts_lays_out_finite_inside_its_node() {
         // Verifies: ADR-0013, Q-4
-        // Up to the bridge's limits, 8 rows of 6 columns of texts of up to 1,000 code units, with
-        // weights from the smallest to the largest positive finite numbers, at widths from 0 to
-        // the largest the world holds, in fonts of any metric up to the largest.
+        // Up to the bridge's limits, 8 rows of 6 columns of texts and actions of up to 1,000 code
+        // units, with weights from the smallest to the largest positive finite numbers, at widths
+        // from 0 to the largest the world holds, in fonts of any metric up to the largest.
         const WEIGHTS: [f64; 6] = [f64::MIN_POSITIVE, 1e-300, 0.5, 1.0, 1e300, f64::MAX];
         const WIDTHS: [f32; 6] = [0.0, 1.0, 23.0, 220.0, 1e6, 1.3e36];
         let roles = [Role::Title, Role::Body, Role::Caption];
@@ -535,12 +658,20 @@ mod tests {
             }
             let rows: Vec<u32> = (0..rng.below(9)).map(|_| rng.below(7) as u32).collect();
             let cells: Vec<Cell> = (0..rows.iter().sum::<u32>())
-                .map(|_| Cell {
-                    weight: WEIGHTS[rng.below(WEIGHTS.len())],
-                    element: Element::Text {
-                        role: roles[rng.below(3)],
-                        text: texts[rng.below(texts.len())],
-                    },
+                .map(|_| {
+                    let text = texts[rng.below(texts.len())];
+                    // A role, or past them an action.
+                    let element = match rng.below(4) {
+                        3 => Element::Action { text },
+                        role => Element::Text {
+                            role: roles[role],
+                            text,
+                        },
+                    };
+                    Cell {
+                        weight: WEIGHTS[rng.below(WEIGHTS.len())],
+                        element,
+                    }
                 })
                 .collect();
             let width = WIDTHS[rng.below(WIDTHS.len())];

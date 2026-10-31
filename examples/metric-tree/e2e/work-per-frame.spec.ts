@@ -118,14 +118,18 @@ test("a drag at the far level updates the GPU buffers in place, never reallocati
   const frames = 60;
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
-  // Pressing selects the node, which renders once more before the drag.
+  // Pressing selects the node, and a move past the slop of 4 pixels begins its drag (ADR-0013),
+  // each of which renders once more before the frames counted.
+  await page.evaluate(() => window.comb.whenRendered());
+  const slop = 5;
+  await page.mouse.move(from.x, from.y + slop);
   await page.evaluate(() => window.comb.whenRendered());
   const { queries, edgeTriangles, edgeMesh } = await page.evaluate(() => window.inspect());
   const warm = await work(page);
   // The node moves down and away from its edges' other ends: the mesh grows with them.
   const largest = { vertices: 0, indices: 0 };
   for (let i = 1; i <= frames; i++) {
-    await page.mouse.move(from.x, from.y + 2 * i);
+    await page.mouse.move(from.x, from.y + slop + 2 * i);
     const { vertices, indices } = await page.evaluate(async () => {
       await window.comb.whenRendered();
       return window.inspect().edgeMesh;

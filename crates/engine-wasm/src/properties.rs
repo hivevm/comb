@@ -315,8 +315,8 @@ fn weight() -> BoxedStrategy<Value> {
     prop_oneof![20 => good.prop_map(Value::Number), 1 => Just(Value::Null), 1 => bad].boxed()
 }
 
-/// An element of content: mostly a text in a role, now and then of a kind or a role the bridge
-/// refuses, without a field, or no object.
+/// An element of content: mostly a text in a role or an action with an identifier, now and then
+/// of a kind or a role the bridge refuses, without a field, or no object.
 fn element(loose: bool) -> BoxedStrategy<Value> {
     let named = |name: &str| Value::Text(name.to_owned());
     let kind = one_of(
@@ -333,6 +333,12 @@ fn element(loose: bool) -> BoxedStrategy<Value> {
         field("weight", weight(), true),
         field("text", text(loose), false),
     ]);
+    let action = object(vec![
+        field("kind", Just(named("action")).boxed(), false),
+        field("weight", weight(), true),
+        field("text", text(loose), loose),
+        field("id", text(loose), loose),
+    ]);
     let odd = prop::sample::select(vec![
         Value::Bool(false),
         Value::Number(3.0),
@@ -340,7 +346,7 @@ fn element(loose: bool) -> BoxedStrategy<Value> {
         Value::Text("text".to_owned()),
         Value::Object(Vec::new()),
     ]);
-    prop_oneof![30 => text_element, 1 => odd].boxed()
+    prop_oneof![30 => text_element, 5 => action, 1 => odd].boxed()
 }
 
 /// The content of a node: mostly a row or two of a text or two, now and then rows and columns at
@@ -510,10 +516,15 @@ fn far_side_ok(node: &Value, lines: [f64; 3]) -> bool {
     else {
         return true;
     };
-    let line = |element: &Value| match fields_of(element).and_then(|fields| get(fields, "role")) {
-        Some(Value::Text(role)) if role == "title" => lines[0],
-        Some(Value::Text(role)) if role == "body" => lines[1],
-        _ => lines[2],
+    // An action is drawn in the body's font.
+    let line = |element: &Value| {
+        let field = |name| fields_of(element).and_then(|fields| get(fields, name));
+        match (field("kind"), field("role")) {
+            (Some(Value::Text(kind)), _) if kind == "action" => lines[1],
+            (_, Some(Value::Text(role))) if role == "title" => lines[0],
+            (_, Some(Value::Text(role))) if role == "body" => lines[1],
+            _ => lines[2],
+        }
     };
     let row = |row: &Value| match row {
         Value::List(elements) => elements.iter().map(line).fold(0.0, f64::max),
@@ -535,7 +546,9 @@ fn nodes_of_data(data: &Value) -> &[Value] {
 
 /// Whether the content of `node` is to be refused by nothing, by brute force over the value: a
 /// list of at most 8 rows, each a list of at most 6 elements, each an object of the kind `text`,
-/// a positive finite weight, a role of the three, and a text of at most 1,000 UTF-16 code units.
+/// a positive finite weight, a role of the three, and a text of at most 1,000 UTF-16 code units, or
+/// of the kind `action`, a positive finite weight, and a text and an identifier of at most 1,000
+/// code units each.
 fn content_ok(node: &Value) -> bool {
     let Some(Value::List(rows)) = fields_of(node).and_then(|fields| get(fields, "content")) else {
         return false;
@@ -552,8 +565,10 @@ fn content_ok(node: &Value) -> bool {
             Some(Value::Number(w)) => w.is_finite() && *w > 0.0,
             Some(_) => false,
         };
-        let text = matches!(get(fields, "text"), Some(Value::Text(t)) if units(t) <= 1_000);
-        named("kind", &["text"]) && named("role", &["title", "body", "caption"]) && weight && text
+        let string = |name| matches!(get(fields, name), Some(Value::Text(t)) if units(t) <= 1_000);
+        let text = named("kind", &["text"]) && named("role", &["title", "body", "caption"]);
+        let action = named("kind", &["action"]) && string("id");
+        (text || action) && weight && string("text")
     };
     rows.len() <= 8
         && rows.iter().all(|row| match row {
@@ -1022,6 +1037,8 @@ fn loaded_in(
     let loaded = load_of(&nodes.view(), &edges.view(), fonts)?;
     let mut content = nodes.content.clone();
     content.spans = loaded.spans;
+    content.name_spans = loaded.name_spans;
+    content.index_names();
     let (mut cells, mut rows, mut placed) = (Vec::new(), Vec::new(), Vec::new());
     let mut drawn = super::Drawn::default();
     drawn.clear();

@@ -260,7 +260,9 @@ export class Scene {
   private contentOf(slot: number): { content?: NodeContent; title?: string } {
     if (!this.source) return {};
     const content = this.source.bridge.content(slot);
-    const title = content.flat().find((element) => element.role === "title")?.text;
+    const title = content
+      .flat()
+      .find((element) => element.kind === "text" && element.role === "title")?.text;
     return { content, ...(title === undefined ? {} : { title }) };
   }
 

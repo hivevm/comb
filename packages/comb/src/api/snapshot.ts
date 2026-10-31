@@ -142,7 +142,8 @@ function nameOf(value: unknown, read: Reader): unknown {
   return value.length > read.textLimit ? value.slice(0, read.textLimit + 1) : value;
 }
 
-/** An element of content as plain data, or `false` where it is no object. */
+/** An element of content as plain data, or `false` where it is no object; an action's identifier
+ *  read as a text is, and read of no other kind. */
 function elementOf(read: Reader, value: unknown) {
   const fields = objectOf(value);
   if (!fields || Array.isArray(value)) return false;
@@ -152,6 +153,7 @@ function elementOf(read: Reader, value: unknown) {
     role: nameOf(role, read),
     text: read.text(text),
   };
+  if (kind === "action") element.id = read.text(fields.id);
   // No key for a weight left out, which the bridge reads as 1, so that Comb keeps none either.
   if (weight !== undefined && weight !== null) element.weight = read.number(weight);
   return element;
@@ -262,10 +264,13 @@ function writeRow(
     else {
       const { kind, role, weight, text } = value as Fields;
       // The kind, the role, and the weight cross as codes and a number, which the writer takes
-      // by `typeof` and by comparing a string with a name.
+      // by `typeof` and by comparing a string with a name; an action's identifier is read as a
+      // text is, and counted with the texts.
       const shown = read.text(text);
-      columns.element(kind, role, weight, shown, last);
+      const id = kind === "action" ? read.text((value as Fields).id) : undefined;
+      columns.element(kind, role, weight, shown, id, last);
       if (typeof shown === "string") counted(read, shown.length, node, limits);
+      if (typeof id === "string") counted(read, id.length, node, limits);
     }
   }
 }

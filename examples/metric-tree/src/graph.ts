@@ -57,7 +57,8 @@ export function titled(title: string): NodeContent {
 /** The title a node of the example shows: the text of its first title, or none. */
 export function titleOf(node: Pick<NodeData, "content">): string {
   for (const row of node.content)
-    for (const element of row) if (element.role === "title") return element.text;
+    for (const element of row)
+      if (element.kind === "text" && element.role === "title") return element.text;
   return "";
 }
 

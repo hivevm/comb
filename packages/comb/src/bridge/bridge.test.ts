@@ -61,8 +61,8 @@ function writeContent(columns: NodeColumnWriter, content: unknown) {
         if (typeof element !== "object" || element === null || Array.isArray(element))
           columns.noElement(last);
         else {
-          const { kind, role, weight, text } = element as Record<string, unknown>;
-          columns.element(kind, role, weight, text, last);
+          const { kind, role, weight, text, id } = element as Record<string, unknown>;
+          columns.element(kind, role, weight, text, id, last);
         }
       });
   }
@@ -445,6 +445,54 @@ describe("bridge columns of a load", () => {
   });
 });
 
+describe("bridge actions", () => {
+  /** A node `b` of a title and an action whose identifier is `id`. */
+  const withAction = (id: unknown) => ({
+    ...node("b", 300, 0),
+    content: [
+      [{ kind: "text", role: "title", text: "Bet" }],
+      [{ kind: "action", text: "Details", id }],
+    ],
+  });
+
+  test("an action crosses with its identifier among the names and comes back as given", () => {
+    // Verifies: ADR-0013, ADR-0034
+    const { snapshot } = snapshotted([node("a", 0, 0), withAction("\u{1F600}details")]);
+    expect(snapshot.nodes.content.names).toEqual(["\u{1F600}details"]);
+    expect([...snapshot.nodes.content.kinds]).toEqual([
+      KindCode.Text,
+      KindCode.Text,
+      KindCode.Action,
+    ]);
+    expect(bridge.loadGraph(snapshot)).toBe(2);
+    expect(bridge.content(1)[1]).toEqual([
+      { kind: "action", text: "Details", id: "\u{1F600}details", weight: 1 },
+    ]);
+  });
+
+  test("an action whose identifier is no string or too long is refused naming the node", () => {
+    // Verifies: ADR-0013, ADR-0034, Q-7
+    const at = { node: "b", row: 1, column: 0, field: "id" };
+    const cases: [unknown, object][] = [
+      [undefined, { kind: "invalidContentText", ...at }],
+      [5, { kind: "invalidContentText", ...at }],
+      ["\ud800", { kind: "invalidContentText", ...at }],
+      ["d".repeat(1001), { kind: "contentTextTooLong", ...at, limit: 1000 }],
+    ];
+    for (const [id, problem] of cases) {
+      const { snapshot } = snapshotted([node("a", 0, 0), withAction(id)]);
+      expect(outcome(() => bridge.loadGraph(snapshot))).toEqual(problem);
+    }
+    // Through `addNode` alike, and an identifier at the limit is taken.
+    bridge.loadGraph(snapshotted([node("a", 0, 0)]).snapshot);
+    expect(outcome(() => bridge.addNode(added(withAction(5))))).toEqual({
+      kind: "invalidContentText",
+      ...at,
+    });
+    expect(bridge.addNode(added(withAction("d".repeat(1000))))).toBe(1);
+  });
+});
+
 // Identifiers of 0 to 16 code units, characters beyond the basic plane among them; titles and
 // label texts of none, columns of no code units.
 const PIECED_IDS = [
@@ -524,9 +572,9 @@ describe("bridge pieces of a string column", () => {
   test("a value longer than the bound on a piece fits in none, and the writer refuses it", () => {
     // Verifies: ADR-0034
     expect(() => nodeColumns(1, 16).node("x".repeat(17), 0, 0, 1)).toThrow(RangeError);
-    expect(() => nodeColumns(1, 16).element("text", "title", 1, "x".repeat(17), true)).toThrow(
-      RangeError,
-    );
+    expect(() =>
+      nodeColumns(1, 16).element("text", "title", 1, "x".repeat(17), undefined, true),
+    ).toThrow(RangeError);
     expect(() =>
       edgeColumns(1, 16).edge(
         "e",

@@ -28,6 +28,8 @@ import init, {
   type InitOutput,
   type EdgeInput,
   type EdgePatch,
+  type ElementHit,
+  type ElementKind,
   type Hit,
   type GraphDataProblem,
   type NodeContent,
@@ -42,6 +44,8 @@ import init, {
 export type {
   ContentElement,
   EdgeField,
+  ElementHit,
+  ElementKind,
   GraphDataProblem,
   NodeContent,
   NodeField,
@@ -69,8 +73,9 @@ export const PIECE_BOUND = 2 ** 28;
  *  elements in slot order, each node's rows in their order and each row's elements in theirs:
  *  the boundaries of each node's rows, one more than there are nodes; of each row's elements,
  *  one more than there are rows; per element its kind's code, its weight, NaN for one of another
- *  type, and a text's role's code, 0 for another kind; and the texts, every string an element
- *  shows, as a string column with per text whether it is a text, 1 or 0. */
+ *  type, and a text's role's code, 0 for another kind; the texts, every string an element shows,
+ *  as a string column with per text whether it is a text, 1 or 0; and the names, every string an
+ *  element names and does not show, an action's identifier, as the texts. */
 export interface ContentColumns {
   readonly rowBounds: Uint32Array;
   readonly elementBounds: Uint32Array;
@@ -80,6 +85,9 @@ export interface ContentColumns {
   readonly texts: string[];
   readonly textBounds: Uint32Array;
   readonly textValid: Uint8Array;
+  readonly names: string[];
+  readonly nameBounds: Uint32Array;
+  readonly nameValid: Uint8Array;
 }
 
 /** The nodes of a load as the engine's `loadGraph` takes them (ADR-0034), each column in slot
@@ -116,9 +124,16 @@ export interface NodeColumnWriter {
   /** The node's content is no list: refused by its type, and the node holds no rows. */
   noContent(): void;
   /** The next element of the row: an element's kind and role cross as their codes, its weight as
-   *  given, 1 where it is absent, NaN where it is of another type, and a text that is no string
-   *  as no text, each refused at its rule. */
-  element(kind: unknown, role: unknown, weight: unknown, text: unknown, endsRow: boolean): void;
+   *  given, 1 where it is absent, NaN where it is of another type, and a text or an action's
+   *  identifier `id` that is no string as none, each refused at its rule. */
+  element(
+    kind: unknown,
+    role: unknown,
+    weight: unknown,
+    text: unknown,
+    id: unknown,
+    endsRow: boolean,
+  ): void;
   /** The next element of the row is no object: it crosses as one of no kind, its place named. */
   noElement(endsRow: boolean): void;
   /** The row is no list: it crosses as a row of no elements, its place named, and ends. */
@@ -180,7 +195,10 @@ type Typed = Uint8Array | Uint32Array | Float64Array;
 
 /** The code of each kind of element and each role by its name, typed by the generated names so
  *  that a kind or a role added in the engine fails here until it has its code (ADR-0034). */
-const KINDS: Readonly<Record<ContentElement["kind"], KindCode>> = { text: KindCode.Text };
+const KINDS: Readonly<Record<ContentElement["kind"], KindCode>> = {
+  text: KindCode.Text,
+  action: KindCode.Action,
+};
 const ROLES: Readonly<Record<TextRole, RoleCode>> = {
   title: RoleCode.Title,
   body: RoleCode.Body,
@@ -190,7 +208,14 @@ const ROLES: Readonly<Record<TextRole, RoleCode>> = {
 /** The code of the kind `kind` names, `Unnamed` for any other value: compared with each name,
  *  which `KINDS` holds, so that a value is looked at by equality alone. */
 function kindCode(kind: unknown): KindCode {
-  return kind === "text" ? KINDS.text : KindCode.Unnamed;
+  switch (kind) {
+    case "text":
+      return KINDS.text;
+    case "action":
+      return KINDS.action;
+    default:
+      return KindCode.Unnamed;
+  }
 }
 
 /** The code of the role `role` names, `Unnamed` for any other value, as `kindCode` finds it. */
@@ -234,10 +259,13 @@ class NodeWriter implements NodeColumnWriter {
   private roles: Uint8Array;
   private textValid: Uint8Array;
   private readonly texts: ReturnType<typeof stringColumn>;
+  private nameValid = new Uint8Array(16);
+  private readonly names: ReturnType<typeof stringColumn>;
   private nodes = 0;
   private rows = 0;
   private elements = 0;
   private valid = 0;
+  private namesValid = 0;
 
   constructor(count: number, bound: number) {
     this.ids = stringColumn(count, bound);
@@ -251,6 +279,7 @@ class NodeWriter implements NodeColumnWriter {
     this.roles = new Uint8Array(count);
     this.textValid = new Uint8Array(count);
     this.texts = stringColumn(count, bound);
+    this.names = stringColumn(16, bound);
   }
 
   /** The row and column of the next element within its node. */
@@ -334,16 +363,26 @@ class NodeWriter implements NodeColumnWriter {
     if (endsRow) this.endRow();
   }
 
-  /** The next element, of the fields read of it. */
-  element(kind: unknown, role: unknown, weight: unknown, text: unknown, endsRow: boolean): void {
+  /** The next element, of the fields read of it: a `text` fills its role and a text, an
+   *  `action` a text and a name, and any other kind none (ADR-0034). */
+  element(
+    kind: unknown,
+    role: unknown,
+    weight: unknown,
+    text: unknown,
+    id: unknown,
+    endsRow: boolean,
+  ): void {
     const at = this.next();
     const code = kindCode(kind);
     this.kinds[at] = code;
     this.weights[at] = absent(weight) ? WEIGHT : typeof weight === "number" ? weight : Number.NaN;
-    if (code !== KindCode.Text) this.roles[at] = 0;
-    else {
-      this.roles[at] = roleCode(role);
+    this.roles[at] = code === KindCode.Text ? roleCode(role) : 0;
+    if (code === KindCode.Text || code === KindCode.Action)
       this.textValid[this.valid++] = Number(this.texts.add(text));
+    if (code === KindCode.Action) {
+      if (this.namesValid === this.nameValid.length) this.nameValid = grown(this.nameValid);
+      this.nameValid[this.namesValid++] = Number(this.names.add(id));
     }
     if (endsRow) this.endRow();
   }
@@ -371,6 +410,9 @@ class NodeWriter implements NodeColumnWriter {
       texts: this.texts.pieces(),
       textBounds: this.texts.bounds(),
       textValid: this.textValid.subarray(0, this.valid),
+      names: this.names.pieces(),
+      nameBounds: this.names.bounds(),
+      nameValid: this.nameValid.subarray(0, this.namesValid),
     };
   }
 }
@@ -664,16 +706,23 @@ const DETAILS: Record<MeshDetail, Detail> = {
  *  (ADR-0013), at the near and the middle level: per found node, in their order, the boundaries
  *  of its elements in the other columns, one more than there are found nodes; per element, its
  *  node's elements in the order of its rows and theirs, its rectangle `x, y, width, height`
- *  relative to its node's top-left corner, its text's role, and what is drawn of its text, the
- *  text or as much of it as fits followed by an ellipsis, those strings one after another in
- *  `texts`, cut by `textBounds`. At the far level it holds no node. */
+ *  relative to its node's top-left corner, its kind's code, the role whose font draws its text,
+ *  body for an action, and what is drawn of its text, the text or as much of it as fits followed
+ *  by an ellipsis, those strings one after another in `texts`, cut by `textBounds`. At the far
+ *  level it holds no node. */
 export interface Placed {
   bounds: Uint32Array;
   rects: Float32Array;
+  kinds: Uint8Array;
   roles: Uint8Array;
   texts: string;
   textBounds: Uint32Array;
 }
+
+/** The kind of each code of `KindCode` the bridge accepts, by the code. */
+export const KIND_NAMES: Readonly<Record<number, ContentElement["kind"]>> = Object.fromEntries(
+  Object.entries(KINDS).map(([name, code]) => [code, name as ContentElement["kind"]]),
+);
 
 /** The role of each code of `RoleCode`, by the code. */
 export const ROLE_NAMES: Readonly<Record<number, TextRole>> = Object.fromEntries(
@@ -999,6 +1048,9 @@ function load(engine: Engine, { nodes, edges }: GraphSnapshot): number {
     c.texts,
     c.textBounds,
     c.textValid,
+    c.names,
+    c.nameBounds,
+    c.nameValid,
   ] as const;
   const e = edges;
   const edgeColumnValues = [
@@ -1061,6 +1113,7 @@ function queried(
     content: {
       bounds: u32(engine.contentBoundsPtr(), engine.contentBoundsLen()),
       rects: f32(engine.contentRectsPtr(), engine.contentRectsLen()),
+      kinds: u8(engine.contentKindsPtr(), engine.contentKindsLen()),
       roles: u8(engine.contentRolesPtr(), engine.contentRolesLen()),
       texts,
       textBounds: u32(engine.contentTextBoundsPtr(), engine.contentTextBoundsLen()),

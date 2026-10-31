@@ -1,7 +1,8 @@
 // The nodes layer at the near and the middle level (ADR-0027): a pooled view per node in view, its
 // box and its content (ADR-0013), every text as `BitmapText`. The engine lays the content out and
-// the view draws each text where the engine placed it, cut where it was cut: near every text,
-// middle the texts of role title alone, at the place near gives them.
+// the view draws each text where the engine placed it, cut where it was cut, an action's in the
+// link colour: near every text, middle the texts of role title alone, at the place near gives
+// them.
 import {
   BitmapFontManager,
   BitmapText,
@@ -10,7 +11,14 @@ import {
   TextStyle,
   type TextStyleOptions,
 } from "pixi.js";
-import { ROLE_NAMES, type FontMetrics, type Placed, type TextRole } from "../bridge";
+import {
+  KIND_NAMES,
+  ROLE_NAMES,
+  type ContentElement,
+  type FontMetrics,
+  type Placed,
+  type TextRole,
+} from "../bridge";
 import type { GraphView, NodeView } from "../store";
 import { Bindings } from "./bindings";
 
@@ -19,6 +27,7 @@ const NODE_STROKE = 0xd0d4dc;
 const SELECTED_STROKE = 0x3b82f6;
 const TEXT_COLOR = 0x1f2430;
 const CAPTION_COLOR = 0x6b7280;
+const LINK_COLOR = 0x2563eb;
 
 /** The style each role's texts are drawn in; the title's is that of the title before content. */
 export const TEXT_STYLES: Readonly<Record<TextRole, TextStyleOptions>> = {
@@ -26,6 +35,14 @@ export const TEXT_STYLES: Readonly<Record<TextRole, TextStyleOptions>> = {
   body: { fontFamily: "Arial", fontSize: 12, fill: TEXT_COLOR },
   caption: { fontFamily: "Arial", fontSize: 11, fill: CAPTION_COLOR },
 };
+
+/** The style an action's text is drawn in: the body's font, which the engine lays it out in, in
+ *  the link colour. */
+export const ACTION_STYLE: TextStyleOptions = { ...TEXT_STYLES.body, fill: LINK_COLOR };
+
+/** The style of a text of `kind` and `role`. */
+const styleOf = (kind: ContentElement["kind"], role: TextRole) =>
+  kind === "action" ? ACTION_STYLE : TEXT_STYLES[role];
 
 /** The height of a line of each role, which the engine stacks rows by: given here rather than
  *  measured, so that a node's height does not depend on how a machine measures the font. A text
@@ -76,6 +93,7 @@ export function fontMetricsOf(role: TextRole): FontMetrics {
 /** One text a view draws: where the engine placed it in its node, and what of it is drawn, the
  *  text or as much of it as fits followed by an ellipsis. */
 export interface DrawnText {
+  kind: ContentElement["kind"];
   role: TextRole;
   drawn: string;
   x: number;
@@ -84,16 +102,17 @@ export interface DrawnText {
   height: number;
 }
 
-/** The texts of the elements `start` to `end` of `placed`; at the middle level those of role
- *  title alone. */
+/** The texts of the elements `start` to `end` of `placed`; at the middle level the texts of role
+ *  title alone, no action among them. */
 function textsOf(placed: Placed, start: number, end: number, titlesOnly: boolean): DrawnText[] {
   const texts: DrawnText[] = [];
   for (let i = start; i < end; i++) {
+    const kind = KIND_NAMES[placed.kinds[i]!]!;
     const role = ROLE_NAMES[placed.roles[i]!]!;
-    if (titlesOnly && role !== "title") continue;
+    if (titlesOnly && (kind !== "text" || role !== "title")) continue;
     const drawn = placed.texts.slice(placed.textBounds[i], placed.textBounds[i + 1]);
     const r = placed.rects.subarray(i * 4, i * 4 + 4);
-    texts.push({ role, drawn, x: r[0]!, y: r[1]!, width: r[2]!, height: r[3]! });
+    texts.push({ kind, role, drawn, x: r[0]!, y: r[1]!, width: r[2]!, height: r[3]! });
   }
   return texts;
 }
@@ -102,7 +121,7 @@ function textsOf(placed: Placed, start: number, end: number, titlesOnly: boolean
 export class NodeGraphic extends Container {
   private readonly box = new Graphics();
   /** The pooled text objects of the view, the first `texts.length` of them in use. */
-  private readonly pool: { view: BitmapText; role: TextRole }[] = [];
+  private readonly pool: { view: BitmapText; style: TextStyleOptions }[] = [];
   /** The node the view shows. */
   nodeId = "";
   /** What the view last drew, compared by content, since a pooled view shows another node from
@@ -177,15 +196,13 @@ export class NodeGraphic extends Container {
     this.texts = texts;
     texts.forEach((text, i) => {
       let pooled = this.pool[i];
+      const style = styleOf(text.kind, text.role);
       if (!pooled) {
-        pooled = {
-          view: new BitmapText({ text: "", style: TEXT_STYLES[text.role] }),
-          role: text.role,
-        };
+        pooled = { view: new BitmapText({ text: "", style }), style };
         this.pool.push(pooled);
-      } else if (pooled.role !== text.role) {
-        pooled.view.style = TEXT_STYLES[text.role];
-        pooled.role = text.role;
+      } else if (pooled.style !== style) {
+        pooled.view.style = style;
+        pooled.style = style;
       }
       pooled.view.text = text.drawn;
       pooled.view.position.set(text.x, text.y);
