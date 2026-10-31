@@ -6,7 +6,8 @@
 //! which the shell reads as typed-array views created anew after every call.
 //!
 //! This root holds the exports and their conversions; the reading and checking of graph data,
-//! which the bridge alone does (ADR-0028), is the module `graph_data`.
+//! which the bridge alone does (ADR-0028), is the module `graph_data`, and what the bridge keeps
+//! of node content between calls, and draws of it, the module `kept`.
 
 #![cfg_attr(
     test,
@@ -17,6 +18,7 @@
 )]
 
 mod graph_data;
+mod kept;
 
 use comb_engine::content::{Cell, Font, Fonts, Placed, drawn_at};
 use comb_engine::geometry::Point;
@@ -37,10 +39,12 @@ pub use graph_data::{
     TextRole, Trend, TrendDirection,
 };
 
+use kept::{ContentStore, Drawn};
+
 use graph_data::{
-    COLUMN_LIMIT, ContentData, ContentStore, Drawn, EdgeColumns, EdgeRefusal, ID_LIMIT,
-    NodeColumns, ROW_LIMIT, SEGMENT_LIMIT, TEXT_LIMIT, add_edge_to, add_node_to, edge_refused_of,
-    load_of, malformed, patch_of, refused_of, slot, unshaped, update_edge_in,
+    COLUMN_LIMIT, ContentData, EdgeColumns, EdgeRefusal, ID_LIMIT, NodeColumns, ROW_LIMIT,
+    SEGMENT_LIMIT, TEXT_LIMIT, add_edge_to, add_node_to, edge_refused_of, load_of, malformed,
+    patch_of, refused_of, slot, unshaped, update_edge_in,
 };
 
 /// A number the shell computed that an export cannot take: the shell's own mistake, never one of

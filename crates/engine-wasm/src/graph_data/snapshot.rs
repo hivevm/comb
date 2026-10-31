@@ -8,7 +8,8 @@ use super::field::items;
 use super::node_columns::Refused;
 use super::{
     Arrow, ArrowCode, ContentData, ContentInput, EdgeColumns, EdgeField, EdgeInput, Field,
-    LabelInput, NodeColumns, NodeField, NodeInput, Pair, Side, SideCode, Unflat, utf16_length,
+    LabelInput, NodeColumns, NodeField, NodeInput, Pair, Side, SideCode, Unflat, numbered,
+    utf16_length,
 };
 
 /// The nodes and edges of one load as the tests write them, each in slot order: the nodes as the
@@ -438,5 +439,47 @@ impl OwnedEdgeColumns {
             target_side: &self.target_side,
             refused: self.refused,
         }
+    }
+}
+
+#[cfg(test)]
+impl ContentData {
+    /// Ends a node of the columns of a load being written.
+    pub(crate) fn end_node(&mut self) {
+        self.row_bounds
+            .push(numbered(self.element_bounds.len() - 1));
+    }
+
+    /// Appends the rows of `node`, the content of one node, to the columns of a load being
+    /// written, its texts one value each onto `texts` and its names onto `names`, which the caller
+    /// cuts into pieces.
+    pub(crate) fn append(&mut self, node: &Self, texts: &mut Vec<String>, names: &mut Vec<String>) {
+        let base = numbered(self.kinds.len());
+        let ends = node.element_bounds.windows(2).map(|pair| base + pair[1]);
+        self.element_bounds.extend(ends);
+        self.kinds.extend(&node.kinds);
+        self.weights.extend(&node.weights);
+        self.roles.extend(&node.roles);
+        self.directions.extend(&node.directions);
+        self.colors.extend(&node.colors);
+        let base = numbered(self.fractions.len());
+        let ends = node.segment_bounds.windows(2).map(|pair| base + pair[1]);
+        self.segment_bounds.extend(ends);
+        self.fractions.extend(&node.fractions);
+        self.segment_colors.extend(&node.segment_colors);
+        let values = super::values(&node.texts, &node.text_bounds).expect("texts of one node");
+        for value in values {
+            let last = self.text_bounds[self.text_bounds.len() - 1];
+            self.text_bounds.push(last + numbered(utf16_length(value)));
+            texts.push(value.to_owned());
+        }
+        self.text_valid.extend(&node.text_valid);
+        let values = super::values(&node.names, &node.name_bounds).expect("names of one node");
+        for value in values {
+            let last = self.name_bounds[self.name_bounds.len() - 1];
+            self.name_bounds.push(last + numbered(utf16_length(value)));
+            names.push(value.to_owned());
+        }
+        self.name_valid.extend(&node.name_valid);
     }
 }

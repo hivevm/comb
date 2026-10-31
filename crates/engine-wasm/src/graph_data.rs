@@ -29,7 +29,7 @@ use checks::rgb;
 pub(crate) use checks::{kept_height, within_by_height};
 use content::Cursor;
 pub(crate) use content::{
-    COLUMN_LIMIT, Checked, ContentStore, Drawn, ROW_LIMIT, SEGMENT_LIMIT, check_content_budget,
+    COLUMN_LIMIT, Checked, ROW_LIMIT, SEGMENT_LIMIT, check_content_budget, direction_of, rgb_of,
     role_of,
 };
 pub use content::{
@@ -58,8 +58,8 @@ pub use problem::{GraphDataProblem, GraphList};
 pub(crate) use problem::{malformed, slot, unshaped};
 #[cfg(test)]
 pub(crate) use snapshot::{EdgeCells, GraphBatch, OwnedColumns, OwnedEdgeColumns};
-use strings::{bounds_fit, lengths, utf16_length, value_at, values};
-pub(crate) use strings::{numbered, text_spans};
+use strings::{bounds_fit, lengths, string_at, value_at, values};
+pub(crate) use strings::{numbered, text_spans, utf16_length};
 
 /// The value of `values` whose code, its discriminant, is `code`, or none for a code none has.
 fn coded<T: Copy + Into<u32>>(values: &[T], code: u32) -> Option<T> {

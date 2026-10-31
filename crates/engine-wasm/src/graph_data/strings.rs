@@ -6,7 +6,7 @@
 use super::{GraphDataProblem, malformed};
 
 /// The length of a text in UTF-16 code units, as JavaScript counts it.
-pub(super) fn utf16_length(text: &str) -> usize {
+pub(crate) fn utf16_length(text: &str) -> usize {
     if text.is_ascii() {
         text.len()
     } else {
@@ -183,3 +183,38 @@ pub(crate) fn text_spans(
 
 /// The refusal of a boundary of a text of content that falls inside a character.
 pub(crate) const TEXT_INSIDE: &str = "a text of content ends inside a character";
+
+/// The string at `index` of a column of `pieces` cut by `bounds`, by its span in `spans`, or
+/// where they are none, of ASCII pieces at its code units.
+pub(super) fn string_at<'a>(
+    pieces: &'a [String],
+    bounds: &[u32],
+    spans: &[(u32, u32, u32)],
+    index: usize,
+) -> &'a str {
+    if spans.is_empty() {
+        return ascii_at(pieces, bounds, index);
+    }
+    let (piece, start, end) = spans[index];
+    // An empty string past the last piece, or in a column of no pieces, lies in none.
+    pieces
+        .get(piece as usize)
+        .map_or("", |piece| &piece[start as usize..end as usize])
+}
+
+/// The string at `index` of ASCII pieces, at its code units in the piece it lies in.
+fn ascii_at<'a>(pieces: &'a [String], bounds: &[u32], index: usize) -> &'a str {
+    let (start, end) = (bounds[index] as usize, bounds[index + 1] as usize);
+    let mut base = 0;
+    for piece in pieces {
+        // A string no longer than nothing lies in no piece; any other lies whole in one.
+        if start == end {
+            break;
+        }
+        if end <= base + piece.len() {
+            return &piece[start - base..end - base];
+        }
+        base += piece.len();
+    }
+    ""
+}

@@ -1359,7 +1359,7 @@ fn loaded_in(
     content.name_spans = loaded.name_spans;
     content.index_strings();
     let (mut cells, mut rows, mut placed) = (Vec::new(), Vec::new(), Vec::new());
-    let mut drawn = super::Drawn::default();
+    let mut drawn = crate::kept::Drawn::default();
     drawn.clear();
     // The texts each placed element shows, none of a progress bar and three of a metric, and the
     // name of an icon, which the shell draws as the image registered under it.
@@ -1418,7 +1418,7 @@ fn loaded_in(
 
 /// Asserts that the pieces of each bar `drawn` holds lie within the element `placed` holds of it,
 /// from its left in order.
-fn assert_bars_within(drawn: &super::Drawn, placed: &[comb_engine::content::Placed]) {
+fn assert_bars_within(drawn: &crate::kept::Drawn, placed: &[comb_engine::content::Placed]) {
     assert_eq!(drawn.bar_bounds.len(), placed.len() + 1);
     assert_eq!(drawn.bars.len(), 4 * drawn.bar_colors.len());
     for (index, at) in placed.iter().enumerate() {
@@ -1438,7 +1438,7 @@ fn assert_bars_within(drawn: &super::Drawn, placed: &[comb_engine::content::Plac
 }
 
 /// Asserts that each icon's text `drawn` holds is its name, `texts`, whole, never cut.
-fn assert_names_whole(drawn: &super::Drawn, texts: &[Vec<&str>]) {
+fn assert_names_whole(drawn: &crate::kept::Drawn, texts: &[Vec<&str>]) {
     let shown = split_utf16(&drawn.texts, &drawn.bounds);
     for ((shown, &kind), text) in shown.iter().zip(&drawn.kinds).zip(texts) {
         if kind == KindCode::Icon as u8 {
@@ -1450,7 +1450,7 @@ fn assert_names_whole(drawn: &super::Drawn, texts: &[Vec<&str>]) {
 /// Asserts that each text `drawn` holds is a prefix of the text of its element, `texts`, an
 /// ellipsis after it where it was cut; a metric's three, each cut on its own.
 fn assert_texts_drawn(
-    drawn: &super::Drawn,
+    drawn: &crate::kept::Drawn,
     placed: &[comb_engine::content::Placed],
     texts: &[Vec<&str>],
 ) {
@@ -1486,7 +1486,7 @@ fn assert_texts_drawn(
 
 /// Asserts that the parts and the arrow of each metric `drawn` holds lie within the cell `placed`
 /// holds of it, and that no other element holds either.
-fn assert_parts_within(drawn: &super::Drawn, placed: &[comb_engine::content::Placed]) {
+fn assert_parts_within(drawn: &crate::kept::Drawn, placed: &[comb_engine::content::Placed]) {
     assert_eq!(drawn.part_bounds.len(), placed.len() + 1);
     assert_eq!(drawn.arrow_bounds.len(), placed.len() + 1);
     assert_eq!(drawn.parts.len(), 4 * drawn.part_ends.len());
