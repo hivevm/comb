@@ -259,6 +259,18 @@ impl Element<'_> {
             Self::Icon | Self::Progress | Self::Metric { .. } => "",
         }
     }
+
+    /// The element's kind, and a text's role.
+    const fn kind(&self) -> Kind {
+        match *self {
+            Self::Text { role, .. } => Kind::Text(role),
+            Self::Icon => Kind::Icon,
+            Self::Action { .. } => Kind::Action,
+            Self::Badge { .. } => Kind::Badge,
+            Self::Progress => Kind::Progress,
+            Self::Metric { .. } => Kind::Metric,
+        }
+    }
 }
 
 /// One column of a row: its weight, a positive finite number the bridge checked, and its element.
@@ -281,50 +293,48 @@ pub struct Placed {
     pub ellipsis: bool,
 }
 
-/// The height of `element` in `fonts`: its line's, an icon's the body's line, a badge's pill's,
-/// its line and the padding above and below, and a metric's two lines, the caption's and the
-/// body's below it.
-pub fn element_height(element: &Element, fonts: &Fonts) -> f64 {
-    let line = fonts.of(element.role()).line_height();
-    match element {
-        Element::Badge { .. } => line + 2.0 * BADGE_PADDING_Y,
-        Element::Metric { .. } => fonts.of(Role::Caption).line_height() + line,
-        _ => line,
+/// What of an element its height and where it lies in its row depend on: its kind, and a text's
+/// role; none of its texts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    Text(Role),
+    Icon,
+    Action,
+    Badge,
+    Progress,
+    Metric,
+}
+
+/// The height of an element of `kind` in `fonts`: its line's, an icon's the body's line, a
+/// badge's pill's, its line and the padding above and below, and a metric's two lines, the
+/// caption's and the body's below it.
+fn element_height(kind: Kind, fonts: &Fonts) -> f64 {
+    match kind {
+        Kind::Text(role) => fonts.of(role).line_height(),
+        Kind::Badge => fonts.of(Role::Body).line_height() + 2.0 * BADGE_PADDING_Y,
+        Kind::Metric => fonts.of(Role::Caption).line_height() + fonts.of(Role::Body).line_height(),
+        Kind::Icon | Kind::Action | Kind::Progress => fonts.of(Role::Body).line_height(),
     }
 }
 
-/// How far below its row's top an element lies in a row that holds a badge where `badged`: every
-/// element but a badge by the badge's padding above its text, so that the texts of the row share
-/// one line; nothing in a row without a badge.
-pub const fn row_offset(element: &Element, badged: bool) -> f64 {
-    match element {
-        Element::Badge { .. } => 0.0,
+/// How far below its row's top an element of `kind` lies in a row that holds a badge where
+/// `badged`: every element but a badge by the badge's padding above its text, so that the texts of
+/// the row share one line; nothing in a row without a badge.
+const fn row_offset(kind: Kind, badged: bool) -> f64 {
+    match kind {
+        Kind::Badge => 0.0,
         _ if badged => BADGE_PADDING_Y,
         _ => 0.0,
     }
 }
 
-/// The height of a row of elements, each given as whether it is a badge and its height: as deep
-/// as its deepest element reaches, each other than a badge lying `BADGE_PADDING_Y` lower in a row
-/// that holds a badge; none for a row of no elements.
-pub fn row_height_of(elements: impl IntoIterator<Item = (bool, f64)>) -> f64 {
-    let (mut badges, mut others) = (None::<f64>, 0.0_f64);
-    for (badge, height) in elements {
-        if badge {
-            badges = Some(badges.map_or(height, |deepest| deepest.max(height)));
-        } else {
-            others = others.max(height);
-        }
-    }
-    badges.map_or(others, |badges| badges.max(others + BADGE_PADDING_Y))
-}
-
-/// The height of a row of `cells`, as `row_height_of` finds it.
-pub fn row_height(cells: &[Cell], fonts: &Fonts) -> f64 {
-    row_height_of(cells.iter().map(|cell| {
-        let badge = matches!(cell.element, Element::Badge { .. });
-        (badge, element_height(&cell.element, fonts))
-    }))
+/// The height of a row of elements of `kinds`: as deep as its deepest element reaches below the
+/// row's top, its offset (`row_offset`) and its height; none for a row of no elements.
+fn row_height(kinds: impl Iterator<Item = Kind> + Clone, fonts: &Fonts) -> f64 {
+    let badged = kinds.clone().any(|kind| kind == Kind::Badge);
+    kinds
+        .map(|kind| row_offset(kind, badged) + element_height(kind, fonts))
+        .fold(0.0, f64::max)
 }
 
 /// Whether `cells` hold a badge.
@@ -334,11 +344,24 @@ fn badged(cells: &[Cell]) -> bool {
         .any(|cell| matches!(cell.element, Element::Badge { .. }))
 }
 
-/// The height of a node whose rows are `rows` high: the padding above and below and the rows
-/// between, at least `MIN_HEIGHT`.
-pub fn node_height(rows: impl IntoIterator<Item = f64>) -> f64 {
-    let rows: f64 = rows.into_iter().sum();
+/// The height of a node whose rows are `rows` high together: the padding above and below and the
+/// rows between, at least `MIN_HEIGHT`.
+fn node_height(rows: f64) -> f64 {
     (PADDING_TOP + rows + PADDING_BOTTOM).max(MIN_HEIGHT)
+}
+
+/// The height of a node whose rows hold elements of the kinds of `rows`, each row's in its order,
+/// in `fonts`: the height `lay_out` returns for that content, whatever its texts and its width.
+pub fn height<R>(rows: impl IntoIterator<Item = R>, fonts: &Fonts) -> f64
+where
+    R: IntoIterator<Item = Kind>,
+    R::IntoIter: Clone,
+{
+    node_height(
+        rows.into_iter()
+            .map(|row| row_height(row.into_iter(), fonts))
+            .sum(),
+    )
 }
 
 /// The largest `f32` of at most `value` whose sum with `x` stays within `end`, both sums taken
@@ -432,6 +455,7 @@ pub fn lay_out(
     let pad = PADDING_X.min(full / 2.0);
     let inner = full - 2.0 * pad;
     let mut top = PADDING_TOP;
+    let mut stacked = 0.0;
     let mut start = 0;
     for &length in rows {
         let row = &cells[start..start + length as usize];
@@ -448,12 +472,14 @@ pub fn lay_out(
         let largest = row.iter().map(|cell| cell.weight).fold(0.0, f64::max);
         let total: f64 = row.iter().map(|cell| cell.weight / largest).sum();
         let mut left = pad;
+        // How deep the row's elements reach below its top, where each lies and how high it is.
+        let mut reach = 0.0_f64;
         for cell in row {
             let span = room * (cell.weight / largest) / total;
             let x = place(left.min(full));
             let column = within(x, span, place(full - pad));
-            let height = element_height(&cell.element, fonts);
             let element = cell.element;
+            let height = element_height(element.kind(), fonts);
             let font = fonts.of(element.role());
             let (width, (kept, ellipsis)) = match element {
                 // The pill at the column's left, as wide as its text is drawn and the padding
@@ -467,7 +493,9 @@ pub fn lay_out(
                 }
                 _ => (column, cut(element.text(), f64::from(column), font)),
             };
-            let y = top + row_offset(&element, badged);
+            let offset = row_offset(element.kind(), badged);
+            reach = reach.max(offset + height);
+            let y = top + offset;
             out.push(if matches!(element, Element::Icon) {
                 icon_square(x, y, column, height)
             } else {
@@ -482,9 +510,10 @@ pub fn lay_out(
             });
             left += span + gap;
         }
-        top += row_height(row, fonts);
+        top += reach;
+        stacked += reach;
     }
-    node_height(std::iter::once(top - PADDING_TOP))
+    node_height(stacked)
 }
 
 /// The square of an icon whose column lies from `x`, `column` wide, on a line `line` high from
@@ -705,6 +734,11 @@ mod tests {
         }
     }
 
+    /// The kinds of the elements of `cells`.
+    fn kinds<'c>(cells: &'c [Cell]) -> impl Iterator<Item = Kind> + Clone + 'c {
+        cells.iter().map(|cell| cell.element.kind())
+    }
+
     fn laid_out(cells: &[Cell], rows: &[u32], width: f32) -> (Vec<Placed>, f64) {
         let mut out = Vec::new();
         let height = lay_out(cells, rows, width, &fonts(), &mut out);
@@ -819,7 +853,7 @@ mod tests {
             &cells[3..4],
             &cells[4..],
         ];
-        let sum: f64 = rows.iter().map(|row| row_height(row, &fonts)).sum();
+        let sum: f64 = rows.iter().map(|row| row_height(kinds(row), &fonts)).sum();
         assert_eq!(height, PADDING_TOP + sum + PADDING_BOTTOM);
     }
 
@@ -1000,8 +1034,8 @@ mod tests {
             ],
         );
         assert_eq!(height, 83.0);
-        assert_eq!(row_height(&cells[..2], &fonts), 33.0);
-        assert_eq!(row_height(&cells[2..], &fonts), 30.0);
+        assert_eq!(row_height(kinds(&cells[..2]), &fonts), 33.0);
+        assert_eq!(row_height(kinds(&cells[2..]), &fonts), 30.0);
     }
 
     #[test]
@@ -1770,6 +1804,72 @@ mod tests {
         assert_eq!(font.advance('\u{1F600}'), 5.0);
         assert_eq!(font.advance('B'), 2.0);
         assert_eq!(font.advance('\u{1F601}'), 2.0);
+    }
+
+    #[test]
+    fn a_node_s_height_from_its_kinds_is_the_height_its_content_lays_out_to() {
+        // Verifies: ADR-0013
+        // Random content of every kind and role, in fonts of any line, at any width: the height of
+        // its rows' kinds alone is exactly the height `lay_out` returns, which stacks its rows by
+        // where it places their elements. Lines too small or too inexact for `f64` to sum exactly
+        // make the order in which the rows are summed count too.
+        const METRICS: [f64; 9] = [0.0, 1e-30, 1e-7, 0.1, 1.0, 7.5, 13.3, 1023.3, MAX_METRIC];
+        const WEIGHTS: [f64; 4] = [1.0, 0.25, 3.0, 1e300];
+        const WIDTHS: [f32; 5] = [0.0, 23.0, 220.0, 1e6, 1.3e36];
+        let roles = [Role::Title, Role::Body, Role::Caption];
+        let texts = ["", "Done", &"w".repeat(100)];
+        let mut rng = Lcg(19);
+        let mut badged_rows = 0;
+        for _ in 0..5_000 {
+            let mut fonts = Fonts::default();
+            for role in roles {
+                let metric = |rng: &mut Lcg| METRICS[rng.below(METRICS.len())];
+                let font = Font::new(&[], &[], metric(&mut rng), metric(&mut rng)).unwrap();
+                fonts.set(role, font);
+            }
+            let rows: Vec<u32> = (0..rng.below(9)).map(|_| rng.below(7) as u32).collect();
+            let cells: Vec<Cell> = (0..rows.iter().sum::<u32>())
+                .map(|_| {
+                    let text = texts[rng.below(texts.len())];
+                    let element = match rng.below(8) {
+                        7 => Element::Icon,
+                        6 => Element::Action { text },
+                        5 | 4 => Element::Badge { text },
+                        3 => Element::Progress,
+                        2 => Element::Metric {
+                            caption: text,
+                            value: text,
+                            trend: text,
+                        },
+                        _ => Element::Text {
+                            role: roles[rng.below(roles.len())],
+                            text,
+                        },
+                    };
+                    Cell {
+                        weight: WEIGHTS[rng.below(WEIGHTS.len())],
+                        element,
+                    }
+                })
+                .collect();
+            let mut start = 0;
+            let mut row_kinds = Vec::new();
+            for &length in &rows {
+                let row = &cells[start..start + length as usize];
+                start += length as usize;
+                let others = row
+                    .iter()
+                    .any(|cell| !matches!(cell.element, Element::Badge { .. }));
+                badged_rows += usize::from(badged(row) && others);
+                row_kinds.push(kinds(row));
+            }
+            let width = WIDTHS[rng.below(WIDTHS.len())];
+            let mut placed = Vec::new();
+            let laid = lay_out(&cells, &rows, width, &fonts, &mut placed);
+            assert_eq!(height(row_kinds, &fonts), laid, "{cells:?} in {rows:?}");
+        }
+        // Rows of a badge beside another element are reached, where the badge's offset counts.
+        assert!(badged_rows > 1_000, "{badged_rows}");
     }
 
     /// A small deterministic generator, so that a failure repeats.
