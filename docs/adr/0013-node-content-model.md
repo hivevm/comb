@@ -36,13 +36,21 @@ registers and colours given as numbers.
 - **Elements:** `text` with a role of title, body, or caption; `icon` by registered name;
   `progress` as segments, each a fraction and a colour; `badge` as text on a colour; `metric` as a
   caption, a value, and a trend with a text, a direction, and a colour; `action` as text with an
-  identifier.
+  identifier, its fields `text` and `id`, laid out and drawn as a text in the font of role body,
+  in a link colour.
 - **Content replaces the title and the height:** a node is its identifier, its position, its
   width, and its content; its title is a `text` of role title, and the engine computes its height.
   `updateNode` replaces a node's content as a whole, checked as a load checks it.
 - **Clicks:** a click on any element, without a drag, is reported to the host application with
   the node's identifier, the element's row and column, and its kind, and for an `action` its
-  identifier; it selects the node as a click on the node does.
+  identifier; it selects the node as a click on the node does. It reaches the host application
+  through `Comb.onContentClick(listener)`, which returns the function that removes the listener,
+  as `{ node, row, column, kind, action? }`. A press on a node waits for the slop of a press on an
+  edge (ADR-0025), 4 screen pixels from the press: released within it, the press is a click; once
+  the pointer has moved beyond it, the node is dragged from the press and no click is reported.
+  The engine's hit test names the element whose rectangle holds the point, of those drawn at the
+  level of detail: at *near* every element, at *middle* the texts of role title, at *far* none; a
+  press on the padding or between elements selects the node and reports no click.
 - **Layout:** the host application gives a node's width; the engine computes each row's height,
   each element's rectangle, and where each text is truncated, and the node's height from its rows.
   A row is as high as its tallest element, and a row's columns share its width by their weights,
@@ -51,7 +59,7 @@ registers and colours given as numbers.
   the size of the nodes before content. The engine states the padding, the gap between columns,
   and the least height; the shell states each role's line height.
 - **Levels of detail (ADR-0027):** *near* draws every element; *middle* draws the box and the
-  texts of role title, at the place near gives them; *far* draws no element.
+  texts of role title, at the place near gives them, and no action; *far* draws no element.
 - **Limits (Q-7):** the bridge refuses a node with more rows, a row with more columns, a text
   longer, or a load whose texts hold more code units in all than limits it states, each with a
   typed problem that names the node.

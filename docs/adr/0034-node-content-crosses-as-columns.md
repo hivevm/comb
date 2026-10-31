@@ -253,7 +253,8 @@ reads and writes as typed-array views created anew after every engine call.
     rectangle relative to its node as `Float32Array` and its role's code as `Uint8Array`; and what
     is drawn of each text, the text or as much of it as fits followed by an ellipsis, as one
     string `contentTexts` returns in one copy per query, with the boundaries of the texts in it as
-    `Uint32Array`;
+    `Uint32Array`; and per placed element its kind's code as `Uint8Array`, which says how the
+    shell draws it, an action's role's code that of body, whose font draws it;
   - the edge mesh of that query: vertex positions, distances along the path, and dash patterns as
     `Float32Array`, colours as RGBA bytes in `Uint32Array`, and triangle indices as `Uint32Array`;
   - for inspection, the slots of the edges the query found as `Uint32Array`, with the ends of each
