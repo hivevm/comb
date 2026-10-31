@@ -9,6 +9,7 @@ use serde::{Deserialize, Deserializer};
 
 use super::codes::{direction_code, filled, kind_code, role_code};
 use super::{ContentData, DirectionCode, KindCode, RoleCode, numbered, utf16_length};
+use crate::graph_data::field::other_shapes;
 
 /// Where the snapshot found a shape of content it cannot flatten in a node: the row, and below a
 /// row the column, of a row that is no list, an element that is no object, or a progress bar's
@@ -315,34 +316,7 @@ impl<'de> Visitor<'de> for RowSeed<'_> {
     }
 
     // Any other value is no list: a row of no elements.
-    fn visit_bool<E>(self, _: bool) -> Result<bool, E> {
-        Ok(false)
-    }
-    fn visit_i64<E>(self, _: i64) -> Result<bool, E> {
-        Ok(false)
-    }
-    fn visit_u64<E>(self, _: u64) -> Result<bool, E> {
-        Ok(false)
-    }
-    fn visit_f64<E>(self, _: f64) -> Result<bool, E> {
-        Ok(false)
-    }
-    fn visit_str<E>(self, _: &str) -> Result<bool, E> {
-        Ok(false)
-    }
-    fn visit_unit<E>(self) -> Result<bool, E> {
-        Ok(false)
-    }
-    fn visit_none<E>(self) -> Result<bool, E> {
-        Ok(false)
-    }
-    fn visit_some<D: Deserializer<'de>>(self, deserializer: D) -> Result<bool, D::Error> {
-        deserializer.deserialize_any(self)
-    }
-    fn visit_map<A: de::MapAccess<'de>>(self, mut map: A) -> Result<bool, A::Error> {
-        while map.next_entry::<IgnoredAny, IgnoredAny>()?.is_some() {}
-        Ok(false)
-    }
+    other_shapes!('de, bool, false, map);
 }
 
 /// A trend's text, direction, and colour, as `Fields` holds them.
@@ -437,34 +411,7 @@ impl<'de> Visitor<'de> for ElementVisitor {
     }
 
     // Any other value is no object.
-    fn visit_bool<E>(self, _: bool) -> Result<ElementCells, E> {
-        Ok(ElementCells(None))
-    }
-    fn visit_i64<E>(self, _: i64) -> Result<ElementCells, E> {
-        Ok(ElementCells(None))
-    }
-    fn visit_u64<E>(self, _: u64) -> Result<ElementCells, E> {
-        Ok(ElementCells(None))
-    }
-    fn visit_f64<E>(self, _: f64) -> Result<ElementCells, E> {
-        Ok(ElementCells(None))
-    }
-    fn visit_str<E>(self, _: &str) -> Result<ElementCells, E> {
-        Ok(ElementCells(None))
-    }
-    fn visit_unit<E>(self) -> Result<ElementCells, E> {
-        Ok(ElementCells(None))
-    }
-    fn visit_none<E>(self) -> Result<ElementCells, E> {
-        Ok(ElementCells(None))
-    }
-    fn visit_some<D: Deserializer<'de>>(self, deserializer: D) -> Result<ElementCells, D::Error> {
-        deserializer.deserialize_any(self)
-    }
-    fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<ElementCells, A::Error> {
-        while seq.next_element::<IgnoredAny>()?.is_some() {}
-        Ok(ElementCells(None))
-    }
+    other_shapes!('de, ElementCells, ElementCells(None), seq);
 }
 
 /// A metric's trend as the host application handed it over: its text, its direction, and its
@@ -503,34 +450,7 @@ impl<'de> Visitor<'de> for TrendVisitor {
     }
 
     // Any other value is no object.
-    fn visit_bool<E>(self, _: bool) -> Result<TrendCells, E> {
-        Ok(TrendCells(None))
-    }
-    fn visit_i64<E>(self, _: i64) -> Result<TrendCells, E> {
-        Ok(TrendCells(None))
-    }
-    fn visit_u64<E>(self, _: u64) -> Result<TrendCells, E> {
-        Ok(TrendCells(None))
-    }
-    fn visit_f64<E>(self, _: f64) -> Result<TrendCells, E> {
-        Ok(TrendCells(None))
-    }
-    fn visit_str<E>(self, _: &str) -> Result<TrendCells, E> {
-        Ok(TrendCells(None))
-    }
-    fn visit_unit<E>(self) -> Result<TrendCells, E> {
-        Ok(TrendCells(None))
-    }
-    fn visit_none<E>(self) -> Result<TrendCells, E> {
-        Ok(TrendCells(None))
-    }
-    fn visit_some<D: Deserializer<'de>>(self, deserializer: D) -> Result<TrendCells, D::Error> {
-        deserializer.deserialize_any(self)
-    }
-    fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<TrendCells, A::Error> {
-        while seq.next_element::<IgnoredAny>()?.is_some() {}
-        Ok(TrendCells(None))
-    }
+    other_shapes!('de, TrendCells, TrendCells(None), seq);
 }
 
 /// A progress bar's segments as the host application handed them over, as `Fields` holds them.
