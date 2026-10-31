@@ -66,17 +66,19 @@ registers and colours given as numbers.
   the column and both lines. The caption fills its line, cut to the column as a text is. On the
   value's line the value lies at the column's left, as wide as it is drawn; the trend's arrow 8
   after it, the gap between columns; and the trend's text 4 after the arrow, to the column's end.
-  The arrow fills a square 10 wide in the middle of the value's line, 3 below its top with a line
-  of 16, and is one triangle turned by its direction, its base one side of the square and its
-  apex the middle of the opposite side: ▲ its base below, ▼ above, ▶ at the left. Where the
-  column is too narrow, the trend's text is cut first, to what the value, both gaps, and the arrow
-  leave; where they leave none, the trend's text is cut to nothing and the value to the column
-  less the gap before the arrow and the arrow, the gap shrinking where even that leaves no room,
-  so that the arrow ends at the column's end; a column narrower than the arrow draws none. The
-  engine places each part and the arrow's three points, and the shell draws the caption in the
-  caption's colour, `0x6B7280`, the value in the near-black of the node's texts, `0x1F2430`, and
-  the arrow and the trend's text in the trend's colour. A metric lies at its row's top as every
-  element does, and in a row that holds a badge 3 lower, as every element but a badge does.
+  The arrow fills a square of side 10, at most the value's line, in the middle of that line, 3 below
+  its top with a line of 16, and is one triangle turned by its direction, its base one side of the
+  square and its apex the middle of the opposite side: ▲ its base below, ▼ above, ▶ at the left.
+  Where the column is too narrow, the trend's text is cut first, to what the value, both gaps, and
+  the arrow leave; where they leave none, the trend's text is cut to nothing and the value to the
+  column less the gap before the arrow and the arrow, the gap shrinking where even that leaves no
+  room, so that the arrow ends at the column's end; a column narrower than the arrow, or a value's
+  line of no height, draws none. Once the value is cut, the trend's text shows nothing, though a
+  glyph of it might fit the room the value's cut leaves. The engine places each part and the arrow's
+  three points, and the shell draws the caption in the caption's colour, `0x6B7280`, the value in
+  the near-black of the node's texts, `0x1F2430`, and the arrow and the trend's text in the trend's
+  colour. A metric lies at its row's top as every element does, and in a row that holds a badge 3
+  lower, as every element but a badge does.
 - **Content replaces the title and the height:** a node is its identifier, its position, its
   width, and its content; its title is a `text` of role title, and the engine computes its height.
   `updateNode` replaces a node's content as a whole, checked as a load checks it.
