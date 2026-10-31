@@ -63,8 +63,11 @@ names (`unknownEdge`), one `addNode`, `addEdge`, or a user's connection adds tha
 The bridge crate checks the node `addNode` and the edge `addEdge` hand over as a load checks one,
 refuses an edge from a node to itself (`selfEdge`) and an addition past the 1,000,000 nodes or edges
 a load may hold, and `api` has it check the code units of identifiers the store counts with the new
-ones; it refuses a patch of `updateNode` that holds a field other than `content`, a patch of
-`updateEdge` that holds a field other than a colour, dash, arrowhead, label, or side
+ones. The engine keeps the count of the code units of the strings of content its nodes hold, set by
+a load and moved by every addition, patch, and removal of a node, and refuses an addition or a
+patch whose strings would pass the budget a load is held to (`contentBudgetExceeded`), before
+anything changes. It refuses a patch of `updateNode` that holds a field other than `content`, a
+patch of `updateEdge` that holds a field other than a colour, dash, arrowhead, label, or side
 (`unknownEdgePatchField`), and a field it would refuse in a load. Label texts and label backgrounds
 are checked there but not kept by the engine; the content of a node it keeps, to lay it out. `api`
 reads the host's graph data once, in JavaScript, into a snapshot (`api/snapshot.ts`) of plain data

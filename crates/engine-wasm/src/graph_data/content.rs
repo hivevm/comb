@@ -26,7 +26,7 @@ pub const MAX_ROWS: usize = ROW_LIMIT as usize;
 pub const MAX_COLUMNS: usize = COLUMN_LIMIT as usize;
 
 /// The most UTF-16 code units of the strings of all content in one load together, the texts and
-/// the names alike: at least the titles a load held before content, 1,000 code units for each of
+/// the names alike, and of all content the graph holds after every edit: at least the titles a load held before content, 1,000 code units for each of
 /// 1,000,000 nodes, and below 2^32, so that every boundary fits a `Uint32Array` (ADR-0034).
 pub const MAX_CONTENT_UNITS: u32 = 1_000_000_000;
 
@@ -245,6 +245,23 @@ impl Default for Cursor {
             units: 0,
             budget: budget(),
         }
+    }
+}
+
+impl Cursor {
+    /// A cursor whose count of the strings of content starts at `held`, the code units of content
+    /// the graph holds besides the node an edit checks, so that `addNode` and `updateNode` count
+    /// on against the budget as a load does.
+    pub(crate) fn holding(held: u64) -> Self {
+        Self {
+            units: held,
+            ..Self::default()
+        }
+    }
+
+    /// The code units of the strings of content counted so far.
+    pub(crate) const fn units(&self) -> u64 {
+        self.units
     }
 }
 
@@ -783,6 +800,21 @@ impl ContentData {
                 .sum::<usize>();
         }
         starts
+    }
+
+    /// The code units of the strings of content of the node at `node`, the texts and the names
+    /// alike, as a check of it counts them against the budget; none for a slot it holds no
+    /// content of.
+    pub(crate) fn units_of(&self, node: usize) -> u64 {
+        let length = |bounds: &[u32], index: usize| u64::from(bounds[index + 1] - bounds[index]);
+        self.elements_of(node)
+            .map(|(_, _, element, at)| {
+                let (texts, names) = filled(self.kinds[element]);
+                let texts = (at.text..at.text + texts).map(|t| length(&self.text_bounds, t));
+                let names = (at.name..at.name + names).map(|n| length(&self.name_bounds, n));
+                texts.chain(names).sum::<u64>()
+            })
+            .sum()
     }
 
     /// The text at `index`, once mapped.

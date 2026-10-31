@@ -1522,6 +1522,8 @@ struct Nodes<'a> {
     positions: Vec<f32>,
     sizes: Vec<f32>,
     slots: HashMap<&'a str, u32>,
+    /// The code units of the strings of all their content, as the budget counted them.
+    units: u64,
 }
 
 /// The position and width of a node as the engine keeps them, `[x, y]` and `width`, or why the
@@ -1613,6 +1615,7 @@ fn nodes_of<'a>(
         positions,
         sizes,
         slots,
+        units: cursor.units(),
     })
 }
 
@@ -1808,12 +1811,13 @@ pub(crate) fn text_spans(
 /// The refusal of a boundary of a text of content that falls inside a character.
 pub(crate) const TEXT_INSIDE: &str = "a text of content ends inside a character";
 
-/// A load the bridge accepted: the engine's graph, and where each text of its content lies in
-/// its piece, which `ContentData` keeps.
+/// A load the bridge accepted: the engine's graph, where each text of its content lies in its
+/// piece, which `ContentData` keeps, and the code units of the strings of its content.
 pub(crate) struct Loaded {
     pub graph: Graph,
     pub spans: Vec<(u32, u32, u32)>,
     pub name_spans: Vec<(u32, u32, u32)>,
+    pub units: u64,
 }
 
 /// Checks a load and builds the engine's graph from it, its nodes and its edges as columns, each
@@ -1845,17 +1849,22 @@ pub(crate) fn load_of(
         graph: Graph::new(nodes.positions, nodes.sizes, edges)?,
         spans,
         name_spans,
+        units: nodes.units,
     })
 }
 
-/// Checks the content of one node, as a load checks a node's, named `id`, and returns it with its
-/// texts mapped and the height it lays out to in `fonts`.
+/// Checks the content of one node, as a load checks a node's, named `id`, its strings counted
+/// against the budget on from `held`, the code units of content the graph holds besides it, and
+/// returns it with its texts mapped and the height it lays out to in `fonts`.
 fn checked_content(
     id: &str,
     content: &ContentData,
     fonts: &Fonts,
+    held: u64,
 ) -> Result<(ContentData, f32), GraphDataProblem> {
-    let height = content.view().check(0, id, &mut Cursor::default(), fonts)?;
+    let height = content
+        .view()
+        .check(0, id, &mut Cursor::holding(held), fonts)?;
     let mut kept = content.clone();
     kept.map()?;
     Ok((kept, kept_height(height)))
@@ -1863,20 +1872,22 @@ fn checked_content(
 
 /// Checks the node `addNode` hands over as a load checks a node, the only one of its batch at
 /// index 0, and adds it to `graph`, whose nodes in use stay within `MAX_ITEMS`, as high as its
-/// content lays out to in `fonts`; returns the slot the engine chose and the content it keeps. A
-/// refused node leaves the graph as it was. That the graph holds no node of its identifier is
-/// `api`'s to check, against the map only it keeps (ADR-0028).
+/// content lays out to in `fonts`, its strings of content counted against the budget on from
+/// `held`, the code units of content the graph holds; returns the slot the engine chose and the
+/// content it keeps. A refused node leaves the graph as it was. That the graph holds no node of
+/// its identifier is `api`'s to check, against the map only it keeps (ADR-0028).
 pub(crate) fn add_node_to(
     graph: &mut Graph,
     node: &NodeInput,
     fonts: &Fonts,
+    held: u64,
 ) -> Result<(u32, ContentData), GraphDataProblem> {
     let nodes = f64::from(graph.nodes_in_use()) + 1.0;
     check_graph_size(nodes, 0.0)?;
     let (node, content) = node_of(0, node)?;
     id_length("nodes", 0, "id", node.id)?;
     let ([x, y], width) = checked_node(&node)?;
-    let (content, height) = checked_content(node.id, content, fonts)?;
+    let (content, height) = checked_content(node.id, content, fonts, held)?;
     within_by_height(node.id, y, height)?;
     Ok((graph.add_node(x, y, width, height)?, content))
 }
@@ -2134,12 +2145,14 @@ pub(crate) fn check_graph_size(nodes: f64, edges: f64) -> Result<(), GraphDataPr
 }
 
 /// Checks a patch of the node `node` and returns the content it sets, checked as a load checks a
-/// node's at index 0 and laid out in `fonts` to the height it returns with it, or none where it
-/// sets none; or names its first offending field.
+/// node's at index 0, its strings counted against the budget on from `held`, the code units of
+/// content the graph holds besides the node's, and laid out in `fonts` to the height it returns
+/// with it, or none where it sets none; or names its first offending field.
 pub(crate) fn patch_of(
     node: &str,
     patch: &NodePatch,
     fonts: &Fonts,
+    held: u64,
 ) -> Result<Option<(ContentData, f32)>, GraphDataProblem> {
     let mut checked = None;
     for (field, value) in &patch.0 {
@@ -2152,7 +2165,7 @@ pub(crate) fn patch_of(
         let mut item = Item::new(GraphList::Nodes, 0);
         item.id = Some(node);
         let content = content_of(&item, value.0.as_ref())?;
-        checked = Some(checked_content(node, content, fonts)?);
+        checked = Some(checked_content(node, content, fonts, held)?);
     }
     Ok(checked)
 }
@@ -2929,6 +2942,126 @@ pub(crate) mod tests {
                 limit: MAX_CONTENT_UNITS
             })
         );
+    }
+
+    /// An engine of a load at the budget lowered to 6 code units: node `a` of a title "abc", and
+    /// `b` of an action showing "de" and naming "f", 3 + 2 + 1.
+    fn at_the_budget() -> crate::Engine {
+        content::TEST_BUDGET.set(Some(6));
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+        data.nodes[0].content = titled("abc");
+        data.nodes[1].content = named_content(&[&[action("de", "f")]]).into();
+        let mut engine = crate::Engine::new();
+        let nodes = OwnedColumns::of(data.nodes.iter().map(Some));
+        let none = OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
+        assert_eq!(engine.content_units, 6);
+        engine
+    }
+
+    /// The node `id` at (0, 200), 100 wide, of `content`.
+    fn node_of(id: &str, content: ContentInput) -> NodeInput {
+        NodeInput {
+            id: id.to_owned().into(),
+            x: 0.0.into(),
+            y: 200.0.into(),
+            width: 100.0.into(),
+            content: content.into(),
+        }
+    }
+
+    /// A patch of a node's content to `content`.
+    fn patch_to(content: ContentInput) -> NodePatch {
+        NodePatch(vec![("content".to_owned(), content.into())])
+    }
+
+    /// The refusal of a string of content of the node `node` past the budget.
+    fn past_budget(node: &str) -> GraphDataProblem {
+        GraphDataProblem::ContentBudgetExceeded {
+            node: node.into(),
+            limit: MAX_CONTENT_UNITS,
+        }
+    }
+
+    #[test]
+    fn a_node_added_to_a_graph_at_the_budget_is_refused_naming_it_and_the_graph_kept() {
+        // Verifies: ADR-0013, ADR-0034, Q-7
+        let mut engine = at_the_budget();
+        let one = node_of("c", content(&[&[text(RoleCode::Title, "x")]]));
+        let added = engine.add(&one);
+        // A node whose content holds no string adds no code unit and is taken.
+        let none = engine.add(&node_of("d", content(&[])));
+        content::TEST_BUDGET.set(None);
+        assert_eq!(added, Err(past_budget("c")));
+        assert_eq!(none, Ok(2));
+        assert_eq!(engine.graph.nodes_in_use(), 3);
+        assert_eq!(engine.content_units, 6);
+        assert_eq!(engine.edited.keys().collect::<Vec<_>>(), [&2]);
+    }
+
+    #[test]
+    fn an_update_past_the_budget_is_refused_and_one_of_as_many_code_units_or_fewer_taken() {
+        // Verifies: ADR-0013, ADR-0034, Q-7
+        let mut engine = at_the_budget();
+        let sizes = engine.graph.sizes().to_vec();
+        // `b`'s action of 3 code units grows to 4: refused, and nothing changes.
+        let grown = engine.update(1, "b", &patch_to(named_content(&[&[action("dex", "f")]])));
+        let kept = (
+            engine.graph.sizes().to_vec(),
+            engine.edited.len(),
+            engine.content_units,
+        );
+        // Two rows of as many code units, and then of fewer: taken.
+        let rows = content(&[&[text(RoleCode::Title, "d")], &[text(RoleCode::Body, "ef")]]);
+        let as_many = engine.update(1, "b", &patch_to(rows));
+        let after_as_many = engine.content_units;
+        let fewer = engine.update(1, "b", &patch_to(content(&[&[text(RoleCode::Title, "d")]])));
+        // A patch of `a`, a loaded node, counts on from what the others hold: 4 of 3 + 1 = 6 fits.
+        let a = engine.update(
+            0,
+            "a",
+            &patch_to(content(&[&[text(RoleCode::Title, "abcd")]])),
+        );
+        let past = engine.update(
+            0,
+            "a",
+            &patch_to(content(&[&[text(RoleCode::Title, "abcdef")]])),
+        );
+        content::TEST_BUDGET.set(None);
+        assert_eq!(grown, Err(crate::CallRefusal::Data(past_budget("b"))));
+        assert_eq!(kept, (sizes, 0, 6));
+        assert_eq!(as_many, Ok(()));
+        assert_eq!(after_as_many, 6);
+        assert_eq!(fewer, Ok(()));
+        assert_eq!(a, Ok(()));
+        assert_eq!(past, Err(crate::CallRefusal::Data(past_budget("a"))));
+        assert_eq!(engine.content_units, 5);
+        let abcd = ContentElement::Text {
+            role: TextRole::Title,
+            text: "abcd".into(),
+            weight: Some(1.0),
+        };
+        assert_eq!(engine.edited[&0].content_of(0).0, [[abcd]]);
+    }
+
+    #[test]
+    fn a_deleted_nodes_code_units_are_free_for_a_node_added_after_it() {
+        // Verifies: ADR-0013, ADR-0034, Q-7
+        let mut engine = at_the_budget();
+        // `a` named twice leaves the count once.
+        assert_eq!(engine.remove_nodes(&[0, 0]), Ok(Vec::new()));
+        let units = engine.content_units;
+        let three = engine.add(&node_of("c", content(&[&[text(RoleCode::Title, "xyz")]])));
+        let one = engine.add(&node_of("d", content(&[&[text(RoleCode::Title, "x")]])));
+        // An added node deleted frees its code units too.
+        assert_eq!(engine.remove_nodes(&[0]), Ok(Vec::new()));
+        let again = engine.add(&node_of("e", content(&[&[text(RoleCode::Title, "x")]])));
+        content::TEST_BUDGET.set(None);
+        assert_eq!(units, 3);
+        assert_eq!(three, Ok(0));
+        assert_eq!(one, Err(past_budget("d")));
+        assert_eq!(again, Ok(0));
+        assert_eq!(engine.content_units, 4);
     }
 
     #[test]
@@ -3756,7 +3889,7 @@ pub(crate) mod tests {
     fn a_patch_with_another_field_or_a_title_not_text_names_its_node() {
         let patch = |entries: Vec<(&str, Field<ContentInput>)>| {
             let fields = entries.into_iter().map(|(k, v)| (k.to_owned(), v));
-            patch_of("a", &NodePatch(fields.collect()), &Fonts::default()).map(|checked| {
+            patch_of("a", &NodePatch(fields.collect()), &Fonts::default(), 0).map(|checked| {
                 checked.map(|(content, height)| (content.text(0).to_owned(), height))
             })
         };
@@ -3857,7 +3990,7 @@ pub(crate) mod tests {
     /// Adds `node` to `graph` as `addNode` does, in the fonts of no font handed over, and returns
     /// its slot.
     fn add(graph: &mut Graph, node: &NodeInput) -> Result<u32, GraphDataProblem> {
-        add_node_to(graph, node, &Fonts::default()).map(|(slot, _)| slot)
+        add_node_to(graph, node, &Fonts::default(), 0).map(|(slot, _)| slot)
     }
 
     #[test]

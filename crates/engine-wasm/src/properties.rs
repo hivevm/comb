@@ -15,7 +15,8 @@
 //! second oracle, written on that value alone, says which field of which node or edge is missing
 //! or of another type, and whether the value has the shape of graph data at all: the bridge names
 //! such a field (`invalidField`), and refuses as malformed only what has no such shape, and no
-//! message names a Rust type or crate.
+//! message names a Rust type or crate. A last property holds the engine's count of the code units
+//! of content to what the graph holds through loads, additions, updates, and removals.
 // Verifies: Q-7, ADR-0028, ADR-0034
 
 use proptest::prelude::*;
@@ -29,10 +30,12 @@ use super::{
     ContentInput, DirectionCode, EdgeCells, EdgeInput, EdgePatch, EdgeRefusal, GraphBatch,
     GraphDataProblem, GraphList, KindCode, NodeInput, OwnedColumns, OwnedEdgeColumns, Unflat,
 };
+use super::{MAX_CONTENT_UNITS, RoleCode, content::TEST_BUDGET, tests::load_into};
 use super::{
-    NodePatch, add_edge_to, add_node_to, graph_of, load_of, patch_of, reading, unshaped,
+    NodePatch, add_edge_to, add_node_to, graph_of, load_of, numbered, patch_of, reading, unshaped,
     update_edge_in,
 };
+use crate::{CallRefusal, Engine};
 
 /// How many random batches one run feeds the bridge: the ticket's floor, which runs in seconds.
 const CASES: u32 = 10_000;
@@ -1729,7 +1732,7 @@ proptest! {
         let mut graph = with_a();
         let added = reading(|| NodeInput::deserialize(value))
             .map_err(unshaped)
-            .and_then(|node| add_node_to(&mut graph, &node, &Fonts::default()));
+            .and_then(|node| add_node_to(&mut graph, &node, &Fonts::default(), 0));
         match (added, as_load) {
             (Ok((slot, _)), Ok((positions, sizes))) => {
                 prop_assert_eq!(slot, 1);
@@ -1818,7 +1821,7 @@ proptest! {
                     *key == "content" && content_ok(&node)
                 });
                 let sets = read.iter().any(|(key, _)| *key == "content");
-                match patch_of("n", &patch, &Fonts::default()) {
+                match patch_of("n", &patch, &Fonts::default(), 0) {
                     Ok(checked) => prop_assert!(fine && checked.is_some() == sets),
                     Err(error) => {
                         prop_assert!(!fine);
@@ -1827,5 +1830,199 @@ proptest! {
                 }
             }
         }
+    }
+}
+
+/// An element of well-formed content as the count of the budget reads it: its strings, the texts
+/// and the names alike, a progress bar none.
+#[derive(Clone, Debug)]
+enum Counted {
+    Text(String),
+    Action(String, String),
+    Badge(String),
+    Progress,
+    Metric([String; 3]),
+    Icon(String),
+}
+
+/// A string of content of up to three characters of one, two, and one UTF-16 code units.
+fn counted_string() -> impl Strategy<Value = String> {
+    prop::collection::vec(prop::sample::select(vec!['a', '😀', 'é']), 0..4)
+        .prop_map(|characters| characters.into_iter().collect())
+}
+
+/// Well-formed content of up to three rows of up to three elements of every kind.
+fn counted_content() -> impl Strategy<Value = Vec<Vec<Counted>>> {
+    let s = counted_string;
+    let element = prop_oneof![
+        s().prop_map(Counted::Text),
+        (s(), s()).prop_map(|(text, id)| Counted::Action(text, id)),
+        s().prop_map(Counted::Badge),
+        Just(Counted::Progress),
+        (s(), s(), s()).prop_map(|(c, v, t)| Counted::Metric([c, v, t])),
+        s().prop_map(Counted::Icon),
+    ];
+    prop::collection::vec(prop::collection::vec(element, 1..4), 0..4)
+}
+
+/// The code units of the strings of `rows`, counted apart from the bridge.
+fn units_in(rows: &[Vec<Counted>]) -> u64 {
+    let units = |s: &String| s.encode_utf16().count() as u64;
+    rows.iter()
+        .flatten()
+        .map(|element| match element {
+            Counted::Text(text) | Counted::Badge(text) | Counted::Icon(text) => units(text),
+            Counted::Action(text, id) => units(text) + units(id),
+            Counted::Metric(texts) => texts.iter().map(units).sum(),
+            Counted::Progress => 0,
+        })
+        .sum()
+}
+
+/// `rows` as the node of `addNode` crosses its content.
+fn content_input(rows: &[Vec<Counted>]) -> ContentInput {
+    let mut content = ContentInput::new();
+    for row in rows {
+        for element in row {
+            match element {
+                Counted::Text(s) => {
+                    let body = RoleCode::Body as u8;
+                    content.push(KindCode::Text, 1.0, body, f64::NAN, Some(s), None);
+                }
+                Counted::Action(s, id) => {
+                    content.push(KindCode::Action, 1.0, 0, f64::NAN, Some(s), Some(id));
+                }
+                Counted::Badge(s) => content.push(KindCode::Badge, 1.0, 0, 0.0, Some(s), None),
+                Counted::Progress => {
+                    content.push(KindCode::Progress, 1.0, 0, f64::NAN, None, None);
+                    content.push_segment(0.5, 0.0);
+                }
+                Counted::Metric([c, v, t]) => content.push_metric(
+                    1.0,
+                    DirectionCode::Up as u8,
+                    0.0,
+                    [Some(c), Some(v), Some(t)],
+                ),
+                Counted::Icon(name) => {
+                    content.push(KindCode::Icon, 1.0, 0, f64::NAN, None, Some(name));
+                }
+            }
+        }
+        content.end_row();
+    }
+    content
+}
+
+/// The node `id` at (0, 0), 100 wide, of `rows`.
+fn counted_node(id: String, rows: &[Vec<Counted>]) -> NodeInput {
+    NodeInput {
+        id: id.into(),
+        x: 0.0.into(),
+        y: 0.0.into(),
+        width: 100.0.into(),
+        content: content_input(rows).into(),
+    }
+}
+
+/// An edit of the count's property test: a load of nodes of content, an addition, an update of
+/// the node a pick chooses among those the graph holds, or a removal of those its picks choose,
+/// one now and then named twice.
+#[derive(Clone, Debug)]
+enum Edit {
+    Load(Vec<Vec<Vec<Counted>>>),
+    Add(Vec<Vec<Counted>>),
+    Update(usize, Vec<Vec<Counted>>),
+    Remove(Vec<usize>),
+}
+
+fn edit() -> impl Strategy<Value = Edit> {
+    prop_oneof![
+        1 => prop::collection::vec(counted_content(), 0..4).prop_map(Edit::Load),
+        3 => counted_content().prop_map(Edit::Add),
+        3 => (any::<usize>(), counted_content()).prop_map(|(pick, c)| Edit::Update(pick, c)),
+        2 => prop::collection::vec(any::<usize>(), 1..3).prop_map(Edit::Remove),
+    ]
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(CASES))]
+
+    #[test]
+    fn the_count_of_content_equals_the_code_units_the_graph_holds_after_every_edit(
+        budget in 0..48_u64,
+        edits in prop::collection::vec(edit(), 1..12),
+    ) {
+        // Verifies: ADR-0013, ADR-0034, Q-7
+        // The budget lowered so that edits pass it; each edit is taken exactly where the code
+        // units the graph holds besides the node, and the node's, stay within it, and the engine's
+        // count is the sum of what the nodes it holds were given, counted apart from the bridge.
+        let past = |node: &str| GraphDataProblem::ContentBudgetExceeded {
+            node: node.to_owned(),
+            limit: MAX_CONTENT_UNITS,
+        };
+        TEST_BUDGET.set(Some(budget));
+        let mut engine = Engine::new();
+        // Per node the graph holds, its slot and the code units of its content.
+        let mut held: Vec<(u32, u64)> = Vec::new();
+        for (step, edit) in edits.into_iter().enumerate() {
+            let total: u64 = held.iter().map(|&(_, units)| units).sum();
+            match edit {
+                Edit::Load(nodes) => {
+                    let units: Vec<u64> = nodes.iter().map(|rows| units_in(rows)).collect();
+                    let inputs: Vec<NodeInput> = nodes
+                        .iter()
+                        .enumerate()
+                        .map(|(i, rows)| counted_node(format!("n{i}"), rows))
+                        .collect();
+                    let columns = OwnedColumns::of(inputs.iter().map(Some));
+                    let loaded = load_into(&mut engine, &columns, &OwnedEdgeColumns::of([]));
+                    if units.iter().sum::<u64>() <= budget {
+                        prop_assert_eq!(loaded, Ok(numbered(nodes.len())));
+                        held = units.into_iter().enumerate().map(|(i, u)| (numbered(i), u)).collect();
+                    } else {
+                        let refused = matches!(loaded, Err(GraphDataProblem::ContentBudgetExceeded { .. }));
+                        prop_assert!(refused, "{:?}", loaded);
+                    }
+                }
+                Edit::Add(rows) => {
+                    let id = format!("a{step}");
+                    let added = engine.add(&counted_node(id.clone(), &rows));
+                    let units = units_in(&rows);
+                    if total + units <= budget {
+                        let slot = added.expect("an addition within the budget is taken");
+                        held.push((slot, units));
+                    } else {
+                        prop_assert_eq!(added, Err(past(&id)));
+                    }
+                }
+                Edit::Update(pick, rows) => {
+                    if held.is_empty() {
+                        continue;
+                    }
+                    let at = pick % held.len();
+                    let (slot, old) = held[at];
+                    let patch = NodePatch(vec![("content".to_owned(), content_input(&rows).into())]);
+                    let updated = engine.update(slot, "u", &patch);
+                    let units = units_in(&rows);
+                    if total - old + units <= budget {
+                        prop_assert_eq!(updated, Ok(()));
+                        held[at].1 = units;
+                    } else {
+                        prop_assert_eq!(updated, Err(CallRefusal::Data(past("u"))));
+                    }
+                }
+                Edit::Remove(picks) => {
+                    if held.is_empty() {
+                        continue;
+                    }
+                    let slots: Vec<u32> = picks.iter().map(|pick| held[pick % held.len()].0).collect();
+                    prop_assert!(engine.remove_nodes(&slots).is_ok());
+                    held.retain(|(slot, _)| !slots.contains(slot));
+                }
+            }
+            prop_assert_eq!(engine.content_units, held.iter().map(|&(_, units)| units).sum::<u64>());
+            prop_assert_eq!(engine.graph.nodes_in_use() as usize, held.len());
+        }
+        TEST_BUDGET.set(None);
     }
 }
