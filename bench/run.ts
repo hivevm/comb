@@ -59,7 +59,8 @@ function percentile(sorted: number[], p: number): number {
 }
 
 /** Runs `act` while the page records, for every frame, its interval and whether Comb rendered.
- *  Recording starts once every earlier change is drawn, so no render of an earlier gesture counts. */
+ *  Recording starts once every earlier change is drawn, so no render of an earlier gesture
+ *  counts. */
 async function frameTimes(page: Page, act: () => Promise<number>): Promise<Measure> {
   await page.evaluate(() => window.comb.whenRendered());
   await page.evaluate(() => {

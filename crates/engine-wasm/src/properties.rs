@@ -1648,7 +1648,8 @@ proptest! {
             prop_assert_eq!(graph.edges_in_use(), 0);
             return Ok(());
         }
-        // Held to the oracle on its own too, so that a check a load shares with it, dropped, is seen.
+        // Held to the oracle on its own too, so that a check a load shares with it, dropped,
+        // is seen.
         prop_assert_eq!(added.is_ok(), accepted_alone(value.clone()), "{:?}", added);
         match (added, as_load) {
             (Ok(slot), Ok(expected)) => {

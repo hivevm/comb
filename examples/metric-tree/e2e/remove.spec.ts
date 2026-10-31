@@ -268,7 +268,8 @@ test("a removal reads a hostile list's length once and refuses a list too long q
       sparse: kindOf(() => window.comb.removeEdges(new Array(1_000_001))),
       counted: kindOf(() => window.comb.removeNodes(counted)),
     };
-    // The list a refusal of a list too long names, so that the two removals' size checks stay apart.
+    // The list a refusal of a list too long names, so that the two removals' size checks
+    // stay apart.
     const listOf = (call: () => void) => {
       try {
         call();

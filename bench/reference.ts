@@ -1,9 +1,9 @@
 // The reference workload of the benchmark (ADR-0008): fixed work timed in the benchmark's page on
 // the same runner, so that bench/compare.ts can tell a runner unlike the baseline's and refuse to
-// compare its numbers. It uses what Comb's numbers depend on, the browser's JavaScript, WebAssembly,
-// and WebGL2 raster, and none of Comb's code: a JavaScript loop, a WebAssembly loop, and a WebGL2
-// draw of a fixed mesh on a canvas of its own. Each part runs once to warm up and then ROUNDS
-// times; the reference records each part's median and their sum.
+// compare its numbers. It uses what Comb's numbers depend on, the browser's JavaScript,
+// WebAssembly, and WebGL2 raster, and none of Comb's code: a JavaScript loop, a WebAssembly loop,
+// and a WebGL2 draw of a fixed mesh on a canvas of its own. Each part runs once to warm up and then
+// ROUNDS times; the reference records each part's median and their sum.
 //
 // The parts are handed to page.evaluate, so each is serialized and uses nothing outside it but
 // its argument and the timer the page is given first.

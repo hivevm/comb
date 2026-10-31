@@ -3,8 +3,8 @@
 // those, so that a `switch` on `problem.kind` without a `default` covers them. The type check
 // decides it: the table below holds one handler per kind, each handed the fields of its kind, and
 // it lacks one for a kind the union gains and holds one for a kind it loses, which the type check
-// refuses either way. A `switch` of a case per kind would decide the same but lies beyond the lint's
-// bound on complexity. The browser test of every kind shows that each is thrown.
+// refuses either way. A `switch` of a case per kind would decide the same but lies beyond the
+// lint's bound on complexity. The browser test of every kind shows that each is thrown.
 // Verifies: Q-3, ADR-0034
 import { describe, expect, test } from "bun:test";
 import {

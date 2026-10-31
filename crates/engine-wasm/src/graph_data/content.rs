@@ -1069,9 +1069,9 @@ impl ContentData {
     /// Pushes onto `drawn` the kind, the role, the colour, the drawn text, the pieces of the bar,
     /// and the parts and the arrow of each element of the node at `node`, which `placed` holds in
     /// the order of its rows and theirs, as `lay_out` placed them in `fonts`; an action's, a
-    /// badge's, a progress bar's, a metric's, and an icon's role is body, whose font draws the first
-    /// two, whose line the third and the last lie in, and the value and the trend's text of the
-    /// fourth; an icon's text is its registered name.
+    /// badge's, a progress bar's, a metric's, and an icon's role is body, whose font draws the
+    /// first two, whose line the third and the last lie in, and the value and the trend's text of
+    /// the fourth; an icon's text is its registered name.
     pub(crate) fn draw(&self, node: usize, placed: &[Placed], fonts: &Fonts, drawn: &mut Drawn) {
         for ((_, _, element, strings), at) in self.elements_of(node).zip(placed) {
             let kind = self.kinds[element];
