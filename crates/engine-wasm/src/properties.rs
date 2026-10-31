@@ -26,8 +26,8 @@ use serde::de::{self, IntoDeserializer, Visitor};
 use comb_engine::content::{Font, Fonts, MAX_METRIC, Role};
 
 use super::{
-    ContentInput, EdgeCells, EdgeInput, EdgePatch, EdgeRefusal, GraphBatch, GraphDataProblem,
-    GraphList, KindCode, NodeInput, OwnedColumns, OwnedEdgeColumns, Unflat,
+    ContentInput, DirectionCode, EdgeCells, EdgeInput, EdgePatch, EdgeRefusal, GraphBatch,
+    GraphDataProblem, GraphList, KindCode, NodeInput, OwnedColumns, OwnedEdgeColumns, Unflat,
 };
 use super::{
     NodePatch, add_edge_to, add_node_to, graph_of, load_of, patch_of, reading, unshaped,
@@ -316,13 +316,13 @@ fn weight() -> BoxedStrategy<Value> {
 }
 
 /// An element of content: mostly a text in a role, an action with an identifier, a badge on a
-/// colour, or a progress bar of segments, now and then of a kind or a role the bridge refuses,
+/// colour, a progress bar of segments, or a metric with its trend, now and then of a kind or a role the bridge refuses,
 /// without a field, or no object.
 fn element(loose: bool) -> BoxedStrategy<Value> {
     let named = |name: &str| Value::Text(name.to_owned());
     let kind = one_of(
         vec![named("text")],
-        vec![named("metric"), named(""), Value::Number(1.0)],
+        vec![named("icon"), named(""), Value::Number(1.0)],
         true,
     );
     let roles = ["title", "body", "caption"].map(named).to_vec();
@@ -356,6 +356,26 @@ fn element(loose: bool) -> BoxedStrategy<Value> {
         field("text", text(loose), loose),
         field("color", shade.clone(), loose),
     ]);
+    let directions = ["up", "down", "flat"].map(named).to_vec();
+    let direction = one_of(directions, vec![named("sideways"), Value::Bool(true)], true);
+    let trend = object(vec![
+        field("text", text(loose), loose),
+        field("direction", direction, loose),
+        field("color", shade.clone().boxed(), loose),
+    ]);
+    let odd_trend =
+        prop::sample::select(vec![Value::Null, Value::Number(1.0), Value::List(vec![])]);
+    let metric = object(vec![
+        field("kind", Just(named("metric")).boxed(), false),
+        field("weight", weight(), true),
+        field("caption", text(loose), loose),
+        field("value", text(loose), loose),
+        field(
+            "trend",
+            prop_oneof![20 => trend.boxed(), 1 => odd_trend.boxed()].boxed(),
+            loose,
+        ),
+    ]);
     let progress = object(vec![
         field("kind", Just(named("progress")).boxed(), false),
         field("weight", weight(), true),
@@ -368,7 +388,15 @@ fn element(loose: bool) -> BoxedStrategy<Value> {
         Value::Text("text".to_owned()),
         Value::Object(Vec::new()),
     ]);
-    prop_oneof![30 => text_element, 5 => action, 5 => badge, 5 => progress, 1 => odd].boxed()
+    prop_oneof![
+        30 => text_element,
+        5 => action,
+        5 => badge,
+        5 => progress,
+        5 => metric,
+        1 => odd
+    ]
+    .boxed()
 }
 
 /// A progress bar's segments: mostly a few of a fraction and a colour, now and then as many as the
@@ -581,6 +609,7 @@ fn far_side_ok(node: &Value, lines: [f64; 3]) -> bool {
             (Some(Value::Text(kind)), _) if kind == "action" => lines[1],
             (Some(Value::Text(kind)), _) if kind == "badge" => lines[1] + 6.0,
             (Some(Value::Text(kind)), _) if kind == "progress" => lines[1],
+            (Some(Value::Text(kind)), _) if kind == "metric" => lines[2] + lines[1],
             (_, Some(Value::Text(role))) if role == "title" => lines[0],
             (_, Some(Value::Text(role))) if role == "body" => lines[1],
             _ => lines[2],
@@ -617,7 +646,9 @@ fn nodes_of_data(data: &Value) -> &[Value] {
 /// code units each, of the kind `badge`, a positive finite weight, a text of at most 1,000 code
 /// units, and a colour that is an integer from 0 to 0xFFFFFF, or of the kind `progress`, a
 /// positive finite weight and a list of at most 8 segments, each an object of a finite fraction of
-/// 0 or more and a colour as a badge's, their fractions summing to at most 1 and 1e-9.
+/// 0 or more and a colour as a badge's, their fractions summing to at most 1 and 1e-9, or of the
+/// kind `metric`, a positive finite weight, a caption and a value as texts are, and a trend, an
+/// object of a text as theirs, a direction of the three, and a colour as a badge's.
 fn content_ok(node: &Value) -> bool {
     let Some(Value::List(rows)) = fields_of(node).and_then(|fields| get(fields, "content")) else {
         return false;
@@ -657,7 +688,20 @@ fn content_ok(node: &Value) -> bool {
                 if segments.len() <= 8
                     && segments.iter().all(segment_ok)
                     && segments.iter().map(fraction).sum::<f64>() <= 1.0 + 1e-9);
-        progress && weight || (text || action || badge) && weight && string("text")
+        let trend_ok = |trend: &Value| {
+            let Value::Object(trend) = trend else {
+                return false;
+            };
+            let direction = matches!(get(trend, "direction"), Some(Value::Text(d)) if ["up", "down", "flat"].contains(&d.as_str()));
+            let text = matches!(get(trend, "text"), Some(Value::Text(t)) if units(t) <= 1_000);
+            let color = matches!(get(trend, "color"), Some(Value::Number(c)) if rgb(c));
+            direction && text && color
+        };
+        let metric = named("kind", &["metric"])
+            && string("caption")
+            && string("value")
+            && get(fields, "trend").is_some_and(trend_ok);
+        (progress || metric) && weight || (text || action || badge) && weight && string("text")
     };
     rows.len() <= 8
         && rows.iter().all(|row| match row {
@@ -1044,6 +1088,51 @@ fn a_progress_bar_read_through_serde_names_its_segments_shape_and_reads_the_rest
 }
 
 #[test]
+fn a_metric_read_through_serde_fills_its_trend_and_a_trend_that_is_no_object_holds_none() {
+    // Verifies: ADR-0034
+    // As `addNode` and `updateNode` read content: a metric's caption, value, and trend's text
+    // among the texts, its direction by its code and its colour; a trend that is no object, and
+    // a direction or a colour of another type, read as none, which their rules refuse, and no
+    // shape named.
+    let text = |value: &str| Value::Text(value.to_owned());
+    let read = |trend: Value| {
+        let metric = Value::Object(vec![
+            ("kind".to_owned(), text("metric")),
+            ("caption".to_owned(), text("Revenue")),
+            ("value".to_owned(), Value::Number(42.0)),
+            ("trend".to_owned(), trend),
+        ]);
+        ContentInput::deserialize(Value::List(vec![Value::List(vec![metric])])).unwrap()
+    };
+    let trend = Value::Object(vec![
+        ("text".to_owned(), text("+3%")),
+        ("direction".to_owned(), text("flat")),
+        ("color".to_owned(), Value::Number(255.0)),
+    ]);
+    let whole = read(trend);
+    assert_eq!(whole.shape, None);
+    assert_eq!(whole.data.kinds, [KindCode::Metric as u8]);
+    assert_eq!(whole.data.directions, [DirectionCode::Flat as u8]);
+    assert_eq!(whole.data.colors, [255.0]);
+    // The value, a number, is no text: it crosses empty and marked as none.
+    assert_eq!(whole.data.text_valid, [1, 0, 1]);
+    assert_eq!(whole.data.text_bounds, [0, 7, 7, 10]);
+    for odd in [Value::Null, Value::Number(1.0), Value::List(Vec::new())] {
+        let none = read(odd);
+        assert_eq!(none.shape, None);
+        assert_eq!(none.data.directions, [DirectionCode::Unnamed as u8]);
+        assert!(none.data.colors[0].is_nan());
+        assert_eq!(none.data.text_valid, [1, 0, 0]);
+    }
+    let sideways = read(Value::Object(vec![
+        ("direction".to_owned(), text("sideways")),
+        ("color".to_owned(), text("red")),
+    ]));
+    assert_eq!(sideways.data.directions, [DirectionCode::Unnamed as u8]);
+    assert!(sideways.data.colors[0].is_nan());
+}
+
+#[test]
 fn the_check_for_rust_names_finds_them() {
     let message = "Failed to deserialize JsValue into type `comb_engine_wasm::GraphBatch`: \
                    Error: invalid type: string \"1\", expected f64";
@@ -1178,7 +1267,7 @@ fn loaded_in(
     let (mut cells, mut rows, mut placed) = (Vec::new(), Vec::new(), Vec::new());
     let mut drawn = super::Drawn::default();
     drawn.clear();
-    // The text each placed element shows, none of a progress bar.
+    // The texts each placed element shows, none of a progress bar and three of a metric.
     let mut texts = Vec::new();
     for node in 0..loaded.graph.nodes_in_use() as usize {
         let [width, height] = [0, 1].map(|axis| f64::from(loaded.graph.sizes()[node * 2 + axis]));
@@ -1191,10 +1280,16 @@ fn loaded_in(
             &mut rows,
             &mut placed,
         );
-        content.draw(node, &placed[start..], &mut drawn);
+        content.draw(node, &placed[start..], fonts, &mut drawn);
         for (_, _, element, at) in content.elements_of(node) {
-            let progress = content.kinds[element] == KindCode::Progress as u8;
-            texts.push(if progress { "" } else { content.text(at.text) });
+            let kind = content.kinds[element];
+            texts.push(if kind == KindCode::Progress as u8 {
+                vec![""]
+            } else if kind == KindCode::Metric as u8 {
+                (0..3).map(|i| content.text(at.text + i)).collect()
+            } else {
+                vec![content.text(at.text)]
+            });
         }
         for at in &placed[start..] {
             let [x, y, w, h] = [at.x, at.y, at.width, at.height].map(f64::from);
@@ -1212,18 +1307,8 @@ fn loaded_in(
     assert_eq!(drawn.bounds.len(), placed.len() + 1);
     assert_eq!(drawn.colors.len(), placed.len());
     assert_bars_within(&drawn, &placed);
-    // Each drawn text a prefix of its text, an ellipsis after it where it was cut.
-    let shown = split_utf16(&drawn.texts, &drawn.bounds);
-    for ((shown, at), text) in shown.iter().zip(&placed).zip(texts) {
-        let prefix = if at.ellipsis {
-            shown
-                .strip_suffix('\u{2026}')
-                .expect("an ellipsis after a cut text")
-        } else {
-            shown
-        };
-        assert!(text.starts_with(prefix), "{shown:?} of {text:?}");
-    }
+    assert_parts_within(&drawn, &placed);
+    assert_texts_drawn(&drawn, &placed, &texts);
     // Each text is read back as the column holds it, mapped or not.
     let texts = super::values(&content.texts, &content.text_bounds).expect("mapped texts");
     for (index, text) in texts.into_iter().enumerate() {
@@ -1249,6 +1334,70 @@ fn assert_bars_within(drawn: &super::Drawn, placed: &[comb_engine::content::Plac
             );
             assert!(y >= f64::from(at.y) && y + h <= f64::from(at.y) + f64::from(at.height));
             from = x + w;
+        }
+    }
+}
+
+/// Asserts that each text `drawn` holds is a prefix of the text of its element, `texts`, an
+/// ellipsis after it where it was cut; a metric's three, each cut on its own.
+fn assert_texts_drawn(
+    drawn: &super::Drawn,
+    placed: &[comb_engine::content::Placed],
+    texts: &[Vec<&str>],
+) {
+    let shown = split_utf16(&drawn.texts, &drawn.bounds);
+    for (index, ((shown, at), text)) in shown.iter().zip(placed).zip(texts).enumerate() {
+        let parts = drawn.part_bounds[index] as usize..drawn.part_bounds[index + 1] as usize;
+        if parts.is_empty() {
+            let prefix = if at.ellipsis {
+                shown
+                    .strip_suffix('\u{2026}')
+                    .expect("an ellipsis after a cut text")
+            } else {
+                shown
+            };
+            assert!(text[0].starts_with(prefix), "{shown:?} of {text:?}");
+            continue;
+        }
+        let start = drawn.bounds[index];
+        let ends: Vec<u32> = std::iter::once(start)
+            .chain(parts.map(|part| drawn.part_ends[part]))
+            .collect();
+        assert_eq!(ends.last(), Some(&drawn.bounds[index + 1]));
+        let relative: Vec<u32> = ends.iter().map(|end| end - start).collect();
+        for (part, text) in split_utf16(shown, &relative).into_iter().zip(text) {
+            let prefix = part
+                .strip_suffix('\u{2026}')
+                .filter(|_| !text.starts_with(part))
+                .unwrap_or(part);
+            assert!(text.starts_with(prefix), "{part:?} of {text:?}");
+        }
+    }
+}
+
+/// Asserts that the parts and the arrow of each metric `drawn` holds lie within the cell `placed`
+/// holds of it, and that no other element holds either.
+fn assert_parts_within(drawn: &super::Drawn, placed: &[comb_engine::content::Placed]) {
+    assert_eq!(drawn.part_bounds.len(), placed.len() + 1);
+    assert_eq!(drawn.arrow_bounds.len(), placed.len() + 1);
+    assert_eq!(drawn.parts.len(), 4 * drawn.part_ends.len());
+    for (index, at) in placed.iter().enumerate() {
+        let [left, top, width, height] = [at.x, at.y, at.width, at.height].map(f64::from);
+        let parts = drawn.part_bounds[index] as usize..drawn.part_bounds[index + 1] as usize;
+        let metric = drawn.kinds[index] == KindCode::Metric as u8;
+        assert_eq!(parts.len(), if metric { 3 } else { 0 });
+        for part in parts {
+            let [x, y, w, h] = [0, 1, 2, 3].map(|i| f64::from(drawn.parts[part * 4 + i]));
+            assert!(w >= 0.0 && x >= left && x + w <= left + width, "{at:?}");
+            assert!(y >= top && y + h <= top + height, "{at:?}");
+        }
+        let arrows = drawn.arrow_bounds[index] as usize..drawn.arrow_bounds[index + 1] as usize;
+        assert!(arrows.len() <= usize::from(metric));
+        for arrow in arrows {
+            for i in [0, 2, 4] {
+                let x = f64::from(drawn.arrows[arrow * 6 + i]);
+                assert!(x >= left && x <= left + width, "{at:?}");
+            }
         }
     }
 }

@@ -144,16 +144,21 @@ function nameOf(value: unknown, read: Reader): unknown {
 }
 
 /** An element of content as plain data, or `false` where it is no object; an action's identifier
- *  read as a text is, a badge's colour as a number is, each read of no other kind, and a progress
- *  bar of its kind, its weight, and its segments as `segmentsOf` reads them alone, since it shows
- *  no text and has no role. */
+ *  read as a text is, a badge's colour as a number is, each read of no other kind, a progress bar
+ *  of its kind, its weight, and its segments as `segmentsOf` reads them alone, since it shows no
+ *  text and has no role, and a metric of its kind, its weight, its caption and value, and its
+ *  trend as `trendOf` reads it. */
 function elementOf(read: Reader, value: unknown, limits: Limits) {
   const fields = objectOf(value);
   if (!fields || Array.isArray(value)) return false;
   const kind = fields.kind;
   const element: Record<string, unknown> = { kind: nameOf(kind, read) };
   if (kind === "progress") element.segments = segmentsOf(read, fields.segments, limits);
-  else {
+  else if (kind === "metric") {
+    element.caption = read.text(fields.caption);
+    element.value = read.text(fields.value);
+    element.trend = trendOf(read, fields.trend);
+  } else {
     const { role, text } = fields;
     element.role = nameOf(role, read);
     element.text = read.text(text);
@@ -164,6 +169,15 @@ function elementOf(read: Reader, value: unknown, limits: Limits) {
   // No key for a weight left out, which the bridge reads as 1, so that Comb keeps none either.
   if (weight !== undefined && weight !== null) element.weight = read.number(weight);
   return element;
+}
+
+/** A metric's trend as plain data: an object of its text read as a text is, its direction as a
+ *  name, and its colour as a number; or `false` where it is no object, a list among them. */
+function trendOf(read: Reader, value: unknown) {
+  const fields = segmentFieldsOf(value);
+  if (!fields) return false;
+  const { text, direction, color } = fields;
+  return { text: read.text(text), direction: nameOf(direction, read), color: read.number(color) };
 }
 
 /** A progress bar's segments as plain data: at most one beyond `limits.segments`, each an object
@@ -182,8 +196,8 @@ function segmentsOf(read: Reader, value: unknown, limits: Limits) {
   return segments;
 }
 
-/** A segment's fields to read, or `false` where it is no object: a list is none, as an element
- *  is none. */
+/** A segment's or a trend's fields to read, or `false` where it is no object: a list is none, as
+ *  an element is none. */
 function segmentFieldsOf(value: unknown): Fields | false {
   const fields = objectOf(value);
   return fields && !Array.isArray(value) ? fields : false;
@@ -309,6 +323,10 @@ function writeElement(
     writeProgress(read, element.weight, element.segments, columns, limits, last);
     return;
   }
+  if (kind === "metric") {
+    writeMetric(read, element, columns, limits, node, last);
+    return;
+  }
   const { role, weight, text } = element;
   // The kind, the role, the weight, and a badge's colour cross as codes and numbers, which the
   // writer takes by `typeof` and by comparing a string with a name; an action's identifier is
@@ -319,6 +337,31 @@ function writeElement(
   columns.element(kind, role, weight, color, shown, id, last);
   if (typeof shown === "string") counted(read, shown.length, node, limits);
   if (typeof id === "string") counted(read, id.length, node, limits);
+}
+
+/** Writes `element`, a metric, into `columns`, read once by `read`: its weight, its caption and
+ *  value, and its trend, whose text, direction, and colour are read of it once where it is an
+ *  object and none where it is not, each refused at its rule; its texts counted with the others. */
+function writeMetric(
+  read: Reader,
+  element: Fields,
+  columns: NodeColumnWriter,
+  limits: Limits,
+  node: unknown,
+  last: boolean,
+) {
+  const { weight, caption, value, trend } = element;
+  const texts = [read.text(caption), read.text(value)];
+  const fields = segmentFieldsOf(trend);
+  let direction: unknown;
+  let color: unknown;
+  if (fields) {
+    const { text, direction: named, color: shade } = fields;
+    texts.push(read.text(text));
+    [direction, color] = [named, read.number(shade)];
+  } else texts.push(undefined);
+  columns.metric(weight, texts[0], texts[1], direction, color, texts[2], last);
+  for (const text of texts) if (typeof text === "string") counted(read, text.length, node, limits);
 }
 
 /** Writes a progress bar of `weight` and `segments`, each read once already, into `columns`, the

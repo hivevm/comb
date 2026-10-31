@@ -63,7 +63,8 @@ to invent.
 - **Content element** — one piece of node content: a text, an icon, a progress bar, a badge, a
   value with its trend, or an action, a text whose click the host application gives a meaning.
   A progress bar is divided into *segments*, each a fraction of the bar in a colour, from its
-  left; the rest of the bar is its *track*.
+  left; the rest of the bar is its *track*. A *metric* is a caption above a value and its
+  *trend*, a text with a direction, up, down, or flat, drawn as an arrow, and a colour.
 - **Palette** — the host application's HTML list of node types, from which the user drags new nodes
   onto the canvas.
 - **Path parameter** — a number `t` from 0.0 to 1.0 that marks a point along an edge's path, from

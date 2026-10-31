@@ -1332,9 +1332,10 @@ function installKinds() {
     invalidContentShape: nodes({ content: [5] }),
     tooManyRows: nodes({ content: Array.from({ length: 9 }, () => [title]) }),
     tooManyColumns: nodes({ content: [Array.from({ length: 7 }, () => title)] }),
-    invalidElementKind: element({ kind: "metric" }),
+    invalidElementKind: element({ kind: "icon" }),
     invalidWeight: element({ weight: 0 }),
     invalidRole: element({ role: "headline" }),
+    invalidDirection: element({ kind: "metric", trend: { text: "x", direction: "sideways" } }),
     invalidContentText: element({ text: 5 }),
     contentTextTooLong: element({ text: "x".repeat(1001) }),
     invalidContentColor: element({ kind: "badge", color: 0x1000000 }),
@@ -1401,5 +1402,5 @@ test("load and the methods that edit the graph throw every kind of GraphDataProb
   const thrown = await page.evaluate(everyKind);
   expect(errors).toEqual([]);
   expect(thrown).toEqual(Object.fromEntries(Object.keys(thrown).map((kind) => [kind, kind])));
-  expect(Object.keys(thrown).length).toBe(34);
+  expect(Object.keys(thrown).length).toBe(35);
 });

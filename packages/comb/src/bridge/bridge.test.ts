@@ -14,7 +14,14 @@ import {
   type PlainPatch,
 } from ".";
 import { listsOf, nodeSnapshotOf, patchOf, snapshotOf } from "../api/snapshot";
-import { EdgeField, KindCode, NodeField, RoleCode, SideCode } from "../../wasm/engine.js";
+import {
+  DirectionCode,
+  EdgeField,
+  KindCode,
+  NodeField,
+  RoleCode,
+  SideCode,
+} from "../../wasm/engine.js";
 
 let bridge: Bridge;
 
@@ -62,6 +69,7 @@ function writeContent(columns: NodeColumnWriter, content: unknown) {
           columns.noElement(last);
         else {
           const { kind, role, weight, color, text, id } = element as Record<string, unknown>;
+          if (kind === "metric") return writeMetric(columns, element as object, last);
           if (kind !== "progress")
             return columns.element(kind, role, weight, color, text, id, last);
           // A progress bar's segments follow it before its row ends.
@@ -71,6 +79,15 @@ function writeContent(columns: NodeColumnWriter, content: unknown) {
         }
       });
   }
+}
+/** Writes the plain metric `metric` into `columns`, its trend's fields where it is an object. */
+function writeMetric(columns: NodeColumnWriter, metric: object, last: boolean) {
+  const { weight, caption, value, trend } = metric as Record<string, unknown>;
+  const fields = (typeof trend === "object" && trend !== null ? trend : {}) as Record<
+    string,
+    unknown
+  >;
+  columns.metric(weight, caption, value, fields.direction, fields.color, fields.text, last);
 }
 /** Writes the plain segments `segments` of the progress bar just written into `columns`. */
 function writeSegments(columns: NodeColumnWriter, segments: unknown) {
@@ -705,6 +722,118 @@ describe("bridge progress bars refused", () => {
   });
 });
 
+/** A node `b` of a title and, below it, a metric "Revenue" over "42" and its trend `trend`. */
+const withMetric = (trend: unknown, caption: unknown = "Revenue", value: unknown = "42") => ({
+  ...node("b", 300, 0),
+  content: [
+    [{ kind: "text", role: "title", text: "Bet" }],
+    [{ kind: "metric", caption, value, trend }],
+  ],
+});
+
+describe("bridge metrics", () => {
+  test("a metric crosses with its direction and colour, is drawn near as its three texts and its arrow, and comes back as given", () => {
+    // Verifies: ADR-0013, ADR-0034
+    const trend = { text: "+3%", direction: "up" as const, color: GREEN };
+    const { snapshot } = snapshotted([node("a", 0, 0), withMetric(trend)]);
+    const c = snapshot.nodes.content;
+    expect([...c.kinds]).toEqual([KindCode.Text, KindCode.Text, KindCode.Metric]);
+    expect([...c.directions]).toEqual([0, 0, DirectionCode.Up]);
+    expect([...c.colors].slice(2)).toEqual([GREEN]);
+    // Its caption, value, and trend's text among the texts, after the two titles.
+    expect([...c.textValid]).toEqual([1, 1, 1, 1, 1]);
+    expect([...c.textBounds]).toEqual([0, 1, 4, 11, 13, 16]);
+    // Its cell is its column below the title, 76 wide, and two lines, 30; the caption on the
+    // first, the value "42" at the left of the second, 14 wide, the arrow 8 after it, a square of
+    // 10 in the middle of the line, and the trend's text 4 after the arrow, to the column's end.
+    bridge.setFont("body", FONT);
+    expect(bridge.loadGraph(snapshot)).toBe(2);
+    const near = bridge.query(everywhere, "near", 1, 0).content;
+    expect([...near.kinds]).toEqual([KindCode.Text, KindCode.Text, KindCode.Metric]);
+    expect([...near.colors]).toEqual([0, 0, GREEN]);
+    expect([...near.rects.subarray(8, 12)]).toEqual([12, 28, 76, 30]);
+    expect(near.texts).toBe("aBetRevenue42+3%");
+    expect([...near.partBounds]).toEqual([0, 0, 0, 3]);
+    expect([...near.partEnds]).toEqual([11, 13, 16]);
+    expect([...near.parts]).toEqual([12, 28, 76, 14, 12, 42, 14, 16, 48, 42, 40, 16]);
+    expect([...near.arrowBounds]).toEqual([0, 0, 0, 1]);
+    expect([...near.arrows]).toEqual([34, 55, 44, 55, 39, 45]);
+    expect(bridge.content(1)[1]).toEqual([
+      { kind: "metric", caption: "Revenue", value: "42", trend, weight: 1 },
+    ]);
+    // A press anywhere in its cell reports the metric; the middle level hits none, as it draws
+    // none.
+    for (const [x, y] of [
+      [380, 30],
+      [330, 50],
+      [387, 57],
+    ] as const)
+      expect(bridge.hit(x, y, 1, "near", false)).toMatchObject({
+        kind: "node",
+        slot: 1,
+        element: { row: 1, column: 0, kind: "metric" },
+      });
+    expect(bridge.hit(320, 50, 1, "middle", false)).not.toHaveProperty("element");
+  });
+});
+
+describe("bridge metrics refused", () => {
+  test("a metric whose direction, texts, or colour are refused is named with its node and the field, through every export", () => {
+    // Verifies: ADR-0013, ADR-0034, Q-7
+    const at = { node: "b", row: 1, column: 0 };
+    const trend = (fields: object) => ({ text: "+3%", direction: "up", color: GREEN, ...fields });
+    const direction = { kind: "invalidDirection", ...at };
+    const color = { kind: "invalidContentColor", ...at };
+    const text = (field: string) => ({ kind: "invalidContentText", ...at, field });
+    const cases: [unknown, unknown, unknown, object][] = [
+      [trend({ direction: "sideways" }), "Revenue", "42", direction],
+      [trend({ direction: 1 }), "Revenue", "42", direction],
+      [trend({ direction: undefined }), "Revenue", "42", direction],
+      [5, "Revenue", "42", direction],
+      [null, "Revenue", "42", direction],
+      [[], "Revenue", "42", direction],
+      [trend({ color: 0x1000000 }), "Revenue", "42", color],
+      [trend({ color: "#fff" }), "Revenue", "42", color],
+      [trend({ color: undefined }), "Revenue", "42", color],
+      [trend({}), 5, "42", text("caption")],
+      [trend({}), "Revenue", 42, text("value")],
+      [trend({}), "Revenue", "\ud800", text("value")],
+      [trend({ text: undefined }), "Revenue", "42", text("trend.text")],
+      [
+        trend({ text: "d".repeat(1001) }),
+        "Revenue",
+        "42",
+        { kind: "contentTextTooLong", ...at, field: "trend.text", limit: 1000 },
+      ],
+      // The direction before the texts, the texts before the colour.
+      [trend({ direction: "x", text: 5 }), 5, 5, direction],
+      [trend({ color: -1 }), 5, "42", text("caption")],
+    ];
+    for (const [shown, caption, value, problem] of cases) {
+      const { snapshot } = snapshotted([node("a", 0, 0), withMetric(shown, caption, value)]);
+      expect(outcome(() => bridge.loadGraph(snapshot))).toEqual(problem);
+      // Through `addNode` and `updateNode` alike, as the snapshot reads a single node.
+      bridge.loadGraph(snapshotted([node("a", 0, 0)]).snapshot);
+      const alone = nodeSnapshotOf(withMetric(shown, caption, value), limits()).snapshot;
+      expect(outcome(() => bridge.addNode(alone))).toEqual(problem);
+      const content = patchOf({ content: withMetric(shown, caption, value).content }, limits());
+      expect(outcome(() => bridge.updateNode(0, "b", content))).toEqual(problem);
+    }
+    // Each direction, and both ends of the colours, are taken.
+    for (const [shown, shade] of [
+      ["up", 0],
+      ["down", 0xffffff],
+      ["flat", GREEN],
+    ] as const) {
+      const { snapshot } = snapshotted([
+        node("a", 0, 0),
+        withMetric(trend({ direction: shown, color: shade })),
+      ]);
+      expect(bridge.loadGraph(snapshot)).toBe(2);
+    }
+  });
+});
+
 // Identifiers of 0 to 16 code units, characters beyond the basic plane among them; titles and
 // label texts of none, columns of no code units.
 const PIECED_IDS = [
@@ -856,7 +985,7 @@ describe("bridge columns of a load's content", () => {
     // Verifies: ADR-0034
     const content = [
       [
-        { kind: "metric", role: "title", text: "x", weight: 1 },
+        { kind: "icon", role: "title", text: "x", weight: 1 },
         textOf("headline", "y"),
         textOf("body", 5, "1"),
       ],

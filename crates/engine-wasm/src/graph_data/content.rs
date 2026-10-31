@@ -2,12 +2,12 @@
 //! content crosses as and the content of a single node read through serde-wasm-bindgen, both
 //! checked by the one function below, and the content the engine keeps to lay out.
 //!
-//! `text`, `action`, `badge`, and `progress` have columns and a code so far; each further kind of
+//! `text`, `action`, `badge`, `progress`, and `metric` have columns and a code so far; each further kind of
 //! ADR-0013 adds its own with its ticket, in the places ADR-0034 gives them.
 
 use std::fmt;
 
-use comb_engine::content::{self as layout, Cell, Element, Fonts, Placed, Role};
+use comb_engine::content::{self as layout, Cell, Direction, Element, Fonts, Placed, Role};
 use serde::Serialize;
 use serde::de::{self, IgnoredAny, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -15,8 +15,8 @@ use tsify::Tsify;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use super::{
-    ContentElement, GraphDataProblem, NodeContent, Segment, TEXT_LIMIT, TextRole, bounds_fit,
-    numbered, rgb, utf16_length,
+    ContentElement, GraphDataProblem, NodeContent, Segment, TEXT_LIMIT, TextRole, Trend,
+    TrendDirection, bounds_fit, numbered, rgb, utf16_length,
 };
 
 /// The most rows of one node's content.
@@ -55,6 +55,7 @@ pub enum KindCode {
     Action,
     Badge,
     Progress,
+    Metric,
     Unnamed,
 }
 
@@ -66,6 +67,7 @@ pub enum ElementKind {
     Action,
     Badge,
     Progress,
+    Metric,
 }
 
 /// The element of a node a press hits (ADR-0013): its row and column, its kind, and for an
@@ -92,6 +94,17 @@ pub enum RoleCode {
     Unnamed,
 }
 
+/// The code of a trend's direction in its column: `Unnamed` for a direction that names none, or a
+/// trend that is no object, which its rule refuses; 0 for an element of another kind.
+#[wasm_bindgen]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DirectionCode {
+    Up,
+    Down,
+    Flat,
+    Unnamed,
+}
+
 /// The kind of `name`, as the snapshot codes it, `Unnamed` for a string that names none.
 pub(crate) fn kind_code(name: &str) -> KindCode {
     match name {
@@ -99,6 +112,7 @@ pub(crate) fn kind_code(name: &str) -> KindCode {
         "action" => KindCode::Action,
         "badge" => KindCode::Badge,
         "progress" => KindCode::Progress,
+        "metric" => KindCode::Metric,
         _ => KindCode::Unnamed,
     }
 }
@@ -111,6 +125,28 @@ pub(crate) fn role_code(name: &str) -> RoleCode {
         "caption" => RoleCode::Caption,
         _ => RoleCode::Unnamed,
     }
+}
+
+/// The direction of `name`, `Unnamed` for a string that names none.
+pub(crate) fn direction_code(name: &str) -> DirectionCode {
+    match name {
+        "up" => DirectionCode::Up,
+        "down" => DirectionCode::Down,
+        "flat" => DirectionCode::Flat,
+        _ => DirectionCode::Unnamed,
+    }
+}
+
+/// The direction of `code`, or none for `Unnamed` and a code no direction has.
+pub(crate) fn direction_of(code: u8) -> Option<Direction> {
+    [
+        (DirectionCode::Up, Direction::Up),
+        (DirectionCode::Down, Direction::Down),
+        (DirectionCode::Flat, Direction::Flat),
+    ]
+    .into_iter()
+    .find(|&(of, _)| of as u8 == code)
+    .map(|(_, direction)| direction)
 }
 
 /// The role of `code`, or none for `Unnamed` and a code no role has.
@@ -129,11 +165,13 @@ pub(crate) fn role_of(code: u8) -> Option<Role> {
 /// each node's rows in their order and each row's elements in theirs: the boundaries of each
 /// node's rows, one more than there are nodes; of each row's elements, one more than there are
 /// rows; per element its kind's code, its weight as the host application handed it, NaN for one
-/// of another type, a text's role's code, 0 for another kind, and a badge's colour as the host
-/// application handed it, NaN for one of another type and for another kind; per element the
+/// of another type, a text's role's code and a trend's direction's code, each 0 for another kind,
+/// and a badge's or a trend's colour as the host application handed it, NaN for one of another
+/// type and for another kind; per element the
 /// boundaries of a progress bar's segments, one more than there are elements, and per segment its
 /// fraction and its colour as the host application handed them, NaN for one of another type; the
-/// texts, every string an element shows, concatenated in pieces as every string column is, with
+/// texts, every string an element shows, a metric's caption, value, and trend's text in that
+/// order, concatenated in pieces as every string column is, with
 /// their boundaries and per text whether it is a text; and the names, every string an element
 /// names and does not show, an action's identifier, as the texts are.
 #[derive(Clone, Copy)]
@@ -143,6 +181,7 @@ pub struct ContentColumns<'a> {
     pub kinds: &'a [u8],
     pub weights: &'a [f64],
     pub roles: &'a [u8],
+    pub directions: &'a [u8],
     pub colors: &'a [f64],
     pub segment_bounds: &'a [u32],
     pub fractions: &'a [f64],
@@ -169,6 +208,7 @@ fn filled(kind: u8) -> (usize, usize) {
         k if k == KindCode::Text as u8 => (1, 0),
         k if k == KindCode::Action as u8 => (1, 1),
         k if k == KindCode::Badge as u8 => (1, 0),
+        k if k == KindCode::Metric as u8 => (3, 0),
         _ => (0, 0),
     }
 }
@@ -235,9 +275,10 @@ impl At<'_> {
 
 impl ContentColumns<'_> {
     /// Whether the columns fit together for `nodes` nodes: the boundaries bound what follows them,
-    /// the elements' columns are as long as there are elements, each code names a kind or a role,
-    /// or none, each validity byte is 1 or 0, there are as many texts and names as the elements'
-    /// kinds fill, a text for each `text` and `badge` and a text and a name for each `action`, and
+    /// the elements' columns are as long as there are elements, each code names a kind, a role, or
+    /// a direction, or none, each validity byte is 1 or 0, there are as many texts and names as the
+    /// elements' kinds fill, a text for each `text` and `badge`, a text and a name for each
+    /// `action`, and three texts for each `metric`, and
     /// only a progress bar holds segments, each with a fraction and a colour.
     pub(crate) fn fit(&self, nodes: usize) -> bool {
         let elements = self.kinds.len();
@@ -252,6 +293,7 @@ impl ContentColumns<'_> {
             && runs_fit(self.element_bounds, rows, elements)
             && self.weights.len() == elements
             && self.roles.len() == elements
+            && self.directions.len() == elements
             && self.colors.len() == elements
             && runs_fit(self.segment_bounds, elements, self.fractions.len())
             && self.segment_colors.len() == self.fractions.len()
@@ -266,6 +308,10 @@ impl ContentColumns<'_> {
                 .roles
                 .iter()
                 .all(|&role| role <= RoleCode::Unnamed as u8)
+            && self
+                .directions
+                .iter()
+                .all(|&direction| direction <= DirectionCode::Unnamed as u8)
             && self.text_valid.iter().all(|&valid| valid <= 1)
             && self.name_valid.iter().all(|&valid| valid <= 1)
             && texts == filled_texts
@@ -416,6 +462,15 @@ impl ContentColumns<'_> {
             self.check_segments(element, at)?;
             return Ok(layout::element_height(&Element::Progress, fonts));
         }
+        if kind == KindCode::Metric as u8 {
+            self.check_metric(element, at, cursor)?;
+            let metric = Element::Metric {
+                caption: "",
+                value: "",
+                trend: "",
+            };
+            return Ok(layout::element_height(&metric, fonts));
+        }
         let Some(role) = role_of(self.roles[element]) else {
             return Err(GraphDataProblem::InvalidRole {
                 node: at.node(),
@@ -465,6 +520,37 @@ impl ContentColumns<'_> {
                 node: at.node(),
                 row: at.row,
                 column: at.column,
+            });
+        }
+        Ok(())
+    }
+
+    /// Checks the metric at `element`, at `at`: its trend's direction, then its caption, its value,
+    /// and its trend's text, then its trend's colour.
+    fn check_metric(
+        &self,
+        element: usize,
+        at: &At,
+        cursor: &mut Cursor,
+    ) -> Result<(), GraphDataProblem> {
+        if direction_of(self.directions[element]).is_none() {
+            return Err(GraphDataProblem::InvalidDirection {
+                node: at.node(),
+                row: at.row,
+                column: at.column,
+            });
+        }
+        for field in ["caption", "value", "trend.text"] {
+            let text = cursor.text;
+            cursor.text += 1;
+            check_string(self.texts(), text, at, field, cursor)?;
+        }
+        if !rgb(self.colors[element]) {
+            return Err(GraphDataProblem::InvalidContentColor {
+                node: at.node(),
+                row: at.row,
+                column: at.column,
+                segment: None,
             });
         }
         Ok(())
@@ -546,6 +632,7 @@ pub struct ContentData {
     pub(crate) kinds: Vec<u8>,
     pub(crate) weights: Vec<f64>,
     pub(crate) roles: Vec<u8>,
+    pub(crate) directions: Vec<u8>,
     pub(crate) colors: Vec<f64>,
     pub(crate) segment_bounds: Vec<u32>,
     pub(crate) fractions: Vec<f64>,
@@ -631,6 +718,7 @@ impl ContentData {
             kinds: &self.kinds,
             weights: &self.weights,
             roles: &self.roles,
+            directions: &self.directions,
             colors: &self.colors,
             segment_bounds: &self.segment_bounds,
             fractions: &self.fractions,
@@ -730,20 +818,36 @@ impl ContentData {
             })
     }
 
-    /// The element at `element`, its text, where it shows one, the one at `text`, as the layout
-    /// reads it.
+    /// The element at `element`, its text, where it shows one, the one at `text`, and a metric's
+    /// three from there, as the layout reads it.
     fn element(&self, element: usize, text: usize) -> Element<'_> {
-        if self.kinds[element] == KindCode::Progress as u8 {
+        let kind = self.kinds[element];
+        if kind == KindCode::Progress as u8 {
             return Element::Progress;
+        }
+        if kind == KindCode::Metric as u8 {
+            return Element::Metric {
+                caption: self.text(text),
+                value: self.text(text + 1),
+                trend: self.text(text + 2),
+            };
         }
         self.element_with(element, self.text(text))
     }
 
-    /// The element at `element` as the layout reads it, showing `text` where it shows one.
+    /// The element at `element` as the layout reads it, showing `text` where it shows one, a
+    /// metric `text` in each of its three.
     fn element_with<'t>(&self, element: usize, text: &'t str) -> Element<'t> {
         let kind = self.kinds[element];
         if kind == KindCode::Progress as u8 {
             return Element::Progress;
+        }
+        if kind == KindCode::Metric as u8 {
+            return Element::Metric {
+                caption: text,
+                value: text,
+                trend: text,
+            };
         }
         if kind == KindCode::Action as u8 {
             return Element::Action { text };
@@ -817,6 +921,7 @@ impl ContentData {
             Element::Action { .. } => (ElementKind::Action, Some(self.name(at.name).to_owned())),
             Element::Badge { .. } => (ElementKind::Badge, None),
             Element::Progress => (ElementKind::Progress, None),
+            Element::Metric { .. } => (ElementKind::Metric, None),
             Element::Text { .. } => (ElementKind::Text, None),
         };
         Some(ElementHit {
@@ -836,7 +941,16 @@ impl ContentData {
 /// the boundaries of the pieces of its bar in `bar_bounds`, one more than there are elements, a
 /// progress bar's segments and then its track and no piece of another kind, each piece's
 /// rectangle `x, y, width, height` relative to its node in `bars`, and its colour as `0xRRGGBB` in
-/// `bar_colors`, a segment's, and 0 for a track, whose colour is the shell's.
+/// `bar_colors`, a segment's, and 0 for a track, whose colour is the shell's. A metric's colour is
+/// its trend's, and its drawn text its caption's, its value's, and its trend's text's one after
+/// another, which its parts cut: per element the boundaries of its parts in `part_bounds`, one
+/// more than there are elements, a metric's three and no part of another kind, each part's
+/// rectangle relative to its node in `parts`, and where its text ends in `texts`, in UTF-16 code
+/// units, in `part_ends`, each part's text starting where the one before it in its element ends,
+/// the first where its element's does; and per element the boundaries of its arrows in
+/// `arrow_bounds`, one more than there are elements, a metric's one where its column holds it and
+/// none of another kind, each arrow's triangle as three points `x, y` relative to its node in
+/// `arrows`, drawn in its element's colour.
 #[derive(Debug, Default)]
 pub struct Drawn {
     pub kinds: Vec<u8>,
@@ -847,6 +961,11 @@ pub struct Drawn {
     pub bar_bounds: Vec<u32>,
     pub bars: Vec<f32>,
     pub bar_colors: Vec<u32>,
+    pub part_bounds: Vec<u32>,
+    pub parts: Vec<f32>,
+    pub part_ends: Vec<u32>,
+    pub arrow_bounds: Vec<u32>,
+    pub arrows: Vec<f32>,
     units: u32,
     pieces: Vec<[f32; 4]>,
 }
@@ -865,22 +984,52 @@ impl Drawn {
         self.bar_bounds.push(0);
         self.bars.clear();
         self.bar_colors.clear();
+        self.part_bounds.clear();
+        self.part_bounds.push(0);
+        self.parts.clear();
+        self.part_ends.clear();
+        self.arrow_bounds.clear();
+        self.arrow_bounds.push(0);
+        self.arrows.clear();
+    }
+
+    /// Pushes what is drawn of `text`, its first `at.kept` UTF-16 code units and an ellipsis
+    /// after them where `at.ellipsis`, onto the texts.
+    fn push_text(&mut self, text: &str, at: &Placed) {
+        let mut units = 0;
+        let end = text
+            .char_indices()
+            .find(|&(_, character)| {
+                let past = units >= at.kept;
+                units += numbered(character.len_utf16());
+                past
+            })
+            .map_or(text.len(), |(byte, _)| byte);
+        self.texts.push_str(&text[..end]);
+        self.units += at.kept.min(units);
+        if at.ellipsis {
+            self.texts.push(layout::ELLIPSIS);
+            self.units += 1;
+        }
     }
 }
 
 impl ContentData {
-    /// Pushes onto `drawn` the kind, the role, the colour, the drawn text, and the pieces of the
-    /// bar of each element of the node at `node`, which `placed` holds in the order of its rows
-    /// and theirs, as `lay_out` placed them; an action's, a badge's, and a progress bar's role is
-    /// body, whose font draws the first two and whose line the last lies in.
-    pub(crate) fn draw(&self, node: usize, placed: &[Placed], drawn: &mut Drawn) {
+    /// Pushes onto `drawn` the kind, the role, the colour, the drawn text, the pieces of the bar,
+    /// and the parts and the arrow of each element of the node at `node`, which `placed` holds in
+    /// the order of its rows and theirs, as `lay_out` placed them in `fonts`; an action's, a
+    /// badge's, a progress bar's, and a metric's role is body, whose font draws the first two,
+    /// whose line the third lies in, and the value and the trend's text of the last.
+    pub(crate) fn draw(&self, node: usize, placed: &[Placed], fonts: &Fonts, drawn: &mut Drawn) {
         for ((_, _, element, strings), at) in self.elements_of(node).zip(placed) {
             let kind = self.kinds[element];
             drawn.kinds.push(kind);
             let shown = self.element(element, strings.text);
             let (role, color) = match shown {
                 Element::Action { .. } | Element::Progress => (RoleCode::Body as u8, 0),
-                Element::Badge { .. } => (RoleCode::Body as u8, self.color(element)),
+                Element::Badge { .. } | Element::Metric { .. } => {
+                    (RoleCode::Body as u8, self.color(element))
+                }
                 Element::Text { .. } => (self.roles[element], 0),
             };
             drawn.roles.push(role);
@@ -889,22 +1038,32 @@ impl ContentData {
                 self.draw_bar(element, at, drawn);
             }
             drawn.bar_bounds.push(numbered(drawn.bar_colors.len()));
-            let text = shown.text();
-            let mut units = 0;
-            let end = text
-                .char_indices()
-                .find(|&(_, character)| {
-                    let past = units >= at.kept;
-                    units += numbered(character.len_utf16());
-                    past
-                })
-                .map_or(text.len(), |(byte, _)| byte);
-            drawn.texts.push_str(&text[..end]);
-            drawn.units += at.kept.min(units);
-            if at.ellipsis {
-                drawn.texts.push(layout::ELLIPSIS);
-                drawn.units += 1;
+            if let Element::Metric {
+                caption,
+                value,
+                trend,
+            } = shown
+            {
+                // A metric's direction, which the bridge checked.
+                let direction = direction_of(self.directions[element]).unwrap_or(Direction::Flat);
+                let parts = layout::metric_parts(at, [caption, value, trend], direction, fonts);
+                for (text, part) in [
+                    (caption, parts.caption),
+                    (value, parts.value),
+                    (trend, parts.trend),
+                ] {
+                    drawn.push_text(text, &part);
+                    drawn
+                        .parts
+                        .extend([part.x, part.y, part.width, part.height]);
+                    drawn.part_ends.push(drawn.units);
+                }
+                drawn.arrows.extend(parts.arrow.iter().flatten());
+            } else {
+                drawn.push_text(shown.text(), at);
             }
+            drawn.part_bounds.push(numbered(drawn.part_ends.len()));
+            drawn.arrow_bounds.push(numbered(drawn.arrows.len() / 6));
             drawn.bounds.push(drawn.units);
         }
     }
@@ -924,7 +1083,7 @@ impl ContentData {
         drawn.bar_colors.extend(colors.chain([0]));
     }
 
-    /// The colour of the badge at `element`, which the bridge checked.
+    /// The colour of the badge or the trend of the metric at `element`, which the bridge checked.
     fn color(&self, element: usize) -> u32 {
         rgb_of(self.colors[element])
     }
@@ -988,6 +1147,24 @@ impl ContentData {
                     color: self.color(element),
                     weight,
                 },
+                Element::Metric {
+                    caption,
+                    value,
+                    trend,
+                } => ContentElement::Metric {
+                    caption: caption.to_owned(),
+                    value: value.to_owned(),
+                    trend: Trend {
+                        text: trend.to_owned(),
+                        direction: match direction_of(self.directions[element]) {
+                            Some(Direction::Up) => TrendDirection::Up,
+                            Some(Direction::Down) => TrendDirection::Down,
+                            _ => TrendDirection::Flat,
+                        },
+                        color: self.color(element),
+                    },
+                    weight,
+                },
                 Element::Text { role, .. } => ContentElement::Text {
                     role: match role {
                         Role::Title => TextRole::Title,
@@ -1021,6 +1198,7 @@ impl ContentData {
         self.kinds.extend(&node.kinds);
         self.weights.extend(&node.weights);
         self.roles.extend(&node.roles);
+        self.directions.extend(&node.directions);
         self.colors.extend(&node.colors);
         let base = numbered(self.fractions.len());
         let ends = node.segment_bounds.windows(2).map(|pair| base + pair[1]);
@@ -1122,7 +1300,7 @@ impl ContentInput {
     }
 
     /// Adds an element of `kind`, `weight`, and `role`, the role crossing as 0 for an action, a
-    /// badge, and a progress bar, and of the colour `color`, NaN for a kind other than `badge`; where it is a
+    /// badge, a progress bar, and a metric, and of the colour `color`, NaN for a kind other than `badge`; where it is a
     /// `text`, an `action`, or a `badge`, its text, and where it is an `action`, its identifier
     /// `id`, each none for one of another type, which crosses empty and marked as no string.
     pub(crate) fn push(
@@ -1140,13 +1318,14 @@ impl ContentInput {
         data.roles.push(
             if matches!(
                 kind,
-                KindCode::Action | KindCode::Badge | KindCode::Progress
+                KindCode::Action | KindCode::Badge | KindCode::Progress | KindCode::Metric
             ) {
                 0
             } else {
                 role
             },
         );
+        data.directions.push(0);
         data.colors.push(if kind == KindCode::Badge {
             color
         } else {
@@ -1155,7 +1334,8 @@ impl ContentInput {
         let segments = data.segment_bounds[data.segment_bounds.len() - 1];
         data.segment_bounds.push(segments);
         let (texts, names) = filled(kind as u8);
-        if texts > 0 {
+        // A metric's three texts are `push_metric`'s to fill.
+        if texts == 1 {
             push_string(
                 &mut data.texts,
                 &mut data.text_bounds,
@@ -1169,6 +1349,36 @@ impl ContentInput {
                 &mut data.name_bounds,
                 &mut data.name_valid,
                 id,
+            );
+        }
+    }
+}
+
+impl ContentInput {
+    /// Adds a metric of `weight`, its trend of the direction `direction`, a code, and the colour
+    /// `color`, showing `caption`, `value`, and the trend's text `trend`, each none for one of
+    /// another type, which crosses empty and marked as no string.
+    pub(crate) fn push_metric(
+        &mut self,
+        weight: f64,
+        direction: u8,
+        color: f64,
+        [caption, value, trend]: [Option<&str>; 3],
+    ) {
+        self.push(KindCode::Metric, weight, 0, f64::NAN, None, None);
+        let data = &mut self.data;
+        if let Some(last) = data.directions.last_mut() {
+            *last = direction;
+        }
+        if let Some(last) = data.colors.last_mut() {
+            *last = color;
+        }
+        for text in [caption, value, trend] {
+            push_string(
+                &mut data.texts,
+                &mut data.text_bounds,
+                &mut data.text_valid,
+                text,
             );
         }
     }
@@ -1251,14 +1461,33 @@ impl<'de> Visitor<'de> for RowSeed<'_> {
                 Some(cells) => {
                     let kind = cells.kind.as_deref().map_or(KindCode::Unnamed, kind_code);
                     let role = cells.role.as_deref().map_or(RoleCode::Unnamed, role_code);
-                    content.push(
-                        kind,
-                        cells.weight,
-                        role as u8,
-                        cells.color,
-                        cells.text.as_deref(),
-                        cells.id.as_deref(),
-                    );
+                    if kind == KindCode::Metric {
+                        // A trend that is no object holds none of its fields.
+                        let (text, direction, color) =
+                            cells.trend.unwrap_or((None, None, f64::NAN));
+                        let direction = direction
+                            .as_deref()
+                            .map_or(DirectionCode::Unnamed, direction_code);
+                        content.push_metric(
+                            cells.weight,
+                            direction as u8,
+                            color,
+                            [
+                                cells.caption.as_deref(),
+                                cells.value.as_deref(),
+                                text.as_deref(),
+                            ],
+                        );
+                    } else {
+                        content.push(
+                            kind,
+                            cells.weight,
+                            role as u8,
+                            cells.color,
+                            cells.text.as_deref(),
+                            cells.id.as_deref(),
+                        );
+                    }
                     // Only a progress bar's segments are read; any other kind holds none.
                     if kind == KindCode::Progress {
                         let at = Some(column);
@@ -1317,6 +1546,9 @@ impl<'de> Visitor<'de> for RowSeed<'_> {
     }
 }
 
+/// A trend's text, direction, and colour, as `Fields` holds them.
+type Trend3 = (Option<String>, Option<String>, f64);
+
 /// An element as the host application handed it over: its fields, each of its type or none, a
 /// weight left out or null 1 and one of another type NaN, or none where it is no object.
 struct ElementCells(Option<Fields>);
@@ -1330,6 +1562,14 @@ struct Fields {
     fraction: f64,
     text: Option<String>,
     id: Option<String>,
+    /// A trend's direction, read as a kind is.
+    direction: Option<String>,
+    /// A metric's caption and value, read as a text is.
+    caption: Option<String>,
+    value: Option<String>,
+    /// A metric's trend, its text, its direction, and its colour, each read as `Fields` reads
+    /// them, or none where it is no object.
+    trend: Option<Trend3>,
     /// A progress bar's segments, each its fraction and its colour, NaN for one left out or of
     /// another type, or none for a segment that is no object; none where they are no list.
     segments: Option<Vec<Option<(f64, f64)>>>,
@@ -1360,6 +1600,10 @@ impl<'de> Visitor<'de> for ElementVisitor {
             fraction: f64::NAN,
             text: None,
             id: None,
+            direction: None,
+            caption: None,
+            value: None,
+            trend: None,
             segments: None,
         };
         while let Some(key) = map.next_key::<String>()? {
@@ -1380,6 +1624,13 @@ impl<'de> Visitor<'de> for ElementVisitor {
                 }
                 "text" => fields.text = map.next_value::<Lenient<String>>()?.0,
                 "id" => fields.id = map.next_value::<Lenient<String>>()?.0,
+                "direction" => fields.direction = map.next_value::<Lenient<String>>()?.0,
+                "caption" => fields.caption = map.next_value::<Lenient<String>>()?.0,
+                "value" => fields.value = map.next_value::<Lenient<String>>()?.0,
+                "trend" => {
+                    let trend = map.next_value::<ElementCells>()?.0;
+                    fields.trend = trend.map(|t| (t.text, t.direction, t.color));
+                }
                 "segments" => fields.segments = map.next_value::<SegmentsCells>()?.0,
                 _ => {
                     map.next_value::<IgnoredAny>()?;

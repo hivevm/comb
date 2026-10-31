@@ -82,10 +82,11 @@ function counting(name: string, fields: Record<string, unknown>, reads: Record<s
   return counted;
 }
 
-test("the snapshot reads each field of an element once, and a progress bar's text and role not at all", () => {
+test("the snapshot reads each field of an element once, and a progress bar's and a metric's text and role not at all", () => {
   // Verifies: ADR-0028, ADR-0034
   const elements = (reads: Record<string, number>) => {
     const segment = counting("segment", { fraction: 0.5, color: 0x22c55e }, reads);
+    const trend = counting("trend", { text: "+3%", direction: "up", color: 0x22c55e }, reads);
     const fields = (kind: string, more: Record<string, unknown>) => ({
       kind,
       role: "body",
@@ -98,6 +99,7 @@ test("the snapshot reads each field of an element once, and a progress bar's tex
       [counting("action", fields("action", { id: "go" }), reads)],
       [counting("badge", fields("badge", { color: 0x22c55e }), reads)],
       [counting("progress", fields("progress", { segments: [segment] }), reads)],
+      [counting("metric", fields("metric", { caption: "c", value: "1", trend }), reads)],
     ];
   };
   const expected = {
@@ -120,6 +122,14 @@ test("the snapshot reads each field of an element once, and a progress bar's tex
     "progress.segments": 1,
     "segment.fraction": 1,
     "segment.color": 1,
+    "metric.kind": 1,
+    "metric.weight": 1,
+    "metric.caption": 1,
+    "metric.value": 1,
+    "metric.trend": 1,
+    "trend.text": 1,
+    "trend.direction": 1,
+    "trend.color": 1,
   };
   // Through a load, which writes the columns, and through the snapshot of a single node alike.
   const loaded: Record<string, number> = {};
