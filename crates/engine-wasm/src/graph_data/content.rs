@@ -1245,14 +1245,12 @@ impl ContentData {
     }
 }
 
-/// The content of one node the bridge checked, mapped, with the code units of its strings and
-/// the count of the graph's with them, as the check's cursor counted them on from the code units
-/// the graph holds besides the node.
+/// The content of one node the bridge checked, mapped, and the code units of this node, as the
+/// check's cursor counted them.
 #[derive(Debug)]
 pub(crate) struct Checked {
     data: ContentData,
     units: u64,
-    total: u64,
 }
 
 impl Checked {
@@ -1269,22 +1267,21 @@ impl Checked {
         let height = content.view().check(0, id, &mut cursor, fonts)?;
         let mut data = content.clone();
         data.map()?;
-        let total = cursor.units();
-        let units = total - held;
-        Ok((Self { data, units, total }, height))
+        let units = cursor.units() - held;
+        Ok((Self { data, units }, height))
     }
 }
 
 /// The content of the nodes the graph holds, by slot: that of the last load, the content each
 /// addition or patch since gave a slot, and the code units of the strings of all of it, the texts
-/// and the names alike, which every edit holds to the budget a load is held to (ADR-0013). It
-/// answers for a slot that holds a node; a free slot holds nothing (ADR-0022).
+/// and the names alike, which every edit holds to the budget a load is held to (ADR-0013). A slot
+/// a removal freed holds no content and no code units until an addition takes it (ADR-0022).
 #[derive(Debug, Default)]
 pub(crate) struct ContentStore {
     /// The content of the nodes of the last load, by slot.
     loaded: ContentData,
     /// The content of each slot an addition or a patch gave content since the load, with the
-    /// code units of its strings.
+    /// code units of its strings; empty, of none, for each slot a removal freed since.
     edited: HashMap<u32, (ContentData, u64)>,
     units: u64,
 }
@@ -1304,13 +1301,14 @@ impl ContentStore {
         self.units
     }
 
-    /// The code units of the strings of content the graph holds besides the node in `slot`, a slot
-    /// that holds a node.
+    /// The code units of the strings of content the graph holds besides the node in `slot`; all of
+    /// them for a free slot.
     pub(crate) fn held_besides(&self, slot: u32) -> u64 {
         self.units - self.units_at(slot)
     }
 
-    /// The content that holds the node in `slot`, and the node's index in it.
+    /// The content that holds the node in `slot`, and the node's index in it; empty content for a
+    /// free slot.
     pub(crate) fn of(&self, slot: u32) -> (&ContentData, usize) {
         match self.edited.get(&slot) {
             Some((content, _)) => (content, 0),
@@ -1324,21 +1322,19 @@ impl ContentStore {
         content.content_of(node)
     }
 
-    /// Gives the node in `slot`, added or patched, the content `checked`, whose count of the
-    /// graph's strings becomes the store's: the check counted on from `held_besides(slot)`.
+    /// Gives the node in `slot`, added or patched, the content `checked`: the code units of the
+    /// content it held leave the count, and those of `checked` join it.
     pub(crate) fn set(&mut self, slot: u32, checked: Checked) {
-        self.units = checked.total;
+        self.units = self.units - self.units_at(slot) + checked.units;
         self.edited.insert(slot, (checked.data, checked.units));
     }
 
-    /// Takes the content of the nodes in `slots` out of the count, a slot named twice once.
+    /// Takes the content of the nodes in `slots` out of the count and leaves each slot empty, so
+    /// that a slot named twice leaves the count once.
     pub(crate) fn remove(&mut self, slots: &[u32]) {
-        let mut removed = slots.to_vec();
-        removed.sort_unstable();
-        removed.dedup();
-        for slot in removed {
+        for &slot in slots {
             self.units -= self.units_at(slot);
-            self.edited.remove(&slot);
+            self.edited.insert(slot, (ContentData::default(), 0));
         }
     }
 
@@ -1361,7 +1357,8 @@ impl Checked {
 
 #[cfg(test)]
 impl ContentStore {
-    /// The slots an addition or a patch gave content since the load, in ascending order.
+    /// The slots an addition, a patch, or a removal gave content since the load, in ascending
+    /// order.
     pub(crate) fn edited_slots(&self) -> Vec<u32> {
         let mut slots: Vec<u32> = self.edited.keys().copied().collect();
         slots.sort_unstable();

@@ -817,13 +817,7 @@ impl Engine {
     /// `updateNode` of the node `id` in `slot` by `patch`, read: its strings of content counted on
     /// from those the graph holds besides the node's.
     fn update(&mut self, slot: u32, id: &str, patch: &NodePatch) -> Result<(), CallRefusal> {
-        // A slot that holds no node holds no content: the patch counts on from all the graph
-        // holds, and is refused as a slot only once its content is checked.
-        let held = if self.graph.holds_node(slot) {
-            self.content.held_besides(slot)
-        } else {
-            self.content.units()
-        };
+        let held = self.content.held_besides(slot);
         let Some((content, height)) = patch_of(id, patch, &self.fonts, held)? else {
             return Ok(());
         };
