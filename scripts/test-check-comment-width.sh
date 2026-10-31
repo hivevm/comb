@@ -13,10 +13,11 @@
 # comment, and a line inside one, also as the last line without a final newline and in a file whose
 # name holds a character beyond ASCII; one of 100 columns passes, an em dash counted as one column.
 # A URL or a Markdown link standing on a line of its own passes, in a line comment and in a block
-# comment, and a URL with prose after it fails. A code line, a comment after code, and a string literal over 100 columns pass, as does a
-# code line after a block comment closed on the line that opens it or on a later one, and a file
-# git ignores or marks 'linguist-generated'; a file marked not generated is read. A directory that
-# is no git repository fails, as does a repository where git lists no `.rs` file or no `.ts` file.
+# comment, and a URL with prose after it fails. A code line, a comment after code, and a string
+# literal over 100 columns pass, as does a code line after a block comment closed on the line that
+# opens it or on a later one, and a file git ignores or marks 'linguist-generated'; a file marked
+# not generated is read. A directory that is no git repository fails, as does a repository where
+# git lists no `.rs` file or no `.ts` file.
 #
 # Usage:
 #     scripts/test-check-comment-width.sh
