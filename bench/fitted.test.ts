@@ -1,15 +1,16 @@
 // The gestures at the fitted view, run against a viewport the fake gestures move as the page's do.
 import { describe, expect, test } from "bun:test";
-import { atFittedView, type View } from "./fitted";
+import { gesturesAtFitted, type View } from "./fitted";
 
 describe("the gestures at the fitted view", () => {
   test("given the zoom cut short, the edits begin at the fitted view and record its scale", async () => {
-    // Verifies: ADR-0008
+    // Decides no ADR clause and no criterion: the view the edits at the fitted view begin at,
+    // which no ADR fixes.
     const fitted: View = { x: 310, y: 120, scale: 0.045 };
     let view = { ...fitted };
     const order: string[] = [];
     let editedAt: View | undefined;
-    const result = await atFittedView(
+    const result = await gesturesAtFitted(
       { read: async () => ({ ...view }), show: async (to) => void (view = { ...to }) },
       fitted,
       {

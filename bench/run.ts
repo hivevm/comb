@@ -28,7 +28,7 @@ import { cpus } from "node:os";
 import type { LoadReport } from "../examples/metric-tree/src/main";
 import { chromiumEnv } from "./chromium";
 import { contentOf, gestures, type LEVELS, type Run } from "./compare";
-import { atFittedView as atFitted, type View } from "./fitted";
+import { gesturesAtFitted, type View } from "./fitted";
 import { PARTS, referenceWorkload } from "./reference";
 
 const PORT = 4173;
@@ -409,7 +409,7 @@ async function atFittedView(page: Page, fitted: View) {
     read: () => viewport(page),
     show: (view: View) => show(page, view),
   };
-  const measured = await atFitted(shown, fitted, {
+  const measured = await gesturesAtFitted(shown, fitted, {
     drag: async () => {
       const before = await drawnNode(page, node.id);
       const dragged = await frameTimes(page, () => drag(page, node.at, 0, 120));
@@ -502,7 +502,7 @@ async function measure(page: Page) {
   // The view the example opens with, the whole graph fitted, which draws the far level.
   const fitted = await viewport(page);
   const middle = await graphMiddle(page);
-  const { node, drag: dragged, pan, zoom: zoomed, edit: edited } = await atFittedView(page, fitted);
+  const atFitted = await atFittedView(page, fitted);
   const { fittedIsFar, levels } = await atEveryLevel(page, middle, fitted.scale);
   if (errors.length) throw new Error(`the example failed: ${errors.join("; ")}`);
   return {
@@ -512,12 +512,12 @@ async function measure(page: Page) {
     // of the far level, or another, for a graph small enough.
     fitted: { scale: fitted.scale, level: fittedIsFar ? "far" : "nearer than far" },
     reference,
-    node: node.id,
-    drag: dragged,
-    pan,
-    zoom: zoomed,
+    node: atFitted.node.id,
+    drag: atFitted.drag,
+    pan: atFitted.pan,
+    zoom: atFitted.zoom,
     levels,
-    edit: edited,
+    edit: atFitted.edit,
   };
 }
 

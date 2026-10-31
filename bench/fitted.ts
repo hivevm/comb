@@ -17,16 +17,16 @@ export interface Viewport {
 }
 
 /** Runs the gestures at the fitted view `fitted`, in order, the edits from `fitted` again. */
-export async function atFittedView<D, G>(
+export async function gesturesAtFitted<G>(
   viewport: Viewport,
   fitted: View,
   gestures: {
-    drag(): Promise<D>;
+    drag(): Promise<G>;
     pan(): Promise<G>;
     zoom(): Promise<G>;
     edit(): Promise<G>;
   },
-): Promise<{ drag: D; pan: G; zoom: G; edit: G & { scale: number } }> {
+): Promise<{ drag: G; pan: G; zoom: G; edit: G & { scale: number } }> {
   const drag = await gestures.drag();
   const pan = await gestures.pan();
   const zoom = await gestures.zoom();
