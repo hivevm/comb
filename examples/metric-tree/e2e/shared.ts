@@ -41,13 +41,13 @@ export async function open(page: Page, query = ""): Promise<void> {
 /** The screen point at the centre of a drawn node. */
 export async function screenCentre(page: Page, id: string) {
   return page.evaluate(
-    ({ id: wanted, w, h }) => {
+    ({ id: wanted, w }) => {
       const node = window.inspect().nodes.find((candidate) => candidate.id === wanted)!;
       const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();
-      const at = window.screenPoint(node.x + w / 2, node.y + h / 2);
+      const at = window.screenPoint(node.x + w / 2, node.y + node.height / 2);
       return { x: rect.left + at.x, y: rect.top + at.y };
     },
-    { id, w: NODE_WIDTH, h: NODE_HEIGHT },
+    { id, w: NODE_WIDTH },
   );
 }
 

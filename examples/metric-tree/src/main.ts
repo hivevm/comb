@@ -28,7 +28,20 @@ import {
   work,
   type SceneSnapshot,
 } from "comb/testing";
-import { KINDS, metricTree, NODE_HEIGHT, NODE_WIDTH, retitled, titled, titleOf } from "./graph";
+import {
+  contentOf,
+  DETAILS,
+  HEIGHTS,
+  metricTree,
+  newFields,
+  NODE_WIDTH,
+  retitled,
+  STATUSES,
+  titleOf,
+  TYPES,
+  type Fields,
+  type NodeType,
+} from "./graph";
 
 /** The type of the data a palette item carries in a drag. */
 const PALETTE_TYPE = "application/x-metric-tree-kind";
@@ -123,18 +136,57 @@ const comb = await createComb(element("canvas"), {
             : `${proposal.source}-${proposal.target}-${(connected += 1)}`) as string | false,
       }),
 });
-/** Registers the icon of each kind of node, drawn by the example itself on a canvas, so that no
- *  image is requested: a disc of the kind's colour (ADR-0013). */
+/** How the icon of each type of node is drawn on a canvas of 32 × 32 in the type's colour: a
+ *  bet a diamond, an epic three stacked bars, an input metric a rising bar chart, the north-star
+ *  metric a four-pointed star, a KPI a target. */
+const ICONS: Record<NodeType, (context: CanvasRenderingContext2D) => void> = {
+  bet: (context) => polygon(context, [16, 2, 30, 16, 16, 30, 2, 16]),
+  epic: (context) => {
+    for (const y of [3, 13, 23]) context.fillRect(3, y, 26, 6);
+  },
+  "input-metric": (context) => {
+    for (const [x, height] of [
+      [3, 10],
+      [13, 18],
+      [23, 27],
+    ] as const)
+      context.fillRect(x, 30 - height, 7, height);
+  },
+  "north-star": (context) =>
+    polygon(context, [16, 1, 20, 12, 31, 16, 20, 20, 16, 31, 12, 20, 1, 16, 12, 12]),
+  kpi: (context) => {
+    for (const [radius, fill] of [
+      [15, true],
+      [10, false],
+      [5, true],
+    ] as const) {
+      context.globalCompositeOperation = fill ? "source-over" : "destination-out";
+      context.beginPath();
+      context.arc(16, 16, radius, 0, 2 * Math.PI);
+      context.fill();
+    }
+    context.globalCompositeOperation = "source-over";
+  },
+};
+
+/** Fills the polygon of the points `xy`, as x and y in turn. */
+function polygon(context: CanvasRenderingContext2D, xy: readonly number[]): void {
+  context.beginPath();
+  for (let i = 0; i < xy.length; i += 2) context.lineTo(xy[i]!, xy[i + 1]!);
+  context.closePath();
+  context.fill();
+}
+
+/** Registers the icon of each type of node, drawn by the example itself on a canvas, so that no
+ *  image is requested (ADR-0013). */
 function registerIcons(): void {
-  for (const { icon, color } of KINDS) {
+  for (const [type, draw] of Object.entries(ICONS) as [NodeType, (typeof ICONS)[NodeType]][]) {
     const canvas = document.createElement("canvas");
     [canvas.width, canvas.height] = [32, 32];
     const context = canvas.getContext("2d")!;
-    context.fillStyle = color;
-    context.beginPath();
-    context.arc(16, 16, 14, 0, 2 * Math.PI);
-    context.fill();
-    comb.registerIcon(icon, canvas);
+    context.fillStyle = TYPES[type].color;
+    draw(context);
+    comb.registerIcon(type, canvas);
   }
 }
 registerIcons();
@@ -142,7 +194,15 @@ const copies = element<HTMLSelectElement>("copies");
 const count = element("count");
 const selection = element("selection");
 const empty = element("empty");
+const nodeType = element("node-type");
 const title = element<HTMLInputElement>("title");
+const hypothesisField = element("hypothesis-field");
+const hypothesis = element<HTMLInputElement>("hypothesis");
+const progressField = element("progress-field");
+const progress = element<HTMLInputElement>("progress");
+const statusField = element("status-field");
+const status = element<HTMLSelectElement>("status");
+const periods = element("periods");
 const edgeSelection = element("edge-selection");
 const edgeColor = element<HTMLInputElement>("edge-color");
 const edgeDash = element<HTMLSelectElement>("edge-dash");
@@ -153,7 +213,10 @@ const DASH = [6, 4] as const;
 /** Comb's colour for an edge that names none, which a host application cannot read from it. */
 const EDGE_GREY = 0x9aa1ad;
 
-let graph: GraphData = metricTree(1);
+let graph: GraphData = { nodes: [], edges: [] };
+/** What the sidebar edits of each node the example described, by its identifier; a node loaded
+ *  through `useGraph` has none, and the sidebar edits its title alone. */
+let fields = new Map<string, Fields>();
 let selected: string | null = null;
 let selectedEdge: EdgeData | undefined;
 
@@ -173,7 +236,7 @@ function counted(): void {
 }
 
 async function load(): Promise<LoadReport> {
-  graph = metricTree(Number(copies.value));
+  ({ graph, fields } = metricTree(Number(copies.value)));
   counted();
   const start = performance.now();
   comb.load(graph);
@@ -196,8 +259,81 @@ function show(next: Selection): void {
   selection.hidden = !node;
   edgeSelection.hidden = !selectedEdge;
   empty.hidden = !!node || !!selectedEdge;
-  if (node) title.value = titleOf(node);
+  if (node) showNode(node.content, fields.get(node.id));
   if (selectedEdge) showEdge(selectedEdge);
+}
+
+/** Fills the sidebar's form of a node from its fields, or from its title where it has none. */
+function showNode(content: GraphData["nodes"][number]["content"], of: Fields | undefined): void {
+  nodeType.textContent = of ? TYPES[of.type].name : "";
+  title.value = of ? of.title : titleOf({ content });
+  for (const field of [hypothesisField, progressField, statusField]) field.hidden = true;
+  periods.replaceChildren();
+  if (of) showFields(of);
+}
+
+/** Shows the fields of `of`'s type beyond its title, filled from it. */
+function showFields(of: Fields): void {
+  if (of.type === "bet" || of.type === "epic") {
+    statusField.hidden = false;
+    status.replaceChildren(...Object.keys(STATUSES[of.type]).map((name) => new Option(name)));
+    status.value = of.status;
+  }
+  if (of.type === "bet") {
+    hypothesisField.hidden = false;
+    hypothesis.value = of.hypothesis;
+  } else if (of.type === "epic") {
+    progressField.hidden = false;
+    progress.value = String(of.progress);
+  } else periods.append(...of.periods.map(periodForm));
+}
+
+/** The form of the period at `index` of the selected node: its value and its change. */
+function periodForm(period: { label: string; value: string; change: number }, index: number) {
+  const set = document.createElement("fieldset");
+  const legend = document.createElement("legend");
+  legend.textContent = period.label;
+  const input = (name: string, type: string, value: string, change: (raw: string) => object) => {
+    const label = document.createElement("label");
+    const field = document.createElement("input");
+    Object.assign(field, { type, value });
+    field.dataset.period = `${index}`;
+    field.dataset.field = name;
+    field.addEventListener("input", () => editPeriod(index, change(field.value)));
+    label.append(name === "value" ? "Value" : "Change (%)", field);
+    return label;
+  };
+  set.append(
+    legend,
+    input("value", "text", period.value, (value) => ({ value })),
+    input("change", "number", String(period.change), (raw) => ({ change: Number(raw) || 0 })),
+  );
+  return set;
+}
+
+/** The node whose content the sidebar is replacing, while `updateNode` tells it. */
+let editing: string | null = null;
+
+/** Changes the selected node's fields by `patch` and replaces its content with theirs through
+ *  `updateNode`; the example's graph follows from the `nodeUpdated` Comb tells, synchronously. */
+function edit(patch: Partial<Fields>): void {
+  const of = selected === null ? undefined : fields.get(selected);
+  if (!of || selected === null) return;
+  const next = { ...of, ...patch } as Fields;
+  fields.set(selected, next);
+  editing = selected;
+  try {
+    comb.updateNode(selected, { content: contentOf(next) });
+  } finally {
+    editing = null;
+  }
+}
+
+/** Changes the period at `index` of the selected node by `patch`. */
+function editPeriod(index: number, patch: object): void {
+  const of = selected === null ? undefined : fields.get(selected);
+  if (!of || !("periods" in of)) return;
+  edit({ periods: of.periods.map((each, i) => (i === index ? { ...each, ...patch } : each)) });
 }
 
 /** Fills the sidebar's form of an edge from `edge`. */
@@ -230,6 +366,7 @@ function patched(edge: EdgeData, patch: EdgePatch): void {
 function removed(nodes: readonly string[], edges: readonly string[]): void {
   const [goneNodes, goneEdges] = [new Set(nodes), new Set(edges)];
   graph.nodes = graph.nodes.filter(({ id }) => !goneNodes.has(id));
+  for (const id of nodes) fields.delete(id);
   graph.edges = graph.edges.filter(({ id }) => !goneEdges.has(id));
 }
 
@@ -244,6 +381,9 @@ const MIRROR: { [K in GraphChange["kind"]]: (change: Extract<GraphChange, { kind
     nodeUpdated: ({ id, patch }) => {
       const node = nodeOf(id);
       if (node) Object.assign(node, patch);
+      // Content another caller of `updateNode` gave the node no longer follows from its fields:
+      // the sidebar edits its title alone from then on, as of a node loaded through `useGraph`.
+      if (id !== editing) fields.delete(id);
     },
     nodeMoved: ({ id, x, y }) => {
       const node = nodeOf(id);
@@ -276,30 +416,28 @@ function labelFor(text: string): EdgeData["label"] | null {
   return { t: 0.5, offset: 0, background: color, ...selectedEdge?.label, text };
 }
 
-/** The title a node dropped from the palette starts with, by its kind. */
-const PALETTE: Record<string, string> = {
-  bet: "New bet",
-  epic: "New epic",
-  metric: "New input metric",
-  kpi: "New KPI",
-};
+/** The types the palette offers. */
+const PALETTE: readonly string[] = ["bet", "epic", "input-metric", "kpi"];
 let dropped = 0;
 
-/** Adds a node of the palette's `kind`, centred on the world point under the drop at
- *  (`clientX`, `clientY`) of the page (G-1). */
+/** Adds a node of the palette's `kind`, a type of node, centred by its type's height on the world
+ *  point under the drop at (`clientX`, `clientY`) of the page (G-1). */
 function drop(kind: string, clientX: number, clientY: number): void {
-  const kindTitle = PALETTE[kind];
-  if (!kindTitle) return;
+  if (!PALETTE.includes(kind)) return;
+  const type = kind as NodeType;
   const { x, y } = comb.worldPointAt(clientX, clientY);
   dropped += 1;
+  const id = `${kind}-${dropped}`;
+  const of = newFields(type);
   try {
     comb.addNode({
-      id: `${kind}-${dropped}`,
+      id,
       x: x - NODE_WIDTH / 2,
-      y: y - NODE_HEIGHT / 2,
+      y: y - HEIGHTS[type] / 2,
       width: NODE_WIDTH,
-      content: titled(kindTitle),
+      content: contentOf(of),
     });
+    fields.set(id, of);
   } catch (error) {
     // A lost engine, or a node past the limits of a load: the drop adds nothing.
     console.warn("metric tree: the dropped node was not added", error);
@@ -321,14 +459,29 @@ canvas.addEventListener("drop", (event) => {
 });
 comb.onChange(mirror);
 comb.onSelectionChange(show);
+// "Details" on a node: the click has selected it, and so filled the sidebar; the sidebar's form
+// takes the focus, so that the user edits the node at once.
+comb.onContentClick((click) => {
+  if (click.kind !== "action" || click.action !== DETAILS) return;
+  selection.scrollIntoView({ block: "nearest" });
+  title.focus();
+});
 copies.addEventListener("change", () => {
   window.loadReport = load();
 });
 title.addEventListener("input", () => {
   // The copy follows from the `nodeUpdated` Comb tells.
   const node = selected === null ? undefined : nodeOf(selected);
-  if (node) comb.updateNode(node.id, { content: retitled(node.content, title.value) });
+  if (!node) return;
+  if (fields.has(node.id)) edit({ title: title.value });
+  else comb.updateNode(node.id, { content: retitled(node.content, title.value) });
 });
+hypothesis.addEventListener("input", () => edit({ hypothesis: hypothesis.value }));
+progress.addEventListener("input", () => {
+  const value = Math.round(Number(progress.value));
+  if (Number.isFinite(value)) edit({ progress: Math.min(100, Math.max(0, value)) });
+});
+status.addEventListener("change", () => edit({ status: status.value } as Partial<Fields>));
 edgeColor.addEventListener("input", () =>
   changeEdge({ color: Number.parseInt(edgeColor.value.slice(1), 16) }),
 );
@@ -344,6 +497,7 @@ window.comb = comb;
 window.exampleGraph = () => structuredClone(graph);
 window.useGraph = (next) => {
   graph = next;
+  fields = new Map();
   counted();
   comb.load(next);
 };

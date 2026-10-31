@@ -1,14 +1,6 @@
 // Dragging a node (G-2).
 import { expect, test, type Page } from "@playwright/test";
-import {
-  canvasOrigin,
-  NODE_HEIGHT,
-  NODE_WIDTH,
-  open,
-  recordChanges,
-  screenCentre,
-  told,
-} from "./shared";
+import { canvasOrigin, NODE_WIDTH, open, recordChanges, screenCentre, told } from "./shared";
 
 /** A node's position in world coordinates, as the canvas draws it. */
 async function drawnNode(page: Page, id: string) {
@@ -40,10 +32,10 @@ test("dragging a node moves it with its edges and edge labels, and a click shows
   const source = snapshot.nodes.find((node) => node.id === "0:2.3")!;
   const edge = snapshot.edges.find((candidate) => candidate.id === "0:2.3-3.0")!;
   expect(edge.target.x).toBeCloseTo(after.x, 3);
-  expect(edge.target.y).toBeCloseTo(after.y + NODE_HEIGHT / 2, 3);
+  expect(edge.target.y).toBeCloseTo(after.y + after.height / 2, 3);
   const label = snapshot.edgeLabels.find((candidate) => candidate.edge === "0:2.3-3.0")!;
   expect(label.x).toBeCloseTo((source.x + NODE_WIDTH + after.x) / 2, 1);
-  expect(label.y).toBeCloseTo((source.y + after.y + NODE_HEIGHT) / 2, 1);
+  expect(label.y).toBeCloseTo((source.y + source.height / 2 + after.y + after.height / 2) / 2, 1);
 
   const moved = await screenCentre(page, northStar);
   await page.mouse.click(moved.x, moved.y);
