@@ -140,7 +140,7 @@ pub(crate) fn batch(nodes: &[(&str, f64, f64)], edges: &[(&str, &str, &str)]) ->
 }
 
 /// The refusal of a node or label of `list` and `id` lying past the world's limit by `field`.
-pub(crate) fn beyond(list: GraphList, id: &str, field: &str) -> GraphDataProblem {
+pub(super) fn beyond(list: GraphList, id: &str, field: &str) -> GraphDataProblem {
     GraphDataProblem::BeyondWorld {
         list,
         id: id.into(),
@@ -150,7 +150,7 @@ pub(crate) fn beyond(list: GraphList, id: &str, field: &str) -> GraphDataProblem
 }
 
 /// The refusal of the text at `row` and `column` of the node `node` as no text.
-pub(crate) fn invalid_text(node: &str, row: u32, column: u32) -> GraphDataProblem {
+pub(super) fn invalid_text(node: &str, row: u32, column: u32) -> GraphDataProblem {
     GraphDataProblem::InvalidContentText {
         node: node.into(),
         row,
@@ -160,7 +160,7 @@ pub(crate) fn invalid_text(node: &str, row: u32, column: u32) -> GraphDataProble
 }
 
 /// The node of `batch` at `(x, y)` with `change` made to it.
-pub(crate) fn added(x: f64, y: f64, change: impl FnOnce(&mut NodeInput)) -> NodeInput {
+pub(super) fn added(x: f64, y: f64, change: impl FnOnce(&mut NodeInput)) -> NodeInput {
     let mut node = batch(&[("n", x, y)], &[]).nodes.remove(0);
     change(&mut node);
     node
@@ -168,18 +168,18 @@ pub(crate) fn added(x: f64, y: f64, change: impl FnOnce(&mut NodeInput)) -> Node
 
 /// Adds `node` to `graph` as `addNode` does, in the fonts of no font handed over, and returns
 /// its slot.
-pub(crate) fn add(graph: &mut Graph, node: &NodeInput) -> Result<u32, GraphDataProblem> {
+pub(super) fn add(graph: &mut Graph, node: &NodeInput) -> Result<u32, GraphDataProblem> {
     add_node_to(graph, node, &Fonts::default(), 0).map(|(slot, _)| slot)
 }
 
 /// The load of `columns` and no edges, as `loadGraph` checks it.
-pub(crate) fn load_columns(columns: &OwnedColumns) -> Result<Graph, GraphDataProblem> {
+pub(super) fn load_columns(columns: &OwnedColumns) -> Result<Graph, GraphDataProblem> {
     let edges = OwnedEdgeColumns::of([]);
     load_of(&columns.view(), &edges.view(), &Fonts::default()).map(|loaded| loaded.graph)
 }
 
 /// The columns of node `a` and of `b`, made by `change` from a well-formed one.
-pub(crate) fn a_and(change: impl FnOnce(&mut NodeInput)) -> OwnedColumns {
+pub(super) fn a_and(change: impl FnOnce(&mut NodeInput)) -> OwnedColumns {
     let nodes = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]).nodes;
     let mut b = added(300.0, 0.0, |n| n.id = "b".to_owned().into());
     change(&mut b);
@@ -201,13 +201,13 @@ pub(crate) fn refused(rows: &[&[Cell]]) -> Option<GraphDataProblem> {
 }
 
 /// The element at `row` and `column` of node `b`, as a refusal names it.
-pub(crate) fn at_b(row: u32, column: u32) -> (String, u32, u32) {
+pub(super) fn at_b(row: u32, column: u32) -> (String, u32, u32) {
     ("b".to_owned(), row, column)
 }
 
 /// The columns of nodes of identifiers `ids`, given as the string Rust holds and the
 /// boundaries the shell computed, with the field `refused` of a node named.
-pub(crate) fn cut(ids: &str, bounds: &[u32], refused: Option<(u32, NodeField)>) -> OwnedColumns {
+pub(super) fn cut(ids: &str, bounds: &[u32], refused: Option<(u32, NodeField)>) -> OwnedColumns {
     let refused = refused.map(|(index, field)| Refused {
         index,
         field,
@@ -224,7 +224,7 @@ pub(crate) fn cut(ids: &str, bounds: &[u32], refused: Option<(u32, NodeField)>) 
 }
 
 /// The load of nodes `a` and `b` and of `edges`, as `loadGraph` checks it.
-pub(crate) fn load_edges(edges: &OwnedEdgeColumns) -> Result<Graph, GraphDataProblem> {
+pub(super) fn load_edges(edges: &OwnedEdgeColumns) -> Result<Graph, GraphDataProblem> {
     let nodes = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]).nodes;
     load_of(
         &OwnedColumns::of(nodes.iter().map(Some)).view(),
@@ -235,7 +235,7 @@ pub(crate) fn load_edges(edges: &OwnedEdgeColumns) -> Result<Graph, GraphDataPro
 }
 
 /// Edge `d` from `a` to `b`, labelled, dashed, and with a background, as an edge of a load.
-pub(crate) fn labelled(id: &str) -> EdgeCells {
+pub(super) fn labelled(id: &str) -> EdgeCells {
     let mut data = batch(&[], &[(id, "a", "b")]);
     let edge = &mut data.edges[0];
     edge.label = Some(LabelInput {
@@ -251,14 +251,14 @@ pub(crate) fn labelled(id: &str) -> EdgeCells {
 
 /// The columns of edge `d` and of `e`, made by `change` from a well-formed one, both from `a`
 /// to `b`.
-pub(crate) fn d_and(change: impl FnOnce(&mut EdgeCells)) -> OwnedEdgeColumns {
+pub(super) fn d_and(change: impl FnOnce(&mut EdgeCells)) -> OwnedEdgeColumns {
     let mut e = labelled("e");
     change(&mut e);
     OwnedEdgeColumns::of([Some(&labelled("d")), Some(&e)])
 }
 
 /// The label of `edge`, which `labelled` gave it.
-pub(crate) fn label_in(edge: &mut EdgeCells) -> &mut LabelInput {
+pub(super) fn label_in(edge: &mut EdgeCells) -> &mut LabelInput {
     let Field(Some(Some(label))) = &mut edge.label else {
         unreachable!("a labelled edge")
     };
