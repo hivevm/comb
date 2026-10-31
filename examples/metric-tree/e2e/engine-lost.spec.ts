@@ -278,29 +278,37 @@ test("a listener of onEngineLost is called once, also when registered after the 
   expect(errors).toEqual([]);
 });
 
-test("a Comb before its first load keeps its engine through a viewport, a fit, and a pointer, and then draws its load", async ({
+test("a Comb before its first load keeps its engine through a pointer, a viewport, and a fit, and then draws its load", async ({
   page,
 }) => {
   // Verifies: Q-7
   const errors = await openWithErrors(page);
-  const told = await page.evaluate(async () => {
+  await page.evaluate(async () => {
     const second = await window.createComb(window.secondHost(), {
       engine: fetch(window.engineUrl),
     });
     window.second = second;
-    const heard: string[] = [];
-    second.onEngineLost((error) => heard.push(error.name));
-    window.heard = heard;
-    // Each schedules a frame that queries the engine, which has never held a graph.
-    second.setViewport({ x: 0, y: 0, scale: 1 });
-    second.fitView();
-    await second.whenRendered();
-    return [...heard];
+    window.heard = [];
+    second.onEngineLost((error) => window.heard.push(error.name));
   });
-  // A pointer over the second canvas asks the engine what it hits.
+  // A pointer over the second canvas asks the engine what it hits, which has never held a graph.
   await page.mouse.move(100, 80);
   await page.mouse.move(150, 100);
   await page.mouse.move(200, 120);
+  const afterPointer = await page.evaluate(async () => {
+    await window.second.whenRendered();
+    return [...window.heard];
+  });
+  expect(afterPointer).toEqual([]);
+  const afterViewport = await page.evaluate(async () => {
+    const { second } = window;
+    // Each schedules a frame that queries the engine.
+    second.setViewport({ x: 0, y: 0, scale: 1 });
+    second.fitView();
+    await second.whenRendered();
+    return [...window.heard];
+  });
+  expect(afterViewport).toEqual([]);
   const result = await page.evaluate(async () => {
     const { second, outcome } = window;
     const load = outcome(() => second.load({ nodes: [window.node("a", 20, 20)], edges: [] }));
@@ -311,7 +319,6 @@ test("a Comb before its first load keeps its engine through a viewport, a fit, a
       heard: window.heard,
     };
   });
-  expect(told).toEqual([]);
   expect(result).toEqual({ load: "ok", drawn: ["a"], heard: [] });
   expect(errors).toEqual([]);
 });
