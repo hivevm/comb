@@ -4,55 +4,116 @@
   "cpu": "AMD EPYC 7763 64-Core Processor",
   "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
   "reference": {
-    "ms": 656.1999999999534,
-    "js": 124.59999999997672,
-    "wasm": 124.70000000001164,
-    "gpu": 407
+    "ms": 641.4000000000233,
+    "js": 124.60000000000582,
+    "wasm": 124.60000000009313,
+    "gpu": 392.0999999999767
   },
   "load": {
     "nodes": 50010,
-    "firstFrameMs": 378.5999999999767
+    "firstFrameMs": 458,
+    "content": {
+      "nodes": {
+        "bet": 6668,
+        "epic": 16670,
+        "input-metric": 13336,
+        "north-star": 3334,
+        "kpi": 10002
+      },
+      "elements": {
+        "action": 50010,
+        "badge": 23338,
+        "icon": 50010,
+        "metric": 53344,
+        "progress": 16670,
+        "text": 100020
+      }
+    }
   },
   "drag": {
-    "p95": 250,
-    "steps": 37,
-    "frames": 38,
+    "p95": 300,
+    "steps": 31,
+    "frames": 28,
     "truncated": true
   },
   "pan": {
     "p95": 233.40000000000146,
-    "steps": 36,
-    "frames": 37,
+    "steps": 35,
+    "frames": 36,
     "truncated": true
   },
   "zoom": {
-    "p95": 200.10000000000582,
-    "steps": 57,
-    "frames": 57,
+    "p95": 233.3000000000029,
+    "steps": 55,
+    "frames": 55,
     "truncated": true
   },
   "levels": {
     "near": {
+      "drag": {
+        "p95": 150.10000000000582,
+        "steps": 54,
+        "frames": 52,
+        "truncated": true
+      },
       "pan": {
-        "p95": 133.39999999999418,
-        "steps": 66,
-        "frames": 67,
+        "p95": 150.09999999997672,
+        "steps": 55,
+        "frames": 56,
+        "truncated": true
+      },
+      "zoom": {
+        "p95": 183.39999999999418,
+        "steps": 55,
+        "frames": 55,
+        "truncated": true
+      },
+      "edit": {
+        "p95": 150.10000000003492,
+        "steps": 106,
+        "frames": 106,
         "truncated": true
       }
     },
     "middle": {
+      "drag": {
+        "p95": 166.70000000001164,
+        "steps": 52,
+        "frames": 50,
+        "truncated": true
+      },
       "pan": {
         "p95": 166.70000000001164,
-        "steps": 50,
-        "frames": 51,
+        "steps": 51,
+        "frames": 52,
+        "truncated": true
+      },
+      "zoom": {
+        "p95": 166.59999999997672,
+        "steps": 46,
+        "frames": 46,
+        "truncated": true
+      },
+      "edit": {
+        "p95": 166.70000000001164,
+        "steps": 102,
+        "frames": 102,
+        "truncated": true
+      }
+    },
+    "far": {
+      "zoom": {
+        "p95": 216.70000000001164,
+        "steps": 54,
+        "frames": 54,
         "truncated": true
       }
     }
   },
   "edit": {
-    "p95": 150,
-    "steps": 113,
-    "frames": 113,
+    "p95": 300,
+    "steps": 59,
+    "frames": 59,
     "truncated": true
   }
 }
