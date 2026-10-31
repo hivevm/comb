@@ -8,7 +8,8 @@
 //! decoding of the string columns, `node_columns` and `edge_columns` the columns of a load's nodes
 //! and edges, `problem` the refusals, `item` the reading of a node or an edge, `checks` the rules
 //! of each, `load` a load and `addNode`, `edit` `addEdge` and the patches, and `content` the node
-//! content; `snapshot` builds, for the tests, the columns the shell builds.
+//! content; `snapshot` builds, for the tests, the columns the shell builds. This root keeps what
+//! the columns of both lists share: the first value a load's first pass refuses.
 
 mod checks;
 mod content;

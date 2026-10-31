@@ -1,5 +1,6 @@
 //! The lenient reading of a field the host application hands over: a value of another type is
-//! kept as none, so that the bridge refuses it by name rather than as malformed data.
+//! kept as none, so that the bridge refuses it by name rather than as malformed data, and a value
+//! of another shape than a reader of content reads, a list or an object, read as none too.
 
 #[cfg(test)]
 use std::fmt;
