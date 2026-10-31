@@ -912,7 +912,7 @@ impl Engine {
                 let fonts = &self.fonts;
                 laid.clear();
                 content.lay_out(node, width, fonts, &mut cells, &mut rows, &mut laid);
-                content.draw(node, &cells, &laid, level, fonts, &mut self.drawn);
+                self.drawn.draw(content, node, &cells, &laid, level, fonts);
                 let drawn = cells.iter().zip(&laid);
                 let drawn = drawn.filter(|(cell, _)| drawn_at(&cell.element, level));
                 self.placed.extend(drawn.map(|(_, at)| *at));

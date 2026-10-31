@@ -93,48 +93,46 @@ impl Drawn {
             self.units += 1;
         }
     }
-}
 
-impl ContentData {
-    /// Pushes onto `drawn` the kind, the role, the colour, the drawn text, the pieces of the bar,
-    /// and the parts and the arrow of each element of the node at `node` drawn at `level`
+    /// Pushes the kind, the role, the colour, the drawn text, the pieces of the bar, and the parts
+    /// and the arrow of each element of the node at `node` of `content` drawn at `level`
     /// (`layout::drawn_at`), of `cells` at `placed` in the order of its rows and theirs, as
     /// `lay_out` laid them out in `fonts`; an action's, a badge's, a progress bar's, a metric's,
     /// and an icon's role is body, whose font draws the first two, whose line the third and the
     /// last lie in, and the value and the trend's text of the fourth; an icon's text is its
     /// registered name.
     pub(crate) fn draw(
-        &self,
+        &mut self,
+        content: &ContentData,
         node: usize,
         cells: &[Cell],
         placed: &[Placed],
         level: Level,
         fonts: &Fonts,
-        drawn: &mut Drawn,
     ) {
-        let laid = self.elements_of(node).zip(cells).zip(placed);
+        let laid = content.elements_of(node).zip(cells).zip(placed);
         for ((_, _, element, strings), at) in laid
             .filter(|((_, cell), _)| layout::drawn_at(&cell.element, level))
             .map(|((element, _), at)| (element, at))
         {
-            let kind = self.kinds[element];
-            drawn.kinds.push(kind);
-            let shown = self.element(element, strings.text);
+            let kind = content.kinds[element];
+            self.kinds.push(kind);
+            let shown = content.element(element, strings.text);
             let (role, color) = match shown {
                 Element::Action { .. } | Element::Progress | Element::Icon => {
                     (RoleCode::Body as u8, 0)
                 }
                 Element::Badge { .. } | Element::Metric { .. } => {
-                    (RoleCode::Body as u8, self.color(element))
+                    (RoleCode::Body as u8, content.color(element))
                 }
-                Element::Text { .. } => (self.roles[element], 0),
+                Element::Text { .. } => (content.roles[element], 0),
             };
-            drawn.roles.push(role);
-            drawn.colors.push(color);
+            self.roles.push(role);
+            self.colors.push(color);
             if matches!(shown, Element::Progress) {
-                self.draw_bar(element, at, drawn);
+                self.draw_bar(content, element, at);
             }
-            drawn.bar_bounds.push(numbered(drawn.bar_colors.len()));
+            self.bar_bounds.push(numbered(self.bar_colors.len()));
             if let Element::Metric {
                 caption,
                 value,
@@ -142,43 +140,42 @@ impl ContentData {
             } = shown
             {
                 // A metric's direction, which the bridge checked.
-                let direction = direction_of(self.directions[element]).unwrap_or(Direction::Flat);
+                let direction =
+                    direction_of(content.directions[element]).unwrap_or(Direction::Flat);
                 let parts = layout::metric_parts(at, [caption, value, trend], direction, fonts);
                 for (text, part) in [
                     (caption, parts.caption),
                     (value, parts.value),
                     (trend, parts.trend),
                 ] {
-                    drawn.push_text(text, &part);
-                    drawn
-                        .parts
-                        .extend([part.x, part.y, part.width, part.height]);
-                    drawn.part_ends.push(drawn.units);
+                    self.push_text(text, &part);
+                    self.parts.extend([part.x, part.y, part.width, part.height]);
+                    self.part_ends.push(self.units);
                 }
-                drawn.arrows.extend(parts.arrow.iter().flatten());
+                self.arrows.extend(parts.arrow.iter().flatten());
             } else if matches!(shown, Element::Icon) {
-                drawn.push_name(self.name(strings.name));
+                self.push_name(content.name(strings.name));
             } else {
-                drawn.push_text(shown.text(), at);
+                self.push_text(shown.text(), at);
             }
-            drawn.part_bounds.push(numbered(drawn.part_ends.len()));
-            drawn.arrow_bounds.push(numbered(drawn.arrows.len() / 6));
-            drawn.bounds.push(drawn.units);
+            self.part_bounds.push(numbered(self.part_ends.len()));
+            self.arrow_bounds.push(numbered(self.arrows.len() / 6));
+            self.bounds.push(self.units);
         }
     }
 
-    /// Pushes onto `drawn` the pieces of the bar of the progress bar at `element`, placed at
-    /// `at`: its segments, each of its colour, and its track, of 0.
-    fn draw_bar(&self, element: usize, at: &Placed, drawn: &mut Drawn) {
-        drawn.pieces.clear();
-        layout::bar(at, self.fractions(element), &mut drawn.pieces);
-        for piece in &drawn.pieces {
-            drawn.bars.extend(piece);
+    /// Pushes the pieces of the bar of the progress bar at `element` of `content`, placed at `at`:
+    /// its segments, each of its colour, and its track, of 0.
+    fn draw_bar(&mut self, content: &ContentData, element: usize, at: &Placed) {
+        self.pieces.clear();
+        layout::bar(at, content.fractions(element), &mut self.pieces);
+        for piece in &self.pieces {
+            self.bars.extend(piece);
         }
-        let colors = self
+        let colors = content
             .view()
             .segments(element)
-            .map(|s| rgb_of(self.segment_colors[s]));
-        drawn.bar_colors.extend(colors.chain([0]));
+            .map(|s| rgb_of(content.segment_colors[s]));
+        self.bar_colors.extend(colors.chain([0]));
     }
 }

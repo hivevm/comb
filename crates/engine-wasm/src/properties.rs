@@ -1375,7 +1375,7 @@ fn loaded_in(
             &mut placed,
         );
         let laid = &placed[start..];
-        content.draw(node, &cells, laid, Level::Near, fonts, &mut drawn);
+        drawn.draw(&content, node, &cells, laid, Level::Near, fonts);
         for (_, _, element, at) in content.elements_of(node) {
             let kind = content.kinds[element];
             texts.push(if kind == KindCode::Progress as u8 {
