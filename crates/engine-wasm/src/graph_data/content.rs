@@ -5,6 +5,7 @@
 //! Each of the six kinds of ADR-0013, `text`, `action`, `badge`, `progress`, `metric`, and `icon`,
 //! has a code and fills the columns ADR-0034 gives it.
 
+use std::collections::HashMap;
 use std::fmt;
 
 use comb_engine::content::{self as layout, Cell, Direction, Element, Fonts, Kind, Placed, Role};
@@ -817,7 +818,7 @@ impl ContentData {
     /// The code units of the strings of content of the node at `node`, the texts and the names
     /// alike, as a check of it counts them against the budget; none for a slot it holds no
     /// content of.
-    pub(crate) fn units_of(&self, node: usize) -> u64 {
+    fn units_of(&self, node: usize) -> u64 {
         let length = |bounds: &[u32], index: usize| u64::from(bounds[index + 1] - bounds[index]);
         self.elements_of(node)
             .map(|(_, _, element, at)| {
@@ -1241,6 +1242,130 @@ impl ContentData {
             });
         }
         NodeContent(rows)
+    }
+}
+
+/// The content of one node the bridge checked, mapped, with the code units of its strings and
+/// the count of the graph's with them, as the check's cursor counted them on from the code units
+/// the graph holds besides the node.
+#[derive(Debug)]
+pub(crate) struct Checked {
+    data: ContentData,
+    units: u64,
+    total: u64,
+}
+
+impl Checked {
+    /// Checks the content of one node, as a load checks a node's, named `id`, its strings counted
+    /// against the budget on from `held`, the code units of content the graph holds besides it,
+    /// and returns it with its texts mapped and the height it lays out to in `fonts`.
+    pub(crate) fn of(
+        id: &str,
+        content: &ContentData,
+        fonts: &Fonts,
+        held: u64,
+    ) -> Result<(Self, f64), GraphDataProblem> {
+        let mut cursor = Cursor::holding(held);
+        let height = content.view().check(0, id, &mut cursor, fonts)?;
+        let mut data = content.clone();
+        data.map()?;
+        let total = cursor.units();
+        let units = total - held;
+        Ok((Self { data, units, total }, height))
+    }
+}
+
+/// The content of the nodes the graph holds, by slot: that of the last load, the content each
+/// addition or patch since gave a slot, and the code units of the strings of all of it, the texts
+/// and the names alike, which every edit holds to the budget a load is held to (ADR-0013). It
+/// answers for a slot that holds a node; a free slot holds nothing (ADR-0022).
+#[derive(Debug, Default)]
+pub(crate) struct ContentStore {
+    /// The content of the nodes of the last load, by slot.
+    loaded: ContentData,
+    /// The content of each slot an addition or a patch gave content since the load, with the
+    /// code units of its strings.
+    edited: HashMap<u32, (ContentData, u64)>,
+    units: u64,
+}
+
+impl ContentStore {
+    /// The content of a load, `loaded`, whose strings the load's check counted to `units`.
+    pub(crate) fn of_load(loaded: ContentData, units: u64) -> Self {
+        Self {
+            loaded,
+            edited: HashMap::new(),
+            units,
+        }
+    }
+
+    /// The code units of the strings of content the graph holds.
+    pub(crate) const fn units(&self) -> u64 {
+        self.units
+    }
+
+    /// The code units of the strings of content the graph holds besides the node in `slot`, a slot
+    /// that holds a node.
+    pub(crate) fn held_besides(&self, slot: u32) -> u64 {
+        self.units - self.units_at(slot)
+    }
+
+    /// The content that holds the node in `slot`, and the node's index in it.
+    pub(crate) fn of(&self, slot: u32) -> (&ContentData, usize) {
+        match self.edited.get(&slot) {
+            Some((content, _)) => (content, 0),
+            None => (&self.loaded, slot as usize),
+        }
+    }
+
+    /// The content of the node in `slot`, as the host application's type describes it.
+    pub(crate) fn content_of(&self, slot: u32) -> NodeContent {
+        let (content, node) = self.of(slot);
+        content.content_of(node)
+    }
+
+    /// Gives the node in `slot`, added or patched, the content `checked`, whose count of the
+    /// graph's strings becomes the store's: the check counted on from `held_besides(slot)`.
+    pub(crate) fn set(&mut self, slot: u32, checked: Checked) {
+        self.units = checked.total;
+        self.edited.insert(slot, (checked.data, checked.units));
+    }
+
+    /// Takes the content of the nodes in `slots` out of the count, a slot named twice once.
+    pub(crate) fn remove(&mut self, slots: &[u32]) {
+        let mut removed = slots.to_vec();
+        removed.sort_unstable();
+        removed.dedup();
+        for slot in removed {
+            self.units -= self.units_at(slot);
+            self.edited.remove(&slot);
+        }
+    }
+
+    /// The code units of the strings of content of the node in `slot`.
+    fn units_at(&self, slot: u32) -> u64 {
+        match self.edited.get(&slot) {
+            Some(&(_, units)) => units,
+            None => self.loaded.units_of(slot as usize),
+        }
+    }
+}
+
+#[cfg(test)]
+impl Checked {
+    /// The text at `index`, mapped.
+    pub(crate) fn text(&self, index: usize) -> &str {
+        self.data.text(index)
+    }
+}
+
+#[cfg(test)]
+impl ContentStore {
+    /// The slots an addition or a patch gave content since the load, in ascending order.
+    pub(crate) fn edited_slots(&self) -> Vec<u32> {
+        let mut slots: Vec<u32> = self.edited.keys().copied().collect();
+        slots.sort_unstable();
+        slots
     }
 }
 
