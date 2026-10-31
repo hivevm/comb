@@ -3,7 +3,7 @@
 - **Status:** 🟡 proposed
 - **Date:** 2026-10-17
 - **Deciders:** Markus Brigl
-- **Applies to:** the node-content types of `crates/engine` and `crates/engine-wasm`, their generated TypeScript definitions in `packages/comb`, the layout functions of the engine, the drawing of node content in `packages/comb/src/render/`, and the report of a click on a content element in `packages/comb/src/api/`
+- **Applies to:** the node-content types of `crates/engine` and `crates/engine-wasm`, their generated TypeScript definitions in `packages/comb`, the layout functions of the engine, the drawing of node content in `packages/comb/src/render/`, the report of a click on a content element in `packages/comb/src/api/`, the hit test of `crates/engine/src/graph.rs` and its export in `crates/engine-wasm/`, the label extents the render layer of `packages/comb/src/render/` hands the engine, and the press and hover of `packages/comb/src/interaction/`
 
 ## Context
 
