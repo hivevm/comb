@@ -11,6 +11,7 @@ const limits = {
   contentBudget: 1e9,
   rows: 8,
   columns: 6,
+  segments: 8,
 };
 
 test("an edge read once fills its defaults and keeps no key for a field left out", () => {

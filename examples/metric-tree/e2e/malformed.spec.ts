@@ -1322,6 +1322,7 @@ function installKinds() {
   const edges = (fields: object) => load({ nodes: two, edges: [{ ...anEdge, ...fields }] });
   const title = { kind: "text", role: "title", text: "a" };
   const element = (fields: object) => nodes({ content: [[{ ...title, ...fields }]] });
+  const segment = { fraction: 0.4, color: 0x22c55e };
   const calls: Record<Exclude<GraphDataProblem["kind"], "contentBudgetExceeded">, () => void> = {
     malformed: load(null),
     invalidField: nodes({ x: "1" }),
@@ -1331,12 +1332,15 @@ function installKinds() {
     invalidContentShape: nodes({ content: [5] }),
     tooManyRows: nodes({ content: Array.from({ length: 9 }, () => [title]) }),
     tooManyColumns: nodes({ content: [Array.from({ length: 7 }, () => title)] }),
-    invalidElementKind: element({ kind: "progress" }),
+    invalidElementKind: element({ kind: "metric" }),
     invalidWeight: element({ weight: 0 }),
     invalidRole: element({ role: "headline" }),
     invalidContentText: element({ text: 5 }),
     contentTextTooLong: element({ text: "x".repeat(1001) }),
     invalidContentColor: element({ kind: "badge", color: 0x1000000 }),
+    tooManySegments: element({ kind: "progress", segments: Array(9).fill(segment) }),
+    invalidFraction: element({ kind: "progress", segments: [{ ...segment, fraction: -1 }] }),
+    fractionsPastOne: element({ kind: "progress", segments: [segment, segment, segment] }),
     unknownPatchField: () => window.comb.updateNode("a", { id: "b" } as never),
     duplicateNode: load({ nodes: [nodeAt("a"), nodeAt("a")], edges: [] }),
     duplicateEdge: load({ nodes: two, edges: [anEdge, anEdge] }),
@@ -1397,5 +1401,5 @@ test("load and the methods that edit the graph throw every kind of GraphDataProb
   const thrown = await page.evaluate(everyKind);
   expect(errors).toEqual([]);
   expect(thrown).toEqual(Object.fromEntries(Object.keys(thrown).map((kind) => [kind, kind])));
-  expect(Object.keys(thrown).length).toBe(31);
+  expect(Object.keys(thrown).length).toBe(34);
 });

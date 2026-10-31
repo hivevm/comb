@@ -62,9 +62,26 @@ function writeContent(columns: NodeColumnWriter, content: unknown) {
           columns.noElement(last);
         else {
           const { kind, role, weight, color, text, id } = element as Record<string, unknown>;
-          columns.element(kind, role, weight, color, text, id, last);
+          if (kind !== "progress")
+            return columns.element(kind, role, weight, color, text, id, last);
+          // A progress bar's segments follow it before its row ends.
+          columns.element(kind, role, weight, undefined, undefined, undefined, false);
+          writeSegments(columns, (element as Record<string, unknown>).segments);
+          if (last) columns.endRow();
         }
       });
+  }
+}
+/** Writes the plain segments `segments` of the progress bar just written into `columns`. */
+function writeSegments(columns: NodeColumnWriter, segments: unknown) {
+  if (!Array.isArray(segments)) return columns.noSegments();
+  for (const segment of segments as unknown[]) {
+    if (typeof segment !== "object" || segment === null || Array.isArray(segment))
+      columns.noSegment();
+    else {
+      const { fraction, color } = segment as Record<string, unknown>;
+      columns.segment(fraction, color);
+    }
   }
 }
 const graph = (nodes: readonly PlainNode[], edges: readonly object[] = [], bound = PIECE_BOUND) => {
@@ -369,6 +386,7 @@ const limits = () => ({
   contentBudget: bridge.contentBudget(),
   rows: bridge.rowLimit(),
   columns: bridge.columnLimit(),
+  segments: bridge.segmentLimit(),
 });
 
 /** The snapshot `api/snapshot.ts` builds of `nodes` and `edges`, and the graph the store keeps. */
@@ -416,7 +434,10 @@ describe("bridge columns of a load", () => {
     expect(kept.nodes.map((n) => n.id)).toEqual(ids);
     expect(bridge.loadGraph(snapshot)).toBe(4);
     // The engine keeps the titles, and hands each back as it was given.
-    const title = (slot: number) => bridge.content(slot)[0]![0]!.text;
+    const title = (slot: number) => {
+      const element = bridge.content(slot)[0]![0]!;
+      return element.kind === "text" ? element.text : undefined;
+    };
     expect([0, 1, 2, 3].map(title)).toEqual(titles);
     // Each edge's ends resolve to the slots of exactly the identifiers it names.
     expect([...bridge.edgesAt(new Uint32Array([1]))]).toEqual([0]);
@@ -573,6 +594,117 @@ describe("bridge badges refused", () => {
   });
 });
 
+/** A node `b` of a title and, below it, a progress bar of `segments`. */
+const withProgress = (segments: unknown) => ({
+  ...node("b", 300, 0),
+  content: [[{ kind: "text", role: "title", text: "Bet" }], [{ kind: "progress", segments }]],
+});
+const [GREEN, GREY] = [0x22c55e, 0x9ca3af];
+
+describe("bridge progress bars", () => {
+  test("a progress bar crosses with its segments among the numbers, is drawn near as its segments and track, and comes back as given", () => {
+    // Verifies: ADR-0013, ADR-0034
+    const segments = [
+      { fraction: 0.3, color: GREEN },
+      { fraction: 0.2, color: GREY },
+    ];
+    const { snapshot } = snapshotted([node("a", 0, 0), withProgress(segments)]);
+    const c = snapshot.nodes.content;
+    expect([...c.kinds]).toEqual([KindCode.Text, KindCode.Text, KindCode.Progress]);
+    expect([...c.segmentBounds]).toEqual([0, 0, 0, 2]);
+    expect([...c.fractions]).toEqual([0.3, 0.2]);
+    expect([...c.segmentColors]).toEqual([GREEN, GREY]);
+    // It fills no text: the two titles' alone.
+    expect([...c.textValid]).toEqual([1, 1]);
+    // Its cell is its column below the title, 76 wide, and a body's line of 16; its bar 8 high in
+    // the middle of it, its segments 22.8 and 15.2 long from the column's left, then the track.
+    bridge.setFont("body", FONT);
+    expect(bridge.loadGraph(snapshot)).toBe(2);
+    const near = bridge.query(everywhere, "near", 1, 0).content;
+    expect([...near.kinds]).toEqual([KindCode.Text, KindCode.Text, KindCode.Progress]);
+    expect([...near.rects.subarray(8, 12)]).toEqual([12, 28, 76, 16]);
+    expect([...near.barBounds]).toEqual([0, 0, 0, 3]);
+    expect([...near.barColors]).toEqual([GREEN, GREY, 0]);
+    const expected = [12, 32, 22.8, 8, 34.8, 32, 15.2, 8, 50, 32, 38, 8];
+    [...near.bars].forEach((value, i) => expect(value).toBeCloseTo(expected[i]!, 4));
+    expect(near.texts).toBe("aBet");
+    expect(bridge.content(1)[1]).toEqual([{ kind: "progress", segments, weight: 1 }]);
+    // A press on its line in its column reports the bar, above the bar too; the middle level hits
+    // none, as it draws none.
+    for (const y of [29, 36])
+      expect(bridge.hit(380, y, 1, "near", false)).toMatchObject({
+        kind: "node",
+        slot: 1,
+        element: { row: 1, column: 0, kind: "progress" },
+      });
+    expect(bridge.hit(320, 36, 1, "middle", false)).not.toHaveProperty("element");
+  });
+
+  test("a snapshot hands over one segment beyond the limit at most", () => {
+    // Verifies: ADR-0034, Q-7
+    const many = Array.from({ length: 20 }, () => ({ fraction: 0, color: 0 }));
+    const { snapshot } = snapshotted([withProgress(many)]);
+    expect([...snapshot.nodes.content.segmentBounds]).toEqual([0, 0, 9]);
+    const single = nodeSnapshotOf(withProgress(many), limits()).snapshot as {
+      content: { segments?: unknown[] }[][];
+    };
+    expect(single.content[1]![0]!.segments).toHaveLength(9);
+  });
+});
+
+describe("bridge progress bars refused", () => {
+  test("a progress bar whose segments are refused is named with its node and the segment, through every export", () => {
+    // Verifies: ADR-0013, ADR-0034, Q-7
+    const at = { node: "b", row: 1, column: 0 };
+    const segment = (fraction: unknown, color: unknown = GREEN) => ({ fraction, color });
+    const shape = (expected: string) => ({
+      kind: "invalidContentShape",
+      index: 1,
+      id: "b",
+      row: 1,
+      column: 0,
+      expected,
+    });
+    const cases: [unknown, object][] = [
+      [[segment(-0.1)], { kind: "invalidFraction", ...at, segment: 0 }],
+      [[segment(0.3), segment(Number.NaN)], { kind: "invalidFraction", ...at, segment: 1 }],
+      [[segment(0.3), segment(Infinity)], { kind: "invalidFraction", ...at, segment: 1 }],
+      [[segment(0.3), segment("0.2")], { kind: "invalidFraction", ...at, segment: 1 }],
+      [[segment(0.3), segment(0.2, 0x1000000)], { kind: "invalidContentColor", ...at, segment: 1 }],
+      [[segment(0.3), segment(0.2, "#fff")], { kind: "invalidContentColor", ...at, segment: 1 }],
+      [[segment(0.3), { fraction: 0.2 }], { kind: "invalidContentColor", ...at, segment: 1 }],
+      [Array(9).fill(segment(0.1)), { kind: "tooManySegments", ...at, limit: 8 }],
+      [[segment(0.6), segment(0.4 + 2e-9)], { kind: "fractionsPastOne", ...at }],
+      [5, shape("a list of segments")],
+      [undefined, shape("a list of segments")],
+      [[segment(0.3), null], shape("an object")],
+      [[segment(0.3), [0.2, GREEN]], shape("an object")],
+    ];
+    for (const [segments, problem] of cases) {
+      const { snapshot } = snapshotted([node("a", 0, 0), withProgress(segments)]);
+      expect(outcome(() => bridge.loadGraph(snapshot))).toEqual(problem);
+      // Through `addNode` and `updateNode` alike, as the snapshot reads a single node: the node
+      // at index 0 there.
+      const single = { ...problem, ...("index" in problem ? { index: 0 } : {}) };
+      bridge.loadGraph(snapshotted([node("a", 0, 0)]).snapshot);
+      const alone = nodeSnapshotOf(withProgress(segments), limits()).snapshot;
+      expect(outcome(() => bridge.addNode(alone))).toEqual(single);
+      const content = patchOf({ content: withProgress(segments).content }, limits());
+      expect(outcome(() => bridge.updateNode(0, "b", content))).toEqual(single);
+    }
+    // At the limit, summing a little past 1 within what the bridge admits, and of no segments,
+    // the bar is taken.
+    for (const segments of [
+      Array(8).fill(segment(0.125)),
+      [segment(0.6), segment(0.4 + 5e-10)],
+      [],
+    ]) {
+      const { snapshot } = snapshotted([node("a", 0, 0), withProgress(segments)]);
+      expect(bridge.loadGraph(snapshot)).toBe(2);
+    }
+  });
+});
+
 // Identifiers of 0 to 16 code units, characters beyond the basic plane among them; titles and
 // label texts of none, columns of no code units.
 const PIECED_IDS = [
@@ -724,7 +856,7 @@ describe("bridge columns of a load's content", () => {
     // Verifies: ADR-0034
     const content = [
       [
-        { kind: "progress", role: "title", text: "x", weight: 1 },
+        { kind: "metric", role: "title", text: "x", weight: 1 },
         textOf("headline", "y"),
         textOf("body", 5, "1"),
       ],

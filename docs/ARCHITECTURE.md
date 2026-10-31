@@ -42,9 +42,13 @@ node content, an action's identifier (`id`), or a label text that is not a strin
 1,000 UTF-16 code units, node
 content that is no list of rows, a row that is no list or an element that is no object
 (`invalidContentShape`, naming the node, row, and column), more than 8 rows or a row of more than
-6 columns, an element of a kind other than `text`, `action`, and `badge`, a weight that is not a
-positive finite number, a role of a text other than `title`, `body`, and `caption`, a badge's
-colour that is not an integer from `0` to `0xFFFFFF` (`invalidContentColor`), the texts and the
+6 columns, an element of a kind other than `text`, `action`, `badge`, and `progress`, a weight
+that is not a positive finite number, a role of a text other than `title`, `body`, and `caption`,
+a badge's or a segment's colour that is not an integer from `0` to `0xFFFFFF`
+(`invalidContentColor`), a progress bar's segments that are no list or a segment that is no
+object (`invalidContentShape`), more than 8 segments (`tooManySegments`), a segment's fraction
+that is negative or not finite (`invalidFraction`) and fractions that sum past 1
+(`fractionsPastOne`), each naming the segment where it names one, the texts and the
 actions' identifiers of a load's content holding more than 1,000,000,000 code units together,
 each naming the node and, where it has them, the row and column, a label background that is
 not an integer from `0` to `0xFFFFFF`, more than 1,000,000 nodes or edges, an identifier, source, or
@@ -154,8 +158,10 @@ The functional core and its shell follow
   ([ADR-0013](adr/0013-node-content-model.md)): from each role's font, the glyph advances and the
   line height the shell hands over, an action in the font of role body, a badge in it on a pill
   at its column's left that hugs the drawn text with 8 either side and 3 above and below, the
-  pill being the badge's rectangle and every other element of its row 3 lower, a row as deep as
-  its deepest element, the columns of a row
+  pill being the badge's rectangle and every other element of its row 3 lower, a progress bar as
+  its column and a body's line, its bar 8 high in the middle of that line cut by `bar` into its
+  segments from the column's left and the track after them, none past the column's end, a row as
+  deep as its deepest element, the columns of a row
   sharing the width inside a padding of 12 less gaps of 8 by their weights, each text cut before an
   ellipsis where it passes its column, and the node as high as the padding of 10 above and below
   and its rows, at least 64; `element_at` finds the element whose rectangle holds a point of the
@@ -185,7 +191,8 @@ The functional core and its shell follow
   pill reaches from its point, and writes the found node slots, the edge-label slots and points (at
   the near level only), at the near and the middle level where the elements of each found node lie
   and their kinds, roles, and colours (`contentBounds…`, `contentRects…`, `contentKinds…`,
-  `contentRoles…`, `contentColors…`), what of each text is drawn
+  `contentRoles…`, `contentColors…`), the pieces of each progress bar's bar and their colours
+  (`contentBarBounds…`, `contentBars…`, `contentBarColors…`), what of each text is drawn
   as one string `contentTexts` returns, cut by `contentTextBounds…`, the found edge slots, and the
   edge mesh into buffers the engine owns, the label points and the mesh's positions relative to the
   query's origin, which `originX` and
@@ -297,7 +304,9 @@ The functional core and its shell follow
   a badge's on its pill, which one `Graphics` per view draws of the colour the query hands over,
   placed by the padding the engine states (`badgePaddingX`, `badgePaddingY`), in white or
   near-black by WCAG contrast (`badgeTextColor`), inspection reading the pills back from that
-  `Graphics`, every text at the near level and
+  `Graphics`, and a progress bar's pieces, which another `Graphics` per view fills within the
+  bar's outline, only its outer ends rounded by 4 (`pieceOutline`), the track in `TRACK_COLOR`,
+  inspection reading them back likewise, every text and bar at the near level and
   those of role title alone at the middle level, what the query placed; a view draws anew only
   where its node, which the store replaces when its content changes, its size, its selection, or
   the level changed;

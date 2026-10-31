@@ -48,6 +48,18 @@ registers and colours given as numbers.
   before. A badge's cell is its pill, so that a press beside the pill in its column hits no
   element. Its text is drawn white or in the near-black of the node's texts, `0x1F2430`,
   whichever has the higher contrast ratio with the pill's colour by WCAG's relative luminance.
+  A `progress`, its field `segments`, each a `fraction` and a `color`, shows no text: its cell is
+  its column and the body's line, 16 high with a line of 16, laid out and hit as a text's cell,
+  so that a press anywhere on that line in its column, above or below the bar too, hits it. Its
+  bar is as wide as the column and 8 world units high, at most the line, in the middle of the
+  line; the engine cuts it into its segments in order from the column's left, each as long as its
+  fraction of the bar, and the track, the rest of the bar, so that no segment reaches past the
+  column's end. The shell draws the segments in their colours and the track in `0xE5E7EB`, only
+  the bar's two outer ends rounded by 4, at most half its height and half its length, the
+  segments and the track abutting square. A progress bar holds at most 8 segments; a fraction is
+  finite and not negative, a segment's colour is a badge's, and the fractions sum to at most 1
+  and 1e-9 beyond it, so that fractions that sum to 1 in exact arithmetic are not refused for
+  their rounding.
 - **Content replaces the title and the height:** a node is its identifier, its position, its
   width, and its content; its title is a `text` of role title, and the engine computes its height.
   `updateNode` replaces a node's content as a whole, checked as a load checks it.
@@ -73,11 +85,11 @@ registers and colours given as numbers.
   the size of the nodes before content. The engine states the padding, the gap between columns,
   and the least height; the shell states each role's line height.
 - **Levels of detail (ADR-0027):** *near* draws every element; *middle* draws the box and the
-  texts of role title, at the place near gives them, and no action or badge; *far* draws no
-  element.
-- **Limits (Q-7):** the bridge refuses a node with more rows, a row with more columns, a text
-  longer, or a load whose texts hold more code units in all than limits it states, each with a
-  typed problem that names the node.
+  texts of role title, at the place near gives them, and no action, badge, or progress bar; *far*
+  draws no element.
+- **Limits (Q-7):** the bridge refuses a node with more rows, a row with more columns, a progress
+  bar with more segments, a text longer, or a load whose texts hold more code units in all than
+  limits it states, each with a typed problem that names the node.
 - **Fonts:** the shell passes each `BitmapText` font's glyph advances and line height to the
   engine once, before the first layout that uses it.
 - **No URLs in graph data:** an icon is named, never located; an `action` carries an identifier,

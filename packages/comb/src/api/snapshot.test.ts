@@ -10,6 +10,7 @@ const limits = {
   contentBudget: 1e9,
   rows: 8,
   columns: 6,
+  segments: 8,
 };
 
 const cases: [name: string, value: string, read: string | false][] = [
@@ -64,4 +65,68 @@ test("the snapshot of a load stops reading once its texts of content pass the bu
     contentBudget: 6,
   });
   expect(within.content).toEqual({ units: 6, past: undefined });
+});
+
+/** An object whose fields `fields` are getters that count each read into `reads` under
+ *  `name.field`. */
+function counting(name: string, fields: Record<string, unknown>, reads: Record<string, number>) {
+  const counted: Record<string, unknown> = {};
+  for (const [field, value] of Object.entries(fields))
+    Object.defineProperty(counted, field, {
+      enumerable: true,
+      get() {
+        reads[`${name}.${field}`] = (reads[`${name}.${field}`] ?? 0) + 1;
+        return value;
+      },
+    });
+  return counted;
+}
+
+test("the snapshot reads each field of an element once, and a progress bar's text and role not at all", () => {
+  // Verifies: ADR-0028, ADR-0034
+  const elements = (reads: Record<string, number>) => {
+    const segment = counting("segment", { fraction: 0.5, color: 0x22c55e }, reads);
+    const fields = (kind: string, more: Record<string, unknown>) => ({
+      kind,
+      role: "body",
+      weight: 2,
+      text: "t",
+      ...more,
+    });
+    return [
+      [counting("text", fields("text", {}), reads)],
+      [counting("action", fields("action", { id: "go" }), reads)],
+      [counting("badge", fields("badge", { color: 0x22c55e }), reads)],
+      [counting("progress", fields("progress", { segments: [segment] }), reads)],
+    ];
+  };
+  const expected = {
+    "text.kind": 1,
+    "text.role": 1,
+    "text.weight": 1,
+    "text.text": 1,
+    "action.kind": 1,
+    "action.role": 1,
+    "action.weight": 1,
+    "action.text": 1,
+    "action.id": 1,
+    "badge.kind": 1,
+    "badge.role": 1,
+    "badge.weight": 1,
+    "badge.text": 1,
+    "badge.color": 1,
+    "progress.kind": 1,
+    "progress.weight": 1,
+    "progress.segments": 1,
+    "segment.fraction": 1,
+    "segment.color": 1,
+  };
+  // Through a load, which writes the columns, and through the snapshot of a single node alike.
+  const loaded: Record<string, number> = {};
+  const node = (content: unknown) => ({ id: "a", x: 0, y: 0, width: 100, content });
+  snapshotOf(listsOf({ nodes: [node(elements(loaded))], edges: [] } as never), limits);
+  expect(loaded).toEqual(expected);
+  const single: Record<string, number> = {};
+  nodeSnapshotOf(node(elements(single)), limits);
+  expect(single).toEqual(expected);
 });

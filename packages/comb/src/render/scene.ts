@@ -51,7 +51,8 @@ export interface SceneSnapshot {
   /** Every node drawn, by a view or, at the far level, as a particle, at the height its content
    *  lays out to; `texts` are the texts a view draws, each placed relative to its node, with the
    *  width and the fill its text object draws at, `pills` the pills of badges its `Graphics`
-   *  draws, `content` the node's content as the engine keeps it, built
+   *  draws, `bars` the pieces of progress bars it draws, each bar's segments and then its track,
+   *  `content` the node's content as the engine keeps it, built
    *  when asked, and `title` the text of its first title; a particle draws none of them. */
   nodes: {
     id: string;
@@ -63,6 +64,7 @@ export interface SceneSnapshot {
     content?: NodeContent;
     texts?: (Omit<DrawnText, "pill"> & { drawnWidth: number; fill: unknown })[];
     pills?: DrawnPill[];
+    bars?: DrawnPill[];
   }[];
   /** How many nodes are drawn as particles. */
   particles: number;
@@ -262,9 +264,10 @@ export class Scene {
   private contentOf(slot: number): { content?: NodeContent; title?: string } {
     if (!this.source) return {};
     const content = this.source.bridge.content(slot);
-    const title = content
+    const first = content
       .flat()
-      .find((element) => element.kind === "text" && element.role === "title")?.text;
+      .find((element) => element.kind === "text" && element.role === "title");
+    const title = first?.kind === "text" ? first.text : undefined;
     return { content, ...(title === undefined ? {} : { title }) };
   }
 
@@ -289,6 +292,7 @@ export class Scene {
           ...this.contentOf((view as NodeGraphic).slot),
           texts: (view as NodeGraphic).inspected(),
           pills: (view as NodeGraphic).drawnPills(),
+          bars: (view as NodeGraphic).drawnBars(),
         })),
         ...this.particles.drawn(),
       ],

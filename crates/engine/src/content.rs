@@ -4,12 +4,15 @@
 //! element's rectangle, where each text is cut and an ellipsis drawn after it, and the node's
 //! height from its rows; the rest of the engine takes that height as the node's.
 //!
-//! The elements `text`, `action`, and `badge` exist so far; each further kind of ADR-0013 joins
-//! `Element` with the ticket that builds it. An action is a text in the font of role body; what it
-//! names is the bridge's to keep, since the layout reads none of it. A badge is a text in the font
-//! of role body on a pill, whose rectangle is the badge's: it hugs the text as far as it is drawn,
-//! padded as an edge label's pill is, and stays within its column; its colour is the bridge's to
-//! keep.
+//! The elements `text`, `action`, `badge`, and `progress` exist so far; each further kind of
+//! ADR-0013 joins `Element` with the ticket that builds it. An action is a text in the font of role
+//! body; what it names is the bridge's to keep, since the layout reads none of it. A badge is a
+//! text in the font of role body on a pill, whose rectangle is the badge's: it hugs the text as far
+//! as it is drawn, padded as an edge label's pill is, and stays within its column; its colour is
+//! the bridge's to keep. A progress bar fills its column and a line of the body's height, its
+//! cell, and its bar, `BAR_HEIGHT` high, lies in the middle of that line, cut into its segments
+//! from the column's left by their fractions and the rest of the bar its track (`bar`); the
+//! segments' colours are the bridge's to keep.
 
 /// The space between a node's left and right sides and its columns, in world units.
 pub const PADDING_X: f64 = 12.0;
@@ -30,6 +33,9 @@ pub const BADGE_PADDING_X: f64 = 8.0;
 /// The space between a badge's text and its pill's top and bottom, in world units: with the
 /// body's line of 16, a pill 22 high, as an edge label's.
 pub const BADGE_PADDING_Y: f64 = 3.0;
+
+/// The height of a progress bar's bar, in world units, at most its line's.
+pub const BAR_HEIGHT: f64 = 8.0;
 
 /// The least height of a node, whatever its rows: a node of one row of a title is as tall as the
 /// nodes of the host applications that gave a height before content replaced it.
@@ -193,6 +199,8 @@ pub enum Element<'a> {
     Badge {
         text: &'a str,
     },
+    /// A bar the width of its column in a line of the body's height, which shows no text.
+    Progress,
 }
 
 impl Element<'_> {
@@ -200,7 +208,7 @@ impl Element<'_> {
     pub const fn role(&self) -> Role {
         match *self {
             Self::Text { role, .. } => role,
-            Self::Action { .. } | Self::Badge { .. } => Role::Body,
+            Self::Action { .. } | Self::Badge { .. } | Self::Progress => Role::Body,
         }
     }
 
@@ -208,6 +216,7 @@ impl Element<'_> {
     pub const fn text(&self) -> &str {
         match *self {
             Self::Text { text, .. } | Self::Action { text } | Self::Badge { text } => text,
+            Self::Progress => "",
         }
     }
 }
@@ -293,14 +302,19 @@ pub fn node_height(rows: impl IntoIterator<Item = f64>) -> f64 {
 /// The largest `f32` of at most `value` whose sum with `x` stays within `end`, both sums taken
 /// exactly in `f64`, and 0 where none does.
 fn within(x: f32, value: f64, end: f32) -> f32 {
-    let room = (f64::from(end) - f64::from(x)).min(value).max(0.0);
+    within_f64(x, value, f64::from(end))
+}
+
+/// `within` for an end that `f64` holds and `f32` may not.
+fn within_f64(x: f32, value: f64, end: f64) -> f32 {
+    let room = (end - f64::from(x)).min(value).max(0.0);
     #[expect(
         clippy::cast_possible_truncation,
         reason = "a span within a node's width, which f32 holds, stepped down below to stay in it"
     )]
     let width = room as f32;
     // Rounded to the nearest, it passes `end` by at most one step.
-    if f64::from(x) + f64::from(width) > f64::from(end) {
+    if f64::from(x) + f64::from(width) > end {
         return width.next_down().max(0.0);
     }
     width
@@ -424,6 +438,48 @@ pub fn lay_out(
         top += row_height(row, fonts);
     }
     node_height(std::iter::once(top - PADDING_TOP))
+}
+
+/// Pushes onto `out` the pieces of the bar of a progress bar placed at `at` whose segments are
+/// `fractions` long, each piece `[x, y, width, height]` relative to its node: the bar is as wide as
+/// `at`, `BAR_HEIGHT` high and at most as high as `at`, in the middle of it; each segment in order
+/// from its left, as long as its fraction of the bar, and then the track, the rest of the bar. A
+/// segment that would pass the bar's end, as fractions summing a little past 1 make one, ends at
+/// it, so that no piece reaches past the bar; the fractions are finite and not negative, which the
+/// bridge checked.
+pub fn bar(at: &Placed, fractions: &[f64], out: &mut Vec<[f32; 4]>) {
+    let (left, width) = (f64::from(at.x), f64::from(at.width));
+    let end = left + width;
+    let height = BAR_HEIGHT.min(f64::from(at.height));
+    let y = place(f64::from(at.y) + (f64::from(at.height) - height) / 2.0);
+    let height = place(height);
+    // Each boundary as the `f32` nearest it, never past the bar's end.
+    let boundary = |share: f64| {
+        let mut x = place(left + width * share.min(1.0));
+        while f64::from(x) > end {
+            x = x.next_down();
+        }
+        x
+    };
+    let mut from = at.x;
+    let mut sum = 0.0;
+    for &fraction in fractions {
+        sum += fraction;
+        let to = boundary(sum).max(from);
+        out.push([
+            from,
+            y,
+            within_f64(from, f64::from(to) - f64::from(from), end),
+            height,
+        ]);
+        from = to;
+    }
+    out.push([
+        from,
+        y,
+        within_f64(from, end - f64::from(from), end),
+        height,
+    ]);
 }
 
 /// The index of the element of `cells`, which `lay_out` placed at `placed`, whose rectangle holds
@@ -869,6 +925,167 @@ mod tests {
                 assert_eq!(pill.height, place(line + 2.0 * BADGE_PADDING_Y));
             }
         }
+    }
+
+    fn progress(weight: f64) -> Cell<'static> {
+        Cell {
+            weight,
+            element: Element::Progress,
+        }
+    }
+
+    /// The pieces of the bar of the progress bar placed at `at` with segments of `fractions`.
+    fn pieces(at: &Placed, fractions: &[f64]) -> Vec<[f32; 4]> {
+        let mut out = Vec::new();
+        bar(at, fractions, &mut out);
+        out
+    }
+
+    /// Asserts that `pieces` match `expected` within 0.5, in order.
+    fn assert_pieces(pieces: &[[f32; 4]], expected: &[Expected]) {
+        assert_eq!(pieces.len(), expected.len(), "{pieces:?}");
+        for (piece, e) in pieces.iter().zip(expected) {
+            let got = piece.map(f64::from);
+            for (g, w) in got.iter().zip(e) {
+                assert!((g - w).abs() <= 0.5, "{got:?} against {e:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_progress_bar_s_segments_lie_in_order_from_its_column_s_left_and_its_track_after_them() {
+        // Verifies: ADR-0013, Q-4
+        // At 220, a title row, then a progress bar alone in its row: its cell the column from 12,
+        // 196 wide, and a body's line of 16 from 28; its bar 8 high in the middle of it, from 32.
+        // Segments of 0.3 and 0.2 are 58.8 and 39.2 long from the column's left, and the track
+        // the rest, 98. The row is 16 high: 10 + 18 + 16 + 10 = 54, the least height 64.
+        let cells = [text(Role::Title, "Bet", 1.0), progress(1.0)];
+        let (placed, height) = laid_out(&cells, &[1, 1], 220.0);
+        assert_near(&placed[1..], &[[12.0, 28.0, 196.0, 16.0]]);
+        assert_eq!((placed[1].kept, placed[1].ellipsis), (0, false));
+        assert_eq!(height, 64.0);
+        assert_pieces(
+            &pieces(&placed[1], &[0.3, 0.2]),
+            &[
+                [12.0, 32.0, 58.8, 8.0],
+                [70.8, 32.0, 39.2, 8.0],
+                [110.0, 32.0, 98.0, 8.0],
+            ],
+        );
+        // Beside a caption, weighted 3 to its 1, the bar's column lies from 67, 141 wide: the
+        // segments 42.3 and 28.2 long from there.
+        let cells = [
+            text(Role::Title, "Bet", 1.0),
+            text(Role::Caption, "c", 1.0),
+            progress(3.0),
+        ];
+        let (placed, _) = laid_out(&cells, &[1, 2], 220.0);
+        assert_near(&placed[2..], &[[67.0, 28.0, 141.0, 16.0]]);
+        assert_pieces(
+            &pieces(&placed[2], &[0.3, 0.2]),
+            &[
+                [67.0, 32.0, 42.3, 8.0],
+                [109.3, 32.0, 28.2, 8.0],
+                [137.5, 32.0, 70.5, 8.0],
+            ],
+        );
+        // A bar of no segments is its track; one whose segments sum to 1, no track to speak of.
+        assert_pieces(&pieces(&placed[2], &[]), &[[67.0, 32.0, 141.0, 8.0]]);
+        assert_pieces(
+            &pieces(&placed[2], &[0.5, 0.5]),
+            &[
+                [67.0, 32.0, 70.5, 8.0],
+                [137.5, 32.0, 70.5, 8.0],
+                [208.0, 32.0, 0.0, 8.0],
+            ],
+        );
+        // Beside a badge the bar's line lies 3 lower, as every element but the badge does.
+        let cells = [
+            text(Role::Title, "Bet", 1.0),
+            badge("Done", 1.0),
+            progress(1.0),
+        ];
+        let (placed, _) = laid_out(&cells, &[1, 2], 220.0);
+        assert_near(&placed[2..], &[[114.0, 31.0, 94.0, 16.0]]);
+        assert_pieces(
+            &pieces(&placed[2], &[1.0]),
+            &[[114.0, 35.0, 94.0, 8.0], [208.0, 35.0, 0.0, 8.0]],
+        );
+    }
+
+    #[test]
+    fn a_bar_never_reaches_past_its_column_and_is_no_higher_than_its_line() {
+        // Verifies: ADR-0013, Q-4
+        // Fractions that sum a little past 1, as the bridge admits them, or far past it: the
+        // segment that would pass the bar's end ends at it, and every one after it is empty.
+        let at = Placed {
+            x: 12.0,
+            y: 28.0,
+            width: 196.0,
+            height: 16.0,
+            kept: 0,
+            ellipsis: false,
+        };
+        let past = pieces(&at, &[0.6, 0.4 + 1e-9]);
+        assert_eq!(past[1][0] + past[1][2], 208.0);
+        assert_eq!(past[2][2], 0.0);
+        assert_pieces(
+            &pieces(&at, &[0.7, 0.5, 0.2]),
+            &[
+                [12.0, 32.0, 137.2, 8.0],
+                [149.2, 32.0, 58.8, 8.0],
+                [208.0, 32.0, 0.0, 8.0],
+                [208.0, 32.0, 0.0, 8.0],
+            ],
+        );
+        // In a line lower than the bar, the bar is as high as the line.
+        let low = Placed { height: 6.0, ..at };
+        assert_pieces(
+            &pieces(&low, &[0.5]),
+            &[[12.0, 28.0, 98.0, 6.0], [110.0, 28.0, 98.0, 6.0]],
+        );
+        // Any fractions the bridge admits, and some it refuses, at any width: the pieces abut in
+        // order from the bar's left, and none reaches past its end.
+        let mut rng = Lcg(17);
+        for _ in 0..5_000 {
+            let width = [0.0, 1.0, 23.0, 196.0, 1e6, 1.3e36][rng.below(6)];
+            let at = Placed {
+                x: [0.0, 12.0, 1e5][rng.below(3)],
+                width,
+                ..at
+            };
+            let fractions: Vec<f64> = (0..rng.below(9))
+                .map(|_| [0.0, 1e-9, 0.1, 0.3, rng.next(), 1.0][rng.below(6)])
+                .collect();
+            let out = pieces(&at, &fractions);
+            assert_eq!(out.len(), fractions.len() + 1);
+            let end = f64::from(at.x) + f64::from(at.width);
+            // Each piece from where the one before it ends, as `f32` rounds its width.
+            let mut from = f64::from(at.x);
+            for piece in &out {
+                let [x, _, w, _] = piece.map(f64::from);
+                assert!((x - from).abs() <= from.abs() * 1e-6, "{out:?}");
+                assert!(w >= 0.0 && x + w <= end, "{out:?}");
+                assert_eq!([piece[1], piece[3]], [32.0, 8.0]);
+                from = x + w;
+            }
+        }
+    }
+
+    #[test]
+    fn a_progress_bar_is_hit_across_its_line_in_its_column_and_not_at_the_middle_level() {
+        // Verifies: ADR-0013
+        // The bar of the reference at 220: its cell from (12, 28), 196 × 16, its bar 8 high in
+        // the middle of it; a press anywhere in the cell hits it, above or below the bar too.
+        let cells = [text(Role::Title, "Bet", 1.0), progress(1.0)];
+        let (placed, _) = laid_out(&cells, &[1, 1], 220.0);
+        let at = |x, y| element_at(&cells, &placed, x, y, false);
+        assert_eq!(at(12.0, 28.0), Some(1));
+        assert_eq!(at(200.0, 30.0), Some(1));
+        assert_eq!(at(207.9, 43.9), Some(1));
+        assert_eq!(at(208.0, 35.0), None);
+        assert_eq!(at(100.0, 44.0), None);
+        assert_eq!(element_at(&cells, &placed, 100.0, 35.0, true), None);
     }
 
     #[test]

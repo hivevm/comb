@@ -204,6 +204,7 @@ function limitsOf(bridge: Bridge): Limits {
     contentBudget: bridge.contentBudget(),
     rows: bridge.rowLimit(),
     columns: bridge.columnLimit(),
+    segments: bridge.segmentLimit(),
   };
 }
 

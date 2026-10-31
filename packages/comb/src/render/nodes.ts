@@ -1,8 +1,9 @@
 // The nodes layer at the near and the middle level (ADR-0027): a pooled view per node in view, its
 // box and its content (ADR-0013), every text as `BitmapText`. The engine lays the content out and
 // the view draws each text where the engine placed it, cut where it was cut, an action's in the
-// link colour, a badge's on its pill: near every element, middle the texts of role title alone,
-// at the place near gives them.
+// link colour, a badge's on its pill, and each progress bar as the segments and the track the
+// engine cut its bar into: near every element, middle the texts of role title alone, at the place
+// near gives them.
 import {
   BitmapFontManager,
   BitmapText,
@@ -28,6 +29,12 @@ const SELECTED_STROKE = 0x3b82f6;
 const TEXT_COLOR = 0x1f2430;
 const CAPTION_COLOR = 0x6b7280;
 const LINK_COLOR = 0x2563eb;
+/** The colour of the rest of a progress bar, past its segments. */
+const TRACK_COLOR = 0xe5e7eb;
+/** The radius of a progress bar's ends, at most half its height and half its length. */
+const BAR_RADIUS = 4;
+/** How many points a quarter of a bar's rounded end is drawn with. */
+const END_STEPS = 6;
 
 /** The style each role's texts are drawn in; the title's is that of the title before content. */
 export const TEXT_STYLES: Readonly<Record<TextRole, TextStyleOptions>> = {
@@ -130,13 +137,63 @@ export interface DrawnText {
   pill?: { color: number; textColor: number; textX: number; textY: number };
 }
 
-/** A pill a view drew, as its `Graphics` holds it: its rectangle in its node and its colour. */
+/** A pill a view drew, as its `Graphics` holds it: its rectangle in its node and its colour; and
+ *  so a piece of a progress bar, a segment or its track. */
 export interface DrawnPill {
   x: number;
   y: number;
   width: number;
   height: number;
   color: number;
+}
+
+/** One progress bar a view draws: its pieces as the engine cut its bar, its segments in their
+ *  colours and its track, the last, in the track colour, each relative to its node. */
+type DrawnBar = DrawnPill[];
+
+/** The bars of the progress bars among the elements `start` to `end` of `placed`; none at the
+ *  middle level. */
+function barsOf(placed: Placed, start: number, end: number, titlesOnly: boolean): DrawnBar[] {
+  const bars: DrawnBar[] = [];
+  if (titlesOnly) return bars;
+  for (let i = start; i < end; i++) {
+    const [first, last] = [placed.barBounds[i]!, placed.barBounds[i + 1]!];
+    if (first === last) continue;
+    const bar: DrawnBar = [];
+    for (let p = first; p < last; p++) {
+      const [x, y, width, height] = placed.bars.subarray(p * 4, p * 4 + 4);
+      const color = p === last - 1 ? TRACK_COLOR : placed.barColors[p]!;
+      bar.push({ x: x!, y: y!, width: width!, height: height!, color });
+    }
+    bars.push(bar);
+  }
+  return bars;
+}
+
+/** The outline of the piece `piece` of a bar from `left` to `right`, as points `x, y`: the piece's
+ *  rectangle within the bar, whose two ends are rounded by `radius`, so that only the bar's outer
+ *  ends are round and its pieces abut square. */
+export function pieceOutline(piece: DrawnPill, left: number, right: number, radius: number) {
+  const { x, y, width, height } = piece;
+  const end = x + width;
+  // How far the bar's outline lies inside its top and bottom at `at`, by its rounded ends.
+  const inset = (at: number) => {
+    const reach = Math.min(at - left, right - at);
+    if (reach >= radius) return 0;
+    const off = radius - Math.max(reach, 0);
+    return radius - Math.sqrt(Math.max(radius * radius - off * off, 0));
+  };
+  const xs = [x];
+  for (let k = 1; k < END_STEPS; k++) {
+    for (const at of [left + (radius * k) / END_STEPS, right - (radius * k) / END_STEPS])
+      if (at > x && at < end) xs.push(at);
+  }
+  xs.push(end);
+  xs.sort((a, b) => a - b);
+  const points: number[] = [];
+  for (const at of xs) points.push(at, y + inset(at));
+  for (const at of xs.reverse()) points.push(at, y + height - inset(at));
+  return points;
 }
 
 /** The texts of the elements `start` to `end` of `placed`; at the middle level the texts of role
@@ -147,6 +204,8 @@ function textsOf(placed: Placed, start: number, end: number, titlesOnly: boolean
     const kind = KIND_NAMES[placed.kinds[i]!]!;
     const role = ROLE_NAMES[placed.roles[i]!]!;
     if (titlesOnly && (kind !== "text" || role !== "title")) continue;
+    // A progress bar shows no text: its bar is drawn of its pieces.
+    if (kind === "progress") continue;
     const drawn = placed.texts.slice(placed.textBounds[i], placed.textBounds[i + 1]);
     const r = placed.rects.subarray(i * 4, i * 4 + 4);
     const text: DrawnText = { kind, role, drawn, x: r[0]!, y: r[1]!, width: r[2]!, height: r[3]! };
@@ -160,12 +219,14 @@ function textsOf(placed: Placed, start: number, end: number, titlesOnly: boolean
   return texts;
 }
 
-/** One node: its box, its badges' pills, and its texts. A pooled view, bound to one node slot at
- *  a time. */
+/** One node: its box, its badges' pills, its progress bars, and its texts. A pooled view, bound to
+ *  one node slot at a time. */
 export class NodeGraphic extends Container {
   private readonly box = new Graphics();
   /** The pills of the node's badges, drawn together. */
   private readonly pills = new Graphics();
+  /** The pieces of the node's progress bars, drawn together. */
+  private readonly bars = new Graphics();
   /** The pooled text objects of the view, the first `texts.length` of them in use. */
   private readonly pool: { view: BitmapText; style: TextStyleOptions }[] = [];
   /** The node the view shows. */
@@ -192,7 +253,7 @@ export class NodeGraphic extends Container {
 
   constructor() {
     super();
-    this.addChild(this.box, this.pills);
+    this.addChild(this.box, this.pills, this.bars);
     // The engine answers which node lies under the pointer; the view takes no events.
     this.eventMode = "none";
   }
@@ -218,12 +279,13 @@ export class NodeGraphic extends Container {
 
   /** The pills the view's `Graphics` draws, read from its fill instructions. */
   drawnPills(): DrawnPill[] {
-    return this.pills.context.instructions.flatMap((instruction) => {
-      if (instruction.action !== "fill") return [];
-      const { path, style } = instruction.data;
-      const { minX, minY, width, height } = path.bounds;
-      return [{ x: minX, y: minY, width, height, color: style.color }];
-    });
+    return filled(this.pills);
+  }
+
+  /** The pieces of progress bars the view's `Graphics` draws, each bar's segments and then its
+   *  track, read from its fill instructions. */
+  drawnBars(): DrawnPill[] {
+    return filled(this.bars);
   }
 
   /** The size the node was last drawn at. */
@@ -259,6 +321,22 @@ export class NodeGraphic extends Container {
       .fill({ color: NODE_FILL })
       .stroke({ color: selected ? SELECTED_STROKE : NODE_STROKE, width: selected ? 2 : 1 });
     this.showTexts(textsOf(placed, start, end, titlesOnly));
+    this.showBars(barsOf(placed, start, end, titlesOnly));
+  }
+
+  /** Draws `bars`, each piece within its bar's outline, which only its outer ends round; a piece
+   *  of no length is drawn as none. */
+  private showBars(bars: DrawnBar[]): void {
+    this.bars.clear();
+    for (const bar of bars) {
+      const left = bar[0]!.x;
+      const right = bar.at(-1)!.x + bar.at(-1)!.width;
+      const radius = Math.min(BAR_RADIUS, bar[0]!.height / 2, (right - left) / 2);
+      for (const piece of bar) {
+        if (piece.width <= 0) continue;
+        this.bars.poly(pieceOutline(piece, left, right, radius)).fill({ color: piece.color });
+      }
+    }
   }
 
   /** Draws `texts`, taking text objects from the view's pool and leaving the rest out, a badge's
@@ -291,6 +369,16 @@ export class NodeGraphic extends Container {
       if (view.parent === this) this.removeChild(view);
     }
   }
+}
+
+/** The shapes `graphics` fills, each by the bounds of its path and its colour. */
+function filled(graphics: Graphics): DrawnPill[] {
+  return graphics.context.instructions.flatMap((instruction) => {
+    if (instruction.action !== "fill") return [];
+    const { path, style } = instruction.data;
+    const { minX, minY, width, height } = path.bounds;
+    return [{ x: minX, y: minY, width, height, color: style.color }];
+  });
 }
 
 /** The nodes layer: a pooled view for every node slot the query found, and none for the rest. */

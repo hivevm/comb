@@ -27,7 +27,7 @@ use comb_engine::content::{Font, Fonts, MAX_METRIC, Role};
 
 use super::{
     ContentInput, EdgeCells, EdgeInput, EdgePatch, EdgeRefusal, GraphBatch, GraphDataProblem,
-    GraphList, KindCode, NodeInput, OwnedColumns, OwnedEdgeColumns,
+    GraphList, KindCode, NodeInput, OwnedColumns, OwnedEdgeColumns, Unflat,
 };
 use super::{
     NodePatch, add_edge_to, add_node_to, graph_of, load_of, patch_of, reading, unshaped,
@@ -315,13 +315,14 @@ fn weight() -> BoxedStrategy<Value> {
     prop_oneof![20 => good.prop_map(Value::Number), 1 => Just(Value::Null), 1 => bad].boxed()
 }
 
-/// An element of content: mostly a text in a role, an action with an identifier, or a badge on a
-/// colour, now and then of a kind or a role the bridge refuses, without a field, or no object.
+/// An element of content: mostly a text in a role, an action with an identifier, a badge on a
+/// colour, or a progress bar of segments, now and then of a kind or a role the bridge refuses,
+/// without a field, or no object.
 fn element(loose: bool) -> BoxedStrategy<Value> {
     let named = |name: &str| Value::Text(name.to_owned());
     let kind = one_of(
         vec![named("text")],
-        vec![named("progress"), named(""), Value::Number(1.0)],
+        vec![named("metric"), named(""), Value::Number(1.0)],
         true,
     );
     let roles = ["title", "body", "caption"].map(named).to_vec();
@@ -353,7 +354,12 @@ fn element(loose: bool) -> BoxedStrategy<Value> {
         field("kind", Just(named("badge")).boxed(), false),
         field("weight", weight(), true),
         field("text", text(loose), loose),
-        field("color", shade, loose),
+        field("color", shade.clone(), loose),
+    ]);
+    let progress = object(vec![
+        field("kind", Just(named("progress")).boxed(), false),
+        field("weight", weight(), true),
+        field("segments", segments(shade.boxed(), loose), loose),
     ]);
     let odd = prop::sample::select(vec![
         Value::Bool(false),
@@ -362,7 +368,43 @@ fn element(loose: bool) -> BoxedStrategy<Value> {
         Value::Text("text".to_owned()),
         Value::Object(Vec::new()),
     ]);
-    prop_oneof![30 => text_element, 5 => action, 5 => badge, 1 => odd].boxed()
+    prop_oneof![30 => text_element, 5 => action, 5 => badge, 5 => progress, 1 => odd].boxed()
+}
+
+/// A progress bar's segments: mostly a few of a fraction and a colour, now and then as many as the
+/// limit of 8 allows and one more, fractions that sum to 1 and a little past it, one the bridge
+/// refuses, a segment that is no object, or segments that are no list.
+fn segments(shade: BoxedStrategy<Value>, loose: bool) -> BoxedStrategy<Value> {
+    let fraction = prop_oneof![
+        20 => prop::sample::select(vec![0.0, 0.1, 0.25, 0.5]).prop_map(Value::Number),
+        1 => prop::sample::select(vec![
+            Value::Number(-0.1),
+            Value::Number(f64::NAN),
+            Value::Number(f64::INFINITY),
+            Value::Text("half".to_owned()),
+        ]),
+    ];
+    let segment = object(vec![
+        field("fraction", fraction, loose),
+        field("color", shade, loose),
+    ]);
+    let odd_segment = prop::sample::select(vec![Value::Null, Value::Number(0.5)]);
+    let one = prop_oneof![30 => segment.boxed(), 1 => odd_segment.boxed()];
+    let some = prop_oneof![20 => 0..=3_usize, 1 => 8..=9_usize]
+        .prop_flat_map(move |n| prop::collection::vec(one.clone(), n))
+        .prop_map(Value::List);
+    // Halves summing to 1, and a little past it within and beyond what the bridge admits.
+    let at_one = prop::sample::select(vec![0.0, 5e-10, 2e-9]).prop_map(|past| {
+        let half = |fraction| {
+            Value::Object(vec![
+                ("fraction".to_owned(), Value::Number(fraction)),
+                ("color".to_owned(), Value::Number(0.0)),
+            ])
+        };
+        Value::List(vec![half(0.5), half(0.5 + past)])
+    });
+    let odd = prop::sample::select(vec![Value::Null, Value::Object(Vec::new())]);
+    prop_oneof![20 => some, 2 => at_one, 1 => odd].boxed()
 }
 
 /// The content of a node: mostly a row or two of a text or two, now and then rows and columns at
@@ -538,6 +580,7 @@ fn far_side_ok(node: &Value, lines: [f64; 3]) -> bool {
         match (field("kind"), field("role")) {
             (Some(Value::Text(kind)), _) if kind == "action" => lines[1],
             (Some(Value::Text(kind)), _) if kind == "badge" => lines[1] + 6.0,
+            (Some(Value::Text(kind)), _) if kind == "progress" => lines[1],
             (_, Some(Value::Text(role))) if role == "title" => lines[0],
             (_, Some(Value::Text(role))) if role == "body" => lines[1],
             _ => lines[2],
@@ -571,8 +614,10 @@ fn nodes_of_data(data: &Value) -> &[Value] {
 /// list of at most 8 rows, each a list of at most 6 elements, each an object of the kind `text`,
 /// a positive finite weight, a role of the three, and a text of at most 1,000 UTF-16 code units, of
 /// the kind `action`, a positive finite weight, and a text and an identifier of at most 1,000
-/// code units each, or of the kind `badge`, a positive finite weight, a text of at most 1,000 code
-/// units, and a colour that is an integer from 0 to 0xFFFFFF.
+/// code units each, of the kind `badge`, a positive finite weight, a text of at most 1,000 code
+/// units, and a colour that is an integer from 0 to 0xFFFFFF, or of the kind `progress`, a
+/// positive finite weight and a list of at most 8 segments, each an object of a finite fraction of
+/// 0 or more and a colour as a badge's, their fractions summing to at most 1 and 1e-9.
 fn content_ok(node: &Value) -> bool {
     let Some(Value::List(rows)) = fields_of(node).and_then(|fields| get(fields, "content")) else {
         return false;
@@ -595,7 +640,24 @@ fn content_ok(node: &Value) -> bool {
         let rgb = |c: &f64| c.fract() == 0.0 && (0.0..=16_777_215.0).contains(c);
         let color = matches!(get(fields, "color"), Some(Value::Number(c)) if rgb(c));
         let badge = named("kind", &["badge"]) && color;
-        (text || action || badge) && weight && string("text")
+        let segment_ok = |segment: &Value| match segment {
+            Value::Object(fields) => {
+                let fraction = matches!(get(fields, "fraction"), Some(Value::Number(f)) if f.is_finite() && *f >= 0.0);
+                let color = matches!(get(fields, "color"), Some(Value::Number(c)) if rgb(c));
+                fraction && color
+            }
+            _ => false,
+        };
+        let fraction = |segment: &Value| match fields_of(segment).and_then(|f| get(f, "fraction")) {
+            Some(Value::Number(f)) => *f,
+            _ => 0.0,
+        };
+        let progress = named("kind", &["progress"])
+            && matches!(get(fields, "segments"), Some(Value::List(segments))
+                if segments.len() <= 8
+                    && segments.iter().all(segment_ok)
+                    && segments.iter().map(fraction).sum::<f64>() <= 1.0 + 1e-9);
+        progress && weight || (text || action || badge) && weight && string("text")
     };
     rows.len() <= 8
         && rows.iter().all(|row| match row {
@@ -605,7 +667,8 @@ fn content_ok(node: &Value) -> bool {
 }
 
 /// The position of the first shape of the content of a node, `fields`, that the snapshot cannot
-/// flatten: a row that is no list, or an element that is no object; or none.
+/// flatten: a row that is no list, an element that is no object, or a progress bar's segments that
+/// are no list or hold a segment that is no object; or none.
 fn first_shape(fields: &Fields) -> Option<(u32, Option<u32>)> {
     let Some(Value::List(rows)) = get(fields, "content") else {
         return None;
@@ -614,10 +677,17 @@ fn first_shape(fields: &Fields) -> Option<(u32, Option<u32>)> {
         let Value::List(elements) = row else {
             return Some((r as u32, None));
         };
-        if let Some(c) = elements
-            .iter()
-            .position(|element| !matches!(element, Value::Object(_)))
-        {
+        let unflat = |element: &Value| match element {
+            Value::Object(fields) => {
+                let progress =
+                    matches!(get(fields, "kind"), Some(Value::Text(kind)) if kind == "progress");
+                progress
+                    && !matches!(get(fields, "segments"), Some(Value::List(segments))
+                        if segments.iter().all(|segment| matches!(segment, Value::Object(_))))
+            }
+            _ => true,
+        };
+        if let Some(c) = elements.iter().position(unflat) {
             return Some((r as u32, Some(c as u32)));
         }
     }
@@ -935,6 +1005,45 @@ fn content_read_through_serde_names_its_first_shape_and_reads_the_rest() {
 }
 
 #[test]
+fn a_progress_bar_read_through_serde_names_its_segments_shape_and_reads_the_rest() {
+    // Verifies: ADR-0034
+    // Segments that are no list, and a segment that is no object, as `addNode` and `updateNode`
+    // read content: the first named, the segments read as none and the segment as NaN.
+    let read = |segments: Value| {
+        let bar = Value::Object(vec![
+            ("kind".to_owned(), Value::Text("progress".to_owned())),
+            ("segments".to_owned(), segments),
+        ]);
+        ContentInput::deserialize(Value::List(vec![Value::List(vec![bar])])).unwrap()
+    };
+    let segment = |fraction: f64, color: f64| {
+        Value::Object(vec![
+            ("fraction".to_owned(), Value::Number(fraction)),
+            ("color".to_owned(), Value::Number(color)),
+        ])
+    };
+    let whole = read(Value::List(vec![segment(0.3, 1.0), segment(0.2, 2.0)]));
+    assert_eq!(whole.shape, None);
+    assert_eq!(whole.data.segment_bounds, [0, 2]);
+    assert_eq!(whole.data.fractions, [0.3, 0.2]);
+    assert_eq!(whole.data.segment_colors, [1.0, 2.0]);
+    assert!(whole.data.text_valid.is_empty());
+    let odd = read(Value::List(vec![segment(0.3, 1.0), Value::Null]));
+    assert_eq!(
+        (odd.shape, odd.unread),
+        (Some((0, Some(0))), Unflat::Segment)
+    );
+    assert_eq!(odd.data.segment_bounds, [0, 2]);
+    assert!(odd.data.fractions[1].is_nan() && odd.data.segment_colors[1].is_nan());
+    let none = read(Value::Number(5.0));
+    assert_eq!(
+        (none.shape, none.unread),
+        (Some((0, Some(0))), Unflat::Segments)
+    );
+    assert_eq!(none.data.segment_bounds, [0, 0]);
+}
+
+#[test]
 fn the_check_for_rust_names_finds_them() {
     let message = "Failed to deserialize JsValue into type `comb_engine_wasm::GraphBatch`: \
                    Error: invalid type: string \"1\", expected f64";
@@ -1065,10 +1174,12 @@ fn loaded_in(
     let mut content = nodes.content.clone();
     content.spans = loaded.spans;
     content.name_spans = loaded.name_spans;
-    content.index_names();
+    content.index_strings();
     let (mut cells, mut rows, mut placed) = (Vec::new(), Vec::new(), Vec::new());
     let mut drawn = super::Drawn::default();
     drawn.clear();
+    // The text each placed element shows, none of a progress bar.
+    let mut texts = Vec::new();
     for node in 0..loaded.graph.nodes_in_use() as usize {
         let [width, height] = [0, 1].map(|axis| f64::from(loaded.graph.sizes()[node * 2 + axis]));
         let start = placed.len();
@@ -1081,6 +1192,10 @@ fn loaded_in(
             &mut placed,
         );
         content.draw(node, &placed[start..], &mut drawn);
+        for (_, _, element, at) in content.elements_of(node) {
+            let progress = content.kinds[element] == KindCode::Progress as u8;
+            texts.push(if progress { "" } else { content.text(at.text) });
+        }
         for at in &placed[start..] {
             let [x, y, w, h] = [at.x, at.y, at.width, at.height].map(f64::from);
             assert!(
@@ -1096,10 +1211,10 @@ fn loaded_in(
     }
     assert_eq!(drawn.bounds.len(), placed.len() + 1);
     assert_eq!(drawn.colors.len(), placed.len());
+    assert_bars_within(&drawn, &placed);
     // Each drawn text a prefix of its text, an ellipsis after it where it was cut.
     let shown = split_utf16(&drawn.texts, &drawn.bounds);
-    for (index, (shown, at)) in shown.iter().zip(&placed).enumerate() {
-        let text = content.text(index);
+    for ((shown, at), text) in shown.iter().zip(&placed).zip(texts) {
         let prefix = if at.ellipsis {
             shown
                 .strip_suffix('\u{2026}')
@@ -1115,6 +1230,27 @@ fn loaded_in(
         assert_eq!(content.text(index), text);
     }
     Ok(loaded.graph)
+}
+
+/// Asserts that the pieces of each bar `drawn` holds lie within the element `placed` holds of it,
+/// from its left in order.
+fn assert_bars_within(drawn: &super::Drawn, placed: &[comb_engine::content::Placed]) {
+    assert_eq!(drawn.bar_bounds.len(), placed.len() + 1);
+    assert_eq!(drawn.bars.len(), 4 * drawn.bar_colors.len());
+    for (index, at) in placed.iter().enumerate() {
+        let pieces = drawn.bar_bounds[index] as usize..drawn.bar_bounds[index + 1] as usize;
+        let mut from = f64::from(at.x);
+        for piece in pieces {
+            let [x, y, w, h] = [0, 1, 2, 3].map(|i| f64::from(drawn.bars[piece * 4 + i]));
+            assert!((x - from).abs() <= from.abs() * 1e-6, "{at:?}");
+            assert!(
+                w >= 0.0 && x + w <= f64::from(at.x) + f64::from(at.width),
+                "{at:?}"
+            );
+            assert!(y >= f64::from(at.y) && y + h <= f64::from(at.y) + f64::from(at.height));
+            from = x + w;
+        }
+    }
 }
 
 /// `text` cut at `bounds`, in UTF-16 code units.

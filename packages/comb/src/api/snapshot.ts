@@ -5,9 +5,9 @@
 // (ADR-0034). A value of another type is replaced by `false`, which the bridge refuses naming the
 // node or edge and the field; a text of content, a label text, and the arrow are handed over no
 // longer than one code unit beyond the bridge's limit for texts, an identifier no longer than one
-// beyond its limit for identifiers, and a node's content no more rows, nor a row more columns,
-// than one beyond the bridge's limits, so that a value of any size costs at most that much to
-// check. The code units of all identifiers are counted while they are read, and
+// beyond its limit for identifiers, and a node's content no more rows, nor a row more columns, nor
+// a progress bar more segments, than one beyond the bridge's limits, so that a value of any size
+// costs at most that much to check. The code units of all identifiers are counted while they are read, and
 // reading stops once they exceed the bridge's budget, whose check then refuses the load. What
 // cannot be read at all throws an `UnreadableError`.
 import {
@@ -49,7 +49,7 @@ type Fields = Record<PropertyKey, unknown>;
 
 /** The bridge's limits the snapshot cuts by: the most code units of a text and of an
  *  identifier, and of all identifiers of one load together, and the most rows of a node's
- *  content and columns of a row. */
+ *  content, columns of a row, and segments of a progress bar. */
 export interface Limits {
   text: number;
   id: number;
@@ -57,6 +57,7 @@ export interface Limits {
   contentBudget: number;
   rows: number;
   columns: number;
+  segments: number;
 }
 
 /** What a field expects: a number, a text, an identifier, or a node's content, each of its type
@@ -128,7 +129,7 @@ function contentOf(read: Reader, rows: readonly unknown[], limits: Limits) {
     }
     const columns = Math.min(row.length, limits.columns + 1);
     const elements: unknown[] = [];
-    for (let c = 0; c < columns; c++) elements.push(elementOf(read, row[c]));
+    for (let c = 0; c < columns; c++) elements.push(elementOf(read, row[c], limits));
     content.push(elements);
   }
   return content;
@@ -143,21 +144,49 @@ function nameOf(value: unknown, read: Reader): unknown {
 }
 
 /** An element of content as plain data, or `false` where it is no object; an action's identifier
- *  read as a text is, and a badge's colour as a number is, each read of no other kind. */
-function elementOf(read: Reader, value: unknown) {
+ *  read as a text is, a badge's colour as a number is, each read of no other kind, and a progress
+ *  bar of its kind, its weight, and its segments as `segmentsOf` reads them alone, since it shows
+ *  no text and has no role. */
+function elementOf(read: Reader, value: unknown, limits: Limits) {
   const fields = objectOf(value);
   if (!fields || Array.isArray(value)) return false;
-  const { kind, role, text, weight } = fields;
-  const element: Record<string, unknown> = {
-    kind: nameOf(kind, read),
-    role: nameOf(role, read),
-    text: read.text(text),
-  };
+  const kind = fields.kind;
+  const element: Record<string, unknown> = { kind: nameOf(kind, read) };
+  if (kind === "progress") element.segments = segmentsOf(read, fields.segments, limits);
+  else {
+    const { role, text } = fields;
+    element.role = nameOf(role, read);
+    element.text = read.text(text);
+  }
   if (kind === "action") element.id = read.text(fields.id);
   if (kind === "badge") element.color = read.number(fields.color);
+  const weight = fields.weight;
   // No key for a weight left out, which the bridge reads as 1, so that Comb keeps none either.
   if (weight !== undefined && weight !== null) element.weight = read.number(weight);
   return element;
+}
+
+/** A progress bar's segments as plain data: at most one beyond `limits.segments`, each an object
+ *  of its fraction and its colour, each read as a number, or `false` where it is no object; or
+ *  `false` where they are no list. */
+function segmentsOf(read: Reader, value: unknown, limits: Limits) {
+  if (!Array.isArray(value)) return false;
+  const count = Math.min(value.length, limits.segments + 1);
+  const segments: unknown[] = [];
+  for (let s = 0; s < count; s++) {
+    const fields = segmentFieldsOf(value[s]);
+    segments.push(
+      fields && { fraction: read.number(fields.fraction), color: read.number(fields.color) },
+    );
+  }
+  return segments;
+}
+
+/** A segment's fields to read, or `false` where it is no object: a list is none, as an element
+ *  is none. */
+function segmentFieldsOf(value: unknown): Fields | false {
+  const fields = objectOf(value);
+  return fields && !Array.isArray(value) ? fields : false;
 }
 
 /** `value` as an object to read fields of, or none where it is no object. */
@@ -275,7 +304,12 @@ function writeElement(
   node: unknown,
   last: boolean,
 ) {
-  const { kind, role, weight, text } = element;
+  const kind = element.kind;
+  if (kind === "progress") {
+    writeProgress(read, element.weight, element.segments, columns, limits, last);
+    return;
+  }
+  const { role, weight, text } = element;
   // The kind, the role, the weight, and a badge's colour cross as codes and numbers, which the
   // writer takes by `typeof` and by comparing a string with a name; an action's identifier is
   // read as a text is, and counted with the texts.
@@ -285,6 +319,30 @@ function writeElement(
   columns.element(kind, role, weight, color, shown, id, last);
   if (typeof shown === "string") counted(read, shown.length, node, limits);
   if (typeof id === "string") counted(read, id.length, node, limits);
+}
+
+/** Writes a progress bar of `weight` and `segments`, each read once already, into `columns`, the
+ *  segments' items and fields read once by `read`: it shows no text and has no role, and its
+ *  segments follow it, at most one beyond `limits.segments`, before its row ends where `last`. */
+function writeProgress(
+  read: Reader,
+  weight: unknown,
+  segments: unknown,
+  columns: NodeColumnWriter,
+  limits: Limits,
+  last: boolean,
+) {
+  columns.element("progress", undefined, weight, undefined, undefined, undefined, false);
+  if (!Array.isArray(segments)) columns.noSegments();
+  else {
+    const count = segments.length > limits.segments ? limits.segments + 1 : segments.length;
+    for (let s = 0; s < count; s++) {
+      const fields = segmentFieldsOf(segments[s]);
+      if (fields) columns.segment(read.number(fields.fraction), read.number(fields.color));
+      else columns.noSegment();
+    }
+  }
+  if (last) columns.endRow();
 }
 
 /** A label: absent where null or undefined, `false` where no object. */
