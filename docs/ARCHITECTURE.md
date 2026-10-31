@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([ADR-0001](adr/0001-agent-governance-model.md)).
 >
-> **Last design revision:** 2026-10-25, due after 20 changes. The revision that ran moves the
+> **Last design revision:** 2026-10-31, due after 20 changes. The revision that ran moves the
 > date; the number is this project's to set; a sensor counts the changes outside `docs/` since
 > the commit that set the date and says when the next is due
 > ([ADR-0006](adr/0006-feature-layer.md)).
@@ -171,11 +171,11 @@ The functional core and its shell follow
   in a square of 10, 8 after the value, and its trend's text 4 after the arrow to the column's
   end, the trend's text cut first and then the value, an icon as a square of the body's line at
   its column's left, at most the column and in the middle of the line, a row as deep as its
-  deepest element, the
-  columns of a row
-  sharing the width inside a padding of 12 less gaps of 8 by their weights, each text cut before an
-  ellipsis where it passes its column, and the node as high as the padding of 10 above and below
-  and its rows, at least 64; `element_at` finds the element whose rectangle holds a point of the
+  deepest element, the columns of a row sharing the width inside a padding of 12 less gaps of 8
+  by their weights, each text advanced glyph by glyph from the left, without kerning, a character
+  the shell hands no advance for by the font's fallback, and cut before an ellipsis where it
+  passes its column, and the node as high as the padding of 10 above and below and its rows, at
+  least 64; `element_at` finds the element whose rectangle holds a point of the
   node, of those drawn at a level, which the bridge's `hit` names beside the node it hits;
   `graph`'s `resize_node` gives a node a new height and re-places its
   edges and its place in the index. It depends on no crate that reaches the browser. `graph` keeps
@@ -401,21 +401,28 @@ The functional core and its shell follow
   and `window.engineUrl` let a browser test make a second Comb in a host element of its own,
   `window.useGraph` loads a graph as the example's own, and the functions of `comb/testing` stand on
   `window`, bound to its Comb.
-- **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, measuring the time to
-  the first frame and p95 frame times of drag, pan, and zoom over the frames Comb rendered, of
-  edits one a frame, a node and an edge added and removed again, and of a pan where the near and
-  the middle level begin, each gesture checked for its effect (Q-1, Q-2),
+- **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, each node with the
+  content of its type, measuring the time to the first frame and p95 frame times over the frames
+  Comb rendered of drag, pan, zoom, and edits one a frame, a node and an edge added and removed
+  again, each gesture checked for its effect (Q-1, Q-2): first at the view the example opens
+  with, the whole graph fitted, in the order `bench/fitted.ts` holds, the edits beginning at the
+  fitted view's scale and position again and recording that scale; then at each level of detail,
+  centred in the graph, the pans first, near and middle at the scale where each begins; where the
+  fitted view draws far, as at 50,010 nodes, its gestures are far's and far adds only its zoom. A
+  run records the level the fitted view draws (`fitted`) and the content loaded, nodes by type and
+  elements by kind (`load.content`). It is
   served from the example's production build by `vite preview` on port 4173, in a Chromium
   started by `bench/chromium.ts`.
   After the first frame and before the gestures it times the reference workload of
   `bench/reference.ts` in the same page, which uses the browser's JavaScript, WebAssembly, and
   WebGL2 and none of Comb's code. `bench/compare.ts` compares the median of several runs with
   the baseline of the runner's kind, the CPU model the run records, in `bench/baselines/`, with a
-  margin of 25 %, refuses a run on a kind without a baseline, and refuses a run whose reference
+  margin of 25 %, reports a gesture the baseline lacks as `no baseline` without judging it,
+  refuses a run on a kind without a baseline, and refuses a run whose reference
   differs from its kind's baseline by more than 25 % in a part; a kind's baseline is the median of
   three runs on a GitHub runner of that kind on `main`; the **Benchmark** workflow
   (`.github/workflows/benchmark.yml`) runs the benchmark three times and compares on a GitHub
-  runner, weekly and on demand.
+  runner, weekly and on demand, within 45 minutes.
 - **Mutation testing** (`.github/workflows/mutation.yml`) — cargo-mutants mutates `crates/engine`
   on a GitHub runner, weekly and on demand; `scripts/check-mutants.sh` compares the surviving
   mutants with `crates/engine/mutants-missed.txt` by file, function, and replacement, and fails
