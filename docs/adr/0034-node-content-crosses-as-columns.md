@@ -183,7 +183,8 @@ reads and writes as typed-array views created anew after every engine call.
       (`fractionsPastOne`), which is at most 1 and 1e-9 beyond it (ADR-0013). A progress bar's
       fields are checked as its number of segments, then each segment's fraction and colour in
       the order of its segments, then their sum. A metric's fields are checked as its trend's
-      direction, then its caption, its value, and its trend's text, then its trend's colour.
+      direction, then its caption, its value, and its trend's text, then its trend's colour. An
+      icon's one field is its name, checked as a string of content as the field `name`.
 
     Each names the node by its identifier, and the row and column of the element where it has
     them; a segment's refusal names the segment too. The limits' numbers are the bridge crate's
@@ -280,7 +281,9 @@ reads and writes as typed-array views created anew after every engine call.
     boundaries of its arrows as `Uint32Array`, a metric's one where its column holds it and none
     of another kind, each arrow's triangle as three points `x, y` relative to its node as
     `Float32Array`, drawn in its element's colour, so that the engine alone holds the arrow's
-    geometry (ADR-0013);
+    geometry (ADR-0013); an icon's rectangle is its square, its role's code that of body, its
+    colour 0, and its text in `contentTexts` its registered name, whole, which the shell draws as
+    the image registered under it and never as text;
   - the edge mesh of that query: vertex positions, distances along the path, and dash patterns as
     `Float32Array`, colours as RGBA bytes in `Uint32Array`, and triangle indices as `Uint32Array`;
   - for inspection, the slots of the edges the query found as `Uint32Array`, with the ends of each

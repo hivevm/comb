@@ -78,7 +78,23 @@ registers and colours given as numbers.
   three points, and the shell draws the caption in the caption's colour, `0x6B7280`, the value in
   the near-black of the node's texts, `0x1F2430`, and the arrow and the trend's text in the trend's
   colour. A metric lies at its row's top as every element does, and in a row that holds a badge 3
-  lower, as every element but a badge does.
+  lower, as every element but a badge does. An `icon`, its field `name`, shows no text: it is a
+  square as high as the body's line, 16 with a line of 16, at its column's left, at most as wide
+  as its column and then in the middle of the line, and lies at its row's top, or 3 lower beside a
+  badge, as every element but a badge does. Its cell is its square, so that a press beside it in
+  its column hits no element, as beside a badge's pill. The shell draws the image registered under
+  its name as a sprite fitted into the square with its aspect kept and centred in it; an icon
+  whose name none registers draws nothing and is no error. Its name is checked as a text of
+  content is, as the field `name`, and counts toward the budget of a load's strings.
+- **Icons:** `Comb.registerIcon(name, image)` takes an `ImageBitmap`, an `HTMLImageElement` that
+  has loaded, or an `HTMLCanvasElement` the host application holds, and makes it the texture of
+  the icon `name`, drawn from the next frame on by every icon that names it, without a load.
+  Registering a name again draws the new image wherever the old one was drawn and destroys the
+  old texture once the views have taken the new one; nothing unregisters a name. It throws an
+  `IconError`, and registers nothing, where the name is no string, holds a lone surrogate, or is
+  longer than a text of content may be, or where the image is a string, a `URL`, or a `Request`,
+  none of the three, or one that holds no pixels, an image that has not loaded or failed to, a
+  closed `ImageBitmap`, or a canvas of no size; it never fetches.
 - **Content replaces the title and the height:** a node is its identifier, its position, its
   width, and its content; its title is a `text` of role title, and the engine computes its height.
   `updateNode` replaces a node's content as a whole, checked as a load checks it.
@@ -104,8 +120,8 @@ registers and colours given as numbers.
   the size of the nodes before content. The engine states the padding, the gap between columns,
   and the least height; the shell states each role's line height.
 - **Levels of detail (ADR-0027):** *near* draws every element; *middle* draws the box and the
-  texts of role title, at the place near gives them, and no action, badge, progress bar, or
-  metric; *far* draws no element.
+  texts of role title, at the place near gives them, and no action, badge, progress bar, metric,
+  or icon; *far* draws no element.
 - **Limits (Q-7):** the bridge refuses a node with more rows, a row with more columns, a progress
   bar with more segments, a text longer, or a load whose texts hold more code units in all than
   limits it states, each with a typed problem that names the node.
@@ -189,8 +205,13 @@ application receives, and that a drag that starts on an element reports none. A 
 `examples/metric-tree/e2e/node-content.spec.ts` asserts what each level of detail draws of a
 node's content. A test in `packages/comb/src/content-types.test.ts` asserts that the generated
 TypeScript type of node content admits exactly the element kinds built, each kind's ticket adding
-its own until it admits the six. Each cites this ADR with `Verifies:
-ADR-0013`, and the first also `Verifies: Q-4`.
+its own until it admits the six. A browser test in `examples/metric-tree/e2e/icons.spec.ts`
+asserts that a registered icon is drawn as a sprite of its texture in its square within 0.5 px,
+an image that is not square fitted into it, that an icon not yet registered draws nothing until
+it is, that a name registered again draws the new image, and that `registerIcon` refuses a
+string, a URL, an image that has not loaded, and a name no icon can give, and requests nothing;
+`packages/comb/src/render/icons.test.ts` asserts that the replaced texture is destroyed. Each
+cites this ADR with `Verifies: ADR-0013`, and the first also `Verifies: Q-4`.
 
 The tests of the hit test verify its clauses here too; they cite `Verifies: ADR-0025` until this
 ADR supersedes it:
