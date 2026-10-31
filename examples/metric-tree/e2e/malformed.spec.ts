@@ -1332,7 +1332,7 @@ function installKinds() {
     invalidContentShape: nodes({ content: [5] }),
     tooManyRows: nodes({ content: Array.from({ length: 9 }, () => [title]) }),
     tooManyColumns: nodes({ content: [Array.from({ length: 7 }, () => title)] }),
-    invalidElementKind: element({ kind: "icon" }),
+    invalidElementKind: element({ kind: "chart" }),
     invalidWeight: element({ weight: 0 }),
     invalidRole: element({ role: "headline" }),
     invalidDirection: element({ kind: "metric", trend: { text: "x", direction: "sideways" } }),

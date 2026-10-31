@@ -3,14 +3,16 @@
 // the view draws each text where the engine placed it, cut where it was cut, an action's in the
 // link colour, a badge's on its pill, each progress bar as the segments and the track the engine
 // cut its bar into, and each metric as its caption, its value, and its trend's text and arrow, the
-// last two in the trend's colour: near every element, middle the texts of role title alone, at
-// the place near gives them.
+// last two in the trend's colour, and each icon as a sprite of the texture the host application
+// registered under its name, fitted into its square: near every element, middle the texts of role
+// title alone, at the place near gives them.
 import {
   BitmapFontManager,
   BitmapText,
   Container,
   Graphics,
   type Polygon,
+  Sprite,
   TextStyle,
   type TextStyleOptions,
 } from "pixi.js";
@@ -24,6 +26,7 @@ import {
 } from "../bridge";
 import type { GraphView, NodeView } from "../store";
 import { Bindings } from "./bindings";
+import type { Icons } from "./icons";
 
 const NODE_FILL = 0xffffff;
 const NODE_STROKE = 0xd0d4dc;
@@ -228,8 +231,8 @@ function textsOf(placed: Placed, start: number, end: number, titlesOnly: boolean
     const kind = KIND_NAMES[placed.kinds[i]!]!;
     const role = ROLE_NAMES[placed.roles[i]!]!;
     if (titlesOnly && (kind !== "text" || role !== "title")) continue;
-    // A progress bar shows no text: its bar is drawn of its pieces.
-    if (kind === "progress") continue;
+    // A progress bar shows no text: its bar is drawn of its pieces; an icon's text is its name.
+    if (kind === "progress" || kind === "icon") continue;
     if (kind === "metric") {
       texts.push(...metricTexts(placed, i));
       continue;
@@ -287,8 +290,56 @@ function arrowsOf(placed: Placed, start: number, end: number, titlesOnly: boolea
   return arrows;
 }
 
-/** One node: its box, its badges' pills, its progress bars, its metrics' arrows, and its texts. A pooled view, bound to
- *  one node slot at a time. */
+/** An icon a view draws: the name it is registered under, and the square the engine laid it
+ *  out in, relative to its node. */
+export interface DrawnIcon {
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** A sprite of an icon a view drew, as the sprite holds it: the name its texture is registered
+ *  under, null for a texture no longer registered, and its rectangle relative to its node. */
+export interface DrawnSprite {
+  texture: string | null;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** The icons among the elements `start` to `end` of `placed`, each its name and its square; none
+ *  at the middle level. */
+function iconsOf(placed: Placed, start: number, end: number, titlesOnly: boolean): DrawnIcon[] {
+  const icons: DrawnIcon[] = [];
+  if (titlesOnly) return icons;
+  for (let i = start; i < end; i++) {
+    if (KIND_NAMES[placed.kinds[i]!] !== "icon") continue;
+    const name = placed.texts.slice(placed.textBounds[i], placed.textBounds[i + 1]);
+    const [x, y, width, height] = placed.rects.subarray(i * 4, i * 4 + 4);
+    icons.push({ name, x: x!, y: y!, width: width!, height: height! });
+  }
+  return icons;
+}
+
+/** The rectangle of an image `imageWidth` × `imageHeight` fitted into `square` with its aspect
+ *  kept and centred in it: as large as fits, a non-square image touching two opposite sides. */
+export function fitted(
+  square: { x: number; y: number; width: number; height: number },
+  imageWidth: number,
+  imageHeight: number,
+) {
+  const scale = Math.min(square.width / imageWidth, square.height / imageHeight);
+  const [width, height] = [imageWidth * scale, imageHeight * scale];
+  const x = square.x + (square.width - width) / 2;
+  const y = square.y + (square.height - height) / 2;
+  return { x, y, width, height };
+}
+
+/** One node: its box, its badges' pills, its progress bars, its metrics' arrows, its texts, and
+ *  its icons. A pooled view, bound to one node slot at a time. */
 export class NodeGraphic extends Container {
   private readonly box = new Graphics();
   /** The pills of the node's badges, drawn together. */
@@ -297,6 +348,13 @@ export class NodeGraphic extends Container {
   private readonly bars = new Graphics();
   /** The arrows of the node's metrics' trends, drawn together. */
   private readonly arrows = new Graphics();
+  /** The pooled sprites of the view's icons, those with a parent in use. */
+  private readonly sprites: Sprite[] = [];
+  /** The icons the view drew sprites of, which inspection reads by the registry's names. */
+  private icons: Icons | null = null;
+  /** The icons the view's node holds where the view draws them, for a registration to draw
+   *  anew without a query. */
+  private iconsShown: DrawnIcon[] = [];
   /** The pooled text objects of the view, the first `texts.length` of them in use. */
   private readonly pool: { view: BitmapText; style: TextStyleOptions }[] = [];
   /** The node the view shows. */
@@ -310,7 +368,8 @@ export class NodeGraphic extends Container {
     height: number;
     selected: boolean;
     titlesOnly: boolean;
-  } = { node: null, width: -1, height: -1, selected: false, titlesOnly: false };
+    icons: number;
+  } = { node: null, width: -1, height: -1, selected: false, titlesOnly: false, icons: -1 };
   /** The texts the view draws, for inspection. */
   texts: DrawnText[] = [];
 
@@ -358,6 +417,19 @@ export class NodeGraphic extends Container {
     return filled(this.bars);
   }
 
+  /** The sprites of icons the view draws, read from the sprites themselves. */
+  drawnSprites(): DrawnSprite[] {
+    return this.sprites
+      .filter((sprite) => sprite.parent === this)
+      .map((sprite) => ({
+        texture: this.icons?.nameOf(sprite.texture) ?? null,
+        x: sprite.x,
+        y: sprite.y,
+        width: sprite.width,
+        height: sprite.height,
+      }));
+  }
+
   /** The arrows of metrics the view's `Graphics` draws, read from its fill instructions. */
   drawnArrows(): DrawnArrow[] {
     return this.arrows.context.instructions.flatMap((instruction) => {
@@ -374,7 +446,8 @@ export class NodeGraphic extends Container {
   size = { width: 0, height: 0 };
 
   /** Shows `node`, `width` × `height`, its content placed by the elements `start` to `end` of
-   *  `placed`, drawing again only when what it shows changed. */
+   *  `placed`, its icons of `icons`, drawing again only when what it shows changed, a
+   *  registration among it. */
   bind(
     node: Readonly<NodeView>,
     selected: boolean,
@@ -383,6 +456,7 @@ export class NodeGraphic extends Container {
     placed: Placed,
     start: number,
     end: number,
+    icons: Icons,
   ): void {
     this.nodeId = node.id;
     const { drawn } = this;
@@ -392,10 +466,11 @@ export class NodeGraphic extends Container {
       drawn.width === width &&
       drawn.height === height &&
       drawn.selected === selected &&
-      drawn.titlesOnly === titlesOnly
+      drawn.titlesOnly === titlesOnly &&
+      drawn.icons === icons.version
     )
       return;
-    this.drawn = { node, width, height, selected, titlesOnly };
+    this.drawn = { node, width, height, selected, titlesOnly, icons: icons.version };
     this.size = { width, height };
     this.box
       .clear()
@@ -405,6 +480,40 @@ export class NodeGraphic extends Container {
     this.showTexts(textsOf(placed, start, end, titlesOnly));
     this.showBars(barsOf(placed, start, end, titlesOnly));
     this.showArrows(arrowsOf(placed, start, end, titlesOnly));
+    this.showIcons(iconsOf(placed, start, end, titlesOnly), icons);
+  }
+
+  /** Draws the view's icons anew from `icons`, after a registration, without the engine. */
+  redrawIcons(icons: Icons): void {
+    this.showIcons(this.iconsShown, icons);
+    this.drawn.icons = icons.version;
+  }
+
+  /** Draws a sprite of each of `icons` registered in `icons`, its texture fitted into its square;
+   *  an icon none is registered under draws nothing. */
+  private showIcons(drawn: DrawnIcon[], icons: Icons): void {
+    this.icons = icons;
+    this.iconsShown = drawn;
+    let used = 0;
+    for (const icon of drawn) {
+      const texture = icons.get(icon.name);
+      if (!texture) continue;
+      let sprite = this.sprites[used];
+      if (!sprite) {
+        sprite = new Sprite();
+        this.sprites.push(sprite);
+      }
+      used += 1;
+      sprite.texture = texture;
+      const at = fitted(icon, texture.width, texture.height);
+      sprite.position.set(at.x, at.y);
+      sprite.setSize(at.width, at.height);
+      if (sprite.parent !== this) this.addChild(sprite);
+    }
+    for (let i = used; i < this.sprites.length; i++) {
+      const sprite = this.sprites[i]!;
+      if (sprite.parent === this) this.removeChild(sprite);
+    }
   }
 
   /** Draws `arrows`, each its triangle filled in its colour. */
@@ -482,9 +591,14 @@ export class NodesContainer extends Container {
     return this.views.created;
   }
 
+  /** Draws the icons of every bound view anew from `icons`, after a registration. */
+  redrawIcons(icons: Icons): void {
+    for (const view of this.children as NodeGraphic[]) view.redrawIcons(icons);
+  }
+
   /** Binds a view to each of `slots`, the nodes a query found, at their places in `positions` and
-   *  of their sizes in `sizes`, their content placed by `placed`; at the middle level, where
-   *  `titlesOnly`, the texts of role title alone. */
+   *  of their sizes in `sizes`, their content placed by `placed`, their icons of `icons`; at the
+   *  middle level, where `titlesOnly`, the texts of role title alone. */
   sync(
     state: GraphView,
     slots: Uint32Array,
@@ -492,6 +606,7 @@ export class NodesContainer extends Container {
     sizes: Float32Array,
     placed: Placed,
     titlesOnly: boolean,
+    icons: Icons,
   ): void {
     const selected = state.selection?.kind === "node" ? state.selection.id : null;
     this.views.begin();
@@ -500,7 +615,8 @@ export class NodesContainer extends Container {
       if (!node) return;
       const view = this.views.bind(slot);
       const [start, end] = [placed.bounds[i]!, placed.bounds[i + 1]!];
-      view.bind(node, node.id === selected, sizes[slot * 2 + 1]!, titlesOnly, placed, start, end);
+      const height = sizes[slot * 2 + 1]!;
+      view.bind(node, node.id === selected, height, titlesOnly, placed, start, end, icons);
       view.position.set(positions[slot * 2], positions[slot * 2 + 1]);
     });
     this.views.end();

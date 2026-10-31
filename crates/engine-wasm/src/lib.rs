@@ -570,7 +570,9 @@ impl Engine {
 
     /// The texts the last `query` placed, as the shell draws them, one after another, which the
     /// boundaries of `contentTextBounds…` cut: each text, or as much of it as fits followed by an
-    /// ellipsis (ADR-0013). One copy per query, of the texts of the nodes it found alone.
+    /// ellipsis, and an icon's registered name whole, which the shell draws as the image
+    /// registered under it (ADR-0013). One copy per query, of the texts of the nodes it found
+    /// alone.
     #[wasm_bindgen(js_name = contentTexts)]
     pub fn content_texts(&mut self) -> String {
         trap::spring();
@@ -989,7 +991,8 @@ impl Engine {
     }
 
     /// Where the buffer starts that `query` writes, per placed element, the code of the
-    /// `RoleCode` whose font draws its text into, body for an action.
+    /// `RoleCode` whose font draws its text into, body for an action, and for an icon, whose line
+    /// it lies in.
     #[wasm_bindgen(js_name = contentRolesPtr)]
     pub fn content_roles_ptr(&self) -> *const u8 {
         self.drawn.roles.as_ptr()
@@ -1630,6 +1633,53 @@ mod tests {
         assert_eq!(at(320.0, 45.0, DetailLevel::Near), None);
         assert_eq!(at(320.0, 36.0, DetailLevel::Middle), None);
         assert_eq!(at(320.0, 36.0, DetailLevel::Far), None);
+    }
+
+    #[test]
+    fn an_icon_hands_the_shell_its_name_and_its_square_kept_as_given_and_hit_on_its_square() {
+        // Verifies: ADR-0013, ADR-0034
+        // `b`, 100 wide at (300, 0), holds a title row and an icon named "bet" below it: its
+        // square from (12, 28), the body's line of 16 on a side, in a column 76 wide.
+        use graph_data::tests::{icon, load_into, named_content};
+        let mut engine = fonted();
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+        let title = (graph_data::tests::text(RoleCode::Title, "Bet"), None);
+        data.nodes[1].content = named_content(&[&[title], &[icon(Some("bet"))]]).into();
+        let nodes = graph_data::OwnedColumns::of(data.nodes.iter().map(Some));
+        let none = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
+        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
+        let (t, i) = (KindCode::Text as u8, KindCode::Icon as u8);
+        let (title, body) = (RoleCode::Title as u8, RoleCode::Body as u8);
+        let drawn = &engine.drawn;
+        assert_eq!(
+            (&drawn.kinds[..], &drawn.roles[..], &drawn.colors[..]),
+            (&[t, t, i][..], &[title, title, body][..], &[0, 0, 0][..])
+        );
+        // An icon's text is its name, whole, which the shell draws as the image registered
+        // under it.
+        assert_eq!(
+            (&drawn.texts[..], &drawn.bounds[..]),
+            ("xBetbet", &[0, 1, 4, 7][..])
+        );
+        assert_eq!(engine.content_rects[8..], [12.0, 28.0, 16.0, 16.0]);
+        assert_eq!(engine.drawn.bar_bounds, [0, 0, 0, 0]);
+        // Its content, built when asked, holds the icon as the host application gave it.
+        let kept = ContentElement::Icon {
+            name: "bet".to_owned(),
+            weight: Some(1.0),
+        };
+        assert_eq!(engine.content.content_of(1).0[1], [kept]);
+        // A press on the square hits the icon; beside it in its column, none; at the middle and
+        // far level, where no icon is drawn, none.
+        let at = |x, y, level| element(&engine, 1, x, y, level);
+        assert_eq!(
+            at(320.0, 35.0, DetailLevel::Near),
+            hit(1, 0, ElementKind::Icon, None)
+        );
+        assert_eq!(at(330.0, 35.0, DetailLevel::Near), None);
+        assert_eq!(at(320.0, 35.0, DetailLevel::Middle), None);
+        assert_eq!(at(320.0, 35.0, DetailLevel::Far), None);
     }
 
     /// An engine of fonts whose caption glyphs advance by 5 and its lines are 14 high, besides

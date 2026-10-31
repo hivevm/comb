@@ -140,3 +140,31 @@ test("the snapshot reads each field of an element once, and a progress bar's and
   nodeSnapshotOf(node(elements(single)), limits);
   expect(single).toEqual(expected);
 });
+
+test("the snapshot reads an icon's kind, weight, and name once, and its text, role, and identifier not at all", () => {
+  // Verifies: ADR-0028, ADR-0034
+  const icon = (reads: Record<string, number>) => [
+    [
+      counting(
+        "icon",
+        { kind: "icon", role: "body", weight: 2, text: "t", id: "go", name: "bet" },
+        reads,
+      ),
+    ],
+  ];
+  const expected = { "icon.kind": 1, "icon.weight": 1, "icon.name": 1 };
+  const node = (content: unknown) => ({ id: "a", x: 0, y: 0, width: 100, content });
+  const loaded: Record<string, number> = {};
+  const load = snapshotOf(listsOf({ nodes: [node(icon(loaded))], edges: [] } as never), limits);
+  expect(loaded).toEqual(expected);
+  // Its name crosses among the names, counted with the strings of content, and fills no text.
+  const columns = load.snapshot.nodes.content;
+  expect([...columns.textValid]).toEqual([]);
+  expect([...columns.nameValid]).toEqual([1]);
+  expect(columns.names.join("")).toBe("bet");
+  expect(load.content.units).toBe(3);
+  const single: Record<string, number> = {};
+  const { snapshot } = nodeSnapshotOf(node(icon(single)), limits);
+  expect(single).toEqual(expected);
+  expect(snapshot).toMatchObject({ content: [[{ kind: "icon", weight: 2, name: "bet" }]] });
+});

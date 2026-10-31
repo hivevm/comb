@@ -28,7 +28,7 @@ import {
   work,
   type SceneSnapshot,
 } from "comb/testing";
-import { metricTree, NODE_HEIGHT, NODE_WIDTH, titled, titleOf } from "./graph";
+import { KINDS, metricTree, NODE_HEIGHT, NODE_WIDTH, retitled, titled, titleOf } from "./graph";
 
 /** The type of the data a palette item carries in a drag. */
 const PALETTE_TYPE = "application/x-metric-tree-kind";
@@ -123,6 +123,21 @@ const comb = await createComb(element("canvas"), {
             : `${proposal.source}-${proposal.target}-${(connected += 1)}`) as string | false,
       }),
 });
+/** Registers the icon of each kind of node, drawn by the example itself on a canvas, so that no
+ *  image is requested: a disc of the kind's colour (ADR-0013). */
+function registerIcons(): void {
+  for (const { icon, color } of KINDS) {
+    const canvas = document.createElement("canvas");
+    [canvas.width, canvas.height] = [32, 32];
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = color;
+    context.beginPath();
+    context.arc(16, 16, 14, 0, 2 * Math.PI);
+    context.fill();
+    comb.registerIcon(icon, canvas);
+  }
+}
+registerIcons();
 const copies = element<HTMLSelectElement>("copies");
 const count = element("count");
 const selection = element("selection");
@@ -311,8 +326,8 @@ copies.addEventListener("change", () => {
 });
 title.addEventListener("input", () => {
   // The copy follows from the `nodeUpdated` Comb tells.
-  if (selected !== null && nodeOf(selected))
-    comb.updateNode(selected, { content: titled(title.value) });
+  const node = selected === null ? undefined : nodeOf(selected);
+  if (node) comb.updateNode(node.id, { content: retitled(node.content, title.value) });
 });
 edgeColor.addEventListener("input", () =>
   changeEdge({ color: Number.parseInt(edgeColor.value.slice(1), 16) }),

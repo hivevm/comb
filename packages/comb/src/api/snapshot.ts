@@ -146,8 +146,8 @@ function nameOf(value: unknown, read: Reader): unknown {
 /** An element of content as plain data, or `false` where it is no object; an action's identifier
  *  read as a text is, a badge's colour as a number is, each read of no other kind, a progress bar
  *  of its kind, its weight, and its segments as `segmentsOf` reads them alone, since it shows no
- *  text and has no role, and a metric of its kind, its weight, its caption and value, and its
- *  trend as `trendOf` reads it. */
+ *  text and has no role, a metric of its kind, its weight, its caption and value, and its trend as
+ *  `trendOf` reads it, and an icon of its kind, its weight, and its name, read as a text is. */
 function elementOf(read: Reader, value: unknown, limits: Limits) {
   const fields = objectOf(value);
   if (!fields || Array.isArray(value)) return false;
@@ -158,7 +158,8 @@ function elementOf(read: Reader, value: unknown, limits: Limits) {
     element.caption = read.text(fields.caption);
     element.value = read.text(fields.value);
     element.trend = trendOf(read, fields.trend);
-  } else {
+  } else if (kind === "icon") element.name = read.text(fields.name);
+  else {
     const { role, text } = fields;
     element.role = nameOf(role, read);
     element.text = read.text(text);
@@ -325,6 +326,14 @@ function writeElement(
   }
   if (kind === "metric") {
     writeMetric(read, element, columns, limits, node, last);
+    return;
+  }
+  if (kind === "icon") {
+    // An icon shows no text and has no role: its name crosses among the names, counted with the
+    // texts.
+    const name = read.text(element.name);
+    columns.element(kind, undefined, element.weight, undefined, undefined, name, last);
+    if (typeof name === "string") counted(read, name.length, node, limits);
     return;
   }
   const { role, weight, text } = element;

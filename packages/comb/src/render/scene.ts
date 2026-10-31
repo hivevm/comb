@@ -25,8 +25,10 @@ import {
   NodesContainer,
   type DrawnArrow,
   type DrawnPill,
+  type DrawnSprite,
   type DrawnText,
 } from "./nodes";
+import { Icons, type IconImage } from "./icons";
 import {
   ConnectionLine,
   ConnectorsLayer,
@@ -59,7 +61,8 @@ export interface SceneSnapshot {
    *  width and the fill its text object draws at, `pills` the pills of badges its `Graphics`
    *  draws, `bars` the pieces of progress bars it draws, each bar's segments and then its track,
    *  `arrows` the triangles of metrics' trends it draws, each its points and its colour,
-   *  `content` the node's content as the engine keeps it, built
+   *  `icons` the sprites of icons it draws, each the name its texture is registered under and its
+   *  rectangle, `content` the node's content as the engine keeps it, built
    *  when asked, and `title` the text of its first title; a particle draws none of them. */
   nodes: {
     id: string;
@@ -73,6 +76,7 @@ export interface SceneSnapshot {
     pills?: DrawnPill[];
     bars?: DrawnPill[];
     arrows?: DrawnArrow[];
+    icons?: DrawnSprite[];
   }[];
   /** How many nodes are drawn as particles. */
   particles: number;
@@ -148,6 +152,8 @@ export class Scene {
   readonly labels = new LabelsContainer();
   readonly connectors = new ConnectorsLayer();
   readonly overlay = new Container();
+  /** The icons the host application registered, which the node views draw. */
+  readonly icons = new Icons();
   private readonly connection = new ConnectionLine();
   level: Level = "near";
   /** The detail of the edge mesh the last query drew, which inspection reports; the host
@@ -185,6 +191,15 @@ export class Scene {
     this.world.position.set(at.x, at.y);
     this.world.scale.set(state.viewport.scale);
     this.renders += 1;
+  }
+
+  /** Registers `image` as the icon `name`, has every view drawn take it at once, without a query,
+   *  so that it draws even once the engine is lost, and destroys the texture it replaces, which no
+   *  view drawn holds any more; a view bound later draws its icons anew. */
+  registerIcon(name: string, image: IconImage): void {
+    this.icons.register(name, image);
+    this.nodes.redrawIcons(this.icons);
+    this.icons.release();
   }
 
   /** Whether what the scene last queried for still holds everything the viewport shows, at about
@@ -228,6 +243,7 @@ export class Scene {
       sizes,
       content,
       level === "middle",
+      this.icons,
     );
     this.particles.sync(state, far ? visible.nodes : NONE, positions, sizes);
     this.edges.sync(visible);
@@ -302,6 +318,7 @@ export class Scene {
           pills: (view as NodeGraphic).drawnPills(),
           bars: (view as NodeGraphic).drawnBars(),
           arrows: (view as NodeGraphic).drawnArrows(),
+          icons: (view as NodeGraphic).drawnSprites(),
         })),
         ...this.particles.drawn(),
       ],

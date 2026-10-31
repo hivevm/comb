@@ -171,6 +171,40 @@ test("a click on a metric reports kind metric, across its two lines, and below t
   expect(await selection(page)).toEqual({ kind: "node", id: "b" });
 });
 
+test("a click on an icon reports kind icon, on its square, and beside it in its column none", async ({
+  page,
+}) => {
+  // Verifies: ADR-0013
+  // An icon beside a title weighted 1 and 9, columns of 18.8 from 12 and 169.2 from 38.8: the
+  // icon's square from (12, 10), 16 × 16, the body's line, at its column's left.
+  await open(page);
+  const content: NodeContent = [
+    [
+      { kind: "icon", name: "bet" },
+      { kind: "text", role: "title", text: "Bet", weight: 9 },
+    ],
+  ];
+  await loaded(page, { nodes: [{ ...node("b"), content }], edges: [] });
+  await page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    [canvas.width, canvas.height] = [16, 16];
+    canvas.getContext("2d")!.fillRect(0, 0, 16, 16);
+    window.comb.registerIcon("bet", canvas);
+    const w = window as unknown as { clicks: ContentClick[] };
+    w.clicks = [];
+    window.comb.onContentClick((click) => w.clicks.push(click));
+  });
+  await page.evaluate(() => window.comb.whenRendered());
+  const icon = { node: "b", row: 0, column: 0, kind: "icon" };
+  const title = { node: "b", row: 0, column: 1, kind: "text" };
+  // On the square, beside it in its column, and on the title.
+  await clickWorld(page, 20, 18);
+  await clickWorld(page, 30, 18);
+  await clickWorld(page, 100, 18);
+  expect(await clicks(page)).toEqual([icon, title]);
+  expect(await selection(page)).toEqual({ kind: "node", id: "b" });
+});
+
 test("a press on an element that moves past 4 pixels drags the node and reports no click; within them it clicks", async ({
   page,
 }) => {

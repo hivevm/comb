@@ -316,13 +316,13 @@ fn weight() -> BoxedStrategy<Value> {
 }
 
 /// An element of content: mostly a text in a role, an action with an identifier, a badge on a
-/// colour, a progress bar of segments, or a metric with its trend, now and then of a kind or a role
-/// the bridge refuses, without a field, or no object.
+/// colour, a progress bar of segments, a metric with its trend, or an icon by its name, now and
+/// then of a kind or a role the bridge refuses, without a field, or no object.
 fn element(loose: bool) -> BoxedStrategy<Value> {
     let named = |name: &str| Value::Text(name.to_owned());
     let kind = one_of(
         vec![named("text")],
-        vec![named("icon"), named(""), Value::Number(1.0)],
+        vec![named("chart"), named(""), Value::Number(1.0)],
         true,
     );
     let roles = ["title", "body", "caption"].map(named).to_vec();
@@ -394,8 +394,19 @@ fn element(loose: bool) -> BoxedStrategy<Value> {
         5 => badge,
         5 => progress,
         5 => metric,
+        5 => icon(loose),
         1 => odd
     ]
+    .boxed()
+}
+
+/// An icon by its name, now and then without it or with a name the bridge refuses.
+fn icon(loose: bool) -> BoxedStrategy<Value> {
+    object(vec![
+        field("kind", Just(Value::Text("icon".to_owned())).boxed(), false),
+        field("weight", weight(), true),
+        field("name", text(loose), loose),
+    ])
     .boxed()
 }
 
@@ -609,6 +620,7 @@ fn far_side_ok(node: &Value, lines: [f64; 3]) -> bool {
             (Some(Value::Text(kind)), _) if kind == "action" => lines[1],
             (Some(Value::Text(kind)), _) if kind == "badge" => lines[1] + 6.0,
             (Some(Value::Text(kind)), _) if kind == "progress" => lines[1],
+            (Some(Value::Text(kind)), _) if kind == "icon" => lines[1],
             (Some(Value::Text(kind)), _) if kind == "metric" => lines[2] + lines[1],
             (_, Some(Value::Text(role))) if role == "title" => lines[0],
             (_, Some(Value::Text(role))) if role == "body" => lines[1],
@@ -648,7 +660,8 @@ fn nodes_of_data(data: &Value) -> &[Value] {
 /// positive finite weight and a list of at most 8 segments, each an object of a finite fraction of
 /// 0 or more and a colour as a badge's, their fractions summing to at most 1 and 1e-9, or of the
 /// kind `metric`, a positive finite weight, a caption and a value as texts are, and a trend, an
-/// object of a text as theirs, a direction of the three, and a colour as a badge's.
+/// object of a text as theirs, a direction of the three, and a colour as a badge's, or of the kind
+/// `icon`, a positive finite weight and a name as a text is.
 fn content_ok(node: &Value) -> bool {
     let Some(Value::List(rows)) = fields_of(node).and_then(|fields| get(fields, "content")) else {
         return false;
@@ -703,7 +716,9 @@ fn content_ok(node: &Value) -> bool {
             && string("caption")
             && string("value")
             && get(fields, "trend").is_some_and(trend_ok);
-        (progress || metric) && weight || (text || action || badge) && weight && string("text")
+        let icon = named("kind", &["icon"]) && string("name");
+        (progress || metric || icon) && weight
+            || (text || action || badge) && weight && string("text")
     };
     rows.len() <= 8
         && rows.iter().all(|row| match row {
@@ -1135,6 +1150,43 @@ fn a_metric_read_through_serde_fills_its_trend_and_a_trend_that_is_no_object_hol
 }
 
 #[test]
+fn an_icon_read_through_serde_fills_its_name_among_the_names_and_no_text() {
+    // Verifies: ADR-0034
+    // As `addNode` and `updateNode` read content: an icon's name among the names, read as a text
+    // is, an `id` or a `text` beside it read as none of its fields; a name of another type crosses
+    // empty and marked as none, which its rule refuses.
+    let text = |value: &str| Value::Text(value.to_owned());
+    let read = |name: Value| {
+        let icon = Value::Object(vec![
+            ("kind".to_owned(), text("icon")),
+            ("id".to_owned(), text("details")),
+            ("text".to_owned(), text("Bet")),
+            ("name".to_owned(), name),
+        ]);
+        ContentInput::deserialize(Value::List(vec![Value::List(vec![icon])])).unwrap()
+    };
+    let named = read(text("bet"));
+    assert_eq!(named.shape, None);
+    assert_eq!(named.data.kinds, [KindCode::Icon as u8]);
+    assert_eq!(named.data.roles, [0]);
+    assert!(named.data.text_valid.is_empty());
+    assert_eq!(named.data.text_bounds, [0]);
+    assert_eq!(named.data.names, ["bet"]);
+    assert_eq!(
+        (&named.data.name_bounds[..], &named.data.name_valid[..]),
+        (&[0, 3][..], &[1][..])
+    );
+    let numbered = read(Value::Number(3.0));
+    assert_eq!(
+        (
+            &numbered.data.name_bounds[..],
+            &numbered.data.name_valid[..]
+        ),
+        (&[0, 0][..], &[0][..])
+    );
+}
+
+#[test]
 fn a_trend_read_through_serde_reads_its_text_direction_and_colour_alone() {
     // Verifies: ADR-0034
     // A trend that holds a trend of its own and segments, as a host application may hand one:
@@ -1305,7 +1357,8 @@ fn loaded_in(
     let (mut cells, mut rows, mut placed) = (Vec::new(), Vec::new(), Vec::new());
     let mut drawn = super::Drawn::default();
     drawn.clear();
-    // The texts each placed element shows, none of a progress bar and three of a metric.
+    // The texts each placed element shows, none of a progress bar and three of a metric, and the
+    // name of an icon, which the shell draws as the image registered under it.
     let mut texts = Vec::new();
     for node in 0..loaded.graph.nodes_in_use() as usize {
         let [width, height] = [0, 1].map(|axis| f64::from(loaded.graph.sizes()[node * 2 + axis]));
@@ -1323,6 +1376,8 @@ fn loaded_in(
             let kind = content.kinds[element];
             texts.push(if kind == KindCode::Progress as u8 {
                 vec![""]
+            } else if kind == KindCode::Icon as u8 {
+                vec![content.name(at.name)]
             } else if kind == KindCode::Metric as u8 {
                 (0..3).map(|i| content.text(at.text + i)).collect()
             } else {
@@ -1347,6 +1402,7 @@ fn loaded_in(
     assert_bars_within(&drawn, &placed);
     assert_parts_within(&drawn, &placed);
     assert_texts_drawn(&drawn, &placed, &texts);
+    assert_names_whole(&drawn, &texts);
     // Each text is read back as the column holds it, mapped or not.
     let texts = super::values(&content.texts, &content.text_bounds).expect("mapped texts");
     for (index, text) in texts.into_iter().enumerate() {
@@ -1372,6 +1428,16 @@ fn assert_bars_within(drawn: &super::Drawn, placed: &[comb_engine::content::Plac
             );
             assert!(y >= f64::from(at.y) && y + h <= f64::from(at.y) + f64::from(at.height));
             from = x + w;
+        }
+    }
+}
+
+/// Asserts that each icon's text `drawn` holds is its name, `texts`, whole, never cut.
+fn assert_names_whole(drawn: &super::Drawn, texts: &[Vec<&str>]) {
+    let shown = split_utf16(&drawn.texts, &drawn.bounds);
+    for ((shown, &kind), text) in shown.iter().zip(&drawn.kinds).zip(texts) {
+        if kind == KindCode::Icon as u8 {
+            assert_eq!(*shown, text[0]);
         }
     }
 }

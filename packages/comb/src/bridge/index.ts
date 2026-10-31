@@ -84,7 +84,7 @@ export const PIECE_BOUND = 2 ** 28;
  *  its colour, NaN for one of another type; the texts, every string an element shows, a metric's
  *  caption, value, and trend's text in that order, as a string column with per text whether it is a
  *  text, 1 or 0; and the names, every string an element names and does not show, an action's
- *  identifier, as the texts. */
+ *  identifier and an icon's registered name, as the texts. */
 export interface ContentColumns {
   readonly rowBounds: Uint32Array;
   readonly elementBounds: Uint32Array;
@@ -140,8 +140,8 @@ export interface NodeColumnWriter {
   noContent(): void;
   /** The next element of the row: an element's kind and role cross as their codes, its weight as
    *  given, 1 where it is absent, NaN where it is of another type, a badge's colour as given, NaN
-   *  where it is absent or of another type, and a text or an action's identifier `id` that is no
-   *  string as none, each refused at its rule. */
+   *  where it is absent or of another type, and a text, or an action's identifier or an icon's
+   *  name, `id`, that is no string as none, each refused at its rule. */
   element(
     kind: unknown,
     role: unknown,
@@ -240,6 +240,7 @@ const KINDS: Readonly<Record<ContentElement["kind"], KindCode>> = {
   badge: KindCode.Badge,
   progress: KindCode.Progress,
   metric: KindCode.Metric,
+  icon: KindCode.Icon,
 };
 const DIRECTIONS: Readonly<Record<TrendDirection, DirectionCode>> = {
   up: DirectionCode.Up,
@@ -266,6 +267,8 @@ function kindCode(kind: unknown): KindCode {
       return KINDS.progress;
     case "metric":
       return KINDS.metric;
+    case "icon":
+      return KINDS.icon;
     default:
       return KindCode.Unnamed;
   }
@@ -469,7 +472,7 @@ class NodeWriter implements NodeColumnWriter {
 
   /** The next element, of the fields read of it: a `text` fills its role and a text, an
    *  `action` a text and a name, a `badge` its colour and a text, a `progress` no string, its
-   *  segments following it, and any other kind none (ADR-0034). */
+   *  segments following it, an `icon` a name, and any other kind none (ADR-0034). */
   element(
     kind: unknown,
     role: unknown,
@@ -511,14 +514,14 @@ class NodeWriter implements NodeColumnWriter {
     if (endsRow) this.endRow();
   }
 
-  /** The strings an element of `code` fills: a text of every kind built so far but a progress
-   *  bar and a metric, whose three `metric` fills, and a name of an action. */
+  /** The strings an element of `code` fills: a text of a `text`, an `action`, and a `badge`, the
+   *  three of a metric being `metric`'s to fill, and a name of an action and of an icon. */
   private strings(code: KindCode, text: unknown, id: unknown): void {
-    if (code !== KindCode.Unnamed && code !== KindCode.Progress && code !== KindCode.Metric) {
+    if (code === KindCode.Text || code === KindCode.Action || code === KindCode.Badge) {
       if (this.valid === this.textValid.length) this.textValid = grown(this.textValid);
       this.textValid[this.valid++] = Number(this.texts.add(text));
     }
-    if (code === KindCode.Action) {
+    if (code === KindCode.Action || code === KindCode.Icon) {
       if (this.namesValid === this.nameValid.length) this.nameValid = grown(this.nameValid);
       this.nameValid[this.namesValid++] = Number(this.names.add(id));
     }
@@ -867,7 +870,9 @@ const DETAILS: Record<MeshDetail, Detail> = {
  *  `partEnds`, each starting where the one before it in its element ends, the first where its
  *  element's text starts; and per element the boundaries of its arrows in `arrowBounds`, a
  *  metric's one where its column holds it, each arrow's triangle as three points `x, y` relative
- *  to its node in `arrows`. At the far level it holds no node. */
+ *  to its node in `arrows`. An icon's rectangle is its square, and its text in `texts` its
+ *  registered name, whole, which the shell draws as the image registered under it. At the far
+ *  level it holds no node. */
 export interface Placed {
   bounds: Uint32Array;
   rects: Float32Array;

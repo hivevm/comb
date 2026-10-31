@@ -38,11 +38,12 @@ a negative gap, a node whose coordinate or far side (`x + width`) lies more than
 world's limit, 2^120 world units, from the origin, and a label offset beyond it (`beyondWorld`),
 naming the node or edge and the field, duplicate node or edge identifiers, edges to missing nodes,
 non-finite label placements, a colour that is not an integer from `0` to `0xFFFFFF`, a text of
-node content, an action's identifier (`id`), or a label text that is not a string or longer than
-1,000 UTF-16 code units, node
+node content, an action's identifier (`id`), an icon's name (`name`), or a label text that is not
+a string or longer than 1,000 UTF-16 code units, node
 content that is no list of rows, a row that is no list or an element that is no object
 (`invalidContentShape`, naming the node, row, and column), more than 8 rows or a row of more than
-6 columns, an element of a kind other than `text`, `action`, `badge`, `progress`, and `metric`, a
+6 columns, an element of a kind other than `text`, `action`, `badge`, `progress`, `metric`, and
+`icon`, a
 weight that is not a positive finite number, a role of a text other than `title`, `body`, and
 `caption`, a trend's direction other than `up`, `down`, and `flat` or a trend that is no object
 (`invalidDirection`), a badge's, a trend's, or a segment's colour that is not an integer from `0`
@@ -165,7 +166,9 @@ The functional core and its shell follow
   as its column and two lines, the caption's and the body's, which `metric_parts` divides into
   its caption on the first, its value at the left of the second, its trend's arrow, a triangle
   in a square of 10, 8 after the value, and its trend's text 4 after the arrow to the column's
-  end, the trend's text cut first and then the value, a row as deep as its deepest element, the
+  end, the trend's text cut first and then the value, an icon as a square of the body's line at
+  its column's left, at most the column and in the middle of the line, a row as deep as its
+  deepest element, the
   columns of a row
   sharing the width inside a padding of 12 less gaps of 8 by their weights, each text cut before an
   ellipsis where it passes its column, and the node as high as the padding of 10 above and below
@@ -199,11 +202,10 @@ The functional core and its shell follow
   `contentRoles…`, `contentColors…`), the pieces of each progress bar's bar and their colours
   (`contentBarBounds…`, `contentBars…`, `contentBarColors…`), the parts of each metric and the
   end of each part's text (`contentPartBounds…`, `contentParts…`, `contentPartEnds…`) and its
-  arrow (`contentArrowBounds…`, `contentArrows…`), what of each text is drawn
-  as one string `contentTexts` returns, cut by `contentTextBounds…`, the found edge slots, and the
-  edge mesh into buffers the engine owns, the label points and the mesh's positions relative to the
-  query's origin, which `originX` and
-  `originY` read
+  arrow (`contentArrowBounds…`, `contentArrows…`), what of each text is drawn, and each icon's
+  registered name whole, as one string `contentTexts` returns, cut by `contentTextBounds…`, the
+  found edge slots, and the edge mesh into buffers the engine owns, the label points and the
+  mesh's positions relative to the query's origin, which `originX` and `originY` read
   ([ADR-0034](adr/0034-node-content-crosses-as-columns.md)), and returns the mesh's detail,
   complete or coarsened, and refuses a pixel that is not a finite number above zero; `drawnEdges`
   computes the ends of the found edges when inspection asks, as they lie then, and `hit` names what
@@ -316,10 +318,15 @@ The functional core and its shell follow
   inspection reading them back likewise, and a metric's caption in the caption's style, its value
   in the body's, and its trend's text in the body's font and the trend's colour, each where the
   query placed its part, and its arrow, which a third `Graphics` per view fills in the trend's
-  colour, inspection reading it back likewise, every text, bar, and arrow at the near level and
+  colour, inspection reading it back likewise, and an icon as a pooled `Sprite` of the texture the
+  host application registered under its name (`render/icons.ts`), fitted into its square with its
+  aspect kept, none where none is registered, inspection reading the sprites back, every text,
+  bar, arrow, and icon at the near level and
   those of role title alone at the middle level, what the query placed; a view draws anew only
   where its node, which the store replaces when its content changes, its size, its selection, or
-  the level changed;
+  the level changed; a registration of an icon has every bound view draw its icons anew at once,
+  without a query, so that it draws once the engine is lost too, and destroys the texture it
+  replaced, a view bound later drawing its icons anew;
   `fontMetricsOf` of `nodes.ts` measures each role's glyph advances, which `createComb` hands the
   engine once, before the first load, with the line height of each role, which the render layer
   states rather than measures.
@@ -338,7 +345,10 @@ The functional core and its shell follow
   viewport (`fitView`, `setViewport`, `viewport`, and `worldPointAt`, the world point
   under a point of the page, which needs no engine), the events to the host application (`onChange`,
   `onSelectionChange`, `onContentClick`, which interaction tells of each click on an element,
-  `onEngineLost`), and `destroy`; `onChange` delivers each change the store
+  `onEngineLost`), `registerIcon`, which refuses with an `IconError` a name no icon element can
+  give and an image Comb would fetch, cannot draw, that has not loaded, or whose pixels the page
+  may not read, and copies the image into a canvas of its own (`api/icons.ts`), and
+  `destroy`; `onChange` delivers each change the store
   records as a `GraphChange`
   ([ADR-0030](adr/0030-a-veto-that-changes-the-graph-ends-its-gesture.md)), its positions read
   from the engine's buffer, synchronously from one subscription to the store that tells a change
@@ -346,7 +356,8 @@ The functional core and its shell follow
   drawn, with one render per animation frame scheduled by `api/frames.ts`. `api/scenes.ts` is the
   one way from a `Comb` to its scene and to the hit test its presses ask, for the testing entry.
 - **Testing entry** (`comb/testing`, `packages/comb/src/testing.ts`) — `inspect` returns what the
-  scene draws, each node view's texts with where they lie and what of them is drawn, its content and
+  scene draws, each node view's texts with where they lie and what of them is drawn, its icons'
+  sprites with their rectangles and the names their textures are registered under, its content and
   the text of its first title, which the engine builds when asked (`content`), and the labels drawn
   included, the connectors drawn with where
   each is centred and how often the layer drew them anew, and the size and detail of the edge mesh,
@@ -366,7 +377,9 @@ The functional core and its shell follow
   in `f32`; for tests, the benchmark, and tooling.
   Its shape follows the scene and is outside the stable interface of `comb`.
 - **Example** (`examples/metric-tree`) — a host application with a metric tree and an HTML sidebar
-  (G-9) that edits the selected node's title, the text of its one title, or the selected edge's
+  (G-9), each node a title and below it the icon of its kind, which the example draws on a canvas
+  and registers before its first load, and a sidebar that edits the selected node's title, the
+  text of its first title, or the selected edge's
   colour, dash, arrowhead, and label, with a palette whose kinds HTML drag and drop puts onto the
   canvas, where the example adds
   a node centred on `worldPointAt` of the drop (G-1); it keeps its own copy of the graph from every

@@ -31,6 +31,15 @@ const columns: string[][] = [
   ["ARR", "Monthly retention", "Monthly premium subscriptions"],
 ];
 
+/** The kind of the nodes of each column, which names the icon each shows, and its colour. */
+export const KINDS: readonly { icon: string; color: string }[] = [
+  { icon: "bet", color: "#7c3aed" },
+  { icon: "epic", color: "#2563eb" },
+  { icon: "input-metric", color: "#0891b2" },
+  { icon: "north-star", color: "#d97706" },
+  { icon: "kpi", color: "#16a34a" },
+];
+
 const links: [string, string, number?][] = [
   ["0.0", "1.1"],
   ["0.0", "1.2"],
@@ -54,6 +63,25 @@ export function titled(title: string): NodeContent {
   return [[{ kind: "text", role: "title", text: title }]];
 }
 
+/** The content of a node that shows `title`, and below it the icon `icon` of its kind: a row of
+ *  the title alone, so that the title keeps its whole width, and a row of the icon, the node
+ *  keeping the least height. */
+export function iconTitled(icon: string, title: string): NodeContent {
+  return [[{ kind: "text", role: "title", text: title }], [{ kind: "icon", name: icon }]];
+}
+
+/** `content` with the text of its first title replaced by `title`, every other element kept. */
+export function retitled(content: NodeContent, title: string): NodeContent {
+  let done = false;
+  return content.map((row) =>
+    row.map((element) => {
+      if (done || element.kind !== "text" || element.role !== "title") return element;
+      done = true;
+      return { ...element, text: title };
+    }),
+  );
+}
+
 /** The title a node of the example shows: the text of its first title, or none. */
 export function titleOf(node: Pick<NodeData, "content">): string {
   for (const row of node.content)
@@ -69,7 +97,7 @@ function nodesOf(copy: number, top: number): NodeData[] {
       x: c * COLUMN,
       y: top + (r - (titles.length - 1) / 2) * ROW,
       width: NODE_WIDTH,
-      content: titled(title),
+      content: iconTitled(KINDS[c]!.icon, title),
     })),
   );
 }

@@ -68,8 +68,10 @@ function writeContent(columns: NodeColumnWriter, content: unknown) {
         if (typeof element !== "object" || element === null || Array.isArray(element))
           columns.noElement(last);
         else {
-          const { kind, role, weight, color, text, id } = element as Record<string, unknown>;
+          const { kind, role, weight, color, text, id, name } = element as Record<string, unknown>;
           if (kind === "metric") return writeMetric(columns, element as object, last);
+          // An icon names its image by `name`, which crosses among the names as an identifier.
+          if (kind === "icon") return columns.element(kind, role, weight, color, text, name, last);
           if (kind !== "progress")
             return columns.element(kind, role, weight, color, text, id, last);
           // A progress bar's segments follow it before its row ends.
@@ -777,6 +779,41 @@ describe("bridge metrics", () => {
   });
 });
 
+describe("bridge icons", () => {
+  test("an icon crosses as its name among the names, is placed near as its square with its name, and comes back as given", () => {
+    // Verifies: ADR-0013, ADR-0034
+    const withIcon = {
+      ...node("b", 300, 0),
+      content: [[{ kind: "text", role: "title", text: "Bet" }], [{ kind: "icon", name: "bet" }]],
+    };
+    const { snapshot } = snapshotted([node("a", 0, 0), withIcon]);
+    const c = snapshot.nodes.content;
+    expect([...c.kinds]).toEqual([KindCode.Text, KindCode.Text, KindCode.Icon]);
+    // It fills no text and one name.
+    expect([...c.textValid]).toEqual([1, 1]);
+    expect([...c.nameValid]).toEqual([1]);
+    expect(c.names.join("")).toBe("bet");
+    // Its square lies at its column's left below the title, the body's line of 16 on a side; its
+    // text in the query is its name, whole.
+    bridge.setFont("body", FONT);
+    expect(bridge.loadGraph(snapshot)).toBe(2);
+    const near = bridge.query(everywhere, "near", 1, 0).content;
+    expect([...near.kinds]).toEqual([KindCode.Text, KindCode.Text, KindCode.Icon]);
+    expect([...near.rects.subarray(8, 12)]).toEqual([12, 28, 16, 16]);
+    expect(near.texts).toBe("aBetbet");
+    expect([...near.textBounds]).toEqual([0, 1, 4, 7]);
+    expect(bridge.content(1)[1]).toEqual([{ kind: "icon", name: "bet", weight: 1 }]);
+    // A press on its square reports the icon; beside it, and at the middle level, none.
+    expect(bridge.hit(320, 35, 1, "near", false)).toMatchObject({
+      kind: "node",
+      slot: 1,
+      element: { row: 1, column: 0, kind: "icon" },
+    });
+    expect(bridge.hit(340, 35, 1, "near", false)).not.toHaveProperty("element");
+    expect(bridge.hit(320, 35, 1, "middle", false)).not.toHaveProperty("element");
+  });
+});
+
 describe("bridge metrics refused", () => {
   test("a metric whose direction, texts, or colour are refused is named with its node and the field, through every export", () => {
     // Verifies: ADR-0013, ADR-0034, Q-7
@@ -985,7 +1022,7 @@ describe("bridge columns of a load's content", () => {
     // Verifies: ADR-0034
     const content = [
       [
-        { kind: "icon", role: "title", text: "x", weight: 1 },
+        { kind: "chart", role: "title", text: "x", weight: 1 },
         textOf("headline", "y"),
         textOf("body", 5, "1"),
       ],
