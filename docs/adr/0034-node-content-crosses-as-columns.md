@@ -124,9 +124,10 @@ reads and writes as typed-array views created anew after every engine call.
   `Deserialize`, and `Tsify`; its TypeScript definition is the generated one, never written by
   hand. The metrics of a role's font cross once, before the first load, through `setFont(role,
   codes, advances, fallback, lineHeight)`, the role's code, a `Uint32Array` of code points, a
-  `Float64Array` of their advances, and two numbers; `textLimit`, `rowLimit`, and `columnLimit`
-  hand the snapshot the limits it cuts a load by, and `badgePaddingX` and `badgePaddingY` hand
-  the shell the padding of a badge's pill, by which it places the badge's text (ADR-0013).
+  `Float64Array` of their advances, and two numbers; `textLimit`, `rowLimit`, `columnLimit`, and
+  `segmentLimit` hand the snapshot the limits it cuts a load by, and `badgePaddingX` and
+  `badgePaddingY` hand the shell the padding of a badge's pill, by which it places the badge's
+  text (ADR-0013).
 - **Graph data of a load (changed):** `loadGraph` takes its nodes and edges as columns, one per
   field, each in slot order, which `api`'s snapshot builds while it reads the host application's
   graph data once (ADR-0028). A node crosses as its identifier, `x`, `y`, `width`, and its content
@@ -146,13 +147,15 @@ reads and writes as typed-array views created anew after every engine call.
     progress bar's segments that are no list, and a segment that is no object. The snapshot hands
     over the position of the first such value it reads, its list, its index, and its field, the
     field a plain `u32` code as today, never a parameter of a wasm-bindgen enumeration, and for a
-    shape of content also the row and, below a row, the column; or none. A shape it cannot
-    flatten crosses as empty in its place, a row as a row of no elements, an element as one of
-    the code of no kind. The bridge crate refuses a shape of content as `invalidContentShape`,
-    naming the node by its index and, where its identifier was read, by it, the row, the column,
-    and in words what the value should be; a position that names no row or column of the columns
-    is refused as malformed. An arrowhead or a side that is a string naming no value crosses as
-    its code, and the bridge crate finds it in its first pass at its place in that order.
+    shape of content also the row and, below a row, the column, for a progress bar's segments
+    and a segment of them the progress bar's; or none. A shape it cannot flatten crosses as empty
+    in its place, a row as a row of no elements, an element as one of the code of no kind,
+    segments as none, and a segment as one whose fraction and colour are NaN. The bridge crate
+    refuses a shape of content as `invalidContentShape`, naming the node by its index and, where
+    its identifier was read, by it, the row, the column, and in words what the value should be; a
+    position that names no row or column of the columns is refused as malformed. An arrowhead or
+    a side that is a string naming no value crosses as its code, and the bridge crate finds it in
+    its first pass at its place in that order.
   - **The rules** follow, in the same order: the identifiers' lengths and their budget, then each
     node's and each edge's checks, a node's content and an edge's label text among them, which
     are no `Field<T>`. A label text missing, of another type, or holding a lone surrogate is
@@ -174,7 +177,9 @@ reads and writes as typed-array views created anew after every engine call.
       from 0 to 0xFFFFFF, as an edge's colour is;
     - a progress bar's number of segments (`tooManySegments`) against its limit, each segment's
       fraction (`invalidFraction`), which is finite and not negative, and their sum
-      (`fractionsPastOne`), which is at most 1.
+      (`fractionsPastOne`), which is at most 1 and 1e-9 beyond it (ADR-0013). A progress bar's
+      fields are checked as its number of segments, then each segment's fraction and colour in
+      the order of its segments, then their sum.
 
     Each names the node by its identifier, and the row and column of the element where it has
     them; a segment's refusal names the segment too. The limits' numbers are the bridge crate's
@@ -257,6 +262,10 @@ reads and writes as typed-array views created anew after every engine call.
     `Uint32Array`; and per placed element its kind's code as `Uint8Array`, which says how the
     shell draws it, an action's and a badge's role's code that of body, whose font draws it, and
     its colour as `0xRRGGBB` in `Uint32Array`, a badge's pill's, 0 for an element of no colour;
+    and per placed element the boundaries of the pieces of its bar as `Uint32Array`, a progress
+    bar's segments and then its track and no piece of another kind, each piece's rectangle
+    relative to its node as `Float32Array`, and its colour as `0xRRGGBB` in `Uint32Array`, a
+    segment's, and 0 for the track, whose colour the shell states (ADR-0013);
   - the edge mesh of that query: vertex positions, distances along the path, and dash patterns as
     `Float32Array`, colours as RGBA bytes in `Uint32Array`, and triangle indices as `Uint32Array`;
   - for inspection, the slots of the edges the query found as `Uint32Array`, with the ends of each
