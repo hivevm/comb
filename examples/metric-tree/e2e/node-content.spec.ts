@@ -3,7 +3,7 @@
 // as high as its rows; read through `comb/testing` rather than pixels.
 import { expect, test, type Page } from "@playwright/test";
 import type { NodeContent, NodeData } from "comb";
-import { loaded, node, NODE_HEIGHT, NODE_WIDTH, open, setViewport, told } from "./shared";
+import { loaded, node, NODE_HEIGHT, NODE_WIDTH, open, setViewport, titled, told } from "./shared";
 
 /** A text of `role`, of weight 1 unless given. */
 const text = (role: "title" | "body" | "caption", value: string, weight?: number) => ({
@@ -34,8 +34,11 @@ async function drawnNode(page: Page, id: string) {
 test("a node of one title shows one text view where its title was drawn", async ({ page }) => {
   // Verifies: ADR-0013
   await open(page);
-  await setViewport(page, { x: 40, y: 300, scale: 1 });
-  const drawn = await drawnNode(page, "0:0.0");
+  await loaded(page, {
+    nodes: [{ ...node("a"), content: titled("Launch push notifications") }],
+    edges: [],
+  });
+  const drawn = await drawnNode(page, "a");
   expect(drawn).toMatchObject({
     width: NODE_WIDTH,
     height: NODE_HEIGHT,

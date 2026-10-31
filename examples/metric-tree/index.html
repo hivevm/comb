@@ -27,16 +27,30 @@
         <ul>
           <li draggable="true" data-kind="bet">Bet</li>
           <li draggable="true" data-kind="epic">Epic</li>
-          <li draggable="true" data-kind="metric">Input metric</li>
+          <li draggable="true" data-kind="input-metric">Input metric</li>
           <li draggable="true" data-kind="kpi">KPI</li>
         </ul>
       </section>
       <section id="selection" hidden>
         <h2>Selected node</h2>
+        <p id="node-type"></p>
         <label>
           Title
           <input id="title" type="text" />
         </label>
+        <label id="hypothesis-field" hidden>
+          Hypothesis
+          <input id="hypothesis" type="text" />
+        </label>
+        <label id="progress-field" hidden>
+          Progress (%)
+          <input id="progress" type="number" min="0" max="100" step="1" />
+        </label>
+        <label id="status-field" hidden>
+          Status
+          <select id="status"></select>
+        </label>
+        <div id="periods"></div>
       </section>
       <section id="edge-selection" hidden>
         <h2>Selected edge</h2>

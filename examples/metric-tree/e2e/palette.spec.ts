@@ -1,15 +1,8 @@
 // A node dropped from the host's palette (G-1): `worldPointAt` names the world point under a
 // point of the page, and the example adds a node of the palette's kind there (ADR-0030).
 import { expect, test, type Page } from "@playwright/test";
-import {
-  NODE_HEIGHT,
-  NODE_WIDTH,
-  open,
-  recordChanges,
-  screenCentre,
-  setViewport,
-  told,
-} from "./shared";
+import { HEIGHTS } from "../src/graph";
+import { NODE_WIDTH, open, recordChanges, screenCentre, setViewport, told } from "./shared";
 
 /** Moves the canvas away from the page's corner, by a margin on its left and top, and scales it
  *  with CSS by `scale`, and waits until Comb has drawn at its new size. */
@@ -95,7 +88,7 @@ test("a kind dragged from the palette and dropped on the canvas becomes a node u
   const centre = { x: (at.x - 40) / 0.8, y: (at.y - 30) / 0.8 };
   expect(result.node).toMatchObject({ id: "epic-1", title: "New epic" });
   expect(result.node!.x).toBeCloseTo(centre.x - NODE_WIDTH / 2, 2);
-  expect(result.node!.y).toBeCloseTo(centre.y - NODE_HEIGHT / 2, 2);
+  expect(result.node!.y).toBeCloseTo(centre.y - result.node!.height / 2, 2);
   expect(result.told).toHaveLength(1);
   expect(result.told[0]).toMatchObject({ kind: "nodeAdded", by: "host", node: { id: "epic-1" } });
   // The example's listener took the node into its graph: its sidebar edits it once selected.
@@ -104,4 +97,39 @@ test("a kind dragged from the palette and dropped on the canvas becomes a node u
   await page.mouse.click(press.x, press.y);
   await expect(page.locator("#selection")).toBeVisible();
   await expect(page.locator("#title")).toHaveValue("New epic");
+});
+
+test("each type in the palette drops a node of that type, centred on the drop by its height", async ({
+  page,
+}) => {
+  // Verifies: G-1, G-9
+  await open(page);
+  await setViewport(page, { x: 40, y: 30, scale: 1 });
+  const canvas = page.locator("#canvas canvas");
+  const box = (await canvas.boundingBox())!;
+  const types = ["bet", "epic", "input-metric", "kpi"] as const;
+  for (const [i, type] of types.entries()) {
+    const at = { x: 140 + i * 240, y: box.height - 60 };
+    await page.locator(`#palette [data-kind="${type}"]`).dragTo(canvas, { targetPosition: at });
+    const dropped = await page.evaluate(
+      async (id) => {
+        await window.comb.whenRendered();
+        const node = window.inspect().nodes.find((each) => each.id === id)!;
+        return {
+          middle: node.y + node.height / 2,
+          height: node.height,
+          icons: node.icons!.map(({ texture }) => texture),
+          details: node.texts!.some(({ kind, drawn }) => kind === "action" && drawn === "Details"),
+        };
+      },
+      `${type}-${i + 1}`,
+    );
+    expect(dropped).toEqual({
+      middle: expect.closeTo(at.y - 30, 2),
+      height: HEIGHTS[type],
+      icons: [type],
+      details: true,
+    });
+  }
+  await expect(page.locator("#count")).toHaveText("19 nodes, 15 edges");
 });

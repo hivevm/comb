@@ -380,15 +380,19 @@ The functional core and its shell follow
   in `f32`; for tests, the benchmark, and tooling.
   Its shape follows the scene and is outside the stable interface of `comb`.
 - **Example** (`examples/metric-tree`) — a host application with a metric tree and an HTML sidebar
-  (G-9), each node a title and below it the icon of its kind, which the example draws on a canvas
-  and registers before its first load, and a sidebar that edits the selected node's title, the
-  text of its first title, or the selected edge's
-  colour, dash, arrowhead, and label, with a palette whose kinds HTML drag and drop puts onto the
-  canvas, where the example adds
-  a node centred on `worldPointAt` of the drop (G-1); it keeps its own copy of the graph from every
-  kind of change `onChange` tells, in one table by kind, the sidebar's edits following from the
-  changes Comb tells, and `window.exampleGraph` hands a browser test that copy; it names each edge
-  the user connects after its ends, and hands its vetoes to `window.canConnect` and
+  (G-9), each type of node told only by the content the example describes from its fields (G-10):
+  a bet its hypothesis and status badge, an epic its progress bar and status badge, an input
+  metric its values over three periods, the north-star metric and a KPI theirs, each with the icon
+  of its type beside its title, which the example draws on a canvas and registers before its first
+  load, and a "Details" action, whose click puts the sidebar's focus on the node; each node lies
+  with its middle on its row whatever its height; a sidebar edits the selected node's fields and
+  replaces its content through `updateNode`, of a node whose content another caller replaced its
+  title alone, or the selected edge's colour, dash, arrowhead, and label, with a palette whose
+  types HTML drag and drop puts onto the canvas, where the example adds a node of that type
+  centred by its height on `worldPointAt` of the drop (G-1); it keeps its own copy of the graph
+  from every kind of change `onChange` tells, in one table by kind, the sidebar's edits following
+  from the changes Comb tells, and `window.exampleGraph` hands a browser test that copy; it names
+  each edge the user connects after its ends, and hands its vetoes to `window.canConnect` and
   `window.canDelete` where a browser test sets them; `?connect=none` gives Comb no `canConnect`;
   `?copies=` sets its size, the copies lie in a grid about as wide as tall, and it reports its load
   time as `window.loadReport`; `?fallback=canvas` allows the Canvas 2D fallback; it fetches the
