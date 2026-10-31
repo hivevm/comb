@@ -49,45 +49,33 @@ off.
 
 ## Where it stands
 
-Stopped before any code: two existing browser tests besides the approved one pin the example's
-nodes to the least height of 64, and G-9's content for an input metric cannot be laid out that
-low. The engine lays a node out to its rows and 10 above and below them, at least 64
-(`crates/engine/src/content.rs`), so its rows may hold at most 44: a title's line is 18 and a
-metric's two lines 30, so an input metric with its title in a row of its own and its three
-periods below is at least 10 + 18 + 30 + 10 = 68 high. The library behaves as its tickets said;
-the conflict is with the example's tests.
+The human approved the first stop's options 1a (`drag.spec.ts` reads the drawn heights) and 2a
+(`palette.spec.ts` centres a dropped node by its drawn height), and keeping each node's middle so
+that the reference image of `edge-styles.spec.ts` stands. The example is built, uncommitted in the
+ticket's worktree: content per type in `src/graph.ts` (`contentOf`, `HEIGHTS`, `metricTree`
+returning the graph and each node's fields), the sidebar per type in `index.html` and
+`src/main.ts`, "Details" through `onContentClick`, the palette dropping each type; the golden-path
+tests in `e2e/example.spec.ts` and a palette test per type pass, as do the approved adaptations and
+the one-title test moved to a loaded node. The chromium suite runs 297 green and 2 red: two more
+existing tests depend on the least height or on one text per node, and the session stops on them.
 
-1. **`e2e/drag.spec.ts`, "dragging a node moves it with its edges and edge labels, and a click
-   shows it in the sidebar"** drags the north-star metric `0:3.0` and expects the edge from the
-   input metric `0:2.3` to end at `after.y + NODE_HEIGHT / 2`, and its label at
-   `(source.y + after.y + NODE_HEIGHT) / 2`, both to 0.05. That holds only where both nodes are 64
-   high; an input metric of 68 moves the label by 1.
-   - a. Read the heights the canvas draws: the end at `after.y + after.height / 2`, the label at
-     the midpoint of `source.y + source.height / 2` and `after.y + after.height / 2`. What it
-     verifies stays: the edge ends at the moved node's left connector, the label sits midway
-     between the connectors.
-   - b. Keep the test and squeeze the input metric into one row, icon, title, three metrics, and
-     "Details" side by side in 196: each column about 20 wide, the title and every trend cut to
-     nothing.
+1. **`e2e/drag.spec.ts`, "a node dragged across frames stays under the pointer, its edges' ends at
+   its connectors in the same frame"** presses the north-star metric at `screenCentre`, which
+   `e2e/shared.ts` computes as `node.y + NODE_HEIGHT / 2`, and expects the drawn centre,
+   `node.y + node.height / 2`, within 1 pixel of the pointer; with the north star 84 high the press
+   lies 10 world units, 6.5 pixels, above the centre.
+   - a. `screenCentre` in `shared.ts` reads the drawn node's height, as its comment already says
+     ("the screen point at the centre of a drawn node"); no assertion changes, and every caller
+     that presses a node of one title presses the same point as before.
+   - b. Change the assertion to compare with the pressed point's offset.
    - Recommendation: a.
-2. **`e2e/palette.spec.ts`, "a kind dragged from the palette and dropped on the canvas becomes a
-   node under the drop"** drops an epic and expects its top at `centre.y - NODE_HEIGHT / 2`. An
-   epic of G-9, a title, a progress bar, and a status badge, is at least 10 + 18 + 16 + 22 + 10 =
-   76 high.
-   - a. Read the dropped node's drawn height there too (`centre.y - node.height / 2`), and centre
-     each dropped node by the height of its type.
-   - b. Keep the test, and offset every drop by half the least height, so that a taller node
-     hangs below the drop rather than being centred on it.
+2. **`e2e/levels-of-detail.spec.ts`, "zooming through each threshold switches the level of
+   detail"**, line 22, expects at the near level `texts` to be `nodes + labels`, one text per node;
+   every node of the example now draws 4 to 12 texts (107 against 22). The middle level's
+   `texts == nodes` holds, since middle draws the titles alone.
+   - a. Compare with the texts the drawn nodes draw: `texts` equal to the sum of each node's
+     `texts.length` and the labels. What it verifies stays: at near every text of the nodes and
+     every label is bound.
+   - b. Load a graph of one-title nodes there, which stops the test from covering the example's
+     tree.
    - Recommendation: a.
-3. **`e2e/edge-styles.spec.ts`** compares the default tree's edges with a reference image. Not
-   open: the example keeps every node's middle where it is today, its top half its height above
-   its row's middle, so that the edges, which enter and leave at the middle of a side, and the
-   reference image stay as they are; the image then also proves the middles kept.
-
-The rest is ready to build once 1 and 2 are answered: the content per type in
-`examples/metric-tree/src/graph.ts`, the icon in the title's row (icon weight 1, title weight 9,
-as `content-click.spec.ts` lays one out) rather than a row of its own, the sidebar's form per
-type in `index.html` and `main.ts`, "Details" through `onContentClick`, the palette dropping each
-type's content, and the golden-path test in `example.spec.ts` covering every type through
-inspection; the one-title test of `node-content.spec.ts` moves to a node of one title loaded
-through `loaded`, which the human approved.
