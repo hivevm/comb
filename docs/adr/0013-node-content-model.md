@@ -37,7 +37,14 @@ registers and colours given as numbers.
   `progress` as segments, each a fraction and a colour; `badge` as text on a colour; `metric` as a
   caption, a value, and a trend with a text, a direction, and a colour; `action` as text with an
   identifier, its fields `text` and `id`, laid out and drawn as a text in the font of role body,
-  in a link colour.
+  in a link colour. A `badge`, its fields `text` and `color`, is laid out in the font of role
+  body on a pill as an edge label's: the pill lies at its column's left, as wide as its text is
+  drawn and 8 world units either side, at most the column, and as high as the body's line and 3
+  above and below, 22 with a line of 16; its text is cut to the column less the 16 of padding,
+  and the pill's corners are rounded by half its height. A badge's cell is its pill, so that a
+  press beside the pill in its column hits no element. Its text is drawn white or in the
+  near-black of the node's texts, `0x1F2430`, whichever has the higher contrast ratio with the
+  pill's colour by WCAG's relative luminance, white where the two are equal.
 - **Content replaces the title and the height:** a node is its identifier, its position, its
   width, and its content; its title is a `text` of role title, and the engine computes its height.
   `updateNode` replaces a node's content as a whole, checked as a load checks it.
@@ -63,7 +70,8 @@ registers and colours given as numbers.
   the size of the nodes before content. The engine states the padding, the gap between columns,
   and the least height; the shell states each role's line height.
 - **Levels of detail (ADR-0027):** *near* draws every element; *middle* draws the box and the
-  texts of role title, at the place near gives them, and no action; *far* draws no element.
+  texts of role title, at the place near gives them, and no action or badge; *far* draws no
+  element.
 - **Limits (Q-7):** the bridge refuses a node with more rows, a row with more columns, a text
   longer, or a load whose texts hold more code units in all than limits it states, each with a
   typed problem that names the node.
