@@ -78,6 +78,37 @@ test("a click on the title reports kind text and no action identifier", async ({
   expect(await selection(page)).toEqual({ kind: "node", id: "b" });
 });
 
+test("a click on a badge reports kind badge, and a click beside its pill in its column none", async ({
+  page,
+}) => {
+  // Verifies: ADR-0013
+  // A title, then a badge "Done" in a column of 196: its pill from (12, 28), 22 high, as wide as
+  // its text and 8 either side, far short of the column.
+  await open(page);
+  const content: NodeContent = [
+    [{ kind: "text", role: "title", text: "Bet" }],
+    [{ kind: "badge", text: "Done", color: 0x22c55e }],
+  ];
+  await loaded(page, { nodes: [{ ...node("b"), content }], edges: [] });
+  await page.evaluate(() => {
+    const w = window as unknown as { clicks: ContentClick[] };
+    w.clicks = [];
+    window.comb.onContentClick((click) => w.clicks.push(click));
+  });
+  const pill = await page.evaluate(async () => {
+    await window.comb.whenRendered();
+    return window.inspect().nodes[0]!.texts![1]!;
+  });
+  expect(pill.width).toBeLessThan(100);
+  await clickWorld(page, pill.x + pill.width / 2, pill.y + pill.height / 2);
+  expect(await clicks(page)).toEqual([{ node: "b", row: 1, column: 0, kind: "badge" }]);
+  expect(await selection(page)).toEqual({ kind: "node", id: "b" });
+  // Beside the pill, in the badge's column: the node is selected, no element clicked.
+  await clickWorld(page, 180, pill.y + pill.height / 2);
+  expect(await clicks(page)).toHaveLength(1);
+  expect(await selection(page)).toEqual({ kind: "node", id: "b" });
+});
+
 test("a press on an element that moves past 4 pixels drags the node and reports no click; within them it clicks", async ({
   page,
 }) => {

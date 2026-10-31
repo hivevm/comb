@@ -143,7 +143,7 @@ function nameOf(value: unknown, read: Reader): unknown {
 }
 
 /** An element of content as plain data, or `false` where it is no object; an action's identifier
- *  read as a text is, and read of no other kind. */
+ *  read as a text is, and a badge's colour as a number is, each read of no other kind. */
 function elementOf(read: Reader, value: unknown) {
   const fields = objectOf(value);
   if (!fields || Array.isArray(value)) return false;
@@ -154,6 +154,7 @@ function elementOf(read: Reader, value: unknown) {
     text: read.text(text),
   };
   if (kind === "action") element.id = read.text(fields.id);
+  if (kind === "badge") element.color = read.number(fields.color);
   // No key for a weight left out, which the bridge reads as 1, so that Comb keeps none either.
   if (weight !== undefined && weight !== null) element.weight = read.number(weight);
   return element;
@@ -261,18 +262,29 @@ function writeRow(
     const last = c === count - 1;
     if (typeof value !== "object" || value === null || Array.isArray(value))
       columns.noElement(last);
-    else {
-      const { kind, role, weight, text } = value as Fields;
-      // The kind, the role, and the weight cross as codes and a number, which the writer takes
-      // by `typeof` and by comparing a string with a name; an action's identifier is read as a
-      // text is, and counted with the texts.
-      const shown = read.text(text);
-      const id = kind === "action" ? read.text((value as Fields).id) : undefined;
-      columns.element(kind, role, weight, shown, id, last);
-      if (typeof shown === "string") counted(read, shown.length, node, limits);
-      if (typeof id === "string") counted(read, id.length, node, limits);
-    }
+    else writeElement(read, value as Fields, columns, limits, node, last);
   }
+}
+
+/** Writes `element`, an object, into `columns`, read once by `read`, ending the row where `last`. */
+function writeElement(
+  read: Reader,
+  element: Fields,
+  columns: NodeColumnWriter,
+  limits: Limits,
+  node: unknown,
+  last: boolean,
+) {
+  const { kind, role, weight, text } = element;
+  // The kind, the role, the weight, and a badge's colour cross as codes and numbers, which the
+  // writer takes by `typeof` and by comparing a string with a name; an action's identifier is
+  // read as a text is, and counted with the texts.
+  const shown = read.text(text);
+  const id = kind === "action" ? read.text(element.id) : undefined;
+  const color = kind === "badge" ? read.number(element.color) : undefined;
+  columns.element(kind, role, weight, color, shown, id, last);
+  if (typeof shown === "string") counted(read, shown.length, node, limits);
+  if (typeof id === "string") counted(read, id.length, node, limits);
 }
 
 /** A label: absent where null or undefined, `false` where no object. */

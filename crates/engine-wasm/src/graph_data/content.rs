@@ -2,8 +2,8 @@
 //! content crosses as and the content of a single node read through serde-wasm-bindgen, both
 //! checked by the one function below, and the content the engine keeps to lay out.
 //!
-//! `text` and `action` have columns and a code so far; each further kind of ADR-0013 adds its own
-//! with its ticket, in the places ADR-0034 gives them.
+//! `text`, `action`, and `badge` have columns and a code so far; each further kind of ADR-0013
+//! adds its own with its ticket, in the places ADR-0034 gives them.
 
 use std::fmt;
 
@@ -15,7 +15,7 @@ use tsify::Tsify;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use super::{
-    ContentElement, GraphDataProblem, NodeContent, TEXT_LIMIT, TextRole, bounds_fit, numbered,
+    ContentElement, GraphDataProblem, NodeContent, TEXT_LIMIT, TextRole, bounds_fit, numbered, rgb,
     utf16_length,
 };
 
@@ -43,6 +43,7 @@ pub(crate) const COLUMN_LIMIT: u32 = 6;
 pub enum KindCode {
     Text,
     Action,
+    Badge,
     Unnamed,
 }
 
@@ -52,6 +53,7 @@ pub enum KindCode {
 pub enum ElementKind {
     Text,
     Action,
+    Badge,
 }
 
 /// The element of a node a press hits (ADR-0013): its row and column, its kind, and for an
@@ -83,6 +85,7 @@ pub(crate) fn kind_code(name: &str) -> KindCode {
     match name {
         "text" => KindCode::Text,
         "action" => KindCode::Action,
+        "badge" => KindCode::Badge,
         _ => KindCode::Unnamed,
     }
 }
@@ -113,10 +116,11 @@ pub(crate) fn role_of(code: u8) -> Option<Role> {
 /// each node's rows in their order and each row's elements in theirs: the boundaries of each
 /// node's rows, one more than there are nodes; of each row's elements, one more than there are
 /// rows; per element its kind's code, its weight as the host application handed it, NaN for one
-/// of another type, and a text's role's code, 0 for another kind; the texts, every string an
-/// element shows, concatenated in pieces as every string column is, with their boundaries and per
-/// text whether it is a text; and the names, every string an element names and does not show, an
-/// action's identifier, as the texts are.
+/// of another type, a text's role's code, 0 for another kind, and a badge's colour as the host
+/// application handed it, NaN for one of another type and for another kind; the texts, every
+/// string an element shows, concatenated in pieces as every string column is, with their
+/// boundaries and per text whether it is a text; and the names, every string an element names and
+/// does not show, an action's identifier, as the texts are.
 #[derive(Clone, Copy)]
 pub struct ContentColumns<'a> {
     pub row_bounds: &'a [u32],
@@ -124,6 +128,7 @@ pub struct ContentColumns<'a> {
     pub kinds: &'a [u8],
     pub weights: &'a [f64],
     pub roles: &'a [u8],
+    pub colors: &'a [f64],
     pub texts: &'a [String],
     pub text_bounds: &'a [u32],
     pub text_valid: &'a [u8],
@@ -145,6 +150,7 @@ fn filled(kind: u8) -> (usize, usize) {
     match kind {
         k if k == KindCode::Text as u8 => (1, 0),
         k if k == KindCode::Action as u8 => (1, 1),
+        k if k == KindCode::Badge as u8 => (1, 0),
         _ => (0, 0),
     }
 }
@@ -213,7 +219,8 @@ impl ContentColumns<'_> {
     /// Whether the columns fit together for `nodes` nodes: the boundaries bound what follows them,
     /// the elements' columns are as long as there are elements, each code names a kind or a role,
     /// or none, each validity byte is 1 or 0, and there are as many texts and names as the
-    /// elements' kinds fill, a text for each `text` and a text and a name for each `action`.
+    /// elements' kinds fill, a text for each `text` and `badge` and a text and a name for each
+    /// `action`.
     pub(crate) fn fit(&self, nodes: usize) -> bool {
         let elements = self.kinds.len();
         let rows = self.element_bounds.len().saturating_sub(1);
@@ -227,6 +234,7 @@ impl ContentColumns<'_> {
             && runs_fit(self.element_bounds, rows, elements)
             && self.weights.len() == elements
             && self.roles.len() == elements
+            && self.colors.len() == elements
             && self
                 .kinds
                 .iter()
@@ -306,16 +314,17 @@ impl ContentColumns<'_> {
                     limit: COLUMN_LIMIT,
                 });
             }
-            let mut height: f64 = 0.0;
-            for (c, element) in elements.enumerate() {
+            let mut checked = [(false, 0.0); MAX_COLUMNS];
+            for (c, element) in elements.clone().enumerate() {
                 let at = At {
                     node: id,
                     row: numbered(r),
                     column: numbered(c),
                 };
-                height = height.max(self.check_element(element, &at, cursor, fonts)?);
+                let height = self.check_element(element, &at, cursor, fonts)?;
+                checked[c] = (self.kinds[element] == KindCode::Badge as u8, height);
             }
-            heights += height;
+            heights += layout::row_height_of(checked[..elements.len()].iter().copied());
         }
         Ok(layout::node_height([heights]))
     }
@@ -330,7 +339,7 @@ impl ContentColumns<'_> {
         fonts: &Fonts,
     ) -> Result<f64, GraphDataProblem> {
         let kind = self.kinds[element];
-        if kind != KindCode::Text as u8 && kind != KindCode::Action as u8 {
+        if kind == KindCode::Unnamed as u8 {
             return Err(GraphDataProblem::InvalidElementKind {
                 node: at.node(),
                 row: at.row,
@@ -351,6 +360,17 @@ impl ContentColumns<'_> {
             cursor.name += 1;
             check_string(self.names(), name, at, "id", cursor)?;
             return Ok(fonts.of(Role::Body).line_height());
+        }
+        if kind == KindCode::Badge as u8 {
+            self.check_text(at, cursor)?;
+            if !rgb(self.colors[element]) {
+                return Err(GraphDataProblem::InvalidContentColor {
+                    node: at.node(),
+                    row: at.row,
+                    column: at.column,
+                });
+            }
+            return Ok(layout::element_height(&Element::Badge { text: "" }, fonts));
         }
         let Some(role) = role_of(self.roles[element]) else {
             return Err(GraphDataProblem::InvalidRole {
@@ -438,6 +458,7 @@ pub struct ContentData {
     pub(crate) kinds: Vec<u8>,
     pub(crate) weights: Vec<f64>,
     pub(crate) roles: Vec<u8>,
+    pub(crate) colors: Vec<f64>,
     pub(crate) texts: Vec<String>,
     pub(crate) text_bounds: Vec<u32>,
     pub(crate) text_valid: Vec<u8>,
@@ -497,6 +518,7 @@ impl ContentData {
             kinds: &self.kinds,
             weights: &self.weights,
             roles: &self.roles,
+            colors: &self.colors,
             texts: &self.texts,
             text_bounds: &self.text_bounds,
             text_valid: &self.text_valid,
@@ -575,8 +597,12 @@ impl ContentData {
     /// The element at `element`, as the layout reads it.
     fn element(&self, element: usize) -> Element<'_> {
         let text = self.text(element);
-        if self.kinds[element] == KindCode::Action as u8 {
+        let kind = self.kinds[element];
+        if kind == KindCode::Action as u8 {
             return Element::Action { text };
+        }
+        if kind == KindCode::Badge as u8 {
+            return Element::Badge { text };
         }
         let role = role_of(self.roles[element]).unwrap_or(Role::Body);
         Element::Text { role, text }
@@ -636,28 +662,30 @@ impl ContentData {
         self.lay_out(node, width, fonts, cells, rows, placed);
         let hit = layout::element_at(cells, placed, x, y, titles_only)?;
         let (row, column, element, name) = self.elements_of(node).nth(hit)?;
-        let action = self.kinds[element] == KindCode::Action as u8;
+        let (kind, action) = match self.element(element) {
+            Element::Action { .. } => (ElementKind::Action, Some(self.name(name).to_owned())),
+            Element::Badge { .. } => (ElementKind::Badge, None),
+            Element::Text { .. } => (ElementKind::Text, None),
+        };
         Some(ElementHit {
             row,
             column,
-            kind: if action {
-                ElementKind::Action
-            } else {
-                ElementKind::Text
-            },
-            action: action.then(|| self.name(name).to_owned()),
+            kind,
+            action,
         })
     }
 }
 
 /// The texts of the elements a query placed, as the shell draws them (ADR-0013): per element its
-/// kind's code, the code of the role whose font draws it, and what is drawn of its text, the text or as much of it as fits followed by an
-/// ellipsis, those strings one after another in `texts`, with their boundaries in UTF-16 code
-/// units in `bounds`, one more than there are elements.
+/// kind's code, the code of the role whose font draws it, its colour as `0xRRGGBB`, a badge's
+/// pill's, 0 for an element of no colour, and what is drawn of its text, the text or as much of it
+/// as fits followed by an ellipsis, those strings one after another in `texts`, with their
+/// boundaries in UTF-16 code units in `bounds`, one more than there are elements.
 #[derive(Debug, Default)]
 pub struct Drawn {
     pub kinds: Vec<u8>,
     pub roles: Vec<u8>,
+    pub colors: Vec<u32>,
     pub texts: String,
     pub bounds: Vec<u32>,
     units: u32,
@@ -668,6 +696,7 @@ impl Drawn {
     pub(crate) fn clear(&mut self) {
         self.kinds.clear();
         self.roles.clear();
+        self.colors.clear();
         self.texts.clear();
         self.bounds.clear();
         self.bounds.push(0);
@@ -676,9 +705,9 @@ impl Drawn {
 }
 
 impl ContentData {
-    /// Pushes onto `drawn` the kind, the role, and the drawn text of each element of the node at
-    /// `node`, which `placed` holds in the order of its rows and theirs, as `lay_out` placed them;
-    /// an action's role is body, whose font draws it.
+    /// Pushes onto `drawn` the kind, the role, the colour, and the drawn text of each element of
+    /// the node at `node`, which `placed` holds in the order of its rows and theirs, as `lay_out`
+    /// placed them; an action's and a badge's role is body, whose font draws it.
     pub(crate) fn draw(&self, node: usize, placed: &[Placed], drawn: &mut Drawn) {
         if node + 1 >= self.row_bounds.len() {
             return;
@@ -688,11 +717,13 @@ impl ContentData {
         for (element, at) in elements.zip(placed) {
             let kind = self.kinds[element];
             drawn.kinds.push(kind);
-            drawn.roles.push(if kind == KindCode::Action as u8 {
-                RoleCode::Body as u8
-            } else {
-                self.roles[element]
-            });
+            let (role, color) = match self.element(element) {
+                Element::Action { .. } => (RoleCode::Body as u8, 0),
+                Element::Badge { .. } => (RoleCode::Body as u8, self.color(element)),
+                Element::Text { .. } => (self.roles[element], 0),
+            };
+            drawn.roles.push(role);
+            drawn.colors.push(color);
             let text = self.text(element);
             let mut units = 0;
             let end = text
@@ -713,6 +744,17 @@ impl ContentData {
         }
     }
 
+    /// The colour of the badge at `element`, which the bridge checked.
+    fn color(&self, element: usize) -> u32 {
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "an integer from 0 to 0xFFFFFF, as the content's check made sure"
+        )]
+        let color = self.colors[element] as u32;
+        color
+    }
+
     /// The height the content of the node at `node` lays out to in `fonts`, as the `f32` the engine
     /// keeps; that of no rows for a node without content, as only the tests build one.
     pub(crate) fn height(&self, node: usize, fonts: &Fonts) -> f32 {
@@ -722,9 +764,11 @@ impl ContentData {
             .into_iter()
             .flatten();
         let heights = rows.map(|row| {
-            view.elements(row)
-                .map(|element| layout::element_height(&self.element(element), fonts))
-                .fold(0.0, f64::max)
+            layout::row_height_of(view.elements(row).map(|element| {
+                let element = self.element(element);
+                let badge = matches!(element, Element::Badge { .. });
+                (badge, layout::element_height(&element, fonts))
+            }))
         });
         super::kept_height(layout::node_height(heights))
     }
@@ -745,6 +789,11 @@ impl ContentData {
                 Element::Action { .. } => ContentElement::Action {
                     text,
                     id: self.name(name).to_owned(),
+                    weight,
+                },
+                Element::Badge { .. } => ContentElement::Badge {
+                    text,
+                    color: self.color(element),
                     weight,
                 },
                 Element::Text { role, .. } => ContentElement::Text {
@@ -780,6 +829,7 @@ impl ContentData {
         self.kinds.extend(&node.kinds);
         self.weights.extend(&node.weights);
         self.roles.extend(&node.roles);
+        self.colors.extend(&node.colors);
         let values = super::values(&node.texts, &node.text_bounds).expect("texts of one node");
         for value in values {
             let last = self.text_bounds[self.text_bounds.len() - 1];
@@ -805,7 +855,8 @@ pub type Shape = (u32, Option<u32>);
 /// handed it over, read through serde-wasm-bindgen as the snapshot hands a load's over in
 /// columns: a row that is no list as a row of no elements, an element that is no object as one
 /// of no kind, each element's kind and role by their codes, a weight left out as 1 and one of
-/// another type as NaN, a text of another type as none; and the first shape it could not flatten.
+/// another type as NaN, a badge's colour left out or of another type as NaN, a text of another
+/// type as none; and the first shape it could not flatten.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct ContentInput {
     pub(crate) data: ContentData,
@@ -834,15 +885,16 @@ impl ContentInput {
         data.row_bounds[1] += 1;
     }
 
-    /// Adds an element of `kind`, `weight`, and `role`, the role crossing as 0 for a kind other
-    /// than `text`; where it is a `text` or an `action`, its text, and where it is an `action`, its
-    /// identifier `id`, each none for one of another type, which crosses empty and marked as no
-    /// string.
+    /// Adds an element of `kind`, `weight`, and `role`, the role crossing as 0 for an action and a
+    /// badge, and of the colour `color`, NaN for a kind other than `badge`; where it is a
+    /// `text`, an `action`, or a `badge`, its text, and where it is an `action`, its identifier
+    /// `id`, each none for one of another type, which crosses empty and marked as no string.
     pub(crate) fn push(
         &mut self,
         kind: KindCode,
         weight: f64,
         role: u8,
+        color: f64,
         text: Option<&str>,
         id: Option<&str>,
     ) {
@@ -850,7 +902,16 @@ impl ContentInput {
         data.kinds.push(kind as u8);
         data.weights.push(weight);
         data.roles
-            .push(if kind == KindCode::Action { 0 } else { role });
+            .push(if matches!(kind, KindCode::Action | KindCode::Badge) {
+                0
+            } else {
+                role
+            });
+        data.colors.push(if kind == KindCode::Badge {
+            color
+        } else {
+            f64::NAN
+        });
         let (texts, names) = filled(kind as u8);
         if texts > 0 {
             push_string(
@@ -952,13 +1013,14 @@ impl<'de> Visitor<'de> for RowSeed<'_> {
                         kind,
                         cells.weight,
                         role as u8,
+                        cells.color,
                         cells.text.as_deref(),
                         cells.id.as_deref(),
                     );
                 }
                 None => {
                     content.shape.get_or_insert((row, Some(column)));
-                    content.push(KindCode::Unnamed, f64::NAN, 0, None, None);
+                    content.push(KindCode::Unnamed, f64::NAN, 0, f64::NAN, None, None);
                 }
             }
             column += 1;
@@ -1005,6 +1067,7 @@ struct Fields {
     kind: Option<String>,
     role: Option<String>,
     weight: f64,
+    color: f64,
     text: Option<String>,
     id: Option<String>,
 }
@@ -1030,6 +1093,7 @@ impl<'de> Visitor<'de> for ElementVisitor {
             kind: None,
             role: None,
             weight: 1.0,
+            color: f64::NAN,
             text: None,
             id: None,
         };
@@ -1040,6 +1104,10 @@ impl<'de> Visitor<'de> for ElementVisitor {
                 "weight" => {
                     let weight = map.next_value::<Lenient<Option<f64>>>()?.0;
                     fields.weight = weight.map_or(f64::NAN, |weight| weight.unwrap_or(1.0));
+                }
+                "color" => {
+                    let color = map.next_value::<Lenient<f64>>()?.0;
+                    fields.color = color.unwrap_or(f64::NAN);
                 }
                 "text" => fields.text = map.next_value::<Lenient<String>>()?.0,
                 "id" => fields.id = map.next_value::<Lenient<String>>()?.0,

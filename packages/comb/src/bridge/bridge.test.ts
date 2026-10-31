@@ -13,7 +13,7 @@ import {
   type PlainEdgePatch,
   type PlainPatch,
 } from ".";
-import { listsOf, snapshotOf } from "../api/snapshot";
+import { listsOf, nodeSnapshotOf, patchOf, snapshotOf } from "../api/snapshot";
 import { EdgeField, KindCode, NodeField, RoleCode, SideCode } from "../../wasm/engine.js";
 
 let bridge: Bridge;
@@ -61,8 +61,8 @@ function writeContent(columns: NodeColumnWriter, content: unknown) {
         if (typeof element !== "object" || element === null || Array.isArray(element))
           columns.noElement(last);
         else {
-          const { kind, role, weight, text, id } = element as Record<string, unknown>;
-          columns.element(kind, role, weight, text, id, last);
+          const { kind, role, weight, color, text, id } = element as Record<string, unknown>;
+          columns.element(kind, role, weight, color, text, id, last);
         }
       });
   }
@@ -493,6 +493,86 @@ describe("bridge actions", () => {
   });
 });
 
+/** A node `b` of a title and, below it, a badge showing `text` on `color`. */
+const withBadge = (text: unknown, color: unknown) => ({
+  ...node("b", 300, 0),
+  content: [[{ kind: "text", role: "title", text: "Bet" }], [{ kind: "badge", text, color }]],
+});
+
+describe("bridge badges", () => {
+  test("a badge crosses with its colour among the numbers, is drawn near on it, and comes back as given", () => {
+    // Verifies: ADR-0013, ADR-0034
+    const { snapshot } = snapshotted([node("a", 0, 0), withBadge("Done", 0x22c55e)]);
+    const c = snapshot.nodes.content;
+    expect([...c.kinds]).toEqual([KindCode.Text, KindCode.Text, KindCode.Badge]);
+    expect([...c.colors]).toEqual([Number.NaN, Number.NaN, 0x22c55e]);
+    expect([...c.roles]).toEqual([RoleCode.Title, RoleCode.Title, 0]);
+    expect(c.names).toEqual([]);
+    // A body whose glyphs advance by 7: "Done" on a pill 28 + 2 * 8 wide and 16 + 2 * 3 high,
+    // at the left of its column of 76 below the title.
+    bridge.setFont("body", FONT);
+    expect(bridge.loadGraph(snapshot)).toBe(2);
+    const near = bridge.query(everywhere, "near", 1, 0).content;
+    expect([...near.kinds]).toEqual([KindCode.Text, KindCode.Text, KindCode.Badge]);
+    expect([...near.roles]).toEqual([RoleCode.Title, RoleCode.Title, RoleCode.Body]);
+    expect([...near.colors]).toEqual([0, 0, 0x22c55e]);
+    expect([...near.rects.subarray(8, 12)]).toEqual([12, 28, 44, 22]);
+    // The padding the pill was laid out with, by which the shell places the text on it.
+    expect(near.badgePadding).toEqual({ x: 8, y: 3 });
+    expect(near.texts).toBe("aBetDone");
+    expect(bridge.nodeBuffers().sizes[3]).toBe(64);
+    expect(bridge.content(1)[1]).toEqual([
+      { kind: "badge", text: "Done", color: 0x22c55e, weight: 1 },
+    ]);
+    // A press on the pill reports the badge; beside it in its column, none.
+    expect(bridge.hit(320, 35, 1, "near", false)).toMatchObject({
+      kind: "node",
+      slot: 1,
+      element: { row: 1, column: 0, kind: "badge" },
+    });
+    expect(bridge.hit(370, 35, 1, "near", false)).not.toHaveProperty("element");
+    // The middle level hits no badge, as it draws none.
+    expect(bridge.hit(320, 35, 1, "middle", false)).not.toHaveProperty("element");
+  });
+});
+
+describe("bridge badges refused", () => {
+  test("a badge whose colour is no integer in 0 to 0xffffff, or whose text is malformed, is refused naming the node", () => {
+    // Verifies: ADR-0013, ADR-0034, Q-7
+    const at = { node: "b", row: 1, column: 0 };
+    const color = { kind: "invalidContentColor", ...at };
+    const cases: [unknown, unknown, object][] = [
+      ["Done", -1, color],
+      ["Done", 0x1000000, color],
+      ["Done", 0.5, color],
+      ["Done", Number.NaN, color],
+      ["Done", "#22c55e", color],
+      ["Done", undefined, color],
+      [5, 0, { kind: "invalidContentText", ...at, field: "text" }],
+      ["\ud800", 0, { kind: "invalidContentText", ...at, field: "text" }],
+      ["d".repeat(1001), 0, { kind: "contentTextTooLong", ...at, field: "text", limit: 1000 }],
+    ];
+    for (const [text, shade, problem] of cases) {
+      const { snapshot } = snapshotted([node("a", 0, 0), withBadge(text, shade)]);
+      expect(outcome(() => bridge.loadGraph(snapshot))).toEqual(problem);
+      // Through `addNode` and `updateNode` alike, as the snapshot reads a single node.
+      bridge.loadGraph(snapshotted([node("a", 0, 0)]).snapshot);
+      const single = nodeSnapshotOf(withBadge(text, shade), limits()).snapshot;
+      expect(outcome(() => bridge.addNode(single))).toEqual(problem);
+      const content = patchOf({ content: withBadge(text, shade).content }, limits());
+      expect(outcome(() => bridge.updateNode(0, "b", content))).toEqual(problem);
+    }
+    // Both ends of the colours are taken.
+    for (const shade of [0, 0xffffff]) {
+      const { snapshot } = snapshotted([node("a", 0, 0), withBadge("Done", shade)]);
+      expect(bridge.loadGraph(snapshot)).toBe(2);
+      expect(bridge.content(1)[1]).toEqual([
+        { kind: "badge", text: "Done", color: shade, weight: 1 },
+      ]);
+    }
+  });
+});
+
 // Identifiers of 0 to 16 code units, characters beyond the basic plane among them; titles and
 // label texts of none, columns of no code units.
 const PIECED_IDS = [
@@ -573,7 +653,7 @@ describe("bridge pieces of a string column", () => {
     // Verifies: ADR-0034
     expect(() => nodeColumns(1, 16).node("x".repeat(17), 0, 0, 1)).toThrow(RangeError);
     expect(() =>
-      nodeColumns(1, 16).element("text", "title", 1, "x".repeat(17), undefined, true),
+      nodeColumns(1, 16).element("text", "title", 1, undefined, "x".repeat(17), undefined, true),
     ).toThrow(RangeError);
     expect(() =>
       edgeColumns(1, 16).edge(
@@ -644,7 +724,7 @@ describe("bridge columns of a load's content", () => {
     // Verifies: ADR-0034
     const content = [
       [
-        { kind: "badge", role: "title", text: "x", weight: 1 },
+        { kind: "progress", role: "title", text: "x", weight: 1 },
         textOf("headline", "y"),
         textOf("body", 5, "1"),
       ],

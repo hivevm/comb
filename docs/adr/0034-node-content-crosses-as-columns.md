@@ -125,7 +125,8 @@ reads and writes as typed-array views created anew after every engine call.
   hand. The metrics of a role's font cross once, before the first load, through `setFont(role,
   codes, advances, fallback, lineHeight)`, the role's code, a `Uint32Array` of code points, a
   `Float64Array` of their advances, and two numbers; `textLimit`, `rowLimit`, and `columnLimit`
-  hand the snapshot the limits it cuts a load by.
+  hand the snapshot the limits it cuts a load by, and `badgePaddingX` and `badgePaddingY` hand
+  the shell the padding of a badge's pill, by which it places the badge's text (ADR-0013).
 - **Graph data of a load (changed):** `loadGraph` takes its nodes and edges as columns, one per
   field, each in slot order, which `api`'s snapshot builds while it reads the host application's
   graph data once (ADR-0028). A node crosses as its identifier, `x`, `y`, `width`, and its content
@@ -254,7 +255,8 @@ reads and writes as typed-array views created anew after every engine call.
     is drawn of each text, the text or as much of it as fits followed by an ellipsis, as one
     string `contentTexts` returns in one copy per query, with the boundaries of the texts in it as
     `Uint32Array`; and per placed element its kind's code as `Uint8Array`, which says how the
-    shell draws it, an action's role's code that of body, whose font draws it;
+    shell draws it, an action's and a badge's role's code that of body, whose font draws it, and
+    its colour as `0xRRGGBB` in `Uint32Array`, a badge's pill's, 0 for an element of no colour;
   - the edge mesh of that query: vertex positions, distances along the path, and dash patterns as
     `Float32Array`, colours as RGBA bytes in `Uint32Array`, and triangle indices as `Uint32Array`;
   - for inspection, the slots of the edges the query found as `Uint32Array`, with the ends of each

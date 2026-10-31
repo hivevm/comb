@@ -1331,11 +1331,12 @@ function installKinds() {
     invalidContentShape: nodes({ content: [5] }),
     tooManyRows: nodes({ content: Array.from({ length: 9 }, () => [title]) }),
     tooManyColumns: nodes({ content: [Array.from({ length: 7 }, () => title)] }),
-    invalidElementKind: element({ kind: "badge" }),
+    invalidElementKind: element({ kind: "progress" }),
     invalidWeight: element({ weight: 0 }),
     invalidRole: element({ role: "headline" }),
     invalidContentText: element({ text: 5 }),
     contentTextTooLong: element({ text: "x".repeat(1001) }),
+    invalidContentColor: element({ kind: "badge", color: 0x1000000 }),
     unknownPatchField: () => window.comb.updateNode("a", { id: "b" } as never),
     duplicateNode: load({ nodes: [nodeAt("a"), nodeAt("a")], edges: [] }),
     duplicateEdge: load({ nodes: two, edges: [anEdge, anEdge] }),
@@ -1396,5 +1397,5 @@ test("load and the methods that edit the graph throw every kind of GraphDataProb
   const thrown = await page.evaluate(everyKind);
   expect(errors).toEqual([]);
   expect(thrown).toEqual(Object.fromEntries(Object.keys(thrown).map((kind) => [kind, kind])));
-  expect(Object.keys(thrown).length).toBe(30);
+  expect(Object.keys(thrown).length).toBe(31);
 });

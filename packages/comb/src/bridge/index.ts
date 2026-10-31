@@ -7,6 +7,8 @@ import init, {
   ArrowCode,
   checkGraphSize,
   checkContentBudget,
+  badgePaddingX,
+  badgePaddingY,
   checkIdBudget,
   columnLimit,
   contentBudget,
@@ -73,7 +75,8 @@ export const PIECE_BOUND = 2 ** 28;
  *  elements in slot order, each node's rows in their order and each row's elements in theirs:
  *  the boundaries of each node's rows, one more than there are nodes; of each row's elements,
  *  one more than there are rows; per element its kind's code, its weight, NaN for one of another
- *  type, and a text's role's code, 0 for another kind; the texts, every string an element shows,
+ *  type, a text's role's code, 0 for another kind, and a badge's colour, NaN for one of another
+ *  type and for another kind; the texts, every string an element shows,
  *  as a string column with per text whether it is a text, 1 or 0; and the names, every string an
  *  element names and does not show, an action's identifier, as the texts. */
 export interface ContentColumns {
@@ -82,6 +85,7 @@ export interface ContentColumns {
   readonly kinds: Uint8Array;
   readonly weights: Float64Array;
   readonly roles: Uint8Array;
+  readonly colors: Float64Array;
   readonly texts: string[];
   readonly textBounds: Uint32Array;
   readonly textValid: Uint8Array;
@@ -124,12 +128,14 @@ export interface NodeColumnWriter {
   /** The node's content is no list: refused by its type, and the node holds no rows. */
   noContent(): void;
   /** The next element of the row: an element's kind and role cross as their codes, its weight as
-   *  given, 1 where it is absent, NaN where it is of another type, and a text or an action's
-   *  identifier `id` that is no string as none, each refused at its rule. */
+   *  given, 1 where it is absent, NaN where it is of another type, a badge's colour as given, NaN
+   *  where it is absent or of another type, and a text or an action's identifier `id` that is no
+   *  string as none, each refused at its rule. */
   element(
     kind: unknown,
     role: unknown,
     weight: unknown,
+    color: unknown,
     text: unknown,
     id: unknown,
     endsRow: boolean,
@@ -198,6 +204,7 @@ type Typed = Uint8Array | Uint32Array | Float64Array;
 const KINDS: Readonly<Record<ContentElement["kind"], KindCode>> = {
   text: KindCode.Text,
   action: KindCode.Action,
+  badge: KindCode.Badge,
 };
 const ROLES: Readonly<Record<TextRole, RoleCode>> = {
   title: RoleCode.Title,
@@ -213,6 +220,8 @@ function kindCode(kind: unknown): KindCode {
       return KINDS.text;
     case "action":
       return KINDS.action;
+    case "badge":
+      return KINDS.badge;
     default:
       return KindCode.Unnamed;
   }
@@ -257,6 +266,7 @@ class NodeWriter implements NodeColumnWriter {
   private kinds: Uint8Array;
   private weights: Float64Array;
   private roles: Uint8Array;
+  private colors: Float64Array;
   private textValid: Uint8Array;
   private readonly texts: ReturnType<typeof stringColumn>;
   private nameValid = new Uint8Array(16);
@@ -277,6 +287,7 @@ class NodeWriter implements NodeColumnWriter {
     this.kinds = new Uint8Array(count);
     this.weights = new Float64Array(count);
     this.roles = new Uint8Array(count);
+    this.colors = new Float64Array(count);
     this.textValid = new Uint8Array(count);
     this.texts = stringColumn(count, bound);
     this.names = stringColumn(16, bound);
@@ -349,6 +360,7 @@ class NodeWriter implements NodeColumnWriter {
       this.kinds = grown(this.kinds);
       this.weights = grown(this.weights);
       this.roles = grown(this.roles);
+      this.colors = grown(this.colors);
       this.textValid = grown(this.textValid);
     }
     this.column++;
@@ -360,15 +372,18 @@ class NodeWriter implements NodeColumnWriter {
     this.refuse(NodeField.Element, this.row, this.column);
     const at = this.next();
     [this.kinds[at], this.weights[at], this.roles[at]] = [KindCode.Unnamed, Number.NaN, 0];
+    this.colors[at] = Number.NaN;
     if (endsRow) this.endRow();
   }
 
   /** The next element, of the fields read of it: a `text` fills its role and a text, an
-   *  `action` a text and a name, and any other kind none (ADR-0034). */
+   *  `action` a text and a name, a `badge` its colour and a text, and any other kind none
+   *  (ADR-0034). */
   element(
     kind: unknown,
     role: unknown,
     weight: unknown,
+    color: unknown,
     text: unknown,
     id: unknown,
     endsRow: boolean,
@@ -378,8 +393,9 @@ class NodeWriter implements NodeColumnWriter {
     this.kinds[at] = code;
     this.weights[at] = absent(weight) ? WEIGHT : typeof weight === "number" ? weight : Number.NaN;
     this.roles[at] = code === KindCode.Text ? roleCode(role) : 0;
-    if (code === KindCode.Text || code === KindCode.Action)
-      this.textValid[this.valid++] = Number(this.texts.add(text));
+    this.colors[at] = code === KindCode.Badge && typeof color === "number" ? color : Number.NaN;
+    // Every kind built so far shows one text.
+    if (code !== KindCode.Unnamed) this.textValid[this.valid++] = Number(this.texts.add(text));
     if (code === KindCode.Action) {
       if (this.namesValid === this.nameValid.length) this.nameValid = grown(this.nameValid);
       this.nameValid[this.namesValid++] = Number(this.names.add(id));
@@ -407,6 +423,7 @@ class NodeWriter implements NodeColumnWriter {
       kinds: this.kinds.subarray(0, this.elements),
       weights: this.weights.subarray(0, this.elements),
       roles: this.roles.subarray(0, this.elements),
+      colors: this.colors.subarray(0, this.elements),
       texts: this.texts.pieces(),
       textBounds: this.texts.bounds(),
       textValid: this.textValid.subarray(0, this.valid),
@@ -707,7 +724,8 @@ const DETAILS: Record<MeshDetail, Detail> = {
  *  of its elements in the other columns, one more than there are found nodes; per element, its
  *  node's elements in the order of its rows and theirs, its rectangle `x, y, width, height`
  *  relative to its node's top-left corner, its kind's code, the role whose font draws its text,
- *  body for an action, and what is drawn of its text, the text or as much of it as fits followed
+ *  body for an action and a badge, its colour as `0xRRGGBB`, a badge's pill's and 0 for an
+ *  element of no colour, and what is drawn of its text, the text or as much of it as fits followed
  *  by an ellipsis, those strings one after another in `texts`, cut by `textBounds`. At the far
  *  level it holds no node. */
 export interface Placed {
@@ -715,8 +733,11 @@ export interface Placed {
   rects: Float32Array;
   kinds: Uint8Array;
   roles: Uint8Array;
+  colors: Uint32Array;
   texts: string;
   textBounds: Uint32Array;
+  /** The space between a badge's text and its pill's left side and its top, the engine's. */
+  badgePadding: { x: number; y: number };
 }
 
 /** The kind of each code of `KindCode` the bridge accepts, by the code. */
@@ -1045,6 +1066,7 @@ function load(engine: Engine, { nodes, edges }: GraphSnapshot): number {
     c.kinds,
     c.weights,
     c.roles,
+    c.colors,
     c.texts,
     c.textBounds,
     c.textValid,
@@ -1104,6 +1126,7 @@ function queried(
   const detail = DETAILS[engine.query(rect, LEVELS[level], pixel, labelReach)];
   // Read before the views: each is a call into the engine.
   const origin = { x: engine.originX(), y: engine.originY() };
+  const badgePadding = { x: badgePaddingX(), y: badgePaddingY() };
   // The texts only where the query placed any, which it does at the near and middle level.
   const texts = engine.contentTextBoundsLen() > 1 ? engine.contentTexts() : "";
   return {
@@ -1115,8 +1138,10 @@ function queried(
       rects: f32(engine.contentRectsPtr(), engine.contentRectsLen()),
       kinds: u8(engine.contentKindsPtr(), engine.contentKindsLen()),
       roles: u8(engine.contentRolesPtr(), engine.contentRolesLen()),
+      colors: u32(engine.contentColorsPtr(), engine.contentColorsLen()),
       texts,
       textBounds: u32(engine.contentTextBoundsPtr(), engine.contentTextBoundsLen()),
+      badgePadding,
     },
     labels: u32(engine.visibleLabelsPtr(), engine.visibleLabelsLen()),
     labelPoints: f32(engine.labelPointsPtr(), engine.labelPointsLen()),

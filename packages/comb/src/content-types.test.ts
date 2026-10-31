@@ -3,8 +3,8 @@
 // `switch` on `element.kind` without a `default` covers them. The type check decides it: each
 // table below holds one entry per kind or role, and lacks one for a kind the union gains and holds
 // one for a kind it loses, which the type check refuses either way. Of the six kinds of ADR-0013,
-// `text` and `action` are built so far; each further kind joins the table with the ticket that
-// builds it.
+// `text`, `action`, and `badge` are built so far; each further kind joins the table with the
+// ticket that builds it.
 // Verifies: ADR-0013
 import { describe, expect, test } from "bun:test";
 import type { ContentClick, ContentElement, NodeContent, NodeData, TextRole } from ".";
@@ -18,6 +18,7 @@ type Of<K extends Kind> = Extract<ContentElement, { kind: K }>;
 const READ: { [K in Kind]: (element: Of<K>) => string } = {
   text: (element) => `${element.role}: ${element.text} (${element.weight ?? 1})`,
   action: (element) => `${element.id}: ${element.text} (${element.weight ?? 1})`,
+  badge: (element) => `#${element.color.toString(16)}: ${element.text} (${element.weight ?? 1})`,
 };
 
 /** Whether `A` and `B` are the same type. */
@@ -31,24 +32,39 @@ const CLICKED: Same<ContentClick["kind"], Kind> = true;
 const ROLES: { [R in TextRole]: R } = { title: "title", body: "body", caption: "caption" };
 
 describe("the type of node content", () => {
-  test("it admits exactly the kinds of element the engine draws, text and action for now", () => {
-    expect(Object.keys(READ)).toEqual(["text", "action"]);
+  test("it admits exactly the kinds of element the engine draws, text, action, and badge for now", () => {
+    expect(Object.keys(READ)).toEqual(["text", "action", "badge"]);
     expect(Object.keys(ROLES)).toEqual(["title", "body", "caption"]);
     const content: NodeContent = [
       [{ kind: "text", role: "title", text: "A" }],
       [{ kind: "action", text: "Details", id: "details", weight: 2 }],
+      [{ kind: "badge", text: "Done", color: 0x22c55e }],
     ];
     const node: NodeData = { id: "a", x: 0, y: 0, width: 220, content };
-    const read = (element: ContentElement) =>
-      element.kind === "text" ? READ.text(element) : READ.action(element);
-    expect(node.content.flat().map(read)).toEqual(["title: A (1)", "details: Details (2)"]);
+    const read = (element: ContentElement) => {
+      switch (element.kind) {
+        case "text":
+          return READ.text(element);
+        case "action":
+          return READ.action(element);
+        case "badge":
+          return READ.badge(element);
+      }
+    };
+    expect(node.content.flat().map(read)).toEqual([
+      "title: A (1)",
+      "details: Details (2)",
+      "#22c55e: Done (1)",
+    ]);
     // @ts-expect-error A kind the engine does not draw is no element.
-    const badge: ContentElement = { kind: "badge", role: "title", text: "B" };
+    const progress: ContentElement = { kind: "progress", role: "title", text: "B" };
+    // @ts-expect-error A badge is drawn on a colour.
+    const colourless: ContentElement = { kind: "badge", text: "B" };
     // @ts-expect-error A role of no font is no role.
     const headline: ContentElement = { kind: "text", role: "headline", text: "C" };
     // @ts-expect-error An action names what a click on it means.
     const unnamed: ContentElement = { kind: "action", text: "D" };
-    expect([badge, headline, unnamed]).toHaveLength(3);
+    expect([progress, colourless, headline, unnamed]).toHaveLength(4);
     expect(CLICKED).toBe(true);
   });
 });

@@ -20,7 +20,7 @@ import type { GraphView } from "../store";
 import { EdgesContainer, type MeshSize } from "./edges";
 import { EdgeFill } from "./edges-canvas";
 import { LabelsContainer, type LabelView } from "./labels";
-import { NodeGraphic, NodesContainer, type DrawnText } from "./nodes";
+import { NodeGraphic, NodesContainer, type DrawnPill, type DrawnText } from "./nodes";
 import {
   ConnectionLine,
   ConnectorsLayer,
@@ -50,7 +50,8 @@ export interface SceneSnapshot {
   level: Level;
   /** Every node drawn, by a view or, at the far level, as a particle, at the height its content
    *  lays out to; `texts` are the texts a view draws, each placed relative to its node, with the
-   *  width its text object draws at, `content` the node's content as the engine keeps it, built
+   *  width and the fill its text object draws at, `pills` the pills of badges its `Graphics`
+   *  draws, `content` the node's content as the engine keeps it, built
    *  when asked, and `title` the text of its first title; a particle draws none of them. */
   nodes: {
     id: string;
@@ -60,7 +61,8 @@ export interface SceneSnapshot {
     height: number;
     title?: string;
     content?: NodeContent;
-    texts?: (DrawnText & { drawnWidth: number })[];
+    texts?: (Omit<DrawnText, "pill"> & { drawnWidth: number; fill: unknown })[];
+    pills?: DrawnPill[];
   }[];
   /** How many nodes are drawn as particles. */
   particles: number;
@@ -286,6 +288,7 @@ export class Scene {
           y: view.y,
           ...this.contentOf((view as NodeGraphic).slot),
           texts: (view as NodeGraphic).inspected(),
+          pills: (view as NodeGraphic).drawnPills(),
         })),
         ...this.particles.drawn(),
       ],
