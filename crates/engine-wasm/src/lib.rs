@@ -18,7 +18,7 @@
 
 mod graph_data;
 
-use comb_engine::content::{Cell, Font, Fonts, Placed};
+use comb_engine::content::{Cell, Font, Fonts, Placed, drawn_at};
 use comb_engine::geometry::Point;
 use comb_engine::geometry::Rect;
 use comb_engine::graph::{
@@ -831,8 +831,9 @@ impl Engine {
     }
 
     /// The element of the content of the node in `slot` whose rectangle holds `point`, of those
-    /// drawn at `level` (ADR-0013).
+    /// drawn at `level`, by the rule the query places them by (`drawn_at`, ADR-0013).
     fn element_at(&self, slot: u32, point: Point, level: DetailLevel) -> Option<ElementHit> {
+        // The far level draws no element (`drawn_at`): no node is laid out for nothing.
         if level == DetailLevel::Far {
             return None;
         }
@@ -846,7 +847,7 @@ impl Engine {
             width,
             &self.fonts,
             (point.x - x, point.y - y),
-            level == DetailLevel::Middle,
+            level.into(),
             &mut cells,
             &mut rows,
             &mut placed,
@@ -887,7 +888,9 @@ impl Engine {
     }
 
     /// Lays out the content of the nodes the last query found, at the near and the middle level,
-    /// into the buffers of placed elements; at the far level, none (ADR-0013, ADR-0027).
+    /// and places into the buffers of placed elements those drawn at `level` (`drawn_at`): at the
+    /// middle level the texts of role title alone, at the rectangles the near level gives them; at
+    /// the far level, which draws none, the buffers hold no node (ADR-0013, ADR-0027).
     fn lay_out_found(&mut self, level: DetailLevel) {
         self.content_bounds.clear();
         self.placed.clear();
@@ -896,14 +899,19 @@ impl Engine {
             self.content_bounds.push(0);
             let mut cells: Vec<Cell> = Vec::new();
             let mut rows = Vec::new();
+            let mut laid = Vec::new();
             let sizes = self.graph.sizes();
+            let level = level.into();
             for &slot in &self.visible.nodes {
                 let width = sizes[slot as usize * 2];
                 let (content, node) = self.content.of(slot);
                 let fonts = &self.fonts;
-                let start = self.placed.len();
-                content.lay_out(node, width, fonts, &mut cells, &mut rows, &mut self.placed);
-                content.draw(node, &self.placed[start..], fonts, &mut self.drawn);
+                laid.clear();
+                content.lay_out(node, width, fonts, &mut cells, &mut rows, &mut laid);
+                content.draw(node, &cells, &laid, level, fonts, &mut self.drawn);
+                let drawn = cells.iter().zip(&laid);
+                let drawn = drawn.filter(|(cell, _)| drawn_at(&cell.element, level));
+                self.placed.extend(drawn.map(|(_, at)| *at));
                 self.content_bounds
                     .push(graph_data::numbered(self.placed.len()));
             }
@@ -1765,6 +1773,121 @@ mod tests {
         assert_eq!(at(320.0, 59.0, DetailLevel::Near), None);
         assert_eq!(at(320.0, 50.0, DetailLevel::Middle), None);
         assert_eq!(at(320.0, 50.0, DetailLevel::Far), None);
+    }
+
+    /// An engine of `a`, 100 wide at (0, 0), of one title, and `b`, 200 wide at (300, 0), of an
+    /// element of every kind: a title beside a badge, a body beside an action and an icon, a
+    /// progress bar, a metric, and a second title.
+    fn every_kind() -> Engine {
+        use graph_data::tests::load_into;
+        let mut engine = fonted();
+        let ellipsis = [u32::from(comb_engine::content::ELLIPSIS)];
+        let caption = RoleCode::Caption as u8;
+        assert_eq!(
+            engine.set_font(caption, &ellipsis, &[8.0], 5.0, 14.0),
+            Ok(())
+        );
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+        let (title, body) = (RoleCode::Title as u8, RoleCode::Body as u8);
+        let mut content = graph_data::ContentInput::new();
+        content.push(KindCode::Text, 1.0, title, f64::NAN, Some("Bet"), None);
+        content.push(KindCode::Badge, 1.0, 0, 34_816.0, Some("Done"), None);
+        content.end_row();
+        content.push(KindCode::Text, 1.0, body, f64::NAN, Some("b"), None);
+        content.push(KindCode::Action, 1.0, 0, f64::NAN, Some("Go"), Some("go"));
+        content.push(KindCode::Icon, 1.0, 0, f64::NAN, None, Some("bet"));
+        content.end_row();
+        content.push(KindCode::Progress, 1.0, 0, f64::NAN, None, None);
+        content.push_segment(0.5, 34_816.0);
+        content.end_row();
+        let down = DirectionCode::Down as u8;
+        let texts = [Some("Revenue"), Some("42"), Some("+3%")];
+        content.push_metric(1.0, down, f64::from(RED), texts);
+        content.end_row();
+        content.push(KindCode::Text, 1.0, title, f64::NAN, Some("Two"), None);
+        content.end_row();
+        data.nodes[1].content = content.into();
+        data.nodes[1].width = 200.0.into();
+        let nodes = graph_data::OwnedColumns::of(data.nodes.iter().map(Some));
+        let none = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
+        engine
+    }
+
+    /// The query of `level` over the whole of `every_kind`, where a pixel is a world unit.
+    fn every_kind_at(engine: &mut Engine, level: DetailLevel) {
+        let rect = RectInput {
+            min_x: -10.0,
+            min_y: -10.0,
+            max_x: 600.0,
+            max_y: 300.0,
+        };
+        engine.query_rect(&rect, level, 1.0, 0.0).unwrap();
+    }
+
+    #[test]
+    fn the_middle_level_places_the_texts_of_role_title_alone_where_the_near_level_does() {
+        // Verifies: ADR-0013
+        let mut engine = every_kind();
+        every_kind_at(&mut engine, DetailLevel::Near);
+        // `a`'s title, then `b`'s eight elements in the order of its rows.
+        assert_eq!(engine.content_bounds, [0, 1, 9]);
+        let near_rects = engine.content_rects.clone();
+        let rect_of = |element: usize| near_rects[element * 4..element * 4 + 4].to_vec();
+        every_kind_at(&mut engine, DetailLevel::Middle);
+        // `a`'s title, then `b`'s two titles, its first and its last element, where near has
+        // them; no other element, nor its bar, its parts, or its arrow.
+        assert_eq!(engine.content_bounds, [0, 1, 3]);
+        assert_eq!(
+            engine.content_rects,
+            [rect_of(0), rect_of(1), rect_of(8)].concat()
+        );
+        let (t, title) = (KindCode::Text as u8, RoleCode::Title as u8);
+        let drawn = &engine.drawn;
+        assert_eq!(
+            (&drawn.kinds[..], &drawn.roles[..], &drawn.colors[..]),
+            (&[t, t, t][..], &[title, title, title][..], &[0, 0, 0][..])
+        );
+        assert_eq!(
+            (&drawn.texts[..], &drawn.bounds[..]),
+            ("xBetTwo", &[0, 1, 4, 7][..])
+        );
+        assert_eq!(drawn.bar_bounds, [0, 0, 0, 0]);
+        assert_eq!(drawn.part_bounds, [0, 0, 0, 0]);
+        assert_eq!(drawn.arrow_bounds, [0, 0, 0, 0]);
+        let empty: [&[f32]; 3] = [&drawn.bars, &drawn.parts, &drawn.arrows];
+        assert!(empty.iter().all(|values| values.is_empty()), "{empty:?}");
+        assert!(drawn.bar_colors.is_empty() && drawn.part_ends.is_empty());
+    }
+
+    #[test]
+    fn the_hit_test_names_at_each_level_an_element_the_query_places_there_and_none_else() {
+        // Verifies: ADR-0013
+        let mut engine = every_kind();
+        every_kind_at(&mut engine, DetailLevel::Near);
+        let near_rects = engine.content_rects[4..].to_vec();
+        let centre = |r: &[f32]| {
+            let [x, y, w, h] = [r[0], r[1], r[2], r[3]].map(f64::from);
+            (300.0 + x + w / 2.0, y + h / 2.0)
+        };
+        // A press on the badge, `b`'s second element, at the middle level hits none.
+        let (x, y) = centre(&near_rects[4..8]);
+        assert_eq!(
+            element(&engine, 1, x, y, DetailLevel::Near),
+            hit(0, 1, ElementKind::Badge, None)
+        );
+        assert_eq!(element(&engine, 1, x, y, DetailLevel::Middle), None);
+        // At each level, a press in the middle of each of `b`'s elements as near places them
+        // hits an element where, and only where, the query of that level places that rectangle.
+        for level in [DetailLevel::Near, DetailLevel::Middle, DetailLevel::Far] {
+            every_kind_at(&mut engine, level);
+            let placed: Vec<&[f32]> = engine.content_rects.chunks(4).skip(1).collect();
+            for rect in near_rects.chunks(4) {
+                let (x, y) = centre(rect);
+                let hit = element(&engine, 1, x, y, level);
+                assert_eq!(hit.is_some(), placed.contains(&rect), "{level:?} {rect:?}");
+            }
+        }
     }
 
     #[test]

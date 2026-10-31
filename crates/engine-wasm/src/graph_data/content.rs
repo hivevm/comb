@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::fmt;
 
 use comb_engine::content::{self as layout, Cell, Direction, Element, Fonts, Kind, Placed, Role};
+use comb_engine::graph::Level;
 use serde::Serialize;
 use serde::de::{self, IgnoredAny, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -950,9 +951,9 @@ impl ContentData {
     }
 
     /// The element of the node at `node`, `width` wide and laid out in `fonts`, whose rectangle
-    /// holds the point `(x, y)` relative to the node's top-left corner, of the elements drawn,
-    /// texts of role title alone where `titles_only` (ADR-0013); `cells`, `rows`, and `placed` are
-    /// the caller's to reuse.
+    /// holds the point `(x, y)` relative to the node's top-left corner, of the elements drawn at
+    /// `level` (`layout::drawn_at`, ADR-0013); `cells`, `rows`, and `placed` are the caller's to
+    /// reuse.
     #[expect(
         clippy::too_many_arguments,
         reason = "the node, its point, and the buffers the caller reuses, as `lay_out` takes them"
@@ -963,14 +964,14 @@ impl ContentData {
         width: f32,
         fonts: &Fonts,
         (x, y): (f64, f64),
-        titles_only: bool,
+        level: Level,
         cells: &mut Vec<Cell<'a>>,
         rows: &mut Vec<u32>,
         placed: &mut Vec<Placed>,
     ) -> Option<ElementHit> {
         placed.clear();
         self.lay_out(node, width, fonts, cells, rows, placed);
-        let hit = layout::element_at(cells, placed, x, y, titles_only)?;
+        let hit = layout::element_at(cells, placed, x, y, level)?;
         let (row, column, element, at) = self.elements_of(node).nth(hit)?;
         let (kind, action) = match self.element(element, at.text) {
             Element::Action { .. } => (ElementKind::Action, Some(self.name(at.name).to_owned())),
@@ -1079,13 +1080,26 @@ impl Drawn {
 
 impl ContentData {
     /// Pushes onto `drawn` the kind, the role, the colour, the drawn text, the pieces of the bar,
-    /// and the parts and the arrow of each element of the node at `node`, which `placed` holds in
-    /// the order of its rows and theirs, as `lay_out` placed them in `fonts`; an action's, a
-    /// badge's, a progress bar's, a metric's, and an icon's role is body, whose font draws the
-    /// first two, whose line the third and the last lie in, and the value and the trend's text of
-    /// the fourth; an icon's text is its registered name.
-    pub(crate) fn draw(&self, node: usize, placed: &[Placed], fonts: &Fonts, drawn: &mut Drawn) {
-        for ((_, _, element, strings), at) in self.elements_of(node).zip(placed) {
+    /// and the parts and the arrow of each element of the node at `node` drawn at `level`
+    /// (`layout::drawn_at`), of `cells` at `placed` in the order of its rows and theirs, as
+    /// `lay_out` laid them out in `fonts`; an action's, a badge's, a progress bar's, a metric's,
+    /// and an icon's role is body, whose font draws the first two, whose line the third and the
+    /// last lie in, and the value and the trend's text of the fourth; an icon's text is its
+    /// registered name.
+    pub(crate) fn draw(
+        &self,
+        node: usize,
+        cells: &[Cell],
+        placed: &[Placed],
+        level: Level,
+        fonts: &Fonts,
+        drawn: &mut Drawn,
+    ) {
+        let laid = self.elements_of(node).zip(cells).zip(placed);
+        for ((_, _, element, strings), at) in laid
+            .filter(|((_, cell), _)| layout::drawn_at(&cell.element, level))
+            .map(|((element, _), at)| (element, at))
+        {
             let kind = self.kinds[element];
             drawn.kinds.push(kind);
             let shown = self.element(element, strings.text);

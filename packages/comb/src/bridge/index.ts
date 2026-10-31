@@ -873,8 +873,9 @@ const DETAILS: Record<MeshDetail, Detail> = {
  *  element's text starts; and per element the boundaries of its arrows in `arrowBounds`, a
  *  metric's one where its column holds it, each arrow's triangle as three points `x, y` relative
  *  to its node in `arrows`. An icon's rectangle is its square, and its text in `texts` its
- *  registered name, whole, which the shell draws as the image registered under it. At the far
- *  level it holds no node. */
+ *  registered name, whole, which the shell draws as the image registered under it. Of each node
+ *  it holds the elements drawn at the query's level, at the middle level its texts of role title
+ *  alone; at the far level it holds no node. */
 export interface Placed {
   bounds: Uint32Array;
   rects: Float32Array;

@@ -175,8 +175,10 @@ The functional core and its shell follow
   by their weights, each text advanced glyph by glyph from the left, without kerning, a character
   the shell hands no advance for by the font's fallback, and cut before an ellipsis where it
   passes its column, and the node as high as the padding of 10 above and below and its rows, at
-  least 64; `element_at` finds the element whose rectangle holds a point of the
-  node, of those drawn at a level, which the bridge's `hit` names beside the node it hits;
+  least 64; `drawn_at` is the one rule of which elements a level draws, every element near, the
+  texts of role title middle, none far, by which the bridge's query places a found node's elements
+  and `element_at` finds the element whose rectangle holds a point of the node, which the bridge's
+  `hit` names beside the node it hits;
   `graph`'s `resize_node` gives a node a new height and re-places its
   edges and its place in the index. It depends on no crate that reaches the browser. `graph` keeps
   each edge's path and its bounds as of its last move, so that a query computes no bounds;
@@ -200,21 +202,21 @@ The functional core and its shell follow
   every point the engine derives stays within `f32`, `query` takes a rectangle, a level of detail,
   the size of a screen pixel, at most 2^114 world units for a stroke, and how far an edge label's
   pill reaches from its point, and writes the found node slots, the edge-label slots and points (at
-  the near level only), at the near and the middle level where the elements of each found node lie
-  and their kinds, roles, and colours (`contentBounds…`, `contentRects…`, `contentKinds…`,
-  `contentRoles…`, `contentColors…`), the pieces of each progress bar's bar and their colours
-  (`contentBarBounds…`, `contentBars…`, `contentBarColors…`), the parts of each metric and the
-  end of each part's text (`contentPartBounds…`, `contentParts…`, `contentPartEnds…`) and its
-  arrow (`contentArrowBounds…`, `contentArrows…`), what of each text is drawn, and each icon's
-  registered name whole, as one string `contentTexts` returns, cut by `contentTextBounds…`, the
-  found edge slots, and the edge mesh into buffers the engine owns, the label points and the
-  mesh's positions relative to the query's origin, which `originX` and `originY` read
-  ([ADR-0034](adr/0034-node-content-crosses-as-columns.md)), and returns the mesh's detail,
-  complete or coarsened, and refuses a pixel that is not a finite number above zero; `drawnEdges`
-  computes the ends of the found edges when inspection asks, as they lie then, and `hit` names what
-  a press at a point hits, a connector where the shell asks for connectors, a label, a node, or an
-  edge by its slot, or nothing, as one generated value, and refuses a pixel as `query` does and a
-  point that is not finite;
+  the near level only), at the near and the middle level where the elements of each found node
+  drawn at the level lie (`drawn_at`), and their kinds, roles, and colours (`contentBounds…`,
+  `contentRects…`, `contentKinds…`, `contentRoles…`, `contentColors…`), the pieces of each
+  progress bar's bar and their colours (`contentBarBounds…`, `contentBars…`, `contentBarColors…`),
+  the parts of each metric and the end of each part's text (`contentPartBounds…`, `contentParts…`,
+  `contentPartEnds…`) and its arrow (`contentArrowBounds…`, `contentArrows…`), what of each text is
+  drawn, and each icon's registered name whole, as one string `contentTexts` returns, cut by
+  `contentTextBounds…`, the found edge slots, and the edge mesh into buffers the engine owns, the
+  label points and the mesh's positions relative to the query's origin, which `originX` and
+  `originY` read ([ADR-0034](adr/0034-node-content-crosses-as-columns.md)), and returns the mesh's
+  detail, complete or coarsened, and refuses a pixel that is not a finite number above zero;
+  `drawnEdges` computes the ends of the found edges when inspection asks, as they lie then, and
+  `hit` names what a press at a point hits, a connector where the shell asks for connectors, a
+  label, a node, or an edge by its slot, or nothing, as one generated value, and refuses a pixel as
+  `query` does and a point that is not finite;
   `setLabelSize` takes the measure of a label's pill, `labelPoint` names where a label lies, and
   `moveLabel` places a dragged label, one dragged beyond the world's limit stopping there, refuses
   a point that is not finite as `hit` does, and returns its path parameter and offset; it generates
@@ -326,13 +328,12 @@ The functional core and its shell follow
   query placed its part, and its arrow, which a third `Graphics` per view fills in the trend's
   colour, inspection reading it back likewise, and an icon as a pooled `Sprite` of the texture the
   host application registered under its name (`render/icons.ts`), fitted into its square with its
-  aspect kept, none where none is registered, inspection reading the sprites back, every text,
-  bar, arrow, and icon at the near level and
-  those of role title alone at the middle level, what the query placed; a view draws anew only
-  where its node, which the store replaces when its content changes, its size, its selection, or
-  the level changed; a registration of an icon has every bound view draw its icons anew at once,
-  without a query, so that it draws once the engine is lost too, and destroys the texture it
-  replaced, a view bound later drawing its icons anew;
+  aspect kept, none where none is registered, inspection reading the sprites back, what the
+  query placed and nothing of the level; a view draws anew only where its node, which the store
+  replaces when its content changes, its size, its selection, or the number of elements the
+  query placed of it changed; a registration of an icon has every bound view draw its icons anew
+  at once, without a query, so that it draws once the engine is lost too, and destroys the
+  texture it replaced, a view bound later drawing its icons anew;
   `fontMetricsOf` of `nodes.ts` measures each role's glyph advances, which `createComb` hands the
   engine once, before the first load, with the line height of each role, which the render layer
   states rather than measures.
