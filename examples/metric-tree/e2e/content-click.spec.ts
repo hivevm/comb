@@ -134,3 +134,27 @@ test("an element is clicked only where it is drawn: at the middle level the titl
   expect(await clicks(page)).toHaveLength(1);
   expect(await selection(page)).toEqual({ kind: "node", id: "b" });
 });
+
+test("a host that replaces the content when it hears of the selection hears of the element under the release", async ({
+  page,
+}) => {
+  // Verifies: ADR-0013
+  await openClicks(page);
+  // Once `b` is selected, its second row holds two body texts, the action's place the second's.
+  await page.evaluate(() => {
+    window.comb.onSelectionChange((selected) => {
+      if (selected?.kind !== "node") return;
+      window.comb.updateNode(selected.id, {
+        content: [
+          [{ kind: "text", role: "title", text: "Bet" }],
+          [
+            { kind: "text", role: "body", text: "Body" },
+            { kind: "text", role: "body", text: "Other" },
+          ],
+        ],
+      });
+    });
+  });
+  await clickWorld(page, ...ACTION);
+  expect(await clicks(page)).toEqual([{ node: "b", row: 1, column: 1, kind: "text" }]);
+});

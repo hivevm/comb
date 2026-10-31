@@ -34,9 +34,10 @@ export interface Gesture {
   readonly grabs: boolean;
   /** Follows the pointer to the screen point `(x, y)`. */
   move(x: number, y: number): void;
-  /** Ends it, `released` where the pointer was released, not ended by a later press; tells
-   *  what it changed (ADR-0030). */
-  end(released: boolean): void;
+  /** Ends it, `released` where the pointer was released, not ended by a later press or a
+   *  cancel, and `at` the screen point of a release on the canvas, none outside it; tells what it
+   *  changed (ADR-0030). */
+  end(released: boolean, at?: { x: number; y: number }): void;
   /** Whether the change `state` records took its subject from under it. */
   taken(state: GraphState): boolean;
   /** Ends it without a word, once its subject was taken. */

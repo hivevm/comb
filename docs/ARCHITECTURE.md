@@ -236,8 +236,9 @@ The functional core and its shell follow
   a release or at a later press, and whether a change of the graph takes its subject, which ends it
   without a word; `guard.ts` holds the guard every handler runs under once the engine is lost.
   `node-drag.ts` selects a node on press and drags it once the pointer has moved more than the
-  slop of 4 screen pixels (`SLOP` of `gesture.ts`), and on a release within it tells a click on
-  the element of the node's content the hit named, through the `click` of the gestures' `Context`;
+  slop of 4 screen pixels (`SLOP` of `gesture.ts`), and on a release on the canvas within it
+  tells a click on the element of the node's content under the release, hit anew, through the
+  `click` of the gestures' `Context`; a cancelled pointer ends a gesture as no release;
   `pan.ts` selects an edge on press and pans once the pointer has moved beyond the same slop, or
   clears the selection on the empty canvas and pans; `index.ts` zooms around the pointer and sets
   the cursor over what a press would hit;

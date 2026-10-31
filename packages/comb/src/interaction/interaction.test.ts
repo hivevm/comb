@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Application } from "pixi.js";
-import { attachInteraction } from ".";
+import { attachInteraction, type Connect } from ".";
 import type { Bridge } from "../bridge";
 import { ConnectionLine } from "../render/connectors";
 import { createGraphStore, type GraphData, type GraphStore, type NodeContent } from "../store";
@@ -43,6 +43,11 @@ function fakeApp() {
   return { app: app as unknown as Application, emit };
 }
 
+/** Attaches interaction to `app` over `store` and `bridge`, connections proposed to `connect`
+ *  where given, and no click heard. */
+const attached = (app: Application, store: GraphStore, bridge: Bridge, connect?: Connect) =>
+  attachInteraction(app, store, bridge, connect, () => {});
+
 /** A bridge with one node under every point, which records the moves it is asked for. */
 function fakeBridge(
   hit: { kind: string; slot?: number; side?: string } | ((x: number) => unknown) = {
@@ -71,7 +76,7 @@ describe("interaction", () => {
     });
     const { app, emit } = fakeApp();
     const { bridge, moves } = fakeBridge();
-    attachInteraction(app, store, bridge);
+    attached(app, store, bridge);
     const { nodes, edges, slots } = store.getState();
     emit("pointerdown", 10, 10);
     const { positionsVersion } = store.getState();
@@ -104,7 +109,7 @@ function dragged() {
     edges: [],
   });
   const { app, emit } = fakeApp();
-  attachInteraction(app, store, fakeBridge().bridge);
+  attached(app, store, fakeBridge().bridge);
   const changes: unknown[] = [];
   store.subscribe((state, previous) => {
     if (state.change !== previous.change) changes.push(state.change);
@@ -202,23 +207,31 @@ describe("interaction ends a drag the graph took its node from", () => {
   });
 });
 
-describe("interaction tells a click on an element of a node's content", () => {
-  /** A store holding node `a`, with interaction attached over a bridge that hits `element` of
-   *  `a` everywhere; `clicks` lists every click told, `moves` every move of the node. */
-  function pressed(element?: { row: number; column: number; kind: string; action?: string }) {
-    const store = createGraphStore();
-    load(store, {
-      nodes: [{ id: "a", x: 0, y: 0, width: 100, content: titled("A") }],
-      edges: [],
-    });
-    const { app, emit } = fakeApp();
-    const { bridge, moves } = fakeBridge({ kind: "node", slot: 0, ...(element && { element }) });
-    const clicks: unknown[] = [];
-    attachInteraction(app, store, bridge, undefined, (click) => clicks.push(click));
-    return { store, emit, clicks, moves };
-  }
-  const action = { row: 1, column: 0, kind: "action", action: "details" };
+/** An element a press hits, as the fake bridge names it. */
+type Hit = { row: number; column: number; kind: string; action?: string };
+/** A store holding nodes `a` and `b`, with interaction attached over a bridge that hits
+ *  `element` of `a` everywhere, or what `hit` names at a screen `x`; `clicks` lists every click
+ *  told, `moves` every move of a node. */
+function pressed(element?: Hit, hit?: (x: number) => unknown) {
+  const store = createGraphStore();
+  load(store, {
+    nodes: [
+      { id: "a", x: 0, y: 0, width: 100, content: titled("A") },
+      { id: "b", x: 300, y: 0, width: 100, content: titled("B") },
+    ],
+    edges: [],
+  });
+  const { app, emit } = fakeApp();
+  const { bridge, moves } = fakeBridge(
+    hit ?? { kind: "node", slot: 0, ...(element && { element }) },
+  );
+  const clicks: unknown[] = [];
+  attachInteraction(app, store, bridge, undefined, (click) => clicks.push(click));
+  return { store, emit, clicks, moves };
+}
+const action = { row: 1, column: 0, kind: "action", action: "details" };
 
+describe("interaction tells a click on an element of a node's content", () => {
   test("a release within 4 pixels of the press on an element tells it and selects the node", () => {
     // Verifies: ADR-0013
     const { store, emit, clicks, moves } = pressed(action);
@@ -260,6 +273,62 @@ describe("interaction tells a click on an element of a node's content", () => {
     expect(clicks).toEqual([]);
     expect(store.getState().selection).toEqual({ kind: "node", id: "a" });
   });
+});
+
+describe("interaction tells a click where the pointer is released", () => {
+  test("the click names the element under the release, asked anew, and none off it or off the node", () => {
+    // Verifies: ADR-0013
+    // At x = 10 the action of `a`; at 11 its title; at 12 its padding; at 13 node `b`.
+    const title = { row: 0, column: 0, kind: "text" };
+    const under = (x: number) =>
+      [
+        { kind: "node", slot: 0, element: action },
+        { kind: "node", slot: 0, element: title },
+        { kind: "node", slot: 0 },
+        { kind: "node", slot: 1, element: title },
+      ][x - 10];
+    const { emit, clicks } = pressed(undefined, under);
+    for (const x of [11, 12, 13]) {
+      emit("pointerdown", 10, 10);
+      emit("pointerup", x, 10);
+    }
+    expect(clicks).toEqual([{ node: "a", row: 0, column: 0, kind: "text" }]);
+  });
+
+  test("a release outside the canvas or a cancelled pointer tells no click, and a cancel ends the drag", () => {
+    // Verifies: ADR-0013, ADR-0030
+    const { store, emit, clicks, moves } = pressed(action);
+    const changes: unknown[] = [];
+    store.subscribe((state, previous) => {
+      if (state.change !== previous.change) changes.push(state.change);
+    });
+    emit("pointerdown", 10, 10);
+    emit("pointerupoutside", 10, 10);
+    emit("pointerdown", 10, 10);
+    emit("pointercancel", 10, 10);
+    // After the cancel, the pointer moves the node no more.
+    emit("globalpointermove", 40, 10);
+    emit("pointerup", 40, 10);
+    expect(clicks).toEqual([]);
+    expect(moves).toEqual([]);
+    expect(changes).toEqual([]);
+  });
+
+  test("a cancel during a drag ends it where the drag left the node", () => {
+    // Verifies: ADR-0030
+    const { store, emit, clicks, moves } = pressed(action);
+    const changes: unknown[] = [];
+    store.subscribe((state, previous) => {
+      if (state.change !== previous.change) changes.push(state.change);
+    });
+    emit("pointerdown", 10, 10);
+    emit("globalpointermove", 20, 10);
+    emit("pointercancel", 20, 10);
+    emit("globalpointermove", 40, 10);
+    expect(moves).toEqual([{ slots: [0], dx: 10, dy: 0 }]);
+    expect(changes).toEqual([{ kind: "nodeMoved", by: "user", id: "a" }]);
+    expect(clicks).toEqual([]);
+  });
 
   test("a press ended by a later press, its release never having come, tells no click", () => {
     // Verifies: ADR-0013
@@ -284,7 +353,7 @@ describe("interaction on an edge", () => {
       edges: [{ id: "a-b", source: "a", target: "b" }],
     });
     const { app, emit } = fakeApp();
-    attachInteraction(app, store, fakeBridge({ kind: "edge", slot: 0 }).bridge);
+    attached(app, store, fakeBridge({ kind: "edge", slot: 0 }).bridge);
     emit("globalpointermove", 200, 20);
     expect(app.canvas.style.cursor).toBe("pointer");
     const { viewport } = store.getState();
@@ -303,7 +372,7 @@ describe("interaction on an edge", () => {
     // Verifies: ADR-0025
     const store = createGraphStore();
     const { app, emit } = fakeApp();
-    attachInteraction(app, store, fakeBridge({ kind: "none" }).bridge);
+    attached(app, store, fakeBridge({ kind: "none" }).bridge);
     emit("globalpointermove", 200, 20);
     expect(app.canvas.style.cursor).toBe("");
     emit("pointerdown", 200, 20);
@@ -342,7 +411,7 @@ describe("the hit test", () => {
           translate() {},
         } as unknown as Bridge;
         const { app, emit } = fakeApp();
-        const interaction = attachInteraction(app, store, bridge, connects ? () => {} : undefined);
+        const interaction = attached(app, store, bridge, connects ? () => {} : undefined);
         // The screen point (130, 60) shows the world point (50, 20), a screen pixel half a unit.
         const asked = [50, 20, 0.5, "near", connects];
         emit("globalpointermove", 130, 60);
@@ -371,7 +440,7 @@ describe("interaction keeps the point a connection is dragged to", () => {
     const hit = (x: number) =>
       x <= 100 ? { kind: "connector", slot: 0, side: "right" } : { kind: "none" };
     const { bridge } = fakeBridge(hit);
-    const interaction = attachInteraction(app, store, bridge, () => {});
+    const interaction = attached(app, store, bridge, () => {});
     emit("pointerdown", 230, 60);
     const line = new ConnectionLine();
     // The first move leaves a's connector for the empty canvas: the connection is over nothing.
@@ -425,7 +494,7 @@ describe("interaction writes a connection whose target changed", () => {
         ? { kind: "connector", slot: 0, side: "right" }
         : { kind: "connector", slot: 1, side: x < 350 ? "top" : "right" };
     const proposals: unknown[] = [];
-    attachInteraction(app, store, fakeBridge(hit).bridge, (proposal) => proposals.push(proposal));
+    attached(app, store, fakeBridge(hit).bridge, (proposal) => proposals.push(proposal));
     emit("pointerdown", 100, 20);
     emit("globalpointermove", 300, 0);
     expect(store.getState().connection?.target).toEqual({ slot: 1, side: "top" });
@@ -462,7 +531,7 @@ describe("interaction writes a connection whose compatibility changed", () => {
       x < 200 ? { kind: "connector", slot: 0, side: "right" } : { kind: "node", slot: 1 };
     let edges = new Uint32Array(0);
     const bridge = { ...fakeBridge(hit).bridge, edgesAt: () => edges } as unknown as Bridge;
-    attachInteraction(app, store, bridge, () => {});
+    attached(app, store, bridge, () => {});
     emit("pointerdown", 100, 20);
     emit("globalpointermove", 320, 20);
     expect(store.getState().connection?.compatible).toBe(true);
@@ -498,7 +567,7 @@ describe("interaction connects", () => {
         ? { kind: "connector", slot: 0, side: "right" }
         : { kind: "connector", slot: 1, side: "left" };
     const proposals: unknown[] = [];
-    attachInteraction(app, store, fakeBridge(hit).bridge, (proposal) => proposals.push(proposal));
+    attached(app, store, fakeBridge(hit).bridge, (proposal) => proposals.push(proposal));
     emit("pointerdown", 100, 20);
     emit("globalpointermove", 300, 20);
     expect(store.getState().connection?.target).toEqual({ slot: 1, side: "left" });
@@ -530,7 +599,7 @@ describe("interaction connects", () => {
           ? { kind: "connector", slot: 0, side: "right" }
           : { kind: "connector", slot: 1, side: "left" };
       const proposals: unknown[] = [];
-      attachInteraction(app, store, fakeBridge(hit).bridge, (proposal) => proposals.push(proposal));
+      attached(app, store, fakeBridge(hit).bridge, (proposal) => proposals.push(proposal));
       emit("pointerdown", 100, 20);
       emit("globalpointermove", 300, 20);
       if (taken === "a load") load(store, graph);

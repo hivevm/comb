@@ -24,7 +24,7 @@ import {
 import { clampScale, fitViewport, toWorld } from "../store/viewport";
 import { Scene } from "../render/scene";
 import { fontMetricsOf } from "../render/nodes";
-import { listenersOf, type GraphChange } from "./changes";
+import { contentClicksOf, listenersOf, type GraphChange } from "./changes";
 import { engineOf, type EngineSource } from "./engine";
 import { editorsOf } from "./editors";
 import type { Limits } from "./snapshot";
@@ -216,35 +216,6 @@ function worldPointerOf(store: GraphStore, app: Application): Comb["worldPointAt
     if (![clientX, clientY].every(Number.isFinite)) throw new RangeError("comb: point not finite");
     const at = canvasPointAt(canvas, screen, clientX, clientY);
     return toWorld(store.getState().viewport, at.x, at.y);
-  };
-}
-
-/** `onContentClick` of one Comb, and the function that tells its listeners of a click: each is
- *  told, a listener that throws keeping no other from being told, and the first error is thrown
- *  on once all were. */
-function contentClicksOf(): {
-  onContentClick: Comb["onContentClick"];
-  tell(click: ContentClick): void;
-} {
-  const listeners = new Set<(click: ContentClick) => void>();
-  return {
-    onContentClick(listener) {
-      // A registration of its own, so that one listener registered twice is told twice.
-      const registration = (click: ContentClick) => listener(click);
-      listeners.add(registration);
-      return () => void listeners.delete(registration);
-    },
-    tell(click) {
-      const failed: unknown[] = [];
-      for (const listener of [...listeners]) {
-        try {
-          listener(click);
-        } catch (error) {
-          failed.push(error);
-        }
-      }
-      if (failed.length > 0) throw failed[0];
-    },
   };
 }
 
