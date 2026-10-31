@@ -32,10 +32,11 @@ use tsify::{Ts, Tsify};
 use wasm_bindgen::prelude::*;
 
 pub use graph_data::{
-    Arrow, ArrowCode, ContentElement, EdgeField, EdgeInput, EdgePatch, ElementHit, ElementKind,
-    Field, GraphDataProblem, GraphList, KindCode, LabelInput, MAX_COLUMNS, MAX_CONTENT_UNITS,
-    MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_ROWS, MAX_SEGMENTS, MAX_TEXT, NodeContent, NodeField,
-    NodeInput, NodePatch, Pair, RoleCode, Segment, Side, SideCode, TextRole,
+    Arrow, ArrowCode, ContentElement, DirectionCode, EdgeField, EdgeInput, EdgePatch, ElementHit,
+    ElementKind, Field, GraphDataProblem, GraphList, KindCode, LabelInput, MAX_COLUMNS,
+    MAX_CONTENT_UNITS, MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_ROWS, MAX_SEGMENTS, MAX_TEXT,
+    NodeContent, NodeField, NodeInput, NodePatch, Pair, RoleCode, Segment, Side, SideCode,
+    TextRole, Trend, TrendDirection,
 };
 
 use graph_data::{
@@ -462,6 +463,7 @@ impl Engine {
         kinds: Vec<u8>,
         weights: Vec<f64>,
         roles: Vec<u8>,
+        directions: Vec<u8>,
         colors: Vec<f64>,
         segment_bounds: Vec<u32>,
         fractions: Vec<f64>,
@@ -533,6 +535,7 @@ impl Engine {
             kinds,
             weights,
             roles,
+            directions,
             colors,
             segment_bounds,
             fractions,
@@ -902,7 +905,7 @@ impl Engine {
                 let fonts = &self.fonts;
                 let start = self.placed.len();
                 content.lay_out(node, width, fonts, &mut cells, &mut rows, &mut self.placed);
-                content.draw(node, &self.placed[start..], &mut self.drawn);
+                content.draw(node, &self.placed[start..], fonts, &mut self.drawn);
                 self.content_bounds
                     .push(graph_data::numbered(self.placed.len()));
             }
@@ -1049,6 +1052,74 @@ impl Engine {
     #[wasm_bindgen(js_name = contentBarColorsLen)]
     pub fn content_bar_colors_len(&self) -> usize {
         self.drawn.bar_colors.len()
+    }
+
+    /// Where the buffer starts that `query` writes, per placed element, the boundaries of its parts
+    /// in `contentParts…` into: one more than there are placed elements, a metric's caption, value,
+    /// and trend's text, and no part of another kind (ADR-0013).
+    #[wasm_bindgen(js_name = contentPartBoundsPtr)]
+    pub fn content_part_bounds_ptr(&self) -> *const u32 {
+        self.drawn.part_bounds.as_ptr()
+    }
+
+    /// How many boundaries the buffer of the parts' boundaries holds.
+    #[wasm_bindgen(js_name = contentPartBoundsLen)]
+    pub fn content_part_bounds_len(&self) -> usize {
+        self.drawn.part_bounds.len()
+    }
+
+    /// Where the buffer starts that `query` writes each part's rectangle into, `x, y, width,
+    /// height` relative to its node.
+    #[wasm_bindgen(js_name = contentPartsPtr)]
+    pub fn content_parts_ptr(&self) -> *const f32 {
+        self.drawn.parts.as_ptr()
+    }
+
+    /// How many values the buffer of the parts' rectangles holds: four per part.
+    #[wasm_bindgen(js_name = contentPartsLen)]
+    pub fn content_parts_len(&self) -> usize {
+        self.drawn.parts.len()
+    }
+
+    /// Where the buffer starts that `query` writes where each part's text ends in `contentTexts`
+    /// into, in UTF-16 code units: each part's text starts where the one before it in its element
+    /// ends, the first where its element's text starts.
+    #[wasm_bindgen(js_name = contentPartEndsPtr)]
+    pub fn content_part_ends_ptr(&self) -> *const u32 {
+        self.drawn.part_ends.as_ptr()
+    }
+
+    /// How many values the buffer of the parts' ends holds: one per part.
+    #[wasm_bindgen(js_name = contentPartEndsLen)]
+    pub fn content_part_ends_len(&self) -> usize {
+        self.drawn.part_ends.len()
+    }
+
+    /// Where the buffer starts that `query` writes, per placed element, the boundaries of its
+    /// arrows in `contentArrows…` into: one more than there are placed elements, a metric's one
+    /// where its column holds it, and none of another kind (ADR-0013).
+    #[wasm_bindgen(js_name = contentArrowBoundsPtr)]
+    pub fn content_arrow_bounds_ptr(&self) -> *const u32 {
+        self.drawn.arrow_bounds.as_ptr()
+    }
+
+    /// How many boundaries the buffer of the arrows' boundaries holds.
+    #[wasm_bindgen(js_name = contentArrowBoundsLen)]
+    pub fn content_arrow_bounds_len(&self) -> usize {
+        self.drawn.arrow_bounds.len()
+    }
+
+    /// Where the buffer starts that `query` writes each arrow's triangle into, three points `x, y`
+    /// relative to its node, drawn in its element's colour.
+    #[wasm_bindgen(js_name = contentArrowsPtr)]
+    pub fn content_arrows_ptr(&self) -> *const f32 {
+        self.drawn.arrows.as_ptr()
+    }
+
+    /// How many values the buffer of the arrows holds: six per arrow.
+    #[wasm_bindgen(js_name = contentArrowsLen)]
+    pub fn content_arrows_len(&self) -> usize {
+        self.drawn.arrows.len()
     }
 
     /// Where the buffer starts that `query` writes the boundaries of the drawn texts in
@@ -1559,6 +1630,94 @@ mod tests {
         assert_eq!(at(320.0, 45.0, DetailLevel::Near), None);
         assert_eq!(at(320.0, 36.0, DetailLevel::Middle), None);
         assert_eq!(at(320.0, 36.0, DetailLevel::Far), None);
+    }
+
+    /// An engine of fonts whose caption glyphs advance by 5 and its lines are 14 high, besides
+    /// `fonted`'s, loaded with `a` and `b`, 100 wide at (300, 0), which holds a title row and a
+    /// metric below it, "Revenue" over "42" and a trend "+3%" down in 0xEF4444, queried near.
+    fn metric_engine() -> Engine {
+        use graph_data::tests::{load_into, metricked};
+        let mut engine = fonted();
+        let ellipsis = [u32::from(comb_engine::content::ELLIPSIS)];
+        let caption = RoleCode::Caption as u8;
+        assert_eq!(
+            engine.set_font(caption, &ellipsis, &[8.0], 5.0, 14.0),
+            Ok(())
+        );
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+        let texts = [Some("Revenue"), Some("42"), Some("+3%")];
+        let down = DirectionCode::Down as u8;
+        data.nodes[1].content = metricked(down, f64::from(RED), texts).into();
+        let nodes = graph_data::OwnedColumns::of(data.nodes.iter().map(Some));
+        let none = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
+        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
+        engine
+    }
+
+    /// The colour of the trend of `metric_engine`'s metric.
+    const RED: u32 = 0xef_4444;
+
+    #[test]
+    fn a_metric_is_drawn_as_its_three_texts_and_its_arrow() {
+        // Verifies: ADR-0013, ADR-0034
+        // `metric_engine`'s metric: its cell from (12, 28), 76 × 30, the node 68 high; the caption
+        // on its line of 14; the value from (12, 42), two body glyphs of 6; the arrow 8 after it,
+        // a square of 10 from (32, 45); the trend's text 4 after the arrow, from 46 to 88.
+        let engine = metric_engine();
+        assert_eq!(engine.graph.sizes()[3], 68.0);
+        let (t, m) = (KindCode::Text as u8, KindCode::Metric as u8);
+        let (title, body) = (RoleCode::Title as u8, RoleCode::Body as u8);
+        let drawn = &engine.drawn;
+        assert_eq!(
+            (&drawn.kinds[..], &drawn.roles[..], &drawn.colors[..]),
+            (&[t, t, m][..], &[title, title, body][..], &[0, 0, RED][..])
+        );
+        assert_eq!(engine.content_rects[8..], [12.0, 28.0, 76.0, 30.0]);
+        // Its texts one after another, which its three parts cut.
+        assert_eq!(
+            (&drawn.texts[..], &drawn.bounds[..]),
+            ("xBetRevenue42+3%", &[0, 1, 4, 16][..])
+        );
+        assert_eq!(
+            (&drawn.part_bounds[..], &drawn.part_ends[..]),
+            (&[0, 0, 0, 3][..], &[11, 13, 16][..])
+        );
+        let parts = [
+            12.0, 28.0, 76.0, 14.0, 12.0, 42.0, 12.0, 16.0, 46.0, 42.0, 42.0, 16.0,
+        ];
+        assert_close(&drawn.parts, &parts);
+        // Its arrow, down: its base along the square's top, its apex the middle of its bottom.
+        assert_eq!(drawn.arrow_bounds, [0, 0, 0, 1]);
+        assert_close(&drawn.arrows, &[32.0, 45.0, 42.0, 45.0, 37.0, 55.0]);
+    }
+
+    #[test]
+    fn a_metric_is_kept_as_given_and_hit_across_its_cell() {
+        // Verifies: ADR-0013, ADR-0034
+        let engine = metric_engine();
+        // Its content, built when asked, holds the metric as the host application gave it.
+        let metric = ContentElement::Metric {
+            caption: "Revenue".to_owned(),
+            value: "42".to_owned(),
+            trend: Trend {
+                text: "+3%".to_owned(),
+                direction: TrendDirection::Down,
+                color: RED,
+            },
+            weight: Some(1.0),
+        };
+        assert_eq!(engine.content.content_of(1).0[1], [metric]);
+        // A press anywhere in its cell hits it, on the caption, beside the value, and on the
+        // trend; below it none; at the middle and far level, where no metric is drawn, none.
+        let at = |x, y, level| element(&engine, 1, x, y, level);
+        let hit_metric = hit(1, 0, ElementKind::Metric, None);
+        assert_eq!(at(380.0, 30.0, DetailLevel::Near), hit_metric);
+        assert_eq!(at(328.0, 50.0, DetailLevel::Near), hit_metric);
+        assert_eq!(at(387.0, 57.0, DetailLevel::Near), hit_metric);
+        assert_eq!(at(320.0, 59.0, DetailLevel::Near), None);
+        assert_eq!(at(320.0, 50.0, DetailLevel::Middle), None);
+        assert_eq!(at(320.0, 50.0, DetailLevel::Far), None);
     }
 
     #[test]

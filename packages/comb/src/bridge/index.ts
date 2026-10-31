@@ -13,6 +13,7 @@ import init, {
   columnLimit,
   contentBudget,
   DetailLevel,
+  DirectionCode,
   EdgeField,
   idBudget,
   idLimit,
@@ -42,6 +43,7 @@ import init, {
   type Side,
   type SlotError,
   type TextRole,
+  type TrendDirection,
 } from "../../wasm/engine.js";
 
 export type {
@@ -73,21 +75,23 @@ declare const read: unique symbol;
 export const PIECE_BOUND = 2 ** 28;
 
 /** The content of a load's nodes as the engine's `loadGraph` takes it (ADR-0034), the nodes'
- *  elements in slot order, each node's rows in their order and each row's elements in theirs:
- *  the boundaries of each node's rows, one more than there are nodes; of each row's elements,
- *  one more than there are rows; per element its kind's code, its weight, NaN for one of another
- *  type, a text's role's code, 0 for another kind, and a badge's colour, NaN for one of another
- *  type and for another kind; per element the boundaries of a progress bar's segments, one more
- *  than there are elements, and per segment its fraction and its colour, NaN for one of another
- *  type; the texts, every string an element shows, as a string column with per text whether it
- *  is a text, 1 or 0; and the names, every string an element names and does not show, an
- *  action's identifier, as the texts. */
+ *  elements in slot order, each node's rows in their order and each row's elements in theirs: the
+ *  boundaries of each node's rows, one more than there are nodes; of each row's elements, one more
+ *  than there are rows; per element its kind's code, its weight, NaN for one of another type, a
+ *  text's role's code and a trend's direction's code, each 0 for another kind, and a badge's or a
+ *  trend's colour, NaN for one of another type and for another kind; per element the boundaries of
+ *  a progress bar's segments, one more than there are elements, and per segment its fraction and
+ *  its colour, NaN for one of another type; the texts, every string an element shows, a metric's
+ *  caption, value, and trend's text in that order, as a string column with per text whether it is a
+ *  text, 1 or 0; and the names, every string an element names and does not show, an action's
+ *  identifier, as the texts. */
 export interface ContentColumns {
   readonly rowBounds: Uint32Array;
   readonly elementBounds: Uint32Array;
   readonly kinds: Uint8Array;
   readonly weights: Float64Array;
   readonly roles: Uint8Array;
+  readonly directions: Uint8Array;
   readonly colors: Float64Array;
   readonly segmentBounds: Uint32Array;
   readonly fractions: Float64Array;
@@ -145,6 +149,19 @@ export interface NodeColumnWriter {
     color: unknown,
     text: unknown,
     id: unknown,
+    endsRow: boolean,
+  ): void;
+  /** The next element of the row, a metric: its weight as `element` takes one, its caption, its
+   *  value, and its trend's text as texts, its trend's direction as its code, and its trend's
+   *  colour as a badge's; a trend that is no object holds none of its fields, each refused at its
+   *  rule. */
+  metric(
+    weight: unknown,
+    caption: unknown,
+    value: unknown,
+    direction: unknown,
+    color: unknown,
+    trend: unknown,
     endsRow: boolean,
   ): void;
   /** The next element of the row is no object: it crosses as one of no kind, its place named. */
@@ -222,6 +239,12 @@ const KINDS: Readonly<Record<ContentElement["kind"], KindCode>> = {
   action: KindCode.Action,
   badge: KindCode.Badge,
   progress: KindCode.Progress,
+  metric: KindCode.Metric,
+};
+const DIRECTIONS: Readonly<Record<TrendDirection, DirectionCode>> = {
+  up: DirectionCode.Up,
+  down: DirectionCode.Down,
+  flat: DirectionCode.Flat,
 };
 const ROLES: Readonly<Record<TextRole, RoleCode>> = {
   title: RoleCode.Title,
@@ -241,8 +264,25 @@ function kindCode(kind: unknown): KindCode {
       return KINDS.badge;
     case "progress":
       return KINDS.progress;
+    case "metric":
+      return KINDS.metric;
     default:
       return KindCode.Unnamed;
+  }
+}
+
+/** The code of the direction `direction` names, `Unnamed` for any other value, as `kindCode`
+ *  finds it. */
+function directionCode(direction: unknown): DirectionCode {
+  switch (direction) {
+    case "up":
+      return DIRECTIONS.up;
+    case "down":
+      return DIRECTIONS.down;
+    case "flat":
+      return DIRECTIONS.flat;
+    default:
+      return DirectionCode.Unnamed;
   }
 }
 
@@ -285,6 +325,7 @@ class NodeWriter implements NodeColumnWriter {
   private kinds: Uint8Array;
   private weights: Float64Array;
   private roles: Uint8Array;
+  private directions: Uint8Array;
   private colors: Float64Array;
   private segmentBounds: Uint32Array;
   private fractions = new Float64Array(16);
@@ -310,6 +351,7 @@ class NodeWriter implements NodeColumnWriter {
     this.kinds = new Uint8Array(count);
     this.weights = new Float64Array(count);
     this.roles = new Uint8Array(count);
+    this.directions = new Uint8Array(count);
     this.colors = new Float64Array(count);
     this.segmentBounds = new Uint32Array(count + 1);
     this.textValid = new Uint8Array(count);
@@ -384,6 +426,7 @@ class NodeWriter implements NodeColumnWriter {
       this.kinds = grown(this.kinds);
       this.weights = grown(this.weights);
       this.roles = grown(this.roles);
+      this.directions = grown(this.directions);
       this.colors = grown(this.colors);
       this.textValid = grown(this.textValid);
     }
@@ -398,7 +441,7 @@ class NodeWriter implements NodeColumnWriter {
     this.refuse(NodeField.Element, this.row, this.column);
     const at = this.next();
     [this.kinds[at], this.weights[at], this.roles[at]] = [KindCode.Unnamed, Number.NaN, 0];
-    this.colors[at] = Number.NaN;
+    [this.directions[at], this.colors[at]] = [0, Number.NaN];
     if (endsRow) this.endRow();
   }
 
@@ -439,18 +482,42 @@ class NodeWriter implements NodeColumnWriter {
     const at = this.next();
     const code = kindCode(kind);
     this.kinds[at] = code;
-    this.weights[at] = absent(weight) ? WEIGHT : typeof weight === "number" ? weight : Number.NaN;
+    this.weights[at] = weightOf(weight);
     this.roles[at] = code === KindCode.Text ? roleCode(role) : 0;
+    this.directions[at] = 0;
     this.colors[at] = code === KindCode.Badge && typeof color === "number" ? color : Number.NaN;
     this.strings(code, text, id);
     if (endsRow) this.endRow();
   }
 
-  /** The strings an element of `code` fills: a text of every kind built so far but a progress
-   *  bar, and a name of an action. */
-  private strings(code: KindCode, text: unknown, id: unknown): void {
-    if (code !== KindCode.Unnamed && code !== KindCode.Progress)
+  /** The next element, a metric: its direction and its colour, and its three texts. */
+  metric(
+    weight: unknown,
+    caption: unknown,
+    value: unknown,
+    direction: unknown,
+    color: unknown,
+    trend: unknown,
+    endsRow: boolean,
+  ): void {
+    const at = this.next();
+    [this.kinds[at], this.weights[at], this.roles[at]] = [KindCode.Metric, weightOf(weight), 0];
+    this.directions[at] = directionCode(direction);
+    this.colors[at] = typeof color === "number" ? color : Number.NaN;
+    for (const text of [caption, value, trend]) {
+      if (this.valid === this.textValid.length) this.textValid = grown(this.textValid);
       this.textValid[this.valid++] = Number(this.texts.add(text));
+    }
+    if (endsRow) this.endRow();
+  }
+
+  /** The strings an element of `code` fills: a text of every kind built so far but a progress
+   *  bar and a metric, whose three `metric` fills, and a name of an action. */
+  private strings(code: KindCode, text: unknown, id: unknown): void {
+    if (code !== KindCode.Unnamed && code !== KindCode.Progress && code !== KindCode.Metric) {
+      if (this.valid === this.textValid.length) this.textValid = grown(this.textValid);
+      this.textValid[this.valid++] = Number(this.texts.add(text));
+    }
     if (code === KindCode.Action) {
       if (this.namesValid === this.nameValid.length) this.nameValid = grown(this.nameValid);
       this.nameValid[this.namesValid++] = Number(this.names.add(id));
@@ -477,6 +544,7 @@ class NodeWriter implements NodeColumnWriter {
       kinds: this.kinds.subarray(0, this.elements),
       weights: this.weights.subarray(0, this.elements),
       roles: this.roles.subarray(0, this.elements),
+      directions: this.directions.subarray(0, this.elements),
       colors: this.colors.subarray(0, this.elements),
       segmentBounds: this.segmentBounds.subarray(0, this.elements + 1),
       fractions: this.fractions.subarray(0, this.segments),
@@ -490,6 +558,11 @@ class NodeWriter implements NodeColumnWriter {
     };
   }
 }
+
+/** A weight as the host application handed it: 1 where it is absent, NaN where it is of another
+ *  type. */
+const weightOf = (weight: unknown) =>
+  absent(weight) ? WEIGHT : typeof weight === "number" ? weight : Number.NaN;
 
 /** `array` with its values in one twice as long. */
 function grown<T extends Typed>(array: T): T {
@@ -787,7 +860,14 @@ const DETAILS: Record<MeshDetail, Detail> = {
  *  per element the boundaries of the pieces of its bar in `barBounds`, one more than there are
  *  elements, a progress bar's segments and then its track and no piece of another kind, each
  *  piece's rectangle `x, y, width, height` relative to its node in `bars`, and its colour in
- *  `barColors`, a segment's, 0 for the track. At the far level it holds no node. */
+ *  `barColors`, a segment's, 0 for the track. A metric's colour is its trend's, its role body's,
+ *  and its drawn text its caption's, value's, and trend's text's one after another: per element
+ *  the boundaries of its parts in `partBounds`, a metric's three and no part of another kind,
+ *  each part's rectangle relative to its node in `parts`, and where its text ends in `texts` in
+ *  `partEnds`, each starting where the one before it in its element ends, the first where its
+ *  element's text starts; and per element the boundaries of its arrows in `arrowBounds`, a
+ *  metric's one where its column holds it, each arrow's triangle as three points `x, y` relative
+ *  to its node in `arrows`. At the far level it holds no node. */
 export interface Placed {
   bounds: Uint32Array;
   rects: Float32Array;
@@ -799,6 +879,11 @@ export interface Placed {
   barBounds: Uint32Array;
   bars: Float32Array;
   barColors: Uint32Array;
+  partBounds: Uint32Array;
+  parts: Float32Array;
+  partEnds: Uint32Array;
+  arrowBounds: Uint32Array;
+  arrows: Float32Array;
   /** The space between a badge's text and its pill's left side and its top, the engine's. */
   badgePadding: { x: number; y: number };
 }
@@ -1131,6 +1216,7 @@ function load(engine: Engine, { nodes, edges }: GraphSnapshot): number {
     c.kinds,
     c.weights,
     c.roles,
+    c.directions,
     c.colors,
     c.segmentBounds,
     c.fractions,
@@ -1212,6 +1298,11 @@ function queried(
       barBounds: u32(engine.contentBarBoundsPtr(), engine.contentBarBoundsLen()),
       bars: f32(engine.contentBarsPtr(), engine.contentBarsLen()),
       barColors: u32(engine.contentBarColorsPtr(), engine.contentBarColorsLen()),
+      partBounds: u32(engine.contentPartBoundsPtr(), engine.contentPartBoundsLen()),
+      parts: f32(engine.contentPartsPtr(), engine.contentPartsLen()),
+      partEnds: u32(engine.contentPartEndsPtr(), engine.contentPartEndsLen()),
+      arrowBounds: u32(engine.contentArrowBoundsPtr(), engine.contentArrowBoundsLen()),
+      arrows: f32(engine.contentArrowsPtr(), engine.contentArrowsLen()),
       badgePadding,
     },
     labels: u32(engine.visibleLabelsPtr(), engine.visibleLabelsLen()),

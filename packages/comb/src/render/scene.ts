@@ -20,7 +20,13 @@ import type { GraphView } from "../store";
 import { EdgesContainer, type MeshSize } from "./edges";
 import { EdgeFill } from "./edges-canvas";
 import { LabelsContainer, type LabelView } from "./labels";
-import { NodeGraphic, NodesContainer, type DrawnPill, type DrawnText } from "./nodes";
+import {
+  NodeGraphic,
+  NodesContainer,
+  type DrawnArrow,
+  type DrawnPill,
+  type DrawnText,
+} from "./nodes";
 import {
   ConnectionLine,
   ConnectorsLayer,
@@ -52,6 +58,7 @@ export interface SceneSnapshot {
    *  lays out to; `texts` are the texts a view draws, each placed relative to its node, with the
    *  width and the fill its text object draws at, `pills` the pills of badges its `Graphics`
    *  draws, `bars` the pieces of progress bars it draws, each bar's segments and then its track,
+   *  `arrows` the triangles of metrics' trends it draws, each its points and its colour,
    *  `content` the node's content as the engine keeps it, built
    *  when asked, and `title` the text of its first title; a particle draws none of them. */
   nodes: {
@@ -65,6 +72,7 @@ export interface SceneSnapshot {
     texts?: (Omit<DrawnText, "pill"> & { drawnWidth: number; fill: unknown })[];
     pills?: DrawnPill[];
     bars?: DrawnPill[];
+    arrows?: DrawnArrow[];
   }[];
   /** How many nodes are drawn as particles. */
   particles: number;
@@ -293,6 +301,7 @@ export class Scene {
           texts: (view as NodeGraphic).inspected(),
           pills: (view as NodeGraphic).drawnPills(),
           bars: (view as NodeGraphic).drawnBars(),
+          arrows: (view as NodeGraphic).drawnArrows(),
         })),
         ...this.particles.drawn(),
       ],

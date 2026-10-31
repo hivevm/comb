@@ -136,6 +136,41 @@ test("a click on a progress bar reports kind progress, across its line above and
   expect(await selection(page)).toEqual({ kind: "node", id: "b" });
 });
 
+test("a click on a metric reports kind metric, across its two lines, and below them none", async ({
+  page,
+}) => {
+  // Verifies: ADR-0013
+  // A title, then a metric in a column of 196: its cell from (12, 28), 196 × 30, the caption's
+  // line of 14 and the value's of 16 below it.
+  await open(page);
+  const content: NodeContent = [
+    [{ kind: "text", role: "title", text: "Bet" }],
+    [
+      {
+        kind: "metric",
+        caption: "Revenue",
+        value: "42",
+        trend: { text: "+3%", direction: "up", color: 0x22c55e },
+      },
+    ],
+  ];
+  await loaded(page, { nodes: [{ ...node("b"), content }], edges: [] });
+  await page.evaluate(() => {
+    const w = window as unknown as { clicks: ContentClick[] };
+    w.clicks = [];
+    window.comb.onContentClick((click) => w.clicks.push(click));
+  });
+  await page.evaluate(() => window.comb.whenRendered());
+  const metric = { node: "b", row: 1, column: 0, kind: "metric" };
+  // On the caption, on the value, beside the trend's text, and on the padding below the cell.
+  await clickWorld(page, 150, 34);
+  await clickWorld(page, 16, 50);
+  await clickWorld(page, 200, 56);
+  await clickWorld(page, 100, 62);
+  expect(await clicks(page)).toEqual([metric, metric, metric]);
+  expect(await selection(page)).toEqual({ kind: "node", id: "b" });
+});
+
 test("a press on an element that moves past 4 pixels drags the node and reports no click; within them it clicks", async ({
   page,
 }) => {

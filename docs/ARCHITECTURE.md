@@ -42,13 +42,14 @@ node content, an action's identifier (`id`), or a label text that is not a strin
 1,000 UTF-16 code units, node
 content that is no list of rows, a row that is no list or an element that is no object
 (`invalidContentShape`, naming the node, row, and column), more than 8 rows or a row of more than
-6 columns, an element of a kind other than `text`, `action`, `badge`, and `progress`, a weight
-that is not a positive finite number, a role of a text other than `title`, `body`, and `caption`,
-a badge's or a segment's colour that is not an integer from `0` to `0xFFFFFF`
-(`invalidContentColor`), a progress bar's segments that are no list or a segment that is no
-object (`invalidContentShape`), more than 8 segments (`tooManySegments`), a segment's fraction
-that is negative or not finite (`invalidFraction`) and fractions that sum past 1
-(`fractionsPastOne`), each naming the segment where it names one, the texts and the
+6 columns, an element of a kind other than `text`, `action`, `badge`, `progress`, and `metric`, a
+weight that is not a positive finite number, a role of a text other than `title`, `body`, and
+`caption`, a trend's direction other than `up`, `down`, and `flat` or a trend that is no object
+(`invalidDirection`), a badge's, a trend's, or a segment's colour that is not an integer from `0`
+to `0xFFFFFF` (`invalidContentColor`), a progress bar's segments that are no list or a segment
+that is no object (`invalidContentShape`), more than 8 segments (`tooManySegments`), a
+segment's fraction that is negative or not finite (`invalidFraction`) and fractions that sum past
+1 (`fractionsPastOne`), each naming the segment where it names one, the texts and the
 actions' identifiers of a load's content holding more than 1,000,000,000 code units together,
 each naming the node and, where it has them, the row and column, a label background that is
 not an integer from `0` to `0xFFFFFF`, more than 1,000,000 nodes or edges, an identifier, source, or
@@ -160,8 +161,12 @@ The functional core and its shell follow
   at its column's left that hugs the drawn text with 8 either side and 3 above and below, the
   pill being the badge's rectangle and every other element of its row 3 lower, a progress bar as
   its column and a body's line, its bar 8 high in the middle of that line cut by `bar` into its
-  segments from the column's left and the track after them, none past the column's end, a row as
-  deep as its deepest element, the columns of a row
+  segments from the column's left and the track after them, none past the column's end, a metric
+  as its column and two lines, the caption's and the body's, which `metric_parts` divides into
+  its caption on the first, its value at the left of the second, its trend's arrow, a triangle
+  in a square of 10, 8 after the value, and its trend's text 4 after the arrow to the column's
+  end, the trend's text cut first and then the value, a row as deep as its deepest element, the
+  columns of a row
   sharing the width inside a padding of 12 less gaps of 8 by their weights, each text cut before an
   ellipsis where it passes its column, and the node as high as the padding of 10 above and below
   and its rows, at least 64; `element_at` finds the element whose rectangle holds a point of the
@@ -192,7 +197,9 @@ The functional core and its shell follow
   the near level only), at the near and the middle level where the elements of each found node lie
   and their kinds, roles, and colours (`contentBounds…`, `contentRects…`, `contentKinds…`,
   `contentRoles…`, `contentColors…`), the pieces of each progress bar's bar and their colours
-  (`contentBarBounds…`, `contentBars…`, `contentBarColors…`), what of each text is drawn
+  (`contentBarBounds…`, `contentBars…`, `contentBarColors…`), the parts of each metric and the
+  end of each part's text (`contentPartBounds…`, `contentParts…`, `contentPartEnds…`) and its
+  arrow (`contentArrowBounds…`, `contentArrows…`), what of each text is drawn
   as one string `contentTexts` returns, cut by `contentTextBounds…`, the found edge slots, and the
   edge mesh into buffers the engine owns, the label points and the mesh's positions relative to the
   query's origin, which `originX` and
@@ -306,7 +313,10 @@ The functional core and its shell follow
   near-black by WCAG contrast (`badgeTextColor`), inspection reading the pills back from that
   `Graphics`, and a progress bar's pieces, which another `Graphics` per view fills within the
   bar's outline, only its outer ends rounded by 4 (`pieceOutline`), the track in `TRACK_COLOR`,
-  inspection reading them back likewise, every text and bar at the near level and
+  inspection reading them back likewise, and a metric's caption in the caption's style, its value
+  in the body's, and its trend's text in the body's font and the trend's colour, each where the
+  query placed its part, and its arrow, which a third `Graphics` per view fills in the trend's
+  colour, inspection reading it back likewise, every text, bar, and arrow at the near level and
   those of role title alone at the middle level, what the query placed; a view draws anew only
   where its node, which the store replaces when its content changes, its size, its selection, or
   the level changed;

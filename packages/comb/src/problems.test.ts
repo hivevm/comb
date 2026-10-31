@@ -33,6 +33,7 @@ const DESCRIBE: { [K in Kind]: (problem: Of<K>) => string } = {
   invalidElementKind: (p) => `${p.node} ${p.row} ${p.column}`,
   invalidWeight: (p) => `${p.node} ${p.row} ${p.column}`,
   invalidRole: (p) => `${p.node} ${p.row} ${p.column}`,
+  invalidDirection: (p) => `${p.node} ${p.row} ${p.column}`,
   invalidContentText: (p) => `${p.node} ${p.row} ${p.column} ${p.field}`,
   contentTextTooLong: (p) => `${p.node} ${p.row} ${p.column} ${p.field} ${p.limit}`,
   contentBudgetExceeded: (p) => `${p.node} ${p.limit}`,

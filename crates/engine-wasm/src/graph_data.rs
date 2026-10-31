@@ -27,8 +27,8 @@ pub(crate) use content::{
     COLUMN_LIMIT, Drawn, ROW_LIMIT, SEGMENT_LIMIT, check_content_budget, role_of,
 };
 pub use content::{
-    ContentColumns, ContentData, ContentInput, ElementHit, ElementKind, KindCode, MAX_COLUMNS,
-    MAX_CONTENT_UNITS, MAX_ROWS, MAX_SEGMENTS, RoleCode, Unflat,
+    ContentColumns, ContentData, ContentInput, DirectionCode, ElementHit, ElementKind, KindCode,
+    MAX_COLUMNS, MAX_CONTENT_UNITS, MAX_ROWS, MAX_SEGMENTS, RoleCode, Unflat,
 };
 
 /// The most UTF-16 code units, the length JavaScript gives a string, of a text of node content or
@@ -210,12 +210,31 @@ pub struct Segment {
     pub color: u32,
 }
 
+/// The direction of a metric's trend (ADR-0013), drawn as an arrow: up ▲, down ▼, or flat ▶.
+#[derive(Tsify, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TrendDirection {
+    Up,
+    Down,
+    Flat,
+}
+
+/// The trend of a metric (ADR-0013): its text, its direction, and its colour as `0xRRGGBB`, in
+/// which its arrow and its text are drawn.
+#[derive(Tsify, Serialize, Debug, PartialEq)]
+pub struct Trend {
+    pub text: String,
+    pub direction: TrendDirection,
+    pub color: u32,
+}
+
 /// One element of node content (ADR-0013): a text in a role; an action, a text whose click
 /// reports its identifier `id` to the host application; a badge, a text on a pill of the colour
-/// `color`, `0xRRGGBB`; or a progress bar, a bar the width of its column divided into `segments`
-/// from its left, the rest of it the track; each in a column that takes its share of the row's
-/// width by `weight`, 1 where it is left out. Of the closed set of ADR-0013, `text`, `action`,
-/// `badge`, and `progress` are built so far; this type names exactly the kinds the bridge accepts.
+/// `color`, `0xRRGGBB`; a progress bar, a bar the width of its column divided into `segments`
+/// from its left, the rest of it the track; or a metric, a `caption` above a `value` and its
+/// `trend`; each in a column that takes its share of the row's width by `weight`, 1 where it is
+/// left out. Of the closed set of ADR-0013, `text`, `action`, `badge`, `progress`, and `metric`
+/// are built so far; this type names exactly the kinds the bridge accepts.
 /// Its reading is `ContentInput`'s, which takes any value, so that what it refuses is named.
 #[derive(Tsify, Serialize, Debug, PartialEq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -240,6 +259,13 @@ pub enum ContentElement {
     },
     Progress {
         segments: Vec<Segment>,
+        #[tsify(optional)]
+        weight: Option<f64>,
+    },
+    Metric {
+        caption: String,
+        value: String,
+        trend: Trend,
         #[tsify(optional)]
         weight: Option<f64>,
     },
@@ -1128,6 +1154,10 @@ pub enum GraphDataProblem {
     /// The role of a text of a node's content is not `title`, `body`, or `caption`.
     #[serde(rename_all = "camelCase")]
     InvalidRole { node: String, row: u32, column: u32 },
+    /// The direction of a metric's trend in a node's content is not `up`, `down`, or `flat`, or
+    /// its trend is no object.
+    #[serde(rename_all = "camelCase")]
+    InvalidDirection { node: String, row: u32, column: u32 },
     /// The string `field` of an element of a node's content is missing, not a string, or holds a
     /// lone surrogate.
     #[serde(rename_all = "camelCase")]
@@ -1151,8 +1181,8 @@ pub enum GraphDataProblem {
     /// `node` is the node whose string passed it.
     #[serde(rename_all = "camelCase")]
     ContentBudgetExceeded { node: String, limit: u32 },
-    /// The colour of a badge of a node's content, or of the segment at `segment` of a progress
-    /// bar, is not an integer from `0` to `0xFFFFFF`.
+    /// The colour of a badge or of a metric's trend of a node's content, or of the segment at
+    /// `segment` of a progress bar, is not an integer from `0` to `0xFFFFFF`.
     #[serde(rename_all = "camelCase")]
     InvalidContentColor {
         node: String,
@@ -2671,6 +2701,19 @@ pub(crate) mod tests {
         content
     }
 
+    /// Content of a title row, "Bet", then a row of a metric of weight 1, its trend of the direction
+    /// code `direction` and the colour `color`, showing `texts`, its caption, value, and trend's
+    /// text, each none for one of another type.
+    pub(crate) fn metricked(direction: u8, color: f64, texts: [Option<&str>; 3]) -> ContentInput {
+        let mut content = ContentInput::new();
+        let title = (RoleCode::Title as u8, Some("Bet"));
+        content.push(KindCode::Text, 1.0, title.0, f64::NAN, title.1, None);
+        content.end_row();
+        content.push_metric(1.0, direction, color, texts);
+        content.end_row();
+        content
+    }
+
     /// The content of a node of the time before content: one row of one title, `title`.
     pub(crate) fn titled(title: &str) -> Field<ContentInput> {
         content(&[&[text(RoleCode::Title, title)]]).into()
@@ -3149,6 +3192,137 @@ pub(crate) mod tests {
         }))]);
         columns.content.text_valid.push(1);
         columns.content.text_bounds.push(0);
+        assert!(!columns.content.view().fit(1));
+    }
+
+    /// The refusal of the metric at row 1, column 0 of the node `node` by its rule `rule`: the
+    /// direction, the colour, or a text by its field.
+    fn metric_refusal(rule: &str, node: &str) -> GraphDataProblem {
+        let (node, row, column) = (node.to_owned(), 1, 0);
+        match rule {
+            "direction" => GraphDataProblem::InvalidDirection { node, row, column },
+            "color" => GraphDataProblem::InvalidContentColor {
+                node,
+                row,
+                column,
+                segment: None,
+            },
+            "long value" => GraphDataProblem::ContentTextTooLong {
+                node,
+                row,
+                column,
+                field: "value".into(),
+                limit: TEXT_LIMIT,
+            },
+            field => GraphDataProblem::InvalidContentText {
+                node,
+                row,
+                column,
+                field: field.into(),
+            },
+        }
+    }
+
+    #[test]
+    fn a_metric_whose_direction_texts_or_colour_are_refused_names_its_node_and_the_field() {
+        // Verifies: ADR-0013, ADR-0034, Q-7
+        // A metric below a title: its trend's direction, then its caption, its value, and its
+        // trend's text, each a string of content, then its trend's colour, as a badge's; through
+        // a load and through `addNode` alike.
+        let (up, green) = (DirectionCode::Up as u8, f64::from(0x22_c55e));
+        let unnamed = DirectionCode::Unnamed as u8;
+        let long = "d".repeat(MAX_TEXT + 1);
+        let fine = [Some("Revenue"), Some("42"), Some("+3%")];
+        let cases: Vec<(u8, f64, [Option<&str>; 3], &str)> = vec![
+            (unnamed, green, fine, "direction"),
+            (up, -1.0, fine, "color"),
+            (up, f64::from(0x100_0000), fine, "color"),
+            (up, 0.5, fine, "color"),
+            (up, f64::NAN, fine, "color"),
+            (up, green, [None, fine[1], fine[2]], "caption"),
+            (up, green, [fine[0], None, fine[2]], "value"),
+            (up, green, [fine[0], fine[1], None], "trend.text"),
+            (up, green, [fine[0], Some(&long), fine[2]], "long value"),
+            // The direction before the texts, the caption before the value, the texts before the
+            // colour.
+            (unnamed, f64::NAN, [None; 3], "direction"),
+            (up, green, [None, None, None], "caption"),
+            (up, f64::NAN, [fine[0], fine[1], None], "trend.text"),
+        ];
+        for (direction, shade, texts, rule) in cases {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+            data.nodes[1].content = metricked(direction, shade, texts).into();
+            let refused = graph_of(&data).unwrap_err();
+            assert_eq!(refused, metric_refusal(rule, "b"), "{texts:?} {shade}");
+            let mut graph = graph_of(&batch(&[("a", 0.0, 0.0)], &[])).unwrap();
+            let node = added(0.0, 0.0, |node| {
+                node.content = metricked(direction, shade, texts).into();
+            });
+            let refused = add(&mut graph, &node).unwrap_err();
+            assert_eq!(refused, metric_refusal(rule, "n"));
+        }
+    }
+
+    #[test]
+    fn a_metric_of_each_direction_and_colours_and_texts_at_their_limits_is_accepted() {
+        // Verifies: ADR-0013, ADR-0034
+        let held = "d".repeat(MAX_TEXT);
+        let fine = [Some("Revenue"), Some("42"), Some("+3%")];
+        for direction in [DirectionCode::Up, DirectionCode::Down, DirectionCode::Flat] {
+            for (shade, texts) in [
+                (0.0, fine),
+                (
+                    f64::from(0xff_ffff),
+                    [Some(&*held), Some(&*held), Some(&*held)],
+                ),
+                (1.0, [Some(""), Some(""), Some("")]),
+            ] {
+                let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+                data.nodes[1].content = metricked(direction as u8, shade, texts).into();
+                assert!(graph_of(&data).is_ok(), "{direction:?} {shade}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_metric_fills_its_direction_colour_and_three_texts_and_columns_that_do_not_fit_are_malformed()
+     {
+        // Verifies: ADR-0034
+        let green = f64::from(0x22_c55e);
+        let texts = [Some("Revenue"), Some("42"), Some("+3%")];
+        let content = metricked(DirectionCode::Down as u8, green, texts);
+        let mut columns = OwnedColumns::of([Some(&added(0.0, 0.0, |node| {
+            node.content = content.into();
+        }))]);
+        let c = &columns.content;
+        assert_eq!(c.kinds, [KindCode::Text as u8, KindCode::Metric as u8]);
+        assert_eq!(c.roles, [RoleCode::Title as u8, 0]);
+        assert_eq!(c.directions, [0, DirectionCode::Down as u8]);
+        assert!(c.colors[0].is_nan());
+        assert_eq!(c.colors[1], green);
+        // The title's text, then the metric's caption, value, and trend's text; no name.
+        assert_eq!(c.text_bounds, [0, 3, 10, 12, 15]);
+        assert_eq!((c.text_valid.len(), c.name_valid.len()), (4, 0));
+        assert!(columns.content.view().fit(1));
+        assert_eq!(
+            load_columns(&columns).map(|graph| graph.nodes_in_use()),
+            Ok(1)
+        );
+        // A direction per element: one too many or too few, or a code that is none, does not fit.
+        columns.content.directions.push(0);
+        assert!(!columns.content.view().fit(1));
+        columns.content.directions.truncate(1);
+        assert!(!columns.content.view().fit(1));
+        columns
+            .content
+            .directions
+            .push(DirectionCode::Unnamed as u8 + 1);
+        assert_eq!(load_columns(&columns).err(), Some(unfit()));
+        columns.content.directions[1] = DirectionCode::Unnamed as u8;
+        assert!(columns.content.view().fit(1));
+        // A metric of fewer than three texts does not fit.
+        columns.content.text_valid.pop();
+        columns.content.text_bounds.pop();
         assert!(!columns.content.view().fit(1));
     }
 
@@ -3927,6 +4101,7 @@ pub(crate) mod tests {
                 kinds: &vec![KindCode::Text as u8; count as usize],
                 weights: &vec![1.0; count as usize],
                 roles: &vec![RoleCode::Title as u8; count as usize],
+                directions: &vec![0; count as usize],
                 colors: &vec![f64::NAN; count as usize],
                 segment_bounds: &vec![0; count as usize + 1],
                 fractions: &[],
@@ -4496,6 +4671,7 @@ pub(crate) mod tests {
             c.kinds.clone(),
             c.weights.clone(),
             c.roles.clone(),
+            c.directions.clone(),
             c.colors.clone(),
             c.segment_bounds.clone(),
             c.fractions.clone(),

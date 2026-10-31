@@ -266,6 +266,155 @@ test("a progress bar is drawn near as its segments from its column's left and it
   expect(await at(1)).toEqual({ level: "near", bars: [] });
 });
 
+/** Asserts that `got` is `want` within 0.5 (Q-4). */
+const near = (got: number, want: number) => expect(Math.abs(got - want)).toBeLessThanOrEqual(0.5);
+
+/** A metric of weight 1 showing `caption` over `value` and a trend of `shown`, `direction`, and
+ *  `color`. */
+const metric = (caption: string, value: string, shown: string, direction: string, color: number) =>
+  ({ kind: "metric", caption, value, trend: { text: shown, direction, color } }) as const;
+
+const [GREEN, RED, GREY] = [0x22c55e, 0xef4444, 0x6b7280];
+
+/** A title, then a metric alone in its row, its cell the column of 196 from (12, 28) and two
+ *  lines, the caption's of 14 and the body's of 16; then two metrics side by side, columns of 94
+ *  from 12 and 114, from 58. The node is 10 + 18 + 30 + 30 + 10 = 98 high. */
+const METRICS = [
+  [text("title", "Bet")],
+  [metric("Revenue", "42,000", "+3.5%", "up", GREEN)],
+  [metric("Churn", "2.1%", "-0.4%", "down", RED), metric("NPS", "41", "±0", "flat", GREY)],
+] as NodeContent;
+
+/** The cells of the metrics of `METRICS`, and the triangle of each one's arrow from its square's
+ *  top-left corner `(x, y)`. */
+const METRIC_CELLS = [
+  {
+    left: 12,
+    top: 28,
+    width: 196,
+    arrow: (x: number, y: number) => [x, y + 10, x + 10, y + 10, x + 5, y],
+  },
+  {
+    left: 12,
+    top: 58,
+    width: 94,
+    arrow: (x: number, y: number) => [x, y, x + 10, y, x + 5, y + 10],
+  },
+  {
+    left: 114,
+    top: 58,
+    width: 94,
+    arrow: (x: number, y: number) => [x, y, x, y + 10, x + 10, y + 5],
+  },
+];
+
+test("a metric is drawn near as its caption over its value, its trend's arrow and text in the trend's colour", async ({
+  page,
+}) => {
+  // Verifies: ADR-0013, Q-4
+  // On each value's line the value lies at the column's left, the arrow 8 after it, a square of
+  // 10 3 below the line's top, and the trend's text 4 after the arrow, to the column's end.
+  await open(page);
+  await loaded(page, { nodes: [{ ...node("b"), content: METRICS }], edges: [] });
+  await setViewport(page, { x: 100, y: 100, scale: 1 });
+  const shown = (await drawnNode(page, "b"))!;
+  expect(shown.height).toBe(98);
+  const texts = shown.texts!.slice(1);
+  expect(texts.map((t) => [t.kind, t.role, t.drawn, t.fill])).toEqual([
+    ["metric", "caption", "Revenue", 0x6b7280],
+    ["metric", "body", "42,000", 0x1f2430],
+    ["metric", "body", "+3.5%", GREEN],
+    ["metric", "caption", "Churn", 0x6b7280],
+    ["metric", "body", "2.1%", 0x1f2430],
+    ["metric", "body", "-0.4%", RED],
+    ["metric", "caption", "NPS", 0x6b7280],
+    ["metric", "body", "41", 0x1f2430],
+    ["metric", "body", "±0", GREY],
+  ]);
+  // Each metric's parts where the engine placed them, its value as wide as it is drawn, and its
+  // arrow, as the view's `Graphics` fills it, of its direction and the trend's colour.
+  expect(shown.arrows!.map(({ color }) => color)).toEqual([GREEN, RED, GREY]);
+  METRIC_CELLS.forEach(({ left, top, width, arrow }, m) => {
+    const [caption, value, trend] = texts.slice(m * 3, m * 3 + 3);
+    for (const [got, want] of [
+      [caption!.x, left],
+      [caption!.y, top],
+      [caption!.width, width],
+      [caption!.height, 14],
+      [value!.x, left],
+      [value!.y, top + 14],
+      [value!.width, value!.drawnWidth],
+      [value!.height, 16],
+      [trend!.x, left + value!.width + 22],
+      [trend!.y, top + 14],
+      [trend!.x + trend!.width, left + width],
+    ])
+      near(got!, want!);
+    const points = arrow(left + value!.width + 8, top + 17);
+    shown.arrows![m]!.points.forEach((point, i) => near(point, points[i]!));
+  });
+});
+
+test("the middle and far level draw no metric, and near draws it until updateNode takes it away", async ({
+  page,
+}) => {
+  // Verifies: ADR-0013, ADR-0027
+  await open(page);
+  await loaded(page, { nodes: [{ ...node("b"), content: METRICS }], edges: [] });
+  const at = async (scale: number) => {
+    await setViewport(page, { x: 100, y: 100, scale });
+    return page.evaluate(async () => {
+      await window.comb.whenRendered();
+      const { level, nodes } = window.inspect();
+      const [shown] = nodes;
+      return { level, kinds: shown?.texts?.map(({ kind }) => kind), arrows: shown?.arrows };
+    });
+  };
+  expect(await at(0.5)).toEqual({ level: "middle", kinds: ["text"], arrows: [] });
+  expect(await at(0.2)).toEqual({ level: "far", kinds: undefined, arrows: undefined });
+  expect((await at(1)).arrows).toHaveLength(3);
+  await page.evaluate(() =>
+    window.comb.updateNode("b", { content: [[{ kind: "text", role: "title", text: "Bet" }]] }),
+  );
+  expect(await at(1)).toEqual({ level: "near", kinds: ["text"], arrows: [] });
+});
+
+test("a trend's text takes each new colour on its pooled text object, and no text object is made for one", async ({
+  page,
+}) => {
+  // Verifies: ADR-0013
+  // One metric whose trend's colour changes 200 times: its pooled text object is drawn in each
+  // colour in turn, and no further text object is bound for any of them.
+  await open(page);
+  await loaded(page, { nodes: [{ ...node("b"), content: METRICS }], edges: [] });
+  await setViewport(page, { x: 100, y: 100, scale: 1 });
+  const drawn = await page.evaluate(async () => {
+    const seen: { fill: unknown; texts: number }[] = [];
+    for (let i = 0; i < 200; i++) {
+      const color = 0x010203 * (i + 1);
+      window.comb.updateNode("b", {
+        content: [
+          [{ kind: "text", role: "title", text: "Bet" }],
+          [
+            {
+              kind: "metric",
+              caption: "c",
+              value: "1",
+              trend: { text: "t", direction: "up", color },
+            },
+          ],
+        ],
+      });
+      await window.comb.whenRendered();
+      const { nodes, texts } = window.inspect();
+      seen.push({ fill: nodes[0]!.texts!.at(-1)!.fill, texts });
+    }
+    return seen;
+  });
+  expect(drawn.map(({ fill }) => fill)).toEqual(drawn.map((_, i) => 0x010203 * (i + 1)));
+  expect(new Set(drawn.map(({ texts }) => texts)).size).toBe(1);
+});
+
 test("updateNode replaces the content, the canvas shows it, the node's height follows, and nodeUpdated carries it", async ({
   page,
 }) => {
@@ -304,7 +453,7 @@ test("content past a limit or malformed is refused naming the node, and the grap
       { content: Array.from({ length: 9 }, () => [title]) },
       { content: [Array.from({ length: 7 }, () => title)] },
       { content: [5] },
-      { content: [[{ ...title, kind: "metric" }]] },
+      { content: [[{ ...title, kind: "icon" }]] },
       { content: [[{ ...title, weight: -1 }]] },
       { content: [[{ ...title, role: "headline" }]] },
       { content: [[{ ...title, text: 5 }]] },

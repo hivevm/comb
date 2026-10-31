@@ -168,10 +168,12 @@ reads and writes as typed-array views created anew after every engine call.
     - the element's kind (`invalidElementKind`), a kind code naming no kind;
     - its weight (`invalidWeight`), which is a positive finite number;
     - a text's role (`invalidRole`) and a trend's direction (`invalidDirection`), a code naming no
-      role or direction;
+      role or direction; a trend that is no object holds none of its fields, its direction
+      crossing as the code that names none, so that it is refused here and not as a shape;
     - each of its strings (`invalidContentText`), refused where it is missing, of another type, or
       holds a lone surrogate, and its length (`contentTextTooLong`) against the limit of code
-      units per text, the field named as the element's type names it;
+      units per text, the field named as the element's type names it, a metric's as `caption`,
+      `value`, and `trend.text`;
     - the code units of the strings of all content in the load (`contentBudgetExceeded`), counted
       in slot order and refused at the node whose string passes the limit;
     - a badge's, a trend's, and a segment's colour (`invalidContentColor`), which is an integer
@@ -180,7 +182,8 @@ reads and writes as typed-array views created anew after every engine call.
       fraction (`invalidFraction`), which is finite and not negative, and their sum
       (`fractionsPastOne`), which is at most 1 and 1e-9 beyond it (ADR-0013). A progress bar's
       fields are checked as its number of segments, then each segment's fraction and colour in
-      the order of its segments, then their sum.
+      the order of its segments, then their sum. A metric's fields are checked as its trend's
+      direction, then its caption, its value, and its trend's text, then its trend's colour.
 
     Each names the node by its identifier, and the row and column of the element where it has
     them; a segment's refusal names the segment too. The limits' numbers are the bridge crate's
@@ -266,7 +269,18 @@ reads and writes as typed-array views created anew after every engine call.
     and per placed element the boundaries of the pieces of its bar as `Uint32Array`, a progress
     bar's segments and then its track and no piece of another kind, each piece's rectangle
     relative to its node as `Float32Array`, and its colour as `0xRRGGBB` in `Uint32Array`, a
-    segment's, and 0 for the track, whose colour the shell states (ADR-0013);
+    segment's, and 0 for the track, whose colour the shell states (ADR-0013); a metric's colour,
+    its trend's, among the colours, its role's code that of body, and its drawn text its
+    caption's, its value's, and its trend's text's, each as much of it as fits followed by an
+    ellipsis, one after another, which its parts cut: per placed element the boundaries of its
+    parts as `Uint32Array`, a metric's three in that order and no part of another kind, each
+    part's rectangle relative to its node as `Float32Array`, and where its text ends in
+    `contentTexts` as `Uint32Array`, in UTF-16 code units, each starting where the part before it
+    in its element ends, the first where its element's text starts; and per placed element the
+    boundaries of its arrows as `Uint32Array`, a metric's one where its column holds it and none
+    of another kind, each arrow's triangle as three points `x, y` relative to its node as
+    `Float32Array`, drawn in its element's colour, so that the engine alone holds the arrow's
+    geometry (ADR-0013);
   - the edge mesh of that query: vertex positions, distances along the path, and dash patterns as
     `Float32Array`, colours as RGBA bytes in `Uint32Array`, and triangle indices as `Uint32Array`;
   - for inspection, the slots of the edges the query found as `Uint32Array`, with the ends of each

@@ -1,14 +1,16 @@
 // The nodes layer at the near and the middle level (ADR-0027): a pooled view per node in view, its
 // box and its content (ADR-0013), every text as `BitmapText`. The engine lays the content out and
 // the view draws each text where the engine placed it, cut where it was cut, an action's in the
-// link colour, a badge's on its pill, and each progress bar as the segments and the track the
-// engine cut its bar into: near every element, middle the texts of role title alone, at the place
-// near gives them.
+// link colour, a badge's on its pill, each progress bar as the segments and the track the engine
+// cut its bar into, and each metric as its caption, its value, and its trend's text and arrow, the
+// last two in the trend's colour: near every element, middle the texts of role title alone, at
+// the place near gives them.
 import {
   BitmapFontManager,
   BitmapText,
   Container,
   Graphics,
+  type Polygon,
   TextStyle,
   type TextStyleOptions,
 } from "pixi.js";
@@ -53,6 +55,10 @@ const BADGE_STYLES: Readonly<Record<number, TextStyleOptions>> = {
   [TEXT_COLOR]: { ...TEXT_STYLES.body, fill: TEXT_COLOR },
 };
 
+/** The style a metric's trend's text is drawn in: the body's font, its fill set on the pooled
+ *  text object's own style to the trend's colour, so that no style is kept per colour. */
+const TREND_STYLE: TextStyleOptions = { ...TEXT_STYLES.body };
+
 /** The relative luminance of `color`, `0xRRGGBB`, as WCAG 2 defines it. */
 function luminance(color: number): number {
   const channel = (shift: number) => {
@@ -73,8 +79,14 @@ export function badgeTextColor(color: number): number {
 }
 
 /** The style of the text `text`. */
-const styleOf = ({ kind, role, pill }: DrawnText) =>
-  kind === "action" ? ACTION_STYLE : pill ? BADGE_STYLES[pill.textColor]! : TEXT_STYLES[role];
+const styleOf = ({ kind, role, pill, trend }: DrawnText) =>
+  kind === "action"
+    ? ACTION_STYLE
+    : pill
+      ? BADGE_STYLES[pill.textColor]!
+      : trend !== undefined
+        ? TREND_STYLE
+        : TEXT_STYLES[role];
 
 /** The height of a line of each role, which the engine stacks rows by: given here rather than
  *  measured, so that a node's height does not depend on how a machine measures the font. A text
@@ -122,10 +134,11 @@ export function fontMetricsOf(role: TextRole): FontMetrics {
   return { codes, advances, fallback, lineHeight: LINE_HEIGHTS[role] };
 }
 
-/** One text a view draws: where the engine placed its element in its node, and what of it is
- *  drawn, the text or as much of it as fits followed by an ellipsis; of a badge, the pill the
- *  rectangle is, of its colour, the colour its text is drawn in on it, and where its text lies,
- *  inside the engine's padding. */
+/** One text a view draws: where the engine placed its element in its node, or of a metric its
+ *  part, and what of it is drawn, the text or as much of it as fits followed by an ellipsis; of a
+ *  badge, the pill the rectangle is, of its colour, the colour its text is drawn in on it, and
+ *  where its text lies, inside the engine's padding; of a metric's trend, the trend's colour its
+ *  text is drawn in. */
 export interface DrawnText {
   kind: ContentElement["kind"];
   role: TextRole;
@@ -135,7 +148,18 @@ export interface DrawnText {
   width: number;
   height: number;
   pill?: { color: number; textColor: number; textX: number; textY: number };
+  trend?: number;
 }
+
+/** A metric's trend arrow a view draws, as its `Graphics` holds it: its triangle's three points
+ *  `x, y` relative to its node, and its colour. */
+export interface DrawnArrow {
+  points: number[];
+  color: number;
+}
+
+/** The roles of a metric's three parts: its caption's, its value's, and its trend's text's. */
+const METRIC_ROLES: readonly TextRole[] = ["caption", "body", "body"];
 
 /** A pill a view drew, as its `Graphics` holds it: its rectangle in its node and its colour; and
  *  so a piece of a progress bar, a segment or its track. */
@@ -206,6 +230,10 @@ function textsOf(placed: Placed, start: number, end: number, titlesOnly: boolean
     if (titlesOnly && (kind !== "text" || role !== "title")) continue;
     // A progress bar shows no text: its bar is drawn of its pieces.
     if (kind === "progress") continue;
+    if (kind === "metric") {
+      texts.push(...metricTexts(placed, i));
+      continue;
+    }
     const drawn = placed.texts.slice(placed.textBounds[i], placed.textBounds[i + 1]);
     const r = placed.rects.subarray(i * 4, i * 4 + 4);
     const text: DrawnText = { kind, role, drawn, x: r[0]!, y: r[1]!, width: r[2]!, height: r[3]! };
@@ -219,7 +247,47 @@ function textsOf(placed: Placed, start: number, end: number, titlesOnly: boolean
   return texts;
 }
 
-/** One node: its box, its badges' pills, its progress bars, and its texts. A pooled view, bound to
+/** The texts of the metric at `i` of `placed`: its caption in the caption's role and colour, its
+ *  value in the body's, and its trend's text in the body's font and the trend's colour, each where
+ *  the engine placed its part. */
+function metricTexts(placed: Placed, i: number): DrawnText[] {
+  const texts: DrawnText[] = [];
+  let start = placed.textBounds[i]!;
+  for (let p = placed.partBounds[i]!, k = 0; p < placed.partBounds[i + 1]!; p++, k++) {
+    const end = placed.partEnds[p]!;
+    const [x, y, width, height] = placed.parts.subarray(p * 4, p * 4 + 4);
+    const role = METRIC_ROLES[k]!;
+    const text: DrawnText = {
+      kind: "metric",
+      role,
+      drawn: placed.texts.slice(start, end),
+      x: x!,
+      y: y!,
+      width: width!,
+      height: height!,
+    };
+    if (k === 2) text.trend = placed.colors[i]!;
+    texts.push(text);
+    start = end;
+  }
+  return texts;
+}
+
+/** The arrows of the metrics among the elements `start` to `end` of `placed`; none at the middle
+ *  level. */
+function arrowsOf(placed: Placed, start: number, end: number, titlesOnly: boolean): DrawnArrow[] {
+  const arrows: DrawnArrow[] = [];
+  if (titlesOnly) return arrows;
+  for (let i = start; i < end; i++) {
+    for (let a = placed.arrowBounds[i]!; a < placed.arrowBounds[i + 1]!; a++) {
+      const points = [...placed.arrows.subarray(a * 6, a * 6 + 6)];
+      arrows.push({ points, color: placed.colors[i]! });
+    }
+  }
+  return arrows;
+}
+
+/** One node: its box, its badges' pills, its progress bars, its metrics' arrows, and its texts. A pooled view, bound to
  *  one node slot at a time. */
 export class NodeGraphic extends Container {
   private readonly box = new Graphics();
@@ -227,6 +295,8 @@ export class NodeGraphic extends Container {
   private readonly pills = new Graphics();
   /** The pieces of the node's progress bars, drawn together. */
   private readonly bars = new Graphics();
+  /** The arrows of the node's metrics' trends, drawn together. */
+  private readonly arrows = new Graphics();
   /** The pooled text objects of the view, the first `texts.length` of them in use. */
   private readonly pool: { view: BitmapText; style: TextStyleOptions }[] = [];
   /** The node the view shows. */
@@ -253,7 +323,7 @@ export class NodeGraphic extends Container {
 
   constructor() {
     super();
-    this.addChild(this.box, this.pills, this.bars);
+    this.addChild(this.box, this.pills, this.bars, this.arrows);
     // The engine answers which node lies under the pointer; the view takes no events.
     this.eventMode = "none";
   }
@@ -286,6 +356,18 @@ export class NodeGraphic extends Container {
    *  track, read from its fill instructions. */
   drawnBars(): DrawnPill[] {
     return filled(this.bars);
+  }
+
+  /** The arrows of metrics the view's `Graphics` draws, read from its fill instructions. */
+  drawnArrows(): DrawnArrow[] {
+    return this.arrows.context.instructions.flatMap((instruction) => {
+      if (instruction.action !== "fill") return [];
+      const { path, style } = instruction.data;
+      return path.shapePath.shapePrimitives.map(({ shape }) => ({
+        points: [...(shape as Polygon).points],
+        color: style.color,
+      }));
+    });
   }
 
   /** The size the node was last drawn at. */
@@ -322,6 +404,13 @@ export class NodeGraphic extends Container {
       .stroke({ color: selected ? SELECTED_STROKE : NODE_STROKE, width: selected ? 2 : 1 });
     this.showTexts(textsOf(placed, start, end, titlesOnly));
     this.showBars(barsOf(placed, start, end, titlesOnly));
+    this.showArrows(arrowsOf(placed, start, end, titlesOnly));
+  }
+
+  /** Draws `arrows`, each its triangle filled in its colour. */
+  private showArrows(arrows: DrawnArrow[]): void {
+    this.arrows.clear();
+    for (const { points, color } of arrows) this.arrows.poly(points).fill({ color });
   }
 
   /** Draws `bars`, each piece within its bar's outline, which only its outer ends round; a piece
@@ -355,6 +444,9 @@ export class NodeGraphic extends Container {
         pooled.style = style;
       }
       pooled.view.text = text.drawn;
+      // A trend's colour on the text object's own style, set only where it changed.
+      if (text.trend !== undefined && pooled.view.style.fill !== text.trend)
+        pooled.view.style.fill = text.trend;
       if (text.pill) {
         const { x, y, width, height } = text;
         this.pills
