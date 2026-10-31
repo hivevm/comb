@@ -10,7 +10,8 @@ crosses the budget of 64,000,000 only after about 970,000 of the 1,000,000 edges
 load reads about 97 % of what the accepted one reads, and the assertion holds only while the
 engine's load of the accepted graph costs at least as much as the reading. A run measured 921 ms
 against a limit of 912 ms, without any change to the code either side times; a rerun passed. A
-test that passes and fails on the same code is a defect (`AGENTS.md` §5).
+test that passes and fails on the same code is a defect
+([`AGENTS.md` §5](../../../AGENTS.md#5-quality-bar--definition-of-done)).
 
 The test decides the rule itself: a load refused by the identifier budget is refused before any
 column crosses into the engine, observed directly, for example by the bridge's load never being
