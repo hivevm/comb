@@ -18,9 +18,12 @@ The **Benchmark** workflow on 2c11a58, against the baselines without content, fo
 | AMD EPYC 7763 | drag p95 | 250.0 | 316.6 | +27 % |
 | AMD EPYC 9V74 (run 41193154217) | edit p95 | 66.7 | 116.7 | +75 % |
 
-The first frame is the ticket
-docs/plan/node-content/10-the-writer-sizes-its-columns-from-the-content.md.
-A local profile against 9a27df1, before the content, found the drag and the edits at the fitted
+The first frame's growth is the content's columns: a local profile against 9a27df1 found
+`snapshotOf` 32 ms longer, of which the bridge's node writer copying its columns as they grow is
+at most 3 to 5 ms. Sizing them beforehand would read the host's content twice, which ADR-0028
+rules out, so the first frame's cost is the content's and its baseline records it.
+
+The same profile found the drag and the edits at the fitted
 view 9 to 14 % slower in their mean frame, and none of it in JavaScript or WebAssembly: the far
 level draws no node view, and the time is the GPU process executing the WebGL commands on
 SwiftShader. It found no single cause. What it found per frame of a drag at the fitted view,
@@ -35,8 +38,8 @@ about 38 frames, since the drag too runs out of its budget.
 - [ ] Given the zoom at the fitted view cut short by its action budget, when the edits at the
       fitted view begin, then the viewport is the fitted view's, its scale and position, and the
       result records the scale the edits ran at.
-- [ ] Given this ticket and ticket 10 merged on `main`, when the **Benchmark** workflow runs on each
-      runner kind with a baseline, then a number past 25 % of its baseline is decided with the
+- [ ] Given this ticket merged on `main`, when the **Benchmark** workflow runs on each runner
+      kind with a baseline, then a number past 25 % of its baseline is decided with the
       human, and the maintainer records each kind's baseline with the content from a run on
       `main`.
 
@@ -48,7 +51,7 @@ about 38 frames, since the drag too runs out of its budget.
 
 ## Blocked by
 
-- docs/plan/node-content/10-the-writer-sizes-its-columns-from-the-content.md
+- None (can start immediately)
 
 ## Mode
 
