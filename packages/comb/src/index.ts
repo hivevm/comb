@@ -4,6 +4,7 @@ export {
   EngineLostError,
   EngineSourceError,
   GraphDataError,
+  IconError,
   RendererUnavailableError,
 } from "./api";
 export type {
@@ -16,6 +17,7 @@ export type {
   EngineSourceProblem,
   GraphChange,
   GraphDataProblem,
+  IconProblem,
 } from "./api";
 export type {
   ContentElement,

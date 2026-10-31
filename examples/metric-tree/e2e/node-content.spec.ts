@@ -453,7 +453,7 @@ test("content past a limit or malformed is refused naming the node, and the grap
       { content: Array.from({ length: 9 }, () => [title]) },
       { content: [Array.from({ length: 7 }, () => title)] },
       { content: [5] },
-      { content: [[{ ...title, kind: "icon" }]] },
+      { content: [[{ ...title, kind: "chart" }]] },
       { content: [[{ ...title, weight: -1 }]] },
       { content: [[{ ...title, role: "headline" }]] },
       { content: [[{ ...title, text: 5 }]] },

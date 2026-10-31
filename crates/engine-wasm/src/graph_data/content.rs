@@ -2,8 +2,8 @@
 //! content crosses as and the content of a single node read through serde-wasm-bindgen, both
 //! checked by the one function below, and the content the engine keeps to lay out.
 //!
-//! `text`, `action`, `badge`, `progress`, and `metric` have columns and a code so far; each further
-//! kind of ADR-0013 adds its own with its ticket, in the places ADR-0034 gives them.
+//! Each of the six kinds of ADR-0013, `text`, `action`, `badge`, `progress`, `metric`, and `icon`,
+//! has a code and fills the columns ADR-0034 gives it.
 
 use std::fmt;
 
@@ -56,6 +56,7 @@ pub enum KindCode {
     Badge,
     Progress,
     Metric,
+    Icon,
     Unnamed,
 }
 
@@ -68,6 +69,7 @@ pub enum ElementKind {
     Badge,
     Progress,
     Metric,
+    Icon,
 }
 
 /// The element of a node a press hits (ADR-0013): its row and column, its kind, and for an
@@ -113,6 +115,7 @@ pub(crate) fn kind_code(name: &str) -> KindCode {
         "badge" => KindCode::Badge,
         "progress" => KindCode::Progress,
         "metric" => KindCode::Metric,
+        "icon" => KindCode::Icon,
         _ => KindCode::Unnamed,
     }
 }
@@ -173,7 +176,8 @@ pub(crate) fn role_of(code: u8) -> Option<Role> {
 /// texts, every string an element shows, a metric's caption, value, and trend's text in that
 /// order, concatenated in pieces as every string column is, with
 /// their boundaries and per text whether it is a text; and the names, every string an element
-/// names and does not show, an action's identifier, as the texts are.
+/// names and does not show, an action's identifier and an icon's registered name, as the texts
+/// are.
 #[derive(Clone, Copy)]
 pub struct ContentColumns<'a> {
     pub row_bounds: &'a [u32],
@@ -209,6 +213,7 @@ fn filled(kind: u8) -> (usize, usize) {
         k if k == KindCode::Action as u8 => (1, 1),
         k if k == KindCode::Badge as u8 => (1, 0),
         k if k == KindCode::Metric as u8 => (3, 0),
+        k if k == KindCode::Icon as u8 => (0, 1),
         _ => (0, 0),
     }
 }
@@ -278,7 +283,7 @@ impl ContentColumns<'_> {
     /// the elements' columns are as long as there are elements, each code names a kind, a role, or
     /// a direction, or none, each validity byte is 1 or 0, there are as many texts and names as the
     /// elements' kinds fill, a text for each `text` and `badge`, a text and a name for each
-    /// `action`, and three texts for each `metric`, and
+    /// `action`, three texts for each `metric`, and a name for each `icon`, and
     /// only a progress bar holds segments, each with a fraction and a colour.
     pub(crate) fn fit(&self, nodes: usize) -> bool {
         let elements = self.kinds.len();
@@ -445,6 +450,12 @@ impl ContentColumns<'_> {
             cursor.name += 1;
             check_string(self.names(), name, at, "id", cursor)?;
             return Ok(fonts.of(Role::Body).line_height());
+        }
+        if kind == KindCode::Icon as u8 {
+            let name = cursor.name;
+            cursor.name += 1;
+            check_string(self.names(), name, at, "name", cursor)?;
+            return Ok(layout::element_height(&Element::Icon, fonts));
         }
         if kind == KindCode::Badge as u8 {
             self.check_text(at, cursor)?;
@@ -780,7 +791,7 @@ impl ContentData {
     }
 
     /// The name at `index`, once mapped.
-    fn name(&self, index: usize) -> &str {
+    pub(crate) fn name(&self, index: usize) -> &str {
         string_at(&self.names, &self.name_bounds, &self.name_spans, index)
     }
 
@@ -819,11 +830,14 @@ impl ContentData {
     }
 
     /// The element at `element`, its text, where it shows one, the one at `text`, and a metric's
-    /// three from there, as the layout reads it.
+    /// three from there, as the layout reads it; a progress bar and an icon read no text.
     fn element(&self, element: usize, text: usize) -> Element<'_> {
         let kind = self.kinds[element];
         if kind == KindCode::Progress as u8 {
             return Element::Progress;
+        }
+        if kind == KindCode::Icon as u8 {
+            return Element::Icon;
         }
         if kind == KindCode::Metric as u8 {
             return Element::Metric {
@@ -841,6 +855,9 @@ impl ContentData {
         let kind = self.kinds[element];
         if kind == KindCode::Progress as u8 {
             return Element::Progress;
+        }
+        if kind == KindCode::Icon as u8 {
+            return Element::Icon;
         }
         if kind == KindCode::Action as u8 {
             return Element::Action { text };
@@ -915,6 +932,7 @@ impl ContentData {
             Element::Badge { .. } => (ElementKind::Badge, None),
             Element::Progress => (ElementKind::Progress, None),
             Element::Metric { .. } => (ElementKind::Metric, None),
+            Element::Icon => (ElementKind::Icon, None),
             Element::Text { .. } => (ElementKind::Text, None),
         };
         Some(ElementHit {
@@ -943,7 +961,8 @@ impl ContentData {
 /// the first where its element's does; and per element the boundaries of its arrows in
 /// `arrow_bounds`, one more than there are elements, a metric's one where its column holds it and
 /// none of another kind, each arrow's triangle as three points `x, y` relative to its node in
-/// `arrows`, drawn in its element's colour.
+/// `arrows`, drawn in its element's colour. An icon's text in `texts` is its registered name,
+/// whole, which the shell draws as the image registered under it and never as text.
 #[derive(Debug, Default)]
 pub struct Drawn {
     pub kinds: Vec<u8>,
@@ -986,6 +1005,12 @@ impl Drawn {
         self.arrows.clear();
     }
 
+    /// Pushes `name`, an icon's registered name, whole onto the texts.
+    fn push_name(&mut self, name: &str) {
+        self.texts.push_str(name);
+        self.units += numbered(utf16_length(name));
+    }
+
     /// Pushes what is drawn of `text`, its first `at.kept` UTF-16 code units and an ellipsis
     /// after them where `at.ellipsis`, onto the texts.
     fn push_text(&mut self, text: &str, at: &Placed) {
@@ -1011,15 +1036,18 @@ impl ContentData {
     /// Pushes onto `drawn` the kind, the role, the colour, the drawn text, the pieces of the bar,
     /// and the parts and the arrow of each element of the node at `node`, which `placed` holds in
     /// the order of its rows and theirs, as `lay_out` placed them in `fonts`; an action's, a
-    /// badge's, a progress bar's, and a metric's role is body, whose font draws the first two,
-    /// whose line the third lies in, and the value and the trend's text of the last.
+    /// badge's, a progress bar's, a metric's, and an icon's role is body, whose font draws the first
+    /// two, whose line the third and the last lie in, and the value and the trend's text of the
+    /// fourth; an icon's text is its registered name.
     pub(crate) fn draw(&self, node: usize, placed: &[Placed], fonts: &Fonts, drawn: &mut Drawn) {
         for ((_, _, element, strings), at) in self.elements_of(node).zip(placed) {
             let kind = self.kinds[element];
             drawn.kinds.push(kind);
             let shown = self.element(element, strings.text);
             let (role, color) = match shown {
-                Element::Action { .. } | Element::Progress => (RoleCode::Body as u8, 0),
+                Element::Action { .. } | Element::Progress | Element::Icon => {
+                    (RoleCode::Body as u8, 0)
+                }
                 Element::Badge { .. } | Element::Metric { .. } => {
                     (RoleCode::Body as u8, self.color(element))
                 }
@@ -1052,6 +1080,8 @@ impl ContentData {
                     drawn.part_ends.push(drawn.units);
                 }
                 drawn.arrows.extend(parts.arrow.iter().flatten());
+            } else if matches!(shown, Element::Icon) {
+                drawn.push_name(self.name(strings.name));
             } else {
                 drawn.push_text(shown.text(), at);
             }
@@ -1141,6 +1171,10 @@ impl ContentData {
                 },
                 Element::Progress => ContentElement::Progress {
                     segments: self.segments_of(element),
+                    weight,
+                },
+                Element::Icon => ContentElement::Icon {
+                    name: self.name(at.name).to_owned(),
                     weight,
                 },
                 Element::Badge { .. } => ContentElement::Badge {
@@ -1301,10 +1335,10 @@ impl ContentInput {
     }
 
     /// Adds an element of `kind`, `weight`, and `role`, the role crossing as 0 for an action, a
-    /// badge, a progress bar, and a metric, and of the colour `color`, NaN for a kind other than
-    /// `badge`; where it is a `text`, an `action`, or a `badge`, its text, and where it is an
-    /// `action`, its identifier `id`, each none for one of another type, which crosses empty and
-    /// marked as no string.
+    /// badge, a progress bar, a metric, and an icon, and of the colour `color`, NaN for a kind
+    /// other than `badge`; where it is a `text`, an `action`, or a `badge`, its text, and where it
+    /// is an `action` its identifier and an `icon` its name, `id`, each none for one of another
+    /// type, which crosses empty and marked as no string.
     pub(crate) fn push(
         &mut self,
         kind: KindCode,
@@ -1320,7 +1354,11 @@ impl ContentInput {
         data.roles.push(
             if matches!(
                 kind,
-                KindCode::Action | KindCode::Badge | KindCode::Progress | KindCode::Metric
+                KindCode::Action
+                    | KindCode::Badge
+                    | KindCode::Progress
+                    | KindCode::Metric
+                    | KindCode::Icon
             ) {
                 0
             } else {
@@ -1481,13 +1519,19 @@ impl<'de> Visitor<'de> for RowSeed<'_> {
                             ],
                         );
                     } else {
+                        // An icon names its image by `name`, an action its meaning by `id`.
+                        let named = if kind == KindCode::Icon {
+                            cells.name.as_deref()
+                        } else {
+                            cells.id.as_deref()
+                        };
                         content.push(
                             kind,
                             cells.weight,
                             role as u8,
                             cells.color,
                             cells.text.as_deref(),
-                            cells.id.as_deref(),
+                            named,
                         );
                     }
                     // Only a progress bar's segments are read; any other kind holds none.
@@ -1564,6 +1608,8 @@ struct Fields {
     fraction: f64,
     text: Option<String>,
     id: Option<String>,
+    /// An icon's registered name, read as a text is.
+    name: Option<String>,
     /// A metric's caption and value, read as a text is.
     caption: Option<String>,
     value: Option<String>,
@@ -1600,6 +1646,7 @@ impl<'de> Visitor<'de> for ElementVisitor {
             fraction: f64::NAN,
             text: None,
             id: None,
+            name: None,
             caption: None,
             value: None,
             trend: None,
@@ -1623,6 +1670,7 @@ impl<'de> Visitor<'de> for ElementVisitor {
                 }
                 "text" => fields.text = map.next_value::<Lenient<String>>()?.0,
                 "id" => fields.id = map.next_value::<Lenient<String>>()?.0,
+                "name" => fields.name = map.next_value::<Lenient<String>>()?.0,
                 "caption" => fields.caption = map.next_value::<Lenient<String>>()?.0,
                 "value" => fields.value = map.next_value::<Lenient<String>>()?.0,
                 "trend" => fields.trend = map.next_value::<TrendCells>()?.0,

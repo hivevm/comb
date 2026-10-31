@@ -4,8 +4,10 @@
 //! element's rectangle, where each text is cut and an ellipsis drawn after it, and the node's
 //! height from its rows; the rest of the engine takes that height as the node's.
 //!
-//! The elements `text`, `action`, `badge`, `progress`, and `metric` exist so far; each further kind
-//! of ADR-0013 joins `Element` with the ticket that builds it. An action is a text in the font of
+//! The six elements of ADR-0013 exist: `text`, `icon`, `action`, `badge`, `progress`, and
+//! `metric`. An icon is a square as high as the body's line, at most as wide as its column, at its
+//! column's left and in the middle of that line; which image it shows is the bridge's to keep and
+//! the shell's to draw, since the layout reads none of it. An action is a text in the font of
 //! role body; what it names is the bridge's to keep, since the layout reads none of it. A badge is
 //! a text in the font of role body on a pill, whose rectangle is the badge's: it hugs the text as
 //! far as it is drawn, padded as an edge label's pill is, and stays within its column; its colour
@@ -215,6 +217,9 @@ pub enum Element<'a> {
         role: Role,
         text: &'a str,
     },
+    /// A square the height of the body's line, at most its column, which shows the image the host
+    /// application registered under its name; it shows no text.
+    Icon,
     /// A text whose click the host application gives a meaning, drawn in the font of role body.
     Action {
         text: &'a str,
@@ -239,9 +244,11 @@ impl Element<'_> {
     pub const fn role(&self) -> Role {
         match *self {
             Self::Text { role, .. } => role,
-            Self::Action { .. } | Self::Badge { .. } | Self::Progress | Self::Metric { .. } => {
-                Role::Body
-            }
+            Self::Icon
+            | Self::Action { .. }
+            | Self::Badge { .. }
+            | Self::Progress
+            | Self::Metric { .. } => Role::Body,
         }
     }
 
@@ -249,7 +256,7 @@ impl Element<'_> {
     pub const fn text(&self) -> &str {
         match *self {
             Self::Text { text, .. } | Self::Action { text } | Self::Badge { text } => text,
-            Self::Progress | Self::Metric { .. } => "",
+            Self::Icon | Self::Progress | Self::Metric { .. } => "",
         }
     }
 }
@@ -274,8 +281,9 @@ pub struct Placed {
     pub ellipsis: bool,
 }
 
-/// The height of `element` in `fonts`: its line's, a badge's pill's, its line and the padding
-/// above and below, and a metric's two lines, the caption's and the body's below it.
+/// The height of `element` in `fonts`: its line's, an icon's the body's line, a badge's pill's,
+/// its line and the padding above and below, and a metric's two lines, the caption's and the
+/// body's below it.
 pub fn element_height(element: &Element, fonts: &Fonts) -> f64 {
     let line = fonts.of(element.role()).line_height();
     match element {
@@ -459,19 +467,39 @@ pub fn lay_out(
                 }
                 _ => (column, cut(element.text(), f64::from(column), font)),
             };
-            out.push(Placed {
-                x,
-                y: place(top + row_offset(&element, badged)),
-                width,
-                height: place(height),
-                kept,
-                ellipsis,
+            let y = top + row_offset(&element, badged);
+            out.push(if matches!(element, Element::Icon) {
+                icon_square(x, y, column, height)
+            } else {
+                Placed {
+                    x,
+                    y: place(y),
+                    width,
+                    height: place(height),
+                    kept,
+                    ellipsis,
+                }
             });
             left += span + gap;
         }
         top += row_height(row, fonts);
     }
     node_height(std::iter::once(top - PADDING_TOP))
+}
+
+/// The square of an icon whose column lies from `x`, `column` wide, on a line `line` high from
+/// `y`: as high as the line and at most as wide as the column, at the column's left and in the
+/// middle of the line, so that an icon in a column narrower than its line stays within it.
+fn icon_square(x: f32, y: f64, column: f32, line: f64) -> Placed {
+    let side = f64::from(column).min(line);
+    Placed {
+        x,
+        y: place(y + (line - side) / 2.0),
+        width: column.min(place(side)),
+        height: place(side),
+        kept: 0,
+        ellipsis: false,
+    }
 }
 
 /// Pushes onto `out` the pieces of the bar of a progress bar placed at `at` whose segments are
@@ -992,7 +1020,8 @@ mod tests {
             }
             let rows: Vec<u32> = (0..rng.below(9)).map(|_| rng.below(7) as u32).collect();
             let cells: Vec<Cell> = (0..rows.iter().sum::<u32>())
-                .map(|_| match rng.below(4) {
+                .map(|_| match rng.below(5) {
+                    4 => icon(1.0),
                     3 => badge("Done", 1.0),
                     role => text(roles[role], "w", 1.0),
                 })
@@ -1581,6 +1610,113 @@ mod tests {
         assert!(arrows > 100 && cut_values > 100, "{arrows} {cut_values}");
     }
 
+    fn icon(weight: f64) -> Cell<'static> {
+        Cell {
+            weight,
+            element: Element::Icon,
+        }
+    }
+
+    #[test]
+    fn an_icon_is_a_square_of_the_body_s_line_at_its_column_s_left() {
+        // Verifies: ADR-0013, Q-4
+        // At 220, a row of an icon beside a title weighted 1 and 3, columns of 47 from 12 and 141
+        // from 67: the icon's square lies at its column's left, as high and as wide as the body's
+        // line, 16, at the row's top; the row is the title's 18 high. Below it a badge beside an
+        // icon, columns of 94 from 12 and 114: the icon lies 3 lower, as every element beside a
+        // badge does, and the row is the pill's 22. The node is 10 + 18 + 22 + 10 = 60, the least
+        // height 64.
+        let cells = [
+            icon(1.0),
+            text(Role::Title, "Bet", 3.0),
+            badge("Done", 1.0),
+            icon(1.0),
+        ];
+        let (placed, height) = laid_out(&cells, &[2, 2], 220.0);
+        assert_near(
+            &placed,
+            &[
+                [12.0, 10.0, 16.0, 16.0],
+                [67.0, 10.0, 141.0, 18.0],
+                [12.0, 28.0, 40.0, 22.0],
+                [114.0, 31.0, 16.0, 16.0],
+            ],
+        );
+        assert_eq!((placed[0].kept, placed[0].ellipsis), (0, false));
+        assert_eq!(height, 64.0);
+        // An icon alone in a row makes it the body's line high: 10 + 16 * 8 + 10 = 148.
+        let stacked = [icon(1.0); 8];
+        assert_eq!(laid_out(&stacked, &[1; 8], 220.0).1, 148.0);
+        // At 40 its column is 16 wide, the square whole; at 30 it is 6 wide from 12, and the
+        // square 6 on a side, in the middle of the line: from 10 + 5.
+        assert_near(
+            &laid_out(&[icon(1.0)], &[1], 40.0).0,
+            &[[12.0, 10.0, 16.0, 16.0]],
+        );
+        assert_near(
+            &laid_out(&[icon(1.0)], &[1], 30.0).0,
+            &[[12.0, 15.0, 6.0, 6.0]],
+        );
+        // A column of no width holds a square of none.
+        assert_near(
+            &laid_out(&[icon(1.0)], &[1], 0.0).0,
+            &[[0.0, 18.0, 0.0, 0.0]],
+        );
+    }
+
+    #[test]
+    fn an_icon_is_hit_on_its_square_and_not_beside_it_nor_at_the_middle_level() {
+        // Verifies: ADR-0013
+        // An icon alone in a column 196 wide at 220: its square from (12, 10), 16 × 16.
+        let cells = [icon(1.0), text(Role::Body, "b", 1.0)];
+        let (placed, _) = laid_out(&cells, &[1, 1], 220.0);
+        let at = |x, y| element_at(&cells, &placed, x, y, false);
+        assert_eq!(at(12.0, 10.0), Some(0));
+        assert_eq!(at(27.9, 25.9), Some(0));
+        // Beside the square in its column, and below it, no element.
+        assert_eq!(at(28.0, 15.0), None);
+        assert_eq!(at(150.0, 15.0), None);
+        assert_eq!(at(20.0, 26.0), Some(1));
+        // At the middle level no icon is hit.
+        assert_eq!(element_at(&cells, &placed, 20.0, 15.0, true), None);
+    }
+
+    #[test]
+    fn any_icon_lies_inside_its_column_and_its_line() {
+        // Verifies: ADR-0013, Q-4
+        const WIDTHS: [f32; 7] = [0.0, 1.0, 16.0, 23.0, 220.0, 1e6, 1.3e36];
+        let mut rng = Lcg(17);
+        for _ in 0..2_000 {
+            let mut fonts = Fonts::default();
+            let metric = |rng: &mut Lcg| [0.0, 1.0, 7.5, 16.0, MAX_METRIC][rng.below(5)];
+            let font = Font::new(&[], &[], metric(&mut rng), metric(&mut rng)).unwrap();
+            fonts.set(Role::Body, font);
+            let columns = 1 + rng.below(6);
+            let cells: Vec<Cell> = (0..columns)
+                .map(|_| icon([0.5, 1.0, 3.0][rng.below(3)]))
+                .collect();
+            let width = WIDTHS[rng.below(WIDTHS.len())];
+            // The same row of texts gives each column and its line, which the square stays within.
+            let columns_of: Vec<Cell> = cells
+                .iter()
+                .map(|cell| text(Role::Body, "", cell.weight))
+                .collect();
+            let rows = [cells.len() as u32];
+            let mut placed = Vec::new();
+            let mut column = Vec::new();
+            lay_out(&cells, &rows, width, &fonts, &mut placed);
+            lay_out(&columns_of, &rows, width, &fonts, &mut column);
+            for (square, column) in placed.iter().zip(&column) {
+                assert_eq!(square.x, column.x);
+                assert_eq!(square.width, square.height, "{square:?}");
+                assert!(square.width <= column.width, "{square:?} {column:?}");
+                assert!(square.y >= column.y, "{square:?} {column:?}");
+                let (bottom, line) = (square.y + square.height, column.y + column.height);
+                assert!(bottom <= line, "{square:?} {column:?}");
+            }
+        }
+    }
+
     #[test]
     fn a_point_hits_the_element_whose_rectangle_holds_it_and_none_between() {
         // Verifies: ADR-0013
@@ -1657,7 +1793,7 @@ mod tests {
     fn any_content_the_bridge_accepts_lays_out_finite_inside_its_node() {
         // Verifies: ADR-0013, Q-4
         // Up to the bridge's limits, 8 rows of 6 columns of texts and actions of up to 1,000 code
-        // units, with weights from the smallest to the largest positive finite numbers, at widths
+        // units and icons, with weights from the smallest to the largest positive finite numbers, at widths
         // from 0 to the largest the world holds, in fonts of any metric up to the largest.
         const WEIGHTS: [f64; 6] = [f64::MIN_POSITIVE, 1e-300, 0.5, 1.0, 1e300, f64::MAX];
         const WIDTHS: [f32; 6] = [0.0, 1.0, 23.0, 220.0, 1e6, 1.3e36];
@@ -1676,8 +1812,9 @@ mod tests {
             let cells: Vec<Cell> = (0..rows.iter().sum::<u32>())
                 .map(|_| {
                     let text = texts[rng.below(texts.len())];
-                    // A role, or past them an action.
-                    let element = match rng.below(4) {
+                    // A role, or past them an action or an icon.
+                    let element = match rng.below(5) {
+                        4 => Element::Icon,
                         3 => Element::Action { text },
                         role => Element::Text {
                             role: roles[role],

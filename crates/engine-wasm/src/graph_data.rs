@@ -231,10 +231,10 @@ pub struct Trend {
 /// One element of node content (ADR-0013): a text in a role; an action, a text whose click
 /// reports its identifier `id` to the host application; a badge, a text on a pill of the colour
 /// `color`, `0xRRGGBB`; a progress bar, a bar the width of its column divided into `segments`
-/// from its left, the rest of it the track; or a metric, a `caption` above a `value` and its
-/// `trend`; each in a column that takes its share of the row's width by `weight`, 1 where it is
-/// left out. Of the closed set of ADR-0013, `text`, `action`, `badge`, `progress`, and `metric`
-/// are built so far; this type names exactly the kinds the bridge accepts.
+/// from its left, the rest of it the track; a metric, a `caption` above a `value` and its
+/// `trend`; or an icon, the image the host application registered under `name`, which draws
+/// nothing while none is registered; each in a column that takes its share of the row's width by
+/// `weight`, 1 where it is left out. This type names exactly the six kinds of ADR-0013.
 /// Its reading is `ContentInput`'s, which takes any value, so that what it refuses is named.
 #[derive(Tsify, Serialize, Debug, PartialEq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -266,6 +266,11 @@ pub enum ContentElement {
         caption: String,
         value: String,
         trend: Trend,
+        #[tsify(optional)]
+        weight: Option<f64>,
+    },
+    Icon {
+        name: String,
         #[tsify(optional)]
         weight: Option<f64>,
     },
@@ -2668,6 +2673,11 @@ pub(crate) mod tests {
         )
     }
 
+    /// An icon of weight 1 naming `name`, none for one of another type.
+    pub(crate) const fn icon(name: Option<&str>) -> Named<'_> {
+        ((KindCode::Icon, 1.0, RoleCode::Title, None), name)
+    }
+
     /// Content of a title row, "Bet", then a row of a badge of weight 1 showing `text`, none for
     /// one of another type, on `color`.
     pub(crate) fn badged(text: Option<&str>, color: f64) -> ContentInput {
@@ -3491,6 +3501,94 @@ pub(crate) mod tests {
         columns.content.name_valid.push(1);
         columns.content.name_bounds.push(1);
         assert!(!columns.content.view().fit(1));
+        columns.content.name_valid.clear();
+        columns.content.name_bounds = vec![0];
+        columns.content.names.clear();
+        assert!(!columns.content.view().fit(1));
+    }
+
+    #[test]
+    fn an_icon_whose_name_is_no_string_or_too_long_names_its_node() {
+        // Verifies: ADR-0013, ADR-0034, Q-7
+        // A title and an icon beside it, whose name is checked as a string of content is, against
+        // the limit of a text, as the field `name`; through a load and through `addNode` alike.
+        let long = "d".repeat(MAX_TEXT + 1);
+        let held = "d".repeat(MAX_TEXT);
+        let with = |name: Option<&str>| {
+            named_content(&[&[(text(RoleCode::Title, "Bet"), None), icon(name)]])
+        };
+        let invalid = |node: &str| GraphDataProblem::InvalidContentText {
+            node: node.into(),
+            row: 0,
+            column: 1,
+            field: "name".into(),
+        };
+        let too_long = |node: &str| GraphDataProblem::ContentTextTooLong {
+            node: node.into(),
+            row: 0,
+            column: 1,
+            field: "name".into(),
+            limit: TEXT_LIMIT,
+        };
+        type Refusal = fn(&str) -> GraphDataProblem;
+        let cases: [(Option<&str>, Refusal); 2] = [(None, invalid), (Some(&long), too_long)];
+        for (name, problem) in cases {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+            data.nodes[1].content = with(name).into();
+            assert_eq!(graph_of(&data).unwrap_err(), problem("b"));
+            let mut graph = graph_of(&batch(&[("a", 0.0, 0.0)], &[])).unwrap();
+            let node = added(0.0, 0.0, |node| node.content = with(name).into());
+            assert_eq!(add(&mut graph, &node).unwrap_err(), problem("n"));
+        }
+        // A name of the limit, and an empty one, which names an icon no host registers.
+        for name in [held.as_str(), ""] {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+            data.nodes[1].content = with(Some(name)).into();
+            assert!(graph_of(&data).is_ok());
+        }
+    }
+
+    #[test]
+    fn an_icons_name_counts_against_the_budget_of_a_loads_strings_of_content() {
+        // Verifies: ADR-0034, Q-7
+        // The budget lowered to 5 code units: `a`'s icon named "abcde" holds it, and `b`'s title
+        // of 1 passes it.
+        content::TEST_BUDGET.set(Some(5));
+        let load = |b_text: &str| {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+            data.nodes[0].content = named_content(&[&[icon(Some("abcde"))]]).into();
+            data.nodes[1].content = titled(b_text);
+            graph_of(&data)
+        };
+        let held = load("");
+        let passed = load("b");
+        content::TEST_BUDGET.set(None);
+        assert!(held.is_ok(), "{:?}", held.err());
+        assert_eq!(
+            passed.err(),
+            Some(GraphDataProblem::ContentBudgetExceeded {
+                node: "b".into(),
+                limit: MAX_CONTENT_UNITS
+            })
+        );
+    }
+
+    #[test]
+    fn columns_of_an_icon_that_do_not_follow_from_its_kind_are_malformed() {
+        // Verifies: ADR-0034
+        // An icon fills one name and no text: a text, or no name, does not fit.
+        let mut columns = OwnedColumns::of([Some(&added(0.0, 0.0, |node| {
+            node.content = named_content(&[&[icon(Some("bet"))]]).into();
+        }))]);
+        assert!(columns.content.view().fit(1));
+        assert_eq!(columns.content.kinds, [KindCode::Icon as u8]);
+        assert!(columns.content.text_valid.is_empty());
+        columns.content.text_valid.push(1);
+        columns.content.text_bounds.push(0);
+        assert!(!columns.content.view().fit(1));
+        columns.content.text_valid.clear();
+        columns.content.text_bounds = vec![0];
+        assert!(columns.content.view().fit(1));
         columns.content.name_valid.clear();
         columns.content.name_bounds = vec![0];
         columns.content.names.clear();

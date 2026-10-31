@@ -9,6 +9,7 @@ const ARGUMENTS: Record<string, unknown[]> = {
   EngineLostError: [],
   EngineSourceError: ["missing"],
   GraphDataError: [{ kind: "unknownNode", node: "a" }],
+  IconError: ["fetchable"],
   RendererUnavailableError: ["canvas"],
 };
 

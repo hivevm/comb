@@ -26,6 +26,7 @@ import { Scene } from "../render/scene";
 import { fontMetricsOf } from "../render/nodes";
 import { contentClicksOf, listenersOf, type GraphChange } from "./changes";
 import { engineOf, type EngineSource } from "./engine";
+import { iconOf } from "./icons";
 import { editorsOf } from "./editors";
 import type { Limits } from "./snapshot";
 import { createFrames } from "./frames";
@@ -47,6 +48,8 @@ import {
 export { EngineLostError } from "../bridge";
 export { GraphDataError } from "./editors";
 export { EngineSourceError } from "./engine";
+export { IconError } from "./icons";
+export type { IconProblem } from "./icons";
 export type { GraphChange } from "./changes";
 export type { EngineSource, EngineSourceProblem } from "./engine";
 export type { GraphDataProblem } from "../bridge";
@@ -152,6 +155,17 @@ export interface Comb {
    *  far level none; a press that moves further drags the node and clicks nothing. Returns the
    *  unsubscribe function (ADR-0013). */
   onContentClick(listener: (click: ContentClick) => void): () => void;
+  /** Registers `image`, an image the host application has loaded, an `ImageBitmap`, an
+   *  `HTMLImageElement` that has loaded, or a canvas, as the icon `name`: every icon element that
+   *  names it is drawn as it at the near level, fitted into its square with its aspect kept, from
+   *  the next frame on and without a load. An icon element whose name none registers draws
+   *  nothing, and is no error. Registering a name again draws the new image wherever the old one
+   *  was drawn, and releases the old one's texture; Comb never changes `image` itself. Throws an
+   *  `IconError` where `name` is no string, holds a lone surrogate, or is longer than a text of
+   *  content, or where `image` is a string, `URL`, or `Request`, which Comb never fetches (Q-6),
+   *  is none of the three, or has not loaded; and registers nothing then. Needs no engine, so it
+   *  keeps working once the engine is lost (ADR-0013). */
+  registerIcon(name: string, image: ImageBitmap | HTMLImageElement | HTMLCanvasElement): void;
   /** Calls `listener` once, with the `EngineLostError`, when the engine is lost for the page, and
    *  at once where it is lost already; returns the unsubscribe function. The page recovers only
    *  by being loaded anew (ADR-0021). */
@@ -310,6 +324,10 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
     onSelectionChange: listeners.onSelectionChange,
     onChange: listeners.onChange,
     onContentClick: clicks.onContentClick,
+    registerIcon(name, image) {
+      scene.registerIcon(name, iconOf(name, image, limits.text));
+      frames.schedule();
+    },
     onEngineLost: lost.onEngineLost,
     whenRendered: frames.whenRendered,
     destroy() {
@@ -320,6 +338,7 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
       interaction.detach();
       detachDeletion();
       app.destroy(true, { children: true });
+      scene.icons.destroy();
     },
   };
   scenes.set(comb, { scene, hitAt: interaction.hitAt });
