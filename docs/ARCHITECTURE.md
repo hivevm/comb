@@ -141,7 +141,7 @@ The functional core and its shell follow
   call that names one refuses it as it refuses a slot beyond the graph, as a slot that holds
   nothing (`SlotError`). Its query returns the slots a rectangle
   meets, node slots in ascending rank, and `hit_at` what a press at a point hits
-  ([ADR-0025](adr/0025-the-engine-answers-every-hit-test.md)): the node drawn on top there, the one
+  ([ADR-0013](adr/0013-node-content-model.md)): the node drawn on top there, the one
   of the highest rank, else the edge in the highest slot within 4 screen pixels of its path as the
   stroke of the level flattens it, the parts of the path far from the point as chords; where the
   shell asks for connectors, at the near and middle level, a connector within 8 screen pixels, of

@@ -381,7 +381,7 @@ async function restAtLevel(page: Page, middle: Point, level: Level) {
 }
 
 /** A point on the canvas, near its top left, where a press hits nothing, no connector, label,
- *  node or edge, and so pans (ADR-0025). */
+ *  node or edge, and so pans (ADR-0013). */
 async function emptyPoint(page: Page): Promise<Point> {
   return page.evaluate(() => {
     const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();

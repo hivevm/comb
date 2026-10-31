@@ -343,7 +343,7 @@ describe("interaction tells a click where the pointer is released", () => {
 
 describe("interaction on an edge", () => {
   test("a press on an edge selects it, pans once the pointer moves beyond 4 pixels, and shows a pointer", () => {
-    // Verifies: ADR-0025
+    // Verifies: ADR-0013
     const store = createGraphStore();
     load(store, {
       nodes: [
@@ -369,7 +369,7 @@ describe("interaction on an edge", () => {
   });
 
   test("the cursor over nothing is the default, and a press there pans", () => {
-    // Verifies: ADR-0025
+    // Verifies: ADR-0013
     const store = createGraphStore();
     const { app, emit } = fakeApp();
     attached(app, store, fakeBridge({ kind: "none" }).bridge);
@@ -392,7 +392,7 @@ describe("the hit test", () => {
   for (const connects of [true, false]) {
     for (const [over, hit] of hits) {
       test(`over ${over}, ${connects ? "with" : "without"} connect, hitAt, the hover, and a press ask the engine alike`, () => {
-        // Verifies: ADR-0025
+        // Verifies: ADR-0013
         const store = createGraphStore();
         load(store, {
           nodes: [

@@ -1,5 +1,5 @@
 //! The labels of the edges: the size of each label's pill as the shell measured it, the point of
-//! a label, and the placement of a dragged one (ADR-0025, G-6).
+//! a label, and the placement of a dragged one (ADR-0013, G-6).
 
 use super::{Graph, LabelPlacement, SlotError};
 use crate::geometry::{Point, WORLD_LIMIT};
@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn a_label_measured_with_a_size_that_is_not_finite_and_positive_is_not_hit() {
-        // Verifies: ADR-0025
+        // Verifies: ADR-0013
         let mut rng = Lcg(11);
         let (model, mut graph) = Model::random(&mut rng, 10, 10);
         let edge = (0..10).find(|&e| model.label_point(e).is_some()).unwrap();

@@ -1,6 +1,6 @@
 # ADR-0025: The engine answers every hit test in one call, a connector before an edge label, a node, and an edge
 
-- **Status:** 🟢 accepted
+- **Status:** ⚪ superseded by ADR-0013
 - **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** the hit test of `crates/engine/src/graph.rs` and its export in `crates/engine-wasm/`, the label extents the render layer of `packages/comb/src/render/` hands the engine, and the press and hover of `packages/comb/src/interaction/`

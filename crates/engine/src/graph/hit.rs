@@ -1,4 +1,4 @@
-//! The hit test (ADR-0025): what a press at a point hits, a connector before an edge label, a
+//! The hit test (ADR-0013): what a press at a point hits, a connector before an edge label, a
 //! node, and an edge.
 
 use super::{Graph, Level};
@@ -8,19 +8,19 @@ use crate::stroke::{Stroke, near_path};
 /// The four sides, each with a connector.
 const SIDES: [Side; 4] = [Side::Top, Side::Right, Side::Bottom, Side::Left];
 
-/// How near a press has to come to an edge's path to hit it, in screen pixels (ADR-0025).
+/// How near a press has to come to an edge's path to hit it, in screen pixels (ADR-0013).
 const EDGE_REACH: f64 = 4.0;
 
-/// How near a press has to come to a connector to hit it, in screen pixels (ADR-0025).
+/// How near a press has to come to a connector to hit it, in screen pixels (ADR-0013).
 const CONNECTOR_REACH: f64 = 8.0;
 
-/// What a press hits (ADR-0025): a connector by its node's slot and side, a label by its edge's
+/// What a press hits (ADR-0013): a connector by its node's slot and side, a label by its edge's
 /// slot, a node, or an edge, by its slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
     /// The connector of a side of the node in a slot (ADR-0024).
     Connector(u32, Side),
-    /// The label of the edge in a slot (ADR-0025).
+    /// The label of the edge in a slot (ADR-0013).
     Label(u32),
     Node(u32),
     Edge(u32),
@@ -32,7 +32,7 @@ impl Graph {
     /// `CONNECTOR_REACH` screen pixels, of the node of the highest rank; else at the near level a
     /// label whose measured pill holds it, of the highest edge slot; else a node whose bounds hold
     /// it, the one of the highest rank; else an edge within `EDGE_REACH` screen pixels of its path
-    /// as the stroke of `level` flattens it, the one in the highest slot; else nothing (ADR-0025).
+    /// as the stroke of `level` flattens it, the one in the highest slot; else nothing (ADR-0013).
     /// A pixel beyond any zoom hits as the largest a query strokes for.
     pub fn hit_at(
         &mut self,
@@ -71,7 +71,7 @@ impl Graph {
         found.map(Target::Edge)
     }
 
-    /// The label whose measured pill holds `point`, of the edge in the highest slot (ADR-0025).
+    /// The label whose measured pill holds `point`, of the edge in the highest slot (ADR-0013).
     fn label_at(&mut self, point: Point) -> Option<u32> {
         if self.widest_pill <= 0.0 {
             return None;
@@ -95,7 +95,7 @@ impl Graph {
     }
 
     /// The connector within `reach` of `point`: of the nodes with one there, the one drawn on top,
-    /// and of its connectors the nearest (ADR-0025).
+    /// and of its connectors the nearest (ADR-0013).
     fn connector_at(&mut self, point: Point, reach: f64) -> Option<(u32, Side)> {
         self.node_grid
             .candidates(&Rect::at(point).grown(reach), &mut self.scratch);
@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn a_hit_finds_a_node_before_an_edge_and_an_edge_only_near_its_flattened_path() {
-        // Verifies: ADR-0025
+        // Verifies: ADR-0013
         for seed in 1..=4 {
             let mut rng = Lcg(seed);
             let (mut model, mut graph) = Model::random(&mut rng, 30, 40);
@@ -299,7 +299,7 @@ mod tests {
 
     #[test]
     fn a_hit_finds_a_connector_before_a_node_as_a_scan_finds_and_none_at_the_far_level() {
-        // Verifies: ADR-0025, ADR-0024
+        // Verifies: ADR-0013, ADR-0024
         for seed in 1..=6 {
             let mut rng = Lcg(seed);
             let (mut model, mut graph) = Model::random(&mut rng, 40, 20);
@@ -348,7 +348,7 @@ mod tests {
         }
     }
 
-    /// What a scan of every kind finds at `p`, in the order of ADR-0025, from the model alone: a
+    /// What a scan of every kind finds at `p`, in the order of ADR-0013, from the model alone: a
     /// connector where they are asked for, at the near and middle level; a measured label at the
     /// near level; a node; and an edge, which the flattening's tolerance blurs, given as the edge
     /// surely hit and the distance bounds of each.
@@ -516,7 +516,7 @@ mod tests {
 
     #[test]
     fn a_hit_finds_what_a_scan_of_every_kind_finds_in_the_order_connector_label_node_edge() {
-        // Verifies: ADR-0025
+        // Verifies: ADR-0013
         // How often the scan found each kind, connector, label, node, and edge, so that none goes
         // untested.
         let mut found = [0; 4];
@@ -562,7 +562,7 @@ mod tests {
 
     #[test]
     fn a_hit_at_the_near_level_finds_a_measured_label_inside_its_pill_before_a_node() {
-        // Verifies: ADR-0025
+        // Verifies: ADR-0013
         let mut rng = Lcg(9);
         let (mut model, mut graph) = Model::random(&mut rng, 30, 60);
         let measured: Vec<u32> = (0..60).filter(|e| e % 3 != 0).collect();
