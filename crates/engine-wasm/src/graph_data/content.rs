@@ -1280,10 +1280,13 @@ impl Checked {
 pub(crate) struct ContentStore {
     /// The content of the nodes of the last load, by slot.
     loaded: ContentData,
-    /// The content of each slot an addition or a patch gave content since the load, with the
-    /// code units of its strings; empty, of none, for each slot a removal freed since.
-    edited: HashMap<u32, (ContentData, u64)>,
+    /// The content of each slot an addition or a patch gave content since the load, boxed with
+    /// the code units of its strings, and none for each slot a removal freed since: an entry of
+    /// 8 bytes in WebAssembly's memory, about 9 to 18 with the map's control byte and spare room.
+    edited: HashMap<u32, Option<Box<(ContentData, u64)>>>,
     units: u64,
+    /// The content of a free slot: none, which allocates nothing.
+    empty: ContentData,
 }
 
 impl ContentStore {
@@ -1293,6 +1296,7 @@ impl ContentStore {
             loaded,
             edited: HashMap::new(),
             units,
+            empty: ContentData::default(),
         }
     }
 
@@ -1311,7 +1315,8 @@ impl ContentStore {
     /// free slot.
     pub(crate) fn of(&self, slot: u32) -> (&ContentData, usize) {
         match self.edited.get(&slot) {
-            Some((content, _)) => (content, 0),
+            Some(Some(edited)) => (&edited.0, 0),
+            Some(None) => (&self.empty, 0),
             None => (&self.loaded, slot as usize),
         }
     }
@@ -1326,7 +1331,8 @@ impl ContentStore {
     /// content it held leave the count, and those of `checked` join it.
     pub(crate) fn set(&mut self, slot: u32, checked: Checked) {
         self.units = self.units - self.units_at(slot) + checked.units;
-        self.edited.insert(slot, (checked.data, checked.units));
+        let edited = Box::new((checked.data, checked.units));
+        self.edited.insert(slot, Some(edited));
     }
 
     /// Takes the content of the nodes in `slots` out of the count and leaves each slot empty, so
@@ -1334,14 +1340,15 @@ impl ContentStore {
     pub(crate) fn remove(&mut self, slots: &[u32]) {
         for &slot in slots {
             self.units -= self.units_at(slot);
-            self.edited.insert(slot, (ContentData::default(), 0));
+            self.edited.insert(slot, None);
         }
     }
 
     /// The code units of the strings of content of the node in `slot`.
     fn units_at(&self, slot: u32) -> u64 {
         match self.edited.get(&slot) {
-            Some(&(_, units)) => units,
+            Some(Some(edited)) => edited.1,
+            Some(None) => 0,
             None => self.loaded.units_of(slot as usize),
         }
     }
