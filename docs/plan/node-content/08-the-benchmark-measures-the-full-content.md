@@ -32,3 +32,20 @@ says by how much and why. The maintainer records the kind's new baseline from a 
 
 with the human: a new baseline is the maintainer's to record (ADR-0008), and a number past the
 budget is a decision on Q-1 and the levels' thresholds (ADR-0027).
+
+## Where it stands
+
+- Criterion 1 is built, not yet run: `bench/run.ts` times drag, pan, zoom, and edits at the
+  fitted view the example opens with, under the names the baselines hold, and then at each level,
+  `drag near` … `edit far`: near and middle centred in the graph at the scale where each begins,
+  far at the fitted view's scale; the zoom at a level stays within it. The run records
+  `load.content`, the example's nodes by type and elements by kind, and prints it. A gesture the
+  kind's baseline lacks is reported as `no baseline` and listed as new, never judged
+  (`bench/compare.test.ts`, *the gestures at each level of detail*, against both baselines as
+  recorded). The **Benchmark** workflow's timeout is 60 minutes for sixteen gestures a run.
+- Criterion 3 is done: `work-per-frame.spec.ts` pans at the near level over the 50,010 nodes
+  twice and counts every element view of the node views drawn; the second pan creates none. It
+  failed on `main` (158 texts made anew); node views now share their texts and sprites in the
+  layer.
+- Criterion 2 waits for a run of `bun run bench` and of the **Benchmark** workflow against the
+  current baselines; the numbers past 25 %, if any, are decided with the human (Mode).
