@@ -261,7 +261,7 @@ impl Element<'_> {
     }
 
     /// The element's kind, and a text's role.
-    pub const fn kind(&self) -> Kind {
+    const fn kind(&self) -> Kind {
         match *self {
             Self::Text { role, .. } => Kind::Text(role),
             Self::Icon => Kind::Icon,
@@ -1811,7 +1811,9 @@ mod tests {
         // Verifies: ADR-0013
         // Random content of every kind and role, in fonts of any line, at any width: the height of
         // its rows' kinds alone is exactly the height `lay_out` returns, which stacks its rows by
-        // where it places their elements.
+        // where it places their elements. Lines too small or too inexact for `f64` to sum exactly
+        // make the order in which the rows are summed count too.
+        const METRICS: [f64; 9] = [0.0, 1e-30, 1e-7, 0.1, 1.0, 7.5, 13.3, 1023.3, MAX_METRIC];
         const WEIGHTS: [f64; 4] = [1.0, 0.25, 3.0, 1e300];
         const WIDTHS: [f32; 5] = [0.0, 23.0, 220.0, 1e6, 1.3e36];
         let roles = [Role::Title, Role::Body, Role::Caption];
@@ -1821,7 +1823,7 @@ mod tests {
         for _ in 0..5_000 {
             let mut fonts = Fonts::default();
             for role in roles {
-                let metric = |rng: &mut Lcg| [0.0, 0.1, 1.0, 7.5, 13.3, MAX_METRIC][rng.below(6)];
+                let metric = |rng: &mut Lcg| METRICS[rng.below(METRICS.len())];
                 let font = Font::new(&[], &[], metric(&mut rng), metric(&mut rng)).unwrap();
                 fonts.set(role, font);
             }
@@ -1855,7 +1857,10 @@ mod tests {
             for &length in &rows {
                 let row = &cells[start..start + length as usize];
                 start += length as usize;
-                badged_rows += usize::from(row.len() > 1 && badged(row));
+                let others = row
+                    .iter()
+                    .any(|cell| !matches!(cell.element, Element::Badge { .. }));
+                badged_rows += usize::from(badged(row) && others);
                 row_kinds.push(kinds(row));
             }
             let width = WIDTHS[rng.below(WIDTHS.len())];
