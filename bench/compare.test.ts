@@ -632,8 +632,8 @@ describe("the gestures at each level of detail", () => {
   });
 
   test("a run of the full content compares with each kind's baseline as recorded", async () => {
-    // Verifies: ADR-0008 — the baselines of today were recorded before the gestures at each level
-    // and the content were named.
+    // Verifies: ADR-0008 — a baseline recorded with the gestures at each level judges them all, and
+    // one recorded before them reports them as new.
     const baselines = join(import.meta.dir, "baselines");
     for (const name of readdirSync(baselines)) {
       const baseline = (await Bun.file(join(baselines, name)).json()) as Run;
@@ -644,9 +644,9 @@ describe("the gestures at each level of detail", () => {
       const verdict = compare(current, baseline);
       expect({ name, kind: verdict.kind }).toEqual({ name, kind: "compared" });
       const { lines } = verdict as { lines: string[] };
-      expect(lines.find((line) => line.startsWith("new, not in the baseline:"))).toContain(
-        "drag near",
-      );
+      const isNew = lines.find((line) => line.startsWith("new, not in the baseline:"));
+      if (baseline.levels?.near?.drag) expect({ name, isNew }).toEqual({ name, isNew: undefined });
+      else expect(isNew).toContain("drag near");
     }
   });
 });
