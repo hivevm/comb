@@ -30,6 +30,7 @@ import {
 } from "comb/testing";
 import {
   contentOf,
+  countContent,
   DETAILS,
   HEIGHTS,
   metricTree,
@@ -39,6 +40,7 @@ import {
   STATUSES,
   titleOf,
   TYPES,
+  type ContentCount,
   type Fields,
   type NodeType,
 } from "./graph";
@@ -53,6 +55,9 @@ export interface LoadReport {
   edges: number;
   /** Milliseconds from handing the graph to Comb until its first frame was drawn. */
   firstFrameMs: number;
+  /** The content loaded, its nodes by type and their elements by kind, counted after the first
+   *  frame. */
+  content: ContentCount;
 }
 
 declare global {
@@ -248,6 +253,7 @@ async function load(): Promise<LoadReport> {
     nodes: graph.nodes.length,
     edges: graph.edges.length,
     firstFrameMs,
+    content: countContent(graph, fields),
   };
 }
 
