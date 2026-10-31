@@ -157,3 +157,100 @@ test("a drag at the far level updates the GPU buffers in place, never reallocati
     meshBytesUploaded: did.meshBytesUploaded,
   });
 });
+
+/** How many element views of node views, by kind, the canvas has drawn so far. */
+type ElementViews = { text: number; sprite: number; graphics: number };
+
+declare global {
+  interface Window {
+    /** How many element views the node views drawn have shown since the page opened, each counted
+     *  once however often it is drawn again: texts, icons' sprites, and the `Graphics` of boxes,
+     *  pills, bars, and arrows; `countElementViews` installs it. */
+    elementViews?: () => ElementViews;
+  }
+}
+
+/** Installs `elementViews` before the page loads. It finds the canvas by the hook PixiJS calls
+ *  for its devtools as an application starts, and on each call walks its node views, the display
+ *  objects that carry a node id, counting every child of theirs it has not seen before. Called once
+ *  a frame, it sees every element view a frame draws, whether it was made or taken from a pool. */
+async function countElementViews(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    type Shown = { children?: Shown[]; nodeId?: unknown };
+    const apps: { stage: Shown }[] = [];
+    const hooks = globalThis as unknown as { __PIXI_APP_INIT__: (app: { stage: Shown }) => void };
+    hooks.__PIXI_APP_INIT__ = (app) => apps.push(app);
+    const seen = new WeakSet<Shown>();
+    const counts: ElementViews = { text: 0, sprite: 0, graphics: 0 };
+    const walk = (shown: Shown) => {
+      if (typeof shown.nodeId !== "string") {
+        for (const child of shown.children ?? []) walk(child);
+        return;
+      }
+      for (const child of shown.children ?? []) {
+        if (seen.has(child)) continue;
+        seen.add(child);
+        if ("context" in child) counts.graphics += 1;
+        else if ("text" in child) counts.text += 1;
+        else counts.sprite += 1;
+      }
+    };
+    window.elementViews = () => {
+      if (apps.length !== 1) throw new Error(`${apps.length} PixiJS applications, not one`);
+      walk(apps[0]!.stage);
+      return { ...counts };
+    };
+  });
+}
+
+test("a pan across queries at the near level over the full content creates no element view outside the pools' growth", async ({
+  page,
+}) => {
+  // Verifies: ADR-0027, G-10
+  test.setTimeout(180_000);
+  await countElementViews(page);
+  await open(page, "?copies=3334");
+  const { near, cullingMargin } = await sceneNumbers(page);
+  const { width, height } = await canvasSize(page);
+  // At the least scale of the near level, which binds the most views, in the middle of the grid.
+  const middle = await page.evaluate(() => {
+    const { nodes } = window.inspect();
+    const xs = nodes.map((node) => node.x);
+    const ys = nodes.map((node) => node.y);
+    const half = (of: number[]) => (Math.min(...of) + Math.max(...of)) / 2;
+    return { x: half(xs), y: half(ys) };
+  });
+  const start = {
+    x: width / 2 - middle.x * near,
+    y: height / 2 - middle.y * near,
+    scale: near,
+  };
+  // Half the margin a frame for 40 frames, as in the pan across queries above, counting a frame's
+  // element views once it is drawn.
+  const frames = 40;
+  const step = cullingMargin / 2;
+  const sweep = async () => {
+    for (let i = 1; i <= frames; i++) {
+      await setViewport(page, { ...start, x: start.x - i * step });
+      await page.evaluate(() => window.elementViews!());
+    }
+    await setViewport(page, start);
+  };
+  await setViewport(page, start);
+  // The first sweep grows the pools, of node views and of their element views alike; the second
+  // binds the same nodes, each of the content of its type, from the pools grown.
+  await sweep();
+  const grown = await page.evaluate(() => window.elementViews!());
+  const { queries } = await page.evaluate(() => window.inspect());
+  const warm = await work(page);
+  await sweep();
+  const panned = await page.evaluate(() => window.inspect());
+  expect(panned.level).toBe("near");
+  expect(panned.queries).toBeGreaterThanOrEqual(queries + frames / 4);
+  // The premise: the sweep drew every kind of element view.
+  expect(grown.text).toBeGreaterThan(0);
+  expect(grown.sprite).toBeGreaterThan(0);
+  expect(grown.graphics).toBeGreaterThan(0);
+  expect(done(warm, await work(page)).viewsCreated).toBe(0);
+  expect(await page.evaluate(() => window.elementViews!())).toEqual(grown);
+});

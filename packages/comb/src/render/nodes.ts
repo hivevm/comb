@@ -338,8 +338,24 @@ export function fitted(
   return { x, y, width, height };
 }
 
+/** A text object of a node view, with the style it was last given. */
+interface PooledText {
+  view: BitmapText;
+  style: TextStyleOptions;
+}
+
+/** The text objects and the sprites the node views of one layer share: a view holds those it
+ *  draws while it is bound and returns them here once it draws fewer or is released, so that the
+ *  layer makes one only where more are drawn at once than ever before, whichever view draws them
+ *  (ADR-0027). */
+class ElementPool {
+  readonly texts: PooledText[] = [];
+  readonly sprites: Sprite[] = [];
+}
+
 /** One node: its box, its badges' pills, its progress bars, its metrics' arrows, its texts, and
- *  its icons. A pooled view, bound to one node slot at a time. */
+ *  its icons. A pooled view, bound to one node slot at a time; its texts and sprites come from the
+ *  layer's element pool. */
 export class NodeGraphic extends Container {
   private readonly box = new Graphics();
   /** The pills of the node's badges, drawn together. */
@@ -348,15 +364,15 @@ export class NodeGraphic extends Container {
   private readonly bars = new Graphics();
   /** The arrows of the node's metrics' trends, drawn together. */
   private readonly arrows = new Graphics();
-  /** The pooled sprites of the view's icons, those with a parent in use. */
+  /** The sprites of the view's icons, each in use. */
   private readonly sprites: Sprite[] = [];
   /** The icons the view drew sprites of, which inspection reads by the registry's names. */
   private icons: Icons | null = null;
   /** The icons the view's node holds where the view draws them, for a registration to draw
    *  anew without a query. */
   private iconsShown: DrawnIcon[] = [];
-  /** The pooled text objects of the view, the first `texts.length` of them in use. */
-  private readonly pool: { view: BitmapText; style: TextStyleOptions }[] = [];
+  /** The text objects of the view, one for each of `texts`. */
+  private readonly pool: PooledText[] = [];
   /** The node the view shows. */
   nodeId = "";
   /** What the view last drew, compared by content, since a pooled view shows another node from
@@ -380,7 +396,7 @@ export class NodeGraphic extends Container {
   seen = 0;
   slot = -1;
 
-  constructor() {
+  constructor(private readonly shared: ElementPool) {
     super();
     this.addChild(this.box, this.pills, this.bars, this.arrows);
     // The engine answers which node lies under the pointer; the view takes no events.
@@ -419,15 +435,13 @@ export class NodeGraphic extends Container {
 
   /** The sprites of icons the view draws, read from the sprites themselves. */
   drawnSprites(): DrawnSprite[] {
-    return this.sprites
-      .filter((sprite) => sprite.parent === this)
-      .map((sprite) => ({
-        texture: this.icons?.nameOf(sprite.texture) ?? null,
-        x: sprite.x,
-        y: sprite.y,
-        width: sprite.width,
-        height: sprite.height,
-      }));
+    return this.sprites.map((sprite) => ({
+      texture: this.icons?.nameOf(sprite.texture) ?? null,
+      x: sprite.x,
+      y: sprite.y,
+      width: sprite.width,
+      height: sprite.height,
+    }));
   }
 
   /** The arrows of metrics the view's `Graphics` draws, read from its fill instructions. */
@@ -483,6 +497,14 @@ export class NodeGraphic extends Container {
     this.showIcons(iconsOf(placed, start, end, titlesOnly), icons);
   }
 
+  /** Returns the view's texts and sprites to the layer's element pool, once the view is released;
+   *  its next binding draws whatever node it shows anew. */
+  release(): void {
+    this.showTexts([]);
+    if (this.icons) this.showIcons([], this.icons);
+    this.drawn = { ...this.drawn, node: null };
+  }
+
   /** Draws the view's icons anew from `icons`, after a registration, without the engine. */
   redrawIcons(icons: Icons): void {
     this.showIcons(this.iconsShown, icons);
@@ -500,19 +522,19 @@ export class NodeGraphic extends Container {
       if (!texture) continue;
       let sprite = this.sprites[used];
       if (!sprite) {
-        sprite = new Sprite();
+        sprite = this.shared.sprites.pop() ?? new Sprite();
         this.sprites.push(sprite);
+        this.addChild(sprite);
       }
       used += 1;
       sprite.texture = texture;
       const at = fitted(icon, texture.width, texture.height);
       sprite.position.set(at.x, at.y);
       sprite.setSize(at.width, at.height);
-      if (sprite.parent !== this) this.addChild(sprite);
     }
-    for (let i = used; i < this.sprites.length; i++) {
-      const sprite = this.sprites[i]!;
-      if (sprite.parent === this) this.removeChild(sprite);
+    for (const sprite of this.sprites.splice(used)) {
+      this.removeChild(sprite);
+      this.shared.sprites.push(sprite);
     }
   }
 
@@ -537,8 +559,8 @@ export class NodeGraphic extends Container {
     }
   }
 
-  /** Draws `texts`, taking text objects from the view's pool and leaving the rest out, a badge's
-   *  on its pill, inside the pill's padding. */
+  /** Draws `texts`, a badge's on its pill, inside the pill's padding, taking text objects from
+   *  the layer's element pool where the view holds too few and returning those it holds beyond. */
   private showTexts(texts: DrawnText[]): void {
     this.texts = texts;
     this.pills.clear();
@@ -546,9 +568,11 @@ export class NodeGraphic extends Container {
       let pooled = this.pool[i];
       const style = styleOf(text);
       if (!pooled) {
-        pooled = { view: new BitmapText({ text: "", style }), style };
+        pooled = this.shared.texts.pop() ?? { view: new BitmapText({ text: "", style }), style };
         this.pool.push(pooled);
-      } else if (pooled.style !== style) {
+        this.addChild(pooled.view);
+      }
+      if (pooled.style !== style) {
         pooled.view.style = style;
         pooled.style = style;
       }
@@ -563,11 +587,10 @@ export class NodeGraphic extends Container {
           .fill({ color: text.pill.color });
         pooled.view.position.set(text.pill.textX, text.pill.textY);
       } else pooled.view.position.set(text.x, text.y);
-      if (pooled.view.parent !== this) this.addChild(pooled.view);
     });
-    for (let i = texts.length; i < this.pool.length; i++) {
-      const { view } = this.pool[i]!;
-      if (view.parent === this) this.removeChild(view);
+    for (const pooled of this.pool.splice(texts.length)) {
+      this.removeChild(pooled.view);
+      this.shared.texts.push(pooled);
     }
   }
 }
@@ -584,7 +607,12 @@ function filled(graphics: Graphics): DrawnPill[] {
 
 /** The nodes layer: a pooled view for every node slot the query found, and none for the rest. */
 export class NodesContainer extends Container {
-  private readonly views = new Bindings(this, () => new NodeGraphic());
+  private readonly elements = new ElementPool();
+  private readonly views = new Bindings(
+    this,
+    () => new NodeGraphic(this.elements),
+    (view) => view.release(),
+  );
 
   /** How many views the layer's pool has made. */
   get created(): number {

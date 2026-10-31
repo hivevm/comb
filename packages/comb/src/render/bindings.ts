@@ -34,9 +34,11 @@ export class Bindings<V extends Pooled> {
   private render = 0;
   private madeCount = 0;
 
+  /** `release` is told each view a render returns to the pool, after the render's bindings. */
   constructor(
     private readonly layer: Container,
     private readonly make: () => V,
+    private readonly release: (view: V) => void = () => {},
   ) {}
 
   /** Starts a render. */
@@ -79,7 +81,7 @@ export class Bindings<V extends Pooled> {
     return this.madeCount;
   }
 
-  /** Returns every view this render did not bind to the pool, and puts the layer's children in
+  /** Returns every view this render did not bind to the pool, telling `release` of each, and puts the layer's children in
    *  drawing order where this render disturbed it. */
   end(): void {
     const released: V[] = [];
@@ -95,7 +97,10 @@ export class Bindings<V extends Pooled> {
     } else {
       for (const view of released) this.layer.removeChild(view);
     }
-    for (const view of released) this.free.push(view);
+    for (const view of released) {
+      this.release(view);
+      this.free.push(view);
+    }
     this.order.forEach((view, i) => this.place.set(view, i));
     this.disordered = false;
   }
