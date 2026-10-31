@@ -262,3 +262,32 @@ pub(super) const A_SEGMENT_LIST: &str = "a list of segments";
 
 /// What an identifier, a source, or a target expects, by `MAX_ID`.
 pub(super) const AN_ID: &str = "a well-formed string of at most 256 code units";
+
+// The malformed-data tests of graph data verify ADR-0034 (see `graph_data::tests`).
+// Verifies: ADR-0034
+#[cfg(test)]
+mod tests {
+    use super::super::MAX_ID;
+    use super::*;
+
+    #[test]
+    fn what_an_identifier_expects_names_its_limit() {
+        assert!(AN_ID.contains(&format!(" {MAX_ID} ")));
+    }
+
+    #[test]
+    fn a_count_beyond_u32_is_refused_as_the_engine_refuses_it() {
+        let beyond = u32::MAX as usize + 1;
+        assert_eq!(slot(u32::MAX as usize), Ok(u32::MAX));
+        assert_eq!(
+            slot(beyond),
+            Err(GraphDataProblem::from(graph::slot(beyond).unwrap_err()))
+        );
+        assert_eq!(
+            slot(beyond),
+            Err(GraphDataProblem::Malformed {
+                message: "the graph holds more items than the engine can number".into()
+            })
+        );
+    }
+}

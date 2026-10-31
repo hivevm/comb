@@ -192,3 +192,258 @@ impl NodeColumns<'_> {
             .collect())
     }
 }
+
+// The malformed-data tests of graph data verify ADR-0034 (see `graph_data::tests`).
+// Verifies: ADR-0034
+#[cfg(test)]
+mod tests {
+    use super::super::tests::{TITLE, a_and, add, added, b_of, batch, beyond, load_columns};
+    use super::super::{
+        ContentInput, ID_LIMIT, KindCode, MAX_ID, OwnedColumns, RoleCode, graph_of, problem::A_ROW,
+        problem::A_SEGMENT_LIST, problem::AN_ELEMENT,
+    };
+    use super::*;
+    use comb_engine::geometry::WORLD_LIMIT;
+
+    #[test]
+    fn a_progress_bar_s_segments_that_are_no_list_or_a_segment_that_is_no_object_are_refused_where_they_lie()
+     {
+        // Verifies: ADR-0034
+        let shape = |column, expected: &str| GraphDataProblem::InvalidContentShape {
+            index: 1,
+            id: Some("b".into()),
+            row: 1,
+            column: Some(column),
+            expected: expected.into(),
+        };
+        // Node `b`: a title row, then a title beside a progress bar of no segments, at row 1,
+        // column 1.
+        let at = |field, row, column| {
+            let mut b = ContentInput::new();
+            let title = (KindCode::Text, 1.0, RoleCode::Title as u8, f64::NAN);
+            b.push(title.0, title.1, title.2, title.3, Some("t"), None);
+            b.end_row();
+            b.push(title.0, title.1, title.2, title.3, Some("t"), None);
+            b.push(KindCode::Progress, 1.0, 0, f64::NAN, None, None);
+            b.end_row();
+            let mut columns = a_and(|n| n.content = b.into());
+            columns.refused = Some(Refused {
+                index: 1,
+                field,
+                row,
+                column,
+            });
+            load_columns(&columns).err()
+        };
+        assert_eq!(
+            at(NodeField::Segments, Some(1), Some(1)),
+            Some(shape(1, A_SEGMENT_LIST))
+        );
+        assert_eq!(
+            at(NodeField::Segment, Some(1), Some(1)),
+            Some(shape(1, AN_ELEMENT))
+        );
+        // A position that names no element of the columns, or an element that is no progress
+        // bar, is malformed.
+        for (field, row, column) in [
+            (NodeField::Segments, Some(1), None),
+            (NodeField::Segments, Some(1), Some(2)),
+            (NodeField::Segments, Some(1), Some(0)),
+            (NodeField::Segment, Some(0), Some(0)),
+            (NodeField::Segment, None, Some(1)),
+            (NodeField::Segment, Some(2), Some(1)),
+        ] {
+            assert_eq!(at(field, row, column), Some(unfit()), "{field:?}");
+        }
+        // Read as `addNode` and `updateNode` read content: the first shape named, segments that
+        // are no list read as none and a segment that is no object as one of NaN.
+        let mut content = ContentInput::new();
+        content.push(KindCode::Progress, 1.0, 0, f64::NAN, None, None);
+        content.unread(0, Some(0), Unflat::Segment);
+        content.push_segment(f64::NAN, f64::NAN);
+        content.unread(0, Some(0), Unflat::Segments);
+        content.end_row();
+        assert_eq!(
+            (content.shape, content.unread),
+            (Some((0, Some(0))), Unflat::Segment)
+        );
+        let node = added(0.0, 0.0, |node| node.content = content.into());
+        let mut graph = graph_of(&batch(&[("a", 0.0, 0.0)], &[])).unwrap();
+        assert_eq!(
+            add(&mut graph, &node).unwrap_err(),
+            GraphDataProblem::InvalidContentShape {
+                index: 0,
+                id: Some("n".into()),
+                row: 0,
+                column: Some(0),
+                expected: AN_ELEMENT.into(),
+            }
+        );
+    }
+
+    #[test]
+    fn every_refusal_of_a_node_crosses_as_columns_with_its_kind_and_names() {
+        // Verifies: ADR-0034
+        let b = || "b".to_owned();
+        let field =
+            |field: &str, id: Option<String>, expected: &str| GraphDataProblem::InvalidField {
+                list: GraphList::Nodes,
+                index: 1,
+                id,
+                field: field.into(),
+                expected: expected.into(),
+            };
+        // A field missing or of another type, or an identifier with a lone surrogate, which the
+        // snapshot hands over as `false`: the column holds none of it, and names its position.
+        let mut cases: Vec<(OwnedColumns, GraphDataProblem)> = vec![
+            (a_and(|n| n.id = Field(None)), field("id", None, AN_ID)),
+            (
+                a_and(|n| n.x = Field(None)),
+                field("x", Some(b()), A_NUMBER),
+            ),
+            (
+                a_and(|n| n.y = Field(None)),
+                field("y", Some(b()), A_NUMBER),
+            ),
+            (
+                a_and(|n| n.width = Field(None)),
+                field("width", Some(b()), A_SIZE),
+            ),
+            (
+                a_and(|n| n.content = Field(None)),
+                field("content", Some(b()), A_CONTENT),
+            ),
+            // The first of a node's fields refused, in the order a node is read.
+            (
+                a_and(|n| (n.content, n.y) = (Field(None), Field(None))),
+                field("y", Some(b()), A_NUMBER),
+            ),
+            (
+                a_and(|n| n.id = "x".repeat(MAX_ID + 1).into()),
+                GraphDataProblem::IdTooLong {
+                    list: "nodes".into(),
+                    index: 1,
+                    field: "id".into(),
+                    limit: ID_LIMIT,
+                },
+            ),
+            (
+                a_and(|n| n.id = "a".to_owned().into()),
+                GraphDataProblem::DuplicateNode { node: "a".into() },
+            ),
+            (
+                a_and(|n| n.x = f64::INFINITY.into()),
+                GraphDataProblem::NonFiniteCoordinate { node: b() },
+            ),
+            (
+                a_and(|n| n.width = (-1.0).into()),
+                GraphDataProblem::InvalidSize { node: b() },
+            ),
+            (
+                a_and(|n| n.y = (-WORLD_LIMIT * 1.01).into()),
+                beyond(GraphList::Nodes, "b", "y"),
+            ),
+        ];
+        // A node that is no object, refused as malformed as one that is no object was.
+        let a = batch(&[("a", 0.0, 0.0)], &[]).nodes;
+        cases.push((
+            OwnedColumns::of([Some(&a[0]), None]),
+            unshaped("a node is no object"),
+        ));
+        for (columns, problem) in cases {
+            assert_eq!(load_columns(&columns).err(), Some(problem));
+        }
+        assert!(load_columns(&a_and(|_| {})).is_ok());
+    }
+
+    #[test]
+    fn a_shape_of_content_the_snapshot_cannot_flatten_is_refused_where_it_lies() {
+        // Verifies: ADR-0034
+        let shape = |row, column: Option<u32>| GraphDataProblem::InvalidContentShape {
+            index: 1,
+            id: Some("b".into()),
+            row,
+            column,
+            expected: (if column.is_some() { AN_ELEMENT } else { A_ROW }).into(),
+        };
+        let at = |field, row, column| {
+            let mut columns = b_of(&[&[TITLE], &[TITLE, TITLE]]);
+            columns.refused = Some(Refused {
+                index: 1,
+                field,
+                row,
+                column,
+            });
+            load_columns(&columns).err()
+        };
+        assert_eq!(at(NodeField::Row, Some(1), None), Some(shape(1, None)));
+        assert_eq!(
+            at(NodeField::Element, Some(1), Some(1)),
+            Some(shape(1, Some(1)))
+        );
+        // A position that names no row or column of the columns is malformed.
+        for (field, row, column) in [
+            (NodeField::Row, Some(2), None),
+            (NodeField::Row, None, None),
+            (NodeField::Row, Some(0), Some(0)),
+            (NodeField::Element, Some(0), Some(1)),
+            (NodeField::Element, Some(1), None),
+            (NodeField::Element, Some(5), Some(0)),
+            (NodeField::X, Some(0), None),
+            (NodeField::Content, None, Some(0)),
+        ] {
+            assert_eq!(
+                at(field, row, column),
+                Some(unfit()),
+                "{field:?} {row:?} {column:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn columns_that_do_not_fit_together_are_refused_as_malformed() {
+        // Verifies: ADR-0034
+        let fits = || a_and(|_| {});
+        let changes: [fn(&mut OwnedColumns); 7] = [
+            |c| _ = c.x.pop(),
+            |c| _ = c.content.text_valid.pop(),
+            |c| _ = c.id_bounds.pop(),
+            |c| c.id_bounds[0] = 1,
+            |c| c.id_bounds = vec![0, 2, 1],
+            |c| c.content.texts.push("x".to_owned()),
+            |c| {
+                c.refused = Some(Refused {
+                    index: 2,
+                    field: NodeField::X,
+                    row: None,
+                    column: None,
+                })
+            },
+        ];
+        for change in changes {
+            let mut columns = fits();
+            change(&mut columns);
+            assert_eq!(load_columns(&columns).err(), Some(unfit()));
+        }
+        assert_eq!(refused_of(Some(0), None, None, None), Err(unfit()));
+        assert_eq!(
+            refused_of(None, Some(NodeField::Id as u32), None, None),
+            Err(unfit())
+        );
+        assert_eq!(refused_of(None, None, None, None), Ok(None));
+        // A row or a column without a refused field names no place.
+        assert_eq!(refused_of(None, None, Some(0), None), Err(unfit()));
+        assert_eq!(refused_of(None, None, None, Some(0)), Err(unfit()));
+        // Every field by its code, and a code no field has refused as malformed.
+        for field in NodeField::ALL {
+            let refused = refused_of(Some(1), Some(field as u32), None, None);
+            assert_eq!(
+                refused.map(|r| r.map(|r| (r.index, r.field))),
+                Ok(Some((1, field)))
+            );
+        }
+        for code in [10, 255, u32::MAX] {
+            assert_eq!(refused_of(Some(0), Some(code), None, None), Err(unfit()));
+        }
+    }
+}

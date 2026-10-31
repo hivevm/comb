@@ -97,3 +97,140 @@ impl ContentStore {
         slots
     }
 }
+
+// The malformed-data tests of graph data verify ADR-0034 (see `graph_data::tests`).
+// Verifies: ADR-0034
+#[cfg(test)]
+mod tests {
+    use crate::graph_data::tests::{
+        action, batch, content, load_into, named_content, text, titled,
+    };
+    use crate::graph_data::{
+        ContentElement, ContentInput, GraphDataProblem, MAX_CONTENT_UNITS, NodeInput, NodePatch,
+        OwnedColumns, OwnedEdgeColumns, RoleCode, TEST_BUDGET, TextRole,
+    };
+
+    /// An engine of a load at the budget lowered to 6 code units: node `a` of a title "abc", and
+    /// `b` of an action showing "de" and naming "f", 3 + 2 + 1.
+    fn at_the_budget() -> crate::Engine {
+        TEST_BUDGET.set(Some(6));
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+        data.nodes[0].content = titled("abc");
+        data.nodes[1].content = named_content(&[&[action("de", "f")]]).into();
+        let mut engine = crate::Engine::new();
+        let nodes = OwnedColumns::of(data.nodes.iter().map(Some));
+        let none = OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
+        assert_eq!(engine.content.units(), 6);
+        engine
+    }
+
+    /// The node `id` at (0, 200), 100 wide, of `content`.
+    fn node_of(id: &str, content: ContentInput) -> NodeInput {
+        NodeInput {
+            id: id.to_owned().into(),
+            x: 0.0.into(),
+            y: 200.0.into(),
+            width: 100.0.into(),
+            content: content.into(),
+        }
+    }
+
+    /// A patch of a node's content to `content`.
+    fn patch_to(content: ContentInput) -> NodePatch {
+        NodePatch(vec![("content".to_owned(), content.into())])
+    }
+
+    /// The refusal of a string of content of the node `node` past the budget.
+    fn past_budget(node: &str) -> GraphDataProblem {
+        GraphDataProblem::ContentBudgetExceeded {
+            node: node.into(),
+            limit: MAX_CONTENT_UNITS,
+        }
+    }
+
+    #[test]
+    fn a_node_added_to_a_graph_at_the_budget_is_refused_naming_it_and_the_graph_kept() {
+        // Verifies: ADR-0013, ADR-0034, Q-7
+        let mut engine = at_the_budget();
+        let one = node_of("c", content(&[&[text(RoleCode::Title, "x")]]));
+        let added = engine.add(&one);
+        // A node whose content holds no string adds no code unit and is taken.
+        let none = engine.add(&node_of("d", content(&[])));
+        TEST_BUDGET.set(None);
+        assert_eq!(added, Err(past_budget("c")));
+        assert_eq!(none, Ok(2));
+        assert_eq!(engine.graph.nodes_in_use(), 3);
+        assert_eq!(engine.content.units(), 6);
+        assert_eq!(engine.content.edited_slots(), [2]);
+    }
+
+    #[test]
+    fn an_update_past_the_budget_is_refused_and_one_of_as_many_code_units_or_fewer_taken() {
+        // Verifies: ADR-0013, ADR-0034, Q-7
+        let mut engine = at_the_budget();
+        let sizes = engine.graph.sizes().to_vec();
+        // `b`'s action of 3 code units grows to 4: refused, and nothing changes.
+        let grown = engine.update(1, "b", &patch_to(named_content(&[&[action("dex", "f")]])));
+        let kept = (
+            engine.graph.sizes().to_vec(),
+            engine.content.edited_slots().len(),
+            engine.content.units(),
+        );
+        // Two rows of as many code units, and then of fewer: taken.
+        let rows = content(&[&[text(RoleCode::Title, "d")], &[text(RoleCode::Body, "ef")]]);
+        let as_many = engine.update(1, "b", &patch_to(rows));
+        let after_as_many = engine.content.units();
+        let fewer = engine.update(1, "b", &patch_to(content(&[&[text(RoleCode::Title, "d")]])));
+        // A patch of `a`, a loaded node, counts on from what the others hold: 4 of 3 + 1 = 6 fits.
+        let a = engine.update(
+            0,
+            "a",
+            &patch_to(content(&[&[text(RoleCode::Title, "abcd")]])),
+        );
+        let past = engine.update(
+            0,
+            "a",
+            &patch_to(content(&[&[text(RoleCode::Title, "abcdef")]])),
+        );
+        TEST_BUDGET.set(None);
+        assert_eq!(grown, Err(crate::CallRefusal::Data(past_budget("b"))));
+        assert_eq!(kept, (sizes, 0, 6));
+        assert_eq!(as_many, Ok(()));
+        assert_eq!(after_as_many, 6);
+        assert_eq!(fewer, Ok(()));
+        assert_eq!(a, Ok(()));
+        assert_eq!(past, Err(crate::CallRefusal::Data(past_budget("a"))));
+        assert_eq!(engine.content.units(), 5);
+        let abcd = ContentElement::Text {
+            role: TextRole::Title,
+            text: "abcd".into(),
+            weight: Some(1.0),
+        };
+        assert_eq!(engine.content.content_of(0).0, [[abcd]]);
+    }
+
+    #[test]
+    fn a_deleted_nodes_code_units_are_free_for_a_node_added_after_it() {
+        // Verifies: ADR-0013, ADR-0034, Q-7
+        let mut engine = at_the_budget();
+        // A removal that names a slot holding no node is refused and leaves the count.
+        let no_node = Err(crate::SlotError::NoNode { slot: 99 });
+        assert_eq!(engine.remove_nodes(&[0, 99]), no_node);
+        assert_eq!(engine.content.units(), 6);
+        // `a` named twice leaves the count once.
+        assert_eq!(engine.remove_nodes(&[0, 0]), Ok(Vec::new()));
+        let units = engine.content.units();
+        let three = engine.add(&node_of("c", content(&[&[text(RoleCode::Title, "xyz")]])));
+        let one = engine.add(&node_of("d", content(&[&[text(RoleCode::Title, "x")]])));
+        // An added node deleted frees its code units too.
+        assert_eq!(engine.remove_nodes(&[0]), Ok(Vec::new()));
+        let again = engine.add(&node_of("e", content(&[&[text(RoleCode::Title, "x")]])));
+        TEST_BUDGET.set(None);
+        assert_eq!(units, 3);
+        assert_eq!(three, Ok(0));
+        assert_eq!(one, Err(past_budget("d")));
+        assert_eq!(again, Ok(0));
+        assert_eq!(engine.content.units(), 4);
+    }
+}

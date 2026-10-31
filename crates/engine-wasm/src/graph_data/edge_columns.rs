@@ -336,3 +336,167 @@ impl EdgeColumns<'_> {
             .collect()
     }
 }
+
+// The malformed-data tests of graph data verify ADR-0034 (see `graph_data::tests`).
+// Verifies: ADR-0034
+#[cfg(test)]
+mod tests {
+    use super::super::tests::{d_and, label_in, labelled, load_edges};
+    use super::super::{EdgeCells, OwnedEdgeColumns};
+    use super::*;
+
+    #[test]
+    fn every_refusal_of_an_edge_crosses_as_columns_with_its_kind_and_names() {
+        // Verifies: ADR-0034
+        let e = || "e".to_owned();
+        let field =
+            |field: &str, id: Option<String>, expected: &str| GraphDataProblem::InvalidField {
+                list: GraphList::Edges,
+                index: 1,
+                id,
+                field: field.into(),
+                expected: expected.into(),
+            };
+        let text = |value: &str| Field(Some(value.to_owned()));
+        // A field missing or of another type, or an identifier with a lone surrogate, which the
+        // snapshot hands over as `false`: the column holds none of it, and names its position.
+        type Change = fn(&mut EdgeCells);
+        let by_type: [(Change, &str, &str); 11] = [
+            (|e| e.id = Field(None), "id", AN_ID),
+            (|e| e.source = Field(None), "source", AN_ID),
+            (|e| e.target = Field(None), "target", AN_ID),
+            (|e| e.label = Field(None), "label", A_LABEL),
+            (|e| label_in(e).t = Field(None), "label.t", A_NUMBER),
+            (
+                |e| label_in(e).offset = Field(None),
+                "label.offset",
+                A_NUMBER,
+            ),
+            (|e| e.color = Field(None), "color", A_COLOR),
+            (|e| e.dash = Field(None), "dash", A_DASH),
+            (|e| e.arrow = Field(None), "arrow", AN_ARROW),
+            (|e| e.source_side = Field(None), "sourceSide", A_SIDE),
+            (|e| e.target_side = Field(None), "targetSide", A_SIDE),
+        ];
+        let mut cases: Vec<(OwnedEdgeColumns, GraphDataProblem)> = by_type
+            .into_iter()
+            .map(|(change, name, expected)| {
+                let id = (name != "id").then(e);
+                (d_and(change), field(name, id, expected))
+            })
+            .collect();
+        cases.extend([
+            // A string that names no arrowhead or side crosses as its code and is refused at its
+            // place, a side outside the four naming the four.
+            (
+                d_and(|e| e.arrow = text("start")),
+                field("arrow", Some(e()), AN_ARROW),
+            ),
+            (
+                d_and(|e| e.source_side = text("middle")),
+                field("sourceSide", Some(e()), A_SIDE),
+            ),
+            (
+                d_and(|e| e.target_side = text("")),
+                field("targetSide", Some(e()), A_SIDE),
+            ),
+            // The first of an edge's fields refused, in the order an edge is read, whether the
+            // shell named it or its code names nothing.
+            (
+                d_and(|e| (e.target_side, e.arrow) = (Field(None), text("start"))),
+                field("arrow", Some(e()), AN_ARROW),
+            ),
+            (
+                d_and(|e| (e.source_side, e.color) = (text("middle"), Field(None))),
+                field("color", Some(e()), A_COLOR),
+            ),
+            (
+                d_and(|e| (e.target_side, e.source_side) = (text("up"), Field(None))),
+                field("sourceSide", Some(e()), A_SIDE),
+            ),
+        ]);
+        // An edge that is no object, refused as malformed as one that is no object was.
+        let d = labelled("d");
+        cases.push((
+            OwnedEdgeColumns::of([Some(&d), None]),
+            unshaped("an edge is no object"),
+        ));
+        for (columns, problem) in cases {
+            assert_eq!(load_edges(&columns).err(), Some(problem));
+        }
+    }
+
+    #[test]
+    fn edge_columns_that_do_not_fit_together_are_refused_as_malformed() {
+        // Verifies: ADR-0034
+        let changes: [fn(&mut OwnedEdgeColumns); 14] = [
+            |c| _ = c.color.pop(),
+            // A presence or validity byte is 1 or 0.
+            |c| c.has_label[1] = 2,
+            |c| c.label_texts[0] = 2,
+            |c| c.has_background[1] = u8::MAX,
+            |c| c.has_dash[0] = 2,
+            |c| _ = c.gap.pop(),
+            |c| _ = c.has_dash.pop(),
+            |c| _ = c.target_side.pop(),
+            |c| _ = c.source_bounds.pop(),
+            |c| c.target_bounds = vec![0, 2, 1],
+            |c| c.labels.push("x".to_owned()),
+            |c| c.arrow[0] = ArrowCode::Unnamed as u8 + 1,
+            |c| c.source_side[1] = SideCode::Unnamed as u8 + 1,
+            |c| c.refused = Some((2, EdgeField::Id)),
+        ];
+        for change in changes {
+            let mut columns = d_and(|_| {});
+            change(&mut columns);
+            assert_eq!(load_edges(&columns).err(), Some(unfit_edges()));
+        }
+        // A source and a target are identifiers, never mapped inside a character.
+        let mut columns = d_and(|_| {});
+        columns.sources = vec!["\u{1F600}".to_owned()];
+        columns.source_bounds = vec![0, 1, 2];
+        assert_eq!(
+            load_edges(&columns).err(),
+            Some(malformed("an identifier ends inside a character"))
+        );
+        assert_eq!(edge_refused_of(Some(0), None), Err(unfit_edges()));
+        assert_eq!(edge_refused_of(None, None), Ok(None));
+        // Every field by its code, and a code no field has refused as malformed.
+        for field in EdgeField::ALL {
+            assert_eq!(
+                edge_refused_of(Some(1), Some(field as u32)),
+                Ok(Some((1, field)))
+            );
+        }
+        for code in [12, 255, u32::MAX] {
+            assert_eq!(edge_refused_of(Some(0), Some(code)), Err(unfit_edges()));
+        }
+    }
+
+    #[test]
+    fn a_later_edge_refused_by_its_type_is_named_before_an_earlier_one_refused_by_a_rule() {
+        // Verifies: ADR-0034
+        // Edge `d`'s label text holds a lone surrogate, which the snapshot hands over as no text
+        // and its rule refuses; edge `e`'s colour is of another type, which the first pass
+        // refuses, before any rule.
+        let mut d = labelled("d");
+        label_in(&mut d).text_length = None;
+        let mut e = labelled("e");
+        e.color = Field(None);
+        assert_eq!(
+            load_edges(&OwnedEdgeColumns::of([Some(&d), Some(&e)])).err(),
+            Some(GraphDataProblem::InvalidField {
+                list: GraphList::Edges,
+                index: 1,
+                id: Some("e".into()),
+                field: "color".into(),
+                expected: A_COLOR.into(),
+            })
+        );
+        e.color = f64::from(0x12_3456).into();
+        assert_eq!(
+            load_edges(&OwnedEdgeColumns::of([Some(&d), Some(&e)])).err(),
+            Some(GraphDataProblem::InvalidLabelText { edge: "d".into() })
+        );
+    }
+}

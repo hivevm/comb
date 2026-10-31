@@ -267,3 +267,66 @@ pub(crate) fn patch_of(
     }
     Ok(checked)
 }
+
+// The malformed-data tests of graph data verify ADR-0034 (see `graph_data::tests`).
+// Verifies: ADR-0034
+#[cfg(test)]
+mod tests {
+    use super::super::tests::{content, invalid_text, titled};
+    use super::super::{KindCode, MAX_TEXT, RoleCode};
+    use super::*;
+    use comb_engine::graph::TooManySlots;
+
+    #[test]
+    fn a_patch_with_another_field_or_a_title_not_text_names_its_node() {
+        let patch = |entries: Vec<(&str, Field<ContentInput>)>| {
+            let fields = entries.into_iter().map(|(k, v)| (k.to_owned(), v));
+            patch_of("a", &NodePatch(fields.collect()), &Fonts::default(), 0).map(|checked| {
+                checked.map(|(content, height)| (content.text(0).to_owned(), height))
+            })
+        };
+        assert_eq!(patch(Vec::new()), Ok(None));
+        assert_eq!(
+            patch(vec![("content", titled("A"))]),
+            Ok(Some(("A".to_owned(), 64.0)))
+        );
+        assert_eq!(
+            patch(vec![("content", titled("A")), ("width", Field(None))]),
+            Err(GraphDataProblem::UnknownPatchField {
+                node: "a".into(),
+                field: "width".into()
+            })
+        );
+        let long = "x".repeat(MAX_TEXT + 1);
+        assert_eq!(
+            patch(vec![("content", titled(&long))]),
+            Err(GraphDataProblem::ContentTextTooLong {
+                node: "a".into(),
+                row: 0,
+                column: 0,
+                field: "text".into(),
+                limit: 1_000
+            })
+        );
+        let none = content(&[&[(KindCode::Text, 1.0, RoleCode::Title, None)]]);
+        assert_eq!(
+            patch(vec![("content", none.into())]),
+            Err(invalid_text("a", 0, 0))
+        );
+    }
+
+    #[test]
+    fn an_edge_the_engine_cannot_number_is_refused_as_a_node_it_cannot_number() {
+        // Verifies: ADR-0022
+        let node = GraphDataProblem::from(TooManySlots);
+        assert_eq!(
+            EdgeRefusal::from(AddEdgeError::TooManySlots(TooManySlots)),
+            EdgeRefusal::Data(node)
+        );
+        let slot = SlotError::NoNode { slot: 3 };
+        assert_eq!(
+            EdgeRefusal::from(AddEdgeError::Slot(slot)),
+            EdgeRefusal::Slot(slot)
+        );
+    }
+}

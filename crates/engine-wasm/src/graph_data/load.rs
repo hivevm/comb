@@ -103,3 +103,187 @@ pub(crate) fn graph_of(batch: &GraphBatch) -> Result<Graph, GraphDataProblem> {
     )
     .map(|loaded| loaded.graph)
 }
+
+// The malformed-data tests of graph data verify ADR-0034 (see `graph_data::tests`).
+// Verifies: ADR-0034
+#[cfg(test)]
+mod tests {
+    use super::super::tests::{
+        add, added, batch, content, invalid_text, labelled, load_edges, titled,
+    };
+    use super::super::{
+        Field, GraphList, ID_LIMIT, KindCode, MAX_ID, MAX_ITEMS, MAX_TEXT, RoleCode, TEXT_LIMIT,
+        item::batch_of, problem::A_NUMBER, problem::AN_ARROW, problem::AN_ID,
+    };
+    use super::*;
+
+    #[test]
+    fn a_batch_flattens_into_slot_order() {
+        // Each node of one title is as high as the least height of a node.
+        let data = batch(&[("a", 1.0, 2.0), ("b", 3.0, 4.0)], &[]);
+        let graph = graph_of(&data).unwrap();
+        assert_eq!(graph.positions(), [1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(graph.sizes(), [100.0, 64.0, 100.0, 64.0]);
+    }
+
+    #[test]
+    fn edges_resolve_to_the_slots_of_their_nodes() {
+        let data = batch(
+            &[("a", 0.0, 0.0), ("b", 300.0, 0.0), ("c", 600.0, 0.0)],
+            &[("e", "c", "a")],
+        );
+        let columns = OwnedColumns::of(data.nodes.iter().map(Some));
+        let data = batch_of(&data).unwrap();
+        let fonts = Fonts::default();
+        let nodes = nodes_of(&data, &columns.view().content, &fonts).unwrap();
+        let edges = edges_of(&data, &nodes.slots).unwrap();
+        assert_eq!((edges[0].source, edges[0].target), (2, 0));
+    }
+
+    #[test]
+    fn an_added_node_takes_the_next_slot_where_it_was_placed() {
+        // Verifies: ADR-0022
+        let mut graph = graph_of(&batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[])).unwrap();
+        assert_eq!(add(&mut graph, &added(40.0, 50.0, |_| {})), Ok(2));
+        assert_eq!(&graph.positions()[4..], [40.0, 50.0]);
+        // On an engine that never loaded a graph too.
+        let mut empty = Graph::default();
+        assert_eq!(add(&mut empty, &added(1.0, 2.0, |_| {})), Ok(0));
+        assert_eq!(empty.positions(), [1.0, 2.0]);
+    }
+
+    #[test]
+    fn an_added_node_is_refused_as_a_load_refuses_it_and_the_graph_kept() {
+        // Verifies: ADR-0028, Q-7
+        let named = || "n".to_owned();
+        let cases: Vec<(NodeInput, GraphDataProblem)> = vec![
+            (
+                added(f64::INFINITY, 0.0, |_| {}),
+                GraphDataProblem::NonFiniteCoordinate { node: named() },
+            ),
+            (
+                added(0.0, 1e39, |_| {}),
+                GraphDataProblem::NonFiniteCoordinate { node: named() },
+            ),
+            (
+                added(0.0, 0.0, |n| n.width = (-1.0).into()),
+                GraphDataProblem::InvalidSize { node: named() },
+            ),
+            (
+                added(0.0, 0.0, |n| {
+                    n.content = content(&[&[(KindCode::Text, 1.0, RoleCode::Title, None)]]).into();
+                }),
+                invalid_text("n", 0, 0),
+            ),
+            (
+                added(0.0, 0.0, |n| n.content = titled(&"x".repeat(MAX_TEXT + 1))),
+                GraphDataProblem::ContentTextTooLong {
+                    node: named(),
+                    row: 0,
+                    column: 0,
+                    field: "text".into(),
+                    limit: TEXT_LIMIT,
+                },
+            ),
+            (
+                added(0.0, 0.0, |n| n.id = "x".repeat(MAX_ID + 1).into()),
+                GraphDataProblem::IdTooLong {
+                    list: "nodes".into(),
+                    index: 0,
+                    field: "id".into(),
+                    limit: ID_LIMIT,
+                },
+            ),
+            (
+                added(0.0, 0.0, |n| n.x = Field(None)),
+                GraphDataProblem::InvalidField {
+                    list: GraphList::Nodes,
+                    index: 0,
+                    id: Some(named()),
+                    field: "x".into(),
+                    expected: A_NUMBER.into(),
+                },
+            ),
+        ];
+        for (node, problem) in cases {
+            let mut graph = graph_of(&batch(&[("a", 0.0, 0.0)], &[])).unwrap();
+            assert_eq!(add(&mut graph, &node), Err(problem));
+            assert_eq!(graph.positions(), [0.0, 0.0]);
+            assert_eq!(graph.nodes_in_use(), 1);
+        }
+    }
+
+    #[test]
+    fn a_node_added_to_a_graph_at_the_limit_of_a_load_is_refused() {
+        // Verifies: ADR-0028, Q-7
+        let count = MAX_ITEMS as usize;
+        let positions = (0..count).flat_map(|i| [i as f32, 0.0]).collect();
+        let mut graph = Graph::new(positions, vec![1.0; count * 2], Vec::new()).unwrap();
+        assert_eq!(
+            add(&mut graph, &added(0.0, 0.0, |_| {})),
+            Err(GraphDataProblem::TooMany {
+                list: "nodes".into(),
+                limit: MAX_ITEMS,
+            })
+        );
+        assert_eq!(graph.nodes_in_use(), MAX_ITEMS);
+        assert_eq!(graph.positions().len(), count * 2);
+    }
+
+    #[test]
+    fn a_coordinate_not_finite_in_an_early_node_is_named_before_a_title_in_a_later_one() {
+        // Verifies: ADR-0034
+        // The first pass names only the values `Field<T>` reads; a title is checked at its rule,
+        // in the second pass, after the nodes before it.
+        let ids: Vec<String> = (0..6).map(|i| format!("n{i}")).collect();
+        let nodes: Vec<_> = ids.iter().map(|id| (id.as_str(), 0.0, 0.0)).collect();
+        let mut data = batch(&nodes, &[]);
+        data.nodes[0].x = f64::INFINITY.into();
+        // The title of node 5 holds a lone surrogate, which the snapshot hands over as no text.
+        data.nodes[5].content = content(&[&[(KindCode::Text, 1.0, RoleCode::Title, None)]]).into();
+        assert_eq!(
+            graph_of(&data).unwrap_err(),
+            GraphDataProblem::NonFiniteCoordinate { node: "n0".into() }
+        );
+        data.nodes[0].x = 0.0.into();
+        assert_eq!(graph_of(&data).unwrap_err(), invalid_text("n5", 0, 0));
+    }
+
+    #[test]
+    fn the_first_value_refused_by_its_type_is_named_across_nodes_and_edges() {
+        // Verifies: ADR-0034
+        // A node's refused field is named before any edge's, and an earlier edge's arrowhead
+        // that names nothing before a later edge's field the shell named.
+        let mut nodes = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]).nodes;
+        nodes[1].y = Field(None);
+        let nodes = OwnedColumns::of(nodes.iter().map(Some));
+        let mut d = labelled("d");
+        d.arrow = Field(Some("start".to_owned()));
+        let mut e = labelled("e");
+        e.id = Field(None);
+        let edges = OwnedEdgeColumns::of([Some(&d), Some(&e)]);
+        let refused = |list, index, id: Option<&str>, field: &str, expected: &str| {
+            GraphDataProblem::InvalidField {
+                list,
+                index,
+                id: id.map(str::to_owned),
+                field: field.into(),
+                expected: expected.into(),
+            }
+        };
+        assert_eq!(
+            load_of(&nodes.view(), &edges.view(), &Fonts::default()).err(),
+            Some(refused(GraphList::Nodes, 1, Some("b"), "y", A_NUMBER))
+        );
+        assert_eq!(
+            load_edges(&edges).err(),
+            Some(refused(GraphList::Edges, 0, Some("d"), "arrow", AN_ARROW))
+        );
+        d.arrow = Field(Some("none".to_owned()));
+        let edges = OwnedEdgeColumns::of([Some(&d), Some(&e)]);
+        assert_eq!(
+            load_edges(&edges).err(),
+            Some(refused(GraphList::Edges, 1, None, "id", AN_ID))
+        );
+    }
+}

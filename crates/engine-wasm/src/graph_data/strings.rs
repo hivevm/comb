@@ -218,3 +218,123 @@ fn ascii_at<'a>(pieces: &'a [String], bounds: &[u32], index: usize) -> &'a str {
     }
     ""
 }
+
+// The malformed-data tests of graph data verify ADR-0034 (see `graph_data::tests`).
+// Verifies: ADR-0034
+#[cfg(test)]
+mod tests {
+    use super::super::tests::{
+        TITLE, b_of, batch, cut, d_and, label_in, load_columns, load_edges, load_into,
+    };
+    use super::super::{
+        ID_LIMIT, NodeField, OwnedColumns, OwnedEdgeColumns, edge_columns::unfit_edges,
+        node_columns::unfit,
+    };
+    use super::*;
+
+    #[test]
+    fn texts_of_content_cut_inside_a_pair_are_refused_for_their_length_before_any_is_mapped() {
+        // Verifies: ADR-0034
+        // Two texts of 1,100 code units, cut to 1,001: the first ends in the high half of a pair
+        // and the second begins with the low one.
+        let texts = format!("{}\u{1F600}{}", "a".repeat(1_000), "b".repeat(1_000));
+        let mut columns = b_of(&[&[TITLE]]);
+        columns.content.texts = vec![texts];
+        columns.content.text_bounds = vec![0, 1_001, 2_002];
+        assert_eq!(
+            load_columns(&columns).err(),
+            Some(GraphDataProblem::ContentTextTooLong {
+                node: "a".into(),
+                row: 0,
+                column: 0,
+                field: "text".into(),
+                limit: 1_000,
+            })
+        );
+        // A boundary inside a character no length refuses is malformed, never mapped.
+        let mut columns = b_of(&[&[TITLE]]);
+        columns.content.texts = vec!["\u{1F600}".to_owned()];
+        columns.content.text_bounds = vec![0, 1, 2];
+        assert_eq!(load_columns(&columns).err(), Some(malformed(TEXT_INSIDE)));
+    }
+
+    #[test]
+    fn identifiers_cut_inside_a_pair_are_refused_for_their_length_before_any_is_mapped() {
+        // Verifies: ADR-0034
+        // Two identifiers of 300 code units, cut to 257: the first ends in the high half of a
+        // pair and the second begins with the low one, one character across their boundary.
+        let ids = format!("{}\u{1F600}{}", "a".repeat(256), "b".repeat(256));
+        assert_eq!(
+            load_columns(&cut(&ids, &[0, 257, 514], None)).unwrap_err(),
+            GraphDataProblem::IdTooLong {
+                list: "nodes".into(),
+                index: 0,
+                field: "id".into(),
+                limit: ID_LIMIT,
+            }
+        );
+        // A boundary inside a character no length refuses is malformed, never mapped.
+        assert_eq!(
+            load_columns(&cut("\u{1F600}", &[0, 1, 2], None)).unwrap_err(),
+            malformed("an identifier ends inside a character")
+        );
+        // A node refused by its type in the first pass is named by its identifier as the shell
+        // read it, each half of a pair cut in two U+FFFD, as it crossed alone.
+        let named = |at, id: String| {
+            let columns = cut(&ids, &[0, 257, 514], Some((at, NodeField::X)));
+            let problem = load_columns(&columns).unwrap_err();
+            assert!(
+                matches!(&problem, GraphDataProblem::InvalidField { id: Some(named), .. } if *named == id),
+                "{problem:?}"
+            );
+        };
+        named(0, format!("{}\u{FFFD}", "a".repeat(256)));
+        named(1, format!("\u{FFFD}{}", "b".repeat(256)));
+    }
+
+    /// `values` as the pieces of a string column.
+    fn pieces(values: &[&str]) -> Vec<String> {
+        values.iter().map(|&value| value.to_owned()).collect()
+    }
+
+    #[test]
+    fn pieces_that_miss_the_last_boundary_or_end_inside_a_value_are_refused_as_malformed() {
+        // Verifies: ADR-0034
+        // Nodes `ab` and `cd`, and edges `d` and `e` with label texts of 1 and 3 code units.
+        let nodes = |ids: &[&str]| {
+            let mut columns = cut("abcd", &[0, 2, 4], None);
+            columns.ids = pieces(ids);
+            columns
+        };
+        let edges = |labels: &[&str]| {
+            let mut columns = d_and(|e| label_in(e).text_length = Some(3));
+            columns.labels = pieces(labels);
+            columns
+        };
+        let no_edges = OwnedEdgeColumns::of([]);
+        let mut engine = crate::Engine::new();
+        // Pieces that end where values end, an empty one among them, map piece by piece.
+        for ids in [&["abcd"][..], &["ab", "cd"], &["ab", "", "cd"]] {
+            assert_eq!(load_into(&mut engine, &nodes(ids), &no_edges), Ok(2));
+        }
+        assert_eq!(engine.positions_len(), 4);
+        for labels in [&["xxxx"][..], &["x", "xxx"]] {
+            assert!(load_edges(&edges(labels)).is_ok(), "{labels:?}");
+        }
+        // Lengths that sum short of the last boundary, or past it, or no piece at all.
+        let short: [&[&str]; 3] = [&["ab"], &["ab", "cd", "x"], &[]];
+        // A piece that ends inside a value, the lengths summing to the last boundary.
+        let inside: [&[&str]; 3] = [&["a", "bcd"], &["abc", "d"], &["a", "b", "cd"]];
+        for ids in short.into_iter().chain(inside) {
+            let refused = load_into(&mut engine, &nodes(ids), &no_edges);
+            assert_eq!(refused, Err(unfit()), "{ids:?}");
+        }
+        assert_eq!(load_edges(&edges(&["x"])).err(), Some(unfit_edges()));
+        assert_eq!(load_edges(&edges(&["xx", "xx"])).err(), Some(unfit_edges()));
+        // The engine keeps the graph it held, and takes the next load.
+        assert_eq!(engine.positions_len(), 4);
+        let one = OwnedColumns::of(batch(&[("a", 0.0, 0.0)], &[]).nodes.iter().map(Some));
+        assert_eq!(load_into(&mut engine, &one, &no_edges), Ok(1));
+        assert_eq!(engine.positions_len(), 2);
+    }
+}

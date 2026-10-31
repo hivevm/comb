@@ -55,3 +55,32 @@ pub(crate) fn check_graph_size(nodes: f64, edges: f64) -> Result<(), GraphDataPr
     }
     Ok(())
 }
+
+// The malformed-data tests of graph data verify ADR-0034 (see `graph_data::tests`).
+// Verifies: ADR-0034
+#[cfg(test)]
+mod tests {
+    use super::*;
+    // The export itself, as on the crate root, so that its tests go through it.
+    use crate::check_graph_size;
+
+    #[test]
+    fn a_graph_beyond_a_million_nodes_or_edges_is_refused_naming_the_list() {
+        assert_eq!(check_graph_size(1e6, 1e6), Ok(()));
+        let too_many = |list: &str| GraphDataProblem::TooMany {
+            list: list.into(),
+            limit: 1_000_000,
+        };
+        assert_eq!(check_graph_size(1e6 + 1.0, 0.0), Err(too_many("nodes")));
+        assert_eq!(
+            check_graph_size(0.0, 4_294_967_295.0),
+            Err(too_many("edges"))
+        );
+        for count in [f64::NAN, -1.0, 0.5] {
+            assert!(matches!(
+                check_graph_size(count, 0.0),
+                Err(GraphDataProblem::Malformed { .. })
+            ));
+        }
+    }
+}

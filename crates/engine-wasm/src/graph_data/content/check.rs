@@ -532,3 +532,828 @@ impl Checked {
         self.data.text(index)
     }
 }
+
+// The malformed-data tests of graph data verify ADR-0034 (see `graph_data::tests`).
+// Verifies: ADR-0034
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::graph_data::tests::{
+        Cell, TITLE, a_and, action, add, added, at_b, b_of, badged, batch, content, icon,
+        invalid_text, load_columns, metricked, named_content, progressed, refused, text, titled,
+    };
+    use crate::graph_data::{MAX_TEXT, OwnedColumns, content, graph_of, node_columns::unfit};
+
+    #[test]
+    fn a_load_whose_strings_of_content_pass_the_budget_is_refused_at_the_node_that_passes_it() {
+        // Verifies: ADR-0034, Q-7
+        // The budget lowered to 5 code units: node `a`'s two texts of 2 and 3 hold it, and `b`'s
+        // text of 1 passes it.
+        content::TEST_BUDGET.set(Some(5));
+        let two =
+            |a: &str, b: &str| content(&[&[text(RoleCode::Title, a), text(RoleCode::Body, b)]]);
+        let load = |b_text: &str| {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+            data.nodes[0].content = two("aa", "aaa").into();
+            data.nodes[1].content = titled(b_text);
+            graph_of(&data)
+        };
+        let held = load("");
+        let passed = load("b");
+        content::TEST_BUDGET.set(None);
+        assert!(held.is_ok(), "{:?}", held.err());
+        assert_eq!(
+            passed.err(),
+            Some(GraphDataProblem::ContentBudgetExceeded {
+                node: "b".into(),
+                limit: MAX_CONTENT_UNITS
+            })
+        );
+    }
+
+    #[test]
+    fn a_title_that_is_not_text_names_its_node() {
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+        data.nodes[1].content = content(&[&[(KindCode::Text, 1.0, RoleCode::Title, None)]]).into();
+        assert_eq!(graph_of(&data).unwrap_err(), invalid_text("b", 0, 0));
+    }
+
+    #[test]
+    fn an_action_whose_identifier_is_no_string_or_too_long_names_its_node() {
+        // Verifies: ADR-0013, ADR-0034, Q-7
+        // A title and an action beside it, whose identifier is checked as a string of content is,
+        // against the limit of a text, after the action's text; through a load and through
+        // `addNode` alike.
+        let long = "d".repeat(MAX_TEXT + 1);
+        let held = "d".repeat(MAX_TEXT);
+        let with = |id: Option<&str>| {
+            let action = (
+                (KindCode::Action, 1.0, RoleCode::Title, Some("Details")),
+                id,
+            );
+            named_content(&[&[(text(RoleCode::Title, "Bet"), None), action]])
+        };
+        let field = |problem: GraphDataProblem| match problem {
+            GraphDataProblem::InvalidContentText {
+                node,
+                row,
+                column,
+                field,
+            } => (node, row, column, field, None),
+            GraphDataProblem::ContentTextTooLong {
+                node,
+                row,
+                column,
+                field,
+                limit,
+            } => (node, row, column, field, Some(limit)),
+            other => panic!("{other:?}"),
+        };
+        let cases = [(None, None), (Some(long.as_str()), Some(TEXT_LIMIT))];
+        for (id, limit) in cases {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+            data.nodes[1].content = with(id).into();
+            let refused = field(graph_of(&data).unwrap_err());
+            assert_eq!(refused, ("b".into(), 0, 1, "id".into(), limit));
+            let mut graph = graph_of(&batch(&[("a", 0.0, 0.0)], &[])).unwrap();
+            let node = added(0.0, 0.0, |node| node.content = with(id).into());
+            let refused = field(add(&mut graph, &node).unwrap_err());
+            assert_eq!(refused, ("n".into(), 0, 1, "id".into(), limit));
+        }
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+        data.nodes[1].content = with(Some(&held)).into();
+        assert!(graph_of(&data).is_ok());
+        // Its text is a text's: missing, it is refused as the field `text`.
+        let mut data = batch(&[("a", 0.0, 0.0)], &[]);
+        let no_text = ((KindCode::Action, 1.0, RoleCode::Title, None), Some("d"));
+        data.nodes[0].content = named_content(&[&[no_text]]).into();
+        assert_eq!(graph_of(&data).unwrap_err(), invalid_text("a", 0, 0));
+    }
+
+    #[test]
+    fn a_badge_whose_colour_is_no_rgb_or_whose_text_is_malformed_names_its_node() {
+        // Verifies: ADR-0013, ADR-0034, Q-7
+        // A badge below a title, its text checked as a string of content is, then its colour, an
+        // integer from 0 to 0xFFFFFF as an edge's; through a load and through `addNode` alike.
+        let long = "d".repeat(MAX_TEXT + 1);
+        let color = |node: &str| GraphDataProblem::InvalidContentColor {
+            node: node.into(),
+            row: 1,
+            column: 0,
+            segment: None,
+        };
+        let too_long = |node: &str| GraphDataProblem::ContentTextTooLong {
+            node: node.into(),
+            row: 1,
+            column: 0,
+            field: "text".into(),
+            limit: TEXT_LIMIT,
+        };
+        type Refusal = fn(&str) -> GraphDataProblem;
+        let cases: Vec<(Option<&str>, f64, Refusal)> = vec![
+            (Some("Done"), -1.0, color),
+            (Some("Done"), f64::from(0x100_0000), color),
+            (Some("Done"), 0.5, color),
+            (Some("Done"), f64::NAN, color),
+            (Some("Done"), f64::INFINITY, color),
+            (None, 0.0, |node| invalid_text(node, 1, 0)),
+            (Some(&long), 0.0, too_long),
+            // The text is checked before the colour.
+            (None, f64::NAN, |node| invalid_text(node, 1, 0)),
+        ];
+        for (text, shade, problem) in cases {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+            data.nodes[1].content = badged(text, shade).into();
+            assert_eq!(
+                graph_of(&data).unwrap_err(),
+                problem("b"),
+                "{text:?} {shade}"
+            );
+            let mut graph = graph_of(&batch(&[("a", 0.0, 0.0)], &[])).unwrap();
+            let node = added(0.0, 0.0, |node| node.content = badged(text, shade).into());
+            assert_eq!(add(&mut graph, &node).unwrap_err(), problem("n"));
+        }
+        // At both ends of the colours, and a text at the limit, the badge is accepted.
+        for (text, shade) in [
+            ("Done", 0.0),
+            ("Done", f64::from(0xff_ffff)),
+            (&*"d".repeat(MAX_TEXT), 0.0),
+        ] {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+            data.nodes[1].content = badged(Some(text), shade).into();
+            assert!(graph_of(&data).is_ok(), "{shade}");
+        }
+    }
+
+    #[test]
+    fn a_progress_bar_whose_segments_are_refused_names_its_node_and_the_segment() {
+        // Verifies: ADR-0013, ADR-0034, Q-7
+        // A progress bar below a title: its number of segments, then each segment's fraction and
+        // colour in their order, then their sum; through a load and through `addNode` alike.
+        let green = f64::from(0x22_c55e);
+        type Refusal = Box<dyn Fn(&str) -> GraphDataProblem>;
+        let fraction = |segment| -> Refusal {
+            Box::new(move |node| GraphDataProblem::InvalidFraction {
+                node: node.into(),
+                row: 1,
+                column: 0,
+                segment,
+            })
+        };
+        let color = || -> Refusal {
+            Box::new(|node| GraphDataProblem::InvalidContentColor {
+                node: node.into(),
+                row: 1,
+                column: 0,
+                segment: Some(1),
+            })
+        };
+        let too_many = || -> Refusal {
+            Box::new(|node| GraphDataProblem::TooManySegments {
+                node: node.into(),
+                row: 1,
+                column: 0,
+                limit: SEGMENT_LIMIT,
+            })
+        };
+        let past = || -> Refusal {
+            Box::new(|node| GraphDataProblem::FractionsPastOne {
+                node: node.into(),
+                row: 1,
+                column: 0,
+            })
+        };
+        let nine = vec![(0.1, green); MAX_SEGMENTS + 1];
+        let cases: Vec<(Vec<(f64, f64)>, Refusal)> = vec![
+            (vec![(-0.1, green)], fraction(0)),
+            (vec![(0.3, green), (f64::NAN, green)], fraction(1)),
+            (vec![(0.3, green), (f64::INFINITY, green)], fraction(1)),
+            (vec![(0.3, green), (-1e-300, green)], fraction(1)),
+            (vec![(0.3, green), (0.2, -1.0)], color()),
+            (vec![(0.3, green), (0.2, f64::from(0x100_0000))], color()),
+            (vec![(0.3, green), (0.2, 0.5)], color()),
+            (vec![(0.3, green), (0.2, f64::NAN)], color()),
+            // The fraction before the colour, the count before either, the sum after both.
+            (vec![(0.3, green), (f64::NAN, f64::NAN)], fraction(1)),
+            (
+                nine.iter().map(|&(_, c)| (f64::NAN, c)).collect(),
+                too_many(),
+            ),
+            (nine, too_many()),
+            (vec![(0.6, green), (0.4 + 2e-9, green)], past()),
+            (vec![(0.7, green), (0.5, f64::NAN)], color()),
+            (vec![(f64::MAX, green), (f64::MAX, green)], past()),
+        ];
+        for (segments, problem) in cases {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+            data.nodes[1].content = progressed(&segments).into();
+            assert_eq!(graph_of(&data).unwrap_err(), problem("b"), "{segments:?}");
+            let mut graph = graph_of(&batch(&[("a", 0.0, 0.0)], &[])).unwrap();
+            let node = added(0.0, 0.0, |node| node.content = progressed(&segments).into());
+            assert_eq!(add(&mut graph, &node).unwrap_err(), problem("n"));
+        }
+        // At the limit of segments, at both ends of the colours, with fractions of 0, and summing
+        // to 1 and a little past it, the bar is accepted; so is a bar of no segments.
+        let accepted: [&[(f64, f64)]; 5] = [
+            &[(0.125, 0.0); MAX_SEGMENTS],
+            &[(0.0, 0.0), (1.0, f64::from(0xff_ffff))],
+            &[(0.6, green), (0.4 + 5e-10, green)],
+            &[(0.1, green), (0.2, green), (0.7, green)],
+            &[],
+        ];
+        for segments in accepted {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+            data.nodes[1].content = progressed(segments).into();
+            assert!(graph_of(&data).is_ok(), "{segments:?}");
+        }
+    }
+
+    #[test]
+    fn a_progress_bar_fills_its_segments_alone_and_segments_that_do_not_fit_are_malformed() {
+        // Verifies: ADR-0034
+        let green = f64::from(0x22_c55e);
+        let mut columns = OwnedColumns::of([Some(&added(0.0, 0.0, |node| {
+            node.content = progressed(&[(0.3, green), (0.2, 0.0)]).into();
+        }))]);
+        let c = &columns.content;
+        assert_eq!(c.kinds, [KindCode::Text as u8, KindCode::Progress as u8]);
+        assert_eq!(c.roles, [RoleCode::Title as u8, 0]);
+        assert!(c.colors.iter().all(|color| color.is_nan()));
+        assert_eq!(c.segment_bounds, [0, 0, 2]);
+        assert_eq!(c.fractions, [0.3, 0.2]);
+        assert_eq!(c.segment_colors, [green, 0.0]);
+        // The title's text alone: a progress bar fills no text and no name.
+        assert_eq!((c.text_valid.len(), c.name_valid.len()), (1, 0));
+        assert!(columns.content.view().fit(1));
+        // A colour per segment: one too many or one too few does not fit.
+        columns.content.segment_colors.push(0.0);
+        assert!(!columns.content.view().fit(1));
+        columns.content.segment_colors.truncate(1);
+        assert!(!columns.content.view().fit(1));
+        columns.content.segment_colors.push(0.0);
+        assert_eq!(
+            load_columns(&columns).map(|graph| graph.nodes_in_use()),
+            Ok(1)
+        );
+        // A progress bar with a text does not fit.
+        let mut columns = OwnedColumns::of([Some(&added(0.0, 0.0, |node| {
+            node.content = progressed(&[]).into();
+        }))]);
+        columns.content.text_valid.push(1);
+        columns.content.text_bounds.push(0);
+        assert!(!columns.content.view().fit(1));
+    }
+
+    /// The refusal of the metric at row 1, column 0 of the node `node` by its rule `rule`: the
+    /// direction, the colour, or a text by its field.
+    fn metric_refusal(rule: &str, node: &str) -> GraphDataProblem {
+        let (node, row, column) = (node.to_owned(), 1, 0);
+        match rule {
+            "direction" => GraphDataProblem::InvalidDirection { node, row, column },
+            "color" => GraphDataProblem::InvalidContentColor {
+                node,
+                row,
+                column,
+                segment: None,
+            },
+            "long value" => GraphDataProblem::ContentTextTooLong {
+                node,
+                row,
+                column,
+                field: "value".into(),
+                limit: TEXT_LIMIT,
+            },
+            field => GraphDataProblem::InvalidContentText {
+                node,
+                row,
+                column,
+                field: field.into(),
+            },
+        }
+    }
+
+    #[test]
+    fn a_metric_whose_direction_texts_or_colour_are_refused_names_its_node_and_the_field() {
+        // Verifies: ADR-0013, ADR-0034, Q-7
+        // A metric below a title: its trend's direction, then its caption, its value, and its
+        // trend's text, each a string of content, then its trend's colour, as a badge's; through
+        // a load and through `addNode` alike.
+        let (up, green) = (DirectionCode::Up as u8, f64::from(0x22_c55e));
+        let unnamed = DirectionCode::Unnamed as u8;
+        let long = "d".repeat(MAX_TEXT + 1);
+        let fine = [Some("Revenue"), Some("42"), Some("+3%")];
+        let cases: Vec<(u8, f64, [Option<&str>; 3], &str)> = vec![
+            (unnamed, green, fine, "direction"),
+            (up, -1.0, fine, "color"),
+            (up, f64::from(0x100_0000), fine, "color"),
+            (up, 0.5, fine, "color"),
+            (up, f64::NAN, fine, "color"),
+            (up, green, [None, fine[1], fine[2]], "caption"),
+            (up, green, [fine[0], None, fine[2]], "value"),
+            (up, green, [fine[0], fine[1], None], "trend.text"),
+            (up, green, [fine[0], Some(&long), fine[2]], "long value"),
+            // The direction before the texts, the caption before the value, the texts before the
+            // colour.
+            (unnamed, f64::NAN, [None; 3], "direction"),
+            (up, green, [None, None, None], "caption"),
+            (up, f64::NAN, [fine[0], fine[1], None], "trend.text"),
+        ];
+        for (direction, shade, texts, rule) in cases {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+            data.nodes[1].content = metricked(direction, shade, texts).into();
+            let refused = graph_of(&data).unwrap_err();
+            assert_eq!(refused, metric_refusal(rule, "b"), "{texts:?} {shade}");
+            let mut graph = graph_of(&batch(&[("a", 0.0, 0.0)], &[])).unwrap();
+            let node = added(0.0, 0.0, |node| {
+                node.content = metricked(direction, shade, texts).into();
+            });
+            let refused = add(&mut graph, &node).unwrap_err();
+            assert_eq!(refused, metric_refusal(rule, "n"));
+        }
+    }
+
+    #[test]
+    fn a_metric_of_each_direction_and_colours_and_texts_at_their_limits_is_accepted() {
+        // Verifies: ADR-0013, ADR-0034
+        let held = "d".repeat(MAX_TEXT);
+        let fine = [Some("Revenue"), Some("42"), Some("+3%")];
+        for direction in [DirectionCode::Up, DirectionCode::Down, DirectionCode::Flat] {
+            for (shade, texts) in [
+                (0.0, fine),
+                (
+                    f64::from(0xff_ffff),
+                    [Some(&*held), Some(&*held), Some(&*held)],
+                ),
+                (1.0, [Some(""), Some(""), Some("")]),
+            ] {
+                let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+                data.nodes[1].content = metricked(direction as u8, shade, texts).into();
+                assert!(graph_of(&data).is_ok(), "{direction:?} {shade}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_metric_fills_its_direction_colour_and_three_texts_and_columns_that_do_not_fit_are_malformed()
+     {
+        // Verifies: ADR-0034
+        let green = f64::from(0x22_c55e);
+        let texts = [Some("Revenue"), Some("42"), Some("+3%")];
+        let content = metricked(DirectionCode::Down as u8, green, texts);
+        let mut columns = OwnedColumns::of([Some(&added(0.0, 0.0, |node| {
+            node.content = content.into();
+        }))]);
+        let c = &columns.content;
+        assert_eq!(c.kinds, [KindCode::Text as u8, KindCode::Metric as u8]);
+        assert_eq!(c.roles, [RoleCode::Title as u8, 0]);
+        assert_eq!(c.directions, [0, DirectionCode::Down as u8]);
+        assert!(c.colors[0].is_nan());
+        assert_eq!(c.colors[1], green);
+        // The title's text, then the metric's caption, value, and trend's text; no name.
+        assert_eq!(c.text_bounds, [0, 3, 10, 12, 15]);
+        assert_eq!((c.text_valid.len(), c.name_valid.len()), (4, 0));
+        assert!(columns.content.view().fit(1));
+        assert_eq!(
+            load_columns(&columns).map(|graph| graph.nodes_in_use()),
+            Ok(1)
+        );
+        // A direction per element: one too many or too few, or a code that is none, does not fit.
+        columns.content.directions.push(0);
+        assert!(!columns.content.view().fit(1));
+        columns.content.directions.truncate(1);
+        assert!(!columns.content.view().fit(1));
+        columns
+            .content
+            .directions
+            .push(DirectionCode::Unnamed as u8 + 1);
+        assert_eq!(load_columns(&columns).err(), Some(unfit()));
+        columns.content.directions[1] = DirectionCode::Unnamed as u8;
+        assert!(columns.content.view().fit(1));
+        // A metric of fewer than three texts does not fit.
+        columns.content.text_valid.pop();
+        columns.content.text_bounds.pop();
+        assert!(!columns.content.view().fit(1));
+    }
+
+    #[test]
+    fn boundaries_of_segments_that_do_not_bound_them_or_bound_another_kind_s_are_malformed() {
+        // Verifies: ADR-0034
+        // A title, then a progress bar of two segments: their boundaries are [0, 0, 2].
+        let mut columns = OwnedColumns::of([Some(&added(0.0, 0.0, |node| {
+            node.content = progressed(&[(0.3, 0.0), (0.2, 0.0)]).into();
+        }))]);
+        // Boundaries that do not start at 0, fall, end short of the segments or past them, or
+        // are one too few; and segments of the title, which is no progress bar.
+        let unfit_bounds = [
+            vec![1, 1, 2],
+            vec![0, 2, 1],
+            vec![0, 0, 1],
+            vec![0, 0, 3],
+            vec![0, 0],
+            vec![0, 1, 2],
+        ];
+        for bounds in unfit_bounds {
+            columns.content.segment_bounds.clone_from(&bounds);
+            assert_eq!(load_columns(&columns).err(), Some(unfit()), "{bounds:?}");
+        }
+        columns.content.segment_bounds = vec![0, 0, 2];
+        assert!(columns.content.view().fit(1));
+    }
+
+    #[test]
+    fn a_badge_fills_one_text_and_its_colour_and_columns_of_colours_that_do_not_fit_are_malformed()
+    {
+        // Verifies: ADR-0034
+        let mut columns = OwnedColumns::of([Some(&added(0.0, 0.0, |node| {
+            node.content = badged(Some("Done"), f64::from(0x22_c55e)).into();
+        }))]);
+        let c = &columns.content;
+        assert_eq!(c.kinds, [KindCode::Text as u8, KindCode::Badge as u8]);
+        assert_eq!(c.roles, [RoleCode::Title as u8, 0]);
+        assert!(c.colors[0].is_nan());
+        assert_eq!(c.colors[1], f64::from(0x22_c55e));
+        assert_eq!((c.text_valid.len(), c.name_valid.len()), (2, 0));
+        assert!(columns.content.view().fit(1));
+        // A colour per element: one too many or one too few does not fit.
+        columns.content.colors.push(0.0);
+        assert!(!columns.content.view().fit(1));
+        columns.content.colors.truncate(1);
+        assert!(!columns.content.view().fit(1));
+        // A badge without its text does not fit either.
+        let mut columns = OwnedColumns::of([Some(&added(0.0, 0.0, |node| {
+            node.content = badged(Some("Done"), 0.0).into();
+        }))]);
+        columns.content.text_valid.pop();
+        columns.content.text_bounds.pop();
+        assert!(!columns.content.view().fit(1));
+    }
+
+    #[test]
+    fn an_actions_identifier_counts_against_the_budget_of_a_loads_strings_of_content() {
+        // Verifies: ADR-0034, Q-7
+        // The budget lowered to 5 code units: `a`'s action of the text "ab" and the identifier
+        // "cde" holds it, and `b`'s title of 1 passes it.
+        content::TEST_BUDGET.set(Some(5));
+        let load = |b_text: &str| {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+            data.nodes[0].content = named_content(&[&[action("ab", "cde")]]).into();
+            data.nodes[1].content = titled(b_text);
+            graph_of(&data)
+        };
+        let held = load("");
+        let passed = load("b");
+        content::TEST_BUDGET.set(None);
+        assert!(held.is_ok(), "{:?}", held.err());
+        assert_eq!(
+            passed.err(),
+            Some(GraphDataProblem::ContentBudgetExceeded {
+                node: "b".into(),
+                limit: MAX_CONTENT_UNITS
+            })
+        );
+    }
+
+    #[test]
+    fn columns_of_names_that_do_not_follow_from_the_kinds_are_malformed() {
+        // Verifies: ADR-0034
+        // One action fills one text and one name: a name too many, or none, does not fit.
+        let mut columns = OwnedColumns::of([Some(&added(0.0, 0.0, |node| {
+            node.content = named_content(&[&[action("Details", "d")]]).into();
+        }))]);
+        assert!(columns.content.view().fit(1));
+        columns.content.name_valid.push(1);
+        columns.content.name_bounds.push(1);
+        assert!(!columns.content.view().fit(1));
+        columns.content.name_valid.clear();
+        columns.content.name_bounds = vec![0];
+        columns.content.names.clear();
+        assert!(!columns.content.view().fit(1));
+    }
+
+    #[test]
+    fn an_icon_whose_name_is_no_string_or_too_long_names_its_node() {
+        // Verifies: ADR-0013, ADR-0034, Q-7
+        // A title and an icon beside it, whose name is checked as a string of content is, against
+        // the limit of a text, as the field `name`; through a load and through `addNode` alike.
+        let long = "d".repeat(MAX_TEXT + 1);
+        let held = "d".repeat(MAX_TEXT);
+        let with = |name: Option<&str>| {
+            named_content(&[&[(text(RoleCode::Title, "Bet"), None), icon(name)]])
+        };
+        let invalid = |node: &str| GraphDataProblem::InvalidContentText {
+            node: node.into(),
+            row: 0,
+            column: 1,
+            field: "name".into(),
+        };
+        let too_long = |node: &str| GraphDataProblem::ContentTextTooLong {
+            node: node.into(),
+            row: 0,
+            column: 1,
+            field: "name".into(),
+            limit: TEXT_LIMIT,
+        };
+        type Refusal = fn(&str) -> GraphDataProblem;
+        let cases: [(Option<&str>, Refusal); 2] = [(None, invalid), (Some(&long), too_long)];
+        for (name, problem) in cases {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+            data.nodes[1].content = with(name).into();
+            assert_eq!(graph_of(&data).unwrap_err(), problem("b"));
+            let mut graph = graph_of(&batch(&[("a", 0.0, 0.0)], &[])).unwrap();
+            let node = added(0.0, 0.0, |node| node.content = with(name).into());
+            assert_eq!(add(&mut graph, &node).unwrap_err(), problem("n"));
+        }
+        // A name of the limit, and an empty one, which names an icon no host registers.
+        for name in [held.as_str(), ""] {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+            data.nodes[1].content = with(Some(name)).into();
+            assert!(graph_of(&data).is_ok());
+        }
+    }
+
+    #[test]
+    fn an_icons_name_counts_against_the_budget_of_a_loads_strings_of_content() {
+        // Verifies: ADR-0034, Q-7
+        // The budget lowered to 5 code units: `a`'s icon named "abcde" holds it, and `b`'s title
+        // of 1 passes it.
+        content::TEST_BUDGET.set(Some(5));
+        let load = |b_text: &str| {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+            data.nodes[0].content = named_content(&[&[icon(Some("abcde"))]]).into();
+            data.nodes[1].content = titled(b_text);
+            graph_of(&data)
+        };
+        let held = load("");
+        let passed = load("b");
+        content::TEST_BUDGET.set(None);
+        assert!(held.is_ok(), "{:?}", held.err());
+        assert_eq!(
+            passed.err(),
+            Some(GraphDataProblem::ContentBudgetExceeded {
+                node: "b".into(),
+                limit: MAX_CONTENT_UNITS
+            })
+        );
+    }
+
+    #[test]
+    fn columns_of_an_icon_that_do_not_follow_from_its_kind_are_malformed() {
+        // Verifies: ADR-0034
+        // An icon fills one name and no text: a text, or no name, does not fit.
+        let mut columns = OwnedColumns::of([Some(&added(0.0, 0.0, |node| {
+            node.content = named_content(&[&[icon(Some("bet"))]]).into();
+        }))]);
+        assert!(columns.content.view().fit(1));
+        assert_eq!(columns.content.kinds, [KindCode::Icon as u8]);
+        assert!(columns.content.text_valid.is_empty());
+        columns.content.text_valid.push(1);
+        columns.content.text_bounds.push(0);
+        assert!(!columns.content.view().fit(1));
+        columns.content.text_valid.clear();
+        columns.content.text_bounds = vec![0];
+        assert!(columns.content.view().fit(1));
+        columns.content.name_valid.clear();
+        columns.content.name_bounds = vec![0];
+        columns.content.names.clear();
+        assert!(!columns.content.view().fit(1));
+    }
+
+    #[test]
+    fn a_title_that_is_no_text_or_too_long_crosses_as_columns_with_its_kind_and_names() {
+        // Verifies: ADR-0034
+        let b = || "b".to_owned();
+        let cases: Vec<(OwnedColumns, GraphDataProblem)> = vec![
+            // A title missing, of another type, or with a lone surrogate is no text.
+            (
+                a_and(|n| {
+                    n.content = content(&[&[(KindCode::Text, 1.0, RoleCode::Title, None)]]).into();
+                }),
+                invalid_text("b", 0, 0),
+            ),
+            (
+                a_and(|n| n.content = titled(&"x".repeat(MAX_TEXT + 1))),
+                GraphDataProblem::ContentTextTooLong {
+                    node: b(),
+                    row: 0,
+                    column: 0,
+                    field: "text".into(),
+                    limit: TEXT_LIMIT,
+                },
+            ),
+        ];
+        for (columns, problem) in cases {
+            assert_eq!(load_columns(&columns).err(), Some(problem));
+        }
+    }
+
+    #[test]
+    fn rows_and_columns_past_their_limits_are_refused_naming_the_node() {
+        // Verifies: ADR-0034, ADR-0013, Q-7
+        let title_row: &[Cell] = &[TITLE];
+        assert_eq!(refused(&[title_row; MAX_ROWS]), None);
+        let too_many = || GraphDataProblem::TooManyRows {
+            node: "b".into(),
+            limit: 8,
+        };
+        assert_eq!(refused(&[title_row; MAX_ROWS + 1]), Some(too_many()));
+        let wide = [TITLE; MAX_COLUMNS];
+        assert_eq!(refused(&[title_row, &wide]), None);
+        let wider = [TITLE; MAX_COLUMNS + 1];
+        assert_eq!(
+            refused(&[title_row, &wider]),
+            Some(GraphDataProblem::TooManyColumns {
+                node: "b".into(),
+                row: 1,
+                limit: 6
+            })
+        );
+        // The rows are counted before any row's elements are read.
+        let unnamed: &[Cell] = &[(KindCode::Unnamed, 1.0, RoleCode::Title, None)];
+        assert_eq!(refused(&[unnamed; MAX_ROWS + 1]), Some(too_many()));
+    }
+
+    #[test]
+    fn every_content_refusal_crosses_as_columns_with_its_kind_and_names() {
+        // Verifies: ADR-0034, ADR-0013, Q-7
+        let title_row: &[Cell] = &[TITLE];
+        // An element of no kind, at row 1 and column 1.
+        let (node, row, column) = at_b(1, 1);
+        let unnamed = (KindCode::Unnamed, 1.0, RoleCode::Title, None);
+        assert_eq!(
+            refused(&[title_row, &[TITLE, unnamed]]),
+            Some(GraphDataProblem::InvalidElementKind { node, row, column })
+        );
+        // A weight at the bounds of the positive finite numbers, and past them.
+        for weight in [f64::MIN_POSITIVE, 1.0, f64::MAX] {
+            let weighted = (KindCode::Text, weight, RoleCode::Body, Some("w"));
+            assert_eq!(refused(&[title_row, &[TITLE, weighted]]), None, "{weight}");
+        }
+        for weight in [0.0, -0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let weighted = (KindCode::Text, weight, RoleCode::Body, Some("w"));
+            let (node, row, column) = at_b(1, 1);
+            assert_eq!(
+                refused(&[title_row, &[TITLE, weighted]]),
+                Some(GraphDataProblem::InvalidWeight { node, row, column }),
+                "{weight}"
+            );
+        }
+        let roleless = (KindCode::Text, 1.0, RoleCode::Unnamed, Some("r"));
+        let (node, row, column) = at_b(0, 1);
+        assert_eq!(
+            refused(&[&[TITLE, roleless]]),
+            Some(GraphDataProblem::InvalidRole { node, row, column })
+        );
+        // A text missing, of another type, or holding a lone surrogate crosses as no text.
+        let textless = (KindCode::Text, 1.0, RoleCode::Caption, None);
+        assert_eq!(
+            refused(&[title_row, title_row, &[textless]]),
+            Some(invalid_text("b", 2, 0))
+        );
+        // Texts at the limit and past it, in UTF-16 code units, pairs counted twice.
+        let long = |text: &str| {
+            refused(&[
+                title_row,
+                &[TITLE, (KindCode::Text, 1.0, RoleCode::Body, Some(text))],
+            ])
+        };
+        let too_long = Some(GraphDataProblem::ContentTextTooLong {
+            node: "b".into(),
+            row: 1,
+            column: 1,
+            field: "text".into(),
+            limit: 1_000,
+        });
+        assert_eq!(long(&"x".repeat(MAX_TEXT)), None);
+        assert_eq!(long(&"\u{1F600}".repeat(500)), None);
+        assert_eq!(long(&"x".repeat(MAX_TEXT + 1)), too_long);
+        assert_eq!(long(&("\u{1F600}".repeat(500) + "x")), too_long);
+    }
+
+    #[test]
+    fn an_elements_fields_are_checked_in_their_order() {
+        // Verifies: ADR-0034
+        // A kind before a weight, a weight before a role, a role before the text.
+        let (node, row, column) = at_b(0, 0);
+        assert_eq!(
+            refused(&[&[(KindCode::Unnamed, f64::NAN, RoleCode::Unnamed, None)]]),
+            Some(GraphDataProblem::InvalidElementKind { node, row, column })
+        );
+        let (node, row, column) = at_b(0, 0);
+        assert_eq!(
+            refused(&[&[(KindCode::Text, f64::NAN, RoleCode::Unnamed, None)]]),
+            Some(GraphDataProblem::InvalidWeight { node, row, column })
+        );
+        let (node, row, column) = at_b(0, 0);
+        assert_eq!(
+            refused(&[&[(KindCode::Text, 1.0, RoleCode::Unnamed, None)]]),
+            Some(GraphDataProblem::InvalidRole { node, row, column })
+        );
+        assert_eq!(
+            refused(&[&[(KindCode::Text, 1.0, RoleCode::Body, None)]]),
+            Some(invalid_text("b", 0, 0))
+        );
+    }
+
+    #[test]
+    fn the_strings_of_a_loads_content_are_refused_past_their_budget_at_the_node_that_passes_it() {
+        // Verifies: ADR-0034, Q-7
+        // A million nodes of one text of 1,000 code units hold the budget of 1,000,000,000
+        // exactly; one code unit more is refused at the node whose text passes it. The rule reads
+        // the lengths off the boundaries alone, so the texts need not be held.
+        let count = 1_000_000;
+        let budget = |last: u32| {
+            let mut text_bounds: Vec<u32> = (0..=count).map(|i| i * 1_000).collect();
+            text_bounds[count as usize] = text_bounds[count as usize - 1] + last;
+            let nodes: Vec<u32> = (0..=count).collect();
+            let columns = ContentColumns {
+                row_bounds: &nodes,
+                element_bounds: &nodes,
+                kinds: &vec![KindCode::Text as u8; count as usize],
+                weights: &vec![1.0; count as usize],
+                roles: &vec![RoleCode::Title as u8; count as usize],
+                directions: &vec![0; count as usize],
+                colors: &vec![f64::NAN; count as usize],
+                segment_bounds: &vec![0; count as usize + 1],
+                fractions: &[],
+                segment_colors: &[],
+                texts: &[],
+                text_bounds: &text_bounds,
+                text_valid: &vec![1; count as usize],
+                names: &[],
+                name_bounds: &[0],
+                name_valid: &[],
+            };
+            let mut cursor = Cursor::default();
+            let fonts = Fonts::default();
+            (0..count as usize).try_for_each(|node| {
+                let id = format!("n{node}");
+                columns.check(node, &id, &mut cursor, &fonts).map(|_| ())
+            })
+        };
+        assert_eq!(MAX_CONTENT_UNITS, 1_000_000_000);
+        assert_eq!(budget(1_000), Ok(()));
+        // The last text at 1,000 code units holds the budget; the limit of a text keeps it there,
+        // so past it the text is refused for its length first.
+        assert_eq!(
+            budget(1_001)
+                .err()
+                .map(|problem| matches!(problem, GraphDataProblem::ContentTextTooLong { .. })),
+            Some(true)
+        );
+        // The budget's own refusal, at the node whose string passes it.
+        assert_eq!(
+            check_content_budget("n9", f64::from(MAX_CONTENT_UNITS)),
+            Ok(())
+        );
+        assert_eq!(
+            check_content_budget("n9", f64::from(MAX_CONTENT_UNITS) + 1.0),
+            Err(GraphDataProblem::ContentBudgetExceeded {
+                node: "n9".into(),
+                limit: 1_000_000_000
+            })
+        );
+    }
+
+    #[test]
+    fn content_columns_that_do_not_fit_together_are_refused_as_malformed() {
+        // Verifies: ADR-0034
+        let fits = || b_of(&[&[TITLE], &[TITLE, TITLE]]);
+        assert!(load_columns(&fits()).is_ok());
+        let changes: [fn(&mut ContentData); 14] = [
+            // The boundaries of the rows: from 0, never falling, to the rows there are.
+            |c| c.row_bounds[0] = 1,
+            |c| c.row_bounds = vec![0, 2, 1],
+            |c| _ = c.row_bounds.pop(),
+            // Of the elements, likewise.
+            |c| c.element_bounds[0] = 1,
+            |c| c.element_bounds[2] = 0,
+            |c| c.element_bounds.push(4),
+            // Every element's columns as long as there are elements.
+            |c| _ = c.weights.pop(),
+            |c| c.roles.push(0),
+            // A code that is no code, and a validity byte above 1.
+            |c| c.kinds[0] = KindCode::Unnamed as u8 + 1,
+            |c| c.roles[1] = RoleCode::Unnamed as u8 + 1,
+            |c| c.text_valid[2] = 2,
+            // As many texts as the kinds fill: none for an element of no kind.
+            |c| c.kinds[3] = KindCode::Unnamed as u8,
+            |c| _ = c.text_bounds.pop(),
+            |c| c.texts.push("x".to_owned()),
+        ];
+        for (i, change) in changes.into_iter().enumerate() {
+            let mut columns = fits();
+            change(&mut columns.content);
+            assert_eq!(load_columns(&columns).err(), Some(unfit()), "change {i}");
+        }
+    }
+
+    #[test]
+    fn a_title_validity_byte_other_than_one_or_zero_is_refused_as_malformed() {
+        // Verifies: ADR-0034
+        for byte in [2, u8::MAX] {
+            let mut columns = a_and(|_| {});
+            columns.content.text_valid[1] = byte;
+            assert_eq!(load_columns(&columns).err(), Some(unfit()));
+        }
+    }
+}
