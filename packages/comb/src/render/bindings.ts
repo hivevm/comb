@@ -81,8 +81,8 @@ export class Bindings<V extends Pooled> {
     return this.madeCount;
   }
 
-  /** Returns every view this render did not bind to the pool, telling `release` of each, and puts the layer's children in
-   *  drawing order where this render disturbed it. */
+  /** Returns every view this render did not bind to the pool, telling `release` of each, and puts
+   *  the layer's children in drawing order where this render disturbed it. */
   end(): void {
     const released: V[] = [];
     for (const [slot, view] of this.bound) {
