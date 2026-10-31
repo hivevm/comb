@@ -43,8 +43,6 @@ pub use edge_columns::{ArrowCode, EdgeColumns, EdgeField, SideCode};
 pub use edit::{EdgePatch, EdgeRefusal, NodePatch};
 pub(crate) use edit::{add_edge_to, patch_of, update_edge_in};
 pub use field::Field;
-#[cfg(test)]
-pub(crate) use field::reading;
 pub use input::{
     Arrow, ContentElement, EdgeInput, LabelInput, NodeContent, NodeInput, Pair, Segment, Side,
     TextRole, Trend, TrendDirection,

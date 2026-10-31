@@ -2,8 +2,6 @@
 //! kept as none, so that the bridge refuses it by name rather than as malformed data.
 
 #[cfg(test)]
-use std::cell::Cell;
-#[cfg(test)]
 use std::fmt;
 
 #[cfg(test)]
@@ -85,12 +83,13 @@ pub(super) fn optional_number<'de, D: Deserializer<'de>>(
     Ok(Option::<f64>::deserialize(deserializer).unwrap_or(Some(f64::NAN)))
 }
 
-/// A field of a node or an edge as the host application handed it over: its value, or none where
-/// the field is missing or holds a value of another type, which the bridge refuses naming the
-/// node or edge and the field (`invalidField`), not as malformed data. serde-wasm-bindgen gives
-/// each value a deserializer of its own, so the refused one leaves the rest to read; the error
-/// that refused it is dropped unread, and the value never reaches a message. Its TypeScript type
-/// is that of the value, which each field names.
+/// A field as the host application handed it over: its value, or none where the field is missing
+/// or holds a value of another type, which the bridge refuses by name, not as malformed data: a
+/// field of a node or an edge naming the node or edge and the field (`invalidField`), a field of
+/// content by the rule of its element. serde-wasm-bindgen gives each value a deserializer of its
+/// own, so the refused one leaves the rest to read; the error that refused it is dropped unread,
+/// and the value never reaches a message. Its TypeScript type is that of the value, which each
+/// field names.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Field<T>(pub Option<T>);
 
@@ -100,37 +99,23 @@ impl<T> Default for Field<T> {
     }
 }
 
-#[cfg(test)]
-thread_local! {
-    /// Whether a field of the current `reading` of the tests was refused.
-    static REFUSED: Cell<bool> = const { Cell::new(false) };
-}
-
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for Field<T> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let value = T::deserialize(deserializer).ok();
-        #[cfg(test)]
-        if value.is_none() {
-            REFUSED.set(true);
-        }
-        Ok(Self(value))
+        Ok(Self(T::deserialize(deserializer).ok()))
     }
 }
 
-/// What `read` deserializes in the tests, with a refused field of an earlier reading forgotten:
-/// the tests' batch of a load, its items after the first with a refused field left unread.
+/// An item of the tests' graph data whose fields may be refused.
 #[cfg(test)]
-pub(crate) fn reading<T>(read: impl FnOnce() -> T) -> T {
-    REFUSED.set(false);
-    let value = read();
-    REFUSED.set(false);
-    value
+pub(super) trait Refusable {
+    /// Whether a field of the item is missing or holds a value of another type.
+    fn refused(&self) -> bool;
 }
 
 /// The items of a list of the tests' graph data, each read in full until one holds a refused
 /// field, and the rest left unread, as items without fields, so that the list keeps its length.
 #[cfg(test)]
-pub(super) fn items<'de, D: Deserializer<'de>, T: Deserialize<'de> + Default>(
+pub(super) fn items<'de, D: Deserializer<'de>, T: Deserialize<'de> + Default + Refusable>(
     deserializer: D,
 ) -> Result<Vec<T>, D::Error> {
     deserializer.deserialize_seq(Items(std::marker::PhantomData))
@@ -151,7 +136,7 @@ impl<'de> Deserialize<'de> for Unread {
 }
 
 #[cfg(test)]
-impl<'de, T: Deserialize<'de> + Default> Visitor<'de> for Items<T> {
+impl<'de, T: Deserialize<'de> + Default + Refusable> Visitor<'de> for Items<T> {
     type Value = Vec<T>;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -160,14 +145,18 @@ impl<'de, T: Deserialize<'de> + Default> Visitor<'de> for Items<T> {
 
     fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Vec<T>, A::Error> {
         let mut items = Vec::new();
+        let mut refused = false;
         loop {
-            let item = if REFUSED.get() {
+            let item = if refused {
                 seq.next_element::<Unread>()?.map(|Unread| T::default())
             } else {
                 seq.next_element::<T>()?
             };
             match item {
-                Some(item) => items.push(item),
+                Some(item) => {
+                    refused |= item.refused();
+                    items.push(item);
+                }
                 None => return Ok(items),
             }
         }

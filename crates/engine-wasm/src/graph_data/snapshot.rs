@@ -4,7 +4,7 @@
 
 use serde::Deserialize;
 
-use super::field::items;
+use super::field::{Refusable, items};
 use super::node_columns::Refused;
 use super::{
     Arrow, ArrowCode, ContentData, ContentInput, EdgeColumns, EdgeField, EdgeInput, Field,
@@ -22,6 +22,40 @@ pub(crate) struct GraphBatch {
     pub nodes: Vec<NodeInput>,
     #[serde(deserialize_with = "items")]
     pub edges: Vec<EdgeInput>,
+}
+
+/// A node whose identifier, place, width, or content is missing or of another type.
+impl Refusable for NodeInput {
+    fn refused(&self) -> bool {
+        [
+            self.id.0.is_none(),
+            self.x.0.is_none(),
+            self.y.0.is_none(),
+            self.width.0.is_none(),
+            self.content.0.is_none(),
+        ]
+        .contains(&true)
+    }
+}
+
+/// An edge of which a field, or a field of its label, is missing or of another type.
+impl Refusable for EdgeInput {
+    fn refused(&self) -> bool {
+        let label = self.label.0.flatten();
+        [
+            self.id.0.is_none(),
+            self.source.0.is_none(),
+            self.target.0.is_none(),
+            self.label.0.is_none(),
+            label.is_some_and(|label| label.t.0.is_none() || label.offset.0.is_none()),
+            self.color.0.is_none(),
+            self.dash.0.is_none(),
+            self.arrow.0.is_none(),
+            self.source_side.0.is_none(),
+            self.target_side.0.is_none(),
+        ]
+        .contains(&true)
+    }
 }
 
 /// The bound on a piece of a string column the snapshot of `api` passes its writer (ADR-0034).

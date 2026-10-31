@@ -9,6 +9,7 @@ use serde::{Deserialize, Deserializer};
 
 use super::codes::{direction_code, filled, kind_code, role_code};
 use super::{ContentData, DirectionCode, KindCode, RoleCode, numbered, utf16_length};
+use crate::graph_data::Field;
 use crate::graph_data::field::other_shapes;
 
 /// Where the snapshot found a shape of content it cannot flatten in a node: the row, and below a
@@ -381,25 +382,25 @@ impl<'de> Visitor<'de> for ElementVisitor {
         };
         while let Some(key) = map.next_key::<String>()? {
             match key.as_str() {
-                "kind" => fields.kind = map.next_value::<Lenient<String>>()?.0,
-                "role" => fields.role = map.next_value::<Lenient<String>>()?.0,
+                "kind" => fields.kind = map.next_value::<Field<String>>()?.0,
+                "role" => fields.role = map.next_value::<Field<String>>()?.0,
                 "weight" => {
-                    let weight = map.next_value::<Lenient<Option<f64>>>()?.0;
+                    let weight = map.next_value::<Field<Option<f64>>>()?.0;
                     fields.weight = weight.map_or(f64::NAN, |weight| weight.unwrap_or(1.0));
                 }
                 "color" => {
-                    let color = map.next_value::<Lenient<f64>>()?.0;
+                    let color = map.next_value::<Field<f64>>()?.0;
                     fields.color = color.unwrap_or(f64::NAN);
                 }
                 "fraction" => {
-                    let fraction = map.next_value::<Lenient<f64>>()?.0;
+                    let fraction = map.next_value::<Field<f64>>()?.0;
                     fields.fraction = fraction.unwrap_or(f64::NAN);
                 }
-                "text" => fields.text = map.next_value::<Lenient<String>>()?.0,
-                "id" => fields.id = map.next_value::<Lenient<String>>()?.0,
-                "name" => fields.name = map.next_value::<Lenient<String>>()?.0,
-                "caption" => fields.caption = map.next_value::<Lenient<String>>()?.0,
-                "value" => fields.value = map.next_value::<Lenient<String>>()?.0,
+                "text" => fields.text = map.next_value::<Field<String>>()?.0,
+                "id" => fields.id = map.next_value::<Field<String>>()?.0,
+                "name" => fields.name = map.next_value::<Field<String>>()?.0,
+                "caption" => fields.caption = map.next_value::<Field<String>>()?.0,
+                "value" => fields.value = map.next_value::<Field<String>>()?.0,
                 "trend" => fields.trend = map.next_value::<TrendCells>()?.0,
                 "segments" => fields.segments = map.next_value::<SegmentsCells>()?.0,
                 _ => {
@@ -438,9 +439,9 @@ impl<'de> Visitor<'de> for TrendVisitor {
         let (mut text, mut direction, mut color) = (None, None, f64::NAN);
         while let Some(key) = map.next_key::<String>()? {
             match key.as_str() {
-                "text" => text = map.next_value::<Lenient<String>>()?.0,
-                "direction" => direction = map.next_value::<Lenient<String>>()?.0,
-                "color" => color = map.next_value::<Lenient<f64>>()?.0.unwrap_or(f64::NAN),
+                "text" => text = map.next_value::<Field<String>>()?.0,
+                "direction" => direction = map.next_value::<Field<String>>()?.0,
+                "color" => color = map.next_value::<Field<f64>>()?.0.unwrap_or(f64::NAN),
                 _ => {
                     map.next_value::<IgnoredAny>()?;
                 }
@@ -458,7 +459,7 @@ struct SegmentsCells(Option<Vec<Option<(f64, f64)>>>);
 
 impl<'de> Deserialize<'de> for SegmentsCells {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let segments = Lenient::<Vec<SegmentCells>>::deserialize(deserializer)?.0;
+        let segments = Field::<Vec<SegmentCells>>::deserialize(deserializer)?.0;
         Ok(Self(segments.map(|segments| {
             segments.into_iter().map(|segment| segment.0).collect()
         })))
@@ -475,14 +476,5 @@ impl<'de> Deserialize<'de> for SegmentCells {
         Ok(Self(
             element.0.map(|fields| (fields.fraction, fields.color)),
         ))
-    }
-}
-
-/// A value of `T`, or none where it holds a value of another type, which is read and dropped.
-struct Lenient<T>(Option<T>);
-
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for Lenient<T> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Ok(Self(T::deserialize(deserializer).ok()))
     }
 }
