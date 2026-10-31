@@ -50,6 +50,11 @@ skimmed. The design revision drops what prevented nothing
 - **A number says where it was taken.** A test or a measurement whose verdict depends on the
   environment (the renderer, the GPU, the display) asserts that environment before it records
   anything, and fails rather than measure a fallback: a silent fallback looks like a result.
+- **A timed gesture begins from the same view on every runner.** A gesture of the benchmark
+  shows its starting view, its scale and position, before its first timed frame wherever the
+  gesture before it can stop at a place of its own, as one cut short by its action budget does:
+  a gesture that begins where such a one stopped measures another view on each runner under the
+  same name, against a baseline taken at another.
 - **Geometry is tested on its awkward cases.** A test of paths, bounds, or strokes includes edges
   that run backwards (target left of source), level edges, edges shorter than their arrowhead,
   and edges far from the world's origin and far longer than the viewport, where `f32` rounds by
