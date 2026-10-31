@@ -1,8 +1,8 @@
 // The nodes layer at the near and the middle level (ADR-0027): a pooled view per node in view, its
 // box and its content (ADR-0013), every text as `BitmapText`. The engine lays the content out and
 // the view draws each text where the engine placed it, cut where it was cut, an action's in the
-// link colour: near every text, middle the texts of role title alone, at the place near gives
-// them.
+// link colour, a badge's on its pill: near every element, middle the texts of role title alone,
+// at the place near gives them.
 import {
   BitmapFontManager,
   BitmapText,
@@ -40,9 +40,38 @@ export const TEXT_STYLES: Readonly<Record<TextRole, TextStyleOptions>> = {
  *  the link colour. */
 export const ACTION_STYLE: TextStyleOptions = { ...TEXT_STYLES.body, fill: LINK_COLOR };
 
-/** The style of a text of `kind` and `role`. */
-const styleOf = (kind: ContentElement["kind"], role: TextRole) =>
-  kind === "action" ? ACTION_STYLE : TEXT_STYLES[role];
+/** The space between a badge's text and its pill's left side, and its top, in world units: the
+ *  engine's, which lays the pill out around the text (ADR-0013). */
+export const BADGE_PADDING = { x: 8, y: 3 };
+
+/** The styles a badge's text is drawn in: the body's font, white or near-black on its pill. */
+const BADGE_STYLES: Readonly<Record<number, TextStyleOptions>> = {
+  [0xffffff]: { ...TEXT_STYLES.body, fill: 0xffffff },
+  [TEXT_COLOR]: { ...TEXT_STYLES.body, fill: TEXT_COLOR },
+};
+
+/** The relative luminance of `color`, `0xRRGGBB`, as WCAG 2 defines it. */
+function luminance(color: number): number {
+  const channel = (shift: number) => {
+    const c = ((color >> shift) & 0xff) / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0);
+}
+
+/** The colour of a badge's text on a pill of `color`: white or the near-black of the node's texts,
+ *  whichever contrasts more with the pill by WCAG's ratio of relative luminances, white where
+ *  both contrast alike, as on an edge label's pill (ADR-0013). */
+export function badgeTextColor(color: number): number {
+  const pill = luminance(color) + 0.05;
+  const white = (luminance(0xffffff) + 0.05) / pill;
+  const dark = pill / (luminance(TEXT_COLOR) + 0.05);
+  return dark > white ? TEXT_COLOR : 0xffffff;
+}
+
+/** The style of the text `text`. */
+const styleOf = ({ kind, role, pill }: DrawnText) =>
+  kind === "action" ? ACTION_STYLE : pill ? BADGE_STYLES[pill.textColor]! : TEXT_STYLES[role];
 
 /** The height of a line of each role, which the engine stacks rows by: given here rather than
  *  measured, so that a node's height does not depend on how a machine measures the font. A text
@@ -90,8 +119,9 @@ export function fontMetricsOf(role: TextRole): FontMetrics {
   return { codes, advances, fallback, lineHeight: LINE_HEIGHTS[role] };
 }
 
-/** One text a view draws: where the engine placed it in its node, and what of it is drawn, the
- *  text or as much of it as fits followed by an ellipsis. */
+/** One text a view draws: where the engine placed its element in its node, and what of it is
+ *  drawn, the text or as much of it as fits followed by an ellipsis; of a badge, the pill the
+ *  rectangle is, of its colour, and the colour its text is drawn in on it. */
 export interface DrawnText {
   kind: ContentElement["kind"];
   role: TextRole;
@@ -100,6 +130,7 @@ export interface DrawnText {
   y: number;
   width: number;
   height: number;
+  pill?: { color: number; textColor: number };
 }
 
 /** The texts of the elements `start` to `end` of `placed`; at the middle level the texts of role
@@ -112,14 +143,22 @@ function textsOf(placed: Placed, start: number, end: number, titlesOnly: boolean
     if (titlesOnly && (kind !== "text" || role !== "title")) continue;
     const drawn = placed.texts.slice(placed.textBounds[i], placed.textBounds[i + 1]);
     const r = placed.rects.subarray(i * 4, i * 4 + 4);
-    texts.push({ kind, role, drawn, x: r[0]!, y: r[1]!, width: r[2]!, height: r[3]! });
+    const text: DrawnText = { kind, role, drawn, x: r[0]!, y: r[1]!, width: r[2]!, height: r[3]! };
+    if (kind === "badge") {
+      const color = placed.colors[i]!;
+      text.pill = { color, textColor: badgeTextColor(color) };
+    }
+    texts.push(text);
   }
   return texts;
 }
 
-/** One node: its box and its texts. A pooled view, bound to one node slot at a time. */
+/** One node: its box, its badges' pills, and its texts. A pooled view, bound to one node slot at
+ *  a time. */
 export class NodeGraphic extends Container {
   private readonly box = new Graphics();
+  /** The pills of the node's badges, drawn together. */
+  private readonly pills = new Graphics();
   /** The pooled text objects of the view, the first `texts.length` of them in use. */
   private readonly pool: { view: BitmapText; style: TextStyleOptions }[] = [];
   /** The node the view shows. */
@@ -146,7 +185,7 @@ export class NodeGraphic extends Container {
 
   constructor() {
     super();
-    this.addChild(this.box);
+    this.addChild(this.box, this.pills);
     // The engine answers which node lies under the pointer; the view takes no events.
     this.eventMode = "none";
   }
@@ -191,12 +230,14 @@ export class NodeGraphic extends Container {
     this.showTexts(textsOf(placed, start, end, titlesOnly));
   }
 
-  /** Draws `texts`, taking text objects from the view's pool and leaving the rest out. */
+  /** Draws `texts`, taking text objects from the view's pool and leaving the rest out, a badge's
+   *  on its pill, inside the pill's padding. */
   private showTexts(texts: DrawnText[]): void {
     this.texts = texts;
+    this.pills.clear();
     texts.forEach((text, i) => {
       let pooled = this.pool[i];
-      const style = styleOf(text.kind, text.role);
+      const style = styleOf(text);
       if (!pooled) {
         pooled = { view: new BitmapText({ text: "", style }), style };
         this.pool.push(pooled);
@@ -205,7 +246,13 @@ export class NodeGraphic extends Container {
         pooled.style = style;
       }
       pooled.view.text = text.drawn;
-      pooled.view.position.set(text.x, text.y);
+      if (text.pill) {
+        const { x, y, width, height } = text;
+        this.pills
+          .roundRect(x, y, width, height, Math.min(width, height) / 2)
+          .fill({ color: text.pill.color });
+        pooled.view.position.set(x + BADGE_PADDING.x, y + BADGE_PADDING.y);
+      } else pooled.view.position.set(text.x, text.y);
       if (pooled.view.parent !== this) this.addChild(pooled.view);
     });
     for (let i = texts.length; i < this.pool.length; i++) {

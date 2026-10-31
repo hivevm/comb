@@ -315,13 +315,13 @@ fn weight() -> BoxedStrategy<Value> {
     prop_oneof![20 => good.prop_map(Value::Number), 1 => Just(Value::Null), 1 => bad].boxed()
 }
 
-/// An element of content: mostly a text in a role or an action with an identifier, now and then
-/// of a kind or a role the bridge refuses, without a field, or no object.
+/// An element of content: mostly a text in a role, an action with an identifier, or a badge on a
+/// colour, now and then of a kind or a role the bridge refuses, without a field, or no object.
 fn element(loose: bool) -> BoxedStrategy<Value> {
     let named = |name: &str| Value::Text(name.to_owned());
     let kind = one_of(
         vec![named("text")],
-        vec![named("badge"), named(""), Value::Number(1.0)],
+        vec![named("progress"), named(""), Value::Number(1.0)],
         true,
     );
     let roles = ["title", "body", "caption"].map(named).to_vec();
@@ -339,6 +339,22 @@ fn element(loose: bool) -> BoxedStrategy<Value> {
         field("text", text(loose), loose),
         field("id", text(loose), loose),
     ]);
+    // A colour of an edge's: mostly one, now and then past it; loose, any number or none.
+    let shade = prop_oneof![
+        20 => color(loose).boxed(),
+        1 => prop::sample::select(vec![
+            Value::Number(-1.0),
+            Value::Number(0.5),
+            Value::Number(f64::NAN),
+            Value::Text("red".to_owned()),
+        ]),
+    ];
+    let badge = object(vec![
+        field("kind", Just(named("badge")).boxed(), false),
+        field("weight", weight(), true),
+        field("text", text(loose), loose),
+        field("color", shade, loose),
+    ]);
     let odd = prop::sample::select(vec![
         Value::Bool(false),
         Value::Number(3.0),
@@ -346,7 +362,7 @@ fn element(loose: bool) -> BoxedStrategy<Value> {
         Value::Text("text".to_owned()),
         Value::Object(Vec::new()),
     ]);
-    prop_oneof![30 => text_element, 5 => action, 1 => odd].boxed()
+    prop_oneof![30 => text_element, 5 => action, 5 => badge, 1 => odd].boxed()
 }
 
 /// The content of a node: mostly a row or two of a text or two, now and then rows and columns at
@@ -516,11 +532,12 @@ fn far_side_ok(node: &Value, lines: [f64; 3]) -> bool {
     else {
         return true;
     };
-    // An action is drawn in the body's font.
+    // An action is drawn in the body's font, and a badge too, on a pill 3 higher above and below.
     let line = |element: &Value| {
         let field = |name| fields_of(element).and_then(|fields| get(fields, name));
         match (field("kind"), field("role")) {
             (Some(Value::Text(kind)), _) if kind == "action" => lines[1],
+            (Some(Value::Text(kind)), _) if kind == "badge" => lines[1] + 6.0,
             (_, Some(Value::Text(role))) if role == "title" => lines[0],
             (_, Some(Value::Text(role))) if role == "body" => lines[1],
             _ => lines[2],
@@ -546,9 +563,10 @@ fn nodes_of_data(data: &Value) -> &[Value] {
 
 /// Whether the content of `node` is to be refused by nothing, by brute force over the value: a
 /// list of at most 8 rows, each a list of at most 6 elements, each an object of the kind `text`,
-/// a positive finite weight, a role of the three, and a text of at most 1,000 UTF-16 code units, or
-/// of the kind `action`, a positive finite weight, and a text and an identifier of at most 1,000
-/// code units each.
+/// a positive finite weight, a role of the three, and a text of at most 1,000 UTF-16 code units, of
+/// the kind `action`, a positive finite weight, and a text and an identifier of at most 1,000
+/// code units each, or of the kind `badge`, a positive finite weight, a text of at most 1,000 code
+/// units, and a colour that is an integer from 0 to 0xFFFFFF.
 fn content_ok(node: &Value) -> bool {
     let Some(Value::List(rows)) = fields_of(node).and_then(|fields| get(fields, "content")) else {
         return false;
@@ -568,7 +586,10 @@ fn content_ok(node: &Value) -> bool {
         let string = |name| matches!(get(fields, name), Some(Value::Text(t)) if units(t) <= 1_000);
         let text = named("kind", &["text"]) && named("role", &["title", "body", "caption"]);
         let action = named("kind", &["action"]) && string("id");
-        (text || action) && weight && string("text")
+        let rgb = |c: &f64| c.fract() == 0.0 && (0.0..=16_777_215.0).contains(c);
+        let color = matches!(get(fields, "color"), Some(Value::Number(c)) if rgb(c));
+        let badge = named("kind", &["badge"]) && color;
+        (text || action || badge) && weight && string("text")
     };
     rows.len() <= 8
         && rows.iter().all(|row| match row {
@@ -1068,6 +1089,7 @@ fn loaded_in(
         content.content_of(node);
     }
     assert_eq!(drawn.bounds.len(), placed.len() + 1);
+    assert_eq!(drawn.colors.len(), placed.len());
     // Each drawn text a prefix of its text, an ellipsis after it where it was cut.
     let shown = split_utf16(&drawn.texts, &drawn.bounds);
     for (index, (shown, at)) in shown.iter().zip(&placed).enumerate() {

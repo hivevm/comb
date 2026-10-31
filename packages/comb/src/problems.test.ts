@@ -36,6 +36,7 @@ const DESCRIBE: { [K in Kind]: (problem: Of<K>) => string } = {
   invalidContentText: (p) => `${p.node} ${p.row} ${p.column} ${p.field}`,
   contentTextTooLong: (p) => `${p.node} ${p.row} ${p.column} ${p.field} ${p.limit}`,
   contentBudgetExceeded: (p) => `${p.node} ${p.limit}`,
+  invalidContentColor: (p) => `${p.node} ${p.row} ${p.column}`,
   unknownPatchField: (p) => `${p.node} ${p.field}`,
   duplicateNode: (p) => p.node,
   duplicateEdge: (p) => p.edge,

@@ -200,10 +200,11 @@ pub enum TextRole {
     Caption,
 }
 
-/// One element of node content (ADR-0013): a text in a role, or an action, a text whose click
-/// reports its identifier `id` to the host application, each in a column that takes its share of
-/// the row's width by `weight`, 1 where it is left out. Of the closed set of ADR-0013, `text` and
-/// `action` are built so far; this type names exactly the kinds the bridge accepts. Its reading is
+/// One element of node content (ADR-0013): a text in a role; an action, a text whose click
+/// reports its identifier `id` to the host application; or a badge, a text on a pill of the colour
+/// `color`, `0xRRGGBB`; each in a column that takes its share of the row's width by `weight`, 1
+/// where it is left out. Of the closed set of ADR-0013, `text`, `action`, and `badge` are built so
+/// far; this type names exactly the kinds the bridge accepts. Its reading is
 /// `ContentInput`'s, which takes any value, so that what it refuses is named.
 #[derive(Tsify, Serialize, Debug, PartialEq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -217,6 +218,12 @@ pub enum ContentElement {
     Action {
         text: String,
         id: String,
+        #[tsify(optional)]
+        weight: Option<f64>,
+    },
+    Badge {
+        text: String,
+        color: u32,
         #[tsify(optional)]
         weight: Option<f64>,
     },
@@ -1106,6 +1113,9 @@ pub enum GraphDataProblem {
     /// `node` is the node whose string passed it.
     #[serde(rename_all = "camelCase")]
     ContentBudgetExceeded { node: String, limit: u32 },
+    /// The colour of a badge of a node's content is not an integer from `0` to `0xFFFFFF`.
+    #[serde(rename_all = "camelCase")]
+    InvalidContentColor { node: String, row: u32, column: u32 },
     /// A patch of a node holds a field other than its content.
     #[serde(rename_all = "camelCase")]
     UnknownPatchField { node: String, field: String },
@@ -2538,7 +2548,7 @@ pub(crate) mod tests {
         let mut content = ContentInput::new();
         for row in rows {
             for &((kind, weight, role, text), id) in *row {
-                content.push(kind, weight, role as u8, text, id);
+                content.push(kind, weight, role as u8, f64::NAN, text, id);
             }
             content.end_row();
         }
@@ -2551,6 +2561,18 @@ pub(crate) mod tests {
             (KindCode::Action, 1.0, RoleCode::Title, Some(text)),
             Some(id),
         )
+    }
+
+    /// Content of a title row, "Bet", then a row of a badge of weight 1 showing `text`, none for
+    /// one of another type, on `color`.
+    pub(crate) fn badged(text: Option<&str>, color: f64) -> ContentInput {
+        let mut content = ContentInput::new();
+        let title = (RoleCode::Title as u8, Some("Bet"));
+        content.push(KindCode::Text, 1.0, title.0, f64::NAN, title.1, None);
+        content.end_row();
+        content.push(KindCode::Badge, 1.0, 0, color, text, None);
+        content.end_row();
+        content
     }
 
     /// The content of a node of the time before content: one row of one title, `title`.
@@ -2858,6 +2880,88 @@ pub(crate) mod tests {
         let no_text = ((KindCode::Action, 1.0, RoleCode::Title, None), Some("d"));
         data.nodes[0].content = named_content(&[&[no_text]]).into();
         assert_eq!(graph_of(&data).unwrap_err(), invalid_text("a", 0, 0));
+    }
+
+    #[test]
+    fn a_badge_whose_colour_is_no_rgb_or_whose_text_is_malformed_names_its_node() {
+        // Verifies: ADR-0013, ADR-0034, Q-7
+        // A badge below a title, its text checked as a string of content is, then its colour, an
+        // integer from 0 to 0xFFFFFF as an edge's; through a load and through `addNode` alike.
+        let long = "d".repeat(MAX_TEXT + 1);
+        let color = |node: &str| GraphDataProblem::InvalidContentColor {
+            node: node.into(),
+            row: 1,
+            column: 0,
+        };
+        let too_long = |node: &str| GraphDataProblem::ContentTextTooLong {
+            node: node.into(),
+            row: 1,
+            column: 0,
+            field: "text".into(),
+            limit: TEXT_LIMIT,
+        };
+        type Refusal = fn(&str) -> GraphDataProblem;
+        let cases: Vec<(Option<&str>, f64, Refusal)> = vec![
+            (Some("Done"), -1.0, color),
+            (Some("Done"), f64::from(0x100_0000), color),
+            (Some("Done"), 0.5, color),
+            (Some("Done"), f64::NAN, color),
+            (Some("Done"), f64::INFINITY, color),
+            (None, 0.0, |node| invalid_text(node, 1, 0)),
+            (Some(&long), 0.0, too_long),
+            // The text is checked before the colour.
+            (None, f64::NAN, |node| invalid_text(node, 1, 0)),
+        ];
+        for (text, shade, problem) in cases {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+            data.nodes[1].content = badged(text, shade).into();
+            assert_eq!(
+                graph_of(&data).unwrap_err(),
+                problem("b"),
+                "{text:?} {shade}"
+            );
+            let mut graph = graph_of(&batch(&[("a", 0.0, 0.0)], &[])).unwrap();
+            let node = added(0.0, 0.0, |node| node.content = badged(text, shade).into());
+            assert_eq!(add(&mut graph, &node).unwrap_err(), problem("n"));
+        }
+        // At both ends of the colours, and a text at the limit, the badge is accepted.
+        for (text, shade) in [
+            ("Done", 0.0),
+            ("Done", f64::from(0xff_ffff)),
+            (&*"d".repeat(MAX_TEXT), 0.0),
+        ] {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+            data.nodes[1].content = badged(Some(text), shade).into();
+            assert!(graph_of(&data).is_ok(), "{shade}");
+        }
+    }
+
+    #[test]
+    fn a_badge_fills_one_text_and_its_colour_and_columns_of_colours_that_do_not_fit_are_malformed()
+    {
+        // Verifies: ADR-0034
+        let mut columns = OwnedColumns::of([Some(&added(0.0, 0.0, |node| {
+            node.content = badged(Some("Done"), f64::from(0x22_c55e)).into();
+        }))]);
+        let c = &columns.content;
+        assert_eq!(c.kinds, [KindCode::Text as u8, KindCode::Badge as u8]);
+        assert_eq!(c.roles, [RoleCode::Title as u8, 0]);
+        assert!(c.colors[0].is_nan());
+        assert_eq!(c.colors[1], f64::from(0x22_c55e));
+        assert_eq!((c.text_valid.len(), c.name_valid.len()), (2, 0));
+        assert!(columns.content.view().fit(1));
+        // A colour per element: one too many or one too few does not fit.
+        columns.content.colors.push(0.0);
+        assert!(!columns.content.view().fit(1));
+        columns.content.colors.truncate(1);
+        assert!(!columns.content.view().fit(1));
+        // A badge without its text does not fit either.
+        let mut columns = OwnedColumns::of([Some(&added(0.0, 0.0, |node| {
+            node.content = badged(Some("Done"), 0.0).into();
+        }))]);
+        columns.content.text_valid.pop();
+        columns.content.text_bounds.pop();
+        assert!(!columns.content.view().fit(1));
     }
 
     #[test]
@@ -3506,6 +3610,7 @@ pub(crate) mod tests {
                 kinds: &vec![KindCode::Text as u8; count as usize],
                 weights: &vec![1.0; count as usize],
                 roles: &vec![RoleCode::Title as u8; count as usize],
+                colors: &vec![f64::NAN; count as usize],
                 texts: &[],
                 text_bounds: &text_bounds,
                 text_valid: &vec![1; count as usize],
@@ -4071,6 +4176,7 @@ pub(crate) mod tests {
             c.kinds.clone(),
             c.weights.clone(),
             c.roles.clone(),
+            c.colors.clone(),
             c.texts.clone(),
             c.text_bounds.clone(),
             c.text_valid.clone(),

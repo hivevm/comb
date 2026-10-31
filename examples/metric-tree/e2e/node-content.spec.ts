@@ -130,6 +130,59 @@ test("the middle level draws the texts of role title alone, and the far level no
   expect((await drawnNode(page, "b"))!.height).toBe(TALL_HEIGHT);
 });
 
+test("a badge is drawn near as a pill of its colour around its text, and the middle and far level draw none", async ({
+  page,
+}) => {
+  // Verifies: ADR-0013, ADR-0027
+  // A title, then a green badge beside a blue one, each in a column of 94: the pill hugs its text,
+  // 8 either side, and is 22 high, the body's line of 16 and 3 above and below; the row is 22.
+  const content: NodeContent = [
+    [text("title", "Bet")],
+    [
+      { kind: "badge", text: "Done", color: 0x22c55e },
+      { kind: "badge", text: "Blocked by the platform team", color: 0x2563eb },
+    ],
+  ];
+  await open(page);
+  await loaded(page, { nodes: [{ ...node("b"), content }], edges: [] });
+  await setViewport(page, { x: 100, y: 100, scale: 1 });
+  const drawn = (await drawnNode(page, "b"))!;
+  const [, done, blocked] = drawn.texts!;
+  expect(done).toMatchObject({
+    kind: "badge",
+    role: "body",
+    drawn: "Done",
+    x: 12,
+    y: 28,
+    height: 22,
+    pill: { color: 0x22c55e, textColor: 0x1f2430 },
+  });
+  expect(blocked).toMatchObject({
+    kind: "badge",
+    x: 114,
+    y: 28,
+    height: 22,
+    pill: { color: 0x2563eb, textColor: 0xffffff },
+  });
+  // Each pill as wide as its text is drawn and the padding, within Q-4, and within its column:
+  // the long text cut with an ellipsis inside the padding.
+  for (const pill of [done!, blocked!]) {
+    expect(Math.abs(pill.width - (pill.drawnWidth + 16))).toBeLessThanOrEqual(0.5);
+    expect(pill.width).toBeLessThanOrEqual(94);
+  }
+  expect(blocked!.drawn.endsWith("…")).toBe(true);
+  expect(drawn.height).toBe(64);
+  const at = async (scale: number) => {
+    await setViewport(page, { x: 100, y: 100, scale });
+    return page.evaluate(() => {
+      const { level, nodes, texts } = window.inspect();
+      return { level, texts, kinds: nodes[0]?.texts?.map(({ kind }) => kind) };
+    });
+  };
+  expect(await at(0.5)).toEqual({ level: "middle", texts: 1, kinds: ["text"] });
+  expect(await at(0.2)).toEqual({ level: "far", texts: 0, kinds: undefined });
+});
+
 test("updateNode replaces the content, the canvas shows it, the node's height follows, and nodeUpdated carries it", async ({
   page,
 }) => {
@@ -168,7 +221,7 @@ test("content past a limit or malformed is refused naming the node, and the grap
       { content: Array.from({ length: 9 }, () => [title]) },
       { content: [Array.from({ length: 7 }, () => title)] },
       { content: [5] },
-      { content: [[{ ...title, kind: "badge" }]] },
+      { content: [[{ ...title, kind: "progress" }]] },
       { content: [[{ ...title, weight: -1 }]] },
       { content: [[{ ...title, role: "headline" }]] },
       { content: [[{ ...title, text: 5 }]] },

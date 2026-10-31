@@ -441,6 +441,7 @@ impl Engine {
         kinds: Vec<u8>,
         weights: Vec<f64>,
         roles: Vec<u8>,
+        colors: Vec<f64>,
         texts: Vec<String>,
         text_bounds: Vec<u32>,
         text_valid: Vec<u8>,
@@ -508,6 +509,7 @@ impl Engine {
             kinds,
             weights,
             roles,
+            colors,
             texts,
             text_bounds,
             text_valid,
@@ -969,6 +971,19 @@ impl Engine {
         self.drawn.roles.len()
     }
 
+    /// Where the buffer starts that `query` writes, per placed element, its colour as `0xRRGGBB`
+    /// into: a badge's pill's, 0 for an element of no colour (ADR-0013).
+    #[wasm_bindgen(js_name = contentColorsPtr)]
+    pub fn content_colors_ptr(&self) -> *const u32 {
+        self.drawn.colors.as_ptr()
+    }
+
+    /// How many values the buffer of colours holds: one per placed element.
+    #[wasm_bindgen(js_name = contentColorsLen)]
+    pub fn content_colors_len(&self) -> usize {
+        self.drawn.colors.len()
+    }
+
     /// Where the buffer starts that `query` writes the boundaries of the drawn texts in
     /// `contentTexts`, in UTF-16 code units, into: one more than there are placed elements.
     #[wasm_bindgen(js_name = contentTextBoundsPtr)]
@@ -1365,6 +1380,46 @@ mod tests {
         assert_eq!(at(1, 370.0, 30.0, middle), None);
         assert_eq!(at(0, 50.0, 15.0, middle), None);
         assert_eq!(at(1, 320.0, 15.0, DetailLevel::Far), None);
+    }
+
+    #[test]
+    fn a_badge_is_drawn_on_its_colour_kept_as_given_and_hit_on_its_pill_alone() {
+        // Verifies: ADR-0013, ADR-0034
+        // `b`, 100 wide at (300, 0), holds a title row and a badge "Done" on 0x22C55E below it:
+        // its pill from (12, 28), the four glyphs of the body's 6 and 8 either side, 40 × 22.
+        use graph_data::tests::{badged, load_into};
+        let mut engine = fonted();
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+        let green = 0x22_c55e;
+        data.nodes[1].content = badged(Some("Done"), f64::from(green)).into();
+        let nodes = graph_data::OwnedColumns::of(data.nodes.iter().map(Some));
+        let none = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
+        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
+        let (t, b) = (KindCode::Text as u8, KindCode::Badge as u8);
+        assert_eq!(engine.drawn.kinds, [t, t, b]);
+        let (title, body) = (RoleCode::Title as u8, RoleCode::Body as u8);
+        assert_eq!(engine.drawn.roles, [title, title, body]);
+        assert_eq!(engine.drawn.colors, [0, 0, green]);
+        assert_eq!(engine.drawn.texts, "xBetDone");
+        assert_eq!(engine.content_rects[8..], [12.0, 28.0, 40.0, 22.0]);
+        // Its content, built when asked, holds the badge as the host application gave it.
+        let badge = ContentElement::Badge {
+            text: "Done".to_owned(),
+            color: green,
+            weight: Some(1.0),
+        };
+        assert_eq!(engine.content.content_of(1).0[1], [badge]);
+        // A press on the pill hits the badge; beside it in its column, none; at the middle level,
+        // where no badge is drawn, none.
+        let at = |x, y, level| element(&engine, 1, x, y, level);
+        assert_eq!(
+            at(320.0, 35.0, DetailLevel::Near),
+            hit(1, 0, ElementKind::Badge, None)
+        );
+        assert_eq!(at(360.0, 35.0, DetailLevel::Near), None);
+        assert_eq!(at(320.0, 35.0, DetailLevel::Middle), None);
+        assert_eq!(at(320.0, 35.0, DetailLevel::Far), None);
     }
 
     #[test]

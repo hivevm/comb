@@ -4,9 +4,12 @@
 //! element's rectangle, where each text is cut and an ellipsis drawn after it, and the node's
 //! height from its rows; the rest of the engine takes that height as the node's.
 //!
-//! The elements `text` and `action` exist so far; each further kind of ADR-0013 joins `Element`
-//! with the ticket that builds it. An action is a text in the font of role body; what it names is
-//! the bridge's to keep, since the layout reads none of it.
+//! The elements `text`, `action`, and `badge` exist so far; each further kind of ADR-0013 joins
+//! `Element` with the ticket that builds it. An action is a text in the font of role body; what it
+//! names is the bridge's to keep, since the layout reads none of it. A badge is a text in the font
+//! of role body on a pill, whose rectangle is the badge's: it hugs the text as far as it is drawn,
+//! padded as an edge label's pill is, and stays within its column; its colour is the bridge's to
+//! keep.
 
 /// The space between a node's left and right sides and its columns, in world units.
 pub const PADDING_X: f64 = 12.0;
@@ -19,6 +22,14 @@ pub const PADDING_BOTTOM: f64 = 10.0;
 
 /// The space between two columns of a row, in world units.
 pub const COLUMN_GAP: f64 = 8.0;
+
+/// The space between a badge's text and its pill's left and right sides, in world units: an edge
+/// label's pill's.
+pub const BADGE_PADDING_X: f64 = 8.0;
+
+/// The space between a badge's text and its pill's top and bottom, in world units: with the
+/// body's line of 16, a pill 22 high, as an edge label's.
+pub const BADGE_PADDING_Y: f64 = 3.0;
 
 /// The least height of a node, whatever its rows: a node of one row of a title is as tall as the
 /// nodes of the host applications that gave a height before content replaced it.
@@ -178,6 +189,10 @@ pub enum Element<'a> {
     Action {
         text: &'a str,
     },
+    /// A text on a pill of a colour the host application gives, drawn in the font of role body.
+    Badge {
+        text: &'a str,
+    },
 }
 
 impl Element<'_> {
@@ -185,14 +200,14 @@ impl Element<'_> {
     pub const fn role(&self) -> Role {
         match *self {
             Self::Text { role, .. } => role,
-            Self::Action { .. } => Role::Body,
+            Self::Action { .. } | Self::Badge { .. } => Role::Body,
         }
     }
 
     /// The text the element shows.
     pub const fn text(&self) -> &str {
         match *self {
-            Self::Text { text, .. } | Self::Action { text } => text,
+            Self::Text { text, .. } | Self::Action { text } | Self::Badge { text } => text,
         }
     }
 }
@@ -217,9 +232,14 @@ pub struct Placed {
     pub ellipsis: bool,
 }
 
-/// The height of `element`'s line in `fonts`.
+/// The height of `element` in `fonts`: its line's, and a badge's pill's, its line and the padding
+/// above and below.
 pub fn element_height(element: &Element, fonts: &Fonts) -> f64 {
-    fonts.of(element.role()).line_height()
+    let line = fonts.of(element.role()).line_height();
+    match element {
+        Element::Badge { .. } => line + 2.0 * BADGE_PADDING_Y,
+        _ => line,
+    }
 }
 
 /// The height of a row of `cells`: that of its tallest element, none for a row of no elements.
@@ -286,6 +306,26 @@ pub fn cut(text: &str, width: f64, font: &Font) -> (u32, bool) {
     (units(kept), true)
 }
 
+/// The advance of what is drawn of `text` in `font`: its first `kept` UTF-16 code units, and the
+/// ellipsis after them where `ellipsis`.
+fn drawn_width(text: &str, (kept, ellipsis): (u32, bool), font: &Font) -> f64 {
+    let mut units = 0;
+    let glyphs: f64 = text
+        .chars()
+        .take_while(|character| {
+            units += character.len_utf16();
+            units <= kept as usize
+        })
+        .map(|character| font.advance(character))
+        .sum();
+    glyphs
+        + if ellipsis {
+            font.advance(ELLIPSIS)
+        } else {
+            0.0
+        }
+}
+
 /// Lays out content of rows `rows` long, their cells in `cells` one row after another, in a node
 /// `width` wide, and pushes onto `out` where each element lies, in the order of `cells`; returns
 /// the node's height. Each row's columns share the width inside the padding, less the gaps
@@ -323,11 +363,23 @@ pub fn lay_out(
             let column = within(x, span, place(full - pad));
             let height = element_height(&cell.element, fonts);
             let element = cell.element;
-            let (kept, ellipsis) = cut(element.text(), f64::from(column), fonts.of(element.role()));
+            let font = fonts.of(element.role());
+            let (width, (kept, ellipsis)) = match element {
+                // The pill at the column's left, as wide as its text is drawn and the padding
+                // either side, the text cut to the column less that padding.
+                Element::Badge { text } => {
+                    let room = (f64::from(column) - 2.0 * BADGE_PADDING_X).max(0.0);
+                    let cut = cut(text, room, font);
+                    let pill = drawn_width(text, cut, font) + 2.0 * BADGE_PADDING_X;
+                    let end = place(full - pad);
+                    (within(x, pill.min(f64::from(column)), end), cut)
+                }
+                _ => (column, cut(element.text(), f64::from(column), font)),
+            };
             out.push(Placed {
                 x,
                 y: place(top),
-                width: column,
+                width,
                 height: place(height),
                 kept,
                 ellipsis,
@@ -563,6 +615,131 @@ mod tests {
         let (narrow, _) = laid_out(&cells, &[1, 2], 100.0);
         assert_eq!(narrow[2].width, 51.0);
         assert_eq!((narrow[2].kept, narrow[2].ellipsis), (7, true));
+    }
+
+    fn badge(text: &str, weight: f64) -> Cell<'_> {
+        Cell {
+            weight,
+            element: Element::Badge { text },
+        }
+    }
+
+    #[test]
+    fn a_badge_s_pill_hugs_its_text_within_its_column_and_its_text_is_cut_inside_the_padding() {
+        // Verifies: ADR-0013, Q-4
+        // A title row, then a row of a caption beside a badge weighted 1 and 3. At 220 the badge's
+        // column is 141 wide from 67; its pill lies at the column's left, the text's advance, four
+        // body glyphs of 6, and 8 either side wide: 40; and 22 high, the body's line of 16 and 3
+        // above and below, which makes the row 22 high and the node 10 + 18 + 22 + 10 = 60, the
+        // least height 64.
+        let cells = [
+            text(Role::Title, "Bet", 1.0),
+            text(Role::Caption, "c", 1.0),
+            badge("Done", 3.0),
+        ];
+        let (placed, height) = laid_out(&cells, &[1, 2], 220.0);
+        assert_near(
+            &placed,
+            &[
+                [12.0, 10.0, 196.0, 18.0],
+                [12.0, 28.0, 47.0, 14.0],
+                [67.0, 28.0, 40.0, 22.0],
+            ],
+        );
+        assert_eq!((placed[2].kept, placed[2].ellipsis), (4, false));
+        assert_eq!(height, 64.0);
+        // Three rows of badges: 10 + 3 * 22 + 10 = 86.
+        let stacked = [badge("a", 1.0), badge("b", 1.0), badge("c", 1.0)];
+        assert_eq!(laid_out(&stacked, &[1, 1, 1], 220.0).1, 86.0);
+        assert_near(
+            &laid_out(&stacked, &[1, 1, 1], 220.0).0[2..],
+            &[[12.0, 54.0, 22.0, 22.0]],
+        );
+
+        // Twenty-six glyphs, 156, do not fit in 141 less 16: cut beside the body's ellipsis of 9,
+        // in 125 nineteen glyphs, 114, and the pill 114 + 9 + 16 = 139, inside the column.
+        let long = "abcdefghijklmnopqrstuvwxyz";
+        let cells = [
+            text(Role::Title, "Bet", 1.0),
+            text(Role::Caption, "c", 1.0),
+            badge(long, 3.0),
+        ];
+        let (placed, _) = laid_out(&cells, &[1, 2], 220.0);
+        assert_near(&placed[2..], &[[67.0, 28.0, 139.0, 22.0]]);
+        assert_eq!((placed[2].kept, placed[2].ellipsis), (19, true));
+        // At 100 the column is 51 wide from 37: in 35, four glyphs and the ellipsis, 33, and the
+        // pill 49.
+        let (narrow, _) = laid_out(&cells, &[1, 2], 100.0);
+        assert_near(&narrow[2..], &[[37.0, 28.0, 49.0, 22.0]]);
+        assert_eq!((narrow[2].kept, narrow[2].ellipsis), (4, true));
+        // At 40 the badge's column is 6 wide from 22, narrower than the padding: it holds no
+        // text, and the pill is no wider than it.
+        let (squeezed, _) = laid_out(&cells, &[1, 2], 40.0);
+        assert_near(&squeezed[2..], &[[22.0, 28.0, 6.0, 22.0]]);
+        assert_eq!((squeezed[2].kept, squeezed[2].ellipsis), (0, false));
+        // An empty badge is its padding.
+        let (empty, _) = laid_out(&[badge("", 1.0)], &[1], 220.0);
+        assert_near(&empty, &[[12.0, 10.0, 16.0, 22.0]]);
+    }
+
+    #[test]
+    fn a_point_beside_a_badge_s_pill_in_its_column_hits_no_element() {
+        // Verifies: ADR-0013
+        // The badge "Done" at 220: its pill from (67, 28) 40 × 22, in a column 141 wide.
+        let cells = [
+            text(Role::Title, "Bet", 1.0),
+            text(Role::Caption, "c", 1.0),
+            badge("Done", 3.0),
+        ];
+        let (placed, _) = laid_out(&cells, &[1, 2], 220.0);
+        let at = |x, y| element_at(&cells, &placed, x, y, false);
+        assert_eq!(at(67.0, 28.0), Some(2));
+        assert_eq!(at(106.9, 49.9), Some(2));
+        assert_eq!(at(107.0, 35.0), None);
+        assert_eq!(at(180.0, 35.0), None);
+        // The caption's cell ends at its line, 14 high, though its row is 22.
+        assert_eq!(at(20.0, 41.0), Some(1));
+        assert_eq!(at(20.0, 43.0), None);
+        // At the middle level no badge is hit.
+        assert_eq!(element_at(&cells, &placed, 80.0, 35.0, true), None);
+    }
+
+    #[test]
+    fn any_badge_lays_out_inside_its_column() {
+        // Verifies: ADR-0013, Q-4
+        const WIDTHS: [f32; 7] = [0.0, 1.0, 16.0, 23.0, 220.0, 1e6, 1.3e36];
+        let texts = ["", "x", &"w".repeat(1_000), &"\u{1F600}".repeat(500)];
+        let mut rng = Lcg(11);
+        for _ in 0..2_000 {
+            let mut fonts = Fonts::default();
+            let metric = |rng: &mut Lcg| [0.0, 1.0, 7.5, MAX_METRIC][rng.below(4)];
+            let font = Font::new(&[], &[], metric(&mut rng), metric(&mut rng)).unwrap();
+            fonts.set(Role::Body, font);
+            let columns = 1 + rng.below(6);
+            let cells: Vec<Cell> = (0..columns)
+                .map(|_| badge(texts[rng.below(texts.len())], [0.5, 1.0, 3.0][rng.below(3)]))
+                .collect();
+            let width = WIDTHS[rng.below(WIDTHS.len())];
+            // The same row of texts gives each column, which the pill stays within.
+            let columns_of: Vec<Cell> = cells
+                .iter()
+                .map(|cell| text(Role::Body, "", cell.weight))
+                .collect();
+            let rows = [cells.len() as u32];
+            let mut placed = Vec::new();
+            let mut column = Vec::new();
+            lay_out(&cells, &rows, width, &fonts, &mut placed);
+            lay_out(&columns_of, &rows, width, &fonts, &mut column);
+            for (pill, column) in placed.iter().zip(&column) {
+                assert_eq!(pill.x, column.x);
+                assert!(
+                    pill.width >= 0.0 && pill.width <= column.width,
+                    "{pill:?} {column:?}"
+                );
+                let line = fonts.of(Role::Body).line_height();
+                assert_eq!(pill.height, place(line + 2.0 * BADGE_PADDING_Y));
+            }
+        }
     }
 
     #[test]
