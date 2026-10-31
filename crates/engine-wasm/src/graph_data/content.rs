@@ -7,7 +7,7 @@
 
 use std::fmt;
 
-use comb_engine::content::{self as layout, Cell, Direction, Element, Fonts, Placed, Role};
+use comb_engine::content::{self as layout, Cell, Direction, Element, Fonts, Kind, Placed, Role};
 use serde::Serialize;
 use serde::de::{self, IgnoredAny, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -412,8 +412,7 @@ impl ContentColumns<'_> {
                 limit: ROW_LIMIT,
             });
         }
-        let mut heights = 0.0;
-        for (r, row) in rows.enumerate() {
+        for (r, row) in rows.clone().enumerate() {
             let elements = self.elements(row);
             if elements.len() > MAX_COLUMNS {
                 return Err(GraphDataProblem::TooManyColumns {
@@ -422,30 +421,52 @@ impl ContentColumns<'_> {
                     limit: COLUMN_LIMIT,
                 });
             }
-            let mut checked = [(false, 0.0); MAX_COLUMNS];
-            for (c, element) in elements.clone().enumerate() {
+            for (c, element) in elements.enumerate() {
                 let at = At {
                     node: id,
                     row: numbered(r),
                     column: numbered(c),
                 };
-                let height = self.check_element(element, &at, cursor, fonts)?;
-                checked[c] = (self.kinds[element] == KindCode::Badge as u8, height);
+                self.check_element(element, &at, cursor)?;
             }
-            heights += layout::row_height_of(checked[..elements.len()].iter().copied());
         }
-        Ok(layout::node_height([heights]))
+        Ok(self.height(rows, fonts))
     }
 
-    /// Checks the element at `element`, at `at`, its fields in their order, and returns its
-    /// height.
+    /// The height the node whose rows are `rows` lays out to in `fonts`, as the engine computes
+    /// it from its elements' kinds and roles (ADR-0013); of content the bridge checked.
+    fn height(&self, rows: std::ops::Range<usize>, fonts: &Fonts) -> f64 {
+        layout::height(
+            rows.map(|row| self.elements(row).map(|element| self.kind(element))),
+            fonts,
+        )
+    }
+
+    /// The kind of the element at `element`, and a text's role, of content the bridge checked.
+    fn kind(&self, element: usize) -> Kind {
+        let kind = self.kinds[element];
+        if kind == KindCode::Action as u8 {
+            Kind::Action
+        } else if kind == KindCode::Icon as u8 {
+            Kind::Icon
+        } else if kind == KindCode::Badge as u8 {
+            Kind::Badge
+        } else if kind == KindCode::Progress as u8 {
+            Kind::Progress
+        } else if kind == KindCode::Metric as u8 {
+            Kind::Metric
+        } else {
+            Kind::Text(role_of(self.roles[element]).unwrap_or(Role::Body))
+        }
+    }
+
+    /// Checks the element at `element`, at `at`, its fields in their order.
     fn check_element(
         &self,
         element: usize,
         at: &At,
         cursor: &mut Cursor,
-        fonts: &Fonts,
-    ) -> Result<f64, GraphDataProblem> {
+    ) -> Result<(), GraphDataProblem> {
         let kind = self.kinds[element];
         if kind == KindCode::Unnamed as u8 {
             return Err(GraphDataProblem::InvalidElementKind {
@@ -466,14 +487,12 @@ impl ContentColumns<'_> {
             self.check_text(at, cursor)?;
             let name = cursor.name;
             cursor.name += 1;
-            check_string(self.names(), name, at, "id", cursor)?;
-            return Ok(fonts.of(Role::Body).line_height());
+            return check_string(self.names(), name, at, "id", cursor);
         }
         if kind == KindCode::Icon as u8 {
             let name = cursor.name;
             cursor.name += 1;
-            check_string(self.names(), name, at, "name", cursor)?;
-            return Ok(layout::element_height(&Element::Icon, fonts));
+            return check_string(self.names(), name, at, "name", cursor);
         }
         if kind == KindCode::Badge as u8 {
             self.check_text(at, cursor)?;
@@ -485,30 +504,22 @@ impl ContentColumns<'_> {
                     segment: None,
                 });
             }
-            return Ok(layout::element_height(&Element::Badge { text: "" }, fonts));
+            return Ok(());
         }
         if kind == KindCode::Progress as u8 {
-            self.check_segments(element, at)?;
-            return Ok(layout::element_height(&Element::Progress, fonts));
+            return self.check_segments(element, at);
         }
         if kind == KindCode::Metric as u8 {
-            self.check_metric(element, at, cursor)?;
-            let metric = Element::Metric {
-                caption: "",
-                value: "",
-                trend: "",
-            };
-            return Ok(layout::element_height(&metric, fonts));
+            return self.check_metric(element, at, cursor);
         }
-        let Some(role) = role_of(self.roles[element]) else {
+        if role_of(self.roles[element]).is_none() {
             return Err(GraphDataProblem::InvalidRole {
                 node: at.node(),
                 row: at.row,
                 column: at.column,
             });
-        };
-        self.check_text(at, cursor)?;
-        Ok(fonts.of(role).line_height())
+        }
+        self.check_text(at, cursor)
     }
 
     /// Checks the segments of the progress bar at `element`, at `at`: their number, then each
@@ -1160,27 +1171,12 @@ impl ContentData {
     /// keeps; that of no rows for a node without content, as only the tests build one.
     pub(crate) fn height(&self, node: usize, fonts: &Fonts) -> f32 {
         let view = self.view();
-        let rows = (node + 1 < self.row_bounds.len())
-            .then(|| view.rows(node))
-            .into_iter()
-            .flatten();
-        // The height of an element is that of its kind and role, whatever its text.
-        let heights = rows.map(|row| {
-            layout::row_height_of(view.elements(row).map(|element| {
-                let element = if self.kinds[element] == KindCode::Metric as u8 {
-                    Element::Metric {
-                        caption: "",
-                        value: "",
-                        trend: "",
-                    }
-                } else {
-                    self.element_with(element, "")
-                };
-                let badge = matches!(element, Element::Badge { .. });
-                (badge, layout::element_height(&element, fonts))
-            }))
-        });
-        super::kept_height(layout::node_height(heights))
+        let rows = if node + 1 < self.row_bounds.len() {
+            view.rows(node)
+        } else {
+            0..0
+        };
+        super::kept_height(view.height(rows, fonts))
     }
 
     /// The content of the node at `node`, as the host application's type describes it: what
