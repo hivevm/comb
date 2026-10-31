@@ -5,8 +5,9 @@
 The benchmark times the edits at the fitted view at the view the example opens with. The zoom
 at the fitted view zooms in for the first half of its steps and out for the second, and on every
 CI runner it runs out of its action budget before the second half: the baselines hold 57 steps of
-120 on the AMD EPYC 7763, 69 on the 9V74, and 74 on the 9V45. The edits that follow begin
-wherever the cut-short zoom stopped, which depends on the runner.
+120 on the AMD EPYC 7763, 69 on the 9V74, 74 on the 9V45, 49 on the Xeon 6975P-C, and 36 on the
+Xeon Platinum 8573C. The edits that follow begin wherever the cut-short zoom stopped, which
+depends on the runner.
 
 The **Benchmark** workflow on 2c11a58, against the baselines without content, found past 25 %:
 
@@ -18,10 +19,10 @@ The **Benchmark** workflow on 2c11a58, against the baselines without content, fo
 
 The zoom steps and the edits of those runs:
 
-| Runner kind | Zoom steps (baseline) | Edit steps | Edit p95 (ms), baseline |
-|---|---|---|---|
-| AMD EPYC 7763 | 54, 54, 55 (57) | 105, 101, 106, truncated | 150 to 166.7, 150 |
-| AMD EPYC 9V74 | 67, 68, 67 (69) | 120, not truncated | 116.7 (p50 100), 66.7 |
+| Runner kind | Zoom steps (baseline) | Edit steps | Edit p95 (ms) | Baseline edit p95 (ms) |
+|---|---|---|---|---|
+| AMD EPYC 7763 | 54, 54, 55 (57) | 105, 101, 106, truncated | 150 to 166.7 | 150 |
+| AMD EPYC 9V74 | 67, 68, 67 (69) | 120, not truncated | 116.7 (p50 100) | 66.7 |
 
 The edits began at nearly the scale of the baselines' edits. On the 9V74 the whole distribution
 moved, its p50 of 100 ms past the baseline's p95 of 66.7 ms, at nearly the same zoom, so the cause
@@ -32,15 +33,14 @@ The first frame's growth is the content's columns: a local profile against 9a27d
 at most 3 to 5 ms. Sizing them beforehand would read the host's content twice, which ADR-0028
 rules out, so the first frame's cost is the content's and its baseline records it.
 
-The same profile found the drag and the edits at the fitted
-view 9 to 14 % slower in their mean frame, and none of it in JavaScript or WebAssembly: the far
-level draws no node view, and the time is the GPU process executing the WebGL commands on
-SwiftShader. It found no single cause. What it found per frame of a drag at the fitted view,
-present before the content as well: PixiJS hit-tests the edge mesh on every pointer move,
-9 to 11 ms (`Mesh.containsPoint`), and every frame uploads the whole edge mesh, 9.4 MB, and all
-particles, 6.4 MB, since the scene's cover fails on the moved positions
-(`packages/comb/src/render/scene.ts`, `covers` and `query`). A drag's p95 is the second worst of
-about 38 frames, since the drag too runs out of its budget.
+The same profile found the drag and the edits at the fitted view 9 to 14 % slower in their mean
+frame, and none of it in JavaScript or WebAssembly: the far level draws no node view, and the time
+is the GPU process executing the WebGL commands on SwiftShader. It found no single cause. What it
+found per frame of a drag at the fitted view, present before the content as well: PixiJS hit-tests
+the edge mesh on every pointer move, 9 to 11 ms (`Mesh.containsPoint`), and every frame uploads the
+whole edge mesh, 9.4 MB, and all particles, 6.4 MB, since the scene's cover fails on the moved
+positions (`packages/comb/src/render/scene.ts`, `covers` and `query`). A drag's p95 is the second
+worst of about 38 frames, since the drag too runs out of its budget.
 
 ## Acceptance criteria
 
@@ -58,8 +58,13 @@ about 38 frames, since the drag too runs out of its budget.
   edits at the fitted view, and the run records the scale they ran at as `edit.scale`;
   `bench/fitted.test.ts` decides it with the zoom cut short. The edits at each level already
   begin at the level's scale (`restAtLevel`).
-- The median and a baseline keep no `edit.scale`; `bench/compare.ts` reads none, so the committed
-  baselines compare as before.
+- The edits at the fitted view now run at the fitted scale, which draws far, and no longer where
+  the cut-short zoom stopped: 57, 69, 74, 49, and 36 of 120 zoom steps in the committed baselines
+  of the 7763, 9V74, 9V45, Xeon 6975P-C, and Xeon Platinum 8573C, at about 1.062 times the scale
+  a step. Against those baselines their p95 measures another view; it is read against the new
+  baselines of criterion 2. A local profile measured an edit at the fitted view at 135 to 154 ms
+  mean frame, against 60 to 80 ms zoomed in at far.
+- The median and a baseline keep no `edit.scale`.
 - Open: criterion 2, the **Benchmark** workflow's runs on `main` on each runner kind and the
   maintainer's baselines with the content.
 
