@@ -231,17 +231,25 @@ The functional core and its shell follow
   guards each such number before it calls the export. It checks the screen
   pixel of a query and of a hit test in one function, and the point of a hit test and of a label's
   move in another; the core bounds a pixel beyond any zoom for both, in one function. Its crate
-  root holds the exports and their conversions; its module `graph_data` reads and checks graph
-  data, the one place that does, each rule of an edge through one function that a load,
-  `addEdge`, and `updateEdge` reach alike, and a node and an edge of a load's columns by the checks
-  of the node of `addNode` and the edge of `addEdge`, mapping the columns' boundaries onto the
-  identifiers and the texts of content only once their lengths are checked
-  ([ADR-0028](adr/0028-the-graph-lies-within-a-world.md)); its module `graph_data/content` holds
-  node content: its codes and limits, the one check of a load's content columns and of a single
-  node's content, the content the engine keeps and lays out, and the buffers of what a query
-  places of it (`Drawn`); `packages/comb/src/bridge` is the one
-  module that imports the WebAssembly package and reads those buffers through fresh typed-array
-  views per read ([ADR-0034](adr/0034-node-content-crosses-as-columns.md)).
+  root holds the exports and their conversions; its module `graph_data` reads and checks graph data,
+  the one place that does, each rule of an edge through one function that a load, `addEdge`, and
+  `updateEdge` reach alike, and a node and an edge of a load's columns by the checks of the node of
+  `addNode` and the edge of `addEdge`, mapping the columns' boundaries onto the identifiers and the
+  texts of content only once their lengths are checked
+  ([ADR-0028](adr/0028-the-graph-lies-within-a-world.md)). It is split by concept: `limits` holds
+  the limits of a load, `field` the lenient reading of a field, `input` the types the host
+  application hands over, `strings` the decoding of every string column, `node_columns` and
+  `edge_columns` the columns of a load's nodes and edges, `problem` the refusals, `item` the reading
+  of a node or an edge, `checks` the rules of each, `load` a load and `addNode`, `edit` `addEdge`
+  and the patches, and `content` node content, itself split into `codes`, its codes and limits,
+  `check`, the one check of a load's content columns and of a single node's content, `data`, the
+  content the engine keeps, `layout`, the content as the engine's layout and hit test read it,
+  `node_content`, the content as the host application's type describes it, and `input`, the content
+  of a single node read through serde-wasm-bindgen. Its module `kept` holds what the bridge keeps of
+  node content between calls: the content of the nodes by slot (`ContentStore`) and the buffers of
+  what a query places of it (`Drawn`). `packages/comb/src/bridge` is the one module that imports the
+  WebAssembly package and reads those buffers through fresh typed-array views per read
+  ([ADR-0034](adr/0034-node-content-crosses-as-columns.md)).
 - **Store** (`packages/comb/src/store`) — a vanilla Zustand store with the graph's structure, its
   nodes and edges by slot with holes at free slots, which every reader skips, the maps from node and
   edge identifiers to slots, the code units of the identifiers it holds, counted for a node and for

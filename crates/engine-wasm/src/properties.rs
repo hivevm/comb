@@ -33,7 +33,7 @@ use super::{
 };
 use super::{MAX_CONTENT_UNITS, RoleCode, content::TEST_BUDGET, tests::load_into};
 use super::{
-    NodePatch, add_edge_to, add_node_to, graph_of, load_of, numbered, patch_of, reading, unshaped,
+    NodePatch, add_edge_to, add_node_to, graph_of, load_of, numbered, patch_of, unshaped,
     update_edge_in,
 };
 use crate::{CallRefusal, Engine};
@@ -43,7 +43,7 @@ const CASES: u32 = 10_000;
 
 /// A value as JavaScript hands it over: of any shape, whatever the field expects.
 #[derive(Clone, Debug)]
-enum Value {
+pub(super) enum Value {
     Null,
     Bool(bool),
     Number(f64),
@@ -582,8 +582,7 @@ fn finite32(v: f64) -> bool {
 fn accepted_alone(edge: Value) -> bool {
     let data = two_nodes(vec![edge]);
     named_fields(&data).is_empty()
-        && reading(|| GraphBatch::deserialize(data.clone()))
-            .is_ok_and(|batch| acceptable(&batch, &data))
+        && GraphBatch::deserialize(data.clone()).is_ok_and(|batch| acceptable(&batch, &data))
 }
 
 /// Whether nothing in `batch`, read of `data`, is to be refused, by brute force over the batch
@@ -1022,7 +1021,7 @@ fn the_items_after_one_with_a_refused_field_are_left_unread() {
         ("nodes".to_owned(), nodes),
         ("edges".to_owned(), Value::List(Vec::new())),
     ]);
-    let batch = reading(|| GraphBatch::deserialize(value)).map_err(unshaped);
+    let batch = GraphBatch::deserialize(value).map_err(unshaped);
     let batch = batch.unwrap_or_else(|error| panic!("refused as {error:?}"));
     assert_eq!(batch.nodes.len(), 2);
     assert!(matches!(
@@ -1037,7 +1036,7 @@ fn the_items_after_one_with_a_refused_field_are_left_unread() {
         ),
         ("edges".to_owned(), Value::List(Vec::new())),
     ]);
-    let batch = reading(|| GraphBatch::deserialize(well)).map_err(unshaped);
+    let batch = GraphBatch::deserialize(well).map_err(unshaped);
     assert!(graph_of(&batch.unwrap_or_else(|error| panic!("refused as {error:?}"))).is_ok());
 }
 
@@ -1246,7 +1245,7 @@ fn the_check_for_rust_names_finds_them() {
 }
 
 /// The content of a node of the time before content: one row of one title, `title`.
-fn titled(title: &str) -> Value {
+pub(super) fn titled(title: &str) -> Value {
     let text = |value: &str| Value::Text(value.to_owned());
     let element = Value::Object(vec![
         ("kind".to_owned(), text("text")),
@@ -1343,7 +1342,7 @@ fn loaded_in(
     fn read<T: for<'de> Deserialize<'de>>(items: &[Value]) -> Vec<Option<T>> {
         let item = |item: &Value| {
             fields_of(item).map(|_| {
-                reading(|| T::deserialize(item.clone()))
+                T::deserialize(item.clone())
                     .unwrap_or_else(|error| panic!("an object read as an item: {error}"))
             })
         };
@@ -1359,7 +1358,7 @@ fn loaded_in(
     content.name_spans = loaded.name_spans;
     content.index_strings();
     let (mut cells, mut rows, mut placed) = (Vec::new(), Vec::new(), Vec::new());
-    let mut drawn = super::Drawn::default();
+    let mut drawn = crate::kept::Drawn::default();
     drawn.clear();
     // The texts each placed element shows, none of a progress bar and three of a metric, and the
     // name of an icon, which the shell draws as the image registered under it.
@@ -1376,7 +1375,7 @@ fn loaded_in(
             &mut placed,
         );
         let laid = &placed[start..];
-        content.draw(node, &cells, laid, Level::Near, fonts, &mut drawn);
+        drawn.draw(&content, node, &cells, laid, Level::Near, fonts);
         for (_, _, element, at) in content.elements_of(node) {
             let kind = content.kinds[element];
             texts.push(if kind == KindCode::Progress as u8 {
@@ -1418,7 +1417,7 @@ fn loaded_in(
 
 /// Asserts that the pieces of each bar `drawn` holds lie within the element `placed` holds of it,
 /// from its left in order.
-fn assert_bars_within(drawn: &super::Drawn, placed: &[comb_engine::content::Placed]) {
+fn assert_bars_within(drawn: &crate::kept::Drawn, placed: &[comb_engine::content::Placed]) {
     assert_eq!(drawn.bar_bounds.len(), placed.len() + 1);
     assert_eq!(drawn.bars.len(), 4 * drawn.bar_colors.len());
     for (index, at) in placed.iter().enumerate() {
@@ -1438,7 +1437,7 @@ fn assert_bars_within(drawn: &super::Drawn, placed: &[comb_engine::content::Plac
 }
 
 /// Asserts that each icon's text `drawn` holds is its name, `texts`, whole, never cut.
-fn assert_names_whole(drawn: &super::Drawn, texts: &[Vec<&str>]) {
+fn assert_names_whole(drawn: &crate::kept::Drawn, texts: &[Vec<&str>]) {
     let shown = split_utf16(&drawn.texts, &drawn.bounds);
     for ((shown, &kind), text) in shown.iter().zip(&drawn.kinds).zip(texts) {
         if kind == KindCode::Icon as u8 {
@@ -1450,7 +1449,7 @@ fn assert_names_whole(drawn: &super::Drawn, texts: &[Vec<&str>]) {
 /// Asserts that each text `drawn` holds is a prefix of the text of its element, `texts`, an
 /// ellipsis after it where it was cut; a metric's three, each cut on its own.
 fn assert_texts_drawn(
-    drawn: &super::Drawn,
+    drawn: &crate::kept::Drawn,
     placed: &[comb_engine::content::Placed],
     texts: &[Vec<&str>],
 ) {
@@ -1486,7 +1485,7 @@ fn assert_texts_drawn(
 
 /// Asserts that the parts and the arrow of each metric `drawn` holds lie within the cell `placed`
 /// holds of it, and that no other element holds either.
-fn assert_parts_within(drawn: &super::Drawn, placed: &[comb_engine::content::Placed]) {
+fn assert_parts_within(drawn: &crate::kept::Drawn, placed: &[comb_engine::content::Placed]) {
     assert_eq!(drawn.part_bounds.len(), placed.len() + 1);
     assert_eq!(drawn.arrow_bounds.len(), placed.len() + 1);
     assert_eq!(drawn.parts.len(), 4 * drawn.part_ends.len());
@@ -1633,7 +1632,7 @@ proptest! {
         let (source, target) = (end("source"), end("target"));
         let slot_of = |end: &Option<String>| u32::from(end.as_deref() == Some("n1"));
         let mut graph = loaded(bound, two_nodes(Vec::new())).unwrap();
-        let added = reading(|| EdgeInput::deserialize(value.clone()))
+        let added = EdgeInput::deserialize(value.clone())
             .map_err(|error| EdgeRefusal::Data(unshaped(error)))
             .and_then(|edge| add_edge_to(&mut graph, &edge, slot_of(&source), slot_of(&target)));
         let typed = matches!(
@@ -1683,7 +1682,7 @@ proptest! {
             merged.retain(|(k, _)| k != name);
             merged.push((name.clone(), value.clone()));
         }
-        let updated = reading(|| EdgePatch::deserialize(Value::Object(patch)))
+        let updated = EdgePatch::deserialize(Value::Object(patch))
             .map_err(|error| EdgeRefusal::Data(unshaped(error)))
             .and_then(|patch| update_edge_in(&mut graph, 0, "e0", patch));
         if let Some(field) = other {
@@ -1733,7 +1732,7 @@ proptest! {
         let as_load = loaded(bound, alone)
             .map(|graph| (graph.positions().to_vec(), graph.sizes().to_vec()));
         let mut graph = with_a();
-        let added = reading(|| NodeInput::deserialize(value))
+        let added = NodeInput::deserialize(value)
             .map_err(unshaped)
             .and_then(|node| add_node_to(&mut graph, &node, &Fonts::default(), 0));
         match (added, as_load) {
@@ -1762,7 +1761,7 @@ proptest! {
         // The load crosses as columns, its strings in pieces of the bound generated with it, and
         // is held to the oracles of the value it was built of.
         let named = named_fields(&value);
-        let batch = || reading(|| GraphBatch::deserialize(value.clone())).ok();
+        let batch = || GraphBatch::deserialize(value.clone()).ok();
         match loaded_in(bound, value.clone(), &fonts) {
             // A value without the shape of graph data is refused before any check of the
             // bridge's own, as malformed.
