@@ -1,6 +1,6 @@
 // The work a frame does on the GPU and in the pools (ADR-0027).
 import { expect, test, type Page } from "@playwright/test";
-import { canvasSize, open, sceneNumbers, screenCentre, setViewport } from "./shared";
+import { canvasOrigin, canvasSize, open, sceneNumbers, screenCentre, setViewport } from "./shared";
 
 /** What the canvas has done so far, from comb/testing. */
 async function work(page: Page) {
@@ -253,4 +253,97 @@ test("a pan across queries at the near level over the full content creates no el
   expect(grown.graphics).toBeGreaterThan(0);
   expect(done(warm, await work(page)).viewsCreated).toBe(0);
   expect(await page.evaluate(() => window.elementViews!())).toEqual(grown);
+});
+
+declare global {
+  interface Window {
+    /** How many times PixiJS has asked the edge mesh and the particles whether they hold a point
+     *  since the counting began; `countWorldHitTests` installs it, and its first call begins. */
+    worldHitTests?: () => { mesh: number; particles: number };
+  }
+}
+
+/** Installs `worldHitTests` before the page loads. It finds the canvas by the hook PixiJS calls
+ *  for its devtools as an application starts, and on its first call wraps `containsPoint` of the
+ *  edge mesh, the display object of the world with a geometry and a shader, and of the particles,
+ *  the one with particle children, each counting its calls. */
+async function countWorldHitTests(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    type Shown = { children?: Shown[]; containsPoint?: (point: unknown) => boolean };
+    const apps: { stage: Shown }[] = [];
+    const hooks = globalThis as unknown as { __PIXI_APP_INIT__: (app: { stage: Shown }) => void };
+    hooks.__PIXI_APP_INIT__ = (app) => apps.push(app);
+    let counts: { mesh: number; particles: number } | null = null;
+    const find = (shown: Shown, is: (shown: Shown) => boolean): Shown | undefined =>
+      is(shown) ? shown : (shown.children ?? []).map((child) => find(child, is)).find(Boolean);
+    const watch = (shown: Shown | undefined, key: "mesh" | "particles") => {
+      if (!shown?.containsPoint) throw new Error(`no ${key} that hit-tests a point`);
+      const contains = shown.containsPoint.bind(shown);
+      shown.containsPoint = (point) => {
+        counts![key] += 1;
+        return contains(point);
+      };
+    };
+    window.worldHitTests = () => {
+      if (apps.length !== 1) throw new Error(`${apps.length} PixiJS applications, not one`);
+      if (!counts) {
+        counts = { mesh: 0, particles: 0 };
+        const { stage } = apps[0]!;
+        watch(
+          find(stage, (shown) => "geometry" in shown && "shader" in shown),
+          "mesh",
+        );
+        watch(
+          find(stage, (shown) => "particleChildren" in shown),
+          "particles",
+        );
+      }
+      return { ...counts };
+    };
+  });
+}
+
+test("a pointer moving across the edges and dragging a node hit-tests no layer of the world in PixiJS", async ({
+  page,
+}) => {
+  // Verifies: ADR-0013
+  // The engine answers every hit test (ADR-0013, *Hit test*); interaction listens on the stage
+  // alone, so a hit test PixiJS runs on a layer of the world is one whose answer nothing reads.
+  await countWorldHitTests(page);
+  await open(page, "?copies=100");
+  const { width, height } = await canvasSize(page);
+  const { left, top } = await canvasOrigin(page);
+  // At the far level, inside the grid of 100 copies, where the edges cover the canvas and the
+  // nodes are particles.
+  await setViewport(page, await centred(page, 0.2));
+  const drawn = await page.evaluate(() => window.inspect());
+  expect(drawn.renderer).toBe("webgl");
+  expect(drawn.level).toBe("far");
+  expect(drawn.edgeTriangles).toBeGreaterThan(0);
+  expect(drawn.particles).toBeGreaterThan(0);
+  // The node nearest the centre of the view.
+  const distance = (at: { x: number; y: number }) => Math.hypot(at.x - 7000, at.y - 3000);
+  const node = drawn.nodes.reduce((near, candidate) =>
+    distance(candidate) < distance(near) ? candidate : near,
+  );
+  const from = await screenCentre(page, node.id);
+  expect(await page.evaluate(() => window.worldHitTests!())).toEqual({ mesh: 0, particles: 0 });
+  // Across the canvas, from corner to corner.
+  const steps = 40;
+  for (let i = 0; i <= steps; i++) {
+    await page.mouse.move(left + (width * i) / steps, top + (height * i) / steps);
+  }
+  // And a drag of a node, past the slop.
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 20; i++) await page.mouse.move(from.x, from.y + 2 * i);
+  await page.mouse.up();
+  await page.evaluate(() => window.comb.whenRendered());
+  // The premise: the drag moved the node, so the moves reached interaction.
+  const moved = await page.evaluate(
+    (id) => window.inspect().nodes.find((candidate) => candidate.id === id)!.y,
+    node.id,
+  );
+  expect(moved).toBeGreaterThan(node.y);
+  expect(await page.evaluate(() => window.worldHitTests!())).toEqual({ mesh: 0, particles: 0 });
 });

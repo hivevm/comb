@@ -170,6 +170,10 @@ export class Scene {
   constructor(readonly app: Application) {
     this.edges = app.renderer.name === "canvas" ? new EdgeFill() : new EdgesContainer();
     this.world.addChild(this.edges, this.particles, this.nodes, this.labels, this.connectors);
+    // The engine answers every hit test (ADR-0013); interaction listens on the stage alone. The
+    // world and its layers take no events, so that PixiJS's event system walks none of them, and
+    // hit-tests no edge mesh, on a pointer move.
+    this.world.eventMode = "none";
     this.overlay.addChild(this.connection);
     app.stage.addChild(this.world, this.overlay);
   }
