@@ -645,7 +645,7 @@ fn split_at(points: &mut Vec<Point>, area: &Rect) -> bool {
 
 /// Whether `p` lies within `reach` of `path` as a stroke within `tolerance` flattens it: the parts
 /// of the path whose control points miss the square of side `2 · reach` around `p` are their
-/// chords, which lie in those control points' hull and so no nearer than `reach` (ADR-0025).
+/// chords, which lie in those control points' hull and so no nearer than `reach` (ADR-0013).
 /// `scratch` holds the flattened points afterwards.
 pub(crate) fn near_path(
     path: &EdgePath,

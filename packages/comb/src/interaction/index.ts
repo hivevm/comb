@@ -3,7 +3,7 @@
 // says how it moves, how it ends, and whether a change of the graph takes its subject; the wheel
 // zooms, and hover shows what a press would do. The engine answers what lies under the pointer
 // from its spatial index, at every level of detail, also where the scene draws nodes as
-// particles (ADR-0025, ADR-0027). Once the engine is lost, input changes nothing, and no trap
+// particles (ADR-0013, ADR-0027). Once the engine is lost, input changes nothing, and no trap
 // escapes a handler (ADR-0021).
 import type { Application, FederatedPointerEvent } from "pixi.js";
 import type { Bridge, Hit } from "../bridge";
@@ -33,7 +33,7 @@ const CURSORS: Record<Hit["kind"], string> = {
 };
 
 /** Begins what a press at the screen point `(x, y)` does where the context's `hitAt` says it hits
- *  (ADR-0025): on a connector, where the host lets the user connect, a connection; on an edge
+ *  (ADR-0013): on a connector, where the host lets the user connect, a connection; on an edge
  *  label, a drag of it, its edge selected; on a node, a drag of it that waits for the slop, or
  *  within it a click, the node selected; on an edge, a pan that waits for the slop, the edge
  *  selected; on nothing, a pan, the selection cleared. */
@@ -93,7 +93,7 @@ export function canvasPointAt(
 export interface Interaction {
   /** What a press at the screen point `(x, y)` of the canvas hits now, from the store's viewport,
    *  connectors only where the host lets the user connect: the one hit test the press, the hover,
-   *  and the testing entry ask (ADR-0025). */
+   *  and the testing entry ask (ADR-0013). */
   hitAt(x: number, y: number): Hit;
   /** The world point the connection the user drags is dragged to, while the store holds one: kept
    *  here, not in the store, and its moves signalled by the store's `pointerVersion` (ADR-0029). */

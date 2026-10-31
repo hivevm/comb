@@ -291,7 +291,7 @@ pub fn segment_limit() -> u32 {
     SEGMENT_LIMIT
 }
 
-/// What a press hits (ADR-0025): a connector by the slot of its node and its side, a label by the
+/// What a press hits (ADR-0013): a connector by the slot of its node and its side, a label by the
 /// slot of its edge, a node by its slot and the element of its content drawn there, where one is
 /// (ADR-0013), an edge by its slot, or nothing; one generated value (ADR-0034).
 #[derive(Tsify, Serialize, Debug, PartialEq, Eq)]
@@ -684,7 +684,7 @@ impl Engine {
     }
 
     /// Records the half width and half height of the pill of the label of the edge in `slot`, in
-    /// world units, as the shell draws it; a label it has not measured is not hit (ADR-0025).
+    /// world units, as the shell draws it; a label it has not measured is not hit (ADR-0013).
     #[wasm_bindgen(js_name = setLabelSize)]
     pub fn set_label_size(
         &mut self,
@@ -793,7 +793,7 @@ impl Engine {
     /// at `level`: where `connectors` asks for them, at the near and middle level, a connector
     /// within 8 screen pixels, of the node drawn on top; else, at the near level, the label whose
     /// measured pill holds the point; else the node drawn on top there, else the edge drawn on top
-    /// within 4 screen pixels of its path, else nothing (ADR-0025). Of a node, the element of its
+    /// within 4 screen pixels of its path, else nothing (ADR-0013). Of a node, the element of its
     /// content whose rectangle holds the point, of those drawn at `level`: at the near level every
     /// element, at the middle level the texts of role title, at the far level none (ADR-0013). A
     /// pixel is checked as `query` checks it, and a point that is not finite is refused, both with
@@ -1407,7 +1407,7 @@ mod tests {
 
     #[test]
     fn nodes_of_different_content_are_as_high_as_their_rows_and_are_hit_and_joined_there() {
-        // Verifies: ADR-0013, ADR-0025
+        // Verifies: ADR-0013
         // Node `a`, 100 wide at (0, 0), holds one title; `b`, at (300, 0), five rows: a title and
         // four bodies, 10 + 18 + 4 * 16 + 10 = 102 high, and the edge from `a` enters it there.
         use graph_data::tests::{TITLE, b_of, load_into, text};
@@ -2039,7 +2039,7 @@ mod tests {
 
     #[test]
     fn a_hit_refuses_a_pixel_that_is_not_a_finite_number_above_zero() {
-        // Verifies: ADR-0025
+        // Verifies: ADR-0013
         let mut engine = Engine::new();
         engine.graph = graph_of(&batch(
             &[("a", 0.0, 0.0), ("b", 300.0, 100.0)],

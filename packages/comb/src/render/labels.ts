@@ -84,7 +84,7 @@ export class LabelsContainer extends Container {
 
   /** Binds a label view to every label `visible` found, or to none where `shown` is false, and
    *  hands the engine the half width and half height of each pill it has not measured for that
-   *  edge, as it was drawn, by which a press hits it (ADR-0025). */
+   *  edge, as it was drawn, by which a press hits it (ADR-0013). */
   sync(state: GraphView, visible: Visible, shown: boolean, bridge: Bridge): void {
     this.views.begin();
     const pills = shown ? this.bindAll(state, visible) : [];

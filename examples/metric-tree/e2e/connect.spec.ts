@@ -175,7 +175,7 @@ for (const [name, id, kind] of [
 test("without canConnect a press on a connector begins no connection and shows none", async ({
   page,
 }) => {
-  // Verifies: ADR-0030, ADR-0025
+  // Verifies: ADR-0030, ADR-0013
   await open(page, "?connect=none");
   await loaded(page, NODES);
   const midway = await drag(page, A_BOTTOM, B_TOP);
@@ -188,7 +188,7 @@ test("without canConnect a press on a connector begins no connection and shows n
 test("hitKind finds a connector just outside a node only where the Comb lets the user connect", async ({
   page,
 }) => {
-  // Verifies: ADR-0025
+  // Verifies: ADR-0013
   const kinds = [];
   for (const query of ["", "?connect=none"]) {
     await open(page, query);
@@ -207,7 +207,7 @@ test("hitKind finds a connector just outside a node only where the Comb lets the
 test("at the far level no connector is drawn and a press where one would be connects nothing", async ({
   page,
 }) => {
-  // Verifies: ADR-0024, ADR-0025
+  // Verifies: ADR-0024, ADR-0013
   await open(page);
   await loaded(page, NODES);
   await setViewport(page, { x: 100, y: 100, scale: 0.25 });

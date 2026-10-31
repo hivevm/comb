@@ -47,7 +47,7 @@ export function isDrawn(comb: Comb, what: { node: string } | { edge: string }): 
 /** What a press at the screen point `(x, y)`, relative to the canvas of `comb`, hits now: a
  *  connector where `comb` lets the user connect, a label, a node, an edge, or nothing. It asks the
  *  hit test a press asks, from the viewport a press reads, which is the drawn one once
- *  `whenRendered` resolves (ADR-0025); nothing where that viewport puts the point beyond any
+ *  `whenRendered` resolves (ADR-0013); nothing where that viewport puts the point beyond any
  *  finite world point. */
 export function hitKind(comb: Comb, x: number, y: number): Hit["kind"] {
   return inspectedOf(comb).hitAt(x, y).kind;

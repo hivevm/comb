@@ -145,7 +145,7 @@ pub struct Graph {
     bounds: Vec<Rect>,
     labels: Vec<Option<Point>>,
     /// Half the width and half the height of each edge label's pill in world units, as the shell
-    /// measured it; a label it has not measured is not hit (ADR-0025).
+    /// measured it; a label it has not measured is not hit (ADR-0013).
     pills: Vec<Option<(f64, f64)>>,
     /// The largest half extent of any pill measured, by which a hit looks for labels around it.
     widest_pill: f64,

@@ -214,7 +214,7 @@ test("a viewport around 1e300 draws nothing infinite, loses no engine, and draws
 test("a pointer over a viewport beyond any finite world point hits nothing, and throws nothing", async ({
   page,
 }) => {
-  // Verifies: ADR-0025, ADR-0031
+  // Verifies: ADR-0013, ADR-0031
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);

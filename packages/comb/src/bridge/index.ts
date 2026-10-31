@@ -1000,7 +1000,7 @@ export interface Bridge {
    *  graph data, the graph as it was. */
   removeNodes(slots: Uint32Array): Uint32Array;
   /** Records the half width and half height of the pill of the label of the edge in `slot`, in
-   *  world units, as the labels layer draws it; a label not measured is not hit (ADR-0025).
+   *  world units, as the labels layer draws it; a label not measured is not hit (ADR-0013).
    *  Throws a `SlotError`. */
   setLabelSize(slot: number, halfWidth: number, halfHeight: number): void;
   /** The world point of the label of the edge in `slot`, or none where it holds no edge with a
@@ -1044,7 +1044,7 @@ export interface Bridge {
    *  at `level`: where `connectors` asks for them, at the near and middle level, a connector
    *  within 8 screen pixels, of the node drawn on top; else the node drawn on top there, else the
    *  edge drawn on top within 4 screen pixels of its path as the stroke flattens it, else nothing
-   *  (ADR-0025). Throws a `NumberError`, `invalidPixel` for a pixel that is not a finite number
+   *  (ADR-0013). Throws a `NumberError`, `invalidPixel` for a pixel that is not a finite number
    *  above zero and `nonFinitePoint` for a point that is not finite (ADR-0031). */
   hit(x: number, y: number, pixel: number, level: Level, connectors: boolean): Hit;
 }
