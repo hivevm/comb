@@ -642,9 +642,8 @@ Each test below cites this ADR with `Verifies: ADR-0034`.
   fewer is taken, and a removed node's code units are free for a node added after it; a property
   test of `crates/engine-wasm/src/properties.rs` runs loads, additions, updates, and removals and
   asserts after every step that the engine's count is the code units of content the graph holds.
-  The type test in
-  `packages/comb/src/bridge/snapshot-only.test.ts` pins the content columns among the parameter
-  types of `loadGraph`. Tests of `crates/engine-wasm/src/lib.rs` and
+  The type test in `packages/comb/src/bridge/snapshot-only.test.ts` pins the content columns among
+  the parameter types of `loadGraph`. Tests of `crates/engine-wasm/src/lib.rs` and
   `packages/comb/src/bridge/bridge.test.ts` assert the sizes, the placed rectangles, the roles, and
   the drawn texts a query hands back, a patch of `updateNode` laid out anew, and the content
   `content` builds; the property tests of `crates/engine-wasm/src/properties.rs` lay out and draw
