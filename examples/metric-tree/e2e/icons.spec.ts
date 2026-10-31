@@ -23,20 +23,26 @@ async function openIcon(page: Page): Promise<void> {
   await loaded(page, { nodes: [{ ...node("b"), content: CONTENT }], edges: [] });
 }
 
-/** Registers, as the icon `name`, a canvas `width` × `height` the page draws, and waits until it
- *  is drawn. */
-async function registerCanvas(page: Page, name: string, width: number, height: number) {
+/** Registers, as the icon `name`, a canvas `width` × `height` the page fills in `color`, and
+ *  waits until it is drawn. */
+async function registerCanvas(
+  page: Page,
+  name: string,
+  width: number,
+  height: number,
+  color = "#2563eb",
+) {
   await page.evaluate(
-    async ({ name: icon, width: w, height: h }) => {
+    async ({ name: icon, width: w, height: h, color: fill }) => {
       const canvas = document.createElement("canvas");
       [canvas.width, canvas.height] = [w, h];
       const context = canvas.getContext("2d")!;
-      context.fillStyle = "#2563eb";
+      context.fillStyle = fill;
       context.fillRect(0, 0, w, h);
       window.comb.registerIcon(icon, canvas);
       await window.comb.whenRendered();
     },
-    { name, width, height },
+    { name, width, height, color },
   );
 }
 
@@ -170,4 +176,187 @@ test("registerIcon refuses a string, a URL, an image that has not loaded, and a 
   expect(requests).toEqual([]);
   // Nothing was registered: the icon still draws nothing.
   expect(await sprites(page)).toEqual([]);
+});
+
+/** The colour, `[r, g, b]`, the canvas shows at the world point `(x, y)` of node `b`, read off a
+ *  screenshot. */
+async function pixelAt(page: Page, x: number, y: number): Promise<number[]> {
+  const png = await page.locator("#canvas canvas").screenshot();
+  return page.evaluate(
+    async ({ shot, x: worldX, y: worldY }) => {
+      const bytes = Uint8Array.from(atob(shot), (char) => char.charCodeAt(0));
+      const image = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+      const ratio = image.width / document.querySelector("#canvas canvas")!.clientWidth;
+      const copy = document.createElement("canvas");
+      [copy.width, copy.height] = [image.width, image.height];
+      const context = copy.getContext("2d")!;
+      context.drawImage(image, 0, 0);
+      const at = window.screenPoint(worldX, worldY);
+      const { data } = context.getImageData(
+        Math.round(at.x * ratio),
+        Math.round(at.y * ratio),
+        1,
+        1,
+      );
+      return [data[0]!, data[1]!, data[2]!];
+    },
+    { shot: png.toString("base64"), x, y },
+  );
+}
+
+test("the icon is Comb's copy of the image: closing the ImageBitmap or painting the canvas after registering changes nothing", async ({
+  page,
+}) => {
+  // Verifies: ADR-0013
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await openIcon(page);
+  await page.evaluate(async () => {
+    const red = document.createElement("canvas");
+    [red.width, red.height] = [16, 16];
+    const context = red.getContext("2d")!;
+    context.fillStyle = "#ff0000";
+    context.fillRect(0, 0, 16, 16);
+    const bitmap = await createImageBitmap(red);
+    window.comb.registerIcon("flag", bitmap);
+    bitmap.close();
+    // The host application's canvas, registered and then painted over.
+    window.comb.registerIcon("other", red);
+    context.fillStyle = "#00ff00";
+    context.fillRect(0, 0, 16, 16);
+    await window.comb.whenRendered();
+  });
+  // Drawn as registered, and again once the far level has taken the views away and near binds
+  // them anew.
+  expect(await pixelAt(page, 20, 36)).toEqual([255, 0, 0]);
+  await setViewport(page, { x: 100, y: 100, scale: 0.1 });
+  await setViewport(page, { x: 100, y: 100, scale: 1 });
+  const [sprite] = await sprites(page);
+  expect(sprite!.texture).toBe("flag");
+  expect(await pixelAt(page, 20, 36)).toEqual([255, 0, 0]);
+  expect(errors).toEqual([]);
+});
+
+test("an image of another origin whose pixels the page may not read is refused, and nothing breaks a frame", async ({
+  page,
+}) => {
+  // Verifies: ADR-0013, Q-6
+  // The policy of Q-6 lets no image of another origin into the page, so this test serves the
+  // document without it, as a host application without that policy would, and the image itself
+  // from another origin, 127.0.0.1, which the test serves; Comb requests nothing.
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const origin = "http://127.0.0.1:5174";
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  await page.route("/", async (route) => {
+    const response = await route.fetch();
+    const headers = { ...response.headers() };
+    delete headers["content-security-policy"];
+    await route.fulfill({ response, headers });
+  });
+  await page.route(`${origin}/x.png`, (route) =>
+    route.fulfill({ status: 200, contentType: "image/png", body: png }),
+  );
+  await openIcon(page);
+  const outcome = await page.evaluate(async (from) => {
+    const image = new Image();
+    image.src = `${from}/x.png`;
+    await image.decode();
+    const tainted = document.createElement("canvas");
+    [tainted.width, tainted.height] = [1, 1];
+    tainted.getContext("2d")!.drawImage(image, 0, 0);
+    const reasons = [image, tainted].map((icon) => {
+      try {
+        window.comb.registerIcon("flag", icon);
+        return "registered";
+      } catch (error) {
+        const { name, reason } = error as Error & { reason: string };
+        return `${name} ${reason}`;
+      }
+    });
+    window.comb.setViewport({ x: 120, y: 100, scale: 1 });
+    const rendered = await Promise.race([
+      window.comb.whenRendered().then(() => "rendered"),
+      new Promise((resolve) => setTimeout(() => resolve("timeout"), 3000)),
+    ]);
+    return { reasons, rendered };
+  }, origin);
+  expect(outcome).toEqual({
+    reasons: ["IconError crossOrigin", "IconError crossOrigin"],
+    rendered: "rendered",
+  });
+  expect(await sprites(page)).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("after destroy, registerIcon checks its arguments as before and keeps nothing", async ({
+  page,
+}) => {
+  // Verifies: ADR-0013
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await openIcon(page);
+  const outcomes = await page.evaluate(async () => {
+    const canvas = document.createElement("canvas");
+    [canvas.width, canvas.height] = [16, 16];
+    window.comb.registerIcon("flag", canvas);
+    await window.comb.whenRendered();
+    window.comb.destroy();
+    const outcome = (call: () => void) => {
+      try {
+        call();
+        return "ok";
+      } catch (error) {
+        const { name, reason } = error as Error & { reason?: string };
+        return reason ? `${name} ${reason}` : name;
+      }
+    };
+    const result = {
+      // As the other methods that edit, which go on after destroy without drawing.
+      load: outcome(() => window.comb.load({ nodes: [], edges: [] })),
+      registered: outcome(() => window.comb.registerIcon("flag", canvas)),
+      refused: outcome(() => window.comb.registerIcon("flag", "/flag.png" as never)),
+    };
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    return result;
+  });
+  expect(outcomes).toEqual({
+    load: "ok",
+    registered: "ok",
+    refused: "IconError fetchable",
+  });
+  expect(errors).toEqual([]);
+});
+
+test("once the engine is lost, a name registered again is drawn at once and nothing breaks a frame", async ({
+  page,
+}) => {
+  // Verifies: ADR-0013, ADR-0021
+  // No query runs once the engine is lost, and inspection asks the engine; the canvas is read
+  // instead. The views take the new texture as it is registered, and the old one is destroyed
+  // then, which a frame that drew it would report as an error.
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await openIcon(page);
+  await registerCanvas(page, "flag", 16, 16, "#ff0000");
+  expect(await pixelAt(page, 13, 36)).toEqual([255, 0, 0]);
+  const lost = await page.evaluate(() => {
+    window.trapNextCall();
+    try {
+      window.comb.load({ nodes: [], edges: [] });
+    } catch (error) {
+      return (error as Error).name;
+    }
+    return "not lost";
+  });
+  expect(lost).toBe("EngineLostError");
+  // 16 × 32 in green, fitted as 8 × 16 from x = 16: the square's left no longer red.
+  await registerCanvas(page, "flag", 16, 32, "#00ff00");
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 200)));
+  expect(await pixelAt(page, 20, 36)).toEqual([0, 255, 0]);
+  expect(await pixelAt(page, 13, 36)).not.toEqual([255, 0, 0]);
+  expect(errors).toEqual([]);
 });

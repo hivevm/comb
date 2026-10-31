@@ -31,6 +31,9 @@ describe("the registered icons", () => {
     icons.destroy();
     expect(now.destroyed).toBe(true);
     expect(icons.get("bet")).toBeUndefined();
+    // Once destroyed, a registration keeps nothing.
+    icons.register("bet", image(16, 16));
+    expect([icons.get("bet"), icons.version]).toEqual([undefined, 2]);
   });
 });
 

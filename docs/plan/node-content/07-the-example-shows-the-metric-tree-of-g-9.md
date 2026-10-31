@@ -9,6 +9,11 @@ and coloured trends, the north-star metric, and KPIs, each with an icon of its k
 selects the node and opens the sidebar. The palette drops nodes of each type. The multiplier still
 reaches 50,000 nodes.
 
+Until this ticket, each node of the example shows its title and, in a row of its own below it,
+the icon of its kind, so that the policy test of Q-6 draws icons; this ticket revisits that row,
+and with it the browser test "a node of one title shows one text view where its title was drawn",
+which pins the example's first node to one title.
+
 ## Acceptance criteria
 
 - [ ] Given the example, when it opens, then each node type shows the elements G-9 names, as

@@ -1,12 +1,11 @@
-// The icons the host application registered (ADR-0013): each a texture of an image the host
-// application loaded itself, by the name an icon element gives, so that Comb never fetches an
-// image (Q-6). A name registered again draws the new image everywhere, and its old texture is
-// destroyed once the views that drew it have taken the new one; the host application's image
-// itself is left as it was.
+// The icons the host application registered (ADR-0013): each a texture of Comb's own copy of an
+// image the host application loaded itself, by the name an icon element gives, so that Comb never
+// fetches an image (Q-6). A name registered again draws the new image everywhere, and its old
+// texture is destroyed once the views that drew it have taken the new one.
 import { ImageSource, Texture } from "pixi.js";
 
-/** An image the host application has loaded, as `registerIcon` takes it. */
-export type IconImage = ImageBitmap | HTMLImageElement | HTMLCanvasElement;
+/** An image an icon is drawn from: Comb's own copy of what the host application registered. */
+export type IconImage = HTMLCanvasElement;
 
 /** The textures of the icons registered with one Comb, by name. */
 export class Icons {
@@ -15,10 +14,13 @@ export class Icons {
   private retired: Texture[] = [];
   /** How many times an icon was registered, so that a view draws its icons anew after one. */
   version = 0;
+  /** Whether the Comb that draws them was destroyed, after which none is registered. */
+  private destroyed = false;
 
   /** Makes `image` the texture of the icon `name`; the one it replaces is destroyed at the next
-   *  `release`, since a view may draw it until it is bound anew. */
+   *  `release`, since a view draws it until it takes the new one. */
   register(name: string, image: IconImage): void {
+    if (this.destroyed) return;
     // A source of its own, outside PixiJS's cache, so that destroying it touches no other.
     const texture = new Texture({ source: new ImageSource({ resource: image }) });
     const replaced = this.textures.get(name);
@@ -45,8 +47,10 @@ export class Icons {
     return null;
   }
 
-  /** Destroys every texture, when the Comb that draws them is destroyed. */
+  /** Destroys every texture, when the Comb that draws them is destroyed; later registrations keep
+   *  nothing. */
   destroy(): void {
+    this.destroyed = true;
     this.release();
     for (const texture of this.textures.values()) texture.destroy(true);
     this.textures.clear();

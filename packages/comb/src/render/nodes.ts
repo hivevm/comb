@@ -352,6 +352,9 @@ export class NodeGraphic extends Container {
   private readonly sprites: Sprite[] = [];
   /** The icons the view drew sprites of, which inspection reads by the registry's names. */
   private icons: Icons | null = null;
+  /** The icons the view's node holds where the view draws them, for a registration to draw
+   *  anew without a query. */
+  private iconsShown: DrawnIcon[] = [];
   /** The pooled text objects of the view, the first `texts.length` of them in use. */
   private readonly pool: { view: BitmapText; style: TextStyleOptions }[] = [];
   /** The node the view shows. */
@@ -480,10 +483,17 @@ export class NodeGraphic extends Container {
     this.showIcons(iconsOf(placed, start, end, titlesOnly), icons);
   }
 
+  /** Draws the view's icons anew from `icons`, after a registration, without the engine. */
+  redrawIcons(icons: Icons): void {
+    this.showIcons(this.iconsShown, icons);
+    this.drawn.icons = icons.version;
+  }
+
   /** Draws a sprite of each of `icons` registered in `icons`, its texture fitted into its square;
    *  an icon none is registered under draws nothing. */
   private showIcons(drawn: DrawnIcon[], icons: Icons): void {
     this.icons = icons;
+    this.iconsShown = drawn;
     let used = 0;
     for (const icon of drawn) {
       const texture = icons.get(icon.name);
@@ -579,6 +589,11 @@ export class NodesContainer extends Container {
   /** How many views the layer's pool has made. */
   get created(): number {
     return this.views.created;
+  }
+
+  /** Draws the icons of every bound view anew from `icons`, after a registration. */
+  redrawIcons(icons: Icons): void {
+    for (const view of this.children as NodeGraphic[]) view.redrawIcons(icons);
   }
 
   /** Binds a view to each of `slots`, the nodes a query found, at their places in `positions` and

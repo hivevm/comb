@@ -324,8 +324,9 @@ The functional core and its shell follow
   bar, arrow, and icon at the near level and
   those of role title alone at the middle level, what the query placed; a view draws anew only
   where its node, which the store replaces when its content changes, its size, its selection, or
-  the level changed, or an icon was registered, after which the scene queries anew and destroys
-  the textures a registration replaced;
+  the level changed; a registration of an icon has every bound view draw its icons anew at once,
+  without a query, so that it draws once the engine is lost too, and destroys the texture it
+  replaced, a view bound later drawing its icons anew;
   `fontMetricsOf` of `nodes.ts` measures each role's glyph advances, which `createComb` hands the
   engine once, before the first load, with the line height of each role, which the render layer
   states rather than measures.
@@ -345,7 +346,8 @@ The functional core and its shell follow
   under a point of the page, which needs no engine), the events to the host application (`onChange`,
   `onSelectionChange`, `onContentClick`, which interaction tells of each click on an element,
   `onEngineLost`), `registerIcon`, which refuses with an `IconError` a name no icon element can
-  give and an image Comb would fetch, cannot draw, or that has not loaded (`api/icons.ts`), and
+  give and an image Comb would fetch, cannot draw, that has not loaded, or whose pixels the page
+  may not read, and copies the image into a canvas of its own (`api/icons.ts`), and
   `destroy`; `onChange` delivers each change the store
   records as a `GraphChange`
   ([ADR-0030](adr/0030-a-veto-that-changes-the-graph-ends-its-gesture.md)), its positions read

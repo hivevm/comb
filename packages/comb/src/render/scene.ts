@@ -193,11 +193,13 @@ export class Scene {
     this.renders += 1;
   }
 
-  /** Registers `image` as the icon `name` and has the next render query anew, so that every node
-   *  that names it draws it, without a new load, and the texture it replaces is released. */
+  /** Registers `image` as the icon `name`, has every view drawn take it at once, without a query,
+   *  so that it draws even once the engine is lost, and destroys the texture it replaces, which no
+   *  view drawn holds any more; a view bound later draws its icons anew. */
   registerIcon(name: string, image: IconImage): void {
     this.icons.register(name, image);
-    this.drawn = null;
+    this.nodes.redrawIcons(this.icons);
+    this.icons.release();
   }
 
   /** Whether what the scene last queried for still holds everything the viewport shows, at about
@@ -243,8 +245,6 @@ export class Scene {
       level === "middle",
       this.icons,
     );
-    // Every drawn view now holds the textures registered last.
-    this.icons.release();
     this.particles.sync(state, far ? visible.nodes : NONE, positions, sizes);
     this.edges.sync(visible);
     this.detail = visible.detail;
