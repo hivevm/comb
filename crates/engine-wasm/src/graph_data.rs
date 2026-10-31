@@ -1182,8 +1182,8 @@ pub enum GraphDataProblem {
         field: String,
         limit: u32,
     },
-    /// The strings of the content of one load hold more than `limit` UTF-16 code units together;
-    /// `node` is the node whose string passed it.
+    /// The strings of the content the graph would hold, after a load or after an edit, hold more
+    /// than `limit` UTF-16 code units together; `node` is the node whose string passed it.
     #[serde(rename_all = "camelCase")]
     ContentBudgetExceeded { node: String, limit: u32 },
     /// The colour of a badge or of a metric's trend of a node's content, or of the segment at
@@ -3048,6 +3048,10 @@ pub(crate) mod tests {
     fn a_deleted_nodes_code_units_are_free_for_a_node_added_after_it() {
         // Verifies: ADR-0013, ADR-0034, Q-7
         let mut engine = at_the_budget();
+        // A removal that names a slot holding no node is refused and leaves the count.
+        let no_node = Err(crate::SlotError::NoNode { slot: 99 });
+        assert_eq!(engine.remove_nodes(&[0, 99]), no_node);
+        assert_eq!(engine.content_units, 6);
         // `a` named twice leaves the count once.
         assert_eq!(engine.remove_nodes(&[0, 0]), Ok(Vec::new()));
         let units = engine.content_units;

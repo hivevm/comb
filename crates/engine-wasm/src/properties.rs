@@ -1978,9 +1978,16 @@ proptest! {
                     let loaded = load_into(&mut engine, &columns, &OwnedEdgeColumns::of([]));
                     if units.iter().sum::<u64>() <= budget {
                         prop_assert_eq!(loaded, Ok(numbered(nodes.len())));
-                        held = units.into_iter().enumerate().map(|(i, u)| (numbered(i), u)).collect();
+                        held = units
+                            .into_iter()
+                            .enumerate()
+                            .map(|(i, u)| (numbered(i), u))
+                            .collect();
                     } else {
-                        let refused = matches!(loaded, Err(GraphDataProblem::ContentBudgetExceeded { .. }));
+                        let refused = matches!(
+                            loaded,
+                            Err(GraphDataProblem::ContentBudgetExceeded { .. })
+                        );
                         prop_assert!(refused, "{:?}", loaded);
                     }
                 }
@@ -2001,7 +2008,8 @@ proptest! {
                     }
                     let at = pick % held.len();
                     let (slot, old) = held[at];
-                    let patch = NodePatch(vec![("content".to_owned(), content_input(&rows).into())]);
+                    let content = content_input(&rows).into();
+                    let patch = NodePatch(vec![("content".to_owned(), content)]);
                     let updated = engine.update(slot, "u", &patch);
                     let units = units_in(&rows);
                     if total - old + units <= budget {
@@ -2015,12 +2023,14 @@ proptest! {
                     if held.is_empty() {
                         continue;
                     }
-                    let slots: Vec<u32> = picks.iter().map(|pick| held[pick % held.len()].0).collect();
+                    let slots: Vec<u32> =
+                        picks.iter().map(|pick| held[pick % held.len()].0).collect();
                     prop_assert!(engine.remove_nodes(&slots).is_ok());
                     held.retain(|(slot, _)| !slots.contains(slot));
                 }
             }
-            prop_assert_eq!(engine.content_units, held.iter().map(|&(_, units)| units).sum::<u64>());
+            let total: u64 = held.iter().map(|&(_, units)| units).sum();
+            prop_assert_eq!(engine.content_units, total);
             prop_assert_eq!(engine.graph.nodes_in_use() as usize, held.len());
         }
         TEST_BUDGET.set(None);

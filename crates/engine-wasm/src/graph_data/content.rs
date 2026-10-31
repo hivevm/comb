@@ -26,8 +26,9 @@ pub const MAX_ROWS: usize = ROW_LIMIT as usize;
 pub const MAX_COLUMNS: usize = COLUMN_LIMIT as usize;
 
 /// The most UTF-16 code units of the strings of all content in one load together, the texts and
-/// the names alike, and of all content the graph holds after every edit: at least the titles a load held before content, 1,000 code units for each of
-/// 1,000,000 nodes, and below 2^32, so that every boundary fits a `Uint32Array` (ADR-0034).
+/// the names alike, and of all content the graph holds after every edit: at least the titles a
+/// load held before content, 1,000 code units for each of 1,000,000 nodes, and below 2^32, so
+/// that every boundary fits a `Uint32Array` (ADR-0034).
 pub const MAX_CONTENT_UNITS: u32 = 1_000_000_000;
 
 /// `MAX_ROWS` as the `u32` a refusal and `rowLimit` name.
@@ -267,13 +268,13 @@ impl Cursor {
 
 #[cfg(test)]
 thread_local! {
-    /// A budget of a load's strings of content the tests lower, so that a load of a few texts
-    /// passes it; none for `MAX_CONTENT_UNITS`.
+    /// A budget of the strings of content the tests lower, so that a load or an edit of a few
+    /// texts passes it; none for `MAX_CONTENT_UNITS`.
     pub(crate) static TEST_BUDGET: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
 }
 
-/// The budget of a load's strings of content: `MAX_CONTENT_UNITS`, or in the tests the one they
-/// lowered it to.
+/// The budget of the strings of content the graph holds, after a load or an edit:
+/// `MAX_CONTENT_UNITS`, or in the tests the one they lowered it to.
 fn budget() -> u64 {
     #[cfg(test)]
     if let Some(budget) = TEST_BUDGET.get() {
