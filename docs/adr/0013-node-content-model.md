@@ -41,10 +41,13 @@ registers and colours given as numbers.
   body on a pill as an edge label's: the pill lies at its column's left, as wide as its text is
   drawn and 8 world units either side, at most the column, and as high as the body's line and 3
   above and below, 22 with a line of 16; its text is cut to the column less the 16 of padding,
-  and the pill's corners are rounded by half its height. A badge's cell is its pill, so that a
-  press beside the pill in its column hits no element. Its text is drawn white or in the
-  near-black of the node's texts, `0x1F2430`, whichever has the higher contrast ratio with the
-  pill's colour by WCAG's relative luminance, white where the two are equal.
+  and the pill's corners are rounded by half the smaller of its width and height, at most 11.
+  The engine states the padding, and the shell places the text on the pill by it. In a row that
+  holds a badge, every other element lies 3 lower, so that the texts of the row share one line,
+  and the row is as high as its deepest element so placed; a row without a badge is laid out as
+  before. A badge's cell is its pill, so that a press beside the pill in its column hits no
+  element. Its text is drawn white or in the near-black of the node's texts, `0x1F2430`,
+  whichever has the higher contrast ratio with the pill's colour by WCAG's relative luminance.
 - **Content replaces the title and the height:** a node is its identifier, its position, its
   width, and its content; its title is a `text` of role title, and the engine computes its height.
   `updateNode` replaces a node's content as a whole, checked as a load checks it.
