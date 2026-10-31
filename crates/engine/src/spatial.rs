@@ -34,10 +34,11 @@ enum Place {
     Overflow,
 }
 
-/// A grid of square cells, each holding the items whose bounds meet it.
-#[derive(Debug, Default)]
+/// A grid of square cells, each holding the items whose bounds meet it. Every grid has at least
+/// one column and one row, so that every bounds and every query falls into a cell.
+#[derive(Debug)]
 pub struct Grid {
-    extent: Option<Rect>,
+    extent: Rect,
     origin_x: f64,
     origin_y: f64,
     cell: f64,
@@ -52,6 +53,14 @@ pub struct Grid {
     /// The query that last returned each item, so that an item in several cells comes once.
     seen: Vec<u32>,
     query: u32,
+}
+
+/// The grid of a graph that never loaded one: the grid an empty load builds, over the unit square,
+/// for no items, so that a query and a hit on it find nothing as on an empty graph (Q-7).
+impl Default for Grid {
+    fn default() -> Self {
+        Self::new(Rect::new(0.0, 0.0, 1.0, 1.0), 1.0, 0)
+    }
 }
 
 impl Grid {
@@ -87,7 +96,7 @@ impl Grid {
             cell *= 2.0;
         }
         Self {
-            extent: Some(extent),
+            extent,
             origin_x: extent.min_x,
             origin_y: extent.min_y,
             cell,
@@ -112,7 +121,8 @@ impl Grid {
     /// border one, as the cast to `usize` saturates and takes NaN to 0.
     #[expect(
         clippy::cast_possible_truncation,
-        reason = "the cast saturates and takes NaN to 0 on purpose, and `count - 1` caps it"
+        reason = "the cast saturates and takes NaN to 0 on purpose, and `count - 1` caps it, as \
+                  every grid has a column and a row"
     )]
     fn index(&self, value: f64, origin: f64, count: usize) -> usize {
         (((value - origin) / self.cell).floor() as usize).min(count - 1)
@@ -155,13 +165,8 @@ impl Grid {
 
     /// Puts `item` into the cells its `bounds` meet, out of those it was in, growing the grid's
     /// records of items to hold it where it lies beyond them, as a slot appended after the highest
-    /// does (ADR-0022). A grid made for no extent, the default, has no cells and holds nothing:
-    /// the graph of an engine that never loaded one builds its index at its first addition, and a
-    /// grid of no cells has none to put an item in.
+    /// does (ADR-0022).
     pub fn set(&mut self, item: u32, bounds: &Rect) {
-        if self.cells.is_empty() {
-            return;
-        }
         let i = item as usize;
         if i >= self.places.len() {
             self.places.resize(i + 1, None);
@@ -169,9 +174,7 @@ impl Grid {
             self.seen.resize(i + 1, 0);
         }
         let old = self.places[i];
-        let beyond = self
-            .extent
-            .is_some_and(|extent| !(extent.contains_rect(bounds)));
+        let beyond = !self.extent.contains_rect(bounds);
         if beyond != self.beyond[i] {
             self.beyond[i] = beyond;
             if beyond {
@@ -264,6 +267,21 @@ mod tests {
     fn sorted(mut items: Vec<u32>) -> Vec<u32> {
         items.sort_unstable();
         items
+    }
+
+    #[test]
+    fn a_default_grid_answers_every_query_with_nothing() {
+        // Verifies: Q-7
+        let mut grid = Grid::default();
+        let mut out = vec![7];
+        for rect in [
+            Rect::new(0.0, 0.0, 1.0, 1.0),
+            Rect::new(-1e300, -1e300, 1e300, 1e300),
+            Rect::new(f64::NAN, f64::NAN, f64::INFINITY, f64::INFINITY),
+        ] {
+            grid.candidates(&rect, &mut out);
+            assert!(out.is_empty(), "{rect:?}");
+        }
     }
 
     #[test]

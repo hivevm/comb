@@ -3,6 +3,7 @@
 // `onEngineLost`. The trap is provoked through the test-mode seam of the bridge crate, so that the
 // tests do not depend on a trap the checks may close.
 import { expect, test, type Page } from "@playwright/test";
+import type { Comb } from "comb";
 import { open } from "./shared";
 
 declare global {
@@ -14,6 +15,10 @@ declare global {
     secondHost: () => HTMLElement;
     /** The viewport before input on the lost canvas. */
     viewportBefore: { x: number; y: number; scale: number };
+    /** A second Comb, made before its first load. */
+    second: Comb;
+    /** What `onEngineLost` told the second Comb. */
+    heard: string[];
   }
 }
 
@@ -270,5 +275,50 @@ test("a listener of onEngineLost is called once, also when registered after the 
     return heard;
   });
   expect(told).toEqual(["before: EngineLostError", "after: EngineLostError", "function"]);
+  expect(errors).toEqual([]);
+});
+
+test("a Comb before its first load keeps its engine through a pointer, a viewport, and a fit, and then draws its load", async ({
+  page,
+}) => {
+  // Verifies: Q-7
+  const errors = await openWithErrors(page);
+  await page.evaluate(async () => {
+    const second = await window.createComb(window.secondHost(), {
+      engine: fetch(window.engineUrl),
+    });
+    window.second = second;
+    window.heard = [];
+    second.onEngineLost((error) => window.heard.push(error.name));
+  });
+  // A pointer over the second canvas asks the engine what it hits, which has never held a graph.
+  await page.mouse.move(100, 80);
+  await page.mouse.move(150, 100);
+  await page.mouse.move(200, 120);
+  const afterPointer = await page.evaluate(async () => {
+    await window.second.whenRendered();
+    return [...window.heard];
+  });
+  expect(afterPointer).toEqual([]);
+  const afterViewport = await page.evaluate(async () => {
+    const { second } = window;
+    // Each schedules a frame that queries the engine.
+    second.setViewport({ x: 0, y: 0, scale: 1 });
+    second.fitView();
+    await second.whenRendered();
+    return [...window.heard];
+  });
+  expect(afterViewport).toEqual([]);
+  const result = await page.evaluate(async () => {
+    const { second, outcome } = window;
+    const load = outcome(() => second.load({ nodes: [window.node("a", 20, 20)], edges: [] }));
+    await second.whenRendered();
+    return {
+      load,
+      drawn: window.inspect(second).nodes.map((node) => node.id),
+      heard: window.heard,
+    };
+  });
+  expect(result).toEqual({ load: "ok", drawn: ["a"], heard: [] });
   expect(errors).toEqual([]);
 });
