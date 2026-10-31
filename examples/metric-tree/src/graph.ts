@@ -228,7 +228,7 @@ const columns: Fields[][] = [
   [
     {
       type: "north-star",
-      title: "Time spent listening to music by subscribers",
+      title: "Weekly listening time",
       periods: [{ label: "Hours per subscriber and week", value: "6.2 h", change: 4 }],
     },
   ],

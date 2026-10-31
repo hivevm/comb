@@ -40,7 +40,7 @@ test("dragging a node moves it with its edges and edge labels, and a click shows
   const moved = await screenCentre(page, northStar);
   await page.mouse.click(moved.x, moved.y);
   await expect(page.locator("#selection")).toBeVisible();
-  await expect(page.locator("#title")).toHaveValue("Time spent listening to music by subscribers");
+  await expect(page.locator("#title")).toHaveValue("Weekly listening time");
 });
 
 /** For each screen point, relative to the canvas, whether the canvas shows anything but its

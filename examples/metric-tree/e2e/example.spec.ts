@@ -72,7 +72,7 @@ const TYPES = {
     height: HEIGHTS["north-star"],
     icons: ["north-star"],
     texts: [
-      "text Time spent listening to \u2026",
+      "text Weekly listening time",
       "metric Hours per subscriber and week",
       "metric 6.2 h",
       "metric 4%",
