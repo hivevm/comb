@@ -34,14 +34,14 @@ use wasm_bindgen::prelude::*;
 pub use graph_data::{
     Arrow, ArrowCode, ContentElement, EdgeField, EdgeInput, EdgePatch, ElementHit, ElementKind,
     Field, GraphDataProblem, GraphList, KindCode, LabelInput, MAX_COLUMNS, MAX_CONTENT_UNITS,
-    MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_ROWS, MAX_TEXT, NodeContent, NodeField, NodeInput,
-    NodePatch, Pair, RoleCode, Side, SideCode, TextRole,
+    MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_ROWS, MAX_SEGMENTS, MAX_TEXT, NodeContent, NodeField,
+    NodeInput, NodePatch, Pair, RoleCode, Segment, Side, SideCode, TextRole,
 };
 
 use graph_data::{
     COLUMN_LIMIT, ContentData, Drawn, EdgeColumns, EdgeRefusal, ID_LIMIT, NodeColumns, ROW_LIMIT,
-    TEXT_LIMIT, add_edge_to, add_node_to, edge_refused_of, load_of, malformed, patch_of,
-    refused_of, slot, unshaped, update_edge_in,
+    SEGMENT_LIMIT, TEXT_LIMIT, add_edge_to, add_node_to, edge_refused_of, load_of, malformed,
+    patch_of, refused_of, slot, unshaped, update_edge_in,
 };
 
 /// A number the shell computed that an export cannot take: the shell's own mistake, never one of
@@ -283,6 +283,13 @@ pub fn column_limit() -> u32 {
     COLUMN_LIMIT
 }
 
+/// The most segments of a progress bar of a node's content, `MAX_SEGMENTS`: the shell hands over
+/// no more than one beyond it.
+#[wasm_bindgen(js_name = segmentLimit)]
+pub fn segment_limit() -> u32 {
+    SEGMENT_LIMIT
+}
+
 /// What a press hits (ADR-0025): a connector by the slot of its node and its side, a label by the
 /// slot of its edge, a node by its slot and the element of its content drawn there, where one is
 /// (ADR-0013), an edge by its slot, or nothing; one generated value (ADR-0034).
@@ -456,6 +463,9 @@ impl Engine {
         weights: Vec<f64>,
         roles: Vec<u8>,
         colors: Vec<f64>,
+        segment_bounds: Vec<u32>,
+        fractions: Vec<f64>,
+        segment_colors: Vec<f64>,
         texts: Vec<String>,
         text_bounds: Vec<u32>,
         text_valid: Vec<u8>,
@@ -524,6 +534,9 @@ impl Engine {
             weights,
             roles,
             colors,
+            segment_bounds,
+            fractions,
+            segment_colors,
             texts,
             text_bounds,
             text_valid,
@@ -545,7 +558,7 @@ impl Engine {
         self.graph = loaded.graph;
         content.spans = loaded.spans;
         content.name_spans = loaded.name_spans;
-        content.index_names();
+        content.index_strings();
         self.content = content;
         self.edited.clear();
         self.visible = Visible::default();
@@ -998,6 +1011,46 @@ impl Engine {
         self.drawn.colors.len()
     }
 
+    /// Where the buffer starts that `query` writes, per placed element, the boundaries of the
+    /// pieces of its bar in `contentBars…` into: one more than there are placed elements, a
+    /// progress bar's segments and then its track, and no piece of another kind (ADR-0013).
+    #[wasm_bindgen(js_name = contentBarBoundsPtr)]
+    pub fn content_bar_bounds_ptr(&self) -> *const u32 {
+        self.drawn.bar_bounds.as_ptr()
+    }
+
+    /// How many boundaries the buffer of the bars' boundaries holds.
+    #[wasm_bindgen(js_name = contentBarBoundsLen)]
+    pub fn content_bar_bounds_len(&self) -> usize {
+        self.drawn.bar_bounds.len()
+    }
+
+    /// Where the buffer starts that `query` writes each piece of a bar into, its rectangle
+    /// `x, y, width, height` relative to its node.
+    #[wasm_bindgen(js_name = contentBarsPtr)]
+    pub fn content_bars_ptr(&self) -> *const f32 {
+        self.drawn.bars.as_ptr()
+    }
+
+    /// How many values the buffer of the bars' pieces holds: four per piece.
+    #[wasm_bindgen(js_name = contentBarsLen)]
+    pub fn content_bars_len(&self) -> usize {
+        self.drawn.bars.len()
+    }
+
+    /// Where the buffer starts that `query` writes each piece's colour as `0xRRGGBB` into: a
+    /// segment's, and 0 for a track, whose colour is the shell's.
+    #[wasm_bindgen(js_name = contentBarColorsPtr)]
+    pub fn content_bar_colors_ptr(&self) -> *const u32 {
+        self.drawn.bar_colors.as_ptr()
+    }
+
+    /// How many values the buffer of the pieces' colours holds: one per piece.
+    #[wasm_bindgen(js_name = contentBarColorsLen)]
+    pub fn content_bar_colors_len(&self) -> usize {
+        self.drawn.bar_colors.len()
+    }
+
     /// Where the buffer starts that `query` writes the boundaries of the drawn texts in
     /// `contentTexts`, in UTF-16 code units, into: one more than there are placed elements.
     #[wasm_bindgen(js_name = contentTextBoundsPtr)]
@@ -1315,6 +1368,16 @@ mod tests {
     }
 
     /// The element hit at `row` and `column`, of `kind`, naming `action`.
+    /// Asserts that `got` holds `expected`, each within 1e-4.
+    fn assert_close(got: &[f32], expected: &[f64]) {
+        assert_eq!(got.len(), expected.len(), "{got:?}");
+        let close = got
+            .iter()
+            .zip(expected)
+            .all(|(got, want)| (f64::from(*got) - want).abs() <= 1e-4);
+        assert!(close, "{got:?} against {expected:?}");
+    }
+
     fn hit(row: u32, column: u32, kind: ElementKind, action: Option<&str>) -> Option<ElementHit> {
         Some(ElementHit {
             row,
@@ -1434,6 +1497,109 @@ mod tests {
         assert_eq!(at(360.0, 35.0, DetailLevel::Near), None);
         assert_eq!(at(320.0, 35.0, DetailLevel::Middle), None);
         assert_eq!(at(320.0, 35.0, DetailLevel::Far), None);
+    }
+
+    #[test]
+    fn a_progress_bar_is_drawn_as_its_segments_and_track_kept_as_given_and_hit_across_its_line() {
+        // Verifies: ADR-0013, ADR-0034
+        // `b`, 100 wide at (300, 0), holds a title row and a progress bar of 0.3 green and 0.2
+        // grey below it: its cell from (12, 28), 76 × 16, its bar 8 high from 32, the segments
+        // 22.8 and 15.2 long from 12, and the track the remaining 38.
+        use graph_data::tests::{load_into, progressed};
+        let mut engine = fonted();
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+        let (green, grey) = (0x22_c55e, 0x9c_a3af);
+        let segments = [(0.3, f64::from(green)), (0.2, f64::from(grey))];
+        data.nodes[1].content = progressed(&segments).into();
+        let nodes = graph_data::OwnedColumns::of(data.nodes.iter().map(Some));
+        let none = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
+        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
+        let (t, p) = (KindCode::Text as u8, KindCode::Progress as u8);
+        let (title, body) = (RoleCode::Title as u8, RoleCode::Body as u8);
+        let drawn = &engine.drawn;
+        assert_eq!(
+            (&drawn.kinds[..], &drawn.roles[..], &drawn.colors[..]),
+            (&[t, t, p][..], &[title, title, body][..], &[0, 0, 0][..])
+        );
+        // A progress bar shows no text.
+        assert_eq!(
+            (&drawn.texts[..], &drawn.bounds[..]),
+            ("xBet", &[0, 1, 4, 4][..])
+        );
+        assert_eq!(engine.content_rects[8..], [12.0, 28.0, 76.0, 16.0]);
+        // Its pieces: the segments of their colours, then the track, of none.
+        assert_eq!(engine.drawn.bar_bounds, [0, 0, 0, 3]);
+        assert_eq!(engine.drawn.bar_colors, [green, grey, 0]);
+        let expected = [
+            12.0, 32.0, 22.8, 8.0, 34.8, 32.0, 15.2, 8.0, 50.0, 32.0, 38.0, 8.0,
+        ];
+        assert_close(&engine.drawn.bars, &expected);
+        // Its content, built when asked, holds the bar as the host application gave it.
+        let progress = ContentElement::Progress {
+            segments: vec![
+                graph_data::Segment {
+                    fraction: 0.3,
+                    color: green,
+                },
+                graph_data::Segment {
+                    fraction: 0.2,
+                    color: grey,
+                },
+            ],
+            weight: Some(1.0),
+        };
+        assert_eq!(engine.content.content_of(1).0[1], [progress]);
+        // A press anywhere on its line in its column hits it, above the bar too; at the middle
+        // and far level, where no bar is drawn, none.
+        let at = |x, y, level| element(&engine, 1, x, y, level);
+        let hit_bar = hit(1, 0, ElementKind::Progress, None);
+        assert_eq!(at(380.0, 29.0, DetailLevel::Near), hit_bar);
+        assert_eq!(at(320.0, 36.0, DetailLevel::Near), hit_bar);
+        assert_eq!(at(320.0, 45.0, DetailLevel::Near), None);
+        assert_eq!(at(320.0, 36.0, DetailLevel::Middle), None);
+        assert_eq!(at(320.0, 36.0, DetailLevel::Far), None);
+    }
+
+    #[test]
+    fn the_texts_after_a_progress_bar_are_read_as_their_own() {
+        // Verifies: ADR-0013, ADR-0034
+        // A progress bar fills no text, so that the texts of the elements after it, in its node
+        // and in the nodes after it, are their own: a load of a node of a bar between two texts,
+        // then a node of a title.
+        use graph_data::tests::load_into;
+        let mut engine = fonted();
+        let mut content = graph_data::ContentInput::new();
+        content.push(
+            KindCode::Text,
+            1.0,
+            RoleCode::Title as u8,
+            f64::NAN,
+            Some("A"),
+            None,
+        );
+        content.push(KindCode::Progress, 1.0, 0, f64::NAN, None, None);
+        content.push_segment(0.5, 0.0);
+        content.push(KindCode::Action, 1.0, 0, f64::NAN, Some("Go"), Some("go"));
+        content.end_row();
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+        data.nodes[0].content = content.into();
+        let nodes = graph_data::OwnedColumns::of(data.nodes.iter().map(Some));
+        let none = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
+        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
+        assert_eq!(engine.drawn.texts, "AGox");
+        let rows = engine.content.content_of(0).0;
+        assert!(
+            matches!(&rows[0][2], ContentElement::Action { text, id, .. } if text == "Go" && id == "go")
+        );
+        assert!(
+            matches!(&engine.content.content_of(1).0[0][0], ContentElement::Text { text, .. } if text == "x")
+        );
+        assert_eq!(
+            element(&engine, 0, 75.0, 15.0, DetailLevel::Near),
+            hit(0, 2, ElementKind::Action, Some("go"))
+        );
     }
 
     #[test]

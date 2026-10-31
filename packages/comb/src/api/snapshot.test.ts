@@ -10,6 +10,7 @@ const limits = {
   contentBudget: 1e9,
   rows: 8,
   columns: 6,
+  segments: 8,
 };
 
 const cases: [name: string, value: string, read: string | false][] = [

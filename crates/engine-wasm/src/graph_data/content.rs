@@ -2,8 +2,8 @@
 //! content crosses as and the content of a single node read through serde-wasm-bindgen, both
 //! checked by the one function below, and the content the engine keeps to lay out.
 //!
-//! `text`, `action`, and `badge` have columns and a code so far; each further kind of ADR-0013
-//! adds its own with its ticket, in the places ADR-0034 gives them.
+//! `text`, `action`, `badge`, and `progress` have columns and a code so far; each further kind of
+//! ADR-0013 adds its own with its ticket, in the places ADR-0034 gives them.
 
 use std::fmt;
 
@@ -15,8 +15,8 @@ use tsify::Tsify;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use super::{
-    ContentElement, GraphDataProblem, NodeContent, TEXT_LIMIT, TextRole, bounds_fit, numbered, rgb,
-    utf16_length,
+    ContentElement, GraphDataProblem, NodeContent, Segment, TEXT_LIMIT, TextRole, bounds_fit,
+    numbered, rgb, utf16_length,
 };
 
 /// The most rows of one node's content.
@@ -36,6 +36,16 @@ pub(crate) const ROW_LIMIT: u32 = 8;
 /// `MAX_COLUMNS` as the `u32` a refusal and `columnLimit` name.
 pub(crate) const COLUMN_LIMIT: u32 = 6;
 
+/// The most segments of one progress bar.
+pub const MAX_SEGMENTS: usize = SEGMENT_LIMIT as usize;
+
+/// `MAX_SEGMENTS` as the `u32` a refusal and `segmentLimit` name.
+pub(crate) const SEGMENT_LIMIT: u32 = 8;
+
+/// How far past 1 the fractions of a progress bar may sum, so that fractions a host application
+/// computed to sum to 1 are not refused for their rounding.
+const PAST_ONE: f64 = 1e-9;
+
 /// The code of an element's kind in its column (ADR-0034): `Unnamed` for an element whose kind
 /// names none the snapshot codes, or that is no object, which its rule refuses.
 #[wasm_bindgen]
@@ -44,6 +54,7 @@ pub enum KindCode {
     Text,
     Action,
     Badge,
+    Progress,
     Unnamed,
 }
 
@@ -54,6 +65,7 @@ pub enum ElementKind {
     Text,
     Action,
     Badge,
+    Progress,
 }
 
 /// The element of a node a press hits (ADR-0013): its row and column, its kind, and for an
@@ -86,6 +98,7 @@ pub(crate) fn kind_code(name: &str) -> KindCode {
         "text" => KindCode::Text,
         "action" => KindCode::Action,
         "badge" => KindCode::Badge,
+        "progress" => KindCode::Progress,
         _ => KindCode::Unnamed,
     }
 }
@@ -117,10 +130,12 @@ pub(crate) fn role_of(code: u8) -> Option<Role> {
 /// node's rows, one more than there are nodes; of each row's elements, one more than there are
 /// rows; per element its kind's code, its weight as the host application handed it, NaN for one
 /// of another type, a text's role's code, 0 for another kind, and a badge's colour as the host
-/// application handed it, NaN for one of another type and for another kind; the texts, every
-/// string an element shows, concatenated in pieces as every string column is, with their
-/// boundaries and per text whether it is a text; and the names, every string an element names and
-/// does not show, an action's identifier, as the texts are.
+/// application handed it, NaN for one of another type and for another kind; per element the
+/// boundaries of a progress bar's segments, one more than there are elements, and per segment its
+/// fraction and its colour as the host application handed them, NaN for one of another type; the
+/// texts, every string an element shows, concatenated in pieces as every string column is, with
+/// their boundaries and per text whether it is a text; and the names, every string an element
+/// names and does not show, an action's identifier, as the texts are.
 #[derive(Clone, Copy)]
 pub struct ContentColumns<'a> {
     pub row_bounds: &'a [u32],
@@ -129,6 +144,9 @@ pub struct ContentColumns<'a> {
     pub weights: &'a [f64],
     pub roles: &'a [u8],
     pub colors: &'a [f64],
+    pub segment_bounds: &'a [u32],
+    pub fractions: &'a [f64],
+    pub segment_colors: &'a [f64],
     pub texts: &'a [String],
     pub text_bounds: &'a [u32],
     pub text_valid: &'a [u8],
@@ -218,9 +236,9 @@ impl At<'_> {
 impl ContentColumns<'_> {
     /// Whether the columns fit together for `nodes` nodes: the boundaries bound what follows them,
     /// the elements' columns are as long as there are elements, each code names a kind or a role,
-    /// or none, each validity byte is 1 or 0, and there are as many texts and names as the
-    /// elements' kinds fill, a text for each `text` and `badge` and a text and a name for each
-    /// `action`.
+    /// or none, each validity byte is 1 or 0, there are as many texts and names as the elements'
+    /// kinds fill, a text for each `text` and `badge` and a text and a name for each `action`, and
+    /// only a progress bar holds segments, each with a fraction and a colour.
     pub(crate) fn fit(&self, nodes: usize) -> bool {
         let elements = self.kinds.len();
         let rows = self.element_bounds.len().saturating_sub(1);
@@ -235,6 +253,11 @@ impl ContentColumns<'_> {
             && self.weights.len() == elements
             && self.roles.len() == elements
             && self.colors.len() == elements
+            && runs_fit(self.segment_bounds, elements, self.fractions.len())
+            && self.segment_colors.len() == self.fractions.len()
+            && self.kinds.iter().enumerate().all(|(element, &kind)| {
+                kind == KindCode::Progress as u8 || self.segments(element).is_empty()
+            })
             && self
                 .kinds
                 .iter()
@@ -275,6 +298,11 @@ impl ContentColumns<'_> {
     /// The range of the elements of the row at `row`, counted across all nodes.
     fn elements(&self, row: usize) -> std::ops::Range<usize> {
         self.element_bounds[row] as usize..self.element_bounds[row + 1] as usize
+    }
+
+    /// The range of the segments of the element at `element`, counted across all elements.
+    fn segments(&self, element: usize) -> std::ops::Range<usize> {
+        self.segment_bounds[element] as usize..self.segment_bounds[element + 1] as usize
     }
 
     /// Whether the node at `node` has a row `row`, and where `column` is given, that row a
@@ -368,9 +396,14 @@ impl ContentColumns<'_> {
                     node: at.node(),
                     row: at.row,
                     column: at.column,
+                    segment: None,
                 });
             }
             return Ok(layout::element_height(&Element::Badge { text: "" }, fonts));
+        }
+        if kind == KindCode::Progress as u8 {
+            self.check_segments(element, at)?;
+            return Ok(layout::element_height(&Element::Progress, fonts));
         }
         let Some(role) = role_of(self.roles[element]) else {
             return Err(GraphDataProblem::InvalidRole {
@@ -381,6 +414,49 @@ impl ContentColumns<'_> {
         };
         self.check_text(at, cursor)?;
         Ok(fonts.of(role).line_height())
+    }
+
+    /// Checks the segments of the progress bar at `element`, at `at`: their number, then each
+    /// segment's fraction and colour in their order, then the sum of the fractions.
+    fn check_segments(&self, element: usize, at: &At) -> Result<(), GraphDataProblem> {
+        let segments = self.segments(element);
+        if segments.len() > MAX_SEGMENTS {
+            return Err(GraphDataProblem::TooManySegments {
+                node: at.node(),
+                row: at.row,
+                column: at.column,
+                limit: SEGMENT_LIMIT,
+            });
+        }
+        let mut sum = 0.0;
+        for (s, segment) in segments.enumerate() {
+            let fraction = self.fractions[segment];
+            if !(fraction.is_finite() && fraction >= 0.0) {
+                return Err(GraphDataProblem::InvalidFraction {
+                    node: at.node(),
+                    row: at.row,
+                    column: at.column,
+                    segment: numbered(s),
+                });
+            }
+            if !rgb(self.segment_colors[segment]) {
+                return Err(GraphDataProblem::InvalidContentColor {
+                    node: at.node(),
+                    row: at.row,
+                    column: at.column,
+                    segment: Some(numbered(s)),
+                });
+            }
+            sum += fraction;
+        }
+        if sum > 1.0 + PAST_ONE {
+            return Err(GraphDataProblem::FractionsPastOne {
+                node: at.node(),
+                row: at.row,
+                column: at.column,
+            });
+        }
+        Ok(())
     }
 
     /// Checks the next text, the field `text` of the element at `at`.
@@ -450,7 +526,8 @@ pub(crate) fn check_content_budget(node: &str, units: f64) -> Result<(), GraphDa
 
 /// The content of one or more nodes as the engine keeps it, owned: the columns of a load, or the
 /// content of one node `addNode` or `updateNode` handed over, as columns of one node; and once it
-/// is checked, where each text and each name lies in its piece, and per node its first name.
+/// is checked, where each text and each name lies in its piece, and per node its first text and
+/// its first name.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct ContentData {
     pub(crate) row_bounds: Vec<u32>,
@@ -459,6 +536,9 @@ pub struct ContentData {
     pub(crate) weights: Vec<f64>,
     pub(crate) roles: Vec<u8>,
     pub(crate) colors: Vec<f64>,
+    pub(crate) segment_bounds: Vec<u32>,
+    pub(crate) fractions: Vec<f64>,
+    pub(crate) segment_colors: Vec<f64>,
     pub(crate) texts: Vec<String>,
     pub(crate) text_bounds: Vec<u32>,
     pub(crate) text_valid: Vec<u8>,
@@ -472,6 +552,28 @@ pub struct ContentData {
     pub(crate) name_spans: Vec<(u32, u32, u32)>,
     /// Per node, the index of its first name, once indexed; none where no element names one.
     pub(crate) name_starts: Vec<u32>,
+    /// Per node, the index of its first text, once indexed; none where every element fills one
+    /// text, so that the text of an element is the one of its index.
+    pub(crate) text_starts: Vec<u32>,
+}
+
+/// `value`, a colour the content's check found an integer from 0 to 0xFFFFFF, as a `u32`.
+fn rgb_of(value: f64) -> u32 {
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "an integer from 0 to 0xFFFFFF, as the content's check made sure"
+    )]
+    let color = value as u32;
+    color
+}
+
+/// Where the strings of an element lie: the index of its text, and of its name, where it fills
+/// one.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct StringAt {
+    pub(crate) text: usize,
+    pub(crate) name: usize,
 }
 
 /// The string at `index` of a column of `pieces` cut by `bounds`, by its span in `spans`, or
@@ -519,6 +621,9 @@ impl ContentData {
             weights: &self.weights,
             roles: &self.roles,
             colors: &self.colors,
+            segment_bounds: &self.segment_bounds,
+            fractions: &self.fractions,
+            segment_colors: &self.segment_colors,
             texts: &self.texts,
             text_bounds: &self.text_bounds,
             text_valid: &self.text_valid,
@@ -534,28 +639,40 @@ impl ContentData {
     pub(crate) fn map(&mut self) -> Result<(), GraphDataProblem> {
         self.spans = super::text_spans(&self.texts, &self.text_bounds)?;
         self.name_spans = super::text_spans(&self.names, &self.name_bounds)?;
-        self.index_names();
+        self.index_strings();
         Ok(())
     }
 
-    /// Notes the index of each node's first name, so that a node's names are found without
-    /// counting those before it; nothing where no element names one.
-    pub(crate) fn index_names(&mut self) {
-        self.name_starts.clear();
-        if self.name_valid.is_empty() {
-            return;
-        }
+    /// Notes the index of each node's first text and first name, so that a node's strings are
+    /// found without counting those before it; no texts' where every element fills one text, and
+    /// no names' where no element names one.
+    pub(crate) fn index_strings(&mut self) {
+        let one_text_each = self.kinds.iter().all(|&kind| filled(kind).0 == 1);
+        self.text_starts = if one_text_each {
+            Vec::new()
+        } else {
+            self.starts(|kind| filled(kind).0)
+        };
+        self.name_starts = if self.name_valid.is_empty() {
+            Vec::new()
+        } else {
+            self.starts(|kind| filled(kind).1)
+        };
+    }
+
+    /// Per node, how many strings the elements before it fill, each filling `of` its kind.
+    fn starts(&self, of: impl Fn(u8) -> usize) -> Vec<u32> {
         let view = self.view();
-        let mut names = 0;
+        let mut count = 0;
         let mut starts = Vec::with_capacity(self.row_bounds.len());
         for node in 0..self.row_bounds.len().saturating_sub(1) {
-            starts.push(numbered(names));
+            starts.push(numbered(count));
             let elements = view.rows(node).flat_map(|row| view.elements(row));
-            names += elements
-                .map(|element| filled(self.kinds[element]).1)
+            count += elements
+                .map(|element| of(self.kinds[element]))
                 .sum::<usize>();
         }
-        self.name_starts = starts;
+        starts
     }
 
     /// The text at `index`, once mapped.
@@ -568,19 +685,25 @@ impl ContentData {
         string_at(&self.names, &self.name_bounds, &self.name_spans, index)
     }
 
-    /// The elements of the node at `node`, each with its row and column, its index, and the index
-    /// of its name where it names one: every element of content the bridge accepted fills one
-    /// text, so that the text of an element is the one of its index.
-    fn elements_of(&self, node: usize) -> impl Iterator<Item = (u32, u32, usize, usize)> + '_ {
+    /// The elements of the node at `node`, each with its row and column, its index, the index of
+    /// its text, and the index of its name where it names one.
+    pub(crate) fn elements_of(
+        &self,
+        node: usize,
+    ) -> impl Iterator<Item = (u32, u32, usize, StringAt)> + '_ {
         let view = self.view();
-        let mut name = self
-            .name_starts
-            .get(node)
-            .map_or(0, |&start| start as usize);
         let rows = (node + 1 < self.row_bounds.len())
             .then(|| view.rows(node))
             .into_iter()
             .flatten();
+        let first = |starts: &[u32]| starts.get(node).map(|&start| start as usize);
+        // Where every element fills one text, the node's first is that of its first element.
+        let mut text = first(&self.text_starts).unwrap_or_else(|| {
+            rows.clone()
+                .next()
+                .map_or(0, |row| view.elements(row).start)
+        });
+        let mut name = first(&self.name_starts).unwrap_or(0);
         rows.enumerate()
             .flat_map(move |(r, row)| {
                 view.elements(row)
@@ -588,16 +711,29 @@ impl ContentData {
                     .map(move |(c, element)| (r, c, element))
             })
             .map(move |(r, c, element)| {
-                let at = (numbered(r), numbered(c), element, name);
-                name += filled(self.kinds[element]).1;
+                let at = (numbered(r), numbered(c), element, StringAt { text, name });
+                let (texts, names) = filled(self.kinds[element]);
+                text += texts;
+                name += names;
                 at
             })
     }
 
-    /// The element at `element`, as the layout reads it.
-    fn element(&self, element: usize) -> Element<'_> {
-        let text = self.text(element);
+    /// The element at `element`, its text, where it shows one, the one at `text`, as the layout
+    /// reads it.
+    fn element(&self, element: usize, text: usize) -> Element<'_> {
+        if self.kinds[element] == KindCode::Progress as u8 {
+            return Element::Progress;
+        }
+        self.element_with(element, self.text(text))
+    }
+
+    /// The element at `element` as the layout reads it, showing `text` where it shows one.
+    fn element_with<'t>(&self, element: usize, text: &'t str) -> Element<'t> {
         let kind = self.kinds[element];
+        if kind == KindCode::Progress as u8 {
+            return Element::Progress;
+        }
         if kind == KindCode::Action as u8 {
             return Element::Action { text };
         }
@@ -606,6 +742,11 @@ impl ContentData {
         }
         let role = role_of(self.roles[element]).unwrap_or(Role::Body);
         Element::Text { role, text }
+    }
+
+    /// The fractions of the segments of the progress bar at `element`, none for another kind.
+    fn fractions(&self, element: usize) -> &[f64] {
+        &self.fractions[self.view().segments(element)]
     }
 
     /// Lays out the content of the node at `node`, `width` wide, in `fonts`, and pushes where its
@@ -627,14 +768,13 @@ impl ContentData {
         }
         let view = self.view();
         for row in view.rows(node) {
-            let elements = view.elements(row);
-            rows.push(numbered(elements.len()));
-            for element in elements {
-                cells.push(Cell {
-                    weight: self.weights[element],
-                    element: self.element(element),
-                });
-            }
+            rows.push(numbered(view.elements(row).len()));
+        }
+        for (_, _, element, at) in self.elements_of(node) {
+            cells.push(Cell {
+                weight: self.weights[element],
+                element: self.element(element, at.text),
+            });
         }
         layout::lay_out(cells, rows, width, fonts, out);
     }
@@ -661,10 +801,11 @@ impl ContentData {
         placed.clear();
         self.lay_out(node, width, fonts, cells, rows, placed);
         let hit = layout::element_at(cells, placed, x, y, titles_only)?;
-        let (row, column, element, name) = self.elements_of(node).nth(hit)?;
-        let (kind, action) = match self.element(element) {
-            Element::Action { .. } => (ElementKind::Action, Some(self.name(name).to_owned())),
+        let (row, column, element, at) = self.elements_of(node).nth(hit)?;
+        let (kind, action) = match self.element(element, at.text) {
+            Element::Action { .. } => (ElementKind::Action, Some(self.name(at.name).to_owned())),
             Element::Badge { .. } => (ElementKind::Badge, None),
+            Element::Progress => (ElementKind::Progress, None),
             Element::Text { .. } => (ElementKind::Text, None),
         };
         Some(ElementHit {
@@ -680,7 +821,11 @@ impl ContentData {
 /// kind's code, the code of the role whose font draws it, its colour as `0xRRGGBB`, a badge's
 /// pill's, 0 for an element of no colour, and what is drawn of its text, the text or as much of it
 /// as fits followed by an ellipsis, those strings one after another in `texts`, with their
-/// boundaries in UTF-16 code units in `bounds`, one more than there are elements.
+/// boundaries in UTF-16 code units in `bounds`, one more than there are elements; and per element
+/// the boundaries of the pieces of its bar in `bar_bounds`, one more than there are elements, a
+/// progress bar's segments and then its track and no piece of another kind, each piece's
+/// rectangle `x, y, width, height` relative to its node in `bars`, and its colour as `0xRRGGBB` in
+/// `bar_colors`, a segment's, and 0 for a track, whose colour is the shell's.
 #[derive(Debug, Default)]
 pub struct Drawn {
     pub kinds: Vec<u8>,
@@ -688,7 +833,11 @@ pub struct Drawn {
     pub colors: Vec<u32>,
     pub texts: String,
     pub bounds: Vec<u32>,
+    pub bar_bounds: Vec<u32>,
+    pub bars: Vec<f32>,
+    pub bar_colors: Vec<u32>,
     units: u32,
+    pieces: Vec<[f32; 4]>,
 }
 
 impl Drawn {
@@ -701,30 +850,35 @@ impl Drawn {
         self.bounds.clear();
         self.bounds.push(0);
         self.units = 0;
+        self.bar_bounds.clear();
+        self.bar_bounds.push(0);
+        self.bars.clear();
+        self.bar_colors.clear();
     }
 }
 
 impl ContentData {
-    /// Pushes onto `drawn` the kind, the role, the colour, and the drawn text of each element of
-    /// the node at `node`, which `placed` holds in the order of its rows and theirs, as `lay_out`
-    /// placed them; an action's and a badge's role is body, whose font draws it.
+    /// Pushes onto `drawn` the kind, the role, the colour, the drawn text, and the pieces of the
+    /// bar of each element of the node at `node`, which `placed` holds in the order of its rows
+    /// and theirs, as `lay_out` placed them; an action's, a badge's, and a progress bar's role is
+    /// body, whose font draws the first two and whose line the last lies in.
     pub(crate) fn draw(&self, node: usize, placed: &[Placed], drawn: &mut Drawn) {
-        if node + 1 >= self.row_bounds.len() {
-            return;
-        }
-        let view = self.view();
-        let elements = view.rows(node).flat_map(|row| view.elements(row));
-        for (element, at) in elements.zip(placed) {
+        for ((_, _, element, strings), at) in self.elements_of(node).zip(placed) {
             let kind = self.kinds[element];
             drawn.kinds.push(kind);
-            let (role, color) = match self.element(element) {
-                Element::Action { .. } => (RoleCode::Body as u8, 0),
+            let shown = self.element(element, strings.text);
+            let (role, color) = match shown {
+                Element::Action { .. } | Element::Progress => (RoleCode::Body as u8, 0),
                 Element::Badge { .. } => (RoleCode::Body as u8, self.color(element)),
                 Element::Text { .. } => (self.roles[element], 0),
             };
             drawn.roles.push(role);
             drawn.colors.push(color);
-            let text = self.text(element);
+            if matches!(shown, Element::Progress) {
+                self.draw_bar(element, at, drawn);
+            }
+            drawn.bar_bounds.push(numbered(drawn.bar_colors.len()));
+            let text = shown.text();
             let mut units = 0;
             let end = text
                 .char_indices()
@@ -744,15 +898,36 @@ impl ContentData {
         }
     }
 
+    /// Pushes onto `drawn` the pieces of the bar of the progress bar at `element`, placed at
+    /// `at`: its segments, each of its colour, and its track, of 0.
+    fn draw_bar(&self, element: usize, at: &Placed, drawn: &mut Drawn) {
+        drawn.pieces.clear();
+        layout::bar(at, self.fractions(element), &mut drawn.pieces);
+        for piece in &drawn.pieces {
+            drawn.bars.extend(piece);
+        }
+        let colors = self
+            .view()
+            .segments(element)
+            .map(|s| rgb_of(self.segment_colors[s]));
+        drawn.bar_colors.extend(colors.chain([0]));
+    }
+
     /// The colour of the badge at `element`, which the bridge checked.
     fn color(&self, element: usize) -> u32 {
-        #[expect(
-            clippy::cast_possible_truncation,
-            clippy::cast_sign_loss,
-            reason = "an integer from 0 to 0xFFFFFF, as the content's check made sure"
-        )]
-        let color = self.colors[element] as u32;
-        color
+        rgb_of(self.colors[element])
+    }
+
+    /// The segments of the progress bar at `element`, as the host application's type describes
+    /// them.
+    fn segments_of(&self, element: usize) -> Vec<Segment> {
+        self.view()
+            .segments(element)
+            .map(|s| Segment {
+                fraction: self.fractions[s],
+                color: rgb_of(self.segment_colors[s]),
+            })
+            .collect()
     }
 
     /// The height the content of the node at `node` lays out to in `fonts`, as the `f32` the engine
@@ -763,9 +938,10 @@ impl ContentData {
             .then(|| view.rows(node))
             .into_iter()
             .flatten();
+        // The height of an element is that of its kind and role, whatever its text.
         let heights = rows.map(|row| {
             layout::row_height_of(view.elements(row).map(|element| {
-                let element = self.element(element);
+                let element = self.element_with(element, "");
                 let badge = matches!(element, Element::Badge { .. });
                 (badge, layout::element_height(&element, fonts))
             }))
@@ -782,13 +958,18 @@ impl ContentData {
             0
         };
         let mut rows: Vec<Vec<ContentElement>> = (0..count).map(|_| Vec::new()).collect();
-        for (row, _, element, name) in self.elements_of(node) {
-            let text = self.text(element).to_owned();
+        for (row, _, element, at) in self.elements_of(node) {
+            let shown = self.element(element, at.text);
+            let text = shown.text().to_owned();
             let weight = Some(self.weights[element]);
-            rows[row as usize].push(match self.element(element) {
+            rows[row as usize].push(match shown {
                 Element::Action { .. } => ContentElement::Action {
                     text,
-                    id: self.name(name).to_owned(),
+                    id: self.name(at.name).to_owned(),
+                    weight,
+                },
+                Element::Progress => ContentElement::Progress {
+                    segments: self.segments_of(element),
                     weight,
                 },
                 Element::Badge { .. } => ContentElement::Badge {
@@ -830,6 +1011,11 @@ impl ContentData {
         self.weights.extend(&node.weights);
         self.roles.extend(&node.roles);
         self.colors.extend(&node.colors);
+        let base = numbered(self.fractions.len());
+        let ends = node.segment_bounds.windows(2).map(|pair| base + pair[1]);
+        self.segment_bounds.extend(ends);
+        self.fractions.extend(&node.fractions);
+        self.segment_colors.extend(&node.segment_colors);
         let values = super::values(&node.texts, &node.text_bounds).expect("texts of one node");
         for value in values {
             let last = self.text_bounds[self.text_bounds.len() - 1];
@@ -848,19 +1034,37 @@ impl ContentData {
 }
 
 /// Where the snapshot found a shape of content it cannot flatten in a node: the row, and below a
-/// row the column, of a row that is no list or an element that is no object.
+/// row the column, of a row that is no list, an element that is no object, or a progress bar's
+/// segments that are no list or a segment of them that is no object.
 pub type Shape = (u32, Option<u32>);
+
+/// What a shape of content the snapshot cannot flatten should have been (ADR-0034).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Unflat {
+    /// A row: a list of elements.
+    #[default]
+    Row,
+    /// An element: an object.
+    Element,
+    /// A progress bar's segments: a list of segments.
+    Segments,
+    /// A segment: an object.
+    Segment,
+}
 
 /// The content of the node of `addNode` or of a patch of `updateNode` as the host application
 /// handed it over, read through serde-wasm-bindgen as the snapshot hands a load's over in
 /// columns: a row that is no list as a row of no elements, an element that is no object as one
 /// of no kind, each element's kind and role by their codes, a weight left out as 1 and one of
 /// another type as NaN, a badge's colour left out or of another type as NaN, a text of another
-/// type as none; and the first shape it could not flatten.
+/// type as none, a progress bar's segments that are no list as none, and a segment that is no
+/// object, or a fraction or a colour of one left out or of another type, as NaN; and the first
+/// shape it could not flatten, and what that shape should have been.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct ContentInput {
     pub(crate) data: ContentData,
     pub(crate) shape: Option<Shape>,
+    pub(crate) unread: Unflat,
 }
 
 impl ContentInput {
@@ -870,11 +1074,32 @@ impl ContentInput {
             data: ContentData {
                 row_bounds: vec![0, 0],
                 element_bounds: vec![0],
+                segment_bounds: vec![0],
                 text_bounds: vec![0],
                 name_bounds: vec![0],
                 ..ContentData::default()
             },
             shape: None,
+            unread: Unflat::Row,
+        }
+    }
+
+    /// Names the shape at `row` and `column`, which should have been `unread`, unless one before
+    /// it was named.
+    pub(crate) fn unread(&mut self, row: u32, column: Option<u32>, unread: Unflat) {
+        if self.shape.is_none() {
+            self.shape = Some((row, column));
+            self.unread = unread;
+        }
+    }
+
+    /// Adds a segment of `fraction` and `color` to the progress bar pushed last.
+    pub(crate) fn push_segment(&mut self, fraction: f64, color: f64) {
+        let data = &mut self.data;
+        data.fractions.push(fraction);
+        data.segment_colors.push(color);
+        if let Some(end) = data.segment_bounds.last_mut() {
+            *end += 1;
         }
     }
 
@@ -912,6 +1137,8 @@ impl ContentInput {
         } else {
             f64::NAN
         });
+        let segments = data.segment_bounds[data.segment_bounds.len() - 1];
+        data.segment_bounds.push(segments);
         let (texts, names) = filled(kind as u8);
         if texts > 0 {
             push_string(
@@ -974,7 +1201,7 @@ impl<'de> Visitor<'de> for RowsVisitor {
         // hands over at most one row beyond it.
         while let Some(read) = seq.next_element_seed(RowSeed(&mut content, row))? {
             if !read {
-                content.shape.get_or_insert((row, None));
+                content.unread(row, None, Unflat::Row);
             }
             content.end_row();
             row += 1;
@@ -1017,9 +1244,25 @@ impl<'de> Visitor<'de> for RowSeed<'_> {
                         cells.text.as_deref(),
                         cells.id.as_deref(),
                     );
+                    // Only a progress bar's segments are read; any other kind holds none.
+                    if kind == KindCode::Progress {
+                        let at = Some(column);
+                        match cells.segments {
+                            Some(segments) => {
+                                for segment in segments {
+                                    let (fraction, color) = segment.unwrap_or_else(|| {
+                                        content.unread(row, at, Unflat::Segment);
+                                        (f64::NAN, f64::NAN)
+                                    });
+                                    content.push_segment(fraction, color);
+                                }
+                            }
+                            None => content.unread(row, at, Unflat::Segments),
+                        }
+                    }
                 }
                 None => {
-                    content.shape.get_or_insert((row, Some(column)));
+                    content.unread(row, Some(column), Unflat::Element);
                     content.push(KindCode::Unnamed, f64::NAN, 0, f64::NAN, None, None);
                 }
             }
@@ -1068,8 +1311,13 @@ struct Fields {
     role: Option<String>,
     weight: f64,
     color: f64,
+    /// A segment's fraction, read as its colour is.
+    fraction: f64,
     text: Option<String>,
     id: Option<String>,
+    /// A progress bar's segments, each its fraction and its colour, NaN for one left out or of
+    /// another type, or none for a segment that is no object; none where they are no list.
+    segments: Option<Vec<Option<(f64, f64)>>>,
 }
 
 impl<'de> Deserialize<'de> for ElementCells {
@@ -1094,8 +1342,10 @@ impl<'de> Visitor<'de> for ElementVisitor {
             role: None,
             weight: 1.0,
             color: f64::NAN,
+            fraction: f64::NAN,
             text: None,
             id: None,
+            segments: None,
         };
         while let Some(key) = map.next_key::<String>()? {
             match key.as_str() {
@@ -1109,8 +1359,13 @@ impl<'de> Visitor<'de> for ElementVisitor {
                     let color = map.next_value::<Lenient<f64>>()?.0;
                     fields.color = color.unwrap_or(f64::NAN);
                 }
+                "fraction" => {
+                    let fraction = map.next_value::<Lenient<f64>>()?.0;
+                    fields.fraction = fraction.unwrap_or(f64::NAN);
+                }
                 "text" => fields.text = map.next_value::<Lenient<String>>()?.0,
                 "id" => fields.id = map.next_value::<Lenient<String>>()?.0,
+                "segments" => fields.segments = map.next_value::<SegmentsCells>()?.0,
                 _ => {
                     map.next_value::<IgnoredAny>()?;
                 }
@@ -1147,6 +1402,31 @@ impl<'de> Visitor<'de> for ElementVisitor {
     fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<ElementCells, A::Error> {
         while seq.next_element::<IgnoredAny>()?.is_some() {}
         Ok(ElementCells(None))
+    }
+}
+
+/// A progress bar's segments as the host application handed them over, as `Fields` holds them.
+struct SegmentsCells(Option<Vec<Option<(f64, f64)>>>);
+
+impl<'de> Deserialize<'de> for SegmentsCells {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let segments = Lenient::<Vec<SegmentCells>>::deserialize(deserializer)?.0;
+        Ok(Self(segments.map(|segments| {
+            segments.into_iter().map(|segment| segment.0).collect()
+        })))
+    }
+}
+
+/// A segment as the host application handed it over: its fraction and its colour, NaN for one
+/// left out or of another type, or none where it is no object.
+struct SegmentCells(Option<(f64, f64)>);
+
+impl<'de> Deserialize<'de> for SegmentCells {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let element = ElementCells::deserialize(deserializer)?;
+        Ok(Self(
+            element.0.map(|fields| (fields.fraction, fields.color)),
+        ))
     }
 }
 

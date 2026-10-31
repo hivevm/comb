@@ -109,6 +109,33 @@ test("a click on a badge reports kind badge, and a click beside its pill in its 
   expect(await selection(page)).toEqual({ kind: "node", id: "b" });
 });
 
+test("a click on a progress bar reports kind progress, across its line above and below the bar too", async ({
+  page,
+}) => {
+  // Verifies: ADR-0013
+  // A title, then a progress bar in a column of 196: its cell from (12, 28), 196 × 16, its bar 8
+  // high from 32.
+  await open(page);
+  const content: NodeContent = [
+    [{ kind: "text", role: "title", text: "Bet" }],
+    [{ kind: "progress", segments: [{ fraction: 0.4, color: 0x22c55e }] }],
+  ];
+  await loaded(page, { nodes: [{ ...node("b"), content }], edges: [] });
+  await page.evaluate(() => {
+    const w = window as unknown as { clicks: ContentClick[] };
+    w.clicks = [];
+    window.comb.onContentClick((click) => w.clicks.push(click));
+  });
+  await page.evaluate(() => window.comb.whenRendered());
+  const bar = { node: "b", row: 1, column: 0, kind: "progress" };
+  // On a segment, on the track, and on the line above the bar.
+  await clickWorld(page, 40, 36);
+  await clickWorld(page, 180, 36);
+  await clickWorld(page, 100, 29.5);
+  expect(await clicks(page)).toEqual([bar, bar, bar]);
+  expect(await selection(page)).toEqual({ kind: "node", id: "b" });
+});
+
 test("a press on an element that moves past 4 pixels drags the node and reports no click; within them it clicks", async ({
   page,
 }) => {

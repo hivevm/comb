@@ -18,6 +18,7 @@ import init, {
   idLimit,
   KindCode,
   rowLimit,
+  segmentLimit,
   RoleCode,
   textLimit,
   Engine,
@@ -76,9 +77,11 @@ export const PIECE_BOUND = 2 ** 28;
  *  the boundaries of each node's rows, one more than there are nodes; of each row's elements,
  *  one more than there are rows; per element its kind's code, its weight, NaN for one of another
  *  type, a text's role's code, 0 for another kind, and a badge's colour, NaN for one of another
- *  type and for another kind; the texts, every string an element shows,
- *  as a string column with per text whether it is a text, 1 or 0; and the names, every string an
- *  element names and does not show, an action's identifier, as the texts. */
+ *  type and for another kind; per element the boundaries of a progress bar's segments, one more
+ *  than there are elements, and per segment its fraction and its colour, NaN for one of another
+ *  type; the texts, every string an element shows, as a string column with per text whether it
+ *  is a text, 1 or 0; and the names, every string an element names and does not show, an
+ *  action's identifier, as the texts. */
 export interface ContentColumns {
   readonly rowBounds: Uint32Array;
   readonly elementBounds: Uint32Array;
@@ -86,6 +89,9 @@ export interface ContentColumns {
   readonly weights: Float64Array;
   readonly roles: Uint8Array;
   readonly colors: Float64Array;
+  readonly segmentBounds: Uint32Array;
+  readonly fractions: Float64Array;
+  readonly segmentColors: Float64Array;
   readonly texts: string[];
   readonly textBounds: Uint32Array;
   readonly textValid: Uint8Array;
@@ -120,7 +126,8 @@ export interface NodeColumns {
 
 /** What writes the columns of a load's nodes, one node after another in slot order, from the
  *  primitives `api/snapshot.ts` reads of each: `node`, then its content row by row, each row's
- *  elements, the last of which ends the row, or `endRow` for a row of none. */
+ *  elements, the last of which ends the row, or `endRow` for a row of none or one whose last
+ *  element is a progress bar, whose segments follow it before its row ends. */
 export interface NodeColumnWriter {
   /** Starts the next node: an identifier that is a string is one, a number that is a number is
    *  one, and any other value is refused by its type, the first of them named. */
@@ -142,9 +149,18 @@ export interface NodeColumnWriter {
   ): void;
   /** The next element of the row is no object: it crosses as one of no kind, its place named. */
   noElement(endsRow: boolean): void;
+  /** The next segment of the progress bar written last: a fraction and a colour that are numbers
+   *  cross as given, any other value as NaN, refused at its rule. */
+  segment(fraction: unknown, color: unknown): void;
+  /** The progress bar written last has segments that are no list: it holds none, its place
+   *  named. */
+  noSegments(): void;
+  /** The next segment of the progress bar written last is no object: it crosses as one of NaN,
+   *  its place named. */
+  noSegment(): void;
   /** The row is no list: it crosses as a row of no elements, its place named, and ends. */
   noRow(): void;
-  /** Ends a row of no elements. */
+  /** Ends a row of no elements, or one whose last element was written without ending it. */
   endRow(): void;
   /** The next node, which is no object, refused as malformed unless a value before it was. */
   noObject(): void;
@@ -205,6 +221,7 @@ const KINDS: Readonly<Record<ContentElement["kind"], KindCode>> = {
   text: KindCode.Text,
   action: KindCode.Action,
   badge: KindCode.Badge,
+  progress: KindCode.Progress,
 };
 const ROLES: Readonly<Record<TextRole, RoleCode>> = {
   title: RoleCode.Title,
@@ -222,6 +239,8 @@ function kindCode(kind: unknown): KindCode {
       return KINDS.action;
     case "badge":
       return KINDS.badge;
+    case "progress":
+      return KINDS.progress;
     default:
       return KindCode.Unnamed;
   }
@@ -267,6 +286,10 @@ class NodeWriter implements NodeColumnWriter {
   private weights: Float64Array;
   private roles: Uint8Array;
   private colors: Float64Array;
+  private segmentBounds: Uint32Array;
+  private fractions = new Float64Array(16);
+  private segmentColors = new Float64Array(16);
+  private segments = 0;
   private textValid: Uint8Array;
   private readonly texts: ReturnType<typeof stringColumn>;
   private nameValid = new Uint8Array(16);
@@ -288,6 +311,7 @@ class NodeWriter implements NodeColumnWriter {
     this.weights = new Float64Array(count);
     this.roles = new Uint8Array(count);
     this.colors = new Float64Array(count);
+    this.segmentBounds = new Uint32Array(count + 1);
     this.textValid = new Uint8Array(count);
     this.texts = stringColumn(count, bound);
     this.names = stringColumn(16, bound);
@@ -363,6 +387,8 @@ class NodeWriter implements NodeColumnWriter {
       this.colors = grown(this.colors);
       this.textValid = grown(this.textValid);
     }
+    if (at + 1 === this.segmentBounds.length) this.segmentBounds = grown(this.segmentBounds);
+    this.segmentBounds[at + 1] = this.segments;
     this.column++;
     return at;
   }
@@ -376,9 +402,31 @@ class NodeWriter implements NodeColumnWriter {
     if (endsRow) this.endRow();
   }
 
+  /** The next segment of the progress bar written last. */
+  segment(fraction: unknown, color: unknown): void {
+    if (this.segments === this.fractions.length) {
+      this.fractions = grown(this.fractions);
+      this.segmentColors = grown(this.segmentColors);
+    }
+    this.fractions[this.segments] = typeof fraction === "number" ? fraction : Number.NaN;
+    this.segmentColors[this.segments] = typeof color === "number" ? color : Number.NaN;
+    this.segmentBounds[this.elements] = ++this.segments;
+  }
+
+  /** The segments of the progress bar written last are no list. */
+  noSegments(): void {
+    this.refuse(NodeField.Segments, this.row, this.column - 1);
+  }
+
+  /** The next segment of the progress bar written last is no object. */
+  noSegment(): void {
+    this.refuse(NodeField.Segment, this.row, this.column - 1);
+    this.segment(undefined, undefined);
+  }
+
   /** The next element, of the fields read of it: a `text` fills its role and a text, an
-   *  `action` a text and a name, a `badge` its colour and a text, and any other kind none
-   *  (ADR-0034). */
+   *  `action` a text and a name, a `badge` its colour and a text, a `progress` no string, its
+   *  segments following it, and any other kind none (ADR-0034). */
   element(
     kind: unknown,
     role: unknown,
@@ -394,13 +442,19 @@ class NodeWriter implements NodeColumnWriter {
     this.weights[at] = absent(weight) ? WEIGHT : typeof weight === "number" ? weight : Number.NaN;
     this.roles[at] = code === KindCode.Text ? roleCode(role) : 0;
     this.colors[at] = code === KindCode.Badge && typeof color === "number" ? color : Number.NaN;
-    // Every kind built so far shows one text.
-    if (code !== KindCode.Unnamed) this.textValid[this.valid++] = Number(this.texts.add(text));
+    this.strings(code, text, id);
+    if (endsRow) this.endRow();
+  }
+
+  /** The strings an element of `code` fills: a text of every kind built so far but a progress
+   *  bar, and a name of an action. */
+  private strings(code: KindCode, text: unknown, id: unknown): void {
+    if (code !== KindCode.Unnamed && code !== KindCode.Progress)
+      this.textValid[this.valid++] = Number(this.texts.add(text));
     if (code === KindCode.Action) {
       if (this.namesValid === this.nameValid.length) this.nameValid = grown(this.nameValid);
       this.nameValid[this.namesValid++] = Number(this.names.add(id));
     }
-    if (endsRow) this.endRow();
   }
 
   columns(): NodeColumns {
@@ -424,6 +478,9 @@ class NodeWriter implements NodeColumnWriter {
       weights: this.weights.subarray(0, this.elements),
       roles: this.roles.subarray(0, this.elements),
       colors: this.colors.subarray(0, this.elements),
+      segmentBounds: this.segmentBounds.subarray(0, this.elements + 1),
+      fractions: this.fractions.subarray(0, this.segments),
+      segmentColors: this.segmentColors.subarray(0, this.segments),
       texts: this.texts.pieces(),
       textBounds: this.texts.bounds(),
       textValid: this.textValid.subarray(0, this.valid),
@@ -724,10 +781,13 @@ const DETAILS: Record<MeshDetail, Detail> = {
  *  of its elements in the other columns, one more than there are found nodes; per element, its
  *  node's elements in the order of its rows and theirs, its rectangle `x, y, width, height`
  *  relative to its node's top-left corner, its kind's code, the role whose font draws its text,
- *  body for an action and a badge, its colour as `0xRRGGBB`, a badge's pill's and 0 for an
- *  element of no colour, and what is drawn of its text, the text or as much of it as fits followed
- *  by an ellipsis, those strings one after another in `texts`, cut by `textBounds`. At the far
- *  level it holds no node. */
+ *  body for an action, a badge, and a progress bar, its colour as `0xRRGGBB`, a badge's pill's and
+ *  0 for an element of no colour, and what is drawn of its text, the text or as much of it as fits
+ *  followed by an ellipsis, those strings one after another in `texts`, cut by `textBounds`; and
+ *  per element the boundaries of the pieces of its bar in `barBounds`, one more than there are
+ *  elements, a progress bar's segments and then its track and no piece of another kind, each
+ *  piece's rectangle `x, y, width, height` relative to its node in `bars`, and its colour in
+ *  `barColors`, a segment's, 0 for the track. At the far level it holds no node. */
 export interface Placed {
   bounds: Uint32Array;
   rects: Float32Array;
@@ -736,6 +796,9 @@ export interface Placed {
   colors: Uint32Array;
   texts: string;
   textBounds: Uint32Array;
+  barBounds: Uint32Array;
+  bars: Float32Array;
+  barColors: Uint32Array;
   /** The space between a badge's text and its pill's left side and its top, the engine's. */
   badgePadding: { x: number; y: number };
 }
@@ -825,6 +888,8 @@ export interface Bridge {
   rowLimit(): number;
   /** The most columns of a row the bridge accepts. */
   columnLimit(): number;
+  /** The most segments of a progress bar the bridge accepts. */
+  segmentLimit(): number;
   /** The most UTF-16 code units of an identifier the bridge accepts. */
   idLimit(): number;
   /** The most UTF-16 code units of all identifiers of one load the bridge accepts. */
@@ -1067,6 +1132,9 @@ function load(engine: Engine, { nodes, edges }: GraphSnapshot): number {
     c.weights,
     c.roles,
     c.colors,
+    c.segmentBounds,
+    c.fractions,
+    c.segmentColors,
     c.texts,
     c.textBounds,
     c.textValid,
@@ -1141,6 +1209,9 @@ function queried(
       colors: u32(engine.contentColorsPtr(), engine.contentColorsLen()),
       texts,
       textBounds: u32(engine.contentTextBoundsPtr(), engine.contentTextBoundsLen()),
+      barBounds: u32(engine.contentBarBoundsPtr(), engine.contentBarBoundsLen()),
+      bars: f32(engine.contentBarsPtr(), engine.contentBarsLen()),
+      barColors: u32(engine.contentBarColorsPtr(), engine.contentBarColorsLen()),
       badgePadding,
     },
     labels: u32(engine.visibleLabelsPtr(), engine.visibleLabelsLen()),
@@ -1172,6 +1243,7 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
     updateEdge: (slot, id, patch) => engine.updateEdge(slot, id, patch),
     textLimit,
     rowLimit,
+    segmentLimit,
     columnLimit,
     idLimit,
     idBudget,

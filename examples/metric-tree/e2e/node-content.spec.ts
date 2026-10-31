@@ -185,6 +185,87 @@ test("a badge is drawn near as a pill of its colour around its text, and the mid
   expect(await at(1)).toEqual({ level: "near", texts: 1, kinds: ["text"], pills: [] });
 });
 
+/** Asserts that `pieces` match `expected`, each `[x, y, width, height, color]`, within 0.5 (Q-4)
+ *  and of its colour exactly, in order. */
+function expectPieces(
+  pieces: { x: number; y: number; width: number; height: number; color: number }[],
+  expected: number[][],
+) {
+  expect(pieces).toHaveLength(expected.length);
+  pieces.forEach(({ x, y, width, height, color }, i) => {
+    const [ex, ey, ew, eh, ecolor] = expected[i]!;
+    for (const [got, want] of [
+      [x, ex],
+      [y, ey],
+      [width, ew],
+      [height, eh],
+    ])
+      expect(Math.abs(got! - want!)).toBeLessThanOrEqual(0.5);
+    expect(color).toBe(ecolor);
+  });
+}
+
+test("a progress bar is drawn near as its segments from its column's left and its track after them, and the middle and far level draw none", async ({
+  page,
+}) => {
+  // Verifies: ADR-0013, ADR-0027, Q-4
+  // A title, then a bar of 0.3 green and 0.2 grey alone in its row, its column 196 wide from 12,
+  // then a caption beside a bar of 0.5 blue weighted 3, its column 141 wide from 67. Each bar is
+  // 8 high in the middle of a body's line of 16: from 32 in the row from 28, from 48 in the row
+  // from 44; the node is 10 + 18 + 16 + 16 + 10 = 70 high.
+  const [green, grey, blue] = [0x22c55e, 0x9ca3af, 0x2563eb];
+  const content: NodeContent = [
+    [text("title", "Bet")],
+    [
+      {
+        kind: "progress",
+        segments: [
+          { fraction: 0.3, color: green },
+          { fraction: 0.2, color: grey },
+        ],
+      },
+    ],
+    [
+      text("caption", "c"),
+      { kind: "progress", segments: [{ fraction: 0.5, color: blue }], weight: 3 },
+    ],
+  ];
+  await open(page);
+  await loaded(page, { nodes: [{ ...node("b"), content }], edges: [] });
+  await setViewport(page, { x: 100, y: 100, scale: 1 });
+  const drawn = (await drawnNode(page, "b"))!;
+  expect(drawn.height).toBe(70);
+  // The pieces as the view's `Graphics` draws them, read from its fills: each bar's segments in
+  // order from its column's left, then its track in the track colour.
+  const track = 0xe5e7eb;
+  const expected = [
+    [12, 32, 58.8, 8, green],
+    [70.8, 32, 39.2, 8, grey],
+    [110, 32, 98, 8, track],
+    [67, 48, 70.5, 8, blue],
+    [137.5, 48, 70.5, 8, track],
+  ];
+  expectPieces(drawn.bars!, expected);
+  // A progress bar shows no text.
+  expect(drawn.texts!.map(({ kind }) => kind)).toEqual(["text", "text"]);
+  const at = async (scale: number) => {
+    await setViewport(page, { x: 100, y: 100, scale });
+    return page.evaluate(async () => {
+      await window.comb.whenRendered();
+      const { level, nodes } = window.inspect();
+      return { level, bars: nodes[0]?.bars };
+    });
+  };
+  expect(await at(0.5)).toEqual({ level: "middle", bars: [] });
+  expect(await at(0.2)).toEqual({ level: "far", bars: undefined });
+  // Near again the bars are drawn; once updateNode takes them away, none.
+  expect((await at(1)).bars).toHaveLength(expected.length);
+  await page.evaluate(() =>
+    window.comb.updateNode("b", { content: [[{ kind: "text", role: "title", text: "Bet" }]] }),
+  );
+  expect(await at(1)).toEqual({ level: "near", bars: [] });
+});
+
 test("updateNode replaces the content, the canvas shows it, the node's height follows, and nodeUpdated carries it", async ({
   page,
 }) => {
@@ -223,7 +304,7 @@ test("content past a limit or malformed is refused naming the node, and the grap
       { content: Array.from({ length: 9 }, () => [title]) },
       { content: [Array.from({ length: 7 }, () => title)] },
       { content: [5] },
-      { content: [[{ ...title, kind: "progress" }]] },
+      { content: [[{ ...title, kind: "metric" }]] },
       { content: [[{ ...title, weight: -1 }]] },
       { content: [[{ ...title, role: "headline" }]] },
       { content: [[{ ...title, text: 5 }]] },

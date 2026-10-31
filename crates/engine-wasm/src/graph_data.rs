@@ -23,10 +23,12 @@ mod content;
 
 use comb_engine::content::Fonts;
 use content::Cursor;
-pub(crate) use content::{COLUMN_LIMIT, Drawn, ROW_LIMIT, check_content_budget, role_of};
+pub(crate) use content::{
+    COLUMN_LIMIT, Drawn, ROW_LIMIT, SEGMENT_LIMIT, check_content_budget, role_of,
+};
 pub use content::{
     ContentColumns, ContentData, ContentInput, ElementHit, ElementKind, KindCode, MAX_COLUMNS,
-    MAX_CONTENT_UNITS, MAX_ROWS, RoleCode,
+    MAX_CONTENT_UNITS, MAX_ROWS, MAX_SEGMENTS, RoleCode, Unflat,
 };
 
 /// The most UTF-16 code units, the length JavaScript gives a string, of a text of node content or
@@ -200,12 +202,21 @@ pub enum TextRole {
     Caption,
 }
 
+/// One segment of a progress bar (ADR-0013): the fraction of the bar it fills, finite and not
+/// negative, and its colour as `0xRRGGBB`.
+#[derive(Tsify, Serialize, Debug, PartialEq)]
+pub struct Segment {
+    pub fraction: f64,
+    pub color: u32,
+}
+
 /// One element of node content (ADR-0013): a text in a role; an action, a text whose click
-/// reports its identifier `id` to the host application; or a badge, a text on a pill of the colour
-/// `color`, `0xRRGGBB`; each in a column that takes its share of the row's width by `weight`, 1
-/// where it is left out. Of the closed set of ADR-0013, `text`, `action`, and `badge` are built so
-/// far; this type names exactly the kinds the bridge accepts. Its reading is
-/// `ContentInput`'s, which takes any value, so that what it refuses is named.
+/// reports its identifier `id` to the host application; a badge, a text on a pill of the colour
+/// `color`, `0xRRGGBB`; or a progress bar, a bar the width of its column divided into `segments`
+/// from its left, the rest of it the track; each in a column that takes its share of the row's
+/// width by `weight`, 1 where it is left out. Of the closed set of ADR-0013, `text`, `action`,
+/// `badge`, and `progress` are built so far; this type names exactly the kinds the bridge accepts.
+/// Its reading is `ContentInput`'s, which takes any value, so that what it refuses is named.
 #[derive(Tsify, Serialize, Debug, PartialEq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ContentElement {
@@ -224,6 +235,11 @@ pub enum ContentElement {
     Badge {
         text: String,
         color: u32,
+        #[tsify(optional)]
+        weight: Option<f64>,
+    },
+    Progress {
+        segments: Vec<Segment>,
         #[tsify(optional)]
         weight: Option<f64>,
     },
@@ -353,7 +369,9 @@ impl<'de> Visitor<'de> for PairVisitor {
 /// A field of a node that a load's first pass refuses by its type (ADR-0034), as the shell names
 /// the first such value it reads: `Item` for a node that is no object, refused as malformed;
 /// `Content` for content that is no list; and of the shapes of content the snapshot cannot
-/// flatten, `Row` for a row that is no list and `Element` for an element that is no object. It
+/// flatten, `Row` for a row that is no list, `Element` for an element that is no object,
+/// `Segments` for a progress bar's segments that are no list, and `Segment` for a segment that is
+/// no object. It
 /// crosses as its code, a plain number, so that a code it does not know is refused as malformed
 /// rather than thrown by the glue while the engine is borrowed, which would wedge it.
 #[wasm_bindgen]
@@ -367,6 +385,8 @@ pub enum NodeField {
     Content,
     Row,
     Element,
+    Segments,
+    Segment,
 }
 
 /// The first value of the nodes the first pass refuses, as the shell names it: the index of its
@@ -411,7 +431,7 @@ fn coded<T: Copy + Into<u32>>(values: &[T], code: u32) -> Option<T> {
 }
 
 impl NodeField {
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 10] = [
         Self::Item,
         Self::Id,
         Self::X,
@@ -420,6 +440,8 @@ impl NodeField {
         Self::Content,
         Self::Row,
         Self::Element,
+        Self::Segments,
+        Self::Segment,
     ];
 }
 
@@ -630,14 +652,17 @@ fn piece_values(
 }
 
 /// Whether `refused` names a position the content of its node holds: a row that is no list by
-/// its row alone, an element that is no object by its row and column, and every other field by
-/// neither.
+/// its row alone, an element that is no object and a progress bar's segments or a segment that
+/// are no list or no object by its row and column, and every other field by neither.
 fn refused_fits(refused: &Refused, content: &ContentColumns) -> bool {
     let node = refused.index as usize;
+    let below_a_row = [NodeField::Element, NodeField::Segments, NodeField::Segment];
     match (refused.field, refused.row, refused.column) {
         (NodeField::Row, Some(row), None) => content.holds(node, row, None),
-        (NodeField::Element, Some(row), Some(column)) => content.holds(node, row, Some(column)),
-        (NodeField::Row | NodeField::Element, ..) => false,
+        (field, Some(row), Some(column)) if below_a_row.contains(&field) => {
+            content.holds(node, row, Some(column))
+        }
+        (field, ..) if field == NodeField::Row || below_a_row.contains(&field) => false,
         (_, row, column) => row.is_none() && column.is_none(),
     }
 }
@@ -674,9 +699,15 @@ impl NodeColumns<'_> {
             NodeField::Y => ("y", A_NUMBER),
             NodeField::Width => ("width", A_SIZE),
             NodeField::Content => ("content", A_CONTENT),
-            NodeField::Row | NodeField::Element => {
+            NodeField::Row | NodeField::Element | NodeField::Segments | NodeField::Segment => {
+                let unread = match refused.field {
+                    NodeField::Element => Unflat::Element,
+                    NodeField::Segments => Unflat::Segments,
+                    NodeField::Segment => Unflat::Segment,
+                    _ => Unflat::Row,
+                };
                 let shape = (refused.row.unwrap_or(0), refused.column);
-                return Err(item.shape(shape));
+                return Err(item.shape(shape, unread));
             }
         };
         item.read(name, Field::<()>(None), expected)
@@ -1113,9 +1144,37 @@ pub enum GraphDataProblem {
     /// `node` is the node whose string passed it.
     #[serde(rename_all = "camelCase")]
     ContentBudgetExceeded { node: String, limit: u32 },
-    /// The colour of a badge of a node's content is not an integer from `0` to `0xFFFFFF`.
+    /// The colour of a badge of a node's content, or of the segment at `segment` of a progress
+    /// bar, is not an integer from `0` to `0xFFFFFF`.
     #[serde(rename_all = "camelCase")]
-    InvalidContentColor { node: String, row: u32, column: u32 },
+    InvalidContentColor {
+        node: String,
+        row: u32,
+        column: u32,
+        #[tsify(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        segment: Option<u32>,
+    },
+    /// A progress bar of a node's content holds more than `limit` segments.
+    #[serde(rename_all = "camelCase")]
+    TooManySegments {
+        node: String,
+        row: u32,
+        column: u32,
+        limit: u32,
+    },
+    /// The fraction of the segment at `segment` of a progress bar of a node's content is negative
+    /// or not finite.
+    #[serde(rename_all = "camelCase")]
+    InvalidFraction {
+        node: String,
+        row: u32,
+        column: u32,
+        segment: u32,
+    },
+    /// The fractions of the segments of a progress bar of a node's content sum past 1.
+    #[serde(rename_all = "camelCase")]
+    FractionsPastOne { node: String, row: u32, column: u32 },
     /// A patch of a node holds a field other than its content.
     #[serde(rename_all = "camelCase")]
     UnknownPatchField { node: String, field: String },
@@ -1229,6 +1288,7 @@ const A_SIDE: &str = "\"top\", \"right\", \"bottom\", or \"left\"";
 const A_CONTENT: &str = "a list of rows";
 const A_ROW: &str = "a list of elements";
 const AN_ELEMENT: &str = "an object";
+const A_SEGMENT_LIST: &str = "a list of segments";
 
 /// What an identifier, a source, or a target expects, by `MAX_ID`.
 const AN_ID: &str = "a well-formed string of at most 256 code units";
@@ -1305,19 +1365,25 @@ impl<'a> Item<'a> {
         self.read(name, value, expected)
     }
 
-    /// The refusal of a shape of content at `row` and, below a row, `column` of the item.
+    /// The refusal of a shape of content at `row` and, below a row, `column` of the item, which
+    /// should have been `unread`.
     #[expect(
         clippy::cast_possible_truncation,
         reason = "an index below the count of its list, which the bridge checked against \
                   `MAX_ITEMS` first (ADR-0028)"
     )]
-    fn shape(&self, (row, column): content::Shape) -> GraphDataProblem {
+    fn shape(&self, (row, column): content::Shape, unread: Unflat) -> GraphDataProblem {
+        let expected = match unread {
+            Unflat::Row => A_ROW,
+            Unflat::Element | Unflat::Segment => AN_ELEMENT,
+            Unflat::Segments => A_SEGMENT_LIST,
+        };
         GraphDataProblem::InvalidContentShape {
             index: self.index as u32,
             id: self.id.map(str::to_owned),
             row,
             column,
-            expected: (if column.is_some() { AN_ELEMENT } else { A_ROW }).to_owned(),
+            expected: expected.to_owned(),
         }
     }
 
@@ -1351,7 +1417,7 @@ fn content_of<'c>(
 ) -> Result<&'c ContentData, GraphDataProblem> {
     let content = item.read("content", Field(content), A_CONTENT)?;
     match content.shape {
-        Some(shape) => Err(item.shape(shape)),
+        Some(shape) => Err(item.shape(shape, content.unread)),
         None => Ok(&content.data),
     }
 }
@@ -2134,6 +2200,7 @@ impl OwnedColumns {
             content: ContentData {
                 row_bounds: vec![0],
                 element_bounds: vec![0],
+                segment_bounds: vec![0],
                 text_bounds: vec![0],
                 name_bounds: vec![0],
                 ..ContentData::default()
@@ -2210,10 +2277,11 @@ impl OwnedColumns {
             return;
         };
         if let Some((row, column)) = content.shape {
-            let field = if column.is_some() {
-                NodeField::Element
-            } else {
-                NodeField::Row
+            let field = match content.unread {
+                Unflat::Row => NodeField::Row,
+                Unflat::Element => NodeField::Element,
+                Unflat::Segments => NodeField::Segments,
+                Unflat::Segment => NodeField::Segment,
             };
             self.refused.get_or_insert(Refused {
                 index,
@@ -2575,6 +2643,27 @@ pub(crate) mod tests {
         content
     }
 
+    /// Content of a title row, "Bet", then a row of a progress bar of weight 1 of `segments`, each
+    /// its fraction and its colour.
+    pub(crate) fn progressed(segments: &[(f64, f64)]) -> ContentInput {
+        let mut content = ContentInput::new();
+        content.push(
+            KindCode::Text,
+            1.0,
+            RoleCode::Title as u8,
+            f64::NAN,
+            Some("Bet"),
+            None,
+        );
+        content.end_row();
+        content.push(KindCode::Progress, 1.0, 0, f64::NAN, None, None);
+        for &(fraction, color) in segments {
+            content.push_segment(fraction, color);
+        }
+        content.end_row();
+        content
+    }
+
     /// The content of a node of the time before content: one row of one title, `title`.
     pub(crate) fn titled(title: &str) -> Field<ContentInput> {
         content(&[&[text(RoleCode::Title, title)]]).into()
@@ -2892,6 +2981,7 @@ pub(crate) mod tests {
             node: node.into(),
             row: 1,
             column: 0,
+            segment: None,
         };
         let too_long = |node: &str| GraphDataProblem::ContentTextTooLong {
             node: node.into(),
@@ -2934,6 +3024,214 @@ pub(crate) mod tests {
             data.nodes[1].content = badged(Some(text), shade).into();
             assert!(graph_of(&data).is_ok(), "{shade}");
         }
+    }
+
+    #[test]
+    fn a_progress_bar_whose_segments_are_refused_names_its_node_and_the_segment() {
+        // Verifies: ADR-0013, ADR-0034, Q-7
+        // A progress bar below a title: its number of segments, then each segment's fraction and
+        // colour in their order, then their sum; through a load and through `addNode` alike.
+        let green = f64::from(0x22_c55e);
+        type Refusal = Box<dyn Fn(&str) -> GraphDataProblem>;
+        let fraction = |segment| -> Refusal {
+            Box::new(move |node| GraphDataProblem::InvalidFraction {
+                node: node.into(),
+                row: 1,
+                column: 0,
+                segment,
+            })
+        };
+        let color = || -> Refusal {
+            Box::new(|node| GraphDataProblem::InvalidContentColor {
+                node: node.into(),
+                row: 1,
+                column: 0,
+                segment: Some(1),
+            })
+        };
+        let too_many = || -> Refusal {
+            Box::new(|node| GraphDataProblem::TooManySegments {
+                node: node.into(),
+                row: 1,
+                column: 0,
+                limit: SEGMENT_LIMIT,
+            })
+        };
+        let past = || -> Refusal {
+            Box::new(|node| GraphDataProblem::FractionsPastOne {
+                node: node.into(),
+                row: 1,
+                column: 0,
+            })
+        };
+        let nine = vec![(0.1, green); MAX_SEGMENTS + 1];
+        let cases: Vec<(Vec<(f64, f64)>, Refusal)> = vec![
+            (vec![(-0.1, green)], fraction(0)),
+            (vec![(0.3, green), (f64::NAN, green)], fraction(1)),
+            (vec![(0.3, green), (f64::INFINITY, green)], fraction(1)),
+            (vec![(0.3, green), (-1e-300, green)], fraction(1)),
+            (vec![(0.3, green), (0.2, -1.0)], color()),
+            (vec![(0.3, green), (0.2, f64::from(0x100_0000))], color()),
+            (vec![(0.3, green), (0.2, 0.5)], color()),
+            (vec![(0.3, green), (0.2, f64::NAN)], color()),
+            // The fraction before the colour, the count before either, the sum after both.
+            (vec![(0.3, green), (f64::NAN, f64::NAN)], fraction(1)),
+            (
+                nine.iter().map(|&(_, c)| (f64::NAN, c)).collect(),
+                too_many(),
+            ),
+            (nine, too_many()),
+            (vec![(0.6, green), (0.4 + 2e-9, green)], past()),
+            (vec![(0.7, green), (0.5, f64::NAN)], color()),
+            (vec![(f64::MAX, green), (f64::MAX, green)], past()),
+        ];
+        for (segments, problem) in cases {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+            data.nodes[1].content = progressed(&segments).into();
+            assert_eq!(graph_of(&data).unwrap_err(), problem("b"), "{segments:?}");
+            let mut graph = graph_of(&batch(&[("a", 0.0, 0.0)], &[])).unwrap();
+            let node = added(0.0, 0.0, |node| node.content = progressed(&segments).into());
+            assert_eq!(add(&mut graph, &node).unwrap_err(), problem("n"));
+        }
+        // At the limit of segments, at both ends of the colours, with fractions of 0, and summing
+        // to 1 and a little past it, the bar is accepted; so is a bar of no segments.
+        let accepted: [&[(f64, f64)]; 5] = [
+            &[(0.125, 0.0); MAX_SEGMENTS],
+            &[(0.0, 0.0), (1.0, f64::from(0xff_ffff))],
+            &[(0.6, green), (0.4 + 5e-10, green)],
+            &[(0.1, green), (0.2, green), (0.7, green)],
+            &[],
+        ];
+        for segments in accepted {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+            data.nodes[1].content = progressed(segments).into();
+            assert!(graph_of(&data).is_ok(), "{segments:?}");
+        }
+    }
+
+    #[test]
+    fn a_progress_bar_fills_its_segments_alone_and_segments_that_do_not_fit_are_malformed() {
+        // Verifies: ADR-0034
+        let green = f64::from(0x22_c55e);
+        let mut columns = OwnedColumns::of([Some(&added(0.0, 0.0, |node| {
+            node.content = progressed(&[(0.3, green), (0.2, 0.0)]).into();
+        }))]);
+        let c = &columns.content;
+        assert_eq!(c.kinds, [KindCode::Text as u8, KindCode::Progress as u8]);
+        assert_eq!(c.roles, [RoleCode::Title as u8, 0]);
+        assert!(c.colors.iter().all(|color| color.is_nan()));
+        assert_eq!(c.segment_bounds, [0, 0, 2]);
+        assert_eq!(c.fractions, [0.3, 0.2]);
+        assert_eq!(c.segment_colors, [green, 0.0]);
+        // The title's text alone: a progress bar fills no text and no name.
+        assert_eq!((c.text_valid.len(), c.name_valid.len()), (1, 0));
+        assert!(columns.content.view().fit(1));
+        // A colour per segment: one too many or one too few does not fit.
+        columns.content.segment_colors.push(0.0);
+        assert!(!columns.content.view().fit(1));
+        columns.content.segment_colors.truncate(1);
+        assert!(!columns.content.view().fit(1));
+        columns.content.segment_colors.push(0.0);
+        assert_eq!(
+            load_columns(&columns).map(|graph| graph.nodes_in_use()),
+            Ok(1)
+        );
+        // A progress bar with a text does not fit.
+        let mut columns = OwnedColumns::of([Some(&added(0.0, 0.0, |node| {
+            node.content = progressed(&[]).into();
+        }))]);
+        columns.content.text_valid.push(1);
+        columns.content.text_bounds.push(0);
+        assert!(!columns.content.view().fit(1));
+    }
+
+    #[test]
+    fn boundaries_of_segments_that_do_not_bound_them_or_bound_another_kind_s_are_malformed() {
+        // Verifies: ADR-0034
+        // A title, then a progress bar of two segments: their boundaries are [0, 0, 2].
+        let mut columns = OwnedColumns::of([Some(&added(0.0, 0.0, |node| {
+            node.content = progressed(&[(0.3, 0.0), (0.2, 0.0)]).into();
+        }))]);
+        // Boundaries that do not start at 0, fall, end short of the segments or past them, or
+        // are one too few; and segments of the title, which is no progress bar.
+        let unfit_bounds = [
+            vec![1, 1, 2],
+            vec![0, 2, 1],
+            vec![0, 0, 1],
+            vec![0, 0, 3],
+            vec![0, 0],
+            vec![0, 1, 2],
+        ];
+        for bounds in unfit_bounds {
+            columns.content.segment_bounds.clone_from(&bounds);
+            assert_eq!(load_columns(&columns).err(), Some(unfit()), "{bounds:?}");
+        }
+        columns.content.segment_bounds = vec![0, 0, 2];
+        assert!(columns.content.view().fit(1));
+    }
+
+    #[test]
+    fn a_progress_bar_s_segments_that_are_no_list_or_a_segment_that_is_no_object_are_refused_where_they_lie()
+     {
+        // Verifies: ADR-0034
+        let shape = |column, expected: &str| GraphDataProblem::InvalidContentShape {
+            index: 1,
+            id: Some("b".into()),
+            row: 1,
+            column: Some(column),
+            expected: expected.into(),
+        };
+        let at = |field, row, column| {
+            let mut columns = b_of(&[&[TITLE], &[TITLE, TITLE]]);
+            columns.refused = Some(Refused {
+                index: 1,
+                field,
+                row,
+                column,
+            });
+            load_columns(&columns).err()
+        };
+        assert_eq!(
+            at(NodeField::Segments, Some(1), Some(1)),
+            Some(shape(1, A_SEGMENT_LIST))
+        );
+        assert_eq!(
+            at(NodeField::Segment, Some(1), Some(0)),
+            Some(shape(0, AN_ELEMENT))
+        );
+        // A position that names no element of the columns is malformed.
+        for (field, row, column) in [
+            (NodeField::Segments, Some(1), None),
+            (NodeField::Segments, Some(0), Some(1)),
+            (NodeField::Segment, None, Some(0)),
+            (NodeField::Segment, Some(2), Some(0)),
+        ] {
+            assert_eq!(at(field, row, column), Some(unfit()), "{field:?}");
+        }
+        // Read as `addNode` and `updateNode` read content: the first shape named, segments that
+        // are no list read as none and a segment that is no object as one of NaN.
+        let mut content = ContentInput::new();
+        content.push(KindCode::Progress, 1.0, 0, f64::NAN, None, None);
+        content.unread(0, Some(0), Unflat::Segment);
+        content.push_segment(f64::NAN, f64::NAN);
+        content.unread(0, Some(0), Unflat::Segments);
+        content.end_row();
+        assert_eq!(
+            (content.shape, content.unread),
+            (Some((0, Some(0))), Unflat::Segment)
+        );
+        let node = added(0.0, 0.0, |node| node.content = content.into());
+        let mut graph = graph_of(&batch(&[("a", 0.0, 0.0)], &[])).unwrap();
+        assert_eq!(
+            add(&mut graph, &node).unwrap_err(),
+            GraphDataProblem::InvalidContentShape {
+                index: 0,
+                id: Some("n".into()),
+                row: 0,
+                column: Some(0),
+                expected: AN_ELEMENT.into(),
+            }
+        );
     }
 
     #[test]
@@ -3611,6 +3909,9 @@ pub(crate) mod tests {
                 weights: &vec![1.0; count as usize],
                 roles: &vec![RoleCode::Title as u8; count as usize],
                 colors: &vec![f64::NAN; count as usize],
+                segment_bounds: &vec![0; count as usize + 1],
+                fractions: &[],
+                segment_colors: &[],
                 texts: &[],
                 text_bounds: &text_bounds,
                 text_valid: &vec![1; count as usize],
@@ -3865,7 +4166,7 @@ pub(crate) mod tests {
                 Ok(Some((1, field)))
             );
         }
-        for code in [8, 255, u32::MAX] {
+        for code in [10, 255, u32::MAX] {
             assert_eq!(refused_of(Some(0), Some(code), None, None), Err(unfit()));
         }
     }
@@ -4177,6 +4478,9 @@ pub(crate) mod tests {
             c.weights.clone(),
             c.roles.clone(),
             c.colors.clone(),
+            c.segment_bounds.clone(),
+            c.fractions.clone(),
+            c.segment_colors.clone(),
             c.texts.clone(),
             c.text_bounds.clone(),
             c.text_valid.clone(),

@@ -12,8 +12,8 @@ type Same<A, B> =
 
 // The engine's `loadGraph` takes a load's nodes and edges as columns, strings in pieces and typed
 // arrays its glue copies whole, and no `GraphBatch` and no `EdgeList` (ADR-0034): its generated
-// parameters, pinned, the content columns of `text`, `action`, and `badge` among them and no
-// title or height column. A
+// parameters, pinned, the content columns of `text`, `action`, `badge`, and `progress` among
+// them and no title or height column. A
 // refused field crosses as the code of its `NodeField` or `EdgeField`, a plain number, and a shape
 // of content with its row and column.
 const columns: Same<
@@ -30,6 +30,9 @@ const columns: Same<
     weights: Float64Array,
     roles: Uint8Array,
     colors: Float64Array,
+    segmentBounds: Uint32Array,
+    fractions: Float64Array,
+    segmentColors: Float64Array,
     texts: string[],
     textBounds: Uint32Array,
     textValid: Uint8Array,
