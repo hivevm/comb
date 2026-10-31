@@ -43,6 +43,11 @@ body {
   font-size: 13px;
 }
 
+/* A field the selected node's type does not have, which the label's flex would show. */
+#sidebar label[hidden] {
+  display: none;
+}
+
 #sidebar label.inline {
   flex-direction: row;
   align-items: center;

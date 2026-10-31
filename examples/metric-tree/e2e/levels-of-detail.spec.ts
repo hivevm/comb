@@ -27,6 +27,7 @@ test("zooming through each threshold switches the level of detail", async ({ pag
   const near = await at(nearFrom);
   expect(near.level).toBe("near");
   expect(near.labels).toBeGreaterThan(0);
+  expect(near.nodeTexts).toBeGreaterThan(near.nodes);
   expect(near.texts).toBe(near.nodeTexts + near.labels);
   const middle = await at(below(nearFrom));
   expect(middle).toMatchObject({ level: "middle", labels: 0, particles: 0 });

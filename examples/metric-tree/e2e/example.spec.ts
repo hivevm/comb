@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { HEIGHTS } from "../src/graph";
-import { clickWorld, open, POLICY, screenCentre, setViewport } from "./shared";
+import { clickWorld, NODE_HEIGHT, open, POLICY, screenCentre, setViewport } from "./shared";
 
 /** Node `id` as the canvas draws it at the near level, with the viewport moved so that its
  *  top-left corner lies at (100, 100) on the canvas at scale 1. */
@@ -171,19 +171,22 @@ test("each type of node shows the elements of its type, as inspection reports th
   for (const [id, drawn] of Object.entries(TYPES)) {
     expect({ id, ...(await nearNode(page, id)) }).toEqual({ id, ...drawn });
   }
-  // Each node's middle lies where a node of one title had it, so that the edges meet the nodes
-  // where the reference image of edge-styles.spec.ts draws them: every edge ends at a node's
-  // middle height.
-  const misses = await page.evaluate(() => {
-    const { nodes, edges } = window.inspect();
-    const middle = new Map(nodes.map((node) => [node.id, node.y + node.height / 2]));
-    return edges.filter(
-      ({ id, source, target }) =>
-        source.y !== middle.get(id.split("-")[0]!) ||
-        target.y !== middle.get(`${id.split(":")[0]}:${id.split("-")[1]}`),
-    );
+  // Each node's middle lies where a node of one title had it, the middle of its row, so that the
+  // edges meet the nodes where the reference image of edge-styles.spec.ts draws them: the rows of
+  // a column 110 apart and centred on y = 0, each a node of one title high.
+  const middles = await page.evaluate(async () => {
+    window.comb.fitView();
+    await window.comb.whenRendered();
+    return window.inspect().nodes.map(({ id, y, height }) => [id, y + height / 2] as const);
   });
-  expect(misses).toEqual([]);
+  const rows = [2, 5, 4, 1, 3];
+  const expected = rows.flatMap((count, column) =>
+    Array.from({ length: count }, (_, row) => [
+      `0:${column}.${row}`,
+      (row - (count - 1) / 2) * 110 + NODE_HEIGHT / 2,
+    ]),
+  );
+  expect(new Map(middles)).toEqual(new Map(expected as [string, number][]));
 });
 
 test("a bet's status changed in the sidebar shows on its badge", async ({ page }) => {
@@ -275,4 +278,24 @@ test("the sidebar edits a node from its own content once another caller replaced
     ],
     pills: [0x15803d],
   });
+});
+
+test("the sidebar drops a selected node's type fields once another caller replaces its content", async ({
+  page,
+}) => {
+  // Verifies: G-9
+  await open(page);
+  const bet = await screenCentre(page, "0:0.0");
+  await page.mouse.click(bet.x, bet.y);
+  await expect(page.locator("#status-field")).toBeVisible();
+  await expect(page.locator("#hypothesis-field")).toBeVisible();
+  await page.evaluate(() =>
+    window.comb.updateNode("0:0.0", {
+      content: [[{ kind: "text", role: "title", text: "Replaced" }]],
+    }),
+  );
+  await expect(page.locator("#status-field")).toBeHidden();
+  await expect(page.locator("#hypothesis-field")).toBeHidden();
+  await expect(page.locator("#node-type")).toHaveText("");
+  await expect(page.locator("#title")).toHaveValue("Replaced");
 });

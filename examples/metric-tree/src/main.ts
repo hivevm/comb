@@ -320,13 +320,18 @@ function edit(patch: Partial<Fields>): void {
   const of = selected === null ? undefined : fields.get(selected);
   if (!of || selected === null) return;
   const next = { ...of, ...patch } as Fields;
-  fields.set(selected, next);
   editing = selected;
   try {
     comb.updateNode(selected, { content: contentOf(next) });
   } finally {
     editing = null;
   }
+  fields.set(selected, next);
+}
+
+/** Whether `name` is one of `statuses`. */
+function isStatusOf<T extends object>(statuses: T, name: string): name is Extract<keyof T, string> {
+  return Object.hasOwn(statuses, name);
 }
 
 /** Changes the period at `index` of the selected node by `patch`. */
@@ -382,8 +387,11 @@ const MIRROR: { [K in GraphChange["kind"]]: (change: Extract<GraphChange, { kind
       const node = nodeOf(id);
       if (node) Object.assign(node, patch);
       // Content another caller of `updateNode` gave the node no longer follows from its fields:
-      // the sidebar edits its title alone from then on, as of a node loaded through `useGraph`.
-      if (id !== editing) fields.delete(id);
+      // the sidebar edits its title alone from then on, as of a node loaded through `useGraph`,
+      // and shows that at once where the node is selected.
+      if (id === editing) return;
+      fields.delete(id);
+      if (node && id === selected) showNode(node.content, undefined);
     },
     nodeMoved: ({ id, x, y }) => {
       const node = nodeOf(id);
@@ -417,14 +425,14 @@ function labelFor(text: string): EdgeData["label"] | null {
 }
 
 /** The types the palette offers. */
-const PALETTE: readonly string[] = ["bet", "epic", "input-metric", "kpi"];
+const PALETTE: readonly NodeType[] = ["bet", "epic", "input-metric", "kpi"];
 let dropped = 0;
 
 /** Adds a node of the palette's `kind`, a type of node, centred by its type's height on the world
  *  point under the drop at (`clientX`, `clientY`) of the page (G-1). */
 function drop(kind: string, clientX: number, clientY: number): void {
-  if (!PALETTE.includes(kind)) return;
-  const type = kind as NodeType;
+  const type = PALETTE.find((each) => each === kind);
+  if (!type) return;
   const { x, y } = comb.worldPointAt(clientX, clientY);
   dropped += 1;
   const id = `${kind}-${dropped}`;
@@ -481,7 +489,11 @@ progress.addEventListener("input", () => {
   const value = Math.round(Number(progress.value));
   if (Number.isFinite(value)) edit({ progress: Math.min(100, Math.max(0, value)) });
 });
-status.addEventListener("change", () => edit({ status: status.value } as Partial<Fields>));
+status.addEventListener("change", () => {
+  const [name, of] = [status.value, selected === null ? undefined : fields.get(selected)];
+  if (of?.type === "bet" && isStatusOf(STATUSES.bet, name)) edit({ status: name });
+  if (of?.type === "epic" && isStatusOf(STATUSES.epic, name)) edit({ status: name });
+});
 edgeColor.addEventListener("input", () =>
   changeEdge({ color: Number.parseInt(edgeColor.value.slice(1), 16) }),
 );
