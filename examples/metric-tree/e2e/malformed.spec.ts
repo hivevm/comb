@@ -1200,12 +1200,10 @@ test("load draws identifiers of 256 characters", async ({ page }) => {
   expect(drawnNow.edges.map((id) => id.length)).toEqual([256]);
 });
 
-/** In the page: loads a million edges between two nodes whose identifiers hold `length` code
- *  units each, then, before a frame draws them, a graph of one node; reports the problem and the
- *  time of the first load, and what the canvas drew. */
-/** Loads node "kept", then nodes "a" and "b" with a million edges between them whose identifiers
- *  are `length` code units long, and reports the problem refused, how long the load took, how
- *  often the bridge's `loadGraph` was called for it, and the titles drawn after it. */
+/** In the page: loads node "kept", then nodes "a" and "b" with a million edges between them whose
+ *  identifiers hold `length` code units each, and reports the problem refused, how long the load
+ *  took, how often the bridge's `loadGraph` was called for it, and the titles drawn after it; then
+ *  loads a graph of one node, so that the next test's page draws no million edges. */
 async function budgeted(length: number) {
   const nodeAt = (id: string, x: number) => window.node(id, x);
   window.comb.load({ nodes: [nodeAt("kept", 0)], edges: [] });

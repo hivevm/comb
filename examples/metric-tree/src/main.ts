@@ -13,6 +13,7 @@ import {
 } from "comb";
 import engineUrl from "comb/engine.wasm?url";
 import {
+  bridgeCalls,
   edgeVertices,
   hitKind,
   inspect,
@@ -23,7 +24,6 @@ import {
   showLayers,
   testMode,
   trapNextCall,
-  bridgeCalls,
   viewport,
   visibleRect,
   work,
