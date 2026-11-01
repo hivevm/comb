@@ -158,7 +158,7 @@ export interface GraphView {
   readonly connection: Connection | null;
   readonly viewport: Readonly<Viewport>;
   /** Counts the changes of the engine's positions that a query the scene keeps does not survive:
-   *  a load, an added node, the release of a drag (ADR-0037, ADR-0036). */
+   *  a load, the release of a drag, a move of a label drag (ADR-0041, ADR-0040). */
   readonly positionsVersion: number;
   /** The node slots a drag moves, from its first move to its release, or none; a load, or a
    *  removal of one of them, leaves none (ADR-0036). */
@@ -429,9 +429,9 @@ export function createGraphStore() {
           nodes,
           slots: new Map(state.slots).set(id, slot),
           idUnits: state.idUnits + nodeUnits({ id }),
+          // Its slot in `nodes` is the signal of the new node, which a kept query at the far level
+          // survives (ADR-0040, ADR-0041); no counter moves.
           change: { kind: "nodeAdded", by: "host", id },
-          // The engine's positions buffer holds the new slot.
-          positionsVersion: state.positionsVersion + 1,
         };
       }),
     updateNode: (id, content) => set((state) => updatedFrom(state, id, content)),

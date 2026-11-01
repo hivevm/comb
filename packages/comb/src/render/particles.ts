@@ -82,6 +82,13 @@ export class NodeParticles extends ParticleContainer {
     this.update();
   }
 
+  /** Whether the last sync drew a particle of the node in `slot`. */
+  holds(slot: number): boolean {
+    const count = this.particleChildren.length;
+    for (let i = 0; i < count; i++) if (this.slots[i] === slot) return true;
+    return false;
+  }
+
   /** How many particles the pool has made; it makes one only for a slot beyond its size. */
   get created(): number {
     return this.madeCount;

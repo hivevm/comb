@@ -159,13 +159,18 @@ class MeshBuffers {
     this.indices = indices;
   }
 
-  /** Leaves the triangles of `ranges` of the indices out, as empty triangles, and marks the index
-   *  buffer alone for upload. */
+  /** Leaves the triangles of `ranges` of the indices out, as empty triangles, and marks the one
+   *  span of the index buffer that covers them for upload, nothing else (ADR-0040). */
   hide(ranges: readonly [number, number][]): void {
     if (ranges.length === 0) return;
     const array = this.arrays.indices;
-    for (const [start, end] of ranges) array.fill(0, start, end);
-    this.geometry.indexBuffer.setDataWithSize(array, this.indices, true);
+    let [first, last] = [Infinity, 0];
+    for (const [start, end] of ranges) {
+      array.fill(0, start, end);
+      [first, last] = [Math.min(first, start), Math.max(last, end)];
+    }
+    const bytes = array.BYTES_PER_ELEMENT;
+    this.geometry.indexBuffer.update((last - first) * bytes, first * bytes);
   }
 }
 

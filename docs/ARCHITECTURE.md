@@ -322,9 +322,11 @@ The functional core and its shell follow
 - **Render** (`packages/comb/src/render`) — the PixiJS scene (`scene.ts`), which imports nothing
   from interaction: a `world` render group with the layers `EdgesContainer` (`edges.ts`),
   `NodeParticles` (`particles.ts`), `NodesContainer` (`nodes.ts`), `LabelsContainer` (`labels.ts`),
-  and `ConnectorsLayer` (`connectors.ts`), the moving layer of a drag, a second `EdgesContainer`
-  directly above the edges and a second `NodeParticles` directly above the particles
-  ([ADR-0036](adr/0036-a-drag-redraws-what-it-moved.md)), with the connectors of the node under the
+  and `ConnectorsLayer` (`connectors.ts`), the moving layer of a drag and of edits at the far
+  level, a second `EdgesContainer` directly above the edges and a second `NodeParticles` directly
+  above the particles
+  ([ADR-0040](adr/0040-a-drag-or-an-edit-redraws-what-it-changed.md)), whose edits `edits.ts`
+  reads from the store's arrays against the kept query's, with the connectors of the node under the
   pointer and, while the user connects, of the source and the node under the pointer, and an
   `overlay` with the line of the connection being dragged, to the pointer `api` hands each render
   from interaction ([ADR-0027](adr/0027-nodes-bound-by-rank.md)); `bindings.ts`
@@ -518,7 +520,11 @@ leaves the dragged node's edges out of the query's mesh, uploading its indices a
 far level its particle; every frame asks the engine for the mesh of the edges at the node
 (`meshAt`), uploads it whole into the moving layer above the edges, and moves the node's view, or
 draws its particle in the moving layer, and its edges' labels where they are now, so edges and
-labels follow the node in the same frame. The release queries once.
+labels follow the node in the same frame. The release queries once. At the far level an edit of
+up to 256 slots keeps the query too (ADR-0040): the scene reads from the store's arrays which
+slots were added or removed, draws the added nodes' particles and edges in the moving layer,
+hides the removed ones in the query's mesh by the span of their indices, and queries anew past
+the bound, for a slot filled in both by another object, or for a removal that ends a drag.
 
 **Editing.** A method of `Comb` that changes the graph runs through one function of
 `api/editors.ts`, which holds the order: it refuses once the engine is lost, reads the input once,

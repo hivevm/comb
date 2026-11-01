@@ -326,9 +326,9 @@ export interface Bridge {
    *  `slots` holds no node or of `also` no edge, and a `NumberError` `invalidPixel` as `query`
    *  does. */
   meshAt(slots: Uint32Array, also: Uint32Array, rect: Rect, level: Level, pixel: number): Moving;
-  /** The edges the last query found, with their ends as they lie now, which after a move and
-   *  before the next query are already moved: for inspection, not for drawing. Fresh views; do
-   *  not keep them across calls. */
+  /** The edges the last query found and those the last `meshAt` meshed, each once, with their
+   *  ends as they lie now, which after a move and before the next query are already moved: for
+   *  inspection, not for drawing (ADR-0040). Fresh views; do not keep them across calls. */
   drawnEdges(): DrawnEdges;
   /** What a press at the world point `(x, y)` hits where a screen pixel is `pixel` world units,
    *  at `level`: where `connectors` asks for them, at the near and middle level, a connector
@@ -691,7 +691,7 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
     drawnEdges() {
       engine.drawnEdges();
       return {
-        slots: u32(engine.visibleEdgesPtr(), engine.visibleEdgesLen()),
+        slots: u32(engine.drawnEdgesPtr(), engine.drawnEdgesLen()),
         ends: f32(engine.edgeEndsPtr(), engine.edgeEndsLen()),
       };
     },
