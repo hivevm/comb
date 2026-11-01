@@ -443,15 +443,20 @@ test("a drag zoomed from the far level to the middle draws its node once, by its
   expect(middle.nodes.every(({ texts }) => texts !== undefined)).toBe(true);
 });
 
+/** Opens the example at `copies`, at the far level: the fitted view of a large graph, a scale
+ *  below far's threshold of a small one. */
+async function openAtFar(page: Page, copies: number) {
+  await open(page, `?copies=${copies}`);
+  if (copies >= 1000) return;
+  const { width, height } = await canvasSize(page);
+  await setViewport(page, { x: width / 2, y: height / 2, scale: 0.2 });
+}
+
 /** An edit a frame at the far level of `copies`: a node added, an edge from a drawn node to it, an
  *  edge the kept query drew removed, and the added node removed; what each frame queried and
  *  uploaded, and whether the canvas showed each edit. */
 async function editFrames(page: Page, copies: number) {
-  await open(page, `?copies=${copies}`);
-  if (copies < 1000) {
-    const { width, height } = await canvasSize(page);
-    await setViewport(page, { x: width / 2, y: height / 2, scale: 0.2 });
-  }
+  await openAtFar(page, copies);
   return page.evaluate(async () => {
     const { comb } = window;
     await comb.whenRendered();
@@ -461,10 +466,19 @@ async function editFrames(page: Page, copies: number) {
     const source = kept.source;
     const before = { work: window.work(), queries: window.inspect().queries };
     const shown: boolean[] = [];
-    const step = async (edit: () => void, check: () => boolean) => {
+    // Shown as `isDrawn` and `inspect()` both report it.
+    const inspected = (what: { node: string } | { edge: string }) => {
+      const snapshot = window.inspect();
+      const listed =
+        "node" in what
+          ? snapshot.nodes.some(({ id }) => id === what.node)
+          : snapshot.edges.some(({ id }) => id === what.edge);
+      return listed === window.isDrawn(what) ? listed : null;
+    };
+    const step = async (edit: () => void, check: () => boolean | null) => {
       edit();
       await comb.whenRendered();
-      shown.push(check());
+      shown.push(check() === true);
     };
     const node = {
       id: "edit-node",
@@ -473,21 +487,22 @@ async function editFrames(page: Page, copies: number) {
       width: 160,
       content: [[{ kind: "text" as const, role: "title" as const, text: "e" }]],
     };
+    const not = (value: boolean | null) => (value === null ? null : !value);
     await step(
       () => comb.addNode(node),
-      () => window.isDrawn({ node: "edit-node" }),
+      () => inspected({ node: "edit-node" }),
     );
     await step(
       () => comb.addEdge({ id: "edit-edge", source, target: "edit-node" }),
-      () => window.isDrawn({ edge: "edit-edge" }),
+      () => inspected({ edge: "edit-edge" }),
     );
     await step(
       () => comb.removeEdges([kept.id]),
-      () => !window.isDrawn({ edge: kept.id }),
+      () => not(inspected({ edge: kept.id })),
     );
     await step(
       () => comb.removeNodes(["edit-node"]),
-      () => !window.isDrawn({ node: "edit-node" }),
+      () => not(inspected({ node: "edit-node" })),
     );
     const after = { work: window.work(), queries: window.inspect().queries };
     return {
@@ -521,6 +536,7 @@ test("edits past the bound, or a removal of a node a drag moves, query anew", as
   await open(page);
   const { width, height } = await canvasSize(page);
   await setViewport(page, { x: width / 2, y: height / 2, scale: 0.2 });
+  expect(await page.evaluate(() => window.inspect().level)).toBe("far");
   const queried = await page.evaluate(async () => {
     const { comb } = window;
     await comb.whenRendered();

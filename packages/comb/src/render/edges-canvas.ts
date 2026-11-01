@@ -49,7 +49,7 @@ export class EdgeFill extends Container {
     this.fill();
   }
 
-  /** Fills the mesh the last sync drew again without the edges in `hidden` (ADR-0036). */
+  /** Fills the mesh the last sync drew again without the edges in `hidden` (ADR-0040). */
   hide(hidden: ReadonlySet<number>): void {
     const { indices, edges, starts } = this.kept;
     const ranges = hiddenRanges(edges, starts, indices.length, hidden);

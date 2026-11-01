@@ -190,12 +190,16 @@ export class Scene {
   /** What the moving layer leaves out of the query it keeps, by the query's count: the edges and
    *  the particles hidden so far; none while it draws nothing (ADR-0040). */
   private hidden: { queries: number; edges: Set<number>; particles: Set<number> } | null = null;
-  /** The edits since the kept query, and the arrays they were read from (ADR-0040). */
-  private edits: Edits = NO_EDITS;
+  /** The edits since the kept query, null where it does not survive them, and the arrays they were
+   *  read from (ADR-0040). */
+  private edits: Edits | null = NO_EDITS;
   private editedFrom: Pick<GraphView, "nodes" | "edges"> | null = null;
   /** The edge slots the moving layer draws, and what its mesh was made for. */
   private movingEdgeSlots = NONE;
   private movingFor: unknown[] = [];
+  /** The slots the last render's drag moved, and whether this render queried. */
+  private draggedAt: readonly number[] = [];
+  private queried = false;
   /** The store's arrays at the last render, which inspection reads (ADR-0040). */
   private current: Pick<GraphView, "nodes" | "edges"> = { nodes: [], edges: [] };
   /** The detail of the moving layer's mesh, which joins the query's in inspection. */
@@ -229,9 +233,11 @@ export class Scene {
     bridge: Bridge,
     pointer: { readonly x: number; readonly y: number },
   ): void {
+    this.queried = false;
+    this.readEdits(state);
     if (!this.covers(state)) this.query(state, bridge);
     this.current = { nodes: state.nodes, edges: state.edges };
-    if (state.dragged || edited(this.edits)) this.moving(state, bridge);
+    if (state.dragged || edited(this.edits ?? NO_EDITS)) this.moving(state, bridge);
     else if (this.hidden) this.dropped(state);
     // Both views of one call, since a call into the engine may detach the views of the last.
     const { positions, sizes } = bridge.nodeBuffers();
@@ -264,7 +270,7 @@ export class Scene {
     const { scale } = state.viewport;
     return (
       drawn.positionsVersion === state.positionsVersion &&
-      this.keepsEdits(drawn, state) &&
+      this.edits !== null &&
       drawn.selection === state.selection &&
       drawn.level === levelAt(scale) &&
       scale <= drawn.scale * RESCALE &&
@@ -274,30 +280,24 @@ export class Scene {
     );
   }
 
-  /** Whether the edits since the query drawn, read from the store's arrays when either is a new
-   *  one, are those the kept query survives (ADR-0040): none, or at the far level at most
-   *  `EDIT_BOUND` slots added or removed, none of them a node a drag moved. */
-  private keepsEdits(drawn: Drawn, state: GraphView): boolean {
+  /** Reads the edits since the query drawn from the store's arrays when either is a new one
+   *  (ADR-0040): none where they are the query's, the edits at the far level where the kept query
+   *  survives them, and null where it does not, past `EDIT_BOUND`, at another level, or once a
+   *  drag ended with no release, by a removal of what it moved. */
+  private readEdits(state: GraphView): void {
+    const { drawn } = this;
     const now = { nodes: state.nodes, edges: state.edges };
-    if (drawn.nodes === now.nodes && drawn.edges === now.edges) {
-      this.edits = NO_EDITS;
-      return true;
+    if (!drawn || (drawn.nodes === now.nodes && drawn.edges === now.edges)) {
+      [this.edits, this.editedFrom] = [NO_EDITS, null];
+    } else {
+      const from = this.editedFrom;
+      if (!from || from.nodes !== now.nodes || from.edges !== now.edges) {
+        this.editedFrom = now;
+        this.edits = drawn.level === "far" ? editsSince(drawn, now) : null;
+      }
     }
-    if (drawn.level !== "far") return false;
-    const from = this.editedFrom;
-    if (!from || from.nodes !== now.nodes || from.edges !== now.edges) {
-      const edits = editsSince(drawn, now);
-      this.editedFrom = now;
-      // A removal that ends a drag queries anew.
-      const dragged = this.hidden ? new Set(this.draggedAt) : new Set<number>();
-      if (!edits || edits.removedNodes.some((slot) => dragged.has(slot))) return false;
-      this.edits = edits;
-    }
-    return true;
+    if (this.draggedAt.length > 0 && !state.dragged) this.edits = null;
   }
-
-  /** The slots the last render's drag moved. */
-  private draggedAt: readonly number[] = [];
 
   /** Draws a frame of what moved or was edited against the query the scene keeps (ADR-0040): the
    *  edges at the dragged nodes and the added edges meshed into the moving layer when the drag
@@ -310,7 +310,7 @@ export class Scene {
     if (!drawn) return;
     const dragged = state.dragged ?? [];
     this.draggedAt = dragged;
-    const { addedEdges, removedEdges, addedNodes, removedNodes } = this.edits;
+    const { addedEdges, removedEdges, addedNodes, removedNodes } = this.edits ?? NO_EDITS;
     const key = [this.queries, state.movesVersion, state.nodes, state.edges, dragged];
     if (key.some((part, i) => part !== this.movingFor[i])) {
       const slots = Uint32Array.from(dragged);
@@ -339,23 +339,25 @@ export class Scene {
   }
 
   /** Hides in what the kept query drew the edges of `edges` and, at the far level, the particles of
-   *  `particles` it does not hide yet: the edges by the one span of indices they cover, the
-   *  particles all uploaded once a time the set grows. */
+   *  `particles` it does not hide yet, each slot looked at once a query: the edges by the one span
+   *  of indices they cover, the particles all uploaded once a time the set grows by one drawn. */
   private hideNew(far: boolean, edges: number[], particles: readonly number[]): void {
     const hidden = this.hidden!;
     const newEdges = edges.filter((slot) => !hidden.edges.has(slot));
     if (newEdges.length > 0) {
       for (const slot of newEdges) hidden.edges.add(slot);
-      this.edges.hide(new Set(newEdges));
+      // A query this render left its whole index buffer to upload, which a span would cut short.
+      if (this.edges instanceof EdgesContainer) this.edges.hide(new Set(newEdges), this.queried);
+      else this.edges.hide(new Set(newEdges));
     }
     if (!far) return;
-    // Only what the query drew: a node it never drew, one an edit added, uploads nothing to hide.
-    const newParticles = particles.filter(
-      (slot) => !hidden.particles.has(slot) && this.particles.holds(slot),
-    );
+    const newParticles = particles.filter((slot) => !hidden.particles.has(slot));
     if (newParticles.length === 0) return;
     for (const slot of newParticles) hidden.particles.add(slot);
-    this.particles.hide(hidden.particles);
+    // Only what the query drew uploads: a node it never drew, one an edit added, needs no hiding.
+    if (newParticles.some((slot) => this.particles.holds(slot))) {
+      this.particles.hide(hidden.particles);
+    }
   }
 
   /** Ends the drawing of a drag or edits whose query is gone: the moving layer emptied. */
@@ -395,6 +397,7 @@ export class Scene {
     this.drawn = { rect, scale, level, nodes, edges, selection, positionsVersion };
     this.edits = NO_EDITS;
     this.editedFrom = null;
+    this.queried = true;
   }
 
   /** Whether the edge in `slot`, which the last query found or the moving layer meshed, is drawn

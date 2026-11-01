@@ -236,3 +236,35 @@ test("a drag whose engine is lost before the release tells no change, and throws
   expect(await told(page)).toEqual([]);
   expect(errors).toEqual([]);
 });
+
+test("a query during a drag uploads the whole new mesh, its indices all, not the span it hides", async ({
+  page,
+}) => {
+  // Verifies: ADR-0040 — WebGL uploads at the draw by the range marked last, so a render that
+  // queries and then hides must mark the whole index buffer, not the hidden span.
+  await open(page);
+  const from = await screenCentre(page, "0:3.0");
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.evaluate(() => window.comb.whenRendered());
+  await page.mouse.move(from.x, from.y + 20);
+  await page.evaluate(() => window.comb.whenRendered());
+  // A zoom past the rescale while the drag holds: that render queries, then hides.
+  const render = await page.evaluate(async () => {
+    const before = { work: window.work(), queries: window.inspect().queries };
+    const { x, y, scale } = window.comb.viewport();
+    window.comb.setViewport({ x: x * 1.4, y: y * 1.4, scale: scale * 1.4 });
+    await window.comb.whenRendered();
+    const after = window.inspect();
+    return {
+      queried: after.queries - before.queries,
+      meshBytes: window.work().meshBytesUploaded - before.work.meshBytesUploaded,
+      mesh: after.edgeMesh,
+    };
+  });
+  await page.mouse.up();
+  expect(render.queried).toBe(1);
+  // Positions, distances, colours, and dashes of each vertex, 24 bytes, and every index, 4.
+  const { vertices, indices } = render.mesh;
+  expect(render.meshBytes).toBeGreaterThanOrEqual(vertices * 24 + indices * 4);
+});

@@ -58,5 +58,8 @@ export function editsSince(kept: Arrays, now: Arrays, bound = EDIT_BOUND): Edits
 
 /** Whether `edits` added or removed anything. */
 export const edited = (edits: Edits) =>
-  edits.addedNodes.length + edits.removedNodes.length + edits.addedEdges.length > 0 ||
-  edits.removedEdges.length > 0;
+  edits.addedNodes.length +
+    edits.removedNodes.length +
+    edits.addedEdges.length +
+    edits.removedEdges.length >
+  0;

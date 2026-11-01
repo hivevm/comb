@@ -214,7 +214,7 @@ pub struct Mesh {
 }
 
 impl Mesh {
-    pub(crate) fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.positions.clear();
         self.distances.clear();
         self.colors.clear();

@@ -956,6 +956,9 @@ impl Engine {
         let rect = Rect::new(rect.min_x, rect.min_y, rect.max_x, rect.max_y);
         self.graph
             .query(&rect, level.into(), pixel, label_reach, &mut self.visible);
+        // A query ends the moving layer it was meshed against, until the next `meshAt`.
+        self.moving_edges.clear();
+        self.moving.clear();
         self.lay_out_found(level);
         Ok(self.visible.mesh.detail.into())
     }

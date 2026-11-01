@@ -160,14 +160,20 @@ class MeshBuffers {
   }
 
   /** Leaves the triangles of `ranges` of the indices out, as empty triangles, and marks the one
-   *  span of the index buffer that covers them for upload, nothing else (ADR-0040). */
-  hide(ranges: readonly [number, number][]): void {
+   *  span of the index buffer that covers them for upload, nothing else (ADR-0040); the whole of it
+   *  where `whole`, since WebGL uploads at the draw by the last range marked, and a `set` of this
+   *  render marked all of it. */
+  hide(ranges: readonly [number, number][], whole = false): void {
     if (ranges.length === 0) return;
     const array = this.arrays.indices;
     let [first, last] = [Infinity, 0];
     for (const [start, end] of ranges) {
       array.fill(0, start, end);
       [first, last] = [Math.min(first, start), Math.max(last, end)];
+    }
+    if (whole) {
+      this.geometry.indexBuffer.setDataWithSize(array, this.indices, true);
+      return;
     }
     const bytes = array.BYTES_PER_ELEMENT;
     this.geometry.indexBuffer.update((last - first) * bytes, first * bytes);
@@ -214,11 +220,11 @@ export class EdgesContainer extends Container {
     };
   }
 
-  /** Leaves the edges in `hidden` out of the mesh the last sync drew, uploading its indices alone
-   *  (ADR-0036). */
-  hide(hidden: ReadonlySet<number>): void {
+  /** Leaves the edges in `hidden` out of the mesh the last sync drew, uploading the span of indices
+   *  they cover, or all of them where `whole` (ADR-0040). */
+  hide(hidden: ReadonlySet<number>, whole = false): void {
     const { edges, starts } = this.found;
-    this.buffers.hide(hiddenRanges(edges, starts, this.buffers.indices, hidden));
+    this.buffers.hide(hiddenRanges(edges, starts, this.buffers.indices, hidden), whole);
   }
 
   /** What the mesh drew last, and the room its arrays hold before they reallocate. */
