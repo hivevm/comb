@@ -272,7 +272,7 @@ export class Scene {
     const { drawn } = this;
     if (!drawn) return;
     const slots = Uint32Array.from(dragged);
-    const moving = bridge.meshAt(slots, drawn.rect, drawn.level, 1 / drawn.scale);
+    const moving = bridge.meshAt(slots, NONE, drawn.rect, drawn.level, 1 / drawn.scale);
     // Copied before the next call into the engine, which may detach the views.
     const edges = Uint32Array.from(moving.edges);
     this.movingEdges.sync(moving);

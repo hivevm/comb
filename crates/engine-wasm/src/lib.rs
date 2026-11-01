@@ -789,16 +789,19 @@ impl Engine {
         self.query_rect(&rect, level, pixel, label_reach)
     }
 
-    /// Meshes every edge at the node slots `slots`, found by the last query or not, in ascending
-    /// slot order, as the last query meshed the edges it found, in `rect` at `level` where a screen
-    /// pixel is `pixel` world units, relative to the last query's origin, within the mesh budget,
-    /// and returns the mesh's detail: what a drag redraws in its moving layer each frame
-    /// (ADR-0036). The edges and their mesh are read through the `moving…` buffers. A slot that
-    /// holds no node throws a `SlotError`, and a pixel is checked as `query` checks it.
+    /// Meshes every edge at the node slots `slots` and of the edge slots `also`, found by the last
+    /// query or not, each once, in ascending slot order, as the last query meshed the edges it
+    /// found, in `rect` at `level` where a screen pixel is `pixel` world units, relative to the
+    /// last query's origin, within the mesh budget, and returns the mesh's detail: what a drag
+    /// redraws of the nodes it moves and an edit of what it added, in the moving layer each frame
+    /// (ADR-0036, ADR-0040). The edges and their mesh are read through `movingEdges…`, `meshPtr`,
+    /// and `meshLen`. A slot of `slots` that holds no node or of `also` that holds no edge throws a
+    /// `SlotError`, and a pixel is checked as `query` checks it.
     #[wasm_bindgen(js_name = meshAt)]
     pub fn mesh_at(
         &mut self,
         slots: &[u32],
+        also: &[u32],
         rect: Ts<RectInput>,
         level: DetailLevel,
         pixel: f64,
@@ -812,7 +815,7 @@ impl Engine {
             origin: self.visible.origin,
         };
         self.graph
-            .mesh_at(slots, &at, &mut self.moving_edges, &mut self.moving)?;
+            .mesh_at(slots, also, &at, &mut self.moving_edges, &mut self.moving)?;
         Ok(self.moving.detail.into())
     }
 

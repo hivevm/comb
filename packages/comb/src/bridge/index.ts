@@ -318,12 +318,14 @@ export interface Bridge {
    *  not keep them across calls. Throws a `NumberError` `invalidPixel` for a pixel that is not a
    *  finite number above zero (ADR-0031). */
   query(rect: Rect, level: Level, pixel: number, labelReach: number): Visible;
-  /** The edges at the node slots `slots`, found by the last query or not, and their mesh, stroked
-   *  as `query` strokes the edges it finds in `rect` at `level` where a screen pixel is `pixel`
-   *  world units, relative to the last query's origin: what a drag redraws each frame
-   *  (ADR-0036). Fresh views; do not keep them across calls. Throws a `SlotError` where a slot
-   *  holds no node, and a `NumberError` `invalidPixel` as `query` does. */
-  meshAt(slots: Uint32Array, rect: Rect, level: Level, pixel: number): Moving;
+  /** The edges at the node slots `slots` and of the edge slots `also`, found by the last query or
+   *  not, each once, and their mesh, stroked as `query` strokes the edges it finds in `rect` at
+   *  `level` where a screen pixel is `pixel` world units, relative to the last query's origin:
+   *  what a drag redraws of the nodes it moves and an edit of what it added, each frame (ADR-0036,
+   *  ADR-0040). Fresh views; do not keep them across calls. Throws a `SlotError` where a slot of
+   *  `slots` holds no node or of `also` no edge, and a `NumberError` `invalidPixel` as `query`
+   *  does. */
+  meshAt(slots: Uint32Array, also: Uint32Array, rect: Rect, level: Level, pixel: number): Moving;
   /** The edges the last query found, with their ends as they lie now, which after a move and
    *  before the next query are already moved: for inspection, not for drawing. Fresh views; do
    *  not keep them across calls. */
@@ -695,22 +697,24 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
     },
     query: (rect, level, pixel, labelReach) =>
       queried(engine, memory, rect, level, pixel, labelReach),
-    meshAt: (slots, rect, level, pixel) => moving(engine, memory, slots, rect, level, pixel),
+    meshAt: (slots, also, rect, level, pixel) =>
+      moving(engine, memory, slots, also, rect, level, pixel),
   };
 }
 
-/** The edges at the node slots `slots` and their mesh, as `meshAt` of `engine` writes them, read
- *  through fresh views on `memory` (ADR-0036). */
+/** The edges at the node slots `slots` and of the edge slots `also`, and their mesh, as `meshAt`
+ *  of `engine` writes them, read through fresh views on `memory` (ADR-0036, ADR-0040). */
 function moving(
   engine: Engine,
   memory: WebAssembly.Memory,
   slots: Uint32Array,
+  also: Uint32Array,
   rect: Rect,
   level: Level,
   pixel: number,
 ): Moving {
   const views = viewsOn(memory);
-  const detail = DETAILS[engine.meshAt(slots, rect, LEVELS[level], pixel)];
+  const detail = DETAILS[engine.meshAt(slots, also, rect, LEVELS[level], pixel)];
   return {
     edges: views.u32(engine.movingEdgesPtr(), engine.movingEdgesLen()),
     mesh: meshOf(engine, views, true),
