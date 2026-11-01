@@ -55,6 +55,9 @@ to invent.
   nodes with their whole content and edge labels, middle nodes with their titles, far nodes as
   plain boxes and edges as thin lines, without text.
 - **Mesh budget** — the most vertices the edge mesh of one query may hold.
+- **Moving layer** — what a drag draws above the edges and the particles each frame: the edges at
+  the nodes it moves, and at the far level their particles, while the scene keeps the query of its
+  press.
 - **Node** — a box on the canvas that stands for one element of the host application's graph.
   _Avoid:_ vertex, block.
 - **Node content** — the host application's description of what a node shows, as a list of

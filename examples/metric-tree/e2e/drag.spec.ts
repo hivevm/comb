@@ -111,7 +111,7 @@ async function drawnFrame(page: Page, id: string) {
 test("a node dragged across frames stays under the pointer, its edges' ends at its connectors in the same frame", async ({
   page,
 }) => {
-  // Verifies: G-2
+  // Verifies: G-2, ADR-0036 — the dragged edges, in the moving layer, follow in the same frame.
   await open(page);
   const northStar = "0:3.0";
   const origin = await canvasOrigin(page);
@@ -130,7 +130,7 @@ test("a node dragged across frames stays under the pointer, its edges' ends at i
     const pointer = { x: from.x, y: from.y + i * step };
     const renders = await page.evaluate(() => window.renderCount());
     await page.mouse.move(pointer.x, pointer.y);
-    // The frame that drew this move, read before any other: one render per move (ADR-0029).
+    // The frame that drew this move, read before any other: one render per move (ADR-0037).
     const frame = await drawnFrame(page, northStar);
     expect(frame.renders).toBe(renders + 1);
     const local = { x: pointer.x - origin.left, y: pointer.y - origin.top };

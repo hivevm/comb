@@ -2,7 +2,7 @@
 // of the node under the pointer, and while the user drags a connection those of its source and of
 // the node under the pointer, the compatible ones drawn apart; and in the overlay, a line from the
 // source's connector to the pointer. It reads the store, the engine's positions, and the point
-// interaction keeps for the pointer, and writes none of them (ADR-0029, ADR-0028).
+// interaction keeps for the pointer, and writes none of them (ADR-0037, ADR-0028).
 import { Graphics } from "pixi.js";
 import type { GraphView, Side } from "../store";
 import { toScreen } from "../store/viewport";
@@ -115,7 +115,7 @@ export class ConnectorsLayer extends Graphics {
 
 /** What the drawn connectors depend on: not where the pointer drags a connection to. */
 function drawnFrom(state: GraphView, origin: { x: number; y: number }, far: boolean): unknown[] {
-  const { connection, hovered, nodes, positionsVersion } = state;
+  const { connection, hovered, nodes, positionsVersion, movesVersion } = state;
   const { source, side, over, compatible } = connection ?? {};
   return [
     far,
@@ -126,6 +126,7 @@ function drawnFrom(state: GraphView, origin: { x: number; y: number }, far: bool
     hovered,
     nodes,
     positionsVersion,
+    movesVersion,
     origin.x,
     origin.y,
   ];

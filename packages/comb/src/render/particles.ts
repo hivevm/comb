@@ -9,6 +9,9 @@ import type { GraphView } from "../store";
 export const FAR_NODE_COLOR = 0xc3c8d1;
 export const FAR_SELECTED_COLOR = 0x3b82f6;
 
+/** No node hidden. */
+const NONE_HIDDEN: ReadonlySet<number> = new Set();
+
 /** The particles layer: a pooled particle for every node slot it is given. */
 export class NodeParticles extends ParticleContainer {
   private readonly pool: Particle[] = [];
@@ -18,6 +21,8 @@ export class NodeParticles extends ParticleContainer {
   private slots = new Uint32Array(1024);
   private heights = new Float32Array(1024);
   private nodes: GraphView["nodes"] = [];
+  /** The nodes whose particles a drag left undrawn since the last sync (ADR-0036). */
+  private hidden: ReadonlySet<number> = NONE_HIDDEN;
   /** The node the last sync tinted as selected, if it drew it. */
   highlighted: string | null = null;
 
@@ -44,6 +49,7 @@ export class NodeParticles extends ParticleContainer {
     }
     const selected = state.selection?.kind === "node" ? state.selection.id : null;
     this.highlighted = null;
+    this.hidden = NONE_HIDDEN;
     particles.length = 0;
     for (const slot of slots) {
       const node = state.nodes[slot];
@@ -54,6 +60,7 @@ export class NodeParticles extends ParticleContainer {
       const isSelected = node.id === selected;
       if (isSelected) this.highlighted = node.id;
       particle.tint = isSelected ? FAR_SELECTED_COLOR : FAR_NODE_COLOR;
+      particle.alpha = 1;
       particle.x = positions[slot * 2]!;
       particle.y = positions[slot * 2 + 1]!;
       const height = sizes[slot * 2 + 1]!;
@@ -64,6 +71,15 @@ export class NodeParticles extends ParticleContainer {
     }
     this.update();
     this.nodes = state.nodes;
+  }
+
+  /** Leaves the particles of the nodes in `hidden` undrawn, which a drag draws in its moving
+   *  layer: every property is static, so this uploads them all, once a drag (ADR-0036). */
+  hide(hidden: ReadonlySet<number>): void {
+    this.hidden = hidden;
+    const count = this.particleChildren.length;
+    for (let i = 0; i < count; i++) if (hidden.has(this.slots[i]!)) this.pool[i]!.alpha = 0;
+    this.update();
   }
 
   /** How many particles the pool has made; it makes one only for a slot beyond its size. */
@@ -79,7 +95,10 @@ export class NodeParticles extends ParticleContainer {
   /** Whether the last sync drew the node `id`, found without building `drawn`. */
   draws(id: string): boolean {
     const count = this.particleChildren.length;
-    for (let i = 0; i < count; i++) if (this.nodes[this.slots[i]!]?.id === id) return true;
+    for (let i = 0; i < count; i++) {
+      const slot = this.slots[i]!;
+      if (!this.hidden.has(slot) && this.nodes[slot]?.id === id) return true;
+    }
     return false;
   }
 
@@ -87,7 +106,7 @@ export class NodeParticles extends ParticleContainer {
   drawn(): { id: string; x: number; y: number; width: number; height: number }[] {
     return this.particleChildren.flatMap((particle, i) => {
       const node = this.nodes[this.slots[i]!];
-      if (!node) return [];
+      if (!node || this.hidden.has(this.slots[i]!)) return [];
       return [
         { id: node.id, x: particle.x, y: particle.y, width: node.width, height: this.heights[i]! },
       ];

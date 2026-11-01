@@ -7,6 +7,11 @@
 // near draws node boxes, their content, and edge labels; middle draws node boxes and the texts of
 // role title; far draws nodes as particles and edges as thin lines, without text.
 //
+// A drag keeps the query of its press (ADR-0036): the dragged nodes' edges, and at the far level
+// their particles, are left out of what it drew and drawn each frame in a moving layer above,
+// from the engine's mesh of the edges at the dragged nodes; their views and their edges' labels
+// move where the query bound them. The release queries once.
+//
 // The world is drawn relative to the origin of the last query (ADR-0034): the `world` render
 // group stands at the screen point of the origin, the edges and the edge labels, which the engine
 // hands over relative to it, at (0, 0) in it, and the nodes and particles, placed by the positions
@@ -42,6 +47,17 @@ import { levelAt, toScreen, worldRect } from "../store/viewport";
 export type { Level };
 
 const NONE = new Uint32Array(0);
+const NONE_F32 = new Float32Array(0);
+/** The mesh of no edge, which the moving layer draws once a drag is released. */
+const EMPTY_MESH = {
+  mesh: {
+    positions: NONE_F32,
+    distances: NONE_F32,
+    colors: NONE,
+    dashes: NONE_F32,
+    indices: NONE,
+  },
+};
 /** How far beyond the viewport the scene binds display objects, in screen pixels, so that a
  *  small pan finds them bound: at least this far when it queries, and at most twice as far while
  *  it moves the world alone between queries. */
@@ -147,7 +163,11 @@ export class Scene {
   readonly world = new Container({ isRenderGroup: true });
   /** The edges layer: the mesh on WebGL2, the fill on Canvas 2D (ADR-0018). */
   readonly edges: EdgesContainer | EdgeFill;
+  /** The moving layer's edges, the edges at the nodes a drag moves (ADR-0036). */
+  readonly movingEdges: EdgesContainer | EdgeFill;
   readonly particles = new NodeParticles();
+  /** The moving layer's particles, of the nodes a drag moves at the far level (ADR-0036). */
+  readonly movingParticles = new NodeParticles();
   readonly nodes = new NodesContainer();
   readonly labels = new LabelsContainer();
   readonly connectors = new ConnectorsLayer();
@@ -166,10 +186,25 @@ export class Scene {
   private origin = { x: 0, y: 0 };
   /** The bridge of the last render and the edges it drew, for inspection. */
   private source: { bridge: Bridge; edges: GraphView["edges"] } | null = null;
+  /** Of a drag, the query whose drawing it hid the dragged nodes' edges and particles in, by its
+   *  count, and the dragged slots; none while no drag is drawn. */
+  private hidden: { queries: number; dragged: readonly number[] } | null = null;
+  /** The detail of the moving layer's mesh, which joins the query's in inspection. */
+  private movingDetail: Detail = "complete";
 
   constructor(readonly app: Application) {
-    this.edges = app.renderer.name === "canvas" ? new EdgeFill() : new EdgesContainer();
-    this.world.addChild(this.edges, this.particles, this.nodes, this.labels, this.connectors);
+    const canvas = app.renderer.name === "canvas";
+    this.edges = canvas ? new EdgeFill() : new EdgesContainer();
+    this.movingEdges = canvas ? new EdgeFill() : new EdgesContainer();
+    this.world.addChild(
+      this.edges,
+      this.movingEdges,
+      this.particles,
+      this.movingParticles,
+      this.nodes,
+      this.labels,
+      this.connectors,
+    );
     // The engine answers every hit test (ADR-0013); interaction listens on the stage alone. The
     // world and its layers take no events, so that PixiJS's event system walks none of them, and
     // hit-tests no edge mesh, on a pointer move.
@@ -179,13 +214,15 @@ export class Scene {
   }
 
   /** Draws `state` from the engine behind `bridge`, a connection being dragged to the world point
-   *  `pointer`, which interaction keeps outside the store (ADR-0029). */
+   *  `pointer`, which interaction keeps outside the store (ADR-0037). */
   render(
     state: GraphView,
     bridge: Bridge,
     pointer: { readonly x: number; readonly y: number },
   ): void {
     if (!this.covers(state)) this.query(state, bridge);
+    if (state.dragged) this.drag(state, state.dragged, bridge);
+    else if (this.hidden) this.dropped(state);
     // Both views of one call, since a call into the engine may detach the views of the last.
     const { positions, sizes } = bridge.nodeBuffers();
     this.connectors.sync(state, positions, sizes, this.origin, this.level === "far");
@@ -227,6 +264,42 @@ export class Scene {
     );
   }
 
+  /** Draws a frame of a drag of the nodes in `dragged` against the query the scene keeps: the
+   *  edges at them meshed anew into the moving layer, those edges and, at the far level, the
+   *  nodes' particles hidden in what the query drew, once a query and drag, and the nodes' views,
+   *  their particles, and their edges' labels where they are now (ADR-0036). */
+  private drag(state: GraphView, dragged: readonly number[], bridge: Bridge): void {
+    const { drawn } = this;
+    if (!drawn) return;
+    const slots = Uint32Array.from(dragged);
+    const moving = bridge.meshAt(slots, drawn.rect, drawn.level, 1 / drawn.scale);
+    // Copied before the next call into the engine, which may detach the views.
+    const edges = Uint32Array.from(moving.edges);
+    this.movingEdges.sync(moving);
+    this.movingDetail = moving.detail;
+    const far = drawn.level === "far";
+    const hidden = this.hidden;
+    if (!hidden || hidden.queries !== this.queries || hidden.dragged !== dragged) {
+      this.edges.hide(new Set(edges));
+      if (far) this.particles.hide(new Set(dragged));
+      // A query nearer than far, after a zoom across the level, draws the nodes' views instead.
+      else this.movingParticles.sync(state, NONE, NONE_F32, NONE_F32);
+      this.hidden = { queries: this.queries, dragged };
+    }
+    const { positions, sizes } = bridge.nodeBuffers();
+    if (far) this.movingParticles.sync(state, slots, positions, sizes);
+    else this.nodes.place(dragged, positions);
+    if (drawn.level === "near") this.labels.follow(edges, bridge, this.origin);
+  }
+
+  /** Ends the drawing of a drag whose release has queried: the moving layer emptied. */
+  private dropped(state: GraphView): void {
+    this.movingEdges.sync(EMPTY_MESH);
+    this.movingDetail = "complete";
+    this.movingParticles.sync(state, NONE, NONE_F32, NONE_F32);
+    this.hidden = null;
+  }
+
   private query(state: GraphView, bridge: Bridge): void {
     const { width, height } = this.app.screen;
     const rect = worldRect(state.viewport, width, height, CULLING_MARGIN);
@@ -239,6 +312,7 @@ export class Scene {
     this.origin = origin;
     this.nodes.position.set(-origin.x, -origin.y);
     this.particles.position.set(-origin.x, -origin.y);
+    this.movingParticles.position.set(-origin.x, -origin.y);
     const { positions, sizes, content } = visible;
     this.nodes.sync(state, far ? NONE : visible.nodes, positions, sizes, content, this.icons);
     this.particles.sync(state, far ? visible.nodes : NONE, positions, sizes);
@@ -271,7 +345,11 @@ export class Scene {
     if ("node" in what) {
       const { node } = what;
       const views = this.nodes.children as NodeGraphic[];
-      return views.some((view) => view.nodeId === node) || this.particles.draws(node);
+      return (
+        views.some((view) => view.nodeId === node) ||
+        this.particles.draws(node) ||
+        this.movingParticles.draws(node)
+      );
     }
     if (!this.source) return false;
     const { bridge, edges } = this.source;
@@ -317,6 +395,7 @@ export class Scene {
           icons: (view as NodeGraphic).drawnSprites(),
         })),
         ...this.particles.drawn(),
+        ...this.movingParticles.drawn(),
       ],
       particles: this.particles.particleChildren.length,
       texts: countTexts(this.world),
@@ -326,7 +405,10 @@ export class Scene {
         null,
       edges: this.drawnEdges(),
       edgeTriangles: this.edges.triangles(),
-      edgeMesh: { ...this.edges.size(), detail: this.detail },
+      edgeMesh: {
+        ...this.edges.size(),
+        detail: this.movingDetail === "coarsened" ? "coarsened" : this.detail,
+      },
       edgeLabels: this.labels.children.map((label) => ({
         edge: label.label,
         x: label.x + this.origin.x,

@@ -69,7 +69,7 @@ function fakeBridge(
 
 describe("interaction", () => {
   test("a drag across many frames moves the node through the engine and keeps the graph", () => {
-    // Verifies: ADR-0029
+    // Verifies: ADR-0037, ADR-0036
     const store = createGraphStore();
     load(store, {
       nodes: [{ id: "a", x: 0, y: 0, width: 100, content: titled("A") }],
@@ -80,7 +80,7 @@ describe("interaction", () => {
     attached(app, store, bridge);
     const { nodes, edges, slots } = store.getState();
     emit("pointerdown", 10, 10);
-    const { positionsVersion } = store.getState();
+    const { positionsVersion, movesVersion } = store.getState();
     let notified = 0;
     const unsubscribe = store.subscribe(() => (notified += 1));
     // One pointer move per frame, as a browser delivers them while the user drags.
@@ -88,7 +88,10 @@ describe("interaction", () => {
     for (let frame = 1; frame <= frames; frame += 1) {
       emit("globalpointermove", 10 + frame * 5, 10);
       const state = store.getState();
-      expect(state.positionsVersion).toBe(positionsVersion + frame);
+      // A move a kept query survives, the node's slot named as dragged (ADR-0036).
+      expect(state.movesVersion).toBe(movesVersion + frame);
+      expect(state.positionsVersion).toBe(positionsVersion);
+      expect(state.dragged).toEqual([0]);
       expect(state.nodes).toBe(nodes);
       expect(state.edges).toBe(edges);
       expect(state.slots).toBe(slots);
@@ -98,6 +101,12 @@ describe("interaction", () => {
     expect(moves).toHaveLength(frames);
     expect(moves.every((move) => move.slots[0] === 0 && move.dx === 5 && move.dy === 0)).toBe(true);
     expect(store.getState().selection).toEqual({ kind: "node", id: "a" });
+    // The release names no node dragged, a change a kept query does not survive.
+    emit("pointerup", 10 + frames * 5, 10);
+    expect(store.getState()).toMatchObject({
+      dragged: null,
+      positionsVersion: positionsVersion + 1,
+    });
   });
 });
 
@@ -428,7 +437,7 @@ describe("the hit test", () => {
 
 describe("interaction keeps the point a connection is dragged to", () => {
   test("a connection dragged across the empty canvas writes no coordinate into the store, and its line follows", () => {
-    // Verifies: ADR-0029
+    // Verifies: ADR-0037
     const store = createGraphStore();
     load(store, {
       nodes: [{ id: "a", x: 0, y: 0, width: 100, content: titled("A") }],

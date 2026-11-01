@@ -106,10 +106,10 @@ test("a pan across queries at the near level takes every view from the warm pool
   expect(done(warm, await work(page)).viewsCreated).toBe(0);
 });
 
-test("a drag at the far level updates the GPU buffers in place, never reallocating them", async ({
+test("a drag at the far level keeps its query, and uploads and reallocates none of its mesh", async ({
   page,
 }) => {
-  // Verifies: ADR-0027
+  // Verifies: ADR-0027, ADR-0036
   await open(page);
   const { width, height } = await canvasSize(page);
   await setViewport(page, { x: width / 2, y: height / 2, scale: 0.2 });
@@ -119,14 +119,14 @@ test("a drag at the far level updates the GPU buffers in place, never reallocati
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
   // Pressing selects the node, and a move past the slop of 4 pixels begins its drag (ADR-0013),
-  // each of which renders once more before the frames counted.
+  // each of which renders once more before the frames counted: the first move hides the node's
+  // edges in the query's mesh and its particle, once a drag (ADR-0036).
   await page.evaluate(() => window.comb.whenRendered());
   const slop = 5;
   await page.mouse.move(from.x, from.y + slop);
   await page.evaluate(() => window.comb.whenRendered());
-  const { queries, edgeTriangles, edgeMesh } = await page.evaluate(() => window.inspect());
+  const { queries, edgeMesh } = await page.evaluate(() => window.inspect());
   const warm = await work(page);
-  // The node moves down and away from its edges' other ends: the mesh grows with them.
   const largest = { vertices: 0, indices: 0 };
   for (let i = 1; i <= frames; i++) {
     await page.mouse.move(from.x, from.y + slop + 2 * i);
@@ -140,17 +140,19 @@ test("a drag at the far level updates the GPU buffers in place, never reallocati
   const did = done(warm, await work(page));
   const dragged = await page.evaluate(() => window.inspect());
   await page.mouse.up();
-  // Every frame moved the node, so every frame queried, synced the particles, and uploaded them.
-  expect(dragged.queries).toBe(queries + frames);
-  expect(dragged.particles).toBe(dragged.nodes.length);
-  expect(dragged.edgeTriangles).toBeGreaterThan(edgeTriangles);
-  // The premise: the mesh never outgrew the room it had before the drag, which a larger scene
-  // would, rightly growing its buffers.
-  expect(largest.vertices).toBeLessThanOrEqual(edgeMesh.capacity.vertices);
-  expect(largest.indices).toBeLessThanOrEqual(edgeMesh.capacity.indices);
-  // The mesh uploaded, and so did the particles, beyond the mesh's bytes.
-  expect(did.meshBytesUploaded).toBeGreaterThan(0);
-  expect(did.bytesUploaded - did.meshBytesUploaded).toBeGreaterThan(0);
+  await page.evaluate(() => window.comb.whenRendered());
+  const released = await page.evaluate(() => window.inspect().queries);
+  // No frame of the drag queried: each drew the node and its edges in the moving layer, and the
+  // node is drawn once, by its particle there, beside every other node's.
+  expect(dragged.queries).toBe(queries);
+  expect(dragged.nodes.length).toBe(dragged.particles);
+  expect(dragged.nodes.filter(({ id }) => id === "0:0.0")).toHaveLength(1);
+  // The query's mesh stayed as it was, and none of it uploaded; the moving layer did.
+  expect(largest).toEqual({ vertices: edgeMesh.vertices, indices: edgeMesh.indices });
+  expect(did.meshBytesUploaded).toBe(0);
+  expect(did.bytesUploaded).toBeGreaterThan(0);
+  // The release queries once.
+  expect(released).toBe(queries + 1);
   expect(did).toEqual({
     ...NOTHING,
     bytesUploaded: did.bytesUploaded,
@@ -346,4 +348,97 @@ test("a pointer moving across the edges and dragging a node hit-tests no layer o
   );
   expect(moved).toBeGreaterThan(node.y);
   expect(await page.evaluate(() => window.worldHitTests!())).toEqual({ mesh: 0, particles: 0 });
+});
+
+/** The bytes uploaded a frame while the node `id`, which has one edge, is dragged down, from the
+ *  view the example opens `copies` at, the whole graph fitted, and the bytes the query's edge
+ *  mesh holds there. */
+async function dragUploads(page: Page, copies: number, id: string) {
+  await open(page, `?copies=${copies}`);
+  const from = await screenCentre(page, id);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.evaluate(() => window.comb.whenRendered());
+  // Past the slop: the first move hides the node's edge and particle in the kept query.
+  await page.mouse.move(from.x, from.y + 5);
+  await page.evaluate(() => window.comb.whenRendered());
+  const before = await page.evaluate(() => window.inspect());
+  const warm = await work(page);
+  const frames = 20;
+  for (let i = 1; i <= frames; i++) {
+    await page.mouse.move(from.x, from.y + 5 + i);
+    await page.evaluate(() => window.comb.whenRendered());
+  }
+  const did = done(warm, await work(page));
+  const after = await page.evaluate(() => window.inspect());
+  await page.mouse.up();
+  // Positions, distances, colours, and dashes of each vertex, and its indices, as 32-bit values.
+  const { vertices, indices } = before.edgeMesh;
+  const y = (snapshot: typeof before) => snapshot.nodes.find((node) => node.id === id)!.y;
+  return {
+    moved: y(after) > y(before),
+    perFrame: did.bytesUploaded / frames,
+    meshBytes: vertices * 6 * 4 + indices * 4,
+    queried: after.queries - before.queries,
+    level: before.level,
+    count: before.nodes.length,
+  };
+}
+
+test("a drag frame uploads what the dragged node and its edge take, not what the graph does", async ({
+  page,
+}) => {
+  // Verifies: ADR-0036
+  test.setTimeout(180_000);
+  // Node 0.1 of a copy, a bet, has one edge.
+  const small = await dragUploads(page, 1, "0:0.1");
+  const large = await dragUploads(page, 3334, "0:0.1");
+  expect([small.count, large.count, large.level]).toEqual([15, 50_010, "far"]);
+  // Each drag moved its node, and no frame of it queried.
+  expect([small.moved, large.moved]).toEqual([true, true]);
+  expect([small.queried, large.queried]).toEqual([0, 0]);
+  // At 50,010 nodes the query's mesh holds far more than a frame uploads, and a frame uploads no
+  // more than at 15 nodes, where the near level strokes the edge in full.
+  expect(large.meshBytes).toBeGreaterThan(1_000_000);
+  expect(large.perFrame).toBeLessThan(large.meshBytes / 100);
+  expect(large.perFrame).toBeLessThanOrEqual(small.perFrame * 2);
+});
+
+test("a drag zoomed from the far level to the middle draws its node once, by its view", async ({
+  page,
+}) => {
+  // Verifies: ADR-0036
+  await open(page);
+  const { width, height } = await canvasSize(page);
+  await setViewport(page, { x: width / 2, y: height / 2, scale: 0.2 });
+  const from = await screenCentre(page, "0:0.0");
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.evaluate(() => window.comb.whenRendered());
+  await page.mouse.move(from.x, from.y + 10);
+  await page.evaluate(() => window.comb.whenRendered());
+  const far = await page.evaluate(() => window.inspect());
+  // Zoomed in mid-drag, about the pointer, past the far level's threshold: the render queries.
+  await page.evaluate(
+    async ({ x, y }) => {
+      const view = window.comb.viewport();
+      const scale = 0.4;
+      const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();
+      const [px, py] = [x - rect.left, y - rect.top];
+      const k = scale / view.scale;
+      window.comb.setViewport({ x: px - (px - view.x) * k, y: py - (py - view.y) * k, scale });
+      await window.comb.whenRendered();
+    },
+    { x: from.x, y: from.y + 10 },
+  );
+  await page.mouse.move(from.x, from.y + 14);
+  await page.evaluate(() => window.comb.whenRendered());
+  const middle = await page.evaluate(() => window.inspect());
+  await page.mouse.up();
+  expect([far.level, middle.level]).toEqual(["far", "middle"]);
+  expect(far.nodes.filter(({ id }) => id === "0:0.0")).toHaveLength(1);
+  // Drawn once, by its view: no particle of the far level left where the zoom found it.
+  expect(middle.nodes.filter(({ id }) => id === "0:0.0")).toHaveLength(1);
+  expect(middle.particles).toBe(0);
+  expect(middle.nodes.every(({ texts }) => texts !== undefined)).toBe(true);
 });

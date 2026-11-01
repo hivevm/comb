@@ -2,7 +2,7 @@
 //! detail, and the mesh of the edges it found, written relative to an origin (ADR-0034,
 //! ADR-0027).
 
-use super::Graph;
+use super::{Graph, SlotError};
 use crate::geometry::{Point, Rect, bounded_pixel};
 use crate::stroke::{MESH_BUDGET, Mesh, Stroke};
 
@@ -125,6 +125,46 @@ impl Graph {
         out.mesh
             .build(found, &stroke, rect, out.origin, budget, &mut self.points);
     }
+
+    /// Writes into `edges` the slots of every edge at the node slots `slots`, found by a query or
+    /// not, in ascending order, and into `out` their mesh, stroked as `query` strokes the edges it
+    /// found in `rect` at `level` where a screen pixel is `pixel` world units, relative to
+    /// `origin`, within the mesh budget: what a drag redraws of the nodes it moves (ADR-0036). A
+    /// slot that holds no node refuses the call, and nothing is written.
+    pub fn mesh_at(
+        &mut self,
+        slots: &[u32],
+        at: &MeshAt,
+        edges: &mut Vec<u32>,
+        out: &mut Mesh,
+    ) -> Result<(), SlotError> {
+        *edges = self.edges_at(slots)?;
+        let found = edges.iter().map(|&slot| {
+            let slot = slot as usize;
+            (&self.paths[slot], &self.edges[slot].style)
+        });
+        let stroke = Stroke::at(at.level, bounded_pixel(at.pixel));
+        out.build(
+            found,
+            &stroke,
+            &at.rect,
+            at.origin,
+            MESH_BUDGET,
+            &mut self.points,
+        );
+        Ok(())
+    }
+}
+
+/// Where `mesh_at` strokes the edges at the nodes a drag moves: in the rectangle, at the level,
+/// and where a screen pixel is the pixel's world units of the query the scene keeps, relative to
+/// its origin (ADR-0036).
+#[derive(Clone, Copy, Debug)]
+pub struct MeshAt {
+    pub rect: Rect,
+    pub level: Level,
+    pub pixel: f64,
+    pub origin: Point,
 }
 
 #[cfg(test)]
@@ -154,6 +194,51 @@ mod tests {
                 assert_eq!(target, None, "{level:?}");
             }
         }
+    }
+
+    #[test]
+    fn the_mesh_at_a_node_holds_every_edge_at_it_found_or_not_and_no_other() {
+        // Verifies: ADR-0036
+        // Nodes 0 and 1 side by side, node 2 far off; edges 0–1, 1–2, and 0–2, then one between
+        // 1 and 2 alone, which no edge at 0 is.
+        let positions = vec![0.0, 0.0, 300.0, 0.0, 1e6, 1e6];
+        let sizes = vec![220.0, 64.0, 220.0, 64.0, 220.0, 64.0];
+        let edge = |source, target| EdgeSpec {
+            sides: Sides::default(),
+            source,
+            target,
+            label: None,
+            style: EdgeStyle::unstyled(),
+        };
+        let edges = vec![edge(0, 1), edge(1, 2), edge(0, 2), edge(2, 1)];
+        let mut graph = Graph::new(positions, sizes, edges).unwrap();
+        // Inside node 0's box, short of its right side, where its edges leave: the query finds
+        // node 0 but not edge 0 at it.
+        let rect = Rect::new(10.0, 10.0, 50.0, 50.0);
+        let mut found = Visible::default();
+        graph.query(&rect, Level::Near, 1.0, 0.0, &mut found);
+        assert_eq!(found.nodes, [0]);
+        assert!(!found.edges.contains(&0), "{:?}", found.edges);
+        assert_eq!(found.mesh.edge_starts.len(), found.edges.len());
+        let at = MeshAt {
+            rect,
+            level: Level::Near,
+            pixel: 1.0,
+            origin: found.origin,
+        };
+        let (mut edges, mut mesh) = (Vec::new(), Mesh::default());
+        graph.mesh_at(&[0], &at, &mut edges, &mut mesh).unwrap();
+        assert_eq!(edges, [0, 2]);
+        assert_eq!(mesh.edge_starts.len(), 2);
+        assert!(!mesh.indices.is_empty());
+        // Of two nodes, each edge at either once, found by the query or not.
+        graph.mesh_at(&[1, 2], &at, &mut edges, &mut mesh).unwrap();
+        assert_eq!(edges, [0, 1, 2, 3]);
+        assert_eq!(mesh.edge_starts.len(), 4);
+        // A slot that holds no node refuses, and nothing is written.
+        let before = mesh.indices.len();
+        assert!(graph.mesh_at(&[9], &at, &mut edges, &mut mesh).is_err());
+        assert_eq!((edges.len(), mesh.indices.len()), (4, before));
     }
 
     #[test]

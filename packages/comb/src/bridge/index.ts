@@ -167,21 +167,34 @@ export interface Placed {
   badgePadding: { x: number; y: number };
 }
 
-/** What a viewport query found: node slots in ascending order, the edge slot and point of each
- *  found edge label, the mesh of the found edges and its detail, where the found nodes' content
- *  lies, and the positions and sizes buffers, all read after the same call. The label points and
- *  the mesh's positions are relative to `origin`, a world point near the query's rectangle, so
- *  that `f32` rounds them by their distance from it (ADR-0034); the positions buffer is not. */
+/** What a viewport query found: node slots in ascending order, the edge slots it found in
+ *  ascending order and the first of each one's vertex indices in the mesh, the edge slot and point
+ *  of each found edge label, the mesh of the found edges and its detail, where the found nodes'
+ *  content lies, and the positions and sizes buffers, all read after the same call. The label
+ *  points and the mesh's positions are relative to `origin`, a world point near the query's
+ *  rectangle, so that `f32` rounds them by their distance from it (ADR-0034); the positions buffer
+ *  is not. */
 export interface Visible {
   positions: Float32Array;
   sizes: Float32Array;
   nodes: Uint32Array;
   content: Placed;
+  edges: Uint32Array;
+  edgeStarts: Uint32Array;
   labels: Uint32Array;
   labelPoints: Float32Array;
   mesh: EdgeMesh;
   detail: Detail;
   origin: { x: number; y: number };
+}
+
+/** What `meshAt` meshed: the slots of the edges at the nodes a drag moves, in ascending order,
+ *  their mesh relative to the last query's origin, and its detail (ADR-0036). Fresh views; do not
+ *  keep them across calls. */
+export interface Moving {
+  edges: Uint32Array;
+  mesh: EdgeMesh;
+  detail: Detail;
 }
 
 /** The level of detail a query serves (ADR-0027): near with edge labels, middle without, far
@@ -304,6 +317,12 @@ export interface Bridge {
    *  not keep them across calls. Throws a `NumberError` `invalidPixel` for a pixel that is not a
    *  finite number above zero (ADR-0031). */
   query(rect: Rect, level: Level, pixel: number, labelReach: number): Visible;
+  /** The edges at the node slots `slots`, found by the last query or not, and their mesh, stroked
+   *  as `query` strokes the edges it finds in `rect` at `level` where a screen pixel is `pixel`
+   *  world units, relative to the last query's origin: what a drag redraws each frame
+   *  (ADR-0036). Fresh views; do not keep them across calls. Throws a `SlotError` where a slot
+   *  holds no node, and a `NumberError` `invalidPixel` as `query` does. */
+  meshAt(slots: Uint32Array, rect: Rect, level: Level, pixel: number): Moving;
   /** The edges the last query found, with their ends as they lie now, which after a move and
    *  before the next query are already moved: for inspection, not for drawing. Fresh views; do
    *  not keep them across calls. */
@@ -591,6 +610,8 @@ function queried(
       arrows: f32(engine.contentArrowsPtr(), engine.contentArrowsLen()),
       badgePadding,
     },
+    edges: u32(engine.visibleEdgesPtr(), engine.visibleEdgesLen()),
+    edgeStarts: u32(engine.meshEdgeStartsPtr(), engine.meshEdgeStartsLen()),
     labels: u32(engine.visibleLabelsPtr(), engine.visibleLabelsLen()),
     labelPoints: f32(engine.labelPointsPtr(), engine.labelPointsLen()),
     mesh: {
@@ -657,6 +678,33 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
     },
     query: (rect, level, pixel, labelReach) =>
       queried(engine, memory, rect, level, pixel, labelReach),
+    meshAt: (slots, rect, level, pixel) => moving(engine, memory, slots, rect, level, pixel),
+  };
+}
+
+/** The edges at the node slots `slots` and their mesh, as `meshAt` of `engine` writes them, read
+ *  through fresh views on `memory` (ADR-0036). */
+function moving(
+  engine: Engine,
+  memory: WebAssembly.Memory,
+  slots: Uint32Array,
+  rect: Rect,
+  level: Level,
+  pixel: number,
+): Moving {
+  const u32 = (ptr: number, len: number) => new Uint32Array(memory.buffer, ptr, len);
+  const f32 = (ptr: number, len: number) => new Float32Array(memory.buffer, ptr, len);
+  const detail = DETAILS[engine.meshAt(slots, rect, LEVELS[level], pixel)];
+  return {
+    edges: u32(engine.movingEdgesPtr(), engine.movingEdgesLen()),
+    mesh: {
+      positions: f32(engine.movingPositionsPtr(), engine.movingPositionsLen()),
+      distances: f32(engine.movingDistancesPtr(), engine.movingDistancesLen()),
+      colors: u32(engine.movingColorsPtr(), engine.movingColorsLen()),
+      dashes: f32(engine.movingDashesPtr(), engine.movingDashesLen()),
+      indices: u32(engine.movingIndicesPtr(), engine.movingIndicesLen()),
+    },
+    detail,
   };
 }
 
