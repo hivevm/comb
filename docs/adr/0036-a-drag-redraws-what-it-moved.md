@@ -36,16 +36,20 @@ drew at the press, with those nodes and edges hidden in it, and query once at th
   them at the release; each pointer move increments a counter of moves, `movesVersion`, which a
   kept query survives, instead of `positionsVersion`. `positionsVersion` keeps meaning a change of
   positions the query does not survive: a load, an added node, a move of a node no drag holds.
-- **The press:** the scene hides the dragged nodes' particles or views and the dragged nodes'
-  edges in what it keeps, once: their ranges of the edge mesh collapsed to no area, a partial
-  upload, and their particles and views hidden.
+- **The press:** the scene hides the dragged nodes' particles and the dragged nodes' edges in
+  what it keeps, once: their ranges of the edge mesh collapsed to no area, a partial upload, and
+  their particles hidden.
 - **Each frame of the drag:** the engine meshes every edge at the dragged slots, the query's or
   not, as the query meshes an edge, at the scale and within the rectangle of the kept query, into
-  a mesh of their own, which the moving layer uploads whole; the moving layer draws the dragged
-  nodes as the kept level draws a node. A frame costs what the dragged nodes and their edges cost,
-  not what the graph does.
-- **Layers:** the moving edges directly above `edges`, the moving nodes directly above `nodes`
-  (ADR-0027), so that a dragged node is drawn above every other, as a drag draws it now.
+  a mesh of their own, which the moving layer uploads whole. A dragged node keeps its rank, which
+  a drag does not change (ADR-0022): at the near and the middle level its view stays where the
+  kept query bound it and moves to the node's position, and at the far level the moving layer
+  draws its particle. The labels of the dragged nodes' edges the kept query bound move to their
+  edges' points each frame (G-6). A frame costs what the dragged nodes and their edges cost, not
+  what the graph does.
+- **Layers:** the moving edges directly above `edges`, the moving particles directly above
+  `particles` (ADR-0027); a particle one pixel wide drawn above the nodes it passes is the one
+  departure from the order of ranks, until the release.
 - **The release, and anything else:** the release clears the dragged slots and queries as today.
   A change of the graph, of the selection, of the level, or a viewport past the kept rectangle
   during a drag queries as today too, with the dragged nodes and edges hidden in the new query and
