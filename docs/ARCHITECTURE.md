@@ -222,8 +222,10 @@ The functional core and its shell follow
   detail, complete or coarsened, and refuses a pixel that is not a finite number above zero,
   with where each found edge's indices start in the mesh (`meshEdgeStarts…`); `meshAt` meshes the
   edges at given node slots in the rectangle, at the level, and at the pixel of the query the
-  scene keeps, relative to its origin, into buffers of their own (`moving…`), refuses a slot that
-  holds no node and a pixel as `query` does, and returns the mesh's detail (ADR-0036);
+  scene keeps, relative to its origin, into a mesh of their own, their slots in `movingEdges…`,
+  refuses a slot that holds no node and a pixel as `query` does, and returns the mesh's detail
+  (ADR-0036); `meshPtr` and `meshLen` read a buffer of either mesh, the query's or the moving
+  layer's, by a `MeshBuffer`, so that the shell reads both through one function;
   `drawnEdges` computes the ends of the found edges when inspection asks, as they lie then, and
   `hit` names what a press at a point hits, a connector where the shell asks for connectors, a
   label, a node, or an edge by its slot, or nothing, as one generated value, and refuses a pixel as

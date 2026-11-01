@@ -21,6 +21,7 @@ import init, {
   textLimit,
   Engine,
   initSync,
+  MeshBuffer,
   MeshDetail,
   NodeField,
   type ContentElement,
@@ -579,9 +580,8 @@ function queried(
   pixel: number,
   labelReach: number,
 ): Visible {
-  const u32 = (ptr: number, len: number) => new Uint32Array(memory.buffer, ptr, len);
-  const f32 = (ptr: number, len: number) => new Float32Array(memory.buffer, ptr, len);
-  const u8 = (ptr: number, len: number) => new Uint8Array(memory.buffer, ptr, len);
+  const views = viewsOn(memory);
+  const { u32, f32, u8 } = views;
   const detail = DETAILS[engine.query(rect, LEVELS[level], pixel, labelReach)];
   // Read before the views: each is a call into the engine.
   const origin = { x: engine.originX(), y: engine.originY() };
@@ -614,22 +614,39 @@ function queried(
     edgeStarts: u32(engine.meshEdgeStartsPtr(), engine.meshEdgeStartsLen()),
     labels: u32(engine.visibleLabelsPtr(), engine.visibleLabelsLen()),
     labelPoints: f32(engine.labelPointsPtr(), engine.labelPointsLen()),
-    mesh: {
-      positions: f32(engine.meshPositionsPtr(), engine.meshPositionsLen()),
-      distances: f32(engine.meshDistancesPtr(), engine.meshDistancesLen()),
-      colors: u32(engine.meshColorsPtr(), engine.meshColorsLen()),
-      dashes: f32(engine.meshDashesPtr(), engine.meshDashesLen()),
-      indices: u32(engine.meshIndicesPtr(), engine.meshIndicesLen()),
-    },
+    mesh: meshOf(engine, views, false),
     detail,
     origin,
   };
 }
 
+/** Fresh views on `memory`, one per read, since growing memory detaches older ones (ADR-0034). */
+function viewsOn(memory: WebAssembly.Memory) {
+  return {
+    u32: (ptr: number, len: number) => new Uint32Array(memory.buffer, ptr, len),
+    f32: (ptr: number, len: number) => new Float32Array(memory.buffer, ptr, len),
+    u8: (ptr: number, len: number) => new Uint8Array(memory.buffer, ptr, len),
+  };
+}
+
+/** The buffers of an edge mesh of `engine` through `views`: the moving layer's where `ofDrag`,
+ *  which `meshAt` wrote, else the last query's (ADR-0036). */
+function meshOf(engine: Engine, views: ReturnType<typeof viewsOn>, ofDrag: boolean): EdgeMesh {
+  const { u32, f32 } = views;
+  const at = (buffer: MeshBuffer) =>
+    [engine.meshPtr(ofDrag, buffer), engine.meshLen(ofDrag, buffer)] as const;
+  return {
+    positions: f32(...at(MeshBuffer.Positions)),
+    distances: f32(...at(MeshBuffer.Distances)),
+    colors: u32(...at(MeshBuffer.Colors)),
+    dashes: f32(...at(MeshBuffer.Dashes)),
+    indices: u32(...at(MeshBuffer.Indices)),
+  };
+}
+
 function engineBridge(memory: WebAssembly.Memory): Bridge {
   const engine = newEngine();
-  const u32 = (ptr: number, len: number) => new Uint32Array(memory.buffer, ptr, len);
-  const f32 = (ptr: number, len: number) => new Float32Array(memory.buffer, ptr, len);
+  const { u32, f32 } = viewsOn(memory);
   return {
     loadGraph: (snapshot) => load(engine, snapshot),
     addNode: (node) => engine.addNode(node),
@@ -692,18 +709,11 @@ function moving(
   level: Level,
   pixel: number,
 ): Moving {
-  const u32 = (ptr: number, len: number) => new Uint32Array(memory.buffer, ptr, len);
-  const f32 = (ptr: number, len: number) => new Float32Array(memory.buffer, ptr, len);
+  const views = viewsOn(memory);
   const detail = DETAILS[engine.meshAt(slots, rect, LEVELS[level], pixel)];
   return {
-    edges: u32(engine.movingEdgesPtr(), engine.movingEdgesLen()),
-    mesh: {
-      positions: f32(engine.movingPositionsPtr(), engine.movingPositionsLen()),
-      distances: f32(engine.movingDistancesPtr(), engine.movingDistancesLen()),
-      colors: u32(engine.movingColorsPtr(), engine.movingColorsLen()),
-      dashes: f32(engine.movingDashesPtr(), engine.movingDashesLen()),
-      indices: u32(engine.movingIndicesPtr(), engine.movingIndicesLen()),
-    },
+    edges: views.u32(engine.movingEdgesPtr(), engine.movingEdgesLen()),
+    mesh: meshOf(engine, views, true),
     detail,
   };
 }
