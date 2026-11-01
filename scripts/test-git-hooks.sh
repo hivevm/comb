@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# Self-test of the git hooks under .githooks/: pre-commit refuses a commit on main, pre-push
-# refuses a push while the checks are red (AGENTS.md, sections 5 and 6), and pre-merge-commit
-# refuses a merge commit on main while the documentation check or the plan frontier sensor fails
-# or is missing.
+# Self-test of the git hooks under .githooks/: pre-commit refuses a commit on main and one that
+# stages a Markdown file while the documentation check fails, pre-push refuses a push while the
+# checks are red (AGENTS.md, sections 5 and 6), and pre-merge-commit refuses a merge commit on
+# main while the documentation check or the plan frontier sensor fails or is missing.
 #
 # Each case builds a throwaway repository under a temporary directory with core.hooksPath pointing
 # at this repository's .githooks/, runs a real 'git commit', 'git push', or 'git merge --no-ff' in
@@ -126,13 +126,14 @@ STAND_IN
   echo "$dir"
 }
 
-# branch_with <dir> <branch> <path> <content> — a branch off main that commits one file.
+# branch_with <dir> <branch> <path> <content> — a branch off main that commits one file, past
+# pre-commit, which would refuse the red document a merge case is built from.
 branch_with() {
   git -C "${1:?}" switch -q -c "$2" main
   mkdir -p "$(dirname "$1/$3")"
   printf '%s\n' "$4" > "$1/$3"
   g "$1" add "$3"
-  g "$1" commit -q -m "$2"
+  g "$1" commit -q --no-verify -m "$2"
   git -C "${1:?}" switch -q main
 }
 
@@ -171,6 +172,24 @@ g "$d" commit -q -m "drop the check"
 git -C "${d:?}" switch -q main
 expect refuse "a merge commit on main that removes a check" "$d" \
   "scripts/check-docs.sh is missing" merge -q --no-ff -m merge feature
+
+d="$(merging commit-long-line)"
+git -C "${d:?}" switch -q -c feature
+printf '%s\n' "$LONG" > "$d/notes.md"
+g "$d" add notes.md
+expect refuse "a commit on a branch staging a Markdown line over 100 columns" "$d" \
+  "notes.md: 1" commit -q -m x
+expect refuse "the refusal names the check" "$d" "scripts/check-docs.sh fails" commit -q -m x
+
+d="$(merging commit-no-markdown)"
+git -C "${d:?}" switch -q -c feature
+printf '%s\n' "$LONG" > "$d/notes.md"
+g "$d" add notes.md
+g "$d" commit -q --no-verify -m "a red document, past the hook"
+printf 'x\n' > "$d/code.txt"
+g "$d" add code.txt
+expect pass "a commit that stages no Markdown file runs no documentation check" "$d" "" \
+  commit -q -m y
 
 d="$(merging merge-worktree)"
 branch_with "$d" red docs/notes.md "$LONG"
