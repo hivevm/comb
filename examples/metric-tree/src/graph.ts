@@ -2,7 +2,7 @@
 // to one north-star metric, and that to KPIs. Each node's type is told only by the content the
 // example describes for it (G-10). Edges between metrics carry their correlation; every edge ends
 // in an arrowhead at its target.
-import type { ContentElement, EdgeData, GraphData, NodeContent, NodeData } from "comb";
+import type { Comb, ContentElement, EdgeData, GraphData, NodeContent, NodeData } from "comb";
 
 const GREY = 0x9aa1ad;
 const GREEN = 0x22a55b;
@@ -259,10 +259,6 @@ const links: [string, string, number?][] = [
   ["3.0", "4.2", 0.998],
 ];
 
-/** The height Comb lays a node's content out to at a width, as `Comb.heightOf` answers it
- *  (ADR-0035). */
-export type HeightOf = (content: NodeContent, width: number) => number;
-
 function nodesOf(
   copy: number,
   left: number,
@@ -310,7 +306,7 @@ function edgesOf(copy: number): EdgeData[] {
  *  whatever the copies, since every copy shares that content. */
 export function metricTree(
   copies: number,
-  heightOf: HeightOf,
+  heightOf: Comb["heightOf"],
 ): { graph: GraphData; fields: Map<string, Fields> } {
   const heights = contents.map((column) => column.map((each) => heightOf(each, NODE_WIDTH)));
   const width = columns.length * COLUMN;

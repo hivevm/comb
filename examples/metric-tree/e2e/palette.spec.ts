@@ -117,17 +117,19 @@ test("each type in the palette drops a node of that type, centred on the drop by
         const { content, width } = window.exampleGraph().nodes.find((each) => each.id === id)!;
         return {
           middle: node.y + node.height / 2,
-          height: node.height - window.comb.heightOf(content, width),
+          height: node.height,
+          asked: window.comb.heightOf(content, width),
           icons: node.icons!.map(({ texture }) => texture),
           details: node.texts!.some(({ kind, drawn }) => kind === "action" && drawn === "Details"),
         };
       },
       `${type}-${i + 1}`,
     );
-    expect(dropped).toEqual({
-      middle: expect.closeTo(at.y - 30, 2),
+    const { asked, ...drawn } = dropped;
+    expect(drawn).toEqual({
       // Centred by the height Comb gives its content (ADR-0035).
-      height: 0,
+      middle: expect.closeTo(at.y - 30, 2),
+      height: asked,
       icons: [type],
       details: true,
     });

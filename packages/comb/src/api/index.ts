@@ -110,8 +110,9 @@ export interface Comb {
    *  draws with: the height `addNode` gives such a node, without one in the graph and changing
    *  nothing. Content whose rows hold elements of the same kinds, row by row and in the same
    *  order, has the same height whatever its texts and width, so a layout asks once per shape.
-   *  Throws a `GraphDataError` with the problem `addNode` gives the content or the width, naming
-   *  the node `""` (Q-7), and an `EngineLostError` once the engine is lost (ADR-0035). */
+   *  Throws a `GraphDataError` with the problem `addNode` gives the content or the width, its
+   *  texts counted against the budget alone, as in an empty graph, naming the node `""` (Q-7),
+   *  and an `EngineLostError` once the engine is lost (ADR-0035). */
   heightOf(content: NodeContent, width: number): number;
   /** Adds `edge` between two nodes the graph holds, without a load, drawn with its colour, dash
    *  pattern, arrowhead, and label (G-11). Throws a `GraphDataError` where the graph holds an edge

@@ -30,13 +30,17 @@ test("content of one shape has one height, whatever its texts and its width", as
   // Verifies: ADR-0035
   await open(page);
   const heights = await page.evaluate((ids) => {
-    // Every text of the content another, of the most code units a text may hold.
+    // Every text of the content another, a metric's caption, value, and trend's text among them,
+    // of the most code units a text may hold.
+    const long = "W".repeat(1_000);
     const retexted = (content: NodeContent): NodeContent =>
       content.map((row) =>
         row.map((element) =>
-          "text" in element && typeof element.text === "string"
-            ? { ...element, text: "W".repeat(1_000) }
-            : element,
+          element.kind === "metric"
+            ? { ...element, caption: long, value: long, trend: { ...element.trend, text: long } }
+            : "text" in element
+              ? { ...element, text: long }
+              : element,
         ),
       );
     return ids.map((id) => {
@@ -71,12 +75,12 @@ test("heightOf refuses what addNode refuses of content and width, naming the nod
     ] as unknown as { content: NodeContent; width: number }[];
     return malformed.map(({ content, width }) => ({
       asked: problemOf(() => comb.heightOf(content, width)),
-      added: problemOf(() => comb.addNode({ id: "n", x: 0, y: 0, width, content })),
+      added: problemOf(() => comb.addNode({ id: "", x: 0, y: 0, width, content })),
     }));
   });
+  // Each the problem `addNode` gives a node named "" at the origin.
   for (const { asked, added } of outcomes) {
     expect(added).not.toBe("ok");
-    // The problem `addNode` gives, its node named "" where `addNode`'s names "n".
-    expect(JSON.stringify(asked)).toBe(JSON.stringify(added).replaceAll('"n"', '""'));
+    expect(asked).toEqual(added);
   }
 });
