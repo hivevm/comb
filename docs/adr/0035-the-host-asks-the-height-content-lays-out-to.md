@@ -44,6 +44,9 @@ the engine lays content of that width out to in the fonts Comb hands it, checked
 checks content and refused with the same typed problems, changing nothing.
 
 - It needs no node in the graph, so that a host application asks before it adds or loads.
+- Its problems name the node as the empty string, `node: ""`, where `addNode`'s name the node's
+  identifier, so that the problem types stay those of `addNode`. The width is checked as
+  `addNode` checks a node's width, for a node at the origin.
 - It is the height the engine gives a node of that content and width, the same number, so that
   a host application that places a node by it places it where Comb draws it.
 - After `destroy`, and once the engine is lost, it refuses as every other method does
@@ -75,6 +78,11 @@ of an edge label, which Comb places along its edge (G-6); a method that takes ma
   times, and a second method would duplicate the first one's checks and problems.
 - **`heightOf(content)`, without the width** — exact today, but wrapping a text would change the
   method's signature, not only its result.
+- **Problems without a node** — `node` optional in the content's problems, left out by
+  `heightOf`: no name a node could share, but it changes about twenty variants of the public
+  `GraphDataProblem` and everything that builds or reads them.
+- **`heightOf({ id, content, width })`, the problems naming `id`** — a host application that lays
+  out before it has identifiers makes one up.
 
 ## Sources / Prior art
 
@@ -113,4 +121,5 @@ of an edge label, which Comb places along its edge (G-6); a method that takes ma
 A browser test of the example, citing `Verifies: ADR-0035`, adds a node of each type of the metric
 tree and asserts that the drawn height equals `heightOf` of its content and width, that content
 of the same shape with other texts and at another width has the same height, and that malformed
-content is refused with the problem `addNode` gives it.
+content, and a width `addNode` refuses, is refused with the problem `addNode` gives it, naming
+the node `""`.
