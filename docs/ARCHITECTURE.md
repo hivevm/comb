@@ -253,7 +253,9 @@ The functional core and its shell follow
   node content between calls: the content of the nodes by slot (`ContentStore`) and the buffers of
   what a query places of it (`Drawn`). `packages/comb/src/bridge` is the one module that imports the
   WebAssembly package and reads those buffers through fresh typed-array views per read
-  ([ADR-0034](adr/0034-node-content-crosses-as-columns.md)).
+  ([ADR-0034](adr/0034-node-content-crosses-as-columns.md)): its `columns.ts` holds the writers of
+  a load's columns and the codes they cross as, its `index.ts` the facade of the engine, which
+  re-exports them.
 - **Store** (`packages/comb/src/store`) — a vanilla Zustand store with the graph's structure, its
   nodes and edges by slot with holes at free slots, which every reader skips, the maps from node and
   edge identifiers to slots, the code units of the identifiers it holds, counted for a node and for
