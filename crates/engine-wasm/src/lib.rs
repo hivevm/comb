@@ -431,6 +431,8 @@ pub struct Engine {
     /// The edges at the nodes a drag moves, and their mesh, which `meshAt` writes (ADR-0036).
     moving_edges: Vec<u32>,
     moving: Mesh,
+    /// The slots of the edges `drawnEdges` computed the ends of.
+    drawn_edges: Vec<u32>,
 }
 
 #[wasm_bindgen]
@@ -819,12 +821,31 @@ impl Engine {
         Ok(self.moving.detail.into())
     }
 
-    /// Computes the ends of the edges the last query found, read through the `edgeEnds…` buffer:
-    /// for inspection, not for drawing.
+    /// Computes the ends of the edges the last query found and of those the last `meshAt` meshed,
+    /// each once, in ascending slot order, read through the `drawnEdges…` and `edgeEnds…`
+    /// buffers: for inspection, not for drawing (ADR-0040).
     #[wasm_bindgen(js_name = drawnEdges)]
     pub fn drawn_edges(&mut self) {
         trap::spring();
-        self.graph.edge_ends(&self.visible.edges, &mut self.ends);
+        self.drawn_edges.clear();
+        self.drawn_edges.extend_from_slice(&self.visible.edges);
+        self.drawn_edges.extend_from_slice(&self.moving_edges);
+        self.drawn_edges.sort_unstable();
+        self.drawn_edges.dedup();
+        self.graph.edge_ends(&self.drawn_edges, &mut self.ends);
+    }
+
+    /// Where the buffer starts that `drawnEdges` writes the slots of the edges it computed the
+    /// ends of into.
+    #[wasm_bindgen(js_name = drawnEdgesPtr)]
+    pub fn drawn_edges_ptr(&self) -> *const u32 {
+        self.drawn_edges.as_ptr()
+    }
+
+    /// How many edge slots the last `drawnEdges` wrote.
+    #[wasm_bindgen(js_name = drawnEdgesLen)]
+    pub fn drawn_edges_len(&self) -> usize {
+        self.drawn_edges.len()
     }
 
     /// What a press at the world point `(x, y)` hits where a screen pixel is `pixel` world units,
