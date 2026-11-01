@@ -574,6 +574,12 @@ example fail where `testMode()` says the build runs the bridge in test mode.
 `scripts/check-dependencies.sh` fails on a lockfile of another package manager beside `bun.lock`
 (ADR-0008), on tsify's default or `json` features or `serde_json` in the bridge crate (ADR-0034), in
 whatever form the entry takes, and on a listed state library other than zustand in the library's
-dependency lists (ADR-0029). The type checker does the rest for the render layer: `GraphView` has no
-action to call. ESLint forbids the DOM markup sinks (Q-5) and `eval`, implied eval, and `new
-Function` (Q-6) in Comb's library sources, outside its tests.
+dependency lists (ADR-0029).
+`scripts/check-container.sh` fails where the Dev Container does not build from its Dockerfile,
+where the Dockerfile names an image without a digest, or where a Feature installs Node.js
+(ADR-0014), and on a Feature that brings a container engine or a Compose file (ADR-0015); the
+workflow `.github/workflows/devcontainer.yml` builds the container and asserts the pinned Bun,
+Cargo with the WebAssembly target, and no Node.js inside it (ADR-0014). The type checker does the
+rest for the render layer: `GraphView` has no action to call. ESLint forbids the DOM markup sinks
+(Q-5) and `eval`, implied eval, and `new Function` (Q-6) in Comb's library sources, outside its
+tests.
