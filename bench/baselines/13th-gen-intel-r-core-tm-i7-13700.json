@@ -1,0 +1,122 @@
+{
+  "copies": 3334,
+  "headed": true,
+  "cpu": "13th Gen Intel(R) Core(TM) i7-13700",
+  "gpu": "ANGLE (Intel, Mesa Intel(R) Graphics (RPL-S), OpenGL ES 3.2)",
+  "attached": true,
+  "browser": "156.0.8078.79",
+  "cpuThrottle": 2,
+  "reference": {
+    "ms": 420.1000000089407,
+    "js": 211,
+    "wasm": 201.6000000089407,
+    "gpu": 7.5
+  },
+  "load": {
+    "nodes": 50010,
+    "firstFrameMs": 471,
+    "content": {
+      "nodes": {
+        "bet": 6668,
+        "epic": 16670,
+        "input-metric": 13336,
+        "north-star": 3334,
+        "kpi": 10002
+      },
+      "elements": {
+        "action": 50010,
+        "badge": 23338,
+        "icon": 50010,
+        "metric": 53344,
+        "progress": 16670,
+        "text": 100020
+      }
+    }
+  },
+  "drag": {
+    "p95": 16.799999999999272,
+    "steps": 120,
+    "frames": 117,
+    "truncated": false
+  },
+  "pan": {
+    "p95": 16.799999999999272,
+    "steps": 120,
+    "frames": 121,
+    "truncated": false
+  },
+  "zoom": {
+    "p95": 50,
+    "steps": 120,
+    "frames": 120,
+    "truncated": false
+  },
+  "levels": {
+    "near": {
+      "drag": {
+        "p95": 16.799999999995634,
+        "steps": 120,
+        "frames": 118,
+        "truncated": false
+      },
+      "pan": {
+        "p95": 16.799999999995634,
+        "steps": 120,
+        "frames": 120,
+        "truncated": false
+      },
+      "zoom": {
+        "p95": 16.700000000004366,
+        "steps": 120,
+        "frames": 120,
+        "truncated": false
+      },
+      "edit": {
+        "p95": 16.80000000000291,
+        "steps": 120,
+        "frames": 119,
+        "truncated": false
+      }
+    },
+    "middle": {
+      "drag": {
+        "p95": 16.70000000001164,
+        "steps": 120,
+        "frames": 118,
+        "truncated": false
+      },
+      "pan": {
+        "p95": 16.799999999995634,
+        "steps": 120,
+        "frames": 120,
+        "truncated": false
+      },
+      "zoom": {
+        "p95": 16.70000000001164,
+        "steps": 120,
+        "frames": 120,
+        "truncated": false
+      },
+      "edit": {
+        "p95": 16.79999999998836,
+        "steps": 120,
+        "frames": 119,
+        "truncated": false
+      }
+    },
+    "far": {
+      "zoom": {
+        "p95": 66.69999999999709,
+        "steps": 120,
+        "frames": 120,
+        "truncated": false
+      }
+    }
+  },
+  "edit": {
+    "p95": 116.70000000000073,
+    "steps": 120,
+    "frames": 120,
+    "truncated": false
+  }
+}
