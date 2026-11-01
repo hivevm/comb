@@ -62,10 +62,11 @@ ADR-0027 says.
   dragged nodes and every added edge, each once, as the query meshes an edge, in its rectangle, at
   its level, relative to its origin, within the mesh budget; the mesh is made anew when the drag
   moves or the arrays change, and kept otherwise. At the far level the moving layer draws the
-  dragged and the added nodes' particles, in the order of their ranks. At the near and the middle
-  level a dragged node's view stays where the kept query bound it, keeping its rank (ADR-0022), and
-  moves to the node's position, and the labels of the dragged nodes' edges move to their points
-  (G-6).
+  dragged nodes' particles and above them the added ones, which hold the newest ranks, in slot
+  order, their ranks' but where an edit reused a slot freed since the query. At the near and the
+  middle level a dragged node's view stays where the kept query bound it, keeping its rank
+  (ADR-0022), and moves to the node's position, and the labels of the dragged nodes' edges move to
+  their points (G-6).
 - **Layers:** the moving edges directly above `edges`, the moving particles directly above
   `particles` (ADR-0027); a dragged particle drawn above the nodes it passes is the one departure
   from the order of ranks, until the next query.
