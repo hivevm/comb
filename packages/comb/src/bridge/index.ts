@@ -958,6 +958,10 @@ export interface Bridge {
    *  returns the slot the engine chose for it (ADR-0022). Throws a `GraphDataProblem`, the graph
    *  as it was. */
   addNode(node: NodeSnapshot): number;
+  /** The height, in world units, the content of `node` lays out to at its width, checked as
+   *  `addNode` checks a node and added to nothing; `api` names it `""` and puts it at the origin
+   *  (ADR-0035). Throws a `GraphDataProblem`. */
+  heightOf(node: NodeSnapshot): number;
   /** Checks `edge` as a load checks an edge, refuses one from a node to itself, and adds it
    *  between the node slots `source` and `target`, which `api` resolved; returns the slot the
    *  engine chose for it (ADR-0022). Throws a `GraphDataProblem`, and a `SlotError` where a slot
@@ -1334,6 +1338,7 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
   return {
     loadGraph: (snapshot) => load(engine, snapshot),
     addNode: (node) => engine.addNode(node),
+    heightOf: (node) => engine.heightOf(node),
     updateNode: (slot, id, patch) => engine.updateNode(slot, id, patch),
     content: (slot) => engine.content(slot),
     setFont: (role, { codes, advances, fallback, lineHeight }) =>

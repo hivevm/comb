@@ -192,8 +192,9 @@ The functional core and its shell follow
   the positions buffer, and a font handed over later lays every node out anew; a node whose far
   side, by that height, lies past the world's limit is refused; `updateNode` checks a patch of a
   node's content as a load checks it and gives the node the new content and its height, `addNode`
-  checks one node as a load would and returns the slot the engine chose for it, `addEdge` checks one
-  edge as a load would, refuses one from a node to
+  checks one node as a load would and returns the slot the engine chose for it, `heightOf` checks
+  a node named `""` at the origin as `addNode` does and returns the height its content lays out to,
+  adding nothing (ADR-0035), `addEdge` checks one edge as a load would, refuses one from a node to
   itself, and adds it between the node slots `api` resolved, `updateEdge` checks a patch of an
   edge's colour, dash, arrowhead, label, and sides as a load checks those fields and restyles and
   re-places the edge, `edgesAt` names the edges at given nodes without removing anything,

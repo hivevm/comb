@@ -2,7 +2,7 @@
 // to one north-star metric, and that to KPIs. Each node's type is told only by the content the
 // example describes for it (G-10). Edges between metrics carry their correlation; every edge ends
 // in an arrowhead at its target.
-import type { ContentElement, EdgeData, GraphData, NodeContent, NodeData } from "comb";
+import type { Comb, ContentElement, EdgeData, GraphData, NodeContent, NodeData } from "comb";
 
 const GREY = 0x9aa1ad;
 const GREEN = 0x22a55b;
@@ -59,18 +59,6 @@ export const TYPES: Record<
     caption: "North-star metric",
   },
   kpi: { color: "#16a34a", name: "KPI", dropped: "New KPI", caption: "KPI" },
-};
-
-/** The height Comb lays a node of each type out to, from the engine's padding of 10 above and
- *  below and the shell's lines (ADR-0013): a title's row of 18; a hypothesis's or a progress bar's
- *  row of 16; a badge's row of 22; a row of metrics of 30; a caption beside "Details" of 16. The
- *  example places each node by it so that its middle, where its edges meet it, lies on its row. */
-export const HEIGHTS: Record<NodeType, number> = {
-  bet: 10 + 18 + 16 + 22 + 10,
-  epic: 10 + 18 + 16 + 22 + 10,
-  "input-metric": 10 + 18 + 30 + 16 + 10,
-  "north-star": 10 + 18 + 30 + 16 + 10,
-  kpi: 10 + 18 + 30 + 16 + 10,
 };
 
 /** The colour of a trend, drawn on the node's white: green up, red down, grey flat, each with a
@@ -271,7 +259,13 @@ const links: [string, string, number?][] = [
   ["3.0", "4.2", 0.998],
 ];
 
-function nodesOf(copy: number, left: number, top: number, fields: Map<string, Fields>): NodeData[] {
+function nodesOf(
+  copy: number,
+  left: number,
+  top: number,
+  fields: Map<string, Fields>,
+  heights: number[][],
+): NodeData[] {
   return columns.flatMap((column, c) =>
     column.map((each, r) => {
       const id = `${copy}:${c}.${r}`;
@@ -280,7 +274,7 @@ function nodesOf(copy: number, left: number, top: number, fields: Map<string, Fi
       return {
         id,
         x: left + c * COLUMN,
-        y: middle - HEIGHTS[each.type] / 2,
+        y: middle - heights[c]![r]! / 2,
         width: NODE_WIDTH,
         content: contents[c]![r]!,
       };
@@ -307,8 +301,14 @@ function edgesOf(copy: number): EdgeData[] {
 }
 
 /** The tree `copies` times, in a grid about as wide as it is tall, so that fitting the view
- *  shows all of them, with the fields of each node by its identifier. */
-export function metricTree(copies: number): { graph: GraphData; fields: Map<string, Fields> } {
+ *  shows all of them, with the fields of each node by its identifier. Each node lies with its
+ *  middle on its row, by the height `heightOf` gives its content, asked once per node of the tree
+ *  whatever the copies, since every copy shares that content. */
+export function metricTree(
+  copies: number,
+  heightOf: Comb["heightOf"],
+): { graph: GraphData; fields: Map<string, Fields> } {
+  const heights = contents.map((column) => column.map((each) => heightOf(each, NODE_WIDTH)));
   const width = columns.length * COLUMN;
   const height = 7 * ROW;
   const perRow = Math.ceil(Math.sqrt((copies * height) / width));
@@ -317,7 +317,7 @@ export function metricTree(copies: number): { graph: GraphData; fields: Map<stri
   return {
     graph: {
       nodes: trees.flatMap((copy) =>
-        nodesOf(copy, (copy % perRow) * width, Math.floor(copy / perRow) * height, fields),
+        nodesOf(copy, (copy % perRow) * width, Math.floor(copy / perRow) * height, fields, heights),
       ),
       edges: trees.flatMap((copy) => edgesOf(copy)),
     },

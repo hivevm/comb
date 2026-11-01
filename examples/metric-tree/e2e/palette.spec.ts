@@ -1,7 +1,6 @@
 // A node dropped from the host's palette (G-1): `worldPointAt` names the world point under a
 // point of the page, and the example adds a node of the palette's kind there (ADR-0030).
 import { expect, test, type Page } from "@playwright/test";
-import { HEIGHTS } from "../src/graph";
 import { NODE_WIDTH, open, recordChanges, screenCentre, setViewport, told } from "./shared";
 
 /** Moves the canvas away from the page's corner, by a margin on its left and top, and scales it
@@ -115,18 +114,22 @@ test("each type in the palette drops a node of that type, centred on the drop by
       async (id) => {
         await window.comb.whenRendered();
         const node = window.inspect().nodes.find((each) => each.id === id)!;
+        const { content, width } = window.exampleGraph().nodes.find((each) => each.id === id)!;
         return {
           middle: node.y + node.height / 2,
           height: node.height,
+          asked: window.comb.heightOf(content, width),
           icons: node.icons!.map(({ texture }) => texture),
           details: node.texts!.some(({ kind, drawn }) => kind === "action" && drawn === "Details"),
         };
       },
       `${type}-${i + 1}`,
     );
-    expect(dropped).toEqual({
+    const { asked, ...drawn } = dropped;
+    expect(drawn).toEqual({
+      // Centred by the height Comb gives its content (ADR-0035).
       middle: expect.closeTo(at.y - 30, 2),
-      height: HEIGHTS[type],
+      height: asked,
       icons: [type],
       details: true,
     });

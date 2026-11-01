@@ -43,8 +43,8 @@ use kept::{ContentStore, Drawn};
 
 use graph_data::{
     COLUMN_LIMIT, ContentData, EdgeColumns, EdgeRefusal, ID_LIMIT, NodeColumns, ROW_LIMIT,
-    SEGMENT_LIMIT, TEXT_LIMIT, add_edge_to, add_node_to, edge_refused_of, load_of, malformed,
-    patch_of, refused_of, slot, unshaped, update_edge_in,
+    SEGMENT_LIMIT, TEXT_LIMIT, add_edge_to, add_node_to, edge_refused_of, height_of, load_of,
+    malformed, patch_of, refused_of, slot, unshaped, update_edge_in,
 };
 
 /// A number the shell computed that an export cannot take: the shell's own mistake, never one of
@@ -623,6 +623,16 @@ impl Engine {
         trap::spring();
         let node = node.to_rust().map_err(unshaped)?;
         self.add(&node)
+    }
+
+    /// The height, in world units, the content of the node `heightOf` hands over lays out to at
+    /// its width in the fonts the shell handed over, checked as `addNode` checks a node, named
+    /// `""` and at the origin, and added to nothing (ADR-0035).
+    #[wasm_bindgen(js_name = heightOf)]
+    pub fn height_of(&self, node: Ts<NodeInput>) -> Result<f64, GraphDataProblem> {
+        trap::spring();
+        let node = node.to_rust().map_err(unshaped)?;
+        Ok(f64::from(height_of(&node, &self.fonts)?))
     }
 
     /// Checks the patch `updateNode` hands over for the node `id` in `slot`, reading it once, as a

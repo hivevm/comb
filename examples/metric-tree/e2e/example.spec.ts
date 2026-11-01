@@ -1,5 +1,4 @@
 import { expect, test, type Page } from "@playwright/test";
-import { HEIGHTS } from "../src/graph";
 import { clickWorld, NODE_HEIGHT, open, POLICY, screenCentre, setViewport } from "./shared";
 
 /** Node `id` as the canvas draws it at the near level, with the viewport moved so that its
@@ -26,10 +25,12 @@ async function nearNode(page: Page, id: string) {
 /** What the canvas draws of each type of node of the example: a bet with its hypothesis and its
  *  status badge, an epic with its progress bar and status badge, an input metric with values over
  *  three periods and coloured trends, the north-star metric, and a KPI, each with the icon of its
- *  type beside its title and "Details". */
+ *  type beside its title and "Details". Its height is the engine's padding of 10 above and below
+ *  and the shell's rows (ADR-0013): a title's of 18; a hypothesis's or a progress bar's of 16 and
+ *  a badge's of 22; or a row of metrics of 30 and a caption beside "Details" of 16. */
 const TYPES = {
   "0:0.0": {
-    height: HEIGHTS.bet,
+    height: 10 + 18 + 16 + 22 + 10,
     icons: ["bet"],
     texts: [
       "text Launch push notifications",
@@ -42,7 +43,7 @@ const TYPES = {
     arrows: [],
   },
   "0:1.1": {
-    height: HEIGHTS.epic,
+    height: 10 + 18 + 16 + 22 + 10,
     icons: ["epic"],
     texts: ["text Social notifications", "text 60%", "badge In progress", "action Details"],
     pills: [0x1d4ed8],
@@ -54,7 +55,7 @@ const TYPES = {
     arrows: [],
   },
   "0:2.1": {
-    height: HEIGHTS["input-metric"],
+    height: 10 + 18 + 30 + 16 + 10,
     icons: ["input-metric"],
     texts: [
       "text Avg. sessions per week",
@@ -69,7 +70,7 @@ const TYPES = {
     arrows: [0x15803d, 0x15803d, 0xb91c1c],
   },
   "0:3.0": {
-    height: HEIGHTS["north-star"],
+    height: 10 + 18 + 30 + 16 + 10,
     icons: ["north-star"],
     texts: [
       "text Weekly listening time",
@@ -84,7 +85,7 @@ const TYPES = {
     arrows: [0x15803d],
   },
   "0:4.1": {
-    height: HEIGHTS.kpi,
+    height: 10 + 18 + 30 + 16 + 10,
     icons: ["kpi"],
     texts: [
       "text Monthly retention",

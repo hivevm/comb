@@ -1,6 +1,6 @@
 # ADR-0035: The host application asks Comb the height a node's content lays out to
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-31
 - **Deciders:** Markus Brigl
 - **Applies to:** the `Comb` interface in `packages/comb/src/api/`, its export in `crates/engine-wasm/`, the height the engine computes in `crates/engine/src/content.rs`, and every host application that places nodes by their height, `examples/metric-tree` among them
@@ -114,7 +114,6 @@ of an edge label, which Comb places along its edge (G-6); a method that takes ma
   layout keeps; content checked twice where the host application asks and then adds.
 - Negative / trade-offs: the promise that a shape of content has one height binds the layout; a
   text that wraps needs a new ADR.
-- Follow-ups: whether the example's `HEIGHTS` and their browser tests give way to the method.
 
 ## Enforcement
 
