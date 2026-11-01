@@ -168,3 +168,29 @@ test("the snapshot reads an icon's kind, weight, and name once, and its text, ro
   expect(single).toEqual(expected);
   expect(snapshot).toMatchObject({ content: [[{ kind: "icon", weight: 2, name: "bet" }]] });
 });
+
+test("the snapshot reads content no further than one row, element, and segment past its limits, for a load and a single node alike", () => {
+  // Verifies: ADR-0028, ADR-0034
+  const read = (crossing: "load" | "single") => {
+    const reads: Record<string, number> = {};
+    const element = counting("element", { kind: "text", role: "body", text: "t" }, reads);
+    const segment = counting("segment", { fraction: 0.1, color: 0 }, reads);
+    const progress = { kind: "progress", segments: Array(limits.segments + 5).fill(segment) };
+    const row = Array(limits.columns + 5).fill(element);
+    const rows = [[progress], ...Array(limits.rows + 5).fill(row)];
+    const node = { id: "a", x: 0, y: 0, width: 100, content: rows };
+    if (crossing === "load") snapshotOf(listsOf({ nodes: [node], edges: [] } as never), limits);
+    else nodeSnapshotOf(node, limits);
+    return reads;
+  };
+  // The progress bar's row and `limits.rows` more, each of `limits.columns + 1` elements.
+  const expected = {
+    "element.kind": limits.rows * (limits.columns + 1),
+    "element.role": limits.rows * (limits.columns + 1),
+    "element.text": limits.rows * (limits.columns + 1),
+    "segment.fraction": limits.segments + 1,
+    "segment.color": limits.segments + 1,
+  };
+  expect(read("load")).toEqual(expected);
+  expect(read("single")).toEqual(expected);
+});
