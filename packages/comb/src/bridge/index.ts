@@ -1,5 +1,5 @@
-// The facade of the engine, in the one module that imports the WebAssembly package (ADR-0028),
-// beside the writers of a load's columns in `columns.ts`. Structured data crosses as
+// The facade of the engine, in the bridge, the one module that imports the WebAssembly package
+// (ADR-0028), beside the writers of a load's columns in `columns.ts`. Structured data crosses as
 // generated types through serde-wasm-bindgen, but for a load's nodes and edges, which cross as
 // columns of strings in pieces or one typed array each; node positions and the results of a
 // viewport query are read through views on the engine's buffers, created anew on every read
