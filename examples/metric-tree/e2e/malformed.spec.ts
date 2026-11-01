@@ -1203,13 +1203,18 @@ test("load draws identifiers of 256 characters", async ({ page }) => {
 /** In the page: loads a million edges between two nodes whose identifiers hold `length` code
  *  units each, then, before a frame draws them, a graph of one node; reports the problem and the
  *  time of the first load, and what the canvas drew. */
+/** Loads node "kept", then nodes "a" and "b" with a million edges between them whose identifiers
+ *  are `length` code units long, and reports the problem refused, how long the load took, how
+ *  often the bridge's `loadGraph` was called for it, and the titles drawn after it. */
 async function budgeted(length: number) {
   const nodeAt = (id: string, x: number) => window.node(id, x);
+  window.comb.load({ nodes: [nodeAt("kept", 0)], edges: [] });
   const edges = Array.from({ length: 1_000_000 }, (_, i) => ({
     id: String(i).padStart(length, "e"),
     source: "a",
     target: "b",
   }));
+  const before = window.bridgeCalls("loadGraph");
   const start = performance.now();
   let problem: unknown = null;
   try {
@@ -1218,12 +1223,14 @@ async function budgeted(length: number) {
     problem = (error as Error & { problem: unknown }).problem;
   }
   const ms = performance.now() - start;
-  window.comb.load({ nodes: [nodeAt("ok", 0)], edges: [] });
+  const loads = window.bridgeCalls("loadGraph") - before;
   await window.comb.whenRendered();
-  return { problem, ms, titles: window.inspect().nodes.map(({ title }) => title) };
+  const titles = window.inspect().nodes.map(({ title }) => title);
+  window.comb.load({ nodes: [nodeAt("ok", 0)], edges: [] });
+  return { problem, ms, loads, titles };
 }
 
-test("load takes a million edges whose identifiers hold 63 million code units, and refuses 66 million by the budget, quickly", async ({
+test("load takes a million edges whose identifiers hold 63 million code units, and refuses 66 million by the budget before any crosses into the engine", async ({
   page,
 }) => {
   // Verifies: Q-7, ADR-0028
@@ -1239,14 +1246,14 @@ test("load takes a million edges whose identifiers hold 63 million code units, a
     `a million edges: ${within.ms.toFixed(0)} ms within the budget, ${beyond.ms.toFixed(0)} ms refused`,
   );
   expect(errors).toEqual([]);
-  expect(within).toEqual({ problem: null, ms: within.ms, titles: ["ok"] });
+  expect(within).toEqual({ problem: null, ms: within.ms, loads: 1, titles: ["a", "b"] });
+  // Refused while reading, before any column crosses into the engine, and the graph kept.
   expect(beyond).toEqual({
     problem: { kind: "idBudgetExceeded", limit: 64_000_000 },
     ms: beyond.ms,
-    titles: ["ok"],
+    loads: 0,
+    titles: ["kept"],
   });
-  // Refused while reading, before the edges cross into the engine.
-  expect(beyond.ms).toBeLessThan(within.ms / 2);
 });
 
 /** In the page: loads 600,000 nodes, each with one text of 1,000 code units, or, with `edges`,

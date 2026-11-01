@@ -1069,20 +1069,33 @@ export const TEST_MODE = import.meta.env.MODE === "test" || import.meta.env.NODE
 const DETACHING_MARK = "comb-test-mode:detaching";
 const TRAP_EXPORT = "comb_test_mode_trap";
 
-/** Each call of `bridge` passed through `around`. */
+/** Each call of `bridge` passed through `around`, with its name. */
 function each(
   bridge: Bridge,
-  around: <A extends unknown[], R>(call: (...args: A) => R) => (...args: A) => R,
+  around: <A extends unknown[], R>(call: (...args: A) => R, name: string) => (...args: A) => R,
 ): Bridge {
-  const calls = Object.entries(bridge).map(([name, call]) => [name, around(call)]);
+  const calls = Object.entries(bridge).map(([name, call]) => [name, around(call, name)]);
   return Object.fromEntries(calls) as Bridge;
+}
+
+/** How often each call of the bridge was made on the page, by its name, in test mode. */
+const callCounts = new Map<string, number>();
+
+/** Test mode only: how often the bridge's call `name` was made on the page, by every Comb on it,
+ *  so that a test sees whether something crossed into the engine, such as a load refused before
+ *  its columns are handed over (ADR-0028). Throws outside test mode. */
+export function bridgeCalls(name: keyof Bridge): number {
+  if (!TEST_MODE) throw new Error("comb: the bridge counts its calls in test mode only");
+  return callCounts.get(name) ?? 0;
 }
 
 /** `bridge` with the engine's memory grown by a page before each of its calls, so that a view
  *  kept across a call is detached and reads empty in tests, not only when memory happens to grow
- *  (ADR-0034). The message of its error carries `DETACHING_MARK`. */
+ *  (ADR-0034), and each call counted by its name. The message of its error carries
+ *  `DETACHING_MARK`. */
 function detaching(bridge: Bridge, memory: WebAssembly.Memory): Bridge {
-  return each(bridge, (call) => (...args) => {
+  return each(bridge, (call, name) => (...args) => {
+    callCounts.set(name, (callCounts.get(name) ?? 0) + 1);
     try {
       memory.grow(1);
     } catch (cause) {

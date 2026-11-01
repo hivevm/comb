@@ -459,7 +459,9 @@ example, reading what is drawn through `comb/testing` rather than pixels, apart 
 image of the edges alone.
 
 The Bun tests and the browser tests on the development server run the bridge in test mode, which
-grows the engine's memory before each of its calls, so a view kept across a call reads empty. The
+grows the engine's memory before each of its calls, so a view kept across a call reads empty, and
+counts each call by its name, which `bridgeCalls(name)` of `comb/testing` reads, so that a test
+sees whether a load crossed into the engine. The
 browser tests serve the example in Vite's `test` mode for it, on port 5174, and assert it through
 `testMode()` of `comb/testing`; the bundle check fails a bundle that carries it. In test mode the
 engine traps on demand: `trapNextCall()` of `comb/testing` arms an export the bridge crate carries
