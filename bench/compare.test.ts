@@ -688,6 +688,21 @@ describe("the content a run loaded", () => {
 });
 
 describe("benchmark comparison of the browser and the CPU a run measured with", () => {
+  test("the median of attached, slowed runs keeps both, so that a baseline taken from it compares", () => {
+    // Verifies: ADR-0038, ADR-0039
+    const slowed = {
+      ...run(200, 100),
+      headed: true,
+      attached: true,
+      browser: "156",
+      cpuThrottle: 2,
+    };
+    const middle = median([slowed, { ...slowed }, { ...slowed }]);
+    if (typeof middle === "string") throw new Error(middle);
+    expect(middle).toMatchObject({ attached: true, browser: "156", cpuThrottle: 2 });
+    expect(compare(slowed, middle).kind).toBe("compared");
+  });
+
   test("a run of an attached browser is not compared with a baseline of a launched one", () => {
     // Verifies: ADR-0038
     const attached = { ...run(200, 100), headed: true, attached: true };
