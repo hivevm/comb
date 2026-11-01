@@ -13,10 +13,9 @@ name: Dev Container
 # file, weekly against main for what moves without a commit (the Feature's stable Rust, the
 # Debian package of ShellCheck, Chromium), and on demand. It is no required check, since a
 # required check that a path filter skips never reports. The Dev Containers CLI runs on the
-# runner's own Node.js, outside the
-# container, at a pinned version; '--frozen-lockfile' fails the build where the lock does not
-# match the Features. It needs no secret (ADR-0016); its action is pinned by commit SHA
-# (ADR-0017), and its checkout keeps no credentials.
+# runner's own Node.js, outside the container, at a pinned version; '--frozen-lockfile' fails the
+# build where the lock does not match the Features. It needs no secret (ADR-0016); its action is
+# pinned by commit SHA (ADR-0017), and its checkout keeps no credentials.
 
 on:
   pull_request:
