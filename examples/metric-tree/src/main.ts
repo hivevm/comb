@@ -13,6 +13,7 @@ import {
 } from "comb";
 import engineUrl from "comb/engine.wasm?url";
 import {
+  bridgeCalls,
   edgeVertices,
   hitKind,
   inspect,
@@ -87,6 +88,7 @@ declare global {
     sceneNumbers: typeof sceneNumbers;
     testMode: typeof testMode;
     trapNextCall: typeof trapNextCall;
+    bridgeCalls: typeof bridgeCalls;
     screenPoint: (x: number, y: number) => ReturnType<typeof screenPoint>;
     hitKind: (x: number, y: number) => ReturnType<typeof hitKind>;
     isDrawn: (what: Parameters<typeof isDrawn>[1]) => boolean;
@@ -532,6 +534,7 @@ window.showLayers = (layers) => showLayers(comb, layers);
 window.sceneNumbers = sceneNumbers;
 window.testMode = testMode;
 window.trapNextCall = trapNextCall;
+window.bridgeCalls = bridgeCalls;
 window.screenPoint = (x, y) => screenPoint(comb, x, y);
 window.hitKind = (x, y) => hitKind(comb, x, y);
 window.isDrawn = (what) => isDrawn(comb, what);
