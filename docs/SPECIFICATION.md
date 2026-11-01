@@ -86,12 +86,15 @@ against them. Each has a measure concrete enough to settle a disagreement and st
 from the threats below.
 
 The reference machine is a mid-range laptop with four cores and an integrated GPU of the class of
-Intel Iris Xe or AMD Radeon 680M, running the current stable Chrome.
+Intel Iris Xe or AMD Radeon 680M, running the current stable Chrome. A machine whose GPU is no
+stronger than that class stands in for it where the benchmark slows its processor to the class
+and its record names the factor; the maintainer's, an Intel UHD Graphics 770 with an Intel Core
+i7-13700 slowed two times, is one.
 
 - **Q-1** — Interaction performance: the reason Comb exists. With 50,000 nodes and 50,000 edges
-  loaded, dragging a node, panning, zooming, and adding or removing a node or an edge hold a p95
-  frame time of at most 16.7 ms (60 fps) on the reference machine, measured by the benchmark of
-  the Strategy.
+  loaded, dragging a node, panning, zooming, and adding or removing a node or an edge draw a frame
+  each refresh of a 60 Hz display on the reference machine: a p95 frame interval of at most
+  16.8 ms as the browser times it, measured by the benchmark of the Strategy.
 - **Q-2** — Load time: a large graph is useless if it takes long to open. Loading a graph of 50,000
   nodes and 50,000 edges until its first frame is drawn takes at most 1 s on the reference
   machine.
