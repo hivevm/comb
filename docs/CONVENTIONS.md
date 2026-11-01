@@ -41,12 +41,20 @@ skimmed. The design revision drops what prevented nothing
   host may give, such as an extreme viewport, either guards it or handles the refusal. A browser
   test drives one such input and asserts no page error. An export's refusal that an input event
   reaches is an uncaught error on the host's page.
+- **Hostile host code in a test answers within bounds.** A test that hands Comb a getter or a
+  `Proxy` whose answers change, as a host application's code may, answers a finite value it
+  counts, such as a length that grows once to a few more than the limit, never one that grows on
+  every read: under the bug it looks for, the reading loops, and a timeout does not end a loop
+  that never yields, so the test hangs instead of failing.
 - **Hand the host copies.** What a change or a method gives the host application is a copy, never
   an object the store keeps, since a host that writes into it changes the graph past every check.
-- **Work a frame need not redo is pinned by a count.** A layer, a hand-over to the engine, or a
-  probe that should do nothing while the pointer moves or the view pans has a test that counts it
-  across such a move (`work()` of `comb/testing`, or a count of its calls), because a frame that
-  redoes it still draws the right picture and no other test sees the cost.
+- **Work that should not happen is pinned by a count, never by a time.** A layer, a hand-over to
+  the engine, or a probe that should do nothing while the pointer moves or the view pans has a test
+  that counts it across such a move (`work()` of `comb/testing`, or a count of its calls), because
+  a frame that redoes it still draws the right picture and no other test sees the cost. Where a
+  test asserts that something is refused before it crosses into the engine, it counts the
+  crossings (`bridgeCalls(name)` of `comb/testing`): a comparison of two timings holds only while
+  the work either side happens to cost what it did, and fails on the same code another day.
 - **A number says where it was taken.** A test or a measurement whose verdict depends on the
   environment (the renderer, the GPU, the display) asserts that environment before it records
   anything, and fails rather than measure a fallback: a silent fallback looks like a result.
@@ -84,3 +92,7 @@ skimmed. The design revision drops what prevented nothing
   from the repository root, `packages/comb/src/api/editors.ts` and not `api/editors.ts`, so that
   `scripts/check-plan-modes.sh` reads each one against the protected parts of
   [ADR-0007](adr/0007-harness.md); a short form passes that check unread.
+- **A premise is read in the code.** An ADR or a ticket that states how the system behaves today,
+  such as the order the scene draws in or what a counter signals, names the function, the test, or
+  the ADR it read that in. A premise written from memory reads as true to the reviewer, who has no
+  reason to open the engine, and a decision built on a false one decides the wrong problem.

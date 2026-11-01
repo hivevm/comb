@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([ADR-0001](adr/0001-agent-governance-model.md)).
 >
-> **Last design revision:** 2026-10-31, due after 20 changes. The revision that ran moves the
+> **Last design revision:** 2026-11-02, due after 20 changes. The revision that ran moves the
 > date; the number is this project's to set; a sensor counts the changes outside `docs/` since
 > the commit that set the date and says when the next is due
 > ([ADR-0006](adr/0006-feature-layer.md)).
@@ -151,18 +151,21 @@ The functional core and its shell follow
   the node of the highest rank, comes before them all. At the near level a label whose pill, as the
   labels layer measures and hands it over (`setLabelSize`), holds the point comes before a node;
   `move_label` places a dragged label at the path parameter nearest a point and its distance along
-  the normal there. `stroke` flattens the found edges within a tolerance and strokes them into the
-  triangles of one mesh, with each edge's colour, dash pattern, and arrowhead, or as thin lines
-  alone at the far level of detail; it decides the stroke of each level. A part of a path whose
-  control points miss the query's rectangle, grown by the stroke's width, is drawn as its chord, a
-  segment that meets the grown rectangle with an end outside it is split where it enters and leaves
-  it, so that what the rectangle shows rounds by its distance from the query's origin, and a path is
-  subdivided at most 24 levels deep; the mesh of one query holds at most the mesh budget, 2^22
-  vertices: each edge's floor, its chord or its arrowhead alone where that is its full mesh, is
-  reserved first, edges are meshed in full in slot order while each fits beside the floors of those
-  after it, and from the first that does not, every edge is drawn as its floor and the mesh is
-  coarsened; its vectors grow by `try_reserve`, so that memory running short coarsens the mesh
-  instead of trapping. `content` lays a node's content out
+  the normal there; `mesh_at` meshes every edge at given node slots, found by a query or not, as
+  the query meshes the edges it found, what a drag redraws of the nodes it moves
+  ([ADR-0036](adr/0036-a-drag-redraws-what-it-moved.md)). `stroke` flattens the found edges within a
+  tolerance and strokes them into the triangles of one mesh, with each edge's colour, dash pattern,
+  and arrowhead, or as thin lines alone at the far level of detail; it decides the stroke of each
+  level. A part of a path whose control points miss the query's rectangle, grown by the stroke's
+  width, is drawn as its chord, a segment that meets the grown rectangle with an end outside it is
+  split where it enters and leaves it, so that what the rectangle shows rounds by its distance from
+  the query's origin, and a path is subdivided at most 24 levels deep; the mesh of one query holds
+  at most the mesh budget, 2^22 vertices: each edge's floor, its chord or its arrowhead alone where
+  that is its full mesh, is reserved first, edges are meshed in full in slot order while each fits
+  beside the floors of those after it, and from the first that does not, every edge is drawn as its
+  floor and the mesh is coarsened; its vectors grow by `try_reserve`, so that memory running short
+  coarsens the mesh instead of trapping; the mesh records where each edge's indices start, so that
+  the shell can leave an edge out of a mesh it keeps. `content` lays a node's content out
   ([ADR-0013](adr/0013-node-content-model.md)): from each role's font, the glyph advances and the
   line height the shell hands over, an action in the font of role body, a badge in it on a pill
   at its column's left that hugs the drawn text with 8 either side and 3 above and below, the
@@ -216,7 +219,11 @@ The functional core and its shell follow
   `contentTextBounds…`, the found edge slots, and the edge mesh into buffers the engine owns, the
   label points and the mesh's positions relative to the query's origin, which `originX` and
   `originY` read ([ADR-0034](adr/0034-node-content-crosses-as-columns.md)), and returns the mesh's
-  detail, complete or coarsened, and refuses a pixel that is not a finite number above zero;
+  detail, complete or coarsened, and refuses a pixel that is not a finite number above zero,
+  with where each found edge's indices start in the mesh (`meshEdgeStarts…`); `meshAt` meshes the
+  edges at given node slots in the rectangle, at the level, and at the pixel of the query the
+  scene keeps, relative to its origin, into buffers of their own (`moving…`), refuses a slot that
+  holds no node and a pixel as `query` does, and returns the mesh's detail (ADR-0036);
   `drawnEdges` computes the ends of the found edges when inspection asks, as they lie then, and
   `hit` names what a press at a point hits, a connector where the shell asks for connectors, a
   label, a node, or an edge by its slot, or nothing, as one generated value, and refuses a pixel as
@@ -249,12 +256,14 @@ The functional core and its shell follow
   `check`, the one check of a load's content columns and of a single node's content, `data`, the
   content the engine keeps, `layout`, the content as the engine's layout and hit test read it,
   `node_content`, the content as the host application's type describes it, and `input`, the content
-  of a single node read through serde-wasm-bindgen. Its module `kept` holds what the bridge keeps of
-  node content between calls: the content of the nodes by slot (`ContentStore`) and the buffers of
-  what a query places of it (`Drawn`). `packages/comb/src/bridge` is the one module that imports the
-  WebAssembly package and reads those buffers through fresh typed-array views per read
-  ([ADR-0034](adr/0034-node-content-crosses-as-columns.md)): its `columns.ts` holds the writers of
-  a load's columns and the codes they cross as, its `index.ts` the facade of the engine, which
+  of a single node read through serde-wasm-bindgen; `snapshot`, built for the tests alone, writes
+  the columns the shell writes, and `tests` holds the builders the tests share. Its module `kept`
+  holds what the bridge keeps of node content between calls: the content of the nodes by slot
+  (`ContentStore`) and the buffers of what a query places of it (`Drawn`).
+  `packages/comb/src/bridge` is the one module that imports the WebAssembly package and reads those
+  buffers through fresh typed-array views per read
+  ([ADR-0034](adr/0034-node-content-crosses-as-columns.md)): its `columns.ts` holds the writers of a
+  load's columns and the codes they cross as, its `index.ts` the facade of the engine, which
   re-exports them.
 - **Store** (`packages/comb/src/store`) — a vanilla Zustand store with the graph's structure, its
   nodes and edges by slot with holes at free slots, which every reader skips, the maps from node and
@@ -262,8 +271,10 @@ The functional core and its shell follow
   an edge by one function each and for a load taken as its snapshot counted them, the change the
   last action that changed the graph made, by kind and identifier, the selection, the node under the
   pointer, the connection the user drags, its source, side, the node under the pointer,
-  compatibility, and the connector a release connects to, the viewport, a counter for moved
-  positions, and a counter for moves of the point a connection is dragged to; no coordinates of
+  compatibility, and the connector a release connects to, the viewport, the slots a drag moves
+  (`dragged`), a counter for changes of positions a kept query does not survive
+  (`positionsVersion`), a counter for a drag's moves (`movesVersion`), and a counter for moves of
+  the point a connection is dragged to (`pointerVersion`); no coordinates of
   nodes, edges, or the pointer
   ([ADR-0037](adr/0037-each-move-its-counter-a-drag-apart.md)).
   `GraphView` is its state without the actions, the type the render layer reads.
@@ -309,10 +320,12 @@ The functional core and its shell follow
 - **Render** (`packages/comb/src/render`) — the PixiJS scene (`scene.ts`), which imports nothing
   from interaction: a `world` render group with the layers `EdgesContainer` (`edges.ts`),
   `NodeParticles` (`particles.ts`), `NodesContainer` (`nodes.ts`), `LabelsContainer` (`labels.ts`),
-  and `ConnectorsLayer` (`connectors.ts`), with the connectors of the node under the pointer and,
-  while the user connects, of the source and the node under the pointer, and an `overlay` with the
-  line of the connection being dragged, to the pointer `api` hands each render from interaction
-  ([ADR-0027](adr/0027-nodes-bound-by-rank.md)); `bindings.ts`
+  and `ConnectorsLayer` (`connectors.ts`), the moving layer of a drag, a second `EdgesContainer`
+  directly above the edges and a second `NodeParticles` directly above the particles
+  ([ADR-0036](adr/0036-a-drag-redraws-what-it-moved.md)), with the connectors of the node under the
+  pointer and, while the user connects, of the source and the node under the pointer, and an
+  `overlay` with the line of the connection being dragged, to the pointer `api` hands each render
+  from interaction ([ADR-0027](adr/0027-nodes-bound-by-rank.md)); `bindings.ts`
   is the pool of views the nodes and labels layers bind to slots, keeping the layer's children in
   the order a render binds them. The scale chooses the level of detail: near (from 0.6) draws node
   views and edge labels, middle (from 0.3) node views alone, and far nodes as particles of one
@@ -322,20 +335,20 @@ The functional core and its shell follow
   which the query returns, edge labels in slot order; while the viewport stays within what it last
   queried, that rectangle within the viewport grown by twice the culling margin, at about its scale
   and the same level of detail, and the graph and the selection are unchanged, a render moves the
-  world alone. The world stands at the screen point of the last query's origin, the edges, labels,
-  and connectors at (0, 0) in it, drawn less the origin, the nodes and particles at minus the
-  origin, so that the GPU sees no far coordinate of edges, labels, and node views. `EdgesContainer`
-  (`render/edges.ts`) draws the edge mesh with a shader that leaves out the gaps of dash patterns;
-  on the Canvas 2D renderer a host application opts into
-  ([ADR-0018](adr/0018-webgl2-or-an-opted-in-canvas-fallback.md)), which runs no shader, `EdgeFill`
-  (`render/edges-canvas.ts`) takes its place, builds no mesh, and fills the same triangles into one
-  `Graphics`, one fill per run of one colour, dash patterns solid. A node view draws its box and its
-  content ([ADR-0013](adr/0013-node-content-model.md)): each text a pooled `BitmapText` of its
-  role's style where the query placed it, cut where the engine cut it and followed by an ellipsis,
-  a badge's on its pill, which one `Graphics` per view draws of the colour the query hands over,
-  placed by the padding the engine states (`badgePaddingX`, `badgePaddingY`), in white or
-  near-black by WCAG contrast (`badgeTextColor`), inspection reading the pills back from that
-  `Graphics`, and a progress bar's pieces, which another `Graphics` per view fills within the
+  world alone; a drag keeps its query and draws its frames as **How it runs** says. The world stands
+  at the screen point of the last query's origin, the edges, labels, and connectors at (0, 0) in it,
+  drawn less the origin, the nodes and particles at minus the origin, so that the GPU sees no far
+  coordinate of edges, labels, and node views. `EdgesContainer` (`render/edges.ts`) draws the edge
+  mesh with a shader that leaves out the gaps of dash patterns; on the Canvas 2D renderer a host
+  application opts into ([ADR-0018](adr/0018-webgl2-or-an-opted-in-canvas-fallback.md)), which runs
+  no shader, `EdgeFill` (`render/edges-canvas.ts`) takes its place, builds no mesh, and fills the
+  same triangles into one `Graphics`, one fill per run of one colour, dash patterns solid. A node
+  view draws its box and its content ([ADR-0013](adr/0013-node-content-model.md)): each text a
+  pooled `BitmapText` of its role's style where the query placed it, cut where the engine cut it and
+  followed by an ellipsis, a badge's on its pill, which one `Graphics` per view draws of the colour
+  the query hands over, placed by the padding the engine states (`badgePaddingX`, `badgePaddingY`),
+  in white or near-black by WCAG contrast (`badgeTextColor`), inspection reading the pills back from
+  that `Graphics`, and a progress bar's pieces, which another `Graphics` per view fills within the
   bar's outline, only its outer ends rounded by 4 (`pieceOutline`), the track in `TRACK_COLOR`,
   inspection reading them back likewise, and a metric's caption in the caption's style, its value
   in the body's, and its trend's text in the body's font and the trend's colour, each where the
@@ -361,14 +374,16 @@ The functional core and its shell follow
   it draw on Canvas 2D (`api/renderers.ts`), and paints the canvas in `background`; and the `Comb`
   it returns: the graph data (`load`, `updateNode`, `addNode`, `addEdge`, `updateEdge`,
   `removeNodes`, `removeEdges`), read once into a snapshot (`api/snapshot.ts`) and handed to the
-  engine by `api/editors.ts`, which also gives interaction the user's connection and deletion, each
-  after its veto, `CombOptions.canConnect` or `CombOptions.canDelete`, the
-  viewport (`fitView`, `setViewport`, `viewport`, and `worldPointAt`, the world point
-  under a point of the page, which needs no engine), the events to the host application (`onChange`,
-  `onSelectionChange`, `onContentClick`, which interaction tells of each click on an element,
-  `onEngineLost`), `registerIcon`, which refuses with an `IconError` a name no icon element can
-  give and an image Comb would fetch, cannot draw, that has not loaded, or whose pixels the page
-  may not read, and copies the image into a canvas of its own (`api/icons.ts`), and
+  engine by `api/editors.ts`, which also gives interaction the user's connection and deletion,
+  each after its veto, `CombOptions.canConnect` or `CombOptions.canDelete`, `heightOf`, the
+  height a node's content lays out to, read and checked there as `addNode` reads and checks a
+  node, changing nothing ([ADR-0035](adr/0035-the-host-asks-the-height-content-lays-out-to.md)),
+  the viewport (`fitView`, `setViewport`, `viewport`, and `worldPointAt`,
+  the world point under a point of the page, which needs no engine), the events to the host
+  application (`onChange`, `onSelectionChange`, `onContentClick`, which interaction tells of each
+  click on an element, `onEngineLost`), `registerIcon`, which refuses with an `IconError` a name no
+  icon element can give and an image Comb would fetch, cannot draw, that has not loaded, or whose
+  pixels the page may not read, and copies the image into a canvas of its own (`api/icons.ts`), and
   `destroy`; `onChange` delivers each change the store
   records as a `GraphChange`
   ([ADR-0030](adr/0030-a-veto-that-changes-the-graph-ends-its-gesture.md)), its positions read
@@ -403,20 +418,21 @@ The functional core and its shell follow
   metric its values over three periods, the north-star metric and a KPI theirs, each with the icon
   of its type beside its title, which the example draws on a canvas and registers before its first
   load, and a "Details" action, whose click puts the sidebar's focus on the node; each node lies
-  with its middle on its row whatever its height; a sidebar edits the selected node's fields and
-  replaces its content through `updateNode`, of a node whose content another caller replaced its
-  title alone, or the selected edge's colour, dash, arrowhead, and label, with a palette whose
-  types HTML drag and drop puts onto the canvas, where the example adds a node of that type
-  centred by its height on `worldPointAt` of the drop (G-1); it keeps its own copy of the graph
-  from every kind of change `onChange` tells, in one table by kind, the sidebar's edits following
-  from the changes Comb tells, and `window.exampleGraph` hands a browser test that copy; it names
-  each edge the user connects after its ends, and hands its vetoes to `window.canConnect` and
-  `window.canDelete` where a browser test sets them; `?connect=none` gives Comb no `canConnect`;
-  `?copies=` sets its size, the copies lie in a grid about as wide as tall, and it reports its load
-  time as `window.loadReport`; `?fallback=canvas` allows the Canvas 2D fallback; it fetches the
-  engine file Vite emits for its `comb/engine.wasm?url` import and hands over the promise of the
-  response, or with `?engine=response`, `module`, `bytes`, or `view` that form; `window.createComb`
-  and `window.engineUrl` let a browser test make a second Comb in a host element of its own,
+  with its middle on its row whatever its height, which the example asks of `heightOf`; a sidebar
+  edits the selected node's fields and replaces its content through `updateNode`, of a node whose
+  content another caller replaced its title alone, or the selected edge's colour, dash, arrowhead,
+  and label, with a palette whose types HTML drag and drop puts onto the canvas, where the example
+  adds a node of that type centred by the height `heightOf` gives on `worldPointAt` of the drop
+  (G-1); it keeps its own copy of the graph from every kind of change `onChange` tells, in one table
+  by kind, the sidebar's edits following from the changes Comb tells, and `window.exampleGraph`
+  hands a browser test that copy; it names each edge the user connects after its ends, and hands its
+  vetoes to `window.canConnect` and `window.canDelete` where a browser test sets them;
+  `?connect=none` gives Comb no `canConnect`; `?copies=` sets its size, the copies lie in a grid
+  about as wide as tall, and it reports its load time as `window.loadReport`; `?fallback=canvas`
+  allows the Canvas 2D fallback; it fetches the engine file Vite emits for its
+  `comb/engine.wasm?url` import and hands over the promise of the response, or with
+  `?engine=response`, `module`, `bytes`, or `view` that form; `window.createComb` and
+  `window.engineUrl` let a browser test make a second Comb in a host element of its own,
   `window.useGraph` loads a graph as the example's own, and the functions of `comb/testing` stand on
   `window`, bound to its Comb.
 - **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, each node with the
@@ -454,7 +470,8 @@ lowered; the hit test held to one scan of every kind, whose oracle, `Model` of `
 computes bounds, connectors, paths, and label points from the inputs the test gave the graph and
 reads nothing of it; Bun tests beside their module as `*.test.ts`, the bridge's against the built
 WebAssembly module, the lint's rules for Comb's library sources in `packages/comb/src/lint.test.ts`,
-and those of `bench/compare.ts`, `bench/chromium.ts`, and `bench/fitted.ts` beside them; browser
+and those of `bench/compare.ts`, `bench/chromium.ts`, and `bench/fitted.ts` beside them, with
+`bench/content.test.ts` of the content the benchmark names as loaded; browser
 tests under `examples/*/e2e`, a file for the golden path and one for each concern they verify,
 sharing their helpers through `e2e/shared.ts` (a graph loaded as the example's own through
 `useGraph` with what Comb tells recorded, the one read of the drawn nodes and edges each spec
@@ -551,9 +568,9 @@ input handlers do nothing, so no trap escapes as a page error.
 
 **Holding the shape.** `scripts/check-code.sh`, which `scripts/check-all.sh` runs and the **Checks**
 workflow (`.github/workflows/checks.yml`) runs on every pull request, runs the structural, the
-dependency, the overview, and the comment width checks below with their self-tests and the
-self-test of the engine check, then the build, the lint, and the tests, then the bundle check with
-its self-test.
+dependency, the container, the overview, and the comment width checks below with their
+self-tests and the self-test of the engine check, then the build, the lint, and the tests, then the
+bundle check with its self-test.
 `scripts/check-engine.sh`, which `bun run test`, `bun run dev`, and the bundle check run first,
 fails when `engine_bg.wasm` of `packages/comb/wasm/` or of `packages/comb/wasm/test-mode/` is
 missing or older than a file under `crates/` other than those no build reads (the list of surviving
@@ -587,6 +604,9 @@ example fail where `testMode()` says the build runs the bridge in test mode.
 (ADR-0008), on tsify's default or `json` features or `serde_json` in the bridge crate (ADR-0034), in
 whatever form the entry takes, and on a listed state library other than zustand in the library's
 dependency lists (ADR-0037).
+`scripts/check-devcontainer.sh`, the template's, which `scripts/check-all.sh` and the **Checks**
+workflow run beside `scripts/check-code.sh`, fails on a host Docker socket mounted, a Feature not
+referenced by its major tag alone, or a lock that does not name the Features (ADR-0004).
 `scripts/check-container.sh` fails where the Dev Container does not build from its Dockerfile,
 where the Dockerfile names an image without a digest, or where a Feature installs Node.js
 (ADR-0014), and on a Feature that brings a container engine or a Compose file (ADR-0015); the
