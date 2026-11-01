@@ -71,6 +71,11 @@ export class Bindings<V extends Pooled> {
     return view;
   }
 
+  /** The view the last render bound to `slot`, or none. */
+  boundTo(slot: number): V | undefined {
+    return this.bound.get(slot);
+  }
+
   private made(): V {
     this.madeCount += 1;
     return this.make();

@@ -1352,7 +1352,7 @@ impl Engine {
         self.moving_edges.len()
     }
 
-    /// Where the buffer starts that `meshAt` writes the mesh's its vertices' positions, `x, y` each into.
+    /// Where `meshAt` writes the positions of the moving mesh's vertices, `x, y` each.
     #[wasm_bindgen(js_name = movingPositionsPtr)]
     pub fn moving_positions_ptr(&self) -> *const f32 {
         self.moving.positions.as_ptr()
@@ -1364,7 +1364,7 @@ impl Engine {
         self.moving.positions.len()
     }
 
-    /// Where the buffer starts that `meshAt` writes the mesh's its vertices' distances along their paths into.
+    /// Where `meshAt` writes the distances of the moving mesh's vertices along their paths.
     #[wasm_bindgen(js_name = movingDistancesPtr)]
     pub fn moving_distances_ptr(&self) -> *const f32 {
         self.moving.distances.as_ptr()
@@ -1376,7 +1376,7 @@ impl Engine {
         self.moving.distances.len()
     }
 
-    /// Where the buffer starts that `meshAt` writes the mesh's its vertices' colours as RGBA bytes into.
+    /// Where `meshAt` writes the colours of the moving mesh's vertices as RGBA bytes.
     #[wasm_bindgen(js_name = movingColorsPtr)]
     pub fn moving_colors_ptr(&self) -> *const u32 {
         self.moving.colors.as_ptr()
@@ -1388,7 +1388,7 @@ impl Engine {
         self.moving.colors.len()
     }
 
-    /// Where the buffer starts that `meshAt` writes the mesh's its vertices' dash patterns, `dash, gap` each into.
+    /// Where `meshAt` writes the dash patterns of the moving mesh's vertices, `dash, gap` each.
     #[wasm_bindgen(js_name = movingDashesPtr)]
     pub fn moving_dashes_ptr(&self) -> *const f32 {
         self.moving.dashes.as_ptr()
@@ -1400,7 +1400,7 @@ impl Engine {
         self.moving.dashes.len()
     }
 
-    /// Where the buffer starts that `meshAt` writes the mesh's its vertex indices, three per triangle into.
+    /// Where `meshAt` writes the moving mesh's vertex indices, three per triangle.
     #[wasm_bindgen(js_name = movingIndicesPtr)]
     pub fn moving_indices_ptr(&self) -> *const u32 {
         self.moving.indices.as_ptr()

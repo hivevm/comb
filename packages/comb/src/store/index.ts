@@ -156,7 +156,14 @@ export interface GraphView {
    *  gesture to end before anything reads the store after the change. */
   readonly connection: Connection | null;
   readonly viewport: Readonly<Viewport>;
+  /** Counts the changes of the engine's positions that a query the scene keeps does not survive:
+   *  a load, an added node, the release of a drag (ADR-0029, ADR-0036). */
   readonly positionsVersion: number;
+  /** The node slots a drag moves, from its first move to its release, or none; a load, or a
+   *  removal of one of them, leaves none (ADR-0036). */
+  readonly dragged: readonly number[] | null;
+  /** Counts the moves of the nodes in `dragged`, which a query the scene keeps survives. */
+  readonly movesVersion: number;
   /** Counts the moves of the point a connection is dragged to, which interaction keeps. */
   readonly pointerVersion: number;
 }
@@ -173,6 +180,12 @@ export interface GraphState extends GraphView {
   select(selection: Selection): void;
   setViewport(viewport: Viewport): void;
   positionsMoved(): void;
+  /** Records that a drag moves the nodes in `slots`, which the engine has moved once. */
+  dragStarted(slots: readonly number[]): void;
+  /** Records that the drag moved its nodes again. */
+  dragMoved(): void;
+  /** Records that the drag ended, which a query the scene keeps does not survive. */
+  dragEnded(): void;
   /** Records that the point a connection is dragged to moved, where interaction keeps it. */
   pointerMoved(): void;
   /** Records that a drag, now released, left the node `id` where the engine keeps it. */
@@ -267,12 +280,30 @@ function loadedFrom(state: GraphView, graph: KeptGraph, idUnits: number): Partia
     change: { kind: "loaded", by: "host" },
     selection: null,
     hovered: null,
+    dragged: null,
     positionsVersion: state.positionsVersion + 1,
   };
 }
 
 /** What `removeNodes` changes of `state`: the nodes in `nodeSlots` and the edges in `edgeSlots`
  *  forgotten, and a selection of a removed node cleared. */
+/** What a removal leaving `nodes` changes of a drag of `state`: none dragged where it removed one
+ *  of the nodes the drag moves (ADR-0036). */
+function draggedWithout(state: GraphView, nodes: GraphView["nodes"]): Partial<GraphView> {
+  return state.dragged?.some((slot) => !nodes[slot]) ? { dragged: null } : {};
+}
+
+/** The actions of a drag of nodes (ADR-0036), by the store's `set`. */
+function dragsOf(set: (change: (state: GraphState) => Partial<GraphState>) => void) {
+  return {
+    dragStarted: (slots: readonly number[]) =>
+      set((state) => ({ dragged: slots, movesVersion: state.movesVersion + 1 })),
+    dragMoved: () => set((state) => ({ movesVersion: state.movesVersion + 1 })),
+    dragEnded: () =>
+      set((state) => ({ dragged: null, positionsVersion: state.positionsVersion + 1 })),
+  };
+}
+
 function withoutNodes(
   state: GraphView,
   nodeSlots: readonly number[],
@@ -298,6 +329,7 @@ function withoutNodes(
     (selection?.kind === "edge" && !removed.edgeSlots.has(selection.id));
   const hoveredAndConnection = hoveredAndConnectionWithout(state, nodes);
   return {
+    ...draggedWithout(state, nodes),
     nodes,
     slots,
     edges: removed.edges,
@@ -384,6 +416,8 @@ export function createGraphStore() {
     connection: null,
     viewport: { x: 0, y: 0, scale: 1 },
     positionsVersion: 0,
+    dragged: null,
+    movesVersion: 0,
     pointerVersion: 0,
     load: (graph, idUnits) => set((state) => loadedFrom(state, graph, idUnits)),
     addNode: ({ id, width }, slot) =>
@@ -403,6 +437,7 @@ export function createGraphStore() {
     select: (selection) => set({ selection }),
     setViewport: (viewport) => set({ viewport }),
     positionsMoved: () => set((state) => ({ positionsVersion: state.positionsVersion + 1 })),
+    ...dragsOf(set),
     pointerMoved: () => set((state) => ({ pointerVersion: state.pointerVersion + 1 })),
     nodeMoved: (id) => set({ change: { kind: "nodeMoved", by: "user", id } }),
     removeNodes: (nodeSlots, edgeSlots, by) =>

@@ -82,6 +82,16 @@ export class LabelsContainer extends Container {
    *  the reach the next query uses for labels. */
   reach = LABEL_REACH;
 
+  /** Moves the label views bound to the edges in `slots`, which a drag moves, to their edges'
+   *  points as the engine places them now, relative to `origin` (G-6, ADR-0036). */
+  follow(slots: Uint32Array, bridge: Bridge, origin: { x: number; y: number }): void {
+    for (const slot of slots) {
+      const view = this.views.boundTo(slot);
+      const point = view && bridge.labelPoint(slot);
+      if (point) view.position.set(point.x - origin.x, point.y - origin.y);
+    }
+  }
+
   /** Binds a label view to every label `visible` found, or to none where `shown` is false, and
    *  hands the engine the half width and half height of each pill it has not measured for that
    *  edge, as it was drawn, by which a press hits it (ADR-0013). */

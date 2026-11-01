@@ -115,7 +115,7 @@ export class ConnectorsLayer extends Graphics {
 
 /** What the drawn connectors depend on: not where the pointer drags a connection to. */
 function drawnFrom(state: GraphView, origin: { x: number; y: number }, far: boolean): unknown[] {
-  const { connection, hovered, nodes, positionsVersion } = state;
+  const { connection, hovered, nodes, positionsVersion, movesVersion } = state;
   const { source, side, over, compatible } = connection ?? {};
   return [
     far,
@@ -126,6 +126,7 @@ function drawnFrom(state: GraphView, origin: { x: number; y: number }, far: bool
     hovered,
     nodes,
     positionsVersion,
+    movesVersion,
     origin.x,
     origin.y,
   ];

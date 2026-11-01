@@ -144,7 +144,14 @@ impl Graph {
             (&self.paths[slot], &self.edges[slot].style)
         });
         let stroke = Stroke::at(at.level, bounded_pixel(at.pixel));
-        out.build(found, &stroke, &at.rect, at.origin, MESH_BUDGET, &mut self.points);
+        out.build(
+            found,
+            &stroke,
+            &at.rect,
+            at.origin,
+            MESH_BUDGET,
+            &mut self.points,
+        );
         Ok(())
     }
 }

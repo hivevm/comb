@@ -292,7 +292,7 @@ The functional core and its shell follow
   a key held down or pressed with Control, Alt, or Meta deletes nothing beyond its first press. A
   connection's source and what it is over are the store's, written only where they change; the
   world point it is dragged to is interaction's `pointer`, which `attachInteraction` returns, and a
-  move signals it with the store's `pointerMoved`, as a drag of a node signals its positions; its
+  move signals it with the store's `pointerMoved`, as a drag of a node signals its moves; its
   gesture ends it at a load or a removal of its source. `label-drag.ts`: a press on a label, at the
   near level, selects its edge and drags the label, held where it was grabbed, which the engine
   places on every move; its release, or a later press, records `labelMoved` once, and a load, a
@@ -489,11 +489,15 @@ forwards, so WebGL2 runs on SwiftShader instead of PixiJS falling back to Canvas
 
 **Dragging a node.** `interaction` turns the pointer delta into world units and calls
 `bridge.translate`, which moves the slot in the engine's positions buffer and recomputes the
-node's edges and their place in the spatial index; it then bumps the store's `positionsVersion`.
-The store notifies the scene, which renders once per animation frame: it queries the engine for
-the viewport grown by the culling margin, binds node views and edge-label views to the slots
-found, and uploads the edge mesh the query built, so edges and labels follow the node in the
-same frame.
+node's edges and their place in the spatial index; its first move names the slot in the store's
+`dragged` (`dragStarted`), each later one bumps `movesVersion` (`dragMoved`), and the release
+clears it and bumps `positionsVersion` (`dragEnded`). The store notifies the scene, which renders
+once per animation frame and keeps the query it drew at the press (ADR-0036): the first frame
+leaves the dragged node's edges out of the query's mesh, uploading its indices alone, and at the
+far level its particle; every frame asks the engine for the mesh of the edges at the node
+(`meshAt`), uploads it whole into the moving layer above the edges, and moves the node's view, or
+draws its particle in the moving layer, and its edges' labels where they are now, so edges and
+labels follow the node in the same frame. The release queries once.
 
 **Editing.** A method of `Comb` that changes the graph runs through one function of
 `api/editors.ts`, which holds the order: it refuses once the engine is lost, reads the input once,

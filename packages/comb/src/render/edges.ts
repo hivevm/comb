@@ -4,7 +4,7 @@
 // renderer a host application opts into (ADR-0018), which runs no shader, `EdgeFill` in
 // `edges-canvas.ts` draws the layer instead.
 import { Container, Geometry, Mesh, Shader } from "pixi.js";
-import type { EdgeMesh, Visible } from "../bridge";
+import type { EdgeMesh } from "../bridge";
 import type { EdgeData } from "../store";
 
 /** The colour of an edge the host application gives none. */
@@ -56,6 +56,31 @@ const ATTRIBUTES = [
   { name: "aColor", from: "colors", values: 1, format: "unorm8x4" },
   { name: "aDash", from: "dashes", values: 2, format: "float32x2" },
 ] as const;
+
+/** A mesh an edges layer draws: a query's, which names the edges it found and where each one's
+ *  indices start, or the moving mesh of a drag, which names none (ADR-0036). */
+export interface DrawnMesh {
+  mesh: EdgeMesh;
+  edges?: Uint32Array;
+  edgeStarts?: Uint32Array;
+}
+
+/** The ranges of indices, `[start, end)` each, of those of `edges` in `hidden`, each starting at
+ *  its place in `starts` and ending where the next begins, the last at `count`, the mesh's
+ *  indices; none where the mesh holds no edge, as `starts` then says. */
+export function hiddenRanges(
+  edges: Uint32Array,
+  starts: Uint32Array,
+  count: number,
+  hidden: ReadonlySet<number>,
+): [number, number][] {
+  if (starts.length !== edges.length) return [];
+  const ranges: [number, number][] = [];
+  edges.forEach((slot, i) => {
+    if (hidden.has(slot)) ranges.push([starts[i]!, starts[i + 1] ?? count]);
+  });
+  return ranges;
+}
 
 /** The capacity a mesh of `size` grows to: the next power of two, so it grows rarely. */
 function grown(size: number): number {
@@ -133,6 +158,15 @@ class MeshBuffers {
     this.vertices = vertices;
     this.indices = indices;
   }
+
+  /** Leaves the triangles of `ranges` of the indices out, as empty triangles, and marks the index
+   *  buffer alone for upload. */
+  hide(ranges: readonly [number, number][]): void {
+    if (ranges.length === 0) return;
+    const array = this.arrays.indices;
+    for (const [start, end] of ranges) array.fill(0, start, end);
+    this.geometry.indexBuffer.setDataWithSize(array, this.indices, true);
+  }
 }
 
 /** What the edges layer drew last, and the room its arrays hold before they reallocate. */
@@ -162,9 +196,24 @@ export class EdgesContainer extends Container {
     this.addChild(this.mesh);
   }
 
-  sync(visible: Visible): void {
-    this.buffers.set(visible.mesh);
+  /** The edges the last sync drew and where each one's indices start, copied out of the engine's
+   *  memory. */
+  private found = { edges: new Uint32Array(0), starts: new Uint32Array(0) };
+
+  sync(drawn: DrawnMesh): void {
+    this.buffers.set(drawn.mesh);
     this.mesh.visible = this.buffers.indices > 0;
+    this.found = {
+      edges: Uint32Array.from(drawn.edges ?? []),
+      starts: Uint32Array.from(drawn.edgeStarts ?? []),
+    };
+  }
+
+  /** Leaves the edges in `hidden` out of the mesh the last sync drew, uploading its indices alone
+   *  (ADR-0036). */
+  hide(hidden: ReadonlySet<number>): void {
+    const { edges, starts } = this.found;
+    this.buffers.hide(hiddenRanges(edges, starts, this.buffers.indices, hidden));
   }
 
   /** What the mesh drew last, and the room its arrays hold before they reallocate. */

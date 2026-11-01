@@ -137,8 +137,9 @@ test("a pan within the culling margin moves the world without a query", async ({
   expect(await queries()).toBe(before);
   await setViewport(page, { ...start, x: start.x + 4 * cullingMargin });
   expect(await queries()).toBe(before + 1);
-  // A selection and a move change what is drawn: the renders query, wherever the viewport is.
-  // Each step waits for its render, so that none folds into the next.
+  // A selection changes what is drawn: its render queries, wherever the viewport is. A drag's
+  // moves keep that query, and its release queries once (ADR-0036). Each step waits for its
+  // render, so that none folds into the next.
   // The counts are exact because no display object uses eventMode "dynamic", whose ticker
   // pointermove would add moves.
   const rendered = () => page.evaluate(() => window.comb.whenRendered());
@@ -149,8 +150,7 @@ test("a pan within the culling margin moves the world without a query", async ({
   expect(await queries()).toBe(before + 2);
   await page.mouse.move(centre.x, centre.y + 5);
   await rendered();
-  expect(await queries()).toBe(before + 3);
-  // Releasing the node changes nothing drawn.
+  expect(await queries()).toBe(before + 2);
   await page.mouse.up();
   await rendered();
   expect(await queries()).toBe(before + 3);
