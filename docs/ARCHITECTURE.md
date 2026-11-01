@@ -85,7 +85,10 @@ texts of content, counted and stopped at their budget alike (`checkContentBudget
 whose text passed it), then the snapshot, and the
 store keeps the snapshot's edges and of each node its identifier and width; a node's content is the
 engine's alone, which the snapshot of a load writes straight into its columns, and which the
-engine's `content` builds when inspection or a change Comb tells asks for it. A load's nodes and
+engine's `content` builds when inspection or a change Comb tells asks for it. One walk reads a
+node's content, `walkContent`, and hands what it read to a sink: a load's writes its columns and
+counts its texts against the budget, that of `addNode`, `updateNode`, and `heightOf` builds the
+plain data serde reads. A load's nodes and
 edges cross as columns the snapshot writes while it reads them, through the bridge's
 `nodeColumns` and `edgeColumns`: each string field, the identifiers, sources, targets, label texts,
 the texts of content, and its names, the actions' identifiers, as pieces of at
