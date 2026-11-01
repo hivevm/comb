@@ -1,6 +1,6 @@
 # ADR-0038: The benchmark can drive a Chrome on the host, through its debugging port bridged to the Dev Container
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-02
 - **Deciders:** Markus Brigl
 - **Applies to:** `bench/run.ts` and its tests under `bench/`, `.devcontainer/devcontainer.json`, and the **Benchmark** part of `README.md`

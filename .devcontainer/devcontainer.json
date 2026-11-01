@@ -18,6 +18,10 @@
     "source=${localEnv:HOME}${localEnv:USERPROFILE}/.claude,target=/home/vscode/.claude,type=bind"
   ],
 
+  // The host's address on the Docker bridge, by which the benchmark reaches a Chrome on the host
+  // that a forwarder there bridges to its debugging port (ADR-0038).
+  "runArgs": ["--add-host=host.docker.internal:host-gateway"],
+
   "shutdownAction": "stopContainer",
 
   // Runs on the host before the container is created. Ensures the bind-mount source for the agent
@@ -74,11 +78,12 @@
     }
   },
 
-  // The example's development server (G-9); the launch configuration opens it in the host's
-  // browser.
-  "forwardPorts": [5173],
+  // The example's development server (G-9), which the launch configuration opens in the host's
+  // browser, and the benchmark's preview server, which a Chrome on the host loads (ADR-0038).
+  "forwardPorts": [5173, 4173],
   "portsAttributes": {
-    "5173": { "label": "Comb example", "onAutoForward": "silent" }
+    "5173": { "label": "Comb example", "onAutoForward": "silent" },
+    "4173": { "label": "Comb benchmark", "onAutoForward": "silent" }
   },
 
   "hostRequirements": {

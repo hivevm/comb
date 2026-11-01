@@ -448,7 +448,9 @@ The functional core and its shell follow
   run records the level the fitted view draws (`fitted`) and the content loaded, nodes by type and
   elements by kind (`load.content`). It is
   served from the example's production build by `vite preview` on port 4173, in a Chromium
-  started by `bench/chromium.ts`.
+  started by `bench/chromium.ts`, or attached through its debugging port to a Chrome on the host
+  where `BENCH_CDP` names one (ADR-0038); `BENCH_CPU_THROTTLE` slows the measured page's CPU
+  (ADR-0039). `bench/options.ts` reads both and refuses a value it cannot take.
   After the first frame and before the gestures it times the reference workload of
   `bench/reference.ts` in the same page, which uses the browser's JavaScript, WebAssembly, and
   WebGL2 and none of Comb's code. `bench/compare.ts` compares the median of several runs with

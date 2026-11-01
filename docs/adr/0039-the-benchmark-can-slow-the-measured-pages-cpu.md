@@ -1,6 +1,6 @@
 # ADR-0039: The benchmark can slow the measured page's CPU, by a factor its record names
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-02
 - **Deciders:** Markus Brigl
 - **Applies to:** `bench/run.ts` and its tests under `bench/`, `bench/compare.ts`, and the **Benchmark** part of `README.md`
