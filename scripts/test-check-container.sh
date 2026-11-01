@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Self-test of scripts/check-container.sh. Verifies: ADR-0014, ADR-0015
+# Self-test of scripts/check-container.sh. Verifies: ADR-0014, ADR-0015, ADR-0038
 #
 # Each case builds a fixture under a temporary directory — a devcontainer.json with comments that
 # builds from the Dockerfile and adds the Rust Feature, and a Dockerfile that pins its base image
@@ -26,8 +26,13 @@ passed=0
 
 SHA="sha256:$(printf '0%.0s' {1..64})"
 
+# The run argument and the forwarded ports a fixture names, by which the benchmark reaches a
+# Chrome on the host (ADR-0038); a case clears one to break it.
+RUN_ARGS='"runArgs": ["--add-host=host.docker.internal:host-gateway"],'
+PORTS='"forwardPorts": [5173, 4173],'
+
 # config <dir> <build json line> <feature ids...> — write devcontainer.json with the given build
-# line and Features.
+# line and Features, beside RUN_ARGS and PORTS.
 config() {
   local dir="$1" build="$2"; shift 2
   local id
@@ -36,6 +41,8 @@ config() {
     echo '  "name": "fixture",'
     echo '  // A comment: no "image": "x", no node Feature "ghcr.io/devcontainers/features/node:1": {}.'
     echo "  $build"
+    echo "  $RUN_ARGS"
+    echo "  $PORTS"
     echo '  "features": {'
     for id in "$@"; do
       echo "    \"$id\": {},"
@@ -171,6 +178,8 @@ d="$(repo settings-glob)"
 {
   echo '{'
   echo '  "build": { "dockerfile": "Dockerfile" },'
+  echo "  $RUN_ARGS"
+  echo "  $PORTS"
   echo '  "features": { "ghcr.io/devcontainers/features/rust:1": {} },'
   echo '  "customizations": { "vscode": { "settings": {'
   echo '    "files.watcherExclude": { "**/target/**": true, "**/docker/**": true, "**/node": true }'
@@ -200,6 +209,19 @@ printf '{ "build": { "dockerfile": "Dockerfile" }, "features": { "ghcr.io/devcon
   > "$d/.devcontainer/devcontainer.json"
 expect fail "a configuration on one line, with a string-valued Feature, is read like any other" "$d" \
   "docker-in-docker:2' brings a container engine"
+
+# ADR-0038: the way to a Chrome on the host.
+
+d="$(repo no-host)"
+RUN_ARGS='"runArgs": [],' config "$d" '"build": { "dockerfile": "Dockerfile" },' \
+  "ghcr.io/devcontainers/features/rust:1"
+expect fail "no run argument for the host's address" "$d" "--add-host=host.docker.internal:host-gateway"
+
+d="$(repo no-port)"
+PORTS='"forwardPorts": [5173, 41730],' config "$d" '"build": { "dockerfile": "Dockerfile" },' \
+  "ghcr.io/devcontainers/features/rust:1"
+expect fail "the benchmark's port not forwarded, a longer number naming it no more" "$d" \
+  "does not forward port 4173"
 
 # --- summary -------------------------------------------------------------------------------
 

@@ -10,6 +10,7 @@
 // from the baseline's by at most MARGIN, or the run is refused as taken on a runner not in the
 // state the baseline was taken in. The reference decides only whether to compare, never by how
 // much a number moved. Runs of another size, mode, or GPU than the baseline's are refused as well,
+// as are runs of an attached browser (ADR-0038) or of a CPU slowed by another factor (ADR-0039),
 // and so is a run that names no GPU, as one on a fallback renderer would, and a run without a
 // reference against a baseline with one. Against a baseline without a reference the numbers are
 // compared and the gate is reported as not checked. The median, with the CPU model and each
@@ -68,6 +69,13 @@ export interface Run {
   cpu?: string;
   /** The renderer WebGL reports, as bench/run.ts reads it. */
   gpu?: string;
+  /** Whether the run attached to a browser started outside it rather than launching Chromium,
+   *  and that browser's version (ADR-0038); absent in a run recorded before. */
+  attached?: boolean;
+  browser?: string;
+  /** The factor the measured page's CPU was slowed by (ADR-0039); 1, or absent in a run recorded
+   *  before, where nothing was. */
+  cpuThrottle?: number;
   /** The reference workload of the run, in milliseconds; absent in a run recorded without it. */
   reference?: Reference;
   /** The content is absent in a run recorded before it was named. */
@@ -116,7 +124,9 @@ function numbers(run: Run): Record<string, number> {
 
 /** The size, mode, and GPU of a run, which a comparison and a median require to be the same. */
 const setting = (run: Run) =>
-  `${run.load.nodes} nodes (${run.copies} copies), ${run.headed ? "headed" : "headless"}, on ${run.gpu}`;
+  `${run.load.nodes} nodes (${run.copies} copies), ${run.headed ? "headed" : "headless"}, on ${run.gpu}` +
+  (run.attached ? ", attached" : "") +
+  ((run.cpuThrottle ?? 1) === 1 ? "" : `, the CPU slowed ${run.cpuThrottle} times`);
 
 /** The content a run names, as bench/run.ts prints it: nodes by type, then elements by kind. */
 export const contentOf = ({ nodes, elements }: Content) =>

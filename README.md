@@ -72,6 +72,19 @@ most 300 kB gzipped without PixiJS).
   the kind's baseline lacks is reported as new and not judged. `BENCH_HEADED=1` opens a window
   that uses the machine's GPU, which is how the numbers on the reference machine are taken;
   `BENCH_COPIES` sets another size.
+  The Dev Container has no display and no GPU, so from it the run measures in a Chrome on the host
+  ([ADR-0038](docs/adr/0038-the-benchmark-drives-a-chrome-on-the-host.md)). On the host, for the
+  measurement only, start Chrome with a throwaway profile and bridge its debugging port to the
+  Docker bridge alone (`ip -4 addr show docker0` names its address, often `172.17.0.1`):
+  `google-chrome --remote-debugging-port=9222 --user-data-dir="$(mktemp -d)"` and
+  `socat TCP-LISTEN:9223,bind=172.17.0.1,fork TCP:127.0.0.1:9222`. Then, in the container,
+  `BENCH_CDP=http://host.docker.internal:9223 bun run bench` attaches to that Chrome, which loads
+  the example from the port VS Code forwards, 4173; the record says `attached` and names the
+  browser. `BENCH_CPU_THROTTLE=2` slows the measured page's CPU by that factor, where the machine's
+  processor outruns the reference's
+  ([ADR-0039](docs/adr/0039-the-benchmark-can-slow-the-measured-pages-cpu.md)); the record names
+  `cpuThrottle`, and a run is compared only with baselines of the same factor and kind of browser.
+  Stop Chrome and socat after the measurement: the port gives whoever reaches it the browser.
   After the load and the first frame, before the gestures, each run times a fixed reference
   workload in the same page (`bench/reference.ts`: a JavaScript loop, a WebAssembly loop, and a
   WebGL2 draw of a fixed mesh), recorded as `reference` with its parts. The **Benchmark** workflow

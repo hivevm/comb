@@ -22,18 +22,26 @@
 //   BENCH_HEADED=1 bun run bench    a visible window, which uses the machine's GPU
 //   BENCH_COPIES=100 bun run bench  another size
 //   BENCH_ACTION_MS=60000           the time one action may take (default 30 s)
+//   BENCH_CDP=http://host.docker.internal:9223
+//                                   attach to a Chrome started outside the run, through its
+//                                   debugging port, instead of launching Chromium (ADR-0038)
+//   BENCH_CPU_THROTTLE=2            slow the measured page's CPU by that factor (ADR-0039)
 import { chromium, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { cpus } from "node:os";
 import type { LoadReport } from "../examples/metric-tree/src/main";
 import { chromiumEnv } from "./chromium";
 import { contentOf, gestures, type LEVELS, type Run } from "./compare";
+import { browserFor, cpuThrottleFor } from "./options";
 import { gesturesAtFitted, type View } from "./fitted";
 import { PARTS, referenceWorkload } from "./reference";
 
 const PORT = 4173;
 const COPIES = Number(process.env.BENCH_COPIES ?? 3334);
 const HEADED = Boolean(process.env.BENCH_HEADED);
+// Read before anything starts, so that a value the run cannot take refuses it at once.
+const BROWSER = browserFor(process.env);
+const CPU_THROTTLE = cpuThrottleFor(process.env);
 const STEPS = 120;
 const ACTION_BUDGET_MS = Number(process.env.BENCH_ACTION_MS ?? 30_000);
 const LOAD_TIMEOUT_MS = 300_000;
@@ -577,18 +585,28 @@ const server = Bun.spawn(
 try {
   for (let i = 0; i < 100 && !(await serving()); i++) await Bun.sleep(100);
   if (!(await serving())) throw new Error("the preview server did not start");
-  const browser = await chromium.launch({
-    headless: !HEADED,
-    env: chromiumEnv(HEADED),
-  });
+  // An attached browser is one started outside the run with a window of its own (ADR-0038).
+  const attached = BROWSER.kind === "attach";
+  const browser = attached
+    ? await chromium.connectOverCDP(BROWSER.endpoint)
+    : await chromium.launch({ headless: !HEADED, env: chromiumEnv(HEADED) });
+  // A context of the run's own, so that it closes only what it opened, of an attached browser too.
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   try {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    const page = await context.newPage();
+    if (CPU_THROTTLE !== 1) {
+      const session = await context.newCDPSession(page);
+      await session.send("Emulation.setCPUThrottlingRate", { rate: CPU_THROTTLE });
+    }
     const result = await measure(page);
     const commit = (await Bun.$`git describe --always --dirty`.nothrow().text()).trim();
     const record = {
       date: new Date().toISOString(),
       commit,
-      headed: HEADED,
+      headed: HEADED || attached,
+      attached,
+      browser: browser.version(),
+      cpuThrottle: CPU_THROTTLE,
       cpu: cpus()[0]?.model,
       copies: COPIES,
       steps: STEPS,
@@ -605,6 +623,8 @@ try {
     report(result);
     console.log("Written to bench-results/latest.json.");
   } finally {
+    await context.close();
+    // Of an attached browser, this disconnects and leaves it running.
     await browser.close();
   }
 } finally {

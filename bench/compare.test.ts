@@ -686,3 +686,29 @@ describe("the content a run loaded", () => {
     expect(compare(loaded(), run(200, 100))).toMatchObject({ kind: "compared", regressions: [] });
   });
 });
+
+describe("benchmark comparison of the browser and the CPU a run measured with", () => {
+  test("a run of an attached browser is not compared with a baseline of a launched one", () => {
+    // Verifies: ADR-0038
+    const attached = { ...run(200, 100), headed: true, attached: true };
+    const verdict = compare(attached, { ...run(200, 100), headed: true });
+    expect(verdict).toMatchObject({
+      kind: "incomparable",
+      reason: expect.stringContaining(`on ${SWIFTSHADER}, attached, the baseline`),
+    });
+    expect(compare(attached, { ...attached }).kind).toBe("compared");
+  });
+
+  test("a run of a CPU slowed by another factor than the baseline's is not compared", () => {
+    // Verifies: ADR-0039
+    const slowed = { ...run(200, 100), cpuThrottle: 2 };
+    const verdict = compare(slowed, run(200, 100));
+    expect(verdict).toMatchObject({
+      kind: "incomparable",
+      reason: expect.stringContaining("the CPU slowed 2 times, the baseline"),
+    });
+    // A factor of 1 is no factor: a run recorded before the option compares with it.
+    expect(compare({ ...run(200, 100), cpuThrottle: 1 }, run(200, 100)).kind).toBe("compared");
+    expect(compare(slowed, { ...run(200, 100), cpuThrottle: 2 }).kind).toBe("compared");
+  });
+});
