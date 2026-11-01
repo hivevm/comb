@@ -328,6 +328,18 @@ pub struct RectInput {
     pub max_y: f64,
 }
 
+/// A buffer of an edge mesh, which `meshPtr` and `meshLen` read of the query's mesh or the moving
+/// layer's (ADR-0036).
+#[wasm_bindgen]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MeshBuffer {
+    Positions,
+    Distances,
+    Colors,
+    Dashes,
+    Indices,
+}
+
 /// The level of detail a query serves (ADR-0027).
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -850,6 +862,16 @@ impl Engine {
 }
 
 impl Engine {
+    /// The edge mesh `meshPtr` and `meshLen` read: the moving layer's where `moving`, else the
+    /// last query's.
+    fn mesh_of(&self, moving: bool) -> &Mesh {
+        if moving {
+            &self.moving
+        } else {
+            &self.visible.mesh
+        }
+    }
+
     /// `addNode` of `node`, read: its strings of content counted on from those the graph holds.
     fn add(&mut self, node: &NodeInput) -> Result<u32, GraphDataProblem> {
         let (slot, content) =
@@ -1262,71 +1284,6 @@ impl Engine {
         self.visible.origin.y
     }
 
-    /// Where the buffer starts that `query` writes the mesh's vertex positions into: `x, y` per
-    /// vertex, relative to the origin.
-    #[wasm_bindgen(js_name = meshPositionsPtr)]
-    pub fn mesh_positions_ptr(&self) -> *const f32 {
-        self.visible.mesh.positions.as_ptr()
-    }
-
-    /// How many values of vertex positions the last `query` wrote: two per vertex.
-    #[wasm_bindgen(js_name = meshPositionsLen)]
-    pub fn mesh_positions_len(&self) -> usize {
-        self.visible.mesh.positions.len()
-    }
-
-    /// Where the buffer starts that `query` writes the mesh's distance along its path into: one
-    /// per vertex.
-    #[wasm_bindgen(js_name = meshDistancesPtr)]
-    pub fn mesh_distances_ptr(&self) -> *const f32 {
-        self.visible.mesh.distances.as_ptr()
-    }
-
-    /// How many distances the last `query` wrote: one per vertex.
-    #[wasm_bindgen(js_name = meshDistancesLen)]
-    pub fn mesh_distances_len(&self) -> usize {
-        self.visible.mesh.distances.len()
-    }
-
-    /// Where the buffer starts that `query` writes the mesh's colours into: one per vertex, as
-    /// RGBA bytes.
-    #[wasm_bindgen(js_name = meshColorsPtr)]
-    pub fn mesh_colors_ptr(&self) -> *const u32 {
-        self.visible.mesh.colors.as_ptr()
-    }
-
-    /// How many colours the last `query` wrote: one per vertex.
-    #[wasm_bindgen(js_name = meshColorsLen)]
-    pub fn mesh_colors_len(&self) -> usize {
-        self.visible.mesh.colors.len()
-    }
-
-    /// Where the buffer starts that `query` writes the mesh's dash patterns into: `dash, gap` per
-    /// vertex.
-    #[wasm_bindgen(js_name = meshDashesPtr)]
-    pub fn mesh_dashes_ptr(&self) -> *const f32 {
-        self.visible.mesh.dashes.as_ptr()
-    }
-
-    /// How many values of dash patterns the last `query` wrote: two per vertex.
-    #[wasm_bindgen(js_name = meshDashesLen)]
-    pub fn mesh_dashes_len(&self) -> usize {
-        self.visible.mesh.dashes.len()
-    }
-
-    /// Where the buffer starts that `query` writes the mesh's vertex indices into: three per
-    /// triangle.
-    #[wasm_bindgen(js_name = meshIndicesPtr)]
-    pub fn mesh_indices_ptr(&self) -> *const u32 {
-        self.visible.mesh.indices.as_ptr()
-    }
-
-    /// How many vertex indices the last `query` wrote: three per triangle.
-    #[wasm_bindgen(js_name = meshIndicesLen)]
-    pub fn mesh_indices_len(&self) -> usize {
-        self.visible.mesh.indices.len()
-    }
-
     /// Where the buffer starts that `query` writes, per edge it found, in its order, the first of
     /// its vertex indices into (ADR-0036).
     #[wasm_bindgen(js_name = meshEdgeStartsPtr)]
@@ -1352,64 +1309,33 @@ impl Engine {
         self.moving_edges.len()
     }
 
-    /// Where `meshAt` writes the positions of the moving mesh's vertices, `x, y` each.
-    #[wasm_bindgen(js_name = movingPositionsPtr)]
-    pub fn moving_positions_ptr(&self) -> *const f32 {
-        self.moving.positions.as_ptr()
+    /// Where the buffer `buffer` of an edge mesh starts: the last query's, which `query` writes, or
+    /// where `moving`, the moving layer's, which `meshAt` writes (ADR-0036). Fresh per read, since
+    /// growing memory moves it (ADR-0034).
+    #[wasm_bindgen(js_name = meshPtr)]
+    pub fn mesh_ptr(&self, moving: bool, buffer: MeshBuffer) -> *const u8 {
+        let mesh = self.mesh_of(moving);
+        match buffer {
+            MeshBuffer::Positions => mesh.positions.as_ptr().cast(),
+            MeshBuffer::Distances => mesh.distances.as_ptr().cast(),
+            MeshBuffer::Colors => mesh.colors.as_ptr().cast(),
+            MeshBuffer::Dashes => mesh.dashes.as_ptr().cast(),
+            MeshBuffer::Indices => mesh.indices.as_ptr().cast(),
+        }
     }
 
-    /// How many values of the mesh's positions the last `meshAt` wrote.
-    #[wasm_bindgen(js_name = movingPositionsLen)]
-    pub fn moving_positions_len(&self) -> usize {
-        self.moving.positions.len()
-    }
-
-    /// Where `meshAt` writes the distances of the moving mesh's vertices along their paths.
-    #[wasm_bindgen(js_name = movingDistancesPtr)]
-    pub fn moving_distances_ptr(&self) -> *const f32 {
-        self.moving.distances.as_ptr()
-    }
-
-    /// How many values of the mesh's distances the last `meshAt` wrote.
-    #[wasm_bindgen(js_name = movingDistancesLen)]
-    pub fn moving_distances_len(&self) -> usize {
-        self.moving.distances.len()
-    }
-
-    /// Where `meshAt` writes the colours of the moving mesh's vertices as RGBA bytes.
-    #[wasm_bindgen(js_name = movingColorsPtr)]
-    pub fn moving_colors_ptr(&self) -> *const u32 {
-        self.moving.colors.as_ptr()
-    }
-
-    /// How many values of the mesh's colors the last `meshAt` wrote.
-    #[wasm_bindgen(js_name = movingColorsLen)]
-    pub fn moving_colors_len(&self) -> usize {
-        self.moving.colors.len()
-    }
-
-    /// Where `meshAt` writes the dash patterns of the moving mesh's vertices, `dash, gap` each.
-    #[wasm_bindgen(js_name = movingDashesPtr)]
-    pub fn moving_dashes_ptr(&self) -> *const f32 {
-        self.moving.dashes.as_ptr()
-    }
-
-    /// How many values of the mesh's dashes the last `meshAt` wrote.
-    #[wasm_bindgen(js_name = movingDashesLen)]
-    pub fn moving_dashes_len(&self) -> usize {
-        self.moving.dashes.len()
-    }
-
-    /// Where `meshAt` writes the moving mesh's vertex indices, three per triangle.
-    #[wasm_bindgen(js_name = movingIndicesPtr)]
-    pub fn moving_indices_ptr(&self) -> *const u32 {
-        self.moving.indices.as_ptr()
-    }
-
-    /// How many values of the mesh's indices the last `meshAt` wrote.
-    #[wasm_bindgen(js_name = movingIndicesLen)]
-    pub fn moving_indices_len(&self) -> usize {
-        self.moving.indices.len()
+    /// How many values the buffer `buffer` of that edge mesh holds: two per vertex of positions
+    /// and of dashes, one of distances and of colours, three indices per triangle.
+    #[wasm_bindgen(js_name = meshLen)]
+    pub fn mesh_len(&self, moving: bool, buffer: MeshBuffer) -> usize {
+        let mesh = self.mesh_of(moving);
+        match buffer {
+            MeshBuffer::Positions => mesh.positions.len(),
+            MeshBuffer::Distances => mesh.distances.len(),
+            MeshBuffer::Colors => mesh.colors.len(),
+            MeshBuffer::Dashes => mesh.dashes.len(),
+            MeshBuffer::Indices => mesh.indices.len(),
+        }
     }
 }
 
@@ -2215,7 +2141,7 @@ mod tests {
         let rect = [-100.0, -100.0, 500.0, 300.0];
         let engine = detail_of(&small, rect, DetailLevel::Near, 1.0);
         assert_eq!(engine.visible.mesh.detail, Detail::Complete);
-        assert!(engine.mesh_distances_len() > 4);
+        assert!(engine.mesh_len(false, MeshBuffer::Distances) > 4);
         // 1,000 nodes, 40 a row, 400 apart and 300 down; each edge from a node to one in another
         // row, so that it bends.
         let ids: Vec<String> = (0..1_000).map(|n| format!("n{n}")).collect();
@@ -2245,8 +2171,8 @@ mod tests {
         let engine = detail_of(&large, whole, DetailLevel::Far, 18_000.0 / 1_440.0);
         assert_eq!(engine.visible.edges.len(), MAX_ITEMS as usize);
         assert_eq!(engine.visible.mesh.detail, Detail::Coarsened);
-        assert!(engine.mesh_distances_len() <= MESH_BUDGET as usize);
-        assert!(engine.mesh_indices_len() <= 3 * MESH_BUDGET as usize);
+        assert!(engine.mesh_len(false, MeshBuffer::Distances) <= MESH_BUDGET as usize);
+        assert!(engine.mesh_len(false, MeshBuffer::Indices) <= 3 * MESH_BUDGET as usize);
     }
 
     #[test]
@@ -2343,6 +2269,6 @@ mod tests {
         // The least pixel there is: accepted, and the budget bounds what it flattens.
         let least = engine.query_rect(&rect, DetailLevel::Near, f64::MIN_POSITIVE, 0.0);
         assert_eq!(least, Ok(MeshDetail::Coarsened));
-        assert!(engine.mesh_distances_len() <= MESH_BUDGET as usize);
+        assert!(engine.mesh_len(false, MeshBuffer::Distances) <= MESH_BUDGET as usize);
     }
 }
