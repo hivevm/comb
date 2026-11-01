@@ -232,6 +232,9 @@ export function median(runs: Run[]): Run | string {
     headed: first.headed ?? false,
     ...(first.cpu && { cpu: first.cpu }),
     gpu: first.gpu,
+    // What a baseline taken from it is compared by: the kind of browser and the CPU's factor.
+    ...(first.attached && { attached: true, ...(first.browser && { browser: first.browser }) }),
+    ...((first.cpuThrottle ?? 1) !== 1 && { cpuThrottle: first.cpuThrottle }),
     ...(referenced && {
       reference: Object.fromEntries(
         PARTS.map(([, key]) => [key, of((run) => run.reference![key])]),
