@@ -102,7 +102,7 @@ function readerOf(limits: Limits): Reader {
       if (id !== false) reader.idUnits += id.length;
       return id;
     },
-    content: (value) => (Array.isArray(value) ? contentOf(reader, value, limits) : falseOr(value)),
+    content: (value) => plainContentOf(reader, value, limits),
     textLimit: limits.text,
     idUnits: 0,
     contentUnits: 0,
@@ -114,25 +114,146 @@ function readerOf(limits: Limits): Reader {
 /** `value` where it stands for a field left out, null or undefined, else `false`. */
 const falseOr = (value: unknown) => (value === undefined || value === null ? value : false);
 
-/** A node's content as plain data, read by `read`: at most one row beyond `limits.rows`, each a
- *  list of at most one element beyond `limits.columns` or `false`, each element an object of its
- *  kind, role, text, and weight where one is given, or `false` where it is no object. A list is
- *  no object here: an element is a description, never a list. */
-function contentOf(read: Reader, rows: readonly unknown[], limits: Limits) {
-  const count = Math.min(rows.length, limits.rows + 1);
-  const content: unknown[] = [];
-  for (let r = 0; r < count; r++) {
-    const row: unknown = rows[r];
-    if (!Array.isArray(row)) {
-      content.push(false);
-      continue;
-    }
-    const columns = Math.min(row.length, limits.columns + 1);
-    const elements: unknown[] = [];
-    for (let c = 0; c < columns; c++) elements.push(elementOf(read, row[c], limits));
-    content.push(elements);
+/** A metric's trend as `walkContent` reads it: its text read as a text is, its direction and its
+ *  colour as given and as a number; or `false` where it is no object, a list among them. */
+interface Trend {
+  text: unknown;
+  direction: unknown;
+  color: unknown;
+}
+
+/** What `walkContent` hands what it read of a node's content, each value read once, in the order
+ *  of the columns: an element's kind, role, weight, and a trend's direction as given, which each
+ *  sink names or codes by its own rule, its texts, an action's identifier, and an icon's name as
+ *  `Reader.text` reads them, and a badge's colour and a segment's numbers as `Reader.number` does.
+ *  A row's last element ends it; a progress bar's segments follow it before `endRow` ends its
+ *  row where it is the last. */
+interface ContentSink {
+  /** The content is no list: `value` as it was given. */
+  noContent(value: unknown): void;
+  /** The row is no list. */
+  noRow(): void;
+  /** Ends a row of no elements, or one whose last element was handed over without ending it. */
+  endRow(): void;
+  /** The next element is no object, a list among them. */
+  noElement(endsRow: boolean): void;
+  /** The next element, of any kind but a metric: a progress bar's role, colour, text, and `id`
+   *  none, an icon's name as `id`, an action's identifier as `id`, a badge's colour. */
+  element(
+    kind: unknown,
+    role: unknown,
+    weight: unknown,
+    color: unknown,
+    text: unknown,
+    id: unknown,
+    endsRow: boolean,
+  ): void;
+  /** The next element, a metric. */
+  metric(
+    weight: unknown,
+    caption: unknown,
+    value: unknown,
+    trend: Trend | false,
+    endsRow: boolean,
+  ): void;
+  /** The next segment of the progress bar handed over last. */
+  segment(fraction: unknown, color: unknown): void;
+  /** The progress bar handed over last has segments that are no list. */
+  noSegments(): void;
+  /** The next segment of the progress bar handed over last is no object. */
+  noSegment(): void;
+}
+
+/** Reads `content`, a node's content, once by `read` and hands it to `sink`: at most one row
+ *  beyond `limits.rows`, each at most one element beyond `limits.columns`, and a progress bar at
+ *  most one segment beyond `limits.segments`, so that content of any size costs at most that much
+ *  to check. The one walk of content both crossings of ADR-0034 read it by: a load hands the
+ *  sink that writes its columns, `addNode` and `updateNode` the one that builds plain data. */
+function walkContent(read: Reader, content: unknown, sink: ContentSink, limits: Limits): void {
+  if (!Array.isArray(content)) {
+    sink.noContent(content);
+    return;
   }
-  return content;
+  const rows = Math.min(content.length, limits.rows + 1);
+  for (let r = 0; r < rows; r++) {
+    const row: unknown = content[r];
+    if (!Array.isArray(row)) sink.noRow();
+    else walkRow(read, row, sink, limits);
+  }
+}
+
+/** Hands the elements of `row`, a list, to `sink`, read once by `read`, at most one beyond
+ *  `limits.columns`, the last of them ending the row. */
+function walkRow(read: Reader, row: unknown[], sink: ContentSink, limits: Limits): void {
+  const count = Math.min(row.length, limits.columns + 1);
+  if (count === 0) sink.endRow();
+  for (let c = 0; c < count; c++) {
+    const value: unknown = row[c];
+    const last = c === count - 1;
+    if (typeof value !== "object" || value === null || Array.isArray(value)) sink.noElement(last);
+    else walkElement(read, value as Fields, sink, limits, last);
+  }
+}
+
+/** Hands `element`, an object, to `sink`, read once by `read`, ending the row where `last`: a
+ *  progress bar shows no text and has no role, and its segments follow it; a metric its caption,
+ *  value, and trend; an icon shows no text and has no role, its name read as a text is; any other
+ *  kind its role and text, an action's identifier read as a text is, a badge's colour as a number
+ *  is, each read of no other kind. */
+function walkElement(
+  read: Reader,
+  element: Fields,
+  sink: ContentSink,
+  limits: Limits,
+  last: boolean,
+): void {
+  const kind = element.kind;
+  if (kind === "progress") {
+    const { weight, segments } = element;
+    sink.element(kind, undefined, weight, undefined, undefined, undefined, false);
+    walkSegments(read, segments, sink, limits);
+    if (last) sink.endRow();
+    return;
+  }
+  if (kind === "metric") {
+    const { weight, caption, value, trend } = element;
+    const [shown, valued] = [read.text(caption), read.text(value)];
+    sink.metric(weight, shown, valued, trendOf(read, trend), last);
+    return;
+  }
+  if (kind === "icon") {
+    const name = read.text(element.name);
+    sink.element(kind, undefined, element.weight, undefined, undefined, name, last);
+    return;
+  }
+  const { role, weight, text } = element;
+  const shown = read.text(text);
+  const id = kind === "action" ? read.text(element.id) : undefined;
+  const color = kind === "badge" ? read.number(element.color) : undefined;
+  sink.element(kind, role, weight, color, shown, id, last);
+}
+
+/** A metric's trend, read once by `read` where it is an object, and `false` where it is not. */
+function trendOf(read: Reader, value: unknown): Trend | false {
+  const fields = segmentFieldsOf(value);
+  if (!fields) return false;
+  const { text, direction, color } = fields;
+  return { text: read.text(text), direction, color: read.number(color) };
+}
+
+/** Hands a progress bar's `segments` to `sink`, their items and fields read once by `read`, at most
+ *  one beyond `limits.segments`. */
+function walkSegments(read: Reader, segments: unknown, sink: ContentSink, limits: Limits): void {
+  if (!Array.isArray(segments)) {
+    sink.noSegments();
+    return;
+  }
+  const count = Math.min(segments.length, limits.segments + 1);
+  for (let s = 0; s < count; s++) {
+    const fields = segmentFieldsOf(segments[s]);
+    if (fields) sink.segment(read.number(fields.fraction), read.number(fields.color));
+    else sink.noSegment();
+  }
 }
 
 /** A name of an element's kind or a text's role, which the bridge reads as a code: a string as
@@ -143,58 +264,61 @@ function nameOf(value: unknown, read: Reader): unknown {
   return value.length > read.textLimit ? value.slice(0, read.textLimit + 1) : value;
 }
 
-/** An element of content as plain data, or `false` where it is no object; an action's identifier
- *  read as a text is, a badge's colour as a number is, each read of no other kind, a progress bar
- *  of its kind, its weight, and its segments as `segmentsOf` reads them alone, since it shows no
- *  text and has no role, a metric of its kind, its weight, its caption and value, and its trend as
- *  `trendOf` reads it, and an icon of its kind, its weight, and its name, read as a text is. */
-function elementOf(read: Reader, value: unknown, limits: Limits) {
-  const fields = objectOf(value);
-  if (!fields || Array.isArray(value)) return false;
-  const kind = fields.kind;
-  const element: Record<string, unknown> = { kind: nameOf(kind, read) };
-  if (kind === "progress") element.segments = segmentsOf(read, fields.segments, limits);
-  else if (kind === "metric") {
-    element.caption = read.text(fields.caption);
-    element.value = read.text(fields.value);
-    element.trend = trendOf(read, fields.trend);
-  } else if (kind === "icon") element.name = read.text(fields.name);
-  else {
-    const { role, text } = fields;
-    element.role = nameOf(role, read);
-    element.text = read.text(text);
-  }
-  if (kind === "action") element.id = read.text(fields.id);
-  if (kind === "badge") element.color = read.number(fields.color);
-  const weight = fields.weight;
-  // No key for a weight left out, which the bridge reads as 1, so that Comb keeps none either.
-  if (weight !== undefined && weight !== null) element.weight = read.number(weight);
-  return element;
-}
-
-/** A metric's trend as plain data: an object of its text read as a text is, its direction as a
- *  name, and its colour as a number; or `false` where it is no object, a list among them. */
-function trendOf(read: Reader, value: unknown) {
-  const fields = segmentFieldsOf(value);
-  if (!fields) return false;
-  const { text, direction, color } = fields;
-  return { text: read.text(text), direction: nameOf(direction, read), color: read.number(color) };
-}
-
-/** A progress bar's segments as plain data: at most one beyond `limits.segments`, each an object
- *  of its fraction and its colour, each read as a number, or `false` where it is no object; or
- *  `false` where they are no list. */
-function segmentsOf(read: Reader, value: unknown, limits: Limits) {
-  if (!Array.isArray(value)) return false;
-  const count = Math.min(value.length, limits.segments + 1);
-  const segments: unknown[] = [];
-  for (let s = 0; s < count; s++) {
-    const fields = segmentFieldsOf(value[s]);
-    segments.push(
-      fields && { fraction: read.number(fields.fraction), color: read.number(fields.color) },
-    );
-  }
-  return segments;
+/** A node's content as plain data for serde, walked once by `read`: its rows, each a list of its
+ *  elements or `false` where it is no list, each element an object of its kind and the fields of
+ *  its kind, a name of a kind, a role, or a direction as `nameOf` hands it over, a weight only
+ *  where one is given, or `false` where it is no object; or the content as given where it is null
+ *  or undefined, and `false` where it is any other value but a list. */
+function plainContentOf(read: Reader, content: unknown, limits: Limits): unknown {
+  const rows: unknown[] = [];
+  let row: unknown[] | undefined;
+  let result: unknown = rows;
+  const end = (last: boolean) => {
+    if (!last) return;
+    rows.push(row ?? []);
+    row = undefined;
+  };
+  const add = (element: unknown, last: boolean) => {
+    (row ??= []).push(element);
+    end(last);
+  };
+  const weighted = (element: Record<string, unknown>, weight: unknown) => {
+    // No key for a weight left out, which the bridge reads as 1, so that Comb keeps none either.
+    if (weight !== undefined && weight !== null) element.weight = read.number(weight);
+    return element;
+  };
+  const latest = () => row![row!.length - 1] as Record<string, unknown>;
+  walkContent(
+    read,
+    content,
+    {
+      noContent: (value) => (result = falseOr(value)),
+      noRow: () => rows.push(false),
+      endRow: () => end(true),
+      noElement: (last) => add(false, last),
+      element(kind, role, weight, color, text, id, last) {
+        const element: Record<string, unknown> = { kind: nameOf(kind, read) };
+        if (kind === "progress") element.segments = [];
+        else if (kind === "icon") element.name = id;
+        else {
+          element.role = nameOf(role, read);
+          element.text = text;
+        }
+        if (kind === "action") element.id = id;
+        if (kind === "badge") element.color = color;
+        add(weighted(element, weight), last);
+      },
+      metric(weight, caption, value, trend, last) {
+        const named = trend && { ...trend, direction: nameOf(trend.direction, read) };
+        add(weighted({ kind: "metric", caption, value, trend: named }, weight), last);
+      },
+      segment: (fraction, color) => (latest().segments as unknown[]).push({ fraction, color }),
+      noSegments: () => (latest().segments = false),
+      noSegment: () => (latest().segments as unknown[]).push(false),
+    },
+    limits,
+  );
+  return result;
 }
 
 /** A segment's or a trend's fields to read, or `false` where it is no object: a list is none, as
@@ -263,22 +387,14 @@ function nodeOf(read: Reader, node: Fields) {
   };
 }
 
-/** Writes the node `node` into `columns`, read once by `read`, its content straight into its
- *  columns, cut by `limits` as `contentOf` cuts it, and returns what the store keeps of it: its
- *  identifier and its width, no copy of its content (ADR-0013). */
+/** Writes the node `node` into `columns`, read once by `read`, its content walked straight into
+ *  its columns, and returns what the store keeps of it: its identifier and its width, no copy of
+ *  its content (ADR-0013). */
 function written(read: Reader, node: Fields, columns: NodeColumnWriter, limits: Limits) {
   const { id, x, y, width, content } = node;
   const kept = { id: read.id(id), width: read.number(width) };
   columns.node(kept.id, read.number(x), read.number(y), kept.width);
-  if (!Array.isArray(content)) columns.noContent();
-  else {
-    const rows = content.length > limits.rows ? limits.rows + 1 : content.length;
-    for (let r = 0; r < rows; r++) {
-      const row: unknown = content[r];
-      if (!Array.isArray(row)) columns.noRow();
-      else writeRow(read, row, columns, limits, kept.id);
-    }
-  }
+  walkContent(read, content, columnSink(read, columns, limits, kept.id), limits);
   return kept;
 }
 
@@ -290,112 +406,38 @@ function counted(read: Reader, units: number, node: unknown, limits: Limits) {
     read.contentPast = typeof node === "string" ? node : "";
 }
 
-/** Writes the elements of `row`, a list, into `columns`, read once by `read`, at most one beyond
- *  `limits.columns`, the last of them ending the row. */
-function writeRow(
+/** The sink of a load's content: each value handed to `columns`, which takes the kind, the role,
+ *  the weight, and a trend's direction by `typeof` and by comparing a string with a name, and each
+ *  string of content, a text, an action's identifier, and an icon's name among the names, counted
+ *  against the budget for the node `node`. */
+function columnSink(
   read: Reader,
-  row: unknown[],
   columns: NodeColumnWriter,
   limits: Limits,
   node: unknown,
-) {
-  const count = row.length > limits.columns ? limits.columns + 1 : row.length;
-  if (count === 0) columns.endRow();
-  for (let c = 0; c < count; c++) {
-    const value: unknown = row[c];
-    const last = c === count - 1;
-    if (typeof value !== "object" || value === null || Array.isArray(value))
-      columns.noElement(last);
-    else writeElement(read, value as Fields, columns, limits, node, last);
-  }
-}
-
-/** Writes `element`, an object, into `columns`, read once by `read`, ending the row where
- *  `last`. */
-function writeElement(
-  read: Reader,
-  element: Fields,
-  columns: NodeColumnWriter,
-  limits: Limits,
-  node: unknown,
-  last: boolean,
-) {
-  const kind = element.kind;
-  if (kind === "progress") {
-    writeProgress(read, element.weight, element.segments, columns, limits, last);
-    return;
-  }
-  if (kind === "metric") {
-    writeMetric(read, element, columns, limits, node, last);
-    return;
-  }
-  if (kind === "icon") {
-    // An icon shows no text and has no role: its name crosses among the names, counted with the
-    // texts.
-    const name = read.text(element.name);
-    columns.element(kind, undefined, element.weight, undefined, undefined, name, last);
-    if (typeof name === "string") counted(read, name.length, node, limits);
-    return;
-  }
-  const { role, weight, text } = element;
-  // The kind, the role, the weight, and a badge's colour cross as codes and numbers, which the
-  // writer takes by `typeof` and by comparing a string with a name; an action's identifier is
-  // read as a text is, and counted with the texts.
-  const shown = read.text(text);
-  const id = kind === "action" ? read.text(element.id) : undefined;
-  const color = kind === "badge" ? read.number(element.color) : undefined;
-  columns.element(kind, role, weight, color, shown, id, last);
-  if (typeof shown === "string") counted(read, shown.length, node, limits);
-  if (typeof id === "string") counted(read, id.length, node, limits);
-}
-
-/** Writes `element`, a metric, into `columns`, read once by `read`: its weight, its caption and
- *  value, and its trend, whose text, direction, and colour are read of it once where it is an
- *  object and none where it is not, each refused at its rule; its texts counted with the others. */
-function writeMetric(
-  read: Reader,
-  element: Fields,
-  columns: NodeColumnWriter,
-  limits: Limits,
-  node: unknown,
-  last: boolean,
-) {
-  const { weight, caption, value, trend } = element;
-  const texts = [read.text(caption), read.text(value)];
-  const fields = segmentFieldsOf(trend);
-  let direction: unknown;
-  let color: unknown;
-  if (fields) {
-    const { text, direction: named, color: shade } = fields;
-    texts.push(read.text(text));
-    [direction, color] = [named, read.number(shade)];
-  } else texts.push(undefined);
-  columns.metric(weight, texts[0], texts[1], direction, color, texts[2], last);
-  for (const text of texts) if (typeof text === "string") counted(read, text.length, node, limits);
-}
-
-/** Writes a progress bar of `weight` and `segments`, each read once already, into `columns`, the
- *  segments' items and fields read once by `read`: it shows no text and has no role, and its
- *  segments follow it, at most one beyond `limits.segments`, before its row ends where `last`. */
-function writeProgress(
-  read: Reader,
-  weight: unknown,
-  segments: unknown,
-  columns: NodeColumnWriter,
-  limits: Limits,
-  last: boolean,
-) {
-  columns.element("progress", undefined, weight, undefined, undefined, undefined, false);
-  if (!Array.isArray(segments)) columns.noSegments();
-  else {
-    const count = segments.length > limits.segments ? limits.segments + 1 : segments.length;
-    for (let s = 0; s < count; s++) {
-      const fields = segmentFieldsOf(segments[s]);
-      if (fields) columns.segment(read.number(fields.fraction), read.number(fields.color));
-      else columns.noSegment();
-    }
-  }
-  if (last) columns.endRow();
+): ContentSink {
+  const count = (...strings: unknown[]) => {
+    for (const string of strings)
+      if (typeof string === "string") counted(read, string.length, node, limits);
+  };
+  return {
+    noContent: () => columns.noContent(),
+    noRow: () => columns.noRow(),
+    endRow: () => columns.endRow(),
+    noElement: (last) => columns.noElement(last),
+    element(kind, role, weight, color, text, id, last) {
+      columns.element(kind, role, weight, color, text, id, last);
+      count(text, id);
+    },
+    metric(weight, caption, value, trend, last) {
+      const { text, direction, color } = trend || {};
+      columns.metric(weight, caption, value, direction, color, text, last);
+      count(caption, value, text);
+    },
+    segment: (fraction, color) => columns.segment(fraction, color),
+    noSegments: () => columns.noSegments(),
+    noSegment: () => columns.noSegment(),
+  };
 }
 
 /** A label: absent where null or undefined, `false` where no object. */
