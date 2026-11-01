@@ -70,6 +70,36 @@ pub(super) fn checked_content(
     Ok((checked, kept_height(height)))
 }
 
+/// A node one crossing hands over, checked: its place, its width, its content with its texts
+/// mapped, and the height that content lays out to.
+struct Single {
+    x: f32,
+    y: f32,
+    width: f32,
+    content: Checked,
+    height: f32,
+}
+
+/// Checks the node of `addNode` or `heightOf` as a load checks a node, the only one of its batch at
+/// index 0: every field's type, its identifier's length, its place and width, its content, its
+/// strings counted against the budget on from `held`, laid out in `fonts`, and its far side by that
+/// height; the one sequence both crossings refuse by, so that their problems and their order stay
+/// one (ADR-0035).
+fn single_of(node: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, GraphDataProblem> {
+    let (node, content) = node_of(0, node)?;
+    id_length("nodes", 0, "id", node.id)?;
+    let ([x, y], width) = checked_node(&node)?;
+    let (content, height) = checked_content(node.id, content, fonts, held)?;
+    within_by_height(node.id, y, height)?;
+    Ok(Single {
+        x,
+        y,
+        width,
+        content,
+        height,
+    })
+}
+
 /// Checks the node `addNode` hands over as a load checks a node, the only one of its batch at
 /// index 0, and adds it to `graph`, whose nodes in use stay within `MAX_ITEMS`, as high as its
 /// content lays out to in `fonts`, its strings of content counted against the budget on from
@@ -84,11 +114,13 @@ pub(crate) fn add_node_to(
 ) -> Result<(u32, Checked), GraphDataProblem> {
     let nodes = f64::from(graph.nodes_in_use()) + 1.0;
     check_graph_size(nodes, 0.0)?;
-    let (node, content) = node_of(0, node)?;
-    id_length("nodes", 0, "id", node.id)?;
-    let ([x, y], width) = checked_node(&node)?;
-    let (content, height) = checked_content(node.id, content, fonts, held)?;
-    within_by_height(node.id, y, height)?;
+    let Single {
+        x,
+        y,
+        width,
+        content,
+        height,
+    } = single_of(node, fonts, held)?;
     Ok((graph.add_node(x, y, width, height)?, content))
 }
 
@@ -96,11 +128,7 @@ pub(crate) fn add_node_to(
 /// checks a node, its strings counted against the budget alone, and added to nothing: the node
 /// `heightOf` hands over, named `""` and at the origin (ADR-0035).
 pub(crate) fn height_of(node: &NodeInput, fonts: &Fonts) -> Result<f32, GraphDataProblem> {
-    let (node, content) = node_of(0, node)?;
-    let ([_, y], _) = checked_node(&node)?;
-    let (_, height) = checked_content(node.id, content, fonts, 0)?;
-    within_by_height(node.id, y, height)?;
-    Ok(height)
+    Ok(single_of(node, fonts, 0)?.height)
 }
 
 /// A load of `batch` as `loadGraph` checks one, its nodes and edges crossed as columns.
