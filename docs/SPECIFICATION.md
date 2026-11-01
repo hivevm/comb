@@ -65,14 +65,15 @@ Only a normalization renumbers them ([`AGENTS.md` §3](../AGENTS.md#3-adr-rules)
    the system shall build the engine, serve an example host application, and open it in the
    browser. The example shows a metric tree that flows from left to right: bets with a hypothesis
    and a status badge, epics with a progress bar and a status badge, input metrics with values
-   over three periods and coloured trends, one north-star metric, and KPIs. Dotted edges with
+   over three periods and coloured trends, one north-star metric, and KPIs, each with an icon of
+   its type and a "Details" link. Dotted edges with
    arrowheads connect them, grey from bets and epics, and green or red between metrics by the
    sign of their correlation, whose value an edge label shows on a pill of the same colour. Its
    sidebar edits the selected node or edge, and a control multiplies the tree up to 50,000 nodes.
 10. **G-10** — When the host application describes the content of a node as elements (text, icon,
-    progress bar, badge, value with trend), the system shall draw those elements inside the node;
-    node types differ only in that description, and a click on an element is reported to the host
-    application.
+    progress bar, badge, value with trend, action), the system shall draw those elements inside the
+    node; node types differ only in that description, and a click on an element is reported to the
+    host application, for an action with its identifier.
 11. **G-11** — When the host application gives an edge a colour, a dash pattern, or an arrowhead,
     or gives an edge label a background colour, the system shall draw the edge or the label that
     way.
@@ -88,16 +89,18 @@ The reference machine is a mid-range laptop with four cores and an integrated GP
 Intel Iris Xe or AMD Radeon 680M, running the current stable Chrome.
 
 - **Q-1** — Interaction performance: the reason Comb exists. With 50,000 nodes and 50,000 edges
-  loaded, dragging a node, panning, and zooming hold a p95 frame time of at most 16.7 ms (60 fps)
-  on the reference machine, measured by the benchmark of the Strategy.
+  loaded, dragging a node, panning, zooming, and adding or removing a node or an edge hold a p95
+  frame time of at most 16.7 ms (60 fps) on the reference machine, measured by the benchmark of
+  the Strategy.
 - **Q-2** — Load time: a large graph is useless if it takes long to open. Loading a graph of 50,000
   nodes and 50,000 edges until its first frame is drawn takes at most 1 s on the reference
   machine.
 - **Q-3** — Embeddability: Comb is a framework for others' applications. It depends on no UI
   framework such as React or Vue, its public interface is fully typed in TypeScript, and its
   bundle of JavaScript and WebAssembly, gzipped and without PixiJS, stays under 300 kB.
-- **Q-4** — Geometric accuracy: edge paths and label positions deviate by at most 0.5 px from a
-  reference computation at every zoom level, for everything the viewport shows. An edge path holds
+- **Q-4** — Geometric accuracy: edge paths, label positions, and the rectangles of node content
+  deviate by at most 0.5 px from a reference computation at every zoom level, for everything the
+  viewport shows. An edge path holds
   this where every point of the path lies within 2^21 px of the viewport, and its dash pattern where
   it lies at most 2^21 px along the path from the source connector, in pixels at the current zoom.
   Past these bounds the accuracy is that of single precision: the deviation grows beyond 0.5 px by
@@ -113,11 +116,11 @@ Intel Iris Xe or AMD Radeon 680M, running the current stable Chrome.
   `wasm-unsafe-eval` but not `unsafe-eval`.
 - **Q-7** — Robust input: malformed graph data (a value of the wrong type, non-finite
   coordinates, an edge referring to a missing node, a duplicate identifier), and a change through
-  the public interface that names a node the graph does not hold, never crash or hang the host
-  page and never cause a WebAssembly panic; the system rejects each with a typed error that names
-  what it refused, and keeps the graph it had. Accepted graph data within the limits of a load,
-  and every change to it the system accepts, never crash or hang the host page and never cause a
-  WebAssembly panic or trap, at any viewport.
+  the public interface that names a node or an edge the graph does not hold, or adds one it holds
+  already, never crash or hang the host page and never cause a WebAssembly panic; the system
+  rejects each with a typed error that names what it refused, and keeps the graph it had. Accepted
+  graph data within the limits of a load, and every change to it the system accepts, never crash
+  or hang the host page and never cause a WebAssembly panic or trap, at any viewport.
 
 ## Non-Goals
 
@@ -131,6 +134,8 @@ What this project explicitly does not try to do.
   on its public interface.
 - No real-time collaboration between several users editing one graph.
 - No screen-reader access to the canvas content.
+- No text shaping in node content: no kerning, ligatures, or right-to-left and bidirectional
+  text.
 
 ## Constraints
 
@@ -186,7 +191,7 @@ maintained.
 - Graphs that matter stay around 50,000 nodes and 50,000 edges; Comb is not designed for
   millions.
 - Every edge connects one connector of a node to one connector of another node; there are no
-  hyperedges and no edges without both ends.
+  hyperedges and no edges without both ends. An edge of a load may join a node to itself.
 - The reference machine represents the hardware of the people who use applications built on Comb.
 - PixiJS, wasm-bindgen, and serde-wasm-bindgen stay maintained and keep their WebGL2 and
   WebAssembly support.
