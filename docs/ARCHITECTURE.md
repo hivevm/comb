@@ -85,7 +85,10 @@ texts of content, counted and stopped at their budget alike (`checkContentBudget
 whose text passed it), then the snapshot, and the
 store keeps the snapshot's edges and of each node its identifier and width; a node's content is the
 engine's alone, which the snapshot of a load writes straight into its columns, and which the
-engine's `content` builds when inspection or a change Comb tells asks for it. A load's nodes and
+engine's `content` builds when inspection or a change Comb tells asks for it. One walk reads a
+node's content, `walkContent`, and hands what it read to a sink: a load's writes its columns and
+counts its texts against the budget, that of `addNode`, `updateNode`, and `heightOf` builds the
+plain data serde reads. A load's nodes and
 edges cross as columns the snapshot writes while it reads them, through the bridge's
 `nodeColumns` and `edgeColumns`: each string field, the identifiers, sources, targets, label texts,
 the texts of content, and its names, the actions' identifiers, as pieces of at
@@ -250,7 +253,9 @@ The functional core and its shell follow
   node content between calls: the content of the nodes by slot (`ContentStore`) and the buffers of
   what a query places of it (`Drawn`). `packages/comb/src/bridge` is the one module that imports the
   WebAssembly package and reads those buffers through fresh typed-array views per read
-  ([ADR-0034](adr/0034-node-content-crosses-as-columns.md)).
+  ([ADR-0034](adr/0034-node-content-crosses-as-columns.md)): its `columns.ts` holds the writers of
+  a load's columns and the codes they cross as, its `index.ts` the facade of the engine, which
+  re-exports them.
 - **Store** (`packages/comb/src/store`) — a vanilla Zustand store with the graph's structure, its
   nodes and edges by slot with holes at free slots, which every reader skips, the maps from node and
   edge identifiers to slots, the code units of the identifiers it holds, counted for a node and for
@@ -459,9 +464,11 @@ example, reading what is drawn through `comb/testing` rather than pixels, apart 
 image of the edges alone.
 
 The Bun tests and the browser tests on the development server run the bridge in test mode, which
-grows the engine's memory before each of its calls, so a view kept across a call reads empty. The
-browser tests serve the example in Vite's `test` mode for it, on port 5174, and assert it through
-`testMode()` of `comb/testing`; the bundle check fails a bundle that carries it. In test mode the
+grows the engine's memory before each of its calls, so a view kept across a call reads empty, and
+counts each call by its name, which `bridgeCalls(name)` of `comb/testing` reads, so that a test
+sees whether a load crossed into the engine. The browser tests serve the example in Vite's `test`
+mode for it, on port 5174, and assert it through `testMode()` of `comb/testing`; the bundle check
+fails a bundle that carries it. In test mode the
 engine traps on demand: `trapNextCall()` of `comb/testing` arms an export the bridge crate carries
 only when built with its feature `test-mode`, and the next call of an `Engine` traps. The example's
 Vite configuration hands that engine, from `packages/comb/wasm/test-mode/`, over in place of

@@ -168,3 +168,54 @@ test("the snapshot reads an icon's kind, weight, and name once, and its text, ro
   expect(single).toEqual(expected);
   expect(snapshot).toMatchObject({ content: [[{ kind: "icon", weight: 2, name: "bet" }]] });
 });
+
+test("the snapshot reads content no further than one row, element, and segment past its limits, for a load and a single node alike", () => {
+  // Verifies: ADR-0028, ADR-0034
+  const read = (crossing: "load" | "single") => {
+    const reads: Record<string, number> = {};
+    const element = counting("element", { kind: "text", role: "body", text: "t" }, reads);
+    const segment = counting("segment", { fraction: 0.1, color: 0 }, reads);
+    const progress = { kind: "progress", segments: Array(limits.segments + 5).fill(segment) };
+    const row = Array(limits.columns + 5).fill(element);
+    const rows = [[progress], ...Array(limits.rows + 5).fill(row)];
+    const node = { id: "a", x: 0, y: 0, width: 100, content: rows };
+    if (crossing === "load") snapshotOf(listsOf({ nodes: [node], edges: [] } as never), limits);
+    else nodeSnapshotOf(node, limits);
+    return reads;
+  };
+  // The progress bar's row and `limits.rows` more, each of `limits.columns + 1` elements.
+  const expected = {
+    "element.kind": limits.rows * (limits.columns + 1),
+    "element.role": limits.rows * (limits.columns + 1),
+    "element.text": limits.rows * (limits.columns + 1),
+    "segment.fraction": limits.segments + 1,
+    "segment.color": limits.segments + 1,
+  };
+  expect(read("load")).toEqual(expected);
+  expect(read("single")).toEqual(expected);
+});
+
+test("the snapshot reads the length of content, a row, and a progress bar's segments once, for a load and a single node alike", () => {
+  // Verifies: ADR-0028
+  const read = (crossing: "load" | "single") => {
+    const reads: Record<string, number> = {};
+    // A list whose length the host's code answers, counted, smaller on its first read than after.
+    const listed = (name: string, items: unknown[]) =>
+      new Proxy(items, {
+        get(target, key, receiver) {
+          if (key !== "length") return Reflect.get(target, key, receiver);
+          reads[name] = (reads[name] ?? 0) + 1;
+          return reads[name] === 1 ? target.length : 50;
+        },
+      });
+    const segments = listed("segments", [{ fraction: 0.1, color: 0 }]);
+    const row = listed("row", [{ kind: "progress", segments }]);
+    const node = { id: "a", x: 0, y: 0, width: 100, content: listed("content", [row]) };
+    if (crossing === "load") snapshotOf(listsOf({ nodes: [node], edges: [] } as never), limits);
+    else nodeSnapshotOf(node, limits);
+    return reads;
+  };
+  const once = { content: 1, row: 1, segments: 1 };
+  expect(read("load")).toEqual(once);
+  expect(read("single")).toEqual(once);
+});

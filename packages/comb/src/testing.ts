@@ -4,7 +4,7 @@
 import type { Buffer, Matrix, WebGLRenderer } from "pixi.js";
 import type { Comb } from "./api";
 import { scenes } from "./api/scenes";
-import { TEST_MODE, trapNextCall, type Hit, type Rect } from "./bridge";
+import { bridgeCalls, TEST_MODE, trapNextCall, type Hit, type Rect } from "./bridge";
 import { EdgesContainer } from "./render/edges";
 import { LABEL_REACH } from "./render/labels";
 import { CULLING_MARGIN, RESCALE, type SceneSnapshot } from "./render/scene";
@@ -262,3 +262,7 @@ export function testMode(): boolean {
  *  checks would, so that a test sees the engine lost for the page (ADR-0021). Throws outside test
  *  mode, and where the engine was built without its trap. */
 export { trapNextCall };
+
+/** Test mode only: how often the bridge's call `name` was made on the page, such as `loadGraph`,
+ *  so that a test sees what crossed into the engine (ADR-0028). Throws outside test mode. */
+export { bridgeCalls };
