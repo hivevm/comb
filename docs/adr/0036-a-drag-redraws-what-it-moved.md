@@ -1,6 +1,6 @@
 # ADR-0036: A drag redraws what it moved, in a layer of its own, and the release queries once
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-01
 - **Deciders:** Markus Brigl
 - **Applies to:** the scene's culling and binding in `packages/comb/src/render/`, the edge mesh and the query of `crates/engine` and `crates/engine-wasm`, the store's signals of a move in `packages/comb/src/store/`, and the node drag of `packages/comb/src/interaction/`

@@ -1,4 +1,4 @@
-// The state of the graph and the viewport (ADR-0029). Coordinates are not kept here: positions live
+// The state of the graph and the viewport (ADR-0037). Coordinates are not kept here: positions live
 // in the engine's buffer, and `positionsVersion` tells readers that they moved, `movesVersion` that
 // a drag moved its nodes (ADR-0036); the point a connection is dragged to lives in interaction, and
 // `pointerVersion` tells them that it moved.
@@ -71,7 +71,7 @@ export interface EdgePatch {
 }
 
 /** A node as the store keeps it: its identifier and its width. Its position, its content, and
- *  its height are the engine's (ADR-0029, ADR-0013); a new object for every change of its
+ *  its height are the engine's (ADR-0037, ADR-0013); a new object for every change of its
  *  content, so that a view tells the change by identity. */
 export type NodeView = Pick<NodeData, "id" | "width">;
 
@@ -90,7 +90,7 @@ export interface NodePatch {
 export type By = "user" | "host";
 
 /** The change the last action that changed the graph made, by kind and the identifier it touched,
- *  never a coordinate (ADR-0029, ADR-0030): `api` delivers it to the host application, reading
+ *  never a coordinate (ADR-0037, ADR-0030): `api` delivers it to the host application, reading
  *  what it carries from the store and the engine's buffers. A new object for every change, so
  *  that one is told from the next by identity. */
 export type StoreChange =
@@ -124,7 +124,7 @@ export type StoreChange =
  *  over the node in slot `over`, whose connectors are `compatible` where the source does not reach
  *  it yet, and over its connector `target` where a release connects. The world point it is dragged
  *  to is no part of it: interaction keeps that point and signals its moves by `pointerVersion`
- *  (ADR-0029). */
+ *  (ADR-0037). */
 export interface Connection {
   readonly source: number;
   readonly side: Side;
@@ -158,7 +158,7 @@ export interface GraphView {
   readonly connection: Connection | null;
   readonly viewport: Readonly<Viewport>;
   /** Counts the changes of the engine's positions that a query the scene keeps does not survive:
-   *  a load, an added node, the release of a drag (ADR-0029, ADR-0036). */
+   *  a load, an added node, the release of a drag (ADR-0037, ADR-0036). */
   readonly positionsVersion: number;
   /** The node slots a drag moves, from its first move to its release, or none; a load, or a
    *  removal of one of them, leaves none (ADR-0036). */

@@ -214,7 +214,7 @@ export class Scene {
   }
 
   /** Draws `state` from the engine behind `bridge`, a connection being dragged to the world point
-   *  `pointer`, which interaction keeps outside the store (ADR-0029). */
+   *  `pointer`, which interaction keeps outside the store (ADR-0037). */
   render(
     state: GraphView,
     bridge: Bridge,

@@ -1,8 +1,9 @@
 # ADR-0037: The graph's structure and what the pointer is over live in a vanilla Zustand store; no coordinate does, and each kind of move is signalled by a counter of its own, a drag's apart
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-02
 - **Deciders:** Markus Brigl
+- **Supersedes:** [ADR-0029](0029-the-store-holds-no-coordinate-each-move-its-counter.md)
 - **Applies to:** `packages/comb/src/store/`, the state `packages/comb/src/interaction/` keeps between pointer events, and every module that reads or writes the state of the graph or the viewport
 
 ## Context
@@ -17,8 +18,7 @@ which the scene can do only where it tells a move of the dragged nodes from a ch
 a query does not survive: a load, an added node. One counter cannot say which, so the drag's moves
 take a counter of their own, `movesVersion`, and the store names the nodes a drag moves.
 
-This ADR restates ADR-0029 with that clause, and supersedes it once accepted, together with
-ADR-0036; until then ADR-0029 stays in force as it reads.
+This ADR restates ADR-0029 with that clause, and supersedes it, together with ADR-0036.
 
 ## Decision
 
@@ -104,8 +104,7 @@ into one notification; where a coordinate of a later gesture lives, which follow
 
 ## Enforcement
 
-Each test below cites this ADR with `Verifies: ADR-0037`; the tests that cite ADR-0029 move to it
-when it is accepted.
+Each test below cites this ADR with `Verifies: ADR-0037`.
 
 - A test in `packages/comb` drags a node across many frames and asserts that the store's graph
   object stays the same reference while `movesVersion` rises once per frame, `positionsVersion`

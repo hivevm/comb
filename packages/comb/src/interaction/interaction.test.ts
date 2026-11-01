@@ -69,7 +69,7 @@ function fakeBridge(
 
 describe("interaction", () => {
   test("a drag across many frames moves the node through the engine and keeps the graph", () => {
-    // Verifies: ADR-0029, ADR-0036
+    // Verifies: ADR-0037, ADR-0036
     const store = createGraphStore();
     load(store, {
       nodes: [{ id: "a", x: 0, y: 0, width: 100, content: titled("A") }],
@@ -437,7 +437,7 @@ describe("the hit test", () => {
 
 describe("interaction keeps the point a connection is dragged to", () => {
   test("a connection dragged across the empty canvas writes no coordinate into the store, and its line follows", () => {
-    // Verifies: ADR-0029
+    // Verifies: ADR-0037
     const store = createGraphStore();
     load(store, {
       nodes: [{ id: "a", x: 0, y: 0, width: 100, content: titled("A") }],

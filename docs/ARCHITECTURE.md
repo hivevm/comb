@@ -265,7 +265,7 @@ The functional core and its shell follow
   compatibility, and the connector a release connects to, the viewport, a counter for moved
   positions, and a counter for moves of the point a connection is dragged to; no coordinates of
   nodes, edges, or the pointer
-  ([ADR-0029](adr/0029-the-store-holds-no-coordinate-each-move-its-counter.md)).
+  ([ADR-0037](adr/0037-each-move-its-counter-a-drag-apart.md)).
   `GraphView` is its state without the actions, the type the render layer reads.
   `store/viewport.ts` holds the viewport's arithmetic, the transform between world and screen and
   the level of detail of a scale included, for interaction, the scene, `api`'s `fitView`,
@@ -586,7 +586,7 @@ example fail where `testMode()` says the build runs the bridge in test mode.
 `scripts/check-dependencies.sh` fails on a lockfile of another package manager beside `bun.lock`
 (ADR-0008), on tsify's default or `json` features or `serde_json` in the bridge crate (ADR-0034), in
 whatever form the entry takes, and on a listed state library other than zustand in the library's
-dependency lists (ADR-0029).
+dependency lists (ADR-0037).
 `scripts/check-container.sh` fails where the Dev Container does not build from its Dockerfile,
 where the Dockerfile names an image without a digest, or where a Feature installs Node.js
 (ADR-0014), and on a Feature that brings a container engine or a Compose file (ADR-0015); the

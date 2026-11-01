@@ -2,7 +2,7 @@
 #
 # Builds, tests, and lints Comb: the commands of the README's "Build, Test & Run" (ADR-0008),
 # with the shape of the code (scripts/check-structure.sh, ADR-0028), the decided dependencies
-# (scripts/check-dependencies.sh, ADR-0008, ADR-0034, ADR-0029), the Dev Container's image and
+# (scripts/check-dependencies.sh, ADR-0008, ADR-0034, ADR-0037), the Dev Container's image and
 # reach (scripts/check-container.sh, ADR-0014, ADR-0015), the overview's naming of every
 # entry point (scripts/check-overview.sh, ADR-0001), and the width of comments
 # (scripts/check-comment-width.sh) first, each after its self-test, since they need no toolchain
