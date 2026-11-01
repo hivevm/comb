@@ -1,380 +1,137 @@
-//! The bridge between the shell and the engine (ADR-0010).
+//! The bridge between the shell and the engine (ADR-0034).
 //!
 //! Structured data crosses through serde-wasm-bindgen as `Ts<T>`, with TypeScript types tsify
-//! generates; node positions and the results of a viewport query cross as buffers the engine
-//! owns, which the shell reads as typed-array views created anew after every call.
+//! generates; the graph data of a load crosses as columns, each a string in pieces or one typed
+//! array; node positions and the results of a viewport query cross as buffers the engine owns,
+//! which the shell reads as typed-array views created anew after every call.
+//!
+//! This root holds the exports and their conversions; the reading and checking of graph data,
+//! which the bridge alone does (ADR-0028), is the module `graph_data`, and what the bridge keeps
+//! of node content between calls, and draws of it, the module `kept`.
 
-use std::cell::Cell;
-use std::collections::{HashMap, HashSet};
-use std::fmt;
+#![cfg_attr(
+    test,
+    allow(
+        clippy::cast_possible_truncation,
+        reason = "test code narrows the fixtures it builds; the lint holds the code that ships"
+    )
+)]
 
+mod graph_data;
+mod kept;
+
+use comb_engine::content::{Cell, Font, Fonts, Placed, drawn_at};
 use comb_engine::geometry::Point;
 use comb_engine::geometry::Rect;
-use comb_engine::graph::{self, EdgeSpec, Graph, GraphError, LabelPlacement, Level, Visible};
-use comb_engine::positions::PositionError;
-use comb_engine::stroke::{Detail, EdgeStyle};
-use serde::de::{self, IgnoredAny, Visitor};
-use serde::{Deserialize, Deserializer, Serialize};
+use comb_engine::graph::{
+    Graph, Level, MoveError, PositionError, SlotError as GraphSlotError, Target, Visible,
+};
+use comb_engine::stroke::Detail;
+use serde::{Deserialize, Serialize};
 use tsify::{Ts, Tsify};
 use wasm_bindgen::prelude::*;
 
-/// The most UTF-16 code units, the length JavaScript gives a string, of a node's title or an edge
-/// label's text.
-pub const MAX_TEXT: usize = 1_000;
+pub use graph_data::{
+    Arrow, ArrowCode, ContentElement, DirectionCode, EdgeField, EdgeInput, EdgePatch, ElementHit,
+    ElementKind, Field, GraphDataProblem, GraphList, KindCode, LabelInput, MAX_COLUMNS,
+    MAX_CONTENT_UNITS, MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_ROWS, MAX_SEGMENTS, MAX_TEXT,
+    NodeContent, NodeField, NodeInput, NodePatch, Pair, RoleCode, Segment, Side, SideCode,
+    TextRole, Trend, TrendDirection,
+};
 
-/// The most nodes, and the most edges, of one graph.
-pub const MAX_ITEMS: u32 = 1_000_000;
+use kept::{ContentStore, Drawn};
 
-/// The most UTF-16 code units of an identifier: a node's or an edge's, or an edge's source or
-/// target.
-pub const MAX_ID: usize = 256;
+use graph_data::{
+    COLUMN_LIMIT, ContentData, EdgeColumns, EdgeRefusal, ID_LIMIT, NodeColumns, ROW_LIMIT,
+    SEGMENT_LIMIT, TEXT_LIMIT, add_edge_to, add_node_to, edge_refused_of, load_of, malformed,
+    patch_of, refused_of, slot, unshaped, update_edge_in,
+};
 
-/// The most UTF-16 code units of all identifiers of one load together, sources and targets
-/// among them, so that the identifiers of a graph within its other limits cost a bounded copy.
-pub const MAX_ID_UNITS: u32 = 64_000_000;
-
-/// The length of a text in UTF-16 code units, as JavaScript counts it.
-fn utf16_length(text: &str) -> usize {
-    text.encode_utf16().count()
-}
-
-/// The length in UTF-16 code units of a field the engine does not keep, or none where it holds
-/// no string. A value of another type is refused naming its node or edge and the field, not as
-/// malformed data; serde-wasm-bindgen gives each value a deserializer of its own, so the refused
-/// one leaves the rest to read. The text itself is not kept: the bridge only checks it.
-fn text_length<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<usize>, D::Error> {
-    Ok(String::deserialize(deserializer)
-        .ok()
-        .map(|text| utf16_length(&text)))
-}
-
-/// A field the engine does not keep that holds a number or nothing: `None` for null or
-/// undefined, NaN for a value of another type, a BigInt among them, so that the check refuses
-/// it by name.
-fn optional_number<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<f64>, D::Error> {
-    Ok(Option::<f64>::deserialize(deserializer).unwrap_or(Some(f64::NAN)))
-}
-
-/// A field of a node or an edge as the host application handed it over: its value, or none where
-/// the field is missing or holds a value of another type, which the bridge refuses naming the
-/// node or edge and the field (`invalidField`), not as malformed data. serde-wasm-bindgen gives
-/// each value a deserializer of its own, so the refused one leaves the rest to read; the error
-/// that refused it is dropped unread, and the value never reaches a message. Its TypeScript type
-/// is that of the value, which each field names.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Field<T>(pub Option<T>);
-
-impl<T> Default for Field<T> {
-    fn default() -> Self {
-        Self(None)
-    }
-}
-
-thread_local! {
-    /// Whether a field of the current `reading` was refused.
-    static REFUSED: Cell<bool> = const { Cell::new(false) };
-}
-
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for Field<T> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let value = T::deserialize(deserializer).ok();
-        if value.is_none() {
-            REFUSED.set(true);
-        }
-        Ok(Self(value))
-    }
-}
-
-/// What `read` deserializes, a batch, with the nodes and edges after the first with a refused
-/// field left unread: only that field is named, so that a graph of a million refused fields costs
-/// no million errors of serde-wasm-bindgen.
-fn reading<T>(read: impl FnOnce() -> T) -> T {
-    REFUSED.set(false);
-    let value = read();
-    REFUSED.set(false);
-    value
-}
-
-/// The items of a list of graph data, each read in full until one holds a refused field, and the
-/// rest left unread, as items without fields, so that the list keeps its length.
-fn items<'de, D: Deserializer<'de>, T: Deserialize<'de> + Default>(
-    deserializer: D,
-) -> Result<Vec<T>, D::Error> {
-    deserializer.deserialize_seq(Items(std::marker::PhantomData))
-}
-
-struct Items<T>(std::marker::PhantomData<T>);
-
-/// A value left unread.
-struct Unread;
-
-impl<'de> Deserialize<'de> for Unread {
-    fn deserialize<D: Deserializer<'de>>(_deserializer: D) -> Result<Self, D::Error> {
-        Ok(Self)
-    }
-}
-
-impl<'de, T: Deserialize<'de> + Default> Visitor<'de> for Items<T> {
-    type Value = Vec<T>;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a list")
-    }
-
-    fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Vec<T>, A::Error> {
-        let mut items = Vec::new();
-        loop {
-            let item = if REFUSED.get() {
-                seq.next_element::<Unread>()?.map(|Unread| T::default())
-            } else {
-                seq.next_element::<T>()?
-            };
-            match item {
-                Some(item) => items.push(item),
-                None => return Ok(items),
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-impl<T> From<T> for Field<T> {
-    fn from(value: T) -> Self {
-        Self(Some(value))
-    }
-}
-
-/// A value of the patch of `updateNode`: the string it holds, or none where it holds a value of
-/// another type.
-pub struct Text(pub Option<String>);
-
-impl<'de> Deserialize<'de> for Text {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Ok(Self(String::deserialize(deserializer).ok()))
-    }
-}
-
-/// A node as the host application hands it over: its identifier, its title, the position of its
-/// top-left corner, and its size.
-#[derive(Tsify, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct NodeInput {
-    #[tsify(type = "string")]
-    pub id: Field<String>,
-    /// Missing, it is refused by name, which makes it optional in the generated type.
-    #[tsify(type = "string")]
-    #[serde(rename = "title", default, deserialize_with = "text_length")]
-    pub title_length: Option<usize>,
-    #[tsify(type = "number")]
-    pub x: Field<f64>,
-    #[tsify(type = "number")]
-    pub y: Field<f64>,
-    #[tsify(type = "number")]
-    pub width: Field<f64>,
-    #[tsify(type = "number")]
-    pub height: Field<f64>,
-}
-
-/// An edge label: its text, where it sits by path parameter `t` and label offset in pixels
-/// (G-6), and the colour of its background as `0xRRGGBB`, the edge's own without one.
-#[derive(Tsify, Deserialize, Clone, Copy)]
-pub struct LabelInput {
-    #[tsify(type = "string")]
-    #[serde(rename = "text", default, deserialize_with = "text_length")]
-    pub text_length: Option<usize>,
-    #[tsify(type = "number")]
-    pub t: Field<f64>,
-    #[tsify(type = "number")]
-    pub offset: Field<f64>,
-    #[tsify(optional)]
-    #[serde(default, deserialize_with = "optional_number")]
-    pub background: Option<f64>,
-}
-
-/// Whether an arrowhead marks the end of an edge.
-#[derive(Tsify, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub enum Arrow {
-    End,
-    None,
-}
-
-/// An edge between two nodes, named by their identifiers, with the style it is drawn with: its
-/// colour as `0xRRGGBB`, its dash pattern as dash and gap lengths in world units (none for a
-/// solid line), and whether an arrowhead marks its end (G-11).
-#[derive(Tsify, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct EdgeInput {
-    #[tsify(type = "string")]
-    pub id: Field<String>,
-    #[tsify(type = "string")]
-    pub source: Field<String>,
-    #[tsify(type = "string")]
-    pub target: Field<String>,
-    #[tsify(type = "LabelInput", optional)]
-    pub label: Field<Option<LabelInput>>,
-    #[tsify(type = "number")]
-    pub color: Field<f64>,
-    #[tsify(type = "[number, number]", optional)]
-    pub dash: Field<Option<Pair>>,
-    #[tsify(type = "Arrow")]
-    pub arrow: Field<Arrow>,
-}
-
-/// A dash pattern: a list of exactly two numbers, the dash and the gap.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Pair(pub [f64; 2]);
-
-impl<'de> Deserialize<'de> for Pair {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_seq(PairVisitor)
-    }
-}
-
-struct PairVisitor;
-
-impl<'de> Visitor<'de> for PairVisitor {
-    type Value = Pair;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a list of two numbers")
-    }
-
-    /// Reads two numbers, and refuses a list that holds a third without reading the rest.
-    fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Pair, A::Error> {
-        let mut next = |read| {
-            seq.next_element()?
-                .ok_or_else(|| de::Error::invalid_length(read, &self))
-        };
-        let pair = [next(0)?, next(1)?];
-        if seq.next_element::<IgnoredAny>()?.is_some() {
-            return Err(de::Error::invalid_length(3, &self));
-        }
-        Ok(Pair(pair))
-    }
-}
-
-/// The nodes and edges of one load, each in slot order.
-#[derive(Tsify, Deserialize)]
-pub struct GraphBatch {
-    #[serde(deserialize_with = "items")]
-    pub nodes: Vec<NodeInput>,
-    #[serde(deserialize_with = "items")]
-    pub edges: Vec<EdgeInput>,
-}
-
-/// Which list of graph data an item belongs to.
-#[derive(Tsify, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub enum GraphList {
-    Nodes,
-    Edges,
-}
-
-/// Why Comb refused graph data in `load` or `updateNode` (Q-7): what the bridge refused, what the
-/// shell could not read, and a node `updateNode` names that the graph does not hold. The shell
-/// builds the last two as values of this type; no kind of it is written by hand in TypeScript.
-/// `query` refuses a rectangle without its shape as malformed too, which no host application
-/// meets.
-#[derive(Tsify, Serialize, Deserialize, Debug, PartialEq)]
+/// A number the shell computed that an export cannot take: the shell's own mistake, never one of
+/// graph data, so that a host application never meets it (ADR-0031). Its kind names the number.
+#[derive(Tsify, Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
-pub enum GraphDataProblem {
-    /// The value did not have the shape the export expects: graph data that is no object, a list
-    /// that is no list, a node or an edge that is no object, or a patch that is no plain object.
-    #[serde(rename_all = "camelCase")]
-    Malformed { message: String },
-    /// A field of the item at `index` of `list`, the node or edge `id` where its identifier was
-    /// read, is missing or holds a value of another type; `field` names it, a label's as
-    /// `label.t`, and `expected` says in words what it holds.
-    #[serde(rename_all = "camelCase")]
-    InvalidField {
-        list: GraphList,
-        index: u32,
-        #[tsify(optional)]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        id: Option<String>,
-        field: String,
-        expected: String,
-    },
-    /// A node's coordinate is NaN or infinite.
-    #[serde(rename_all = "camelCase")]
-    NonFiniteCoordinate { node: String },
-    /// A node's width or height is negative, NaN, or infinite.
-    #[serde(rename_all = "camelCase")]
-    InvalidSize { node: String },
-    /// A node's title, in a load or a patch, is not a string.
-    #[serde(rename_all = "camelCase")]
-    InvalidTitle { node: String },
-    /// A node's title, in a load or a patch, is longer than `limit` UTF-16 code units.
-    #[serde(rename_all = "camelCase")]
-    TitleTooLong { node: String, limit: u32 },
-    /// A patch of a node holds a field other than its title.
-    #[serde(rename_all = "camelCase")]
-    UnknownPatchField { node: String, field: String },
-    /// Two nodes share an identifier.
-    #[serde(rename_all = "camelCase")]
-    DuplicateNode { node: String },
-    /// Two edges share an identifier.
-    #[serde(rename_all = "camelCase")]
-    DuplicateEdge { edge: String },
-    /// An edge names a node that is not in the batch.
-    #[serde(rename_all = "camelCase")]
-    MissingNode { edge: String, node: String },
-    /// An edge label's path parameter or label offset is NaN or infinite.
-    #[serde(rename_all = "camelCase")]
-    NonFiniteLabel { edge: String },
-    /// An edge label's text is not a string.
-    #[serde(rename_all = "camelCase")]
-    InvalidLabelText { edge: String },
-    /// An edge label's text is longer than `limit` UTF-16 code units.
-    #[serde(rename_all = "camelCase")]
-    LabelTextTooLong { edge: String, limit: u32 },
-    /// An edge label's background is not an integer from `0` to `0xFFFFFF`.
-    #[serde(rename_all = "camelCase")]
-    InvalidBackground { edge: String },
-    /// An edge's colour is not an integer from `0` to `0xFFFFFF`.
-    #[serde(rename_all = "camelCase")]
-    InvalidColor { edge: String },
-    /// An edge's dash is not positive or its gap negative, or either is not finite.
-    #[serde(rename_all = "camelCase")]
-    InvalidDash { edge: String },
-    /// A graph holds more than `limit` nodes or edges; `list` names which.
-    #[serde(rename_all = "camelCase")]
-    TooMany { list: String, limit: u32 },
-    /// An identifier is longer than `limit` UTF-16 code units: `field` (`id`, `source`, or
-    /// `target`) of the item at `index` of `list` (`nodes` or `edges`).
-    #[serde(rename_all = "camelCase")]
-    IdTooLong {
-        list: String,
-        index: u32,
-        field: String,
-        limit: u32,
-    },
-    /// The identifiers of one load hold more than `limit` UTF-16 code units together.
-    #[serde(rename_all = "camelCase")]
-    IdBudgetExceeded { limit: u32 },
-    /// `updateNode` names a node the graph does not hold.
-    #[serde(rename_all = "camelCase")]
-    UnknownNode { node: String },
-}
-
-/// Why the engine refused a move of nodes: the shell's own mistake, never one of graph data, so
-/// that a host application never meets it.
-#[derive(Tsify, Serialize, Deserialize, Debug, PartialEq)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum TranslateError {
-    /// A slot beyond the loaded nodes.
-    #[serde(rename_all = "camelCase")]
-    SlotOutOfRange { slot: u32 },
-    /// A delta that is NaN or infinite.
+pub enum NumberError {
+    /// A world point of `hit` or `moveLabel` with a coordinate that is NaN or infinite.
+    NonFinitePoint,
+    /// A screen pixel of `query` or `hit` that is not a finite number above zero.
+    InvalidPixel,
+    /// A delta of `translate` that is NaN or infinite.
     NonFiniteDelta,
+    /// A font of `setFont` whose role names none, or whose metrics do not pair up or are not
+    /// finite numbers from 0 to 1,024.
+    InvalidFont,
 }
 
-impl From<PositionError> for TranslateError {
-    fn from(error: PositionError) -> Self {
+/// The refusal of `translate`'s delta, under the name it had before `NumberError` held it. A slot
+/// that holds no node is refused with a `SlotError`, as every export that takes slots refuses one.
+pub type TranslateError = NumberError;
+
+/// Why `hit`, `query`, or `moveLabel` was refused, as the shell receives it: a problem of graph
+/// data, a slot that holds nothing, or a number the shell computed (ADR-0031).
+#[derive(Debug, PartialEq)]
+pub enum CallRefusal {
+    Data(GraphDataProblem),
+    Slot(SlotError),
+    Number(NumberError),
+}
+
+impl From<GraphDataProblem> for CallRefusal {
+    fn from(problem: GraphDataProblem) -> Self {
+        Self::Data(problem)
+    }
+}
+
+impl From<GraphSlotError> for CallRefusal {
+    fn from(error: GraphSlotError) -> Self {
+        Self::Slot(error.into())
+    }
+}
+
+impl From<NumberError> for CallRefusal {
+    fn from(error: NumberError) -> Self {
+        Self::Number(error)
+    }
+}
+
+/// Why `translate` was refused, as the shell receives it: a slot that holds no node, crossing as
+/// `SlotError`, or a delta that is not finite, crossing as `TranslateError`.
+#[derive(Debug, PartialEq)]
+pub enum TranslateRefusal {
+    Slot(SlotError),
+    Delta(TranslateError),
+}
+
+/// Why the engine refused a call that names slots: a slot that holds no node or no edge, beyond
+/// the slots or free. The shell's own mistake, never one of graph data, since `api` refuses an
+/// identifier the graph does not hold before it names a slot (ADR-0028).
+#[derive(Tsify, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum SlotError {
+    /// A slot that holds no node.
+    #[serde(rename_all = "camelCase")]
+    NoNode { slot: u32 },
+    /// A slot that holds no edge.
+    #[serde(rename_all = "camelCase")]
+    NoEdge { slot: u32 },
+}
+
+impl From<GraphSlotError> for SlotError {
+    fn from(error: GraphSlotError) -> Self {
         match error {
-            PositionError::SlotOutOfRange { slot } => Self::SlotOutOfRange { slot },
-            PositionError::NonFinite => Self::NonFiniteDelta,
+            GraphSlotError::NoNode { slot } => Self::NoNode { slot },
+            GraphSlotError::NoEdge { slot } => Self::NoEdge { slot },
+        }
+    }
+}
+
+impl From<MoveError> for TranslateRefusal {
+    fn from(error: MoveError) -> Self {
+        match error {
+            MoveError::Slot(error) => Self::Slot(error.into()),
+            MoveError::Position(PositionError::NonFinite) => {
+                Self::Delta(TranslateError::NonFiniteDelta)
+            }
         }
     }
 }
@@ -396,399 +153,74 @@ impl From<GraphDataProblem> for JsValue {
     }
 }
 
-impl From<TranslateError> for JsValue {
-    fn from(error: TranslateError) -> Self {
+impl From<TranslateRefusal> for JsValue {
+    fn from(refusal: TranslateRefusal) -> Self {
+        match refusal {
+            TranslateRefusal::Slot(error) => thrown(error),
+            TranslateRefusal::Delta(error) => thrown(error),
+        }
+    }
+}
+
+impl From<SlotError> for JsValue {
+    fn from(error: SlotError) -> Self {
         thrown(error)
     }
 }
 
-/// A value that does not have the shape an export expects. Its message is the bridge's own: the
-/// error is dropped and the value not formatted into it, so that a refused value of any size
-/// costs no copy and no message names a type of the bridge crate.
-fn unshaped(_error: impl std::fmt::Display) -> GraphDataProblem {
-    malformed("the value does not have the shape the bridge expects")
+impl From<CallRefusal> for JsValue {
+    fn from(refusal: CallRefusal) -> Self {
+        match refusal {
+            CallRefusal::Data(problem) => problem.into(),
+            CallRefusal::Slot(error) => thrown(error),
+            CallRefusal::Number(error) => thrown(error),
+        }
+    }
 }
 
-/// Malformed data, with a message in plain words that names no type of the bridge crate.
-fn malformed(message: &str) -> GraphDataProblem {
-    GraphDataProblem::Malformed {
-        message: message.to_owned(),
+impl From<EdgeRefusal> for JsValue {
+    fn from(refusal: EdgeRefusal) -> Self {
+        match refusal {
+            EdgeRefusal::Data(problem) => problem.into(),
+            EdgeRefusal::Slot(error) => SlotError::from(error).into(),
+        }
+    }
+}
+
+/// The size of a screen pixel, in world units, a query and a hit test take, or its refusal as the
+/// shell's mistake where it is no finite number above zero, before any edge is flattened
+/// (ADR-0031).
+fn checked_pixel(pixel: f64) -> Result<f64, NumberError> {
+    if pixel.is_finite() && pixel > 0.0 {
+        Ok(pixel)
+    } else {
+        Err(NumberError::InvalidPixel)
     }
 }
 
-/// A graph the engine refuses after the bridge's own checks is malformed data. Each refusal is
-/// named, so that a new one is decided here rather than passed on by default.
-impl From<GraphError> for GraphDataProblem {
-    fn from(error: GraphError) -> Self {
-        malformed(match error {
-            GraphError::SlotCountMismatch => "the positions and sizes do not match the nodes",
-            GraphError::EdgeEndOutOfRange { .. } => "an edge ends at a node beyond the graph",
-            GraphError::TooManySlots => "the graph holds more items than the engine can number",
-        })
+/// The world point `(x, y)` a hit test or a label's move takes, or its refusal as the shell's
+/// mistake where a coordinate is NaN or infinite, before anything is hit or moved (ADR-0031).
+fn checked_point(x: f64, y: f64) -> Result<Point, NumberError> {
+    if x.is_finite() && y.is_finite() {
+        Ok(Point::new(x, y))
+    } else {
+        Err(NumberError::NonFinitePoint)
     }
 }
 
-/// The engine's conversion of a count to slots, so that both refuse the same counts.
-fn slot(index: usize) -> Result<u32, GraphDataProblem> {
-    Ok(graph::slot(index)?)
-}
-
-/// What a field expects, as `invalidField` says it: plain words, no type of the bridge crate.
-const A_NUMBER: &str = "a finite number";
-const A_SIZE: &str = "a finite number of 0 or more";
-const A_COLOR: &str = "an integer from 0 to 0xFFFFFF";
-const A_LABEL: &str = "an object, or none";
-const A_DASH: &str = "a list of two finite numbers, or none";
-const AN_ARROW: &str = "\"end\" or \"none\"";
-
-/// What an identifier, a source, or a target expects, by `MAX_ID`.
-const AN_ID: &str = "a well-formed string of at most 256 code units";
-
-/// A node with every field read.
-struct Node<'a> {
-    id: &'a str,
-    title_length: Option<usize>,
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-}
-
-/// An edge label with every field read.
-struct Label {
-    text_length: Option<usize>,
-    t: f64,
-    offset: f64,
-    background: Option<f64>,
-}
-
-/// An edge with every field read.
-struct Edge<'a> {
-    id: &'a str,
-    source: &'a str,
-    target: &'a str,
-    label: Option<Label>,
-    color: f64,
-    dash: Option<[f64; 2]>,
-    arrow: Arrow,
-}
-
-/// A batch with every field of every node and edge read.
-struct Batch<'a> {
-    nodes: Vec<Node<'a>>,
-    edges: Vec<Edge<'a>>,
-}
-
-/// The item at `index` of `list` while its fields are read, `id` once its identifier is.
-struct Item<'a> {
-    list: GraphList,
-    index: usize,
-    id: Option<&'a str>,
-}
-
-impl<'a> Item<'a> {
-    fn new(list: GraphList, index: usize) -> Self {
-        Self {
-            list,
-            index,
-            id: None,
-        }
-    }
-
-    /// The value of `field`, or the refusal that names the item and the field.
-    fn read<T>(&self, field: &str, value: Field<T>, expected: &str) -> Result<T, GraphDataProblem> {
-        value.0.ok_or_else(|| GraphDataProblem::InvalidField {
-            list: self.list,
-            // Within `MAX_ITEMS`, which the bridge checked first.
-            index: self.index as u32,
-            id: self.id.map(str::to_owned),
-            field: field.to_owned(),
-            expected: expected.to_owned(),
-        })
-    }
-
-    /// The identifier `field` of the item, read in place.
-    fn id(&self, field: &str, value: &'a Field<String>) -> Result<&'a str, GraphDataProblem> {
-        self.read(field, Field(value.0.as_deref()), AN_ID)
-    }
-}
-
-/// The node at `index` with every field read, or the refusal that names its first missing or
-/// mistyped field.
-fn node_of(index: usize, node: &NodeInput) -> Result<Node<'_>, GraphDataProblem> {
-    let mut item = Item::new(GraphList::Nodes, index);
-    let id = item.id("id", &node.id)?;
-    item.id = Some(id);
-    Ok(Node {
-        id,
-        title_length: node.title_length,
-        x: item.read("x", node.x, A_NUMBER)?,
-        y: item.read("y", node.y, A_NUMBER)?,
-        width: item.read("width", node.width, A_SIZE)?,
-        height: item.read("height", node.height, A_SIZE)?,
-    })
-}
-
-/// The edge at `index` with every field read, or the refusal that names its first missing or
-/// mistyped field.
-fn edge_of(index: usize, edge: &EdgeInput) -> Result<Edge<'_>, GraphDataProblem> {
-    let mut item = Item::new(GraphList::Edges, index);
-    let id = item.id("id", &edge.id)?;
-    item.id = Some(id);
-    let source = item.id("source", &edge.source)?;
-    let target = item.id("target", &edge.target)?;
-    let label = match item.read("label", edge.label, A_LABEL)? {
-        None => None,
-        Some(label) => Some(Label {
-            text_length: label.text_length,
-            t: item.read("label.t", label.t, A_NUMBER)?,
-            offset: item.read("label.offset", label.offset, A_NUMBER)?,
-            background: label.background,
-        }),
-    };
-    Ok(Edge {
-        id,
-        source,
-        target,
-        label,
-        color: item.read("color", edge.color, A_COLOR)?,
-        dash: item.read("dash", edge.dash, A_DASH)?.map(|Pair(pair)| pair),
-        arrow: item.read("arrow", edge.arrow, AN_ARROW)?,
-    })
-}
-
-/// Reads every field of every node and edge of a batch, or names the first that is missing or
-/// holds a value of another type.
-fn batch_of(batch: &GraphBatch) -> Result<Batch<'_>, GraphDataProblem> {
-    let nodes = batch.nodes.iter().enumerate().map(|(i, n)| node_of(i, n));
-    let edges = batch.edges.iter().enumerate().map(|(i, e)| edge_of(i, e));
-    Ok(Batch {
-        nodes: nodes.collect::<Result<_, _>>()?,
-        edges: edges.collect::<Result<_, _>>()?,
-    })
-}
-
-/// The nodes of a batch as the engine takes them: positions and sizes, `x, y` and `width, height`
-/// per slot, and the map from identifier to slot.
-struct Nodes<'a> {
-    positions: Vec<f32>,
-    sizes: Vec<f32>,
-    slots: HashMap<&'a str, u32>,
-}
-
-/// Checks the nodes and flattens them, or names the first offending node.
-fn nodes_of<'a>(batch: &Batch<'a>) -> Result<Nodes<'a>, GraphDataProblem> {
-    let mut slots = HashMap::with_capacity(batch.nodes.len());
-    let mut positions = Vec::with_capacity(batch.nodes.len() * 2);
-    let mut sizes = Vec::with_capacity(batch.nodes.len() * 2);
-    for (index, node) in batch.nodes.iter().enumerate() {
-        let named = || node.id.to_owned();
-        // Checked as the engine keeps them: a number beyond `f32` is as infinite as infinity.
-        let [x, y, width, height] = [node.x, node.y, node.width, node.height].map(|v| v as f32);
-        if !x.is_finite() || !y.is_finite() {
-            return Err(GraphDataProblem::NonFiniteCoordinate { node: named() });
-        }
-        if !(width.is_finite() && height.is_finite()) || width < 0.0 || height < 0.0 {
-            return Err(GraphDataProblem::InvalidSize { node: named() });
-        }
-        match node.title_length {
-            None => return Err(GraphDataProblem::InvalidTitle { node: named() }),
-            Some(length) if length > MAX_TEXT => {
-                return Err(GraphDataProblem::TitleTooLong {
-                    node: named(),
-                    limit: MAX_TEXT as u32,
-                });
-            }
-            Some(_) => {}
-        }
-        if slots.insert(node.id, slot(index)?).is_some() {
-            return Err(GraphDataProblem::DuplicateNode { node: named() });
-        }
-        positions.extend([x, y]);
-        sizes.extend([width, height]);
-    }
-    Ok(Nodes {
-        positions,
-        sizes,
-        slots,
-    })
-}
-
-/// Whether `value` is a colour `0xRRGGBB`: an integer from `0` to `0xFFFFFF`.
-fn rgb(value: f64) -> bool {
-    value.fract() == 0.0 && (0.0..=f64::from(0xff_ffff)).contains(&value)
-}
-
-/// The label placement and style of an edge, or why they were refused.
-fn placement_of(edge: &Edge) -> Result<(Option<LabelPlacement>, EdgeStyle), GraphDataProblem> {
-    let id = || edge.id.to_owned();
-    let label = match &edge.label {
-        Some(l) if !(l.t.is_finite() && l.offset.is_finite()) => {
-            return Err(GraphDataProblem::NonFiniteLabel { edge: id() });
-        }
-        Some(l) if l.text_length.is_none() => {
-            return Err(GraphDataProblem::InvalidLabelText { edge: id() });
-        }
-        Some(l) if l.text_length > Some(MAX_TEXT) => {
-            return Err(GraphDataProblem::LabelTextTooLong {
-                edge: id(),
-                limit: MAX_TEXT as u32,
-            });
-        }
-        Some(Label {
-            background: Some(b),
-            ..
-        }) if !rgb(*b) => {
-            return Err(GraphDataProblem::InvalidBackground { edge: id() });
-        }
-        label => label.as_ref().map(|l| LabelPlacement {
-            t: l.t,
-            offset: l.offset,
-        }),
-    };
-    if !rgb(edge.color) {
-        return Err(GraphDataProblem::InvalidColor { edge: id() });
-    }
-    // Checked as the engine keeps it, so that a dash too short for `f32` is refused too.
-    let dash = match edge.dash.map(|[dash, gap]| (dash as f32, gap as f32)) {
-        Some((dash, gap)) if !(dash.is_finite() && gap.is_finite() && dash > 0.0 && gap >= 0.0) => {
-            return Err(GraphDataProblem::InvalidDash { edge: id() });
-        }
-        dash => dash,
-    };
-    let style = EdgeStyle {
-        // An integer from 0 to 0xFFFFFF, as `rgb` checked.
-        color: edge.color as u32,
-        dash,
-        arrow: edge.arrow == Arrow::End,
-    };
-    Ok((label, style))
-}
-
-/// Resolves every edge's ends to node slots, or names the first offending edge: the second of
-/// two that share an identifier, or one whose ends, label, or style were refused.
-fn edges_of(batch: &Batch, slots: &HashMap<&str, u32>) -> Result<Vec<EdgeSpec>, GraphDataProblem> {
-    let mut seen = HashSet::with_capacity(batch.edges.len());
-    let end = |edge: &Edge, node: &str| {
-        slots
-            .get(node)
-            .copied()
-            .ok_or_else(|| GraphDataProblem::MissingNode {
-                edge: edge.id.to_owned(),
-                node: node.to_owned(),
-            })
-    };
-    batch
-        .edges
-        .iter()
-        .map(|edge| {
-            if !seen.insert(edge.id) {
-                return Err(GraphDataProblem::DuplicateEdge {
-                    edge: edge.id.to_owned(),
-                });
-            }
-            let source = end(edge, edge.source)?;
-            let target = end(edge, edge.target)?;
-            let (label, style) = placement_of(edge)?;
-            Ok(EdgeSpec {
-                source,
-                target,
-                label,
-                style,
-            })
-        })
-        .collect()
-}
-
-/// Checks the length of every identifier of a batch, and of all of them together.
-fn ids_of(batch: &Batch) -> Result<(), GraphDataProblem> {
-    let mut units = 0;
-    let mut add = |list: &str, index: usize, field: &str, id: &str| {
-        let length = utf16_length(id);
-        if length > MAX_ID {
-            return Err(GraphDataProblem::IdTooLong {
-                list: list.to_owned(),
-                index: slot(index)?,
-                field: field.to_owned(),
-                limit: MAX_ID as u32,
-            });
-        }
-        units += length;
-        Ok(())
-    };
-    for (index, node) in batch.nodes.iter().enumerate() {
-        add("nodes", index, "id", node.id)?;
-    }
-    for (index, edge) in batch.edges.iter().enumerate() {
-        add("edges", index, "id", edge.id)?;
-        add("edges", index, "source", edge.source)?;
-        add("edges", index, "target", edge.target)?;
-    }
-    check_id_budget(units as f64)
-}
-
-/// Checks a batch and builds the engine's graph from it: its size, then every field's type, the
-/// identifiers' lengths, the nodes, and the edges.
-fn graph_of(batch: &GraphBatch) -> Result<Graph, GraphDataProblem> {
-    check_graph_size(batch.nodes.len() as f64, batch.edges.len() as f64)?;
-    let batch = batch_of(batch)?;
-    ids_of(&batch)?;
-    let nodes = nodes_of(&batch)?;
-    let edges = edges_of(&batch, &nodes.slots)?;
-    Ok(Graph::new(nodes.positions, nodes.sizes, edges)?)
-}
-
-/// The attributes `updateNode` changes on a node, by name: only its title, a string. Read from a
-/// plain object alone: `api` hands over a copy whose values are primitives, and `false` in place
-/// of a patch that is no plain object, a `Map` or an array among them, which is refused as
-/// malformed. No value of the host application, and none of its code, reaches the bridge.
-#[derive(Tsify)]
-#[tsify(type = "{ title?: string }")]
-pub struct NodePatch(pub Vec<(String, Text)>);
-
-impl<'de> Deserialize<'de> for NodePatch {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_any(PatchVisitor)
-    }
-}
-
-struct PatchVisitor;
-
-impl<'de> Visitor<'de> for PatchVisitor {
-    type Value = NodePatch;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("an object")
-    }
-
-    /// Keeps the fields up to the first other than `title`, which is refused, and passes over
-    /// the rest unread, so that a patch of many fields costs no copy of them.
-    fn visit_map<A: de::MapAccess<'de>>(self, mut map: A) -> Result<NodePatch, A::Error> {
-        let mut fields = Vec::new();
-        while let Some(field) = map.next_key::<String>()? {
-            let other = field != "title";
-            fields.push((field, map.next_value()?));
-            if other {
-                while map.next_entry::<IgnoredAny, IgnoredAny>()?.is_some() {}
-                break;
-            }
-        }
-        Ok(NodePatch(fields))
-    }
-}
-
-/// The most UTF-16 code units of a title or a label text, `MAX_TEXT`: the shell hands over no
-/// more than one beyond it, so that a text of any length costs at most that much to check.
+/// The most UTF-16 code units of a text of node content or a label text, `MAX_TEXT`: the shell
+/// hands over no more than one beyond it, so that a text of any length costs at most that much to
+/// check.
 #[wasm_bindgen(js_name = textLimit)]
 pub fn text_limit() -> u32 {
-    MAX_TEXT as u32
+    TEXT_LIMIT
 }
 
 /// The most UTF-16 code units of an identifier, `MAX_ID`: the shell hands over no more than one
 /// beyond it.
 #[wasm_bindgen(js_name = idLimit)]
 pub fn id_limit() -> u32 {
-    MAX_ID as u32
+    ID_LIMIT
 }
 
 /// The most UTF-16 code units of all identifiers of one load, `MAX_ID_UNITS`: the shell stops
@@ -801,77 +233,89 @@ pub fn id_budget() -> u32 {
 /// Checks how many UTF-16 code units the identifiers of one load hold together.
 #[wasm_bindgen(js_name = checkIdBudget)]
 pub fn check_id_budget(units: f64) -> Result<(), GraphDataProblem> {
-    if units.is_nan() || units < 0.0 {
-        return Err(malformed("the count of identifier code units is no count"));
-    }
-    if units > f64::from(MAX_ID_UNITS) {
-        return Err(GraphDataProblem::IdBudgetExceeded {
-            limit: MAX_ID_UNITS,
-        });
-    }
-    Ok(())
+    graph_data::check_id_budget(units)
 }
 
 /// Checks how many nodes and edges a graph holds, before the shell copies any of them: at most
 /// `MAX_ITEMS` of each. A count that is no whole number from 0 is no list's length.
 #[wasm_bindgen(js_name = checkGraphSize)]
 pub fn check_graph_size(nodes: f64, edges: f64) -> Result<(), GraphDataProblem> {
-    for (list, count) in [("nodes", nodes), ("edges", edges)] {
-        if !(count >= 0.0 && count.fract() == 0.0) {
-            return Err(malformed(&format!("{list} is not a list")));
-        }
-        if count > f64::from(MAX_ITEMS) {
-            return Err(GraphDataProblem::TooMany {
-                list: list.to_owned(),
-                limit: MAX_ITEMS,
-            });
-        }
-    }
-    Ok(())
+    graph_data::check_graph_size(nodes, edges)
 }
 
-/// A patch of a node as the bridge checked it: what the store merges, and nothing else.
-#[derive(Tsify, Serialize, Debug, PartialEq, Default)]
-pub struct CheckedPatch {
-    #[tsify(optional)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
+/// The most UTF-16 code units of the strings of all content of one load, `MAX_CONTENT_UNITS`: the
+/// shell stops reading a graph whose content holds more, and hands over their count.
+#[wasm_bindgen(js_name = contentBudget)]
+pub fn content_budget() -> u32 {
+    MAX_CONTENT_UNITS
 }
 
-/// Checks a patch of the node `node` and returns the fields it changes, or names its first
-/// offending field.
-fn patch_of(node: &str, patch: NodePatch) -> Result<CheckedPatch, GraphDataProblem> {
-    let mut checked = CheckedPatch::default();
-    for (field, Text(value)) in patch.0 {
-        if field != "title" {
-            return Err(GraphDataProblem::UnknownPatchField {
-                node: node.to_owned(),
-                field,
-            });
-        }
-        let title = value.ok_or_else(|| GraphDataProblem::InvalidTitle {
-            node: node.to_owned(),
-        })?;
-        if utf16_length(&title) > MAX_TEXT {
-            return Err(GraphDataProblem::TitleTooLong {
-                node: node.to_owned(),
-                limit: MAX_TEXT as u32,
-            });
-        }
-        checked.title = Some(title);
-    }
-    Ok(checked)
+/// Checks how many UTF-16 code units the strings of content of one load hold together, `units`,
+/// as the shell counted them while it read them, and names the node `node` whose string passed
+/// the budget (ADR-0034).
+#[wasm_bindgen(js_name = checkContentBudget)]
+pub fn check_content_budget(units: f64, node: &str) -> Result<(), GraphDataProblem> {
+    graph_data::check_content_budget(node, units)
 }
 
-/// Checks the patch `updateNode` hands over for the node `node`, reading it once, and returns
-/// the fields it changes, which the store merges in its place; the engine keeps nothing of it.
-#[wasm_bindgen(js_name = checkNodePatch)]
-pub fn check_node_patch(
-    node: &str,
-    patch: Ts<NodePatch>,
-) -> Result<Ts<CheckedPatch>, GraphDataProblem> {
-    let checked = patch_of(node, patch.to_rust().map_err(unshaped)?)?;
-    Ts::from_rust(&checked).map_err(|_| malformed("the checked patch could not be handed back"))
+/// The space between a badge's text and its pill's left and right sides, in world units: the
+/// engine's, by which the shell places the text on the pill the engine laid out (ADR-0013).
+#[wasm_bindgen(js_name = badgePaddingX)]
+pub fn badge_padding_x() -> f64 {
+    comb_engine::content::BADGE_PADDING_X
+}
+
+/// The space between a badge's text and its pill's top and bottom, in world units, as
+/// `badgePaddingX`.
+#[wasm_bindgen(js_name = badgePaddingY)]
+pub fn badge_padding_y() -> f64 {
+    comb_engine::content::BADGE_PADDING_Y
+}
+
+/// The most rows of a node's content, `MAX_ROWS`: the shell hands over no more than one beyond
+/// it.
+#[wasm_bindgen(js_name = rowLimit)]
+pub fn row_limit() -> u32 {
+    ROW_LIMIT
+}
+
+/// The most columns of a row of a node's content, `MAX_COLUMNS`: the shell hands over no more
+/// than one beyond it.
+#[wasm_bindgen(js_name = columnLimit)]
+pub fn column_limit() -> u32 {
+    COLUMN_LIMIT
+}
+
+/// The most segments of a progress bar of a node's content, `MAX_SEGMENTS`: the shell hands over
+/// no more than one beyond it.
+#[wasm_bindgen(js_name = segmentLimit)]
+pub fn segment_limit() -> u32 {
+    SEGMENT_LIMIT
+}
+
+/// What a press hits (ADR-0013): a connector by the slot of its node and its side, a label by the
+/// slot of its edge, a node by its slot and the element of its content drawn there, where one is
+/// (ADR-0013), an edge by its slot, or nothing; one generated value (ADR-0034).
+#[derive(Tsify, Serialize, Debug, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum Hit {
+    None,
+    Connector {
+        slot: u32,
+        side: Side,
+    },
+    Label {
+        slot: u32,
+    },
+    Node {
+        slot: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[tsify(optional)]
+        element: Option<ElementHit>,
+    },
+    Edge {
+        slot: u32,
+    },
 }
 
 /// A rectangle in world coordinates, as a query asks for it.
@@ -884,7 +328,7 @@ pub struct RectInput {
     pub max_y: f64,
 }
 
-/// The level of detail a query serves (ADR-0012).
+/// The level of detail a query serves (ADR-0027).
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DetailLevel {
@@ -903,7 +347,7 @@ impl From<DetailLevel> for Level {
     }
 }
 
-/// The detail of a query's edge mesh (ADR-0012): complete, or coarsened where an edge was drawn
+/// The detail of a query's edge mesh (ADR-0027): complete, or coarsened where an edge was drawn
 /// as its chord, or left out, for the mesh budget or for memory.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -953,13 +397,25 @@ mod trap {
     pub const fn spring() {}
 }
 
-/// The engine's state as the shell sees it: the loaded graph, and what the last query found.
+/// The engine's state as the shell sees it: the loaded graph, the content of its nodes and the
+/// fonts it is laid out in (ADR-0013), and what the last query found.
 #[wasm_bindgen]
 #[derive(Default)]
 pub struct Engine {
     graph: Graph,
     visible: Visible,
     ends: Vec<f32>,
+    fonts: Fonts,
+    /// The content of the nodes the graph holds and the code units of its strings (ADR-0013).
+    content: ContentStore,
+    /// Of the nodes the last query found at the near or middle level, in its order, the
+    /// boundaries of each one's elements in `placed`.
+    content_bounds: Vec<u32>,
+    placed: Vec<Placed>,
+    /// `x, y, width, height` of each element of `placed`, as the shell reads them.
+    content_rects: Vec<f32>,
+    /// The role and the drawn text of each element of `placed`.
+    drawn: Drawn,
 }
 
 #[wasm_bindgen]
@@ -969,38 +425,340 @@ impl Engine {
         Self::default()
     }
 
-    /// Replaces the graph with the batch, node slot `i` for the batch's node `i` and edge slot
-    /// `i` for its edge `i`, and returns the number of node slots. A refused batch leaves the
-    /// loaded graph as it was.
+    /// Replaces the graph with a load, node slot `i` for its node `i` and edge slot `i` for its
+    /// edge `i`, and returns the number of node slots. The nodes and the edges cross as columns
+    /// (ADR-0034), each in slot order, and serde-wasm-bindgen converts nothing of a load. Of the
+    /// nodes: the identifiers as pieces of at most 2^28 UTF-16 code units, each ending where a
+    /// value ends, with the boundaries across all pieces in UTF-16 code units, the numbers as
+    /// `Float64Array`, the content as the columns of `ContentColumns`, its texts in pieces as the
+    /// identifiers are, with per text whether it is a text, and the first value the shell refused
+    /// by its type, the index of its node, the code of its `NodeField`, and for a shape of content
+    /// its row and column, or none. Each node is as high as its content lays out to in the fonts
+    /// `setFont` handed over (ADR-0013). Of the edges: the identifiers, sources, targets, and label
+    /// texts each as pieces with their boundaries, per label text whether it is a text; whether a
+    /// label, its background, and a dash are present, as bytes; the label's `t` and offset, the
+    /// background, the colour, and the dash and gap as `Float64Array`; the arrowhead and the sides
+    /// as the codes of `ArrowCode` and `SideCode`; and the first value the shell refused by its
+    /// type, the index of its edge and the code of its `EdgeField`, or none. A refused load leaves
+    /// the loaded graph as it was.
     #[wasm_bindgen(js_name = loadGraph)]
-    pub fn load_graph(&mut self, batch: Ts<GraphBatch>) -> Result<u32, GraphDataProblem> {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one parameter per column, each a type wasm-bindgen hands over in one copy, \
+                  or one per piece (ADR-0034)"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "wasm-bindgen hands a list of strings over as an owned `Vec<String>` only"
+    )]
+    pub fn load_graph(
+        &mut self,
+        ids: Vec<String>,
+        id_bounds: &[u32],
+        x: &[f64],
+        y: &[f64],
+        width: &[f64],
+        row_bounds: Vec<u32>,
+        element_bounds: Vec<u32>,
+        kinds: Vec<u8>,
+        weights: Vec<f64>,
+        roles: Vec<u8>,
+        directions: Vec<u8>,
+        colors: Vec<f64>,
+        segment_bounds: Vec<u32>,
+        fractions: Vec<f64>,
+        segment_colors: Vec<f64>,
+        texts: Vec<String>,
+        text_bounds: Vec<u32>,
+        text_valid: Vec<u8>,
+        names: Vec<String>,
+        name_bounds: Vec<u32>,
+        name_valid: Vec<u8>,
+        refused_at: Option<u32>,
+        refused_field: Option<u32>,
+        refused_row: Option<u32>,
+        refused_column: Option<u32>,
+        edge_ids: Vec<String>,
+        edge_id_bounds: &[u32],
+        sources: Vec<String>,
+        source_bounds: &[u32],
+        targets: Vec<String>,
+        target_bounds: &[u32],
+        has_label: &[u8],
+        labels: Vec<String>,
+        label_bounds: &[u32],
+        label_texts: &[u8],
+        label_t: &[f64],
+        label_offset: &[f64],
+        has_background: &[u8],
+        background: &[f64],
+        color: &[f64],
+        has_dash: &[u8],
+        dash: &[f64],
+        gap: &[f64],
+        arrow: &[u8],
+        source_side: &[u8],
+        target_side: &[u8],
+        edge_refused_at: Option<u32>,
+        edge_refused_field: Option<u32>,
+    ) -> Result<u32, GraphDataProblem> {
         trap::spring();
-        let batch = reading(|| batch.to_rust()).map_err(unshaped)?;
-        self.graph = graph_of(&batch)?;
+        let refused = refused_of(refused_at, refused_field, refused_row, refused_column)?;
+        let edges = EdgeColumns {
+            ids: &edge_ids,
+            id_bounds: edge_id_bounds,
+            sources: &sources,
+            source_bounds,
+            targets: &targets,
+            target_bounds,
+            has_label,
+            labels: &labels,
+            label_bounds,
+            label_texts,
+            label_t,
+            label_offset,
+            has_background,
+            background,
+            color,
+            has_dash,
+            dash,
+            gap,
+            arrow,
+            source_side,
+            target_side,
+            refused: edge_refused_of(edge_refused_at, edge_refused_field)?,
+        };
+        // The content's columns, which the engine keeps as they crossed, owned without a copy.
+        let mut content = ContentData {
+            row_bounds,
+            element_bounds,
+            kinds,
+            weights,
+            roles,
+            directions,
+            colors,
+            segment_bounds,
+            fractions,
+            segment_colors,
+            texts,
+            text_bounds,
+            text_valid,
+            names,
+            name_bounds,
+            name_valid,
+            ..ContentData::default()
+        };
+        let nodes = NodeColumns {
+            ids: &ids,
+            id_bounds,
+            x,
+            y,
+            width,
+            content: content.view(),
+            refused,
+        };
+        let loaded = load_of(&nodes, &edges, &self.fonts)?;
+        self.graph = loaded.graph;
+        content.spans = loaded.spans;
+        content.name_spans = loaded.name_spans;
+        content.index_strings();
+        self.content = ContentStore::of_load(content, loaded.units);
         self.visible = Visible::default();
-        slot(batch.nodes.len())
+        slot(x.len())
     }
 
-    /// Moves the nodes in `slots` by `(dx, dy)`, their edges with them.
-    pub fn translate(&mut self, slots: &[u32], dx: f32, dy: f32) -> Result<(), TranslateError> {
+    /// The texts the last `query` placed, as the shell draws them, one after another, which the
+    /// boundaries of `contentTextBounds…` cut: each text, or as much of it as fits followed by an
+    /// ellipsis, and an icon's registered name whole, which the shell draws as the image
+    /// registered under it (ADR-0013). One copy per query, of the texts of the nodes it found
+    /// alone.
+    #[wasm_bindgen(js_name = contentTexts)]
+    pub fn content_texts(&mut self) -> String {
+        trap::spring();
+        self.drawn.texts.clone()
+    }
+
+    /// The content of the node in `slot`, as the host application's type describes it: built when
+    /// inspection or a change Comb tells asks for it, since the shell keeps none (ADR-0013). A slot
+    /// that holds no node throws a `SlotError`.
+    pub fn content(&mut self, slot: u32) -> Result<Ts<NodeContent>, CallRefusal> {
+        trap::spring();
+        if !self.graph.holds_node(slot) {
+            return Err(CallRefusal::Slot(SlotError::NoNode { slot }));
+        }
+        Ts::from_rust(&self.content.content_of(slot))
+            .map_err(|_| malformed("the content could not be handed back").into())
+    }
+
+    /// Hands over the metrics of the font the shell draws the texts of the role `role`, a
+    /// `RoleCode`, with: the advance of the glyph of each code point of `codes` in `advances`,
+    /// that of every other character, `fallback`, and its line height, all in world units. Every
+    /// layout from then on uses it; the shell hands each over once, before the first load
+    /// (ADR-0013). A role that names none, or metrics that do not pair up or are not finite
+    /// numbers from 0 to 1,024, are refused with a `NumberError`, and nothing changes.
+    #[wasm_bindgen(js_name = setFont)]
+    pub fn set_font(
+        &mut self,
+        role: u8,
+        codes: &[u32],
+        advances: &[f64],
+        fallback: f64,
+        line_height: f64,
+    ) -> Result<(), CallRefusal> {
+        trap::spring();
+        let role = graph_data::role_of(role).ok_or(NumberError::InvalidFont)?;
+        let font = Font::new(codes, advances, fallback, line_height)
+            .map_err(|_| NumberError::InvalidFont)?;
+        self.fonts.set(role, font);
+        self.lay_out_heights();
+        Ok(())
+    }
+
+    /// Checks the node `addNode` hands over as a load checks a node, its strings of content
+    /// counted against the budget on from those the graph holds, and adds it, drawn and hit
+    /// above every other node, and returns the slot the engine chose for it: the free slot freed
+    /// last, or a new one after the highest (ADR-0022). A refused node leaves the graph as it was.
+    #[wasm_bindgen(js_name = addNode)]
+    pub fn add_node(&mut self, node: Ts<NodeInput>) -> Result<u32, GraphDataProblem> {
+        trap::spring();
+        let node = node.to_rust().map_err(unshaped)?;
+        self.add(&node)
+    }
+
+    /// Checks the patch `updateNode` hands over for the node `id` in `slot`, reading it once, as a
+    /// load checks a node's content, its strings counted against the budget on from those the
+    /// graph holds besides the node's, and gives the node its new content and the height it lays
+    /// out to, its edges re-placed (ADR-0013); the store merges the patch. A refused patch changes
+    /// nothing; a slot that holds no node throws a `SlotError`.
+    #[wasm_bindgen(js_name = updateNode)]
+    pub fn update_node(
+        &mut self,
+        slot: u32,
+        id: &str,
+        patch: Ts<NodePatch>,
+    ) -> Result<(), CallRefusal> {
+        trap::spring();
+        let patch = patch.to_rust().map_err(unshaped)?;
+        self.update(slot, id, &patch)
+    }
+
+    /// Checks the edge `addEdge` hands over as a load checks an edge, refuses one from a node to
+    /// itself (ADR-0024), adds it between the node slots `source` and `target`, which the shell
+    /// resolved, and returns the slot the engine chose for it (ADR-0022). A refused edge leaves
+    /// the graph as it was; a slot of an end that holds no node throws a `SlotError`.
+    #[wasm_bindgen(js_name = addEdge)]
+    pub fn add_edge(
+        &mut self,
+        edge: Ts<EdgeInput>,
+        source: u32,
+        target: u32,
+    ) -> Result<u32, EdgeRefusal> {
+        trap::spring();
+        let edge = edge.to_rust().map_err(unshaped)?;
+        add_edge_to(&mut self.graph, &edge, source, target)
+    }
+
+    /// Checks the patch `updateEdge` hands over for the edge `id` in `slot`, reading it once, as a
+    /// load checks those fields, and gives the edge its new style and label placement; the store
+    /// merges the patch, the rest of which the engine does not keep. A refused patch changes
+    /// nothing; a slot that holds no edge throws a `SlotError`.
+    #[wasm_bindgen(js_name = updateEdge)]
+    pub fn update_edge(
+        &mut self,
+        slot: u32,
+        id: &str,
+        patch: Ts<EdgePatch>,
+    ) -> Result<(), EdgeRefusal> {
+        trap::spring();
+        let patch = patch.to_rust().map_err(unshaped)?;
+        update_edge_in(&mut self.graph, slot, id, patch)
+    }
+
+    /// Records the half width and half height of the pill of the label of the edge in `slot`, in
+    /// world units, as the shell draws it; a label it has not measured is not hit (ADR-0013).
+    #[wasm_bindgen(js_name = setLabelSize)]
+    pub fn set_label_size(
+        &mut self,
+        slot: u32,
+        half_width: f64,
+        half_height: f64,
+    ) -> Result<(), SlotError> {
+        trap::spring();
+        Ok(self.graph.set_label_size(slot, half_width, half_height)?)
+    }
+
+    /// The world point of the label of the edge in `slot`, `x, y`, or nothing where it holds no
+    /// edge with a label.
+    #[wasm_bindgen(js_name = labelPoint)]
+    pub fn label_point(&mut self, slot: u32) -> Vec<f64> {
+        trap::spring();
+        self.graph
+            .label_point(slot)
+            .map_or_else(Vec::new, |p| vec![p.x, p.y])
+    }
+
+    /// Places the label of the edge in `slot` at the world point `(x, y)`, at the path parameter
+    /// nearest it and its distance along the normal there, and returns the two, `t, offset`
+    /// (G-6). A slot that holds no edge with a label refuses it with a `SlotError`, and a point
+    /// that is not finite with a `NumberError`, before anything moves.
+    #[wasm_bindgen(js_name = moveLabel)]
+    pub fn move_label(&mut self, slot: u32, x: f64, y: f64) -> Result<Vec<f64>, CallRefusal> {
+        trap::spring();
+        let point = checked_point(x, y)?;
+        let placed = self.graph.move_label(slot, point)?;
+        Ok(vec![placed.t, placed.offset])
+    }
+
+    /// The slots of the edges at the nodes in `slots`, in ascending order, as a removal of them
+    /// would take along, named before anything is removed (ADR-0022). A slot that holds no node
+    /// refuses the call.
+    #[wasm_bindgen(js_name = edgesAt)]
+    pub fn edges_at(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
+        trap::spring();
+        Ok(self.graph.edges_at(slots)?)
+    }
+
+    /// Removes the nodes in `slots` and every edge at them, and returns the slots of those edges
+    /// in ascending order; the slots go onto the free lists (ADR-0022). A slot that holds no node
+    /// refuses the call, which then changes nothing.
+    #[wasm_bindgen(js_name = removeNodes)]
+    pub fn remove_nodes(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
+        trap::spring();
+        let edges = self.graph.remove_nodes(slots)?;
+        self.content.remove(slots);
+        Ok(edges)
+    }
+
+    /// Removes the edges in `slots`; the slots go onto the free list (ADR-0022). A slot that holds
+    /// no edge refuses the call, which then changes nothing.
+    #[wasm_bindgen(js_name = removeEdges)]
+    pub fn remove_edges(&mut self, slots: &[u32]) -> Result<(), SlotError> {
+        trap::spring();
+        Ok(self.graph.remove_edges(slots)?)
+    }
+
+    /// Moves the nodes in `slots` by `(dx, dy)`, their edges with them. A slot that holds no node
+    /// throws a `SlotError`, and a delta that is not finite a `NumberError` `nonFiniteDelta`, which
+    /// `TranslateError` names; either way nothing moves.
+    pub fn translate(&mut self, slots: &[u32], dx: f32, dy: f32) -> Result<(), TranslateRefusal> {
         trap::spring();
         self.graph
             .translate(slots, dx, dy)
-            .map_err(TranslateError::from)
+            .map_err(TranslateRefusal::from)
     }
 
     /// Finds the nodes and edges that meet the rectangle and builds the mesh of the edges for
     /// `level`, where a screen pixel is `pixel` world units, within the mesh budget; at the near
     /// level also the edge labels within `label_reach` of it. Returns the detail of the mesh; the
     /// results are read through the `visible…` and `mesh…` buffers. A pixel that is not a finite
-    /// number above zero is refused as malformed before any edge is flattened.
+    /// number above zero is refused with a `NumberError` before any edge is flattened.
     pub fn query(
         &mut self,
         rect: Ts<RectInput>,
         level: DetailLevel,
         pixel: f64,
         label_reach: f64,
-    ) -> Result<MeshDetail, GraphDataProblem> {
+    ) -> Result<MeshDetail, CallRefusal> {
         trap::spring();
         let rect = rect.to_rust().map_err(unshaped)?;
         self.query_rect(&rect, level, pixel, label_reach)
@@ -1014,14 +772,92 @@ impl Engine {
         self.graph.edge_ends(&self.visible.edges, &mut self.ends);
     }
 
-    /// The slot of the node drawn on top at the world point `(x, y)`, if any.
-    pub fn hit(&mut self, x: f64, y: f64) -> Option<u32> {
+    /// What a press at the world point `(x, y)` hits where a screen pixel is `pixel` world units,
+    /// at `level`: where `connectors` asks for them, at the near and middle level, a connector
+    /// within 8 screen pixels, of the node drawn on top; else, at the near level, the label whose
+    /// measured pill holds the point; else the node drawn on top there, else the edge drawn on top
+    /// within 4 screen pixels of its path, else nothing (ADR-0013). Of a node, the element of its
+    /// content whose rectangle holds the point, of those drawn at `level`: at the near level every
+    /// element, at the middle level the texts of role title, at the far level none (ADR-0013). A
+    /// pixel is checked as `query` checks it, and a point that is not finite is refused, both with
+    /// a `NumberError`.
+    pub fn hit(
+        &mut self,
+        x: f64,
+        y: f64,
+        pixel: f64,
+        level: DetailLevel,
+        connectors: bool,
+    ) -> Result<Ts<Hit>, CallRefusal> {
         trap::spring();
-        self.graph.hit(Point::new(x, y))
+        let point = checked_point(x, y)?;
+        let pixel = checked_pixel(pixel)?;
+        let hit = match self.graph.hit_at(point, pixel, level.into(), connectors) {
+            Some(Target::Connector(slot, side)) => Hit::Connector {
+                slot,
+                side: side.into(),
+            },
+            Some(Target::Label(slot)) => Hit::Label { slot },
+            Some(Target::Node(slot)) => Hit::Node {
+                slot,
+                element: self.element_at(slot, point, level),
+            },
+            Some(Target::Edge(slot)) => Hit::Edge { slot },
+            None => Hit::None,
+        };
+        Ts::from_rust(&hit).map_err(|_| malformed("the hit could not be handed back").into())
     }
 }
 
 impl Engine {
+    /// `addNode` of `node`, read: its strings of content counted on from those the graph holds.
+    fn add(&mut self, node: &NodeInput) -> Result<u32, GraphDataProblem> {
+        let (slot, content) =
+            add_node_to(&mut self.graph, node, &self.fonts, self.content.units())?;
+        self.content.set(slot, content);
+        Ok(slot)
+    }
+
+    /// `updateNode` of the node `id` in `slot` by `patch`, read: its strings of content counted on
+    /// from those the graph holds besides the node's.
+    fn update(&mut self, slot: u32, id: &str, patch: &NodePatch) -> Result<(), CallRefusal> {
+        let held = self.content.held_besides(slot);
+        let Some((content, height)) = patch_of(id, patch, &self.fonts, held)? else {
+            return Ok(());
+        };
+        if !self.graph.holds_node(slot) {
+            return Err(CallRefusal::Slot(SlotError::NoNode { slot }));
+        }
+        graph_data::within_by_height(id, self.graph.positions()[slot as usize * 2 + 1], height)?;
+        self.graph.resize_node(slot, height)?;
+        self.content.set(slot, content);
+        Ok(())
+    }
+
+    /// The element of the content of the node in `slot` whose rectangle holds `point`, of those
+    /// drawn at `level`, by the rule the query places them by (`drawn_at`, ADR-0013).
+    fn element_at(&self, slot: u32, point: Point, level: DetailLevel) -> Option<ElementHit> {
+        // The far level draws no element (`drawn_at`): no node is laid out for nothing.
+        if level == DetailLevel::Far {
+            return None;
+        }
+        let at = slot as usize * 2;
+        let [x, y] = [0, 1].map(|axis| f64::from(self.graph.positions()[at + axis]));
+        let width = self.graph.sizes()[at];
+        let (content, node) = self.content.of(slot);
+        let (mut cells, mut rows, mut placed) = (Vec::new(), Vec::new(), Vec::new());
+        content.element_at(
+            node,
+            width,
+            &self.fonts,
+            (point.x - x, point.y - y),
+            level.into(),
+            &mut cells,
+            &mut rows,
+            &mut placed,
+        )
+    }
+
     /// `query` of a rectangle already converted.
     fn query_rect(
         &mut self,
@@ -1029,16 +865,66 @@ impl Engine {
         level: DetailLevel,
         pixel: f64,
         label_reach: f64,
-    ) -> Result<MeshDetail, GraphDataProblem> {
-        if !(pixel.is_finite() && pixel > 0.0) {
-            return Err(malformed(
-                "the size of a screen pixel is not a finite number above zero",
-            ));
-        }
+    ) -> Result<MeshDetail, CallRefusal> {
+        let pixel = checked_pixel(pixel)?;
         let rect = Rect::new(rect.min_x, rect.min_y, rect.max_x, rect.max_y);
         self.graph
             .query(&rect, level.into(), pixel, label_reach, &mut self.visible);
+        self.lay_out_found(level);
         Ok(self.visible.mesh.detail.into())
+    }
+
+    /// Gives every node the height its content lays out to in the fonts as they are now, its edges
+    /// and its place in the index moved along where it changed (ADR-0013).
+    fn lay_out_heights(&mut self) {
+        let slots = graph_data::numbered(self.graph.sizes().len() / 2);
+        for slot in 0..slots {
+            if !self.graph.holds_node(slot) {
+                continue;
+            }
+            let (content, node) = self.content.of(slot);
+            let height = content.height(node, &self.fonts);
+            if self.graph.sizes()[slot as usize * 2 + 1] != height {
+                // A slot that holds a node, as the check above found, which no resize refuses.
+                let _ = self.graph.resize_node(slot, height);
+            }
+        }
+    }
+
+    /// Lays out the content of the nodes the last query found, at the near and the middle level,
+    /// and places into the buffers of placed elements those drawn at `level` (`drawn_at`): at the
+    /// middle level the texts of role title alone, at the rectangles the near level gives them; at
+    /// the far level, which draws none, the buffers hold no node (ADR-0013, ADR-0027).
+    fn lay_out_found(&mut self, level: DetailLevel) {
+        self.content_bounds.clear();
+        self.placed.clear();
+        self.drawn.clear();
+        if level != DetailLevel::Far {
+            self.content_bounds.push(0);
+            let mut cells: Vec<Cell> = Vec::new();
+            let mut rows = Vec::new();
+            let mut laid = Vec::new();
+            let sizes = self.graph.sizes();
+            let level = level.into();
+            for &slot in &self.visible.nodes {
+                let width = sizes[slot as usize * 2];
+                let (content, node) = self.content.of(slot);
+                let fonts = &self.fonts;
+                laid.clear();
+                content.lay_out(node, width, fonts, &mut cells, &mut rows, &mut laid);
+                self.drawn.draw(content, node, &cells, &laid, level, fonts);
+                let drawn = cells.iter().zip(&laid);
+                let drawn = drawn.filter(|(cell, _)| drawn_at(&cell.element, level));
+                self.placed.extend(drawn.map(|(_, at)| *at));
+                self.content_bounds
+                    .push(graph_data::numbered(self.placed.len()));
+            }
+        }
+        self.content_rects.clear();
+        for placed in &self.placed {
+            let rect = [placed.x, placed.y, placed.width, placed.height];
+            self.content_rects.extend(rect);
+        }
     }
 }
 
@@ -1056,6 +942,208 @@ impl Engine {
     #[wasm_bindgen(js_name = positionsLen)]
     pub fn positions_len(&self) -> usize {
         self.graph.positions().len()
+    }
+
+    /// Where the sizes buffer starts, which `loadGraph`, `addNode`, and `updateNode` write:
+    /// `width, height` per node slot, the height the node's content lays out to (ADR-0013).
+    #[wasm_bindgen(js_name = sizesPtr)]
+    pub fn sizes_ptr(&self) -> *const f32 {
+        self.graph.sizes().as_ptr()
+    }
+
+    /// How many values the sizes buffer holds: two per node slot.
+    #[wasm_bindgen(js_name = sizesLen)]
+    pub fn sizes_len(&self) -> usize {
+        self.graph.sizes().len()
+    }
+
+    /// Where the buffer starts that `query` writes, at the near and the middle level, the
+    /// boundaries of the placed elements of each node it found into, one more than it found, in
+    /// the order of the found node slots; at the far level it holds none.
+    #[wasm_bindgen(js_name = contentBoundsPtr)]
+    pub fn content_bounds_ptr(&self) -> *const u32 {
+        self.content_bounds.as_ptr()
+    }
+
+    /// How many boundaries the buffer of placed elements' boundaries holds.
+    #[wasm_bindgen(js_name = contentBoundsLen)]
+    pub fn content_bounds_len(&self) -> usize {
+        self.content_bounds.len()
+    }
+
+    /// Where the buffer starts that `query` writes each placed element's rectangle into, `x, y,
+    /// width, height` relative to its node's top-left corner, its node's elements in the order of
+    /// its rows and theirs.
+    #[wasm_bindgen(js_name = contentRectsPtr)]
+    pub fn content_rects_ptr(&self) -> *const f32 {
+        self.content_rects.as_ptr()
+    }
+
+    /// How many values the buffer of placed elements' rectangles holds: four per element.
+    #[wasm_bindgen(js_name = contentRectsLen)]
+    pub fn content_rects_len(&self) -> usize {
+        self.content_rects.len()
+    }
+
+    /// Where the buffer starts that `query` writes, per placed element, the code of its
+    /// `KindCode` into, which says how the shell draws it (ADR-0013).
+    #[wasm_bindgen(js_name = contentKindsPtr)]
+    pub fn content_kinds_ptr(&self) -> *const u8 {
+        self.drawn.kinds.as_ptr()
+    }
+
+    /// How many values the buffer of kinds holds: one per placed element.
+    #[wasm_bindgen(js_name = contentKindsLen)]
+    pub fn content_kinds_len(&self) -> usize {
+        self.drawn.kinds.len()
+    }
+
+    /// Where the buffer starts that `query` writes, per placed element, the code of the
+    /// `RoleCode` whose font draws its text into, body for an action, and for an icon, whose line
+    /// it lies in.
+    #[wasm_bindgen(js_name = contentRolesPtr)]
+    pub fn content_roles_ptr(&self) -> *const u8 {
+        self.drawn.roles.as_ptr()
+    }
+
+    /// How many values the buffer of roles holds: one per placed element.
+    #[wasm_bindgen(js_name = contentRolesLen)]
+    pub fn content_roles_len(&self) -> usize {
+        self.drawn.roles.len()
+    }
+
+    /// Where the buffer starts that `query` writes, per placed element, its colour as `0xRRGGBB`
+    /// into: a badge's pill's, 0 for an element of no colour (ADR-0013).
+    #[wasm_bindgen(js_name = contentColorsPtr)]
+    pub fn content_colors_ptr(&self) -> *const u32 {
+        self.drawn.colors.as_ptr()
+    }
+
+    /// How many values the buffer of colours holds: one per placed element.
+    #[wasm_bindgen(js_name = contentColorsLen)]
+    pub fn content_colors_len(&self) -> usize {
+        self.drawn.colors.len()
+    }
+
+    /// Where the buffer starts that `query` writes, per placed element, the boundaries of the
+    /// pieces of its bar in `contentBars…` into: one more than there are placed elements, a
+    /// progress bar's segments and then its track, and no piece of another kind (ADR-0013).
+    #[wasm_bindgen(js_name = contentBarBoundsPtr)]
+    pub fn content_bar_bounds_ptr(&self) -> *const u32 {
+        self.drawn.bar_bounds.as_ptr()
+    }
+
+    /// How many boundaries the buffer of the bars' boundaries holds.
+    #[wasm_bindgen(js_name = contentBarBoundsLen)]
+    pub fn content_bar_bounds_len(&self) -> usize {
+        self.drawn.bar_bounds.len()
+    }
+
+    /// Where the buffer starts that `query` writes each piece of a bar into, its rectangle
+    /// `x, y, width, height` relative to its node.
+    #[wasm_bindgen(js_name = contentBarsPtr)]
+    pub fn content_bars_ptr(&self) -> *const f32 {
+        self.drawn.bars.as_ptr()
+    }
+
+    /// How many values the buffer of the bars' pieces holds: four per piece.
+    #[wasm_bindgen(js_name = contentBarsLen)]
+    pub fn content_bars_len(&self) -> usize {
+        self.drawn.bars.len()
+    }
+
+    /// Where the buffer starts that `query` writes each piece's colour as `0xRRGGBB` into: a
+    /// segment's, and 0 for a track, whose colour is the shell's.
+    #[wasm_bindgen(js_name = contentBarColorsPtr)]
+    pub fn content_bar_colors_ptr(&self) -> *const u32 {
+        self.drawn.bar_colors.as_ptr()
+    }
+
+    /// How many values the buffer of the pieces' colours holds: one per piece.
+    #[wasm_bindgen(js_name = contentBarColorsLen)]
+    pub fn content_bar_colors_len(&self) -> usize {
+        self.drawn.bar_colors.len()
+    }
+
+    /// Where the buffer starts that `query` writes, per placed element, the boundaries of its parts
+    /// in `contentParts…` into: one more than there are placed elements, a metric's caption, value,
+    /// and trend's text, and no part of another kind (ADR-0013).
+    #[wasm_bindgen(js_name = contentPartBoundsPtr)]
+    pub fn content_part_bounds_ptr(&self) -> *const u32 {
+        self.drawn.part_bounds.as_ptr()
+    }
+
+    /// How many boundaries the buffer of the parts' boundaries holds.
+    #[wasm_bindgen(js_name = contentPartBoundsLen)]
+    pub fn content_part_bounds_len(&self) -> usize {
+        self.drawn.part_bounds.len()
+    }
+
+    /// Where the buffer starts that `query` writes each part's rectangle into, `x, y, width,
+    /// height` relative to its node.
+    #[wasm_bindgen(js_name = contentPartsPtr)]
+    pub fn content_parts_ptr(&self) -> *const f32 {
+        self.drawn.parts.as_ptr()
+    }
+
+    /// How many values the buffer of the parts' rectangles holds: four per part.
+    #[wasm_bindgen(js_name = contentPartsLen)]
+    pub fn content_parts_len(&self) -> usize {
+        self.drawn.parts.len()
+    }
+
+    /// Where the buffer starts that `query` writes where each part's text ends in `contentTexts`
+    /// into, in UTF-16 code units: each part's text starts where the one before it in its element
+    /// ends, the first where its element's text starts.
+    #[wasm_bindgen(js_name = contentPartEndsPtr)]
+    pub fn content_part_ends_ptr(&self) -> *const u32 {
+        self.drawn.part_ends.as_ptr()
+    }
+
+    /// How many values the buffer of the parts' ends holds: one per part.
+    #[wasm_bindgen(js_name = contentPartEndsLen)]
+    pub fn content_part_ends_len(&self) -> usize {
+        self.drawn.part_ends.len()
+    }
+
+    /// Where the buffer starts that `query` writes, per placed element, the boundaries of its
+    /// arrows in `contentArrows…` into: one more than there are placed elements, a metric's one
+    /// where its column holds it, and none of another kind (ADR-0013).
+    #[wasm_bindgen(js_name = contentArrowBoundsPtr)]
+    pub fn content_arrow_bounds_ptr(&self) -> *const u32 {
+        self.drawn.arrow_bounds.as_ptr()
+    }
+
+    /// How many boundaries the buffer of the arrows' boundaries holds.
+    #[wasm_bindgen(js_name = contentArrowBoundsLen)]
+    pub fn content_arrow_bounds_len(&self) -> usize {
+        self.drawn.arrow_bounds.len()
+    }
+
+    /// Where the buffer starts that `query` writes each arrow's triangle into, three points `x, y`
+    /// relative to its node, drawn in its element's colour.
+    #[wasm_bindgen(js_name = contentArrowsPtr)]
+    pub fn content_arrows_ptr(&self) -> *const f32 {
+        self.drawn.arrows.as_ptr()
+    }
+
+    /// How many values the buffer of the arrows holds: six per arrow.
+    #[wasm_bindgen(js_name = contentArrowsLen)]
+    pub fn content_arrows_len(&self) -> usize {
+        self.drawn.arrows.len()
+    }
+
+    /// Where the buffer starts that `query` writes the boundaries of the drawn texts in
+    /// `contentTexts`, in UTF-16 code units, into: one more than there are placed elements.
+    #[wasm_bindgen(js_name = contentTextBoundsPtr)]
+    pub fn content_text_bounds_ptr(&self) -> *const u32 {
+        self.drawn.bounds.as_ptr()
+    }
+
+    /// How many boundaries the buffer of drawn texts' boundaries holds.
+    #[wasm_bindgen(js_name = contentTextBoundsLen)]
+    pub fn content_text_bounds_len(&self) -> usize {
+        self.drawn.bounds.len()
     }
 
     /// Where the buffer starts that `query` writes the node slots it found into.
@@ -1108,7 +1196,7 @@ impl Engine {
     }
 
     /// Where the buffer starts that `query` writes the point of each label it found into: `x, y`
-    /// per label slot.
+    /// per label slot, relative to the origin.
     #[wasm_bindgen(js_name = labelPointsPtr)]
     pub fn label_points_ptr(&self) -> *const f32 {
         self.visible.label_points.as_ptr()
@@ -1120,8 +1208,22 @@ impl Engine {
         self.visible.label_points.len()
     }
 
+    /// The `x` of the origin the last `query` wrote its vertex positions and label points
+    /// relative to (ADR-0034).
+    #[wasm_bindgen(js_name = originX)]
+    pub fn origin_x(&self) -> f64 {
+        self.visible.origin.x
+    }
+
+    /// The `y` of the origin the last `query` wrote its vertex positions and label points
+    /// relative to (ADR-0034).
+    #[wasm_bindgen(js_name = originY)]
+    pub fn origin_y(&self) -> f64 {
+        self.visible.origin.y
+    }
+
     /// Where the buffer starts that `query` writes the mesh's vertex positions into: `x, y` per
-    /// vertex.
+    /// vertex, relative to the origin.
     #[wasm_bindgen(js_name = meshPositionsPtr)]
     pub fn mesh_positions_ptr(&self) -> *const f32 {
         self.visible.mesh.positions.as_ptr()
@@ -1186,377 +1288,781 @@ impl Engine {
     }
 }
 
-#[cfg(test)]
-mod properties;
-
-// The malformed-data tests below verify ADR-0010: every export that receives graph data returns a
-// typed error that names the offender, and none panics.
-// Verifies: ADR-0010
+// The tests of the exports: a query of a loaded graph, and the budget a load's limit must fit.
 #[cfg(test)]
 mod tests {
     use super::*;
     use comb_engine::stroke::MESH_BUDGET;
-
-    fn batch(nodes: &[(&str, f64, f64)], edges: &[(&str, &str, &str)]) -> GraphBatch {
-        GraphBatch {
-            nodes: nodes
-                .iter()
-                .map(|&(id, x, y)| NodeInput {
-                    id: id.to_owned().into(),
-                    title_length: Some(1),
-                    x: x.into(),
-                    y: y.into(),
-                    width: 100.0.into(),
-                    height: 50.0.into(),
-                })
-                .collect(),
-            edges: edges
-                .iter()
-                .map(|&(id, source, target)| EdgeInput {
-                    id: id.to_owned().into(),
-                    source: source.to_owned().into(),
-                    target: target.to_owned().into(),
-                    label: None.into(),
-                    color: f64::from(0x9a_a1ad).into(),
-                    dash: None.into(),
-                    arrow: Arrow::End.into(),
-                })
-                .collect(),
-        }
-    }
+    use graph_data::tests::batch;
+    use graph_data::{GraphBatch, graph_of};
 
     #[test]
-    fn what_an_identifier_expects_names_its_limit() {
-        assert!(AN_ID.contains(&format!(" {MAX_ID} ")));
-    }
-
-    #[test]
-    fn a_batch_flattens_into_slot_order() {
-        let data = batch(&[("a", 1.0, 2.0), ("b", 3.0, 4.0)], &[]);
-        let nodes = nodes_of(&batch_of(&data).unwrap()).unwrap();
-        assert_eq!(nodes.positions, [1.0, 2.0, 3.0, 4.0]);
-        assert_eq!(nodes.sizes, [100.0, 50.0, 100.0, 50.0]);
-    }
-
-    #[test]
-    fn a_non_finite_coordinate_names_its_node() {
-        let error = graph_of(&batch(&[("a", 0.0, 0.0), ("b", f64::NAN, 0.0)], &[])).unwrap_err();
-        assert_eq!(
-            error,
-            GraphDataProblem::NonFiniteCoordinate { node: "b".into() }
-        );
-    }
-
-    #[test]
-    fn a_size_that_is_negative_or_not_finite_names_its_node() {
-        for (width, height) in [(-1.0, 10.0), (10.0, f64::INFINITY), (f64::NAN, 10.0)] {
-            let mut data = batch(&[("a", 0.0, 0.0)], &[]);
-            data.nodes[0].width = width.into();
-            data.nodes[0].height = height.into();
-            let error = graph_of(&data).unwrap_err();
-            assert_eq!(error, GraphDataProblem::InvalidSize { node: "a".into() });
-        }
-    }
-
-    #[test]
-    fn a_number_beyond_f32_is_refused_as_a_non_finite_one() {
-        let error = graph_of(&batch(&[("a", 1e300, 0.0)], &[])).unwrap_err();
-        assert_eq!(
-            error,
-            GraphDataProblem::NonFiniteCoordinate { node: "a".into() }
-        );
-        let mut data = batch(&[("a", 0.0, 0.0)], &[]);
-        data.nodes[0].width = 1e300.into();
-        assert_eq!(
-            graph_of(&data).unwrap_err(),
-            GraphDataProblem::InvalidSize { node: "a".into() }
-        );
-        let two = [("a", 0.0, 0.0), ("b", 300.0, 0.0)];
-        let mut data = batch(&two, &[("e", "a", "b")]);
-        data.edges[0].dash = Some(Pair([1e-300, 1e300])).into();
-        assert_eq!(
-            graph_of(&data).unwrap_err(),
-            GraphDataProblem::InvalidDash { edge: "e".into() }
-        );
-    }
-
-    #[test]
-    fn a_duplicate_identifier_names_its_node() {
-        let error = graph_of(&batch(&[("a", 0.0, 0.0), ("a", 1.0, 1.0)], &[])).unwrap_err();
-        assert_eq!(error, GraphDataProblem::DuplicateNode { node: "a".into() });
-    }
-
-    #[test]
-    fn a_duplicate_identifier_names_its_edge() {
-        let two = [("a", 0.0, 0.0), ("b", 300.0, 0.0)];
-        let error = graph_of(&batch(&two, &[("e", "a", "b"), ("e", "b", "a")])).unwrap_err();
-        assert_eq!(error, GraphDataProblem::DuplicateEdge { edge: "e".into() });
-    }
-
-    #[test]
-    fn an_edge_to_a_missing_node_names_the_edge_and_the_node() {
-        let error = graph_of(&batch(&[("a", 0.0, 0.0)], &[("e", "a", "z")])).unwrap_err();
-        assert_eq!(
-            error,
-            GraphDataProblem::MissingNode {
-                edge: "e".into(),
-                node: "z".into()
-            }
-        );
-    }
-
-    #[test]
-    fn a_non_finite_label_names_its_edge() {
-        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[("e", "a", "b")]);
-        data.edges[0].label = Some(LabelInput {
-            text_length: Some(1),
-            t: f64::NAN.into(),
-            offset: 0.0.into(),
-            background: None,
-        })
-        .into();
-        let error = graph_of(&data).unwrap_err();
-        assert_eq!(error, GraphDataProblem::NonFiniteLabel { edge: "e".into() });
-    }
-
-    #[test]
-    fn a_colour_beyond_rgb_or_a_bad_dash_names_its_edge() {
-        let two = [("a", 0.0, 0.0), ("b", 300.0, 0.0)];
-        let mut data = batch(&two, &[("e", "a", "b")]);
-        data.edges[0].color = f64::from(0x100_0000).into();
-        assert_eq!(
-            graph_of(&data).unwrap_err(),
-            GraphDataProblem::InvalidColor { edge: "e".into() }
-        );
-        for dash in [
-            [0.0, 4.0],
-            [6.0, -1.0],
-            [f64::NAN, 4.0],
-            [6.0, f64::INFINITY],
-        ] {
-            let mut data = batch(&two, &[("e", "a", "b")]);
-            data.edges[0].dash = Some(Pair(dash)).into();
-            assert_eq!(
-                graph_of(&data).unwrap_err(),
-                GraphDataProblem::InvalidDash { edge: "e".into() }
-            );
-        }
-    }
-
-    #[test]
-    fn a_title_that_is_not_text_names_its_node() {
-        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
-        data.nodes[1].title_length = None;
-        assert_eq!(
-            graph_of(&data).unwrap_err(),
-            GraphDataProblem::InvalidTitle { node: "b".into() }
-        );
-    }
-
-    #[test]
-    fn a_label_text_or_background_pixi_cannot_draw_names_its_edge() {
-        let two = [("a", 0.0, 0.0), ("b", 300.0, 0.0)];
-        let label = |text, background| {
-            let mut data = batch(&two, &[("e", "a", "b")]);
-            data.edges[0].label = Some(LabelInput {
-                text_length: text,
-                t: 0.5.into(),
-                offset: 0.0.into(),
-                background,
-            })
-            .into();
-            graph_of(&data)
-        };
-        assert!(label(Some(1), None).is_ok());
-        assert!(label(Some(1), Some(0.0)).is_ok());
-        assert!(label(Some(1), Some(f64::from(0xff_ffff))).is_ok());
-        assert_eq!(
-            label(None, None).unwrap_err(),
-            GraphDataProblem::InvalidLabelText { edge: "e".into() }
-        );
-        for background in [-5.0, 1.5, f64::NAN, 1e20, f64::from(0x100_0000)] {
-            assert_eq!(
-                label(Some(1), Some(background)).unwrap_err(),
-                GraphDataProblem::InvalidBackground { edge: "e".into() }
-            );
-        }
-    }
-
-    #[test]
-    fn a_text_longer_than_its_limit_names_its_node_or_edge() {
-        let two = [("a", 0.0, 0.0), ("b", 300.0, 0.0)];
-        let mut data = batch(&two, &[("e", "a", "b")]);
-        data.nodes[0].title_length = Some(MAX_TEXT);
-        data.edges[0].label = Some(LabelInput {
-            text_length: Some(MAX_TEXT),
-            t: 0.5.into(),
-            offset: 0.0.into(),
-            background: None,
-        })
-        .into();
-        assert!(graph_of(&data).is_ok());
-        data.nodes[0].title_length = Some(MAX_TEXT + 1);
-        assert_eq!(
-            graph_of(&data).unwrap_err(),
-            GraphDataProblem::TitleTooLong {
-                node: "a".into(),
-                limit: 1_000
-            }
-        );
-        data.nodes[0].title_length = Some(MAX_TEXT);
-        if let Field(Some(Some(label))) = &mut data.edges[0].label {
-            label.text_length = Some(MAX_TEXT + 1);
-        }
-        assert_eq!(
-            graph_of(&data).unwrap_err(),
-            GraphDataProblem::LabelTextTooLong {
-                edge: "e".into(),
-                limit: 1_000
-            }
-        );
-        // JavaScript's length: a character beyond the basic plane counts twice.
-        assert_eq!(utf16_length(&"\u{1F600}".repeat(500)), 1_000);
-    }
-
-    #[test]
-    fn an_identifier_beyond_its_limit_or_the_budget_is_refused() {
-        let long = "x".repeat(MAX_ID);
-        let longer = "x".repeat(MAX_ID + 1);
-        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[("e", "a", "b")]);
-        data.nodes[1].id = long.clone().into();
-        data.edges[0].target = long.into();
-        assert!(graph_of(&data).is_ok());
-        data.edges[0].source = longer.into();
-        assert_eq!(
-            graph_of(&data).unwrap_err(),
-            GraphDataProblem::IdTooLong {
-                list: "edges".into(),
-                index: 0,
-                field: "source".into(),
-                limit: 256
-            }
-        );
-        assert_eq!(check_id_budget(64e6), Ok(()));
-        assert_eq!(
-            check_id_budget(64e6 + 1.0),
-            Err(GraphDataProblem::IdBudgetExceeded { limit: 64_000_000 })
-        );
-        assert!(matches!(
-            check_id_budget(f64::NAN),
-            Err(GraphDataProblem::Malformed { .. })
-        ));
-    }
-
-    #[test]
-    fn a_load_counts_the_code_units_of_all_its_identifiers_against_the_budget() {
-        let id = |i: usize| format!("{i:0>256}");
-        let nodes = |count: usize| GraphBatch {
-            nodes: (0..count)
-                .map(|i| NodeInput {
-                    id: id(i).into(),
-                    title_length: Some(1),
-                    x: 0.0.into(),
-                    y: 0.0.into(),
-                    width: 1.0.into(),
-                    height: 1.0.into(),
-                })
-                .collect(),
-            edges: Vec::new(),
-        };
-        // 250,000 identifiers of 256 code units hold 64,000,000 together.
-        let ids = |count| ids_of(&batch_of(&nodes(count)).unwrap());
-        assert_eq!(ids(250_000), Ok(()));
-        assert_eq!(
-            ids(250_001),
-            Err(GraphDataProblem::IdBudgetExceeded { limit: 64_000_000 })
-        );
-    }
-
-    #[test]
-    fn a_graph_beyond_a_million_nodes_or_edges_is_refused_naming_the_list() {
-        assert_eq!(check_graph_size(1e6, 1e6), Ok(()));
-        let too_many = |list: &str| GraphDataProblem::TooMany {
-            list: list.into(),
-            limit: 1_000_000,
-        };
-        assert_eq!(check_graph_size(1e6 + 1.0, 0.0), Err(too_many("nodes")));
-        assert_eq!(
-            check_graph_size(0.0, 4_294_967_295.0),
-            Err(too_many("edges"))
-        );
-        for count in [f64::NAN, -1.0, 0.5] {
-            assert!(matches!(
-                check_graph_size(count, 0.0),
-                Err(GraphDataProblem::Malformed { .. })
-            ));
-        }
-    }
-
-    #[test]
-    fn a_patch_with_another_field_or_a_title_not_text_names_its_node() {
-        let patch = |entries: &[(&str, Option<&str>)]| {
-            let text = |v: Option<&str>| Text(v.map(str::to_owned));
-            let fields = entries.iter().map(|&(k, v)| (k.to_owned(), text(v)));
-            patch_of("a", NodePatch(fields.collect()))
-        };
-        assert_eq!(patch(&[]), Ok(CheckedPatch { title: None }));
-        assert_eq!(
-            patch(&[("title", Some("A"))]),
-            Ok(CheckedPatch {
-                title: Some("A".into())
-            })
-        );
-        assert_eq!(
-            patch(&[("title", Some("A")), ("width", None)]),
-            Err(GraphDataProblem::UnknownPatchField {
-                node: "a".into(),
-                field: "width".into()
-            })
-        );
-        let long = "x".repeat(MAX_TEXT + 1);
-        assert_eq!(
-            patch(&[("title", Some(long.as_str()))]),
-            Err(GraphDataProblem::TitleTooLong {
-                node: "a".into(),
-                limit: 1_000
-            })
-        );
-        assert_eq!(
-            patch(&[("title", None)]),
-            Err(GraphDataProblem::InvalidTitle { node: "a".into() })
-        );
-    }
-
-    #[test]
-    fn a_count_beyond_u32_is_refused_as_the_engine_refuses_it() {
-        let beyond = u32::MAX as usize + 1;
-        assert_eq!(slot(u32::MAX as usize), Ok(u32::MAX));
-        assert_eq!(
-            slot(beyond),
-            Err(GraphDataProblem::from(graph::slot(beyond).unwrap_err()))
-        );
-        assert_eq!(
-            slot(beyond),
-            Err(GraphDataProblem::Malformed {
-                message: "the graph holds more items than the engine can number".into()
-            })
-        );
-    }
-
-    #[test]
-    fn edges_resolve_to_the_slots_of_their_nodes() {
+    fn a_freed_slot_is_refused_by_every_export_that_takes_slots_as_a_slot_beyond_the_graph() {
+        // Verifies: ADR-0022
         let data = batch(
             &[("a", 0.0, 0.0), ("b", 300.0, 0.0), ("c", 600.0, 0.0)],
-            &[("e", "c", "a")],
+            &[("a-b", "a", "b"), ("b-c", "b", "c")],
         );
-        let data = batch_of(&data).unwrap();
-        let edges = edges_of(&data, &nodes_of(&data).unwrap().slots).unwrap();
-        assert_eq!((edges[0].source, edges[0].target), (2, 0));
+        let mut engine = Engine::new();
+        engine.graph = graph_of(&data).unwrap();
+        // Node c goes, and edge b-c, slot 1, with it.
+        assert_eq!(engine.remove_nodes(&[2]), Ok(vec![1]));
+        for slot in [2, 9] {
+            assert_eq!(
+                engine.remove_nodes(&[0, slot]),
+                Err(SlotError::NoNode { slot })
+            );
+            assert_eq!(
+                engine.translate(&[0, slot], 1.0, 1.0),
+                Err(TranslateRefusal::Slot(SlotError::NoNode { slot }))
+            );
+        }
+        for slot in [1, 9] {
+            assert_eq!(
+                engine.remove_edges(&[0, slot]),
+                Err(SlotError::NoEdge { slot })
+            );
+        }
+        assert_eq!(engine.graph.positions()[..4], [0.0, 0.0, 300.0, 0.0]);
+        assert_eq!(engine.remove_edges(&[0]), Ok(()));
+    }
+
+    #[test]
+    fn a_move_by_a_delta_that_is_not_finite_is_refused_after_its_slots_and_nothing_moves() {
+        // Verifies: ADR-0031
+        // A delta is the shell's own mistake, which crosses as `TranslateError`, the
+        // `NumberError` of a delta, never as a problem of graph data.
+        let mut engine = Engine::new();
+        engine.graph = graph_of(&batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[])).unwrap();
+        for (dx, dy) in [(f32::NAN, 1.0), (1.0, f32::INFINITY)] {
+            assert_eq!(
+                engine.translate(&[0, 1], dx, dy),
+                Err(TranslateRefusal::Delta(TranslateError::NonFiniteDelta))
+            );
+            assert_eq!(
+                engine.translate(&[0, 7], dx, dy),
+                Err(TranslateRefusal::Slot(SlotError::NoNode { slot: 7 }))
+            );
+        }
+        assert_eq!(engine.graph.positions(), [0.0, 0.0, 300.0, 0.0]);
+    }
+
+    /// An engine whose titles advance by 7 a glyph and whose ellipsis by 10, the body by 6, in
+    /// lines 18 and 16 high.
+    fn fonted() -> Engine {
+        let mut engine = Engine::new();
+        let ellipsis = [u32::from(comb_engine::content::ELLIPSIS)];
+        let title = RoleCode::Title as u8;
+        assert_eq!(
+            engine.set_font(title, &ellipsis, &[10.0], 7.0, 18.0),
+            Ok(())
+        );
+        let body = RoleCode::Body as u8;
+        assert_eq!(engine.set_font(body, &ellipsis, &[9.0], 6.0, 16.0), Ok(()));
+        engine
+    }
+
+    /// The query of the near level over `rect` on `engine`, where a pixel is a world unit.
+    fn near(engine: &mut Engine, rect: [f64; 4]) {
+        let [min_x, min_y, max_x, max_y] = rect;
+        let rect = RectInput {
+            min_x,
+            min_y,
+            max_x,
+            max_y,
+        };
+        engine
+            .query_rect(&rect, DetailLevel::Near, 1.0, 0.0)
+            .unwrap();
+    }
+
+    #[test]
+    fn nodes_of_different_content_are_as_high_as_their_rows_and_are_hit_and_joined_there() {
+        // Verifies: ADR-0013
+        // Node `a`, 100 wide at (0, 0), holds one title; `b`, at (300, 0), five rows: a title and
+        // four bodies, 10 + 18 + 4 * 16 + 10 = 102 high, and the edge from `a` enters it there.
+        use graph_data::tests::{TITLE, b_of, load_into, text};
+        let body = text(RoleCode::Body, "b");
+        let mut engine = fonted();
+        let mut nodes = b_of(&[&[TITLE], &[body], &[body], &[body], &[body]]);
+        let edges = graph_data::OwnedEdgeColumns::of([Some(&graph_data::EdgeCells::from(
+            &batch(&[], &[("e", "a", "b")]).edges[0],
+        ))]);
+        nodes.content.weights.iter_mut().for_each(|w| *w = 1.0);
+        assert_eq!(load_into(&mut engine, &nodes, &edges), Ok(2));
+        assert_eq!(engine.graph.sizes(), [100.0, 64.0, 100.0, 102.0]);
+        let hit = |engine: &mut Engine, x, y| {
+            engine
+                .graph
+                .hit_at(Point::new(x, y), 1.0, Level::Near, false)
+        };
+        // Below `a`'s bottom, nothing; at the same height in `b`, `b`.
+        assert_eq!(hit(&mut engine, 50.0, 90.0), None);
+        assert_eq!(hit(&mut engine, 350.0, 90.0), Some(Target::Node(1)));
+        assert_eq!(hit(&mut engine, 350.0, 103.0), None);
+        let mut ends = Vec::new();
+        engine.graph.edge_ends(&[0], &mut ends);
+        assert_eq!(ends, [100.0, 32.0, 300.0, 51.0]);
+        // The near level places every text, each relative to its node.
+        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
+        assert_eq!(engine.content_bounds, [0, 1, 6]);
+        assert_eq!(
+            engine.content_rects[..8],
+            [12.0, 10.0, 76.0, 18.0, 12.0, 10.0, 76.0, 18.0]
+        );
+        assert_eq!(engine.content_rects[8..12], [12.0, 28.0, 76.0, 16.0]);
+        // Each text drawn whole, with its role: `a`'s title "x", `b`'s title "t" and four bodies.
+        assert_eq!(engine.drawn.texts, "xtbbbb");
+        assert_eq!(engine.drawn.bounds, [0, 1, 2, 3, 4, 5, 6]);
+        let (title, body) = (RoleCode::Title as u8, RoleCode::Body as u8);
+        assert_eq!(engine.drawn.roles, [title, title, body, body, body, body]);
+    }
+
+    /// An engine of `a`, 100 wide at (0, 0), of one action, and `b` at (300, 0), of a title row and
+    /// a row of a body beside an action, each 34 wide with a gap of 8: the body from x = 12, the
+    /// action from 54, both from y = 28 to 44.
+    fn with_actions() -> Engine {
+        use graph_data::tests::{TITLE, action, load_into, named_content, text};
+        let mut engine = fonted();
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+        data.nodes[0].content = named_content(&[&[action("Open", "first")]]).into();
+        let body = (text(RoleCode::Body, "b"), None);
+        let b = [
+            [(TITLE, None)].as_slice(),
+            &[body, action("Details", "details")],
+        ];
+        data.nodes[1].content = named_content(&b).into();
+        let nodes = graph_data::OwnedColumns::of(data.nodes.iter().map(Some));
+        let none = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
+        engine
+    }
+
+    /// The element `engine` hits in the node in `slot` at `(x, y)` at `level`.
+    fn element(
+        engine: &Engine,
+        slot: u32,
+        x: f64,
+        y: f64,
+        level: DetailLevel,
+    ) -> Option<ElementHit> {
+        engine.element_at(slot, Point::new(x, y), level)
+    }
+
+    /// Asserts that `got` holds `expected`, each within 1e-4.
+    fn assert_close(got: &[f32], expected: &[f64]) {
+        assert_eq!(got.len(), expected.len(), "{got:?}");
+        let close = got
+            .iter()
+            .zip(expected)
+            .all(|(got, want)| (f64::from(*got) - want).abs() <= 1e-4);
+        assert!(close, "{got:?} against {expected:?}");
+    }
+
+    /// The element hit at `row` and `column`, of `kind`, naming `action`.
+    fn hit(row: u32, column: u32, kind: ElementKind, action: Option<&str>) -> Option<ElementHit> {
+        Some(ElementHit {
+            row,
+            column,
+            kind,
+            action: action.map(str::to_owned),
+        })
+    }
+
+    #[test]
+    fn actions_are_drawn_in_the_bodys_font_kept_as_given_and_a_patchs_hit_as_it_lays_out() {
+        // Verifies: ADR-0013
+        use graph_data::tests::{action, named_content};
+        let mut engine = with_actions();
+        // The near level draws the actions as actions, in the body's font.
+        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
+        let (t, a) = (KindCode::Text as u8, KindCode::Action as u8);
+        assert_eq!(engine.drawn.kinds, [a, t, t, a]);
+        let (title, body) = (RoleCode::Title as u8, RoleCode::Body as u8);
+        assert_eq!(engine.drawn.roles, [body, title, body, body]);
+        // "Details" in a column of 34 keeps four of the body's glyphs of 6 beside its
+        // ellipsis of 9.
+        assert_eq!(engine.drawn.texts, "OpentbDeta\u{2026}");
+        // Its content, built when asked, holds the action as the host application gave it.
+        let details = ContentElement::Action {
+            text: "Details".to_owned(),
+            id: "details".to_owned(),
+            weight: Some(1.0),
+        };
+        assert_eq!(engine.content.content_of(1).0[1][1], details);
+        // A patch's content is hit as it lays out, its names its own.
+        let patch = NodePatch(vec![(
+            "content".to_owned(),
+            named_content(&[&[action("Next", "next")]]).into(),
+        )]);
+        let (checked, height) = patch_of("b", &patch, &engine.fonts, 0).unwrap().unwrap();
+        engine.graph.resize_node(1, height).unwrap();
+        engine.content.set(1, checked);
+        assert_eq!(
+            element(&engine, 1, 320.0, 15.0, DetailLevel::Near),
+            hit(0, 0, ElementKind::Action, Some("next"))
+        );
+    }
+
+    #[test]
+    fn a_point_in_a_node_hits_the_element_drawn_there_and_an_action_its_identifier() {
+        // Verifies: ADR-0013
+        let engine = with_actions();
+        let at = |slot, x, y, level| element(&engine, slot, x, y, level);
+        let close = DetailLevel::Near;
+        assert_eq!(
+            at(1, 370.0, 30.0, close),
+            hit(1, 1, ElementKind::Action, Some("details"))
+        );
+        assert_eq!(
+            at(1, 320.0, 30.0, close),
+            hit(1, 0, ElementKind::Text, None)
+        );
+        assert_eq!(
+            at(1, 320.0, 15.0, close),
+            hit(0, 0, ElementKind::Text, None)
+        );
+        // The gap between the body and the action, the padding, and below the rows: none.
+        for (x, y) in [(350.0, 30.0), (305.0, 15.0), (320.0, 50.0)] {
+            assert_eq!(at(1, x, y, close), None, "({x}, {y})");
+        }
+        // `a`'s action names its own identifier, before `b`'s in the column of names.
+        assert_eq!(
+            at(0, 50.0, 15.0, close),
+            hit(0, 0, ElementKind::Action, Some("first"))
+        );
+        // The middle level draws the title alone, and the far level nothing.
+        let middle = DetailLevel::Middle;
+        assert_eq!(
+            at(1, 320.0, 15.0, middle),
+            hit(0, 0, ElementKind::Text, None)
+        );
+        assert_eq!(at(1, 370.0, 30.0, middle), None);
+        assert_eq!(at(0, 50.0, 15.0, middle), None);
+        assert_eq!(at(1, 320.0, 15.0, DetailLevel::Far), None);
+    }
+
+    #[test]
+    fn a_badge_is_drawn_on_its_colour_kept_as_given_and_hit_on_its_pill_alone() {
+        // Verifies: ADR-0013, ADR-0034
+        // `b`, 100 wide at (300, 0), holds a title row and a badge "Done" on 0x22C55E below it:
+        // its pill from (12, 28), the four glyphs of the body's 6 and 8 either side, 40 × 22.
+        use graph_data::tests::{badged, load_into};
+        let mut engine = fonted();
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+        let green = 0x22_c55e;
+        data.nodes[1].content = badged(Some("Done"), f64::from(green)).into();
+        let nodes = graph_data::OwnedColumns::of(data.nodes.iter().map(Some));
+        let none = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
+        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
+        let (t, b) = (KindCode::Text as u8, KindCode::Badge as u8);
+        assert_eq!(engine.drawn.kinds, [t, t, b]);
+        let (title, body) = (RoleCode::Title as u8, RoleCode::Body as u8);
+        assert_eq!(engine.drawn.roles, [title, title, body]);
+        assert_eq!(engine.drawn.colors, [0, 0, green]);
+        assert_eq!(engine.drawn.texts, "xBetDone");
+        assert_eq!(engine.content_rects[8..], [12.0, 28.0, 40.0, 22.0]);
+        // Its content, built when asked, holds the badge as the host application gave it.
+        let badge = ContentElement::Badge {
+            text: "Done".to_owned(),
+            color: green,
+            weight: Some(1.0),
+        };
+        assert_eq!(engine.content.content_of(1).0[1], [badge]);
+        // A press on the pill hits the badge; beside it in its column, none; at the middle level,
+        // where no badge is drawn, none.
+        let at = |x, y, level| element(&engine, 1, x, y, level);
+        assert_eq!(
+            at(320.0, 35.0, DetailLevel::Near),
+            hit(1, 0, ElementKind::Badge, None)
+        );
+        assert_eq!(at(360.0, 35.0, DetailLevel::Near), None);
+        assert_eq!(at(320.0, 35.0, DetailLevel::Middle), None);
+        assert_eq!(at(320.0, 35.0, DetailLevel::Far), None);
+    }
+
+    #[test]
+    fn a_progress_bar_is_drawn_as_its_segments_and_track_kept_as_given_and_hit_across_its_line() {
+        // Verifies: ADR-0013, ADR-0034
+        // `b`, 100 wide at (300, 0), holds a title row and a progress bar of 0.3 green and 0.2
+        // grey below it: its cell from (12, 28), 76 × 16, its bar 8 high from 32, the segments
+        // 22.8 and 15.2 long from 12, and the track the remaining 38.
+        use graph_data::tests::{load_into, progressed};
+        let mut engine = fonted();
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+        let (green, grey) = (0x22_c55e, 0x9c_a3af);
+        let segments = [(0.3, f64::from(green)), (0.2, f64::from(grey))];
+        data.nodes[1].content = progressed(&segments).into();
+        let nodes = graph_data::OwnedColumns::of(data.nodes.iter().map(Some));
+        let none = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
+        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
+        let (t, p) = (KindCode::Text as u8, KindCode::Progress as u8);
+        let (title, body) = (RoleCode::Title as u8, RoleCode::Body as u8);
+        let drawn = &engine.drawn;
+        assert_eq!(
+            (&drawn.kinds[..], &drawn.roles[..], &drawn.colors[..]),
+            (&[t, t, p][..], &[title, title, body][..], &[0, 0, 0][..])
+        );
+        // A progress bar shows no text.
+        assert_eq!(
+            (&drawn.texts[..], &drawn.bounds[..]),
+            ("xBet", &[0, 1, 4, 4][..])
+        );
+        assert_eq!(engine.content_rects[8..], [12.0, 28.0, 76.0, 16.0]);
+        // Its pieces: the segments of their colours, then the track, of none.
+        assert_eq!(engine.drawn.bar_bounds, [0, 0, 0, 3]);
+        assert_eq!(engine.drawn.bar_colors, [green, grey, 0]);
+        let expected = [
+            12.0, 32.0, 22.8, 8.0, 34.8, 32.0, 15.2, 8.0, 50.0, 32.0, 38.0, 8.0,
+        ];
+        assert_close(&engine.drawn.bars, &expected);
+        // Its content, built when asked, holds the bar as the host application gave it.
+        let progress = ContentElement::Progress {
+            segments: vec![
+                graph_data::Segment {
+                    fraction: 0.3,
+                    color: green,
+                },
+                graph_data::Segment {
+                    fraction: 0.2,
+                    color: grey,
+                },
+            ],
+            weight: Some(1.0),
+        };
+        assert_eq!(engine.content.content_of(1).0[1], [progress]);
+        // A press anywhere on its line in its column hits it, above the bar too; at the middle
+        // and far level, where no bar is drawn, none.
+        let at = |x, y, level| element(&engine, 1, x, y, level);
+        let hit_bar = hit(1, 0, ElementKind::Progress, None);
+        assert_eq!(at(380.0, 29.0, DetailLevel::Near), hit_bar);
+        assert_eq!(at(320.0, 36.0, DetailLevel::Near), hit_bar);
+        assert_eq!(at(320.0, 45.0, DetailLevel::Near), None);
+        assert_eq!(at(320.0, 36.0, DetailLevel::Middle), None);
+        assert_eq!(at(320.0, 36.0, DetailLevel::Far), None);
+    }
+
+    #[test]
+    fn an_icon_hands_the_shell_its_name_and_its_square_kept_as_given_and_hit_on_its_square() {
+        // Verifies: ADR-0013, ADR-0034
+        // `b`, 100 wide at (300, 0), holds a title row and an icon named "bet" below it: its
+        // square from (12, 28), the body's line of 16 on a side, in a column 76 wide.
+        use graph_data::tests::{icon, load_into, named_content};
+        let mut engine = fonted();
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+        let title = (graph_data::tests::text(RoleCode::Title, "Bet"), None);
+        data.nodes[1].content = named_content(&[&[title], &[icon(Some("bet"))]]).into();
+        let nodes = graph_data::OwnedColumns::of(data.nodes.iter().map(Some));
+        let none = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
+        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
+        let (t, i) = (KindCode::Text as u8, KindCode::Icon as u8);
+        let (title, body) = (RoleCode::Title as u8, RoleCode::Body as u8);
+        let drawn = &engine.drawn;
+        assert_eq!(
+            (&drawn.kinds[..], &drawn.roles[..], &drawn.colors[..]),
+            (&[t, t, i][..], &[title, title, body][..], &[0, 0, 0][..])
+        );
+        // An icon's text is its name, whole, which the shell draws as the image registered
+        // under it.
+        assert_eq!(
+            (&drawn.texts[..], &drawn.bounds[..]),
+            ("xBetbet", &[0, 1, 4, 7][..])
+        );
+        assert_eq!(engine.content_rects[8..], [12.0, 28.0, 16.0, 16.0]);
+        assert_eq!(engine.drawn.bar_bounds, [0, 0, 0, 0]);
+        // Its content, built when asked, holds the icon as the host application gave it.
+        let kept = ContentElement::Icon {
+            name: "bet".to_owned(),
+            weight: Some(1.0),
+        };
+        assert_eq!(engine.content.content_of(1).0[1], [kept]);
+        // A press on the square hits the icon; beside it in its column, none; at the middle and
+        // far level, where no icon is drawn, none.
+        let at = |x, y, level| element(&engine, 1, x, y, level);
+        assert_eq!(
+            at(320.0, 35.0, DetailLevel::Near),
+            hit(1, 0, ElementKind::Icon, None)
+        );
+        assert_eq!(at(330.0, 35.0, DetailLevel::Near), None);
+        assert_eq!(at(320.0, 35.0, DetailLevel::Middle), None);
+        assert_eq!(at(320.0, 35.0, DetailLevel::Far), None);
+    }
+
+    /// An engine of fonts whose caption glyphs advance by 5 and its lines are 14 high, besides
+    /// `fonted`'s, loaded with `a` and `b`, 100 wide at (300, 0), which holds a title row and a
+    /// metric below it, "Revenue" over "42" and a trend "+3%" down in 0xEF4444, queried near.
+    fn metric_engine() -> Engine {
+        use graph_data::tests::{load_into, metricked};
+        let mut engine = fonted();
+        let ellipsis = [u32::from(comb_engine::content::ELLIPSIS)];
+        let caption = RoleCode::Caption as u8;
+        assert_eq!(
+            engine.set_font(caption, &ellipsis, &[8.0], 5.0, 14.0),
+            Ok(())
+        );
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+        let texts = [Some("Revenue"), Some("42"), Some("+3%")];
+        let down = DirectionCode::Down as u8;
+        data.nodes[1].content = metricked(down, f64::from(RED), texts).into();
+        let nodes = graph_data::OwnedColumns::of(data.nodes.iter().map(Some));
+        let none = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
+        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
+        engine
+    }
+
+    /// The colour of the trend of `metric_engine`'s metric.
+    const RED: u32 = 0xef_4444;
+
+    #[test]
+    fn a_metric_is_drawn_as_its_three_texts_and_its_arrow() {
+        // Verifies: ADR-0013, ADR-0034
+        // `metric_engine`'s metric: its cell from (12, 28), 76 × 30, the node 68 high; the caption
+        // on its line of 14; the value from (12, 42), two body glyphs of 6; the arrow 8 after it,
+        // a square of 10 from (32, 45); the trend's text 4 after the arrow, from 46 to 88.
+        let engine = metric_engine();
+        assert_eq!(engine.graph.sizes()[3], 68.0);
+        let (t, m) = (KindCode::Text as u8, KindCode::Metric as u8);
+        let (title, body) = (RoleCode::Title as u8, RoleCode::Body as u8);
+        let drawn = &engine.drawn;
+        assert_eq!(
+            (&drawn.kinds[..], &drawn.roles[..], &drawn.colors[..]),
+            (&[t, t, m][..], &[title, title, body][..], &[0, 0, RED][..])
+        );
+        assert_eq!(engine.content_rects[8..], [12.0, 28.0, 76.0, 30.0]);
+        // Its texts one after another, which its three parts cut.
+        assert_eq!(
+            (&drawn.texts[..], &drawn.bounds[..]),
+            ("xBetRevenue42+3%", &[0, 1, 4, 16][..])
+        );
+        assert_eq!(
+            (&drawn.part_bounds[..], &drawn.part_ends[..]),
+            (&[0, 0, 0, 3][..], &[11, 13, 16][..])
+        );
+        let parts = [
+            12.0, 28.0, 76.0, 14.0, 12.0, 42.0, 12.0, 16.0, 46.0, 42.0, 42.0, 16.0,
+        ];
+        assert_close(&drawn.parts, &parts);
+        // Its arrow, down: its base along the square's top, its apex the middle of its bottom.
+        assert_eq!(drawn.arrow_bounds, [0, 0, 0, 1]);
+        assert_close(&drawn.arrows, &[32.0, 45.0, 42.0, 45.0, 37.0, 55.0]);
+    }
+
+    #[test]
+    fn a_metric_is_kept_as_given_and_hit_across_its_cell() {
+        // Verifies: ADR-0013, ADR-0034
+        let engine = metric_engine();
+        // Its content, built when asked, holds the metric as the host application gave it.
+        let metric = ContentElement::Metric {
+            caption: "Revenue".to_owned(),
+            value: "42".to_owned(),
+            trend: Trend {
+                text: "+3%".to_owned(),
+                direction: TrendDirection::Down,
+                color: RED,
+            },
+            weight: Some(1.0),
+        };
+        assert_eq!(engine.content.content_of(1).0[1], [metric]);
+        // A press anywhere in its cell hits it, on the caption, beside the value, and on the
+        // trend; below it none; at the middle and far level, where no metric is drawn, none.
+        let at = |x, y, level| element(&engine, 1, x, y, level);
+        let hit_metric = hit(1, 0, ElementKind::Metric, None);
+        assert_eq!(at(380.0, 30.0, DetailLevel::Near), hit_metric);
+        assert_eq!(at(328.0, 50.0, DetailLevel::Near), hit_metric);
+        assert_eq!(at(387.0, 57.0, DetailLevel::Near), hit_metric);
+        assert_eq!(at(320.0, 59.0, DetailLevel::Near), None);
+        assert_eq!(at(320.0, 50.0, DetailLevel::Middle), None);
+        assert_eq!(at(320.0, 50.0, DetailLevel::Far), None);
+    }
+
+    /// An engine of `a`, 100 wide at (0, 0), of one title, and `b`, 200 wide at (300, 0), of an
+    /// element of every kind: a title beside a badge, a body beside an action and an icon, a
+    /// progress bar, a metric, and a second title.
+    fn every_kind() -> Engine {
+        use graph_data::tests::load_into;
+        let mut engine = fonted();
+        let ellipsis = [u32::from(comb_engine::content::ELLIPSIS)];
+        let caption = RoleCode::Caption as u8;
+        assert_eq!(
+            engine.set_font(caption, &ellipsis, &[8.0], 5.0, 14.0),
+            Ok(())
+        );
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+        let (title, body) = (RoleCode::Title as u8, RoleCode::Body as u8);
+        let mut content = graph_data::ContentInput::new();
+        content.push(KindCode::Text, 1.0, title, f64::NAN, Some("Bet"), None);
+        content.push(KindCode::Badge, 1.0, 0, 34_816.0, Some("Done"), None);
+        content.end_row();
+        content.push(KindCode::Text, 1.0, body, f64::NAN, Some("b"), None);
+        content.push(KindCode::Action, 1.0, 0, f64::NAN, Some("Go"), Some("go"));
+        content.push(KindCode::Icon, 1.0, 0, f64::NAN, None, Some("bet"));
+        content.end_row();
+        content.push(KindCode::Progress, 1.0, 0, f64::NAN, None, None);
+        content.push_segment(0.5, 34_816.0);
+        content.end_row();
+        let down = DirectionCode::Down as u8;
+        let texts = [Some("Revenue"), Some("42"), Some("+3%")];
+        content.push_metric(1.0, down, f64::from(RED), texts);
+        content.end_row();
+        content.push(KindCode::Text, 1.0, title, f64::NAN, Some("Two"), None);
+        content.end_row();
+        data.nodes[1].content = content.into();
+        data.nodes[1].width = 200.0.into();
+        let nodes = graph_data::OwnedColumns::of(data.nodes.iter().map(Some));
+        let none = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
+        engine
+    }
+
+    /// The query of `level` over the whole of `every_kind`, where a pixel is a world unit.
+    fn every_kind_at(engine: &mut Engine, level: DetailLevel) {
+        let rect = RectInput {
+            min_x: -10.0,
+            min_y: -10.0,
+            max_x: 600.0,
+            max_y: 300.0,
+        };
+        engine.query_rect(&rect, level, 1.0, 0.0).unwrap();
+    }
+
+    #[test]
+    fn the_middle_level_places_the_texts_of_role_title_alone_where_the_near_level_does() {
+        // Verifies: ADR-0013
+        let mut engine = every_kind();
+        every_kind_at(&mut engine, DetailLevel::Near);
+        // `a`'s title, then `b`'s eight elements in the order of its rows.
+        assert_eq!(engine.content_bounds, [0, 1, 9]);
+        let near_rects = engine.content_rects.clone();
+        let rect_of = |element: usize| near_rects[element * 4..element * 4 + 4].to_vec();
+        every_kind_at(&mut engine, DetailLevel::Middle);
+        // `a`'s title, then `b`'s two titles, its first and its last element, where near has
+        // them; no other element, nor its bar, its parts, or its arrow.
+        assert_eq!(engine.content_bounds, [0, 1, 3]);
+        assert_eq!(
+            engine.content_rects,
+            [rect_of(0), rect_of(1), rect_of(8)].concat()
+        );
+        let (t, title) = (KindCode::Text as u8, RoleCode::Title as u8);
+        let drawn = &engine.drawn;
+        assert_eq!(
+            (&drawn.kinds[..], &drawn.roles[..], &drawn.colors[..]),
+            (&[t, t, t][..], &[title, title, title][..], &[0, 0, 0][..])
+        );
+        assert_eq!(
+            (&drawn.texts[..], &drawn.bounds[..]),
+            ("xBetTwo", &[0, 1, 4, 7][..])
+        );
+        assert_eq!(drawn.bar_bounds, [0, 0, 0, 0]);
+        assert_eq!(drawn.part_bounds, [0, 0, 0, 0]);
+        assert_eq!(drawn.arrow_bounds, [0, 0, 0, 0]);
+        let empty: [&[f32]; 3] = [&drawn.bars, &drawn.parts, &drawn.arrows];
+        assert!(empty.iter().all(|values| values.is_empty()), "{empty:?}");
+        assert!(drawn.bar_colors.is_empty() && drawn.part_ends.is_empty());
+    }
+
+    #[test]
+    fn the_hit_test_names_at_each_level_an_element_the_query_places_there_and_none_else() {
+        // Verifies: ADR-0013
+        let mut engine = every_kind();
+        every_kind_at(&mut engine, DetailLevel::Near);
+        let near_rects = engine.content_rects[4..].to_vec();
+        let centre = |r: &[f32]| {
+            let [x, y, w, h] = [r[0], r[1], r[2], r[3]].map(f64::from);
+            (300.0 + x + w / 2.0, y + h / 2.0)
+        };
+        // A press on the badge, `b`'s second element, at the middle level hits none.
+        let (x, y) = centre(&near_rects[4..8]);
+        assert_eq!(
+            element(&engine, 1, x, y, DetailLevel::Near),
+            hit(0, 1, ElementKind::Badge, None)
+        );
+        assert_eq!(element(&engine, 1, x, y, DetailLevel::Middle), None);
+        // At each level, a press in the middle of each of `b`'s elements as near places them
+        // hits an element where, and only where, the query of that level places that rectangle.
+        for level in [DetailLevel::Near, DetailLevel::Middle, DetailLevel::Far] {
+            every_kind_at(&mut engine, level);
+            let placed: Vec<&[f32]> = engine.content_rects.chunks(4).skip(1).collect();
+            for rect in near_rects.chunks(4) {
+                let (x, y) = centre(rect);
+                let hit = element(&engine, 1, x, y, level);
+                assert_eq!(hit.is_some(), placed.contains(&rect), "{level:?} {rect:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_texts_after_a_progress_bar_are_read_as_their_own() {
+        // Verifies: ADR-0013, ADR-0034
+        // A progress bar fills no text, so that the texts of the elements after it, in its node
+        // and in the nodes after it, are their own: a load of a node of a bar between two texts,
+        // then a node of a title.
+        use graph_data::tests::load_into;
+        let mut engine = fonted();
+        let mut content = graph_data::ContentInput::new();
+        content.push(
+            KindCode::Text,
+            1.0,
+            RoleCode::Title as u8,
+            f64::NAN,
+            Some("A"),
+            None,
+        );
+        content.push(KindCode::Progress, 1.0, 0, f64::NAN, None, None);
+        content.push_segment(0.5, 0.0);
+        content.push(KindCode::Action, 1.0, 0, f64::NAN, Some("Go"), Some("go"));
+        content.end_row();
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
+        data.nodes[0].content = content.into();
+        let nodes = graph_data::OwnedColumns::of(data.nodes.iter().map(Some));
+        let none = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
+        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
+        assert_eq!(engine.drawn.texts, "AGox");
+        let rows = engine.content.content_of(0).0;
+        assert!(
+            matches!(&rows[0][2], ContentElement::Action { text, id, .. } if text == "Go" && id == "go")
+        );
+        assert!(
+            matches!(&engine.content.content_of(1).0[0][0], ContentElement::Text { text, .. } if text == "x")
+        );
+        assert_eq!(
+            element(&engine, 0, 75.0, 15.0, DetailLevel::Near),
+            hit(0, 2, ElementKind::Action, Some("go"))
+        );
+    }
+
+    #[test]
+    fn a_patch_of_content_lays_the_node_out_anew_and_a_refused_one_changes_nothing() {
+        // Verifies: ADR-0013, ADR-0030
+        use graph_data::tests::{TITLE, b_of, content, load_into, text};
+        let mut engine = fonted();
+        let nodes = b_of(&[&[TITLE]]);
+        let none = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
+        let body = text(RoleCode::Body, "b");
+        let long = text(RoleCode::Title, "abcdefghijklmnopqrst");
+        let rows = content(&[&[long], &[body], &[body], &[body], &[body]]);
+        let patch = NodePatch(vec![("content".to_owned(), rows.into())]);
+        let slot = 1;
+        let (checked, height) = patch_of("b", &patch, &engine.fonts, 0).unwrap().unwrap();
+        engine.graph.resize_node(slot, height).unwrap();
+        engine.content.set(slot, checked);
+        assert_eq!(engine.graph.sizes()[2..], [100.0, 102.0]);
+        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
+        // The long title is cut to 9 glyphs and an ellipsis within its column of 76.
+        let long = &engine.drawn.texts[engine.drawn.bounds[1] as usize..];
+        assert!(long.starts_with("abcdefghi\u{2026}b"), "{long}");
+        assert_eq!(engine.drawn.bounds[2] - engine.drawn.bounds[1], 10);
+        // Its content, built when asked, is the patch's, each weight as the engine keeps it.
+        let text = |role, text: &str| ContentElement::Text {
+            role,
+            text: text.to_owned(),
+            weight: Some(1.0),
+        };
+        let rows = engine.content.content_of(slot).0;
+        assert_eq!(rows.len(), 5);
+        assert_eq!(rows[0], [text(TextRole::Title, "abcdefghijklmnopqrst")]);
+        assert_eq!(rows[4], [text(TextRole::Body, "b")]);
+        assert_eq!(
+            engine.content.content_of(0).0,
+            [[text(TextRole::Title, "x")]]
+        );
+        // A refused patch leaves the node as it was.
+        let refused = NodePatch(vec![(
+            "content".to_owned(),
+            content(&[&[(KindCode::Unnamed, 1.0, RoleCode::Title, None)]]).into(),
+        )]);
+        assert!(patch_of("b", &refused, &engine.fonts, 0).is_err());
+        assert_eq!(engine.graph.sizes()[2..], [100.0, 102.0]);
+        // A slot that holds no node is the shell's mistake.
+        assert_eq!(
+            engine.graph.resize_node(7, 64.0),
+            Err(comb_engine::graph::SlotError::NoNode { slot: 7 })
+        );
+    }
+
+    #[test]
+    fn a_load_whose_texts_are_all_empty_and_a_node_of_no_rows_lay_out() {
+        // Verifies: ADR-0034
+        // Every text empty: the column of texts crosses in no piece at all.
+        use graph_data::tests::{content, load_into, text};
+        let empty = || content(&[&[text(RoleCode::Title, "")]]);
+        let mut nodes = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]).nodes;
+        for node in &mut nodes {
+            node.content = empty().into();
+        }
+        let columns = graph_data::OwnedColumns::of(nodes.iter().map(Some));
+        let mut engine = Engine::new();
+        let none = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &columns, &none), Ok(2));
+        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
+        assert_eq!(engine.drawn.texts, "");
+        assert_eq!(engine.drawn.bounds, [0, 0, 0]);
+        // A node patched to no rows at all lays out to none, the least height high.
+        let patch = NodePatch(vec![("content".to_owned(), content(&[]).into())]);
+        let (checked, height) = patch_of("b", &patch, &engine.fonts, 0).unwrap().unwrap();
+        engine.graph.resize_node(1, height).unwrap();
+        engine.content.set(1, checked);
+        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
+        assert_eq!(engine.content_bounds, [0, 1, 1]);
+        assert_eq!(engine.graph.sizes()[3], 64.0);
+    }
+
+    #[test]
+    fn a_font_handed_over_after_a_load_lays_every_node_out_anew_and_moves_its_edges() {
+        // Verifies: ADR-0013
+        // Two nodes of one title, joined by an edge: a title line of 60 makes each 10 + 60 + 10 =
+        // 80 high, and the edge leaves and enters at their middles, 40 down.
+        use graph_data::tests::load_into;
+        let mut engine = Engine::new();
+        let nodes = graph_data::OwnedColumns::of(
+            batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[])
+                .nodes
+                .iter()
+                .map(Some),
+        );
+        let edges = graph_data::OwnedEdgeColumns::of([Some(&graph_data::EdgeCells::from(
+            &batch(&[], &[("e", "a", "b")]).edges[0],
+        ))]);
+        assert_eq!(load_into(&mut engine, &nodes, &edges), Ok(2));
+        assert_eq!(engine.graph.sizes(), [100.0, 64.0, 100.0, 64.0]);
+        let title = RoleCode::Title as u8;
+        assert_eq!(engine.set_font(title, &[], &[], 7.0, 60.0), Ok(()));
+        assert_eq!(engine.graph.sizes(), [100.0, 80.0, 100.0, 80.0]);
+        let mut ends = Vec::new();
+        engine.graph.edge_ends(&[0], &mut ends);
+        assert_eq!(ends, [100.0, 40.0, 300.0, 40.0]);
+        let hit = engine
+            .graph
+            .hit_at(Point::new(350.0, 75.0), 1.0, Level::Near, false);
+        assert_eq!(hit, Some(Target::Node(1)));
+    }
+
+    #[test]
+    fn a_font_whose_role_or_metrics_the_engine_cannot_take_is_refused_and_nothing_changes() {
+        // Verifies: ADR-0031
+        let mut engine = Engine::new();
+        let refused = Err(CallRefusal::Number(NumberError::InvalidFont));
+        assert_eq!(
+            engine.set_font(RoleCode::Unnamed as u8, &[], &[], 1.0, 1.0),
+            refused
+        );
+        assert_eq!(engine.set_font(9, &[], &[], 1.0, 1.0), refused);
+        assert_eq!(engine.set_font(0, &[65], &[], 1.0, 1.0), refused);
+        assert_eq!(engine.set_font(0, &[], &[], f64::NAN, 1.0), refused);
+        assert_eq!(engine.set_font(0, &[], &[], 1.0, -1.0), refused);
+        assert_eq!(engine.fonts, Fonts::default());
+        assert_eq!(engine.set_font(0, &[], &[], 1.0, 20.0), Ok(()));
+        assert_ne!(engine.fonts, Fonts::default());
     }
 
     #[test]
     fn four_vertices_for_each_of_the_most_edges_a_load_holds_fit_the_budget() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         assert!(4 * u64::from(MAX_ITEMS) <= u64::from(MESH_BUDGET));
         assert_eq!(MESH_BUDGET, (4 * MAX_ITEMS).next_power_of_two());
     }
@@ -1579,7 +2085,7 @@ mod tests {
 
     #[test]
     fn a_small_graph_queries_complete_and_a_million_curved_edges_whole_far_coarsened() {
-        // Verifies: ADR-0010
+        // Verifies: ADR-0034
         let small = batch(&[("a", 0.0, 0.0), ("b", 300.0, 100.0)], &[("e", "a", "b")]);
         let rect = [-100.0, -100.0, 500.0, 300.0];
         let engine = detail_of(&small, rect, DetailLevel::Near, 1.0);
@@ -1619,8 +2125,76 @@ mod tests {
     }
 
     #[test]
+    fn a_hit_refuses_a_pixel_that_is_not_a_finite_number_above_zero() {
+        // Verifies: ADR-0013
+        let mut engine = Engine::new();
+        engine.graph = graph_of(&batch(
+            &[("a", 0.0, 0.0), ("b", 300.0, 100.0)],
+            &[("e", "a", "b")],
+        ))
+        .unwrap();
+        // Refused before anything is hit, so the native test needs no JavaScript value.
+        for pixel in [0.0, -0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(
+                engine
+                    .hit(200.0, 60.0, pixel, DetailLevel::Near, true)
+                    .is_err(),
+                "{pixel}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_hit_refuses_a_pixel_that_is_not_a_finite_number_above_zero_as_the_shells_mistake() {
+        // Verifies: ADR-0031
+        let mut engine = Engine::new();
+        let data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 100.0)], &[("e", "a", "b")]);
+        engine.graph = graph_of(&data).unwrap();
+        let before = engine.graph.positions().to_vec();
+        // Refused before anything is hit, so the native test needs no JavaScript value.
+        for pixel in [0.0, -0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let hit = engine.hit(200.0, 60.0, pixel, DetailLevel::Near, true);
+            assert_eq!(
+                hit.err(),
+                Some(CallRefusal::Number(NumberError::InvalidPixel)),
+                "{pixel}"
+            );
+        }
+        assert_eq!(engine.graph.positions(), before);
+    }
+
+    #[test]
+    fn a_hit_and_a_move_of_a_label_refuse_a_point_that_is_not_finite_and_change_nothing() {
+        // Verifies: ADR-0031
+        let mut engine = Engine::new();
+        let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 100.0)], &[("e", "a", "b")]);
+        data.edges[0].label = Some(LabelInput {
+            text_length: Some(1),
+            t: 0.5.into(),
+            offset: 0.0.into(),
+            background: None,
+        })
+        .into();
+        engine.graph = graph_of(&data).unwrap();
+        let before = engine.label_point(0);
+        let refusal = || CallRefusal::Number(NumberError::NonFinitePoint);
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            for (x, y) in [(bad, 60.0), (200.0, bad)] {
+                let moved = engine.move_label(0, x, y);
+                assert_eq!(moved, Err(refusal()), "({x}, {y})");
+                assert_eq!(engine.label_point(0), before, "the label at ({x}, {y})");
+                // Refused before anything is hit, so the native test needs no JavaScript value.
+                let hit = engine.hit(x, y, 1.0, DetailLevel::Near, true);
+                assert_eq!(hit.err(), Some(refusal()), "hit at ({x}, {y})");
+            }
+        }
+        assert!(engine.move_label(0, 150.0, 80.0).is_ok());
+        assert_ne!(engine.label_point(0), before);
+    }
+
+    #[test]
     fn a_pixel_that_is_not_a_finite_number_above_zero_is_refused_before_any_edge_is_flattened() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027, ADR-0031
         let mut engine = Engine::new();
         let data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 100.0)], &[("e", "a", "b")]);
         engine.graph = graph_of(&data).unwrap();
@@ -1634,9 +2208,7 @@ mod tests {
             let refused = engine.query_rect(&rect, DetailLevel::Near, pixel, 0.0);
             assert_eq!(
                 refused,
-                Err(malformed(
-                    "the size of a screen pixel is not a finite number above zero"
-                )),
+                Err(CallRefusal::Number(NumberError::InvalidPixel)),
                 "{pixel}"
             );
             assert!(engine.visible.edges.is_empty(), "{pixel}");

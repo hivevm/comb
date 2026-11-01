@@ -1,8 +1,22 @@
 // The example host application: Comb on the canvas, the attribute form in the HTML sidebar.
-import { createComb, type Comb, type EngineSource, type GraphData, type Selection } from "comb";
+import {
+  createComb,
+  type Comb,
+  type Deletion,
+  type Proposal,
+  type EdgeData,
+  type EdgePatch,
+  type EngineSource,
+  type GraphChange,
+  type GraphData,
+  type Selection,
+} from "comb";
 import engineUrl from "comb/engine.wasm?url";
 import {
+  edgeVertices,
+  hitKind,
   inspect,
+  isDrawn,
   renderCount,
   sceneNumbers,
   screenPoint,
@@ -14,7 +28,25 @@ import {
   work,
   type SceneSnapshot,
 } from "comb/testing";
-import { metricTree } from "./graph";
+import {
+  contentOf,
+  countContent,
+  DETAILS,
+  HEIGHTS,
+  metricTree,
+  newFields,
+  NODE_WIDTH,
+  retitled,
+  STATUSES,
+  titleOf,
+  TYPES,
+  type ContentCount,
+  type Fields,
+  type NodeType,
+} from "./graph";
+
+/** The type of the data a palette item carries in a drag. */
+const PALETTE_TYPE = "application/x-metric-tree-kind";
 
 /** How the last load went: what the benchmark and the browser tests read. */
 export interface LoadReport {
@@ -23,17 +55,31 @@ export interface LoadReport {
   edges: number;
   /** Milliseconds from handing the graph to Comb until its first frame was drawn. */
   firstFrameMs: number;
+  /** The content loaded, its nodes by type and their elements by kind, counted after the first
+   *  frame. */
+  content: ContentCount;
 }
 
 declare global {
   interface Window {
     comb: Comb;
-    /** Comb's factory, so that a browser test can watch the document while a second Comb is made. */
+    /** Comb's factory, so that a browser test can watch the document while a second Comb is
+     *  made. */
     createComb: typeof createComb;
     /** The URL of the engine file Vite emits, for a browser test that hands a second Comb its
      *  engine. */
     engineUrl: string;
     loadReport: Promise<LoadReport>;
+    /** The veto of the user's deletions a browser test sets; without one, every deletion is
+     *  allowed. Its result is handed to Comb as it is. */
+    canDelete?: (deletion: Deletion) => unknown;
+    /** The veto of the user's connections a browser test sets; without one, the example names
+     *  each new edge after its ends. Its result is handed to Comb as it is. */
+    canConnect?: (proposal: Proposal) => unknown;
+    /** Loads `graph` as the example's own, which its sidebar edits, for a browser test. */
+    useGraph: (graph: GraphData) => void;
+    /** The example's copy of the graph, kept from what `onChange` tells. */
+    exampleGraph: () => GraphData;
     /** What the canvas draws, from comb/testing, for the browser tests and the benchmark. */
     inspect: (other?: Comb) => SceneSnapshot;
     renderCount: () => number;
@@ -43,8 +89,11 @@ declare global {
     testMode: typeof testMode;
     trapNextCall: typeof trapNextCall;
     screenPoint: (x: number, y: number) => ReturnType<typeof screenPoint>;
+    hitKind: (x: number, y: number) => ReturnType<typeof hitKind>;
+    isDrawn: (what: Parameters<typeof isDrawn>[1]) => boolean;
     visibleRect: (margin?: number) => ReturnType<typeof visibleRect>;
     work: () => ReturnType<typeof work>;
+    edgeVertices: () => ReturnType<typeof edgeVertices>;
   }
 }
 
@@ -74,21 +123,108 @@ async function engineAs(form: string): Promise<EngineSource> {
 }
 
 const form = query.get("engine");
+/** How many edges the user connected, for the name of the next. */
+let connected = 0;
 // `?fallback=canvas` lets Comb draw on Canvas 2D where the browser offers no WebGL2.
 const fallback = query.get("fallback") === "canvas";
 // By default the example hands over the promise of its request, as a host application would.
 const comb = await createComb(element("canvas"), {
   engine: form ? await engineAs(form) : fetch(engineUrl),
   allowCanvasFallback: fallback,
+  canDelete: (deletion) => (window.canDelete ? window.canDelete(deletion) : true) as boolean,
+  // `?connect=none` gives Comb no veto of connections, so that the user connects nothing.
+  ...(query.get("connect") === "none"
+    ? {}
+    : {
+        canConnect: (proposal: Proposal) =>
+          (window.canConnect
+            ? window.canConnect(proposal)
+            : `${proposal.source}-${proposal.target}-${(connected += 1)}`) as string | false,
+      }),
 });
+/** How the icon of each type of node is drawn on a canvas of 32 × 32 in the type's colour: a
+ *  bet a diamond, an epic three stacked bars, an input metric a rising bar chart, the north-star
+ *  metric a four-pointed star, a KPI a target. */
+const ICONS: Record<NodeType, (context: CanvasRenderingContext2D) => void> = {
+  bet: (context) => polygon(context, [16, 2, 30, 16, 16, 30, 2, 16]),
+  epic: (context) => {
+    for (const y of [3, 13, 23]) context.fillRect(3, y, 26, 6);
+  },
+  "input-metric": (context) => {
+    for (const [x, height] of [
+      [3, 10],
+      [13, 18],
+      [23, 27],
+    ] as const)
+      context.fillRect(x, 30 - height, 7, height);
+  },
+  "north-star": (context) =>
+    polygon(context, [16, 1, 20, 12, 31, 16, 20, 20, 16, 31, 12, 20, 1, 16, 12, 12]),
+  kpi: (context) => {
+    for (const [radius, fill] of [
+      [15, true],
+      [10, false],
+      [5, true],
+    ] as const) {
+      context.globalCompositeOperation = fill ? "source-over" : "destination-out";
+      context.beginPath();
+      context.arc(16, 16, radius, 0, 2 * Math.PI);
+      context.fill();
+    }
+    context.globalCompositeOperation = "source-over";
+  },
+};
+
+/** Fills the polygon of the points `xy`, as x and y in turn. */
+function polygon(context: CanvasRenderingContext2D, xy: readonly number[]): void {
+  context.beginPath();
+  for (let i = 0; i < xy.length; i += 2) context.lineTo(xy[i]!, xy[i + 1]!);
+  context.closePath();
+  context.fill();
+}
+
+/** Registers the icon of each type of node, drawn by the example itself on a canvas, so that no
+ *  image is requested (ADR-0013). */
+function registerIcons(): void {
+  for (const [type, draw] of Object.entries(ICONS) as [NodeType, (typeof ICONS)[NodeType]][]) {
+    const canvas = document.createElement("canvas");
+    [canvas.width, canvas.height] = [32, 32];
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = TYPES[type].color;
+    draw(context);
+    comb.registerIcon(type, canvas);
+  }
+}
+registerIcons();
 const copies = element<HTMLSelectElement>("copies");
 const count = element("count");
 const selection = element("selection");
 const empty = element("empty");
+const nodeType = element("node-type");
 const title = element<HTMLInputElement>("title");
+const hypothesisField = element("hypothesis-field");
+const hypothesis = element<HTMLInputElement>("hypothesis");
+const progressField = element("progress-field");
+const progress = element<HTMLInputElement>("progress");
+const statusField = element("status-field");
+const status = element<HTMLSelectElement>("status");
+const periods = element("periods");
+const edgeSelection = element("edge-selection");
+const edgeColor = element<HTMLInputElement>("edge-color");
+const edgeDash = element<HTMLSelectElement>("edge-dash");
+const edgeArrow = element<HTMLInputElement>("edge-arrow");
+const edgeLabel = element<HTMLInputElement>("edge-label");
+/** The dash pattern the sidebar gives an edge it makes dashed, as the tree's own dashed edges. */
+const DASH = [6, 4] as const;
+/** Comb's colour for an edge that names none, which a host application cannot read from it. */
+const EDGE_GREY = 0x9aa1ad;
 
-let graph: GraphData = metricTree(1);
+let graph: GraphData = { nodes: [], edges: [] };
+/** What the sidebar edits of each node the example described, by its identifier; a node loaded
+ *  through `useGraph` has none, and the sidebar edits its title alone. */
+let fields = new Map<string, Fields>();
 let selected: string | null = null;
+let selectedEdge: EdgeData | undefined;
 
 /** Selects the copies the query string asks for, adding the option where it is missing. */
 function copiesFromQuery(): void {
@@ -100,9 +236,14 @@ function copiesFromQuery(): void {
   copies.value = String(asked);
 }
 
-async function load(): Promise<LoadReport> {
-  graph = metricTree(Number(copies.value));
+/** Shows the size of the graph the example holds. */
+function counted(): void {
   count.textContent = `${graph.nodes.length} nodes, ${graph.edges.length} edges`;
+}
+
+async function load(): Promise<LoadReport> {
+  ({ graph, fields } = metricTree(Number(copies.value)));
+  counted();
   const start = performance.now();
   comb.load(graph);
   comb.fitView();
@@ -113,29 +254,272 @@ async function load(): Promise<LoadReport> {
     nodes: graph.nodes.length,
     edges: graph.edges.length,
     firstFrameMs,
+    content: countContent(graph, fields),
   };
 }
 
 function show(next: Selection): void {
   selected = next?.kind === "node" ? next.id : null;
   const node = graph.nodes.find((candidate) => candidate.id === selected);
+  selectedEdge =
+    next?.kind === "edge" ? graph.edges.find((candidate) => candidate.id === next.id) : undefined;
   selection.hidden = !node;
-  empty.hidden = !!node;
-  if (node) title.value = node.title;
+  edgeSelection.hidden = !selectedEdge;
+  empty.hidden = !!node || !!selectedEdge;
+  if (node) showNode(node.content, fields.get(node.id));
+  if (selectedEdge) showEdge(selectedEdge);
 }
 
+/** Fills the sidebar's form of a node from its fields, or from its title where it has none. */
+function showNode(content: GraphData["nodes"][number]["content"], of: Fields | undefined): void {
+  nodeType.textContent = of ? TYPES[of.type].name : "";
+  title.value = of ? of.title : titleOf({ content });
+  for (const field of [hypothesisField, progressField, statusField]) field.hidden = true;
+  periods.replaceChildren();
+  if (of) showFields(of);
+}
+
+/** Shows the fields of `of`'s type beyond its title, filled from it. */
+function showFields(of: Fields): void {
+  if (of.type === "bet" || of.type === "epic") {
+    statusField.hidden = false;
+    status.replaceChildren(...Object.keys(STATUSES[of.type]).map((name) => new Option(name)));
+    status.value = of.status;
+  }
+  if (of.type === "bet") {
+    hypothesisField.hidden = false;
+    hypothesis.value = of.hypothesis;
+  } else if (of.type === "epic") {
+    progressField.hidden = false;
+    progress.value = String(of.progress);
+  } else periods.append(...of.periods.map(periodForm));
+}
+
+/** The form of the period at `index` of the selected node: its value and its change. */
+function periodForm(period: { label: string; value: string; change: number }, index: number) {
+  const set = document.createElement("fieldset");
+  const legend = document.createElement("legend");
+  legend.textContent = period.label;
+  const input = (name: string, type: string, value: string, change: (raw: string) => object) => {
+    const label = document.createElement("label");
+    const field = document.createElement("input");
+    Object.assign(field, { type, value });
+    field.dataset.period = `${index}`;
+    field.dataset.field = name;
+    field.addEventListener("input", () => editPeriod(index, change(field.value)));
+    label.append(name === "value" ? "Value" : "Change (%)", field);
+    return label;
+  };
+  set.append(
+    legend,
+    input("value", "text", period.value, (value) => ({ value })),
+    input("change", "number", String(period.change), (raw) => ({ change: Number(raw) || 0 })),
+  );
+  return set;
+}
+
+/** The node whose content the sidebar is replacing, while `updateNode` tells it. */
+let editing: string | null = null;
+
+/** Changes the selected node's fields by `patch` and replaces its content with theirs through
+ *  `updateNode`; the example's graph follows from the `nodeUpdated` Comb tells, synchronously. */
+function edit(patch: Partial<Fields>): void {
+  const of = selected === null ? undefined : fields.get(selected);
+  if (!of || selected === null) return;
+  const next = { ...of, ...patch } as Fields;
+  editing = selected;
+  try {
+    comb.updateNode(selected, { content: contentOf(next) });
+  } finally {
+    editing = null;
+  }
+  fields.set(selected, next);
+}
+
+/** Whether `name` is one of `statuses`. */
+function isStatusOf<T extends object>(statuses: T, name: string): name is Extract<keyof T, string> {
+  return Object.hasOwn(statuses, name);
+}
+
+/** Changes the period at `index` of the selected node by `patch`. */
+function editPeriod(index: number, patch: object): void {
+  const of = selected === null ? undefined : fields.get(selected);
+  if (!of || !("periods" in of)) return;
+  edit({ periods: of.periods.map((each, i) => (i === index ? { ...each, ...patch } : each)) });
+}
+
+/** Fills the sidebar's form of an edge from `edge`. */
+function showEdge(edge: EdgeData): void {
+  const color = edge.color ?? EDGE_GREY;
+  edgeColor.value = `#${color.toString(16).padStart(6, "0")}`;
+  edgeDash.value = edge.dash ? "dashed" : "solid";
+  edgeArrow.checked = edge.arrow !== "none";
+  edgeLabel.value = edge.label?.text ?? "";
+}
+
+/** Changes the selected edge by `patch` through `updateEdge`; the example's graph follows from
+ *  the `edgeUpdated` Comb tells. */
+function changeEdge(patch: EdgePatch): void {
+  if (selectedEdge) comb.updateEdge(selectedEdge.id, patch);
+}
+
+const nodeOf = (id: string) => graph.nodes.find((candidate) => candidate.id === id);
+const edgeOf = (id: string) => graph.edges.find((candidate) => candidate.id === id);
+
+/** `edge` with `patch` merged, as Comb merges it: `null` clears a dash or a label. */
+function patched(edge: EdgeData, patch: EdgePatch): void {
+  const { dash, label, ...rest } = patch;
+  Object.assign(edge, rest);
+  if (dash !== undefined) edge.dash = dash ?? undefined;
+  if (label !== undefined) edge.label = label ?? undefined;
+}
+
+/** Drops from the copy the nodes and edges a removal names. */
+function removed(nodes: readonly string[], edges: readonly string[]): void {
+  const [goneNodes, goneEdges] = [new Set(nodes), new Set(edges)];
+  graph.nodes = graph.nodes.filter(({ id }) => !goneNodes.has(id));
+  for (const id of nodes) fields.delete(id);
+  graph.edges = graph.edges.filter(({ id }) => !goneEdges.has(id));
+}
+
+/** How the example's copy of the graph takes each kind of change, as a host application that
+ *  persists keeps its own from `onChange` alone (ADR-0030); the type checker fails it where a
+ *  kind is left out. */
+const MIRROR: { [K in GraphChange["kind"]]: (change: Extract<GraphChange, { kind: K }>) => void } =
+  {
+    // `load` and `useGraph` set the copy before they hand it to Comb.
+    loaded: () => {},
+    nodeAdded: ({ node }) => void graph.nodes.push({ ...node }),
+    nodeUpdated: ({ id, patch }) => {
+      const node = nodeOf(id);
+      if (node) Object.assign(node, patch);
+      // Content another caller of `updateNode` gave the node no longer follows from its fields:
+      // the sidebar edits its title alone from then on, as of a node loaded through `useGraph`,
+      // and shows that at once where the node is selected.
+      if (id === editing) return;
+      fields.delete(id);
+      if (node && id === selected) showNode(node.content, undefined);
+    },
+    nodeMoved: ({ id, x, y }) => {
+      const node = nodeOf(id);
+      if (node) Object.assign(node, { x, y });
+    },
+    nodesRemoved: ({ nodes, edges }) => removed(nodes, edges),
+    edgeAdded: ({ edge }) => void graph.edges.push({ ...edge }),
+    edgeUpdated: ({ id, patch }) => {
+      const edge = edgeOf(id);
+      if (edge) patched(edge, patch);
+    },
+    edgesRemoved: ({ edges }) => removed([], edges),
+    labelMoved: ({ edge: id, t, offset }) => {
+      const edge = edgeOf(id);
+      if (edge?.label) edge.label = { ...edge.label, t, offset };
+    },
+  };
+
+/** Takes `change` into the example's copy of the graph. */
+function mirror(change: GraphChange): void {
+  (MIRROR[change.kind] as (change: GraphChange) => void)(change);
+  counted();
+}
+
+/** The label the sidebar's text gives the selected edge: its own moved to the new text, a new one
+ *  in the middle of the edge, or none for no text. */
+function labelFor(text: string): EdgeData["label"] | null {
+  if (text === "") return null;
+  const color = selectedEdge?.color ?? EDGE_GREY;
+  return { t: 0.5, offset: 0, background: color, ...selectedEdge?.label, text };
+}
+
+/** The types the palette offers. */
+const PALETTE: readonly NodeType[] = ["bet", "epic", "input-metric", "kpi"];
+let dropped = 0;
+
+/** Adds a node of the palette's `kind`, a type of node, centred by its type's height on the world
+ *  point under the drop at (`clientX`, `clientY`) of the page (G-1). */
+function drop(kind: string, clientX: number, clientY: number): void {
+  const type = PALETTE.find((each) => each === kind);
+  if (!type) return;
+  const { x, y } = comb.worldPointAt(clientX, clientY);
+  dropped += 1;
+  const id = `${kind}-${dropped}`;
+  const of = newFields(type);
+  try {
+    comb.addNode({
+      id,
+      x: x - NODE_WIDTH / 2,
+      y: y - HEIGHTS[type] / 2,
+      width: NODE_WIDTH,
+      content: contentOf(of),
+    });
+    fields.set(id, of);
+  } catch (error) {
+    // A lost engine, or a node past the limits of a load: the drop adds nothing.
+    console.warn("metric tree: the dropped node was not added", error);
+  }
+}
+
+for (const item of document.querySelectorAll<HTMLElement>("#palette [data-kind]")) {
+  item.addEventListener("dragstart", (event) => {
+    event.dataTransfer?.setData(PALETTE_TYPE, item.dataset.kind ?? "");
+  });
+}
+const canvas = element("canvas");
+canvas.addEventListener("dragover", (event) => {
+  if (event.dataTransfer?.types.includes(PALETTE_TYPE)) event.preventDefault();
+});
+canvas.addEventListener("drop", (event) => {
+  event.preventDefault();
+  drop(event.dataTransfer?.getData(PALETTE_TYPE) ?? "", event.clientX, event.clientY);
+});
+comb.onChange(mirror);
 comb.onSelectionChange(show);
+// "Details" on a node: the click has selected it, and so filled the sidebar; the sidebar's form
+// takes the focus, so that the user edits the node at once.
+comb.onContentClick((click) => {
+  if (click.kind !== "action" || click.action !== DETAILS) return;
+  selection.scrollIntoView({ block: "nearest" });
+  title.focus();
+});
 copies.addEventListener("change", () => {
   window.loadReport = load();
 });
 title.addEventListener("input", () => {
-  const node = graph.nodes.find((candidate) => candidate.id === selected);
+  // The copy follows from the `nodeUpdated` Comb tells.
+  const node = selected === null ? undefined : nodeOf(selected);
   if (!node) return;
-  node.title = title.value;
-  comb.updateNode(node.id, { title: title.value });
+  if (fields.has(node.id)) edit({ title: title.value });
+  else comb.updateNode(node.id, { content: retitled(node.content, title.value) });
 });
+hypothesis.addEventListener("input", () => edit({ hypothesis: hypothesis.value }));
+progress.addEventListener("input", () => {
+  const value = Math.round(Number(progress.value));
+  if (Number.isFinite(value)) edit({ progress: Math.min(100, Math.max(0, value)) });
+});
+status.addEventListener("change", () => {
+  const [name, of] = [status.value, selected === null ? undefined : fields.get(selected)];
+  if (of?.type === "bet" && isStatusOf(STATUSES.bet, name)) edit({ status: name });
+  if (of?.type === "epic" && isStatusOf(STATUSES.epic, name)) edit({ status: name });
+});
+edgeColor.addEventListener("input", () =>
+  changeEdge({ color: Number.parseInt(edgeColor.value.slice(1), 16) }),
+);
+edgeDash.addEventListener("change", () =>
+  changeEdge({ dash: edgeDash.value === "dashed" ? DASH : null }),
+);
+edgeArrow.addEventListener("change", () =>
+  changeEdge({ arrow: edgeArrow.checked ? "end" : "none" }),
+);
+edgeLabel.addEventListener("input", () => changeEdge({ label: labelFor(edgeLabel.value) }));
 copiesFromQuery();
 window.comb = comb;
+window.exampleGraph = () => structuredClone(graph);
+window.useGraph = (next) => {
+  graph = next;
+  fields = new Map();
+  counted();
+  comb.load(next);
+};
 window.createComb = createComb;
 window.engineUrl = engineUrl;
 window.inspect = (other = comb) => inspect(other);
@@ -146,6 +530,9 @@ window.sceneNumbers = sceneNumbers;
 window.testMode = testMode;
 window.trapNextCall = trapNextCall;
 window.screenPoint = (x, y) => screenPoint(comb, x, y);
+window.hitKind = (x, y) => hitKind(comb, x, y);
+window.isDrawn = (what) => isDrawn(comb, what);
 window.visibleRect = (margin) => visibleRect(comb, margin);
 window.work = () => work(comb);
+window.edgeVertices = () => edgeVertices(comb);
 window.loadReport = load();

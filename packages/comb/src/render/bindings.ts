@@ -1,5 +1,5 @@
-// The pool of a layer's views (ADR-0012): a render binds pooled views to exactly the slots the
-// engine found, in slot order, and returns the others for reuse.
+// The pool of a layer's views (ADR-0027): a render binds pooled views to exactly the slots the
+// engine found, in the order it found them, and returns the others for reuse.
 import type { Container } from "pixi.js";
 
 /** A display object a layer binds to one slot at a time. */
@@ -13,42 +13,57 @@ export interface Pooled extends Container {
  *  instead of removing each, which searches the children. */
 const BULK_RELEASE = 64;
 
-/** The views of one layer bound to slots: a render binds the slots it found, in ascending order,
- *  and the views of the others go back to a pool for reuse. A view draws in the order of its
- *  slot, as without pooling, so that overlapping nodes stack and take the pointer the same way
- *  however the user panned. */
+/** The views of one layer bound to slots: a render binds the slots it found, in the order they
+ *  are drawn, bottom to top, which is the order the engine returns them in, by rank for nodes and
+ *  by slot for edge labels (ADR-0027); the views of the others go back to a pool for reuse. A view
+ *  draws in that order, as without pooling, so that overlapping nodes stack and take the pointer
+ *  the same way however the user panned. */
 export class Bindings<V extends Pooled> {
   private readonly bound = new Map<number, V>();
   private readonly free: V[] = [];
-  /** The views this render bound, in slot order. */
+  /** The views this render bound, in drawing order. */
   private readonly order: V[] = [];
-  /** The highest slot among the layer's children, and whether this render bound a view below
-   *  it, which an append would draw out of order. */
-  private highest = -1;
+  /** Where each view stood in the drawing order of the render that last bound it. */
+  private readonly place = new Map<V, number>();
+  /** The place of the view this render bound last that an earlier render had bound, whether
+   *  this render bound a new view, which goes to the end, and whether it bound a view that
+   *  stands before one bound already, which the layer's children then put out of order. */
+  private lastPlace = -1;
+  private appended = false;
   private disordered = false;
   private render = 0;
   private madeCount = 0;
 
+  /** `release` is told each view a render returns to the pool, after the render's bindings. */
   constructor(
     private readonly layer: Container,
     private readonly make: () => V,
+    private readonly release: (view: V) => void = () => {},
   ) {}
 
   /** Starts a render. */
   begin(): void {
     this.render += 1;
     this.order.length = 0;
+    this.lastPlace = -1;
+    this.appended = false;
   }
 
-  /** The view bound to `slot`, taken from the pool if the slot had none. Slots come in ascending
-   *  order within a render. */
+  /** The view bound to `slot`, taken from the pool if the slot had none. Slots come in drawing
+   *  order within a render, bottom first. */
   bind(slot: number): V {
     let view = this.bound.get(slot);
-    if (!view) {
+    if (view) {
+      // A view kept from an earlier render stays where it stood among the layer's children: in
+      // order only while it comes after those kept before it and before every new one.
+      const place = this.place.get(view)!;
+      if (this.appended || place < this.lastPlace) this.disordered = true;
+      this.lastPlace = place;
+    } else {
       view = this.free.pop() ?? this.made();
       this.bound.set(slot, view);
-      if (slot < this.highest) this.disordered = true;
-      else this.layer.addChild(view);
+      this.layer.addChild(view);
+      this.appended = true;
     }
     view.seen = this.render;
     view.slot = slot;
@@ -66,13 +81,14 @@ export class Bindings<V extends Pooled> {
     return this.madeCount;
   }
 
-  /** Returns every view this render did not bind to the pool, and puts the layer's children in
-   *  slot order where this render disturbed it. */
+  /** Returns every view this render did not bind to the pool, telling `release` of each, and puts
+   *  the layer's children in drawing order where this render disturbed it. */
   end(): void {
     const released: V[] = [];
     for (const [slot, view] of this.bound) {
       if (view.seen === this.render) continue;
       this.bound.delete(slot);
+      this.place.delete(view);
       released.push(view);
     }
     if (this.disordered || released.length > BULK_RELEASE) {
@@ -81,8 +97,11 @@ export class Bindings<V extends Pooled> {
     } else {
       for (const view of released) this.layer.removeChild(view);
     }
-    for (const view of released) this.free.push(view);
+    for (const view of released) {
+      this.release(view);
+      this.free.push(view);
+    }
+    this.order.forEach((view, i) => this.place.set(view, i));
     this.disordered = false;
-    this.highest = this.order.at(-1)?.slot ?? -1;
   }
 }

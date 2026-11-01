@@ -1,98 +1,191 @@
-// Input into commands on the store (ADR-0009): drag a node, pan the empty canvas, zoom by wheel.
-// The engine answers which node lies under the pointer from its spatial index, at every level of
-// detail, also where the scene draws nodes as particles (ADR-0012). Once the engine is lost, input
-// changes nothing, and no trap escapes a handler (ADR-0021).
+// Input into commands on the store (ADR-0028): a press begins the gesture of what it hits, the
+// drag of a node or of an edge's label, a connection, or a pan, each a module of its own that
+// says how it moves, how it ends, and whether a change of the graph takes its subject; the wheel
+// zooms, and hover shows what a press would do. The engine answers what lies under the pointer
+// from its spatial index, at every level of detail, also where the scene draws nodes as
+// particles (ADR-0013, ADR-0027). Once the engine is lost, input changes nothing, and no trap
+// escapes a handler (ADR-0021).
 import type { Application, FederatedPointerEvent } from "pixi.js";
-import { EngineLostError, refuseIfLost, type Bridge } from "../bridge";
+import type { Bridge, Hit } from "../bridge";
 import type { GraphStore } from "../store";
-import { panBy, toWorld, zoomAt } from "./viewport";
+import { connection, type Connect } from "./connect";
+import { targetAt, type ContentClick, type Context, type Gesture } from "./gesture";
+import { untilLost } from "./guard";
+import { labelDrag } from "./label-drag";
+import { nodeDrag } from "./node-drag";
+import { pan } from "./pan";
+import { levelAt, zoomAt } from "../store/viewport";
+
+export { attachDeletion, type Delete, type Deletion } from "./delete";
+export type { Connect, Proposal } from "./connect";
+export type { ContentClick } from "./gesture";
 
 const WHEEL_STEP = 1.0015;
 
-type Drag =
-  { kind: "node"; slot: number; x: number; y: number } | { kind: "pan"; x: number; y: number };
+/** The cursor over what a press would hit: begin a connection, grab a node, select an edge, or
+ *  nothing. */
+const CURSORS: Record<Hit["kind"], string> = {
+  connector: "crosshair",
+  label: "grab",
+  node: "grab",
+  edge: "pointer",
+  none: "",
+};
 
-/** The slot of the node under a screen point, from the engine's spatial index. */
-function nodeAt(store: GraphStore, bridge: Bridge, x: number, y: number): number | undefined {
-  const world = toWorld(store.getState().viewport, x, y);
-  return bridge.hit(world.x, world.y);
+/** Begins what a press at the screen point `(x, y)` does where the context's `hitAt` says it hits
+ *  (ADR-0013): on a connector, where the host lets the user connect, a connection; on an edge
+ *  label, a drag of it, its edge selected; on a node, a drag of it that waits for the slop, or
+ *  within it a click, the node selected; on an edge, a pan that waits for the slop, the edge
+ *  selected; on nothing, a pan, the selection cleared. */
+function begin(context: Context, x: number, y: number, connect?: Connect): Gesture {
+  const hit = context.hitAt(x, y);
+  return (
+    (connect && connection(context, hit, x, y, connect)) ||
+    labelDrag(context, hit, x, y) ||
+    nodeDrag(context, hit, x, y) ||
+    pan(context, hit, x, y)
+  );
 }
 
-function startDrag(store: GraphStore, bridge: Bridge, event: FederatedPointerEvent): Drag {
-  const { x, y } = event.global;
-  const { nodes } = store.getState();
-  const slot = nodeAt(store, bridge, x, y);
-  const node = slot === undefined ? undefined : nodes[slot];
-  if (slot !== undefined && node) {
-    store.getState().select({ kind: "node", id: node.id });
-    return { kind: "node", slot, x, y };
-  }
-  store.getState().select(null);
-  return { kind: "pan", x, y };
+/** Zooms around the pointer by the wheel's turn. */
+function zoomByWheel(app: Application, store: GraphStore, event: WheelEvent): void {
+  event.preventDefault();
+  const at = canvasPointAt(app.canvas, app.screen, event.clientX, event.clientY);
+  const factor = WHEEL_STEP ** -event.deltaY;
+  const { viewport, setViewport } = store.getState();
+  setViewport(zoomAt(viewport, at.x, at.y, factor));
 }
 
-function continueDrag(store: GraphStore, bridge: Bridge, drag: Drag, event: FederatedPointerEvent) {
-  const dx = event.global.x - drag.x;
-  const dy = event.global.y - drag.y;
-  drag.x = event.global.x;
-  drag.y = event.global.y;
-  const { viewport } = store.getState();
-  if (drag.kind === "node") {
-    bridge.translate(new Uint32Array([drag.slot]), dx / viewport.scale, dy / viewport.scale);
-    store.getState().positionsMoved();
-  } else {
-    store.getState().setViewport(panBy(viewport, dx, dy));
-  }
+/** Zooms around the pointer by the wheel on the canvas; returns the removal of the listener. */
+function attachWheel(app: Application, store: GraphStore): () => void {
+  const onWheel = untilLost((event: WheelEvent) => zoomByWheel(app, store, event));
+  app.canvas.addEventListener("wheel", onWheel, { passive: false });
+  return () => app.canvas.removeEventListener("wheel", onWheel);
 }
 
-/** `handler`, doing nothing once the engine is lost. */
-function untilLost<A extends unknown[]>(handler: (...args: A) => void): (...args: A) => void {
-  return (...args) => {
+/** Shows what a press at the pointer would do: the cursor, and where the host lets the user
+ *  connect, the connectors of the node under it. */
+function hoverAt(app: Application, store: GraphStore, hit: Hit, connecting: boolean): void {
+  app.canvas.style.cursor = CURSORS[hit.kind];
+  // At the far level no connector is drawn, so none is shown, and hover writes nothing.
+  const far = levelAt(store.getState().viewport.scale) === "far";
+  const over = hit.kind === "connector" || hit.kind === "node";
+  store.getState().hover(connecting && over && !far ? hit.slot : null);
+}
+
+/** The screen point of `canvas`, drawn at the size of `screen`, under the point (`clientX`,
+ *  `clientY`) of the page: its place in the page taken away, and a canvas the page scales with
+ *  CSS scaled back, as PixiJS maps a pointer. */
+export function canvasPointAt(
+  canvas: HTMLCanvasElement,
+  screen: { width: number; height: number },
+  clientX: number,
+  clientY: number,
+): { x: number; y: number } {
+  const rect = canvas.getBoundingClientRect();
+  const sx = rect.width > 0 ? screen.width / rect.width : 1;
+  const sy = rect.height > 0 ? screen.height / rect.height : 1;
+  return { x: (clientX - rect.left) * sx, y: (clientY - rect.top) * sy };
+}
+
+/** Interaction attached to a canvas: what a press at a screen point hits, and the removal of its
+ *  input. */
+export interface Interaction {
+  /** What a press at the screen point `(x, y)` of the canvas hits now, from the store's viewport,
+   *  connectors only where the host lets the user connect: the one hit test the press, the hover,
+   *  and the testing entry ask (ADR-0013). */
+  hitAt(x: number, y: number): Hit;
+  /** The world point the connection the user drags is dragged to, while the store holds one: kept
+   *  here, not in the store, and its moves signalled by the store's `pointerVersion` (ADR-0029). */
+  readonly pointer: { readonly x: number; readonly y: number };
+  /** Removes the input from the canvas. */
+  detach(): void;
+}
+
+/** Ends the gesture `release` ends where the pointer is released: on the canvas with its point,
+ *  after which the cursor shows what lies under it, outside the canvas without one, and where the
+ *  pointer is cancelled, as a touch the browser takes over, as no release. */
+function attachRelease(
+  app: Application,
+  release: (released: boolean, at?: FederatedPointerEvent) => void,
+  hover: (event: FederatedPointerEvent) => void,
+): void {
+  app.stage.on("pointerup", (event) => {
     try {
-      refuseIfLost();
-      handler(...args);
-    } catch (error) {
-      if (!(error instanceof EngineLostError)) throw error;
+      release(true, event);
+    } finally {
+      hover(event);
     }
-  };
+  });
+  app.stage.on("pointerupoutside", () => release(true));
+  app.stage.on("pointercancel", () => release(false));
 }
 
-/** Wires pointer and wheel input on the canvas; returns the function that removes it. */
-export function attachInteraction(app: Application, store: GraphStore, bridge: Bridge): () => void {
-  let drag: Drag | null = null;
-  app.stage.eventMode = "static";
-  app.stage.hitArea = app.screen;
-  // The cursor shows what a press would do: grab a node, or, over the empty canvas, nothing.
-  const hover = untilLost((event: FederatedPointerEvent) => {
-    const over = nodeAt(store, bridge, event.global.x, event.global.y) !== undefined;
-    app.canvas.style.cursor = over ? "grab" : "";
-  });
+/** Wires pointer and wheel input on the canvas; a click on an element of a node's content is told
+ *  to `click`, and a connection proposed to `connect`, where the host lets the user connect. */
+export function attachInteraction(
+  app: Application,
+  store: GraphStore,
+  bridge: Bridge,
+  connect: Connect | undefined,
+  click: (click: ContentClick) => void,
+): Interaction {
+  const connecting = connect !== undefined;
+  const hitAt = (x: number, y: number) => targetAt({ store, bridge }, x, y, connecting);
+  const context: Context = { store, bridge, pointer: { x: 0, y: 0 }, hitAt, click };
+  let gesture: Gesture | null = null;
+  Object.assign(app.stage, { eventMode: "static", hitArea: app.screen });
+  // The cursor shows what a press would do, and the connectors of the node under the pointer show
+  // where a connection may begin, where the host lets the user connect.
+  const hover = untilLost((event: FederatedPointerEvent) =>
+    hoverAt(app, store, hitAt(event.global.x, event.global.y), connecting),
+  );
+  // The gesture is over before its change is told, so that it stays over where a listener
+  // throws, and also once the engine is lost, when nothing is told.
+  const tellEnd = untilLost(
+    (ended: Gesture | null, released: boolean, at?: FederatedPointerEvent) =>
+      ended?.end(released, at && { x: at.global.x, y: at.global.y }),
+  );
+  // A release on the canvas ends with its point, one outside it without, and a cancelled pointer
+  // or a later press as no release, so that a cancelled touch neither drags nor clicks.
+  const release = (released = true, at?: FederatedPointerEvent) => {
+    const ended = gesture;
+    gesture = null;
+    tellEnd(ended, released, at);
+  };
   app.stage.on(
     "pointerdown",
     untilLost((event: FederatedPointerEvent) => {
-      drag = startDrag(store, bridge, event);
-      if (drag.kind === "node") app.canvas.style.cursor = "grabbing";
+      // A gesture whose release never came ends where the next press begins.
+      release(false);
+      gesture = begin(context, event.global.x, event.global.y, connect);
+      if (gesture.grabs) app.canvas.style.cursor = "grabbing";
     }),
   );
   app.stage.on(
     "globalpointermove",
     untilLost((event: FederatedPointerEvent) =>
-      drag ? continueDrag(store, bridge, drag, event) : hover(event),
+      gesture ? gesture.move(event.global.x, event.global.y) : hover(event),
     ),
   );
-  app.stage.on("pointerup", (event) => ((drag = null), hover(event)));
-  app.stage.on("pointerupoutside", () => (drag = null));
-
-  const onWheel = untilLost((event: WheelEvent) => {
-    event.preventDefault();
-    const rect = app.canvas.getBoundingClientRect();
-    const factor = WHEEL_STEP ** -event.deltaY;
-    const { viewport, setViewport } = store.getState();
-    setViewport(zoomAt(viewport, event.clientX - rect.left, event.clientY - rect.top, factor));
+  attachRelease(app, release, hover);
+  // A change that takes a gesture's subject from under it ends the gesture without a word: it
+  // moves nothing that took the subject's slot, and tells nothing of what the user never moved.
+  const unsubscribe = store.subscribe((state, previous) => {
+    if (state.change === previous.change || !gesture?.taken(state)) return;
+    const taken = gesture;
+    gesture = null;
+    taken.drop();
   });
-  app.canvas.addEventListener("wheel", onWheel, { passive: false });
-  return () => {
-    app.stage.removeAllListeners();
-    app.canvas.removeEventListener("wheel", onWheel);
+
+  const detachWheel = attachWheel(app, store);
+  return {
+    hitAt,
+    pointer: context.pointer,
+    detach() {
+      unsubscribe();
+      app.stage.removeAllListeners();
+      detachWheel();
+    },
   };
 }

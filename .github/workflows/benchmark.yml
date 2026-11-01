@@ -31,7 +31,9 @@ concurrency:
 jobs:
   bench:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Thirteen gestures a run, each up to bench/run.ts's 30 s, three runs, and the build: about
+    # half an hour.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -58,6 +60,8 @@ jobs:
             bun --bun bench/run.ts
             cp bench-results/latest.json "bench-results/run-$i.json"
           done
+      # Verifies: ADR-0034, ADR-0008 — the median first frame of the runner's kind stays within the
+      # margin of its baseline, so a load that grows slow again is found at the next run.
       - name: Compare the median with the baseline of the runner's kind
         run: bun bench/compare.ts bench/baselines bench-results/run-*.json
       # Uploaded whether the comparison passes or not, so a regression can be read and a new

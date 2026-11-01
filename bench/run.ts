@@ -1,14 +1,22 @@
-// The benchmark of Q-1 and Q-2 (ADR-0008): the example at 50,000 nodes and 50,000 edges, served
-// from its production build. It measures the time from handing the graph to Comb until its first
-// frame is drawn, and the p95 frame time while a node on screen is dragged, the viewport panned,
-// and zoomed in and out, and while the viewport is panned at the scale where the near and the
-// middle level of detail begin. Only frames in which Comb rendered count; each action is checked for its
+// The benchmark of Q-1 and Q-2 (ADR-0008): the example at 50,000 nodes and 50,000 edges, each
+// node with the content of its type (G-9, G-10), served from its production build. It measures
+// the time from handing the graph to Comb until its first frame is drawn, and the p95 frame time
+// of each gesture: a node on screen dragged, the viewport panned, the viewport zoomed in and out,
+// and the graph edited one edit a frame, a node and an edge added and removed again (ADR-0022).
+// It times them first at the view the example opens with, the whole graph fitted, as the
+// baselines recorded before the levels were measured did, the zoom from there crossing every
+// level, the edits from the fitted view again wherever the zoom stopped, recording their scale;
+// then at each level of detail (ADR-0027), centred in the graph, the pans first: near and
+// middle at the scale where each begins, the least it draws at and so the most it binds. Where
+// the fitted view draws the far level, as at 50,000 nodes, its drag, pan, and edits are far's and
+// far adds only its zoom; otherwise every gesture is timed at far as well. The zoom at a level
+// stays within it. Only frames in which Comb rendered count; each action is checked for its
 // effect, so a gesture that missed fails the run instead of measuring idle frames. Before the
 // gestures it times the reference workload of bench/reference.ts in the same page, by which
 // bench/compare.ts tells whether the runner is in the state its kind's baseline was taken in; the
-// CPU model it records names the runner's kind, and each gesture records the steps it sent and
-// the frames Comb rendered. The numbers go to bench-results/latest.json and are printed beside
-// the targets.
+// CPU model it records names the runner's kind, the content the example counts names what was
+// loaded, and each gesture records the steps it sent and the frames Comb rendered. The numbers go
+// to bench-results/latest.json and are printed beside the targets.
 //
 //   bun run bench                   headless Chromium, software WebGL
 //   BENCH_HEADED=1 bun run bench    a visible window, which uses the machine's GPU
@@ -19,8 +27,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { cpus } from "node:os";
 import type { LoadReport } from "../examples/metric-tree/src/main";
 import { chromiumEnv } from "./chromium";
-import { gestures } from "./compare";
-import { referenceWorkload } from "./reference";
+import { contentOf, gestures, type LEVELS, type Run } from "./compare";
+import { gesturesAtFitted, type View } from "./fitted";
+import { PARTS, referenceWorkload } from "./reference";
 
 const PORT = 4173;
 const COPIES = Number(process.env.BENCH_COPIES ?? 3334);
@@ -50,7 +59,8 @@ function percentile(sorted: number[], p: number): number {
 }
 
 /** Runs `act` while the page records, for every frame, its interval and whether Comb rendered.
- *  Recording starts once every earlier change is drawn, so no render of an earlier gesture counts. */
+ *  Recording starts once every earlier change is drawn, so no render of an earlier gesture
+ *  counts. */
 async function frameTimes(page: Page, act: () => Promise<number>): Promise<Measure> {
   await page.evaluate(() => window.comb.whenRendered());
   await page.evaluate(() => {
@@ -109,12 +119,15 @@ async function drag(page: Page, from: Point, dx: number, dy: number): Promise<nu
   return sent;
 }
 
-/** Zooms in for the first half of the steps and out for the second; `scales` collects the scale
- *  after each step, so the caller can tell that the gesture zoomed. */
-async function zoom(page: Page, at: Point, scales: number[]): Promise<number> {
+/** The wheel's turn of a step of the zoom at the view the example opens with. */
+const WHEEL = 40;
+
+/** Zooms in for the first half of the steps and out for the second, by `wheel` a step; `scales`
+ *  collects the scale after each step, so the caller can tell that the gesture zoomed. */
+async function zoom(page: Page, at: Point, scales: number[], wheel = WHEEL): Promise<number> {
   await page.mouse.move(at.x, at.y);
   return steps(page, async (i) => {
-    await page.mouse.wheel(0, i <= STEPS / 2 ? -40 : 40);
+    await page.mouse.wheel(0, i <= STEPS / 2 ? -wheel : wheel);
     scales.push(await page.evaluate(() => window.viewport().scale));
   });
 }
@@ -142,7 +155,7 @@ async function nodeNearCentre(page: Page): Promise<{ id: string; at: Point }> {
 }
 
 async function drawnNode(page: Page, id: string) {
-  return page.evaluate((id) => window.inspect().nodes.find((node) => node.id === id)!, id);
+  return page.evaluate((wanted) => window.inspect().nodes.find((node) => node.id === wanted)!, id);
 }
 
 async function viewport(page: Page) {
@@ -153,48 +166,309 @@ function expectEffect(ok: boolean, what: string): void {
   if (!ok) throw new Error(`the ${what} had no effect; the measurement would be of idle frames`);
 }
 
-/** Pans at the scale where a level of detail begins, the least scale it draws at and so the most
- *  it binds, centred in the graph; the pan leaves the culling margin, so the scene queries. */
-async function panAt(page: Page, scale: number): Promise<Measure> {
-  const box = (await page.locator("#canvas canvas").boundingBox())!;
+/** Installs `benchEdit(i)` in the page: edit `i` of the gesture, one of adding a node beside
+ *  `near`, adding an edge from `near` to it, removing the edge, and removing the node, over and
+ *  over (ADR-0022). Before it edits, it counts in `drawnEdits` whether the canvas drew the edit
+ *  before it, by a probe cheap enough not to weigh on the frame it falls in, as `inspect` would at
+ *  50,000 nodes; `benchEdit(i + 1, false)` checks edit `i` alone. Every edit is counted in `told`
+ *  once it is told. */
+async function installEdits(page: Page, near: string): Promise<void> {
+  const at = await drawnNode(page, near);
   await page.evaluate(
-    async ({ scale, width, height }) => {
-      const nodes = window.inspect().nodes;
-      const xs = nodes.map((node) => node.x);
-      const ys = nodes.map((node) => node.y);
-      const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
-      const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
-      window.comb.setViewport({ x: width / 2 - cx * scale, y: height / 2 - cy * scale, scale });
-      await window.comb.whenRendered();
+    ({ near: source, at: corner }) => {
+      const w = window as unknown as BenchEdits;
+      const ofStep = (i: number) => {
+        const round = Math.floor((i - 1) / 4);
+        return { kind: (i - 1) % 4, node: `bench-node-${round}`, edge: `bench-edge-${round}` };
+      };
+      // Whether the canvas shows what edit `i` made: its node or edge drawn, or no longer drawn.
+      const shows = (i: number) => {
+        const { kind, node, edge } = ofStep(i);
+        const drawn = window.isDrawn(kind % 3 === 0 ? { node } : { edge });
+        return kind < 2 ? drawn : !drawn;
+      };
+      [w.told, w.drawnEdits] = [0, 0];
+      w.stopTelling = window.comb.onChange(() => (w.told += 1));
+      w.benchEdit = (i, edit = true) => {
+        if (i > 1 && shows(i - 1)) w.drawnEdits += 1;
+        if (!edit) return;
+        const { kind, node, edge } = ofStep(i);
+        const { comb } = window;
+        if (kind === 0)
+          comb.addNode({
+            id: node,
+            x: corner.x + 40,
+            y: corner.y + 90,
+            width: 160,
+            content: [[{ kind: "text", role: "title", text: "edit" }]],
+          });
+        else if (kind === 1) comb.addEdge({ id: edge, source, target: node });
+        else if (kind === 2) comb.removeEdges([edge]);
+        else comb.removeNodes([node]);
+      };
     },
-    { scale, width: box.width, height: box.height },
+    { near, at: { x: at.x, y: at.y } },
   );
+}
+
+/** What `installEdits` keeps in the page. */
+interface BenchEdits {
+  told: number;
+  drawnEdits: number;
+  stopTelling: () => void;
+  benchEdit: (i: number, edit?: boolean) => void;
+}
+
+/** The zoom gesture around `at`, by `wheel` a step, checked for having changed the scale and,
+ *  where `within` is given, for having kept it within those bounds, the lower one included. */
+async function zoomGesture(
+  page: Page,
+  at: Point,
+  name = "zoom",
+  wheel = WHEEL,
+  within?: [number, number],
+): Promise<Measure> {
+  const zoomFrom = await viewport(page);
+  const scales: number[] = [];
+  const zoomed = await frameTimes(page, () => zoom(page, at, scales, wheel));
+  expectEffect(
+    scales.some((scale) => scale !== zoomFrom.scale),
+    name,
+  );
+  if (within && !scales.every((scale) => scale >= within[0] && scale < within[1]))
+    throw new Error(`the ${name} left its level, scales ${within[0]} to ${within[1]}`);
+  console.log(`${name}: ${zoomed.frames} frames, p95 ${zoomed.p95.toFixed(1)} ms`);
+  return zoomed;
+}
+
+/** The edit gesture, beside the node nearest the centre of the view: each edit is told and
+ *  drawn. A gesture the time budget cuts short of a whole round leaves its node or edge, which is
+ *  removed after the timed frames; then no edit is left drawn. */
+async function editGesture(page: Page, name = "edit"): Promise<Measure> {
+  const beside = await nodeNearCentre(page);
+  await installEdits(page, beside.id);
+  const edited = await frameTimes(page, () =>
+    steps(page, (i) =>
+      page.evaluate((edit) => (window as unknown as BenchEdits).benchEdit(edit), i),
+    ),
+  );
+  const checked = await page.evaluate(async (made) => {
+    await window.comb.whenRendered();
+    const w = window as unknown as BenchEdits;
+    w.benchEdit(made + 1, false);
+    w.stopTelling();
+    const { comb } = window;
+    const ids = (prefix: string, of: { id: string }[]) =>
+      of.map(({ id }) => id).filter((id) => id.startsWith(prefix));
+    comb.removeNodes(ids("bench-node-", window.inspect().nodes));
+    await comb.whenRendered();
+    const { nodes, edges } = window.inspect();
+    const left = ids("bench-node-", nodes).length + ids("bench-edge-", edges).length;
+    return { told: w.told, drawnEdits: w.drawnEdits, left };
+  }, edited.steps);
+  expectEffect(
+    checked.told === edited.steps && checked.drawnEdits === edited.steps && checked.left === 0,
+    name,
+  );
+  console.log(`${name}: ${edited.frames} frames, p95 ${edited.p95.toFixed(1)} ms`);
+  return edited;
+}
+
+/** The middle of the graph, in world coordinates. */
+async function graphMiddle(page: Page): Promise<Point> {
+  return page.evaluate(() => {
+    const nodes = window.inspect().nodes;
+    const half = (of: number[]) => (Math.min(...of) + Math.max(...of)) / 2;
+    return { x: half(nodes.map((node) => node.x)), y: half(nodes.map((node) => node.y)) };
+  });
+}
+
+/** Shows `middle` in the middle of the canvas at `scale` and waits until it is drawn. */
+async function centreAt(page: Page, middle: Point, scale: number): Promise<void> {
+  const box = (await page.locator("#canvas canvas").boundingBox())!;
+  await show(page, {
+    x: box.width / 2 - middle.x * scale,
+    y: box.height / 2 - middle.y * scale,
+    scale,
+  });
+}
+
+/** Shows `view` and waits until it is drawn. */
+async function show(page: Page, view: View): Promise<void> {
+  await page.evaluate(async (wanted) => {
+    window.comb.setViewport(wanted);
+    await window.comb.whenRendered();
+  }, view);
+}
+
+/** A level of detail as the benchmark times it: the scale its gestures start at, and the bounds
+ *  its zoom stays within, the lower one included. */
+interface Level {
+  name: (typeof LEVELS)[number];
+  scale: number;
+  within: [number, number];
+}
+
+/** The pan from an empty point by 400 and 200 pixels, checked for having moved the viewport; it
+ *  leaves the culling margin, so the scene queries. */
+async function panGesture(page: Page, name: string): Promise<Measure> {
   const start = await emptyPoint(page);
   const from = await viewport(page);
   const pan = await frameTimes(page, () => drag(page, start, 400, 200));
   const to = await viewport(page);
-  expectEffect(to.x !== from.x || to.y !== from.y, `pan at scale ${scale}`);
+  expectEffect(to.x !== from.x || to.y !== from.y, name);
+  console.log(`${name}: ${pan.frames} frames, p95 ${pan.p95.toFixed(1)} ms`);
   return pan;
 }
 
-/** A point on the canvas, near its top left, over no drawn node, where a press pans. */
+/** The drag of the node nearest the centre of the view by 120 pixels down, checked for having
+ *  moved it. */
+async function dragGesture(page: Page, name: string): Promise<Measure> {
+  const node = await nodeNearCentre(page);
+  const before = await drawnNode(page, node.id);
+  const dragged = await frameTimes(page, () => drag(page, node.at, 0, 120));
+  const after = await drawnNode(page, node.id);
+  expectEffect(after.y !== before.y, `${name} of node ${node.id}`);
+  console.log(`${name}: ${dragged.frames} frames, p95 ${dragged.p95.toFixed(1)} ms`);
+  return dragged;
+}
+
+/** The wheel's turn a step that zooms by `factor` over half the steps, from the zoom of one
+ *  wheel event by WHEEL, taken back before the gesture. */
+async function wheelFor(page: Page, at: Point, factor: number): Promise<number> {
+  const from = (await viewport(page)).scale;
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.wheel(0, -WHEEL);
+  await page.evaluate(() => window.comb.whenRendered());
+  const by = (await viewport(page)).scale / from;
+  await page.mouse.wheel(0, WHEEL);
+  await page.evaluate(() => window.comb.whenRendered());
+  return (WHEEL * Math.log(factor)) / Math.log(by) / (STEPS / 2);
+}
+
+/** Shows `middle` at `level`'s scale, checked for drawing that level. */
+async function toLevel(page: Page, middle: Point, { name, scale }: Level): Promise<void> {
+  await centreAt(page, middle, scale);
+  const drawn = await page.evaluate(() => window.inspect().level);
+  if (drawn !== name) throw new Error(`at scale ${scale} the scene draws ${drawn}, not ${name}`);
+}
+
+/** The pan at `level`, from the level's scale, centred on `middle`. */
+async function panAtLevel(page: Page, middle: Point, level: Level): Promise<Measure> {
+  await toLevel(page, middle, level);
+  return panGesture(page, `pan ${level.name}`);
+}
+
+/** The zoom at `level`, in from just above the level's scale towards its upper bound and out
+ *  again, around the centre of the canvas, centred on `middle`. */
+async function zoomAtLevel(page: Page, middle: Point, level: Level): Promise<Measure> {
+  const { name, scale, within } = level;
+  await toLevel(page, middle, level);
+  // Off the level's lower bound by a hundredth and short of its upper one by a twentieth, so that
+  // the rounding of the way in and out again cannot leave the level.
+  const from = Math.max(scale, within[0] * 1.01);
+  await centreAt(page, middle, from);
+  const box = (await page.locator("#canvas canvas").boundingBox())!;
+  const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const wheel = await wheelFor(page, centre, (within[1] * 0.95) / from);
+  return zoomGesture(page, centre, `zoom ${name}`, wheel, within);
+}
+
+/** The drag, the zoom, and the edits at `level`, each from the level's scale, centred on
+ *  `middle`. */
+async function restAtLevel(page: Page, middle: Point, level: Level) {
+  await toLevel(page, middle, level);
+  const dragged = await dragGesture(page, `drag ${level.name}`);
+  const zoomed = await zoomAtLevel(page, middle, level);
+  await toLevel(page, middle, level);
+  const edited = await editGesture(page, `edit ${level.name}`);
+  return { drag: dragged, zoom: zoomed, edit: edited };
+}
+
+/** A point on the canvas, near its top left, where a press hits nothing, no connector, label,
+ *  node or edge, and so pans (ADR-0013). */
 async function emptyPoint(page: Page): Promise<Point> {
   return page.evaluate(() => {
-    const { nodes } = window.inspect();
     const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();
-    const over = (px: number, py: number) =>
-      nodes.some((node) => {
-        const from = window.screenPoint(node.x, node.y);
-        const to = window.screenPoint(node.x + node.width, node.y + node.height);
-        return px >= from.x && px <= to.x && py >= from.y && py <= to.y;
-      });
     for (let py = 4; py < rect.height / 2; py += 3) {
       for (let px = 4; px < rect.width / 2; px += 3) {
-        if (!over(px, py)) return { x: rect.left + px, y: rect.top + py };
+        // The example lets the user connect, so the hit test finds connectors, as a press does.
+        if (window.hitKind(px, py) === "none") return { x: rect.left + px, y: rect.top + py };
       }
     }
     throw new Error("no empty point to pan from");
   });
+}
+
+/** The gestures at the view the example opens with, `fitted`, as the baselines recorded before the
+ *  levels timed them: the drag of the node nearest the centre, the pan from the canvas's top left,
+ *  the zoom around its centre, and the edits, which begin at `fitted` again (bench/fitted.ts). */
+async function atFittedView(page: Page, fitted: View) {
+  const node = await nodeNearCentre(page);
+  const box = (await page.locator("#canvas canvas").boundingBox())!;
+  const shown = {
+    read: () => viewport(page),
+    show: (view: View) => show(page, view),
+  };
+  const measured = await gesturesAtFitted(shown, fitted, {
+    drag: async () => {
+      const before = await drawnNode(page, node.id);
+      const dragged = await frameTimes(page, () => drag(page, node.at, 0, 120));
+      const after = await drawnNode(page, node.id);
+      expectEffect(after.y !== before.y, `drag of node ${node.id}`);
+      console.log(`drag: ${dragged.frames} frames, p95 ${dragged.p95.toFixed(1)} ms`);
+      return dragged;
+    },
+    pan: async () => {
+      const panFrom = await viewport(page);
+      const pan = await frameTimes(page, () =>
+        drag(page, { x: box.x + 4, y: box.y + 4 }, 200, 100),
+      );
+      const panTo = await viewport(page);
+      expectEffect(panTo.x !== panFrom.x || panTo.y !== panFrom.y, "pan");
+      console.log(`pan: ${pan.frames} frames, p95 ${pan.p95.toFixed(1)} ms`);
+      return pan;
+    },
+    zoom: () => zoomGesture(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 }),
+    edit: () => editGesture(page),
+  });
+  return { node, ...measured };
+}
+
+/** The gestures at each level of detail, centred on `middle`, the pans first, so that the pans at
+ *  near and middle follow the gestures at the fitted view, as when their baselines were taken.
+ *  Near reaches up to the largest scale Comb zooms to, and four times where it begins stays below
+ *  it. Where the fitted view, of scale `fitted`, draws the far level, the gestures at the fitted
+ *  view are those of far, and far adds only its zoom, which stays within far; otherwise, for a
+ *  graph whose fitted view is nearer, every gesture is timed at far at half where far begins. */
+async function atEveryLevel(page: Page, middle: Point, fitted: number) {
+  const begins = await page.evaluate(() => window.sceneNumbers());
+  const fittedIsFar = fitted < begins.far;
+  const farScale = fittedIsFar ? fitted : begins.far / 2;
+  const near: Level = { name: "near", scale: begins.near, within: [begins.near, begins.near * 4] };
+  const middleLevel: Level = {
+    name: "middle",
+    scale: begins.far,
+    within: [begins.far, begins.near],
+  };
+  const far: Level = { name: "far", scale: farScale, within: [farScale, begins.far] };
+  const pans = {
+    near: await panAtLevel(page, middle, near),
+    middle: await panAtLevel(page, middle, middleLevel),
+    far: fittedIsFar ? undefined : await panAtLevel(page, middle, far),
+  };
+  const levels = {
+    near: { scale: near.scale, pan: pans.near, ...(await restAtLevel(page, middle, near)) },
+    middle: {
+      scale: middleLevel.scale,
+      pan: pans.middle,
+      ...(await restAtLevel(page, middle, middleLevel)),
+    },
+    far: fittedIsFar
+      ? { scale: far.scale, zoom: await zoomAtLevel(page, middle, far) }
+      : { scale: far.scale, pan: pans.far, ...(await restAtLevel(page, middle, far)) },
+  };
+  return { fittedIsFar, levels };
 }
 
 async function measure(page: Page) {
@@ -203,6 +477,9 @@ async function measure(page: Page) {
   await page.goto(`http://localhost:${PORT}/?copies=${COPIES}`, { timeout: LOAD_TIMEOUT_MS });
   // The example sets loadReport after a top-level await, which the load event does not wait for.
   await page.waitForFunction(() => "loadReport" in window, null, { timeout: LOAD_TIMEOUT_MS });
+  // A build in test mode grows the engine's memory before every call: no number of it holds.
+  if (await page.evaluate(() => window.testMode()))
+    throw new Error("the example runs the bridge in test mode; no number holds");
   const load: LoadReport = await page.evaluate(() => window.loadReport);
   if (errors.length) throw new Error(`the example failed: ${errors.join("; ")}`);
   console.log(
@@ -218,45 +495,31 @@ async function measure(page: Page) {
   });
 
   const reference = await referenceWorkload(page);
-  console.log(
-    `reference: ${reference.ms.toFixed(1)} ms (JavaScript ${reference.js.toFixed(1)}, ` +
-      `WebAssembly ${reference.wasm.toFixed(1)}, WebGL2 ${reference.gpu.toFixed(1)})`,
-  );
+  const each = PARTS.filter(([, key]) => key !== "ms")
+    .map(([name, key]) => `${name} ${reference[key].toFixed(1)}`)
+    .join(", ");
+  console.log(`reference: ${reference.ms.toFixed(1)} ms (${each})`);
 
-  const node = await nodeNearCentre(page);
-  const before = await drawnNode(page, node.id);
-  const dragged = await frameTimes(page, () => drag(page, node.at, 0, 120));
-  const after = await drawnNode(page, node.id);
-  expectEffect(after.y !== before.y, `drag of node ${node.id}`);
-  console.log(`drag: ${dragged.frames} frames, p95 ${dragged.p95.toFixed(1)} ms`);
-
-  const box = (await page.locator("#canvas canvas").boundingBox())!;
-  const panFrom = await viewport(page);
-  const pan = await frameTimes(page, () => drag(page, { x: box.x + 4, y: box.y + 4 }, 200, 100));
-  const panTo = await viewport(page);
-  expectEffect(panTo.x !== panFrom.x || panTo.y !== panFrom.y, "pan");
-  console.log(`pan: ${pan.frames} frames, p95 ${pan.p95.toFixed(1)} ms`);
-
-  const zoomFrom = await viewport(page);
-  const scales: number[] = [];
-  const zoomed = await frameTimes(page, () =>
-    zoom(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 }, scales),
-  );
-  expectEffect(
-    scales.some((scale) => scale !== zoomFrom.scale),
-    "zoom",
-  );
-  console.log(`zoom: ${zoomed.frames} frames, p95 ${zoomed.p95.toFixed(1)} ms`);
-
-  const begins = await page.evaluate(() => window.sceneNumbers());
-  const near = await panAt(page, begins.near);
-  const middle = await panAt(page, begins.far);
+  // The view the example opens with, the whole graph fitted, which draws the far level.
+  const fitted = await viewport(page);
+  const middle = await graphMiddle(page);
+  const atFitted = await atFittedView(page, fitted);
+  const { fittedIsFar, levels } = await atEveryLevel(page, middle, fitted.scale);
   if (errors.length) throw new Error(`the example failed: ${errors.join("; ")}`);
-  const levels = {
-    near: { scale: begins.near, pan: near },
-    middle: { scale: begins.far, pan: middle },
+  return {
+    load,
+    gpu,
+    // The scale of the fitted view, and the level it draws: far, its drag, pan, and edits those
+    // of the far level, or another, for a graph small enough.
+    fitted: { scale: fitted.scale, level: fittedIsFar ? "far" : "nearer than far" },
+    reference,
+    node: atFitted.node.id,
+    drag: atFitted.drag,
+    pan: atFitted.pan,
+    zoom: atFitted.zoom,
+    levels,
+    edit: atFitted.edit,
   };
-  return { load, gpu, reference, node: node.id, drag: dragged, pan, zoom: zoomed, levels };
 }
 
 /** Compared at the precision printed, so that a frame of 16.67 ms at 60 Hz meets 16.7. */
@@ -279,8 +542,15 @@ function report(result: Awaited<ReturnType<typeof measure>>): void {
     ),
   ];
   console.log(`${result.load.nodes} nodes, ${result.load.edges} edges — GPU: ${result.gpu}`);
+  console.log(`content: ${contentOf(result.load.content)}`);
+  const { fitted, levels } = result;
+  const draws =
+    fitted.level === "far" ? "the far level: drag, pan, and edit are far's" : "nearer than far";
   console.log(
-    `pan near at scale ${result.levels.near.scale}, pan middle at ${result.levels.middle.scale}`,
+    `drag, pan, zoom, and edit at the fitted view, scale ${fitted.scale.toPrecision(3)}, ` +
+      `which draws ${draws}; ` +
+      `near at scale ${levels.near.scale}, middle at ${levels.middle.scale}, ` +
+      `far at ${levels.far.scale.toPrecision(3)}`,
   );
   for (const [name, value, target, m] of rows) {
     const note = m?.truncated
@@ -323,6 +593,12 @@ try {
       copies: COPIES,
       steps: STEPS,
       ...result,
+      // Every field of `Run` present, an optional one too, so that one misnamed is refused rather
+      // than read as missing, as a run of an older shape would be.
+    } satisfies Run & { [K in keyof Run]-?: unknown } & {
+      date: string;
+      commit: string;
+      steps: number;
     };
     mkdirSync("bench-results", { recursive: true });
     writeFileSync("bench-results/latest.json", JSON.stringify(record, null, 2) + "\n");

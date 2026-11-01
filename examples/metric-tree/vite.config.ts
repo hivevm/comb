@@ -37,6 +37,8 @@ const TEST_ENGINE = {
 export default defineConfig(({ command, mode }) => ({
   plugins: mode === "test" ? [strictPolicy()] : [],
   resolve: { alias: command === "serve" && mode === "test" ? [TEST_ENGINE] : [] },
-  server: { port: 5173, strictPort: true },
-  preview: { port: 5173, strictPort: true },
+  // Node resolves `localhost` to ::1 alone, and the Dev Container's forwarding dials 127.0.0.1;
+  // the example a developer runs listens there, the tests' servers keep Vite's default.
+  server: { port: 5173, strictPort: true, host: mode === "test" ? undefined : "127.0.0.1" },
+  preview: { port: 5173, strictPort: true, host: mode === "test" ? undefined : "127.0.0.1" },
 }));

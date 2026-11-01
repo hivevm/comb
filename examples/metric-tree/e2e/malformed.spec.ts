@@ -1,20 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
-import type { GraphData, GraphDataProblem } from "comb";
-import { open, setViewport } from "./shared";
+import type { GraphData, GraphDataProblem, NodeContent, NodePatch } from "comb";
+import { drawnGraph, node, open, setViewport, titled } from "./shared";
 
-/** The identifiers and places of the nodes the canvas draws, and of its edges. */
-async function drawn(page: Page) {
-  return page.evaluate(async () => {
-    await window.comb.whenRendered();
-    const { nodes, edges } = window.inspect();
-    return {
-      nodes: nodes.map(({ id, x, y, title }) => ({ id, x, y, title })),
-      edges: edges.map(({ id }) => id),
-    };
-  });
-}
-
-const node = (id: string, x = 0, y = 0) => ({ id, title: id, x, y, width: 220, height: 64 });
 const edge = (id: string, source: string, target: string) => ({ id, source, target });
 /** Nodes `a` and `b` and an edge `e` between them whose label lies in view at the near level,
  *  where a label the store kept would be drawn in the next frame. */
@@ -48,6 +35,17 @@ const MALFORMED: { name: string; graph: GraphData; problem: unknown }[] = [
     graph: { nodes: [node("a"), node("b", 300, 1e300)], edges: [] },
     problem: { kind: "nonFiniteCoordinate", node: "b" },
   },
+  // Verifies: ADR-0028
+  {
+    name: "a node whose far side lies beyond what a 32-bit float holds",
+    graph: { nodes: [node("a"), { ...node("b", 3e38), width: 3e38 }], edges: [] },
+    problem: { kind: "beyondWorld", list: "nodes", id: "b", field: "x", limit: 2 ** 120 },
+  },
+  {
+    name: "a node within the world whose far side lies beyond it",
+    graph: { nodes: [node("a"), { ...node("b", 2 ** 119), width: 2 ** 119 + 1e30 }], edges: [] },
+    problem: { kind: "beyondWorld", list: "nodes", id: "b", field: "width", limit: 2 ** 120 },
+  },
   {
     name: "an edge to a missing node",
     graph: { nodes: [node("a"), node("b", 300)], edges: [edge("e", "a", "z")] },
@@ -66,11 +64,14 @@ const MALFORMED: { name: string; graph: GraphData; problem: unknown }[] = [
     },
     problem: { kind: "duplicateEdge", edge: "e" },
   },
-  // Verifies: ADR-0009
+  // Verifies: ADR-0028
   {
     name: "a title that is not a string",
-    graph: { nodes: [node("a"), { ...node("b", 300), title: wrong<string>(5) }], edges: [] },
-    problem: { kind: "invalidTitle", node: "b" },
+    graph: {
+      nodes: [node("a"), { ...node("b", 300), content: titled(wrong<string>(5)) }],
+      edges: [],
+    },
+    problem: { kind: "invalidContentText", node: "b", row: 0, column: 0, field: "text" },
   },
   {
     name: "a label text that is not a string",
@@ -94,8 +95,18 @@ const MALFORMED: { name: string; graph: GraphData; problem: unknown }[] = [
   },
   {
     name: "a title of 1,001 characters",
-    graph: { nodes: [node("a"), { ...node("b", 300), title: "x".repeat(1001) }], edges: [] },
-    problem: { kind: "titleTooLong", node: "b", limit: 1000 },
+    graph: {
+      nodes: [node("a"), { ...node("b", 300), content: titled("x".repeat(1001)) }],
+      edges: [],
+    },
+    problem: {
+      kind: "contentTextTooLong",
+      node: "b",
+      row: 0,
+      column: 0,
+      field: "text",
+      limit: 1000,
+    },
   },
   {
     name: "a label text of 1,001 UTF-16 code units",
@@ -120,10 +131,14 @@ const SIZE = "a finite number of 0 or more";
 const COLOR = "an integer from 0 to 0xFFFFFF";
 const DASH = "a list of two finite numbers, or none";
 const ID = "a well-formed string of at most 256 code units";
+const SIDE = '"top", "right", "bottom", or "left"';
+const ROWS = "a list of rows";
+/** A text element of node `b`'s content where it lies, as a problem of its text names it. */
+const TEXT_AT = { node: "b", row: 0, column: 0, field: "text" };
 
 /** Nodes `a` and `b` and an edge `e` between them, with `change` made to `b` or to `e`. */
 function changed(item: "b" | "e", change: (fields: Record<string, unknown>) => void): GraphData {
-  const b: Record<string, unknown> = node("b", 300);
+  const b: Record<string, unknown> = { ...node("b", 300) };
   const e: Record<string, unknown> = {
     ...edge("e", "a", "b"),
     label: { text: "e", t: 0.5, offset: 0 },
@@ -138,7 +153,7 @@ const FIELDS: { name: string; graph: GraphData; problem: unknown }[] = [
   ...[
     ["a coordinate that is a string", (b: Record<string, unknown>) => (b.x = "1"), "x", NUMBER],
     ["a missing width", (b: Record<string, unknown>) => delete b.width, "width", SIZE],
-    ["a height that is null", (b: Record<string, unknown>) => (b.height = null), "height", SIZE],
+    ["content that is null", (b: Record<string, unknown>) => (b.content = null), "content", ROWS],
   ].map(([name, change, field, expected]) => ({
     name: name as string,
     graph: changed("b", change as (b: Record<string, unknown>) => void),
@@ -173,25 +188,248 @@ const FIELDS: { name: string; graph: GraphData; problem: unknown }[] = [
 
 for (const { name, graph, problem } of FIELDS) {
   test(`load refuses ${name}, naming the node or edge and the field`, async ({ page }) => {
-    // Verifies: Q-7, ADR-0010
+    // Verifies: Q-7, ADR-0034
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
-    const before = await drawn(page);
-    const refused = await page.evaluate((graph) => {
+    const before = await drawnGraph(page);
+    const refused = await page.evaluate((data) => {
       try {
-        window.comb.load(graph);
+        window.comb.load(data);
         return null;
       } catch (error) {
-        const { name, problem } = error as Error & { problem: unknown };
-        return { name, problem };
+        const { name: thrown, problem: found } = error as Error & { problem: unknown };
+        return { name: thrown, problem: found };
       }
     }, graph);
     expect(errors).toEqual([]);
     expect(refused).toStrictEqual({ name: "GraphDataError", problem });
-    expect(await drawn(page)).toEqual(before);
+    expect(await drawnGraph(page)).toEqual(before);
   });
 }
+
+/** Each refusal a node of a load can cause, of node `b` after node `a`: the graph data is built in
+ *  the page, where a lone surrogate keeps its code unit, by `nodeRefusal`. */
+const NODE_REFUSALS: { kind: string; problem: unknown }[] = [
+  ...(
+    [
+      ["missingId", "id", ID],
+      ["numberId", "id", ID],
+      ["loneSurrogateId", "id", ID],
+      ["stringX", "x", NUMBER],
+      ["missingY", "y", NUMBER],
+      ["nullWidth", "width", SIZE],
+      ["booleanContent", "content", ROWS],
+    ] as const
+  ).map(([kind, field, expected]) => {
+    const problem = { kind: "invalidField", list: "nodes", index: 1, id: "b", field, expected };
+    if (field === "id") delete (problem as { id?: string }).id;
+    return { kind, problem };
+  }),
+  {
+    kind: "noObject",
+    problem: { kind: "malformed", message: "the value does not have the shape the bridge expects" },
+  },
+  { kind: "missingTitle", problem: { kind: "invalidContentText", ...TEXT_AT } },
+  { kind: "loneSurrogateTitle", problem: { kind: "invalidContentText", ...TEXT_AT } },
+  {
+    kind: "longId",
+    problem: { kind: "idTooLong", list: "nodes", index: 1, field: "id", limit: 256 },
+  },
+  { kind: "longTitle", problem: { kind: "contentTextTooLong", ...TEXT_AT, limit: 1000 } },
+  { kind: "duplicate", problem: { kind: "duplicateNode", node: "a" } },
+  {
+    kind: "beyondWorld",
+    problem: { kind: "beyondWorld", list: "nodes", id: "b", field: "x", limit: 2 ** 120 },
+  },
+  { kind: "nonFinite", problem: { kind: "nonFiniteCoordinate", node: "b" } },
+  { kind: "negativeSize", problem: { kind: "invalidSize", node: "b" } },
+];
+
+/** Loads nodes `a` and `b` with `b` changed as `kind` names, in the page, and returns the problem
+ *  `load` throws, or none. */
+function nodeRefusal(kind: string) {
+  const b: Record<string, unknown> = { ...window.node("b", 300) };
+  const changes: Record<string, () => unknown> = {
+    missingId: () => delete b.id,
+    numberId: () => (b.id = 5),
+    loneSurrogateId: () => (b.id = "b\uD800"),
+    stringX: () => (b.x = "1"),
+    missingY: () => delete b.y,
+    nullWidth: () => (b.width = null),
+    booleanContent: () => (b.content = true),
+    missingTitle: () => (b.content = [[{ kind: "text", role: "title" }]]),
+    loneSurrogateTitle: () => (b.content = [[{ kind: "text", role: "title", text: "b\uDC00" }]]),
+    longId: () => (b.id = "b".repeat(257)),
+    longTitle: () => (b.content = [[{ kind: "text", role: "title", text: "b".repeat(1001) }]]),
+    duplicate: () => (b.id = "a"),
+    beyondWorld: () => (b.x = 2 ** 121),
+    nonFinite: () => (b.x = Number.NEGATIVE_INFINITY),
+    negativeSize: () => (b.width = -1),
+  };
+  const nodes: unknown[] = [window.node("a"), b];
+  if (kind === "noObject") nodes[1] = 5;
+  else changes[kind]!();
+  try {
+    window.comb.load({ nodes, edges: [] } as never);
+    return null;
+  } catch (error) {
+    return (error as { problem?: unknown }).problem ?? null;
+  }
+}
+
+for (const { kind, problem } of NODE_REFUSALS) {
+  test(`load refuses a node (${kind}) as before, its nodes crossing as columns, and the previous graph stays drawn`, async ({
+    page,
+  }) => {
+    // Verifies: ADR-0034
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await open(page);
+    const before = await drawnGraph(page);
+    const refused = await page.evaluate(nodeRefusal, kind);
+    await frames(page);
+    expect(errors).toEqual([]);
+    expect(refused).toStrictEqual(problem);
+    expect(await drawnGraph(page)).toEqual(before);
+  });
+}
+
+/** Each refusal an edge of a load can cause, of edge `e` after edge `d`, both between nodes `a`
+ *  and `b`: the graph data is built in the page, where a lone surrogate keeps its code unit, by
+ *  `edgeRefusal`. */
+const EDGE_REFUSALS: { kind: string; problem: unknown }[] = [
+  ...(
+    [
+      ["missingId", "id", ID],
+      ["numberId", "id", ID],
+      ["loneSurrogateId", "id", ID],
+      ["loneSurrogateSource", "source", ID],
+      ["objectSource", "source", ID],
+      ["nullTarget", "target", ID],
+      ["booleanLabel", "label", "an object, or none"],
+      ["stringLabelT", "label.t", NUMBER],
+      ["missingLabelOffset", "label.offset", NUMBER],
+      ["stringColor", "color", COLOR],
+      ["dashOfThree", "dash", DASH],
+      ["dashOfStrings", "dash", DASH],
+      ["arrowAtStart", "arrow", '"end" or "none"'],
+      ["numberArrow", "arrow", '"end" or "none"'],
+      ["middleSourceSide", "sourceSide", SIDE],
+      ["numberTargetSide", "targetSide", SIDE],
+      ["loneSurrogateTargetSide", "targetSide", SIDE],
+    ] as const
+  ).map(([kind, field, expected]) => {
+    const problem = { kind: "invalidField", list: "edges", index: 1, id: "e", field, expected };
+    if (field === "id") delete (problem as { id?: string }).id;
+    return { kind, problem };
+  }),
+  {
+    kind: "noObject",
+    problem: { kind: "malformed", message: "the value does not have the shape the bridge expects" },
+  },
+  { kind: "missingEnd", problem: { kind: "missingNode", edge: "e", node: "z" } },
+  { kind: "duplicate", problem: { kind: "duplicateEdge", edge: "d" } },
+  {
+    kind: "longId",
+    problem: { kind: "idTooLong", list: "edges", index: 1, field: "id", limit: 256 },
+  },
+  {
+    kind: "longTarget",
+    problem: { kind: "idTooLong", list: "edges", index: 1, field: "target", limit: 256 },
+  },
+  { kind: "missingLabelText", problem: { kind: "invalidLabelText", edge: "e" } },
+  { kind: "loneSurrogateLabelText", problem: { kind: "invalidLabelText", edge: "e" } },
+  { kind: "longLabelText", problem: { kind: "labelTextTooLong", edge: "e", limit: 1000 } },
+  { kind: "stringBackground", problem: { kind: "invalidBackground", edge: "e" } },
+  { kind: "backgroundBeyondRgb", problem: { kind: "invalidBackground", edge: "e" } },
+  { kind: "colorBeyondRgb", problem: { kind: "invalidColor", edge: "e" } },
+  { kind: "negativeGap", problem: { kind: "invalidDash", edge: "e" } },
+  { kind: "nonFiniteLabel", problem: { kind: "nonFiniteLabel", edge: "e" } },
+  {
+    kind: "labelBeyondWorld",
+    problem: {
+      kind: "beyondWorld",
+      list: "edges",
+      id: "e",
+      field: "label.offset",
+      limit: 2 ** 120,
+    },
+  },
+];
+
+/** Loads nodes `a` and `b` and edges `d` and `e` between them, with `e` changed as `kind` names,
+ *  or as it is for a kind none names, in the page, and returns the problem `load` throws, or
+ *  none. */
+function edgeRefusal(kind: string) {
+  const label: Record<string, unknown> = { text: "e", t: 0.5, offset: 0, background: 0x123456 };
+  const e: Record<string, unknown> = { id: "e", source: "b", target: "a", label, dash: [6, 4] };
+  const changes: Record<string, () => unknown> = {
+    missingId: () => delete e.id,
+    numberId: () => (e.id = 5),
+    loneSurrogateId: () => (e.id = "e\uD800"),
+    loneSurrogateSource: () => (e.source = "\uDC00b"),
+    objectSource: () => (e.source = { id: "b" }),
+    nullTarget: () => (e.target = null),
+    booleanLabel: () => (e.label = true),
+    stringLabelT: () => (label.t = "1"),
+    missingLabelOffset: () => delete label.offset,
+    stringColor: () => (e.color = "red"),
+    dashOfThree: () => (e.dash = [6, 4, 2]),
+    dashOfStrings: () => (e.dash = ["6", 4]),
+    arrowAtStart: () => (e.arrow = "start"),
+    numberArrow: () => (e.arrow = 1),
+    middleSourceSide: () => (e.sourceSide = "middle"),
+    numberTargetSide: () => (e.targetSide = 3),
+    loneSurrogateTargetSide: () => (e.targetSide = "left\uD800"),
+    missingEnd: () => (e.target = "z"),
+    duplicate: () => (e.id = "d"),
+    longId: () => (e.id = "e".repeat(257)),
+    longTarget: () => (e.target = "a".repeat(257)),
+    missingLabelText: () => delete label.text,
+    loneSurrogateLabelText: () => (label.text = "e\uDC00"),
+    longLabelText: () => (label.text = "\u{1F600}".repeat(500) + "e"),
+    stringBackground: () => (label.background = "red"),
+    backgroundBeyondRgb: () => (label.background = 0x1000000),
+    colorBeyondRgb: () => (e.color = 0x1000000),
+    negativeGap: () => (e.dash = [6, -1]),
+    nonFiniteLabel: () => (label.t = Number.POSITIVE_INFINITY),
+    labelBeyondWorld: () => (label.offset = 2 ** 121),
+  };
+  const edges: unknown[] = [{ id: "d", source: "a", target: "b" }, e];
+  if (kind === "noObject") edges[1] = 5;
+  else changes[kind]?.();
+  try {
+    window.comb.load({ nodes: [window.node("a"), window.node("b", 300)], edges } as never);
+    return null;
+  } catch (error) {
+    return (error as { problem?: unknown }).problem ?? null;
+  }
+}
+
+for (const { kind, problem } of EDGE_REFUSALS) {
+  test(`load refuses an edge (${kind}) as before, its edges crossing as columns, and the previous graph stays drawn`, async ({
+    page,
+  }) => {
+    // Verifies: ADR-0034
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await open(page);
+    const before = await drawnGraph(page);
+    const refused = await page.evaluate(edgeRefusal, kind);
+    await frames(page);
+    expect(errors).toEqual([]);
+    expect(refused).toStrictEqual(problem);
+    expect(await drawnGraph(page)).toEqual(before);
+  });
+}
+
+test("load takes an edge with every field, its edges crossing as columns", async ({ page }) => {
+  // Verifies: ADR-0034
+  await open(page);
+  const refused = await page.evaluate(edgeRefusal, "none");
+  expect(refused).toBeNull();
+});
 
 for (const { name, graph, problem } of MALFORMED) {
   test(`load refuses ${name} with a GraphDataError, and the previous graph stays drawn`, async ({
@@ -203,31 +441,31 @@ for (const { name, graph, problem } of MALFORMED) {
     await open(page);
     // At the near level, with the origin in view, so that an edge label the store kept is drawn.
     await setViewport(page, { x: 100, y: 100, scale: 1 });
-    const before = await drawn(page);
+    const before = await drawnGraph(page);
     expect(before.nodes.length).toBeGreaterThan(0);
-    const refused = await page.evaluate((graph) => {
+    const refused = await page.evaluate((data) => {
       try {
-        window.comb.load(graph);
+        window.comb.load(data);
         return null;
       } catch (error) {
-        const { name, problem } = error as Error & { problem: unknown };
-        return { name, problem };
+        const { name: thrown, problem: found } = error as Error & { problem: unknown };
+        return { name: thrown, problem: found };
       }
     }, graph);
     await frames(page);
     // First, since a value the check let through throws in the next frame, not in `load`.
     expect(errors).toEqual([]);
     expect(refused).toEqual({ name: "GraphDataError", problem });
-    expect(await drawn(page)).toEqual(before);
+    expect(await drawnGraph(page)).toEqual(before);
   });
 }
 
 test("updateNode with an identifier the graph does not hold throws a GraphDataError naming it, and changes nothing", async ({
   page,
 }) => {
-  // Verifies: Q-7
+  // Verifies: Q-7, ADR-0028
   await open(page);
-  const before = await drawn(page);
+  const before = await drawnGraph(page);
   const result = await page.evaluate(async () => {
     await window.comb.whenRendered();
     // Two frames with nothing to draw, so that a render the call would schedule is counted.
@@ -236,7 +474,9 @@ test("updateNode with an identifier the graph does not hold throws a GraphDataEr
     const renders = window.renderCount();
     let refused = null;
     try {
-      window.comb.updateNode("no-such-node", { title: "Renamed" });
+      window.comb.updateNode("no-such-node", {
+        content: [[{ kind: "text", role: "title", text: "Renamed" }]],
+      });
     } catch (error) {
       const { name, problem } = error as Error & { problem: unknown };
       refused = { name, problem };
@@ -249,35 +489,48 @@ test("updateNode with an identifier the graph does not hold throws a GraphDataEr
     refused: { name: "GraphDataError", problem: { kind: "unknownNode", node: "no-such-node" } },
     rendered: 0,
   });
-  expect(await drawn(page)).toEqual(before);
+  expect(await drawnGraph(page)).toEqual(before);
 });
 
 /** Each kind of patch `updateNode` refuses, with the problem it reports for it. */
 const PATCHES: { patch: unknown; problem: unknown }[] = [
   { patch: { id: "b" }, problem: { kind: "unknownPatchField", node: "a", field: "id" } },
   { patch: { width: -1 }, problem: { kind: "unknownPatchField", node: "a", field: "width" } },
-  { patch: { title: 5 }, problem: { kind: "invalidTitle", node: "a" } },
-  { patch: { title: null }, problem: { kind: "invalidTitle", node: "a" } },
-  { patch: [["title", "a"]], problem: expect.objectContaining({ kind: "malformed" }) },
+  {
+    patch: { content: [[{ kind: "text", role: "title", text: 5 }]] },
+    problem: { kind: "invalidContentText", node: "a", row: 0, column: 0, field: "text" },
+  },
+  {
+    patch: { content: null },
+    problem: {
+      kind: "invalidField",
+      list: "nodes",
+      index: 0,
+      id: "a",
+      field: "content",
+      expected: ROWS,
+    },
+  },
+  { patch: [["content", titled("a")]], problem: expect.objectContaining({ kind: "malformed" }) },
 ];
 
 for (const { patch, problem } of PATCHES) {
   test(`updateNode refuses the patch ${JSON.stringify(patch)} with a GraphDataError, and changes nothing`, async ({
     page,
   }) => {
-    // Verifies: Q-7, ADR-0009
+    // Verifies: Q-7, ADR-0028
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
     await page.evaluate(async () => {
       window.comb.load({
-        nodes: [{ id: "a", title: "a", x: 0, y: 0, width: 220, height: 64 }],
+        nodes: [window.node("a")],
         edges: [],
       });
       await window.comb.whenRendered();
     });
-    const before = await drawn(page);
-    const result = await page.evaluate(async (patch) => {
+    const before = await drawnGraph(page);
+    const result = await page.evaluate(async (changes) => {
       // Two frames with nothing to draw, so that a render the call would schedule is counted;
       // the store schedules one for any change, so none means its nodes stayed as they were.
       const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
@@ -285,17 +538,17 @@ for (const { patch, problem } of PATCHES) {
       const renders = window.renderCount();
       let refused = null;
       try {
-        window.comb.updateNode("a", patch as { title: string });
+        window.comb.updateNode("a", changes as NodePatch);
       } catch (error) {
-        const { name, problem } = error as Error & { problem: unknown };
-        refused = { name, problem };
+        const { name, problem: found } = error as Error & { problem: unknown };
+        refused = { name, problem: found };
       }
       await frame();
       await frame();
       return { refused, rendered: window.renderCount() - renders };
     }, patch);
     expect(result).toEqual({ refused: { name: "GraphDataError", problem }, rendered: 0 });
-    expect(await drawn(page)).toEqual(before);
+    expect(await drawnGraph(page)).toEqual(before);
     expect(errors).toEqual([]);
   });
 }
@@ -322,6 +575,8 @@ function installGenerator(): void {
   const fail = () => {
     throw new Error("host code");
   };
+  /** One row of one title, `text`. */
+  const title = (text: unknown) => [[{ kind: "text", role: "title", text }]];
   let deep: unknown[] = [];
   for (let i = 0; i < 200_000; i++) deep = [deep];
   const odd = [
@@ -337,11 +592,10 @@ function installGenerator(): void {
     const ids = Array.from({ length: 1 + Math.floor(random() * 3) }, (_, k) => `n${k}`);
     const nodes = ids.map((id) => ({
       id: mostly(() => id, ["n0", ...odd]),
-      title: mostly(() => pick(["", "Revenue", "\u{1F600}"]), odd),
+      content: mostly(() => title(mostly(() => pick(["", "Revenue", "\u{1F600}"]), odd)), odd),
       x: mostly(() => random() * 600 - 100, odd),
       y: mostly(() => random() * 300 - 100, odd),
       width: mostly(() => random() * 220, odd),
-      height: mostly(() => random() * 64, odd),
     }));
     const label = () => ({
       text: mostly(() => pick(["", "ok", "x".repeat(40)]), odd),
@@ -359,7 +613,7 @@ function installGenerator(): void {
       label: mostly(label, [undefined, null]),
     }));
     const patch = mostly(
-      () => ({ title: mostly(() => "Renamed", odd) }),
+      () => ({ content: mostly(() => title("Renamed"), odd) }),
       [{ id: "z" }, { width: -1 }, {}],
     );
     return { graph: { nodes, edges } as unknown as GraphData, patch };
@@ -398,7 +652,7 @@ async function runCases(cases: number) {
       continue;
     }
     try {
-      comb.updateNode(graph.nodes[0]!.id, patch as { title: string });
+      comb.updateNode(graph.nodes[0]!.id, patch as NodePatch);
     } catch (error) {
       if ((error as Error).name !== "GraphDataError")
         tally.other.push(`updateNode ${i}: ${String(error)}`);
@@ -414,7 +668,7 @@ async function runCases(cases: number) {
 test("random graph data and patches through the public interface end in a GraphDataError or a drawn graph, and no page error", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0028
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -436,7 +690,7 @@ type Read = { refused: unknown; reads: number; titles: unknown[] };
 test("load reads the host's graph data once and keeps what the bridge checked", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0028
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -449,11 +703,11 @@ test("load reads the host's graph data once and keeps what the bridge checked", 
       enumerable: true,
       get: () => (reads++ === 0 ? 0x123456 : -5),
     });
-    const node = (id: string, x: number) => ({ id, title: id, x, y: 0, width: 220, height: 64 });
+    const nodeAt = (id: string, x: number) => window.node(id, x);
     let refused = null;
     try {
       window.comb.load({
-        nodes: [node("a", 0), node("b", 300)],
+        nodes: [nodeAt("a", 0), nodeAt("b", 300)],
         edges: [{ id: "e", source: "a", target: "b", label }],
       });
     } catch (error) {
@@ -471,7 +725,7 @@ test("load reads the host's graph data once and keeps what the bridge checked", 
  *  what `updateNode` does with it. */
 const READ_ONCE: { name: string; kind: "turning" | "map" | "throwing"; expected: Read }[] = [
   {
-    name: "a title that turns into a number on its second read",
+    name: "content that turns into a number on its second read",
     kind: "turning",
     expected: { refused: null, reads: 1, titles: ["Renamed"] },
   },
@@ -498,21 +752,22 @@ const READ_ONCE: { name: string; kind: "turning" | "map" | "throwing"; expected:
 /** In the page: loads one node `a`, hands `updateNode` the patch of `kind`, and reports. */
 async function patchOnce(kind: (typeof READ_ONCE)[number]["kind"]): Promise<Read> {
   window.comb.load({
-    nodes: [{ id: "a", title: "a", x: 0, y: 0, width: 220, height: 64 }],
+    nodes: [window.node("a")],
     edges: [],
   });
   let reads = 0;
+  const renamed: NodeContent = [[{ kind: "text", role: "title", text: "Renamed" }]];
   const patches = {
     turning: () => ({
-      get title() {
-        return reads++ === 0 ? "Renamed" : (5 as unknown as string);
+      get content() {
+        return reads++ === 0 ? renamed : (5 as unknown as NodeContent);
       },
     }),
-    map: () => new Map([["title", "Renamed"]]) as unknown as { title: string },
+    map: () => new Map([["content", renamed]]) as unknown as NodePatch,
     throwing: () => ({
-      get title(): string {
+      get content(): NodeContent {
         reads++;
-        throw new Error("no title");
+        throw new Error("no content");
       },
     }),
   };
@@ -530,7 +785,7 @@ for (const { name, kind, expected } of READ_ONCE) {
   test(`updateNode reads the host's patch once and keeps what the bridge checked: ${name}`, async ({
     page,
   }) => {
-    // Verifies: Q-7, ADR-0009
+    // Verifies: Q-7, ADR-0028
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
@@ -544,21 +799,22 @@ for (const { name, kind, expected } of READ_ONCE) {
 test("load copies nodes out of a list whose own map would hand over the host's objects", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0028
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
   const read: Read = await page.evaluate(async () => {
-    // A title that is a string on its first read and a number after it, in a list whose `map`
-    // returns the host's own node, not the copy it was asked for.
+    // Content that is a list of rows on its first read and a number after it, in a list whose
+    // `map` returns the host's own node, not the copy it was asked for.
     let reads = 0;
-    const node = { id: "a", x: 0, y: 0, width: 220, height: 64 };
-    Object.defineProperty(node, "title", {
+    const { id, x, y, width, content } = window.node("a");
+    const nodeAt = { id, x, y, width };
+    Object.defineProperty(nodeAt, "content", {
       enumerable: true,
-      get: () => (reads++ === 0 ? "a" : 5),
+      get: () => (reads++ === 0 ? content : 5),
     });
-    const nodes = [node];
-    Object.defineProperty(nodes, "map", { value: () => [node] });
+    const nodes = [nodeAt];
+    Object.defineProperty(nodes, "map", { value: () => [nodeAt] });
     window.comb.load({ nodes: nodes as never, edges: [] });
     await window.comb.whenRendered();
     return { refused: null, reads, titles: window.inspect().nodes.map(({ title }) => title) };
@@ -571,28 +827,30 @@ test("load copies nodes out of a list whose own map would hand over the host's o
 test("updateNode refuses thousands of patches whose getter throws, and the engine still works", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0028
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
   const result = await page.evaluate(async () => {
     window.comb.load({
-      nodes: [{ id: "a", title: "a", x: 0, y: 0, width: 220, height: 64 }],
+      nodes: [window.node("a")],
       edges: [],
     });
     const kinds = new Set<unknown>();
     for (let i = 0; i < 5000; i++) {
       try {
         window.comb.updateNode("a", {
-          get title(): string {
-            throw new Error("no title");
+          get content(): NodeContent {
+            throw new Error("no content");
           },
         });
       } catch (error) {
         kinds.add((error as Error & { problem: { kind: string } }).problem.kind);
       }
     }
-    window.comb.updateNode("a", { title: "Renamed" });
+    window.comb.updateNode("a", {
+      content: [[{ kind: "text", role: "title", text: "Renamed" }]],
+    });
     await window.comb.whenRendered();
     return { kinds: [...kinds], titles: window.inspect().nodes.map(({ title }) => title) };
   });
@@ -601,7 +859,7 @@ test("updateNode refuses thousands of patches whose getter throws, and the engin
 });
 
 test("load draws a title and a label text of 1,000 UTF-16 code units", async ({ page }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0028
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -614,18 +872,20 @@ test("load draws a title and a label text of 1,000 UTF-16 code units", async ({ 
     },
     {
       ...labelled({ text: "\u{1F600}".repeat(500) }),
-      nodes: [{ ...node("a"), title }, node("b", 300)],
+      nodes: [{ ...node("a"), content: titled(title) }, node("b", 300)],
     },
   );
   await frames(page);
   expect(errors).toEqual([]);
-  expect((await drawn(page)).nodes.map(({ title }) => title?.length)).toEqual([1000, 1]);
+  expect((await drawnGraph(page)).nodes.map(({ title: shown }) => shown?.length)).toEqual([
+    1000, 1,
+  ]);
 });
 
 test("load refuses a million and one nodes by their count, before it copies any", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0028
   await open(page);
   const result = await page.evaluate(() => {
     const nodes = new Array(1_000_001);
@@ -698,36 +958,41 @@ type Hostile = Window & { hostileValue: (kind: (typeof HOSTILE)[number]) => unkn
  *  reports what the first call threw and what the canvas drew after the second. */
 async function hostile([kind, place]: [(typeof HOSTILE)[number], (typeof PLACES)[number]]) {
   const value = (window as unknown as Hostile).hostileValue(kind) as never;
-  const node = (id: string) => ({ id, title: id, x: 0, y: 0, width: 220, height: 64 });
+  const nodeAt = (id: string) => window.node(id);
   const label = { text: "e", t: 0.5, offset: 0 };
-  const edge = { id: "e", source: "a", target: "b", label };
+  const anEdge = { id: "e", source: "a", target: "b", label };
   const calls = {
-    title: () => window.comb.load({ nodes: [{ ...node("a"), title: value }], edges: [] }),
-    id: () => window.comb.load({ nodes: [{ ...node("a"), id: value }], edges: [] }),
-    x: () => window.comb.load({ nodes: [{ ...node("a"), x: value }], edges: [] }),
+    title: () =>
+      window.comb.load({
+        nodes: [{ ...nodeAt("a"), content: [[{ kind: "text", role: "title", text: value }]] }],
+        edges: [],
+      }),
+    id: () => window.comb.load({ nodes: [{ ...nodeAt("a"), id: value }], edges: [] }),
+    x: () => window.comb.load({ nodes: [{ ...nodeAt("a"), x: value }], edges: [] }),
     text: () =>
       window.comb.load({
-        nodes: [node("a"), node("b")],
-        edges: [{ ...edge, label: { ...label, text: value } }],
+        nodes: [nodeAt("a"), nodeAt("b")],
+        edges: [{ ...anEdge, label: { ...label, text: value } }],
       }),
     background: () =>
       window.comb.load({
-        nodes: [node("a"), node("b")],
-        edges: [{ ...edge, label: { ...label, background: value } }],
+        nodes: [nodeAt("a"), nodeAt("b")],
+        edges: [{ ...anEdge, label: { ...label, background: value } }],
       }),
     nodes: () => window.comb.load({ nodes: value, edges: [] }),
     graph: () => window.comb.load(value),
     patch: () => window.comb.updateNode("a", value),
-    patchTitle: () => window.comb.updateNode("a", { title: value }),
+    patchTitle: () =>
+      window.comb.updateNode("a", { content: [[{ kind: "text", role: "title", text: value }]] }),
   };
-  window.comb.load({ nodes: [node("a")], edges: [] });
+  window.comb.load({ nodes: [nodeAt("a")], edges: [] });
   let first: unknown = "accepted";
   try {
     calls[place]();
   } catch (error) {
     first = (error as Error).name;
   }
-  window.comb.load({ nodes: [node("ok")], edges: [] });
+  window.comb.load({ nodes: [nodeAt("ok")], edges: [] });
   await window.comb.whenRendered();
   return { first, titles: window.inspect().nodes.map(({ title }) => title) };
 }
@@ -736,7 +1001,7 @@ for (const kind of HOSTILE) {
   test(`a hostile value (${kind}) anywhere in graph data or a patch is refused, and the engine still loads`, async ({
     page,
   }) => {
-    // Verifies: Q-7, ADR-0009
+    // Verifies: Q-7, ADR-0028
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
@@ -764,14 +1029,16 @@ type RefusalKind =
   | "hugeKey"
   | "thrownProxy"
   | "loneSurrogateId"
-  | "loneSurrogateTitle";
+  | "loneSurrogateTitle"
+  | "loneSurrogateKey";
 
 /** In the page: loads one node `a`, provokes the refusal of `kind`, and reports what it threw, how
  *  long it took, and what the canvas drew after a valid load that follows it. */
 async function refusal(kind: RefusalKind) {
-  const node = (id: string) => ({ id, title: id, x: 0, y: 0, width: 220, height: 64 });
-  window.comb.load({ nodes: [node("a")], edges: [] });
+  const nodeAt = (id: string) => window.node(id);
+  window.comb.load({ nodes: [nodeAt("a")], edges: [] });
   const big = "\u4e00".repeat(50_000_000);
+  const textOf = (text: string) => [[{ kind: "text" as const, role: "title" as const, text }]];
   // A thrown value whose prototype chain runs the host's code.
   const thrown = new Proxy(
     {},
@@ -782,10 +1049,13 @@ async function refusal(kind: RefusalKind) {
     },
   );
   const calls = {
-    bigX: () => window.comb.load({ nodes: [{ ...node("a"), x: big as never }], edges: [] }),
+    bigX: () => window.comb.load({ nodes: [{ ...nodeAt("a"), x: big as never }], edges: [] }),
     sharedTitle: () =>
       window.comb.load({
-        nodes: Array.from({ length: 10_000 }, (_, i) => ({ ...node(`n${i}`), title: big })),
+        nodes: Array.from({ length: 10_000 }, (_, i) => ({
+          ...nodeAt(`n${i}`),
+          content: textOf(big),
+        })),
         edges: [],
       }),
     symbolKey: () => window.comb.updateNode("a", { [Symbol("extra")]: 1 } as never),
@@ -794,14 +1064,15 @@ async function refusal(kind: RefusalKind) {
     // The bridge would read both as "a\uFFFD" and join the edge to a node the store's edge misses.
     loneSurrogateId: () =>
       window.comb.load({
-        nodes: [node("a\uD800"), node("b")],
+        nodes: [nodeAt("a\uD800"), nodeAt("b")],
         edges: [{ id: "e", source: "a\uD801", target: "b" }],
       }),
-    loneSurrogateTitle: () => window.comb.updateNode("a", { title: "x\uDC00" }),
+    loneSurrogateTitle: () => window.comb.updateNode("a", { content: textOf("x\uDC00") }),
+    loneSurrogateKey: () => window.comb.updateNode("a", { "x\uDC00": 1 } as never),
     thrownProxy: () =>
       window.comb.load({
         nodes: [
-          Object.defineProperty(node("a"), "title", {
+          Object.defineProperty(nodeAt("a"), "content", {
             get: () => {
               throw thrown;
             },
@@ -821,7 +1092,7 @@ async function refusal(kind: RefusalKind) {
         : `untyped ${typeof error}`;
   }
   const ms = performance.now() - start;
-  window.comb.load({ nodes: [node("ok")], edges: [] });
+  window.comb.load({ nodes: [nodeAt("ok")], edges: [] });
   await window.comb.whenRendered();
   return { problem, ms, titles: window.inspect().nodes.map(({ title }) => title) };
 }
@@ -842,7 +1113,14 @@ const REFUSALS: { name: string; kind: RefusalKind; problem: unknown }[] = [
   {
     name: "a title of 50 million characters shared by 10,000 nodes",
     kind: "sharedTitle",
-    problem: { kind: "titleTooLong", node: "n0", limit: 1000 },
+    problem: {
+      kind: "contentTextTooLong",
+      node: "n0",
+      row: 0,
+      column: 0,
+      field: "text",
+      limit: 1000,
+    },
   },
   {
     name: "a patch with a Symbol key",
@@ -873,7 +1151,14 @@ const REFUSALS: { name: string; kind: RefusalKind; problem: unknown }[] = [
   {
     name: "a title with a lone surrogate",
     kind: "loneSurrogateTitle",
-    problem: { kind: "invalidTitle", node: "a" },
+    problem: { kind: "invalidContentText", node: "a", row: 0, column: 0, field: "text" },
+  },
+  {
+    // The bridge crate reads the lone surrogate as U+FFFD, so the field names the key as a Rust
+    // string can carry it.
+    name: "a patch with a key that holds a lone surrogate",
+    kind: "loneSurrogateKey",
+    problem: { kind: "unknownPatchField", node: "a", field: "x\uFFFD" },
   },
   {
     name: "a getter that throws a Proxy",
@@ -886,7 +1171,7 @@ for (const { name, kind, problem } of REFUSALS) {
   test(`refuses ${name} quickly with a typed problem, and the engine still loads`, async ({
     page,
   }) => {
-    // Verifies: Q-7, ADR-0009
+    // Verifies: Q-7, ADR-0028
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
@@ -899,7 +1184,7 @@ for (const { name, kind, problem } of REFUSALS) {
 }
 
 test("load draws identifiers of 256 characters", async ({ page }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0028
   await open(page);
   const a = "a".repeat(256);
   const b = "b".repeat(256);
@@ -910,7 +1195,7 @@ test("load draws identifiers of 256 characters", async ({ page }) => {
     },
     { nodes: [node(a), node(b, 300)], edges: [edge("e".repeat(256), a, b)] },
   );
-  const drawnNow = await drawn(page);
+  const drawnNow = await drawnGraph(page);
   expect(drawnNow.nodes.map(({ id }) => id.length)).toEqual([256, 256]);
   expect(drawnNow.edges.map((id) => id.length)).toEqual([256]);
 });
@@ -919,7 +1204,7 @@ test("load draws identifiers of 256 characters", async ({ page }) => {
  *  units each, then, before a frame draws them, a graph of one node; reports the problem and the
  *  time of the first load, and what the canvas drew. */
 async function budgeted(length: number) {
-  const node = (id: string, x: number) => ({ id, title: id, x, y: 0, width: 220, height: 64 });
+  const nodeAt = (id: string, x: number) => window.node(id, x);
   const edges = Array.from({ length: 1_000_000 }, (_, i) => ({
     id: String(i).padStart(length, "e"),
     source: "a",
@@ -928,12 +1213,12 @@ async function budgeted(length: number) {
   const start = performance.now();
   let problem: unknown = null;
   try {
-    window.comb.load({ nodes: [node("a", 0), node("b", 300)], edges });
+    window.comb.load({ nodes: [nodeAt("a", 0), nodeAt("b", 300)], edges });
   } catch (error) {
     problem = (error as Error & { problem: unknown }).problem;
   }
   const ms = performance.now() - start;
-  window.comb.load({ nodes: [node("ok", 0)], edges: [] });
+  window.comb.load({ nodes: [nodeAt("ok", 0)], edges: [] });
   await window.comb.whenRendered();
   return { problem, ms, titles: window.inspect().nodes.map(({ title }) => title) };
 }
@@ -941,7 +1226,7 @@ async function budgeted(length: number) {
 test("load takes a million edges whose identifiers hold 63 million code units, and refuses 66 million by the budget, quickly", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0028
   test.setTimeout(120_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -964,28 +1249,102 @@ test("load takes a million edges whose identifiers hold 63 million code units, a
   expect(beyond.ms).toBeLessThan(within.ms / 2);
 });
 
-/** In the page: provokes each kind of `GraphDataProblem` through `load` or `updateNode`, one call
- *  each after a valid load, and reports the kind of problem each threw. Its table is typed by the
- *  kinds, so that a kind the union gains or loses fails the type check. */
-async function everyKind() {
-  const node = (id: string) => ({ id, title: id, x: 0, y: 0, width: 220, height: 64 });
-  const two = [node("a"), node("b")];
-  const edge = { id: "e", source: "a", target: "b" };
-  const label = { text: "e", t: 0.5, offset: 0 };
+/** In the page: loads 600,000 nodes, each with one text of 1,000 code units, or, with `edges`,
+ *  two nodes and 600,000 edges between them whose label texts hold 1,000 each, a column of
+ *  600,000,000 code units beyond V8's longest string; then a graph of one node. Reports the
+ *  problem of the first load, whether the canvas drew its nodes, and the time it took. */
+async function atTheTextLimit(edges: boolean) {
+  const count = 600_000;
+  const text = "x".repeat(1000);
+  const nodeAt = (id: string, x: number) => window.node(id, x);
+  const graph = edges
+    ? {
+        nodes: [nodeAt("a", 0), nodeAt("b", 300)],
+        edges: Array.from({ length: count }, (_, i) => ({
+          id: `e${i}`,
+          source: "a",
+          target: "b",
+          label: { text, t: 0.5, offset: 0 },
+        })),
+      }
+    : {
+        nodes: Array.from({ length: count }, (_, i) => ({
+          ...nodeAt(`n${i}`, i * 200),
+          content: [[{ kind: "text" as const, role: "title" as const, text }]],
+        })),
+        edges: [],
+      };
+  const start = performance.now();
+  let problem: unknown = null;
+  try {
+    window.comb.load(graph);
+  } catch (error) {
+    problem = (error as Error & { problem?: unknown }).problem ?? String(error);
+  }
+  const ms = performance.now() - start;
+  const drawn = window.inspect().nodes.length > 0;
+  window.comb.load({ nodes: [nodeAt("ok", 0)], edges: [] });
+  await window.comb.whenRendered();
+  return { problem, drawn, ms };
+}
+
+test("load takes 600,000 titles and 600,000 label texts of 1,000 code units, their columns in pieces", async ({
+  page,
+}) => {
+  // Verifies: ADR-0034
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page);
+  const titles = await page.evaluate(atTheTextLimit, false);
+  const labels = await page.evaluate(atTheTextLimit, true);
+  console.log(
+    `600,000 texts of 1,000: ${titles.ms.toFixed(0)} ms titles, ${labels.ms.toFixed(0)} ms labels`,
+  );
+  expect(errors).toEqual([]);
+  expect(titles).toEqual({ problem: null, drawn: true, ms: titles.ms });
+  expect(labels).toEqual({ problem: null, drawn: true, ms: labels.ms });
+});
+
+/** The calls `installKinds` leaves in the page, one per kind of `GraphDataProblem`. */
+type Kinds = Window & { kindCalls: Record<string, () => void> };
+
+/** In the page: installs a call that provokes each kind of `GraphDataProblem` through `load` or an
+ *  edit, which `everyKind` makes. Its table is typed by the kinds, so that a kind the union gains
+ *  or loses fails the type check; it leaves out `contentBudgetExceeded`, more text than a browser
+ *  test holds, which the bridge crate's tests decide. */
+function installKinds() {
+  const nodeAt = (id: string) => window.node(id);
+  const [two, anEdge] = [[nodeAt("a"), nodeAt("b")], { id: "e", source: "a", target: "b" }];
+  const [label, long] = [{ text: "e", t: 0.5, offset: 0 }, "x".repeat(256)];
   const load = (graph: unknown) => () => window.comb.load(graph as GraphData);
-  const nodes = (fields: object) => load({ nodes: [{ ...node("a"), ...fields }], edges: [] });
-  const edges = (fields: object) => load({ nodes: two, edges: [{ ...edge, ...fields }] });
-  const long = "x".repeat(256);
-  const calls: Record<GraphDataProblem["kind"], () => void> = {
+  const nodes = (fields: object) => load({ nodes: [{ ...nodeAt("a"), ...fields }], edges: [] });
+  const edges = (fields: object) => load({ nodes: two, edges: [{ ...anEdge, ...fields }] });
+  const title = { kind: "text", role: "title", text: "a" };
+  const element = (fields: object) => nodes({ content: [[{ ...title, ...fields }]] });
+  const segment = { fraction: 0.4, color: 0x22c55e };
+  const calls: Record<Exclude<GraphDataProblem["kind"], "contentBudgetExceeded">, () => void> = {
     malformed: load(null),
     invalidField: nodes({ x: "1" }),
     nonFiniteCoordinate: nodes({ x: Number.POSITIVE_INFINITY }),
+    beyondWorld: nodes({ x: 3e38, width: 3e38 }),
     invalidSize: nodes({ width: -1 }),
-    invalidTitle: nodes({ title: 5 }),
-    titleTooLong: nodes({ title: "x".repeat(1001) }),
+    invalidContentShape: nodes({ content: [5] }),
+    tooManyRows: nodes({ content: Array.from({ length: 9 }, () => [title]) }),
+    tooManyColumns: nodes({ content: [Array.from({ length: 7 }, () => title)] }),
+    invalidElementKind: element({ kind: "chart" }),
+    invalidWeight: element({ weight: 0 }),
+    invalidRole: element({ role: "headline" }),
+    invalidDirection: element({ kind: "metric", trend: { text: "x", direction: "sideways" } }),
+    invalidContentText: element({ text: 5 }),
+    contentTextTooLong: element({ text: "x".repeat(1001) }),
+    invalidContentColor: element({ kind: "badge", color: 0x1000000 }),
+    tooManySegments: element({ kind: "progress", segments: Array(9).fill(segment) }),
+    invalidFraction: element({ kind: "progress", segments: [{ ...segment, fraction: -1 }] }),
+    fractionsPastOne: element({ kind: "progress", segments: [segment, segment, segment] }),
     unknownPatchField: () => window.comb.updateNode("a", { id: "b" } as never),
-    duplicateNode: load({ nodes: [node("a"), node("a")], edges: [] }),
-    duplicateEdge: load({ nodes: two, edges: [edge, edge] }),
+    duplicateNode: load({ nodes: [nodeAt("a"), nodeAt("a")], edges: [] }),
+    duplicateEdge: load({ nodes: two, edges: [anEdge, anEdge] }),
     missingNode: edges({ target: "z" }),
     nonFiniteLabel: edges({ label: { ...label, t: Number.NaN } }),
     invalidLabelText: edges({ label: { ...label, text: 5 } }),
@@ -997,14 +1356,28 @@ async function everyKind() {
     idTooLong: nodes({ id: long + "x" }),
     // 250,001 identifiers of 256 code units hold more than 64,000,000 together.
     idBudgetExceeded: load({
-      nodes: Array.from({ length: 250_001 }, () => node(long)),
+      nodes: Array.from({ length: 250_001 }, () => nodeAt(long)),
       edges: [],
     }),
-    unknownNode: () => window.comb.updateNode("z", { title: "Z" }),
+    unknownNode: () => window.comb.updateNode("z", { content: [] }),
+    unknownEdge: () => window.comb.removeEdges(["z"]),
+    selfEdge: () => window.comb.addEdge({ id: "e", source: "a", target: "a" }),
+    unknownEdgePatchField: () => {
+      window.comb.addNode(nodeAt("b"));
+      window.comb.addEdge({ id: "e", source: "a", target: "b" });
+      window.comb.updateEdge("e", { width: 2 } as never);
+    },
   };
+  (window as unknown as Kinds).kindCalls = calls;
+}
+
+/** In the page: makes each call `installKinds` left, one after a valid load each, and reports the
+ *  kind of problem each threw. */
+function everyKind() {
+  const nodeAt = (id: string) => window.node(id);
   const thrown: Record<string, unknown> = {};
-  for (const [kind, call] of Object.entries(calls)) {
-    window.comb.load({ nodes: [node("a")], edges: [] });
+  for (const [kind, call] of Object.entries((window as unknown as Kinds).kindCalls)) {
+    window.comb.load({ nodes: [nodeAt("a")], edges: [] });
     try {
       call();
       thrown[kind] = "accepted";
@@ -1018,13 +1391,16 @@ async function everyKind() {
   return thrown;
 }
 
-test("load and updateNode throw every kind of GraphDataProblem", async ({ page }) => {
-  // Verifies: Q-3, Q-7, ADR-0010
+test("load and the methods that edit the graph throw every kind of GraphDataProblem", async ({
+  page,
+}) => {
+  // Verifies: Q-3, Q-7, ADR-0034
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
+  await page.evaluate(installKinds);
   const thrown = await page.evaluate(everyKind);
   expect(errors).toEqual([]);
   expect(thrown).toEqual(Object.fromEntries(Object.keys(thrown).map((kind) => [kind, kind])));
-  expect(Object.keys(thrown).length).toBe(20);
+  expect(Object.keys(thrown).length).toBe(35);
 });

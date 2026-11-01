@@ -11,12 +11,6 @@ explicit and reviewable.
 > For agent instructions, see [`AGENTS.md`](AGENTS.md), the single source of truth for all coding
 > agents.
 
-> [!NOTE]
-> **This project still carries its template setup.** The one-time steps that turn the scaffold
-> into your own project are in [`TEMPLATE-SETUP.md`](TEMPLATE-SETUP.md); ask your agent to run the
-> `setup-project` skill to be walked through them, one question at a time. Delete that file and
-> this note once you are through them.
-
 ## Overview
 
 Comb draws nodes, edges, connectors, and edge labels on a WebGL2 canvas with PixiJS and lets the
@@ -35,12 +29,11 @@ statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), th
 
 ## Getting Started
 
-> Setting the project up for the first time? The one-time steps are in
-> [`TEMPLATE-SETUP.md`](TEMPLATE-SETUP.md). Delete this paragraph together with that file.
-
 1. Open the repository in VS Code and choose **Reopen in Container**. The Dev Container and the
    preconfigured agent extensions build automatically, and the container enables the repository's
-   git hooks ([`.githooks/`](.githooks/)): no commit on `main`, and the checks run before a push.
+   git hooks ([`.githooks/`](.githooks/)): no commit on `main`, the checks run before a push, and
+   the documentation checks run before git records a merge commit on `main` itself, as `git merge`
+   and a `git pull` of a diverged `main` do. A fast-forward and a rebase run no hook.
    Working outside the container? Enable them yourself, once per clone:
    `git config core.hooksPath .githooks`.
 2. Authenticate your coding agent inside the container (for Claude Code: `claude login`).
@@ -50,19 +43,34 @@ statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), th
 
 Inside the Dev Container, which provides Bun, Rust, wasm-pack, and Chromium
 ([ADR-0008](docs/adr/0008-toolchain.md), [ADR-0014](docs/adr/0014-dev-container-toolchain.md)).
-[`scripts/check-code.sh`](scripts/check-code.sh) runs the first three in order, then the
-structural test of [ADR-0009](docs/adr/0009-functional-core-imperative-shell.md) and the bundle
-budget of Q-3 (`bun run build:lib`, at most 300 kB gzipped without PixiJS).
+[`scripts/check-code.sh`](scripts/check-code.sh) runs, in order, the structural check of
+[ADR-0028](docs/adr/0028-the-graph-lies-within-a-world.md), the dependency check, the overview
+check of [ADR-0001](docs/adr/0001-agent-governance-model.md), and the check that no comment of a
+Rust or TypeScript source runs past 100 columns, each after its self-test, and the self-test of the
+engine check; then the first three below,
+build, lint, and test; then the bundle budget of Q-3 after its self-test (`bun run build:lib`, at
+most 300 kB gzipped without PixiJS).
 
 - **Build:** `bun run build` — the engine with wasm-pack, the type check, and the example
-- **Test:** `bun run test` — `cargo test`, `bun test`, and the Playwright browser tests
+- **Test:** `bun run test` — `cargo test`, `bun test`, and the Playwright browser tests; it
+  refuses to start on a missing engine or one older than a file under `crates/` that a build
+  reads, than `Cargo.toml`, or than `Cargo.lock` (`scripts/check-engine.sh`), naming the file and
+  `bun run build:engine`; so does `bun run dev`, which serves the example to Playwright
 - **Lint:** `bun run lint` — rustfmt, clippy, ESLint, and Prettier
 - **Run:** `bun run example`, or the launch configuration **Example: metric tree** in VS Code,
   which opens the example in the host's browser; `?copies=3334` opens it with 50,010 nodes
-- **Benchmark:** `bun run bench` — the example at 50,010 nodes and edges in Chromium: time to the
-  first frame and p95 frame times of drag, pan, and zoom against Q-1 and Q-2, written to
-  `bench-results/latest.json`. `BENCH_HEADED=1` opens a window that uses the machine's GPU, which
-  is how the numbers on the reference machine are taken; `BENCH_COPIES` sets another size.
+- **Benchmark:** `bun run bench` — the example at 50,010 nodes and edges, each node with the
+  content of its type, in Chromium: time to the first frame and p95 frame times of drag, pan,
+  zoom, and edits against Q-1 and Q-2, at the fitted view the example opens with and at each level
+  of detail (`drag near` … `edit middle`), written with the content loaded, nodes by type and
+  elements by kind, to `bench-results/latest.json`. The edits at the fitted view begin at its scale
+  and position wherever the zoom before them stopped, and `edit.scale` records the scale they ran
+  at. At 50,010 nodes the fitted view draws the far level, so `drag`, `pan`, and `edit` are far's
+  and far adds only `zoom far`; `fitted` in the result names the level the fitted view draws, and
+  a smaller graph whose fitted view is nearer times all four gestures at far as well. A gesture
+  the kind's baseline lacks is reported as new and not judged. `BENCH_HEADED=1` opens a window
+  that uses the machine's GPU, which is how the numbers on the reference machine are taken;
+  `BENCH_COPIES` sets another size.
   After the load and the first frame, before the gestures, each run times a fixed reference
   workload in the same page (`bench/reference.ts`: a JavaScript loop, a WebAssembly loop, and a
   WebGL2 draw of a fixed mesh), recorded as `reference` with its parts. The **Benchmark** workflow
@@ -107,10 +115,6 @@ budget of Q-3 (`bun run build:lib`, at most 300 kB gzipped without PixiJS).
 
 ## Usage
 
-<!-- Once there is something to use, show how to use the built software: the primary commands or
-     API, a minimal example, and the expected output. Keep build/test/run mechanics in the section
-     above; this section is about using the result, not producing it. -->
-
 A host application gives Comb an element to fill and the engine's WebAssembly, hands it the
 graph, and keeps the forms:
 
@@ -123,8 +127,8 @@ const comb = await createComb(document.getElementById("canvas")!, {
 });
 comb.load({
   nodes: [
-    { id: "a", title: "Premium trial users", x: 0, y: 0, width: 220, height: 64 },
-    { id: "b", title: "Time spent listening", x: 320, y: 0, width: 220, height: 64 },
+    { id: "a", x: 0, y: 0, width: 220, content: [[{ kind: "text", role: "title", text: "Premium trial users" }]] },
+    { id: "b", x: 320, y: 0, width: 220, content: [[{ kind: "text", role: "title", text: "Time spent listening" }]] },
   ],
   edges: [
     {
@@ -138,18 +142,68 @@ comb.load({
 });
 comb.fitView();
 comb.onSelectionChange((selection) => console.log(selection)); // fill the sidebar from here
+comb.onChange((change) => {
+  if (change.kind === "nodeAdded") console.log(change.node.id, change.by); // "c", "host"
+});
+comb.addNode({
+  id: "c",
+  x: 640,
+  y: 0,
+  width: 220,
+  content: [
+    [{ kind: "text", role: "title", text: "Churned users" }],
+    [{ kind: "text", role: "body", text: "Users who cancelled" }, { kind: "text", role: "caption", text: "monthly", weight: 2 }],
+  ],
+});
 ```
 
-`load` throws a `GraphDataError` on graph data it refuses, and `updateNode` one on a node the
-graph does not hold or a patch it refuses; either keeps the graph it had (Q-7). The error's
-`problem` is a `GraphDataProblem`, which `comb` exports, and its `kind` says what was wrong and
-where: `invalidField` for a field missing or of another type, with the list, the index, the
-identifier where the item has one, the field, and what it expects; `unknownNode` for a node
-`updateNode` does not know; `malformed` for graph data that is no object of node and edge lists;
-and a kind of its own for every other refusal, such as `nonFiniteCoordinate` or `missingNode`.
-`problem.kind` narrows the union to the fields of its kind. A `switch` on it without a `default`
-has to handle every kind, so that a kind a later version adds fails the host application's type
-check; the example handles two and leaves the rest to a `default`:
+A node's `content` is rows of weighted columns, each a `text` of role `title`, `body`, or
+`caption` (its `weight`, 1 where left out, shares out the row's width); Comb lays the rows out
+inside the node's `width`, cuts a text too long for its column with an ellipsis, and makes the node
+as high as its rows, at least 64. `updateNode(id, { content })` replaces a node's content whole.
+
+`addNode` adds one node at its `x` and `y` without a load, drawn above every node it overlaps. For a
+node dropped from the host application's palette, `comb.worldPointAt(event.clientX, event.clientY)`
+returns the world point under the drop; Comb handles no drag and drop itself, and `worldPointAt`
+throws a `RangeError` on a coordinate that is not finite. `removeNodes(ids)` removes those nodes and
+every edge at them, and `removeEdges(ids)` those edges, without a load. `addEdge(edge)` adds an
+edge between two nodes the graph holds, and `updateEdge(id, patch)` changes an edge's `color`,
+`dash`, `arrow`, `label`, `sourceSide`, or `targetSide`, `null` clearing a dash or a label. An
+edge leaves its source by `sourceSide` and enters its target by `targetSide`, each `top`, `right`,
+`bottom`, or `left`, by default `right` and `left`. `onChange` tells every
+change of the graph, a `GraphChange` that `comb` exports, typed by its `kind` and by `by`, `"user"`
+or `"host"`: `loaded` after `load`, `nodeAdded` with the node as Comb took it after `addNode`,
+`nodeUpdated` with the merged patch after `updateNode`, `nodesRemoved` with the nodes and the edges
+that went with them after `removeNodes`, `edgesRemoved` with the edges after `removeEdges`,
+`edgeAdded` with the edge as Comb keeps it, its colour and arrowhead filled, after `addEdge`,
+`edgeUpdated` with the patch as merged after `updateEdge`, nothing
+for a removal that names none, and `nodeMoved` with where the node lies, once, when the user
+releases a node dragged, not per frame and not for a press that moved nothing. Each arrives before
+the call or input event that made it returns, and before `onSelectionChange` reports a selection the
+change cleared; `onChange` returns the function that removes the listener. A change a listener makes
+reaches every listener after the change being delivered, so that each hears the changes in the order
+made. A listener that throws keeps no other from being told; once all are told, its error is thrown
+from the call that made the change, or for a change the user made from the input event, and the
+graph holds the change all the same.
+
+`load` throws a `GraphDataError` on graph data it refuses, `updateNode` one on a node the graph does
+not hold or a patch it refuses, and `addNode` one on a node of an identifier the graph holds already
+(`duplicateNode`), a node a load would refuse, or one past the limits of a load, and `removeNodes`
+and `removeEdges` one on an identifier the graph does not hold among those they name (`unknownNode`,
+`unknownEdge`) or identifiers that are no list of strings, `addEdge` one on an edge of an
+identifier the graph holds (`duplicateEdge`), to a node it does not hold (`missingNode`), from a
+node to itself (`selfEdge`, which a load accepts), one a load would refuse, or one past the limits
+of a load, and `updateEdge` one on an edge the graph does not hold, a patch of another field
+(`unknownEdgePatchField`), or a field a load would refuse; each keeps the graph it had and tells
+`onChange` nothing (Q-7). The error's `problem` is a `GraphDataProblem`, which `comb` exports, and
+its `kind` says what was wrong and where: `invalidField` for a field missing or of another type,
+with the list, the index, the identifier where the item has one, the field, and what it expects;
+`unknownNode` and `unknownEdge` for a node or an edge the graph does not hold; `malformed` for graph
+data that is no object of node and edge lists; and a kind of its own for every other refusal, such
+as `nonFiniteCoordinate` or `missingNode`. `problem.kind` narrows the union to the fields of its
+kind. A `switch` on it without a `default` has to handle every kind, so that a kind a later version
+adds fails the host application's type check; the example handles two and leaves the rest to a
+`default`:
 
 ```ts
 import { GraphDataError, type GraphDataProblem } from "comb";
@@ -183,13 +237,15 @@ else (`"invalid"`); `comb` exports the type of `reason`, `EngineSourceProblem`. 
 instantiated once per page: a later `createComb` checks its `engine` but reuses the first
 instance.
 
-Should the engine trap, as WebAssembly does when it runs out of memory, it is lost for the page,
-for every Comb on it (ADR-0021). From then on `load`, `updateNode`, `fitView`, `setViewport`, and
-`createComb` throw an `EngineLostError`, which `comb` exports; `viewport`, `onSelectionChange`, and
-`destroy` keep working, the canvas keeps its last frame, and input on it changes nothing.
-`comb.onEngineLost(listener)` calls `listener` once with the error, at once where the engine is
-lost already, and returns the function that removes it. The only recovery is loading the page
-anew, so a host application tells its user and offers a reload:
+Should the engine trap, as WebAssembly does when it runs out of memory, it is lost for the page, for
+every Comb on it (ADR-0021). From then on `load`, `updateNode`, `addNode`, `addEdge`, `updateEdge`,
+`removeNodes`,
+`removeEdges`, `fitView`, `setViewport`,
+and `createComb` throw an `EngineLostError`, which `comb` exports; `viewport`, `worldPointAt`,
+`onSelectionChange`, `onChange`, and `destroy` keep working, the canvas keeps its last frame, and
+input on it changes nothing. `comb.onEngineLost(listener)` calls `listener` once with the error, at
+once where the engine is lost already, and returns the function that removes it. The only recovery
+is loading the page anew, so a host application tells its user and offers a reload:
 
 ```ts
 comb.onEngineLost(() => showBanner("The graph stopped responding. Reload the page."));
@@ -209,12 +265,29 @@ PixiJS's Canvas 2D renderer:
 const comb = await createComb(host, { engine: fetch(engineUrl), allowCanvasFallback: true });
 ```
 
-[`examples/metric-tree/`](examples/metric-tree/) is a complete host application with a sidebar.
+[`examples/metric-tree/`](examples/metric-tree/) is a complete host application with a sidebar and a
+palette, whose kinds the user drags onto the canvas to add a node under the drop. A click on a node
+or an edge selects it, an edge within 4 screen pixels of its path, a drag from an edge beyond 4
+pixels pans, and the sidebar edits a node's title text or an edge's colour, line, arrowhead, and
+label.
+With the canvas focused, which a press on it does, Delete or Backspace deletes the selection, a node
+with every edge at it, once `CombOptions.canDelete` returns `true` for the identifiers of everything
+that would go; without `canDelete` a deletion is allowed, and the host application's own
+`removeNodes` and `removeEdges` never ask it. The deletion is told as `nodesRemoved` or
+`edgesRemoved` with `by: "user"`. Where `CombOptions.canConnect` is set, hovering a
+node shows its four connectors, and a drag from one to a connector of another node the source does
+not reach yet connects them: `canConnect({ source, sourceSide, target, targetSide })` names the
+new edge, checked as `addEdge` checks one, or refuses with `false`; the edge is told as
+`edgeAdded` with `by: "user"`. Without `canConnect`, no connection begins. A veto during whose call
+Comb tells a change to `onChange` ends its gesture with nothing done, whatever it returns. The
+example names each edge after its ends. At the near level a press inside an edge label's pill
+selects its edge and drags the label, which stays where it is dropped: the engine places it at the
+nearest path parameter and the distance along the normal there, and the release is told as
+`labelMoved` with that `t` and `offset`.
 
 ## Project Layout
 
 ```
-TEMPLATE-SETUP.md     # one-time template setup; delete it when the project is yours
 README.md             # overview & setup for humans
 AGENTS.md             # single source of truth for coding agents
 docs/SPECIFICATION.md # the specification: problem, goals, success criteria
@@ -222,12 +295,13 @@ docs/GLOSSARY.md      # the vocabulary everyone uses, kept current inline
 docs/CONVENTIONS.md   # how this project writes what no check decides, kept current inline
 docs/ARCHITECTURE.md  # the system as it currently stands
 docs/adr/             # Architecture Decision Records (+ template)
-crates/engine/        # the engine's pure Rust core: geometry over values and buffers (ADR-0009)
-crates/engine-wasm/   # the bridge's Rust side: every WebAssembly export (ADR-0010)
+crates/engine/        # the engine's pure Rust core: geometry over values and buffers (ADR-0028)
+crates/engine-wasm/   # the bridge's Rust side: every WebAssembly export (ADR-0034)
 packages/comb/        # the library: api, store, interaction, render, bridge
 examples/metric-tree/ # the example host application, with its browser tests (G-9)
 scripts/              # consistency checks and sensors (check-all.sh runs them all), run in CI
-.githooks/            # git hooks: refuse a commit on main and a push while the checks are red
+.githooks/            # git hooks: refuse a commit on main, a push while the checks are red, and
+                      # a merge commit git records on main while the documentation checks are red
 .github/              # CI workflows, Dependabot, issue & pull request templates, code owners
 .devcontainer/        # Dev Container definition (Dockerfile + Features)
 .vscode/              # shared editor settings

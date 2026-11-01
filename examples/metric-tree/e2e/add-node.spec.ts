@@ -1,0 +1,448 @@
+// The host application adds a node through `addNode` (ADR-0022, ADR-0030): the canvas draws it
+// where it was placed, above every node it overlaps, without a load, and `onChange` tells every
+// change of the graph before the call that made it returns. A node a load would refuse, or one of
+// an identifier the graph holds already, is refused, and nothing changes (ADR-0028, Q-7).
+import { expect, test, type Page } from "@playwright/test";
+import type { GraphChange } from "comb";
+import { drawnGraph, loaded, node, open, screenCentre, selections, titled } from "./shared";
+
+/** The identifiers and places of the nodes the canvas draws, bottom to top, once it has drawn. */
+async function drawn(page: Page) {
+  return (await drawnGraph(page)).nodes;
+}
+
+/** Presses and releases the pointer at the screen centre of the drawn node `id`, and returns the
+ *  identifier of the node selected then. */
+async function pressOn(page: Page, id: string): Promise<string | null> {
+  const before = (await selections(page)).length;
+  const at = await screenCentre(page, id);
+  await page.mouse.click(at.x, at.y);
+  const reported = (await selections(page)).slice(before) as ({ id: string } | null)[];
+  return reported.at(-1)?.id ?? null;
+}
+
+test("addNode draws the node where the host placed it in the next frame, without a load", async ({
+  page,
+}) => {
+  // Verifies: ADR-0022, ADR-0030
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page);
+  await loaded(page, { nodes: [node("a"), node("b", 300)], edges: [] });
+  const result = await page.evaluate(
+    async (added) => {
+      const before = window.inspect().queries;
+      window.comb.addNode(added);
+      await window.comb.whenRendered();
+      const after = window.inspect();
+      return {
+        queried: after.queries - before,
+        nodes: after.nodes.map(({ id, x, y }) => ({ id, x, y })),
+      };
+    },
+    node("c", 120, 200),
+  );
+  expect(result).toEqual({
+    queried: 1,
+    nodes: [
+      { id: "a", x: 0, y: 0 },
+      { id: "b", x: 300, y: 0 },
+      { id: "c", x: 120, y: 200 },
+    ],
+  });
+  // The node added is a node like any other: a press on it selects it.
+  expect(await pressOn(page, "c")).toBe("c");
+  expect(errors).toEqual([]);
+});
+
+test("a node added over others is drawn and selected above them, and a load stacks by slot", async ({
+  page,
+}) => {
+  // Verifies: ADR-0022, ADR-0027
+  await open(page);
+  // Three nodes at the same place: a load draws them in slot order, c on top.
+  await loaded(page, { nodes: [node("a"), node("b"), node("c")], edges: [] });
+  expect((await drawn(page)).map(({ id }) => id)).toEqual(["a", "b", "c"]);
+  expect(await pressOn(page, "a")).toBe("c");
+  // A node added over them, a little off, is drawn above all three and takes the press.
+  await page.evaluate(
+    async (d) => {
+      window.comb.addNode(d);
+      await window.comb.whenRendered();
+    },
+    node("d", 20, 10),
+  );
+  expect((await drawn(page)).map(({ id }) => id)).toEqual(["a", "b", "c", "d"]);
+  expect(await pressOn(page, "a")).toBe("d");
+});
+
+test("onChange receives one nodeAdded before addNode returns, and one loaded for each load", async ({
+  page,
+}) => {
+  // Verifies: ADR-0030
+  await open(page);
+  const result = await page.evaluate(
+    (nodes) => {
+      const { comb } = window;
+      const told: (GraphChange | { selection: string | null })[] = [];
+      comb.onChange((change) => told.push(change));
+      // A listener removed hears nothing.
+      const remove = comb.onChange(() => told.push({ selection: "removed" }));
+      remove();
+      comb.onSelectionChange((selection) => told.push({ selection: selection?.id ?? null }));
+      comb.load({ nodes: [nodes.a], edges: [] });
+      const afterLoad = told.length;
+      comb.addNode(nodes.b);
+      const afterAdd = told.length;
+      comb.updateNode("b", { content: [[{ kind: "text", role: "title", text: "B" }]] });
+      return { told, afterLoad, afterAdd };
+    },
+    { a: node("a"), b: node("b", 300.5, -40.25) },
+  );
+  expect(result).toEqual({
+    told: [
+      { kind: "loaded", by: "host" },
+      // Its content as Comb keeps it, each weight given.
+      {
+        kind: "nodeAdded",
+        by: "host",
+        node: { ...node("b", 300.5, -40.25), content: [[{ ...titled("b")[0]![0]!, weight: 1 }]] },
+      },
+      {
+        kind: "nodeUpdated",
+        by: "host",
+        id: "b",
+        patch: { content: [[{ ...titled("B")[0]![0]!, weight: 1 }]] },
+      },
+    ],
+    afterLoad: 1,
+    afterAdd: 2,
+  });
+});
+
+test("a load that clears the selection tells its change before the selection", async ({ page }) => {
+  // Verifies: ADR-0030
+  await open(page);
+  await loaded(page, { nodes: [node("a")], edges: [] });
+  expect(await pressOn(page, "a")).toBe("a");
+  const told = await page.evaluate((a) => {
+    const heard: string[] = [];
+    window.comb.onSelectionChange((selection) => heard.push(`selection ${String(selection)}`));
+    window.comb.onChange((change) => heard.push(change.kind));
+    window.comb.load({ nodes: [a], edges: [] });
+    return heard;
+  }, node("a"));
+  expect(told).toEqual(["loaded", "selection null"]);
+});
+
+/** Each node `addNode` refuses on a graph of node `a`, with the problem it reports. */
+const REFUSED: { name: string; added: unknown; problem: unknown }[] = [
+  {
+    name: "a node of an identifier the graph holds",
+    added: node("a", 300),
+    problem: { kind: "duplicateNode", node: "a" },
+  },
+  {
+    name: "a coordinate that is not finite",
+    added: node("c", Number.POSITIVE_INFINITY),
+    problem: { kind: "nonFiniteCoordinate", node: "c" },
+  },
+  {
+    name: "a coordinate beyond the range of a 32-bit float",
+    added: node("c", 0, 1e300),
+    problem: { kind: "nonFiniteCoordinate", node: "c" },
+  },
+  {
+    name: "a title of the wrong type",
+    added: { ...node("c"), content: titled(5 as never) },
+    problem: { kind: "invalidContentText", node: "c", row: 0, column: 0, field: "text" },
+  },
+  {
+    name: "a title of 1,001 characters",
+    added: { ...node("c"), content: titled("x".repeat(1001)) },
+    problem: {
+      kind: "contentTextTooLong",
+      node: "c",
+      row: 0,
+      column: 0,
+      field: "text",
+      limit: 1000,
+    },
+  },
+  {
+    name: "a negative width",
+    added: { ...node("c"), width: -1 },
+    problem: { kind: "invalidSize", node: "c" },
+  },
+  {
+    name: "a coordinate that is a string",
+    added: { ...node("c"), x: "1" },
+    problem: {
+      kind: "invalidField",
+      list: "nodes",
+      index: 0,
+      id: "c",
+      field: "x",
+      expected: "a finite number",
+    },
+  },
+  {
+    name: "an identifier of 257 characters",
+    added: node("x".repeat(257)),
+    problem: { kind: "idTooLong", list: "nodes", index: 0, field: "id", limit: 256 },
+  },
+  {
+    name: "an identifier with a lone surrogate",
+    added: node("a\uD800"),
+    problem: {
+      kind: "invalidField",
+      list: "nodes",
+      index: 0,
+      field: "id",
+      expected: "a well-formed string of at most 256 code units",
+    },
+  },
+  {
+    name: "a node that is no object",
+    added: "a",
+    problem: expect.objectContaining({ kind: "malformed" }),
+  },
+];
+
+for (const { name, added, problem } of REFUSED) {
+  test(`addNode refuses ${name} with a GraphDataError, and nothing changes`, async ({ page }) => {
+    // Verifies: Q-7, ADR-0028, ADR-0030
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await open(page);
+    await loaded(page, { nodes: [node("a")], edges: [] });
+    const before = await drawn(page);
+    const result = await page.evaluate(async (candidate) => {
+      const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+      await frame();
+      const renders = window.renderCount();
+      const told: string[] = [];
+      window.comb.onChange((change) => told.push(change.kind));
+      let refused = null;
+      try {
+        window.comb.addNode(candidate as never);
+      } catch (error) {
+        const { name: thrown, problem: found } = error as Error & { problem: unknown };
+        refused = { name: thrown, problem: found };
+      }
+      await frame();
+      await frame();
+      // The store's map took nothing: a valid node of the refused identifier is added after.
+      const rendered = window.renderCount() - renders;
+      window.comb.addNode(window.node("c", 500));
+      return { refused, rendered, told };
+    }, added);
+    expect(result).toEqual({
+      refused: { name: "GraphDataError", problem },
+      rendered: 0,
+      told: ["nodeAdded"],
+    });
+    expect(await drawn(page)).toEqual([...before, { id: "c", x: 500, y: 0, title: "c" }]);
+    expect(errors).toEqual([]);
+  });
+}
+
+test("addNode reads each field of the node once, and a getter that throws refuses it", async ({
+  page,
+}) => {
+  // Verifies: Q-7, ADR-0028
+  await open(page);
+  await loaded(page, { nodes: [node("a")], edges: [] });
+  const result = await page.evaluate(() => {
+    const reads: Record<string, number> = {};
+    const fields = window.node("c");
+    const counted = Object.defineProperties(
+      {},
+      Object.fromEntries(
+        Object.entries(fields).map(([key, value]) => [
+          key,
+          {
+            enumerable: true,
+            get: () => ((reads[key] = (reads[key] ?? 0) + 1), value),
+          },
+        ]),
+      ),
+    );
+    window.comb.addNode(counted as never);
+    const throwing = Object.defineProperty({ ...fields, id: "d" }, "x", {
+      get: () => {
+        throw new Error("host code");
+      },
+    });
+    let refused = null;
+    try {
+      window.comb.addNode(throwing);
+    } catch (error) {
+      const { name, problem } = error as Error & { problem: { kind: string } };
+      refused = { name, kind: problem.kind };
+    }
+    return { reads, refused };
+  });
+  expect(result).toEqual({
+    reads: { id: 1, x: 1, y: 1, width: 1, content: 1 },
+    refused: { name: "GraphDataError", kind: "malformed" },
+  });
+  expect((await drawn(page)).map(({ id }) => id)).toEqual(["a", "c"]);
+});
+
+test("addNode refuses a node past the limit of a load, and nothing changes", async ({ page }) => {
+  // Verifies: Q-7, ADR-0028
+  test.setTimeout(120_000);
+  await open(page);
+  const result = await page.evaluate(async () => {
+    // A million nodes, far from the viewport, so that no frame binds a view to them.
+    const nodes = Array.from({ length: 1_000_000 }, (_, i) => ({
+      id: `n${i}`,
+      x: 1e6 + (i % 1000) * 10,
+      y: 1e6 + Math.floor(i / 1000) * 10,
+      width: 5,
+      content: [[{ kind: "text" as const, role: "title" as const, text: "" }]],
+    }));
+    window.comb.load({ nodes, edges: [] });
+    const told: string[] = [];
+    window.comb.onChange((change) => told.push(change.kind));
+    let refused = null;
+    try {
+      window.comb.addNode(window.node("c"));
+    } catch (error) {
+      const { name, problem } = error as Error & { problem: unknown };
+      refused = { name, problem };
+    }
+    window.comb.setViewport({ x: 100, y: 100, scale: 1 });
+    await window.comb.whenRendered();
+    return { refused, told, drawn: window.inspect().nodes.map(({ id }) => id) };
+  });
+  expect(result).toEqual({
+    refused: {
+      name: "GraphDataError",
+      problem: { kind: "tooMany", list: "nodes", limit: 1_000_000 },
+    },
+    told: [],
+    drawn: [],
+  });
+});
+
+test("addNode refuses a node whose identifier passes the budget of a load, and nothing changes", async ({
+  page,
+}) => {
+  // Verifies: Q-7, ADR-0028
+  test.setTimeout(120_000);
+  await open(page);
+  const result = await page.evaluate(async () => {
+    // 250,000 identifiers of 256 code units hold the 64,000,000 of the budget exactly.
+    const nodes = Array.from({ length: 250_000 }, (_, i) => ({
+      id: String(i).padStart(256, "x"),
+      x: 1e6 + (i % 500) * 10,
+      y: 1e6 + Math.floor(i / 500) * 10,
+      width: 5,
+      content: [[{ kind: "text" as const, role: "title" as const, text: "" }]],
+    }));
+    window.comb.load({ nodes, edges: [] });
+    const told: string[] = [];
+    window.comb.onChange((change) => told.push(change.kind));
+    let refused = null;
+    try {
+      window.comb.addNode(window.node("c"));
+    } catch (error) {
+      const { name, problem } = error as Error & { problem: unknown };
+      refused = { name, problem };
+    }
+    window.comb.setViewport({ x: 100, y: 100, scale: 1 });
+    await window.comb.whenRendered();
+    return { refused, told, drawn: window.inspect().nodes.map(({ id }) => id) };
+  });
+  expect(result).toEqual({
+    refused: {
+      name: "GraphDataError",
+      problem: { kind: "idBudgetExceeded", limit: 64_000_000 },
+    },
+    told: [],
+    drawn: [],
+  });
+});
+
+test("a change a listener makes reaches every listener after the change being delivered", async ({
+  page,
+}) => {
+  // Verifies: ADR-0030
+  await open(page);
+  const result = await page.evaluate(
+    (nodes) => {
+      const { comb } = window;
+      const first: string[] = [];
+      const second: string[] = [];
+      comb.onChange((change) => {
+        first.push(change.kind);
+        if (change.kind === "loaded") comb.addNode(nodes.b);
+      });
+      comb.onChange((change) => second.push(change.kind));
+      comb.load({ nodes: [nodes.a], edges: [] });
+      return { first, second };
+    },
+    { a: node("a"), b: node("b", 300) },
+  );
+  expect(result).toEqual({ first: ["loaded", "nodeAdded"], second: ["loaded", "nodeAdded"] });
+});
+
+test("a listener that throws keeps no other listener from being told, and its error is thrown on", async ({
+  page,
+}) => {
+  // Verifies: ADR-0030
+  await open(page);
+  await loaded(page, { nodes: [node("a")], edges: [] });
+  expect(await pressOn(page, "a")).toBe("a");
+  const result = await page.evaluate((a) => {
+    const { comb } = window;
+    const told: string[] = [];
+    comb.onChange(() => {
+      throw new Error("host listener");
+    });
+    comb.onChange((change) => told.push(change.kind));
+    comb.onSelectionChange((selection) => told.push(`selection ${String(selection)}`));
+    let thrown = null;
+    try {
+      comb.load({ nodes: [a], edges: [] });
+    } catch (error) {
+      thrown = (error as Error).message;
+    }
+    return { told, thrown };
+  }, node("a"));
+  expect(result).toEqual({
+    told: ["loaded", "selection null"],
+    thrown: "host listener",
+  });
+});
+
+test("a getter of updateNode's patch that removes the node refuses the patch as unknownNode", async ({
+  page,
+}) => {
+  // Verifies: Q-7, ADR-0028
+  await open(page);
+  await loaded(page, { nodes: [node("a"), node("b", 300)], edges: [] });
+  const result = await page.evaluate(() => {
+    const told: string[] = [];
+    window.comb.onChange((change) => told.push(change.kind));
+    const patch = {
+      get content() {
+        window.comb.removeNodes(["a"]);
+        return [[{ kind: "text" as const, role: "title" as const, text: "A" }]];
+      },
+    };
+    let problem = null;
+    try {
+      window.comb.updateNode("a", patch);
+    } catch (error) {
+      problem = (error as Error & { problem: unknown }).problem;
+    }
+    return { problem, told };
+  });
+  expect(result).toEqual({
+    problem: { kind: "unknownNode", node: "a" },
+    told: ["nodesRemoved"],
+  });
+});

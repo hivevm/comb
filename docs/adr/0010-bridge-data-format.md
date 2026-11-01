@@ -1,7 +1,7 @@
 # ADR-0010: Structured data crosses the bridge through serde-wasm-bindgen with generated types, coordinate streams through typed-array views on engine-owned buffers
 
-- **Status:** 🟡 proposed
-- **Date:** 2026-10-17
+- **Status:** ⚪ superseded by [ADR-0032](0032-a-load-crosses-the-bridge-as-columns.md)
+- **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/engine-wasm/`, `packages/comb/src/bridge/`, and every value that crosses between them
 
@@ -28,6 +28,17 @@ never to cause a WebAssembly panic.
 A typed-array view on WebAssembly memory becomes detached when the memory grows. A view kept
 across an engine call that allocates reads nothing, silently.
 
+An `f32` holds 24 significant bits. From 2^25 to 2^26 world units, about 3.4e7 to 6.7e7, it holds
+every fourth number, so a coordinate near ±5e7 rounds by up to 2 world units, 8 px at a scale of 4;
+Q-4 asks for 0.5 px for paths within 2^21 px of the viewport. The engine computes edge paths and
+label points in `f64` and rounds them to `f32` as it writes the stream, so the rounding is that of
+the distance to the world's origin, while the query reports the mesh complete. The engine keeps node
+positions as `f32` itself: a node lies where its `f32` lies, its edges end there, and the positions
+buffer hands over that value without rounding it again. The GPU computes in `f32` too: WebGL2 has no
+`double` attribute or uniform, and PixiJS hands the shader the transform of a render group as a
+`mat3x3<f32>` uniform, so a world at ±5e7 shown at a scale of 4 has a translation near 2e8 on the
+GPU, rounded by up to 8 px whatever the vertices hold.
+
 ## Decision
 
 We will pass structured data as `serde` types converted by serde-wasm-bindgen through tsify's
@@ -40,20 +51,30 @@ reads and writes as typed-array views created anew after every engine call.
   never written by hand.
 - **Errors:** every export that receives graph data returns `Result<_, _>` with a typed error that
   names the offending node, edge, or field; no export panics on malformed input.
-- **Streams:** every buffer the shell reads is one of these: node positions as `Float32Array`
-  with `x, y` per node slot; the results of a viewport query, which are the found node slots and
-  edge-label slots as `Uint32Array` and the point of each found label as `Float32Array`; the edge
-  mesh of that query, as vertex positions, distances along the path, and dash patterns in
-  `Float32Array`, colours as RGBA bytes in `Uint32Array`, and triangle indices in `Uint32Array`;
-  and, for inspection, the slots of the edges the query found as `Uint32Array`, with the ends of
-  each as `Float32Array`, computed as they lie when inspection asks. A query takes its rectangle as
-  structured data and its level of detail as an enumeration; the engine derives the stroke from
-  the level and the size of a screen pixel, and places labels only at the near level. It also
-  takes how far an edge label's pill reaches from its point, which the shell measures from the
-  text it draws and the engine cannot, and finds a label whose point lies within that reach of
-  the rectangle. It returns the detail of its mesh as an enumeration, complete or coarsened
-  ([ADR-0012](0012-virtualized-scene-graph.md)), the one value a query hands back beside its
-  buffers.
+- **Streams:** every buffer the shell reads is one of these:
+  - node positions as `Float32Array`, with `x, y` per node slot;
+  - the results of a viewport query: the found node slots and edge-label slots as `Uint32Array`,
+    and the point of each found label as `Float32Array`;
+  - the edge mesh of that query: vertex positions, distances along the path, and dash patterns as
+    `Float32Array`, colours as RGBA bytes in `Uint32Array`, and triangle indices as `Uint32Array`;
+  - for inspection, the slots of the edges the query found as `Uint32Array`, with the ends of each
+    as `Float32Array`, computed as they lie when inspection asks.
+- **A query** takes its rectangle as structured data, its level of detail as an enumeration, and
+  how far an edge label's pill reaches from its point, which the shell measures from the text it
+  draws and the engine cannot. The engine derives the stroke from the level and the size of a
+  screen pixel, places labels only at the near level, and finds a label whose point lies within
+  that reach of the rectangle. Beside its buffers, a query hands back the detail of its mesh as an
+  enumeration, complete or coarsened ([ADR-0012](0012-virtualized-scene-graph.md)), and its
+  origin.
+- **Origin:** each query chooses a world point near its rectangle. The vertex positions and label
+  points it writes are their `f64` values less that point, rounded to `f32` only then, so their
+  rounding is that of their distance from the rectangle. The origin is the rectangle's centre
+  snapped to a grid whose side is the smallest power of two at least the rectangle's larger side,
+  then taken to the nearest `f32`, so that it holds exactly in both; the origin of a rectangle that
+  is not finite is (0, 0). It crosses as two `f64`, read through `originX` and `originY` after the
+  query as its buffers are. Node positions and the ends of inspection cross as the engine keeps
+  them, without an origin. The shell draws the relative streams at the origin, as ADR-0012
+  (*The world at the query's origin*) places the world.
 - **Slots:** the engine knows nodes and edges by slot only. The TypeScript side keeps the map
   from identifiers to slots; `loadGraph` resolves edge ends from identifiers once, while it loads,
   and keeps no map. Every later call into the engine names slots.
@@ -65,9 +86,8 @@ compacted after deletions; moving the engine into a worker.
 
 ## Alternatives considered
 
-- **serde-wasm-bindgen for the streams too** — what the specification first allowed; it builds a
-  JavaScript array element by element on every crossing, and the maintainer chose views from the
-  start.
+Structured data:
+
 - **TypeScript types written by hand with a round-trip test** — no dependency, but two
   definitions of every type, and the test catches a drift only for the examples it sends.
 - **tsify-next** — a fork of tsify; its last release is from 2025-04, while tsify itself released
@@ -80,8 +100,33 @@ compacted after deletions; moving the engine into a worker.
   into buffers in TypeScript at about the cost it saves, the hot paths already cross as typed
   arrays, and `flatc` would join the toolchain with its version tied to two runtime libraries.
   The maintainer rejected it.
+
+Streams:
+
+- **serde-wasm-bindgen for the streams too** — it builds a JavaScript array element by element on
+  every crossing, and the maintainer chose views from the start.
 - **`js_sys::Float32Array::view`** — a view created on the Rust side; it is `unsafe` and still
   detaches on growth, and the pointer and length are simpler to hold in one place.
+
+Precision far from the world's origin:
+
+- **Leaving it** — nothing to build, but up to 8 px at ±5e7 at a scale of 4, against Q-4, while
+  the query reports the mesh complete.
+- **Vertices in `f64`** — no origin, but twice the bytes of positions, 32 instead of 24 bytes of
+  attributes per vertex, about 34 MB more at the mesh budget; WebGL2 and PixiJS take `f32`
+  attributes only, so the shell would subtract an origin itself, vertex by vertex in JavaScript,
+  and the GPU's transform rounds as before.
+- **Splitting precision in the shader** — each position as two `f32`, high and low parts, as
+  CesiumJS does for its globe: no origin, but twice the attributes, a custom shader for every
+  layer, nodes and labels among them, and nothing for the Canvas 2D fallback of ADR-0018, which
+  runs no shader.
+- **The rectangle's centre as the origin, unsnapped** — the smallest distances, but the origin
+  moves with every query, and with it the layers placed by it, so every query updates the
+  transform of every bound view; the snapped origin changes only where the centre crosses into
+  another cell of its grid, and its distances stay below twice the rectangle's side, about 2^-23
+  of a viewport.
+- **An origin the shell chooses and passes to the query** — the same arithmetic, but the rule
+  would live in the shell, which holds no geometry (ADR-0009), and outside the engine's tests.
 
 ## Sources / Prior art
 
@@ -102,6 +147,13 @@ compacted after deletions; moving the engine into a worker.
 - MDN, `WebAssembly.Memory.prototype.grow()` —
   <https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow>:
   growing detaches the previous `ArrayBuffer`.
+- glTF extension CESIUM_RTC —
+  <https://github.com/KhronosGroup/glTF/blob/main/extensions/1.0/Vendor/CESIUM_RTC/README.md>:
+  positions relative to a centre so that 32-bit floats suffice, and the centre's translation
+  computed on the CPU in double precision into the model-view matrix (checked 2026-10-23).
+- PixiJS 8.22.0, `GlobalUniformSystem` and `MeshPipe`: `uWorldTransformMatrix` and
+  `uTransformMatrix` are `mat3x3<f32>` uniforms, the second a mesh's transform within its render
+  group (read in the installed package, 2026-10-23).
 
 ## Consequences
 
@@ -109,7 +161,22 @@ compacted after deletions; moving the engine into a worker.
 - Positive: dragging moves numbers through shared memory without building JavaScript objects,
   which is where Q-1 is most at risk.
 - Positive: malformed graph data comes back as a typed error the host application can show.
+- Positive: an edge or a label far from the world's origin is drawn as precisely as one near
+  it, on the GPU too, with no more bytes per vertex.
 - Negative / trade-offs: two forms of crossing to learn, and slot bookkeeping in the bridge.
+- Negative / trade-offs: the streams of a query mean nothing without its origin, and the world's
+  translation is no longer the viewport's; inspection adds the origin back and reports the
+  viewport the world is drawn through, its transform less the origin's screen point.
+- Negative / trade-offs: the origin bounds the rounding of vertices near the rectangle, not of
+  every vertex the mesh holds; which vertices keep the rounding of ends far beyond the rectangle,
+  and how far it reaches, ADR-0012 states (*Consequences*).
+- Negative / trade-offs: the distances along the path cross as `f32` from the path's source,
+  without an origin, and round by up to 2^-24 of their value, 0.5 px at 2^23 px along a path;
+  Q-4 bounds dashes at 2^21 px, leaving room for the GPU's `f32`, and past that a dash pattern may
+  shift by that rounding.
+- Negative / trade-offs: the particles of the far level keep the rounding they had, of their
+  container's transform on the GPU, of the order of a pixel at ±5e7 at the far level's largest
+  scale, 0.3; Q-4 does not cover nodes.
 - Negative / trade-offs: serde-wasm-bindgen has had no release since 2024-02, though its
   repository was still maintained in 2025; the specification assumes it stays maintained. If it
   is abandoned, tsify's other backend is JSON, which the constraint forbids; the way out without a
@@ -120,11 +187,26 @@ compacted after deletions; moving the engine into a worker.
 
 ## Enforcement
 
-A Rust test in `crates/engine-wasm` sends malformed graph data of each kind Q-7 names through
-every export that receives graph data and asserts a typed error and no panic. A test in
-`packages/comb` grows the engine's memory between two calls and asserts that the positions read
-afterwards are the ones written. A check fails when `crates/engine-wasm/Cargo.toml` enables
-tsify's default features or depends on `serde_json`. A test in `crates/engine-wasm` queries a
-small graph and asserts *complete*, and queries a graph at the limit of a load, 1,000,000 curved
-edges, whole at the far level, where its full mesh passes the budget, and asserts *coarsened*.
-Each cites this ADR with `Verifies: ADR-0010`.
+Each test below cites this ADR with `Verifies: ADR-0010`.
+
+- **Malformed data:** the tests of `crates/engine-wasm/src/lib.rs` send malformed graph data of
+  each kind Q-7 names through every export that receives graph data and assert a typed error and
+  no panic; the property tests of `crates/engine-wasm/src/properties.rs` also cite Q-7.
+- **Views:** a test in `packages/comb/src/bridge/bridge.test.ts` grows the engine's memory between
+  two calls and asserts that the positions read afterwards are the ones written.
+- **tsify:** `scripts/check-dependencies.sh` fails when `crates/engine-wasm/Cargo.toml` enables
+  tsify's default features or depends on `serde_json`; its self-test cites this ADR.
+- **Detail:** a test in `crates/engine-wasm/src/lib.rs` queries a small graph and asserts
+  *complete*, and queries a graph at the limit of a load, 1,000,000 curved edges, whole at the far
+  level, where its full mesh passes the budget, and asserts *coarsened*.
+- **Origin:** tests in `crates/engine/src/graph.rs` assert the origin of a rectangle far from the
+  world's origin, that it stays across a pan shorter than half its grid, and that the vertex
+  positions and label points of a query there, with its origin added back, lie within a sixteenth of
+  a world unit of those of the same graph moved near the world's origin.
+- **On screen:** a Playwright test in `examples/metric-tree/e2e/far-from-the-origin.spec.ts` loads
+  an edge from (5e7, 0) to (5e7 + 300, 200), shows it at a scale of 4, and asserts that every
+  vertex the edges layer draws, on screen as the shader computes it in `f32` from the buffers and
+  transforms PixiJS uploads, lies within a quarter pixel of the same edge drawn near the world's
+  origin, the engine's `f64` stroke shifted; and again after a pan within the culling margin that
+  moves the world without a query. With the origin left at (0, 0) it fails. It also
+  `Verifies: Q-4`.

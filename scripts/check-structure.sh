@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 #
-# Structural test of the shape of the code (ADR-0009) and of how the scene draws (ADR-0012,
-# ADR-0018).
-# Verifies: ADR-0009, ADR-0012, ADR-0018
+# Structural test of the shape of the code (ADR-0028), of how the scene draws (ADR-0027,
+# ADR-0018), and of one boundary between the shell's modules, a rule of the check's own that
+# docs/ARCHITECTURE.md describes.
+# Verifies: ADR-0028, ADR-0027, ADR-0018
 #
-# ADR-0009 builds Comb as a functional core of pure Rust and a TypeScript shell whose only door to
-# the engine is its bridge; ADR-0012 draws every text as BitmapText and the edges as one mesh. This
+# ADR-0028 builds Comb as a functional core of pure Rust and a TypeScript shell whose only door to
+# the engine is its bridge; ADR-0027 draws every text as BitmapText and the edges as one mesh. This
 # check reads the tree and fails on what would break that shape:
 #
 #   1. Core: the core crate crates/engine depends on no crate that reaches the browser, the clock,
@@ -32,6 +33,12 @@
 #      declares a readonly class field `= new Graphics()`: one drawing, made with the layer, never
 #      in a loop over edges or triangles. What text cannot decide is left to review: a class with
 #      that one field created once per edge, or a Graphics made by a factory in another file.
+#   6. Boundaries: the render layer imports nothing from interaction/: the scene draws from the
+#      store and the engine alone, and takes the viewport's arithmetic from the store. No ADR
+#      decides this boundary, so it verifies none; the rule is the check's own, and
+#      docs/ARCHITECTURE.md (*Holding the shape*) describes it. It reads relative imports only,
+#      by a path that passes through interaction/; a name interaction exports that reaches render
+#      re-exported through `comb` or `../api` is out of its reach.
 #
 # Source files are .ts, .tsx, .mts, .cts, .js, .jsx, .mjs, and .cjs; test files are read like any
 # other. Dependencies (node_modules/) and the library's generated directories
@@ -165,9 +172,15 @@ if [[ -f "$fill" ]]; then
   fi
 fi
 
+# 6. Boundaries
+while IFS= read -r file; do
+  report "$file" "${specifier}\.\.?/(${inside}*/)?interaction(/${inside}*)?${quote}" \
+    "the render layer imports nothing from interaction/ (the check's own rule; no ADR decides it)"
+done < <(sources packages/comb/src/render)
+
 if ((${#problems[@]})); then
-  echo "Structure check FAILED (ADR-0009, ADR-0012, ADR-0018):" >&2
+  echo "Structure check FAILED (ADR-0028, ADR-0027, ADR-0018):" >&2
   printf '  - %s\n' "${problems[@]}" >&2
   exit 1
 fi
-echo "Structure check passed (core, bridge, render, examples, drawing)."
+echo "Structure check passed (core, bridge, render, examples, drawing, boundaries)."

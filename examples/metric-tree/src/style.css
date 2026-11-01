@@ -43,8 +43,42 @@ body {
   font-size: 13px;
 }
 
+/* A field the selected node's type does not have, which the label's flex would show. */
+#sidebar label[hidden] {
+  display: none;
+}
+
+#sidebar label.inline {
+  flex-direction: row;
+  align-items: center;
+}
+
 #sidebar input,
 #sidebar select {
   font: inherit;
   padding: 6px 8px;
+}
+
+#palette p {
+  font-size: 13px;
+  margin: 0 0 8px;
+  color: #5a6170;
+}
+
+#palette ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#palette li {
+  border: 1px solid #d0d4dc;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+  background: #f7f8fa;
+  cursor: grab;
 }

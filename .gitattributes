@@ -18,5 +18,6 @@
 
 # A Markdown file a tool writes, such as a generated changelog or API reference, is marked
 # 'linguist-generated': check 15 of scripts/check-docs.sh then leaves its line width alone, and
-# GitHub folds it in a diff. For example:
+# GitHub folds it in a diff. scripts/check-comment-width.sh leaves the comments of a generated Rust
+# or TypeScript source alone the same way. For example:
 #     CHANGELOG.md linguist-generated

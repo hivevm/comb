@@ -1,7 +1,7 @@
 # ADR-0021: A trapped engine is lost for the page; Comb refuses every later call with a typed error and tells the host application
 
-- **Status:** 🟡 proposed
-- **Date:** 2026-10-23
+- **Status:** 🟢 accepted
+- **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `packages/comb/src/bridge/`, `createComb` and the `Comb` interface in `packages/comb/src/api/`, the error types `comb` exports, and the render's animation frame
 

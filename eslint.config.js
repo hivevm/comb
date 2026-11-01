@@ -1,7 +1,8 @@
 // Lint for TypeScript (ADR-0008): typescript-eslint's recommended rules, the maintainability
-// sensors `complexity` and `max-lines-per-function` as errors, and in Comb's library sources no
-// DOM markup sink, so that no graph data is ever parsed as HTML (Q-5), and no eval, implied eval,
-// or `new Function`, so that Comb runs under a policy without `unsafe-eval` (Q-6).
+// sensors `complexity` and `max-lines-per-function` as errors, no local that shadows an outer
+// name, and in Comb's library sources no DOM markup sink, so that no graph data is ever parsed as
+// HTML (Q-5), and no eval, implied eval, or `new Function`, so that Comb runs under a policy
+// without `unsafe-eval` (Q-6).
 import js from "@eslint/js";
 import { defineConfig } from "eslint/config";
 import tseslint from "typescript-eslint";
@@ -17,6 +18,8 @@ export default defineConfig(
       "packages/comb/wasm/",
       "test-results/",
       "playwright-report/",
+      // A session's scratch files and other worktrees, which git ignores too.
+      ".scratch/",
     ],
   },
   js.configs.recommended,
@@ -25,6 +28,8 @@ export default defineConfig(
     rules: {
       complexity: ["error", 10],
       "max-lines-per-function": ["error", { max: 60, skipBlankLines: true, skipComments: true }],
+      // A local named as an outer name reads the one where the other was meant.
+      "@typescript-eslint/no-shadow": "error",
     },
   },
   {

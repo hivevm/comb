@@ -1,21 +1,25 @@
 // The testing entry, `comb/testing`: what the canvas draws, for tests, benchmarks, and tooling,
 // which of its layers it shows, for reference images, and the transform between world and screen.
 // Its shape follows the scene and changes with it, outside the stable interface of `comb`.
-import type { Buffer, WebGLRenderer } from "pixi.js";
+import type { Buffer, Matrix, WebGLRenderer } from "pixi.js";
 import type { Comb } from "./api";
 import { scenes } from "./api/scenes";
-import { toScreen, worldRect } from "./interaction/viewport";
-import { TEST_MODE, trapNextCall, type Rect } from "./bridge";
+import { TEST_MODE, trapNextCall, type Hit, type Rect } from "./bridge";
 import { EdgesContainer } from "./render/edges";
 import { LABEL_REACH } from "./render/labels";
-import { CULLING_MARGIN, FAR_SCALE, NEAR_SCALE, RESCALE, type SceneSnapshot } from "./render/scene";
+import { CULLING_MARGIN, RESCALE, type SceneSnapshot } from "./render/scene";
+import { FAR_SCALE, NEAR_SCALE, toScreen, worldRect } from "./store/viewport";
 
 export type { SceneSnapshot };
 
+function inspectedOf(comb: Comb) {
+  const inspected = scenes.get(comb);
+  if (!inspected) throw new Error("comb/testing: not a Comb created by createComb");
+  return inspected;
+}
+
 function sceneOf(comb: Comb) {
-  const scene = scenes.get(comb);
-  if (!scene) throw new Error("comb/testing: not a Comb created by createComb");
-  return scene;
+  return inspectedOf(comb).scene;
 }
 
 /** What the canvas of `comb` draws right now, in world coordinates. */
@@ -25,14 +29,28 @@ export function inspect(comb: Comb): SceneSnapshot {
 
 /** The viewport the canvas of `comb` draws with; cheap enough to read on every frame. */
 export function viewport(comb: Comb): SceneSnapshot["viewport"] {
-  const { world } = sceneOf(comb);
-  return { x: world.x, y: world.y, scale: world.scale.x };
+  return sceneOf(comb).drawnViewport();
 }
 
 /** The screen point, relative to the canvas, at which the canvas of `comb` shows world point
  *  (x, y): the transform interaction and the scene use, for tests and the benchmark. */
 export function screenPoint(comb: Comb, x: number, y: number): { x: number; y: number } {
   return toScreen(viewport(comb), x, y);
+}
+
+/** Whether the canvas of `comb` drew the node or the edge of `id` at its last render; cheap
+ *  enough to ask on every frame, as `inspect` is not at 50,000 nodes. */
+export function isDrawn(comb: Comb, what: { node: string } | { edge: string }): boolean {
+  return sceneOf(comb).draws(what);
+}
+
+/** What a press at the screen point `(x, y)`, relative to the canvas of `comb`, hits now: a
+ *  connector where `comb` lets the user connect, a label, a node, an edge, or nothing. It asks the
+ *  hit test a press asks, from the viewport a press reads, which is the drawn one once
+ *  `whenRendered` resolves (ADR-0013); nothing where that viewport puts the point beyond any
+ *  finite world point. */
+export function hitKind(comb: Comb, x: number, y: number): Hit["kind"] {
+  return inspectedOf(comb).hitAt(x, y).kind;
 }
 
 /** The world rectangle the canvas of `comb` shows, grown by `margin` screen pixels. */
@@ -170,6 +188,42 @@ export function work(comb: Comb): Work {
   return { ...counts, viewsCreated };
 }
 
+/** The screen point, relative to the canvas, of every vertex the edge mesh of `comb` draws, `x, y`
+ *  each, as its shader computes it: in `f32`, from the positions PixiJS uploads and the two
+ *  transforms it hands the shader as `f32` uniforms, the world's and the mesh's within the world
+ *  (ADR-0034). The shader multiplies the projection into clip space first, a scale and a shift
+ *  by the canvas's size, which rounds by about 2^-24 of the canvas's size more; it is left out,
+ *  since that cannot move a vertex by a quarter pixel. WebGL only: the Canvas 2D fallback has no
+ *  such mesh. */
+export function edgeVertices(comb: Comb): Float64Array {
+  const { app, edges, world } = sceneOf(comb);
+  if (!(edges instanceof EdgesContainer)) {
+    throw new Error(`comb/testing: edgeVertices reads the WebGL mesh, not ${app.renderer.name}`);
+  }
+  const f = Math.fround;
+  const sum = (...terms: number[]) => terms.reduce((total, term) => f(total + term));
+  const uniform = (m: Matrix) => [m.a, m.b, m.c, m.d, m.tx, m.ty].map(f) as Six;
+  const [wa, wb, wc, wd, wx, wy] = uniform(world.worldTransform);
+  const [ta, tb, tc, td, tx, ty] = uniform(edges.mesh.groupTransform);
+  // The shader's product of the world's matrix and the mesh's, each entry rounded as f32 is.
+  const a = sum(f(wa * ta), f(wc * tb));
+  const b = sum(f(wb * ta), f(wd * tb));
+  const c = sum(f(wa * tc), f(wc * td));
+  const d = sum(f(wb * tc), f(wd * td));
+  const x = sum(f(wa * tx), f(wc * ty), wx);
+  const y = sum(f(wb * tx), f(wd * ty), wy);
+  const positions = edges.geometry.getAttribute("aPosition").buffer.data as Float32Array;
+  const out = new Float64Array(edges.size().vertices * 2);
+  for (let i = 0; i < out.length; i += 2) {
+    const [px, py] = [positions[i]!, positions[i + 1]!];
+    out[i] = sum(f(a * px), f(c * py), x);
+    out[i + 1] = sum(f(b * px), f(d * py), y);
+  }
+  return out;
+}
+
+type Six = [number, number, number, number, number, number];
+
 /** Shows or hides layers of the canvas of `comb`, so that a reference image can hold one layer
  *  alone, without the text of the others, whose fonts differ between machines. */
 export function showLayers(comb: Comb, layers: { nodes?: boolean; edgeLabels?: boolean }): void {
@@ -199,7 +253,7 @@ export function sceneNumbers(): {
 }
 
 /** Whether the bridge runs in test mode, in which every view kept across an engine call reads
- *  empty (ADR-0010): what the browser tests assert before they trust that a stale view fails. */
+ *  empty (ADR-0034): what the browser tests assert before they trust that a stale view fails. */
 export function testMode(): boolean {
   return TEST_MODE;
 }
