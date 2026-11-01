@@ -56,6 +56,7 @@ const NEEDS_THE_ENGINE = [
   "load",
   "updateNode",
   "addNode",
+  "heightOf",
   "addEdge",
   "updateEdge",
   "removeNodes",
@@ -79,6 +80,7 @@ test("after a trap in load, every call that needs the engine throws an EngineLos
       load: outcome(() => comb.load({ ...graph, edges: [] })),
       updateNode: outcome(() => comb.updateNode("n0", { content: graph.nodes[0]!.content })),
       addNode: outcome(() => comb.addNode({ ...graph.nodes[0]!, id: "b" })),
+      heightOf: outcome(() => comb.heightOf(graph.nodes[0]!.content, 100)),
       addEdge: outcome(() => comb.addEdge({ id: "e", source: "a", target: "b" })),
       updateEdge: outcome(() => comb.updateEdge("e", { color: 0 })),
       removeNodes: outcome(() => comb.removeNodes(["a"])),
@@ -86,13 +88,11 @@ test("after a trap in load, every call that needs the engine throws an EngineLos
       fitView: outcome(() => comb.fitView()),
       setViewport: outcome(() => comb.setViewport({ x: 0, y: 0, scale: 1 })),
     };
-    let created = "ok";
     const host = window.secondHost();
-    try {
-      await window.createComb(host, { engine: fetch(window.engineUrl) });
-    } catch (error) {
-      created = (error as Error).name;
-    }
+    const created = await window.createComb(host, { engine: fetch(window.engineUrl) }).then(
+      () => "ok",
+      (error: Error) => error.name,
+    );
     const hostChildren = host.childElementCount;
     await comb.whenRendered();
     window.viewportBefore = comb.viewport();

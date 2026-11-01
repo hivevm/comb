@@ -52,7 +52,7 @@ pub(crate) use limits::{ID_LIMIT, TEXT_LIMIT, check_graph_size, check_id_budget}
 pub use limits::{MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_TEXT};
 #[cfg(test)]
 pub(crate) use load::graph_of;
-pub(crate) use load::{add_node_to, load_of};
+pub(crate) use load::{add_node_to, height_of, load_of};
 pub(crate) use node_columns::refused_of;
 pub use node_columns::{NodeColumns, NodeField};
 pub use problem::{GraphDataProblem, GraphList};

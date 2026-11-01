@@ -32,7 +32,6 @@ import {
   contentOf,
   countContent,
   DETAILS,
-  HEIGHTS,
   metricTree,
   newFields,
   NODE_WIDTH,
@@ -242,7 +241,9 @@ function counted(): void {
 }
 
 async function load(): Promise<LoadReport> {
-  ({ graph, fields } = metricTree(Number(copies.value)));
+  ({ graph, fields } = metricTree(Number(copies.value), (content, width) =>
+    comb.heightOf(content, width),
+  ));
   counted();
   const start = performance.now();
   comb.load(graph);
@@ -435,8 +436,9 @@ function labelFor(text: string): EdgeData["label"] | null {
 const PALETTE: readonly NodeType[] = ["bet", "epic", "input-metric", "kpi"];
 let dropped = 0;
 
-/** Adds a node of the palette's `kind`, a type of node, centred by its type's height on the world
- *  point under the drop at (`clientX`, `clientY`) of the page (G-1). */
+/** Adds a node of the palette's `kind`, a type of node, centred by the height Comb gives its
+ *  content on the world point under the drop at (`clientX`, `clientY`) of the page (G-1,
+ *  ADR-0035). */
 function drop(kind: string, clientX: number, clientY: number): void {
   const type = PALETTE.find((each) => each === kind);
   if (!type) return;
@@ -445,12 +447,13 @@ function drop(kind: string, clientX: number, clientY: number): void {
   const id = `${kind}-${dropped}`;
   const of = newFields(type);
   try {
+    const content = contentOf(of);
     comb.addNode({
       id,
       x: x - NODE_WIDTH / 2,
-      y: y - HEIGHTS[type] / 2,
+      y: y - comb.heightOf(content, NODE_WIDTH) / 2,
       width: NODE_WIDTH,
-      content: contentOf(of),
+      content,
     });
     fields.set(id, of);
   } catch (error) {

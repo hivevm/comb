@@ -92,6 +92,17 @@ pub(crate) fn add_node_to(
     Ok((graph.add_node(x, y, width, height)?, content))
 }
 
+/// The height the content of `node` lays out to at its width in `fonts`, checked as `add_node_to`
+/// checks a node, its strings counted against the budget alone, and added to nothing: the node
+/// `heightOf` hands over, named `""` and at the origin (ADR-0035).
+pub(crate) fn height_of(node: &NodeInput, fonts: &Fonts) -> Result<f32, GraphDataProblem> {
+    let (node, content) = node_of(0, node)?;
+    let ([_, y], _) = checked_node(&node)?;
+    let (_, height) = checked_content(node.id, content, fonts, 0)?;
+    within_by_height(node.id, y, height)?;
+    Ok(height)
+}
+
 /// A load of `batch` as `loadGraph` checks one, its nodes and edges crossed as columns.
 #[cfg(test)]
 pub(crate) fn graph_of(batch: &GraphBatch) -> Result<Graph, GraphDataProblem> {
@@ -109,7 +120,7 @@ pub(crate) fn graph_of(batch: &GraphBatch) -> Result<Graph, GraphDataProblem> {
 #[cfg(test)]
 mod tests {
     use super::super::tests::{
-        add, added, batch, content, invalid_text, labelled, load_edges, titled,
+        add, added, badged, batch, content, invalid_text, labelled, load_edges, metricked, titled,
     };
     use super::super::{
         Field, GraphList, ID_LIMIT, KindCode, MAX_ID, MAX_ITEMS, MAX_TEXT, RoleCode, TEXT_LIMIT,
@@ -211,6 +222,65 @@ mod tests {
             assert_eq!(graph.positions(), [0.0, 0.0]);
             assert_eq!(graph.nodes_in_use(), 1);
         }
+    }
+
+    #[test]
+    fn the_height_of_content_is_the_one_an_added_node_of_it_takes_whatever_its_texts_and_width() {
+        // Verifies: ADR-0035
+        let shapes = [
+            |text: &str| titled(text),
+            |text: &str| badged(Some(text), 0x22_a5_5b.into()).into(),
+            |text: &str| metricked(0, 0x22_a5_5b.into(), [Some(text); 3]).into(),
+        ];
+        for shape in shapes {
+            let asked = |text: &str, width: f64| {
+                let node = added(0.0, 0.0, |n| {
+                    n.id = String::new().into();
+                    n.width = width.into();
+                    n.content = shape(text);
+                });
+                height_of(&node, &Fonts::default()).unwrap()
+            };
+            let mut graph = Graph::default();
+            let node = added(40.0, 50.0, |n| n.content = shape("Go"));
+            let slot = add(&mut graph, &node).unwrap() as usize;
+            assert_eq!(asked("Go", 100.0), graph.sizes()[slot * 2 + 1]);
+            assert_eq!(asked(&"x".repeat(MAX_TEXT), 3.0), asked("Go", 100.0));
+        }
+    }
+
+    #[test]
+    fn the_height_of_content_is_refused_as_an_added_node_of_it_naming_no_node() {
+        // Verifies: ADR-0035
+        let unnamed = |change: fn(&mut NodeInput)| {
+            let node = added(0.0, 0.0, |n| {
+                n.id = String::new().into();
+                change(n);
+            });
+            height_of(&node, &Fonts::default())
+        };
+        assert_eq!(
+            unnamed(|n| n.width = (-1.0).into()),
+            Err(GraphDataProblem::InvalidSize {
+                node: String::new()
+            })
+        );
+        assert_eq!(
+            unnamed(|n| {
+                n.content = content(&[&[(KindCode::Text, 1.0, RoleCode::Title, None)]]).into();
+            }),
+            Err(invalid_text("", 0, 0))
+        );
+        assert_eq!(
+            unnamed(|n| n.content = titled(&"x".repeat(MAX_TEXT + 1))),
+            Err(GraphDataProblem::ContentTextTooLong {
+                node: String::new(),
+                row: 0,
+                column: 0,
+                field: "text".into(),
+                limit: TEXT_LIMIT,
+            })
+        );
     }
 
     #[test]

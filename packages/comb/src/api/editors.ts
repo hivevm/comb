@@ -1,5 +1,6 @@
 // The edits of the graph: every method of `Comb` that changes it, and the user's connection and
-// deletion, each run through `edit`, which holds their order (Q-7, ADR-0030, ADR-0028). Refuse
+// deletion, each run through `edit`, which holds their order (Q-7, ADR-0030, ADR-0028); and
+// `heightOf`, which reads and checks as `addNode` does and changes nothing (ADR-0035). Refuse
 // once the engine is lost; read the host's input once, whole, into plain data; refuse what the
 // store's map shows, as it stands after the read, since a getter of the input is the host's code
 // and may have changed the graph through `Comb`; check the code units of identifiers the graph
@@ -16,6 +17,7 @@ import type {
   GraphData,
   GraphState,
   GraphStore,
+  NodeContent,
   NodeData,
   NodePatch,
 } from "../store";
@@ -164,6 +166,17 @@ function load({ store, bridge, limits }: Editing, graph: GraphData): void {
     },
     record: (state, { kept, idUnits }) => state.load(kept, idUnits),
   });
+}
+
+/** `heightOf`: the content and width read once as the node `addNode` reads, named `""` and at the
+ *  origin, and checked by the bridge as `addNode` checks it; the graph is not asked and nothing
+ *  changes (ADR-0035). */
+function heightOf({ bridge, limits }: Editing, content: unknown, width: unknown): number {
+  refuseIfLost();
+  const { snapshot } = readOnce(bridge, () =>
+    nodeSnapshotOf({ id: "", x: 0, y: 0, width, content }, limits),
+  );
+  return checked(() => bridge.heightOf(snapshot));
 }
 
 /** `updateNode`: a node the graph does not hold refused, and the patch merged once the bridge
@@ -325,6 +338,7 @@ export function editorsOf(store: GraphStore, bridge: Bridge, limits: Limits, vet
     load: (graph: GraphData) => load(editing, graph),
     updateNode: (id: string, patch: NodePatch) => updateNode(editing, id, patch),
     addNode: (node: NodeData) => addNode(editing, node),
+    heightOf: (content: NodeContent, width: number) => heightOf(editing, content, width),
     addEdge: (edge: EdgeData) => addEdge(editing, edge, "host"),
     updateEdge: (id: string, patch: EdgePatch) => updateEdge(editing, id, patch),
     removeNodes: (ids: readonly string[]) => removeNodes(editing, ids, "host"),

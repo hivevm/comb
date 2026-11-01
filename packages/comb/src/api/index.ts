@@ -38,6 +38,7 @@ import {
   type EdgePatch,
   type GraphData,
   type GraphStore,
+  type NodeContent,
   type NodeData,
   type NodePatch,
   type NodeView,
@@ -87,9 +88,9 @@ export interface CombOptions {
   canConnect?: (proposal: Proposal) => string | false;
 }
 
-/** Once the engine is lost for the page, `load`, `updateNode`, `addNode`, `addEdge`, `updateEdge`,
- *  `removeNodes`, `removeEdges`, `fitView`, and `setViewport` of every Comb on it throw an
- *  `EngineLostError`, and so does `createComb` (ADR-0021). */
+/** Once the engine is lost for the page, `load`, `updateNode`, `addNode`, `heightOf`, `addEdge`,
+ *  `updateEdge`, `removeNodes`, `removeEdges`, `fitView`, and `setViewport` of every Comb on it
+ *  throw an `EngineLostError`, and so does `createComb` (ADR-0021). */
 export interface Comb {
   /** Replaces the graph. Throws a `GraphDataError` on malformed graph data (Q-7), and an
    *  `EngineLostError` once the engine is lost. */
@@ -105,6 +106,13 @@ export interface Comb {
    *  the limits of a load, and changes nothing then (Q-7); and an `EngineLostError` once the
    *  engine is lost. */
   addNode(node: NodeData): void;
+  /** The height, in world units, a node of `content` and `width` lays out to in the fonts Comb
+   *  draws with: the height `addNode` gives such a node, without one in the graph and changing
+   *  nothing. Content whose rows hold elements of the same kinds, row by row and in the same
+   *  order, has the same height whatever its texts and width, so a layout asks once per shape.
+   *  Throws a `GraphDataError` with the problem `addNode` gives the content or the width, naming
+   *  the node `""` (Q-7), and an `EngineLostError` once the engine is lost (ADR-0035). */
+  heightOf(content: NodeContent, width: number): number;
   /** Adds `edge` between two nodes the graph holds, without a load, drawn with its colour, dash
    *  pattern, arrowhead, and label (G-11). Throws a `GraphDataError` where the graph holds an edge
    *  `edge.id` already (`duplicateEdge`) or no node at one of its ends (`missingNode`), where the
