@@ -3,6 +3,7 @@
 // `onEngineLost`. The trap is provoked through the test-mode seam of the bridge crate, so that the
 // tests do not depend on a trap the checks may close.
 import { expect, test, type Page } from "@playwright/test";
+import type { Comb } from "comb";
 import { open } from "./shared";
 
 declare global {
@@ -14,6 +15,10 @@ declare global {
     secondHost: () => HTMLElement;
     /** The viewport before input on the lost canvas. */
     viewportBefore: { x: number; y: number; scale: number };
+    /** A second Comb, made before its first load. */
+    second: Comb;
+    /** What `onEngineLost` told the second Comb. */
+    heard: string[];
   }
 }
 
@@ -46,37 +51,58 @@ async function openWithErrors(page: Page): Promise<string[]> {
 
 const LOST = "EngineLostError";
 
+/** The methods of `Comb` that need the engine, which throw once it is lost. */
+const NEEDS_THE_ENGINE = [
+  "load",
+  "updateNode",
+  "addNode",
+  "addEdge",
+  "updateEdge",
+  "removeNodes",
+  "removeEdges",
+  "fitView",
+  "setViewport",
+];
+
 test("after a trap in load, every call that needs the engine throws an EngineLostError", async ({
   page,
 }) => {
   // Verifies: ADR-0021, Q-7
   const errors = await openWithErrors(page);
   const outcomes = await page.evaluate(async () => {
-    const graph = { nodes: [{ id: "a", title: "a", x: 0, y: 0, width: 220, height: 64 }] };
+    const graph = { nodes: [window.node("a")] };
     const { comb, outcome } = window;
     const selection = comb.onSelectionChange(() => {});
     window.trapNextCall();
     const trap = outcome(() => comb.load({ ...graph, edges: [] }));
     const later = {
       load: outcome(() => comb.load({ ...graph, edges: [] })),
-      updateNode: outcome(() => comb.updateNode("n0", { title: "x" })),
+      updateNode: outcome(() => comb.updateNode("n0", { content: graph.nodes[0]!.content })),
+      addNode: outcome(() => comb.addNode({ ...graph.nodes[0]!, id: "b" })),
+      addEdge: outcome(() => comb.addEdge({ id: "e", source: "a", target: "b" })),
+      updateEdge: outcome(() => comb.updateEdge("e", { color: 0 })),
+      removeNodes: outcome(() => comb.removeNodes(["a"])),
+      removeEdges: outcome(() => comb.removeEdges([])),
       fitView: outcome(() => comb.fitView()),
       setViewport: outcome(() => comb.setViewport({ x: 0, y: 0, scale: 1 })),
     };
     let created = "ok";
+    const host = window.secondHost();
     try {
-      await window.createComb(window.secondHost(), { engine: fetch(window.engineUrl) });
+      await window.createComb(host, { engine: fetch(window.engineUrl) });
     } catch (error) {
       created = (error as Error).name;
     }
+    const hostChildren = host.childElementCount;
     await comb.whenRendered();
     window.viewportBefore = comb.viewport();
     const kept = {
       viewport: outcome(() => comb.viewport()),
+      worldPointAt: outcome(() => comb.worldPointAt(10, 20)),
       onSelectionChange: outcome(() => comb.onSelectionChange(() => {})()),
       unsubscribe: outcome(selection),
     };
-    return { trap, later, created, kept };
+    return { trap, later, created, hostChildren, kept };
   });
   // Input over the lost canvas changes nothing and throws nothing.
   await page.mouse.move(300, 300);
@@ -92,11 +118,63 @@ test("after a trap in load, every call that needs the engine throws an EngineLos
   });
   expect(outcomes).toEqual({
     trap: LOST,
-    later: { load: LOST, updateNode: LOST, fitView: LOST, setViewport: LOST },
+    later: Object.fromEntries(NEEDS_THE_ENGINE.map((call) => [call, LOST])),
     created: LOST,
-    kept: { viewport: "ok", onSelectionChange: "ok", unsubscribe: "ok" },
+    hostChildren: 0,
+    kept: { viewport: "ok", worldPointAt: "ok", onSelectionChange: "ok", unsubscribe: "ok" },
   });
   expect(destroyed).toEqual({ moved: false, outcome: "ok", canvases: 0 });
+  expect(errors).toEqual([]);
+});
+
+test("a createComb whose engine is lost while PixiJS initialises resolves, or leaves its host element without a child", async ({
+  page,
+}) => {
+  // Verifies: ADR-0021
+  const errors = await openWithErrors(page);
+  const result = await page.evaluate(async () => {
+    const { comb, outcome } = window;
+    // An engine lost before createComb is refused as the engine is created; only a loss while
+    // PixiJS initialises reaches what comes after. No event marks that moment, so a stand-in for
+    // document.createElement springs a trap through the Comb already on the page at the first
+    // canvas made: this depends on PixiJS making a canvas inside app.init.
+    const createElement = document.createElement.bind(document);
+    let sprung = false;
+    let created = "resolved";
+    let host: HTMLElement | undefined;
+    let canvasInHost = false;
+    let refused = "not called";
+    try {
+      document.createElement = ((name: string, options?: ElementCreationOptions) => {
+        if (name === "canvas" && !sprung) {
+          sprung = true;
+          window.trapNextCall();
+          outcome(() => comb.load({ nodes: [], edges: [] }));
+        }
+        return createElement(name, options);
+      }) as typeof document.createElement;
+      host = window.secondHost();
+      const second = await window.createComb(host, { engine: fetch(window.engineUrl) });
+      canvasInHost =
+        host.childElementCount === 1 && host.firstElementChild instanceof HTMLCanvasElement;
+      refused = outcome(() => second.load({ nodes: [], edges: [] }));
+      second.destroy();
+    } catch (error) {
+      created = `${(error as Error).name} leaving ${host?.childElementCount} children`;
+    } finally {
+      document.createElement = createElement;
+    }
+    return { sprung, created, canvasInHost, refused };
+  });
+  // The limits are read as the engine is created, before PixiJS initialises, so a loss there lets
+  // createComb resolve: that is the order the test guards. A rejection would mean the trap sprang
+  // before the limits were read, where it decides nothing, so the test pins "resolved".
+  expect(result).toEqual({
+    sprung: true,
+    created: "resolved",
+    canvasInHost: true,
+    refused: LOST,
+  });
   expect(errors).toEqual([]);
 });
 
@@ -150,7 +228,7 @@ test("a trap in one of two Combs on a page loses the engine for both", async ({ 
       engine: fetch(window.engineUrl),
     });
     const graph = {
-      nodes: [{ id: "a", title: "a", x: 0, y: 0, width: 220, height: 64 }],
+      nodes: [window.node("a")],
       edges: [],
     };
     second.load(graph);
@@ -162,7 +240,9 @@ test("a trap in one of two Combs on a page loses the engine for both", async ({ 
     const trap = outcome(() => first.load(graph));
     const other = {
       load: outcome(() => second.load(graph)),
-      updateNode: outcome(() => second.updateNode("a", { title: "b" })),
+      updateNode: outcome(() =>
+        second.updateNode("a", { content: [[{ kind: "text", role: "title", text: "b" }]] }),
+      ),
     };
     await second.whenRendered();
     return { trap, other, told };
@@ -182,18 +262,63 @@ test("a listener of onEngineLost is called once, also when registered after the 
   const errors = await openWithErrors(page);
   const told = await page.evaluate(async () => {
     const { comb, outcome } = window;
-    const told: string[] = [];
-    comb.onEngineLost((error) => told.push(`before: ${error.name}`));
-    const remove = comb.onEngineLost(() => told.push("removed"));
+    const heard: string[] = [];
+    comb.onEngineLost((error) => heard.push(`before: ${error.name}`));
+    const remove = comb.onEngineLost(() => heard.push("removed"));
     remove();
     window.trapNextCall();
     outcome(() => comb.load({ nodes: [], edges: [] }));
     outcome(() => comb.load({ nodes: [], edges: [] }));
-    const later = comb.onEngineLost((error) => told.push(`after: ${error.name}`));
-    told.push(typeof later);
+    const later = comb.onEngineLost((error) => heard.push(`after: ${error.name}`));
+    heard.push(typeof later);
     later();
-    return told;
+    return heard;
   });
   expect(told).toEqual(["before: EngineLostError", "after: EngineLostError", "function"]);
+  expect(errors).toEqual([]);
+});
+
+test("a Comb before its first load keeps its engine through a pointer, a viewport, and a fit, and then draws its load", async ({
+  page,
+}) => {
+  // Verifies: Q-7
+  const errors = await openWithErrors(page);
+  await page.evaluate(async () => {
+    const second = await window.createComb(window.secondHost(), {
+      engine: fetch(window.engineUrl),
+    });
+    window.second = second;
+    window.heard = [];
+    second.onEngineLost((error) => window.heard.push(error.name));
+  });
+  // A pointer over the second canvas asks the engine what it hits, which has never held a graph.
+  await page.mouse.move(100, 80);
+  await page.mouse.move(150, 100);
+  await page.mouse.move(200, 120);
+  const afterPointer = await page.evaluate(async () => {
+    await window.second.whenRendered();
+    return [...window.heard];
+  });
+  expect(afterPointer).toEqual([]);
+  const afterViewport = await page.evaluate(async () => {
+    const { second } = window;
+    // Each schedules a frame that queries the engine.
+    second.setViewport({ x: 0, y: 0, scale: 1 });
+    second.fitView();
+    await second.whenRendered();
+    return [...window.heard];
+  });
+  expect(afterViewport).toEqual([]);
+  const result = await page.evaluate(async () => {
+    const { second, outcome } = window;
+    const load = outcome(() => second.load({ nodes: [window.node("a", 20, 20)], edges: [] }));
+    await second.whenRendered();
+    return {
+      load,
+      drawn: window.inspect(second).nodes.map((node) => node.id),
+      heard: window.heard,
+    };
+  });
+  expect(result).toEqual({ load: "ok", drawn: ["a"], heard: [] });
   expect(errors).toEqual([]);
 });

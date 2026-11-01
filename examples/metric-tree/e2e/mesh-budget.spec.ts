@@ -1,4 +1,4 @@
-// A query's edge mesh within its budget (ADR-0012): graph data the bridge accepts never runs the
+// A query's edge mesh within its budget (ADR-0027): graph data the bridge accepts never runs the
 // engine out of memory, at any viewport.
 import { expect, test } from "@playwright/test";
 import { open } from "./shared";
@@ -6,22 +6,14 @@ import { open } from "./shared";
 test("20,000 edges between two nodes far apart draw zoomed in, and a later graph draws", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0012
+  // Verifies: Q-7, ADR-0027
   test.setTimeout(120_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
   await page.evaluate(async () => {
-    const node = (id: string, x: number, y: number) => ({
-      id,
-      title: id,
-      x,
-      y,
-      width: 220,
-      height: 64,
-    });
     window.comb.load({
-      nodes: [node("a", 0, 0), node("b", -1e7, 3e6)],
+      nodes: [window.node("a", 0, 0), window.node("b", -1e7, 3e6)],
       edges: Array.from({ length: 20_000 }, (_, i) => ({ id: `e${i}`, source: "a", target: "b" })),
     });
     await window.comb.whenRendered();
@@ -44,9 +36,8 @@ test("20,000 edges between two nodes far apart draw zoomed in, and a later graph
   expect(drawn).toMatchObject({ rendered: true, edges: 20_000, mesh: { detail: "complete" } });
   expect(drawn.mesh!.vertices).toBeGreaterThan(0);
   const after = await page.evaluate(async () => {
-    const node = (id: string, x: number) => ({ id, title: id, x, y: 0, width: 220, height: 64 });
     window.comb.load({
-      nodes: [node("c", 0), node("d", 300)],
+      nodes: [window.node("c", 0), window.node("d", 300)],
       edges: [{ id: "f", source: "c", target: "d" }],
     });
     window.comb.setViewport({ x: 0, y: 100, scale: 1 });

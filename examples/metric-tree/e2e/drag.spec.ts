@@ -1,10 +1,10 @@
 // Dragging a node (G-2).
 import { expect, test, type Page } from "@playwright/test";
-import { canvasOrigin, NODE_HEIGHT, NODE_WIDTH, open, screenCentre } from "./shared";
+import { canvasOrigin, NODE_WIDTH, open, recordChanges, screenCentre, told } from "./shared";
 
 /** A node's position in world coordinates, as the canvas draws it. */
 async function drawnNode(page: Page, id: string) {
-  return page.evaluate((id) => window.inspect().nodes.find((node) => node.id === id), id);
+  return page.evaluate((wanted) => window.inspect().nodes.find((node) => node.id === wanted), id);
 }
 
 test("dragging a node moves it with its edges and edge labels, and a click shows it in the sidebar", async ({
@@ -32,15 +32,15 @@ test("dragging a node moves it with its edges and edge labels, and a click shows
   const source = snapshot.nodes.find((node) => node.id === "0:2.3")!;
   const edge = snapshot.edges.find((candidate) => candidate.id === "0:2.3-3.0")!;
   expect(edge.target.x).toBeCloseTo(after.x, 3);
-  expect(edge.target.y).toBeCloseTo(after.y + NODE_HEIGHT / 2, 3);
+  expect(edge.target.y).toBeCloseTo(after.y + after.height / 2, 3);
   const label = snapshot.edgeLabels.find((candidate) => candidate.edge === "0:2.3-3.0")!;
   expect(label.x).toBeCloseTo((source.x + NODE_WIDTH + after.x) / 2, 1);
-  expect(label.y).toBeCloseTo((source.y + after.y + NODE_HEIGHT) / 2, 1);
+  expect(label.y).toBeCloseTo((source.y + source.height / 2 + after.y + after.height / 2) / 2, 1);
 
   const moved = await screenCentre(page, northStar);
   await page.mouse.click(moved.x, moved.y);
   await expect(page.locator("#selection")).toBeVisible();
-  await expect(page.locator("#title")).toHaveValue("Time spent listening to music by subscribers");
+  await expect(page.locator("#title")).toHaveValue("Weekly listening time");
 });
 
 /** For each screen point, relative to the canvas, whether the canvas shows anything but its
@@ -49,9 +49,9 @@ test("dragging a node moves it with its edges and edge labels, and a click shows
 async function inkNear(page: Page, points: { x: number; y: number }[], radius = 2) {
   const png = await page.locator("#canvas canvas").screenshot();
   return page.evaluate(
-    async ({ png, points, radius }) => {
+    async ({ png: shot, points: near, radius: reach }) => {
       // Decoded in the page, not fetched as a `data:` URL, which the policy's connect-src refuses.
-      const bytes = Uint8Array.from(atob(png), (char) => char.charCodeAt(0));
+      const bytes = Uint8Array.from(atob(shot), (char) => char.charCodeAt(0));
       const image = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
       const ratio = image.width / document.querySelector("#canvas canvas")!.clientWidth;
       const copy = document.createElement("canvas");
@@ -61,8 +61,8 @@ async function inkNear(page: Page, points: { x: number; y: number }[], radius = 
       context.drawImage(image, 0, 0);
       // Comb's default background, which createComb clears the canvas to.
       const background = [0xf7, 0xf8, 0xfa];
-      return points.map(({ x, y }) => {
-        const r = Math.ceil(radius * ratio);
+      return near.map(({ x, y }) => {
+        const r = Math.ceil(reach * ratio);
         const left = Math.round(x * ratio) - r;
         const top = Math.round(y * ratio) - r;
         const { data } = context.getImageData(left, top, 2 * r + 1, 2 * r + 1);
@@ -81,14 +81,14 @@ async function inkNear(page: Page, points: { x: number; y: number }[], radius = 
  *  its centre, its connectors, and the ends of every edge attached to it, with the render count. */
 async function drawnFrame(page: Page, id: string) {
   return page.evaluate(
-    async ({ id }) => {
+    async ({ id: wanted }) => {
       await window.comb.whenRendered();
       const { nodes, edges } = window.inspect();
-      const node = nodes.find((candidate) => candidate.id === id)!;
+      const node = nodes.find((candidate) => candidate.id === wanted)!;
       const toScreen = (p: { x: number; y: number }) => window.screenPoint(p.x, p.y);
       const attached = edges.filter((edge) => {
         const [copy, ends] = edge.id.split(":");
-        return ends!.split("-").some((end) => `${copy}:${end}` === id);
+        return ends!.split("-").some((end) => `${copy}:${end}` === wanted);
       });
       return {
         renders: window.renderCount(),
@@ -98,7 +98,7 @@ async function drawnFrame(page: Page, id: string) {
         in: toScreen({ x: node.x, y: node.y + node.height / 2 }),
         edges: attached.map((edge) => ({
           id: edge.id,
-          outgoing: edge.id.split("-")[0] === id,
+          outgoing: edge.id.split("-")[0] === wanted,
           source: toScreen(edge.source),
           target: toScreen(edge.target),
         })),
@@ -130,7 +130,7 @@ test("a node dragged across frames stays under the pointer, its edges' ends at i
     const pointer = { x: from.x, y: from.y + i * step };
     const renders = await page.evaluate(() => window.renderCount());
     await page.mouse.move(pointer.x, pointer.y);
-    // The frame that drew this move, read before any other: one render per move (ADR-0011).
+    // The frame that drew this move, read before any other: one render per move (ADR-0029).
     const frame = await drawnFrame(page, northStar);
     expect(frame.renders).toBe(renders + 1);
     const local = { x: pointer.x - origin.left, y: pointer.y - origin.top };
@@ -159,4 +159,80 @@ test("a node dragged across frames stays under the pointer, its edges' ends at i
     expect(await page.evaluate(() => window.renderCount())).toBe(renders + 1);
   }
   await page.mouse.up();
+});
+
+test("a node dragged across frames and released tells one nodeMoved, where inspection draws it", async ({
+  page,
+}) => {
+  // Verifies: ADR-0030
+  await open(page);
+  await recordChanges(page);
+  const id = "0:3.0";
+  const from = await screenCentre(page, id);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  for (let step = 1; step <= 8; step += 1) {
+    await page.mouse.move(from.x + step * 9, from.y + step * 7);
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+  }
+  expect(await told(page)).toEqual([]);
+  await page.mouse.up();
+  await page.evaluate(() => window.comb.whenRendered());
+  const node = (await drawnNode(page, id))!;
+  expect(await told(page)).toEqual([{ kind: "nodeMoved", by: "user", id, x: node.x, y: node.y }]);
+});
+
+test("a press and release on a node without a move tells no change", async ({ page }) => {
+  // Verifies: ADR-0030
+  await open(page);
+  await recordChanges(page);
+  const from = await screenCentre(page, "0:3.0");
+  await page.mouse.click(from.x, from.y);
+  await page.evaluate(() => window.comb.whenRendered());
+  expect(await told(page)).toEqual([]);
+});
+
+test("a drag released outside the canvas tells nodeMoved as on it", async ({ page }) => {
+  // Verifies: ADR-0030
+  await open(page);
+  await recordChanges(page);
+  const id = "0:3.0";
+  const from = await screenCentre(page, id);
+  const sidebar = (await page.locator("#sidebar").boundingBox())!;
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(sidebar.x + 40, from.y, { steps: 10 });
+  await page.mouse.up();
+  await page.evaluate(() => window.comb.whenRendered());
+  const node = (await drawnNode(page, id))!;
+  expect(await told(page)).toEqual([{ kind: "nodeMoved", by: "user", id, x: node.x, y: node.y }]);
+});
+
+test("a drag whose engine is lost before the release tells no change, and throws nothing", async ({
+  page,
+}) => {
+  // Verifies: ADR-0030, ADR-0021
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page);
+  await recordChanges(page);
+  const from = await screenCentre(page, "0:3.0");
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x + 20, from.y + 10, { steps: 4 });
+  await page.evaluate(() => window.trapNextCall());
+  // The next move's translate traps, and the engine is lost.
+  await page.mouse.move(from.x + 40, from.y + 20, { steps: 4 });
+  await page.mouse.up();
+  const lost = await page.evaluate(() => {
+    try {
+      window.comb.fitView();
+      return "not lost";
+    } catch (error) {
+      return (error as Error).name;
+    }
+  });
+  expect(lost).toBe("EngineLostError");
+  expect(await told(page)).toEqual([]);
+  expect(errors).toEqual([]);
 });

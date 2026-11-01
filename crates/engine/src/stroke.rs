@@ -1,4 +1,4 @@
-//! The edge mesh (ADR-0012): edge paths flattened into polylines within a tolerance, and stroked
+//! The edge mesh (ADR-0027): edge paths flattened into polylines within a tolerance, and stroked
 //! into triangles with each edge's colour, dash pattern, and arrowhead (G-11).
 //!
 //! A path is flattened by subdividing it until its control points lie within the tolerance of
@@ -12,7 +12,10 @@
 //! near and middle levels draw in full, a width in world units wide.
 //!
 //! A query's mesh has a budget. A part of a path whose control points miss the query's rectangle,
-//! grown by the stroke's width, is drawn as its chord, unflattened. Each edge's floor, its chord,
+//! grown by the stroke's width, is drawn as its chord, unflattened. A segment of the flattened
+//! path that meets the grown rectangle with an end outside it is split where it enters and leaves
+//! it, so that what the rectangle shows rounds by its distance from the query's origin, not by
+//! that of ends far beyond it (ADR-0034). Each edge's floor, its chord,
 //! or its arrowhead alone where that is its full mesh, is reserved before the first edge is meshed;
 //! in slot order, an edge is meshed in full while it fits beside the floors of the edges still to
 //! come, and from the first that does not, it and every later edge are drawn as their floors, and
@@ -25,12 +28,12 @@ use std::collections::TryReserveError;
 use crate::geometry::{EdgePath, Point, Rect};
 use crate::graph::Level;
 
-/// The most vertices the edge mesh of one query holds (ADR-0012): the floors of a load at its
+/// The most vertices the edge mesh of one query holds (ADR-0027): the floors of a load at its
 /// limit of 1,000,000 edges, four vertices each, taken to the next power of two. A mesh holds at
 /// most three times as many indices.
 pub const MESH_BUDGET: u32 = 1 << 22;
 
-/// The detail of a query's edge mesh (ADR-0012): complete, or coarsened where an edge was drawn
+/// The detail of a query's edge mesh (ADR-0027): complete, or coarsened where an edge was drawn
 /// as its chord, or left out, for the budget or for memory.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Detail {
@@ -72,7 +75,7 @@ const FULL_WIDTH: f64 = 2.0;
 
 /// How a query strokes its edges: flattened within `tolerance` and `width` wide, in world units;
 /// `plain` draws thin lines alone, without dash patterns or arrowheads, as the far level of
-/// detail does (ADR-0012).
+/// detail does (ADR-0027).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Stroke {
     pub(crate) tolerance: f64,
@@ -202,6 +205,8 @@ pub struct Mesh {
     pub detail: Detail,
     /// Per edge of the last build, whether its full mesh is its arrowhead alone.
     arrowheads: Vec<bool>,
+    /// The world point the positions of the last build are relative to (ADR-0034).
+    origin: Point,
 }
 
 impl Mesh {
@@ -215,7 +220,8 @@ impl Mesh {
     }
 
     /// Strokes `edges`, in slot order, into the mesh after clearing it, as `stroke` says, inside
-    /// `rect` within a quarter pixel and outside it as chords, and within `budget` vertices: the
+    /// `rect` within a quarter pixel and outside it as chords, with positions relative to
+    /// `origin`, and within `budget` vertices: the
     /// floors of all edges are reserved first, and from the first edge whose full mesh does not
     /// fit beside the floors of the edges after it, or for which memory runs short, every edge is
     /// drawn as its floor. Where even the floors do not fit, the mesh holds no edge.
@@ -224,10 +230,12 @@ impl Mesh {
         edges: impl ExactSizeIterator<Item = (&'a EdgePath, &'a EdgeStyle)> + Clone,
         stroke: &Stroke,
         rect: &Rect,
+        origin: Point,
         budget: u32,
         scratch: &mut Vec<Point>,
     ) {
         self.clear();
+        self.origin = origin;
         let within = Within {
             stroke,
             area: rect.grown(stroke.width),
@@ -325,8 +333,27 @@ impl Mesh {
         u32::try_from(self.distances.len()).unwrap_or(u32::MAX)
     }
 
+    /// Adds a vertex at `at`, its position written relative to the origin and only then rounded.
     fn vertex(&mut self, at: Point, distance: f64, color: u32, dash: (f32, f32)) {
-        self.positions.extend([at.x as f32, at.y as f32]);
+        let Point { x, y } = self.origin;
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "less the query's origin and only then rounded (ADR-0034): a vertex the split \
+                      keeps near the rectangle rounds by its distance from it, and an end left far \
+                      beyond it keeps the rounding ADR-0027 records, which Q-4 allows past 2^21 \
+                      px; a vertex lies within three times `WORLD_LIMIT` of the world's origin, a \
+                      stroke's width within `PIXEL_LIMIT`'s, and the origin of a rectangle that \
+                      finds it within 2^127 of it (ADR-0034), within f32"
+        )]
+        self.positions
+            .extend([(at.x - x) as f32, (at.y - y) as f32]);
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "the distance along the path crosses as f32 from the source, rounded by up to \
+                      2^-24 of itself, the residual ADR-0034 and ADR-0027 record; Q-4 bounds \
+                      dashes at 2^21 px along the path, where that is under 0.5 px; a path between \
+                      nodes within `WORLD_LIMIT` is far shorter than f32::MAX"
+        )]
         self.distances.push(distance as f32);
         self.colors.push(color);
         self.dashes.extend([dash.0, dash.1]);
@@ -414,9 +441,10 @@ fn arrow_of(path: &EdgePath) -> (Point, Point, Point) {
     (tip, base, back)
 }
 
-/// Flattens `path` into `points`, as `within` says, and ends it at the base of its arrowhead where
-/// the stroke draws one; returns what its mesh takes, or none once the flattened points pass
-/// `room` vertices, where the flattening stops.
+/// Flattens `path` into `points`, as `within` says, ends it at the base of its arrowhead where
+/// the stroke draws one, and splits it where it enters and leaves the grown rectangle; returns
+/// what its mesh takes, or none once the flattened points pass `room` vertices, where the
+/// flattening stops, or once the split ones do.
 fn flatten_edge(
     path: &EdgePath,
     style: &EdgeStyle,
@@ -437,7 +465,11 @@ fn flatten_edge(
     if arrow {
         trim_end(points, arrow_of(path).1);
     }
-    Some(head.plus(Size::polyline(points.len())))
+    if !split_at(points, &within.area) {
+        return None;
+    }
+    let size = head.plus(Size::polyline(points.len()));
+    (size.vertices <= room).then_some(size)
 }
 
 /// Whether the full mesh of `path` is its arrowhead alone: every point of its flattening lies
@@ -532,6 +564,105 @@ fn flatten(
     subdivide(path, tolerance, area, 0, out, &fits)
 }
 
+/// Where the segment `a`–`b` lies within `area`, edges included, as the fractions along it at
+/// which it enters and leaves it, or none where it misses it. The bridge refuses coordinates that
+/// are not finite, so none reach it.
+pub(crate) fn crossing(a: Point, b: Point, area: &Rect) -> Option<(f64, f64)> {
+    let (dx, dy) = (b.x - a.x, b.y - a.y);
+    let (mut enters, mut leaves) = (0.0_f64, 1.0_f64);
+    // Per side, how fast the segment moves out across it, and how far inside it `a` lies.
+    for (out, inside) in [
+        (-dx, a.x - area.min_x),
+        (dx, area.max_x - a.x),
+        (-dy, a.y - area.min_y),
+        (dy, area.max_y - a.y),
+    ] {
+        if out == 0.0 {
+            if inside >= 0.0 {
+                continue;
+            }
+            return None;
+        }
+        let at = inside / out;
+        if out < 0.0 {
+            enters = enters.max(at);
+        } else {
+            leaves = leaves.min(at);
+        }
+    }
+    (enters <= leaves).then_some((enters, leaves))
+}
+
+/// The points a segment `a`–`b` is split at so that no part of it that meets `area` has an end
+/// outside it: where it enters `area` after its start, and where it leaves it before its end.
+fn splits(a: Point, b: Point, area: &Rect) -> [Option<Point>; 2] {
+    let (enters, leaves) = crossing(a, b, area).unwrap_or((0.0, 1.0));
+    [
+        (enters > 0.0 && enters < 1.0).then(|| a.lerp(b, enters)),
+        (leaves < 1.0 && leaves > enters).then(|| a.lerp(b, leaves)),
+    ]
+}
+
+/// Splits each segment of the polyline `points` where it enters and leaves `area`, the query's
+/// rectangle grown by the stroke's width (ADR-0027), so that no segment that meets the rectangle
+/// has an end beyond `area`; the parts outside are chords. It runs after the arrowhead has cut
+/// the end, whose base may lie anywhere. The points stay in order along the path, so that the
+/// distance along it runs on through them. Returns false, leaving `points` as they were, where
+/// they cannot grow.
+fn split_at(points: &mut Vec<Point>, area: &Rect) -> bool {
+    let count = |i: usize| {
+        splits(points[i - 1], points[i], area)
+            .iter()
+            .flatten()
+            .count()
+    };
+    let added: usize = (1..points.len()).map(count).sum();
+    if added == 0 {
+        return true;
+    }
+    let old = points.len();
+    if points.try_reserve_exact(added).is_err() {
+        return false;
+    }
+    points.resize(old + added, Point::default());
+    // From the back, so that each point is read before a later one is written over it: point `i`
+    // moves to `i` plus the splits of the segments up to it, and every write lands above `i - 1`.
+    let mut at = old + added;
+    for i in (0..old).rev() {
+        at -= 1;
+        points[at] = points[i];
+        if i == 0 {
+            break;
+        }
+        let (a, b) = (points[i - 1], points[at]);
+        for &point in splits(a, b, area).iter().rev().flatten() {
+            at -= 1;
+            points[at] = point;
+        }
+    }
+    true
+}
+
+/// Whether `p` lies within `reach` of `path` as a stroke within `tolerance` flattens it: the parts
+/// of the path whose control points miss the square of side `2 · reach` around `p` are their
+/// chords, which lie in those control points' hull and so no nearer than `reach` (ADR-0013).
+/// `scratch` holds the flattened points afterwards.
+pub(crate) fn near_path(
+    path: &EdgePath,
+    tolerance: f64,
+    p: Point,
+    reach: f64,
+    scratch: &mut Vec<Point>,
+) -> bool {
+    let area = Rect::at(p).grown(reach);
+    if !flatten(path, tolerance, &area, scratch, |_, _| true) {
+        return false;
+    }
+    scratch
+        .windows(2)
+        .any(|segment| distance_to_segment(p, segment[0], segment[1]) <= reach)
+}
+
 /// How far `p` lies from the segment `a`–`b`.
 pub(crate) fn distance_to_segment(p: Point, a: Point, b: Point) -> f64 {
     let (dx, dy) = (b.x - a.x, b.y - a.y);
@@ -589,12 +720,24 @@ pub(crate) fn flattened(path: &EdgePath, stroke: &Stroke, rect: &Rect) -> Vec<Po
         &mut points,
         |_, _| true
     ));
+    assert!(split_at(&mut points, &area));
     points
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::{PIXEL_LIMIT, Sides, WORLD_LIMIT};
+
+    #[test]
+    fn a_stroke_at_the_largest_pixel_stays_within_a_sixth_of_the_worlds_limit() {
+        // Verifies: ADR-0028
+        for level in [Level::Near, Level::Middle, Level::Far] {
+            let stroke = Stroke::at(level, PIXEL_LIMIT);
+            assert!(stroke.width <= WORLD_LIMIT / 6.0, "{level:?}");
+            assert!(stroke.tolerance <= WORLD_LIMIT / 6.0, "{level:?}");
+        }
+    }
 
     /// A rectangle that holds every point: nothing is drawn as chords for lying outside it.
     const EVERYWHERE: Rect = Rect::new(
@@ -635,13 +778,13 @@ mod tests {
     fn paths() -> Vec<EdgePath> {
         let node = |x, y| Rect::of_node(x, y, 220.0, 64.0);
         vec![
-            EdgePath::between(&node(0.0, 0.0), &node(300.0, 110.0)),
-            EdgePath::between(&node(0.0, 0.0), &node(300.0, -330.0)),
-            EdgePath::between(&node(600.0, 0.0), &node(0.0, 500.0)),
-            EdgePath::between(&node(0.0, 0.0), &node(4000.0, 2000.0)),
+            EdgePath::between(&node(0.0, 0.0), &node(300.0, 110.0), Sides::default()),
+            EdgePath::between(&node(0.0, 0.0), &node(300.0, -330.0), Sides::default()),
+            EdgePath::between(&node(600.0, 0.0), &node(0.0, 500.0), Sides::default()),
+            EdgePath::between(&node(0.0, 0.0), &node(4000.0, 2000.0), Sides::default()),
             // Backwards and level: the control points pull out beyond both ends of the chord.
-            EdgePath::between(&node(500.0, 0.0), &node(0.0, 0.0)),
-            EdgePath::between(&node(500.0, 0.0), &node(0.0, 0.5)),
+            EdgePath::between(&node(500.0, 0.0), &node(0.0, 0.0), Sides::default()),
+            EdgePath::between(&node(500.0, 0.0), &node(0.0, 0.5), Sides::default()),
         ]
     }
 
@@ -706,7 +849,7 @@ mod tests {
 
     #[test]
     fn a_path_is_subdivided_at_most_24_levels_deep() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         // No tolerance stops the subdivision, so it stops at its deepest. Around the source alone,
         // each level splits off the half beyond it as a chord: the source, the end of the deepest
         // part, 2^-24 along the path, and one end per level, 24 of them.
@@ -912,7 +1055,7 @@ mod tests {
 
     #[test]
     fn a_stroke_lies_half_its_width_either_side_of_the_polyline() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         let p = |x, y| Point::new(x, y);
         // Down and right along (0.6, 0.8) for 50, then straight down for 60.
         let points = [p(0.0, 0.0), p(30.0, 40.0), p(30.0, 100.0)];
@@ -952,7 +1095,7 @@ mod tests {
 
     #[test]
     fn an_arrowhead_points_along_a_slanted_end() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         // Straight from (0, 0) to (60, 80), direction (0.6, 0.8): the base lies 10 back at
         // (54, 72), its corners 5 either side along (-0.8, 0.6).
         let path = straight(Point::new(0.0, 0.0), Point::new(60.0, 80.0));
@@ -978,7 +1121,7 @@ mod tests {
 
     #[test]
     fn an_arrowhead_on_an_edge_shorter_than_it_reaches_back_past_the_source() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         // Straight up from (0, 4) to (0, 0), 4 long: the base lies 10 back, at (0, 10), its
         // corners 5 either side along (1, 0); no stroke is drawn.
         let path = straight(Point::new(0.0, 4.0), Point::new(0.0, 0.0));
@@ -1120,13 +1263,20 @@ mod tests {
         let mut mesh = Mesh::default();
         let mut points = Vec::new();
         let all = edges.iter().map(|(path, style)| (path, style));
-        mesh.build(all, &Stroke::full(0.05), &EVERYWHERE, budget, &mut points);
+        mesh.build(
+            all,
+            &Stroke::full(0.05),
+            &EVERYWHERE,
+            Point::default(),
+            budget,
+            &mut points,
+        );
         mesh
     }
 
     #[test]
     fn edges_are_meshed_in_full_while_each_fits_beside_the_floors_after_it() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         let edges = found(&paths()[..3]);
         let sizes: Vec<usize> = (0..3)
             .map(|i| built(&edges[i..=i], u32::MAX).distances.len())
@@ -1237,7 +1387,7 @@ mod tests {
 
     #[test]
     fn an_edge_fits_while_its_flattened_points_stay_within_the_room() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         // The flattening stops once its points pass the room left, counted before the arrowhead
         // cuts the end off.
         let path = paths()[0];
@@ -1281,7 +1431,7 @@ mod tests {
 
     #[test]
     fn outside_the_rectangle_a_path_is_its_chords() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         let path = paths()[3];
         let mut everywhere = Vec::new();
         flatten_all(&path, 0.01, &mut everywhere);
@@ -1302,6 +1452,293 @@ mod tests {
         let a: Vec<_> = points.iter().filter(inside).collect();
         let b: Vec<_> = everywhere.iter().filter(inside).collect();
         assert_eq!(a, b);
+    }
+
+    /// The rectangle the scene queries on a canvas of 1440 × 900 pixels at a scale of 4 around
+    /// `at`: the viewport grown by the culling margin of 128 pixels.
+    fn viewport_around(at: Point) -> Rect {
+        Rect::new(at.x - 180.0, at.y - 112.5, at.x + 180.0, at.y + 112.5).grown(32.0)
+    }
+
+    /// The straight edge of the reproduction, from (-1e7, -3e6) to (1e7, 3e6), flat at once.
+    fn long_straight() -> EdgePath {
+        straight(Point::new(-1e7, -3e6), Point::new(1e7, 3e6))
+    }
+
+    const UNARROWED: EdgeStyle = EdgeStyle {
+        color: 1,
+        dash: Some((6.0, 4.0)),
+        arrow: false,
+    };
+
+    /// The mesh of `path` alone in `style`, queried in `rect` at a scale of 4, its positions
+    /// relative to the query's origin.
+    fn queried(path: &EdgePath, style: &EdgeStyle, rect: &Rect) -> Mesh {
+        let mut mesh = Mesh::default();
+        mesh.build(
+            [(path, style)].into_iter(),
+            &Stroke::at(Level::Near, 0.25),
+            rect,
+            crate::graph::origin_of(rect),
+            MESH_BUDGET,
+            &mut Vec::new(),
+        );
+        mesh
+    }
+
+    /// How far, in pixels at a scale of 4, the points of `path` inside `rect` lie from half the
+    /// stroke's width off either side of its mesh queried there, as f32 holds its vertices; and
+    /// asserts that no vertex of a segment of a side that meets `rect` lies beyond the rectangle
+    /// grown by the stroke's width and its half width at a vertex.
+    fn strays_inside(path: &EdgePath, rect: &Rect) -> f64 {
+        let mesh = queried(path, &UNARROWED, rect);
+        assert_eq!(mesh.detail, Detail::Complete);
+        // The two sides of the stroke drawn, the origin added: the first and the second vertex of
+        // each point.
+        let origin = crate::graph::origin_of(rect);
+        let side = |first: usize| -> Vec<Point> {
+            let at = |v: &[f32], axis: usize| f64::from(v[first + axis]);
+            let vertices = mesh.positions.chunks(4);
+            vertices
+                .map(|v| Point::new(at(v, 0) + origin.x, at(v, 1) + origin.y))
+                .collect()
+        };
+        let sides = [side(0), side(2)];
+        let reach = rect.grown(2.0 * FULL_WIDTH);
+        for side in &sides {
+            for s in side.windows(2) {
+                if crossing(s[0], s[1], rect).is_some() {
+                    assert!(reach.contains(s[0]) && reach.contains(s[1]), "{s:?}");
+                }
+            }
+        }
+        // The points of the edge inside the rectangle, about a twentieth of a pixel apart.
+        let length = (path.target.x - path.source.x).hypot(path.target.y - path.source.y);
+        let step = 1.0 / 80.0 / length;
+        let inside: Vec<Point> = (-10_000..=10_000)
+            .map(|i| path.point_at(0.5 + f64::from(i) * step))
+            .filter(|p| rect.contains(*p))
+            .collect();
+        assert!(inside.len() > 5000, "{}", inside.len());
+        let half = FULL_WIDTH / 2.0;
+        let worst = inside
+            .iter()
+            .flat_map(|&p| {
+                sides.iter().map(move |side| {
+                    let to_side = side
+                        .windows(2)
+                        .map(|s| distance_to_segment(p, s[0], s[1]))
+                        .fold(f64::INFINITY, f64::min);
+                    (to_side - half).abs()
+                })
+            })
+            .fold(0.0, f64::max);
+        worst * 4.0
+    }
+
+    #[test]
+    fn a_straight_edge_far_beyond_the_viewport_is_drawn_within_a_quarter_pixel_inside_it() {
+        // Verifies: Q-4, ADR-0027
+        let rect = viewport_around(Point::default());
+        let worst = strays_inside(&long_straight(), &rect);
+        assert!(worst <= 0.25, "strays {worst} px");
+        // At ±1e7 the ends happen to round little, since they are whole numbers f32 holds; at
+        // ±1e9, unsplit, the sides would stray by pixels.
+        let longer = straight(Point::new(-1e9, -3e8), Point::new(1e9, 3e8));
+        let worst = strays_inside(&longer, &rect);
+        assert!(worst <= 0.25, "strays {worst} px");
+    }
+
+    /// Whether `p` lies on the edge of `area`, within what rounding leaves of it.
+    fn on_edge_of(area: &Rect, p: Point) -> bool {
+        let close = |a: f64, b: f64| (a - b).abs() <= 1e-9 * (1.0 + a.abs());
+        area.grown(1e-6).contains(p)
+            && (close(p.x, area.min_x)
+                || close(p.x, area.max_x)
+                || close(p.y, area.min_y)
+                || close(p.y, area.max_y))
+    }
+
+    #[test]
+    fn a_segment_is_split_where_it_enters_and_leaves_the_rectangle_grown_by_the_stroke() {
+        // Verifies: ADR-0027
+        let path = long_straight();
+        let rect = viewport_around(Point::default());
+        let stroke = Stroke::at(Level::Near, 0.25);
+        let area = rect.grown(stroke.width);
+        let points = flattened(&path, &stroke, &rect);
+        assert_eq!(points.len(), 4, "{points:?}");
+        assert_eq!((points[0], points[3]), (path.source, path.target));
+        // Along y = 0.3 x it enters by the left side, at x = -214, and leaves by the right.
+        for (p, x) in [(points[1], -214.0), (points[2], 214.0)] {
+            assert!(on_edge_of(&area, p), "{p:?}");
+            assert!(
+                (p.x - x).abs() < 1e-6 && (p.y - 0.3 * x).abs() < 1e-6,
+                "{p:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_distance_along_the_path_runs_on_through_the_split() {
+        // Verifies: ADR-0027
+        let path = long_straight();
+        let rect = viewport_around(Point::default());
+        let mesh = queried(&path, &UNARROWED, &rect);
+        let points = flattened(&path, &Stroke::at(Level::Near, 0.25), &rect);
+        let length = |a: Point, b: Point| (b.x - a.x).hypot(b.y - a.y);
+        let mut along = 0.0;
+        let mut expected = vec![0.0_f32];
+        for s in points.windows(2) {
+            along += length(s[0], s[1]);
+            expected.push(along as f32);
+        }
+        let drawn: Vec<f32> = mesh.distances.iter().step_by(2).copied().collect();
+        assert_eq!(drawn, expected);
+        assert_eq!(mesh.distances.chunks(2).filter(|d| d[0] != d[1]).count(), 0);
+        // The whole runs as far as the unsplit chord: the split points lie on it.
+        let whole = length(path.source, path.target) as f32;
+        assert!(
+            (drawn[3] - whole).abs() <= whole * f32::EPSILON,
+            "{drawn:?}"
+        );
+        assert!(mesh.dashes.chunks(2).all(|d| d == [6.0, 4.0]));
+    }
+
+    #[test]
+    fn a_path_wholly_inside_the_rectangle_is_meshed_as_without_one() {
+        // Verifies: ADR-0027
+        let edges = found(&paths());
+        let around = Rect::new(-1000.0, -1000.0, 5000.0, 3000.0);
+        let mut points = Vec::new();
+        let stroke = Stroke::full(0.05);
+        let mut inside = Mesh::default();
+        inside.build(
+            edges.iter().map(|(path, style)| (path, style)),
+            &stroke,
+            &around,
+            Point::default(),
+            u32::MAX,
+            &mut points,
+        );
+        let everywhere = built(&edges, u32::MAX);
+        assert_eq!(inside.positions, everywhere.positions);
+        assert_eq!(inside.distances, everywhere.distances);
+        assert_eq!(inside.indices, everywhere.indices);
+    }
+
+    #[test]
+    fn an_arrowhead_cuts_the_path_before_it_is_split() {
+        // Verifies: ADR-0027
+        // From far to the left into the rectangle: the stroke enters it at x = -2, the edge of
+        // the grown rectangle, and ends at the base of the arrowhead, 10 before the tip.
+        let path = straight(Point::new(-1e6, 50.0), Point::new(50.0, 50.0));
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let stroke = Stroke::full(0.25);
+        let within = Within {
+            stroke: &stroke,
+            area: rect.grown(stroke.width),
+            budget: usize::MAX,
+        };
+        let mut points = Vec::new();
+        let size = flatten_edge(
+            &path,
+            &EdgeStyle::unstyled(),
+            &within,
+            usize::MAX,
+            &mut points,
+        );
+        assert_eq!(size, Some(Size::ARROWHEAD.plus(Size::polyline(3))));
+        let p = |x| Point::new(x, 50.0);
+        assert_eq!(points, [p(-1e6), p(-2.0), p(40.0)]);
+    }
+
+    #[test]
+    fn the_split_points_count_against_the_room_left() {
+        // Verifies: ADR-0027
+        // Flat at once, two points fit in 4 vertices; split, the four take 8.
+        let path = long_straight();
+        let stroke = Stroke::at(Level::Near, 0.25);
+        let within = Within {
+            stroke: &stroke,
+            area: viewport_around(Point::default()).grown(stroke.width),
+            budget: usize::MAX,
+        };
+        let mut points = Vec::new();
+        let fits = flatten_edge(&path, &UNARROWED, &within, 8, &mut points);
+        assert_eq!(fits, Some(Size::polyline(4)));
+        assert_eq!(
+            flatten_edge(&path, &UNARROWED, &within, 7, &mut points),
+            None
+        );
+    }
+
+    #[test]
+    fn a_segment_is_split_only_where_it_crosses_the_edge_of_the_area() {
+        let area = Rect::new(0.0, 0.0, 10.0, 10.0);
+        let p = |x, y| Point::new(x, y);
+        let split = |a: Point, b: Point| -> Vec<Point> {
+            let mut points = vec![a, b];
+            assert!(split_at(&mut points, &area));
+            points
+        };
+        // Inside, outside, or of no length: as it was.
+        for (a, b) in [
+            (p(1.0, 1.0), p(9.0, 9.0)),
+            (p(-5.0, -5.0), p(-5.0, 20.0)),
+            (p(20.0, 5.0), p(20.0, 5.0)),
+            (p(5.0, 5.0), p(5.0, 5.0)),
+            (p(-1.0, 5.0), p(-1.0, 5.0)),
+            // From the edge outward, or inward from it, or onto it: its end on the edge is its
+            // own.
+            (p(0.0, 5.0), p(-20.0, 5.0)),
+            (p(0.0, 5.0), p(5.0, 5.0)),
+            (p(-20.0, 5.0), p(0.0, 5.0)),
+            (p(5.0, 5.0), p(10.0, 5.0)),
+        ] {
+            assert_eq!(split(a, b), [a, b], "{a:?} to {b:?}");
+        }
+        // Through a corner from outside to outside, it leaves where it enters: one point.
+        assert_eq!(
+            split(p(-5.0, 5.0), p(5.0, -5.0)),
+            [p(-5.0, 5.0), p(0.0, 0.0), p(5.0, -5.0)]
+        );
+        // In from outside, out from inside, and through.
+        assert_eq!(
+            split(p(-10.0, 5.0), p(5.0, 5.0)),
+            [p(-10.0, 5.0), p(0.0, 5.0), p(5.0, 5.0)]
+        );
+        assert_eq!(
+            split(p(5.0, 5.0), p(5.0, 30.0)),
+            [p(5.0, 5.0), p(5.0, 10.0), p(5.0, 30.0)]
+        );
+        assert_eq!(
+            split(p(-10.0, 5.0), p(20.0, 5.0)),
+            [p(-10.0, 5.0), p(0.0, 5.0), p(10.0, 5.0), p(20.0, 5.0)]
+        );
+        // Along the edge itself, it is split at the corners.
+        assert_eq!(
+            split(p(-10.0, 0.0), p(20.0, 0.0)),
+            [p(-10.0, 0.0), p(0.0, 0.0), p(10.0, 0.0), p(20.0, 0.0)]
+        );
+        // An area without bounds splits nothing.
+        let mut points = vec![p(-1e9, 3.0), p(1e9, 7.0)];
+        assert!(split_at(&mut points, &EVERYWHERE));
+        assert_eq!(points.len(), 2);
+        // Several segments: each is split in place, the points in order along the path.
+        let mut points = vec![p(-10.0, 5.0), p(5.0, 5.0), p(5.0, 30.0), p(5.0, 40.0)];
+        assert!(split_at(&mut points, &area));
+        assert_eq!(
+            points,
+            [
+                p(-10.0, 5.0),
+                p(0.0, 5.0),
+                p(5.0, 5.0),
+                p(5.0, 10.0),
+                p(5.0, 30.0),
+                p(5.0, 40.0)
+            ]
+        );
     }
 
     #[test]
@@ -1362,7 +1799,7 @@ mod tests {
 
     #[test]
     fn an_edge_whose_full_mesh_is_its_arrowhead_has_that_for_its_floor() {
-        // Verifies: ADR-0012
+        // Verifies: ADR-0027
         let mut edges = found(&paths()[..1]);
         edges.extend((0..4).map(|i| short(f64::from(i) * 100.0)));
         let first = built(&edges[..1], u32::MAX).distances.len();

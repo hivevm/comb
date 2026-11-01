@@ -1,7 +1,7 @@
 # ADR-0020: Comb installs PixiJS's code generation without eval before it creates a renderer
 
-- **Status:** 🟡 proposed
-- **Date:** 2026-10-21
+- **Status:** 🟢 accepted
+- **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `createComb` in `packages/comb/src/api/`, how `packages/comb` imports `pixi.js`, and every host application that embeds Comb
 

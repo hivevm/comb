@@ -1,11 +1,26 @@
 // A trap loses the engine for the process, as for a page (ADR-0021), and Bun runs every test file
 // in one process: bridge.test.ts runs this in a process of its own and reads what it prints, the
 // outcome of each call after the trap.
-import { createBridgeSync, EngineLostError, onEngineLost, trapNextCall } from ".";
+import {
+  createBridgeSync,
+  EngineLostError,
+  onEngineLost,
+  edgeColumns,
+  nodeColumns,
+  PIECE_BOUND,
+  trapNextCall,
+  type GraphSnapshot,
+} from ".";
 
 const url = new URL("../../wasm/test-mode/engine_bg.wasm", import.meta.url);
 const bridge = createBridgeSync(await Bun.file(url).arrayBuffer());
-const graph = { nodes: [{ id: "a", title: "a", x: 0, y: 0, width: 100, height: 50 }], edges: [] };
+// Plain data of its own in place of a snapshot of `api/snapshot.ts` (ADR-0028), its node and its
+// edges, none, written into columns (ADR-0034).
+const columns = nodeColumns(1, PIECE_BOUND);
+columns.node("a", 0, 0, 100);
+columns.element("text", "title", 1, undefined, "a", undefined, true);
+const edges = edgeColumns(0, PIECE_BOUND).columns();
+const graph = { nodes: columns.columns(), edges } as GraphSnapshot;
 
 /** How `call` ended: `ok`, the name of a typed error with the name of its cause, or the message
  *  of an untyped one. */

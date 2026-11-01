@@ -1,14 +1,15 @@
-//! The property test of the mesh budget (ADR-0012): graphs of long edges, and of many edges
+//! The property test of the mesh budget (ADR-0027): graphs of long edges, and of many edges
 //! between few nodes, queried at random rectangles, scales, and levels with the budget lowered,
 //! keep their mesh within the budget, draw every edge they find, report the mesh complete exactly
-//! when every edge is meshed in full, and draw each edge within a quarter pixel inside the
-//! rectangle, edges from (0, 0) to (-1e8, 3e7) among them.
-// Verifies: Q-7, Q-4, ADR-0012
+//! when every edge is meshed in full, draw each edge within a quarter pixel inside the
+//! rectangle, edges from (0, 0) to (-1e8, 3e7) among them, and split each segment that meets the
+//! rectangle where it leaves the rectangle grown by the stroke's width.
+// Verifies: Q-7, Q-4, ADR-0027, ADR-0024
 
-use super::tests::Lcg;
+use super::tests::{Lcg, random_sides};
 use super::{EdgeSpec, Graph, Level, Visible};
-use crate::geometry::{EdgePath, Point, Rect};
-use crate::stroke::{Detail, EdgeStyle, Mesh, Stroke, distance_to_segment, flattened};
+use crate::geometry::{EdgePath, Point, Rect, Sides};
+use crate::stroke::{Detail, EdgeStyle, Mesh, Stroke, crossing, distance_to_segment, flattened};
 
 /// How many random queries one run makes.
 const CASES: u64 = 400;
@@ -30,6 +31,7 @@ fn random_graph(rng: &mut Lcg, nodes: usize, edges: usize, spread: f64) -> Graph
     }
     let specs = (0..edges)
         .map(|i| EdgeSpec {
+            sides: random_sides(rng),
             source: rng.below(nodes),
             target: rng.below(nodes),
             label: None,
@@ -50,6 +52,7 @@ fn farthest(rng: &mut Lcg) -> Graph {
     let edges = 1 + rng.below(40);
     let specs = (0..edges)
         .map(|i| EdgeSpec {
+            sides: random_sides(rng),
             source: rng.below(3),
             target: rng.below(3),
             label: None,
@@ -169,21 +172,40 @@ fn worst_inside(path: &EdgePath, points: &[Point], rect: &Rect, scale: f64) -> f
         .fold(0.0, f64::max)
 }
 
-/// Asserts that the vertices `range` of `mesh`, an edge without an arrowhead, are the stroke of
-/// `points` `width` wide: the middle of each pair of vertices is a point, within what `f32` holds.
-fn assert_stroke_of(mesh: &Mesh, range: std::ops::Range<usize>, points: &[Point], width: f64) {
+/// Asserts that the vertices `range` of the mesh of `out`, an edge without an arrowhead, are the
+/// stroke of `points` `width` wide: the middle of each pair of vertices, its origin added back, is
+/// a point, within what `f32` holds of its distance from the origin (ADR-0034).
+fn assert_stroke_of(out: &Visible, range: std::ops::Range<usize>, points: &[Point], width: f64) {
     assert_eq!(range.len(), 2 * points.len());
+    let mesh = &out.mesh;
+    let origin = [out.origin.x, out.origin.y];
     for (i, point) in range.step_by(2).zip(points) {
         let middle = |axis: usize| {
             let (a, b) = (
                 mesh.positions[2 * i + axis],
                 mesh.positions[2 * i + 2 + axis],
             );
-            (f64::from(a) + f64::from(b)) / 2.0
+            (f64::from(a) + f64::from(b)) / 2.0 + origin[axis]
         };
-        let rounding = (point.x.abs().max(point.y.abs()) + width) * f64::from(f32::EPSILON);
+        let (dx, dy) = (point.x - origin[0], point.y - origin[1]);
+        let rounding = (dx.abs().max(dy.abs()) + width) * f64::from(f32::EPSILON);
         assert!((middle(0) - point.x).abs() <= rounding, "{point:?}");
         assert!((middle(1) - point.y).abs() <= rounding, "{point:?}");
+    }
+}
+
+/// Asserts that no segment of `points` that meets `rect` has an end beyond `rect` grown by
+/// `width`, the stroke's: where one would, the segment is split there, so that each rounds by its
+/// distance from the query's origin (ADR-0027).
+fn assert_within_reach(points: &[Point], rect: &Rect, width: f64, context: &str) {
+    let area = rect.grown(width);
+    let slack = |p: Point| 1e-9 * (1.0 + p.x.abs().max(p.y.abs()));
+    for s in points.windows(2) {
+        if crossing(s[0], s[1], rect).is_some() {
+            for p in [s[0], s[1]] {
+                assert!(area.grown(slack(p)).contains(p), "{context}: {p:?}");
+            }
+        }
     }
 }
 
@@ -220,7 +242,8 @@ fn assert_accurate(graph: &Graph, full: &Visible, rect: &Rect, level: Level, sca
     for (&slot, (_, range)) in measured {
         let path = graph.paths[slot as usize];
         let points = flattened(&path, &stroke, rect);
-        assert_stroke_of(&full.mesh, range, &points, stroke.width);
+        assert_stroke_of(full, range, &points, stroke.width);
+        assert_within_reach(&points, rect, stroke.width, &format!("edge {slot}"));
         let worst = worst_inside(&path, &points, rect, scale);
         assert!(
             worst <= 0.25,
@@ -279,6 +302,7 @@ fn every_query_keeps_its_mesh_within_the_budget_and_draws_every_edge_it_finds() 
 fn far_apart(edges: u32, arrow: bool) -> Graph {
     let specs = (0..edges)
         .map(|i| EdgeSpec {
+            sides: Sides::default(),
             source: 0,
             target: 1,
             label: None,
@@ -301,7 +325,7 @@ fn viewport_at(scale: f64) -> Rect {
 
 #[test]
 fn twenty_thousand_edges_between_two_nodes_far_apart_mesh_in_full_zoomed_in() {
-    // Verifies: Q-7, ADR-0012
+    // Verifies: Q-7, ADR-0027
     let mut graph = far_apart(20_000, true);
     let rect = viewport_at(4.0);
     let mut out = Visible::default();

@@ -5,8 +5,26 @@
 //! path's normal there (G-6). An edge leaves its source node at the middle of its right side and
 //! enters its target node at the middle of its left side.
 
+/// How far from the world's origin the graph lies, in world units, 2^120: every node within it on
+/// each axis, its far side included, and every label offset within it. Every point the engine
+/// derives from them, a connector, a control point, a vertex, a label point, lies within three
+/// times this, and the width of a stroke within `PIXEL_LIMIT`'s, so that each stays far within
+/// `f32`, whose largest value is about 2^128; relative to the origin of a query that draws it,
+/// which lies within half its grid of the rectangle's centre, at most 2^127 (ADR-0034), too.
+pub const WORLD_LIMIT: f64 = 1_329_227_995_784_915_872_903_807_060_280_344_576.0;
+
+/// The largest screen pixel a query strokes for, 2^114 world units: far beyond the shell's least
+/// zoom, and small enough that no stroke or arrowhead reaches past a sixth of `WORLD_LIMIT`.
+pub(crate) const PIXEL_LIMIT: f64 = WORLD_LIMIT / 64.0;
+
+/// `pixel` as a query and a hit test take it: a screen pixel beyond any zoom is the largest a query
+/// strokes for, `PIXEL_LIMIT`, so that every reach and stroke derived from it stays finite.
+pub(crate) fn bounded_pixel(pixel: f64) -> f64 {
+    pixel.min(PIXEL_LIMIT)
+}
+
 /// A point in world coordinates.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Point {
     pub x: f64,
     pub y: f64,
@@ -17,7 +35,7 @@ impl Point {
         Self { x, y }
     }
 
-    fn lerp(self, other: Self, t: f64) -> Self {
+    pub(crate) fn lerp(self, other: Self, t: f64) -> Self {
         Self::new(
             self.x + (other.x - self.x) * t,
             self.y + (other.y - self.y) * t,
@@ -115,6 +133,67 @@ fn extrema(p0: f64, p1: f64, p2: f64, p3: f64) -> impl Iterator<Item = f64> {
     [q / a, c / q].into_iter().filter(|t| !t.is_nan())
 }
 
+/// A side of a node, at whose middle its connector sits (ADR-0024).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Side {
+    Top,
+    #[default]
+    Right,
+    Bottom,
+    Left,
+}
+
+/// The sides an edge leaves its source by and enters its target by: by default the right of its
+/// source and the left of its target (ADR-0024).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Sides {
+    pub source: Side,
+    pub target: Side,
+}
+
+impl Default for Sides {
+    fn default() -> Self {
+        Self {
+            source: Side::Right,
+            target: Side::Left,
+        }
+    }
+}
+
+impl Side {
+    /// The connector of this side of `node`: the middle of the side.
+    pub(crate) fn connector(self, node: &Rect) -> Point {
+        let (mid_x, mid_y) = (
+            (node.min_x + node.max_x) / 2.0,
+            (node.min_y + node.max_y) / 2.0,
+        );
+        match self {
+            Self::Top => Point::new(mid_x, node.min_y),
+            Self::Right => Point::new(node.max_x, mid_y),
+            Self::Bottom => Point::new(mid_x, node.max_y),
+            Self::Left => Point::new(node.min_x, mid_y),
+        }
+    }
+
+    /// How far `to` lies from `from` along this side's normal's axis.
+    fn along(self, from: Point, to: Point) -> f64 {
+        match self {
+            Self::Left | Self::Right => (to.x - from.x).abs(),
+            Self::Top | Self::Bottom => (to.y - from.y).abs(),
+        }
+    }
+
+    /// `point` pulled `pull` out along this side's outward normal.
+    fn pulled(self, point: Point, pull: f64) -> Point {
+        match self {
+            Self::Top => Point::new(point.x, point.y - pull),
+            Self::Right => Point::new(point.x + pull, point.y),
+            Self::Bottom => Point::new(point.x, point.y + pull),
+            Self::Left => Point::new(point.x - pull, point.y),
+        }
+    }
+}
+
 /// The four control points of an edge's cubic Bézier path.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct EdgePath {
@@ -126,8 +205,10 @@ pub(crate) struct EdgePath {
 
 impl EdgePath {
     /// The path from a connector on the right side of a node to one on the left side of
-    /// another: the control points pull horizontally, half the horizontal distance and at least
+    /// another, as it was before edges named their sides, which `between` keeps from the right to
+    /// the left: the control points pull horizontally, half the horizontal distance and at least
     /// `min_pull`, so an edge leaves and enters its connectors level.
+    #[cfg(test)]
     pub(crate) fn horizontal(source: Point, target: Point, min_pull: f64) -> Self {
         let pull = ((target.x - source.x).abs() / 2.0).max(min_pull);
         Self {
@@ -138,14 +219,22 @@ impl EdgePath {
         }
     }
 
-    /// The path from the middle of the right side of `source` to the middle of the left side of
-    /// `target`.
-    pub(crate) fn between(source: &Rect, target: &Rect) -> Self {
-        Self::horizontal(
-            Point::new(source.max_x, (source.min_y + source.max_y) / 2.0),
-            Point::new(target.min_x, (target.min_y + target.max_y) / 2.0),
-            MIN_PULL,
-        )
+    /// The path from the connector of `sides.source` of `source` to that of `sides.target` of
+    /// `target`: each control point lies on its end's outward normal, half the distance between
+    /// the ends along that normal's axis out, and at least `MIN_PULL` (ADR-0024). From the right
+    /// to the left it is `horizontal`'s path, to the bit.
+    pub(crate) fn between(source: &Rect, target: &Rect, sides: Sides) -> Self {
+        let (from, to) = (
+            sides.source.connector(source),
+            sides.target.connector(target),
+        );
+        let pull = |side: Side| (side.along(from, to) / 2.0).max(MIN_PULL);
+        Self {
+            source: from,
+            control_source: sides.source.pulled(from, pull(sides.source)),
+            control_target: sides.target.pulled(to, pull(sides.target)),
+            target: to,
+        }
     }
 
     /// The smallest rectangle that holds the whole path: its ends and the points where it turns.
@@ -232,6 +321,37 @@ impl EdgePath {
         }
     }
 
+    /// The path parameter and label offset that place a label at `p`: the parameter of the path
+    /// point nearest `p`, and how far `p` lies from it along the normal there, so that
+    /// `label_position` of the two is `p` where that nearest point lies inside the path (G-6).
+    pub(crate) fn placement_at(&self, p: Point) -> (f64, f64) {
+        let squared = |t: f64| {
+            let q = self.point_at(t);
+            (q.x - p.x).powi(2) + (q.y - p.y).powi(2)
+        };
+        // Coarsely, then within the bracket of the nearest sample by ternary search; a cubic's
+        // distance has at most a few minima, which samples this close apart do not straddle.
+        let n = 256;
+        let best = (0..=n)
+            .map(|i| f64::from(i) / f64::from(n))
+            .min_by(|a, b| squared(*a).total_cmp(&squared(*b)))
+            .unwrap_or(0.0);
+        let step = 1.0 / f64::from(n);
+        let (mut from, mut to) = ((best - step).max(0.0), (best + step).min(1.0));
+        for _ in 0..100 {
+            let (m1, m2) = (from + (to - from) / 3.0, to - (to - from) / 3.0);
+            if squared(m1) < squared(m2) {
+                to = m2;
+            } else {
+                from = m1;
+            }
+        }
+        let t = (from + to) / 2.0;
+        let (point, tangent) = (self.point_at(t), self.tangent_at(t));
+        let offset = (p.x - point.x) * tangent.y - (p.y - point.y) * tangent.x;
+        (t, offset)
+    }
+
     /// Where an edge label with path parameter `t` and label offset `offset` sits: the path
     /// point at `t`, moved `offset` pixels along the normal, which points left of the direction
     /// of travel.
@@ -254,6 +374,151 @@ mod tests {
 
     fn straight() -> EdgePath {
         EdgePath::horizontal(Point::new(0.0, 0.0), Point::new(200.0, 0.0), 10.0)
+    }
+
+    #[test]
+    fn each_of_the_sixteen_pairs_of_sides_runs_from_connector_to_connector_along_their_normals() {
+        // Verifies: ADR-0024
+        let sides = [Side::Top, Side::Right, Side::Bottom, Side::Left];
+        let outward = |side: Side| match side {
+            Side::Top => (0.0, -1.0),
+            Side::Right => (1.0, 0.0),
+            Side::Bottom => (0.0, 1.0),
+            Side::Left => (-1.0, 0.0),
+        };
+        let source = Rect::of_node(0.0, 0.0, 220.0, 64.0);
+        // Below and to the right, and above and to the left, of the source, and level with it.
+        for target in [
+            Rect::of_node(400.0, 300.0, 220.0, 64.0),
+            Rect::of_node(-500.0, -260.0, 100.0, 40.0),
+            Rect::of_node(300.0, 0.0, 220.0, 64.0),
+        ] {
+            for (from, to) in sides
+                .iter()
+                .flat_map(|&a| sides.iter().map(move |&b| (a, b)))
+            {
+                let path = EdgePath::between(
+                    &source,
+                    &target,
+                    Sides {
+                        source: from,
+                        target: to,
+                    },
+                );
+                let (sx, sy) = (
+                    [110.0, 220.0, 110.0, 0.0][from as usize],
+                    [0.0, 32.0, 64.0, 32.0][from as usize],
+                );
+                assert_eq!(path.source, Point::new(sx, sy), "{from:?} to {to:?}");
+                assert_eq!(path.target, to.connector(&target), "{from:?} to {to:?}");
+                // It leaves along the source side's outward normal and enters against the target
+                // side's: the tangent at each end is parallel to the normal, pointing out at the
+                // start and in at the end.
+                let (nx, ny) = outward(from);
+                let leave = path.tangent_at(0.0);
+                assert!(
+                    (leave.x * ny - leave.y * nx).abs() < 1e-9,
+                    "{from:?} to {to:?}"
+                );
+                assert!(leave.x * nx + leave.y * ny > 0.0, "{from:?} to {to:?}");
+                // Each control point lies on its end's normal, half the distance between the
+                // ends along that normal's axis out, and at least 40.
+                let pull = |side: Side, end: Point, control: Point| {
+                    let (x, y) = outward(side);
+                    let along = if x == 0.0 {
+                        (path.target.y - path.source.y).abs()
+                    } else {
+                        (path.target.x - path.source.x).abs()
+                    };
+                    let out = (along / 2.0).max(40.0);
+                    assert_eq!(control, Point::new(end.x + x * out, end.y + y * out));
+                };
+                pull(from, path.source, path.control_source);
+                pull(to, path.target, path.control_target);
+                let (mx, my) = outward(to);
+                let enter = path.tangent_at(1.0);
+                assert!(
+                    (enter.x * my - enter.y * mx).abs() < 1e-9,
+                    "{from:?} to {to:?}"
+                );
+                assert!(enter.x * mx + enter.y * my < 0.0, "{from:?} to {to:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn from_the_right_to_the_left_the_path_is_the_horizontal_one_to_the_bit() {
+        // Verifies: ADR-0024
+        let source = Rect::of_node(10.0, 20.0, 220.0, 64.0);
+        for target in [
+            Rect::of_node(400.0, 300.0, 220.0, 64.0),
+            Rect::of_node(-500.0, -260.0, 100.0, 40.5),
+            Rect::of_node(0.1, 1e7, 3.0, 0.7),
+        ] {
+            let horizontal = EdgePath::horizontal(
+                Point::new(source.max_x, (source.min_y + source.max_y) / 2.0),
+                Point::new(target.min_x, (target.min_y + target.max_y) / 2.0),
+                MIN_PULL,
+            );
+            assert_eq!(
+                EdgePath::between(&source, &target, Sides::default()),
+                horizontal
+            );
+        }
+    }
+
+    #[test]
+    fn a_label_is_placed_at_the_nearest_of_several_near_points_of_a_path_that_turns_back() {
+        // Verifies: G-6
+        // From the right of a node to the left of one behind and below it: the path swings out to
+        // the right, back across, and out to the left, so that a point beside it lies near
+        // several stretches of it, and the placement has to end at a foot of a perpendicular.
+        let path = EdgePath::between(
+            &Rect::of_node(0.0, 0.0, 220.0, 64.0),
+            &Rect::of_node(-400.0, 140.0, 220.0, 64.0),
+            Sides::default(),
+        );
+        let distance = |t: f64, p: Point| {
+            let q = path.point_at(t);
+            (q.x - p.x).hypot(q.y - p.y)
+        };
+        // A point far beside a path that turns back, whose distance has two minima: a search near
+        // the nearest sample ends at a foot of a perpendicular, where a search of the whole path
+        // ends at a point that is none.
+        let turning = EdgePath::between(
+            &Rect::of_node(0.0, 0.0, 220.0, 64.0),
+            &Rect::of_node(
+                -161.603_165_735_473_57,
+                0.132_577_549_044_583_52,
+                220.0,
+                64.0,
+            ),
+            Sides::default(),
+        );
+        let far = Point::new(-348.000_619_140_425_56, 412.989_424_779_773_57);
+        let (t, offset) = turning.placement_at(far);
+        let placed = turning.label_position(t, offset);
+        assert!(
+            (placed.x - far.x).hypot(placed.y - far.y) < 0.01,
+            "{placed:?}"
+        );
+        for i in 0..40 {
+            for j in 0..12 {
+                let at = path.label_position(f64::from(i) / 40.0, f64::from(j) * 10.0 - 60.0);
+                // The nearest path point by a dense scan: only one inside the path is a case.
+                let nearest = (0..=20_000)
+                    .map(|k| f64::from(k) / 20_000.0)
+                    .min_by(|a, b| distance(*a, at).total_cmp(&distance(*b, at)))
+                    .unwrap();
+                if !(0.01..=0.99).contains(&nearest) {
+                    continue;
+                }
+                let (placed_t, placed_offset) = path.placement_at(at);
+                let placed = path.label_position(placed_t, placed_offset);
+                let miss = (placed.x - at.x).hypot(placed.y - at.y);
+                assert!(miss < 0.01, "at {at:?}: missed by {miss}");
+            }
+        }
     }
 
     #[test]
@@ -320,7 +585,7 @@ mod tests {
     fn an_edge_runs_from_the_right_middle_to_the_left_middle() {
         let source = Rect::of_node(0.0, 0.0, 220.0, 64.0);
         let target = Rect::of_node(300.0, 100.0, 220.0, 64.0);
-        let path = EdgePath::between(&source, &target);
+        let path = EdgePath::between(&source, &target, Sides::default());
         assert!(close(path.source, Point::new(220.0, 32.0)));
         assert!(close(path.target, Point::new(300.0, 132.0)));
     }
@@ -554,7 +819,7 @@ mod tests {
     }
 
     /// A small generator of numbers with a fixed seed (SplitMix64): the core takes no crate that
-    /// reaches randomness (ADR-0009).
+    /// reaches randomness (ADR-0028).
     struct Numbers(u64);
 
     impl Numbers {
@@ -619,6 +884,7 @@ mod tests {
                 EdgePath::between(
                     &source,
                     &Rect::of_node(x, y, numbers.uniform(0.0, s), height),
+                    Sides::default(),
                 )
             }
             // As between builds it, with the minimum pull at the path's own scale.

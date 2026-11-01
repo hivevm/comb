@@ -1,11 +1,11 @@
-// What lies outside the viewport is not drawn (G-7, ADR-0012).
+// What lies outside the viewport is not drawn (G-7, ADR-0027).
 import { expect, test, type Page } from "@playwright/test";
 import { canvasSize, open, sceneNumbers, screenCentre, setViewport } from "./shared";
 
 test("what lies entirely outside the viewport is not bound to a display object", async ({
   page,
 }) => {
-  // Verifies: G-7, ADR-0012
+  // Verifies: G-7, ADR-0027
   await open(page);
   expect((await page.evaluate(() => window.inspect())).edgeLabels).toHaveLength(7);
 
@@ -31,9 +31,9 @@ test("what lies entirely outside the viewport is not bound to a display object",
  *  which holds the whole path, and labels by their point grown by the label reach. The reach is
  *  the scene's least: a label wider than any the example draws would be flagged wrongly. */
 async function drawnBeyond(page: Page, margin: number): Promise<string[]> {
-  return page.evaluate((margin) => {
+  return page.evaluate((grown) => {
     const { nodes, edges, edgeLabels } = window.inspect();
-    const view = window.visibleRect(margin);
+    const view = window.visibleRect(grown);
     const meets = (minX: number, minY: number, maxX: number, maxY: number) =>
       minX <= view.maxX && view.minX <= maxX && minY <= view.maxY && view.minY <= maxY;
     const pull = 40 + 1;
@@ -59,7 +59,7 @@ async function drawnBeyond(page: Page, margin: number): Promise<string[]> {
 test("at every level, nothing entirely outside the viewport and its margin is drawn", async ({
   page,
 }) => {
-  // Verifies: G-7, ADR-0012
+  // Verifies: G-7, ADR-0027
   test.setTimeout(60_000);
   await open(page, "?copies=100");
   const { width, height } = await canvasSize(page);
@@ -98,8 +98,8 @@ test("at every level, nothing entirely outside the viewport and its margin is dr
     // The step only shows the bound where the zoom leaves the last query's reach: the viewport
     // shrinks by (1 - 1 / zoom) of its width, which with the margin must exceed twice the margin.
     const zoom = rescale - 0.01;
-    const { width } = await canvasSize(page);
-    expect(((width * (1 - 1 / zoom)) / 2 + cullingMargin) * zoom).toBeGreaterThan(
+    const { width: canvasWidth } = await canvasSize(page);
+    expect(((canvasWidth * (1 - 1 / zoom)) / 2 + cullingMargin) * zoom).toBeGreaterThan(
       2 * cullingMargin,
     );
     await setViewport(page, centred(scale * zoom));
@@ -157,7 +157,7 @@ test("a pan within the culling margin moves the world without a query", async ({
 });
 
 test("the same area binds as many display objects at 1 and at 1,000 copies", async ({ page }) => {
-  // Verifies: ADR-0012
+  // Verifies: ADR-0027
   test.setTimeout(120_000);
   // Inside the first copy: the next copy to the right starts at x = 1500 and the one below at
   // y = 550, both beyond the canvas and its culling margin at scale 1.
@@ -177,7 +177,7 @@ test("the same area binds as many display objects at 1 and at 1,000 copies", asy
 test("at the middle level, the same area binds as many display objects at 100 and 1,000 copies", async ({
   page,
 }) => {
-  // Verifies: ADR-0012
+  // Verifies: ADR-0027
   test.setTimeout(120_000);
   // Every copy fills the same cell of 1500 × 770 world units, whatever the number of copies; an
   // area well inside both grids shows the same nodes and edges in both.

@@ -13,9 +13,10 @@
 
 set -uo pipefail
 
-branch="$(git symbolic-ref --short -q HEAD 2>/dev/null || true)"
+# The full name, so that a tag called 'main' cannot shorten the branch to 'heads/main'.
+branch="$(git symbolic-ref -q HEAD 2>/dev/null || true)"
 
-if [[ "$branch" == "main" ]]; then
+if [[ "$branch" == "refs/heads/main" ]]; then
   echo "pre-commit: refused — the checkout is on 'main', and commits land on a branch that reaches main through a pull request (AGENTS.md, section 6). Create a branch first: git switch -c <name>" >&2
   exit 1
 fi

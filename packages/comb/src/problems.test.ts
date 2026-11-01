@@ -1,11 +1,11 @@
 // The types of what Comb's errors carry, as a host application imports them from `comb` (Q-3):
-// the kinds of `GraphDataProblem` are those `load` and `updateNode` throw, and only those, so that
-// a `switch` on `problem.kind` without a `default` covers them. The type check decides it: the
-// table below holds one handler per kind, each handed the fields of its kind, and it lacks one
-// for a kind the union gains and holds one for a kind it loses, which the type check refuses
-// either way. A `switch` of a case per kind would decide the same but lies beyond the lint's
-// bound on complexity. The browser test of every kind shows that each is thrown.
-// Verifies: Q-3, ADR-0010
+// the kinds of `GraphDataProblem` are those `load`, `updateNode`, and `addNode` throw, and only
+// those, so that a `switch` on `problem.kind` without a `default` covers them. The type check
+// decides it: the table below holds one handler per kind, each handed the fields of its kind, and
+// it lacks one for a kind the union gains and holds one for a kind it loses, which the type check
+// refuses either way. A `switch` of a case per kind would decide the same but lies beyond the
+// lint's bound on complexity. The browser test of every kind shows that each is thrown.
+// Verifies: Q-3, ADR-0034
 import { describe, expect, test } from "bun:test";
 import {
   EngineSourceError,
@@ -24,9 +24,23 @@ const DESCRIBE: { [K in Kind]: (problem: Of<K>) => string } = {
   malformed: (p) => p.message,
   invalidField: (p) => `${p.list} ${p.index} ${p.id ?? "-"} ${p.field}: ${p.expected}`,
   nonFiniteCoordinate: (p) => p.node,
+  beyondWorld: (p) => `${p.list} ${p.id} ${p.field} ${p.limit}`,
   invalidSize: (p) => p.node,
-  invalidTitle: (p) => p.node,
-  titleTooLong: (p) => `${p.node} ${p.limit}`,
+  invalidContentShape: (p) =>
+    `${p.index} ${p.id ?? "-"} ${p.row} ${p.column ?? "-"}: ${p.expected}`,
+  tooManyRows: (p) => `${p.node} ${p.limit}`,
+  tooManyColumns: (p) => `${p.node} ${p.row} ${p.limit}`,
+  invalidElementKind: (p) => `${p.node} ${p.row} ${p.column}`,
+  invalidWeight: (p) => `${p.node} ${p.row} ${p.column}`,
+  invalidRole: (p) => `${p.node} ${p.row} ${p.column}`,
+  invalidDirection: (p) => `${p.node} ${p.row} ${p.column}`,
+  invalidContentText: (p) => `${p.node} ${p.row} ${p.column} ${p.field}`,
+  contentTextTooLong: (p) => `${p.node} ${p.row} ${p.column} ${p.field} ${p.limit}`,
+  contentBudgetExceeded: (p) => `${p.node} ${p.limit}`,
+  invalidContentColor: (p) => `${p.node} ${p.row} ${p.column} ${p.segment ?? "-"}`,
+  tooManySegments: (p) => `${p.node} ${p.row} ${p.column} ${p.limit}`,
+  invalidFraction: (p) => `${p.node} ${p.row} ${p.column} ${p.segment}`,
+  fractionsPastOne: (p) => `${p.node} ${p.row} ${p.column}`,
   unknownPatchField: (p) => `${p.node} ${p.field}`,
   duplicateNode: (p) => p.node,
   duplicateEdge: (p) => p.edge,
@@ -41,6 +55,9 @@ const DESCRIBE: { [K in Kind]: (problem: Of<K>) => string } = {
   idTooLong: (p) => `${p.list} ${p.index} ${p.field} ${p.limit}`,
   idBudgetExceeded: (p) => `${p.limit}`,
   unknownNode: (p) => p.node,
+  unknownEdge: (p) => p.edge,
+  selfEdge: (p) => p.edge,
+  unknownEdgePatchField: (p) => `${p.edge} ${p.field}`,
 };
 
 /** `problem` described by the handler of its kind. */

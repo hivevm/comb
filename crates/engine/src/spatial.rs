@@ -1,4 +1,4 @@
-//! A uniform grid over the bounds of items, for the spatial queries of culling (G-7, ADR-0012).
+//! A uniform grid over the bounds of items, for the spatial queries of culling (G-7, ADR-0027).
 //!
 //! The grid covers the extent it is made for; bounds beyond it fall into its border cells, so a
 //! query stays exact however far an item moves, and the grid counts the items that left its
@@ -34,10 +34,11 @@ enum Place {
     Overflow,
 }
 
-/// A grid of square cells, each holding the items whose bounds meet it.
-#[derive(Debug, Default)]
+/// A grid of square cells, each holding the items whose bounds meet it. Every grid has at least
+/// one column and one row, so that every bounds and every query falls into a cell.
+#[derive(Debug)]
 pub struct Grid {
-    extent: Option<Rect>,
+    extent: Rect,
     origin_x: f64,
     origin_y: f64,
     cell: f64,
@@ -54,6 +55,14 @@ pub struct Grid {
     query: u32,
 }
 
+/// The grid of a graph that never loaded one: the grid an empty load builds, over the unit square,
+/// for no items, so that a query and a hit on it find nothing as on an empty graph (Q-7).
+impl Default for Grid {
+    fn default() -> Self {
+        Self::new(Rect::new(0.0, 0.0, 1.0, 1.0), 1.0, 0)
+    }
+}
+
 impl Grid {
     /// A grid over `extent` with cells of side `cell`, for items `0..items`. A cell side that is
     /// not positive and finite becomes 1; a side so small that the grid would have more than four
@@ -68,6 +77,10 @@ impl Grid {
         let count = |span: f64, cell: f64| {
             let n = (span / cell).ceil();
             if n.is_finite() && n >= 1.0 {
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    reason = "a whole number of at least 1; the cast saturates and `most` caps it"
+                )]
                 (n as usize).min(most)
             } else {
                 1
@@ -83,7 +96,7 @@ impl Grid {
             cell *= 2.0;
         }
         Self {
-            extent: Some(extent),
+            extent,
             origin_x: extent.min_x,
             origin_y: extent.min_y,
             cell,
@@ -106,6 +119,11 @@ impl Grid {
 
     /// The column or row of `value`: before the first, beyond the last, or not a number, the
     /// border one, as the cast to `usize` saturates and takes NaN to 0.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "the cast saturates and takes NaN to 0 on purpose, and `count - 1` caps it, as \
+                  every grid has a column and a row"
+    )]
     fn index(&self, value: f64, origin: f64, count: usize) -> usize {
         (((value - origin) / self.cell).floor() as usize).min(count - 1)
     }
@@ -145,16 +163,18 @@ impl Grid {
         }
     }
 
-    /// Puts `item` into the cells its `bounds` meet, out of those it was in. An item beyond the
-    /// grid's items is ignored.
+    /// Puts `item` into the cells its `bounds` meet, out of those it was in, growing the grid's
+    /// records of items to hold it where it lies beyond them, as a slot appended after the highest
+    /// does (ADR-0022).
     pub fn set(&mut self, item: u32, bounds: &Rect) {
         let i = item as usize;
-        let Some(&old) = self.places.get(i) else {
-            return;
-        };
-        let beyond = self
-            .extent
-            .is_some_and(|extent| !(extent.contains_rect(bounds)));
+        if i >= self.places.len() {
+            self.places.resize(i + 1, None);
+            self.beyond.resize(i + 1, false);
+            self.seen.resize(i + 1, 0);
+        }
+        let old = self.places[i];
+        let beyond = !self.extent.contains_rect(bounds);
         if beyond != self.beyond[i] {
             self.beyond[i] = beyond;
             if beyond {
@@ -177,6 +197,43 @@ impl Grid {
         }
         self.insert(item, place);
         self.places[i] = Some(place);
+    }
+
+    /// Takes `items` out of the grid, so that no query finds them until they are set again; each
+    /// cell they were in is filtered once, so that many items sharing cells cost each cell once,
+    /// not once per item. An item not in the grid is ignored.
+    pub fn take(&mut self, items: &[u32]) {
+        let mut cells = Vec::new();
+        let mut overflow = false;
+        for &item in items {
+            let i = item as usize;
+            let Some(Some(place)) = self.places.get(i).copied() else {
+                continue;
+            };
+            match place {
+                Place::Overflow => overflow = true,
+                Place::Cells(span) => {
+                    for r in span.r0..=span.r1 {
+                        cells.extend((span.c0..=span.c1).map(|c| r * self.cols + c));
+                    }
+                }
+            }
+            self.places[i] = None;
+            if self.beyond[i] {
+                self.beyond[i] = false;
+                self.beyond_count -= 1;
+            }
+        }
+        cells.sort_unstable();
+        cells.dedup();
+        let places = &self.places;
+        let kept = |other: &u32| places[*other as usize].is_some();
+        for cell in cells {
+            self.cells[cell].retain(kept);
+        }
+        if overflow {
+            self.overflow.retain(kept);
+        }
     }
 
     /// Writes into `out`, after clearing it, every item in a cell that `rect` meets and every
@@ -213,6 +270,21 @@ mod tests {
     }
 
     #[test]
+    fn a_default_grid_answers_every_query_with_nothing() {
+        // Verifies: Q-7
+        let mut grid = Grid::default();
+        let mut out = vec![7];
+        for rect in [
+            Rect::new(0.0, 0.0, 1.0, 1.0),
+            Rect::new(-1e300, -1e300, 1e300, 1e300),
+            Rect::new(f64::NAN, f64::NAN, f64::INFINITY, f64::INFINITY),
+        ] {
+            grid.candidates(&rect, &mut out);
+            assert!(out.is_empty(), "{rect:?}");
+        }
+    }
+
+    #[test]
     fn an_item_in_several_cells_comes_once() {
         let mut grid = Grid::new(Rect::new(0.0, 0.0, 100.0, 100.0), 10.0, 2);
         grid.set(0, &Rect::new(5.0, 5.0, 45.0, 45.0));
@@ -222,6 +294,24 @@ mod tests {
         assert_eq!(out, [0]);
         grid.candidates(&Rect::new(0.0, 0.0, 100.0, 100.0), &mut out);
         assert_eq!(sorted(out), [0, 1]);
+    }
+
+    #[test]
+    fn an_item_taken_out_is_found_by_no_query_and_counts_no_more_beyond() {
+        let mut grid = Grid::new(Rect::new(0.0, 0.0, 100.0, 100.0), 10.0, 3);
+        grid.set(0, &Rect::new(5.0, 5.0, 8.0, 8.0));
+        grid.set(1, &Rect::new(150.0, 5.0, 160.0, 8.0));
+        grid.set(2, &Rect::new(-1e9, -1e9, 1e9, 1e9));
+        assert_eq!(grid.beyond_extent(), 2);
+        grid.take(&[0, 1]);
+        grid.take(&[2, 1]);
+        assert_eq!(grid.beyond_extent(), 0);
+        let mut out = Vec::new();
+        grid.candidates(&Rect::new(-1e10, -1e10, 1e10, 1e10), &mut out);
+        assert!(out.is_empty());
+        grid.set(1, &Rect::new(5.0, 5.0, 8.0, 8.0));
+        grid.candidates(&Rect::new(0.0, 0.0, 10.0, 10.0), &mut out);
+        assert_eq!(out, [1]);
     }
 
     #[test]

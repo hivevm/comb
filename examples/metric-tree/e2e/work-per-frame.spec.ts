@@ -1,6 +1,6 @@
-// The work a frame does on the GPU and in the pools (ADR-0012).
+// The work a frame does on the GPU and in the pools (ADR-0027).
 import { expect, test, type Page } from "@playwright/test";
-import { canvasSize, open, sceneNumbers, screenCentre, setViewport } from "./shared";
+import { canvasOrigin, canvasSize, open, sceneNumbers, screenCentre, setViewport } from "./shared";
 
 /** What the canvas has done so far, from comb/testing. */
 async function work(page: Page) {
@@ -39,9 +39,9 @@ async function pan(
   step = 1,
 ) {
   await page.evaluate(
-    async ({ start, frames, step }) => {
-      for (let i = 1; i <= frames; i++) {
-        window.comb.setViewport({ ...start, x: start.x - i * step });
+    async ({ start: from, frames: count, step: stride }) => {
+      for (let i = 1; i <= count; i++) {
+        window.comb.setViewport({ ...from, x: from.x - i * stride });
         await window.comb.whenRendered();
       }
     },
@@ -52,7 +52,7 @@ async function pan(
 test("a pan within the queried rectangle creates, resizes, and uploads nothing, at every level", async ({
   page,
 }) => {
-  // Verifies: ADR-0012
+  // Verifies: ADR-0027
   test.setTimeout(60_000);
   await open(page, "?copies=100");
   const { cullingMargin } = await sceneNumbers(page);
@@ -84,7 +84,7 @@ test("a pan within the queried rectangle creates, resizes, and uploads nothing, 
 test("a pan across queries at the near level takes every view from the warm pools", async ({
   page,
 }) => {
-  // Verifies: ADR-0012
+  // Verifies: ADR-0027
   test.setTimeout(60_000);
   await open(page, "?copies=100");
   const { cullingMargin } = await sceneNumbers(page);
@@ -109,7 +109,7 @@ test("a pan across queries at the near level takes every view from the warm pool
 test("a drag at the far level updates the GPU buffers in place, never reallocating them", async ({
   page,
 }) => {
-  // Verifies: ADR-0012
+  // Verifies: ADR-0027
   await open(page);
   const { width, height } = await canvasSize(page);
   await setViewport(page, { x: width / 2, y: height / 2, scale: 0.2 });
@@ -118,14 +118,18 @@ test("a drag at the far level updates the GPU buffers in place, never reallocati
   const frames = 60;
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
-  // Pressing selects the node, which renders once more before the drag.
+  // Pressing selects the node, and a move past the slop of 4 pixels begins its drag (ADR-0013),
+  // each of which renders once more before the frames counted.
+  await page.evaluate(() => window.comb.whenRendered());
+  const slop = 5;
+  await page.mouse.move(from.x, from.y + slop);
   await page.evaluate(() => window.comb.whenRendered());
   const { queries, edgeTriangles, edgeMesh } = await page.evaluate(() => window.inspect());
   const warm = await work(page);
   // The node moves down and away from its edges' other ends: the mesh grows with them.
   const largest = { vertices: 0, indices: 0 };
   for (let i = 1; i <= frames; i++) {
-    await page.mouse.move(from.x, from.y + 2 * i);
+    await page.mouse.move(from.x, from.y + slop + 2 * i);
     const { vertices, indices } = await page.evaluate(async () => {
       await window.comb.whenRendered();
       return window.inspect().edgeMesh;
@@ -152,4 +156,194 @@ test("a drag at the far level updates the GPU buffers in place, never reallocati
     bytesUploaded: did.bytesUploaded,
     meshBytesUploaded: did.meshBytesUploaded,
   });
+});
+
+/** How many element views of node views, by kind, the canvas has drawn so far. */
+type ElementViews = { text: number; sprite: number; graphics: number };
+
+declare global {
+  interface Window {
+    /** How many element views the node views drawn have shown since the page opened, each counted
+     *  once however often it is drawn again: texts, icons' sprites, and the `Graphics` of boxes,
+     *  pills, bars, and arrows; `countElementViews` installs it. */
+    elementViews?: () => ElementViews;
+  }
+}
+
+/** Installs `elementViews` before the page loads. It finds the canvas by the hook PixiJS calls
+ *  for its devtools as an application starts, and on each call walks its node views, the display
+ *  objects that carry a node id, counting every child of theirs it has not seen before. Called once
+ *  a frame, it sees every element view a frame draws, whether it was made or taken from a pool. */
+async function countElementViews(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    type Shown = { children?: Shown[]; nodeId?: unknown };
+    const apps: { stage: Shown }[] = [];
+    const hooks = globalThis as unknown as { __PIXI_APP_INIT__: (app: { stage: Shown }) => void };
+    hooks.__PIXI_APP_INIT__ = (app) => apps.push(app);
+    const seen = new WeakSet<Shown>();
+    const counts: ElementViews = { text: 0, sprite: 0, graphics: 0 };
+    const walk = (shown: Shown) => {
+      if (typeof shown.nodeId !== "string") {
+        for (const child of shown.children ?? []) walk(child);
+        return;
+      }
+      for (const child of shown.children ?? []) {
+        if (seen.has(child)) continue;
+        seen.add(child);
+        if ("context" in child) counts.graphics += 1;
+        else if ("text" in child) counts.text += 1;
+        else counts.sprite += 1;
+      }
+    };
+    window.elementViews = () => {
+      if (apps.length !== 1) throw new Error(`${apps.length} PixiJS applications, not one`);
+      walk(apps[0]!.stage);
+      return { ...counts };
+    };
+  });
+}
+
+test("a pan across queries at the near level over the full content creates no element view outside the pools' growth", async ({
+  page,
+}) => {
+  // Verifies: ADR-0027, G-10
+  test.setTimeout(180_000);
+  await countElementViews(page);
+  await open(page, "?copies=3334");
+  const { near, cullingMargin } = await sceneNumbers(page);
+  const { width, height } = await canvasSize(page);
+  // At the least scale of the near level, which binds the most views, in the middle of the grid.
+  const middle = await page.evaluate(() => {
+    const { nodes } = window.inspect();
+    const xs = nodes.map((node) => node.x);
+    const ys = nodes.map((node) => node.y);
+    const half = (of: number[]) => (Math.min(...of) + Math.max(...of)) / 2;
+    return { x: half(xs), y: half(ys) };
+  });
+  const start = {
+    x: width / 2 - middle.x * near,
+    y: height / 2 - middle.y * near,
+    scale: near,
+  };
+  // Half the margin a frame for 40 frames, as in the pan across queries above, counting a frame's
+  // element views once it is drawn.
+  const frames = 40;
+  const step = cullingMargin / 2;
+  const sweep = async () => {
+    for (let i = 1; i <= frames; i++) {
+      await setViewport(page, { ...start, x: start.x - i * step });
+      await page.evaluate(() => window.elementViews!());
+    }
+    await setViewport(page, start);
+  };
+  await setViewport(page, start);
+  // The first sweep grows the pools, of node views and of their element views alike; the second
+  // binds the same nodes, each of the content of its type, from the pools grown.
+  await sweep();
+  const grown = await page.evaluate(() => window.elementViews!());
+  const { queries } = await page.evaluate(() => window.inspect());
+  const warm = await work(page);
+  await sweep();
+  const panned = await page.evaluate(() => window.inspect());
+  expect(panned.level).toBe("near");
+  expect(panned.queries).toBeGreaterThanOrEqual(queries + frames / 4);
+  // The premise: the sweep drew every kind of element view.
+  expect(grown.text).toBeGreaterThan(0);
+  expect(grown.sprite).toBeGreaterThan(0);
+  expect(grown.graphics).toBeGreaterThan(0);
+  expect(done(warm, await work(page)).viewsCreated).toBe(0);
+  expect(await page.evaluate(() => window.elementViews!())).toEqual(grown);
+});
+
+declare global {
+  interface Window {
+    /** How many times PixiJS has asked the edge mesh and the particles whether they hold a point
+     *  since the counting began; `countWorldHitTests` installs it, and its first call begins. */
+    worldHitTests?: () => { mesh: number; particles: number };
+  }
+}
+
+/** Installs `worldHitTests` before the page loads. It finds the canvas by the hook PixiJS calls
+ *  for its devtools as an application starts, and on its first call wraps `containsPoint` of the
+ *  edge mesh, the display object of the world with a geometry and a shader, and of the particles,
+ *  the one with particle children, each counting its calls. */
+async function countWorldHitTests(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    type Shown = { children?: Shown[]; containsPoint?: (point: unknown) => boolean };
+    const apps: { stage: Shown }[] = [];
+    const hooks = globalThis as unknown as { __PIXI_APP_INIT__: (app: { stage: Shown }) => void };
+    hooks.__PIXI_APP_INIT__ = (app) => apps.push(app);
+    let counts: { mesh: number; particles: number } | null = null;
+    const find = (shown: Shown, is: (shown: Shown) => boolean): Shown | undefined =>
+      is(shown) ? shown : (shown.children ?? []).map((child) => find(child, is)).find(Boolean);
+    const watch = (shown: Shown | undefined, key: "mesh" | "particles") => {
+      if (!shown?.containsPoint) throw new Error(`no ${key} that hit-tests a point`);
+      const contains = shown.containsPoint.bind(shown);
+      shown.containsPoint = (point) => {
+        counts![key] += 1;
+        return contains(point);
+      };
+    };
+    window.worldHitTests = () => {
+      if (apps.length !== 1) throw new Error(`${apps.length} PixiJS applications, not one`);
+      if (!counts) {
+        counts = { mesh: 0, particles: 0 };
+        const { stage } = apps[0]!;
+        watch(
+          find(stage, (shown) => "geometry" in shown && "shader" in shown),
+          "mesh",
+        );
+        watch(
+          find(stage, (shown) => "particleChildren" in shown),
+          "particles",
+        );
+      }
+      return { ...counts };
+    };
+  });
+}
+
+test("a pointer moving across the edges and dragging a node hit-tests no layer of the world in PixiJS", async ({
+  page,
+}) => {
+  // Decides no ADR clause and no criterion: work a frame need not redo, pinned by a count
+  // (docs/CONVENTIONS.md); the engine answers every hit test (ADR-0013), so PixiJS's test of the
+  // world is one nothing reads.
+  await countWorldHitTests(page);
+  await open(page, "?copies=100");
+  const { width, height } = await canvasSize(page);
+  const { left, top } = await canvasOrigin(page);
+  // At the far level, inside the grid of 100 copies, where the edges cover the canvas and the
+  // nodes are particles.
+  await setViewport(page, await centred(page, 0.2));
+  const drawn = await page.evaluate(() => window.inspect());
+  expect(drawn.renderer).toBe("webgl");
+  expect(drawn.level).toBe("far");
+  expect(drawn.edgeTriangles).toBeGreaterThan(0);
+  expect(drawn.particles).toBeGreaterThan(0);
+  // The node nearest the centre of the view.
+  const distance = (at: { x: number; y: number }) => Math.hypot(at.x - 7000, at.y - 3000);
+  const node = drawn.nodes.reduce((near, candidate) =>
+    distance(candidate) < distance(near) ? candidate : near,
+  );
+  const from = await screenCentre(page, node.id);
+  expect(await page.evaluate(() => window.worldHitTests!())).toEqual({ mesh: 0, particles: 0 });
+  // Across the canvas, from corner to corner.
+  const steps = 40;
+  for (let i = 0; i <= steps; i++) {
+    await page.mouse.move(left + (width * i) / steps, top + (height * i) / steps);
+  }
+  // And a drag of a node, past the slop.
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 20; i++) await page.mouse.move(from.x, from.y + 2 * i);
+  await page.mouse.up();
+  await page.evaluate(() => window.comb.whenRendered());
+  // The premise: the drag moved the node, so the moves reached interaction.
+  const moved = await page.evaluate(
+    (id) => window.inspect().nodes.find((candidate) => candidate.id === id)!.y,
+    node.id,
+  );
+  expect(moved).toBeGreaterThan(node.y);
+  expect(await page.evaluate(() => window.worldHitTests!())).toEqual({ mesh: 0, particles: 0 });
 });

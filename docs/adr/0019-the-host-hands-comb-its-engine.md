@@ -1,7 +1,7 @@
 # ADR-0019: The host application hands Comb the engine's WebAssembly; Comb requests nothing itself
 
-- **Status:** 🟡 proposed
-- **Date:** 2026-10-19
+- **Status:** 🟢 accepted
+- **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `createComb` and `CombOptions` in `packages/comb/src/api/`, the loading of the engine in `packages/comb/src/bridge/`, the exports of `packages/comb/package.json`, the library build, and `scripts/check-bundle.sh`
 
