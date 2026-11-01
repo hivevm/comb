@@ -218,6 +218,15 @@ function levelsMedian(runs: Run[]): Levels<Gesture> | undefined {
 
 /** The run whose every number is the median of that number over `runs`, which must all be of
  *  one kind, size, and mode; or why they are not. */
+/** What a baseline taken from `run` is compared by beside its kind: the browser where the run
+ *  attached to one (ADR-0038), and the factor its CPU was slowed by (ADR-0039). */
+function measuredWith(run: Run): Partial<Run> {
+  return {
+    ...(run.attached && { attached: true, ...(run.browser && { browser: run.browser }) }),
+    ...((run.cpuThrottle ?? 1) !== 1 && { cpuThrottle: run.cpuThrottle }),
+  };
+}
+
 export function median(runs: Run[]): Run | string {
   const [first] = runs;
   if (!first) return "no run";
@@ -232,9 +241,7 @@ export function median(runs: Run[]): Run | string {
     headed: first.headed ?? false,
     ...(first.cpu && { cpu: first.cpu }),
     gpu: first.gpu,
-    // What a baseline taken from it is compared by: the kind of browser and the CPU's factor.
-    ...(first.attached && { attached: true, ...(first.browser && { browser: first.browser }) }),
-    ...((first.cpuThrottle ?? 1) !== 1 && { cpuThrottle: first.cpuThrottle }),
+    ...measuredWith(first),
     ...(referenced && {
       reference: Object.fromEntries(
         PARTS.map(([, key]) => [key, of((run) => run.reference![key])]),
