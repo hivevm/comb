@@ -48,7 +48,8 @@ The ways a drag could redraw, each weighed against Q-1:
   queries once. A frame costs the overlay alone, the press and the release one partial and one
   full upload. It needs the same ranges to hide, and a second path that draws a node and its edges.
 - **Query less often:** re-query only every few frames, or past a distance. It costs nothing to
-  build, but the dragged node lags the pointer, which G-2 does not allow: every edge at a dragged node follows it in the same frame.
+  build, but the dragged node lags the pointer, which G-2 does not allow: every edge at a dragged
+  node follows it in the same frame.
 
 ## Acceptance criteria
 
