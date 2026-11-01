@@ -1,0 +1,77 @@
+name: Dev Container
+
+# Builds the Dev Container as VS Code does, from .devcontainer/devcontainer.json, its Dockerfile,
+# and its Features resolved by devcontainer-lock.json, and asserts the toolchain ADR-0014 decides
+# inside it: the Bun of the Dockerfile's pinned 'oven/bun' tag, Cargo, the WebAssembly target, and
+# no Node.js on PATH. Starting the container runs its postCreateCommand too, the dependencies from
+# bun.lock and Chromium, so the smoke test covers the setup a new container gets.
+# scripts/check-container.sh reads the same files without building them; this workflow proves that
+# they build into what they say.
+#
+# It runs as a workflow of its own, not as a job of the Checks workflow, because a build takes
+# minutes: on a pull request or a push to main that changes the container's definition or this
+# file, weekly against main for what moves without a commit (the Feature's stable Rust, the
+# Debian package of ShellCheck, Chromium), and on demand. It is no required check, since a
+# required check that a path filter skips never reports. The Dev Containers CLI runs on the
+# runner's own Node.js, outside the
+# container, at a pinned version; '--frozen-lockfile' fails the build where the lock does not
+# match the Features. It needs no secret (ADR-0016); its action is pinned by commit SHA
+# (ADR-0017), and its checkout keeps no credentials.
+
+on:
+  pull_request:
+    paths:
+      - ".devcontainer/**"
+      - ".github/workflows/devcontainer.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".devcontainer/**"
+      - ".github/workflows/devcontainer.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "41 5 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build and start the Dev Container
+        run: npx --yes @devcontainers/cli@0.89.0 up --workspace-folder . --frozen-lockfile
+      # Verifies: ADR-0014 — the container carries the pinned Bun, Cargo with the WebAssembly
+      # target, and no Node.js.
+      - name: Assert the toolchain inside the container
+        run: |
+          bun_tag="$(grep -oE '^COPY --from=oven/bun:[0-9]+\.[0-9]+\.[0-9]+' .devcontainer/Dockerfile | head -n 1)"
+          bun_tag="${bun_tag#COPY --from=oven/bun:}"
+          if [[ -z "$bun_tag" ]]; then
+            echo "No pinned oven/bun tag in .devcontainer/Dockerfile" >&2
+            exit 1
+          fi
+          npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . bash -c '
+            set -euo pipefail
+            bun_version="$(bun --version)"
+            echo "bun $bun_version"
+            if [[ "$bun_version" != "$1" ]]; then
+              echo "bun is $bun_version, the Dockerfile pins $1" >&2
+              exit 1
+            fi
+            cargo --version
+            rustup target list --installed | grep -qx wasm32-unknown-unknown \
+              || { echo "the wasm32-unknown-unknown target is not installed" >&2; exit 1; }
+            if command -v node; then
+              echo "node is on PATH; the container carries no Node.js" >&2
+              exit 1
+            fi
+          ' _ "$bun_tag"
