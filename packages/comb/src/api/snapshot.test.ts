@@ -194,3 +194,28 @@ test("the snapshot reads content no further than one row, element, and segment p
   expect(read("load")).toEqual(expected);
   expect(read("single")).toEqual(expected);
 });
+
+test("the snapshot reads the length of content, a row, and a progress bar's segments once, for a load and a single node alike", () => {
+  // Verifies: ADR-0028
+  const read = (crossing: "load" | "single") => {
+    const reads: Record<string, number> = {};
+    // A list whose length the host's code answers, counted, smaller on its first read than after.
+    const listed = (name: string, items: unknown[]) =>
+      new Proxy(items, {
+        get(target, key, receiver) {
+          if (key !== "length") return Reflect.get(target, key, receiver);
+          reads[name] = (reads[name] ?? 0) + 1;
+          return reads[name] === 1 ? target.length : 50;
+        },
+      });
+    const segments = listed("segments", [{ fraction: 0.1, color: 0 }]);
+    const row = listed("row", [{ kind: "progress", segments }]);
+    const node = { id: "a", x: 0, y: 0, width: 100, content: listed("content", [row]) };
+    if (crossing === "load") snapshotOf(listsOf({ nodes: [node], edges: [] } as never), limits);
+    else nodeSnapshotOf(node, limits);
+    return reads;
+  };
+  const once = { content: 1, row: 1, segments: 1 };
+  expect(read("load")).toEqual(once);
+  expect(read("single")).toEqual(once);
+});

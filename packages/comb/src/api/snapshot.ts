@@ -174,7 +174,7 @@ function walkContent(read: Reader, content: unknown, sink: ContentSink, limits: 
     sink.noContent(content);
     return;
   }
-  const rows = content.length > limits.rows ? limits.rows + 1 : content.length;
+  const rows = Math.min(content.length, limits.rows + 1);
   for (let r = 0; r < rows; r++) {
     const row: unknown = content[r];
     if (!Array.isArray(row)) sink.noRow();
@@ -185,7 +185,7 @@ function walkContent(read: Reader, content: unknown, sink: ContentSink, limits: 
 /** Hands the elements of `row`, a list, to `sink`, read once by `read`, at most one beyond
  *  `limits.columns`, the last of them ending the row. */
 function walkRow(read: Reader, row: unknown[], sink: ContentSink, limits: Limits): void {
-  const count = row.length > limits.columns ? limits.columns + 1 : row.length;
+  const count = Math.min(row.length, limits.columns + 1);
   if (count === 0) sink.endRow();
   for (let c = 0; c < count; c++) {
     const value: unknown = row[c];
@@ -248,7 +248,7 @@ function walkSegments(read: Reader, segments: unknown, sink: ContentSink, limits
     sink.noSegments();
     return;
   }
-  const count = segments.length > limits.segments ? limits.segments + 1 : segments.length;
+  const count = Math.min(segments.length, limits.segments + 1);
   for (let s = 0; s < count; s++) {
     const fields = segmentFieldsOf(segments[s]);
     if (fields) sink.segment(read.number(fields.fraction), read.number(fields.color));
