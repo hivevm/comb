@@ -96,3 +96,10 @@ skimmed. The design revision drops what prevented nothing
   such as the order the scene draws in or what a counter signals, names the function, the test, or
   the ADR it read that in. A premise written from memory reads as true to the reviewer, who has no
   reason to open the engine, and a decision built on a false one decides the wrong problem.
+- **A stacked pull request is retargeted before its base branch goes.** A pull request based on
+  another's branch, rather than on `main`, waits for that one to merge; the base merges without
+  deleting its branch, the dependent one is moved to `main` and updated, and only then is the base's
+  branch deleted. A branch deleted through the API, `gh pr merge --delete-branch` among them, or
+  with git closes every pull request based on it, which GitHub retargets only when the branch goes
+  through its own button or its deletion after a merge. A fix of the base is committed on the base's
+  branch alone and reaches the dependent through that update, never a second time beside it.
