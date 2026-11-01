@@ -9,10 +9,10 @@ import type { GraphView } from "../store";
 export const FAR_NODE_COLOR = 0xc3c8d1;
 export const FAR_SELECTED_COLOR = 0x3b82f6;
 
-/** The particles layer: a pooled particle for every node slot it is given. */
 /** No node hidden. */
 const NONE_HIDDEN: ReadonlySet<number> = new Set();
 
+/** The particles layer: a pooled particle for every node slot it is given. */
 export class NodeParticles extends ParticleContainer {
   private readonly pool: Particle[] = [];
   private madeCount = 0;

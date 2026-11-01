@@ -69,7 +69,7 @@ function fakeBridge(
 
 describe("interaction", () => {
   test("a drag across many frames moves the node through the engine and keeps the graph", () => {
-    // Verifies: ADR-0029
+    // Verifies: ADR-0029, ADR-0036
     const store = createGraphStore();
     load(store, {
       nodes: [{ id: "a", x: 0, y: 0, width: 100, content: titled("A") }],

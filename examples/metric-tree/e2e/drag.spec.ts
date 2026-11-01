@@ -111,7 +111,7 @@ async function drawnFrame(page: Page, id: string) {
 test("a node dragged across frames stays under the pointer, its edges' ends at its connectors in the same frame", async ({
   page,
 }) => {
-  // Verifies: G-2
+  // Verifies: G-2, ADR-0036 — the dragged edges, in the moving layer, follow in the same frame.
   await open(page);
   const northStar = "0:3.0";
   const origin = await canvasOrigin(page);

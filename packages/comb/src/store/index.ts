@@ -1,6 +1,7 @@
 // The state of the graph and the viewport (ADR-0029). Coordinates are not kept here: positions live
-// in the engine's buffer, and `positionsVersion` tells readers that they moved; the point a
-// connection is dragged to lives in interaction, and `pointerVersion` tells them that it moved.
+// in the engine's buffer, and `positionsVersion` tells readers that they moved, `movesVersion` that
+// a drag moved its nodes (ADR-0036); the point a connection is dragged to lives in interaction, and
+// `pointerVersion` tells them that it moved.
 import { createStore } from "zustand/vanilla";
 import type { NodeContent } from "../bridge";
 
@@ -285,8 +286,6 @@ function loadedFrom(state: GraphView, graph: KeptGraph, idUnits: number): Partia
   };
 }
 
-/** What `removeNodes` changes of `state`: the nodes in `nodeSlots` and the edges in `edgeSlots`
- *  forgotten, and a selection of a removed node cleared. */
 /** What a removal leaving `nodes` changes of a drag of `state`: none dragged where it removed one
  *  of the nodes the drag moves (ADR-0036). */
 function draggedWithout(state: GraphView, nodes: GraphView["nodes"]): Partial<GraphView> {
@@ -304,6 +303,8 @@ function dragsOf(set: (change: (state: GraphState) => Partial<GraphState>) => vo
   };
 }
 
+/** What `removeNodes` changes of `state`: the nodes in `nodeSlots` and the edges in `edgeSlots`
+ *  forgotten, and a selection of a removed node cleared. */
 function withoutNodes(
   state: GraphView,
   nodeSlots: readonly number[],

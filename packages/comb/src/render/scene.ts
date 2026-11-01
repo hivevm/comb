@@ -282,6 +282,8 @@ export class Scene {
     if (!hidden || hidden.queries !== this.queries || hidden.dragged !== dragged) {
       this.edges.hide(new Set(edges));
       if (far) this.particles.hide(new Set(dragged));
+      // A query nearer than far, after a zoom across the level, draws the nodes' views instead.
+      else this.movingParticles.sync(state, NONE, NONE_F32, NONE_F32);
       this.hidden = { queries: this.queries, dragged };
     }
     const { positions, sizes } = bridge.nodeBuffers();

@@ -106,7 +106,7 @@ test("a pan across queries at the near level takes every view from the warm pool
   expect(done(warm, await work(page)).viewsCreated).toBe(0);
 });
 
-test("a drag at the far level keeps its query, uploads none of its mesh, and reallocates no buffer", async ({
+test("a drag at the far level keeps its query, and uploads and reallocates none of its mesh", async ({
   page,
 }) => {
   // Verifies: ADR-0027, ADR-0036
@@ -402,4 +402,43 @@ test("a drag frame uploads what the dragged node and its edge take, not what the
   expect(large.meshBytes).toBeGreaterThan(1_000_000);
   expect(large.perFrame).toBeLessThan(large.meshBytes / 100);
   expect(large.perFrame).toBeLessThanOrEqual(small.perFrame * 2);
+});
+
+test("a drag zoomed from the far level to the middle draws its node once, by its view", async ({
+  page,
+}) => {
+  // Verifies: ADR-0036
+  await open(page);
+  const { width, height } = await canvasSize(page);
+  await setViewport(page, { x: width / 2, y: height / 2, scale: 0.2 });
+  const from = await screenCentre(page, "0:0.0");
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.evaluate(() => window.comb.whenRendered());
+  await page.mouse.move(from.x, from.y + 10);
+  await page.evaluate(() => window.comb.whenRendered());
+  const far = await page.evaluate(() => window.inspect());
+  // Zoomed in mid-drag, about the pointer, past the far level's threshold: the render queries.
+  await page.evaluate(
+    async ({ x, y }) => {
+      const view = window.comb.viewport();
+      const scale = 0.4;
+      const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();
+      const [px, py] = [x - rect.left, y - rect.top];
+      const k = scale / view.scale;
+      window.comb.setViewport({ x: px - (px - view.x) * k, y: py - (py - view.y) * k, scale });
+      await window.comb.whenRendered();
+    },
+    { x: from.x, y: from.y + 10 },
+  );
+  await page.mouse.move(from.x, from.y + 14);
+  await page.evaluate(() => window.comb.whenRendered());
+  const middle = await page.evaluate(() => window.inspect());
+  await page.mouse.up();
+  expect([far.level, middle.level]).toEqual(["far", "middle"]);
+  expect(far.nodes.filter(({ id }) => id === "0:0.0")).toHaveLength(1);
+  // Drawn once, by its view: no particle of the far level left where the zoom found it.
+  expect(middle.nodes.filter(({ id }) => id === "0:0.0")).toHaveLength(1);
+  expect(middle.particles).toBe(0);
+  expect(middle.nodes.every(({ texts }) => texts !== undefined)).toBe(true);
 });
