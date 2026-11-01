@@ -24,9 +24,9 @@ use comb_engine::content::{Cell, Font, Fonts, Placed, drawn_at};
 use comb_engine::geometry::Point;
 use comb_engine::geometry::Rect;
 use comb_engine::graph::{
-    Graph, Level, MoveError, PositionError, SlotError as GraphSlotError, Target, Visible,
+    Graph, Level, MeshAt, MoveError, PositionError, SlotError as GraphSlotError, Target, Visible,
 };
-use comb_engine::stroke::Detail;
+use comb_engine::stroke::{Detail, Mesh};
 use serde::{Deserialize, Serialize};
 use tsify::{Ts, Tsify};
 use wasm_bindgen::prelude::*;
@@ -416,6 +416,9 @@ pub struct Engine {
     content_rects: Vec<f32>,
     /// The role and the drawn text of each element of `placed`.
     drawn: Drawn,
+    /// The edges at the nodes a drag moves, and their mesh, which `meshAt` writes (ADR-0036).
+    moving_edges: Vec<u32>,
+    moving: Mesh,
 }
 
 #[wasm_bindgen]
@@ -772,6 +775,33 @@ impl Engine {
         trap::spring();
         let rect = rect.to_rust().map_err(unshaped)?;
         self.query_rect(&rect, level, pixel, label_reach)
+    }
+
+    /// Meshes every edge at the node slots `slots`, found by the last query or not, in ascending
+    /// slot order, as the last query meshed the edges it found, in `rect` at `level` where a screen
+    /// pixel is `pixel` world units, relative to the last query's origin, within the mesh budget,
+    /// and returns the mesh's detail: what a drag redraws in its moving layer each frame
+    /// (ADR-0036). The edges and their mesh are read through the `moving…` buffers. A slot that
+    /// holds no node throws a `SlotError`, and a pixel is checked as `query` checks it.
+    #[wasm_bindgen(js_name = meshAt)]
+    pub fn mesh_at(
+        &mut self,
+        slots: &[u32],
+        rect: Ts<RectInput>,
+        level: DetailLevel,
+        pixel: f64,
+    ) -> Result<MeshDetail, CallRefusal> {
+        trap::spring();
+        let rect = rect.to_rust().map_err(unshaped)?;
+        let at = MeshAt {
+            rect: Rect::new(rect.min_x, rect.min_y, rect.max_x, rect.max_y),
+            level: level.into(),
+            pixel: checked_pixel(pixel)?,
+            origin: self.visible.origin,
+        };
+        self.graph
+            .mesh_at(slots, &at, &mut self.moving_edges, &mut self.moving)?;
+        Ok(self.moving.detail.into())
     }
 
     /// Computes the ends of the edges the last query found, read through the `edgeEnds…` buffer:
@@ -1295,6 +1325,91 @@ impl Engine {
     #[wasm_bindgen(js_name = meshIndicesLen)]
     pub fn mesh_indices_len(&self) -> usize {
         self.visible.mesh.indices.len()
+    }
+
+    /// Where the buffer starts that `query` writes, per edge it found, in its order, the first of
+    /// its vertex indices into (ADR-0036).
+    #[wasm_bindgen(js_name = meshEdgeStartsPtr)]
+    pub fn mesh_edge_starts_ptr(&self) -> *const u32 {
+        self.visible.mesh.edge_starts.as_ptr()
+    }
+
+    /// How many edges the last `query` wrote the first vertex index of.
+    #[wasm_bindgen(js_name = meshEdgeStartsLen)]
+    pub fn mesh_edge_starts_len(&self) -> usize {
+        self.visible.mesh.edge_starts.len()
+    }
+
+    /// Where the buffer starts that `meshAt` writes the slots of the edges it meshed into.
+    #[wasm_bindgen(js_name = movingEdgesPtr)]
+    pub fn moving_edges_ptr(&self) -> *const u32 {
+        self.moving_edges.as_ptr()
+    }
+
+    /// How many edge slots the last `meshAt` wrote.
+    #[wasm_bindgen(js_name = movingEdgesLen)]
+    pub fn moving_edges_len(&self) -> usize {
+        self.moving_edges.len()
+    }
+
+    /// Where the buffer starts that `meshAt` writes the mesh's its vertices' positions, `x, y` each into.
+    #[wasm_bindgen(js_name = movingPositionsPtr)]
+    pub fn moving_positions_ptr(&self) -> *const f32 {
+        self.moving.positions.as_ptr()
+    }
+
+    /// How many values of the mesh's positions the last `meshAt` wrote.
+    #[wasm_bindgen(js_name = movingPositionsLen)]
+    pub fn moving_positions_len(&self) -> usize {
+        self.moving.positions.len()
+    }
+
+    /// Where the buffer starts that `meshAt` writes the mesh's its vertices' distances along their paths into.
+    #[wasm_bindgen(js_name = movingDistancesPtr)]
+    pub fn moving_distances_ptr(&self) -> *const f32 {
+        self.moving.distances.as_ptr()
+    }
+
+    /// How many values of the mesh's distances the last `meshAt` wrote.
+    #[wasm_bindgen(js_name = movingDistancesLen)]
+    pub fn moving_distances_len(&self) -> usize {
+        self.moving.distances.len()
+    }
+
+    /// Where the buffer starts that `meshAt` writes the mesh's its vertices' colours as RGBA bytes into.
+    #[wasm_bindgen(js_name = movingColorsPtr)]
+    pub fn moving_colors_ptr(&self) -> *const u32 {
+        self.moving.colors.as_ptr()
+    }
+
+    /// How many values of the mesh's colors the last `meshAt` wrote.
+    #[wasm_bindgen(js_name = movingColorsLen)]
+    pub fn moving_colors_len(&self) -> usize {
+        self.moving.colors.len()
+    }
+
+    /// Where the buffer starts that `meshAt` writes the mesh's its vertices' dash patterns, `dash, gap` each into.
+    #[wasm_bindgen(js_name = movingDashesPtr)]
+    pub fn moving_dashes_ptr(&self) -> *const f32 {
+        self.moving.dashes.as_ptr()
+    }
+
+    /// How many values of the mesh's dashes the last `meshAt` wrote.
+    #[wasm_bindgen(js_name = movingDashesLen)]
+    pub fn moving_dashes_len(&self) -> usize {
+        self.moving.dashes.len()
+    }
+
+    /// Where the buffer starts that `meshAt` writes the mesh's its vertex indices, three per triangle into.
+    #[wasm_bindgen(js_name = movingIndicesPtr)]
+    pub fn moving_indices_ptr(&self) -> *const u32 {
+        self.moving.indices.as_ptr()
+    }
+
+    /// How many values of the mesh's indices the last `meshAt` wrote.
+    #[wasm_bindgen(js_name = movingIndicesLen)]
+    pub fn moving_indices_len(&self) -> usize {
+        self.moving.indices.len()
     }
 }
 

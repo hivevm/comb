@@ -32,7 +32,7 @@ pub use nodes::PositionError;
 /// The origin of a query, which the tests of `stroke` take theirs from.
 #[cfg(test)]
 pub(crate) use query::origin_of;
-pub use query::{Level, Visible};
+pub use query::{Level, MeshAt, Visible};
 use slots::Slots;
 
 /// An edge between two node slots, with the path parameter and label offset of its edge label

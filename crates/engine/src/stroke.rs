@@ -203,6 +203,10 @@ pub struct Mesh {
     pub dashes: Vec<f32>,
     pub indices: Vec<u32>,
     pub detail: Detail,
+    /// Per edge of the last build, in its order, the first of its vertex indices in `indices`,
+    /// so that the shell can leave an edge out of a mesh it keeps (ADR-0036); none where the mesh
+    /// holds no edge.
+    pub edge_starts: Vec<u32>,
     /// Per edge of the last build, whether its full mesh is its arrowhead alone.
     arrowheads: Vec<bool>,
     /// The world point the positions of the last build are relative to (ADR-0034).
@@ -216,6 +220,7 @@ impl Mesh {
         self.colors.clear();
         self.dashes.clear();
         self.indices.clear();
+        self.edge_starts.clear();
         self.detail = Detail::Complete;
     }
 
@@ -246,6 +251,11 @@ impl Mesh {
             return;
         };
         for (i, (path, style)) in edges.enumerate() {
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "an index within the budget's three indices per vertex, which u32 holds"
+            )]
+            self.edge_starts.push(self.indices.len() as u32);
             let arrowhead = self.arrowheads[i];
             later = later.minus(floor_of(arrowhead));
             if arrowhead {
@@ -273,6 +283,7 @@ impl Mesh {
     ) -> Option<Size> {
         self.arrowheads.clear();
         self.arrowheads.try_reserve_exact(edges.len()).ok()?;
+        self.edge_starts.try_reserve_exact(edges.len()).ok()?;
         let mut floors = Size::polyline(0);
         for (path, style) in edges {
             let arrowhead = arrowhead_alone(path, style, within, scratch);
