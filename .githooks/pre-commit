@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 #
-# Git pre-commit hook: no commit on main.
+# Git pre-commit hook: no commit on main, and none that stages a Markdown file while the
+# documentation checks fail.
 #
 # An agent commits on a branch, never on main, and changes reach main through a pull request
 # (AGENTS.md, section 6). A permission prompt cannot decide this — it asks a human about a command,
 # not about the branch it lands on — so the repository's own hook does, for every agent and every
-# human alike. Enabled through 'git config core.hooksPath .githooks', which the Dev Container sets
+# human alike. Where the commit stages a Markdown file, it runs scripts/check-docs.sh on the
+# working tree first and refuses the commit while it fails or is missing, its output shown, so
+# that a document lands green rather than a commit later; about half a minute. A commit that
+# stages no Markdown file runs no check. Enabled through 'git config core.hooksPath .githooks', which the Dev Container sets
 # on creation (.devcontainer/devcontainer.json); outside it, run that command once per clone.
 #
 # Bypassable with 'git commit --no-verify', which is what a maintainer does on purpose and what an
@@ -18,6 +22,24 @@ branch="$(git symbolic-ref -q HEAD 2>/dev/null || true)"
 
 if [[ "$branch" == "refs/heads/main" ]]; then
   echo "pre-commit: refused — the checkout is on 'main', and commits land on a branch that reaches main through a pull request (AGENTS.md, section 6). Create a branch first: git switch -c <name>" >&2
+  exit 1
+fi
+
+git diff --cached --name-only --diff-filter=ACMR | grep -q '\.md$' || exit 0
+
+root="$(git rev-parse --show-toplevel)" || exit 1
+check="scripts/check-docs.sh"
+if [[ ! -f "$root/$check" ]]; then
+  echo "pre-commit: refused — the commit stages a Markdown file and $check is missing." >&2
+  exit 1
+fi
+# Git hands the hook its own repository variables, with absolute paths in a linked worktree; the
+# check runs without them, as pre-merge-commit runs it, and finds the repository from its own
+# directory.
+# shellcheck disable=SC2046  # one variable name per word is what unset takes
+unset $(git rev-parse --local-env-vars)
+if ! bash "$root/$check" >&2; then
+  echo "pre-commit: refused — the commit stages a Markdown file and $check fails (AGENTS.md, section 5)." >&2
   exit 1
 fi
 
