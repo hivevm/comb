@@ -1,7 +1,7 @@
 # ADR-0041: The graph's structure and what the pointer is over live in a vanilla Zustand store; no coordinate does, and each kind of move is signalled by a counter of its own, an added node by its slot
 
 - **Status:** 🟡 proposed
-- **Date:** 2026-11-02
+- **Date:** 2026-11-01
 - **Deciders:** Markus Brigl
 - **Applies to:** `packages/comb/src/store/`, the state `packages/comb/src/interaction/` keeps between pointer events, and every module that reads or writes the state of the graph or the viewport
 
@@ -12,9 +12,9 @@ ADR-0037 keeps the graph's structure, what the pointer is over, and the viewport
 own; it has an added node increment `positionsVersion`, the counter of the changes of positions a
 kept query does not survive.
 
-ADR-0040 has an edit at the far level keep the query, which the scene can do only where an added
-node is not counted with a load: it reads an edit from the slots in which the store's arrays
-differ from the ones it drew, and an added node's slot is that signal already.
+ADR-0040 has an edit at the far level keep the query, as a drag keeps it, which the scene can do
+only where an added node is not counted with a load: it reads an edit from the slots in which the
+store's arrays differ from the ones it drew, and an added node's slot is that signal already.
 
 This ADR restates ADR-0037 with that clause, and supersedes it once accepted, together with
 ADR-0040; until then ADR-0037 stays in force as it reads.
@@ -113,7 +113,7 @@ Each test below cites this ADR with `Verifies: ADR-0041`; the tests that cite AD
 when it is accepted.
 
 - A test in `packages/comb` adds a node and asserts that `positionsVersion` stays and the node's
-  slot is in the store's `nodes`.
+  slot is in the store's `nodes` (`packages/comb/src/store/store.test.ts`).
 
 - A test in `packages/comb` drags a node across many frames and asserts that the store's graph
   object stays the same reference while `movesVersion` rises once per frame, `positionsVersion`
