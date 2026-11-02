@@ -1,6 +1,6 @@
 # ADR-0037: The graph's structure and what the pointer is over live in a vanilla Zustand store; no coordinate does, and each kind of move is signalled by a counter of its own, a drag's apart
 
-- **Status:** 🟢 accepted
+- **Status:** ⚪ superseded by [ADR-0041](0041-each-move-its-counter-an-added-node-its-slot.md)
 - **Date:** 2026-11-02
 - **Deciders:** Markus Brigl
 - **Supersedes:** [ADR-0029](0029-the-store-holds-no-coordinate-each-move-its-counter.md)

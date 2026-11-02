@@ -15,7 +15,7 @@ export const SLOP = 4;
 export type ContentClick = Readonly<{ node: string } & ElementHit>;
 
 /** What a gesture works on: the store, the bridge to the engine, the world point a connection is
- *  dragged to, which the store does not hold (ADR-0037), and the one hit test, which the press,
+ *  dragged to, which the store does not hold (ADR-0041), and the one hit test, which the press,
  *  the hover, and the connection ask (ADR-0013). */
 export interface Context {
   readonly store: GraphStore;

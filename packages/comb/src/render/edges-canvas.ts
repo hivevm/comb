@@ -2,7 +2,7 @@
 // the triangles of the engine's edge mesh filled into one drawing of the layer, never one per
 // edge (ADR-0027). Canvas 2D runs no shader, so dash patterns draw solid; and no WebGL mesh is
 // built, so nothing is uploaded, but the mesh is kept, so that a drag fills it again without the
-// edges it moves (ADR-0036).
+// edges it moves (ADR-0040).
 import { Container, Graphics } from "pixi.js";
 import { hiddenRanges, type DrawnMesh, type MeshSize } from "./edges";
 

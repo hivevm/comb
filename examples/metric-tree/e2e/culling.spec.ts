@@ -138,7 +138,7 @@ test("a pan within the culling margin moves the world without a query", async ({
   await setViewport(page, { ...start, x: start.x + 4 * cullingMargin });
   expect(await queries()).toBe(before + 1);
   // A selection changes what is drawn: its render queries, wherever the viewport is. A drag's
-  // moves keep that query, and its release queries once (ADR-0036). Each step waits for its
+  // moves keep that query, and its release queries once (ADR-0040). Each step waits for its
   // render, so that none folds into the next.
   // The counts are exact because no display object uses eventMode "dynamic", whose ticker
   // pointermove would add moves.

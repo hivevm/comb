@@ -190,7 +190,7 @@ export interface Visible {
 }
 
 /** What `meshAt` meshed: the slots of the edges at the nodes a drag moves, in ascending order,
- *  their mesh relative to the last query's origin, and its detail (ADR-0036). Fresh views; do not
+ *  their mesh relative to the last query's origin, and its detail (ADR-0040). Fresh views; do not
  *  keep them across calls. */
 export interface Moving {
   edges: Uint32Array;
@@ -321,7 +321,7 @@ export interface Bridge {
   /** The edges at the node slots `slots` and of the edge slots `also`, found by the last query or
    *  not, each once, and their mesh, stroked as `query` strokes the edges it finds in `rect` at
    *  `level` where a screen pixel is `pixel` world units, relative to the last query's origin:
-   *  what a drag redraws of the nodes it moves and an edit of what it added, each frame (ADR-0036,
+   *  what a drag redraws of the nodes it moves and an edit of what it added, each frame (ADR-0040,
    *  ADR-0040). Fresh views; do not keep them across calls. Throws a `SlotError` where a slot of
    *  `slots` holds no node or of `also` no edge, and a `NumberError` `invalidPixel` as `query`
    *  does. */
@@ -632,7 +632,7 @@ function viewsOn(memory: WebAssembly.Memory) {
 }
 
 /** The buffers of an edge mesh of `engine` through `views`: the moving layer's where `ofDrag`,
- *  which `meshAt` wrote, else the last query's (ADR-0036). */
+ *  which `meshAt` wrote, else the last query's (ADR-0040). */
 function meshOf(engine: Engine, views: ReturnType<typeof viewsOn>, ofDrag: boolean): EdgeMesh {
   const { u32, f32 } = views;
   const at = (buffer: MeshBuffer) =>
@@ -703,7 +703,7 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
 }
 
 /** The edges at the node slots `slots` and of the edge slots `also`, and their mesh, as `meshAt`
- *  of `engine` writes them, read through fresh views on `memory` (ADR-0036, ADR-0040). */
+ *  of `engine` writes them, read through fresh views on `memory` (ADR-0040). */
 function moving(
   engine: Engine,
   memory: WebAssembly.Memory,

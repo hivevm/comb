@@ -329,7 +329,7 @@ pub struct RectInput {
 }
 
 /// A buffer of an edge mesh, which `meshPtr` and `meshLen` read of the query's mesh or the moving
-/// layer's (ADR-0036).
+/// layer's (ADR-0040).
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MeshBuffer {
@@ -428,7 +428,7 @@ pub struct Engine {
     content_rects: Vec<f32>,
     /// The role and the drawn text of each element of `placed`.
     drawn: Drawn,
-    /// The edges at the nodes a drag moves, and their mesh, which `meshAt` writes (ADR-0036).
+    /// The edges at the nodes a drag moves, and their mesh, which `meshAt` writes (ADR-0040).
     moving_edges: Vec<u32>,
     moving: Mesh,
     /// The slots of the edges `drawnEdges` computed the ends of.
@@ -796,7 +796,7 @@ impl Engine {
     /// found, in `rect` at `level` where a screen pixel is `pixel` world units, relative to the
     /// last query's origin, within the mesh budget, and returns the mesh's detail: what a drag
     /// redraws of the nodes it moves and an edit of what it added, in the moving layer each frame
-    /// (ADR-0036, ADR-0040). The edges and their mesh are read through `movingEdges…`, `meshPtr`,
+    /// (ADR-0040). The edges and their mesh are read through `movingEdges…`, `meshPtr`,
     /// and `meshLen`. A slot of `slots` that holds no node or of `also` that holds no edge throws a
     /// `SlotError`, and a pixel is checked as `query` checks it.
     #[wasm_bindgen(js_name = meshAt)]
@@ -1312,7 +1312,7 @@ impl Engine {
     }
 
     /// Where the buffer starts that `query` writes, per edge it found, in its order, the first of
-    /// its vertex indices into (ADR-0036).
+    /// its vertex indices into (ADR-0040).
     #[wasm_bindgen(js_name = meshEdgeStartsPtr)]
     pub fn mesh_edge_starts_ptr(&self) -> *const u32 {
         self.visible.mesh.edge_starts.as_ptr()
@@ -1337,7 +1337,7 @@ impl Engine {
     }
 
     /// Where the buffer `buffer` of an edge mesh starts: the last query's, which `query` writes, or
-    /// where `moving`, the moving layer's, which `meshAt` writes (ADR-0036). Fresh per read, since
+    /// where `moving`, the moving layer's, which `meshAt` writes (ADR-0040). Fresh per read, since
     /// growing memory moves it (ADR-0034).
     #[wasm_bindgen(js_name = meshPtr)]
     pub fn mesh_ptr(&self, moving: bool, buffer: MeshBuffer) -> *const u8 {

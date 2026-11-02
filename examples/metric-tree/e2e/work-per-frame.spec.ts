@@ -109,7 +109,7 @@ test("a pan across queries at the near level takes every view from the warm pool
 test("a drag at the far level keeps its query, and uploads and reallocates none of its mesh", async ({
   page,
 }) => {
-  // Verifies: ADR-0027, ADR-0036
+  // Verifies: ADR-0027, ADR-0040
   await open(page);
   const { width, height } = await canvasSize(page);
   await setViewport(page, { x: width / 2, y: height / 2, scale: 0.2 });
@@ -120,7 +120,7 @@ test("a drag at the far level keeps its query, and uploads and reallocates none 
   await page.mouse.down();
   // Pressing selects the node, and a move past the slop of 4 pixels begins its drag (ADR-0013),
   // each of which renders once more before the frames counted: the first move hides the node's
-  // edges in the query's mesh and its particle, once a drag (ADR-0036).
+  // edges in the query's mesh and its particle, once a drag (ADR-0040).
   await page.evaluate(() => window.comb.whenRendered());
   const slop = 5;
   await page.mouse.move(from.x, from.y + slop);
@@ -388,7 +388,7 @@ async function dragUploads(page: Page, copies: number, id: string) {
 test("a drag frame uploads what the dragged node and its edge take, not what the graph does", async ({
   page,
 }) => {
-  // Verifies: ADR-0036
+  // Verifies: ADR-0040
   test.setTimeout(180_000);
   // Node 0.1 of a copy, a bet, has one edge.
   const small = await dragUploads(page, 1, "0:0.1");
@@ -407,7 +407,7 @@ test("a drag frame uploads what the dragged node and its edge take, not what the
 test("a drag zoomed from the far level to the middle draws its node once, by its view", async ({
   page,
 }) => {
-  // Verifies: ADR-0036
+  // Verifies: ADR-0040
   await open(page);
   const { width, height } = await canvasSize(page);
   await setViewport(page, { x: width / 2, y: height / 2, scale: 0.2 });

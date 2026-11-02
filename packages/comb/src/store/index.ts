@@ -1,6 +1,6 @@
-// The state of the graph and the viewport (ADR-0037). Coordinates are not kept here: positions live
+// The state of the graph and the viewport (ADR-0041). Coordinates are not kept here: positions live
 // in the engine's buffer, and `positionsVersion` tells readers that they moved, `movesVersion` that
-// a drag moved its nodes (ADR-0036); the point a connection is dragged to lives in interaction, and
+// a drag moved its nodes (ADR-0040); the point a connection is dragged to lives in interaction, and
 // `pointerVersion` tells them that it moved.
 import { createStore } from "zustand/vanilla";
 import type { NodeContent } from "../bridge";
@@ -71,7 +71,7 @@ export interface EdgePatch {
 }
 
 /** A node as the store keeps it: its identifier and its width. Its position, its content, and
- *  its height are the engine's (ADR-0037, ADR-0013); a new object for every change of its
+ *  its height are the engine's (ADR-0041, ADR-0013); a new object for every change of its
  *  content, so that a view tells the change by identity. */
 export type NodeView = Pick<NodeData, "id" | "width">;
 
@@ -90,7 +90,7 @@ export interface NodePatch {
 export type By = "user" | "host";
 
 /** The change the last action that changed the graph made, by kind and the identifier it touched,
- *  never a coordinate (ADR-0037, ADR-0030): `api` delivers it to the host application, reading
+ *  never a coordinate (ADR-0041, ADR-0030): `api` delivers it to the host application, reading
  *  what it carries from the store and the engine's buffers. A new object for every change, so
  *  that one is told from the next by identity. */
 export type StoreChange =
@@ -124,7 +124,7 @@ export type StoreChange =
  *  over the node in slot `over`, whose connectors are `compatible` where the source does not reach
  *  it yet, and over its connector `target` where a release connects. The world point it is dragged
  *  to is no part of it: interaction keeps that point and signals its moves by `pointerVersion`
- *  (ADR-0037). */
+ *  (ADR-0041). */
 export interface Connection {
   readonly source: number;
   readonly side: Side;
@@ -161,7 +161,7 @@ export interface GraphView {
    *  a load, the release of a drag, a move of a label drag (ADR-0041, ADR-0040). */
   readonly positionsVersion: number;
   /** The node slots a drag moves, from its first move to its release, or none; a load, or a
-   *  removal of one of them, leaves none (ADR-0036). */
+   *  removal of one of them, leaves none (ADR-0040). */
   readonly dragged: readonly number[] | null;
   /** Counts the moves of the nodes in `dragged`, which a query the scene keeps survives. */
   readonly movesVersion: number;
@@ -287,12 +287,12 @@ function loadedFrom(state: GraphView, graph: KeptGraph, idUnits: number): Partia
 }
 
 /** What a removal leaving `nodes` changes of a drag of `state`: none dragged where it removed one
- *  of the nodes the drag moves (ADR-0036). */
+ *  of the nodes the drag moves (ADR-0040). */
 function draggedWithout(state: GraphView, nodes: GraphView["nodes"]): Partial<GraphView> {
   return state.dragged?.some((slot) => !nodes[slot]) ? { dragged: null } : {};
 }
 
-/** The actions of a drag of nodes (ADR-0036), by the store's `set`. */
+/** The actions of a drag of nodes (ADR-0040), by the store's `set`. */
 function dragsOf(set: (change: (state: GraphState) => Partial<GraphState>) => void) {
   return {
     dragStarted: (slots: readonly number[]) =>

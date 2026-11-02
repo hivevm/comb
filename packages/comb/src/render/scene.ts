@@ -164,10 +164,10 @@ export class Scene {
   readonly world = new Container({ isRenderGroup: true });
   /** The edges layer: the mesh on WebGL2, the fill on Canvas 2D (ADR-0018). */
   readonly edges: EdgesContainer | EdgeFill;
-  /** The moving layer's edges, the edges at the nodes a drag moves (ADR-0036). */
+  /** The moving layer's edges, the edges at the nodes a drag moves (ADR-0040). */
   readonly movingEdges: EdgesContainer | EdgeFill;
   readonly particles = new NodeParticles();
-  /** The moving layer's particles, of the nodes a drag moves at the far level (ADR-0036). */
+  /** The moving layer's particles, of the nodes a drag moves at the far level (ADR-0040). */
   readonly movingParticles = new NodeParticles();
   readonly nodes = new NodesContainer();
   readonly labels = new LabelsContainer();
@@ -227,7 +227,7 @@ export class Scene {
   }
 
   /** Draws `state` from the engine behind `bridge`, a connection being dragged to the world point
-   *  `pointer`, which interaction keeps outside the store (ADR-0037). */
+   *  `pointer`, which interaction keeps outside the store (ADR-0041). */
   render(
     state: GraphView,
     bridge: Bridge,

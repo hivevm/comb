@@ -130,7 +130,7 @@ impl Graph {
     /// `also`, found by a query or not, each once, in ascending order, and into `out` their mesh,
     /// stroked as `query` strokes the edges it found in `rect` at `level` where a screen pixel is
     /// `pixel` world units, relative to `origin`, within the mesh budget: what a drag redraws of
-    /// the nodes it moves (ADR-0036) and an edit of what it added (ADR-0040). A slot of `slots`
+    /// the nodes it moves (ADR-0040) and an edit of what it added (ADR-0040). A slot of `slots`
     /// that holds no node, or of `also` that holds no edge, refuses the call, and nothing is
     /// written.
     pub fn mesh_at(
@@ -166,7 +166,7 @@ impl Graph {
 
 /// Where `mesh_at` strokes the edges at the nodes a drag moves: in the rectangle, at the level,
 /// and where a screen pixel is the pixel's world units of the query the scene keeps, relative to
-/// its origin (ADR-0036).
+/// its origin (ADR-0040).
 #[derive(Clone, Copy, Debug)]
 pub struct MeshAt {
     pub rect: Rect,
@@ -206,7 +206,7 @@ mod tests {
 
     #[test]
     fn the_mesh_at_a_node_holds_every_edge_at_it_found_or_not_and_no_other() {
-        // Verifies: ADR-0036
+        // Verifies: ADR-0040
         // Nodes 0 and 1 side by side, node 2 far off; edges 0–1, 1–2, and 0–2, then one between
         // 1 and 2 alone, which no edge at 0 is.
         let positions = vec![0.0, 0.0, 300.0, 0.0, 1e6, 1e6];

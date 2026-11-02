@@ -12,11 +12,11 @@ A profile of the same gesture in the Dev Container (`work()` of `comb/testing`, 
 the production build) found every edit frame querying the engine anew and uploading 15.9 MB, 9.4 MB
 of it the edge mesh, for one node added or removed: an addition or a removal changes the store's
 nodes and `positionsVersion`, which no kept query survives (`covers` of
-`packages/comb/src/render/scene.ts`, ADR-0037). It is the shape ADR-0036 removed from a drag, and
-ADR-0036 names an edit of one node as its follow-up.
+`packages/comb/src/render/scene.ts`, ADR-0041). It is the shape ADR-0040 removed from a drag, and
+ADR-0040 names an edit of one node as its follow-up.
 
-How an edit redraws is a decision on the scene's culling and binding (ADR-0027, ADR-0036) and on
-the store's signals (ADR-0037), for the maintainer: an added node and its edges drawn in a layer
+How an edit redraws is a decision on the scene's culling and binding (ADR-0027, ADR-0040) and on
+the store's signals (ADR-0041), for the maintainer: an added node and its edges drawn in a layer
 of their own until the next query, a removed one hidden in the kept query, or the engine's mesh
 updated in the ranges an edit touched. This ticket is the profile at the reference's class and the
 proposal, before any code: a `proposed` ADR where the choice binds the scene.
@@ -32,7 +32,7 @@ proposal, before any code: a `proposed` ADR where the choice binds the scene.
 
 ## Read first
 
-- ADR-0027, ADR-0036, ADR-0037, ADR-0022; `packages/comb/src/render/scene.ts` (`covers`, `drag`,
+- ADR-0027, ADR-0040, ADR-0041, ADR-0022; `packages/comb/src/render/scene.ts` (`covers`, `drag`,
   `query`); `bench/run.ts` (`installEdits`).
 - `bench/baselines/13th-gen-intel-r-core-tm-i7-13700.json`, the median of the measurement the
   numbers above come from.
@@ -43,5 +43,5 @@ proposal, before any code: a `proposed` ADR where the choice binds the scene.
 
 ## Mode
 
-with the human: the choice binds the scene's culling and binding (ADR-0027, ADR-0036) and is the
+with the human: the choice binds the scene's culling and binding (ADR-0027, ADR-0040) and is the
 maintainer's.

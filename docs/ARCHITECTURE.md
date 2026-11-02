@@ -151,32 +151,33 @@ The functional core and its shell follow
   the node of the highest rank, comes before them all. At the near level a label whose pill, as the
   labels layer measures and hands it over (`setLabelSize`), holds the point comes before a node;
   `move_label` places a dragged label at the path parameter nearest a point and its distance along
-  the normal there; `mesh_at` meshes every edge at given node slots, found by a query or not, as
-  the query meshes the edges it found, what a drag redraws of the nodes it moves
-  ([ADR-0036](adr/0036-a-drag-redraws-what-it-moved.md)). `stroke` flattens the found edges within a
-  tolerance and strokes them into the triangles of one mesh, with each edge's colour, dash pattern,
-  and arrowhead, or as thin lines alone at the far level of detail; it decides the stroke of each
-  level. A part of a path whose control points miss the query's rectangle, grown by the stroke's
-  width, is drawn as its chord, a segment that meets the grown rectangle with an end outside it is
-  split where it enters and leaves it, so that what the rectangle shows rounds by its distance from
-  the query's origin, and a path is subdivided at most 24 levels deep; the mesh of one query holds
-  at most the mesh budget, 2^22 vertices: each edge's floor, its chord or its arrowhead alone where
-  that is its full mesh, is reserved first, edges are meshed in full in slot order while each fits
-  beside the floors of those after it, and from the first that does not, every edge is drawn as its
-  floor and the mesh is coarsened; its vectors grow by `try_reserve`, so that memory running short
-  coarsens the mesh instead of trapping; the mesh records where each edge's indices start, so that
-  the shell can leave an edge out of a mesh it keeps. `content` lays a node's content out
-  ([ADR-0013](adr/0013-node-content-model.md)): from each role's font, the glyph advances and the
-  line height the shell hands over, an action in the font of role body, a badge in it on a pill
-  at its column's left that hugs the drawn text with 8 either side and 3 above and below, the
-  pill being the badge's rectangle and every other element of its row 3 lower, a progress bar as
-  its column and a body's line, its bar 8 high in the middle of that line cut by `bar` into its
-  segments from the column's left and the track after them, none past the column's end, a metric
-  as its column and two lines, the caption's and the body's, which `metric_parts` divides into
-  its caption on the first, its value at the left of the second, its trend's arrow, a triangle
-  in a square of 10, 8 after the value, and its trend's text 4 after the arrow to the column's
-  end, the trend's text cut first and then the value, an icon as a square of the body's line at
-  its column's left, at most the column and in the middle of the line, a row as deep as its
+  the normal there; `mesh_at` meshes every edge at given node slots and of given edge slots,
+  found by a query or not, as the query meshes the edges it found, what a drag redraws of the
+  nodes it moves and an edit of what it added
+  ([ADR-0040](adr/0040-a-drag-or-an-edit-redraws-what-it-changed.md)). `stroke` flattens the found
+  edges within a tolerance and strokes them into the triangles of one mesh, with each edge's
+  colour, dash pattern, and arrowhead, or as thin lines alone at the far level of detail; it decides
+  the stroke of each level. A part of a path whose control points miss the query's rectangle, grown
+  by the stroke's width, is drawn as its chord, a segment that meets the grown rectangle with an
+  end outside it is split where it enters and leaves it, so that what the rectangle shows rounds by
+  its distance from the query's origin, and a path is subdivided at most 24 levels deep; the mesh
+  of one query holds at most the mesh budget, 2^22 vertices: each edge's floor, its chord or its
+  arrowhead alone where that is its full mesh, is reserved first, edges are meshed in full in slot
+  order while each fits beside the floors of those after it, and from the first that does not,
+  every edge is drawn as its floor and the mesh is coarsened; its vectors grow by `try_reserve`, so
+  that memory running short coarsens the mesh instead of trapping; the mesh records where each
+  edge's indices start, so that the shell can leave an edge out of a mesh it keeps. `content` lays
+  a node's content out ([ADR-0013](adr/0013-node-content-model.md)): from each role's font, the
+  glyph advances and the line height the shell hands over, an action in the font of role body, a
+  badge in it on a pill at its column's left that hugs the drawn text with 8 either side and 3
+  above and below, the pill being the badge's rectangle and every other element of its row 3 lower,
+  a progress bar as its column and a body's line, its bar 8 high in the middle of that line cut by
+  `bar` into its segments from the column's left and the track after them, none past the column's
+  end, a metric as its column and two lines, the caption's and the body's, which `metric_parts`
+  divides into its caption on the first, its value at the left of the second, its trend's arrow, a
+  triangle in a square of 10, 8 after the value, and its trend's text 4 after the arrow to the
+  column's end, the trend's text cut first and then the value, an icon as a square of the body's
+  line at its column's left, at most the column and in the middle of the line, a row as deep as its
   deepest element, the columns of a row sharing the width inside a padding of 12 less gaps of 8
   by their weights, each text advanced glyph by glyph from the left, without kerning, a character
   the shell hands no advance for by the font's fallback, and cut before an ellipsis where it
@@ -224,7 +225,7 @@ The functional core and its shell follow
   edges at given node slots in the rectangle, at the level, and at the pixel of the query the
   scene keeps, relative to its origin, into a mesh of their own, their slots in `movingEdges…`,
   refuses a slot that holds no node and a pixel as `query` does, and returns the mesh's detail
-  (ADR-0036); `meshPtr` and `meshLen` read a buffer of either mesh, the query's or the moving
+  (ADR-0040); `meshPtr` and `meshLen` read a buffer of either mesh, the query's or the moving
   layer's, by a `MeshBuffer`, so that the shell reads both through one function;
   `drawnEdges` computes the ends of the found edges when inspection asks, as they lie then, and
   `hit` names what a press at a point hits, a connector where the shell asks for connectors, a
@@ -278,7 +279,7 @@ The functional core and its shell follow
   (`positionsVersion`), a counter for a drag's moves (`movesVersion`), and a counter for moves of
   the point a connection is dragged to (`pointerVersion`); no coordinates of
   nodes, edges, or the pointer
-  ([ADR-0037](adr/0037-each-move-its-counter-a-drag-apart.md)).
+  ([ADR-0041](adr/0041-each-move-its-counter-an-added-node-its-slot.md)).
   `GraphView` is its state without the actions, the type the render layer reads.
   `store/viewport.ts` holds the viewport's arithmetic, the transform between world and screen and
   the level of detail of a scale included, for interaction, the scene, `api`'s `fitView`,
@@ -515,7 +516,7 @@ forwards, so WebGL2 runs on SwiftShader instead of PixiJS falling back to Canvas
 node's edges and their place in the spatial index; its first move names the slot in the store's
 `dragged` (`dragStarted`), each later one bumps `movesVersion` (`dragMoved`), and the release
 clears it and bumps `positionsVersion` (`dragEnded`). The store notifies the scene, which renders
-once per animation frame and keeps the query it drew at the press (ADR-0036): the first frame
+once per animation frame and keeps the query it drew at the press (ADR-0040): the first frame
 leaves the dragged node's edges out of the query's mesh, uploading its indices alone, and at the
 far level its particle; every frame asks the engine for the mesh of the edges at the node
 (`meshAt`), uploads it whole into the moving layer above the edges, and moves the node's view, or
@@ -613,7 +614,7 @@ example fail where `testMode()` says the build runs the bridge in test mode.
 `scripts/check-dependencies.sh` fails on a lockfile of another package manager beside `bun.lock`
 (ADR-0008), on tsify's default or `json` features or `serde_json` in the bridge crate (ADR-0034), in
 whatever form the entry takes, and on a listed state library other than zustand in the library's
-dependency lists (ADR-0037).
+dependency lists (ADR-0041).
 `scripts/check-devcontainer.sh`, the template's, which `scripts/check-all.sh` and the **Checks**
 workflow run beside `scripts/check-code.sh`, fails on a host Docker socket mounted, a Feature not
 referenced by its major tag alone, or a lock that does not name the Features (ADR-0004).

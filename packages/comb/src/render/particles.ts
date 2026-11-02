@@ -21,7 +21,7 @@ export class NodeParticles extends ParticleContainer {
   private slots = new Uint32Array(1024);
   private heights = new Float32Array(1024);
   private nodes: GraphView["nodes"] = [];
-  /** The nodes whose particles a drag left undrawn since the last sync (ADR-0036). */
+  /** The nodes whose particles a drag left undrawn since the last sync (ADR-0040). */
   private hidden: ReadonlySet<number> = NONE_HIDDEN;
   /** The node the last sync tinted as selected, if it drew it. */
   highlighted: string | null = null;
@@ -74,7 +74,7 @@ export class NodeParticles extends ParticleContainer {
   }
 
   /** Leaves the particles of the nodes in `hidden` undrawn, which a drag draws in its moving
-   *  layer: every property is static, so this uploads them all, once a drag (ADR-0036). */
+   *  layer: every property is static, so this uploads them all, once a drag (ADR-0040). */
   hide(hidden: ReadonlySet<number>): void {
     this.hidden = hidden;
     const count = this.particleChildren.length;
