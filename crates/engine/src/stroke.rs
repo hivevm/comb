@@ -204,7 +204,7 @@ pub struct Mesh {
     pub indices: Vec<u32>,
     pub detail: Detail,
     /// Per edge of the last build, in its order, the first of its vertex indices in `indices`,
-    /// so that the shell can leave an edge out of a mesh it keeps (ADR-0036); none where the mesh
+    /// so that the shell can leave an edge out of a mesh it keeps (ADR-0040); none where the mesh
     /// holds no edge.
     pub edge_starts: Vec<u32>,
     /// Per edge of the last build, whether its full mesh is its arrowhead alone.
@@ -214,7 +214,7 @@ pub struct Mesh {
 }
 
 impl Mesh {
-    pub(crate) fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.positions.clear();
         self.distances.clear();
         self.colors.clear();

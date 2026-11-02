@@ -348,7 +348,7 @@ test("a veto that adds an edge and then throws keeps its edge alone, its error t
 test("a connection dragged across the empty canvas neither queries the engine nor redraws the connectors per move", async ({
   page,
 }) => {
-  // Verifies: ADR-0037
+  // Verifies: ADR-0041
   await open(page);
   await loaded(page, NODES);
   await page.evaluate(() => (window.canConnect = () => "e7"));

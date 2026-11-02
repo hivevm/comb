@@ -109,7 +109,7 @@ test("a pan across queries at the near level takes every view from the warm pool
 test("a drag at the far level keeps its query, and uploads and reallocates none of its mesh", async ({
   page,
 }) => {
-  // Verifies: ADR-0027, ADR-0036
+  // Verifies: ADR-0027, ADR-0040
   await open(page);
   const { width, height } = await canvasSize(page);
   await setViewport(page, { x: width / 2, y: height / 2, scale: 0.2 });
@@ -120,7 +120,7 @@ test("a drag at the far level keeps its query, and uploads and reallocates none 
   await page.mouse.down();
   // Pressing selects the node, and a move past the slop of 4 pixels begins its drag (ADR-0013),
   // each of which renders once more before the frames counted: the first move hides the node's
-  // edges in the query's mesh and its particle, once a drag (ADR-0036).
+  // edges in the query's mesh and its particle, once a drag (ADR-0040).
   await page.evaluate(() => window.comb.whenRendered());
   const slop = 5;
   await page.mouse.move(from.x, from.y + slop);
@@ -388,7 +388,7 @@ async function dragUploads(page: Page, copies: number, id: string) {
 test("a drag frame uploads what the dragged node and its edge take, not what the graph does", async ({
   page,
 }) => {
-  // Verifies: ADR-0036
+  // Verifies: ADR-0040
   test.setTimeout(180_000);
   // Node 0.1 of a copy, a bet, has one edge.
   const small = await dragUploads(page, 1, "0:0.1");
@@ -407,7 +407,7 @@ test("a drag frame uploads what the dragged node and its edge take, not what the
 test("a drag zoomed from the far level to the middle draws its node once, by its view", async ({
   page,
 }) => {
-  // Verifies: ADR-0036
+  // Verifies: ADR-0040
   await open(page);
   const { width, height } = await canvasSize(page);
   await setViewport(page, { x: width / 2, y: height / 2, scale: 0.2 });
@@ -441,4 +441,132 @@ test("a drag zoomed from the far level to the middle draws its node once, by its
   expect(middle.nodes.filter(({ id }) => id === "0:0.0")).toHaveLength(1);
   expect(middle.particles).toBe(0);
   expect(middle.nodes.every(({ texts }) => texts !== undefined)).toBe(true);
+});
+
+/** Opens the example at `copies`, at the far level: the fitted view of a large graph, a scale
+ *  below far's threshold of a small one. */
+async function openAtFar(page: Page, copies: number) {
+  await open(page, `?copies=${copies}`);
+  if (copies >= 1000) return;
+  const { width, height } = await canvasSize(page);
+  await setViewport(page, { x: width / 2, y: height / 2, scale: 0.2 });
+}
+
+/** An edit a frame at the far level of `copies`: a node added, an edge from a drawn node to it, an
+ *  edge the kept query drew removed, and the added node removed; what each frame queried and
+ *  uploaded, and whether the canvas showed each edit. */
+async function editFrames(page: Page, copies: number) {
+  await openAtFar(page, copies);
+  return page.evaluate(async () => {
+    const { comb } = window;
+    await comb.whenRendered();
+    const level = window.inspect().level;
+    const graph = window.exampleGraph();
+    const kept = graph.edges.find((edge) => window.isDrawn({ edge: edge.id }))!;
+    const source = kept.source;
+    const before = { work: window.work(), queries: window.inspect().queries };
+    const shown: boolean[] = [];
+    // Shown as `isDrawn` and `inspect()` both report it.
+    const inspected = (what: { node: string } | { edge: string }) => {
+      const snapshot = window.inspect();
+      const listed =
+        "node" in what
+          ? snapshot.nodes.some(({ id }) => id === what.node)
+          : snapshot.edges.some(({ id }) => id === what.edge);
+      return listed === window.isDrawn(what) ? listed : null;
+    };
+    const step = async (edit: () => void, check: () => boolean | null) => {
+      edit();
+      await comb.whenRendered();
+      shown.push(check() === true);
+    };
+    const node = {
+      id: "edit-node",
+      x: 0,
+      y: 0,
+      width: 160,
+      content: [[{ kind: "text" as const, role: "title" as const, text: "e" }]],
+    };
+    const not = (value: boolean | null) => (value === null ? null : !value);
+    await step(
+      () => comb.addNode(node),
+      () => inspected({ node: "edit-node" }),
+    );
+    await step(
+      () => comb.addEdge({ id: "edit-edge", source, target: "edit-node" }),
+      () => inspected({ edge: "edit-edge" }),
+    );
+    await step(
+      () => comb.removeEdges([kept.id]),
+      () => not(inspected({ edge: kept.id })),
+    );
+    await step(
+      () => comb.removeNodes(["edit-node"]),
+      () => not(inspected({ node: "edit-node" })),
+    );
+    const after = { work: window.work(), queries: window.inspect().queries };
+    return {
+      level,
+      shown,
+      queried: after.queries - before.queries,
+      perFrame: (after.work.bytesUploaded - before.work.bytesUploaded) / 4,
+    };
+  });
+}
+
+test("an edit a frame at the far level keeps the query and uploads what it changed, not what the graph holds", async ({
+  page,
+}) => {
+  // Verifies: ADR-0040
+  test.setTimeout(180_000);
+  const small = await editFrames(page, 1);
+  const large = await editFrames(page, 3334);
+  expect([small.level, large.level]).toEqual(["far", "far"]);
+  // Each edit shown in its frame: added drawn, removed not, the kept query's edge among them.
+  expect([small.shown, large.shown]).toEqual([
+    [true, true, true, true],
+    [true, true, true, true],
+  ]);
+  expect([small.queried, large.queried]).toEqual([0, 0]);
+  expect(large.perFrame).toBeLessThanOrEqual(Math.max(small.perFrame * 2, 64 * 1024));
+});
+
+test("edits past the bound, or a removal of a node a drag moves, query anew", async ({ page }) => {
+  // Verifies: ADR-0040
+  await open(page);
+  const { width, height } = await canvasSize(page);
+  await setViewport(page, { x: width / 2, y: height / 2, scale: 0.2 });
+  expect(await page.evaluate(() => window.inspect().level)).toBe("far");
+  const queried = await page.evaluate(async () => {
+    const { comb } = window;
+    await comb.whenRendered();
+    const before = window.inspect().queries;
+    const nodes = Array.from({ length: 257 }, (_, i) => ({
+      id: `bound-${i}`,
+      x: i * 10,
+      y: 2000,
+      width: 8,
+      content: [[{ kind: "text" as const, role: "title" as const, text: "b" }]],
+    }));
+    for (const node of nodes) comb.addNode(node);
+    await comb.whenRendered();
+    return window.inspect().queries - before;
+  });
+  expect(queried).toBe(1);
+  // A drag, then the host removes the dragged node mid-drag.
+  const from = await screenCentre(page, "0:0.0");
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.evaluate(() => window.comb.whenRendered());
+  await page.mouse.move(from.x, from.y + 10);
+  await page.evaluate(() => window.comb.whenRendered());
+  const removal = await page.evaluate(async () => {
+    const before = window.inspect().queries;
+    window.comb.removeNodes(["0:0.0"]);
+    await window.comb.whenRendered();
+    const after = window.inspect();
+    return { queried: after.queries - before, drawn: after.nodes.some(({ id }) => id === "0:0.0") };
+  });
+  await page.mouse.up();
+  expect(removal).toEqual({ queried: 1, drawn: false });
 });

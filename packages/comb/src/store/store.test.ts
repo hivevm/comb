@@ -59,7 +59,7 @@ describe("graph store", () => {
   });
 
   test("an added node takes its slot in the map and the lists, and the change names it", () => {
-    // Verifies: ADR-0022, ADR-0030
+    // Verifies: ADR-0022, ADR-0030, ADR-0041
     const store = createGraphStore();
     store.getState().load(graph, units);
     const { nodes, positionsVersion, idUnits } = store.getState();
@@ -71,7 +71,8 @@ describe("graph store", () => {
     expect(state.nodes[2]).toEqual({ id: "cc", width: 10 });
     expect(state.slots.get("cc")).toBe(2);
     expect(state.idUnits).toBe(idUnits + 2);
-    expect(state.positionsVersion).toBe(positionsVersion + 1);
+    // Its slot is the signal; no counter moves, so that a kept query survives it (ADR-0041).
+    expect(state.positionsVersion).toBe(positionsVersion);
     expect(state.change).toEqual({ kind: "nodeAdded", by: "host", id: "cc" });
     // Selecting changes nothing of the graph, so the change stays the one of the addition.
     store.getState().select({ kind: "node", id: "cc" });

@@ -329,7 +329,7 @@ pub struct RectInput {
 }
 
 /// A buffer of an edge mesh, which `meshPtr` and `meshLen` read of the query's mesh or the moving
-/// layer's (ADR-0036).
+/// layer's (ADR-0040).
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MeshBuffer {
@@ -428,9 +428,11 @@ pub struct Engine {
     content_rects: Vec<f32>,
     /// The role and the drawn text of each element of `placed`.
     drawn: Drawn,
-    /// The edges at the nodes a drag moves, and their mesh, which `meshAt` writes (ADR-0036).
+    /// The edges at the nodes a drag moves, and their mesh, which `meshAt` writes (ADR-0040).
     moving_edges: Vec<u32>,
     moving: Mesh,
+    /// The slots of the edges `drawnEdges` computed the ends of.
+    drawn_edges: Vec<u32>,
 }
 
 #[wasm_bindgen]
@@ -789,16 +791,19 @@ impl Engine {
         self.query_rect(&rect, level, pixel, label_reach)
     }
 
-    /// Meshes every edge at the node slots `slots`, found by the last query or not, in ascending
-    /// slot order, as the last query meshed the edges it found, in `rect` at `level` where a screen
-    /// pixel is `pixel` world units, relative to the last query's origin, within the mesh budget,
-    /// and returns the mesh's detail: what a drag redraws in its moving layer each frame
-    /// (ADR-0036). The edges and their mesh are read through the `moving…` buffers. A slot that
-    /// holds no node throws a `SlotError`, and a pixel is checked as `query` checks it.
+    /// Meshes every edge at the node slots `slots` and of the edge slots `also`, found by the last
+    /// query or not, each once, in ascending slot order, as the last query meshed the edges it
+    /// found, in `rect` at `level` where a screen pixel is `pixel` world units, relative to the
+    /// last query's origin, within the mesh budget, and returns the mesh's detail: what a drag
+    /// redraws of the nodes it moves and an edit of what it added, in the moving layer each frame
+    /// (ADR-0040). The edges and their mesh are read through `movingEdges…`, `meshPtr`,
+    /// and `meshLen`. A slot of `slots` that holds no node or of `also` that holds no edge throws a
+    /// `SlotError`, and a pixel is checked as `query` checks it.
     #[wasm_bindgen(js_name = meshAt)]
     pub fn mesh_at(
         &mut self,
         slots: &[u32],
+        also: &[u32],
         rect: Ts<RectInput>,
         level: DetailLevel,
         pixel: f64,
@@ -812,16 +817,35 @@ impl Engine {
             origin: self.visible.origin,
         };
         self.graph
-            .mesh_at(slots, &at, &mut self.moving_edges, &mut self.moving)?;
+            .mesh_at(slots, also, &at, &mut self.moving_edges, &mut self.moving)?;
         Ok(self.moving.detail.into())
     }
 
-    /// Computes the ends of the edges the last query found, read through the `edgeEnds…` buffer:
-    /// for inspection, not for drawing.
+    /// Computes the ends of the edges the last query found and of those the last `meshAt` meshed,
+    /// each once, in ascending slot order, read through the `drawnEdges…` and `edgeEnds…`
+    /// buffers: for inspection, not for drawing (ADR-0040).
     #[wasm_bindgen(js_name = drawnEdges)]
     pub fn drawn_edges(&mut self) {
         trap::spring();
-        self.graph.edge_ends(&self.visible.edges, &mut self.ends);
+        self.drawn_edges.clear();
+        self.drawn_edges.extend_from_slice(&self.visible.edges);
+        self.drawn_edges.extend_from_slice(&self.moving_edges);
+        self.drawn_edges.sort_unstable();
+        self.drawn_edges.dedup();
+        self.graph.edge_ends(&self.drawn_edges, &mut self.ends);
+    }
+
+    /// Where the buffer starts that `drawnEdges` writes the slots of the edges it computed the
+    /// ends of into.
+    #[wasm_bindgen(js_name = drawnEdgesPtr)]
+    pub fn drawn_edges_ptr(&self) -> *const u32 {
+        self.drawn_edges.as_ptr()
+    }
+
+    /// How many edge slots the last `drawnEdges` wrote.
+    #[wasm_bindgen(js_name = drawnEdgesLen)]
+    pub fn drawn_edges_len(&self) -> usize {
+        self.drawn_edges.len()
     }
 
     /// What a press at the world point `(x, y)` hits where a screen pixel is `pixel` world units,
@@ -932,6 +956,9 @@ impl Engine {
         let rect = Rect::new(rect.min_x, rect.min_y, rect.max_x, rect.max_y);
         self.graph
             .query(&rect, level.into(), pixel, label_reach, &mut self.visible);
+        // A query ends the moving layer it was meshed against, until the next `meshAt`.
+        self.moving_edges.clear();
+        self.moving.clear();
         self.lay_out_found(level);
         Ok(self.visible.mesh.detail.into())
     }
@@ -1285,7 +1312,7 @@ impl Engine {
     }
 
     /// Where the buffer starts that `query` writes, per edge it found, in its order, the first of
-    /// its vertex indices into (ADR-0036).
+    /// its vertex indices into (ADR-0040).
     #[wasm_bindgen(js_name = meshEdgeStartsPtr)]
     pub fn mesh_edge_starts_ptr(&self) -> *const u32 {
         self.visible.mesh.edge_starts.as_ptr()
@@ -1310,7 +1337,7 @@ impl Engine {
     }
 
     /// Where the buffer `buffer` of an edge mesh starts: the last query's, which `query` writes, or
-    /// where `moving`, the moving layer's, which `meshAt` writes (ADR-0036). Fresh per read, since
+    /// where `moving`, the moving layer's, which `meshAt` writes (ADR-0040). Fresh per read, since
     /// growing memory moves it (ADR-0034).
     #[wasm_bindgen(js_name = meshPtr)]
     pub fn mesh_ptr(&self, moving: bool, buffer: MeshBuffer) -> *const u8 {

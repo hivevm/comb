@@ -126,19 +126,27 @@ impl Graph {
             .build(found, &stroke, rect, out.origin, budget, &mut self.points);
     }
 
-    /// Writes into `edges` the slots of every edge at the node slots `slots`, found by a query or
-    /// not, in ascending order, and into `out` their mesh, stroked as `query` strokes the edges it
-    /// found in `rect` at `level` where a screen pixel is `pixel` world units, relative to
-    /// `origin`, within the mesh budget: what a drag redraws of the nodes it moves (ADR-0036). A
-    /// slot that holds no node refuses the call, and nothing is written.
+    /// Writes into `edges` the slots of every edge at the node slots `slots` and of the edge slots
+    /// `also`, found by a query or not, each once, in ascending order, and into `out` their mesh,
+    /// stroked as `query` strokes the edges it found in `rect` at `level` where a screen pixel is
+    /// `pixel` world units, relative to `origin`, within the mesh budget: what a drag redraws of
+    /// the nodes it moves (ADR-0040) and an edit of what it added (ADR-0040). A slot of `slots`
+    /// that holds no node, or of `also` that holds no edge, refuses the call, and nothing is
+    /// written.
     pub fn mesh_at(
         &mut self,
         slots: &[u32],
+        also: &[u32],
         at: &MeshAt,
         edges: &mut Vec<u32>,
         out: &mut Mesh,
     ) -> Result<(), SlotError> {
-        *edges = self.edges_at(slots)?;
+        self.edges_held(also)?;
+        let mut found = self.edges_at(slots)?;
+        found.extend_from_slice(also);
+        found.sort_unstable();
+        found.dedup();
+        *edges = found;
         let found = edges.iter().map(|&slot| {
             let slot = slot as usize;
             (&self.paths[slot], &self.edges[slot].style)
@@ -158,7 +166,7 @@ impl Graph {
 
 /// Where `mesh_at` strokes the edges at the nodes a drag moves: in the rectangle, at the level,
 /// and where a screen pixel is the pixel's world units of the query the scene keeps, relative to
-/// its origin (ADR-0036).
+/// its origin (ADR-0040).
 #[derive(Clone, Copy, Debug)]
 pub struct MeshAt {
     pub rect: Rect,
@@ -198,7 +206,7 @@ mod tests {
 
     #[test]
     fn the_mesh_at_a_node_holds_every_edge_at_it_found_or_not_and_no_other() {
-        // Verifies: ADR-0036
+        // Verifies: ADR-0040
         // Nodes 0 and 1 side by side, node 2 far off; edges 0–1, 1–2, and 0–2, then one between
         // 1 and 2 alone, which no edge at 0 is.
         let positions = vec![0.0, 0.0, 300.0, 0.0, 1e6, 1e6];
@@ -227,18 +235,70 @@ mod tests {
             origin: found.origin,
         };
         let (mut edges, mut mesh) = (Vec::new(), Mesh::default());
-        graph.mesh_at(&[0], &at, &mut edges, &mut mesh).unwrap();
+        graph
+            .mesh_at(&[0], &[], &at, &mut edges, &mut mesh)
+            .unwrap();
         assert_eq!(edges, [0, 2]);
         assert_eq!(mesh.edge_starts.len(), 2);
         assert!(!mesh.indices.is_empty());
         // Of two nodes, each edge at either once, found by the query or not.
-        graph.mesh_at(&[1, 2], &at, &mut edges, &mut mesh).unwrap();
+        graph
+            .mesh_at(&[1, 2], &[], &at, &mut edges, &mut mesh)
+            .unwrap();
         assert_eq!(edges, [0, 1, 2, 3]);
         assert_eq!(mesh.edge_starts.len(), 4);
         // A slot that holds no node refuses, and nothing is written.
         let before = mesh.indices.len();
-        assert!(graph.mesh_at(&[9], &at, &mut edges, &mut mesh).is_err());
+        assert!(
+            graph
+                .mesh_at(&[9], &[], &at, &mut edges, &mut mesh)
+                .is_err()
+        );
         assert_eq!((edges.len(), mesh.indices.len()), (4, before));
+    }
+
+    #[test]
+    fn the_mesh_of_edge_slots_holds_those_edges_and_the_ones_at_the_nodes_each_once() {
+        // Verifies: ADR-0040
+        let positions = vec![0.0, 0.0, 300.0, 0.0, 600.0, 0.0];
+        let sizes = vec![220.0, 64.0, 220.0, 64.0, 220.0, 64.0];
+        let edge = |source, target| EdgeSpec {
+            sides: Sides::default(),
+            source,
+            target,
+            label: None,
+            style: EdgeStyle::unstyled(),
+        };
+        let edges = vec![edge(0, 1), edge(1, 2), edge(0, 2)];
+        let mut graph = Graph::new(positions, sizes, edges).unwrap();
+        let rect = Rect::new(-10.0, -10.0, 900.0, 100.0);
+        let mut found = Visible::default();
+        graph.query(&rect, Level::Far, 1.0, 0.0, &mut found);
+        let at = MeshAt {
+            rect,
+            level: Level::Far,
+            pixel: 1.0,
+            origin: found.origin,
+        };
+        let (mut edges, mut mesh) = (Vec::new(), Mesh::default());
+        // An added edge alone: that edge and no other.
+        graph
+            .mesh_at(&[], &[1], &at, &mut edges, &mut mesh)
+            .unwrap();
+        assert_eq!(edges, [1]);
+        assert_eq!(mesh.edge_starts.len(), 1);
+        // Beside a dragged node: the edges at it and the added one, each once.
+        graph
+            .mesh_at(&[0], &[2, 1], &at, &mut edges, &mut mesh)
+            .unwrap();
+        assert_eq!(edges, [0, 1, 2]);
+        // An edge slot that holds no edge refuses, and nothing is written.
+        assert!(
+            graph
+                .mesh_at(&[], &[7], &at, &mut edges, &mut mesh)
+                .is_err()
+        );
+        assert_eq!(edges, [0, 1, 2]);
     }
 
     #[test]

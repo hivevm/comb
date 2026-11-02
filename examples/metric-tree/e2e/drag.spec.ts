@@ -111,7 +111,7 @@ async function drawnFrame(page: Page, id: string) {
 test("a node dragged across frames stays under the pointer, its edges' ends at its connectors in the same frame", async ({
   page,
 }) => {
-  // Verifies: G-2, ADR-0036 — the dragged edges, in the moving layer, follow in the same frame.
+  // Verifies: G-2, ADR-0040 — the dragged edges, in the moving layer, follow in the same frame.
   await open(page);
   const northStar = "0:3.0";
   const origin = await canvasOrigin(page);
@@ -130,7 +130,7 @@ test("a node dragged across frames stays under the pointer, its edges' ends at i
     const pointer = { x: from.x, y: from.y + i * step };
     const renders = await page.evaluate(() => window.renderCount());
     await page.mouse.move(pointer.x, pointer.y);
-    // The frame that drew this move, read before any other: one render per move (ADR-0037).
+    // The frame that drew this move, read before any other: one render per move (ADR-0041).
     const frame = await drawnFrame(page, northStar);
     expect(frame.renders).toBe(renders + 1);
     const local = { x: pointer.x - origin.left, y: pointer.y - origin.top };
@@ -235,4 +235,36 @@ test("a drag whose engine is lost before the release tells no change, and throws
   expect(lost).toBe("EngineLostError");
   expect(await told(page)).toEqual([]);
   expect(errors).toEqual([]);
+});
+
+test("a query during a drag uploads the whole new mesh, its indices all, not the span it hides", async ({
+  page,
+}) => {
+  // Verifies: ADR-0040 — WebGL uploads at the draw by the range marked last, so a render that
+  // queries and then hides must mark the whole index buffer, not the hidden span.
+  await open(page);
+  const from = await screenCentre(page, "0:3.0");
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.evaluate(() => window.comb.whenRendered());
+  await page.mouse.move(from.x, from.y + 20);
+  await page.evaluate(() => window.comb.whenRendered());
+  // A zoom past the rescale while the drag holds: that render queries, then hides.
+  const render = await page.evaluate(async () => {
+    const before = { work: window.work(), queries: window.inspect().queries };
+    const { x, y, scale } = window.comb.viewport();
+    window.comb.setViewport({ x: x * 1.4, y: y * 1.4, scale: scale * 1.4 });
+    await window.comb.whenRendered();
+    const after = window.inspect();
+    return {
+      queried: after.queries - before.queries,
+      meshBytes: window.work().meshBytesUploaded - before.work.meshBytesUploaded,
+      mesh: after.edgeMesh,
+    };
+  });
+  await page.mouse.up();
+  expect(render.queried).toBe(1);
+  // Positions, distances, colours, and dashes of each vertex, 24 bytes, and every index, 4.
+  const { vertices, indices } = render.mesh;
+  expect(render.meshBytes).toBeGreaterThanOrEqual(vertices * 24 + indices * 4);
 });

@@ -618,7 +618,7 @@ export class NodesContainer extends Container {
   }
 
   /** Moves the views bound to `slots`, the nodes a drag moves, to their places in `positions`,
-   *  keeping their content, their size, and their place among the views (ADR-0036). */
+   *  keeping their content, their size, and their place among the views (ADR-0040). */
   place(slots: readonly number[], positions: Float32Array): void {
     for (const slot of slots)
       this.views.boundTo(slot)?.position.set(positions[slot * 2], positions[slot * 2 + 1]);

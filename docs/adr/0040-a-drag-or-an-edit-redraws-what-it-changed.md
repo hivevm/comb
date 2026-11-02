@@ -1,8 +1,9 @@
 # ADR-0040: A drag, or an edit at the far level, redraws what it changed in a moving layer, and the scene keeps its query
 
-- **Status:** 🟡 proposed
-- **Date:** 2026-11-01
+- **Status:** 🟢 accepted
+- **Date:** 2026-11-02
 - **Deciders:** Markus Brigl
+- **Supersedes:** [ADR-0036](0036-a-drag-redraws-what-it-moved.md)
 - **Applies to:** the scene's culling and binding in `packages/comb/src/render/`, the edge meshes of `crates/engine` and `crates/engine-wasm` and their export in `packages/comb/src/bridge/`, the store's signals of a move and of an added node in `packages/comb/src/store/`, and the node drag of `packages/comb/src/interaction/`
 
 ## Context
@@ -31,8 +32,8 @@ and when the engine reuses a freed slot (ADR-0022). PixiJS uploads a sub-range o
 a property marked static changes, and `packages/comb/src/render/particles.ts` marks every property
 static so that a pan uploads none.
 
-This ADR restates ADR-0036 with edits at the far level, and supersedes it once accepted, together
-with ADR-0041, which restates ADR-0037; until then both stay in force as they read.
+This ADR restates ADR-0036 with edits at the far level, and supersedes it, together with
+ADR-0041, which restates ADR-0037.
 
 ## Decision
 

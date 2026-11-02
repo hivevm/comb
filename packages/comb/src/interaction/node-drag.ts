@@ -1,6 +1,6 @@
 // The drag of a node (G-2): it waits until the pointer has moved beyond the slop from the press,
 // then moves the node in the engine by the pointer's moves, each a move a kept query survives,
-// from the first naming the node's slot as dragged (ADR-0036), and records once, where it moved
+// from the first naming the node's slot as dragged (ADR-0040), and records once, where it moved
 // it, where the release left it (ADR-0030). A press released on the canvas within the slop is a
 // click: where the release point lies on an element of the content of the node pressed, it tells
 // the host application which (ADR-0013).

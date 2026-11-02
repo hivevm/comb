@@ -83,7 +83,7 @@ export class LabelsContainer extends Container {
   reach = LABEL_REACH;
 
   /** Moves the label views bound to the edges in `slots`, which a drag moves, to their edges'
-   *  points as the engine places them now, relative to `origin` (G-6, ADR-0036). */
+   *  points as the engine places them now, relative to `origin` (G-6, ADR-0040). */
   follow(slots: Uint32Array, bridge: Bridge, origin: { x: number; y: number }): void {
     for (const slot of slots) {
       const view = this.views.boundTo(slot);
