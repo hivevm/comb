@@ -34,8 +34,8 @@ proposal, before any code: a `proposed` ADR where the choice binds the scene.
 
 - ADR-0027, ADR-0036, ADR-0037, ADR-0022; `packages/comb/src/render/scene.ts` (`covers`, `drag`,
   `query`); `bench/run.ts` (`installEdits`).
-- docs/plan/revision-2026-10-18/16-measure-q1-q2-on-the-reference-machine.md (*What the
-  measurement found*).
+- `bench/baselines/13th-gen-intel-r-core-tm-i7-13700.json`, the median of the measurement the
+  numbers above come from.
 
 ## Blocked by
 
