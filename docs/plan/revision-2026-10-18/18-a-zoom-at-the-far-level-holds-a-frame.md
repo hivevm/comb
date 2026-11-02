@@ -34,8 +34,8 @@ narrower `RESCALE` with a smaller mesh. Which, if any, is a decision on the leve
 
 - ADR-0027 (*Levels of detail*, *Culling*), ADR-0034; `packages/comb/src/render/scene.ts`
   (`covers`, `RESCALE`), `packages/comb/src/render/edges.ts`.
-- docs/plan/revision-2026-10-18/16-measure-q1-q2-on-the-reference-machine.md (*What the
-  measurement found*).
+- `bench/baselines/13th-gen-intel-r-core-tm-i7-13700.json`, the median of the measurement the
+  numbers above come from.
 
 ## Blocked by
 
