@@ -354,8 +354,9 @@ The functional core and its shell follow
   no shader, `EdgeFill` (`render/edges-canvas.ts`) takes its place, builds no mesh, and fills the
   same triangles into one `Graphics`, one fill per run of one colour, dash patterns solid; both are
   an `EdgeLayer`, which the scene and the moving layer draw and hide edges in alike. The mesh
-  remembers that a sync marked its whole index buffer for upload until PixiJS next draws it, so
-  that a hide in between keeps that mark, since WebGL uploads by the range marked last. A node
+  remembers how much of its index buffer the syncs marked for upload until PixiJS next draws it,
+  a hidden mesh, which it does not draw, included, so that a later sync and a hide in between keep
+  that mark, since WebGL uploads by the range marked last. A node
   view draws its box and its content ([ADR-0013](adr/0013-node-content-model.md)): each text a
   pooled `BitmapText` of its role's style where the query placed it, cut where the engine cut it and
   followed by an ellipsis, a badge's on its pill, which one `Graphics` per view draws of the colour
@@ -425,7 +426,8 @@ The functional core and its shell follow
   WebGL context from its first call, resizes of the edge mesh's buffers, and views the pools made,
   and refuses with an `UncountedRendererError` where the canvas draws without WebGL;
   `edgeVertices` gives the screen point of every vertex of the edge mesh as its shader computes it
-  in `f32`; for tests, the benchmark, and tooling.
+  in `f32`, and `gpuEdgeIndices` the indices its GPU buffer holds, read back; for tests, the
+  benchmark, and tooling.
   Its shape follows the scene and is outside the stable interface of `comb`.
 - **Example** (`examples/metric-tree`) — a host application with a metric tree and an HTML sidebar
   (G-9), each type of node told only by the content the example describes from its fields (G-10):

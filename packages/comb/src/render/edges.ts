@@ -131,9 +131,10 @@ function grown(size: number): number {
 export class MeshBuffers {
   vertices = 0;
   indices = 0;
-  /** How many indices a `set` marked for upload since the mesh was last drawn, 0 once it was:
-   *  WebGL uploads at the draw by the last range marked, so a `hide` before that draw keeps this
-   *  mark instead of marking its own span (ADR-0027). */
+  /** How many indices the `set`s since the mesh was last drawn marked for upload, 0 once it was:
+   *  WebGL uploads at the draw by the last range marked, so a `set` before that draw marks what
+   *  the earlier ones marked too, and a `hide` keeps this mark instead of marking its own span
+   *  (ADR-0027). */
   private wholeMarked = 0;
   private arrays = {
     positions: new Float32Array(0),
@@ -196,7 +197,7 @@ export class MeshBuffers {
     const array = this.arrays.indices;
     array.set(mesh.indices);
     if (this.indices > indices) array.fill(0, indices, this.indices);
-    this.wholeMarked = Math.max(indices, this.indices);
+    this.wholeMarked = Math.max(indices, this.indices, this.wholeMarked);
     this.geometry.indexBuffer.setDataWithSize(array, this.wholeMarked, true);
     this.vertices = vertices;
     this.indices = indices;
@@ -248,8 +249,10 @@ export class EdgesContainer extends Container implements EdgeLayer {
     super();
     this.addChild(this.mesh);
     // PixiJS calls this in each render of the stage, before the draw that uploads what is marked;
-    // it calls it for a mesh it does not draw too, whose marks then never upload.
-    this.mesh.onRender = () => this.buffers.drawn();
+    // it calls it for a hidden mesh too, which it does not draw, so that one keeps its marks.
+    this.mesh.onRender = () => {
+      if (this.mesh.visible) this.buffers.drawn();
+    };
   }
 
   /** The edges the last sync drew and where each one's indices start, copied out of the engine's

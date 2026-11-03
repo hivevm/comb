@@ -1,7 +1,7 @@
 // The testing entry, `comb/testing`: what the canvas draws, for tests, benchmarks, and tooling,
 // which of its layers it shows, for reference images, and the transform between world and screen.
 // Its shape follows the scene and changes with it, outside the stable interface of `comb`.
-import type { Buffer, Matrix, WebGLRenderer } from "pixi.js";
+import type { Buffer, GlBuffer, Matrix, WebGLRenderer } from "pixi.js";
 import type { Comb } from "./api";
 import { scenes } from "./api/scenes";
 import { bridgeCalls, TEST_MODE, trapNextCall, type Hit, type Rect } from "./bridge";
@@ -223,6 +223,32 @@ export function edgeVertices(comb: Comb): Float64Array {
 }
 
 type Six = [number, number, number, number, number, number];
+
+/** The indices the GPU buffer of the edge mesh of `comb` holds, read back from it: what the mesh
+ *  draws, whatever was marked for upload; none before PixiJS made that buffer, which this does
+ *  not make, since a buffer bound first to a copy target can never hold indices. Read through the
+ *  copy target, so that the binding of the vertex array PixiJS keeps stays as it is, and the copy
+ *  target's binding is restored. Throws `UncountedRendererError` without WebGL2. */
+export function gpuEdgeIndices(comb: Comb): Uint32Array {
+  const { app, edges } = sceneOf(comb);
+  const renderer = app.renderer as WebGLRenderer;
+  const gl = renderer.gl as WebGL2RenderingContext | undefined;
+  if (
+    renderer.name !== "webgl" ||
+    !(edges instanceof EdgesContainer) ||
+    typeof gl?.getBufferSubData !== "function"
+  ) {
+    throw new UncountedRendererError(renderer.name);
+  }
+  const made = edges.geometry.indexBuffer._gpuData[renderer.uid] as GlBuffer | undefined;
+  if (!made) return new Uint32Array(0);
+  const indices = new Uint32Array(made.byteLength / Uint32Array.BYTES_PER_ELEMENT);
+  const bound = gl.getParameter(gl.COPY_READ_BUFFER_BINDING) as WebGLBuffer | null;
+  gl.bindBuffer(gl.COPY_READ_BUFFER, made.buffer);
+  gl.getBufferSubData(gl.COPY_READ_BUFFER, 0, indices);
+  gl.bindBuffer(gl.COPY_READ_BUFFER, bound);
+  return indices;
+}
 
 /** Shows or hides layers of the canvas of `comb`, so that a reference image can hold one layer
  *  alone, without the text of the others, whose fonts differ between machines. */

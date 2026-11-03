@@ -15,6 +15,7 @@ import engineUrl from "comb/engine.wasm?url";
 import {
   bridgeCalls,
   edgeVertices,
+  gpuEdgeIndices,
   hitKind,
   inspect,
   isDrawn,
@@ -95,6 +96,7 @@ declare global {
     visibleRect: (margin?: number) => ReturnType<typeof visibleRect>;
     work: () => ReturnType<typeof work>;
     edgeVertices: () => ReturnType<typeof edgeVertices>;
+    gpuEdgeIndices: () => ReturnType<typeof gpuEdgeIndices>;
   }
 }
 
@@ -541,4 +543,5 @@ window.isDrawn = (what) => isDrawn(comb, what);
 window.visibleRect = (margin) => visibleRect(comb, margin);
 window.work = () => work(comb);
 window.edgeVertices = () => edgeVertices(comb);
+window.gpuEdgeIndices = () => gpuEdgeIndices(comb);
 window.loadReport = load();
