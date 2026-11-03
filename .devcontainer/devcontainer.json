@@ -32,17 +32,20 @@
   // container build.
   "initializeCommand": "mkdir \"${localEnv:HOME}${localEnv:USERPROFILE}/.claude\" || exit 0",
 
-  // Runs inside the container once it is created. Git does not version its hooks, so the
-  // repository keeps them under .githooks/ and this points git at them: pre-commit refuses a
-  // commit on main (AGENTS.md, section 6) and runs the documentation checks before a commit that
-  // stages a Markdown file, pre-push runs the checks first (AGENTS.md, section 5),
-  // and pre-merge-commit runs the documentation checks before git records a merge commit on main
-  // itself; a fast-forward and a rebase run no hook.
-  // Outside the container, run the same command once per clone (README → "Getting Started").
-  // The dependencies come from bun.lock; Playwright's installer adds Chromium and its system
-  // libraries for the browser tests (ADR-0008).
-  "postCreateCommand": {
+  // Runs inside the container on every start, so the settings are set again should a session
+  // have changed them: the repository's git hooks under .githooks/ and the merge settings they
+  // rely on. What each refuses, and the same commands for a clone outside the container,
+  // are under "Git hooks" in the README.
+  "postStartCommand": {
     "hooks": "git config core.hooksPath .githooks",
+    "merge": "git config merge.ff false && git config pull.ff only",
+    "index": "git config merge.adr-index.driver '.githooks/merge-adr-index %O %A %B %S %X %Y'"
+  },
+
+  // Runs inside the container once it is created. The dependencies come from bun.lock;
+  // Playwright's installer adds Chromium and its system libraries for the browser tests
+  // (ADR-0008). ShellCheck comes with the image (Dockerfile).
+  "postCreateCommand": {
     "deps": "bun install --frozen-lockfile && bunx --bun playwright install --with-deps chromium"
   },
 

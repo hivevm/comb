@@ -24,8 +24,8 @@ Two roles: the **dispatcher** claims tickets and starts the sessions that work t
    frontier is what may be claimed; the claimed and the blocked are not.
 2. Choose. Alone, one ticket. In parallel, only tickets whose *Mode* says unattended and that
    touch nothing the harness ADR keeps with the human, and no more than its cap on open agent
-   work allows, counting the claimed tickets and the open pull requests of agents. A ticket
-   "with the human" is worked in a session the human sits in, never dispatched.
+   work allows, counting the branches of agents whose work is not yet on `main`, claims included. A
+   ticket "with the human" is worked in a session the human sits in, never dispatched.
 3. Claim each with [`claim.sh`](claim.sh): `.agents/skills/work-tickets/claim.sh <ticket path>`
    creates the branch `ticket/<spec>/<NN>-<slug>` at `main`, and with the remote the harness
    ADR names as a second argument creates it on that remote first, so the claim holds across
@@ -49,17 +49,21 @@ Two roles: the **dispatcher** claims tickets and starts the sessions that work t
 3. Stop where the *Mode* says. A session past its stop writes what it found and where it stands
    into the ticket file, commits it on the branch, and hands off instead of trying on.
 4. Done when [`scripts/check-all.sh`](../../../scripts/check-all.sh) is green. The change
-   deletes the ticket file in the same branch, and the pull request draft says which ticket it
-   lands and carries the *Doubts*.
+   deletes the ticket file in the same branch, and the hand-off draft under `.scratch/` says
+   which ticket it lands and carries the *Doubts*.
 
 ## 3. Review, merge, and the next wave
 
 1. Each finished branch goes to a fresh session that did not write it, through
    [`review`](../review/SKILL.md), of the agent and model the harness ADR names for reviewing.
-2. The pull request merges as any other. A ticket whose spec has no ticket file left hands that
-   spec to [`design-revision`](../design-revision/SKILL.md).
+2. The branch reaches `main` by its pull request, or merges into the `feat/` branch the human
+   names ([`AGENTS.md` §6](../../../AGENTS.md#6-project-rules)); its hand-off is the pull
+   request's description or the merge's message. A ticket whose spec has no ticket file left
+   hands that spec to [`design-revision`](../design-revision/SKILL.md).
 3. Remove each finished worktree (`git worktree remove .scratch/worktrees/<spec>-<NN>-<slug>`)
-   and, once merged, its branch; prune the branches a remote has deleted (`git fetch --prune`),
+   and, once its work is on `main`, its branch: a ticket merged into a `feat/` branch keeps its
+   branch until then, since `main` still has its file and the branch is what claims it; prune
+   the branches a remote has deleted (`git fetch --prune`),
    since the sensor reads remote ones as claims; run it again, and claim from the new frontier.
-   A claim given up without a pull request is released by deleting its branch; on a remote, ask
+   A claim given up without a merge is released by deleting its branch; on a remote, ask
    the human to delete it, since the push the harness ADR grants only creates.

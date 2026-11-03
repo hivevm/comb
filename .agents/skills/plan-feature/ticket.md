@@ -4,7 +4,7 @@
      vertical slice: a narrow but complete path through every layer the change touches, demoable
      or verifiable on its own, sized to one fresh agent session. Claim it by creating the branch
      ticket/<spec>/<NN>-<slug> BEFORE any work, so parallel sessions sharing the repository skip
-     it. The pull request that lands it deletes this file. Decided in
+     it. The branch that lands it deletes this file. Decided in
      docs/adr/0006-feature-layer.md. -->
 
 ## What to build

@@ -2,25 +2,23 @@ name: Checks
 
 # Enforces the repository's rules as CI. Pure bash + coreutils — nothing is installed
 # (ShellCheck, used by the shell job, ships preinstalled on the GitHub-hosted runner image).
-# scripts/check-all.sh is the local equivalent; check 9 of scripts/check-docs.sh holds the two
-# lists and the required checks named in README.md together. Each job runs a check after its own
-# self-test, and each script's header says what it checks:
-# - Documentation: scripts/check-docs.sh, then the self-test of the normalize skill's map script,
-#   scripts/test-normalize-remap.sh (ADR-0001), then scripts/check-plan-modes.sh, which refuses an
-#   unattended ticket that names a protected part of ADR-0007.
-# - Traceability: scripts/check-traceability.sh (ADR-0002).
-# - Dev Container: scripts/check-devcontainer.sh (ADR-0004).
-# - Sensors: scripts/sensor-tests-kept.sh, sensor-binding-adrs.sh (ADR-0001),
-#   sensor-revision-due.sh and sensor-plan-frontier.sh (ADR-0006), and sensor-action-refs.sh.
-#   They report for the reviewer and fail on nothing they count, except sensor-action-refs.sh,
-#   which fails on any action not referenced by its commit SHA (ADR-0017). The job checks out the
-#   full history because three sensors read it.
-# - Shell lint: scripts/check-shell.sh, after the self-test of the git hooks.
-# - Build, test, lint: scripts/check-code.sh (ADR-0008), after Bun, Rust with the WebAssembly
-#   target, and Chromium are set up, and after the self-test of scripts/check-mutants.sh, which
-#   the Mutation testing workflow (mutation.yml) runs. It is the one job of this workflow that
-#   installs something. Every action of every workflow is referenced by its full commit SHA,
-#   with its version in a trailing comment (ADR-0017).
+# scripts/check-all.sh is the local equivalent; check 9 of scripts/check-docs.sh holds its list,
+# the jobs of this workflow, and the required checks named in README.md together. Each job runs
+# a check after its own self-test, and each script's header says what it checks and which ADR it
+# holds. The documentation job also runs scripts/check-plan-modes.sh, which refuses an unattended
+# ticket that names a protected part of ADR-0007.
+#
+# The sensors report for the reviewer and fail on nothing they count, except the action
+# references, which fail on any action not referenced by its commit SHA (ADR-0017); their
+# self-tests fail like any check's. The sensors job checks out the full history because three
+# sensors read it. The review binding sensor runs in review-binding.yml, the repository settings
+# sensor on a human's instruction (ADR-0002); this workflow runs the self-test of each.
+#
+# Build, test, lint: scripts/check-code.sh (ADR-0008), after Bun, Rust with the WebAssembly
+# target, and Chromium are set up, and after the self-test of scripts/check-mutants.sh, which the
+# Mutation testing workflow (mutation.yml) runs. It is the one job of this workflow that installs
+# something. Every action of every workflow is referenced by its full commit SHA, with its version
+# in a trailing comment (ADR-0017).
 #
 # Every job is bounded by a timeout — a hung step would otherwise occupy a runner until the
 # platform's own six-hour limit — and every checkout runs with 'persist-credentials: false': the
@@ -29,8 +27,14 @@ name: Checks
 
 on:
   pull_request:
+    # ready_for_review runs check 16 of check-docs.sh again on a draft pull request marked ready.
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
+  # Started by hand on a pushed branch that has no pull request yet, such as a feat/ branch
+  # under rework (AGENTS.md, section 6): gh workflow run checks.yml --ref <branch>. GitHub offers
+  # it only once this trigger is on the default branch.
+  workflow_dispatch:
   # Once a week against main without a change: catches what moves without a commit, the runner
   # image, a retagged action, a toolchain download. GitHub disables a schedule after 60 days
   # without activity in a public repository.
@@ -64,10 +68,21 @@ jobs:
       # The check's own tests run first: a check that is wrong passes nothing worth trusting.
       - name: Self-test the documentation checks
         run: bash scripts/test-check-docs.sh
+      # Check 16 reads the branch the change lands on from GitHub's own variables: a draft ADR
+      # fails on a pull request into main once it is ready for review, and on a push to main
+      # (ADR-0002). A draft pull request tests a feat/ branch still under rework, and passes.
       - name: Check documentation consistency
         run: bash scripts/check-docs.sh
+        env:
+          PULL_REQUEST_DRAFT: ${{ github.event.pull_request.draft }}
       - name: Self-test the map script of the normalize skill
         run: bash scripts/test-normalize-remap.sh
+      - name: Self-test the numbering script of the drafts
+        run: bash scripts/test-number-adrs.sh
+      - name: Self-test the readiness script of the pull request into main
+        run: bash scripts/test-ready-for-main.sh
+      - name: Self-test the drop script of a merged branch
+        run: bash scripts/test-drop-merged-branch.sh
       - name: Self-test the plan modes check
         run: bash scripts/test-check-plan-modes.sh
       - name: Check that no unattended ticket names a protected part
@@ -134,6 +149,11 @@ jobs:
       # Verifies: ADR-0017 — every action is referenced by its full commit SHA.
       - name: Check that every action is referenced by its commit SHA
         run: bash scripts/sensor-action-refs.sh --require sha
+      - name: Self-test the review binding sensor
+        run: bash scripts/test-sensor-review-binding.sh
+      # The repository settings sensor itself runs on a human's instruction (ADR-0002).
+      - name: Self-test the repository settings sensor
+        run: bash scripts/test-sensor-repo-settings.sh
 
   shell:
     runs-on: ubuntu-latest
@@ -142,6 +162,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Self-test the check runner
+        run: bash scripts/test-check-all.sh
       - name: Self-test the git hooks
         run: bash scripts/test-git-hooks.sh
       - name: Self-test the shell lint
@@ -168,7 +190,31 @@ jobs:
         run: |
           bun install --frozen-lockfile
           bunx --bun playwright install --with-deps chromium
+      - name: Self-test the structure check
+        run: bash scripts/test-check-structure.sh
+      - name: Check the shape of the code (ADR-0028)
+        run: bash scripts/check-structure.sh
+      - name: Self-test the dependency check
+        run: bash scripts/test-check-dependencies.sh
+      - name: Check the decided dependencies
+        run: bash scripts/check-dependencies.sh
+      - name: Self-test the container check
+        run: bash scripts/test-check-container.sh
+      - name: Check the Dev Container's image and reach (ADR-0014, ADR-0015)
+        run: bash scripts/check-container.sh
+      - name: Self-test the overview check
+        run: bash scripts/test-check-overview.sh
+      - name: Check that the overview names every entry point (ADR-0001)
+        run: bash scripts/check-overview.sh
+      - name: Self-test the comment width check
+        run: bash scripts/test-check-comment-width.sh
+      - name: Check the width of comments
+        run: bash scripts/check-comment-width.sh
+      - name: Self-test the engine check
+        run: bash scripts/test-check-engine.sh
+      - name: Self-test the bundle check
+        run: bash scripts/test-check-bundle.sh
       - name: Self-test the comparison of surviving mutants
         run: bash scripts/test-check-mutants.sh
-      - name: Build, test, and lint
+      - name: Build, lint, and test, then the engine and bundle checks
         run: bash scripts/check-code.sh

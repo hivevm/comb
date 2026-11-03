@@ -15,7 +15,7 @@ and the cap on open agent work.
 - A second agent, a second human, or parallel sessions start working in the repository.
 - A ticket asks to run unattended, and nothing says what may.
 - Reviews pile up faster than the humans read them.
-- Pull requests of ADRs wait on the one human who may decide them.
+- Proposed ADRs wait on the one human who may decide them.
 
 ## Fits when
 
@@ -55,8 +55,8 @@ and whatever else the specification's threats protect.
 - The implementer reviewing its own change:
   [`AGENTS.md` §5](../../../../AGENTS.md#5-quality-bar--definition-of-done) excludes it whatever
   the harness says.
-- A gate in one agent's own configuration as the enforcement of a rule: the next agent does not
-  honour it, so it looks like a rule and is not one.
+- A gate in one agent's own configuration as the enforcement of a rule
+  ([`AGENTS.md` §6](../../../../AGENTS.md#6-project-rules)).
 
 ## The rule a test decides
 

@@ -1,6 +1,6 @@
 ---
 name: review
-description: Review a change in a fresh context before its pull request opens. Use when a change is ready to hand off, when the human asks for a review, or when you are the second session or subagent given a diff to judge. The session that wrote the change never runs this on its own work.
+description: Review a change in a fresh context before it is handed off for its merge. Use when a change is ready to hand off, when the human asks for a review, or when you are the second session or subagent given a diff to judge. The session that wrote the change never runs this on its own work.
 ---
 
 # Review a change
@@ -17,8 +17,10 @@ The reviewer runs in a context that did not write the change and is handed only:
 - the task: the ticket or the request, with its acceptance criteria;
 - [`AGENTS.md` §1](../../../AGENTS.md#1-principles) and
   [§5](../../../AGENTS.md#5-quality-bar--definition-of-done);
-- the *Doubts* section of the pull request draft: what the implementer disagreed with and what
-  it could not confirm;
+- the *Doubts* section of the hand-off draft under `.scratch/`, the pull request description or
+  merge message that fills the sections of the pull request template
+  ([`AGENTS.md` §6](../../../AGENTS.md#6-project-rules)): what the implementer disagreed with
+  and what it could not confirm;
 - [`docs/CONVENTIONS.md`](../../../docs/CONVENTIONS.md);
 - the golden path named in [`docs/ARCHITECTURE.md`](../../../docs/ARCHITECTURE.md);
 - the ADRs in force whose *Applies to* the diff touches: those that name a path of the diff, as
@@ -59,11 +61,22 @@ other claim.
 ## 3. Tests that changed
 
 List every existing test the diff changes or removes. Each needs a reason the behaviour changed,
-verified against the diff, not against the pull request's claim. One without a reason weakened
+verified against the diff, not against the hand-off's claim. One without a reason weakened
 the suite and is the first finding.
 
 ## 4. Hand back
 
 Findings, concrete and ranked, with file and line, and what the reviewer itself could not
-verify. No fixes applied. The implementer fixes them before the pull request opens and records in
-the pull request's *Review* section who reviewed, the findings on both axes, and what was fixed.
+verify. No fixes applied. The implementer fixes them before the hand-off. On a branch that
+integrates on a `feat/` branch, a fix that corrects one commit is a fixup of it
+(`git commit --fixup=<commit>`, its body saying what the finding was), so the rework folds it in
+by `git rebase -i --autosquash` ([Integration branches](../../../README.md#integration-branches),
+step 4) instead of by hand. A fix that spans commits, and every fix on a branch whose own pull
+request goes into `main`, which keeps what it merges, is a commit of its own. It records in its
+*Review* section who reviewed, the findings on both axes, what was fixed, and the commit the
+reviewer was handed, on its `Reviewed at:` line. The fixes come after that commit;
+[`scripts/sensor-review-binding.sh`](../../../scripts/sensor-review-binding.sh) lists them for the
+human who decides the merge, unless a second review sees them first and the line moves. After a
+rework, the review is of the whole branch at its head
+([`AGENTS.md` §5](../../../AGENTS.md#5-quality-bar--definition-of-done)), and the pull request's
+description carries that line.

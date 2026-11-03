@@ -2,7 +2,9 @@
 
 > **The single rule file of this project** ([ADR-0001](docs/adr/0001-agent-governance-model.md)).
 > Every working rule lives here. Where another document repeats one, this wording governs. The
-> file belongs to the template and is not edited per project. Project conventions go into
+> file belongs to the template and is not edited per project, except the ADR rules of
+> [§3](#3-adr-rules): a derived project changes them by an ADR on the ADR process, which edits
+> them in the change that lands it. Project conventions go into
 > [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md), into checks, and into ADRs. A procedure is a skill
 > under [`.agents/skills/`](.agents/skills/). It cites a rule here and states none of its own
 > ([ADR-0003](docs/adr/0003-procedures-as-skills.md)).
@@ -23,8 +25,9 @@ over speed and cleverness:
 - **Reflection.** Weigh alternatives and consequences, and write the reasoning down.
 - **Critical stance.** Take nothing at face value: not the human's framing, not your own earlier
   output, not the existing code. Verify against the specification, the ADRs, the code, and
-  authoritative sources. Put disagreement, with its evidence, into the pull request. Put what you
-  could not confirm there too; "none" is a claim the reviewer checks.
+  authoritative sources. Put disagreement, with its evidence, into the hand-off of the change
+  ([§6](#6-project-rules)). Put what you could not confirm there too; "none" is a claim the
+  reviewer checks.
 
 ## 2. Start here
 
@@ -64,15 +67,22 @@ restates nothing. A rule this file does not state is not a rule of this project.
    last however cheap it is to reverse. No ADR is needed for implementing within an ADR in force,
    for bug fixes, interface-preserving refactorings, tests, docs, formatting, or dev-only tooling.
    When genuinely unsure, prefer a short `proposed` ADR over a silent decision.
-3. **Develop the ADR with the human, critically.** Submit it with status `proposed` **in a
-   pull request of ADRs only**, never mixed with implementation. ADRs the same human decides may
-   travel together in one pull request, as the founding decisions of a new project do. Each stays
-   one decision. One the human sends back leaves that pull request for one of its own. Skill:
-   `propose-adr`. The normalization of rule 5 is the one exception: its pull request carries the
-   restated ADRs and the references that move with them.
-4. **After human review, implement while the ADR is still `proposed`.** Findings return as
-   revisions, each in its own ADR-only pull request. **Only a human changes the status.** The
-   flip to `accepted` may land with the implementation.
+3. **Develop the ADR with the human, critically.** Submit it with status `proposed` **in
+   commits of ADRs only**, and hand those commits to the human before anything is implemented
+   against them. They go on the branch of the work they belong to, or on a branch of their own
+   for an ADR that waits for its decision while other work goes on. ADRs the same human decides
+   may travel together, as the founding decisions of a new project do. Each stays one decision.
+   One the human sends back leaves the work's branch for a branch of its own, so the work's pull
+   request does not carry it, and nothing is implemented against it until it is settled. Skill:
+   `propose-adr`. The two exceptions of rule 5, a normalization and the template repository's
+   correction of its own ADRs, carry the restated or corrected ADRs with the text that cites
+   them.
+4. **After human review, implement while the ADR is still `proposed`,** after its commits on
+   the same branch, or on a branch stacked on the ADR's. A commit that changes the text of an
+   ADR changes nothing else, and a sensor lists one that does. Findings return as revisions,
+   each a commit of ADRs only. The hand-off names the commit of ADRs the human reviewed before
+   the implementation. **Only a human changes the status.** The flip to `accepted`, a header
+   line and no text, may land with the implementation.
 5. **Accepted ADRs are binding and immutable.** Never violate or work around one; change it only
    by superseding it. Outside a normalization, never rewrite or delete one. Two edits are
    permitted, both by a human. One flips the `Status` line. The other adds the project's decider
@@ -99,7 +109,7 @@ restates nothing. A rule this file does not state is not a rule of this project.
 - **Reply to the human in their own language.** Everything else is English: code, comments,
   commits, docs, ADRs, pull requests.
 - **Prefer small, reviewable changes.** Plan and explore before a larger one. Commits and pull
-  requests name the ADR they implement (`Implements ADR-NNNN`).
+  requests name the ADR they implement (`Implements ADR-NNNN`, a draft by its `ADR-draft-<slug>`).
 - **Cut work into vertical slices.** Each slice is a thin, tested path through every layer it
   touches. The first slice through new ground is the tracer bullet. The one exception is a wide
   mechanical refactor: expand, migrate in batches, contract, every step green.
@@ -157,8 +167,10 @@ restates nothing. A rule this file does not state is not a rule of this project.
 - **Review in a fresh context before handing off.** The session that wrote a change never reviews
   it. The reviewer gets the diff, the task, the doubts, and the standards, never the reasoning.
   It reports on two axes: does the change do what was asked, and does it meet this bar,
-  simplicity first. Findings are fixed before the pull request opens. Every existing test the
-  diff changes or removes needs a reason. Skill: `review`.
+  simplicity first. Findings are fixed before the change is handed off. Every existing test the
+  diff changes or removes needs a reason. The hand-off names the commit the review saw, and a
+  sensor lists what landed after it. A rework replaces the commits a review saw, so after one
+  the review that binds is a review of the whole branch at its head. Skill: `review`.
 - **A feature spec closes only after a design revision.** A fresh session revisits the modules
   its tickets touched, the ADRs that bind them, and the criteria they serve. It files what it
   finds as tickets, checks, a `proposed` ADR, or a drafted specification change. With no spec
@@ -178,14 +190,34 @@ restates nothing. A rule this file does not state is not a rule of this project.
   Pushing, `gh`, and anything that rewrites or discards history (`reset`, `rebase`, `merge`,
   `restore`, `clean`) wait for an instruction. The instruction names the action and implies no
   next one. A standing instruction may cover one push only: the claim on a ticket across clones,
-  where the harness ADR grants it. A claim reserves a ticket by creating its branch, with an
-  empty commit and nothing else ([ADR-0006](docs/adr/0006-feature-layer.md)). Its push skips the
-  pre-push hook. The git hooks under [`.githooks/`](.githooks/) refuse a commit on `main`. They
-  refuse a push while the checks of [§5](#5-quality-bar--definition-of-done) are red.
+  where the harness ADR grants it. A claim reserves a ticket by creating its branch and
+  nothing else; across clones, with an empty commit. The session releases a local claim, a
+  human one on a remote ([ADR-0006](docs/adr/0006-feature-layer.md)). The git hooks
+  under [`.githooks/`](.githooks/) enforce what a file can of this section and of
+  [§5](#5-quality-bar--definition-of-done); what each refuses is under
+  [Git hooks](README.md#git-hooks). **An agent never bypasses this repository's hooks:** no
+  `--no-verify`, no git run without them, no hand-moved `origin/main`, no hand-written record of
+  a green tree. The one exception is the push of a claim, which skips the pre-push hook. A human
+  may bypass one, deliberately.
+- **A rule is enforced only by what every agent hits:** the git hooks, the checks, and the
+  repository settings. A tool's own configuration enforces none, because a gate one agent
+  honours and the next does not looks like a rule and is not one. It may close a path for its
+  agent as defence in depth ([ADR-0001](docs/adr/0001-agent-governance-model.md)).
 - **Authenticate `gh` through its web flow;** a human enters the one-time code. Never request,
   store, or hard-code personal access tokens.
-- **Changes reach `main` through a pull request.** What no file can enforce is listed under
-  [Repository settings](README.md#repository-settings).
+- **Changes reach `main` through a pull request,** merged as a merge commit. The local `main`
+  only takes up the remote's, with `git merge --ff-only origin/main`. What no file can enforce
+  is listed under [Repository settings](README.md#repository-settings).
+- **Branches may integrate first on a `feat/` branch,** on the human's instruction, after the
+  review of [§5](#5-quality-bar--definition-of-done): by a local merge, or by a pull request
+  against the `feat/` branch, whose pipelines run what the local gate cannot, such as another
+  platform or a service. Each integrated branch is one merge commit, whose message is the
+  hand-off of the change and fills the sections of the
+  [pull request template](.github/PULL_REQUEST_TEMPLATE.md). Until the `feat/` branch's pull
+  request into `main` merges, all of it is the human's to rework, what pull requests merged into
+  it included: rebased, regrouped, or cut down, and pushed again by the human with
+  `--force-with-lease`. What has reached `main` is never rewritten. The steps are under
+  [Integration branches](README.md#integration-branches).
 
 ## 7. Secrets
 

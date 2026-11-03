@@ -4,11 +4,10 @@
 #
 # Lists the ADRs in force — accepted or proposed — whose '**Applies to:**' line names a path a
 # change touches. A path is what that line writes in backticks with no space in it, such as
-# `docs/plan/`, `README.md`, or `Makefile`; it names itself and everything under it, and a Rust
-# file `x.rs` names the directory `x/` beside it too, which holds the modules Rust lays out as its
-# children, so that a module split off a file stays bound by the ADRs that name the file. A
-# `lib.rs`, `main.rs`, `mod.rs`, or `build.rs` names no such directory: the children of the first
-# three lie beside it, and the last is no module. A word in
+# `docs/plan/`, `README.md`, or `Makefile`; it names itself and everything under it, and a file of
+# a language that lays out a module's children in the directory of the file's name names that
+# directory too (MODULE_DIRS below): a Rust file `x.rs` names `x/`, so that a module split off a
+# file stays bound by the ADRs that name the file. A word in
 # backticks that is no path, such as a skill's name, matches no changed path unless one carries
 # that name, so it needs no filter. The rest of the line is prose no script reads ("every
 # accepted ADR", "the pull request template"), so the list is the ADRs a session reads at the
@@ -18,7 +17,9 @@
 # implementing session and the reviewer of AGENTS.md section 5 start from the same list.
 #
 # Pure bash + git. Usage:
-#     scripts/sensor-binding-adrs.sh [base [head]]
+#     scripts/sensor-binding-adrs.sh [--root <dir>] [base [head]]
+# It reads the repository it lives in, as the checks do; --root names another, as its self-test
+# does with each fixture.
 # Without a base, the merge base of head with origin/main (else main) is used; CI passes the
 # pull request's base. A base of zeros, which a push event reports for a new branch, counts as
 # none. Without a head, the change is the working tree, uncommitted and untracked files
@@ -29,13 +30,31 @@
 
 set -uo pipefail
 
-# parent <path> — whether the path is a Rust file whose child modules lie in the directory of its
-# name.
-parent() {
-  [[ "$1" == *.rs ]] || return 1
-  case "${1##*/}" in
-    lib.rs | main.rs | mod.rs | build.rs) return 1 ;;
-  esac
+# shellcheck source-path=SCRIPTDIR source=lib/adr.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/adr.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/git.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/git.sh"
+
+enter_root "Binding ADRs sensor" "${BASH_SOURCE[0]}" "$@"
+shift "$ROOT_TAKEN"
+
+# MODULE_DIRS — per language that lays out a module's children in the directory of its file's
+# name, the extension and the file names that do not, '<extension> <name>...' a line. Rust's
+# lib.rs, main.rs, and mod.rs have their children beside them, and build.rs is no module.
+MODULE_DIRS='rs lib.rs main.rs mod.rs build.rs'
+
+# module_dir <path> — the directory that holds the children of the module in the file, with its
+# trailing slash, by MODULE_DIRS; fails for a path that names none.
+module_dir() {
+  local name="${1##*/}" ext excluded
+  [[ "$name" == ?*.* ]] || return 1
+  while read -r ext excluded; do
+    [[ "${name##*.}" == "$ext" ]] || continue
+    [[ " $excluded " == *" $name "* ]] && return 1
+    printf '%s/' "${1%.*}"
+    return 0
+  done <<< "$MODULE_DIRS"
+  return 1
 }
 
 base="${1:-}"
@@ -44,17 +63,10 @@ worktree=0
 if [[ -z "$head" ]]; then
   head=HEAD
   worktree=1
-  cd "$(git rev-parse --show-toplevel)" || exit 2
 fi
 
 [[ "$base" =~ ^0+$ ]] && base=""
-if [[ -z "$base" ]]; then
-  for candidate in origin/main main; do
-    if git rev-parse --verify -q "$candidate^{commit}" >/dev/null; then
-      base="$(git merge-base "$candidate" "$head" 2>/dev/null)" && break
-    fi
-  done
-fi
+[[ -n "$base" ]] || base="$(main_merge_base "$head")"
 if [[ -z "$base" ]]; then
   echo "Binding ADRs sensor: nothing to compare — no base given and no main to compare with."
   exit 0
@@ -88,36 +100,38 @@ show() { if ((worktree)); then cat -- "$1"; else git show "$head:$1"; fi; }
 
 # The ADRs as the change has them: one that adds an ADR or flips one is read with its own record.
 if ((worktree)); then
-  adrs="$(find docs/adr -maxdepth 1 -type f -name '[0-9][0-9][0-9][0-9]-*.md' 2>/dev/null | LC_ALL=C sort)"
+  adrs="$(adr_files docs/adr 2>/dev/null)"
 else
-  adrs="$(git ls-tree -r --name-only "$head" -- docs/adr/ | grep -E '^docs/adr/[0-9]{4}-[^/]*\.md$')"
+  adrs="$(git ls-tree -r --name-only "$head" -- docs/adr/ | grep -E "^docs/adr/([0-9]{4}-[^/]*|draft-[^/]*)\\.md\$")"
 fi
 
 found=()
 while IFS= read -r file; do
   [[ -n "$file" ]] || continue
   text="$(show "$file")"
-  status="$(grep -m1 -E '^- \*\*Status:\*\*' <<< "$text")"
+  status="$(adr_field_line - Status <<< "$text")"
   [[ "$status" == *"🟢"* || "$status" == *"🟡"* ]] || continue
-  applies="$(grep -m1 -E '^- \*\*Applies to:\*\*' <<< "$text")"
+  applies="$(adr_field_line - 'Applies to' <<< "$text")"
   paths=()
   # shellcheck disable=SC2016  # the backticks are Markdown to match, not a command substitution
   while IFS= read -r token; do
     [[ "$token" =~ ^[^[:space:]]+$ ]] && paths+=("${token%/}")
   done < <(grep -oE '`[^`]+`' <<< "$applies" | tr -d '`')
   ((${#paths[@]})) || continue
+  dirs=()
+  for p in "${paths[@]}"; do dirs+=("$(module_dir "$p")"); done
   hits=()
   for c in "${changed[@]}"; do
-    for p in "${paths[@]}"; do
-      if [[ "$c" == "$p" || "$c" == "$p/"* ]] || { parent "$p" && [[ "$c" == "${p%.rs}/"* ]]; }; then
+    for i in "${!paths[@]}"; do
+      p="${paths[$i]}" dir="${dirs[$i]}"
+      if [[ "$c" == "$p" || "$c" == "$p/"* || ( -n "$dir" && "$c" == "$dir"* ) ]]; then
         hits+=("$c")
         break
       fi
     done
   done
   ((${#hits[@]})) || continue
-  id="${file#docs/adr/}"
-  id="ADR-${id%%-*}"
+  id="ADR-$(adr_key "$file")"
   more=""
   ((${#hits[@]} > 3)) && more=", and $((${#hits[@]} - 3)) more"
   found+=("$id ($file) — ${hits[*]:0:3}$more")

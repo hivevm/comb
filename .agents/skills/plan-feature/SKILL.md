@@ -51,7 +51,7 @@ Unfinished work a session leaves behind is a single ticket in a directory of its
 ## 3. Work and close
 
 The tickets are worked through [`work-tickets`](../work-tickets/SKILL.md), one at a time or in
-parallel: claimed from the frontier by their branch, each pull request deleting its ticket
+parallel: claimed from the frontier by their branch, each branch deleting its ticket
 file. The spec closes only after `design-revision` has run over what its tickets touched and
 deleted `spec.md`. Whatever in the spec has to last moves into the specification, an ADR, the
 architecture overview, the glossary, or the conventions before it does.

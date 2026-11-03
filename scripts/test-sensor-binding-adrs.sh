@@ -7,8 +7,10 @@
 # reader would meet. The cases cover a directory path and a file path in an Applies to line, a
 # path its prose only resembles, an ADR no longer in force, an ADR the change itself adds, a
 # change no ADR names, nothing to compare, and a base that does not resolve; a Rust file binds the
-# modules under the directory of its name, a library root and a file of another kind bind no
-# directory of their name, and a Rust file with no modules binds itself alone.
+# modules under the directory of its name, a Rust library root and a file of another kind do not.
+#
+# Verifies: ADR-0002
+# Inputs: scripts/sensor-binding-adrs.sh scripts/lib/
 #
 # Usage:
 #     scripts/test-sensor-binding-adrs.sh
@@ -16,17 +18,9 @@
 
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib/selftest.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/selftest.sh"
 SENSOR="$ROOT/scripts/sensor-binding-adrs.sh"
-
-work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT
-
-failed=0
-passed=0
-
-# fixture <dir> — refuse an empty fixture path: 'git -C ""' would act on this repository.
-fixture() { [[ -n "${1:-}" && -d "$1/.git" ]] || { echo "fixture: '$1' is no fixture repository" >&2; exit 1; }; }
 
 # commit <dir> <message> — commit everything in the fixture.
 commit() {
@@ -71,7 +65,7 @@ expect() {
   local want="$1" name="$2" dir="$3" needle="$4" base="${5-base}"
   local out rc
   fixture "$dir"
-  out="$(cd "$dir" && bash "$SENSOR" "$base" ${HEADREF:+"$HEADREF"} 2>&1)"; rc=$?
+  out="$(bash "$SENSOR" --root "$dir" "$base" ${HEADREF:+"$HEADREF"} 2>&1)"; rc=$?
   if [[ $rc -eq "$want" && "$out" == *"$needle"* ]]; then
     passed=$((passed + 1))
     return
@@ -85,7 +79,7 @@ expect() {
 reject() {
   local name="$1" dir="$2" needle="$3" out
   fixture "$dir"
-  out="$(cd "$dir" && bash "$SENSOR" base 2>&1)"
+  out="$(bash "$SENSOR" --root "$dir" base 2>&1)"
   if [[ "$out" != *"$needle"* ]]; then
     passed=$((passed + 1))
     return
@@ -121,30 +115,36 @@ commit "$d" "a module of the graph"
 expect 0 "a Rust file binds the modules under the directory of its name" "$d" \
   "- $(adr_id 4) (docs/adr/0004-fixture.md) — crates/engine/src/graph/hit.rs"
 
-d="$(repo rust-file-alone)"
+# base <dir> — fold what the fixture added into the base commit and tag it again.
+base() {
+  git -C "${1:?}" add -A
+  git -C "${1:?}" -c user.name=fixture -c user.email=fixture@example.invalid commit -q --amend -m base
+  git -C "${1:?}" tag -f base >/dev/null
+}
+
+d="$(repo rust-root)"
 # shellcheck disable=SC2016  # the backticks are literal Markdown, not a command substitution
-adr "$d" 0004 "🟢 accepted" 'the library root `src/lib.rs`'
-commit "$d" "the ADR of the library root"
-git -C "${d:?}" tag -f base >/dev/null
-printf 'lib\n' > "$d/src/lib.rs"
-printf 'other\n' > "$d/src/other.rs"
-mkdir -p "$d/src/lib"
-printf 'asset\n' > "$d/src/lib/data.txt"
-commit "$d" "the library root, a file beside it, and a directory named like it"
-expect 0 "a Rust file with no modules of its own binds itself" "$d" \
-  "- $(adr_id 4) (docs/adr/0004-fixture.md) — src/lib.rs"
-reject "a library root binds neither a file beside it nor a directory of its name" "$d" \
-  "$(adr_id 4) (docs/adr/0004-fixture.md) — src/lib.rs src/"
+adr "$d" 0004 "🟢 accepted" 'the crate root `crates/engine/src/lib.rs` and `build.rs`'
+mkdir -p "$d/crates/engine/src/lib" "$d/build"
+printf 'x\n' > "$d/crates/engine/src/lib/part.rs"
+printf 'x\n' > "$d/build/asset.txt"
+base "$d"
+printf 'more\n' >> "$d/crates/engine/src/lib/part.rs"
+printf 'more\n' >> "$d/build/asset.txt"
+commit "$d" "files under directories named like a library root and a build script"
+expect 0 "a Rust library root or build script binds no directory of its name" "$d" \
+  "no ADR in force names one of them"
 
 d="$(repo other-kind)"
+mkdir -p "$d/tools/app"
+printf 'x\n' > "$d/tools/app/part.sh"
 # shellcheck disable=SC2016  # the backticks are literal Markdown, not a command substitution
-adr "$d" 0004 "🟢 accepted" 'the script `src/app.sh`'
-commit "$d" "the ADR of the script"
-git -C "${d:?}" tag -f base >/dev/null
-mkdir -p "$d/src/app"
-printf 'x\n' > "$d/src/app/part.sh"
+adr "$d" 0004 "🟢 accepted" 'the script `tools/app.sh`'
+base "$d"
+printf 'more\n' >> "$d/tools/app/part.sh"
 commit "$d" "a file under a directory named like a script"
-reject "a file of another kind binds no directory of its name" "$d" "$(adr_id 4) (docs/adr/0004-fixture.md)"
+expect 0 "a file of another kind binds no directory of its name" "$d" \
+  "no ADR in force names one of them"
 
 d="$(repo prefix)"
 printf 'x\n' > "$d/README.md.bak"
@@ -207,9 +207,4 @@ expect 0 "a deleted file binds" "$d" "$(adr_id 4) (docs/adr/0004-fixture.md) —
 
 # --- summary ---------------------------------------------------------------------------------
 
-if ((failed)); then
-  echo "Binding ADRs sensor self-test FAILED ($failed of $((passed + failed)) cases)." >&2
-  exit 1
-fi
-echo "Binding ADRs sensor self-test passed ($passed cases)."
-exit 0
+summary "Binding ADRs sensor self-test"
