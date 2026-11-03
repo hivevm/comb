@@ -66,11 +66,12 @@
 #      (AGENTS.md, section 5). A job that runs no script under scripts/ fails too: its commands
 #      run in CI and never in the local gate; a workflow check-all.sh names on a '# Not a gate:'
 #      line, one that publishes rather than checks, is exempt, while the scripts it runs still
-#      count, unless check-all.sh names one on an '# On instruction:' line. A script under
-#      scripts/ that neither list runs fails too, unless check-all.sh names it on such a line; a
-#      script a listed one runs by a line 'bash scripts/<name>.sh' runs where that one runs. A
-#      job with a matrix reports one check run per entry, so the README names it by those,
-#      '<job> (<values>)', and never by its bare name.
+#      count, unless no other workflow runs one and check-all.sh names it on an
+#      '# On instruction:' line. A script under scripts/ that neither list runs fails too, unless
+#      check-all.sh names it on such a line; a script a listed one runs, by a line
+#      'bash scripts/<name>.sh' or 'bash "$ROOT/scripts/<name>.sh"', runs where that one runs,
+#      to any depth. A job with a matrix reports one check run per entry, so the README names it
+#      by those, '<job> (<values>)', and never by its bare name.
 #  10. Project Layout integrity: every path listed in the 'Project Layout' block of README.md
 #      exists, a trailing '/' meaning a directory. The block is written by hand and nothing else
 #      tells a reader that one of its lines has gone stale. A path with a '*' matches at least one
@@ -936,6 +937,23 @@ check_adr_link_targets() {
 # runs in only one of the three is a gate somebody believes in and does not have. Both files say
 # in their own header that a check added to one is added to the other in the same change; this is
 # that sentence, verified.
+
+# _with_nested <array name> — add to the named array, to any depth, every script under scripts/
+# that a script in it runs by a line 'bash scripts/<name>.sh' or 'bash "$ROOT/scripts/<name>.sh"'.
+# shellcheck disable=SC2016  # '$ROOT' in the pattern is the text sought, not an expansion
+_with_nested() {
+  local -n _list="$1"
+  local i=0 found
+  while ((i < ${#_list[@]})); do
+    if [[ -f "$ROOT/${_list[$i]}" ]]; then
+      while IFS= read -r found; do
+        _contains "$found" "${_list[@]}" || _list+=("$found")
+      done < <(sed -n 's/^[[:space:]]*bash[[:space:]]\{1,\}"\{0,1\}\(\$ROOT\/\)\{0,1\}\(scripts\/[A-Za-z0-9._-]*\.sh\).*/\2/p' \
+        "$ROOT/${_list[$i]}")
+    fi
+    i=$((i + 1))
+  done
+}
 check_check_lists() {
   local rel_wf=".github/workflows/checks.yml" rel_all="scripts/check-all.sh"
   local wf="$ROOT/$rel_wf" all="$ROOT/$rel_all" readme="$ROOT/README.md"
@@ -966,7 +984,7 @@ check_check_lists() {
     not_gate+=("$name")
   done < <(sed -n 's/^#[[:space:]]*Not a gate:[[:space:]]*\([^[:space:]]*\).*/\1/p' "$all")
   local line job="" job_scripts=0 in_jobs=0 file rel is_checks is_gate key=""
-  local wf_jobs=() wf_scripts=() matrix_jobs=() not_gate_scripts=()
+  local wf_jobs=() wf_scripts=() matrix_jobs=() not_gate_scripts=() gate_scripts=()
   # job_done — report the job just parsed when none of its steps ran a script.
   job_done() {
     [[ -n "$job" ]] && ((is_gate && job_scripts == 0)) \
@@ -1000,7 +1018,8 @@ check_check_lists() {
       fi
       if [[ "$line" =~ run:[[:space:]]+bash[[:space:]]+(scripts/[A-Za-z0-9._-]+\.sh) ]]; then
         wf_scripts+=("${BASH_REMATCH[1]}")
-        ((is_gate)) || not_gate_scripts+=("${BASH_REMATCH[1]}")
+        if ((is_gate)); then gate_scripts+=("${BASH_REMATCH[1]}")
+        else not_gate_scripts+=("${BASH_REMATCH[1]}"); fi
         job_scripts=$((job_scripts + 1))
       fi
     done < "$file"
@@ -1022,30 +1041,26 @@ check_check_lists() {
     return
   fi
 
-  # A script either list runs may run others in turn, a line 'bash scripts/<name>.sh' of its own,
-  # as a project's build does with the checks that read what it built: those run where it runs.
-  local nested=() s
-  for s in "${wf_scripts[@]}" "${all_scripts[@]}"; do
-    [[ -f "$ROOT/$s" ]] || continue
-    while IFS= read -r name; do
-      _contains "$name" "${nested[@]}" || nested+=("$name")
-    done < <(sed -n 's/^[[:space:]]*bash[[:space:]]\{1,\}\(scripts\/[A-Za-z0-9._-]*\.sh\).*/\1/p' "$ROOT/$s")
-  done
-  for s in "${nested[@]}"; do
-    _contains "$s" "${wf_scripts[@]}" || wf_scripts+=("$s")
-    _contains "$s" "${all_scripts[@]}" || all_scripts+=("$s")
-  done
+  # A script a list runs may run others in turn, by a line 'bash scripts/<name>.sh' or
+  # 'bash "$ROOT/scripts/<name>.sh"' of its own, as a project's build does with the checks that read
+  # what it built: those run where it runs, in the same lists, to any depth.
+  _with_nested wf_scripts
+  _with_nested all_scripts
+  _with_nested gate_scripts
+  _with_nested not_gate_scripts
 
-  # A script that only a workflow named on a '# Not a gate:' line runs, such as one that reads
-  # what that workflow alone produces, may stand on an '# On instruction:' line instead of a run
-  # line of the local runner.
-  local on_instruction=() name
+  # A script that only workflows named on a '# Not a gate:' line run, such as one that reads what
+  # such a workflow alone produces, may stand on an '# On instruction:' line instead of a run line
+  # of the local runner.
+  local on_instruction=()
   while IFS= read -r name; do on_instruction+=("$name"); done \
     < <(sed -n 's/^#[[:space:]]*On instruction:[[:space:]]*\(scripts\/[A-Za-z0-9._-]*\.sh\).*/\1/p' "$all")
 
+  local s
   for s in "${wf_scripts[@]}"; do
     _contains "$s" "${all_scripts[@]}" && continue
-    _contains "$s" "${not_gate_scripts[@]}" && _contains "$s" "${on_instruction[@]}" && continue
+    _contains "$s" "${not_gate_scripts[@]}" && ! _contains "$s" "${gate_scripts[@]}" \
+      && _contains "$s" "${on_instruction[@]}" && continue
     add_error "$rel_all: does not run '$s', which a workflow runs — CI and the local gate disagree"
   done
   for s in "${all_scripts[@]}"; do

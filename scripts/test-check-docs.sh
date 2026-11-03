@@ -800,6 +800,15 @@ release "$d" scripts/sign.sh
 printf '# On instruction: scripts/sign.sh\n' >> "$d/scripts/check-all.sh"
 expect fail "a script a gating workflow runs, named on an '# On instruction:' line" "$d" \
   "does not run 'scripts/sign.sh', which a workflow runs"
+d="$(repo both-on-instruction)"
+echo 'echo sign' > "$d/scripts/sign.sh"
+release "$d" scripts/sign.sh
+printf 'on: [push]\njobs:\n  again:\n    steps:\n      - run: bash scripts/sign.sh\n' \
+  > "$d/.github/workflows/again.yml"
+printf '# Not a gate: .github/workflows/release.yml\n# On instruction: scripts/sign.sh\n' \
+  >> "$d/scripts/check-all.sh"
+expect fail "a script a gating workflow runs too, named on an '# On instruction:' line" "$d" \
+  "does not run 'scripts/sign.sh', which a workflow runs"
 
 # A script a listed one runs, by a line 'bash scripts/<name>.sh' of its own, runs where it runs.
 d="$(repo nested)"
@@ -807,6 +816,23 @@ build_job "$d" "bash scripts/check-build.sh" local
 printf '#!/usr/bin/env bash\nbash scripts/check-inner.sh\n' > "$d/scripts/check-build.sh"
 echo 'echo inner' > "$d/scripts/check-inner.sh"
 expect pass "a script that a listed script runs" "$d"
+d="$(repo nested-deep)"
+build_job "$d" "bash scripts/check-build.sh" local
+printf '#!/usr/bin/env bash\nbash scripts/check-inner.sh\n' > "$d/scripts/check-build.sh"
+# shellcheck disable=SC2016  # the fixture script expands $ROOT, not this one
+printf '#!/usr/bin/env bash\n  bash "$ROOT/scripts/check-deep.sh" || exit 1\n' \
+  > "$d/scripts/check-inner.sh"
+echo 'echo deep' > "$d/scripts/check-deep.sh"
+expect pass "a script that a script a listed one runs runs, by its path from the root" "$d"
+d="$(repo nested-not-a-gate)"
+echo 'echo sign' > "$d/scripts/sign.sh"
+printf '#!/usr/bin/env bash\nbash scripts/sign-inner.sh\n' > "$d/scripts/sign.sh"
+echo 'echo inner' > "$d/scripts/sign-inner.sh"
+release "$d" scripts/sign.sh
+printf '# Not a gate: .github/workflows/release.yml\n# On instruction: scripts/sign.sh\n' \
+  >> "$d/scripts/check-all.sh"
+expect fail "a script that only a script of a workflow that is no gate runs" "$d" \
+  "does not run 'scripts/sign-inner.sh', which a workflow runs"
 d="$(repo nested-mentioned)"
 build_job "$d" "bash scripts/check-build.sh" local
 printf '#!/usr/bin/env bash\n# bash scripts/check-inner.sh\n' > "$d/scripts/check-build.sh"
