@@ -7,10 +7,11 @@
 
 ## Context
 
-The specification fixes the bridge: structured data crosses it through serde-wasm-bindgen and
-never as JSON strings, and bulk coordinate streams (node positions while dragging, edge path
-points for drawing, culling results) cross it as typed-array views on WebAssembly memory
-([Constraints](../SPECIFICATION.md#constraints)). ADR-0009 puts the crossing in two modules,
+The specification fixes the bridge: structured data crosses it through serde-wasm-bindgen and never
+as JSON strings, and bulk coordinate streams (node positions while dragging, edge path points for
+drawing, culling results) cross it as typed-array views on WebAssembly memory
+([Constraints](../SPECIFICATION.md#constraints)).
+[ADR-0009](0009-functional-core-imperative-shell.md) puts the crossing in two modules,
 `crates/engine-wasm` and `packages/comb/src/bridge`. What is left open is how the TypeScript side
 knows the shapes of the structured data, how errors cross, and how the views on memory are kept
 valid.
@@ -39,24 +40,25 @@ buffer hands over that value without rounding it again. The GPU computes in `f32
 `mat3x3<f32>` uniform, so a world at ±5e7 shown at a scale of 4 has a translation near 2e8 on the
 GPU, rounded by up to 8 px whatever the vertices hold.
 
-ADR-0009 has every field the host application hands over cross the bridge and be checked there,
-a title, a label's text, and a label's background among them, and has `api` fill in an edge's
-colour, arrowhead, and sides before it does. serde-wasm-bindgen pays for each field it reads: a
-`Reflect.get`, an `in` check, and for a string a copy into WebAssembly memory, of the order of
-100 ns each, times every node and edge of a load. Q-2 bounds a load of 50,000 nodes and 50,000
-edges to its first frame at 1 s on the reference machine; the Benchmark workflow judges the first
-frame on each runner kind against that kind's baseline, with a margin of 25 %
-([ADR-0008](0008-toolchain.md)). On the AMD EPYC 7763, with an identical reference workload, the
-first frame of the benchmark's 50,010 nodes and edges took 366 to 391 ms (median 378) before every
-field crossed for its check (Benchmark run 40232945159, at `fa46fe6`), and takes 478 to 500 ms
-(median 480) at `main` (run 40212350295, at `cf835ef`); the kind's baseline, from run
-39160029963, holds 378.6 ms. The comparison fails only past the margin, about 473 ms, so the
-first frame is just past it. A timing of the load's CPU path in headless Chromium without a GPU,
-cold, of the same two commits on a development machine, puts the difference in the load, not in
-the render, whose far-level mesh is unchanged: from 107 to 164 ms in all, of which
-`bridge.loadGraph` from 74 to 107 ms, its serde-wasm-bindgen conversion of the batch (`to_rust`)
-from 55 to 79 ms and the bridge crate's second, checked copy of every field 5 ms; the snapshot
-from 1.6 to 10.4 ms; the store's load from 5.8 to 17.5 ms; the first query from 25 to 29 ms.
+[ADR-0009](0009-functional-core-imperative-shell.md) has every field the host application hands
+over cross the bridge and be checked there, a node's content, a label's text, and a label's
+background among them, and has `api` fill in an edge's colour, arrowhead, and sides before it does.
+serde-wasm-bindgen pays for each field it reads: a `Reflect.get`, an `in` check, and for a string a
+copy into WebAssembly memory, of the order of 100 ns each, times every node and edge of a load.
+Q-2 bounds a load of 50,000 nodes and 50,000 edges to its first frame at 1 s on the reference
+machine; the Benchmark workflow judges the first frame on each runner kind against that kind's
+baseline, with a margin of 25 % ([ADR-0008](0008-toolchain.md)). On the AMD EPYC 7763, with an
+identical reference workload, the first frame of the benchmark's 50,010 nodes and edges measured
+366 to 391 ms (median 378) with only the fields the engine keeps crossing (Benchmark run
+40232945159, at `fa46fe6`), and 478 to 500 ms (median 480) with every field crossing through
+serde-wasm-bindgen for its check (run 40212350295, at `cf835ef`); the kind's baseline, from run
+39160029963, holds 378.6 ms, and the comparison fails past the margin, about 473 ms. A timing of
+the load's CPU path in headless Chromium without a GPU, cold, of the same two commits on a
+development machine, puts the difference in the load, not in the render, whose far-level mesh is
+the same: from 107 to 164 ms in all, of which `bridge.loadGraph` from 74 to 107 ms, its
+serde-wasm-bindgen conversion of the batch (`to_rust`) from 55 to 79 ms and the bridge crate's
+second, checked copy of every field 5 ms; the snapshot from 1.6 to 10.4 ms; the store's load from
+5.8 to 17.5 ms; the first query from 25 to 29 ms.
 
 That timing explains 57 ms of the runner's 102 ms. The runner is a shared virtual machine slower
 than the development machine, and its first frame scales the same CPU path by about 1.8; that
@@ -64,43 +66,36 @@ factor is inferred from the two numbers, not measured. Most of the 57 ms is the 
 per field, which no change within the serde path removes while every field crosses. Columns
 remove the conversion whole, the 79 ms of `to_rust` and not only its growth of 24 ms, at the cost
 of a few copies, one per column, and the snapshot's building of them. The CPU path is then
-expected at about 90 ms, below the 107 ms of before, and the runner's first frame some 100 to
-130 ms below its 480 ms, if the factor holds; the Benchmark decides it.
-
-The maintainer decided that only the bulk paths change, and that the checks stay where they are
-and as they are.
+expected at about 90 ms, and the runner's first frame some 100 to 130 ms below 480 ms, if the
+factor holds; the Benchmark decides it. The maintainer decided that only the bulk paths change,
+and that the checks stay where they are and as they are.
 
 A JavaScript string has a maximum length, which each engine sets: V8, in Chromium and Edge, about
 2^29 UTF-16 code units (536,870,888); SpiderMonkey, in Firefox, about 2^30; JavaScriptCore, in
-Safari, about 2^31. ADR-0009 allows a load of 1,000,000 nodes and 1,000,000 edges, a title and a
-label text of up to 1,000 code units each, so a column of titles or of label texts may hold
-1,000,000,000 code units, and joining it into one string throws a `RangeError`. In headless
-Chromium, a load of 600,000 nodes with titles of 1,000 code units each, or of 600,000 edges with
-label texts of 1,000 code units each, loads in 1.9 and 2.5 s when every value crosses as a string
-of its own (`c3766a4`), and is refused as malformed, "graph data could not be read", once the
-column is one string (2026-10-29). The identifiers stay below that length, since ADR-0009 bounds
-them at 64,000,000 code units per load, but one form for every string column needs no second
-rule for which column may grow past it.
+Safari, about 2^31. [ADR-0009](0009-functional-core-imperative-shell.md) allows a load of
+1,000,000 nodes and 1,000,000 edges and a label text of up to 1,000 code units each, and the
+budget of a load's strings of content admits at least 1,000 code units per node, so a column of
+label texts or of texts of content may hold 1,000,000,000 code units, and joining it into one
+string throws a `RangeError`. In headless Chromium, a load of 600,000 nodes with titles of 1,000
+code units each, or of 600,000 edges with label texts of 1,000 code units each, loaded in 1.9 and
+2.5 s with every value crossing as a string of its own (`c3766a4`), and was refused as malformed,
+"graph data could not be read", with the column as one string (2026-10-29). The identifiers stay
+below that length, since [ADR-0009](0009-functional-core-imperative-shell.md) bounds them at
+64,000,000 code units per load, but one form for every string column needs no second rule for
+which column may grow past it.
 
-ADR-0013 replaces a node's title and height with its content: rows of weighted columns, each
-holding one element of `text`, `icon`, `progress`, `badge`, `metric`, or `action`, from which the
-engine computes the node's height. A node of the metric tree G-9 describes holds several elements,
-each of two to five fields, a progress bar's segments of two fields each, so a load of content
-holds several times the fields of a load of titles. Through serde-wasm-bindgen each of them would
-pay the cost per field that made the first frame on the 7763 grow by 27 %; the load's columns hold
-no place for content, a title column and a height column aside. The fields of each kind are those
-of ADR-0013's *Elements*, read with the spec of node content and its tickets: a text's role and
-its text, an icon's registered name, a progress bar's segments of a fraction and a colour each, a
-badge's text and colour, a metric's caption, value, and trend of a text, a direction, and a
-colour, and an action's text and identifier. A string column of the texts of a load would hold
-the titles of today and more, so it needs the pieces as much as the titles do.
-
-This ADR carries ADR-0010 over whole and changes its clause *Graph data of a load* in one point:
-a node's content crosses a load as columns too, and the title and height columns leave it. New
-are the context and alternatives on that point, the source ADR-0013, the consequences of content
-as columns, and the tests of the content columns; what is changed in the Decision, the
-Alternatives, the Consequences, and the Enforcement is marked *(changed)* or *(added)*. Every
-other clause stands as ADR-0010 wrote it.
+A node is its identifier, its position, its width, and its content
+([ADR-0013](0013-node-content-model.md)): rows of weighted columns, each holding one element of
+`text`, `icon`, `progress`, `badge`, `metric`, or `action`, from which the engine computes the
+node's height. A node of the metric tree G-9 describes holds several elements, each of two to five
+fields, a progress bar's segments of two fields each, so a load of content holds several times the
+fields of a load of one title per node. Through serde-wasm-bindgen each of them would pay the cost
+per field that made the first frame on the 7763 grow by 27 %. The fields of each kind are those of
+ADR-0013's *Elements*: a text's role and its text, an icon's registered name, a progress bar's
+segments of a fraction and a colour each, a badge's text and colour, a metric's caption, value,
+and trend of a text, a direction, and a colour, and an action's text and identifier. A string
+column of the texts of a load holds every title and more, so it needs the pieces as much as the
+label texts do.
 
 The specification's constraint names serde-wasm-bindgen for structured data, and graph data is
 structured data; columns of graph data are no coordinate stream. The constraint therefore
@@ -114,7 +109,7 @@ its nodes' content among it, as columns, each a typed array or a string in piece
 bulk coordinate stream through buffers that `crates/engine-wasm` owns and `packages/comb/src/bridge`
 reads and writes as typed-array views created anew after every engine call.
 
-- **Structured data (changed):** node content outside a load, edge appearance, selection, errors,
+- **Structured data:** node content outside a load, edge appearance, selection, errors,
   and the graph data of every export but `loadGraph`: the node of `addNode`, the edge of
   `addEdge`, the patch of `updateNode(slot, id, patch)`, which checks a node's new content as a
   load checks it and lays the node out anew, and the patch of `updateEdge`; and the content
@@ -126,44 +121,44 @@ reads and writes as typed-array views created anew after every engine call.
   `Float64Array` of their advances, and two numbers; `textLimit`, `rowLimit`, `columnLimit`, and
   `segmentLimit` hand the snapshot the limits it cuts a load by, and `badgePaddingX` and
   `badgePaddingY` hand the shell the padding of a badge's pill, by which it places the badge's
-  text (ADR-0013).
-- **Graph data of a load (changed):** `loadGraph` takes its nodes and edges as columns, one per
-  field, each in slot order, which `api`'s snapshot builds while it reads the host application's
-  graph data once (ADR-0009). A node crosses as its identifier, `x`, `y`, `width`, and its content
-  (ADR-0013); a load has no title column and no height column. The snapshot writes a node's
-  content straight into its columns and keeps no copy of it: the store keeps a node's identifier
-  and width, and the engine owns the content's columns as they crossed, taken as `Vec`s without a
-  second copy, mapping its texts onto the strings Rust holds only where a piece is not ASCII. A
-  load checks in two passes, and the columns keep both:
+  text ([ADR-0013](0013-node-content-model.md)).
+- **Graph data of a load:** `loadGraph` takes its nodes and edges as columns, one per field, each in
+  slot order, which `api`'s snapshot builds while it reads the host application's graph data once
+  ([ADR-0009](0009-functional-core-imperative-shell.md)). A node crosses as its identifier, `x`,
+  `y`, `width`, and its content ([ADR-0013](0013-node-content-model.md)); a load has no title column
+  and no height column. The snapshot writes a node's content straight into its columns and keeps no
+  copy of it: the store keeps a node's identifier and width, and the engine owns the content's
+  columns as they crossed, taken as `Vec`s without a second copy, mapping its texts onto the strings
+  Rust holds only where a piece is not ASCII. A load checks in two passes, and the columns keep
+  both:
   - **The first pass** names the first value, nodes before edges and each item's fields in their
     order, that a load refuses before any rule: a field read as `Field<T>` that is missing or of
     another type, the identifier, the source, and the target, which hold `false` for a lone
-    surrogate (ADR-0009), `x`, `y`, `width`, the content as a list, the label as an object, its
-    `t` and `offset`, the colour, the dash as a list of two numbers, the arrowhead, and the two
-    sides, each refused as `invalidField`; an item that is no object, refused as malformed; and,
-    at the place of a node's content and in the order of its rows and elements, a shape of
-    content the snapshot cannot flatten: a row that is no list, an element that is no object, a
-    progress bar's segments that are no list, and a segment that is no object. The snapshot hands
-    over the position of the first such value it reads, its list, its index, and its field, the
-    field a plain `u32` code as today, never a parameter of a wasm-bindgen enumeration, and for a
-    shape of content also the row and, below a row, the column, for a progress bar's segments
-    and a segment of them the progress bar's; or none. A shape it cannot flatten crosses as empty
-    in its place, a row as a row of no elements, an element as one of the code of no kind,
-    segments as none, and a segment as one whose fraction and colour are NaN. The bridge crate
-    refuses a shape of content as `invalidContentShape`, naming the node by its index and, where
-    its identifier was read, by it, the row, the column, and in words what the value should be; a
-    position that names no row or column of the columns, or segments or a segment at an element
-    that is no progress bar, is refused as malformed. An arrowhead or
-    a side that is a string naming no value crosses as its code, and the bridge crate finds it in
-    its first pass at its place in that order.
+    surrogate ([ADR-0009](0009-functional-core-imperative-shell.md)), `x`, `y`, `width`, the content
+    as a list, the label as an object, its `t` and `offset`, the colour, the dash as a list of two
+    numbers, the arrowhead, and the two sides, each refused as `invalidField`; an item that is no
+    object, refused as malformed; and, at the place of a node's content and in the order of its rows
+    and elements, a shape of content the snapshot cannot flatten: a row that is no list, an element
+    that is no object, a progress bar's segments that are no list, and a segment that is no object.
+    The snapshot hands over the position of the first such value it reads, its list, its index, and
+    its field, the field a plain `u32` code, never a parameter of a wasm-bindgen enumeration, and
+    for a shape of content also the row and, below a row, the column, for a progress bar's segments
+    and a segment of them the progress bar's; or none. A shape it cannot flatten crosses as empty in
+    its place, a row as a row of no elements, an element as one of the code of no kind, segments as
+    none, and a segment as one whose fraction and colour are NaN. The bridge crate refuses a shape
+    of content as `invalidContentShape`, naming the node by its index and, where its identifier was
+    read, by it, the row, the column, and in words what the value should be; a position that names
+    no row or column of the columns, or segments or a segment at an element that is no progress bar,
+    is refused as malformed. An arrowhead or a side that is a string naming no value crosses as its
+    code, and the bridge crate finds it in its first pass at its place in that order.
   - **The rules** follow, in the same order: the identifiers' lengths and their budget, then each
-    node's and each edge's checks, a node's content and an edge's label text among them, which
-    are no `Field<T>`. A label text missing, of another type, or holding a lone surrogate is
-    refused at its rule as `invalidLabelText`, and a background of another type as
-    `invalidBackground`, as before. A node's content is checked where its title was, after its
-    other checks, row by row and element by element, each element's fields in their order:
+    node's and each edge's checks, a node's content and an edge's label text among them, which are
+    no `Field<T>`. A label text missing, of another type, or holding a lone surrogate is refused at
+    its rule as `invalidLabelText`, and a background of another type as `invalidBackground`. A
+    node's content is checked after its other checks, row by row and element by element, each
+    element's fields in their order:
     - the number of rows (`tooManyRows`) and of a row's columns (`tooManyColumns`) against the
-      limits ADR-0013 names;
+      limits [ADR-0013](0013-node-content-model.md) names;
     - the element's kind (`invalidElementKind`), a kind code naming no kind;
     - its weight (`invalidWeight`), which is a positive finite number;
     - a text's role (`invalidRole`) and a trend's direction (`invalidDirection`), a code naming no
@@ -181,22 +176,23 @@ reads and writes as typed-array views created anew after every engine call.
       from 0 to 0xFFFFFF, as an edge's colour is;
     - a progress bar's number of segments (`tooManySegments`) against its limit, each segment's
       fraction (`invalidFraction`), which is finite and not negative, and their sum
-      (`fractionsPastOne`), which is at most 1 and 1e-9 beyond it (ADR-0013). A progress bar's
-      fields are checked as its number of segments, then each segment's fraction and colour in
-      the order of its segments, then their sum. A metric's fields are checked as its trend's
-      direction, then its caption, its value, and its trend's text, then its trend's colour. An
-      icon's one field is its name, checked as a string of content as the field `name`.
+      (`fractionsPastOne`), which is at most 1 and 1e-9 beyond it
+      ([ADR-0013](0013-node-content-model.md)). A progress bar's fields are checked as its number of
+      segments, then each segment's fraction and colour in the order of its segments, then their
+      sum. A metric's fields are checked as its trend's direction, then its caption, its value, and
+      its trend's text, then its trend's colour. An icon's one field is its name, checked as a
+      string of content as the field `name`.
 
-    Each names the node by its identifier, and the row and column of the element where it has
-    them; a segment's refusal names the segment too. The limits' numbers are the bridge crate's
-    to state (ADR-0013). The budget of a load's strings of content admits at least the titles a
-    load holds today, 1,000 code units for each of 1,000,000 nodes, so that no load the bridge
-    accepted with titles is refused for it, and stays below 2^32, so that every boundary fits a
-    `Uint32Array`. The title and the height as fields a load hands over leave it with their
-    columns: `invalidTitle` and `titleTooLong`, and `height` as the field `invalidField` names and
-    as a size `invalidSize` refuses, are no longer refusals of a load, since the first pass and the
-    rules read neither. A node's far side past the world's limit stays refused as `beyondWorld`
-    naming `height` (ADR-0009), by the height its content lays out to.
+    Each names the node by its identifier, and the row and column of the element where it has them;
+    a segment's refusal names the segment too. The limits' numbers are the bridge crate's to state
+    ([ADR-0013](0013-node-content-model.md)). The budget of a load's strings of content admits at
+    least 1,000 code units for each of 1,000,000 nodes, a title of full length on every node a load
+    may hold, and stays below 2^32, so that every boundary fits a `Uint32Array`. A load hands over
+    no title and no height: `invalidTitle` and `titleTooLong`, and `height` as the field
+    `invalidField` names and as a size `invalidSize` refuses, are no refusals of a load, since the
+    first pass and the rules read neither. A node's far side past the world's limit is refused as
+    `beyondWorld` naming `height` ([ADR-0009](0009-functional-core-imperative-shell.md)), by the
+    height its content lays out to.
   - A string field, an identifier, a source, a target, a label's text, or a string of content,
     crosses as the field's values concatenated in slot order and cut into pieces, each one
     JavaScript string of at most 2^28 UTF-16 code units that ends where a value ends, so that no
@@ -208,7 +204,7 @@ reads and writes as typed-array views created anew after every engine call.
     that says, per value, whether it is a text, so that one missing, of another type, or with a
     lone surrogate is refused at its rule and not read as an empty text.
   - A number field crosses as a `Float64Array` of the values as the host application handed them,
-    so that the bridge crate checks each as it does today, as `f32` where the engine keeps `f32`;
+    so that the bridge crate checks each as it is, as `f32` where the engine keeps `f32`;
     a background, a weight, a colour of content, or a fraction of another type crosses as NaN,
     which its rule refuses.
   - An enumeration, an arrowhead, a side, an element's kind, a text's role, or a trend's
@@ -216,7 +212,7 @@ reads and writes as typed-array views created anew after every engine call.
     whether an optional field is present, a label, its background, or a dash, as a `Uint8Array`.
     A presence or validity byte above 1, and a code byte that is no code, are refused as
     malformed.
-  - **Node content (added)** crosses as these columns, the nodes' elements in slot order, each
+  - **Node content** crosses as these columns, the nodes' elements in slot order, each
     node's rows in their order and each row's elements in theirs:
     - per node, the boundaries of its rows, a `Uint32Array` of one more than there are nodes;
     - per row, the boundaries of its elements, a `Uint32Array` of one more than there are rows;
@@ -257,34 +253,34 @@ reads and writes as typed-array views created anew after every engine call.
 - **Streams:** every buffer the shell reads is one of these:
   - node positions as `Float32Array`, with `x, y` per node slot, and node sizes, the sizes buffer,
     as `Float32Array`, with `width, height` per node slot, the height the node's content lays out
-    to (ADR-0013);
+    to ([ADR-0013](0013-node-content-model.md));
   - the results of a viewport query: the found node slots and edge-label slots as `Uint32Array`,
     and the point of each found label as `Float32Array`;
-  - at the near and the middle level, where the content of the found nodes lies: per found node,
-    in their order, the boundaries of its placed elements as `Uint32Array`; per placed element its
+  - at the near and the middle level, where the content of the found nodes lies: per found node, in
+    their order, the boundaries of its placed elements as `Uint32Array`; per placed element its
     rectangle relative to its node as `Float32Array` and its role's code as `Uint8Array`; and what
-    is drawn of each text, the text or as much of it as fits followed by an ellipsis, as one
-    string `contentTexts` returns in one copy per query, with the boundaries of the texts in it as
-    `Uint32Array`; and per placed element its kind's code as `Uint8Array`, which says how the
-    shell draws it, an action's and a badge's role's code that of body, whose font draws it, and
-    its colour as `0xRRGGBB` in `Uint32Array`, a badge's pill's, 0 for an element of no colour;
-    and per placed element the boundaries of the pieces of its bar as `Uint32Array`, a progress
-    bar's segments and then its track and no piece of another kind, each piece's rectangle
-    relative to its node as `Float32Array`, and its colour as `0xRRGGBB` in `Uint32Array`, a
-    segment's, and 0 for the track, whose colour the shell states (ADR-0013); a metric's colour,
-    its trend's, among the colours, its role's code that of body, and its drawn text its
+    is drawn of each text, the text or as much of it as fits followed by an ellipsis, as one string
+    `contentTexts` returns in one copy per query, with the boundaries of the texts in it as
+    `Uint32Array`; and per placed element its kind's code as `Uint8Array`, which says how the shell
+    draws it, an action's and a badge's role's code that of body, whose font draws it, and its
+    colour as `0xRRGGBB` in `Uint32Array`, a badge's pill's, 0 for an element of no colour; and per
+    placed element the boundaries of the pieces of its bar as `Uint32Array`, a progress bar's
+    segments and then its track and no piece of another kind, each piece's rectangle relative to its
+    node as `Float32Array`, and its colour as `0xRRGGBB` in `Uint32Array`, a segment's, and 0 for
+    the track, whose colour the shell states ([ADR-0013](0013-node-content-model.md)); a metric's
+    colour, its trend's, among the colours, its role's code that of body, and its drawn text its
     caption's, its value's, and its trend's text's, each as much of it as fits followed by an
-    ellipsis, one after another, which its parts cut: per placed element the boundaries of its
-    parts as `Uint32Array`, a metric's three in that order and no part of another kind, each
-    part's rectangle relative to its node as `Float32Array`, and where its text ends in
-    `contentTexts` as `Uint32Array`, in UTF-16 code units, each starting where the part before it
-    in its element ends, the first where its element's text starts; and per placed element the
-    boundaries of its arrows as `Uint32Array`, a metric's one where its column holds it and none
-    of another kind, each arrow's triangle as three points `x, y` relative to its node as
-    `Float32Array`, drawn in its element's colour, so that the engine alone holds the arrow's
-    geometry (ADR-0013); an icon's rectangle is its square, its role's code that of body, its
-    colour 0, and its text in `contentTexts` its registered name, whole, which the shell draws as
-    the image registered under it and never as text;
+    ellipsis, one after another, which its parts cut: per placed element the boundaries of its parts
+    as `Uint32Array`, a metric's three in that order and no part of another kind, each part's
+    rectangle relative to its node as `Float32Array`, and where its text ends in `contentTexts` as
+    `Uint32Array`, in UTF-16 code units, each starting where the part before it in its element ends,
+    the first where its element's text starts; and per placed element the boundaries of its arrows
+    as `Uint32Array`, a metric's one where its column holds it and none of another kind, each
+    arrow's triangle as three points `x, y` relative to its node as `Float32Array`, drawn in its
+    element's colour, so that the engine alone holds the arrow's geometry
+    ([ADR-0013](0013-node-content-model.md)); an icon's rectangle is its square, its role's code
+    that of body, its colour 0, and its text in `contentTexts` its registered name, whole, which the
+    shell draws as the image registered under it and never as text;
   - the edge mesh of that query: vertex positions, distances along the path, and dash patterns as
     `Float32Array`, colours as RGBA bytes in `Uint32Array`, and triangle indices as `Uint32Array`;
   - for inspection, the slots of the edges the query found as `Uint32Array`, with the ends of each
@@ -302,8 +298,8 @@ reads and writes as typed-array views created anew after every engine call.
   then taken to the nearest `f32`, so that it holds exactly in both; the origin of a rectangle that
   is not finite is (0, 0). It crosses as two `f64`, read through `originX` and `originY` after the
   query as its buffers are. Node positions and the ends of inspection cross as the engine keeps
-  them, without an origin. The shell draws the relative streams at the origin, as ADR-0012
-  (*The world at the query's origin*) places the world.
+  them, without an origin. The shell draws the relative streams at the origin, as
+  [ADR-0012](0012-virtualized-scene-graph.md) (*The world at the query's origin*) places the world.
 - **Slots:** the engine knows nodes and edges by slot only. The TypeScript side keeps the map
   from identifiers to slots; `loadGraph` resolves edge ends from identifiers once, while it loads,
   and keeps no map. Every later call into the engine names slots.
@@ -312,18 +308,11 @@ reads and writes as typed-array views created anew after every engine call.
 
 **Out of scope:** the content of the types, which the goals they serve decide; when slots are
 compacted after deletions; moving the engine into a worker; where a lone surrogate is detected,
-which ADR-0009 decides; columns for a single edit; the elements, their fields, the default of a
-field, and the numbers of the limits, which ADR-0013 decides *(added)*. A field a revision of
-ADR-0013 adds to a kind crosses in the column this clause gives a field of its type: a string it
-shows among the texts, one it names among the names, a number or a code in a column per element.
-
-**Order of work, not a decision *(added)*:** the first ticket of the node-content spec
-(`docs/plan/node-content/01-a-node-shows-its-content-as-rows-of-text.md`) builds the boundaries,
-the kinds, the weights, the roles, and the texts, which `text` fills, and takes the title and
-height columns out of a load; a kind the snapshot does not yet code crosses as the code of no
-kind and is refused at its rule. The tickets of `action`, `badge`, `progress`, `metric`, and `icon`
-each add the columns and the code their kind fills, as this clause decides them, without a
-further ADR.
+which [ADR-0009](0009-functional-core-imperative-shell.md) decides; columns for a single edit; the
+elements, their fields, the default of a field, and the numbers of the limits, which
+[ADR-0013](0013-node-content-model.md) decides. A field a later decision adds to a kind of node
+content crosses in the column this clause gives a field of its type: a string it shows among the
+texts, one it names among the names, a number or a code in a column per element.
 
 ## Alternatives considered
 
@@ -335,43 +324,45 @@ Graph data of a load:
   having and are planned, but they save some 5 to 7 ms of the 57 ms on the CPU path; the
   conversion's cost per field stays, and the first frame stays past its baseline.
 - **A side left out read as the default in the bridge crate** — two strings fewer per edge, but
-  ADR-0025 and ADR-0009 have `api` fill in the defaults before the bridge, so that the store keeps
-  what the bridge checked; it would take superseding both for a part of the cost.
+  [ADR-0025](0025-one-connector-per-side.md) and
+  [ADR-0009](0009-functional-core-imperative-shell.md) have `api` fill in the defaults before the
+  bridge, so that the store keeps what the bridge checked; it would take superseding both for a part
+  of the cost.
 - **UTF-8 bytes and byte offsets** — what Rust reads natively, but the shell would encode each
   column itself and count bytes per value, while one JavaScript string has its boundaries in the
   `length` of each value and crosses in one copy that wasm-bindgen makes (`passStringToWasm0`,
   ASCII copied unit by unit, the rest by `TextEncoder.encodeInto`); the limits are in UTF-16 code
   units, which the boundaries then carry without a count in Rust.
 - **Strings through serde-wasm-bindgen, numbers and enumerations as columns** — less to change,
-  but identifiers, titles, and label texts are a third of the fields and the costly ones, each a
-  copy of its own; most of the cost would stay.
+  but identifiers, texts of content, and label texts are the costly fields, each a copy of its
+  own; most of the cost would stay.
 - **Columns for all graph data, single edits and patches too** — one path for every crossing, but
   a single edit crosses one item, where the conversion costs microseconds; a patch has keys a
   column cannot say are absent without a mask of its own, and an unknown key it names.
 - **Accepting the cost** — Q-2's 1 s holds with room on the runners; but the gate of the 7763
   stays red, or its baseline is retaken at the slower load and the gate forgets a cost the load
   does not need.
-- **Lone surrogates detected in the bridge crate** — one string per column makes it cheap: read
-  the column once as a Rust string, which wasm-bindgen gives U+FFFD in place of a lone surrogate,
-  and ask the JavaScript string for its code unit (`JsString::char_code_at`) only where U+FFFD
-  stands; `JsString::is_valid_utf16` calls JavaScript once per code unit. But ADR-0009 assigns
-  that refusal to `api`, and this ADR does not supersede it.
-- **Only the lengths of label texts** *(changed)* — the engine keeps none, and their boundaries
-  carry every length the bridge checks; but ADR-0009 has every field cross the bridge and be
-  checked there. The strings of content cross whole in any case, since the engine lays them out
-  (ADR-0013).
+- **Lone surrogates detected in the bridge crate** — one string per column makes it cheap: read the
+  column once as a Rust string, which wasm-bindgen gives U+FFFD in place of a lone surrogate, and
+  ask the JavaScript string for its code unit (`JsString::char_code_at`) only where U+FFFD stands;
+  `JsString::is_valid_utf16` calls JavaScript once per code unit. But
+  [ADR-0009](0009-functional-core-imperative-shell.md) assigns that refusal to `api`.
+- **Only the lengths of label texts** — the engine keeps none, and their boundaries carry every
+  length the bridge checks; but [ADR-0009](0009-functional-core-imperative-shell.md) has every field
+  cross the bridge and be checked there. The strings of content cross whole in any case, since the
+  engine lays them out ([ADR-0013](0013-node-content-model.md)).
 - **A `Vec<String>` per column** — no boundaries to compute or map, but wasm-bindgen hands each
   element over as a string of its own, one copy and one allocation per value, which keeps a cost
   per item at the crossing.
 - **One packed buffer for all columns** — one copy instead of one per column, but a layout of
   offsets written by hand on both sides that no generated type checks, for a saving of a handful
   of copies per load.
-- **Every value refused by its type moved into the first pass** *(changed)* — one mechanism for
+- **Every value refused by its type moved into the first pass** — one mechanism for
   every field, but a label text or a string of content missing, of another type, or with a lone
   surrogate, and a background of another type, are refused at their rule, after the identifiers'
   lengths and the earlier items' checks; moving them would change which refusal a load names.
 
-Node content of a load *(added)*:
+Node content of a load:
 
 - **Content through serde-wasm-bindgen beside the columns** — the nested shape crosses as the
   host application wrote it, with a generated type and no columns to build; but every field of
@@ -380,9 +371,9 @@ Node content of a load *(added)*:
   a load of titles.
 - **Content as one JSON string** — one copy for all content; but the specification
   forbids JSON strings across the bridge, and a string of all content would itself need pieces.
-- **Columns for `text` only, the other kinds through serde-wasm-bindgen** — fewer columns to
-  decide now; but every node of G-9 holds badges, progress bars, or metrics, so the cost per field
-  would return with the second ticket, and a load would cross in two forms at once.
+- **Columns for `text` only, the other kinds through serde-wasm-bindgen** — fewer columns; but
+  every node of G-9 holds badges, progress bars, or metrics, so the cost per field would return,
+  and a load would cross in two forms at once.
 - **One string column per field of every kind** — a column for a badge's text, one for a metric's
   caption, one for its value, and so on, each with a value per element: each column says what it
   holds, but most values are empty, every column needs its boundaries and validity bytes, and a
@@ -390,25 +381,27 @@ Node content of a load *(added)*:
   shown, keep one limit and one layout path for every string drawn.
 - **Every string of an element in one column** — one column fewer; but a name is never laid out
   or drawn, and the engine's layout would skip names inside the column it reads.
-- **A revision of this clause per kind, as each kind's ticket comes** — each decision taken when
-  its ticket is understood; but each kind would wait on an ADR-only pull request, and the shape
-  of the columns could drift kind by kind. The maintainer chose to decide all six now.
+- **A decision of the columns per kind, as each kind is built** — each decision taken when its
+  kind is understood; but each kind would wait on an ADR-only pull request, and the shape of the
+  columns could drift kind by kind. The maintainer chose to decide all six at once.
 - **The snapshot refusing a shape it cannot flatten itself** — no position to hand over, and no
-  empty value in its place; but ADR-0009 puts the checking of graph data in the bridge crate, and
-  `api` refuses only what its map of identifiers knows and what the bridge cannot see.
+  empty value in its place; but [ADR-0009](0009-functional-core-imperative-shell.md) puts the
+  checking of graph data in the bridge crate, and `api` refuses only what its map of identifiers
+  knows and what the bridge cannot see.
 
 The pieces of a string column:
 
-- **One string per column, as ADR-0010 decided** — one copy and no piece boundaries, but a column
-  of titles or label texts within ADR-0009's limits exceeds V8's maximum string length, and a
-  load the bridge accepted when each value crossed alone is refused as malformed.
-- **Lower limits** — a bound on a load's code units of titles and label texts, as ADR-0009 bounds
-  identifiers, so that each column fits in one string, with a refusal of its own; but it takes a
-  load away that the bridge accepted before, and the bound would follow the smallest engine's
-  string length, which no specification names. The maintainer rejected it.
-- **Pieces only for titles and label texts** — the identifiers stay one string, bounded by their
-  budget; but two forms of string column, and a rule tying the form of a column to a budget that
-  a later ADR may raise.
+- **One string per column** — one copy and no piece boundaries, but a column of texts of content
+  or of label texts within the limits exceeds V8's maximum string length, and a load within them
+  is refused as malformed.
+- **Lower limits** — a bound on a load's code units of texts and label texts, as
+  [ADR-0009](0009-functional-core-imperative-shell.md) bounds identifiers, so that each column fits
+  in one string, with a refusal of its own; but it refuses loads that cross as a string per value,
+  and the bound would follow the smallest engine's string length, which no specification names. The
+  maintainer rejected it.
+- **Pieces only for texts of content and label texts** — the identifiers stay one string, bounded by
+  their budget; but two forms of string column, and a rule tying the form of a column to a budget
+  that a later ADR may raise.
 - **Pieces of at most a number of values** — a piece per 100,000 values, say, simpler to cut,
   but the bound that matters is the string's length, which a number of values bounds only
   through the longest value; more pieces than needed at the common sizes.
@@ -416,8 +409,8 @@ The pieces of a string column:
   versions and no interface reports it; 2^28 lies at half of V8's, the smallest of the three.
 - **UTF-8 bytes in a `Uint8Array`** — no string length at all, but the shell would encode each
   column with `TextEncoder` at a cost to the snapshot, and the boundaries would be needed in bytes
-  and in UTF-16 code units at once, since ADR-0009 counts its limits in UTF-16; ADR-0010 rejected
-  it for that reason as well.
+  and in UTF-16 code units at once, since [ADR-0009](0009-functional-core-imperative-shell.md)
+  counts its limits in UTF-16, as with UTF-8 bytes and byte offsets above.
 
 Structured data:
 
@@ -450,16 +443,17 @@ Precision far from the world's origin:
   attributes only, so the shell would subtract an origin itself, vertex by vertex in JavaScript,
   and the GPU's transform rounds as before.
 - **Splitting precision in the shader** — each position as two `f32`, high and low parts, as
-  CesiumJS does for its globe: no origin, but twice the attributes, a custom shader for every
-  layer, nodes and labels among them, and nothing for the Canvas 2D fallback of ADR-0018, which
-  runs no shader.
+  CesiumJS does for its globe: no origin, but twice the attributes, a custom shader for every layer,
+  nodes and labels among them, and nothing for the Canvas 2D fallback of
+  [ADR-0018](0018-webgl2-or-an-opted-in-canvas-fallback.md), which runs no shader.
 - **The rectangle's centre as the origin, unsnapped** — the smallest distances, but the origin
   moves with every query, and with it the layers placed by it, so every query updates the
   transform of every bound view; the snapped origin changes only where the centre crosses into
   another cell of its grid, and its distances stay below twice the rectangle's side, about 2^-23
   of a viewport.
-- **An origin the shell chooses and passes to the query** — the same arithmetic, but the rule
-  would live in the shell, which holds no geometry (ADR-0009), and outside the engine's tests.
+- **An origin the shell chooses and passes to the query** — the same arithmetic, but the rule would
+  live in the shell, which holds no geometry ([ADR-0009](0009-functional-core-imperative-shell.md)),
+  and outside the engine's tests.
 
 ## Sources / Prior art
 
@@ -504,10 +498,10 @@ Precision far from the world's origin:
   `JS::MaxStringLength`, 2^30 − 2 (checked 2026-10-29).
 - V8, *[ptr-compr] Bump max string length to ~2\*\*29* —
   <https://chromium.googlesource.com/v8/v8/+/refs/tags/8.1.307.5%5E> (checked 2026-10-29).
-- [ADR-0013](0013-node-content-model.md), proposed: the six elements and their fields
-  (*Elements*), content in place of the title and the height, and the limits a load's content is
-  checked by (*Limits*); with `docs/plan/node-content/spec.md` and its tickets 01 to 06, which
-  give a badge's colour as an integer from 0 to 0xFFFFFF, a progress bar's fractions as finite,
+- [ADR-0013](0013-node-content-model.md): the six elements and their fields (*Elements*), content
+  in place of the title and the height, and the limits a load's content is checked by
+  (*Limits*); with the feature spec of node content and its tickets 01 to 06, which gave a
+  badge's colour as an integer from 0 to 0xFFFFFF, a progress bar's fractions as finite,
   not negative, and summing to at most 1, and a trend's direction as up, down, or flat (read
   2026-10-30).
 - The load of 600,000 nodes with titles of 1,000 code units, and of 600,000 edges with label texts
@@ -524,57 +518,58 @@ Precision far from the world's origin:
 - Positive: malformed graph data comes back as a typed error the host application can show.
 - Positive: an edge or a label far from the world's origin is drawn as precisely as one near
   it, on the GPU too, with no more bytes per vertex.
-- Positive: a load crosses in a fixed number of copies, one per column, whatever the number of
-  nodes and edges, so every field can cross for its check (ADR-0009) without a cost per field at
-  the crossing. The goal it serves is Q-2's load: on the AMD EPYC 7763, a Benchmark run on
-  `main` once both lists cross as columns is expected to report a median first frame some 100 to
-  130 ms below the 480 ms of today, and at least 90 ms below it, about the 378.6 ms of its
-  baseline; a run that misses that, or whose comparison fails, misses the goal, and is not run
-  again until it passes.
+- Positive: a load crosses in a fixed number of copies, one per column, whatever the number of nodes
+  and edges, so every field can cross for its check
+  ([ADR-0009](0009-functional-core-imperative-shell.md)) without a cost per field at the crossing.
+  The goal it serves is Q-2's load: on the AMD EPYC 7763, a Benchmark run on `main` with both lists
+  crossing as columns is expected to report a median first frame some 100 to 130 ms below the 480 ms
+  measured through serde-wasm-bindgen, and at least 90 ms below it, about the 378.6 ms of its
+  baseline; a run that misses that, or whose comparison fails, misses the goal, and is not run again
+  until it passes.
 - Negative / trade-offs: two forms of crossing to learn, and slot bookkeeping in the bridge.
-- Negative / trade-offs: a load and a single edit now cross in two forms, so the checks of a node
+- Negative / trade-offs: a load and a single edit cross in two forms, so the checks of a node
   and an edge are reached from columns and from serde types; the bridge crate keeps one check per
   rule behind both, or the two drift.
-- Negative / trade-offs: the type of a load's crossing is no longer the type of an edge or a node
+- Negative / trade-offs: the type of a load's crossing is not the type of an edge or a node
   the host application knows; the snapshot builds both the columns and the objects the store
   keeps, and the type test that the bridge takes only the snapshot has to hold for the columns.
 - Negative / trade-offs: the code of the columns joins the bundle Q-3 bounds at 300 kB.
-- Positive: every load within ADR-0009's limits crosses in every evergreen browser, whatever the
-  engine's maximum string length, as long as it is at least 2^28 code units.
-- Negative / trade-offs *(changed)*: a string column crosses in one copy per piece; a load at the
+- Positive: every load within [ADR-0009](0009-functional-core-imperative-shell.md)'s limits crosses
+  in every evergreen browser, whatever the engine's maximum string length, as long as it is at least
+  2^28 code units.
+- Negative / trade-offs: a string column crosses in one copy per piece; a load at the
   benchmark's size has one piece per column, and one at the limits four for its label texts and,
   with its strings of content at the budget's least, four for its texts. The bridge crate holds
   the pieces of a column side by side and maps boundaries piece by piece.
-- Positive *(added)*: a load's content crosses in a fixed number of copies too, whatever the
-  number of nodes, rows, elements, and segments, so the content of G-10 reaches the engine without
-  a cost per field at the crossing. Q-2: the first frame of a load whose nodes hold one title
-  text is expected to stay where the title column held it, since the boundaries, the kinds, the
-  weights, and the roles add a few small columns, each one copy; the snapshot's work grows with
-  the elements, which no number measures yet, and a load of G-9's full content is measured once
-  the benchmark holds it. The Benchmark workflow decides, as it does for the columns of today.
-- Negative / trade-offs *(added)*: `loadGraph` takes eighteen parameters of content in place of
-  the four of the title and the height, and the snapshot flattens a nested shape into them; the
-  bridge crate's check that the columns fit together grows with every column, and a column that
-  disagrees with the kinds can only be refused as malformed, since the shell never hands it
-  over. The code of the flattening and of the content columns' reading joins the bundle Q-3
-  bounds at 300 kB; its size is measured with the first ticket.
-- Negative / trade-offs *(added)*: the content of a load and of `addNode` or `updateNode` cross in
+- Positive: a load's content crosses in a fixed number of copies too, whatever the number of
+  nodes, rows, elements, and segments, so the content of G-10 reaches the engine without a cost
+  per field at the crossing. Q-2: the first frame of a load whose nodes hold one text each is
+  expected where a column of titles would hold it, since the boundaries, the kinds, the weights,
+  and the roles add a few small columns, each one copy; the snapshot's work grows with the
+  elements, and a load of G-9's full content is measured once the benchmark holds it. The
+  Benchmark workflow decides, as it does for the other columns.
+- Negative / trade-offs: `loadGraph` takes eighteen parameters of content, and the snapshot flattens
+  a nested shape into them; the bridge crate's check that the columns fit together grows with every
+  column, and a column that disagrees with the kinds can only be refused as malformed, since the
+  shell never hands it over. The code of the flattening and of the content columns' reading joins
+  the bundle Q-3 bounds at 300 kB.
+- Negative / trade-offs: the content of a load and of `addNode` or `updateNode` cross in
   two forms, columns and serde types, so each content rule has one check behind both, or the two
   drift.
-- Negative / trade-offs *(added)*: Q-7 bounds the columns only through the limits: the elements
+- Negative / trade-offs: Q-7 bounds the columns only through the limits: the elements
   of a load are at most its nodes times the rows per node times the columns per row, and a progress
   bar's segments at most their limit, so the numbers the bridge crate states have to keep the
   columns of a load within what WebAssembly's memory holds; the budget bounds the strings alone.
-- Positive *(added)*: weights, colours, and fractions cross as `f64`, as the host application
+- Positive: weights, colours, and fractions cross as `f64`, as the host application
   handed them, so the layout Q-4 holds to 0.5 px is computed from the values themselves.
 - Negative / trade-offs: the specification's constraint carries an exception for the graph data
   of a load.
 - Negative / trade-offs: the streams of a query mean nothing without its origin, and the world's
-  translation is no longer the viewport's; inspection adds the origin back and reports the
+  translation is not the viewport's; inspection adds the origin back and reports the
   viewport the world is drawn through, its transform less the origin's screen point.
 - Negative / trade-offs: the origin bounds the rounding of vertices near the rectangle, not of
   every vertex the mesh holds; which vertices keep the rounding of ends far beyond the rectangle,
-  and how far it reaches, ADR-0012 states (*Consequences*).
+  and how far it reaches, [ADR-0012](0012-virtualized-scene-graph.md) states (*Consequences*).
 - Negative / trade-offs: the distances along the path cross as `f32` from the path's source,
   without an origin, and round by up to 2^-24 of their value, 0.5 px at 2^23 px along a path;
   Q-4 bounds dashes at 2^21 px, leaving room for the GPU's `f32`, and past that a dash pattern may
@@ -589,13 +584,14 @@ Precision far from the world's origin:
   more code for nested data such as node content.
 - Follow-ups: when slots are compacted after deletions; whether the engine moves into a worker;
   watching serde-wasm-bindgen's maintenance; whether the bridge crate detects lone surrogates
-  itself, which would supersede ADR-0009's clause on what the bridge cannot see.
+  itself, which would supersede [ADR-0009](0009-functional-core-imperative-shell.md)'s clause on
+  what the bridge cannot see.
 
 ## Enforcement
 
 Each test below cites this ADR with `Verifies: ADR-0010`.
 
-- **Malformed data (changed):** the tests of `crates/engine-wasm/src/graph_data.rs` send
+- **Malformed data:** the tests of `crates/engine-wasm/src/graph_data.rs` send
   malformed graph data of each kind Q-7 names through every export that receives graph data and
   assert a typed error and no panic; the property tests of `crates/engine-wasm/src/properties.rs`
   also cite Q-7. The property tests generate a load as columns, a value of the wrong type at any
@@ -604,9 +600,9 @@ Each test below cites this ADR with `Verifies: ADR-0010`.
   of the wrong type, shapes it cannot flatten, and lengths past each limit at any position, and
   assert that the load is refused exactly as the oracle refuses the same content, and accepted
   where the oracle accepts it.
-- **Columns (changed):** tests of `crates/engine-wasm/src/graph_data.rs` assert that a load refuses,
+- **Columns:** tests of `crates/engine-wasm/src/graph_data.rs` assert that a load refuses,
   for each field of a node and of an edge, a value its rules refuse, naming the list, the node or
-  edge, and the field as before, and that the order of the two passes holds: node 0 with
+  edge, and the field, and that the order of the two passes holds: node 0 with
   `x: Infinity` beside node 5 whose text of content holds a lone surrogate is refused as
   `nonFiniteCoordinate` for node 0, and a missing text as `invalidContentText`. A browser test in
   `examples/metric-tree/e2e/malformed.spec.ts` loads graph data through the public interface with
@@ -616,7 +612,7 @@ Each test below cites this ADR with `Verifies: ADR-0010`.
   Plane among them, and that two identifiers cut inside a surrogate pair side by side are refused
   for their length. A type test in `packages/comb/src/bridge/snapshot-only.test.ts` pins the
   generated parameter types of the engine's `loadGraph`, pieces of strings and typed arrays, no
-  `GraphBatch`, and no title or height column, so that a load can no longer be handed over as a
+  `GraphBatch`, and no title or height column, so that a load cannot be handed over as a
   serde type. A test in `packages/comb/src/bridge/bridge.test.ts` cuts columns with a small bound
   on a piece and asserts that every piece ends where a value ends and that the values are read
   back exactly; tests in `crates/engine-wasm/src/graph_data.rs` assert that a piece ending inside
@@ -624,7 +620,7 @@ Each test below cites this ADR with `Verifies: ADR-0010`.
   a browser test in `examples/metric-tree/e2e/malformed.spec.ts` loads 600,000 nodes, each with
   one text of 1,000 code units, and 600,000 edges with label texts of 1,000 code units through
   the public interface and asserts that both load.
-- **Content columns (added):** a test in `packages/comb/src/bridge/bridge.test.ts` cuts the content
+- **Content columns:** a test in `packages/comb/src/bridge/bridge.test.ts` cuts the content
   columns of a load whose nodes hold elements of several kinds, rows of several columns, and
   strings outside the Basic Multilingual Plane, and asserts that the boundaries, the codes, the
   numbers, and the strings are read back exactly per node, row, and element. Tests of
@@ -646,8 +642,7 @@ Each test below cites this ADR with `Verifies: ADR-0010`.
   `packages/comb/src/bridge/bridge.test.ts` assert the sizes, the placed rectangles, the roles, and
   the drawn texts a query hands back, a patch of `updateNode` laid out anew, and the content
   `content` builds; the property tests of `crates/engine-wasm/src/properties.rs` lay out and draw
-  every load they accept and read each of its texts back. Each kind's tests arrive with the ticket
-  that builds its columns.
+  every load they accept and read each of its texts back.
 - **Views:** a test in `packages/comb/src/bridge/bridge.test.ts` grows the engine's memory between
   two calls and asserts that the positions read afterwards are the ones written.
 - **tsify:** `scripts/check-dependencies.sh` fails when `crates/engine-wasm/Cargo.toml` enables
@@ -655,8 +650,8 @@ Each test below cites this ADR with `Verifies: ADR-0010`.
 - **Detail:** a test in `crates/engine-wasm/src/lib.rs` queries a small graph and asserts
   *complete*, and queries a graph at the limit of a load, 1,000,000 curved edges, whole at the far
   level, where its full mesh passes the budget, and asserts *coarsened*.
-- **Origin:** tests in `crates/engine/src/graph/query.rs` assert the origin of a rectangle far from the
-  world's origin, that it stays across a pan shorter than half its grid, and that the vertex
+- **Origin:** tests in `crates/engine/src/graph/query.rs` assert the origin of a rectangle far from
+  the world's origin, that it stays across a pan shorter than half its grid, and that the vertex
   positions and label points of a query there, with its origin added back, lie within a sixteenth of
   a world unit of those of the same graph moved near the world's origin.
 - **On screen:** a Playwright test in `examples/metric-tree/e2e/far-from-the-origin.spec.ts` loads
@@ -666,9 +661,9 @@ Each test below cites this ADR with `Verifies: ADR-0010`.
   origin, the engine's `f64` stroke shifted; and again after a pan within the culling margin that
   moves the world without a query. With the origin left at (0, 0) it fails. It also
   `Verifies: Q-4`.
-- **The first frame:** the comparison step of `.github/workflows/benchmark.yml`, which
-  fails when the median first frame of the runner's kind exceeds its baseline under
-  `bench/baselines/` by more than the margin, cites this ADR and ADR-0008; on the AMD EPYC 7763
-  its baseline holds 378.6 ms. It cites no Q-2, which is defined on the reference machine. A
-  number of the workflow decides the goal, not a test of the suite: the workflow runs weekly and
-  on demand, so a load that grows slow again is found at its next run, not in the pull request.
+- **The first frame:** the comparison step of `.github/workflows/benchmark.yml`, which fails when
+  the median first frame of the runner's kind exceeds its baseline under `bench/baselines/` by more
+  than the margin, cites this ADR and [ADR-0008](0008-toolchain.md); on the AMD EPYC 7763 its
+  baseline holds 378.6 ms. It cites no Q-2, which is defined on the reference machine. A number of
+  the workflow decides the goal, not a test of the suite: the workflow runs weekly and on demand, so
+  a load that grows slow again is found at its next run, not in the pull request.

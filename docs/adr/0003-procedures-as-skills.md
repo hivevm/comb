@@ -32,16 +32,17 @@ holding one symlink per skill loads all of them.
 ## Decision
 
 We will keep the procedures of the rule file — developing an ADR, planning work larger than one
-session, working its tickets alone or in parallel, reviewing a change, revising the design — as
-Agent Skills under `.agents/skills/`, one directory with a `SKILL.md` each, reached by Claude Code
-through one symlink per skill under `.claude/skills/`. The walk through `TEMPLATE-SETUP.md` is a
-skill of the same kind, deleted together with that file. A skill carries the steps of one
-procedure, cites the section of `AGENTS.md`, the ADR, or the setup step that requires it, and
-states no rule of its own; the rule file and the templates name the skill and drop the steps. A
-skill may carry reference files its procedure reads, such as the catalogue of concepts of
-`propose-adr`; they hold knowledge and no rule. It may carry a script a step runs where the step
-is a sequence of commands whose order decides its outcome, such as the claim of `work-tickets`;
-the script is a how like the steps, and a self-test under `scripts/` runs it (ADR-0002).
+session, working its tickets alone or in parallel, reviewing a change, revising the design,
+normalizing the record and, through the same skill, taking up the template or one of its releases —
+as Agent Skills under `.agents/skills/`, one directory with a `SKILL.md` each, reached by Claude
+Code through one symlink per skill under `.claude/skills/`. The walk through `TEMPLATE-SETUP.md` is
+a skill of the same kind, deleted together with that file. A skill carries the steps of one
+procedure, cites the section of `AGENTS.md`, the ADR, or the setup step that requires it, and states
+no rule of its own; the rule file and the templates name the skill and drop the steps. A skill may
+carry reference files its procedure reads, such as the catalogue of concepts of `propose-adr`; they
+hold knowledge and no rule. It may carry a script a step runs where the step is a sequence of
+commands whose order decides its outcome, such as the claim of `work-tickets`; the script is a how
+like the steps, and a self-test under `scripts/` runs it (ADR-0002).
 
 **Out of scope:** skills a derived project adds for its own domain; whether a skill may run
 unattended, which its ticket decides ([§4](../../AGENTS.md#4-working-style)); the checks that

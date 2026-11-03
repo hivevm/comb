@@ -7,13 +7,13 @@
 
 ## Context
 
-Q-1 and Q-2 are measured on the reference machine, a laptop with an integrated GPU of the class
-of Intel Iris Xe or AMD Radeon 680M, in current stable Chrome, by `BENCH_HEADED=1 bun run bench`
-(ADR-0008, ticket 16 of revision-2026-10-18). That command launches Playwright's Chromium in the
-place it runs. The Dev Container has no display and no GPU: it sees no `/dev/dri`, and Chromium in
-it renders on SwiftShader, whose frame times are raster-bound and say nothing about a GPU. So the
-measurement has to run outside the container, with Bun, Rust, and the WebAssembly target set up on
-the host a second time, though the maintainer works from the container.
+Q-1 and Q-2 are measured on the reference machine, a laptop with an integrated GPU of the class of
+Intel Iris Xe or AMD Radeon 680M, in current stable Chrome, by `BENCH_HEADED=1 bun run bench`
+([ADR-0008](0008-toolchain.md), ticket 16 of revision-2026-10-18). That command launches
+Playwright's Chromium in the place it runs. The Dev Container has no display and no GPU: it sees no
+`/dev/dri`, and Chromium in it renders on SwiftShader, whose frame times are raster-bound and say
+nothing about a GPU. So the measurement has to run outside the container, with Bun, Rust, and the
+WebAssembly target set up on the host a second time, though the maintainer works from the container.
 
 A Chrome on the host draws with the host's GPU and its drivers, which is what Q-1 and Q-2 ask.
 Playwright attaches to a running Chromium-based browser through the DevTools protocol
@@ -34,18 +34,19 @@ Container in a Chrome on the host, reached through a forwarder on the host's Doc
   `socat TCP-LISTEN:9223,bind=<the Docker bridge's address>,fork TCP:127.0.0.1:9222`, which listens
   on the bridge alone, not on the network. Both end with the measurement.
 - **The container:** `devcontainer.json` adds `--add-host=host.docker.internal:host-gateway` to its
-  run arguments and forwards the benchmark's port, 4173; nothing else of the container changes,
-  and it reaches no container engine (ADR-0004, ADR-0015).
+  run arguments and forwards the benchmark's port, 4173; nothing else of the container changes, and
+  it reaches no container engine ([ADR-0004](0004-dev-container-runtime.md),
+  [ADR-0015](0015-no-container-access.md)).
 - **The benchmark:** with `BENCH_CDP=http://host.docker.internal:9223` it attaches to that browser,
   opens its pages in a context of its own at the size it launches with, and loads the example from
   `http://localhost:4173`, the port VS Code forwards to the host; it records that it measured an
   attached browser, with the browser's version and the GPU its WebGL reports, beside the CPU model,
-  and closes only what it opened. Without `BENCH_CDP` it launches Chromium as before.
+  and closes only what it opened. Without `BENCH_CDP` it launches Chromium.
 - **The README** says the steps on the host, the commands above among them.
 
 **Out of scope:** throttling the measured page's CPU, so that a machine faster than the reference
-stands in for it, which is a decision of its own; which machine is the reference, which is the
-specification's.
+stands in for it, which [ADR-0029](0029-the-benchmark-can-slow-the-measured-pages-cpu.md) decides;
+which machine is the reference, which is the specification's.
 
 ## Alternatives considered
 
@@ -87,8 +88,8 @@ specification's.
   measured, so a run of one kind is compared with the baselines of that kind only.
 - Negative / trade-offs: the steps on the host, Chrome's flags and socat, are the maintainer's to
   run by hand.
-- Follow-ups: throttling the CPU of the measured page; whether a run of an attached browser earns
-  baselines of its own under `bench/baselines/`.
+- Follow-ups: whether a run of an attached browser earns baselines of its own under
+  `bench/baselines/`.
 
 ## Enforcement
 

@@ -7,14 +7,15 @@
 
 ## Context
 
-The reference machine of Q-1 and Q-2 is a laptop with four cores and an integrated GPU of the
-class of Intel Iris Xe or AMD Radeon 680M. The machine the maintainer measures on (ADR-0028) has an
-Intel UHD Graphics 770, weaker than that class, and an Intel Core i7-13700, a desktop processor of
-sixteen cores that is far faster than it. A GPU-bound frame there judges Q-1 more strictly than the
-reference would; the load and the first frame of Q-2, and the WebAssembly of every gesture, run on
-the page's main thread and are judged too kindly. No measurement of a reference laptop exists to
-set the gap by; a core of the i7-13700 is, by the maintainer's estimate, about one and a half to two
-times one of a laptop processor of the Iris Xe's generation.
+The reference machine of Q-1 and Q-2 is a laptop with four cores and an integrated GPU of the class
+of Intel Iris Xe or AMD Radeon 680M. The machine the maintainer measures on
+([ADR-0028](0028-the-benchmark-drives-a-chrome-on-the-host.md)) has an Intel UHD Graphics 770,
+weaker than that class, and an Intel Core i7-13700, a desktop processor of sixteen cores that is far
+faster than it. A GPU-bound frame there judges Q-1 more strictly than the reference would; the load
+and the first frame of Q-2, and the WebAssembly of every gesture, run on the page's main thread and
+are judged too kindly. No measurement of a reference laptop exists to set the gap by; a core of the
+i7-13700 is, by the maintainer's estimate, about one and a half to two times one of a laptop
+processor of the Iris Xe's generation.
 
 Chrome slows a page's CPU by a factor through the DevTools protocol,
 `Emulation.setCPUThrottlingRate`, "a slowdown factor (1 is no throttle, 2 is 2x slowdown)"; it
@@ -28,12 +29,13 @@ that a machine whose processor outruns the reference's stands in for it; the fac
 measures by on their machine is 2.
 
 - **Range:** a finite number of at least 1; any other value refuses the run before it measures.
-  Without the variable, nothing is slowed, as before.
+  Without the variable, nothing is slowed.
 - **The whole run:** the load, the first frame, every gesture, and the reference workload, so that
   every number of one run is slowed alike.
-- **The record:** `cpuThrottle` beside the CPU model and the browser (ADR-0028), 1 where nothing
-  was slowed; `bench/compare.ts` compares a run only with baselines of the same factor, and
-  refuses another, naming both.
+- **The record:** `cpuThrottle` beside the CPU model and the browser
+  ([ADR-0028](0028-the-benchmark-drives-a-chrome-on-the-host.md)), 1 where nothing was slowed;
+  `bench/compare.ts` compares a run only with baselines of the same factor, and refuses another,
+  naming both.
 
 **Out of scope:** slowing the GPU; deriving the factor from a measurement of a reference laptop,
 which a later change takes up when one exists.
@@ -52,7 +54,8 @@ which a later change takes up when one exists.
 
 - Chrome DevTools Protocol, `Emulation.setCPUThrottlingRate`, as Playwright 1.x types it in
   `playwright-core/types/protocol.d.ts` (checked 2026-11-02).
-- The maintainer's machine as the container sees it, 2026-11-02 (ADR-0028).
+- The maintainer's machine as the container sees it, 2026-11-02
+  ([ADR-0028](0028-the-benchmark-drives-a-chrome-on-the-host.md)).
 
 ## Consequences
 

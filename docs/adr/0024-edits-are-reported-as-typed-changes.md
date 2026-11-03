@@ -16,19 +16,20 @@ model does not allow. Q-3 asks for a public interface fully typed in TypeScript 
 framework; Q-7 asks that every change through it that names a node the graph does not hold be
 refused with a typed error, the graph kept as it was.
 
-Today the public interface has `load`, `updateNode` (a title alone), and `onSelectionChange`.
-ADR-0011 derives the events to the host application from store changes in `api`, "so the host
-application sees one sequence of events whatever caused them". ADR-0021 makes every call that
-needs the engine throw an `EngineLostError` once the engine is lost. ADR-0023 adds and removes
-nodes and edges in the engine one at a time.
+Beside the editing methods below, the public interface has `load`, `updateNode`, and
+`onSelectionChange`. [ADR-0011](0011-store.md) derives the events to the host application from store
+changes in `api`, "so the host application sees one sequence of events whatever caused them".
+[ADR-0021](0021-a-trapped-engine-is-lost-for-the-page.md) makes every call that needs the engine
+throw an `EngineLostError` once the engine is lost.
+[ADR-0023](0023-the-engine-edits-its-graph-in-place.md) adds and removes nodes and edges in the
+engine one at a time.
 
-Two shapes of data flow are common. In the *controlled* shape, as xyflow has it, the editor
-proposes each change and the application applies it and hands the graph back; in the
-*uncontrolled* one, the editor applies the change and tells the application. The controlled
-shape puts the host's code into every frame of a drag and every edit round a copy of the graph,
-against Q-1 at 50,000 nodes; the store keeps the structure and the engine the coordinates
-(ADR-0011), and neither can wait for the host. So Comb applies the edit, and the host refuses in
-advance where it has to.
+Two shapes of data flow are common. In the *controlled* shape, as xyflow has it, the editor proposes
+each change and the application applies it and hands the graph back; in the *uncontrolled* one, the
+editor applies the change and tells the application. The controlled shape puts the host's code into
+every frame of a drag and every edit round a copy of the graph, against Q-1 at 50,000 nodes; the
+store keeps the structure and the engine the coordinates ([ADR-0011](0011-store.md)), and neither
+can wait for the host. So Comb applies the edit, and the host refuses in advance where it has to.
 
 A refusal can be asked for in three ways: a callback that answers before the edit, a promise that
 answers later, or an event the host cancels. A test decides a synchronous answer by its return
@@ -38,8 +39,9 @@ and the nodes of the pending edge free to be deleted meanwhile.
 The methods below need refusals only the store's map from identifiers to slots can give: an
 identifier `removeNodes`, `removeEdges`, or `updateEdge` names that the graph does not hold, an
 `addNode`, `addEdge`, or user's connection whose identifier the graph holds already, and an
-`addEdge` whose end the graph does not hold. The engine keeps no identifiers (ADR-0010), so the
-bridge crate cannot check them against the graph it holds; ADR-0009 makes them `api`'s.
+`addEdge` whose end the graph does not hold. The engine keeps no identifiers
+([ADR-0010](0010-bridge-data-format.md)), so the bridge crate cannot check them against the graph it
+holds; [ADR-0009](0009-functional-core-imperative-shell.md) makes them `api`'s.
 
 The maintainer asked for the editing interface as one decision: the changes, the vetoes, and the
 methods are one contract between Comb and the host, each part shaped by the others (a veto exists
@@ -47,21 +49,16 @@ because the change is applied at once; a change reports what a method or a gestu
 ADR records their interplay as one integration ([`AGENTS.md` §3](../../AGENTS.md#3-adr-rules),
 rule 1).
 
-A veto is the host's code, and it may call `Comb` while it runs: add an edge, remove a node,
-update one. `docs/CONVENTIONS.md` (*Host code may change the graph*) asks that after host code
-returns, Comb decide from the graph as it stands then. ADR-0024 decided this interface and left
-open what a veto that changed the graph during its call means, and the two vetoes answered
-differently. The deletion did nothing, silently, since what `canDelete` was asked about may no
-longer be what would go. The connection added the edge whatever `canConnect` did: one that
-removed the source or the target threw `missingNode` from the pointer's release, and one that
-added an edge between the two itself got a second edge from the user's gesture beside its own,
-which ADR-0025 (*Compatible*) would not have let the user make. A veto is asked about one
-proposal; once the graph has changed under it, its answer is about a graph that is gone. On the
-maintainer's decision, both gestures now end as the deletion did. That makes an exception to
-ADR-0024's *The user's edge*, which checks every identifier `canConnect` returns and throws a
-refused one: a `canConnect` that adds the edge `x` and returns `x` threw `duplicateEdge` under
-ADR-0024, and throws nothing here. This ADR carries ADR-0024 over whole and adds the clause
-*A veto during whose call Comb tells a change*, with its exception in *The user's edge*.
+A veto is the host's code, and it may call `Comb` while it runs: add an edge, remove a node, update
+one. `docs/CONVENTIONS.md` (*Host code may change the graph*) asks that after host code returns,
+Comb decide from the graph as it stands then. A veto is asked about one proposal; once the graph has
+changed under it, its answer is about a graph that is gone. What `canDelete` was asked about may no
+longer be what would go; a `canConnect` that removed the source or the target leaves the user's edge
+without an end, and one that added an edge between the two itself would leave the user's edge beside
+its own, which [ADR-0025](0025-one-connector-per-side.md) (*Compatible*) does not let the user make.
+So both gestures end with nothing done once Comb told a change during the veto's call, and *The
+user's edge* below holds with that one exception: a `canConnect` that adds the edge `x` and returns
+`x` throws no `duplicateEdge`.
 
 ## Decision
 
@@ -87,35 +84,35 @@ change of the graph during the veto's call.
   | `labelMoved`   | user           | `edge`, `t`, `offset`: where a drag left the edge label  |
 
   The selection stays with `onSelectionChange`; it is no change of the graph.
-- **Delivery:** `onChange(listener)` returns the function that removes it, like
-  `onSelectionChange`. A change is delivered synchronously, after the store and the engine hold
-  it and before the call or the input event that made it returns, in the order made. `nodeMoved`
-  and `labelMoved` come once, when the pointer is released, not per frame of the drag, and not at
-  all for a drag that moved nothing. The store's action records the kind of the change and the
-  identifiers it touched, never a coordinate (ADR-0011, *The graph's coordinates*); `api` derives
-  the delivery from that store change, as ADR-0011 asks, and reads the positions a change carries
+- **Delivery:** `onChange(listener)` returns the function that removes it, like `onSelectionChange`.
+  A change is delivered synchronously, after the store and the engine hold it and before the call or
+  the input event that made it returns, in the order made. `nodeMoved` and `labelMoved` come once,
+  when the pointer is released, not per frame of the drag, and not at all for a drag that moved
+  nothing. The store's action records the kind of the change and the identifiers it touched, never a
+  coordinate ([ADR-0011](0011-store.md), *The graph's coordinates*); `api` derives the delivery from
+  that store change, as [ADR-0011](0011-store.md) asks, and reads the positions a change carries
   from the engine's buffer as it delivers. Where an edit also clears the selection, its change is
-  delivered before `onSelectionChange` reports `null`. Lists of identifiers are
-  `readonly string[]`.
-- **New methods of `Comb`:** `addNode(node: NodeData)`; `removeNodes(ids: readonly string[])`,
-  which removes the edges at those nodes with them; `addEdge(edge: EdgeData)`;
-  `updateEdge(id, patch)`, whose patch may set `color`, `arrow`, `sourceSide`, and `targetSide`,
-  set `dash` or clear it with `null`, and set `label` or clear it with `null`;
-  `removeEdges(ids: readonly string[])`; and `worldPointAt(clientX, clientY)`, the world point
-  under a point of the page in client coordinates, for a drop from the host's palette (G-1).
-  Each returns nothing. Each method that changes the graph changes all it names or nothing, and
-  throws a
-  `GraphDataError` on a refusal and an `EngineLostError` once the engine is lost (ADR-0021);
-  `worldPointAt` needs no engine and keeps working, and throws a `RangeError` on a coordinate
-  that is not finite, like `setViewport`.
-- **Validation:** `api` reads each input once into primitives (ADR-0009). The bridge crate checks
-  what a load would check of that one node or edge, and a patch of `updateEdge` as a load checks
-  those fields; the limits of a load hold for the graph after the edit, the count of nodes and edges
-  and the code units of all identifiers it holds, which the store counts. `api` refuses, as the
-  store's map shows, an unknown node (`unknownNode`), an unknown edge (`unknownEdge`), an identifier
-  the graph holds already (`duplicateNode`, `duplicateEdge`), and an edge to a node it does not hold
-  (`missingNode`), as ADR-0009 decides. Every new kind is a kind of the generated `GraphDataProblem`
-  (ADR-0010), never one written in TypeScript.
+  delivered before `onSelectionChange` reports `null`. Lists of identifiers are `readonly string[]`.
+- **New methods of `Comb`:** `addNode(node: NodeData)`; `removeNodes(ids: readonly string[])`, which
+  removes the edges at those nodes with them; `addEdge(edge: EdgeData)`; `updateEdge(id, patch)`,
+  whose patch may set `color`, `arrow`, `sourceSide`, and `targetSide`, set `dash` or clear it with
+  `null`, and set `label` or clear it with `null`; `removeEdges(ids: readonly string[])`; and
+  `worldPointAt(clientX, clientY)`, the world point under a point of the page in client coordinates,
+  for a drop from the host's palette (G-1). Each returns nothing. Each method that changes the graph
+  changes all it names or nothing, and throws a `GraphDataError` on a refusal and an
+  `EngineLostError` once the engine is lost
+  ([ADR-0021](0021-a-trapped-engine-is-lost-for-the-page.md)); `worldPointAt` needs no engine and
+  keeps working, and throws a `RangeError` on a coordinate that is not finite, like `setViewport`.
+- **Validation:** `api` reads each input once into primitives
+  ([ADR-0009](0009-functional-core-imperative-shell.md)). The bridge crate checks what a load would
+  check of that one node or edge, and a patch of `updateEdge` as a load checks those fields; the
+  limits of a load hold for the graph after the edit, the count of nodes and edges and the code
+  units of all identifiers it holds, which the store counts. `api` refuses, as the store's map
+  shows, an unknown node (`unknownNode`), an unknown edge (`unknownEdge`), an identifier the graph
+  holds already (`duplicateNode`, `duplicateEdge`), and an edge to a node it does not hold
+  (`missingNode`), as [ADR-0009](0009-functional-core-imperative-shell.md) decides. Every new kind
+  is a kind of the generated `GraphDataProblem` ([ADR-0010](0010-bridge-data-format.md)), never one
+  written in TypeScript.
 - **Vetoes:** both are called synchronously, in the input event that ends the gesture, and
   neither for the host application's own calls. Where one throws, Comb makes no edit, ends the
   gesture, and then throws the error on.
@@ -126,8 +123,8 @@ change of the graph during the veto's call.
     Comb has no name to give the edge.
   - `canDelete({ nodes, edges })` is called when the user deletes the selection, `edges` holding
     every edge that would go with the nodes, as the engine names them before it removes anything
-    (ADR-0023), all as `readonly string[]`. Comb deletes only where it returns `true`. Without
-    `canDelete`, a deletion is allowed.
+    ([ADR-0023](0023-the-engine-edits-its-graph-in-place.md)), all as `readonly string[]`. Comb
+    deletes only where it returns `true`. Without `canDelete`, a deletion is allowed.
 - **A veto during whose call Comb tells a change:** where the store records a change of the graph
   between a veto's call and its return, which Comb tells to the listeners of `onChange` as it
   records it, the gesture ends with nothing done, whatever the veto returned: no edge is added and
@@ -139,14 +136,14 @@ change of the graph during the veto's call.
   a change during its call. Both vetoes are asked from one module of `api`, beside the user's
   edits, and the rule is written there once.
 - **The user's edge:** except where Comb told a change during the veto's call (above), the
-  identifier `canConnect` returns is checked as the identifier of an edge
-  `addEdge` receives: read once, refused by the bridge crate where it is too long or, handed over as
-  `false` (ADR-0009), holds a lone surrogate, and by `api` where the graph holds an edge of that
-  identifier already. A refused identifier refuses the connection: Comb makes no edge, delivers no
-  change, ends the gesture, and then throws the `GraphDataError` of the generated kind from the
-  input event, as it throws on the error of a callback that threw, so that the host's mistake
-  reaches the page as an error. A connection made is drawn with the defaults of an edge without
-  appearance and delivered as `edgeAdded` with `by: "user"`.
+  identifier `canConnect` returns is checked as the identifier of an edge `addEdge` receives: read
+  once, refused by the bridge crate where it is too long or, handed over as `false`
+  ([ADR-0009](0009-functional-core-imperative-shell.md)), holds a lone surrogate, and by `api` where
+  the graph holds an edge of that identifier already. A refused identifier refuses the connection:
+  Comb makes no edge, delivers no change, ends the gesture, and then throws the `GraphDataError` of
+  the generated kind from the input event, as it throws on the error of a callback that threw, so
+  that the host's mistake reaches the page as an error. A connection made is drawn with the defaults
+  of an edge without appearance and delivered as `edgeAdded` with `by: "user"`.
 - **A drop from the palette** is the host application's own `addNode`, so it arrives as
   `by: "host"`; a host that persists only `by: "user"` persists a drop in its own drop handler.
 - **Deleting:** with the canvas focused, Delete or Backspace deletes the selection, a node with
@@ -163,9 +160,9 @@ gesture.
   Comb shows what it is handed, but each edit and each frame of a drag waits on host code and a
   round of the graph through `load` or a diff, against Q-1, and the store and the engine would
   hold a graph that is not yet the host's.
-- **Report the user's changes only** — the host never hears back what it did itself, and no `by`
-  is needed, but ADR-0011 asks for one sequence of events whatever caused them, and a host that
-  mirrors the graph from `onChange` would miss its own calls.
+- **Report the user's changes only** — the host never hears back what it did itself, and no `by` is
+  needed, but [ADR-0011](0011-store.md) asks for one sequence of events whatever caused them, and a
+  host that mirrors the graph from `onChange` would miss its own calls.
 - **A listener per kind of change** (`onNodeAdded`, `onEdgesRemoved`, …) — each narrowly typed,
   but nine listeners where one switch on `kind` does, and a new kind is a new method rather than
   a new member of the union, as the error kinds are.
@@ -196,15 +193,24 @@ gesture.
 - **A veto during whose call Comb tells a change: throw a typed error** — a `GraphDataError` from
   the input event, as a refused identifier is thrown. The host's call that changed the graph
   succeeded, and the host chose to make it; reporting that as its mistake makes every host that
-  edits in a veto handle an error for a case it made on purpose, and the deletion, which ended
-  silently, would change behaviour a host may rely on.
+  edits in a veto handle an error for a case it made on purpose, and a deletion would throw where
+  it can end silently.
+- **The veto's answer stands whatever changed during its call** — the identifier `canConnect`
+  returns is checked and the edge added as when nothing changed, and a deletion `canDelete` allowed
+  is made, or silently dropped, as each gesture happens to handle it. But a `canConnect` that
+  removed the source or the target throws `missingNode` from the pointer's release, one that added
+  an edge between the two itself gets a second edge from the user's gesture beside its own, which
+  [ADR-0025](0025-one-connector-per-side.md) (*Compatible*) does not let the user make, one that
+  adds the edge `x` and returns `x` meets a `duplicateEdge` for a case it made on purpose, and the
+  two vetoes answer the same situation differently.
 - **Count only a change that touches the proposal's nodes or edges** — an `updateNode` of a third
   node would leave the gesture to the veto's answer. But a change touches a proposal in more ways
   than by naming its items: an edge the veto adds between the two nodes makes the connection no
-  longer compatible (ADR-0025), one it adds at a node to delete joins what would go, and a slot
-  freed and reused moves what an identifier names. Deciding which changes touch the proposal is a
-  second check of compatibility and of what goes, run on host-made state, where one comparison of
-  the store's change before and after the call is exact and costs nothing.
+  longer compatible ([ADR-0025](0025-one-connector-per-side.md)), one it adds at a node to delete
+  joins what would go, and a slot freed and reused moves what an identifier names. Deciding which
+  changes touch the proposal is a second check of compatibility and of what goes, run on host-made
+  state, where one comparison of the store's change before and after the call is exact and costs
+  nothing.
 
 ## Sources / Prior art
 
@@ -221,10 +227,9 @@ gesture.
   `canDelete` has them.
 - The `Comb` interface, `api/index.ts`, and the store, `store/index.ts`, as they stand (read on
   2026-10-24).
-- ADR-0024, which this ADR carries over, and the vetoes as they stood before it:
-  `interaction/delete.ts`, which compared the store's change before and after `canDelete`, and
-  `connectorOf` in `api/index.ts`, which added the edge whatever `canConnect` did (read on
-  2026-10-25).
+- `interaction/delete.ts`, whose comparison of the store's change before and after `canDelete`
+  this decision takes for both vetoes, and `connectorOf` in `api/index.ts`, where the user's edge
+  is made (read on 2026-10-25).
 
 ## Consequences
 

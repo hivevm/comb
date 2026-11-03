@@ -62,13 +62,10 @@ what they claim:
   it, nor would with 32 more vertices for each of its edges. So every edge found is drawn at every
   viewport while memory lasts.
 
-ADR-0012 decided this scene and bound the pooled display objects to the slots a query found in
-slot order, so that a node in a higher slot was drawn above one in a lower slot. Editing the graph
-reuses freed slots (ADR-0023), and a node the host application adds has to be drawn on top also
-where it takes a freed slot below others; ADR-0023 gives every node a rank for that, and the hit
-test takes the node of the highest rank. This ADR carries ADR-0012 over whole and narrows its
-clause on culling: node views and particles are bound in the order of their ranks, edges and edge
-labels still in slot order.
+Editing the graph reuses freed slots (ADR-0023), and a node the host application adds has to be
+drawn on top also where it takes a freed slot below others, so slot order cannot be the order in
+which nodes are drawn. ADR-0023 gives every node a rank for that, and the hit test takes the node
+of the highest rank. Edges and edge labels have no such need and keep slot order.
 
 ## Decision
 
@@ -141,7 +138,8 @@ vertices per query, and choose by zoom between three levels of detail.
   index, at every level, the node of the highest rank among those that hold it; node views take no
   events.
 
-**Out of scope:** the model of node content and how its elements are laid out.
+**Out of scope:** the model of node content and how its elements are laid out, which
+[ADR-0013](0013-node-content-model.md) decides.
 
 ## Alternatives considered
 
@@ -156,9 +154,9 @@ The scene:
   points, and zoomed out, every edge is visible.
 - **`Text` instead of `BitmapText`** — sharper typography, but a canvas draw and a texture upload
   for every change, for every node.
-
-- **Nodes bound in slot order, as ADR-0012 had it** — no rank, but a node added into a freed slot
-  would be drawn beneath nodes in higher slots, where the user expects the new node on top.
+- **Nodes bound in slot order** — no rank, and a node in a higher slot drawn above one in a lower
+  slot, but a node added into a freed slot would be drawn beneath nodes in higher slots, where the
+  user expects the new node on top.
 
 What an edge and a query cost:
 
@@ -234,9 +232,9 @@ What an edge and a query cost:
   the rectangle and comes back, its dash pattern inside may shift when a query moves the chord.
 - Negative / trade-offs: which edges keep full detail past the budget follows slot order, not
   what the user looks at.
-- Follow-ups: the model of node content; whether the host application learns that a mesh was
-  coarsened, which would change the public interface; ordering the edges past the budget by their
-  nearness to the viewport's centre.
+- Follow-ups: whether the host application learns that a mesh was coarsened, which would change
+  the public interface; ordering the edges past the budget by their nearness to the viewport's
+  centre.
 
 ## Enforcement
 

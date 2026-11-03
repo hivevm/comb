@@ -7,49 +7,55 @@
 
 ## Context
 
-Q-1 asks dragging a node, and adding or removing a node or an edge, at 50,000 nodes and 50,000
-edges to draw a frame each refresh of a 60 Hz display. ADR-0027 has a drag keep the query of its
-press and redraw what it moves in a moving layer of its own, from the engine's mesh of the edges at
-the dragged nodes, hidden in the kept query by their ranges; it names an edit of one node as its
-follow-up.
+Q-1 asks dragging a node, and adding or removing a node or an edge, at 50,000 nodes and 50,000 edges
+to draw a frame each refresh of a 60 Hz display, and G-2 asks every edge at the dragged node to
+follow it in the same frame. A drag writes the node's position into the engine's buffer once per
+pointer move ([ADR-0011](0011-store.md)), and the scene binds its views, its particles, and one edge
+mesh to what a query of the engine found ([ADR-0012](0012-virtualized-scene-graph.md)).
 
-The measurement on the maintainer's machine (ticket 17 of revision-2026-10-18,
-`bench/baselines/13th-gen-intel-r-core-tm-i7-13700.json`) found the drag at the fitted view, the
-far level, at a frame, and the edit gesture there at a p95 of 116.7 ms, about seven frames; at the
-near and the middle level the edit held a frame. A profile of it in the Dev Container found every
-edit frame querying the whole far view anew and uploading 15.9 MB, 9.4 MB of it the edge mesh, for
-one node or edge added or removed: the query and its mesh, the WebAssembly ADR-0027 measured at
-about 25 ms a frame for the drag, and the uploads.
+A query of the far view is far more than a frame can hold. A profile of a drag that queries anew
+each frame, at the fitted view at 50,010 nodes, the far level (ticket 07 of revision-2026-10-31),
+found 15.5 MB uploaded a frame, the edge mesh's 9.2 MB and about 6.3 MB of particles, and about
+25 ms of WebAssembly for the query and the mesh, though one node and one edge moved; a pan within
+the margin, which moves the world alone, uploads 0.26 MB. The drag at the fitted view is the
+gesture of the AMD EPYC 7763 that passed its baseline by 27 %. The measurement on the maintainer's
+machine (ticket 17 of revision-2026-10-18, `bench/baselines/13th-gen-intel-r-core-tm-i7-13700.json`)
+found the drag at the fitted view, drawn as decided below, at a frame, and an edit gesture that
+queries anew at a p95 of 116.7 ms there, about seven frames; at the near and the middle level the
+edit held a frame. A profile of it in the Dev Container found every edit frame querying the whole
+far view anew and uploading 15.9 MB, 9.4 MB of it the edge mesh, for one node or edge added or
+removed.
 
-The scene keeps a query only while the store's `nodes` and `edges` stay the arrays it drew and
-`positionsVersion` the counter it drew (`covers` of `packages/comb/src/render/scene.ts`, ADR-0012).
-An edit replaces an array, an added node also increments `positionsVersion` (ADR-0011), and
-ADR-0027 has a change of the graph during a drag query anew. The store replaces the object in a
-slot on an edit that adds or removes, on a change of a node's content or an edge's style or label,
-and when the engine reuses a freed slot (ADR-0023). PixiJS uploads a sub-range of a buffer
-(`Buffer.update(sizeInBytes, offsetInBytes)`); its `ParticleContainer` uploads every particle when
-a property marked static changes, and `packages/comb/src/render/particles.ts` marks every property
+A re-meshed edge rarely keeps its vertex count: its length, its splits at the query's rectangle,
+and its chords change as its node moves, so a range of the one mesh cannot take it in place without
+room to spare.
+
+Apart from what this decision keeps, the scene keeps a query only while the store's `nodes` and
+`edges` stay the arrays it drew and `positionsVersion` the counter it drew (`covers` of
+`packages/comb/src/render/scene.ts`), and every edit replaces an array. The store replaces the
+object in a slot on an edit that adds or removes, on a change of a node's content or an edge's style
+or label, and when the engine reuses a freed slot
+([ADR-0023](0023-the-engine-edits-its-graph-in-place.md)). PixiJS uploads a sub-range of a buffer
+(`Buffer.update(sizeInBytes, offsetInBytes)`); its `ParticleContainer` uploads every particle when a
+property marked static changes, and `packages/comb/src/render/particles.ts` marks every property
 static so that a pan uploads none.
-
-This ADR restates ADR-0027 with edits at the far level, and supersedes it, together with
-ADR-0011, which restates ADR-0011.
 
 ## Decision
 
 We will have the scene keep its query while a drag moves nodes, and at the far level while edits
 add or remove a few slots, drawing in a moving layer what they move or add, and hiding in what the
 query drew what they move or remove, and query anew at the release, past those few slots, or as
-ADR-0012 says.
+[ADR-0012](0012-virtualized-scene-graph.md) says.
 
 - **A drag's signal:** at its first move, interaction writes the slots it drags into the store's
   `dragged`, and clears them at the release; each pointer move increments `movesVersion`, which a
-  kept query survives, and the release increments `positionsVersion` (ADR-0011).
+  kept query survives, and the release increments `positionsVersion` ([ADR-0011](0011-store.md)).
 - **An edit, as the scene sees it:** the slots in which the store's `nodes` and `edges` differ from
   the arrays of the query it keeps, compared slot by slot when either array is a new one since the
   last render, so that several edits within a frame count as the slots they changed. A slot empty
   in the kept query and filled now is added; one filled then and empty now is removed; one filled
   in both by another object, a change of content, style, or label or a slot reused, queries anew.
-  An added node increments no counter (ADR-0011).
+  An added node increments no counter ([ADR-0011](0011-store.md)).
 - **Which edits keep the query:** at the far level, at most 256 changed slots since the query, a
   bound on what the moving layer draws each frame and on the comparison; more, an edit at the near
   or the middle level, a load, an edit that clears the selection, and a removal that ends a drag
@@ -57,19 +63,20 @@ ADR-0012 says.
 - **What is hidden:** in what the query drew, the dragged nodes' edges and the removed edges by
   their ranges of the edge mesh, uploading the one span of indices that covers them; and at the far
   level the dragged and the removed nodes' particles, which uploads every particle once each time
-  that set grows.
+  that set grows. A query made anew during a drag hides the dragged nodes' edges and particles in
+  what it draws as well, and the moving layer stays.
 - **The moving layer, each render while the query is kept:** the engine meshes every edge at the
   dragged nodes and every added edge, each once, as the query meshes an edge, in its rectangle, at
-  its level, relative to its origin, within the mesh budget; the mesh is made anew when the drag
-  moves or the arrays change, and kept otherwise. At the far level the moving layer draws the
-  dragged nodes' particles and above them the added ones, which hold the newest ranks, in slot
-  order, their ranks' but where an edit reused a slot freed since the query. At the near and the
-  middle level a dragged node's view stays where the kept query bound it, keeping its rank
-  (ADR-0023), and moves to the node's position, and the labels of the dragged nodes' edges move to
-  their points (G-6).
+  its level, relative to its origin, within the mesh budget, its edges in slot order; the mesh is
+  made anew when the drag moves or the arrays change, and kept otherwise. At the far level the
+  moving layer draws the dragged nodes' particles and above them the added ones, which hold the
+  newest ranks, in slot order, their ranks' but where an edit reused a slot freed since the query.
+  At the near and the middle level a dragged node's view stays where the kept query bound it,
+  keeping its rank ([ADR-0023](0023-the-engine-edits-its-graph-in-place.md)), and moves to the
+  node's position, and the labels of the dragged nodes' edges move to their points (G-6).
 - **Layers:** the moving edges directly above `edges`, the moving particles directly above
-  `particles` (ADR-0012); a dragged particle drawn above the nodes it passes is the one departure
-  from the order of ranks, until the next query.
+  `particles` ([ADR-0012](0012-virtualized-scene-graph.md)); a dragged particle drawn above the
+  nodes it passes is the one departure from the order of ranks, until the next query.
 - **Inspection:** `draws`, `isDrawn`, and `inspect()` report the moving layer's nodes and edges as
   drawn and the hidden ones as not, against the store's arrays, not the query's; the moving mesh's
   detail joins the query's.
@@ -91,30 +98,49 @@ level (ticket 18 of revision-2026-10-18).
   edits within a frame leave only the last visible to the render that follows.
 - **Dynamic particle colours** — a removed node's particle hidden by its colour alone, but a
   dynamic property uploads every frame, every pan among them.
-- From ADR-0027, for a drag: ranges updated in place with room to spare; the moving layer kept past
-  the release; the engine recording the moves; querying less often, which G-2 refuses; an overlay
-  without hiding, which leaves the old edges drawn.
+- **A drag's ranges updated in place, room to spare** — each edge's range of the one mesh keeps
+  spare vertices and a frame overwrites it; the mesh grows for every edge, and an edge that
+  outgrows its room brings back the full upload it was to avoid.
+- **The moving layer kept past the release** — merged into the kept query, no upload at the
+  release; but the main mesh then holds what no query computed, its coarsening detail and its
+  culling inexact until the next query.
+- **The engine reports the moves** — it records the slots `translate` moved since the last query
+  and the scene asks each frame; the store stays as it is, but the engine keeps state of the
+  shell's rendering.
+- **Query less often during a drag** — every few frames, or past a distance; the dragged node lags
+  the pointer, which G-2 does not allow.
+- **Overlay without hiding** — draw the moved node and edges on top and leave the old ones in the
+  kept query; the old edges stay visible where the node was.
 
 ## Sources / Prior art
 
-- The measurements and profiles of ticket 07 of revision-2026-10-31 and ticket 17 of
+- The measurements and profiles of ticket 07 of revision-2026-10-31 (`docs/plan/`), taken
+  2026-11-01 with `work()` of `comb/testing` and the CPU profile of the page, and of ticket 17 of
   revision-2026-10-18, and `bench/baselines/13th-gen-intel-r-core-tm-i7-13700.json`.
-- ADR-0027, which this restates.
+- PixiJS v8's `ParticleContainer` uploads a property marked static whole when it updates;
+  `packages/comb/src/render/particles.ts` marks every property static.
 - PixiJS v8, `Buffer.update(sizeInBytes, offsetInBytes)` and `ParticleBuffer.update`, in
   `node_modules/pixi.js` 8.22.0 (read 2026-11-01).
 
 ## Consequences
 
 - Positive: a drag frame, and an edit frame at the far level that adds or removes an edge, upload
-  and compute in the size of what they changed, which is what Q-1 asks at 50,000 nodes.
+  and compute in the size of what they changed, which is what Q-1 asks at 50,000 nodes; a drag's
+  first frame and its release cost one partial and one full upload.
+- Positive: a node drag does not query, so a pan or a zoom that follows it starts from a query the
+  drag did not invalidate frame by frame.
 - Negative / trade-offs: an edit that removes a node the query drew uploads every particle once, in
   the size of the far view, about 6.3 MB at the fitted view; the benchmark's gesture removes only
   nodes it added, which the moving layer drew.
+- Negative / trade-offs: the engine's mesh names each edge's range, so that the scene can hide an
+  edge by it, and the store holds a counter of moves and the dragged slots besides the graph
+  ([ADR-0011](0011-store.md)).
 - Negative / trade-offs: the moving layer grows with the edits until the next query, up to 256
   slots, and a second drawing path draws a node and its edges as the kept level does.
 - Negative / trade-offs: a comparison of about 100,000 slots each time an array changes while a
   query is kept.
-- Follow-ups: whether the near and the middle level take the edits' path once they need it.
+- Follow-ups: whether the near and the middle level take the edits' path once they need it;
+  whether a label drag takes the drag's path.
 
 ## Enforcement
 

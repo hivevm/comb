@@ -130,7 +130,7 @@ impl Graph {
     /// `also`, found by a query or not, each once, in ascending order, and into `out` their mesh,
     /// stroked as `query` strokes the edges it found in `rect` at `level` where a screen pixel is
     /// `pixel` world units, relative to `origin`, within the mesh budget: what a drag redraws of
-    /// the nodes it moves (ADR-0027) and an edit of what it added (ADR-0027). A slot of `slots`
+    /// the nodes it moves and an edit of what it added (ADR-0027). A slot of `slots`
     /// that holds no node, or of `also` that holds no edge, refuses the call, and nothing is
     /// written.
     pub fn mesh_at(

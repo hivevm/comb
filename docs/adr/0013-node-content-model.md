@@ -11,8 +11,6 @@ G-10 asks for the host application to describe what a node shows as content elem
 to draw them, and for a click on an element to reach the host application. G-9 names the
 elements its example needs: a title, an icon with a kind, a hypothesis, a progress bar in
 segments, a status badge, values over three periods with a coloured trend, and a "Details" link.
-A node today is a title and a size the host application gives; nothing of it is reported but its
-selection.
 Q-1 asks for 60 fps with 50,000 nodes, Q-4 for geometry exact to 0.5 px, and Q-5 forbids
 interpreting graph data as HTML, script, or URL.
 
@@ -25,6 +23,18 @@ Laying out the elements is geometry: the height of each row, the position of eac
 truncation of text to its column. ADR-0009 puts geometry into the engine, where Q-4 can be tested
 without a browser. Text widths depend on the font, which the shell knows from its `BitmapText`
 fonts (ADR-0012).
+
+What the pointer hits decides what a press and a hover do. G-5 asks that the user selects a node
+or an edge, G-6 that the user drags an edge label, and G-3 starts a connection on a connector
+([ADR-0025](0025-one-connector-per-side.md)); a click on a content element is G-10's. The canvas
+draws, from the bottom, the edges as one mesh in slot order, the nodes in the order of their ranks
+(ADR-0023), the edge labels in slot order, and the connectors (ADR-0012, ADR-0025), and node views
+take no events (ADR-0012). A user expects to grab what they see on top. An edge is a curve, drawn
+one pixel wide at the far level and a few pixels wide nearer, so it can only be hit within a
+tolerance. An edge label is a pill whose width follows its text, which the shell measures with its
+`BitmapText` font and the engine cannot; the query receives only the widest pill's reach, one
+number for all labels (ADR-0010). ADR-0009 keeps geometry out of the shell, and the engine's
+spatial index already holds the nodes, the edges, and the label points.
 
 ## Decision
 
@@ -109,7 +119,7 @@ registers and colours given as numbers.
   identifier; it selects the node as a click on the node does. It reaches the host application
   through `Comb.onContentClick(listener)`, which returns the function that removes the listener,
   as `{ node, row, column, kind, action? }`. A press on a node waits for the slop of a press on an
-  edge (ADR-0013), 4 screen pixels from the press: released within it, the press is a click; once
+  edge (*Hit test*), 4 screen pixels from the press: released within it, the press is a click; once
   the pointer has moved beyond it, the node is dragged from the press and no click is reported.
   The engine's hit test names the element whose rectangle holds the point, of those drawn at the
   level of detail: at *near* every element, at *middle* the texts of role title, at *far* none; a
@@ -140,7 +150,7 @@ registers and colours given as numbers.
 - **No URLs in graph data:** an icon is named, never located; an `action` carries an identifier,
   never a link. The host application turns either into whatever it means. It registers an icon's
   image as an object it has already loaded, never as a URL Comb would fetch (Q-6).
-- **Hit test:** this ADR carries the clauses of ADR-0013, which it supersedes. The engine answers every hit test from its spatial index, in one call that takes a
+- **Hit test:** the engine answers every hit test from its spatial index, in one call that takes a
   world point, the size of a screen pixel, the level of detail, and whether to look for
   connectors, and returns the target drawn on top there: a connector, else an edge label, else a
   node, with the element of its content under the point, else an edge, else none.
@@ -183,12 +193,32 @@ more than one item; hitting an edge's arrowhead apart from its path.
   leave the functional core and need a browser to test.
 - **Icons by URL** — familiar from HTML, but graph data that names a URL is what Q-5 forbids Comb
   to interpret.
+- **The shell hit-tests what it drew** — PixiJS's events on the bound views, or their bounds, know
+  every label's pill, but node views take no events (ADR-0012) and particles have none at all;
+  the order between layers would be the shell's, and the distance to a curve geometry the shell
+  does not hold (ADR-0009).
+- **A label hit by the widest pill's reach** — no extents cross the bridge, but beside a long
+  label every short one would be hit far beyond its pill, grabbing a label where the user meant
+  the empty canvas.
+- **Separate calls per kind** — each simpler, but a press asks up to four times and the shell
+  decides the precedence, so a change of the drawing order has two places to follow.
+- **Edges hit by their bounds** — cheap, but the bounds of a curved edge cover much empty canvas,
+  and the pan the user meant would select an edge.
+- **A node before an edge label** — labels sit on edges between nodes and are drawn above them;
+  where a label overlaps a node, the user sees the label and expects to grab it.
+- **A hit test that names the node alone, and a press on a node that drags at once** — one result
+  per kind, but a click on a content element could not be told from the start of a drag, nor its
+  element found without a second call.
 
 ## Sources / Prior art
 
 - The reference picture the maintainer gave for G-9 (not in the repository).
 - PixiJS v8, `BitmapText` and bitmap fonts —
   <https://pixijs.com/8.x/guides/components/scene-objects/text/bitmap>.
+- `Graph::hit_at` and the query in `crates/engine/src/graph/`, the labels layer in
+  `packages/comb/src/render/labels.ts`, and the press in `packages/comb/src/interaction/`, as they
+  stand (read on 2026-10-24).
+- The layer order and the hit testing of ADR-0012 (*Layers*, *Hit testing*).
 
 ## Consequences
 
@@ -200,9 +230,17 @@ more than one item; hitting an edge's arrowhead apart from its path.
   revision of this ADR.
 - Negative / trade-offs: glyph advances cross the bridge once per font, and a font change means a
   new layout of every node that uses it.
-- Negative / trade-offs: a node's height is no longer the host application's to give; a host that
+- Negative / trade-offs: a node's height is not the host application's to give; a host that
   wants equal heights gives equal content.
-- Follow-ups: kerning and right-to-left text, which glyph advances alone do not cover.
+- Positive: what the user grabs is what they see on top, at every level, from one place that
+  follows the drawing order; edges are selectable, and the sidebar of G-9 can edit them.
+- Negative / trade-offs: a hover flattens the edges near the pointer, a few for most points and
+  every edge of the overflow list whose bounds hold the point; the benchmark's frames show whether
+  that matters (Q-1).
+- Negative / trade-offs: label extents cross the bridge once per label drawn and per change of its
+  text, and the engine keeps two numbers per edge slot for them.
+- Follow-ups: kerning and right-to-left text, which glyph advances alone do not cover; whether the
+  edge tolerance follows the edge's width once edges have widths.
 
 ## Enforcement
 
@@ -222,10 +260,9 @@ string, a URL, an image that has not loaded, and a name no icon can give, and re
 `packages/comb/src/render/icons.test.ts` asserts that the replaced texture is destroyed. Each
 cites this ADR with `Verifies: ADR-0013`, and the first also `Verifies: Q-4`.
 
-The tests of the hit test verify its clauses here too; they cite `Verifies: ADR-0013` until this
-ADR supersedes it:
+The tests of the hit test cite this ADR with `Verifies: ADR-0013` too:
 
-- **Against a scan:** a test of `crates/engine/src/graph.rs` hits random points of random graphs
+- **Against a scan:** a test of `crates/engine/src/graph/hit.rs` hits random points of random graphs
   with labels and connectors, at each level, and asserts the target a brute-force scan finds in
   the order of the decision, the distance to an edge measured to its flattened path.
 - **Precedence:** browser tests in `examples/metric-tree/e2e/` press on a label above a node, on
