@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
 #
 # Builds, tests, and lints Comb: the commands of the README's "Build, Test & Run" (ADR-0008),
-# with the shape of the code (scripts/check-structure.sh, ADR-0028), the decided dependencies
-# (scripts/check-dependencies.sh, ADR-0008, ADR-0034, ADR-0041), the Dev Container's image and
-# reach (scripts/check-container.sh, ADR-0014, ADR-0015), the overview's naming of every
-# entry point (scripts/check-overview.sh, ADR-0001), and the width of comments
-# (scripts/check-comment-width.sh) first, each after its self-test, since they need no toolchain
-# and a red test must not hide them; then the self-test of the check of the engine's freshness
-# (scripts/check-engine.sh), which `bun run test` runs itself; and the bundle budget
-# (scripts/check-bundle.sh, Q-3) last, after its self-test.
+# with the check of the engine's freshness (scripts/check-engine.sh) before the tests, which
+# `bun run test` runs as well, and the bundle budget (scripts/check-bundle.sh, Q-3) last. Both
+# read what the build writes, so they run here, after it, rather than beside it in
+# scripts/check-all.sh, whose checks run side by side; check 9 of scripts/check-docs.sh counts a
+# script this one runs. The checks that need no toolchain, and the self-tests of these two, run
+# on lines of their own in scripts/check-all.sh and in the code job of checks.yml.
 #
 # Needs Bun, Rust with the wasm32-unknown-unknown target, and Chromium for Playwright, as the Dev
 # Container provides them (ADR-0014). Where Bun or Cargo is missing it fails and says so: a gate
@@ -16,26 +14,13 @@
 #
 # Usage:
 #     scripts/check-code.sh
-# Exit code 0 when the structure, the dependencies, the container, the overview, the comment
-# width, the self-test of the engine check, the build, the lint, the tests, and the bundle budget
+# Exit code 0 when the build, the lint, the engine's freshness, the tests, and the bundle budget
 # pass, non-zero at the first that fails.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-
-bash scripts/test-check-structure.sh
-bash scripts/check-structure.sh
-bash scripts/test-check-dependencies.sh
-bash scripts/check-dependencies.sh
-bash scripts/test-check-container.sh
-bash scripts/check-container.sh
-bash scripts/test-check-overview.sh
-bash scripts/check-overview.sh
-bash scripts/test-check-comment-width.sh
-bash scripts/check-comment-width.sh
-bash scripts/test-check-engine.sh
 
 missing=()
 for tool in bun cargo; do
@@ -49,7 +34,7 @@ fi
 bun install --frozen-lockfile
 bun run build
 bun run lint
+bash scripts/check-engine.sh
 bun run test
-bash scripts/test-check-bundle.sh
 bash scripts/check-bundle.sh
-echo "Structure, dependencies, container, overview, comment width, engine check, build, lint, tests, and bundle budget passed."
+echo "Build, lint, engine, tests, and bundle budget passed."

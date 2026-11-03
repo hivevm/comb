@@ -6,9 +6,9 @@
 > is updated in the same change as the structure it describes
 > ([ADR-0001](adr/0001-agent-governance-model.md)).
 >
-> **Last design revision:** 2026-11-02, due after 20 changes. The revision that ran moves the
-> date; the number is this project's to set; a sensor counts the changes outside `docs/` since
-> the commit that set the date and says when the next is due
+> **Last design revision:** 2026-11-02, due after 20 changes. The revision that took the count
+> moves the date; the number is this project's to set; a sensor counts the changes outside
+> `docs/` since the commit that set the date and says when the next is due
 > ([ADR-0006](adr/0006-feature-layer.md)).
 
 ## Context
@@ -577,11 +577,11 @@ guard, `createComb`, and the calls of `Comb` that need the engine throw an `Engi
 (ADR-0021). The frame that finds the engine lost stops rendering and resolves its waiters, and
 input handlers do nothing, so no trap escapes as a page error.
 
-**Holding the shape.** `scripts/check-code.sh`, which `scripts/check-all.sh` runs and the **Checks**
-workflow (`.github/workflows/checks.yml`) runs on every pull request, runs the structural, the
-dependency, the container, the overview, and the comment width checks below with their
-self-tests and the self-test of the engine check, then the build, the lint, and the tests, then the
-bundle check with its self-test.
+**Holding the shape.** `scripts/check-all.sh` and the **Checks** workflow
+(`.github/workflows/checks.yml`), on every pull request, run the structural, the dependency, the
+container, the overview, and the comment width checks below, each after its self-test, the
+self-tests of the engine and the bundle checks, and `scripts/check-code.sh`, which runs the build,
+the lint, the engine check, the tests, and then the bundle check.
 `scripts/check-engine.sh`, which `bun run test`, `bun run dev`, and the bundle check run first,
 fails when `engine_bg.wasm` of `packages/comb/wasm/` or of `packages/comb/wasm/test-mode/` is
 missing or older than a file under `crates/` other than those no build reads (the list of surviving
