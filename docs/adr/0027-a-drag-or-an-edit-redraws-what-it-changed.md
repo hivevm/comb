@@ -111,6 +111,10 @@ level (ticket 18 of revision-2026-10-18).
   the pointer, which G-2 does not allow.
 - **Overlay without hiding** — draw the moved node and edges on top and leave the old ones in the
   kept query; the old edges stay visible where the node was.
+- **The dragged slots named at the press** — the hiding and the moving layer begin before the
+  pointer moves, but a press within the slop is a click on the node or one of its elements, not
+  a drag ([ADR-0013](0013-node-content-model.md)), and would hide and upload for a gesture that
+  moves nothing.
 
 ## Sources / Prior art
 

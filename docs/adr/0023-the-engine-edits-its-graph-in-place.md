@@ -10,9 +10,9 @@
 G-1, G-3, and G-4 ask for nodes and edges to be added and removed one by one: the host
 application adds a node or an edge, the user connects two nodes or deletes the selection. A
 load builds the whole graph: the node and edge buffers, the lists of edges at each node, and both
-grids of the spatial index, each sized for the items it was built with. Built as one packed array
-(`offsets` and `incident`), the lists of edges take no item in or out, so changing the graph's
-structure through a load means building all of it again.
+grids of the spatial index, each sized for the items it was built with. Lists of edges built as
+one packed array (`offsets` and `incident`) would take no item in or out, so that changing the
+graph's structure through a load would mean building all of it again.
 
 Q-1 asks for 60 fps with 50,000 nodes and 50,000 edges. A load of that graph takes a good part of
 Q-2's second, so an edit that reloads costs that much per edit, and a host application that adds

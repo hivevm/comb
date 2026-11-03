@@ -57,15 +57,16 @@ whose only door to the engine is its `bridge` module.
 - **Bridge:** `crates/engine-wasm` holds every `#[wasm_bindgen]` export and converts between the
   bridge's data and the core's types; it holds no geometry of its own. It is the one place that
   validates graph data: every field the host application hands over crosses the bridge and is
-  checked there, also a field the engine does not keep, such as a title, a label's text, a
-  label's background, and the patch of `updateNode`. It bounds what a load may hold: at most
-  1,000,000 nodes and 1,000,000 edges, at most 256 UTF-16 code units per identifier (a node's or
-  an edge's, a source, a target), at most 64,000,000 code units of identifiers per load, at
-  most 1,000 code units per title and per label text, and a graph within the world's limit, as
-  *World* says: it refuses a node whose coordinate or far side, `x + width` or `y + height` as
-  `f32` holds them, lies more than 2^120 world units from the origin, and a label offset beyond
-  that, as `addNode`, `addEdge`, and `updateEdge` hand them over too, with the kind
-  `beyondWorld`, which names the list, the node or edge, the field, and the limit.
+  checked there, also a field the engine does not keep, such as a label's text, a label's
+  background, and the patch of `updateNode`. It bounds what a load may hold: at most 1,000,000
+  nodes and 1,000,000 edges, at most 256 UTF-16 code units per identifier (a node's or an
+  edge's, a source, a target), at most 64,000,000 code units of identifiers per load, at most
+  1,000 code units per text of content, a title among them, and per label text, and a graph
+  within the world's limit, as *World* says: it refuses a node whose coordinate or far side,
+  `x + width` or `y + height` as `f32` holds them, lies more than 2^120 world units from the
+  origin, and a label offset beyond that, as `addNode`, `addEdge`, and `updateEdge` hand them
+  over too, with the kind `beyondWorld`, which names the list, the node or edge, the field, and
+  the limit.
 - **World:** the core keeps the graph within the world's limit, `WORLD_LIMIT`, 2^120 world units of
   the origin on each axis, so that every point it derives from the graph, a connector, a control
   point, a vertex, a label point, and every coordinate it writes relative to a query's origin, stays
