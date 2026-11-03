@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([ADR-0001](adr/0001-agent-governance-model.md)).
 >
-> **Last design revision:** 2026-11-02, due after 20 changes. The revision that took the count
+> **Last design revision:** 2026-11-03, due after 20 changes. The revision that took the count
 > moves the date; the number is this project's to set; a sensor counts the changes outside
 > `docs/` since the commit that set the date and says when the next is due
 > ([ADR-0006](adr/0006-feature-layer.md)).
@@ -222,12 +222,14 @@ The functional core and its shell follow
   `originY` read ([ADR-0010](adr/0010-bridge-data-format.md)), and returns the mesh's
   detail, complete or coarsened, and refuses a pixel that is not a finite number above zero,
   with where each found edge's indices start in the mesh (`meshEdgeStarts…`); `meshAt` meshes the
-  edges at given node slots in the rectangle, at the level, and at the pixel of the query the
-  scene keeps, relative to its origin, into a mesh of their own, their slots in `movingEdges…`,
-  refuses a slot that holds no node and a pixel as `query` does, and returns the mesh's detail
+  edges at given node slots and the given edge slots, each once, in the rectangle, at the level,
+  and at the pixel of the query the scene keeps, relative to its origin, into a mesh of their own,
+  their slots in `movingEdges…`, refuses a slot that holds no node or no edge and a pixel as
+  `query` does, and returns the mesh's detail
   (ADR-0027); `meshPtr` and `meshLen` read a buffer of either mesh, the query's or the moving
   layer's, by a `MeshBuffer`, so that the shell reads both through one function;
-  `drawnEdges` computes the ends of the found edges when inspection asks, as they lie then, and
+  `drawnEdges` computes the ends of the found edges and of the moving mesh's when inspection
+  asks, as they lie then, and
   `hit` names what a press at a point hits, a connector where the shell asks for connectors, a
   label, a node, or an edge by its slot, or nothing, as one generated value, and refuses a pixel as
   `query` does and a point that is not finite;
@@ -459,8 +461,10 @@ The functional core and its shell follow
   WebGL2 and none of Comb's code. `bench/compare.ts` compares the median of several runs with
   the baseline of the runner's kind, the CPU model the run records, in `bench/baselines/`, with a
   margin of 25 %, reports a gesture the baseline lacks as `no baseline` without judging it,
-  refuses a run on a kind without a baseline, and refuses a run whose reference
-  differs from its kind's baseline by more than 25 % in a part; a kind's baseline is the median of
+  refuses a run on a kind without a baseline, a run whose reference differs from its kind's
+  baseline by more than 25 % in a part, a run of another size, mode, or GPU or of none named, a
+  run of an attached browser against a launched baseline or the reverse, a run of another CPU
+  slowdown factor, and a median of runs that differ in these; a kind's baseline is the median of
   three runs on a GitHub runner of that kind on `main`; the **Benchmark** workflow
   (`.github/workflows/benchmark.yml`) runs the benchmark three times and compares on a GitHub
   runner, weekly and on demand, within 45 minutes.
@@ -477,7 +481,8 @@ lowered; the hit test held to one scan of every kind, whose oracle, `Model` of `
 computes bounds, connectors, paths, and label points from the inputs the test gave the graph and
 reads nothing of it; Bun tests beside their module as `*.test.ts`, the bridge's against the built
 WebAssembly module, the lint's rules for Comb's library sources in `packages/comb/src/lint.test.ts`,
-and those of `bench/compare.ts`, `bench/chromium.ts`, and `bench/fitted.ts` beside them, with
+and those of `bench/compare.ts`, `bench/chromium.ts`, `bench/options.ts`, and `bench/fitted.ts`
+beside them, with
 `bench/content.test.ts` of the content the benchmark names as loaded; browser
 tests under `examples/*/e2e`, a file for the golden path and one for each concern they verify,
 sharing their helpers through `e2e/shared.ts` (a graph loaded as the example's own through
@@ -578,10 +583,13 @@ guard, `createComb`, and the calls of `Comb` that need the engine throw an `Engi
 input handlers do nothing, so no trap escapes as a page error.
 
 **Holding the shape.** `scripts/check-all.sh` and the **Checks** workflow
-(`.github/workflows/checks.yml`), on every pull request, run the structural, the dependency, the
+(`.github/workflows/checks.yml`), on every pull request, run the template's checks (the
+documentation, plan modes, traceability, and Dev Container checks, the sensors, the shell lint,
+and the self-tests of the check runner and the hooks), the structural, the dependency, the
 container, the overview, and the comment width checks below, each after its self-test, the
-self-tests of the engine and the bundle checks, and `scripts/check-code.sh`, which runs the build,
-the lint, the engine check, the tests, and then the bundle check.
+self-tests of the engine, the bundle, and the mutants checks, and `scripts/check-code.sh`, which
+runs the build, the lint, the tests, and then the bundle check; the `pre-commit` and `pre-push`
+hooks run `scripts/check-all.sh --changed`, as the README's Git hooks say.
 `scripts/check-engine.sh`, which `bun run test`, `bun run dev`, and the bundle check run first,
 fails when `engine_bg.wasm` of `packages/comb/wasm/` or of `packages/comb/wasm/test-mode/` is
 missing or older than a file under `crates/` other than those no build reads (the list of surviving
@@ -620,7 +628,9 @@ workflow run beside `scripts/check-code.sh`, fails on a host Docker socket mount
 referenced by its major tag alone, or a lock that does not name the Features (ADR-0004).
 `scripts/check-container.sh` fails where the Dev Container does not build from its Dockerfile,
 where the Dockerfile names an image without a digest, or where a Feature installs Node.js
-(ADR-0014), and on a Feature that brings a container engine or a Compose file (ADR-0015); the
+(ADR-0014), on a Feature that brings a container engine or a Compose file (ADR-0015), and where
+the container does not reach the host by `--add-host=host.docker.internal:host-gateway` or does
+not forward port 4173, which the benchmark on the host needs (ADR-0028); the
 workflow `.github/workflows/devcontainer.yml` builds the container and asserts the pinned Bun,
 Cargo with the WebAssembly target, and no Node.js inside it (ADR-0014). The type checker does the
 rest for the render layer: `GraphView` has no action to call. ESLint forbids the DOM markup sinks
