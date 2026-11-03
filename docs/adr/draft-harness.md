@@ -1,6 +1,6 @@
 # ADR-draft-harness: One agent implements, a fresh session reviews, and the protected parts stay with the maintainer
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-03
 - **Deciders:** Markus Brigl
 - **Applies to:** every change and every agent session in this repository, `docs/adr/`, `docs/SPECIFICATION.md`, `.github/CODEOWNERS`, and the tickets under `docs/plan/`
