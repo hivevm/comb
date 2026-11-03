@@ -226,8 +226,9 @@ The functional core and its shell follow
   and at the pixel of the query the scene keeps, relative to its origin, into a mesh of their own,
   their slots in `movingEdges…`, refuses a slot that holds no node or no edge and a pixel as
   `query` does, and returns the mesh's detail
-  (ADR-0027); `meshPtr` and `meshLen` read a buffer of either mesh, the query's or the moving
-  layer's, by a `MeshBuffer`, so that the shell reads both through one function;
+  (ADR-0027); `meshPtr` and `meshLen` read a buffer of either mesh, named by a `MeshOf`, the
+  query's or the moving layer's, by a `MeshBuffer`, so that the shell reads both through one
+  function;
   `drawnEdges` computes the ends of the found edges and of the moving mesh's when inspection
   asks, as they lie then, and
   `hit` names what a press at a point hits, a connector where the shell asks for connectors, a

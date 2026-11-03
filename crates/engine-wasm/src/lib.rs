@@ -328,8 +328,17 @@ pub struct RectInput {
     pub max_y: f64,
 }
 
-/// A buffer of an edge mesh, which `meshPtr` and `meshLen` read of the query's mesh or the moving
-/// layer's (ADR-0027).
+/// One of the engine's two edge meshes, which `meshPtr` and `meshLen` read (ADR-0027): the last
+/// query's, which `query` writes, or the moving layer's, of the edges at the nodes a drag moves
+/// and of those an edit at the far level added, which `meshAt` writes.
+#[wasm_bindgen]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MeshOf {
+    Query,
+    Moving,
+}
+
+/// A buffer of an edge mesh, which `meshPtr` and `meshLen` read of the mesh a `MeshOf` names.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MeshBuffer {
@@ -428,7 +437,8 @@ pub struct Engine {
     content_rects: Vec<f32>,
     /// The role and the drawn text of each element of `placed`.
     drawn: Drawn,
-    /// The edges at the nodes a drag moves, and their mesh, which `meshAt` writes (ADR-0027).
+    /// The edges at the nodes a drag moves and those an edit at the far level added, and their
+    /// mesh, which `meshAt` writes (ADR-0027).
     moving_edges: Vec<u32>,
     moving: Mesh,
     /// The slots of the edges `drawnEdges` computed the ends of.
@@ -886,13 +896,11 @@ impl Engine {
 }
 
 impl Engine {
-    /// The edge mesh `meshPtr` and `meshLen` read: the moving layer's where `moving`, else the
-    /// last query's.
-    fn mesh_of(&self, moving: bool) -> &Mesh {
-        if moving {
-            &self.moving
-        } else {
-            &self.visible.mesh
+    /// The edge mesh `meshPtr` and `meshLen` read of `of`.
+    fn mesh_of(&self, of: MeshOf) -> &Mesh {
+        match of {
+            MeshOf::Query => &self.visible.mesh,
+            MeshOf::Moving => &self.moving,
         }
     }
 
@@ -1336,12 +1344,12 @@ impl Engine {
         self.moving_edges.len()
     }
 
-    /// Where the buffer `buffer` of an edge mesh starts: the last query's, which `query` writes, or
-    /// where `moving`, the moving layer's, which `meshAt` writes (ADR-0027). Fresh per read, since
+    /// Where the buffer `buffer` of the edge mesh `of` starts: the last query's, which `query`
+    /// writes, or the moving layer's, which `meshAt` writes (ADR-0027). Fresh per read, since
     /// growing memory moves it (ADR-0010).
     #[wasm_bindgen(js_name = meshPtr)]
-    pub fn mesh_ptr(&self, moving: bool, buffer: MeshBuffer) -> *const u8 {
-        let mesh = self.mesh_of(moving);
+    pub fn mesh_ptr(&self, of: MeshOf, buffer: MeshBuffer) -> *const u8 {
+        let mesh = self.mesh_of(of);
         match buffer {
             MeshBuffer::Positions => mesh.positions.as_ptr().cast(),
             MeshBuffer::Distances => mesh.distances.as_ptr().cast(),
@@ -1354,8 +1362,8 @@ impl Engine {
     /// How many values the buffer `buffer` of that edge mesh holds: two per vertex of positions
     /// and of dashes, one of distances and of colours, three indices per triangle.
     #[wasm_bindgen(js_name = meshLen)]
-    pub fn mesh_len(&self, moving: bool, buffer: MeshBuffer) -> usize {
-        let mesh = self.mesh_of(moving);
+    pub fn mesh_len(&self, of: MeshOf, buffer: MeshBuffer) -> usize {
+        let mesh = self.mesh_of(of);
         match buffer {
             MeshBuffer::Positions => mesh.positions.len(),
             MeshBuffer::Distances => mesh.distances.len(),
@@ -2168,7 +2176,7 @@ mod tests {
         let rect = [-100.0, -100.0, 500.0, 300.0];
         let engine = detail_of(&small, rect, DetailLevel::Near, 1.0);
         assert_eq!(engine.visible.mesh.detail, Detail::Complete);
-        assert!(engine.mesh_len(false, MeshBuffer::Distances) > 4);
+        assert!(engine.mesh_len(MeshOf::Query, MeshBuffer::Distances) > 4);
         // 1,000 nodes, 40 a row, 400 apart and 300 down; each edge from a node to one in another
         // row, so that it bends.
         let ids: Vec<String> = (0..1_000).map(|n| format!("n{n}")).collect();
@@ -2198,8 +2206,8 @@ mod tests {
         let engine = detail_of(&large, whole, DetailLevel::Far, 18_000.0 / 1_440.0);
         assert_eq!(engine.visible.edges.len(), MAX_ITEMS as usize);
         assert_eq!(engine.visible.mesh.detail, Detail::Coarsened);
-        assert!(engine.mesh_len(false, MeshBuffer::Distances) <= MESH_BUDGET as usize);
-        assert!(engine.mesh_len(false, MeshBuffer::Indices) <= 3 * MESH_BUDGET as usize);
+        assert!(engine.mesh_len(MeshOf::Query, MeshBuffer::Distances) <= MESH_BUDGET as usize);
+        assert!(engine.mesh_len(MeshOf::Query, MeshBuffer::Indices) <= 3 * MESH_BUDGET as usize);
     }
 
     #[test]
@@ -2296,6 +2304,6 @@ mod tests {
         // The least pixel there is: accepted, and the budget bounds what it flattens.
         let least = engine.query_rect(&rect, DetailLevel::Near, f64::MIN_POSITIVE, 0.0);
         assert_eq!(least, Ok(MeshDetail::Coarsened));
-        assert!(engine.mesh_len(false, MeshBuffer::Distances) <= MESH_BUDGET as usize);
+        assert!(engine.mesh_len(MeshOf::Query, MeshBuffer::Distances) <= MESH_BUDGET as usize);
     }
 }

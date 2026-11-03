@@ -172,9 +172,10 @@ impl Graph {
     }
 }
 
-/// Where `mesh_at` strokes the edges at the nodes a drag moves: in the rectangle, at the level,
-/// and where a screen pixel is the pixel's world units of the query the scene keeps, relative to
-/// its origin (ADR-0027).
+/// Where an edge mesh is stroked: for `mesh_at`, the edges at the nodes a drag moves and the
+/// edges an edit at the far level added, in the rectangle, at the level, and where a screen pixel
+/// is the pixel's world units of the query the scene keeps, relative to its origin (ADR-0027);
+/// for a query, its own.
 #[derive(Clone, Copy, Debug)]
 pub struct MeshAt {
     pub rect: Rect,
