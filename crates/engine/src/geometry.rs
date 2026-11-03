@@ -23,6 +23,32 @@ pub(crate) fn bounded_pixel(pixel: f64) -> f64 {
     pixel.min(PIXEL_LIMIT)
 }
 
+/// Below this, the squares of `length` may underflow, and it asks `hypot` instead.
+const LENGTH_FLOOR: f64 = 1e-150;
+
+/// The length of the vector `(dx, dy)`, as `f64::hypot` gives it within a few units in the last
+/// place, without its cost: WebAssembly has no fused multiply-add, and libm's `hypot` emulates
+/// one in software. The squares cannot overflow for a vector between two points within three
+/// times `WORLD_LIMIT`, nor for one from a pressed point to a path or connector, which a hit test
+/// measures only once the point lies within the reach of a `PIXEL_LIMIT` of their bounds; where
+/// they may underflow, the length is `hypot`'s.
+pub(crate) fn length(dx: f64, dy: f64) -> f64 {
+    let length = (dx * dx + dy * dy).sqrt();
+    if length >= LENGTH_FLOOR {
+        length
+    } else {
+        tiny_length(dx, dy)
+    }
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "only for a length whose squares may underflow, which is rare and needs its accuracy"
+)]
+fn tiny_length(dx: f64, dy: f64) -> f64 {
+    dx.hypot(dy)
+}
+
 /// A point in world coordinates.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Point {
@@ -313,7 +339,7 @@ impl EdgePath {
             self.control_target.y,
             self.target.y,
         );
-        let length = dx.hypot(dy);
+        let length = length(dx, dy);
         if length < f64::EPSILON {
             Point::new(1.0, 0.0)
         } else {
@@ -374,6 +400,20 @@ mod tests {
 
     fn straight() -> EdgePath {
         EdgePath::horizontal(Point::new(0.0, 0.0), Point::new(200.0, 0.0), 10.0)
+    }
+
+    #[test]
+    fn a_length_holds_where_its_squares_would_underflow() {
+        // Decides no criterion: it pins `length` where its squares alone would give 0, as a hit
+        // test at a pixel of 1e-200 asks; the expected lengths are worked out by hand.
+        assert_eq!(length(3.0, 4.0), 5.0);
+        assert_eq!(length(-1e-170, 0.0), 1e-170);
+        assert_eq!(length(0.0, 2e-300), 2e-300);
+        let tiny = length(3e-160, 4e-160);
+        assert!(
+            (tiny - 5e-160).abs() <= 4.0 * f64::EPSILON * 5e-160,
+            "{tiny}"
+        );
     }
 
     #[test]

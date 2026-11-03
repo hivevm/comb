@@ -2,7 +2,7 @@
 //! node, and an edge.
 
 use super::{Graph, Level};
-use crate::geometry::{Point, Rect, Side, bounded_pixel};
+use crate::geometry::{Point, Rect, Side, bounded_pixel, length};
 use crate::stroke::{Stroke, near_path};
 
 /// The four sides, each with a connector.
@@ -109,7 +109,7 @@ impl Graph {
                 .iter()
                 .map(|&side| {
                     let c = side.connector(&bounds);
-                    (side, (c.x - point.x).hypot(c.y - point.y))
+                    (side, length(c.x - point.x, c.y - point.y))
                 })
                 .filter(|&(_, d)| d <= reach)
                 .min_by(|a, b| a.1.total_cmp(&b.1));

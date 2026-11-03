@@ -1,2 +1,8 @@
 too-many-lines-threshold = 80
 cognitive-complexity-threshold = 15
+# WebAssembly has no fused multiply-add: libm's `hypot` and `mul_add` emulate one in software. The
+# engine measures a length with `geometry::length`.
+disallowed-methods = [
+  { path = "f64::hypot", reason = "emulated in software on WebAssembly; use geometry::length" },
+  { path = "f64::mul_add", reason = "emulated in software on WebAssembly; write a * b + c" },
+]

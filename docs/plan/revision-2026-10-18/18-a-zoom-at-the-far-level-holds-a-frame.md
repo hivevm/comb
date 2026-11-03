@@ -21,6 +21,21 @@ might keep a far query across any zoom within the level, as might a query spread
 narrower `RESCALE` with a smaller mesh. Which, if any, is a decision on the levels of detail
 (ADR-0027) for the maintainer, with a profile on the maintainer's machine first.
 
+## Where it stands
+
+A profile in the Dev Container (headless Chromium, SwiftShader, the CPU unthrottled) of the
+benchmark's zoom at the far level and from the fitted view, with `performance.measure` around the
+parts of `Scene.query` and the engine built with its function names, found the frames that query
+spending nearly all their time in the engine's `query`, 13 to 27 ms, against about 1 ms to sync
+the views and the edges; the upload of about 6 MB follows in the next frame. Of the engine's time,
+about 62 % was `f64::hypot` of libm, which WebAssembly, having no fused multiply-add, runs with an
+emulated one. The engine now measures a length with `geometry::length`, and Clippy refuses
+`f64::hypot` and `f64::mul_add` outside the tests: the engine's query of those frames takes 4 to
+5 ms, its mesh and the uploads unchanged.
+
+Open: the profile on the maintainer's machine, before and after, deferred by the maintainer; only
+where the zooms still miss Q-1 there are the alternatives above weighed.
+
 ## Acceptance criteria
 
 - [ ] Given a zoom at the far level at 50,010 nodes, when it is profiled on the maintainer's

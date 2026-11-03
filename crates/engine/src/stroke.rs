@@ -25,7 +25,7 @@
 
 use std::collections::TryReserveError;
 
-use crate::geometry::{EdgePath, Point, Rect};
+use crate::geometry::{EdgePath, Point, Rect, length};
 use crate::graph::Level;
 
 /// The most vertices the edge mesh of one query holds (ADR-0027): the floors of a load at its
@@ -419,7 +419,7 @@ impl Mesh {
         for (i, &point) in points.iter().enumerate() {
             if i > 0 {
                 let previous = points[i - 1];
-                distance += (point.x - previous.x).hypot(point.y - previous.y);
+                distance += length(point.x - previous.x, point.y - previous.y);
             }
             let (nx, ny) = normal_at(points, i);
             let first = self.vertex_count();
@@ -507,7 +507,7 @@ fn rgba(color: u32) -> u32 {
 }
 
 fn unit(dx: f64, dy: f64) -> Option<(f64, f64)> {
-    let length = dx.hypot(dy);
+    let length = length(dx, dy);
     (length > f64::EPSILON).then(|| (dx / length, dy / length))
 }
 
@@ -549,8 +549,8 @@ fn trim_end(points: &mut Vec<Point>, base: Point) {
 /// Whether a point lies within the arrowhead from `tip` back to `base`: no farther from the tip
 /// than the base.
 fn reach(tip: Point, base: Point) -> impl Fn(&Point) -> bool {
-    let reach = (base.x - tip.x).hypot(base.y - tip.y);
-    move |p: &Point| (p.x - tip.x).hypot(p.y - tip.y) <= reach
+    let reach = length(base.x - tip.x, base.y - tip.y);
+    move |p: &Point| length(p.x - tip.x, p.y - tip.y) <= reach
 }
 
 /// Writes into `out`, after clearing it, the points of `path` flattened so that no point of the
@@ -683,7 +683,7 @@ pub(crate) fn distance_to_segment(p: Point, a: Point, b: Point) -> f64 {
     } else {
         0.0
     };
-    (p.x - a.x - t * dx).hypot(p.y - a.y - t * dy)
+    length(p.x - a.x - t * dx, p.y - a.y - t * dy)
 }
 
 /// How far the control points of `path` lie from its chord, the segment between its ends, at
