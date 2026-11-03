@@ -30,3 +30,4 @@
 /scripts/test-check-*.sh @mbrigl
 /scripts/test-sensor-*.sh @mbrigl
 /scripts/test-git-hooks.sh @mbrigl
+/scripts/lib/ @mbrigl
