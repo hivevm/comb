@@ -12,6 +12,13 @@ export const FAR_SELECTED_COLOR = 0x3b82f6;
 /** No node hidden. */
 const NONE_HIDDEN: ReadonlySet<number> = new Set();
 
+/** Shows `particle` opaque in `tint`, setting each only where it changes: PixiJS converts a tint
+ *  anew on every set, and a query at the far level syncs every node. */
+function shown(particle: Particle, tint: number): void {
+  if (particle.tint !== tint) particle.tint = tint;
+  if (particle.alpha !== 1) particle.alpha = 1;
+}
+
 /** The particles layer: a pooled particle for every node slot it is given. */
 export class NodeParticles extends ParticleContainer {
   private readonly pool: Particle[] = [];
@@ -59,8 +66,7 @@ export class NodeParticles extends ParticleContainer {
       const particle = (this.pool[i] ??= this.made());
       const isSelected = node.id === selected;
       if (isSelected) this.highlighted = node.id;
-      particle.tint = isSelected ? FAR_SELECTED_COLOR : FAR_NODE_COLOR;
-      particle.alpha = 1;
+      shown(particle, isSelected ? FAR_SELECTED_COLOR : FAR_NODE_COLOR);
       particle.x = positions[slot * 2]!;
       particle.y = positions[slot * 2 + 1]!;
       const height = sizes[slot * 2 + 1]!;
