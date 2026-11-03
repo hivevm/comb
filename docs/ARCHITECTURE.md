@@ -226,8 +226,9 @@ The functional core and its shell follow
   and at the pixel of the query the scene keeps, relative to its origin, into a mesh of their own,
   their slots in `movingEdges…`, refuses a slot that holds no node or no edge and a pixel as
   `query` does, and returns the mesh's detail
-  (ADR-0027); `meshPtr` and `meshLen` read a buffer of either mesh, the query's or the moving
-  layer's, by a `MeshBuffer`, so that the shell reads both through one function;
+  (ADR-0027); `meshPtr` and `meshLen` read a buffer of either mesh, named by a `MeshOf`, the
+  query's or the moving layer's, by a `MeshBuffer`, so that the shell reads both through one
+  function;
   `drawnEdges` computes the ends of the found edges and of the moving mesh's when inspection
   asks, as they lie then, and
   `hit` names what a press at a point hits, a connector where the shell asks for connectors, a
@@ -326,10 +327,12 @@ The functional core and its shell follow
   from interaction: a `world` render group with the layers `EdgesContainer` (`edges.ts`),
   `NodeParticles` (`particles.ts`), `NodesContainer` (`nodes.ts`), `LabelsContainer` (`labels.ts`),
   and `ConnectorsLayer` (`connectors.ts`), the moving layer of a drag and of edits at the far
-  level, a second `EdgesContainer` directly above the edges and a second `NodeParticles` directly
-  above the particles
-  ([ADR-0027](adr/0027-a-drag-or-an-edit-redraws-what-it-changed.md)), whose edits `edits.ts`
-  reads from the store's arrays against the kept query's, with the connectors of the node under the
+  level, `MovingLayer` (`moving.ts`), whose second edges layer stands directly above the edges and
+  whose second `NodeParticles` directly above the particles
+  ([ADR-0027](adr/0027-a-drag-or-an-edit-redraws-what-it-changed.md)), which holds the state of
+  that drawing, reads the edits through `edits.ts` from the store's arrays against the kept
+  query's, tells the scene whether its query survives them, hides in the query's layers what moved
+  or was removed, and answers inspection for what it drew, with the connectors of the node under the
   pointer and, while the user connects, of the source and the node under the pointer, and an
   `overlay` with the line of the connection being dragged, to the pointer `api` hands each render
   from interaction ([ADR-0012](adr/0012-virtualized-scene-graph.md)); `bindings.ts`
@@ -349,7 +352,10 @@ The functional core and its shell follow
   mesh with a shader that leaves out the gaps of dash patterns; on the Canvas 2D renderer a host
   application opts into ([ADR-0018](adr/0018-webgl2-or-an-opted-in-canvas-fallback.md)), which runs
   no shader, `EdgeFill` (`render/edges-canvas.ts`) takes its place, builds no mesh, and fills the
-  same triangles into one `Graphics`, one fill per run of one colour, dash patterns solid. A node
+  same triangles into one `Graphics`, one fill per run of one colour, dash patterns solid; both are
+  an `EdgeLayer`, which the scene and the moving layer draw and hide edges in alike. The mesh
+  remembers that a sync marked its whole index buffer for upload until PixiJS next draws it, so
+  that a hide in between keeps that mark, since WebGL uploads by the range marked last. A node
   view draws its box and its content ([ADR-0013](adr/0013-node-content-model.md)): each text a
   pooled `BitmapText` of its role's style where the query placed it, cut where the engine cut it and
   followed by an ellipsis, a badge's on its pill, which one `Graphics` per view draws of the colour
@@ -409,7 +415,9 @@ The functional core and its shell follow
   scene's transform between world and screen; `hitKind` names what a press at a screen point hits,
   asking interaction's hit test from the viewport a press reads, which is the drawn one once
   `whenRendered` resolves, connectors only where the Comb lets the user connect; `isDrawn` finds
-  whether one node or edge is drawn without building every drawn view, as `inspect` does;
+  whether one node or edge is drawn without building every drawn view, as `inspect` does, an
+  edge from the slots the scene holds, the query's and the moving layer's, without asking the
+  engine;
   `showLayers` hides layers for a reference image;
   `sceneNumbers` gives the numbers the scene draws by (where the levels of detail begin, the culling
   margin, the label reach, the rescale); `work` counts what the canvas did: GPU buffers created and

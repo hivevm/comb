@@ -23,6 +23,7 @@ import init, {
   initSync,
   MeshBuffer,
   MeshDetail,
+  MeshOf,
   NodeField,
   type ContentElement,
   type InitOutput,
@@ -189,9 +190,10 @@ export interface Visible {
   origin: { x: number; y: number };
 }
 
-/** What `meshAt` meshed: the slots of the edges at the nodes a drag moves, in ascending order,
- *  their mesh relative to the last query's origin, and its detail (ADR-0027). Fresh views; do not
- *  keep them across calls. */
+/** What `meshAt` meshed for the moving layer: the slots of the edges at the nodes a drag moves
+ *  and of those an edit at the far level added, each once, in ascending order, their mesh
+ *  relative to the last query's origin, and its detail (ADR-0027). Fresh views; do not keep them
+ *  across calls. */
 export interface Moving {
   edges: Uint32Array;
   mesh: EdgeMesh;
@@ -208,8 +210,8 @@ const LEVELS: Record<Level, DetailLevel> = {
   far: DetailLevel.Far,
 };
 
-/** The edges the last query found, by slot, with the point each leaves its source and enters
- *  its target, `x, y` each. */
+/** The edges the last query found and those the moving layer's mesh holds, of a drag and of
+ *  edits, by slot, with the point each leaves its source and enters its target, `x, y` each. */
 export interface DrawnEdges {
   slots: Uint32Array;
   ends: Float32Array;
@@ -321,10 +323,10 @@ export interface Bridge {
   /** The edges at the node slots `slots` and of the edge slots `also`, found by the last query or
    *  not, each once, and their mesh, stroked as `query` strokes the edges it finds in `rect` at
    *  `level` where a screen pixel is `pixel` world units, relative to the last query's origin:
-   *  what a drag redraws of the nodes it moves and an edit of what it added, each frame (ADR-0027,
-   *  ADR-0027). Fresh views; do not keep them across calls. Throws a `SlotError` where a slot of
-   *  `slots` holds no node or of `also` no edge, and a `NumberError` `invalidPixel` as `query`
-   *  does. */
+   *  what a drag redraws of the nodes it moves and an edit at the far level of what it added,
+   *  each frame (ADR-0027). Fresh views; do not keep them across calls. Throws a `SlotError`
+   *  where a slot of `slots` holds no node or of `also` no edge, and a `NumberError`
+   *  `invalidPixel` as `query` does. */
   meshAt(slots: Uint32Array, also: Uint32Array, rect: Rect, level: Level, pixel: number): Moving;
   /** The edges the last query found and those the last `meshAt` meshed, each once, with their
    *  ends as they lie now, which after a move and before the next query are already moved: for
@@ -616,7 +618,7 @@ function queried(
     edgeStarts: u32(engine.meshEdgeStartsPtr(), engine.meshEdgeStartsLen()),
     labels: u32(engine.visibleLabelsPtr(), engine.visibleLabelsLen()),
     labelPoints: f32(engine.labelPointsPtr(), engine.labelPointsLen()),
-    mesh: meshOf(engine, views, false),
+    mesh: meshOf(engine, views, MeshOf.Query),
     detail,
     origin,
   };
@@ -631,12 +633,12 @@ function viewsOn(memory: WebAssembly.Memory) {
   };
 }
 
-/** The buffers of an edge mesh of `engine` through `views`: the moving layer's where `ofDrag`,
- *  which `meshAt` wrote, else the last query's (ADR-0027). */
-function meshOf(engine: Engine, views: ReturnType<typeof viewsOn>, ofDrag: boolean): EdgeMesh {
+/** The buffers of the edge mesh `of` of `engine` through `views`: the last query's, or the
+ *  moving layer's of a drag and of edits, which `meshAt` wrote (ADR-0027). */
+function meshOf(engine: Engine, views: ReturnType<typeof viewsOn>, of: MeshOf): EdgeMesh {
   const { u32, f32 } = views;
   const at = (buffer: MeshBuffer) =>
-    [engine.meshPtr(ofDrag, buffer), engine.meshLen(ofDrag, buffer)] as const;
+    [engine.meshPtr(of, buffer), engine.meshLen(of, buffer)] as const;
   return {
     positions: f32(...at(MeshBuffer.Positions)),
     distances: f32(...at(MeshBuffer.Distances)),
@@ -717,7 +719,7 @@ function moving(
   const detail = DETAILS[engine.meshAt(slots, also, rect, LEVELS[level], pixel)];
   return {
     edges: views.u32(engine.movingEdgesPtr(), engine.movingEdgesLen()),
-    mesh: meshOf(engine, views, true),
+    mesh: meshOf(engine, views, MeshOf.Moving),
     detail,
   };
 }

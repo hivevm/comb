@@ -117,13 +117,13 @@ impl Graph {
                     .extend([(point.x - x) as f32, (point.y - y) as f32]);
             }
         }
-        let found = out.edges.iter().map(|&slot| {
-            let slot = slot as usize;
-            (&self.paths[slot], &self.edges[slot].style)
-        });
-        let stroke = Stroke::at(level, pixel);
-        out.mesh
-            .build(found, &stroke, rect, out.origin, budget, &mut self.points);
+        let at = MeshAt {
+            rect: *rect,
+            level,
+            pixel,
+            origin: out.origin,
+        };
+        self.mesh_edges(&out.edges, &at, budget, &mut out.mesh);
     }
 
     /// Writes into `edges` the slots of every edge at the node slots `slots` and of the edge slots
@@ -147,6 +147,15 @@ impl Graph {
         found.sort_unstable();
         found.dedup();
         *edges = found;
+        self.mesh_edges(edges, at, MESH_BUDGET, out);
+        Ok(())
+    }
+
+    /// Writes into `out` the mesh of the edge slots `edges`, each from its path and its style,
+    /// stroked for `at`'s level where a screen pixel is its pixel's world units, in its rectangle,
+    /// relative to its origin, within `budget` vertices: the step from an edge slot to its stroke,
+    /// which the query and the moving mesh both take (ADR-0012, ADR-0027).
+    fn mesh_edges(&mut self, edges: &[u32], at: &MeshAt, budget: u32, out: &mut Mesh) {
         let found = edges.iter().map(|&slot| {
             let slot = slot as usize;
             (&self.paths[slot], &self.edges[slot].style)
@@ -157,16 +166,16 @@ impl Graph {
             &stroke,
             &at.rect,
             at.origin,
-            MESH_BUDGET,
+            budget,
             &mut self.points,
         );
-        Ok(())
     }
 }
 
-/// Where `mesh_at` strokes the edges at the nodes a drag moves: in the rectangle, at the level,
-/// and where a screen pixel is the pixel's world units of the query the scene keeps, relative to
-/// its origin (ADR-0027).
+/// Where an edge mesh is stroked: for `mesh_at`, the edges at the nodes a drag moves and the
+/// edges an edit at the far level added, in the rectangle, at the level, and where a screen pixel
+/// is the pixel's world units of the query the scene keeps, relative to its origin (ADR-0027);
+/// for a query, its own.
 #[derive(Clone, Copy, Debug)]
 pub struct MeshAt {
     pub rect: Rect,
