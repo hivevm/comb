@@ -5,6 +5,10 @@
     allow(
         clippy::cast_possible_truncation,
         reason = "test code narrows the fixtures it builds; the lint holds the code that ships"
+    ),
+    allow(
+        clippy::disallowed_methods,
+        reason = "an oracle measures with `hypot`, which owes nothing to the engine's `length`"
     )
 )]
 
