@@ -65,6 +65,19 @@ export interface DrawnMesh {
   edgeStarts?: Uint32Array;
 }
 
+/** An edges layer, the mesh on WebGL2 or the fill on Canvas 2D (ADR-0018), as the scene and the
+ *  moving layer draw it. */
+export interface EdgeLayer extends Container {
+  /** Draws `drawn`, read before the engine's next call. */
+  sync(drawn: DrawnMesh): void;
+  /** Leaves the edges in `hidden` out of what the last sync drew (ADR-0027). */
+  hide(hidden: ReadonlySet<number>): void;
+  /** What the layer drew last. */
+  size(): MeshSize;
+  /** How many triangles the layer drew last. */
+  triangles(): number;
+}
+
 /** The ranges of indices, `[start, end)` each, of those of `edges` in `hidden`, each starting at
  *  its place in `starts` and ending where the next begins, the last at `count`, the mesh's
  *  indices; none where the mesh holds no edge, as `starts` then says. */
@@ -82,6 +95,16 @@ export function hiddenRanges(
   return ranges;
 }
 
+/** A geometry of the mesh's attributes, its buffers empty. */
+export function meshGeometry(): Geometry {
+  return new Geometry({
+    attributes: Object.fromEntries(
+      ATTRIBUTES.map(({ name, format }) => [name, { buffer: new Float32Array(0), format }]),
+    ),
+    indexBuffer: new Uint32Array(0),
+  });
+}
+
 /** The capacity a mesh of `size` grows to: the next power of two, so it grows rarely. */
 function grown(size: number): number {
   return 2 ** Math.ceil(Math.log2(Math.max(size, 1024)));
@@ -89,10 +112,14 @@ function grown(size: number): number {
 
 /** The arrays the GPU buffers upload from. They keep their capacity, so that a mesh that fits is
  *  copied in and its used part uploaded, and only a mesh that outgrows them reallocates. The
- *  indices past the used ones are 0, which draws empty triangles. */
-class MeshBuffers {
+ *  indices past the used ones are 0, which draws empty triangles. Exported for its test. */
+export class MeshBuffers {
   vertices = 0;
   indices = 0;
+  /** How many indices a `set` marked for upload since the mesh was last drawn, 0 once it was:
+   *  WebGL uploads at the draw by the last range marked, so a `hide` before that draw keeps this
+   *  mark instead of marking its own span (ADR-0027). */
+  private wholeMarked = 0;
   private arrays = {
     positions: new Float32Array(0),
     distances: new Float32Array(0),
@@ -154,16 +181,21 @@ class MeshBuffers {
     const array = this.arrays.indices;
     array.set(mesh.indices);
     if (this.indices > indices) array.fill(0, indices, this.indices);
-    this.geometry.indexBuffer.setDataWithSize(array, Math.max(indices, this.indices), true);
+    this.wholeMarked = Math.max(indices, this.indices);
+    this.geometry.indexBuffer.setDataWithSize(array, this.wholeMarked, true);
     this.vertices = vertices;
     this.indices = indices;
   }
 
+  /** Takes up a draw of the mesh, which uploaded what was marked. */
+  drawn(): void {
+    this.wholeMarked = 0;
+  }
+
   /** Leaves the triangles of `ranges` of the indices out, as empty triangles, and marks the one
-   *  span of the index buffer that covers them for upload, nothing else (ADR-0027); the whole of it
-   *  where `whole`, since WebGL uploads at the draw by the last range marked, and a `set` of this
-   *  render marked all of it. */
-  hide(ranges: readonly [number, number][], whole = false): void {
+   *  span of the index buffer that covers them for upload, nothing else (ADR-0027); where a `set`
+   *  marked the whole of it since the last draw, it keeps that mark. */
+  hide(ranges: readonly [number, number][]): void {
     if (ranges.length === 0) return;
     const array = this.arrays.indices;
     let [first, last] = [Infinity, 0];
@@ -171,8 +203,8 @@ class MeshBuffers {
       array.fill(0, start, end);
       [first, last] = [Math.min(first, start), Math.max(last, end)];
     }
-    if (whole) {
-      this.geometry.indexBuffer.setDataWithSize(array, this.indices, true);
+    if (this.wholeMarked > 0) {
+      this.geometry.indexBuffer.setDataWithSize(array, this.wholeMarked, true);
       return;
     }
     const bytes = array.BYTES_PER_ELEMENT;
@@ -188,14 +220,9 @@ export interface MeshSize {
 }
 
 /** The edges layer: one mesh for every edge the query found. */
-export class EdgesContainer extends Container {
+export class EdgesContainer extends Container implements EdgeLayer {
   /** The mesh's geometry; the testing entry watches its buffers. */
-  readonly geometry = new Geometry({
-    attributes: Object.fromEntries(
-      ATTRIBUTES.map(({ name, format }) => [name, { buffer: new Float32Array(0), format }]),
-    ),
-    indexBuffer: new Uint32Array(0),
-  });
+  readonly geometry = meshGeometry();
   private readonly buffers = new MeshBuffers(this.geometry);
   /** The mesh; the testing entry reads the transform PixiJS hands its shader. */
   readonly mesh = new Mesh({
@@ -205,6 +232,8 @@ export class EdgesContainer extends Container {
   constructor() {
     super();
     this.addChild(this.mesh);
+    // PixiJS calls this in each render of the stage, before the draw that uploads what is marked.
+    this.mesh.onRender = () => this.buffers.drawn();
   }
 
   /** The edges the last sync drew and where each one's indices start, copied out of the engine's
@@ -221,10 +250,10 @@ export class EdgesContainer extends Container {
   }
 
   /** Leaves the edges in `hidden` out of the mesh the last sync drew, uploading the span of indices
-   *  they cover, or all of them where `whole` (ADR-0027). */
-  hide(hidden: ReadonlySet<number>, whole = false): void {
+   *  they cover, or all of them where a sync since the last draw marked all (ADR-0027). */
+  hide(hidden: ReadonlySet<number>): void {
     const { edges, starts } = this.found;
-    this.buffers.hide(hiddenRanges(edges, starts, this.buffers.indices, hidden), whole);
+    this.buffers.hide(hiddenRanges(edges, starts, this.buffers.indices, hidden));
   }
 
   /** What the mesh drew last, and the room its arrays hold before they reallocate. */

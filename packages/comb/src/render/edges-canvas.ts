@@ -4,7 +4,7 @@
 // built, so nothing is uploaded, but the mesh is kept, so that a drag fills it again without the
 // edges it moves (ADR-0027).
 import { Container, Graphics } from "pixi.js";
-import { hiddenRanges, type DrawnMesh, type MeshSize } from "./edges";
+import { hiddenRanges, type DrawnMesh, type EdgeLayer, type MeshSize } from "./edges";
 
 /** The colour and alpha of a vertex colour of the engine's mesh, whose bytes are R, G, B, A in
  *  memory order. */
@@ -17,7 +17,7 @@ export function fillOf(rgba: number): { color: number; alpha: number } {
 
 /** The edges layer on Canvas 2D: every triangle in the colour of its first vertex, one fill for
  *  each run of consecutive triangles of one colour, which the engine emits edge by edge. */
-export class EdgeFill extends Container {
+export class EdgeFill extends Container implements EdgeLayer {
   /** The one drawing every triangle is filled into. */
   readonly drawing = new Graphics();
   private drawn = { vertices: 0, indices: 0 };
