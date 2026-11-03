@@ -20,6 +20,13 @@ An accepted ADR's *Applies to* changes only by supersession or in a normalizatio
 restate the two ADRs now with the paths added, or carry the paths into the next normalization and
 leave this ticket until then. This revision proposes no ADR.
 
+## Decision
+
+The maintainer chose on 2026-11-03 to carry the paths into the next normalization: the one that
+takes up the next release of the template after v0.2.0, run by the `normalize` skill. It restates
+ADR-0014 and ADR-0015 with `scripts/check-container.sh`, `scripts/test-check-container.sh`, and
+`.github/workflows/devcontainer.yml` in their *Applies to*. No ADR is proposed before it.
+
 ## Acceptance criteria
 
 - [ ] Given the choice, when the maintainer makes it, then the restated ADRs are proposed in a
