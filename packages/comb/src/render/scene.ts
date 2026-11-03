@@ -279,7 +279,8 @@ export class Scene {
   }
 
   /** Whether the last render drew the node or the edge of `id`: cheap beside `inspect`, which
-   *  builds every drawn view, so that the benchmark can check an edit within its timed frames. */
+   *  builds every drawn view and asks the engine for the drawn edges, so that the benchmark can
+   *  check an edit within its timed frames; an edge is answered from the slots the scene holds. */
   draws(what: { node: string } | { edge: string }): boolean {
     if ("node" in what) {
       const { node } = what;
@@ -290,13 +291,7 @@ export class Scene {
         this.moving.particles.draws(node)
       );
     }
-    if (!this.source) return false;
-    const slot = this.moving.edgeSlot(what.edge);
-    return (
-      slot >= 0 &&
-      this.source.bridge.drawnEdges().slots.includes(slot) &&
-      this.moving.edgeDrawn(slot)
-    );
+    return this.source !== null && this.moving.drawsEdge(what.edge, this.edges);
   }
 
   /** The content of the node in `slot`, which the engine builds when asked, and the text of its

@@ -4,7 +4,7 @@
 // built, so nothing is uploaded, but the mesh is kept, so that a drag fills it again without the
 // edges it moves (ADR-0027).
 import { Container, Graphics } from "pixi.js";
-import { hiddenRanges, type DrawnMesh, type EdgeLayer, type MeshSize } from "./edges";
+import { hiddenRanges, holds, type DrawnMesh, type EdgeLayer, type MeshSize } from "./edges";
 
 /** The colour and alpha of a vertex colour of the engine's mesh, whose bytes are R, G, B, A in
  *  memory order. */
@@ -70,6 +70,10 @@ export class EdgeFill extends Container implements EdgeLayer {
       if (i + 3 >= count || colors[indices[i + 3]!] !== color) this.drawing.fill(fillOf(color));
     }
     this.drawn = { vertices: colors.length, indices: count };
+  }
+
+  names(slot: number): boolean {
+    return holds(this.kept.edges, slot);
   }
 
   /** What the fill drew last. */

@@ -1,6 +1,6 @@
 // The edge mesh's marks for upload, which WebGL takes at the draw by the last range marked.
 import { expect, test } from "bun:test";
-import { hiddenRanges, MeshBuffers, meshGeometry } from "./edges";
+import { hiddenRanges, holds, MeshBuffers, meshGeometry } from "./edges";
 
 /** A mesh of two edges, in slots 4 and 7, of six indices each. */
 const mesh = {
@@ -31,4 +31,20 @@ test("a hide after a set keeps the set's mark of the whole index buffer until th
   expect(marked()).toEqual({ offset: 0, size: 6 });
   hide(7);
   expect(marked()).toEqual({ offset: 6, size: 6 });
+});
+
+test("a mesh's ascending edge slots hold a slot by halving, at either end and in between", () => {
+  // Verifies: ADR-0027
+  const slots = Uint32Array.from([2, 5, 9, 40]);
+  expect([0, 2, 3, 5, 9, 39, 40, 41].map((slot) => holds(slots, slot))).toEqual([
+    false,
+    true,
+    false,
+    true,
+    true,
+    false,
+    true,
+    false,
+  ]);
+  expect(holds(new Uint32Array(0), 0)).toBe(false);
 });

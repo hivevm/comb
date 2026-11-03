@@ -73,6 +73,8 @@ export interface EdgeLayer extends Container {
   sync(drawn: DrawnMesh): void;
   /** Leaves the edges in `hidden` out of what the last sync drew (ADR-0027). */
   hide(hidden: ReadonlySet<number>): void;
+  /** Whether the mesh the last sync drew names the edge in `slot`. */
+  names(slot: number): boolean;
   /** What the layer drew last. */
   size(): MeshSize;
   /** How many triangles the layer drew last. */
@@ -104,6 +106,18 @@ export function meshGeometry(): Geometry {
     ),
     indexBuffer: new Uint32Array(0),
   });
+}
+
+/** Whether `slots`, in ascending order as the engine names a mesh's edges, holds `slot`: found by
+ *  halving, so that the far view's edges are not scanned. */
+export function holds(slots: Uint32Array, slot: number): boolean {
+  let [low, high] = [0, slots.length];
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (slots[middle]! < slot) low = middle + 1;
+    else high = middle;
+  }
+  return slots[low] === slot;
 }
 
 /** The capacity a mesh of `size` grows to: the next power of two, so it grows rarely. */
@@ -255,6 +269,10 @@ export class EdgesContainer extends Container implements EdgeLayer {
   hide(hidden: ReadonlySet<number>): void {
     const { edges, starts } = this.found;
     this.buffers.hide(hiddenRanges(edges, starts, this.buffers.indices, hidden));
+  }
+
+  names(slot: number): boolean {
+    return holds(this.found.edges, slot);
   }
 
   /** What the mesh drew last, and the room its arrays hold before they reallocate. */

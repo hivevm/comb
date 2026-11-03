@@ -415,7 +415,9 @@ The functional core and its shell follow
   scene's transform between world and screen; `hitKind` names what a press at a screen point hits,
   asking interaction's hit test from the viewport a press reads, which is the drawn one once
   `whenRendered` resolves, connectors only where the Comb lets the user connect; `isDrawn` finds
-  whether one node or edge is drawn without building every drawn view, as `inspect` does;
+  whether one node or edge is drawn without building every drawn view, as `inspect` does, an
+  edge from the slots the scene holds, the query's and the moving layer's, without asking the
+  engine;
   `showLayers` hides layers for a reference image;
   `sceneNumbers` gives the numbers the scene draws by (where the levels of detail begin, the culling
   margin, the label reach, the rescale); `work` counts what the canvas did: GPU buffers created and
