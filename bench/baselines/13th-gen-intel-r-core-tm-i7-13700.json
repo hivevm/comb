@@ -7,14 +7,14 @@
   "browser": "156.0.8078.79",
   "cpuThrottle": 2,
   "reference": {
-    "ms": 420.1000000089407,
-    "js": 211,
-    "wasm": 201.6000000089407,
-    "gpu": 7.5
+    "ms": 323.40000000596046,
+    "js": 158.30000001192093,
+    "wasm": 158.09999999403954,
+    "gpu": 7
   },
   "load": {
     "nodes": 50010,
-    "firstFrameMs": 471,
+    "firstFrameMs": 347.09999999403954,
     "content": {
       "nodes": {
         "bet": 6668,
@@ -42,11 +42,11 @@
   "pan": {
     "p95": 16.799999999999272,
     "steps": 120,
-    "frames": 121,
+    "frames": 120,
     "truncated": false
   },
   "zoom": {
-    "p95": 50,
+    "p95": 16.799999999999272,
     "steps": 120,
     "frames": 120,
     "truncated": false
@@ -60,7 +60,7 @@
         "truncated": false
       },
       "pan": {
-        "p95": 16.799999999995634,
+        "p95": 16.799999999999272,
         "steps": 120,
         "frames": 120,
         "truncated": false
@@ -72,7 +72,7 @@
         "truncated": false
       },
       "edit": {
-        "p95": 16.80000000000291,
+        "p95": 16.799999999995634,
         "steps": 120,
         "frames": 119,
         "truncated": false
@@ -80,25 +80,25 @@
     },
     "middle": {
       "drag": {
-        "p95": 16.70000000001164,
+        "p95": 16.799999999995634,
         "steps": 120,
         "frames": 118,
         "truncated": false
       },
       "pan": {
-        "p95": 16.799999999995634,
+        "p95": 16.799999999999272,
         "steps": 120,
         "frames": 120,
         "truncated": false
       },
       "zoom": {
-        "p95": 16.70000000001164,
+        "p95": 16.799999999995634,
         "steps": 120,
         "frames": 120,
         "truncated": false
       },
       "edit": {
-        "p95": 16.79999999998836,
+        "p95": 16.799999999995634,
         "steps": 120,
         "frames": 119,
         "truncated": false
@@ -106,7 +106,7 @@
     },
     "far": {
       "zoom": {
-        "p95": 66.69999999999709,
+        "p95": 16.80000000000291,
         "steps": 120,
         "frames": 120,
         "truncated": false
@@ -114,9 +114,9 @@
     }
   },
   "edit": {
-    "p95": 116.70000000000073,
+    "p95": 16.799999999999272,
     "steps": 120,
-    "frames": 120,
+    "frames": 119,
     "truncated": false
   }
 }
