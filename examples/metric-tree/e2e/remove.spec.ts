@@ -1,7 +1,7 @@
 // The host application removes nodes and edges through `removeNodes` and `removeEdges` (G-4,
-// ADR-0022, ADR-0030): the canvas draws them no more, a node takes its edges along, `onChange`
+// ADR-0023, ADR-0024): the canvas draws them no more, a node takes its edges along, `onChange`
 // tells one change, a freed slot is the next addition's, and an identifier the graph does not hold
-// refuses the call, which then removes nothing (ADR-0028, Q-7).
+// refuses the call, which then removes nothing (ADR-0009, Q-7).
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData } from "comb";
 import { drawnGraph, loaded, node, open, screenCentre, told } from "./shared";
@@ -30,7 +30,7 @@ async function drawn(page: Page) {
 test("removeNodes removes a node and its three edges, and tells one nodesRemoved", async ({
   page,
 }) => {
-  // Verifies: G-4, ADR-0022, ADR-0030
+  // Verifies: G-4, ADR-0023, ADR-0024
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -47,7 +47,7 @@ test("removeNodes removes a node and its three edges, and tells one nodesRemoved
 test("removeEdges removes edges and keeps their nodes, and tells one edgesRemoved", async ({
   page,
 }) => {
-  // Verifies: G-4, ADR-0022, ADR-0030
+  // Verifies: G-4, ADR-0023, ADR-0024
   await open(page);
   await loaded(page, STAR, HALF);
   await page.evaluate(() => window.comb.removeEdges(["b-c", "a-c", "b-c"]));
@@ -61,7 +61,7 @@ test("removeEdges removes edges and keeps their nodes, and tells one edgesRemove
 test("isDrawn answers as inspect does, at the near, middle, and far level, before and after a removal", async ({
   page,
 }) => {
-  // Verifies: ADR-0022
+  // Verifies: ADR-0023
   await open(page);
   await loaded(page, STAR, HALF);
   const asked = (scale: number) =>
@@ -95,7 +95,7 @@ test("isDrawn answers as inspect does, at the near, middle, and far level, befor
 test("a node added after a removal takes the freed slot and is drawn and hit above the others", async ({
   page,
 }) => {
-  // Verifies: ADR-0022, ADR-0027
+  // Verifies: ADR-0023, ADR-0012
   await open(page);
   // Three nodes at one place: a load stacks them by slot, c on top.
   await loaded(page, { nodes: [node("a"), node("b"), node("c")], edges: [] }, HALF);
@@ -152,7 +152,7 @@ const REFUSED: { name: string; call: [string, unknown]; problem: unknown }[] = [
 
 for (const { name, call, problem } of REFUSED) {
   test(`a removal of ${name} throws a GraphDataError and removes nothing`, async ({ page }) => {
-    // Verifies: Q-7, ADR-0028
+    // Verifies: Q-7, ADR-0009
     await open(page);
     await loaded(page, STAR, HALF);
     const before = await drawn(page);
@@ -173,7 +173,7 @@ for (const { name, call, problem } of REFUSED) {
 test("removing the selected node reports null to onSelectionChange, after its change", async ({
   page,
 }) => {
-  // Verifies: ADR-0030
+  // Verifies: ADR-0024
   await open(page);
   await loaded(page, STAR, HALF);
   const at = await screenCentre(page, "a");
@@ -189,7 +189,7 @@ test("removing the selected node reports null to onSelectionChange, after its ch
 });
 
 test("fitView fits the nodes a removal kept", async ({ page }) => {
-  // Verifies: ADR-0022
+  // Verifies: ADR-0023
   await open(page);
   await loaded(page, STAR, HALF);
   const viewports = await page.evaluate(async () => {
@@ -208,7 +208,7 @@ test("fitView fits the nodes a removal kept", async ({ page }) => {
 test("a node the host removes during a drag ends it: no error, and no move of the node in its slot", async ({
   page,
 }) => {
-  // Verifies: ADR-0022, ADR-0030
+  // Verifies: ADR-0023, ADR-0024
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -239,7 +239,7 @@ test("a node the host removes during a drag ends it: no error, and no move of th
 test("a removal reads a hostile list's length once and refuses a list too long quickly", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0028
+  // Verifies: Q-7, ADR-0009
   await open(page);
   await loaded(page, STAR, HALF);
   const before = await drawn(page);
@@ -298,7 +298,7 @@ test("a removal reads a hostile list's length once and refuses a list too long q
 test("a removal names an unknown identifier cut to the limit, and an empty one tells nothing", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0028
+  // Verifies: Q-7, ADR-0009
   await open(page);
   await loaded(page, STAR, HALF);
   const before = await drawn(page);

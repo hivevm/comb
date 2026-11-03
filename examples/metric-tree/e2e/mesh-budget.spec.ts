@@ -1,4 +1,4 @@
-// A query's edge mesh within its budget (ADR-0027): graph data the bridge accepts never runs the
+// A query's edge mesh within its budget (ADR-0012): graph data the bridge accepts never runs the
 // engine out of memory, at any viewport.
 import { expect, test } from "@playwright/test";
 import { open } from "./shared";
@@ -6,7 +6,7 @@ import { open } from "./shared";
 test("20,000 edges between two nodes far apart draw zoomed in, and a later graph draws", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0027
+  // Verifies: Q-7, ADR-0012
   test.setTimeout(120_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

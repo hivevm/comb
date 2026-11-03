@@ -84,7 +84,7 @@ struct Single {
 /// index 0: every field's type, its identifier's length, its place and width, its content, its
 /// strings counted against the budget on from `held`, laid out in `fonts`, and its far side by that
 /// height; the one sequence both crossings refuse by, so that their problems and their order stay
-/// one (ADR-0035).
+/// one (ADR-0026).
 fn single_of(node: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, GraphDataProblem> {
     let (node, content) = node_of(0, node)?;
     id_length("nodes", 0, "id", node.id)?;
@@ -105,7 +105,7 @@ fn single_of(node: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, Graph
 /// content lays out to in `fonts`, its strings of content counted against the budget on from
 /// `held`, the code units of content the graph holds; returns the slot the engine chose and the
 /// content it keeps, with its count. A refused node leaves the graph as it was. That the graph
-/// holds no node of its identifier is `api`'s to check, against the map only it keeps (ADR-0028).
+/// holds no node of its identifier is `api`'s to check, against the map only it keeps (ADR-0009).
 pub(crate) fn add_node_to(
     graph: &mut Graph,
     node: &NodeInput,
@@ -126,7 +126,7 @@ pub(crate) fn add_node_to(
 
 /// The height the content of `node` lays out to at its width in `fonts`, checked as `add_node_to`
 /// checks a node, its strings counted against the budget alone, and added to nothing: the node
-/// `heightOf` hands over, named `""` and at the origin (ADR-0035).
+/// `heightOf` hands over, named `""` and at the origin (ADR-0026).
 pub(crate) fn height_of(node: &NodeInput, fonts: &Fonts) -> Result<f32, GraphDataProblem> {
     Ok(single_of(node, fonts, 0)?.height)
 }
@@ -143,8 +143,8 @@ pub(crate) fn graph_of(batch: &GraphBatch) -> Result<Graph, GraphDataProblem> {
     .map(|loaded| loaded.graph)
 }
 
-// The malformed-data tests of graph data verify ADR-0034 (see `graph_data::tests`).
-// Verifies: ADR-0034
+// The malformed-data tests of graph data verify ADR-0010 (see `graph_data::tests`).
+// Verifies: ADR-0010
 #[cfg(test)]
 mod tests {
     use super::super::tests::{
@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn an_added_node_takes_the_next_slot_where_it_was_placed() {
-        // Verifies: ADR-0022
+        // Verifies: ADR-0023
         let mut graph = graph_of(&batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[])).unwrap();
         assert_eq!(add(&mut graph, &added(40.0, 50.0, |_| {})), Ok(2));
         assert_eq!(&graph.positions()[4..], [40.0, 50.0]);
@@ -193,7 +193,7 @@ mod tests {
 
     #[test]
     fn an_added_node_is_refused_as_a_load_refuses_it_and_the_graph_kept() {
-        // Verifies: ADR-0028, Q-7
+        // Verifies: ADR-0009, Q-7
         let named = || "n".to_owned();
         let cases: Vec<(NodeInput, GraphDataProblem)> = vec![
             (
@@ -254,7 +254,7 @@ mod tests {
 
     #[test]
     fn the_height_of_content_is_the_one_an_added_node_of_it_takes_whatever_its_texts_and_width() {
-        // Verifies: ADR-0035
+        // Verifies: ADR-0026
         let shapes = [
             |text: &str| titled(text),
             |text: &str| badged(Some(text), 0x22_a5_5b.into()).into(),
@@ -279,7 +279,7 @@ mod tests {
 
     #[test]
     fn the_height_of_content_is_refused_as_an_added_node_of_it_naming_no_node() {
-        // Verifies: ADR-0035
+        // Verifies: ADR-0026
         let unnamed = |change: fn(&mut NodeInput)| {
             let node = added(0.0, 0.0, |n| {
                 n.id = String::new().into();
@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn a_node_added_to_a_graph_at_the_limit_of_a_load_is_refused() {
-        // Verifies: ADR-0028, Q-7
+        // Verifies: ADR-0009, Q-7
         let count = MAX_ITEMS as usize;
         let positions = (0..count).flat_map(|i| [i as f32, 0.0]).collect();
         let mut graph = Graph::new(positions, vec![1.0; count * 2], Vec::new()).unwrap();
@@ -330,7 +330,7 @@ mod tests {
 
     #[test]
     fn a_coordinate_not_finite_in_an_early_node_is_named_before_a_title_in_a_later_one() {
-        // Verifies: ADR-0034
+        // Verifies: ADR-0010
         // The first pass names only the values `Field<T>` reads; a title is checked at its rule,
         // in the second pass, after the nodes before it.
         let ids: Vec<String> = (0..6).map(|i| format!("n{i}")).collect();
@@ -349,7 +349,7 @@ mod tests {
 
     #[test]
     fn the_first_value_refused_by_its_type_is_named_across_nodes_and_edges() {
-        // Verifies: ADR-0034
+        // Verifies: ADR-0010
         // A node's refused field is named before any edge's, and an earlier edge's arrowhead
         // that names nothing before a later edge's field the shell named.
         let mut nodes = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]).nodes;

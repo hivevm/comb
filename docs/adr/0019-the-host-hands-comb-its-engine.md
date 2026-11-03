@@ -8,14 +8,14 @@
 ## Context
 
 Q-6 says the system never makes a network request of its own and works under a Content Security
-Policy that allows `wasm-unsafe-eval` but not `unsafe-eval`. Today `createComb` calls the
-initialiser wasm-bindgen generates without an argument. That initialiser then resolves
-`engine_bg.wasm` next to its module (`new URL(…, import.meta.url)`) and calls `fetch` on it. In
-the library build Vite inlines the file as a `data:` URL, so even the published bundle calls
-`fetch`. That is a request Comb makes itself, and it is governed by the page's `connect-src`,
-which a host application's policy may not open for it.
+Policy that allows `wasm-unsafe-eval` but not `unsafe-eval`. The initialiser wasm-bindgen
+generates, called without an argument, resolves `engine_bg.wasm` next to its module
+(`new URL(…, import.meta.url)`) and calls `fetch` on it. Vite's library mode inlines such an
+asset as a `data:` URL, and the bundle then calls `fetch` on that. Either is a
+request Comb makes itself, and it is governed by the page's `connect-src`, which a host
+application's policy may not open for it.
 
-The initialiser already takes what to instantiate from: a URL, a `Request`, a `Response` or a
+The initialiser also takes what to instantiate from: a URL, a `Request`, a `Response` or a
 promise of one, a compiled `WebAssembly.Module`, or the bytes. The host application knows how it
 serves its assets, its bundler, its CDN, and its policy. Comb does not.
 
@@ -30,7 +30,7 @@ and Comb will never resolve, fetch, or inline that file itself.
   element. The host application makes the request itself, for example `fetch(url)`, and hands
   over the `Response`, so the request is its own and its policy governs it.
 - **Package:** `comb` exports the file as `comb/engine.wasm`, so a bundler can resolve it, for
-  example with Vite's `?url` import. The library build no longer inlines it. The bundle check
+  example with Vite's `?url` import. The library build does not inline it. The bundle check
   measures the JavaScript and that file, as Q-3 counts them.
 - **Tests:** the Bun suite keeps creating the bridge from the bytes. The example fetches the
   file at the URL its bundler emits and hands over the `Response`, or the promise of it.
@@ -61,20 +61,20 @@ Comb.
   <https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy/connect-src>.
 - Vite, static assets: a file is imported as a URL with the `?url` suffix, and an asset below
   `assetsInlineLimit` is inlined as a base64 `data:` URL — <https://vite.dev/guide/assets>.
-- Measured: the current `packages/comb/dist/comb.js` carries the engine as a
-  `data:application/wasm` URL.
+- Measured: a library build that resolves the file next to the module carries the engine in
+  `packages/comb/dist/comb.js` as a `data:application/wasm` URL.
 
 ## Consequences
 
 - Positive: Q-6 holds by construction. Comb never takes the path of the initialiser that calls
   `fetch`, and a host application decides under its own policy how the file arrives.
-- Positive: the bundle loses the base64 copy of the engine. The browser compiles the file while
+- Positive: the bundle carries no base64 copy of the engine. The browser compiles the file while
   it streams, where the host hands over a `Response`.
 - Negative / trade-offs: every host application writes a line or two more, and a missing option
   fails at `createComb`, not at build time. The type of the option rejects a URL at compile time
   too.
-- Negative / trade-offs: a breaking change of `createComb` for every host there is, the example
-  and the benchmark among them.
+- Negative / trade-offs: every host hands the engine to `createComb`, the example and the
+  benchmark among them; one that does not cannot create a Comb.
 - Follow-ups: whether `comb/testing` offers a helper that hands the test page's engine over.
 
 ## Enforcement

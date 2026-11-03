@@ -39,7 +39,7 @@ application to import it.
   upgrade that renames or drops it breaks the build, not a page at run time.
 
 **Out of scope:** WebGPU, whose code generation the module also replaces but which Comb does not
-use (ADR-0018); a policy stricter than Q-6's.
+use ([ADR-0018](0018-webgl2-or-an-opted-in-canvas-fallback.md)); a policy stricter than Q-6's.
 
 ## Alternatives considered
 
@@ -69,8 +69,9 @@ use (ADR-0018); a policy stricter than Q-6's.
 - Negative / trade-offs: the patch reaches every PixiJS renderer on the host's page.
 - Negative / trade-offs: the code without eval may sync uniforms more slowly. The runner showed
   no difference, but Q-1 is decided on the reference machine.
-- Follow-ups: the measurement on the reference machine, which the design revision's ticket on
-  Q-1 and Q-2 takes, shows whether the module costs frames there.
+- Follow-ups: none. The benchmark on the maintainer's machine, which stands in for the reference
+  machine, holds Q-1 with the module in every gesture
+  (`bench/baselines/13th-gen-intel-r-core-tm-i7-13700.json`).
 
 ## Enforcement
 

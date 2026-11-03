@@ -1,4 +1,4 @@
-// The nodes at the far level of detail (ADR-0027): one particle per node in view, a plain box
+// The nodes at the far level of detail (ADR-0012): one particle per node in view, a plain box
 // in one ParticleContainer, without text, so that a view of the whole graph binds no display
 // object per node. Every property is static: a sync uploads them once, and the frames between
 // syncs upload nothing.
@@ -28,7 +28,7 @@ export class NodeParticles extends ParticleContainer {
   private slots = new Uint32Array(1024);
   private heights = new Float32Array(1024);
   private nodes: GraphView["nodes"] = [];
-  /** The nodes whose particles a drag left undrawn since the last sync (ADR-0040). */
+  /** The nodes whose particles a drag left undrawn since the last sync (ADR-0027). */
   private hidden: ReadonlySet<number> = NONE_HIDDEN;
   /** The node the last sync tinted as selected, if it drew it. */
   highlighted: string | null = null;
@@ -80,7 +80,7 @@ export class NodeParticles extends ParticleContainer {
   }
 
   /** Leaves the particles of the nodes in `hidden` undrawn, which a drag draws in its moving
-   *  layer: every property is static, so this uploads them all, once a drag (ADR-0040). */
+   *  layer: every property is static, so this uploads them all, once a drag (ADR-0027). */
   hide(hidden: ReadonlySet<number>): void {
     this.hidden = hidden;
     const count = this.particleChildren.length;

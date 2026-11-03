@@ -1,7 +1,7 @@
 // The host application adds edges through `addEdge` and changes them through `updateEdge` (G-5,
-// G-11, ADR-0030): the next frame draws them with their colour, dash pattern, and label,
+// G-11, ADR-0024): the next frame draws them with their colour, dash pattern, and label,
 // `onChange` tells each change once, and an edge or a patch a load would refuse, an edge the graph
-// cannot hold, and a patch of an unknown edge or field change nothing (ADR-0028, Q-7).
+// cannot hold, and a patch of an unknown edge or field change nothing (ADR-0009, Q-7).
 import { expect, test } from "@playwright/test";
 import type { EdgeData, GraphData } from "comb";
 import { loaded, node, open, strokeOf, told } from "./shared";
@@ -15,7 +15,7 @@ const BLUE = 0x2060e0;
 test("addEdge draws the edge with its colour, dash, and label, and tells edgeAdded with defaults", async ({
   page,
 }) => {
-  // Verifies: G-11, ADR-0030
+  // Verifies: G-11, ADR-0024
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -55,7 +55,7 @@ test("addEdge draws the edge with its colour, dash, and label, and tells edgeAdd
 test("updateEdge recolours an edge, clears its dash, moves its label, and tells edgeUpdated once", async ({
   page,
 }) => {
-  // Verifies: G-5, G-11, ADR-0030
+  // Verifies: G-5, G-11, ADR-0024
   await open(page);
   await loaded(page, PAIR);
   const edge = { id: "a-b", source: "a", target: "b", color: RED, dash: [8, 8] as const };
@@ -162,7 +162,7 @@ for (const { name, call, problem } of REFUSED) {
   test(`${call[0]} refuses ${name} with a GraphDataError, and nothing changes`, async ({
     page,
   }) => {
-    // Verifies: Q-7, ADR-0028, ADR-0024
+    // Verifies: Q-7, ADR-0009, ADR-0025
     await open(page);
     await loaded(page, PAIR);
     const edge = { id: "a-b", source: "a", target: "b", color: RED, dash: [8, 8] as const };
@@ -186,7 +186,7 @@ for (const { name, call, problem } of REFUSED) {
 }
 
 test("addEdge refuses an edge past the limit of a load as tooMany", async ({ page }) => {
-  // Verifies: Q-7, ADR-0028
+  // Verifies: Q-7, ADR-0009
   test.setTimeout(120_000);
   await open(page);
   const result = await page.evaluate(() => {
@@ -214,7 +214,7 @@ test("addEdge refuses an edge past the limit of a load as tooMany", async ({ pag
 test("a patch of one field keeps the label and the dash, and moves a label the edge has", async ({
   page,
 }) => {
-  // Verifies: G-5, ADR-0030
+  // Verifies: G-5, ADR-0024
   await open(page);
   await loaded(page, PAIR);
   const edge = {
@@ -250,7 +250,7 @@ test("a patch of one field keeps the label and the dash, and moves a label the e
 test("a getter of a patch that removes the edge refuses the patch, and no other edge changes", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0028
+  // Verifies: Q-7, ADR-0009
   await open(page);
   await loaded(page, PAIR);
   await page.evaluate(
@@ -286,7 +286,7 @@ test("a getter of a patch that removes the edge refuses the patch, and no other 
 test("a listener that writes into a delivered change reaches nothing Comb keeps", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0028
+  // Verifies: Q-7, ADR-0009
   await open(page);
   await loaded(page, PAIR);
   await page.evaluate(() => {
@@ -320,7 +320,7 @@ test("a listener that writes into a delivered change reaches nothing Comb keeps"
 test("updateEdge moves an edge's end to another side, and the next frame draws it entering there", async ({
   page,
 }) => {
-  // Verifies: ADR-0024, ADR-0030
+  // Verifies: ADR-0025, ADR-0024
   await open(page);
   // b below and to the right of a, so that its top and left connectors differ.
   await loaded(page, { nodes: [node("a"), node("b", 600, 300)], edges: [] });
@@ -350,7 +350,7 @@ for (const [name, value] of [
   ["a side that is a number", 1],
 ] as const) {
   test(`load, addEdge, and updateEdge refuse ${name} as invalidField`, async ({ page }) => {
-    // Verifies: Q-7, ADR-0024
+    // Verifies: Q-7, ADR-0025
     await open(page);
     await loaded(page, PAIR);
     const problems = await page.evaluate((side) => {

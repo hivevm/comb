@@ -56,7 +56,7 @@ each naming the node and, where it has them, the row and column, a label backgro
 not an integer from `0` to `0xFFFFFF`, more than 1,000,000 nodes or edges, an identifier, source, or
 target longer than 256 UTF-16 code units, and identifiers of one load that hold more than 64,000,000
 code units together, and an edge side other than `top`, `right`, `bottom`, and `left`. `api`
-refuses, against the store's map from identifiers to slots (ADR-0028), an identifier `updateNode` or
+refuses, against the store's map from identifiers to slots (ADR-0009), an identifier `updateNode` or
 `removeNodes` names that the graph does not hold (`unknownNode`), one `updateEdge` or `removeEdges`
 names (`unknownEdge`), one `addNode`, `addEdge`, or a user's connection adds that it holds already
 (`duplicateNode`, `duplicateEdge`), and an end of an added edge it does not hold (`missingNode`).
@@ -100,7 +100,7 @@ boundaries of each node's rows and each row's elements as `Uint32Array`, whether
 background, and a dash are present as bytes, and the first value refused by its type as its
 position, a shape of
 content the snapshot cannot flatten with its row and column
-([ADR-0034](adr/0034-node-content-crosses-as-columns.md)); serde-wasm-bindgen converts
+([ADR-0010](adr/0010-bridge-data-format.md)); serde-wasm-bindgen converts
 nothing of a load. A string with a lone surrogate, which the bridge would read as U+FFFD,
 `api` hands over as `false`, so that it is refused. `updateNode` and `updateEdge` read their patch
 the same way, every own key of a plain object, before they look up the item it names, and merge only
@@ -114,19 +114,19 @@ patched JavaScript's built-ins, such as a setter on `Object.prototype` or a `Sym
 ## Building blocks
 
 The functional core and its shell follow
-[ADR-0028](adr/0028-the-graph-lies-within-a-world.md).
+[ADR-0009](adr/0009-functional-core-imperative-shell.md).
 
 - **Engine** (`crates/engine`) — pure geometry: `geometry` holds edge paths as cubic Bézier curves
   from the connector of a side of one node, the middle of its `top`, `right`, `bottom`, or `left`,
   to that of a side of another, their control points pulled out along each side's outward normal
-  ([ADR-0024](adr/0024-one-connector-per-side.md)), their exact bounds, the point and normal at a
+  ([ADR-0025](adr/0025-one-connector-per-side.md)), their exact bounds, the point and normal at a
   path parameter, and edge-label placement. `graph` keeps the loaded graph, node positions and
   sizes per slot and edges per slot, a rank per node slot, a list of the edges at each node slot, a
   list each of free node and edge slots, and a spatial index (`spatial`, a uniform grid each for
   nodes and edges, with an overflow list for items that cover many cells) that loads, additions,
   and moves keep current and that is built again once many items have moved or been added beyond
   its extent, or the nodes or the edges in use pass twice the count it was built for
-  ([ADR-0022](adr/0022-the-engine-edits-its-graph-in-place.md)). Its modules under `graph/` follow
+  ([ADR-0023](adr/0023-the-engine-edits-its-graph-in-place.md)). Its modules under `graph/` follow
   its concepts: `slots`, the free slots of a kind, one type kept once for nodes and once for edges;
   `nodes` and `edges`, the edits of each, each with the one check that the slots a call names hold
   one, and `nodes` with the moves of the positions buffer; `index`, the grids and the one function
@@ -154,7 +154,7 @@ The functional core and its shell follow
   the normal there; `mesh_at` meshes every edge at given node slots and of given edge slots,
   found by a query or not, as the query meshes the edges it found, what a drag redraws of the
   nodes it moves and an edit of what it added
-  ([ADR-0040](adr/0040-a-drag-or-an-edit-redraws-what-it-changed.md)). `stroke` flattens the found
+  ([ADR-0027](adr/0027-a-drag-or-an-edit-redraws-what-it-changed.md)). `stroke` flattens the found
   edges within a tolerance and strokes them into the triangles of one mesh, with each edge's
   colour, dash pattern, and arrowhead, or as thin lines alone at the far level of detail; it decides
   the stroke of each level. A part of a path whose control points miss the query's rectangle, grown
@@ -201,7 +201,7 @@ The functional core and its shell follow
   node's content as a load checks it and gives the node the new content and its height, `addNode`
   checks one node as a load would and returns the slot the engine chose for it, `heightOf` checks
   a node named `""` at the origin as `addNode` does and returns the height its content lays out to,
-  adding nothing (ADR-0035), `addEdge` checks one edge as a load would, refuses one from a node to
+  adding nothing (ADR-0026), `addEdge` checks one edge as a load would, refuses one from a node to
   itself, and adds it between the node slots `api` resolved, `updateEdge` checks a patch of an
   edge's colour, dash, arrowhead, label, and sides as a load checks those fields and restyles and
   re-places the edge, `edgesAt` names the edges at given nodes without removing anything,
@@ -219,13 +219,13 @@ The functional core and its shell follow
   drawn, and each icon's registered name whole, as one string `contentTexts` returns, cut by
   `contentTextBounds…`, the found edge slots, and the edge mesh into buffers the engine owns, the
   label points and the mesh's positions relative to the query's origin, which `originX` and
-  `originY` read ([ADR-0034](adr/0034-node-content-crosses-as-columns.md)), and returns the mesh's
+  `originY` read ([ADR-0010](adr/0010-bridge-data-format.md)), and returns the mesh's
   detail, complete or coarsened, and refuses a pixel that is not a finite number above zero,
   with where each found edge's indices start in the mesh (`meshEdgeStarts…`); `meshAt` meshes the
   edges at given node slots in the rectangle, at the level, and at the pixel of the query the
   scene keeps, relative to its origin, into a mesh of their own, their slots in `movingEdges…`,
   refuses a slot that holds no node and a pixel as `query` does, and returns the mesh's detail
-  (ADR-0040); `meshPtr` and `meshLen` read a buffer of either mesh, the query's or the moving
+  (ADR-0027); `meshPtr` and `meshLen` read a buffer of either mesh, the query's or the moving
   layer's, by a `MeshBuffer`, so that the shell reads both through one function;
   `drawnEdges` computes the ends of the found edges when inspection asks, as they lie then, and
   `hit` names what a press at a point hits, a connector where the shell asks for connectors, a
@@ -241,7 +241,7 @@ The functional core and its shell follow
   computed that an export cannot take, whose kind names it: `nonFinitePoint` of `hit` and
   `moveLabel`, `invalidPixel` of `query` and `hit`, and `nonFiniteDelta` of `translate`, which
   `TranslateError` names, never a `GraphDataProblem`
-  ([ADR-0031](adr/0031-a-shell-mistake-is-refused-as-the-shells.md)). The shell
+  ([ADR-0022](adr/0022-a-shell-mistake-is-refused-as-the-shells.md)). The shell
   guards each such number before it calls the export. It checks the screen
   pixel of a query and of a hit test in one function, and the point of a hit test and of a label's
   move in another; the core bounds a pixel beyond any zoom for both, in one function. Its crate
@@ -250,7 +250,7 @@ The functional core and its shell follow
   `updateEdge` reach alike, and a node and an edge of a load's columns by the checks of the node of
   `addNode` and the edge of `addEdge`, mapping the columns' boundaries onto the identifiers and the
   texts of content only once their lengths are checked
-  ([ADR-0028](adr/0028-the-graph-lies-within-a-world.md)). It is split by concept: `limits` holds
+  ([ADR-0009](adr/0009-functional-core-imperative-shell.md)). It is split by concept: `limits` holds
   the limits of a load, `field` the lenient reading of a field, `input` the types the host
   application hands over, `strings` the decoding of every string column, `node_columns` and
   `edge_columns` the columns of a load's nodes and edges, `problem` the refusals, `item` the reading
@@ -265,7 +265,7 @@ The functional core and its shell follow
   (`ContentStore`) and the buffers of what a query places of it (`Drawn`).
   `packages/comb/src/bridge` is the one module that imports the WebAssembly package and reads those
   buffers through fresh typed-array views per read
-  ([ADR-0034](adr/0034-node-content-crosses-as-columns.md)): its `columns.ts` holds the writers of a
+  ([ADR-0010](adr/0010-bridge-data-format.md)): its `columns.ts` holds the writers of a
   load's columns and the codes they cross as, its `index.ts` the facade of the engine, which
   re-exports them.
 - **Store** (`packages/comb/src/store`) — a vanilla Zustand store with the graph's structure, its
@@ -279,7 +279,7 @@ The functional core and its shell follow
   (`positionsVersion`), a counter for a drag's moves (`movesVersion`), and a counter for moves of
   the point a connection is dragged to (`pointerVersion`); no coordinates of
   nodes, edges, or the pointer
-  ([ADR-0041](adr/0041-each-move-its-counter-an-added-node-its-slot.md)).
+  ([ADR-0011](adr/0011-store.md)).
   `GraphView` is its state without the actions, the type the render layer reads.
   `store/viewport.ts` holds the viewport's arithmetic, the transform between world and screen and
   the level of detail of a scale included, for interaction, the scene, `api`'s `fitView`,
@@ -326,11 +326,11 @@ The functional core and its shell follow
   and `ConnectorsLayer` (`connectors.ts`), the moving layer of a drag and of edits at the far
   level, a second `EdgesContainer` directly above the edges and a second `NodeParticles` directly
   above the particles
-  ([ADR-0040](adr/0040-a-drag-or-an-edit-redraws-what-it-changed.md)), whose edits `edits.ts`
+  ([ADR-0027](adr/0027-a-drag-or-an-edit-redraws-what-it-changed.md)), whose edits `edits.ts`
   reads from the store's arrays against the kept query's, with the connectors of the node under the
   pointer and, while the user connects, of the source and the node under the pointer, and an
   `overlay` with the line of the connection being dragged, to the pointer `api` hands each render
-  from interaction ([ADR-0027](adr/0027-nodes-bound-by-rank.md)); `bindings.ts`
+  from interaction ([ADR-0012](adr/0012-virtualized-scene-graph.md)); `bindings.ts`
   is the pool of views the nodes and labels layers bind to slots, keeping the layer's children in
   the order a render binds them. The scale chooses the level of detail: near (from 0.6) draws node
   views and edge labels, middle (from 0.3) node views alone, and far nodes as particles of one
@@ -382,7 +382,7 @@ The functional core and its shell follow
   engine by `api/editors.ts`, which also gives interaction the user's connection and deletion,
   each after its veto, `CombOptions.canConnect` or `CombOptions.canDelete`, `heightOf`, the
   height a node's content lays out to, read and checked there as `addNode` reads and checks a
-  node, changing nothing ([ADR-0035](adr/0035-the-host-asks-the-height-content-lays-out-to.md)),
+  node, changing nothing ([ADR-0026](adr/0026-the-host-asks-the-height-content-lays-out-to.md)),
   the viewport (`fitView`, `setViewport`, `viewport`, and `worldPointAt`,
   the world point under a point of the page, which needs no engine), the events to the host
   application (`onChange`, `onSelectionChange`, `onContentClick`, which interaction tells of each
@@ -391,7 +391,7 @@ The functional core and its shell follow
   pixels the page may not read, and copies the image into a canvas of its own (`api/icons.ts`), and
   `destroy`; `onChange` delivers each change the store
   records as a `GraphChange`
-  ([ADR-0030](adr/0030-a-veto-that-changes-the-graph-ends-its-gesture.md)), its positions read
+  ([ADR-0024](adr/0024-edits-are-reported-as-typed-changes.md)), its positions read
   from the engine's buffer, synchronously from one subscription to the store that tells a change
   before the selection it cleared (`api/changes.ts`); `whenRendered` resolves once a change is
   drawn, with one render per animation frame scheduled by `api/frames.ts`. `api/scenes.ts` is the
@@ -452,8 +452,8 @@ The functional core and its shell follow
   elements by kind (`load.content`). It is
   served from the example's production build by `vite preview` on port 4173, in a Chromium
   started by `bench/chromium.ts`, or attached through its debugging port to a Chrome on the host
-  where `BENCH_CDP` names one (ADR-0038); `BENCH_CPU_THROTTLE` slows the measured page's CPU
-  (ADR-0039). `bench/options.ts` reads both and refuses a value it cannot take.
+  where `BENCH_CDP` names one (ADR-0028); `BENCH_CPU_THROTTLE` slows the measured page's CPU
+  (ADR-0029). `bench/options.ts` reads both and refuses a value it cannot take.
   After the first frame and before the gestures it times the reference workload of
   `bench/reference.ts` in the same page, which uses the browser's JavaScript, WebAssembly, and
   WebGL2 and none of Comb's code. `bench/compare.ts` compares the median of several runs with
@@ -516,13 +516,13 @@ forwards, so WebGL2 runs on SwiftShader instead of PixiJS falling back to Canvas
 node's edges and their place in the spatial index; its first move names the slot in the store's
 `dragged` (`dragStarted`), each later one bumps `movesVersion` (`dragMoved`), and the release
 clears it and bumps `positionsVersion` (`dragEnded`). The store notifies the scene, which renders
-once per animation frame and keeps the query it drew at the press (ADR-0040): the first frame
+once per animation frame and keeps the query it drew at the press (ADR-0027): the first frame
 leaves the dragged node's edges out of the query's mesh, uploading its indices alone, and at the
 far level its particle; every frame asks the engine for the mesh of the edges at the node
 (`meshAt`), uploads it whole into the moving layer above the edges, and moves the node's view, or
 draws its particle in the moving layer, and its edges' labels where they are now, so edges and
 labels follow the node in the same frame. The release queries once. At the far level an edit of
-up to 256 slots keeps the query too (ADR-0040): the scene reads from the store's arrays which
+up to 256 slots keeps the query too (ADR-0027): the scene reads from the store's arrays which
 slots were added or removed, draws the added nodes' particles and edges in the moving layer,
 hides the removed ones in the query's mesh by the span of their indices, and queries anew past
 the bound, for a slot filled in both by another object, or for a removal that ends a drag.
@@ -539,7 +539,7 @@ connection and deletion, which `interaction` hands to `api/editors.ts`, are aske
 there, in one place: only an identifier `canConnect` returns connects and only `true` from
 `canDelete` deletes, and a veto during whose call Comb tells a change to `onChange` ends its gesture
 with nothing done and no error, whatever it returned
-([ADR-0030](adr/0030-a-veto-that-changes-the-graph-ends-its-gesture.md)). Then they run through the
+([ADR-0024](adr/0024-edits-are-reported-as-typed-changes.md)). Then they run through the
 same function, the deletion through `removeNodes` where its `Deletion` names nodes, else through
 `removeEdges`, recorded as `by: "user"`, which every store action whose change may be either's
 requires; a dragged node or label writes the engine alone while it moves and records `nodeMoved` or
@@ -590,8 +590,8 @@ mutants, proptest's regressions, a run of cargo-mutants, editors' swap files), `
 the engine's core names or, through `Cargo.lock`, reaches a crate that touches the browser, the
 clock, randomness, or I/O, when a module other than the bridge imports the WebAssembly package, when
 the render layer reaches the store instead of the action-free `GraphView`, or when an example
-imports past the library's entries and its engine file (ADR-0028, ADR-0019), and when the render
-layer names PixiJS's `Text`, `HTMLText`, or `SplitText` or the edges layer a `Graphics` (ADR-0027),
+imports past the library's entries and its engine file (ADR-0009, ADR-0019), and when the render
+layer names PixiJS's `Text`, `HTMLText`, or `SplitText` or the edges layer a `Graphics` (ADR-0012),
 and when its Canvas 2D fallback names `Graphics` outside its imports and its one field (ADR-0018);
 it also fails a render file that imports from interaction by a relative path, a boundary no ADR
 decides, which the check holds as its own rule and this overview describes.
@@ -606,15 +606,15 @@ language. No ADR decides it; the check holds it as its own rule and this overvie
 file reach the 300 kB of Q-3, when no engine file is measured, when the JavaScript inlines the
 engine (ADR-0019), and when the bundle carries either seam of the bridge's test mode, each by a mark
 of its own the bridge's source names once, `DETACHING_MARK` in the message of `detaching` and
-`TRAP_EXPORT`, the name of the trap's export (ADR-0034, ADR-0021); it fails too when it does not
+`TRAP_EXPORT`, the name of the trap's export (ADR-0010, ADR-0021); it fails too when it does not
 recognise each in the library built in test mode, and the trap in the engine of
 `packages/comb/wasm/test-mode/`, and when that engine's generated glue differs from the production
 engine's, which the example hands it over with. The benchmark and the browser test of the built
 example fail where `testMode()` says the build runs the bridge in test mode.
 `scripts/check-dependencies.sh` fails on a lockfile of another package manager beside `bun.lock`
-(ADR-0008), on tsify's default or `json` features or `serde_json` in the bridge crate (ADR-0034), in
+(ADR-0008), on tsify's default or `json` features or `serde_json` in the bridge crate (ADR-0010), in
 whatever form the entry takes, and on a listed state library other than zustand in the library's
-dependency lists (ADR-0041).
+dependency lists (ADR-0011).
 `scripts/check-devcontainer.sh`, the template's, which `scripts/check-all.sh` and the **Checks**
 workflow run beside `scripts/check-code.sh`, fails on a host Docker socket mounted, a Feature not
 referenced by its major tag alone, or a lock that does not name the Features (ADR-0004).

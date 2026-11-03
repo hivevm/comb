@@ -112,7 +112,7 @@ test("a text wider than its column is cut with an ellipsis within the column", a
 test("the middle level draws the texts of role title alone, and the far level none", async ({
   page,
 }) => {
-  // Verifies: ADR-0013, ADR-0027
+  // Verifies: ADR-0013, ADR-0012
   await open(page);
   await loaded(page, { nodes: [{ ...node("b"), content: TALL }], edges: [] });
   const at = async (scale: number) => {
@@ -136,7 +136,7 @@ test("the middle level draws the texts of role title alone, and the far level no
 test("a badge is drawn near as a pill of its colour around its text, and the middle and far level draw none", async ({
   page,
 }) => {
-  // Verifies: ADR-0013, ADR-0027
+  // Verifies: ADR-0013, ADR-0012
   // A title, then a green badge beside a blue one, each in a column of 94: the pill hugs its text,
   // 8 either side, and is 22 high, the body's line of 16 and 3 above and below; the row is 22.
   const content: NodeContent = [
@@ -211,7 +211,7 @@ function expectPieces(
 test("a progress bar is drawn near as its segments from its column's left and its track after them, and the middle and far level draw none", async ({
   page,
 }) => {
-  // Verifies: ADR-0013, ADR-0027, Q-4
+  // Verifies: ADR-0013, ADR-0012, Q-4
   // A title, then a bar of 0.3 green and 0.2 grey alone in its row, its column 196 wide from 12,
   // then a caption beside a bar of 0.5 blue weighted 3, its column 141 wide from 67. Each bar is
   // 8 high in the middle of a body's line of 16: from 32 in the row from 28, from 48 in the row
@@ -361,7 +361,7 @@ test("a metric is drawn near as its caption over its value, its trend's arrow an
 test("the middle and far level draw no metric, and near draws it until updateNode takes it away", async ({
   page,
 }) => {
-  // Verifies: ADR-0013, ADR-0027
+  // Verifies: ADR-0013, ADR-0012
   await open(page);
   await loaded(page, { nodes: [{ ...node("b"), content: METRICS }], edges: [] });
   const at = async (scale: number) => {
@@ -421,7 +421,7 @@ test("a trend's text takes each new colour on its pooled text object, and no tex
 test("updateNode replaces the content, the canvas shows it, the node's height follows, and nodeUpdated carries it", async ({
   page,
 }) => {
-  // Verifies: ADR-0013, ADR-0030, G-5
+  // Verifies: ADR-0013, ADR-0024, G-5
   await open(page);
   await loaded(page, { nodes: [node("a")], edges: [] });
   await page.evaluate((content) => window.comb.updateNode("a", { content }), TALL);
@@ -511,7 +511,7 @@ test("a text of characters beyond the measured ones is cut within its column", a
 });
 
 test("a node's connectors follow the height its content lays out to", async ({ page }) => {
-  // Verifies: ADR-0013, ADR-0024
+  // Verifies: ADR-0013, ADR-0025
   await open(page);
   await loaded(page, { nodes: [{ ...node("b"), content: TALL }], edges: [] });
   /** The connectors drawn while the pointer is over the node, by side. */

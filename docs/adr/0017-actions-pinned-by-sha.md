@@ -7,11 +7,12 @@
 
 ## Context
 
-The specification names the build pipeline as an asset and dependencies and the build pipeline
-as the supply-chain boundary ([Threats](../SPECIFICATION.md#threats--forbidden-actions)).
-ADR-0008 adds actions beyond `actions/*` to set up Bun, Rust, and Playwright, and ADR-0014 a smoke
-test that builds the Dev Container. A tag of an action can be moved to other code by whoever
-controls its repository, and the next run executes that code without a diff in this repository.
+The specification names the build pipeline as an asset and dependencies and the build pipeline as
+the supply-chain boundary ([Threats](../SPECIFICATION.md#threats--forbidden-actions)).
+[ADR-0008](0008-toolchain.md) adds actions beyond `actions/*` to set up Bun, Rust, and Playwright,
+and [ADR-0014](0014-dev-container-toolchain.md) a smoke test that builds the Dev Container. A tag of
+an action can be moved to other code by whoever controls its repository, and the next run executes
+that code without a diff in this repository.
 
 The catalogue offers two forms: a major version tag with Dependabot raising the next major, which
 fits first-party actions and few maintainers, and a full commit SHA with a version comment kept
@@ -29,8 +30,9 @@ schedule of Dependabot's updates.
 
 ## Alternatives considered
 
-- **Major version tag** — what the template ships, with fixes within a major arriving without a
-  pull request; but a moved tag runs unreviewed, and third-party actions join with ADR-0008.
+- **Major version tag** — what the template ships, with fixes within a major arriving without a pull
+  request; but a moved tag runs unreviewed, and third-party actions join with
+  [ADR-0008](0008-toolchain.md).
 - **pinact instead of Dependabot** — pins and updates the same way, but a tool more, while
   Dependabot is already configured.
 

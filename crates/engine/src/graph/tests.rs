@@ -1,6 +1,6 @@
 //! The graphs the tests of the graph's modules build, and the tests that hold the whole graph to
 //! a scan: queries, hits, and the lists of edges at each node after random additions, removals,
-//! and moves (ADR-0022), and the refusals of a load and of a slot that holds nothing.
+//! and moves (ADR-0023), and the refusals of a load and of a slot that holds nothing.
 
 use super::*;
 use crate::geometry::Side;
@@ -350,7 +350,7 @@ fn random_node(rng: &mut Lcg) -> [f32; 4] {
 
 #[test]
 fn queries_and_hits_find_what_a_scan_finds_after_each_addition_and_move() {
-    // Verifies: ADR-0022
+    // Verifies: ADR-0023
     for seed in 1..=10 {
         let mut rng = Lcg(seed);
         // Now and then from an empty graph, which the first addition indexes.
@@ -417,7 +417,7 @@ fn random_edge(rng: &mut Lcg, drawn: &Drawn) -> EdgeSpec {
 
 #[test]
 fn queries_hits_and_lists_find_what_a_scan_finds_after_additions_removals_and_moves() {
-    // Verifies: ADR-0022, G-4
+    // Verifies: ADR-0023, G-4
     for seed in 1..=12 {
         let mut rng = Lcg(seed);
         let mut graph = random_graph(&mut rng, 60, 80);
@@ -479,7 +479,7 @@ fn queries_hits_and_lists_find_what_a_scan_finds_after_additions_removals_and_mo
 
 #[test]
 fn a_slot_that_holds_nothing_refuses_a_removal_and_a_move_which_change_nothing() {
-    // Verifies: ADR-0022
+    // Verifies: ADR-0023
     let mut rng = Lcg(3);
     let mut graph = random_graph(&mut rng, 4, 3);
     let removed = graph.remove_nodes(&[3]).unwrap();

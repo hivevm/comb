@@ -1,4 +1,4 @@
-//! The string columns of a load (ADR-0034): values concatenated and cut into pieces, each ending
+//! The string columns of a load (ADR-0010): values concatenated and cut into pieces, each ending
 //! where a value ends, with their boundaries in UTF-16 code units; whether they fit, the lengths
 //! read off the boundaries, a value named before the column is mapped, and the mapping of the
 //! values onto the strings Rust holds.
@@ -218,8 +218,8 @@ fn holding(
     None
 }
 
-// The malformed-data tests of graph data verify ADR-0034 (see `graph_data::tests`).
-// Verifies: ADR-0034
+// The malformed-data tests of graph data verify ADR-0010 (see `graph_data::tests`).
+// Verifies: ADR-0010
 #[cfg(test)]
 mod tests {
     use super::super::tests::{
@@ -233,7 +233,7 @@ mod tests {
 
     #[test]
     fn texts_of_content_cut_inside_a_pair_are_refused_for_their_length_before_any_is_mapped() {
-        // Verifies: ADR-0034
+        // Verifies: ADR-0010
         // Two texts of 1,100 code units, cut to 1,001: the first ends in the high half of a pair
         // and the second begins with the low one.
         let texts = format!("{}\u{1F600}{}", "a".repeat(1_000), "b".repeat(1_000));
@@ -259,7 +259,7 @@ mod tests {
 
     #[test]
     fn identifiers_cut_inside_a_pair_are_refused_for_their_length_before_any_is_mapped() {
-        // Verifies: ADR-0034
+        // Verifies: ADR-0010
         // Two identifiers of 300 code units, cut to 257: the first ends in the high half of a
         // pair and the second begins with the low one, one character across their boundary.
         let ids = format!("{}\u{1F600}{}", "a".repeat(256), "b".repeat(256));
@@ -298,7 +298,7 @@ mod tests {
 
     #[test]
     fn pieces_that_miss_the_last_boundary_or_end_inside_a_value_are_refused_as_malformed() {
-        // Verifies: ADR-0034
+        // Verifies: ADR-0010
         // Nodes `ab` and `cd`, and edges `d` and `e` with label texts of 1 and 3 code units.
         let nodes = |ids: &[&str]| {
             let mut columns = cut("abcd", &[0, 2, 4], None);

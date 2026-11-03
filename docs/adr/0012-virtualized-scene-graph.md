@@ -1,6 +1,6 @@
-# ADR-0012: A virtualized scene graph with culling by the engine and three levels of detail
+# ADR-0012: A virtualized scene graph with culling by the engine and three levels of detail, nodes bound by rank
 
-- **Status:** ⚪ superseded by [ADR-0027](0027-nodes-bound-by-rank.md)
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `packages/comb/src/render/`, and the exports of `crates/engine` and `crates/engine-wasm` that answer spatial queries and compute edge geometry
@@ -62,6 +62,11 @@ what they claim:
   it, nor would with 32 more vertices for each of its edges. So every edge found is drawn at every
   viewport while memory lasts.
 
+Editing the graph reuses freed slots (ADR-0023), and a node the host application adds has to be
+drawn on top also where it takes a freed slot below others, so slot order cannot be the order in
+which nodes are drawn. ADR-0023 gives every node a rank for that, and the hit test takes the node
+of the highest rank. Edges and edge labels have no such need and keep slot order.
+
 ## Decision
 
 We will create PixiJS display objects only for the nodes, edge labels, and connectors the engine's
@@ -81,7 +86,9 @@ vertices per query, and choose by zoom between three levels of detail.
   the rounding they had. A render that moves the world without a query keeps the origin of the query
   it drew.
 - **Culling:** `render` asks the engine for the slots that meet the viewport grown by a culling
-  margin of 128 screen pixels, and binds pooled display objects to exactly those, in slot order.
+  margin of 128 screen pixels, and binds pooled display objects to exactly those: node views and
+  particles in the order of the nodes' ranks (ADR-0023), which the query returns, so that the node
+  of the highest rank is drawn on top; edges and edge labels in slot order.
   While the viewport stays inside the rectangle it last queried, that rectangle reaches at most
   twice the margin beyond the viewport, the scale stays within a factor of 1.25 of the one it
   queried at, and the graph and the selection are unchanged, a render moves the world alone
@@ -128,9 +135,11 @@ vertices per query, and choose by zoom between three levels of detail.
   scale at which titles fall under 4 pixels (0.3). The benchmark on the reference machine checks
   that each level holds Q-1, and a threshold moves where one does not.
 - **Hit testing:** the engine answers which node is drawn on top at a point from the same spatial
-  index, at every level; node views take no events.
+  index, at every level, the node of the highest rank among those that hold it; node views take no
+  events.
 
-**Out of scope:** the model of node content and how its elements are laid out.
+**Out of scope:** the model of node content and how its elements are laid out, which
+[ADR-0013](0013-node-content-model.md) decides.
 
 ## Alternatives considered
 
@@ -145,6 +154,9 @@ The scene:
   points, and zoomed out, every edge is visible.
 - **`Text` instead of `BitmapText`** — sharper typography, but a canvas draw and a texture upload
   for every change, for every node.
+- **Nodes bound in slot order** — no rank, and a node in a higher slot drawn above one in a lower
+  slot, but a node added into a freed slot would be drawn beneath nodes in higher slots, where the
+  user expects the new node on top.
 
 What an edge and a query cost:
 
@@ -220,9 +232,9 @@ What an edge and a query cost:
   the rectangle and comes back, its dash pattern inside may shift when a query moves the chord.
 - Negative / trade-offs: which edges keep full detail past the budget follows slot order, not
   what the user looks at.
-- Follow-ups: the model of node content; whether the host application learns that a mesh was
-  coarsened, which would change the public interface; ordering the edges past the budget by their
-  nearness to the viewport's centre.
+- Follow-ups: whether the host application learns that a mesh was coarsened, which would change
+  the public interface; ordering the edges past the budget by their nearness to the viewport's
+  centre.
 
 ## Enforcement
 
@@ -263,6 +275,9 @@ Each test and check below cites this ADR with `Verifies: ADR-0012`.
   of the edge inside the viewport lies within a quarter pixel of half the stroke's width from
   either side of the stroke the shell draws; without the split it turns red. Those of accuracy
   also `Verifies: Q-4`.
+- **Draw order:** a browser test adds a node into a freed slot below nodes it overlaps and
+  asserts through inspection that its view is bound after theirs, drawn on top; binding by slot
+  turns it red.
 - Further tests cite it for what the decision fixes: the layers of the scene
   (`examples/metric-tree/e2e/example.spec.ts`), the scene's numbers
   (`packages/comb/src/render/scene-numbers.test.ts`), the levels' thresholds

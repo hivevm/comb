@@ -1,4 +1,4 @@
-# ADR-0024: Every node has one connector in the middle of each side, and an edge records the side it leaves and the side it enters
+# ADR-0025: Every node has one connector in the middle of each side, and an edge records the side it leaves and the side it enters
 
 - **Status:** 🟢 accepted
 - **Date:** 2026-10-24
@@ -14,21 +14,21 @@ assumes every edge connects one connector of a node to one connector of another
 node where an edge starts or ends. Nothing says how many connectors a node has, where they lie,
 or what makes one compatible.
 
-Today an edge has no connector of its own: `EdgePath::between` runs every path from the middle of
-the right side of its source to the middle of the left side of its target, a cubic Bézier curve
-whose control points pull horizontally out of both ends, by half the horizontal distance and at
-least 40 world units, so that an edge leaves and enters level. G-9's metric tree flows from left
-to right, which that path draws. A tree that flows top to bottom, or an edge back to a node
-further left, cannot be drawn so that it reads.
+The horizontal path runs from the middle of the right side of its source to the middle of the
+left side of its target, a cubic Bézier curve whose control points pull horizontally out of both
+ends, by half the horizontal distance and at least 40 world units, so that an edge leaves and
+enters level. G-9's metric tree flows from left to right, which that path draws. A tree that flows
+top to bottom, or an edge back to a node further left, cannot be drawn by it so that it reads.
 
-The stroke (ADR-0027) relies on three properties of the path, not on its direction: it is one
-cubic, so it lies in the hull of its four control points, which the rectangle's chords rest on; a
-cubic crosses each of the four lines of the grown rectangle at most three times, which bounds the
-split points at sixteen; and the arrowhead's tip is the path's end, its direction the path's
-tangent there. Q-4 asks for the path within 0.5 px of a reference computation.
+The stroke ([ADR-0012](0012-virtualized-scene-graph.md)) relies on three properties of the path, not
+on its direction: it is one cubic, so it lies in the hull of its four control points, which the
+rectangle's chords rest on; a cubic crosses each of the four lines of the grown rectangle at most
+three times, which bounds the split points at sixteen; and the arrowhead's tip is the path's end,
+its direction the path's tangent there. Q-4 asks for the path within 0.5 px of a reference
+computation.
 
 The host application describes what a node means; G-10 gives it node content, and none of it
-types a connector. ADR-0013 leaves connectors out of node content.
+types a connector. [ADR-0013](0013-node-content-model.md) leaves connectors out of node content.
 
 ## Decision
 
@@ -44,29 +44,29 @@ points pull out of each end along that side's outward normal.
 - **The path:** it starts at the connector of the source's side and ends at the connector of the
   target's side. Each control point lies on its end's outward normal, at half the distance
   between the two ends along that normal's axis, and at least 40 world units out. For `right` to
-  `left` that is today's path to the bit, so every graph that names no side is drawn as before.
+  `left` that is the horizontal path to the bit, so every graph that names no side is drawn by it.
   The arrowhead's tip is the target's connector, and it points along the path's tangent there,
   into the target's side.
-- **Compatible:** a connector is compatible with a connection the user drags from a connector of
-  a source node when it belongs to another node, and no edge from the source node to that node,
-  in that direction, exists, whatever sides that edge has; an edge the other way does not count.
-  A connection is made only to a compatible connector, and only after the host's veto allows it
-  (ADR-0023). The node the user drags from is the edge's source, the one released over its
-  target.
+- **Compatible:** a connector is compatible with a connection the user drags from a connector of a
+  source node when it belongs to another node, and no edge from the source node to that node, in
+  that direction, exists, whatever sides that edge has; an edge the other way does not count. A
+  connection is made only to a compatible connector, and only after the host's veto allows it
+  ([ADR-0024](0024-edits-are-reported-as-typed-changes.md)). The node the user drags from is the
+  edge's source, the one released over its target.
 - **Self-edges:** a user's connection and `addEdge` refuse an edge from a node to itself, the
   connection by never counting a connector of its own source as compatible, `addEdge` with a
-  generated kind of its own. `load` keeps accepting one, as it does today: the specification's
+  generated kind of its own. `load` accepts one: the specification's
   assumption that every edge joins a connector of one node to one of another
   ([Assumptions](../SPECIFICATION.md#assumptions)) is not enforced for a load.
 - **Second edges:** `addEdge` accepts a second edge between two nodes in the same direction, as
   `load` does; the rule of compatibility binds the user's gesture alone.
 - **Levels:** at the far level no connector is drawn, and no connection is begun. How a
-  connector is hit is decided with the other hit tests.
-- **Drawing:** a `connectors` layer joins the world above the nodes and edge labels (ADR-0027),
-  with the four connectors of the node under the pointer, and while the user drags a connection,
-  those of the source and of the node under the pointer, each compatible one drawn apart from the
-  others. The connection being dragged is drawn in the overlay as a line from the source's
-  connector to the pointer, until it is released.
+  connector is hit is decided with the other hit tests ([ADR-0013](0013-node-content-model.md)).
+- **Drawing:** a `connectors` layer joins the world above the nodes and edge labels
+  ([ADR-0012](0012-virtualized-scene-graph.md)), with the four connectors of the node under the
+  pointer, and while the user drags a connection, those of the source and of the node under the
+  pointer, each compatible one drawn apart from the others. The connection being dragged is drawn in
+  the overlay as a line from the source's connector to the pointer, until it is released.
 
 **Out of scope:** more than one connector per side, and connectors the host application places
 or types; routing edges around nodes; moving an edge's end to another connector by dragging it,
@@ -76,7 +76,7 @@ which the host does through `updateEdge`.
 
 - **Two connectors, an output on the right and an input on the left** — the path stays as it is
   and compatibility is "an output to an input", but a graph that flows top to bottom, or an edge
-  that runs back, keeps the backward S-curve it has today.
+  that runs back, is drawn as a backward S-curve.
 - **The nearest side, chosen anew as the nodes move** — no side to record and a path that always
   takes the short way, but an edge then jumps from side to side during a drag, and the host
   cannot persist where the user connected it.
@@ -90,13 +90,14 @@ which the host does through `updateEdge`.
   nodes, which a dataflow or dependency graph may hold on purpose.
 - **Control points at a fixed distance, or along the line between the ends** — simpler to state,
   but a fixed distance bends short edges into loops and long ones barely, and a pull along the
-  line no longer leaves a connector square to its side, and changes every existing path.
+  line leaves no connector square to its side, and changes the path of every edge that names no
+  side.
 
 ## Sources / Prior art
 
 - `EdgePath::horizontal` and `EdgePath::between` in `crates/engine/src/geometry.rs`, and the
-  stroke's argument of ADR-0027 (*The rectangle*, *Sixteen split points*), as they stand (read on
-  2026-10-24).
+  stroke's argument of [ADR-0012](0012-virtualized-scene-graph.md) (*The rectangle*, *Sixteen split
+  points*) (read on 2026-10-24).
 - xyflow's `Position` of a handle, `left`, `top`, `right`, and `bottom` —
   <https://reactflow.dev/api-reference/types/position> (read 2026-10-24): the same four sides,
   there as places of a handle the application puts on a node.
@@ -104,12 +105,12 @@ which the host does through `updateEdge`.
 ## Consequences
 
 - Positive: a graph that flows in any of four directions is drawn so that it reads, and a graph
-  that names no side looks exactly as it does today, so the reference image of the edges and every
+  that names no side is drawn by the horizontal path, so the reference image of the edges and every
   geometry test stay.
-- Positive: the path is still one cubic, so the rectangle, the sixteen split points, the mesh
-  budget, and the precision far from the world's origin of ADR-0010 and ADR-0027 hold unchanged;
-  since every control point pulls along an axis, graph data still describes no straight slanted
-  edge.
+- Positive: the path is one cubic, so the rectangle, the sixteen split points, the mesh budget, and
+  the precision far from the world's origin of [ADR-0010](0010-bridge-data-format.md) and
+  [ADR-0012](0012-virtualized-scene-graph.md) hold unchanged; since every control point pulls along
+  an axis, graph data describes no straight slanted edge.
 - Negative / trade-offs: an edge record grows by two sides, a byte each in the engine.
 - Negative / trade-offs: with the duplicate rule, a user cannot draw a second edge between two
   nodes in the same direction, even to another side; the host can, through `addEdge`.
@@ -122,14 +123,15 @@ which the host does through `updateEdge`.
 
 ## Enforcement
 
-Each test below cites this ADR with `Verifies: ADR-0024`.
+Each test below cites this ADR with `Verifies: ADR-0025`.
 
 - **The path:** tests in `crates/engine/src/geometry.rs` assert, for each of the sixteen pairs of
-  sides, that the path starts and ends at the two connectors and leaves and enters along each
-  side's normal, and that `right` to `left` is the path of today for the cases the existing tests
-  hold, edges that run backwards among them. The property test of the budget,
-  `crates/engine/src/graph/budget.rs`, draws its random edges with random sides, so that ADR-0027's
-  assertions hold for every pair; it also `Verifies: Q-4`.
+  sides, that the path starts and ends at the two connectors and leaves and enters along each side's
+  normal, and that `right` to `left` is the horizontal path for the cases the geometry tests hold,
+  edges that run backwards among them. The property test of the budget,
+  `crates/engine/src/graph/budget.rs`, draws its random edges with random sides, so that
+  [ADR-0012](0012-virtualized-scene-graph.md)'s assertions hold for every pair; it also `Verifies:
+  Q-4`.
 - **Graph data:** the property test of the bridge crate generates the two side fields, a value
   outside the four among them, and a test asserts that an edge without them is drawn from `right`
   to `left`, and a browser test that `addEdge` refuses an edge from a node to itself.

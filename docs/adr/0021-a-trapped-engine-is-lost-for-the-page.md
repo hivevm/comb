@@ -17,10 +17,11 @@ typed error.
 
 The engine is instantiated once per page: the glue wasm-bindgen generates caches its instance
 (`__wbg_init` in `packages/comb/wasm/engine.js`), so every Comb on the page shares it, and a
-`createComb` after the trap would get the same instance back. After a trap the instance's memory
-may be inconsistent, an allocator stopped halfway, so no call into it is safe again. The checks of
-the bridge (ADR-0009) and the mesh budget (ADR-0012) close the traps that are known; this decision
-is for one that slips past them.
+`createComb` after the trap would get the same instance back. After a trap the instance's memory may
+be inconsistent, an allocator stopped halfway, so no call into it is safe again. The checks of the
+bridge ([ADR-0009](0009-functional-core-imperative-shell.md)) and the mesh budget
+([ADR-0012](0012-virtualized-scene-graph.md)) close the traps that are known; this decision is for
+one that slips past them.
 
 ## Decision
 
@@ -28,9 +29,10 @@ We will treat a trap as the loss of the engine for the page: from the first trap
 every Comb on the page that needs the engine throws an `EngineLostError`, no trap escapes as a page
 error, and the host application learns of the loss through a listener it registers.
 
-- **Detection:** the bridge recognises a trap as a `WebAssembly.RuntimeError` thrown from a call
-  of the engine, or the error the glue throws for an object still borrowed, and marks the engine
-  lost for the page. Errors the bridge returns as values (ADR-0010) are not traps.
+- **Detection:** the bridge recognises a trap as a `WebAssembly.RuntimeError` thrown from a call of
+  the engine, or the error the glue throws for an object still borrowed, and marks the engine lost
+  for the page. Errors the bridge returns as values ([ADR-0010](0010-bridge-data-format.md)) are not
+  traps.
 - **Refusal:** `load`, `updateNode`, `setViewport`, `fitView`, and a `createComb` after the loss
   throw `EngineLostError`, which `comb` exports beside its other errors and which names itself.
   Calls that do not touch the engine (`viewport`, `onSelectionChange`, `destroy`) keep working.
@@ -45,18 +47,20 @@ error, and the host application learns of the loss through a listener it registe
   demand, provokes the trap, so the tests do not depend on a trap the checks may close.
 
 **Out of scope:** instantiating the engine anew within the page, which needs a way past the glue's
-cached instance and the compiled module kept (ADR-0019); persisting the graph across the reload.
+cached instance and the compiled module kept ([ADR-0019](0019-the-host-hands-comb-its-engine.md));
+persisting the graph across the reload.
 
 ## Alternatives considered
 
-- **Instantiate anew automatically** — Comb keeps the compiled `WebAssembly.Module`, builds a
-  fresh instance after a trap, and loads the graph its store holds. The host sees nothing, but the
-  glue caches one instance per page, so this needs a glue built or patched for it, and ADR-0019's
-  handover of a `Response` would become one of a module.
+- **Instantiate anew automatically** — Comb keeps the compiled `WebAssembly.Module`, builds a fresh
+  instance after a trap, and loads the graph its store holds. The host sees nothing, but the glue
+  caches one instance per page, so this needs a glue built or patched for it, and
+  [ADR-0019](0019-the-host-hands-comb-its-engine.md)'s handover of a `Response` would become one of
+  a module.
 - **Refuse, but allow a new Comb** — as decided, and `createComb` may build a fresh instance. It
   needs the same way past the cache as instantiating anew, for a smaller gain.
-- **Leave it untyped** — the state today: a canvas that no longer draws, a page error in the
-  frame, and an error the host application cannot tell from a bug of its own.
+- **Leave it untyped** — what the glue does on its own: a canvas that no longer draws, a page
+  error in the frame, and an error the host application cannot tell from a bug of its own.
 
 ## Sources / Prior art
 
@@ -65,8 +69,8 @@ cached instance and the compiled module kept (ADR-0019); persisting the graph ac
 - WebAssembly JavaScript interface, `WebAssembly.RuntimeError`: the error a trap throws —
   <https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/RuntimeError>.
 - Measured: after a trap, the next call of the same `Engine` throws "recursive use of an object
-  detected which would lead to unsafe aliasing in rust" (the reproduction of the mesh budget's
-  ticket, before the budget).
+  detected which would lead to unsafe aliasing in rust", reproduced with a mesh that runs out of
+  memory, a trap the mesh budget of [ADR-0012](0012-virtualized-scene-graph.md) closes.
 
 ## Consequences
 

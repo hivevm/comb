@@ -1,12 +1,12 @@
 //! The query: which node slots, edge slots, and edge labels a rectangle meets, at a level of
-//! detail, and the mesh of the edges it found, written relative to an origin (ADR-0034,
-//! ADR-0027).
+//! detail, and the mesh of the edges it found, written relative to an origin (ADR-0010,
+//! ADR-0012).
 
 use super::{Graph, SlotError};
 use crate::geometry::{Point, Rect, bounded_pixel};
 use crate::stroke::{MESH_BUDGET, Mesh, Stroke};
 
-/// The level of detail a query serves (ADR-0027): near draws edge labels, middle does not, and
+/// The level of detail a query serves (ADR-0012): near draws edge labels, middle does not, and
 /// far draws edges as plain lines one pixel wide.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Level {
@@ -18,7 +18,7 @@ pub enum Level {
 /// What a query found: node slots in ascending rank, edge and label slots in ascending order, per
 /// found label its
 /// point, and the mesh of the found edges with its detail; the label points and the mesh's
-/// positions relative to `origin` (ADR-0034).
+/// positions relative to `origin` (ADR-0010).
 #[derive(Debug, Default)]
 pub struct Visible {
     pub nodes: Vec<u32>,
@@ -29,7 +29,7 @@ pub struct Visible {
     pub origin: Point,
 }
 
-/// The origin of a query in `rect` (ADR-0034): its centre snapped to a grid whose side is the
+/// The origin of a query in `rect` (ADR-0010): its centre snapped to a grid whose side is the
 /// smallest power of two at least the rectangle's larger side, so that it stays across pans
 /// shorter than that, and taken to the nearest `f32`, so that it holds exactly in both; (0, 0)
 /// for a rectangle that is not finite or has no area to snap to.
@@ -39,7 +39,7 @@ pub(crate) fn origin_of(rect: &Rect) -> Point {
     #[expect(
         clippy::cast_possible_truncation,
         reason = "taken to the nearest f32 on purpose, so that the origin holds exactly in both \
-                  (ADR-0034); a centre beyond f32 turns infinite and falls back to (0, 0) below"
+                  (ADR-0010); a centre beyond f32 turns infinite and falls back to (0, 0) below"
     )]
     let snap = |min: f64, max: f64| f64::from((((min + max) / 2.0 / grid).round() * grid) as f32);
     let origin = Point::new(snap(rect.min_x, rect.max_x), snap(rect.min_y, rect.max_y));
@@ -53,7 +53,7 @@ pub(crate) fn origin_of(rect: &Rect) -> Point {
 impl Graph {
     /// Writes into `out` the nodes and edges whose bounds meet `rect` and the mesh of the edges,
     /// stroked for `level` where a screen pixel is `pixel` world units, within the mesh budget
-    /// (ADR-0027); at the near level also the labels whose point lies within `label_reach` of it,
+    /// (ADR-0012); at the near level also the labels whose point lies within `label_reach` of it,
     /// and at the others no label.
     pub fn query(
         &mut self,
@@ -108,9 +108,9 @@ impl Graph {
                 #[expect(
                     clippy::cast_possible_truncation,
                     reason = "a label point within `label_rect`, less the query's origin and only \
-                              then rounded, rounds by its distance from the rectangle (ADR-0034); \
+                              then rounded, rounds by its distance from the rectangle (ADR-0010); \
                               a label point lies within three times `WORLD_LIMIT`, and the \
-                              origin of a rectangle that finds it within 2^127 of it (ADR-0034), \
+                              origin of a rectangle that finds it within 2^127 of it (ADR-0010), \
                               within f32"
                 )]
                 out.label_points
@@ -130,7 +130,7 @@ impl Graph {
     /// `also`, found by a query or not, each once, in ascending order, and into `out` their mesh,
     /// stroked as `query` strokes the edges it found in `rect` at `level` where a screen pixel is
     /// `pixel` world units, relative to `origin`, within the mesh budget: what a drag redraws of
-    /// the nodes it moves (ADR-0040) and an edit of what it added (ADR-0040). A slot of `slots`
+    /// the nodes it moves and an edit of what it added (ADR-0027). A slot of `slots`
     /// that holds no node, or of `also` that holds no edge, refuses the call, and nothing is
     /// written.
     pub fn mesh_at(
@@ -166,7 +166,7 @@ impl Graph {
 
 /// Where `mesh_at` strokes the edges at the nodes a drag moves: in the rectangle, at the level,
 /// and where a screen pixel is the pixel's world units of the query the scene keeps, relative to
-/// its origin (ADR-0040).
+/// its origin (ADR-0027).
 #[derive(Clone, Copy, Debug)]
 pub struct MeshAt {
     pub rect: Rect,
@@ -206,7 +206,7 @@ mod tests {
 
     #[test]
     fn the_mesh_at_a_node_holds_every_edge_at_it_found_or_not_and_no_other() {
-        // Verifies: ADR-0040
+        // Verifies: ADR-0027
         // Nodes 0 and 1 side by side, node 2 far off; edges 0–1, 1–2, and 0–2, then one between
         // 1 and 2 alone, which no edge at 0 is.
         let positions = vec![0.0, 0.0, 300.0, 0.0, 1e6, 1e6];
@@ -259,7 +259,7 @@ mod tests {
 
     #[test]
     fn the_mesh_of_edge_slots_holds_those_edges_and_the_ones_at_the_nodes_each_once() {
-        // Verifies: ADR-0040
+        // Verifies: ADR-0027
         let positions = vec![0.0, 0.0, 300.0, 0.0, 600.0, 0.0];
         let sizes = vec![220.0, 64.0, 220.0, 64.0, 220.0, 64.0];
         let edge = |source, target| EdgeSpec {
@@ -343,7 +343,7 @@ mod tests {
 
     #[test]
     fn a_query_origin_is_its_centre_snapped_to_the_power_of_two_of_its_larger_side() {
-        // Verifies: ADR-0034
+        // Verifies: ADR-0010
         // 400 by 100 around (5e7 + 100, 100): a grid of 512, and 97,656 of it the nearest in x.
         let rect = Rect::new(5e7 - 100.0, 50.0, 5e7 + 300.0, 150.0);
         assert_eq!(origin_of(&rect), Point::new(49_999_872.0, 0.0));
@@ -354,7 +354,7 @@ mod tests {
 
     #[test]
     fn a_query_origin_stays_across_a_pan_shorter_than_half_its_grid() {
-        // Verifies: ADR-0034
+        // Verifies: ADR-0010
         let around = |x: f64| Rect::new(x - 200.0, -200.0, x + 200.0, 200.0);
         let origin = Point::new(49_999_872.0, 0.0);
         for pan in [-250.0, -100.0, 0.0, 100.0, 250.0] {
@@ -368,7 +368,7 @@ mod tests {
 
     #[test]
     fn a_query_origin_holds_in_f32_and_is_the_world_origin_where_nothing_snaps() {
-        // Verifies: ADR-0034
+        // Verifies: ADR-0010
         // A grid finer than f32 holds at 1e8: the origin is the nearest f32, within its spacing.
         let origin = origin_of(&Rect::new(1e8 + 0.3, 0.3, 1e8 + 0.301, 0.301));
         assert_eq!(f64::from(origin.x as f32), origin.x);
@@ -409,7 +409,7 @@ mod tests {
 
     #[test]
     fn an_edge_far_from_the_world_origin_hands_over_its_mesh_as_precisely_as_near_it() {
-        // Verifies: ADR-0034, Q-4
+        // Verifies: ADR-0010, Q-4
         // At 5e7 an f32 holds every fourth number, at 3e7 every second; near the world's origin,
         // the same edge rounds by under 2^-23 of 512, which stands for the engine's f64 stroke.
         let at = Point::new(5e7, -3e7);
@@ -509,7 +509,7 @@ mod tests {
 
     #[test]
     fn no_coordinate_turns_infinite_where_nodes_and_labels_are_dragged_to_the_world_limit() {
-        // Verifies: Q-4, Q-7, ADR-0028
+        // Verifies: Q-4, Q-7, ADR-0009
         // Node `a` between `b` and `c`, an edge from each to `a` with a label, which the drags
         // below carry to opposite corners of the world, and the labels beyond them.
         let label = Some(LabelPlacement {

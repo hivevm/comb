@@ -86,7 +86,7 @@ pub enum Direction {
 }
 
 /// Why a font was refused: advances and code points that do not pair up, or a metric that is no
-/// finite number from 0 to `MAX_METRIC`. Either is the shell's mistake (ADR-0031).
+/// finite number from 0 to `MAX_METRIC`. Either is the shell's mistake (ADR-0022).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FontError {
     Unpaired,

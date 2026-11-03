@@ -1,7 +1,7 @@
-// The host application adds a node through `addNode` (ADR-0022, ADR-0030): the canvas draws it
+// The host application adds a node through `addNode` (ADR-0023, ADR-0024): the canvas draws it
 // where it was placed, above every node it overlaps, without a load, and `onChange` tells every
 // change of the graph before the call that made it returns. A node a load would refuse, or one of
-// an identifier the graph holds already, is refused, and nothing changes (ADR-0028, Q-7).
+// an identifier the graph holds already, is refused, and nothing changes (ADR-0009, Q-7).
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphChange } from "comb";
 import { drawnGraph, loaded, node, open, screenCentre, selections, titled } from "./shared";
@@ -24,7 +24,7 @@ async function pressOn(page: Page, id: string): Promise<string | null> {
 test("addNode draws the node where the host placed it in the next frame, without a load", async ({
   page,
 }) => {
-  // Verifies: ADR-0022, ADR-0030
+  // Verifies: ADR-0023, ADR-0024
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -58,7 +58,7 @@ test("addNode draws the node where the host placed it in the next frame, without
 test("a node added over others is drawn and selected above them, and a load stacks by slot", async ({
   page,
 }) => {
-  // Verifies: ADR-0022, ADR-0027
+  // Verifies: ADR-0023, ADR-0012
   await open(page);
   // Three nodes at the same place: a load draws them in slot order, c on top.
   await loaded(page, { nodes: [node("a"), node("b"), node("c")], edges: [] });
@@ -79,7 +79,7 @@ test("a node added over others is drawn and selected above them, and a load stac
 test("onChange receives one nodeAdded before addNode returns, and one loaded for each load", async ({
   page,
 }) => {
-  // Verifies: ADR-0030
+  // Verifies: ADR-0024
   await open(page);
   const result = await page.evaluate(
     (nodes) => {
@@ -121,7 +121,7 @@ test("onChange receives one nodeAdded before addNode returns, and one loaded for
 });
 
 test("a load that clears the selection tells its change before the selection", async ({ page }) => {
-  // Verifies: ADR-0030
+  // Verifies: ADR-0024
   await open(page);
   await loaded(page, { nodes: [node("a")], edges: [] });
   expect(await pressOn(page, "a")).toBe("a");
@@ -211,7 +211,7 @@ const REFUSED: { name: string; added: unknown; problem: unknown }[] = [
 
 for (const { name, added, problem } of REFUSED) {
   test(`addNode refuses ${name} with a GraphDataError, and nothing changes`, async ({ page }) => {
-    // Verifies: Q-7, ADR-0028, ADR-0030
+    // Verifies: Q-7, ADR-0009, ADR-0024
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
@@ -250,7 +250,7 @@ for (const { name, added, problem } of REFUSED) {
 test("addNode reads each field of the node once, and a getter that throws refuses it", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0028
+  // Verifies: Q-7, ADR-0009
   await open(page);
   await loaded(page, { nodes: [node("a")], edges: [] });
   const result = await page.evaluate(() => {
@@ -291,7 +291,7 @@ test("addNode reads each field of the node once, and a getter that throws refuse
 });
 
 test("addNode refuses a node past the limit of a load, and nothing changes", async ({ page }) => {
-  // Verifies: Q-7, ADR-0028
+  // Verifies: Q-7, ADR-0009
   test.setTimeout(120_000);
   await open(page);
   const result = await page.evaluate(async () => {
@@ -330,7 +330,7 @@ test("addNode refuses a node past the limit of a load, and nothing changes", asy
 test("addNode refuses a node whose identifier passes the budget of a load, and nothing changes", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0028
+  // Verifies: Q-7, ADR-0009
   test.setTimeout(120_000);
   await open(page);
   const result = await page.evaluate(async () => {
@@ -369,7 +369,7 @@ test("addNode refuses a node whose identifier passes the budget of a load, and n
 test("a change a listener makes reaches every listener after the change being delivered", async ({
   page,
 }) => {
-  // Verifies: ADR-0030
+  // Verifies: ADR-0024
   await open(page);
   const result = await page.evaluate(
     (nodes) => {
@@ -392,7 +392,7 @@ test("a change a listener makes reaches every listener after the change being de
 test("a listener that throws keeps no other listener from being told, and its error is thrown on", async ({
   page,
 }) => {
-  // Verifies: ADR-0030
+  // Verifies: ADR-0024
   await open(page);
   await loaded(page, { nodes: [node("a")], edges: [] });
   expect(await pressOn(page, "a")).toBe("a");
@@ -421,7 +421,7 @@ test("a listener that throws keeps no other listener from being told, and its er
 test("a getter of updateNode's patch that removes the node refuses the patch as unknownNode", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0028
+  // Verifies: Q-7, ADR-0009
   await open(page);
   await loaded(page, { nodes: [node("a"), node("b", 300)], edges: [] });
   const result = await page.evaluate(() => {

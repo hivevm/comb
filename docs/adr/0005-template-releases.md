@@ -1,7 +1,7 @@
 # ADR-0005: The template is released as SemVer tags on `main`, and every repository names the release it carries
 
 - **Status:** 🟢 accepted
-- **Date:** 2026-09-20
+- **Date:** 2026-11-03
 - **Deciders:** NUC maintainer, Markus Brigl
 - **Applies to:** the tags of the template repository, its own ADRs, the **Template** section of `README.md`, check 14 of `scripts/check-docs.sh`, and the pull request that lands a release
 
@@ -37,8 +37,9 @@ from, and `unreleased` before the first.
   tagged.
 - **Major, minor, patch:** a major is a change an existing derived project must act on, such as
   a check that would fail on its tree, an inherited ADR superseded, or the record normalized; a
-  minor adds a check, an ADR, a skill, a catalogue entry, or a document; a patch changes wording.
-  Before `v1.0.0` a minor may break, per SemVer item 4.
+  minor adds a check, an ADR, a skill, a catalogue entry, or a document; a patch changes wording,
+  or fixes a script without changing what it decides. Before `v1.0.0` a minor may break, per
+  SemVer item 4.
 - **A derived project moves the line** when it takes up a later release, and only then; a line
   never moved still tells the truth.
 - **The template corrects its own ADRs in place.** A derived project takes them up by release,
@@ -92,8 +93,8 @@ by subtree, by patch, or by hand; which releases receive fixes, which
 - Negative / trade-offs: the line is moved by hand, and a release nobody cuts leaves `main` ahead
   of the last tag, which harms nothing but names nothing either; a derived project that never
   moves the line reads a state that grows old; tags do not travel, which is why the line exists.
-- Follow-ups: a procedure for taking up the files of a release, beyond the record that a
-  normalization takes up.
+- Follow-ups: none; taking up the files of a release, beyond the record, is a procedure of
+  the `normalize` skill ([ADR-0003](0003-procedures-as-skills.md)).
 
 ## Enforcement
 

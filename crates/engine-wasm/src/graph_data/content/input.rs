@@ -1,4 +1,4 @@
-//! The content of a single node read through serde-wasm-bindgen (ADR-0034), the node of `addNode`
+//! The content of a single node read through serde-wasm-bindgen (ADR-0010), the node of `addNode`
 //! or a patch of `updateNode`, as the snapshot hands a load's over in columns, and the first
 //! shape of it the snapshot could not flatten.
 
@@ -66,7 +66,7 @@ macro_rules! other_shapes {
 /// segments that are no list or a segment of them that is no object.
 pub type Shape = (u32, Option<u32>);
 
-/// What a shape of content the snapshot cannot flatten should have been (ADR-0034).
+/// What a shape of content the snapshot cannot flatten should have been (ADR-0010).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Unflat {
     /// A row: a list of elements.

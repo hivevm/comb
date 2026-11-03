@@ -1,5 +1,5 @@
 // The pool of a layer's views keeps the layer's children in the order a render binds them, bottom
-// to top, whatever order the views were bound in before (ADR-0027).
+// to top, whatever order the views were bound in before (ADR-0012).
 import { describe, expect, test } from "bun:test";
 import { Container } from "pixi.js";
 import { Bindings, type Pooled } from "./bindings";
@@ -19,7 +19,7 @@ function render(bindings: Bindings<View>, layer: Container, slots: number[]): nu
 
 describe("bindings", () => {
   test("the layer's children follow the order of each render, kept and new views alike", () => {
-    // Verifies: ADR-0027
+    // Verifies: ADR-0012
     const layer = new Container();
     const bindings = new Bindings(layer, () => new View());
     // Each render's order, as a query returns nodes by rank: new views after kept ones, before
@@ -40,7 +40,7 @@ describe("bindings", () => {
   });
 
   test("each view a render returns to the pool is released once, after the render's bindings", () => {
-    // Verifies: ADR-0027
+    // Verifies: ADR-0012
     const layer = new Container();
     const released: number[][] = [];
     const bindings = new Bindings(

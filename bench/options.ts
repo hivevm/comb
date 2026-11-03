@@ -1,6 +1,6 @@
 // The options of a benchmark run taken from its environment: which browser it measures in, one it
-// launches or one started outside it whose debugging port it attaches to (ADR-0038), and by what
-// factor it slows the measured page's CPU (ADR-0039). Each refuses a value it cannot take, before
+// launches or one started outside it whose debugging port it attaches to (ADR-0028), and by what
+// factor it slows the measured page's CPU (ADR-0029). Each refuses a value it cannot take, before
 // anything is measured.
 
 /** Where the run measures: in a Chromium it launches, or attached to the browser whose debugging

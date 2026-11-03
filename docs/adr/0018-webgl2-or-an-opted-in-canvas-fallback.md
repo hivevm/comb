@@ -8,11 +8,11 @@
 ## Context
 
 The specification asks for a PixiJS scene graph on WebGL2
-([Constraints](../SPECIFICATION.md#constraints)), and Q-1 is measured there. Where a browser
-offers no WebGL2, PixiJS falls back to its Canvas 2D renderer without a word. That renderer cannot
-run the edge mesh's shader (ADR-0012), so a canvas drawn that way shows nodes without edges, and a
-slow one. A test environment without WebGL2 runs on that fallback unnoticed unless something
-refuses it.
+([Constraints](../SPECIFICATION.md#constraints)), and Q-1 is measured there. Where a browser offers
+no WebGL2, PixiJS falls back to its Canvas 2D renderer without a word. That renderer cannot run the
+edge mesh's shader ([ADR-0012](0012-virtualized-scene-graph.md)), so a canvas drawn that way shows
+nodes without edges, and a slow one. A test environment without WebGL2 runs on that fallback
+unnoticed unless something refuses it.
 
 Some host applications would rather show a graph without dash patterns, slowly, than show
 nothing: a kiosk without a GPU, a locked-down virtual desktop. Others would rather fail loudly.
@@ -38,7 +38,7 @@ fallback below Canvas 2D.
 
 ## Alternatives considered
 
-- **Refusal without an option** — the simplest contract, and it kept the tests honest; but it
+- **Refusal without an option** — the simplest contract, and it keeps the tests honest; but it
   leaves a host application without a GPU no way to show anything.
 - **Silent fallback** — PixiJS's own default; it draws nodes without edges and hides a broken
   environment.

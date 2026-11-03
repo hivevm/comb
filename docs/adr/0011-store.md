@@ -1,9 +1,9 @@
-# ADR-0011: The graph's structure lives in a vanilla Zustand store, its coordinates in the engine's buffers
+# ADR-0011: The graph's structure and what the pointer is over live in a vanilla Zustand store; no coordinate does, and each kind of move is signalled by a counter of its own, an added node by its slot
 
-- **Status:** ⚪ superseded by [ADR-0029](0029-the-store-holds-no-coordinate-each-move-its-counter.md)
-- **Date:** 2026-10-24
+- **Status:** 🟢 accepted
+- **Date:** 2026-11-02
 - **Deciders:** Markus Brigl
-- **Applies to:** `packages/comb/src/store/`, and every module that reads or writes the state of the graph or the viewport
+- **Applies to:** `packages/comb/src/store/`, the state `packages/comb/src/interaction/` keeps between pointer events, and every module that reads or writes the state of the graph or the viewport
 
 ## Context
 
@@ -14,40 +14,88 @@ The specification asks for a lightweight TypeScript store, such as Zustand or si
 
 What decides Q-1 is not the library but what passes through it. With 50,000 nodes, an immutable
 update of every position on every frame of a drag rebuilds a large object for each frame, and a
-signal per node keeps 50,000 reactive objects alive. ADR-0010 already puts node positions, edge
-path points, and culling results into buffers the engine owns. The store then holds what changes
-at the pace of the user's edits, not of the frames: the structure of the graph, attributes, node
-content, edge appearance, the selection, and the viewport.
+signal per node keeps 50,000 reactive objects alive. [ADR-0010](0010-bridge-data-format.md) puts
+node positions, edge path points, and culling results into buffers the engine owns. The store then
+holds what changes at the pace of the user's edits, not of the frames: the structure of the graph,
+attributes, node content, edge appearance, the selection, and the viewport.
+
+Connecting ([ADR-0025](0025-one-connector-per-side.md)) and hovering keep state of their own: the
+node under the pointer, and the connection the user drags, with its source, side, the node it is
+over, compatibility, and the connector a release connects to. That state changes at the pace of
+what the pointer is over, not of its moves, and belongs with the rest of the store. The world point
+a connection is dragged to is a coordinate too, but no part of the graph and in no engine buffer:
+the engine derives nothing from it, and a store update for it every frame is the cost the store
+avoids for positions.
+
+A coordinate outside the store reaches its readers only through a signal, and the scene reads
+each signal for what it may keep. A drag keeps the query of its press and redraws what it moves in
+a layer of its own, and an edit at the far level keeps the query too
+([ADR-0027](0027-a-drag-or-an-edit-redraws-what-it-changed.md)); the scene can do that only where
+it tells a move of the dragged nodes, and an added node, from a change of positions no kept query
+survives, such as a load. One counter cannot say which. The scene reads an edit from the slots in
+which the store's arrays differ from the ones it drew, so an added node's slot is a signal
+already; a drag's moves need a counter of their own, and the store names the nodes a drag moves.
 
 ## Decision
 
 We will keep the structure of the graph, its attributes, node content, edge appearance, the
-selection, and the viewport in one store created with `createStore` from `zustand/vanilla`, and
-keep every coordinate out of it, in the engine's buffers, signalled to its readers by a counter
-the store increments when they change.
+selection, the viewport, and what the pointer is over in one store created with `createStore` from
+`zustand/vanilla`, and keep every coordinate out of it: the graph's in the engine's buffers, the
+pointer's in interaction's own state, each kind signalled to its readers by a counter of its own
+that the store increments when it moves.
 
 - **Writers:** `api` and `interaction` change the store through its actions; `render` only reads
-  it (ADR-0009).
+  it ([ADR-0009](0009-functional-core-imperative-shell.md)).
 - **Rendering:** `api` subscribes to the store and schedules at most one render per animation
   frame, however many changes it carries; `whenRendered` resolves once every change made before
   the call is drawn and is part of the public interface. The scene decides itself what changed
-  since it last drew (ADR-0012), so no selector narrows the subscription.
-- **Coordinates:** a drag writes positions into the engine's buffer and increments the counter
-  once per pointer move, which a browser delivers at most once a frame; no position is copied
-  into the store.
+  since it last drew ([ADR-0012](0012-virtualized-scene-graph.md)), so no selector narrows the
+  subscription.
+- **The graph's coordinates:** a drag of nodes writes positions into the engine's buffer; its
+  first move names the dragged slots in the store's `dragged`, and each pointer move, which a
+  browser delivers at most once a frame, increments `movesVersion`, which a query the scene keeps
+  survives ([ADR-0027](0027-a-drag-or-an-edit-redraws-what-it-changed.md)); its release clears
+  `dragged` and increments `positionsVersion`. `positionsVersion` counts the changes of positions a
+  kept query does not survive: a load, a drag's release, and each move of a label drag. An added
+  node increments none of them: its slot in the store's `nodes` is the signal, which the scene
+  compares with the arrays it last drew
+  ([ADR-0027](0027-a-drag-or-an-edit-redraws-what-it-changed.md)). No position is copied into the
+  store. The scene compares the counters with the ones it last drew.
+- **What the pointer is over:** the node under the pointer and the connection the user drags,
+  without the point it is dragged to, are written only where one of them changes, so a move that
+  changes none writes nothing of them.
+- **The pointer's coordinate:** the world point a connection is dragged to is interaction's,
+  handed by `api` to each render; a move of it increments `pointerVersion` and nothing else, so
+  that the frame it schedules redraws the connection's line without querying the engine or
+  redrawing the connectors. The counter is the signal of the move; no reader needs its value.
 - **Events to the host application** (G-5) are derived from store changes in `api`, so the host
   application sees one sequence of events whatever caused them.
 
 **Out of scope:** persistence and undo, which the host application owns; batching several actions
-into one notification.
+into one notification; where a coordinate of a later gesture lives, which follows this decision.
 
 ## Alternatives considered
 
+- **The graph's coordinates in the store** — one place for all state, but an update per frame of
+  a drag through an immutable store works against Q-1, and
+  [ADR-0010](0010-bridge-data-format.md) already moves them through buffers.
+- **The dragged point in the store** — one place for all state besides the graph's coordinates,
+  but a store update per frame of a connection drag, the cost the store avoids for positions.
+- **The dragged point in an engine buffer** — one home for every coordinate, but the engine
+  derives nothing from the point; a buffer and an export for a value only the shell reads.
+- **One counter, `positionsVersion`, for every move** — one signal and one contract between the
+  store and the engine's buffers, but a connection drag would have the scene query the engine and
+  redraw the connectors on every move, and a node drag's every move could not be told from a
+  load, so the scene would query every frame, which
+  [ADR-0027](0027-a-drag-or-an-edit-redraws-what-it-changed.md) decides it does not.
+- **An added node counted in `positionsVersion`** — every change of positions behind one counter,
+  but the scene cannot tell it from a load, so an edit at the far level would query the whole
+  view, which [ADR-0027](0027-a-drag-or-an-edit-redraws-what-it-changed.md) decides it does not.
+- **A notification without a counter** (`set({})`) — the same render, but a write that names no
+  field shows in no test of what a move writes; the counter makes the move visible.
 - **Signals with `@preact/signals-core`** — fine-grained updates without selectors, but one signal
   per node or edge means tens of thousands of reactive objects, and its benefit, updating exactly
-  what changed, is what the counter and the engine's buffers already give the hot path.
-- **Coordinates in the store** — one place for all state, but an update per frame of a drag
-  through an immutable store contradicts Q-1, and ADR-0010 already moves them through buffers.
+  what changed, is what the counters and the engine's buffers already give the hot path.
 - **`render` subscribing with selectors** — each layer would hear only its slice, but the scene's
   render cache already compares what it last drew with the store, and selectors per layer would
   schedule several renders for one change instead of one per frame.
@@ -60,20 +108,38 @@ into one notification.
   `zustand` 5.0.15, MIT (checked 2026-10-17).
 - Preact Signals core — <https://github.com/preactjs/signals>; npm `@preact/signals-core` 1.14.4,
   MIT (checked 2026-10-17).
+- `packages/comb/src/store/index.ts` (`Connection`, `pointerVersion`), `interaction/connect.ts`,
+  `render/connectors.ts` (`ConnectionLine`), as they stand on 2026-10-25.
 
 ## Consequences
 
-- Positive: the store stays small and changes at the pace of edits, so subscriptions stay cheap.
+- Positive: the store stays small and changes at the pace of edits and of what the pointer is
+  over, so subscriptions stay cheap; a connection drag writes one counter a frame.
+- Positive: where each coordinate lives, and why there are three counters, is in the record.
 - Positive: a familiar library with a small footprint for the bundle budget of Q-3.
-- Negative / trade-offs: the state of the graph is split in two places, the store and the engine's
-  buffers; the counter is the contract between them, and a write that forgets it leaves the
-  canvas stale.
+- Negative / trade-offs: the state of the graph is split in three places, the store, the engine's
+  buffers, and interaction's point; the counters are the contract between them, and a write that
+  forgets one leaves the canvas stale.
+- Negative / trade-offs: `render` takes the pointer's point as an argument of each render beside
+  the store's view.
 - Follow-ups: whether actions are batched into one notification when the host application loads
   a large graph (Q-2).
 
 ## Enforcement
 
-A test in `packages/comb` drags a node across many frames and asserts that the store's graph
-object stays the same reference while the counter rises once per frame. The structural test of
-ADR-0009 fails when `render` calls a writing action. A check fails when `packages/comb` depends on
-a store library other than `zustand`. Each cites this ADR with `Verifies: ADR-0011`.
+Each test below cites this ADR with `Verifies: ADR-0011`.
+
+- A test in `packages/comb` adds a node and asserts that `positionsVersion` stays and the node's
+  slot is in the store's `nodes` (`packages/comb/src/store/store.test.ts`).
+- A test in `packages/comb` drags a node across many frames and asserts that the store's graph
+  object stays the same reference while `movesVersion` rises once per frame, `positionsVersion`
+  stays, and `dragged` names the node's slot, and that the release clears `dragged` and
+  increments `positionsVersion` (`packages/comb/src/interaction/interaction.test.ts`).
+- A test in `packages/comb` drags a connection across the empty canvas, one move a frame, and
+  asserts that each move writes `pointerVersion` alone while the line follows the pointer
+  (`packages/comb/src/interaction/interaction.test.ts`).
+- A browser test drags a connection and asserts that it neither queries the engine nor redraws the
+  connectors per move (`examples/metric-tree/e2e/connect.spec.ts`).
+- The structural check of [ADR-0009](0009-functional-core-imperative-shell.md) fails when `render`
+  reaches a writing action, and `scripts/check-dependencies.sh` fails when `packages/comb` depends
+  on a store library other than `zustand`.

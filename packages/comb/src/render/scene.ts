@@ -1,5 +1,5 @@
-// The PixiJS scene (ADR-0027): a `world` render group with its layers in drawing order, and an
-// `overlay` in screen coordinates. This render reads the store and never writes it (ADR-0028).
+// The PixiJS scene (ADR-0012): a `world` render group with its layers in drawing order, and an
+// `overlay` in screen coordinates. This render reads the store and never writes it (ADR-0009).
 //
 // After every change, the scene asks the engine which nodes, edges, and edge labels meet the
 // viewport and a margin around it, and binds pooled node views and edge-label views to exactly
@@ -7,12 +7,12 @@
 // near draws node boxes, their content, and edge labels; middle draws node boxes and the texts of
 // role title; far draws nodes as particles and edges as thin lines, without text.
 //
-// A drag, and at the far level an edit of a few slots, keep the query (ADR-0040): what they move
+// A drag, and at the far level an edit of a few slots, keep the query (ADR-0027): what they move
 // or remove is left out of what it drew, and what they move or add is drawn in a moving layer
 // above, from the engine's mesh of the edges at the dragged nodes and of the added edges; dragged
 // views and their edges' labels move where the query bound them. A drag's release queries once.
 //
-// The world is drawn relative to the origin of the last query (ADR-0034): the `world` render
+// The world is drawn relative to the origin of the last query (ADR-0010): the `world` render
 // group stands at the screen point of the origin, the edges and the edge labels, which the engine
 // hands over relative to it, at (0, 0) in it, and the nodes and particles, placed by the positions
 // buffer, at minus the origin. The GPU, which takes PixiJS's transforms as `f32`, then sees only
@@ -44,7 +44,7 @@ import { NodeParticles } from "./particles";
 import { edited, editsSince, NO_EDITS, type Edits } from "./edits";
 import { levelAt, toScreen, worldRect } from "../store/viewport";
 
-/** The level of detail the scene draws at (ADR-0027); the engine strokes edges for it. */
+/** The level of detail the scene draws at (ADR-0012); the engine strokes edges for it. */
 export type { Level };
 
 const NONE = new Uint32Array(0);
@@ -108,7 +108,7 @@ export interface SceneSnapshot {
   edgeTriangles: number;
   /** How many vertices and indices the edge mesh draws, how many its buffers hold before they
    *  grow, and its detail: complete, or coarsened where the engine's mesh budget or memory ran
-   *  short (ADR-0027). */
+   *  short (ADR-0012). */
   edgeMesh: MeshSize & { detail: Detail };
   /** Every display object under the world, the layers themselves included. */
   displayObjects: number;
@@ -116,7 +116,7 @@ export interface SceneSnapshot {
   renders: number;
   /** How many of the renders queried the engine; the others moved the world alone. */
   queries: number;
-  /** The connectors the connectors layer draws (ADR-0024). */
+  /** The connectors the connectors layer draws (ADR-0025). */
   connectors: DrawnConnector[];
   /** Where each connector the layer draws is centred, in world units, in the order of
    *  `connectors`. */
@@ -164,10 +164,10 @@ export class Scene {
   readonly world = new Container({ isRenderGroup: true });
   /** The edges layer: the mesh on WebGL2, the fill on Canvas 2D (ADR-0018). */
   readonly edges: EdgesContainer | EdgeFill;
-  /** The moving layer's edges, the edges at the nodes a drag moves (ADR-0040). */
+  /** The moving layer's edges, the edges at the nodes a drag moves (ADR-0027). */
   readonly movingEdges: EdgesContainer | EdgeFill;
   readonly particles = new NodeParticles();
-  /** The moving layer's particles, of the nodes a drag moves at the far level (ADR-0040). */
+  /** The moving layer's particles, of the nodes a drag moves at the far level (ADR-0027). */
   readonly movingParticles = new NodeParticles();
   readonly nodes = new NodesContainer();
   readonly labels = new LabelsContainer();
@@ -188,10 +188,10 @@ export class Scene {
   /** The bridge of the last render and the edges it drew, for inspection. */
   private source: { bridge: Bridge; edges: GraphView["edges"] } | null = null;
   /** What the moving layer leaves out of the query it keeps, by the query's count: the edges and
-   *  the particles hidden so far; none while it draws nothing (ADR-0040). */
+   *  the particles hidden so far; none while it draws nothing (ADR-0027). */
   private hidden: { queries: number; edges: Set<number>; particles: Set<number> } | null = null;
   /** The edits since the kept query, null where it does not survive them, and the arrays they were
-   *  read from (ADR-0040). */
+   *  read from (ADR-0027). */
   private edits: Edits | null = NO_EDITS;
   private editedFrom: Pick<GraphView, "nodes" | "edges"> | null = null;
   /** The edge slots the moving layer draws, and what its mesh was made for. */
@@ -200,7 +200,7 @@ export class Scene {
   /** The slots the last render's drag moved, and whether this render queried. */
   private draggedAt: readonly number[] = [];
   private queried = false;
-  /** The store's arrays at the last render, which inspection reads (ADR-0040). */
+  /** The store's arrays at the last render, which inspection reads (ADR-0027). */
   private current: Pick<GraphView, "nodes" | "edges"> = { nodes: [], edges: [] };
   /** The detail of the moving layer's mesh, which joins the query's in inspection. */
   private movingDetail: Detail = "complete";
@@ -227,7 +227,7 @@ export class Scene {
   }
 
   /** Draws `state` from the engine behind `bridge`, a connection being dragged to the world point
-   *  `pointer`, which interaction keeps outside the store (ADR-0041). */
+   *  `pointer`, which interaction keeps outside the store (ADR-0011). */
   render(
     state: GraphView,
     bridge: Bridge,
@@ -281,7 +281,7 @@ export class Scene {
   }
 
   /** Reads the edits since the query drawn from the store's arrays when either is a new one
-   *  (ADR-0040): none where they are the query's, the edits at the far level where the kept query
+   *  (ADR-0027): none where they are the query's, the edits at the far level where the kept query
    *  survives them, and null where it does not, past `EDIT_BOUND`, at another level, or once a
    *  drag ended with no release, by a removal of what it moved. */
   private readEdits(state: GraphView): void {
@@ -299,7 +299,7 @@ export class Scene {
     if (this.draggedAt.length > 0 && !state.dragged) this.edits = null;
   }
 
-  /** Draws a frame of what moved or was edited against the query the scene keeps (ADR-0040): the
+  /** Draws a frame of what moved or was edited against the query the scene keeps (ADR-0027): the
    *  edges at the dragged nodes and the added edges meshed into the moving layer when the drag
    *  moved or the arrays changed; those edges and the removed ones, and at the far level the
    *  dragged and the removed nodes' particles, hidden in what the query drew, each once a query;
@@ -377,7 +377,7 @@ export class Scene {
     const { scale } = state.viewport;
     const level = levelAt(scale);
     const far = level === "far";
-    // A pixel `query` takes (ADR-0031): every writer of `viewport.scale` goes through `clampScale`.
+    // A pixel `query` takes (ADR-0022): every writer of `viewport.scale` goes through `clampScale`.
     const visible = bridge.query(rect, level, 1 / scale, this.labels.reach);
     const { origin } = visible;
     this.origin = origin;
@@ -401,7 +401,7 @@ export class Scene {
   }
 
   /** Whether the edge in `slot`, which the last query found or the moving layer meshed, is drawn
-   *  now: held by the store, and not hidden unless the moving layer draws it (ADR-0040). */
+   *  now: held by the store, and not hidden unless the moving layer draws it (ADR-0027). */
   private edgeDrawn(slot: number): boolean {
     if (!this.current.edges[slot]) return false;
     return !this.hidden?.edges.has(slot) || this.movingEdgeSlots.includes(slot);

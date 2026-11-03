@@ -1,4 +1,4 @@
-// The edges layer (ADR-0027): every edge the query found, drawn as one mesh from the triangles
+// The edges layer (ADR-0012): every edge the query found, drawn as one mesh from the triangles
 // the engine computes, with each edge's colour, dash pattern, and arrowhead (G-11). A small
 // shader leaves out the gaps of a dash pattern by the distance along the path. On the Canvas 2D
 // renderer a host application opts into (ADR-0018), which runs no shader, `EdgeFill` in
@@ -58,7 +58,7 @@ const ATTRIBUTES = [
 ] as const;
 
 /** A mesh an edges layer draws: a query's, which names the edges it found and where each one's
- *  indices start, or the moving mesh of a drag, which names none (ADR-0040). */
+ *  indices start, or the moving mesh of a drag, which names none (ADR-0027). */
 export interface DrawnMesh {
   mesh: EdgeMesh;
   edges?: Uint32Array;
@@ -160,7 +160,7 @@ class MeshBuffers {
   }
 
   /** Leaves the triangles of `ranges` of the indices out, as empty triangles, and marks the one
-   *  span of the index buffer that covers them for upload, nothing else (ADR-0040); the whole of it
+   *  span of the index buffer that covers them for upload, nothing else (ADR-0027); the whole of it
    *  where `whole`, since WebGL uploads at the draw by the last range marked, and a `set` of this
    *  render marked all of it. */
   hide(ranges: readonly [number, number][], whole = false): void {
@@ -221,7 +221,7 @@ export class EdgesContainer extends Container {
   }
 
   /** Leaves the edges in `hidden` out of the mesh the last sync drew, uploading the span of indices
-   *  they cover, or all of them where `whole` (ADR-0040). */
+   *  they cover, or all of them where `whole` (ADR-0027). */
   hide(hidden: ReadonlySet<number>, whole = false): void {
     const { edges, starts } = this.found;
     this.buffers.hide(hiddenRanges(edges, starts, this.buffers.indices, hidden), whole);

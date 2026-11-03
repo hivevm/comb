@@ -11,7 +11,7 @@ export const NEAR_SCALE = 0.6;
  *  longer read, so nodes become particles. */
 export const FAR_SCALE = 0.3;
 
-/** The level of detail at `scale` (ADR-0027), which the scene draws and a press hits at. */
+/** The level of detail at `scale` (ADR-0012), which the scene draws and a press hits at. */
 export function levelAt(scale: number): Level {
   if (scale >= NEAR_SCALE) return "near";
   return scale >= FAR_SCALE ? "middle" : "far";

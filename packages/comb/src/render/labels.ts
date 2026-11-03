@@ -1,4 +1,4 @@
-// The edge-labels layer at the near level (ADR-0027, G-6): a pooled pill per edge label in view,
+// The edge-labels layer at the near level (ADR-0012, G-6): a pooled pill per edge label in view,
 // centred on the point the engine placed it at.
 import { BitmapText, Container, Graphics } from "pixi.js";
 import type { Bridge, Visible } from "../bridge";
@@ -83,7 +83,7 @@ export class LabelsContainer extends Container {
   reach = LABEL_REACH;
 
   /** Moves the label views bound to the edges in `slots`, which a drag moves, to their edges'
-   *  points as the engine places them now, relative to `origin` (G-6, ADR-0040). */
+   *  points as the engine places them now, relative to `origin` (G-6, ADR-0027). */
   follow(slots: Uint32Array, bridge: Bridge, origin: { x: number; y: number }): void {
     for (const slot of slots) {
       const view = this.views.boundTo(slot);

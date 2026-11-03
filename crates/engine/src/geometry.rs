@@ -10,7 +10,7 @@
 /// derives from them, a connector, a control point, a vertex, a label point, lies within three
 /// times this, and the width of a stroke within `PIXEL_LIMIT`'s, so that each stays far within
 /// `f32`, whose largest value is about 2^128; relative to the origin of a query that draws it,
-/// which lies within half its grid of the rectangle's centre, at most 2^127 (ADR-0034), too.
+/// which lies within half its grid of the rectangle's centre, at most 2^127 (ADR-0010), too.
 pub const WORLD_LIMIT: f64 = 1_329_227_995_784_915_872_903_807_060_280_344_576.0;
 
 /// The largest screen pixel a query strokes for, 2^114 world units: far beyond the shell's least
@@ -159,7 +159,7 @@ fn extrema(p0: f64, p1: f64, p2: f64, p3: f64) -> impl Iterator<Item = f64> {
     [q / a, c / q].into_iter().filter(|t| !t.is_nan())
 }
 
-/// A side of a node, at whose middle its connector sits (ADR-0024).
+/// A side of a node, at whose middle its connector sits (ADR-0025).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Side {
     Top,
@@ -170,7 +170,7 @@ pub enum Side {
 }
 
 /// The sides an edge leaves its source by and enters its target by: by default the right of its
-/// source and the left of its target (ADR-0024).
+/// source and the left of its target (ADR-0025).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Sides {
     pub source: Side,
@@ -247,7 +247,7 @@ impl EdgePath {
 
     /// The path from the connector of `sides.source` of `source` to that of `sides.target` of
     /// `target`: each control point lies on its end's outward normal, half the distance between
-    /// the ends along that normal's axis out, and at least `MIN_PULL` (ADR-0024). From the right
+    /// the ends along that normal's axis out, and at least `MIN_PULL` (ADR-0025). From the right
     /// to the left it is `horizontal`'s path, to the bit.
     pub(crate) fn between(source: &Rect, target: &Rect, sides: Sides) -> Self {
         let (from, to) = (
@@ -418,7 +418,7 @@ mod tests {
 
     #[test]
     fn each_of_the_sixteen_pairs_of_sides_runs_from_connector_to_connector_along_their_normals() {
-        // Verifies: ADR-0024
+        // Verifies: ADR-0025
         let sides = [Side::Top, Side::Right, Side::Bottom, Side::Left];
         let outward = |side: Side| match side {
             Side::Top => (0.0, -1.0),
@@ -488,7 +488,7 @@ mod tests {
 
     #[test]
     fn from_the_right_to_the_left_the_path_is_the_horizontal_one_to_the_bit() {
-        // Verifies: ADR-0024
+        // Verifies: ADR-0025
         let source = Rect::of_node(10.0, 20.0, 220.0, 64.0);
         for target in [
             Rect::of_node(400.0, 300.0, 220.0, 64.0),
@@ -859,7 +859,7 @@ mod tests {
     }
 
     /// A small generator of numbers with a fixed seed (SplitMix64): the core takes no crate that
-    /// reaches randomness (ADR-0028).
+    /// reaches randomness (ADR-0009).
     struct Numbers(u64);
 
     impl Numbers {

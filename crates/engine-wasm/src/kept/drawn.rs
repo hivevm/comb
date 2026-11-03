@@ -1,4 +1,4 @@
-//! The buffers of what a query draws of node content (ADR-0013, ADR-0034): per element placed
+//! The buffers of what a query draws of node content (ADR-0013, ADR-0010): per element placed
 //! its kind, role, colour, and drawn text, the pieces of a progress bar, and the parts and arrow
 //! of a metric, which the shell reads through views on them.
 

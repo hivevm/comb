@@ -1,4 +1,4 @@
-# ADR-0035: The host application asks Comb the height a node's content lays out to
+# ADR-0026: The host application asks Comb the height a node's content lays out to
 
 - **Status:** 🟢 accepted
 - **Date:** 2026-10-31
@@ -7,21 +7,19 @@
 
 ## Context
 
-ADR-0013 takes a node's height from the host application: the engine computes it from the
-node's content, its width, and the fonts. The host application still places each node, by the
-top-left corner `NodeData` gives (`x`, `y`), and a host application that centres a node on a
-point, or runs a layout algorithm of its own, needs each node's size before it places it.
+[ADR-0013](0013-node-content-model.md) takes a node's height from the host application: the engine
+computes it from the node's content, its width, and the fonts. The host application still places
+each node, by the top-left corner `NodeData` gives (`x`, `y`), and a host application that centres a
+node on a point, or runs a layout algorithm of its own, needs each node's size before it places it.
 
 The example does both: it lays the metric tree out in rows, each node with its middle on its row,
-and puts a node dropped from the palette centred on the drop (G-1, G-9). It knows no height from
-Comb, so `examples/metric-tree/src/graph.ts` (lines 11–12 and 64–74) copies the engine's least
-height of 64 and padding of 10 (`crates/engine/src/content.rs`), the shell's line heights of 18,
-16, and 14 (`packages/comb/src/render/nodes.ts`), and a badge's row of 22, and sums them per
-type of node (`HEIGHTS`); `examples/metric-tree/src/main.ts:450` places a drop by it. The
-example's browser tests hold `HEIGHTS` to the drawn heights, so the copy is checked there; any
-other host application has no such test, and a change of a padding or a line height misplaces its
-nodes without a word: copied, the numbers are a public interface nobody declared. No goal of the
-specification names a node's height.
+and puts a node dropped from the palette centred on the drop (G-1, G-9). A host application that
+knows no height from Comb has to copy the engine's least height of 64 and padding of 10
+(`crates/engine/src/content.rs`), the shell's line heights of 18, 16, and 14
+(`packages/comb/src/render/nodes.ts`), and a badge's row of 22, and sum them per type of node.
+A browser test of its own can hold such a copy to the drawn heights; without one, a change of a
+padding or a line height misplaces its nodes without a word: copied, the numbers are a public
+interface nobody declared. No goal of the specification names a node's height.
 
 The layout libraries a host application would hand its graph to take every node's size before
 they lay out: dagre requires a `width` and a `height` of each node and returns its middle; ELK
@@ -31,11 +29,12 @@ and measures them, as the React Flow example of d3-dag's documentation reads `no
 Comb draws no DOM to measure. dagre and ELK take an edge label's size as well, to keep room for
 it.
 
-Content's height does not depend on its texts or its width today: texts are truncated to their
-column, never wrapped (ADR-0013), so `height` in `crates/engine/src/content.rs` sums each row's
-height from the kinds of its elements and the fonts alone. A graph of 50,000 nodes (Q-1) asked
-node by node would cross the bridge 50,000 times before its first load, the cost per crossing that
-ADR-0034 moved a load's fields out of.
+Content's height depends on neither its texts nor its width: texts are truncated to their column,
+never wrapped ([ADR-0013](0013-node-content-model.md)), so `height` in
+`crates/engine/src/content.rs` sums each row's height from the kinds of its elements and the fonts
+alone. A graph of 50,000 nodes (Q-1) asked node by node would cross the bridge 50,000 times before
+its first load, the cost per crossing that [ADR-0010](0010-bridge-data-format.md) keeps out of a
+load by crossing its fields as columns.
 
 ## Decision
 
@@ -50,7 +49,7 @@ checks content and refused with the same typed problems, changing nothing.
 - It is the height the engine gives a node of that content and width, the same number, so that
   a host application that places a node by it places it where Comb draws it.
 - After `destroy`, and once the engine is lost, it refuses as every other method does
-  (ADR-0021).
+  ([ADR-0021](0021-a-trapped-engine-is-lost-for-the-page.md)).
 - Content whose rows hold elements of the same kinds, row by row and in the same order, has the
   same height in the same fonts, whatever its texts and its width, so that a host application asks
   once per shape of content and not once per node. A change that makes a height depend on texts or
@@ -63,21 +62,21 @@ of an edge label, which Comb places along its edge (G-6); a method that takes ma
 
 ## Alternatives considered
 
-- **Keep the copy** — what the example does: no interface, and a test per host application that
-  holds its copy to the drawn heights. Every host application repeats the engine's numbers.
+- **Each host application copies the numbers** — no interface, and a test per host application
+  that holds its copy to the drawn heights. Every host application repeats the engine's numbers.
 - **The height of a node in the graph, `Comb.nodeSize(id)`** — asks after the node is added, so a
   host application adds, reads, and moves it, and Comb has no method that moves a node for the
   host application; and a layout algorithm needs every size before the first load.
 - **An anchor in `NodeData`** — the host application gives the node's middle, or another point,
   and Comb places the corner. It serves centring but not a layout algorithm, and widens
-  `NodeData` and the columns of a load (ADR-0034).
+  `NodeData` and the columns of a load ([ADR-0010](0010-bridge-data-format.md)).
 - **The height in the change `nodeAdded`** — the host application hears it after the node is
   drawn, too late to place it.
 - **`heightsOf(contents, width)`, many contents in one crossing** — serves a layout of 50,000
   nodes asked node by node, but a host application that asks once per shape asks a handful of
   times, and a second method would duplicate the first one's checks and problems.
-- **`heightOf(content)`, without the width** — exact today, but wrapping a text would change the
-  method's signature, not only its result.
+- **`heightOf(content)`, without the width** — exact while no height depends on the width, but
+  wrapping a text would change the method's signature, not only its result.
 - **Problems without a node** — `node` optional in the content's problems, left out by
   `heightOf`: no name a node could share, but it changes about twenty variants of the public
   `GraphDataProblem` and everything that builds or reads them.
@@ -117,7 +116,7 @@ of an edge label, which Comb places along its edge (G-6); a method that takes ma
 
 ## Enforcement
 
-A browser test of the example, citing `Verifies: ADR-0035`, adds a node of each type of the metric
+A browser test of the example, citing `Verifies: ADR-0026`, adds a node of each type of the metric
 tree and asserts that the drawn height equals `heightOf` of its content and width, that content
 of the same shape with other texts and at another width has the same height, and that malformed
 content, and a width `addNode` refuses, is refused with the problem `addNode` gives it, naming

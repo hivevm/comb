@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Self-test of scripts/check-container.sh. Verifies: ADR-0014, ADR-0015, ADR-0038
+# Self-test of scripts/check-container.sh. Verifies: ADR-0014, ADR-0015, ADR-0028
 #
 # Each case builds a fixture under a temporary directory — a devcontainer.json with comments that
 # builds from the Dockerfile and adds the Rust Feature, and a Dockerfile that pins its base image
@@ -27,7 +27,7 @@ passed=0
 SHA="sha256:$(printf '0%.0s' {1..64})"
 
 # The run argument and the forwarded ports a fixture names, by which the benchmark reaches a
-# Chrome on the host (ADR-0038); a case clears one to break it.
+# Chrome on the host (ADR-0028); a case clears one to break it.
 RUN_ARGS='"runArgs": ["--add-host=host.docker.internal:host-gateway"],'
 PORTS='"forwardPorts": [5173, 4173],'
 
@@ -210,7 +210,7 @@ printf '{ "build": { "dockerfile": "Dockerfile" }, "features": { "ghcr.io/devcon
 expect fail "a configuration on one line, with a string-valued Feature, is read like any other" "$d" \
   "docker-in-docker:2' brings a container engine"
 
-# ADR-0038: the way to a Chrome on the host.
+# ADR-0028: the way to a Chrome on the host.
 
 d="$(repo no-host)"
 RUN_ARGS='"runArgs": [],' config "$d" '"build": { "dockerfile": "Dockerfile" },' \

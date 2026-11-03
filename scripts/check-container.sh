@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # The Dev Container's image and its reach (ADR-0014, ADR-0015), and its way to a Chrome on the host
-# (ADR-0038).
+# (ADR-0028).
 #
 # scripts/check-devcontainer.sh holds the template's part, the socket, the Features' tags, and the
 # lock (ADR-0004). This check holds what Comb decided on top of it, from the files the decisions
@@ -17,7 +17,7 @@
 #      (ADR-0015).
 #   5. Host: no '--add-host=host.docker.internal:host-gateway' among its run arguments, or no 4173
 #      among its forwarded ports, by which the benchmark reaches a Chrome on the host and that
-#      Chrome its preview server (ADR-0038).
+#      Chrome its preview server (ADR-0028).
 #
 # A Feature id is a key directly inside the 'features' object, read by tracking brace depth as
 # check-devcontainer.sh reads it, so that a key elsewhere, such as a settings glob, is none.
@@ -86,9 +86,9 @@ else
 
   # 5. Host.
   grep -qF '"--add-host=host.docker.internal:host-gateway"' <<< "$config" \
-    || add_error "$CONFIG: has no run argument --add-host=host.docker.internal:host-gateway — the benchmark reaches a Chrome on the host by it (ADR-0038)"
+    || add_error "$CONFIG: has no run argument --add-host=host.docker.internal:host-gateway — the benchmark reaches a Chrome on the host by it (ADR-0028)"
   grep -qE '"forwardPorts"[[:space:]]*:[[:space:]]*\[[^]]*\b4173\b' <<< "$config" \
-    || add_error "$CONFIG: does not forward port 4173 — a Chrome on the host loads the benchmark's preview server through it (ADR-0038)"
+    || add_error "$CONFIG: does not forward port 4173 — a Chrome on the host loads the benchmark's preview server through it (ADR-0028)"
 
   mapfile -t features < <(feature_ids "$config")
   for id in "${features[@]}"; do

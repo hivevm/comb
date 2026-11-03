@@ -208,7 +208,7 @@ test("a click on an icon reports kind icon, on its square, and beside it in its 
 test("a press on an element that moves past 4 pixels drags the node and reports no click; within them it clicks", async ({
   page,
 }) => {
-  // Verifies: ADR-0013, ADR-0030
+  // Verifies: ADR-0013, ADR-0024
   await openClicks(page);
   const from = await pagePoint(page, ...ACTION);
   // Within the slop: released 3 pixels from the press, a click, and the node stays.
@@ -248,7 +248,7 @@ test("a click on the node's padding or between its elements selects the node and
 test("an element is clicked only where it is drawn: at the middle level the title, at the far level none", async ({
   page,
 }) => {
-  // Verifies: ADR-0013, ADR-0027
+  // Verifies: ADR-0013, ADR-0012
   await openClicks(page);
   await setViewport(page, { x: 100, y: 100, scale: 0.5 });
   expect(await page.evaluate(() => window.inspect().level)).toBe("middle");

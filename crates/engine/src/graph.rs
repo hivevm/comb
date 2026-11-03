@@ -1,6 +1,6 @@
 //! The loaded graph as the engine keeps it: node positions and sizes per node slot, edges per edge
 //! slot, a rank per node slot that orders drawing and hitting, and a spatial index over both that
-//! loads, additions, and moves keep current (ADR-0034, ADR-0022, ADR-0027).
+//! loads, additions, and moves keep current (ADR-0010, ADR-0023, ADR-0012).
 //!
 //! A query answers which node slots, edge slots, and edge labels a rectangle meets, and writes
 //! those slots, the points of the labels, and the mesh of the edges into buffers the caller reads;
@@ -41,7 +41,7 @@ use slots::Slots;
 pub struct EdgeSpec {
     pub source: u32,
     pub target: u32,
-    /// The sides it leaves its source by and enters its target by (ADR-0024).
+    /// The sides it leaves its source by and enters its target by (ADR-0025).
     pub sides: Sides,
     pub label: Option<LabelPlacement>,
     pub style: EdgeStyle,
@@ -76,7 +76,7 @@ impl From<TooManySlots> for GraphError {
     }
 }
 
-/// Why a call that names slots was refused: a slot beyond the slots, or free (ADR-0022).
+/// Why a call that names slots was refused: a slot beyond the slots, or free (ADR-0023).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SlotError {
     /// A slot that holds no node.
@@ -136,9 +136,9 @@ pub struct Graph {
     positions: Vec<f32>,
     sizes: Vec<f32>,
     edges: Vec<EdgeSpec>,
-    /// The node slots, free ones among them (ADR-0022).
+    /// The node slots, free ones among them (ADR-0023).
     node_slots: Slots,
-    /// The edge slots, free ones among them (ADR-0022).
+    /// The edge slots, free ones among them (ADR-0023).
     edge_slots: Slots,
     paths: Vec<EdgePath>,
     /// The bounds of each path, computed when the path is.
@@ -149,10 +149,10 @@ pub struct Graph {
     pills: Vec<Option<(f64, f64)>>,
     /// The largest half extent of any pill measured, by which a hit looks for labels around it.
     widest_pill: f64,
-    /// The edge slots at each node slot, one list per node slot (ADR-0022).
+    /// The edge slots at each node slot, one list per node slot (ADR-0023).
     incident: Vec<Vec<u32>>,
     /// The rank of each node slot: the node of the higher rank is drawn and hit above the other
-    /// (ADR-0022).
+    /// (ADR-0023).
     ranks: Vec<u32>,
     /// The rank the next node added takes, one above the highest given.
     next_rank: u64,

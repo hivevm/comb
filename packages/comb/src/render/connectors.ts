@@ -1,8 +1,8 @@
-// The connectors layer and the connection being dragged (ADR-0024, ADR-0027): the four connectors
+// The connectors layer and the connection being dragged (ADR-0025, ADR-0012): the four connectors
 // of the node under the pointer, and while the user drags a connection those of its source and of
 // the node under the pointer, the compatible ones drawn apart; and in the overlay, a line from the
 // source's connector to the pointer. It reads the store, the engine's positions, and the point
-// interaction keeps for the pointer, and writes none of them (ADR-0041, ADR-0028).
+// interaction keeps for the pointer, and writes none of them (ADR-0011, ADR-0009).
 import { Graphics } from "pixi.js";
 import type { GraphView, Side } from "../store";
 import { toScreen } from "../store/viewport";

@@ -15,7 +15,7 @@ export const SLOP = 4;
 export type ContentClick = Readonly<{ node: string } & ElementHit>;
 
 /** What a gesture works on: the store, the bridge to the engine, the world point a connection is
- *  dragged to, which the store does not hold (ADR-0041), and the one hit test, which the press,
+ *  dragged to, which the store does not hold (ADR-0011), and the one hit test, which the press,
  *  the hover, and the connection ask (ADR-0013). */
 export interface Context {
   readonly store: GraphStore;
@@ -36,7 +36,7 @@ export interface Gesture {
   move(x: number, y: number): void;
   /** Ends it, `released` where the pointer was released, not ended by a later press or a
    *  cancel, and `at` the screen point of a release on the canvas, none outside it; tells what it
-   *  changed (ADR-0030). */
+   *  changed (ADR-0024). */
   end(released: boolean, at?: { x: number; y: number }): void;
   /** Whether the change `state` records took its subject from under it. */
   taken(state: GraphState): boolean;

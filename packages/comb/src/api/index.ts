@@ -1,5 +1,5 @@
 // The public interface of Comb, which hands every field of graph data to the bridge before the
-// store keeps any of it, and checks none itself (ADR-0028).
+// store keeps any of it, and checks none itself (ADR-0009).
 // First, before any PixiJS renderer is created: PixiJS's code generation without eval, so that Comb
 // draws under a Content Security Policy without `unsafe-eval` (Q-6, ADR-0020).
 import "pixi.js/unsafe-eval";
@@ -74,7 +74,7 @@ export interface CombOptions {
    *  `true`; an error it throws refuses the deletion and is thrown on from the key's event.
    *  Never called for the host application's own calls. Without it, a deletion is allowed. One
    *  during whose call Comb tells a change to `onChange` deletes nothing, whatever it returns
-   *  (ADR-0030). */
+   *  (ADR-0024). */
   canDelete?: (deletion: Deletion) => boolean;
   /** The veto of a connection of the user's (G-3): called when the user releases a connection
    *  over a compatible connector of another node, with the identifiers of both nodes and the sides
@@ -84,7 +84,7 @@ export interface CombOptions {
    *  input event. Never called for the host application's own calls. Without it, no connection
    *  begins: Comb has no name to give the edge. One during whose call Comb tells a change to
    *  `onChange` connects nothing, whatever it returns, and its identifier is neither checked nor
-   *  thrown (ADR-0030). */
+   *  thrown (ADR-0024). */
   canConnect?: (proposal: Proposal) => string | false;
 }
 
@@ -112,7 +112,7 @@ export interface Comb {
    *  order, has the same height whatever its texts and width, so a layout asks once per shape.
    *  Throws a `GraphDataError` with the problem `addNode` gives the content or the width, its
    *  texts counted against the budget alone, as in an empty graph, naming the node `""` (Q-7),
-   *  and an `EngineLostError` once the engine is lost (ADR-0035). */
+   *  and an `EngineLostError` once the engine is lost (ADR-0026). */
   heightOf(content: NodeContent, width: number): number;
   /** Adds `edge` between two nodes the graph holds, without a load, drawn with its colour, dash
    *  pattern, arrowhead, and label (G-11). Throws a `GraphDataError` where the graph holds an edge
@@ -147,14 +147,14 @@ export interface Comb {
   /** The world point under the point (`clientX`, `clientY`) of the page, in the client
    *  coordinates of a pointer or drop event, for a node dropped from the host's palette (G-1).
    *  Throws a `RangeError` on a coordinate that is not finite; needs no engine, so it keeps
-   *  answering once the engine is lost (ADR-0030). */
+   *  answering once the engine is lost (ADR-0024). */
   worldPointAt(clientX: number, clientY: number): { x: number; y: number };
   /** Calls `listener` whenever the selection changes (G-5); returns the unsubscribe function. */
   onSelectionChange(listener: (selection: Selection) => void): () => void;
   /** Calls `listener` with every change of the graph, whoever made it, once the canvas holds it
    *  and before the call that made it returns, in the order made; where the change also clears
    *  the selection, before `onSelectionChange` reports it. Returns the unsubscribe function
-   *  (ADR-0030). */
+   *  (ADR-0024). */
   onChange(listener: (change: GraphChange) => void): () => void;
   /** Calls `listener` when the user clicks an element of a node's content: presses on it and
    *  releases within 4 screen pixels of the press, which selects the node, after

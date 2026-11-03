@@ -1,4 +1,4 @@
-// The edge `addEdge` hands the bridge, read once (ADR-0028): defaults filled where the host left
+// The edge `addEdge` hands the bridge, read once (ADR-0009): defaults filled where the host left
 // a field out, and no key for a dash, a label, or a label's background it left out, so that the
 // edge as Comb keeps it, and as `edgeAdded` delivers it, holds none.
 import { expect, test } from "bun:test";
@@ -15,7 +15,7 @@ const limits = {
 };
 
 test("an edge read once fills its defaults and keeps no key for a field left out", () => {
-  // Verifies: ADR-0028, ADR-0024
+  // Verifies: ADR-0009, ADR-0025
   const { snapshot } = edgeSnapshotOf(
     { id: "e", source: "a", target: "b", label: { text: "x", t: 0.5, offset: 0 } },
     limits,

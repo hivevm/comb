@@ -1,5 +1,5 @@
 //! The content of the nodes the graph holds, by slot, and the code units of its strings, which
-//! every edit holds to the budget a load is held to (ADR-0013, ADR-0022).
+//! every edit holds to the budget a load is held to (ADR-0013, ADR-0023).
 
 use std::collections::HashMap;
 
@@ -8,7 +8,7 @@ use crate::graph_data::{Checked, ContentData, NodeContent};
 /// The content of the nodes the graph holds, by slot: that of the last load, the content each
 /// addition or patch since gave a slot, and the code units of the strings of all of it, the texts
 /// and the names alike, which every edit holds to the budget a load is held to (ADR-0013). A slot
-/// a removal freed holds no content and no code units until an addition takes it (ADR-0022).
+/// a removal freed holds no content and no code units until an addition takes it (ADR-0023).
 #[derive(Debug, Default)]
 pub(crate) struct ContentStore {
     /// The content of the nodes of the last load, by slot.
@@ -98,8 +98,8 @@ impl ContentStore {
     }
 }
 
-// The malformed-data tests of graph data verify ADR-0034 (see `graph_data::tests`).
-// Verifies: ADR-0034
+// The malformed-data tests of graph data verify ADR-0010 (see `graph_data::tests`).
+// Verifies: ADR-0010
 #[cfg(test)]
 mod tests {
     use crate::graph_data::tests::{
@@ -151,7 +151,7 @@ mod tests {
 
     #[test]
     fn a_node_added_to_a_graph_at_the_budget_is_refused_naming_it_and_the_graph_kept() {
-        // Verifies: ADR-0013, ADR-0034, Q-7
+        // Verifies: ADR-0013, ADR-0010, Q-7
         let mut engine = at_the_budget();
         let one = node_of("c", content(&[&[text(RoleCode::Title, "x")]]));
         let added = engine.add(&one);
@@ -167,7 +167,7 @@ mod tests {
 
     #[test]
     fn an_update_past_the_budget_is_refused_and_one_of_as_many_code_units_or_fewer_taken() {
-        // Verifies: ADR-0013, ADR-0034, Q-7
+        // Verifies: ADR-0013, ADR-0010, Q-7
         let mut engine = at_the_budget();
         let sizes = engine.graph.sizes().to_vec();
         // `b`'s action of 3 code units grows to 4: refused, and nothing changes.
@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn a_deleted_nodes_code_units_are_free_for_a_node_added_after_it() {
-        // Verifies: ADR-0013, ADR-0034, Q-7
+        // Verifies: ADR-0013, ADR-0010, Q-7
         let mut engine = at_the_budget();
         // A removal that names a slot holding no node is refused and leaves the count.
         let no_node = Err(crate::SlotError::NoNode { slot: 99 });

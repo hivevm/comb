@@ -1,10 +1,10 @@
-//! The property test of the mesh budget (ADR-0027): graphs of long edges, and of many edges
+//! The property test of the mesh budget (ADR-0012): graphs of long edges, and of many edges
 //! between few nodes, queried at random rectangles, scales, and levels with the budget lowered,
 //! keep their mesh within the budget, draw every edge they find, report the mesh complete exactly
 //! when every edge is meshed in full, draw each edge within a quarter pixel inside the
 //! rectangle, edges from (0, 0) to (-1e8, 3e7) among them, and split each segment that meets the
 //! rectangle where it leaves the rectangle grown by the stroke's width.
-// Verifies: Q-7, Q-4, ADR-0027, ADR-0024
+// Verifies: Q-7, Q-4, ADR-0012, ADR-0025
 
 use super::tests::{Lcg, random_sides};
 use super::{EdgeSpec, Graph, Level, Visible};
@@ -174,7 +174,7 @@ fn worst_inside(path: &EdgePath, points: &[Point], rect: &Rect, scale: f64) -> f
 
 /// Asserts that the vertices `range` of the mesh of `out`, an edge without an arrowhead, are the
 /// stroke of `points` `width` wide: the middle of each pair of vertices, its origin added back, is
-/// a point, within what `f32` holds of its distance from the origin (ADR-0034).
+/// a point, within what `f32` holds of its distance from the origin (ADR-0010).
 fn assert_stroke_of(out: &Visible, range: std::ops::Range<usize>, points: &[Point], width: f64) {
     assert_eq!(range.len(), 2 * points.len());
     let mesh = &out.mesh;
@@ -196,7 +196,7 @@ fn assert_stroke_of(out: &Visible, range: std::ops::Range<usize>, points: &[Poin
 
 /// Asserts that no segment of `points` that meets `rect` has an end beyond `rect` grown by
 /// `width`, the stroke's: where one would, the segment is split there, so that each rounds by its
-/// distance from the query's origin (ADR-0027).
+/// distance from the query's origin (ADR-0012).
 fn assert_within_reach(points: &[Point], rect: &Rect, width: f64, context: &str) {
     let area = rect.grown(width);
     let slack = |p: Point| 1e-9 * (1.0 + p.x.abs().max(p.y.abs()));
@@ -325,7 +325,7 @@ fn viewport_at(scale: f64) -> Rect {
 
 #[test]
 fn twenty_thousand_edges_between_two_nodes_far_apart_mesh_in_full_zoomed_in() {
-    // Verifies: Q-7, ADR-0027
+    // Verifies: Q-7, ADR-0012
     let mut graph = far_apart(20_000, true);
     let rect = viewport_at(4.0);
     let mut out = Visible::default();

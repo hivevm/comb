@@ -1,6 +1,6 @@
 //! The nodes of the graph: an addition into the free slot freed last or a new one, with the next
 //! rank, so that it is drawn and hit above every other node; a removal, which takes the edges at
-//! the nodes along; and a move, which takes them along too (ADR-0022).
+//! the nodes along; and a move, which takes them along too (ADR-0023).
 
 use super::slots::put;
 use super::{Graph, MoveError, SlotError, TooManySlots};
@@ -25,7 +25,7 @@ impl Graph {
     }
 
     /// Refuses `slots` where one holds no node, beyond the slots or free, naming the first: the
-    /// one check of the node slots a call names (ADR-0022).
+    /// one check of the node slots a call names (ADR-0023).
     pub(super) fn nodes_held(&self, slots: &[u32]) -> Result<(), SlotError> {
         match slots.iter().find(|&&s| !self.holds_node(s)) {
             Some(&slot) => Err(SlotError::NoNode { slot }),
@@ -35,7 +35,7 @@ impl Graph {
 
     /// Adds the node at `(x, y)` of size `(width, height)` and returns its slot: the free slot
     /// freed last, or a new one after the highest. It takes the next rank, so that it is drawn and
-    /// hit above every other node, and goes into the index in place, which the rule of ADR-0022
+    /// hit above every other node, and goes into the index in place, which the rule of ADR-0023
     /// then builds again where it asks for it.
     pub fn add_node(
         &mut self,
@@ -91,7 +91,7 @@ impl Graph {
 
     /// Removes the nodes in `slots` and every edge at them, and returns the slots of those edges
     /// in ascending order. Their slots go onto the free lists, the one named last freed last, and
-    /// they leave the index; nothing else moves (ADR-0022). A slot that holds no node refuses the
+    /// they leave the index; nothing else moves (ADR-0023). A slot that holds no node refuses the
     /// call, which then changes nothing.
     pub fn remove_nodes(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
         let edges = self.edges_at(slots)?;
@@ -102,7 +102,7 @@ impl Graph {
             }
         }
         self.node_grid.take(slots);
-        // A removal builds nothing: the index is built again after growth and moves (ADR-0022).
+        // A removal builds nothing: the index is built again after growth and moves (ADR-0023).
         self.free_edges_at(&edges);
         Ok(edges)
     }
@@ -162,7 +162,7 @@ impl Graph {
 }
 
 /// Moves the nodes in `slots`, slots that hold a node, by `(dx, dy)` within `positions`, `x, y`
-/// per node slot (ADR-0034), each as far as keeps it, of the size `sizes` holds for it, within
+/// per node slot (ADR-0010), each as far as keeps it, of the size `sizes` holds for it, within
 /// `limit` of the origin on each axis, as `f32` rounds it. Nothing is written unless the delta is
 /// finite, so a refused move leaves the buffer as it was.
 fn translate_positions(
@@ -281,7 +281,7 @@ mod tests {
 
     #[test]
     fn a_node_of_200_000_edges_is_removed_and_its_edges_leave_every_list_in_linear_time() {
-        // Verifies: ADR-0022
+        // Verifies: ADR-0023
         // A hub in slot 0 with an edge to and from each of 100,000 others.
         let count = 100_001u32;
         let positions = (0..count).flat_map(|i| [i as f32, 0.0]).collect();
@@ -310,7 +310,7 @@ mod tests {
 
     #[test]
     fn a_node_added_takes_the_slot_after_the_highest_and_its_place() {
-        // Verifies: ADR-0022
+        // Verifies: ADR-0023
         let mut graph = row(3);
         assert_eq!(graph.add_node(500.0, 0.0, 5.0, 5.0), Ok(3));
         assert_eq!(graph.add_node(510.0, 0.0, 5.0, 5.0), Ok(4));
@@ -323,7 +323,7 @@ mod tests {
 
     #[test]
     fn an_addition_takes_the_slot_freed_last_before_a_new_one() {
-        // Verifies: ADR-0022
+        // Verifies: ADR-0023
         // The slot named last is freed last, and taken first.
         let mut graph = row(4);
         graph.remove_nodes(&[2, 0]).unwrap();
@@ -337,7 +337,7 @@ mod tests {
 
     #[test]
     fn a_graph_that_never_loaded_takes_a_node_and_finds_it() {
-        // Verifies: ADR-0022
+        // Verifies: ADR-0023
         let mut graph = Graph::default();
         assert_eq!(graph.add_node(10.0, 20.0, 50.0, 50.0), Ok(0));
         assert_eq!(graph.node_at(Point::new(30.0, 40.0)), Some(0));
@@ -346,7 +346,7 @@ mod tests {
 
     #[test]
     fn a_node_added_into_a_lower_slot_is_drawn_and_hit_above_the_nodes_it_overlaps() {
-        // Verifies: ADR-0022
+        // Verifies: ADR-0023
         // Nodes 0 to 3 overlap at (0, 0); slot 1 is free, so the addition takes it.
         let positions = vec![0.0; 8];
         let mut graph = Graph::new(positions, vec![50.0; 8], Vec::new()).unwrap();
@@ -362,7 +362,7 @@ mod tests {
 
     #[test]
     fn a_load_ranks_nodes_by_slot() {
-        // Verifies: ADR-0022
+        // Verifies: ADR-0023
         let mut graph = Graph::new(vec![0.0; 6], vec![50.0; 6], Vec::new()).unwrap();
         let mut out = Visible::default();
         graph.query(
@@ -380,7 +380,7 @@ mod tests {
 
     #[test]
     fn ranks_are_numbered_again_from_0_in_their_order_before_they_pass_u32_max() {
-        // Verifies: ADR-0022
+        // Verifies: ADR-0023
         let mut graph = Graph::new(vec![0.0; 8], vec![50.0; 8], Vec::new()).unwrap();
         graph.ranks = vec![u32::MAX - 1, 7, u32::MAX, 3];
         graph.remove_nodes(&[1]).unwrap();

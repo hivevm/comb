@@ -1,8 +1,8 @@
-// Edges far from the world's origin (ADR-0034): the engine hands over the edge mesh and the label
+// Edges far from the world's origin (ADR-0010): the engine hands over the edge mesh and the label
 // points relative to the query's origin, and the scene draws the world relative to it, so that an
 // edge at ±5e7 is drawn as precisely as one near the origin (Q-4). A segment of an edge that
 // crosses the viewport is split where it leaves the queried rectangle grown by the stroke's width
-// (ADR-0027), so that its ends far beyond the viewport do not round what it shows.
+// (ADR-0012), so that its ends far beyond the viewport do not round what it shows.
 import { expect, test, type Page } from "@playwright/test";
 import {
   canvasOrigin,
@@ -59,7 +59,7 @@ function worst(a: number[], b: number[]): number {
 test("an edge at 5e7 is drawn within a quarter pixel of its f64 stroke, and after a pan", async ({
   page,
 }) => {
-  // Verifies: Q-4, ADR-0034
+  // Verifies: Q-4, ADR-0010
   await open(page);
   // The reference: the same edge near the world's origin, where an f32 rounds by 2^-23 of 512,
   // under a ten-thousandth of a pixel: the engine's f64 stroke, shifted to the same screen place.
@@ -131,7 +131,7 @@ async function loadLongEdge(page: Page): Promise<[number, number][]> {
 test("a segment whose ends lie far outside the viewport is drawn within a quarter pixel", async ({
   page,
 }) => {
-  // Verifies: Q-4, ADR-0027
+  // Verifies: Q-4, ADR-0012
   await open(page);
   const { width, height } = await canvasSize(page);
   const path = await loadLongEdge(page);
@@ -178,7 +178,7 @@ test("a segment whose ends lie far outside the viewport is drawn within a quarte
 test("a viewport around 1e300 draws nothing infinite, loses no engine, and draws again once back", async ({
   page,
 }) => {
-  // Verifies: Q-4, Q-7, ADR-0028
+  // Verifies: Q-4, Q-7, ADR-0009
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -214,7 +214,7 @@ test("a viewport around 1e300 draws nothing infinite, loses no engine, and draws
 test("a pointer over a viewport beyond any finite world point hits nothing, and throws nothing", async ({
   page,
 }) => {
-  // Verifies: ADR-0013, ADR-0031
+  // Verifies: ADR-0013, ADR-0022
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);

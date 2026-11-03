@@ -17,7 +17,7 @@
 /crates/engine-wasm/ @mbrigl
 /packages/comb/src/bridge/ @mbrigl
 
-# The mesh budget that holds Q-7 for accepted graph data, and its tests (ADR-0007, ADR-0027).
+# The mesh budget that holds Q-7 for accepted graph data, and its tests (ADR-0007, ADR-0012).
 /crates/engine/src/stroke.rs @mbrigl
 /crates/engine/src/graph.rs @mbrigl
 /crates/engine/src/graph/ @mbrigl
@@ -30,3 +30,4 @@
 /scripts/test-check-*.sh @mbrigl
 /scripts/test-sensor-*.sh @mbrigl
 /scripts/test-git-hooks.sh @mbrigl
+/scripts/lib/ @mbrigl

@@ -1,7 +1,7 @@
 # ADR-0001: The document set: one specification, one ADR record, one `AGENTS.md`, one overview, one glossary, one conventions file
 
 - **Status:** 🟢 accepted
-- **Date:** 2026-09-05
+- **Date:** 2026-11-03
 - **Deciders:** NUC maintainer, Markus Brigl
 - **Applies to:** every document that carries rules for humans or agents, `AGENTS.md` among them, the architecture overview, the glossary, the conventions, `scripts/check-docs.sh`, `scripts/sensor-binding-adrs.sh`, and the map script of the `normalize` skill, `.agents/skills/normalize/remap.sh`
 
@@ -65,15 +65,24 @@ Every other document — [`README.md`](../../README.md), [`CONTRIBUTING.md`](../
 [`SECURITY.md`](../../SECURITY.md), `TEMPLATE-SETUP.md` while it exists, issue and pull
 request templates, per-agent pointers, the catalogue of concepts in the `propose-adr` skill —
 points at the rule file and holds no rule of its own. The exception is a document holding the
-mechanics of a record the rule file delegates to it: [`docs/adr/README.md`](README.md) and its
-[`template.md`](template.md), delegated by [`AGENTS.md` §3](../../AGENTS.md#3-adr-rules).
+mechanics the rule file delegates to it: [`docs/adr/README.md`](README.md) and its
+[`template.md`](template.md), delegated by [`AGENTS.md` §3](../../AGENTS.md#3-adr-rules), and the
+sections *Git hooks*, *Integration branches*, and *Repository settings* of
+[`README.md`](../../README.md), delegated by [`AGENTS.md` §6](../../AGENTS.md#6-project-rules).
+They say how the rule is carried out, what each hook refuses, the steps of an integration, the
+settings, and add no rule the rule file does not state. A per-agent configuration may close a
+path for its one agent as defence in depth, such as reading `.env` files; it enforces no rule,
+and no rule rests on it.
 
 **The load-bearing clause is that there is exactly one rule file.** An ADR that supersedes any other
 part of this record restates it. The ADR rules of [`AGENTS.md` §3](../../AGENTS.md#3-adr-rules)
-are the one block with no ADR behind it — accepted here, and reversible by an ADR on the ADR
-process. Rules 1 and 3 of that block belong to it like the rest: the catalogue is what a decision
-is proposed from, and ADRs the same human decides may travel together in a pull request of ADRs
-only, the founding decisions of a new project always, so that they are proposed as one start and
+are the one block with no ADR behind it — accepted here. In the template repository the block
+changes as this ADR is corrected in place, and the release notes say so
+([ADR-0005](0005-template-releases.md)); in a derived project, by an ADR on the ADR process,
+which edits the block in the change that lands it, so the rule file stays true as it is read.
+Rules 1 and 3 of that block belong to it like the rest: the catalogue is what a decision
+is proposed from, and ADRs the same human decides may travel together in commits of ADRs only,
+the founding decisions of a new project always, so that they are proposed as one start and
 revised while proposed. Rule 5 belongs to it with its normalization: on a human's instruction the
 record is restated in reading order, without its dead ADRs, and no decision changes. A record
 that only grows costs every session the reconstruction the overview exists to spare it.
