@@ -324,9 +324,9 @@ export interface Bridge {
    *  not, each once, and their mesh, stroked as `query` strokes the edges it finds in `rect` at
    *  `level` where a screen pixel is `pixel` world units, relative to the last query's origin:
    *  what a drag redraws of the nodes it moves and an edit at the far level of what it added,
-   *  each frame (ADR-0027). Fresh views; do not keep them across calls. Throws a `SlotError` where a slot of
-   *  `slots` holds no node or of `also` no edge, and a `NumberError` `invalidPixel` as `query`
-   *  does. */
+   *  each frame (ADR-0027). Fresh views; do not keep them across calls. Throws a `SlotError`
+   *  where a slot of `slots` holds no node or of `also` no edge, and a `NumberError`
+   *  `invalidPixel` as `query` does. */
   meshAt(slots: Uint32Array, also: Uint32Array, rect: Rect, level: Level, pixel: number): Moving;
   /** The edges the last query found and those the last `meshAt` meshed, each once, with their
    *  ends as they lie now, which after a move and before the next query are already moved: for
