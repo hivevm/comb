@@ -1,6 +1,6 @@
 # ADR-draft-template-releases: The template is released as SemVer tags on `main`, and every repository names the release it carries
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-03
 - **Deciders:** Markus Brigl
 - **Applies to:** the tags of the template repository, its own ADRs, the **Template** section of `README.md`, check 14 of `scripts/check-docs.sh`, and the pull request that lands a release

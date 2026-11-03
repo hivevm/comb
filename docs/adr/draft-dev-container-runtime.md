@@ -1,6 +1,6 @@
 # ADR-draft-dev-container-runtime: The Dev Container keeps the host daemon out of reach and its Features locked
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-03
 - **Deciders:** Markus Brigl
 - **Applies to:** `.devcontainer/`, `.vscode/settings.json`, `scripts/check-devcontainer.sh`, and everything the container pulls in

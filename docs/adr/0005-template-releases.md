@@ -1,6 +1,6 @@
 # ADR-0005: The template is released as SemVer tags on `main`, and every repository names the release it carries
 
-- **Status:** 🟢 accepted
+- **Status:** ⚪ superseded by [ADR-draft-template-releases](draft-template-releases.md)
 - **Date:** 2026-09-20
 - **Deciders:** NUC maintainer, Markus Brigl
 - **Applies to:** the tags of the template repository, its own ADRs, the **Template** section of `README.md`, check 14 of `scripts/check-docs.sh`, and the pull request that lands a release

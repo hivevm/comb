@@ -1,6 +1,6 @@
 # ADR-0002: Every accepted decision and every success criterion is verified by a test that cites it, and the checks that hold the decisions are bash scripts under `scripts/`
 
-- **Status:** 🟢 accepted
+- **Status:** ⚪ superseded by [ADR-draft-decisions-verified-by-tests](draft-decisions-verified-by-tests.md)
 - **Date:** 2026-09-16
 - **Deciders:** NUC maintainer, Markus Brigl
 - **Applies to:** every accepted ADR, the Goals and Quality Goals of `docs/SPECIFICATION.md`, the tests that verify them, and the checks and sensors under `scripts/`

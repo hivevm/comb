@@ -1,6 +1,6 @@
 # ADR-0001: The document set: one specification, one ADR record, one `AGENTS.md`, one overview, one glossary, one conventions file
 
-- **Status:** 🟢 accepted
+- **Status:** ⚪ superseded by [ADR-draft-agent-governance-model](draft-agent-governance-model.md)
 - **Date:** 2026-09-05
 - **Deciders:** NUC maintainer, Markus Brigl
 - **Applies to:** every document that carries rules for humans or agents, `AGENTS.md` among them, the architecture overview, the glossary, the conventions, `scripts/check-docs.sh`, `scripts/sensor-binding-adrs.sh`, and the map script of the `normalize` skill, `.agents/skills/normalize/remap.sh`
