@@ -247,7 +247,8 @@ export class EdgesContainer extends Container implements EdgeLayer {
   constructor() {
     super();
     this.addChild(this.mesh);
-    // PixiJS calls this in each render of the stage, before the draw that uploads what is marked.
+    // PixiJS calls this in each render of the stage, before the draw that uploads what is marked;
+    // it calls it for a mesh it does not draw too, whose marks then never upload.
     this.mesh.onRender = () => this.buffers.drawn();
   }
 
