@@ -3,6 +3,7 @@
 # and for an equivalent mutant its reason after ' # '.
 # Recorded with scripts/check-mutants.sh --record; the README says how the list changes.
 crates/engine/src/geometry.rs EdgePath::placement_at replace < with <= # equivalent: on a tie of the two thirds either one is dropped, and the nearest point lies in what is kept
+crates/engine/src/geometry.rs length replace >= with > # equivalent: at a length of exactly the floor its squares are normal, and both ways give it within a few units in the last place
 crates/engine/src/graph/hit.rs Graph::connector_at replace > with >= # equivalent: no two nodes in use share a rank, so no tie is ever broken
 crates/engine/src/graph/index.rs Graph::cell_side replace * with + (x2) # equivalent: it affects only how fast a query runs, not which slots it returns
 crates/engine/src/graph/index.rs Graph::cell_side replace * with / (x2) # equivalent: it affects only how fast a query runs, not which slots it returns

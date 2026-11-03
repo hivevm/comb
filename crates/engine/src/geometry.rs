@@ -28,9 +28,10 @@ const LENGTH_FLOOR: f64 = 1e-150;
 
 /// The length of the vector `(dx, dy)`, as `f64::hypot` gives it within a few units in the last
 /// place, without its cost: WebAssembly has no fused multiply-add, and libm's `hypot` emulates
-/// one in software, more than half the time of a query at the far level. The squares cannot
-/// overflow for a vector between two points within three times `WORLD_LIMIT`; where they may
-/// underflow, the length is `hypot`'s.
+/// one in software. The squares cannot overflow for a vector between two points within three
+/// times `WORLD_LIMIT`, nor for one from a pressed point to a path or connector, which a hit test
+/// measures only once the point lies within the reach of a `PIXEL_LIMIT` of their bounds; where
+/// they may underflow, the length is `hypot`'s.
 pub(crate) fn length(dx: f64, dy: f64) -> f64 {
     let length = (dx * dx + dy * dy).sqrt();
     if length >= LENGTH_FLOOR {
@@ -399,6 +400,20 @@ mod tests {
 
     fn straight() -> EdgePath {
         EdgePath::horizontal(Point::new(0.0, 0.0), Point::new(200.0, 0.0), 10.0)
+    }
+
+    #[test]
+    fn a_length_holds_where_its_squares_would_underflow() {
+        // Decides no criterion: it pins `length` where its squares alone would give 0, as a hit
+        // test at a pixel of 1e-200 asks; the expected lengths are worked out by hand.
+        assert_eq!(length(3.0, 4.0), 5.0);
+        assert_eq!(length(-1e-170, 0.0), 1e-170);
+        assert_eq!(length(0.0, 2e-300), 2e-300);
+        let tiny = length(3e-160, 4e-160);
+        assert!(
+            (tiny - 5e-160).abs() <= 4.0 * f64::EPSILON * 5e-160,
+            "{tiny}"
+        );
     }
 
     #[test]
