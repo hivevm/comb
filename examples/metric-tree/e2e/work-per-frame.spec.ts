@@ -531,6 +531,50 @@ test("an edit a frame at the far level keeps the query and uploads what it chang
   expect(large.perFrame).toBeLessThanOrEqual(Math.max(small.perFrame * 2, 64 * 1024));
 });
 
+test("isDrawn of an edge in an edit frame at the far level asks the engine for no drawn edges", async ({
+  page,
+}) => {
+  // Verifies: ADR-0027 — the benchmark's edit gesture checks each edit by isDrawn within the frames
+  // it times, so an edge's answer comes from what the scene holds, as inspect() reports it.
+  test.setTimeout(120_000);
+  await openAtFar(page, 3334);
+  const probed = await page.evaluate(async () => {
+    const { comb } = window;
+    await comb.whenRendered();
+    const graph = window.exampleGraph();
+    const kept = graph.edges.find((edge) => window.isDrawn({ edge: edge.id }))!;
+    const listed = (edge: string) => window.inspect().edges.some(({ id }) => id === edge);
+    const answers: { drawn: boolean; listed: boolean; calls: number }[] = [];
+    const probe = (edge: string) => {
+      const before = window.bridgeCalls("drawnEdges");
+      const drawn = window.isDrawn({ edge });
+      const calls = window.bridgeCalls("drawnEdges") - before;
+      answers.push({ drawn, listed: listed(edge), calls });
+    };
+    comb.addNode({
+      id: "probe-node",
+      x: 0,
+      y: 0,
+      width: 160,
+      content: [[{ kind: "text", role: "title", text: "p" }]],
+    });
+    comb.addEdge({ id: "probe-edge", source: kept.source, target: "probe-node" });
+    await comb.whenRendered();
+    probe("probe-edge");
+    probe(kept.id);
+    comb.removeEdges([kept.id, "probe-edge"]);
+    await comb.whenRendered();
+    probe("probe-edge");
+    probe(kept.id);
+    probe("no-such-edge");
+    return { level: window.inspect().level, answers };
+  });
+  expect(probed.level).toBe("far");
+  expect(probed.answers.map(({ drawn }) => drawn)).toEqual([true, true, false, false, false]);
+  expect(probed.answers.every(({ drawn, listed }) => drawn === listed)).toBe(true);
+  expect(probed.answers.map(({ calls }) => calls)).toEqual([0, 0, 0, 0, 0]);
+});
+
 test("edits past the bound, or a removal of a node a drag moves, query anew", async ({ page }) => {
   // Verifies: ADR-0027
   await open(page);

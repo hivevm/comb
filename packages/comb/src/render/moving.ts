@@ -5,7 +5,7 @@
 // asks it each render, and queries anew where it says the kept query does not survive.
 import type { Bridge, Detail, DrawnEdges, Level, Rect } from "../bridge";
 import type { GraphView } from "../store";
-import { EdgesContainer, type EdgeLayer } from "./edges";
+import { EdgesContainer, holds, type EdgeLayer } from "./edges";
 import { EdgeFill } from "./edges-canvas";
 import type { LabelsContainer } from "./labels";
 import type { NodesContainer } from "./nodes";
@@ -71,7 +71,11 @@ export class MovingLayer {
   /** The slots the last render's drag moved. */
   private draggedAt: readonly number[] = [];
   /** The store's arrays at the last render, which inspection reads. */
-  private current: Pick<GraphView, "nodes" | "edges"> = { nodes: [], edges: [] };
+  private current: Pick<GraphView, "nodes" | "edges" | "edgeSlots"> = {
+    nodes: [],
+    edges: [],
+    edgeSlots: new Map(),
+  };
   /** The detail of the moving layer's mesh, which joins the query's in inspection. */
   detail: Detail = "complete";
 
@@ -93,7 +97,7 @@ export class MovingLayer {
    *  release, by a removal of what it moved. */
   read(state: GraphView, drawn: KeptQuery | null): void {
     const now = { nodes: state.nodes, edges: state.edges };
-    this.current = now;
+    this.current = { ...now, edgeSlots: state.edgeSlots };
     if (!drawn || (drawn.nodes === now.nodes && drawn.edges === now.edges)) {
       [this.edits, this.editedFrom] = [NO_EDITS, null];
     } else {
@@ -196,9 +200,13 @@ export class MovingLayer {
     return !this.hidden?.edges.has(slot) || this.edgeSlots.includes(slot);
   }
 
-  /** The slot of the store's edge `id` at the last render, or -1. */
-  edgeSlot(id: string): number {
-    return this.current.edges.findIndex((edge) => edge?.id === id);
+  /** Whether the last render drew the store's edge `id`, answered from what the scene holds,
+   *  without asking the engine: found by the query `found` drew or meshed by the moving layer, and
+   *  drawn now as `edgeDrawn` says; as `drawnEdges` reports it. */
+  drawsEdge(id: string, found: EdgeLayer): boolean {
+    const slot = this.current.edgeSlots.get(id);
+    if (slot === undefined) return false;
+    return (found.names(slot) || holds(this.edgeSlots, slot)) && this.edgeDrawn(slot);
   }
 
   /** Those of the edges the engine names drawn, with their ends, that are drawn now, named by the
