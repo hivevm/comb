@@ -1,7 +1,7 @@
 # ADR-0007: One agent implements, a fresh session reviews, and the protected parts stay with the maintainer
 
-- **Status:** ⚪ superseded by [ADR-draft-harness](draft-harness.md)
-- **Date:** 2026-10-24
+- **Status:** 🟢 accepted
+- **Date:** 2026-11-03
 - **Deciders:** Markus Brigl
 - **Applies to:** every change and every agent session in this repository, `docs/adr/`, `docs/SPECIFICATION.md`, `.github/CODEOWNERS`, and the tickets under `docs/plan/`
 
@@ -43,9 +43,10 @@ reviews every change to the protected parts, and caps open agent work at two.
   that holds Q-5 to Q-7 (`crates/engine-wasm/`, `packages/comb/src/bridge/`); the mesh budget
   that holds Q-7 for accepted graph data and its tests (`crates/engine/src/stroke.rs`,
   `crates/engine/src/graph.rs`, `crates/engine/src/graph/`); and the CI and the checks the ADRs
-  rest on, with their self-tests (`.github/`, `.githooks/`, `scripts/check-*.sh`,
-  `scripts/sensor-*.sh`, `scripts/test-check-*.sh`, `scripts/test-sensor-*.sh`,
-  `scripts/test-git-hooks.sh`). `.github/CODEOWNERS` names these paths.
+  rest on, with their self-tests and what they share (`.github/`, `.githooks/`,
+  `scripts/check-*.sh`, `scripts/sensor-*.sh`, `scripts/test-check-*.sh`,
+  `scripts/test-sensor-*.sh`, `scripts/test-git-hooks.sh`, `scripts/lib/`). `.github/CODEOWNERS`
+  names these paths.
 - **Unattended work:** a ticket whose *Mode* allows it and that touches no protected part may be
   implemented and reviewed without the maintainer; its pull request still waits for the
   maintainer to merge.

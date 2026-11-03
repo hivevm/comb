@@ -3,7 +3,7 @@
 - **Status:** 🟢 accepted
 - **Date:** 2026-10-17
 - **Deciders:** Markus Brigl
-- **Applies to:** `.devcontainer/`, and every test that would need a service or a container
+- **Applies to:** `.devcontainer/`, every test that would need a service or a container, `scripts/check-container.sh`, `scripts/test-check-container.sh`, and `.github/workflows/devcontainer.yml`
 
 ## Context
 

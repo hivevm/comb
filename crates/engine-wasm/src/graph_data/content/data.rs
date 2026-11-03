@@ -1,4 +1,4 @@
-//! The content the engine keeps (ADR-0034): the columns of a load or of one node, owned, and
+//! The content the engine keeps (ADR-0010): the columns of a load or of one node, owned, and
 //! once checked, where each text and each name lies in its piece and where each node's first
 //! text and first name are, so that a node's strings are found without counting those before it.
 
@@ -83,7 +83,7 @@ impl ContentData {
 
     /// Maps every text and every name onto the string Rust holds, or refuses as malformed where a
     /// boundary falls inside a character, and indexes the names. Called only once every string's
-    /// length has been checked (ADR-0034).
+    /// length has been checked (ADR-0010).
     pub(crate) fn map(&mut self) -> Result<(), GraphDataProblem> {
         self.spans = super::text_spans(&self.texts, &self.text_bounds)?;
         self.name_spans = super::text_spans(&self.names, &self.name_bounds)?;

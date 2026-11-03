@@ -59,7 +59,7 @@ describe("graph store", () => {
   });
 
   test("an added node takes its slot in the map and the lists, and the change names it", () => {
-    // Verifies: ADR-0022, ADR-0030, ADR-0041
+    // Verifies: ADR-0023, ADR-0024, ADR-0011
     const store = createGraphStore();
     store.getState().load(graph, units);
     const { nodes, positionsVersion, idUnits } = store.getState();
@@ -71,7 +71,7 @@ describe("graph store", () => {
     expect(state.nodes[2]).toEqual({ id: "cc", width: 10 });
     expect(state.slots.get("cc")).toBe(2);
     expect(state.idUnits).toBe(idUnits + 2);
-    // Its slot is the signal; no counter moves, so that a kept query survives it (ADR-0041).
+    // Its slot is the signal; no counter moves, so that a kept query survives it (ADR-0011).
     expect(state.positionsVersion).toBe(positionsVersion);
     expect(state.change).toEqual({ kind: "nodeAdded", by: "host", id: "cc" });
     // Selecting changes nothing of the graph, so the change stays the one of the addition.
@@ -82,7 +82,7 @@ describe("graph store", () => {
 
 describe("graph store removals", () => {
   test("a removal leaves holes at the free slots, forgets the identifiers, and clears the selection", () => {
-    // Verifies: ADR-0022, ADR-0030
+    // Verifies: ADR-0023, ADR-0024
     const store = createGraphStore();
     store.getState().load(graph, units);
     store.getState().select({ kind: "node", id: "a" });
@@ -104,7 +104,7 @@ describe("graph store removals", () => {
   });
 
   test("a removal of edges keeps the nodes and a selection of a node", () => {
-    // Verifies: ADR-0022, ADR-0030
+    // Verifies: ADR-0023, ADR-0024
     const store = createGraphStore();
     store.getState().load(graph, units);
     store.getState().select({ kind: "node", id: "b" });
@@ -118,7 +118,7 @@ describe("graph store removals", () => {
   });
 
   test("a removal of a node clears a selection of an edge it took along", () => {
-    // Verifies: ADR-0022
+    // Verifies: ADR-0023
     const store = createGraphStore();
     store.getState().load(graph, units);
     store.getState().select({ kind: "edge", id: "a-b" });
@@ -129,7 +129,7 @@ describe("graph store removals", () => {
 
 describe("graph store edge edits", () => {
   test("an added edge takes its slot and counts its identifiers; a patch merges, null clears", () => {
-    // Verifies: ADR-0022, ADR-0030
+    // Verifies: ADR-0023, ADR-0024
     const store = createGraphStore();
     store.getState().load(graph, units);
     const { idUnits } = store.getState();
@@ -153,7 +153,7 @@ describe("graph store edge edits", () => {
 
 describe("graph store counts", () => {
   test("a load keeps the code units its snapshot counted, and counts none itself", () => {
-    // Verifies: ADR-0030
+    // Verifies: ADR-0024
     const store = createGraphStore();
     store.getState().load(graph, 99);
     expect(store.getState().idUnits).toBe(99);
@@ -172,6 +172,6 @@ function withoutBy(state: GraphState): void {
 }
 
 test("a store action whose change may be the user's or the host's takes who made it", () => {
-  // Verifies: ADR-0030
+  // Verifies: ADR-0024
   expect(typeof withoutBy).toBe("function");
 });

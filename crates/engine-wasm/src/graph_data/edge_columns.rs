@@ -1,4 +1,4 @@
-//! The edges of a load as columns (ADR-0034): the fields an edge reads in their order, the codes
+//! The edges of a load as columns (ADR-0010): the fields an edge reads in their order, the codes
 //! of its arrowhead and sides, whether the columns fit together, the first value refused by its
 //! type, and the edges read off them.
 
@@ -27,7 +27,7 @@ pub(crate) fn edge_refused_of(
     refused_by(at, field, &EdgeField::ALL, unfit_edges)
 }
 
-/// A field of an edge that a load's first pass refuses by its type (ADR-0034), in the order an
+/// A field of an edge that a load's first pass refuses by its type (ADR-0010), in the order an
 /// edge's fields are read, as the shell names the first such value it reads: `Item` for an edge
 /// that is no object, refused as malformed. It crosses as its code, a plain number, as
 /// `NodeField` does.
@@ -98,7 +98,7 @@ impl From<EdgeField> for u32 {
     }
 }
 
-/// The code of an edge's arrowhead in its column (ADR-0034): `Unnamed` for a string that names
+/// The code of an edge's arrowhead in its column (ADR-0010): `Unnamed` for a string that names
 /// neither, which the first pass refuses at its place.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -108,7 +108,7 @@ pub enum ArrowCode {
     Unnamed,
 }
 
-/// The code of a side of an edge in its column (ADR-0034): `Unnamed` for a string that names
+/// The code of a side of an edge in its column (ADR-0010): `Unnamed` for a string that names
 /// none of the four, which the first pass refuses at its place.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -142,7 +142,7 @@ fn side_of(code: u8) -> Option<graph_side::Side> {
     .map(|(_, side)| side)
 }
 
-/// The edges of one load as columns (ADR-0034), each in slot order. The identifiers, sources,
+/// The edges of one load as columns (ADR-0010), each in slot order. The identifiers, sources,
 /// targets, and label texts are each the values concatenated and cut into pieces, each ending
 /// where a value ends, with their boundaries in UTF-16 code units across all pieces, one more
 /// than there are edges, a refused or absent value empty;
@@ -337,8 +337,8 @@ impl EdgeColumns<'_> {
     }
 }
 
-// The malformed-data tests of graph data verify ADR-0034 (see `graph_data::tests`).
-// Verifies: ADR-0034
+// The malformed-data tests of graph data verify ADR-0010 (see `graph_data::tests`).
+// Verifies: ADR-0010
 #[cfg(test)]
 mod tests {
     use super::super::tests::{d_and, label_in, labelled, load_edges};
@@ -347,7 +347,7 @@ mod tests {
 
     #[test]
     fn every_refusal_of_an_edge_crosses_as_columns_with_its_kind_and_names() {
-        // Verifies: ADR-0034
+        // Verifies: ADR-0010
         let e = || "e".to_owned();
         let field =
             |field: &str, id: Option<String>, expected: &str| GraphDataProblem::InvalidField {
@@ -428,7 +428,7 @@ mod tests {
 
     #[test]
     fn edge_columns_that_do_not_fit_together_are_refused_as_malformed() {
-        // Verifies: ADR-0034
+        // Verifies: ADR-0010
         let changes: [fn(&mut OwnedEdgeColumns); 14] = [
             |c| _ = c.color.pop(),
             // A presence or validity byte is 1 or 0.
@@ -475,7 +475,7 @@ mod tests {
 
     #[test]
     fn a_later_edge_refused_by_its_type_is_named_before_an_earlier_one_refused_by_a_rule() {
-        // Verifies: ADR-0034
+        // Verifies: ADR-0010
         // Edge `d`'s label text holds a lone surrogate, which the snapshot hands over as no text
         // and its rule refuses; edge `e`'s colour is of another type, which the first pass
         // refuses, before any rule.

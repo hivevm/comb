@@ -141,7 +141,7 @@ pub enum Arrow {
     None,
 }
 
-/// A side of a node, at whose middle its connector sits (ADR-0024).
+/// A side of a node, at whose middle its connector sits (ADR-0025).
 #[derive(Tsify, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum Side {
@@ -194,7 +194,7 @@ pub struct EdgeInput {
     pub dash: Field<Option<Pair>>,
     #[tsify(type = "Arrow")]
     pub arrow: Field<Arrow>,
-    /// The side of its source it leaves by; `api` fills in `right` (ADR-0024).
+    /// The side of its source it leaves by; `api` fills in `right` (ADR-0025).
     #[tsify(type = "Side")]
     pub source_side: Field<Side>,
     /// The side of its target it enters by; `api` fills in `left`.

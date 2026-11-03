@@ -192,7 +192,7 @@ jobs:
           bunx --bun playwright install --with-deps chromium
       - name: Self-test the structure check
         run: bash scripts/test-check-structure.sh
-      - name: Check the shape of the code (ADR-0028)
+      - name: Check the shape of the code (ADR-0009)
         run: bash scripts/check-structure.sh
       - name: Self-test the dependency check
         run: bash scripts/test-check-dependencies.sh

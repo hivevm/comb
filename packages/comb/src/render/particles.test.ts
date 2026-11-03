@@ -20,7 +20,7 @@ const sizes = Float32Array.from([100, 64, 100, 64]);
 
 test("a sync colours a pooled particle anew, once selected, then not, then hidden", () => {
   // Decides no criterion: it pins that a pooled particle takes the colour and the opacity of the
-  // sync that binds it, which the far level's selection shows (ADR-0027).
+  // sync that binds it, which the far level's selection shows (ADR-0012).
   const particles = new NodeParticles();
   const drawn = () => (particles.particleChildren as Particle[]).map((p) => [p.tint, p.alpha]);
   particles.sync(state("a"), slots, positions, sizes);

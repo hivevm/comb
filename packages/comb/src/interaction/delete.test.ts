@@ -1,4 +1,4 @@
-// The user's deletion of the selection (ADR-0030): allowed without a veto, refused where the veto
+// The user's deletion of the selection (ADR-0024): allowed without a veto, refused where the veto
 // changes the graph itself, and the edges the store forgets those the engine removed.
 import { describe, expect, test } from "bun:test";
 import { editorsOf } from "../api/editors";
@@ -44,7 +44,7 @@ function selected(canDelete?: (deletion: unknown) => unknown) {
 
 describe("deleting the selection", () => {
   test("without a veto, a deletion is allowed", () => {
-    // Verifies: ADR-0030
+    // Verifies: ADR-0024
     const { store, bridge, remove, calls } = selected();
     deleteSelection(store, bridge, remove);
     expect(calls).toEqual(["removeNodes"]);
@@ -57,7 +57,7 @@ describe("deleting the selection", () => {
   });
 
   test("a veto that changes the graph itself refuses the deletion", () => {
-    // Verifies: ADR-0030
+    // Verifies: ADR-0024
     const { store, bridge, remove, calls } = selected(() => {
       store.getState().updateNode("b", true);
       return true;
@@ -68,7 +68,7 @@ describe("deleting the selection", () => {
   });
 
   test("a veto that changes the selection and the viewport leaves the deletion to its answer", () => {
-    // Verifies: ADR-0030
+    // Verifies: ADR-0024
     const { store, bridge, remove, calls } = selected(() => {
       store.getState().select({ kind: "node", id: "b" });
       store.getState().setViewport({ x: 10, y: 10, scale: 2 });

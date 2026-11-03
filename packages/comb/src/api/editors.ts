@@ -1,13 +1,13 @@
 // The edits of the graph: every method of `Comb` that changes it, and the user's connection and
-// deletion, each run through `edit`, which holds their order (Q-7, ADR-0030, ADR-0028); and
-// `heightOf`, which reads and checks as `addNode` does and changes nothing (ADR-0035). Refuse
+// deletion, each run through `edit`, which holds their order (Q-7, ADR-0024, ADR-0009); and
+// `heightOf`, which reads and checks as `addNode` does and changes nothing (ADR-0026). Refuse
 // once the engine is lost; read the host's input once, whole, into plain data; refuse what the
 // store's map shows, as it stands after the read, since a getter of the input is the host's code
 // and may have changed the graph through `Comb`; check the code units of identifiers the graph
 // would hold; have the bridge check the plain data and the engine apply it; and have the store
 // take the result and record the change, by whom it names. The user's edits come after the host
 // application's veto, asked here for both, and a veto during whose call the store records a
-// change, which Comb tells to `onChange`, ends its gesture with nothing done (ADR-0030).
+// change, which Comb tells to `onChange`, ends its gesture with nothing done (ADR-0024).
 import { refuseIfLost, type Bridge, type GraphDataProblem, type SlotError } from "../bridge";
 import type { Connect, Delete, Deletion, Proposal } from "../interaction";
 import type {
@@ -170,7 +170,7 @@ function load({ store, bridge, limits }: Editing, graph: GraphData): void {
 
 /** `heightOf`: the content and width read once as the node `addNode` reads, named `""` and at the
  *  origin, and checked by the bridge as `addNode` checks it; the graph is not asked and nothing
- *  changes (ADR-0035). */
+ *  changes (ADR-0026). */
 function heightOf({ bridge, limits }: Editing, content: unknown, width: unknown): number {
   refuseIfLost();
   const { snapshot } = readOnce(bridge, () =>
@@ -195,7 +195,7 @@ function updateNode({ store, bridge, limits }: Editing, id: string, patch: unkno
 }
 
 /** `addNode`: an identifier the map holds already refused; the engine chooses the slot the store
- *  keeps the node in (ADR-0022). */
+ *  keeps the node in (ADR-0023). */
 function addNode({ store, bridge, limits }: Editing, node: unknown): void {
   edit(store, bridge, {
     read: () => nodeSnapshotOf(node, limits),
@@ -231,7 +231,7 @@ function endsOf(snapshot: unknown, state: GraphState, limits: Limits): [number, 
 }
 
 /** `addEdge`, and the user's connection, as `by` makes it: the edge added between the slots of
- *  its ends (ADR-0022). */
+ *  its ends (ADR-0023). */
 function addEdge({ store, bridge, limits }: Editing, edge: unknown, by: By): void {
   edit(store, bridge, {
     read: () => edgeSnapshotOf(edge, limits),
@@ -289,7 +289,7 @@ function slotsOf(
 }
 
 /** `removeNodes`, and the user's deletion of nodes, as `by` makes it: the nodes `ids` removed with
- *  every edge at them, which the engine names (ADR-0022). An identifier the graph does not hold is
+ *  every edge at them, which the engine names (ADR-0023). An identifier the graph does not hold is
  *  refused, and a list that names none changes and tells nothing. */
 function removeNodes({ store, bridge, limits }: Editing, ids: unknown, by: By): void {
   edit(store, bridge, {
@@ -312,7 +312,7 @@ function removeEdges({ store, bridge, limits }: Editing, ids: unknown, by: By): 
   });
 }
 
-/** The host application's vetoes of the user's connection and deletion (ADR-0030). */
+/** The host application's vetoes of the user's connection and deletion (ADR-0024). */
 export interface Vetoes {
   readonly canConnect?: ((proposal: Proposal) => unknown) | undefined;
   readonly canDelete?: ((deletion: Deletion) => unknown) | undefined;
@@ -320,7 +320,7 @@ export interface Vetoes {
 
 /** What the veto `ask` answers, or `undefined` where the store recorded a change of the graph
  *  during its call, a change Comb tells to `onChange`: its answer was given about a graph that is
- *  gone, so the gesture ends with nothing done, and no error (ADR-0030). An error it throws is
+ *  gone, so the gesture ends with nothing done, and no error (ADR-0024). An error it throws is
  *  thrown on. */
 function answerOf(store: GraphStore, ask: () => unknown): unknown {
   const before = store.getState().change;

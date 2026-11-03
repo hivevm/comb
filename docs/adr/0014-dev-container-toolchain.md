@@ -3,7 +3,7 @@
 - **Status:** 🟢 accepted
 - **Date:** 2026-10-17
 - **Deciders:** Markus Brigl
-- **Applies to:** `.devcontainer/`, `.vscode/launch.json`, `.vscode/extensions.json`, and the CI job that sets up the toolchain
+- **Applies to:** `.devcontainer/`, `.vscode/launch.json`, `.vscode/extensions.json`, the CI job that sets up the toolchain, `scripts/check-container.sh`, `scripts/test-check-container.sh`, and `.github/workflows/devcontainer.yml`
 
 ## Context
 

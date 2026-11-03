@@ -252,7 +252,7 @@ describe("the user's deletion", () => {
     [{ kind: "edge", id: "a-b" }, "edges"],
   ] as const) {
     test(`of ${list} removes as the host's removal does, and tells the same change but for by`, () => {
-      // Verifies: ADR-0030
+      // Verifies: ADR-0024
       const hostCalls: string[] = [];
       const byHost = editing(recording(hostCalls));
       hostCalls.length = 0;
@@ -285,7 +285,7 @@ describe("a slot the shell names that holds nothing", () => {
     }));
 
   test("is thrown as an Error naming the slot, no GraphDataError, and changes nothing", () => {
-    // Verifies: ADR-0022
+    // Verifies: ADR-0023
     for (const [name, kind, item, call] of [
       ["removeNodes", "noNode", "node", (comb: Editing["host"]) => comb.removeNodes(["a"])],
       ["removeEdges", "noEdge", "edge", (comb: Editing["host"]) => comb.removeEdges(["a-b"])],

@@ -69,7 +69,7 @@ function fakeBridge(
 
 describe("interaction", () => {
   test("a drag across many frames moves the node through the engine and keeps the graph", () => {
-    // Verifies: ADR-0041, ADR-0040
+    // Verifies: ADR-0011, ADR-0027
     const store = createGraphStore();
     load(store, {
       nodes: [{ id: "a", x: 0, y: 0, width: 100, content: titled("A") }],
@@ -88,7 +88,7 @@ describe("interaction", () => {
     for (let frame = 1; frame <= frames; frame += 1) {
       emit("globalpointermove", 10 + frame * 5, 10);
       const state = store.getState();
-      // A move a kept query survives, the node's slot named as dragged (ADR-0040).
+      // A move a kept query survives, the node's slot named as dragged (ADR-0027).
       expect(state.movesVersion).toBe(movesVersion + frame);
       expect(state.positionsVersion).toBe(positionsVersion);
       expect(state.dragged).toEqual([0]);
@@ -130,7 +130,7 @@ function dragged() {
 describe("interaction records where a drag left its node", () => {
   for (const release of ["pointerup", "pointerupoutside"]) {
     test(`a drag records one nodeMoved on ${release}, and none per frame`, () => {
-      // Verifies: ADR-0030
+      // Verifies: ADR-0024
       const { emit, changes } = dragged();
       emit("pointerdown", 10, 10);
       for (let frame = 1; frame <= 6; frame += 1) emit("globalpointermove", 10 + frame * 5, 10);
@@ -145,7 +145,7 @@ describe("interaction records where a drag left its node", () => {
   }
 
   test("a press released where it began, or with moves that move nothing, records no change", () => {
-    // Verifies: ADR-0030
+    // Verifies: ADR-0024
     const { emit, changes } = dragged();
     emit("pointerdown", 10, 10);
     emit("pointerup", 10, 10);
@@ -158,7 +158,7 @@ describe("interaction records where a drag left its node", () => {
 
 describe("interaction ends a drag the graph took its node from", () => {
   test("a load during a drag ends it, and its release tells nothing", () => {
-    // Verifies: ADR-0030
+    // Verifies: ADR-0024
     const { store, emit, changes } = dragged();
     emit("pointerdown", 10, 10);
     emit("globalpointermove", 30, 10);
@@ -171,7 +171,7 @@ describe("interaction ends a drag the graph took its node from", () => {
   });
 
   test("a press after a drag whose release never came tells the drag's nodeMoved first", () => {
-    // Verifies: ADR-0030
+    // Verifies: ADR-0024
     const { emit, changes } = dragged();
     emit("pointerdown", 10, 10);
     emit("globalpointermove", 30, 10);
@@ -182,7 +182,7 @@ describe("interaction ends a drag the graph took its node from", () => {
   });
 
   test("a listener that throws on release leaves the drag over and the cursor updated", () => {
-    // Verifies: ADR-0030
+    // Verifies: ADR-0024
     const { store, app, emit, changes } = dragged();
     store.subscribe((state, previous) => {
       if (state.change !== previous.change) throw new Error("host listener");
@@ -199,7 +199,7 @@ describe("interaction ends a drag the graph took its node from", () => {
   });
 
   test("a removal of the dragged node ends the drag, which then moves and tells nothing", () => {
-    // Verifies: ADR-0022, ADR-0030
+    // Verifies: ADR-0023, ADR-0024
     const { store, emit, changes } = dragged();
     emit("pointerdown", 10, 10);
     emit("globalpointermove", 30, 10);
@@ -254,7 +254,7 @@ describe("interaction tells a click on an element of a node's content", () => {
   });
 
   test("a press that moves beyond 4 pixels drags the node from the press and tells no click", () => {
-    // Verifies: ADR-0013, ADR-0030
+    // Verifies: ADR-0013, ADR-0024
     const { store, emit, clicks, moves } = pressed(action);
     const changes: unknown[] = [];
     store.subscribe((state, previous) => {
@@ -306,7 +306,7 @@ describe("interaction tells a click where the pointer is released", () => {
   });
 
   test("a release outside the canvas or a cancelled pointer tells no click, and a cancel ends the drag", () => {
-    // Verifies: ADR-0013, ADR-0030
+    // Verifies: ADR-0013, ADR-0024
     const { store, emit, clicks, moves } = pressed(action);
     const changes: unknown[] = [];
     store.subscribe((state, previous) => {
@@ -325,7 +325,7 @@ describe("interaction tells a click where the pointer is released", () => {
   });
 
   test("a cancel during a drag ends it where the drag left the node", () => {
-    // Verifies: ADR-0030
+    // Verifies: ADR-0024
     const { store, emit, clicks, moves } = pressed(action);
     const changes: unknown[] = [];
     store.subscribe((state, previous) => {
@@ -437,7 +437,7 @@ describe("the hit test", () => {
 
 describe("interaction keeps the point a connection is dragged to", () => {
   test("a connection dragged across the empty canvas writes no coordinate into the store, and its line follows", () => {
-    // Verifies: ADR-0041
+    // Verifies: ADR-0011
     const store = createGraphStore();
     load(store, {
       nodes: [{ id: "a", x: 0, y: 0, width: 100, content: titled("A") }],
@@ -488,7 +488,7 @@ describe("interaction keeps the point a connection is dragged to", () => {
 
 describe("interaction writes a connection whose target changed", () => {
   test("a move from one connector of a node to another of it retargets the connection", () => {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0025
     const store = createGraphStore();
     load(store, {
       nodes: [
@@ -526,7 +526,7 @@ describe("interaction writes a connection whose target changed", () => {
 
 describe("interaction writes a connection whose compatibility changed", () => {
   test("a move over a node the source came to reach since the last move marks it incompatible", () => {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0025
     const store = createGraphStore();
     load(store, {
       nodes: [
@@ -561,7 +561,7 @@ describe("interaction writes a connection whose compatibility changed", () => {
 
 describe("interaction connects", () => {
   test("a connection a later press ends, its release never having come, proposes no edge", () => {
-    // Verifies: ADR-0030, ADR-0024
+    // Verifies: ADR-0024, ADR-0025
     const store = createGraphStore();
     load(store, {
       nodes: [
@@ -593,7 +593,7 @@ describe("interaction connects", () => {
 
   for (const taken of ["a removal of its source, whose slot a node then takes", "a load"]) {
     test(`a connection ends at ${taken}, and its release proposes no edge`, () => {
-      // Verifies: ADR-0030
+      // Verifies: ADR-0024
       const store = createGraphStore();
       const graph = {
         nodes: [

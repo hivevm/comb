@@ -1,4 +1,4 @@
-//! The property test of the bridge's validation (Q-7, ADR-0028): graph data of any shape, well
+//! The property test of the bridge's validation (Q-7, ADR-0009): graph data of any shape, well
 //! formed or not, ends in a typed error or a graph, never in a panic, and in a graph exactly when
 //! an oracle written apart from the bridge finds nothing to refuse. Every field crosses, those the
 //! engine does not keep among them: node content, label texts and backgrounds, the patch of
@@ -6,7 +6,7 @@
 //! of it alone is, and the patch of `updateEdge`, refused exactly as a load of the edge it makes.
 //!
 //! The data starts as a value of any shape, as the host application hands it over. A load's nodes
-//! and edges cross as the columns the snapshot of `api` builds of it (ADR-0034), its strings in
+//! and edges cross as the columns the snapshot of `api` builds of it (ADR-0010), its strings in
 //! pieces of a bound generated with it, each node read as the node of `addNode` is and each edge
 //! as the edge of `addEdge` is, but for an arrowhead and the sides, any string of which crosses as
 //! its code, so that a value of the wrong type or a missing field at any position among them, a
@@ -17,7 +17,7 @@
 //! such a field (`invalidField`), and refuses as malformed only what has no such shape, and no
 //! message names a Rust type or crate. A last property holds the engine's count of the code units
 //! of content to what the graph holds through loads, additions, updates, and removals.
-// Verifies: Q-7, ADR-0028, ADR-0034
+// Verifies: Q-7, ADR-0009, ADR-0010
 
 use proptest::prelude::*;
 use serde::Deserialize;
@@ -1042,7 +1042,7 @@ fn the_items_after_one_with_a_refused_field_are_left_unread() {
 
 #[test]
 fn content_read_through_serde_names_its_first_shape_and_reads_the_rest() {
-    // Verifies: ADR-0034
+    // Verifies: ADR-0010
     // A row that is no list and an element that is no object, as `addNode` and `updateNode`
     // read content: the first named, each read as empty in its place.
     let read = |rows: Vec<Value>| ContentInput::deserialize(Value::List(rows)).unwrap();
@@ -1070,7 +1070,7 @@ fn content_read_through_serde_names_its_first_shape_and_reads_the_rest() {
 
 #[test]
 fn a_progress_bar_read_through_serde_names_its_segments_shape_and_reads_the_rest() {
-    // Verifies: ADR-0034
+    // Verifies: ADR-0010
     // Segments that are no list, and a segment that is no object, as `addNode` and `updateNode`
     // read content: the first named, the segments read as none and the segment as NaN.
     let read = |segments: Value| {
@@ -1109,7 +1109,7 @@ fn a_progress_bar_read_through_serde_names_its_segments_shape_and_reads_the_rest
 
 #[test]
 fn a_metric_read_through_serde_fills_its_trend_and_a_trend_that_is_no_object_holds_none() {
-    // Verifies: ADR-0034
+    // Verifies: ADR-0010
     // As `addNode` and `updateNode` read content: a metric's caption, value, and trend's text
     // among the texts, its direction by its code and its colour; a trend that is no object, and
     // a direction or a colour of another type, read as none, which their rules refuse, and no
@@ -1154,7 +1154,7 @@ fn a_metric_read_through_serde_fills_its_trend_and_a_trend_that_is_no_object_hol
 
 #[test]
 fn an_icon_read_through_serde_fills_its_name_among_the_names_and_no_text() {
-    // Verifies: ADR-0034
+    // Verifies: ADR-0010
     // As `addNode` and `updateNode` read content: an icon's name among the names, read as a text
     // is, an `id` or a `text` beside it read as none of its fields; a name of another type crosses
     // empty and marked as none, which its rule refuses.
@@ -1191,7 +1191,7 @@ fn an_icon_read_through_serde_fills_its_name_among_the_names_and_no_text() {
 
 #[test]
 fn a_trend_read_through_serde_reads_its_text_direction_and_colour_alone() {
-    // Verifies: ADR-0034
+    // Verifies: ADR-0010
     // A trend that holds a trend of its own and segments, as a host application may hand one:
     // read for its text, its direction, and its colour, the rest ignored and not read as content.
     let text = |value: &str| Value::Text(value.to_owned());
@@ -1300,7 +1300,7 @@ fn two_nodes(edges: Vec<Value>) -> Value {
     ])
 }
 
-/// The bound on a piece of a string column (ADR-0034): mostly a few code units, so that a column
+/// The bound on a piece of a string column (ADR-0010): mostly a few code units, so that a column
 /// crosses in many pieces, now and then around the longest values, and now and then the
 /// snapshot's.
 fn piece_bound() -> impl Strategy<Value = usize> {
@@ -1618,7 +1618,7 @@ proptest! {
         value in prop_oneof![9 => edge(true, 0, 2), 1 => anything()],
         bound in piece_bound(),
     ) {
-        // Verifies: ADR-0028, ADR-0024, Q-7
+        // Verifies: ADR-0009, ADR-0025, Q-7
         let as_load = loaded(bound, two_nodes(vec![value.clone()]));
         // An end the graph does not hold is `api`'s to refuse, against its map.
         prop_assume!(!matches!(as_load, Err(GraphDataProblem::MissingNode { .. })));
@@ -1670,7 +1670,7 @@ proptest! {
         patch in edge_patch(),
         bound in piece_bound(),
     ) {
-        // Verifies: ADR-0028, ADR-0030, Q-7
+        // Verifies: ADR-0009, ADR-0024, Q-7
         let mut graph = loaded(bound, two_nodes(vec![Value::Object(base_edge())])).unwrap();
         let before = graph.edge(0);
         let other = patch
@@ -1710,7 +1710,7 @@ proptest! {
         value in added_node(),
         bound in piece_bound(),
     ) {
-        // Verifies: ADR-0028, ADR-0022, Q-7
+        // Verifies: ADR-0009, ADR-0023, Q-7
         let with_a = || {
             let a = Value::Object(vec![
                 ("id".to_owned(), Value::Text("a".to_owned())),
@@ -1756,7 +1756,7 @@ proptest! {
         bound in piece_bound(),
         (fonts, lines) in fonts(),
     ) {
-        // Verifies: ADR-0034
+        // Verifies: ADR-0010
         // A panic anywhere below fails the case; the runner catches it and shrinks the input.
         // The load crosses as columns, its strings in pieces of the bound generated with it, and
         // is held to the oracles of the value it was built of.
@@ -1954,7 +1954,7 @@ proptest! {
         budget in 0..48_u64,
         edits in prop::collection::vec(edit(), 1..12),
     ) {
-        // Verifies: ADR-0013, ADR-0034, Q-7
+        // Verifies: ADR-0013, ADR-0010, Q-7
         // The budget lowered so that edits pass it; each edit is taken exactly where the code
         // units the graph holds besides the node, and the node's, stay within it, and the engine's
         // count is the sum of what the nodes it holds were given, counted apart from the bridge.

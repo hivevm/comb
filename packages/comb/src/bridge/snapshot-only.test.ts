@@ -1,4 +1,4 @@
-// Only the snapshot of `api/snapshot.ts` reaches the bridge (ADR-0028): each call below hands the
+// Only the snapshot of `api/snapshot.ts` reaches the bridge (ADR-0009): each call below hands the
 // bridge a value the host application could have written, which may hold a getter or a Proxy,
 // and must not compile; `tsc` fails on a `@ts-expect-error` that has no error to expect.
 import { expect, test } from "bun:test";
@@ -11,7 +11,7 @@ type Same<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 
 // The engine's `loadGraph` takes a load's nodes and edges as columns, strings in pieces and typed
-// arrays its glue copies whole, and no `GraphBatch` and no `EdgeList` (ADR-0034): its generated
+// arrays its glue copies whole, and no `GraphBatch` and no `EdgeList` (ADR-0010): its generated
 // parameters, pinned, the content columns of `text`, `action`, `badge`, `progress`, and `metric`
 // among them and no title or height column. A
 // refused field crosses as the code of its `NodeField` or `EdgeField`, a plain number, and a shape
@@ -98,12 +98,12 @@ function handsOver(
 }
 
 test("the bridge refuses graph data and patches that are no snapshot at compile time", () => {
-  // Verifies: ADR-0028
+  // Verifies: ADR-0009
   expect(typeof handsOver).toBe("function");
 });
 
 test("the engine takes a load's nodes and edges as columns, pinned at compile time", () => {
-  // Verifies: ADR-0034
+  // Verifies: ADR-0010
   // The type of a title or height column among them would make `columns` false, which no `true`
   // is assignable to.
   expect(columns).toBe(true);

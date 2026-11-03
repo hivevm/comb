@@ -1,4 +1,4 @@
-// The edits the scene reads from the store's arrays against those a kept query drew (ADR-0040).
+// The edits the scene reads from the store's arrays against those a kept query drew (ADR-0027).
 import { expect, test } from "bun:test";
 import { EDIT_BOUND, edited, editsSince, NO_EDITS } from "./edits";
 
@@ -6,7 +6,7 @@ const node = (id: string) => ({ id, width: 100 });
 const edge = (id: string) => ({ id, source: "a", target: "b" });
 
 test("a slot empty then and filled now is added, filled then and empty now is removed", () => {
-  // Verifies: ADR-0040
+  // Verifies: ADR-0027
   const [a, b, c] = [node("a"), node("b"), node("c")];
   const [e, f] = [edge("e"), edge("f")];
   const kept = { nodes: [a, b], edges: [e, undefined] };
@@ -23,7 +23,7 @@ test("a slot empty then and filled now is added, filled then and empty now is re
 });
 
 test("a slot filled in both by another object, or more slots than the bound, is no edit", () => {
-  // Verifies: ADR-0040
+  // Verifies: ADR-0027
   const a = node("a");
   // A change of content, or a slot the engine reused, replaces the object.
   expect(editsSince({ nodes: [a], edges: [] }, { nodes: [{ ...a }], edges: [] })).toBeNull();

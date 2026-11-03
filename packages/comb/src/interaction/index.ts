@@ -1,9 +1,9 @@
-// Input into commands on the store (ADR-0028): a press begins the gesture of what it hits, the
+// Input into commands on the store (ADR-0009): a press begins the gesture of what it hits, the
 // drag of a node or of an edge's label, a connection, or a pan, each a module of its own that
 // says how it moves, how it ends, and whether a change of the graph takes its subject; the wheel
 // zooms, and hover shows what a press would do. The engine answers what lies under the pointer
 // from its spatial index, at every level of detail, also where the scene draws nodes as
-// particles (ADR-0013, ADR-0027). Once the engine is lost, input changes nothing, and no trap
+// particles (ADR-0013, ADR-0012). Once the engine is lost, input changes nothing, and no trap
 // escapes a handler (ADR-0021).
 import type { Application, FederatedPointerEvent } from "pixi.js";
 import type { Bridge, Hit } from "../bridge";
@@ -96,7 +96,7 @@ export interface Interaction {
    *  and the testing entry ask (ADR-0013). */
   hitAt(x: number, y: number): Hit;
   /** The world point the connection the user drags is dragged to, while the store holds one: kept
-   *  here, not in the store, and its moves signalled by the store's `pointerVersion` (ADR-0041). */
+   *  here, not in the store, and its moves signalled by the store's `pointerVersion` (ADR-0011). */
   readonly pointer: { readonly x: number; readonly y: number };
   /** Removes the input from the canvas. */
   detach(): void;

@@ -1,6 +1,6 @@
 //! The edges of the graph: the lists of the edges at each node, an addition into the free slot
 //! freed last or a new one, a change of an edge's label placement, style, and sides, a removal,
-//! and the path of each edge, its bounds, and the point of its label (ADR-0022, ADR-0024).
+//! and the path of each edge, its bounds, and the point of its label (ADR-0023, ADR-0025).
 
 use super::slots::put;
 use super::{AddEdgeError, EdgeSpec, Graph, LabelPlacement, SlotError};
@@ -19,7 +19,7 @@ impl Graph {
     }
 
     /// Refuses `slots` where one holds no edge, beyond the slots or free, naming the first: the
-    /// one check of the edge slots a call names (ADR-0022).
+    /// one check of the edge slots a call names (ADR-0023).
     pub(super) fn edges_held(&self, slots: &[u32]) -> Result<(), SlotError> {
         match slots.iter().find(|&&s| !self.holds_edge(s)) {
             Some(&slot) => Err(SlotError::NoEdge { slot }),
@@ -45,7 +45,7 @@ impl Graph {
     }
 
     /// The slots of the edges at the nodes in `slots`, each once, in ascending order: what a
-    /// removal of those nodes would take along, named before anything is removed (ADR-0022). A
+    /// removal of those nodes would take along, named before anything is removed (ADR-0023). A
     /// slot that holds no node refuses the call.
     pub fn edges_at(&self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
         self.nodes_held(slots)?;
@@ -60,7 +60,7 @@ impl Graph {
 
     /// Adds the edge `spec` and returns its slot: the free slot freed last, or a new one after the
     /// highest. It goes into the lists of its ends and into the index in place, which the rule of
-    /// ADR-0022 then builds again where it asks for it. An end that holds no node refuses the
+    /// ADR-0023 then builds again where it asks for it. An end that holds no node refuses the
     /// edge, and a slot past those a `u32` numbers refuses it as it refuses a node; either way,
     /// nothing changes.
     pub fn add_edge(&mut self, spec: EdgeSpec) -> Result<u32, AddEdgeError> {
@@ -83,7 +83,7 @@ impl Graph {
     }
 
     /// Gives the edge in `slot` the label placement `label`, the style `style`, and the sides
-    /// `sides`, and places it again in place (ADR-0022, ADR-0024). A slot that holds no edge
+    /// `sides`, and places it again in place (ADR-0023, ADR-0025). A slot that holds no edge
     /// refuses the change.
     pub fn update_edge(
         &mut self,
@@ -103,11 +103,11 @@ impl Graph {
     }
 
     /// Removes the edges in `slots`. Their slots go onto the free list, the one named last freed
-    /// last, and they leave the index and the lists of edges at their ends (ADR-0022). A slot that
+    /// last, and they leave the index and the lists of edges at their ends (ADR-0023). A slot that
     /// holds no edge refuses the call, which then changes nothing.
     pub fn remove_edges(&mut self, slots: &[u32]) -> Result<(), SlotError> {
         self.edges_held(slots)?;
-        // A removal builds nothing: the index is built again after growth and moves (ADR-0022).
+        // A removal builds nothing: the index is built again after growth and moves (ADR-0023).
         self.free_edges_at(slots);
         Ok(())
     }
@@ -179,7 +179,7 @@ impl Graph {
         clippy::cast_possible_truncation,
         reason = "an end is the middle of a side of a node, whose position and size the engine \
                   keeps as f32; the ends cross without an origin, rounded by their distance from \
-                  the world's origin (ADR-0034); a node lies within `WORLD_LIMIT`, its far side \
+                  the world's origin (ADR-0010); a node lies within `WORLD_LIMIT`, its far side \
                   included, so an end does too, far within f32"
     )]
     pub fn edge_ends(&self, slots: &[u32], out: &mut Vec<f32>) {
@@ -252,7 +252,7 @@ mod tests {
 
     #[test]
     fn an_edge_to_a_slot_that_holds_no_node_or_a_change_of_a_free_edge_is_refused() {
-        // Verifies: ADR-0022
+        // Verifies: ADR-0023
         let mut graph = paired(4);
         graph.remove_nodes(&[7]).unwrap();
         let spec = |source, target| EdgeSpec {
@@ -284,7 +284,7 @@ mod tests {
 
     #[test]
     fn an_edge_past_the_slots_a_u32_numbers_is_refused_as_a_node_past_them_and_nothing_changes() {
-        // Verifies: ADR-0022
+        // Verifies: ADR-0023
         let spec = EdgeSpec {
             sides: Sides::default(),
             source: 0,

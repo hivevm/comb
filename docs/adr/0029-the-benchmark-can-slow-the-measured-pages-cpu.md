@@ -1,4 +1,4 @@
-# ADR-0039: The benchmark can slow the measured page's CPU, by a factor its record names
+# ADR-0029: The benchmark can slow the measured page's CPU, by a factor its record names
 
 - **Status:** 🟢 accepted
 - **Date:** 2026-11-02
@@ -8,7 +8,7 @@
 ## Context
 
 The reference machine of Q-1 and Q-2 is a laptop with four cores and an integrated GPU of the
-class of Intel Iris Xe or AMD Radeon 680M. The machine the maintainer measures on (ADR-0038) has an
+class of Intel Iris Xe or AMD Radeon 680M. The machine the maintainer measures on (ADR-0028) has an
 Intel UHD Graphics 770, weaker than that class, and an Intel Core i7-13700, a desktop processor of
 sixteen cores that is far faster than it. A GPU-bound frame there judges Q-1 more strictly than the
 reference would; the load and the first frame of Q-2, and the WebAssembly of every gesture, run on
@@ -31,7 +31,7 @@ measures by on their machine is 2.
   Without the variable, nothing is slowed, as before.
 - **The whole run:** the load, the first frame, every gesture, and the reference workload, so that
   every number of one run is slowed alike.
-- **The record:** `cpuThrottle` beside the CPU model and the browser (ADR-0038), 1 where nothing
+- **The record:** `cpuThrottle` beside the CPU model and the browser (ADR-0028), 1 where nothing
   was slowed; `bench/compare.ts` compares a run only with baselines of the same factor, and
   refuses another, naming both.
 
@@ -52,7 +52,7 @@ which a later change takes up when one exists.
 
 - Chrome DevTools Protocol, `Emulation.setCPUThrottlingRate`, as Playwright 1.x types it in
   `playwright-core/types/protocol.d.ts` (checked 2026-11-02).
-- The maintainer's machine as the container sees it, 2026-11-02 (ADR-0038).
+- The maintainer's machine as the container sees it, 2026-11-02 (ADR-0028).
 
 ## Consequences
 
@@ -66,6 +66,6 @@ which a later change takes up when one exists.
 
 ## Enforcement
 
-A test under `bench/`, citing `Verifies: ADR-0039`, asserts that the benchmark slows the page by
+A test under `bench/`, citing `Verifies: ADR-0029`, asserts that the benchmark slows the page by
 the factor `BENCH_CPU_THROTTLE` gives, refuses one below 1 or not finite, records `cpuThrottle`, 1
 without it, and that `bench/compare.ts` refuses a run whose factor differs from its baselines'.

@@ -1,4 +1,4 @@
-# ADR-0038: The benchmark can drive a Chrome on the host, through its debugging port bridged to the Dev Container
+# ADR-0028: The benchmark can drive a Chrome on the host, through its debugging port bridged to the Dev Container
 
 - **Status:** 🟢 accepted
 - **Date:** 2026-11-02
@@ -92,7 +92,7 @@ specification's.
 
 ## Enforcement
 
-A test under `bench/`, citing `Verifies: ADR-0038`, asserts that the benchmark launches Chromium
+A test under `bench/`, citing `Verifies: ADR-0028`, asserts that the benchmark launches Chromium
 without `BENCH_CDP`, attaches to the address `BENCH_CDP` gives, refuses one that is not an `http`
 address of a host and port, and marks its record as of an attached browser.
 `scripts/check-container.sh` fails where `devcontainer.json` names no

@@ -1,10 +1,9 @@
 # ADR-0013: Node content is a closed set of elements in rows, laid out by the engine
 
 - **Status:** 🟢 accepted
-- **Date:** 2026-10-17
+- **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** the node-content types of `crates/engine` and `crates/engine-wasm`, their generated TypeScript definitions in `packages/comb`, the layout functions of the engine, the drawing of node content in `packages/comb/src/render/`, the report of a click on a content element in `packages/comb/src/api/`, the hit test of `crates/engine/src/graph.rs` and its export in `crates/engine-wasm/`, the label extents the render layer of `packages/comb/src/render/` hands the engine, and the press and hover of `packages/comb/src/interaction/`
-- **Supersedes:** [ADR-0025](0025-the-engine-answers-every-hit-test.md)
 
 ## Context
 
@@ -17,15 +16,15 @@ selection.
 Q-1 asks for 60 fps with 50,000 nodes, Q-4 for geometry exact to 0.5 px, and Q-5 forbids
 interpreting graph data as HTML, script, or URL.
 
-A description Comb draws itself can be pooled and batched (ADR-0027); a callback in which the host
+A description Comb draws itself can be pooled and batched (ADR-0012); a callback in which the host
 application draws with PixiJS cannot, and its cost is outside Comb's control. A closed set of
 elements is a public interface the host application relies on, so adding an element is a change
 of that interface.
 
 Laying out the elements is geometry: the height of each row, the position of each element, the
-truncation of text to its column. ADR-0028 puts geometry into the engine, where Q-4 can be tested
+truncation of text to its column. ADR-0009 puts geometry into the engine, where Q-4 can be tested
 without a browser. Text widths depend on the font, which the shell knows from its `BitmapText`
-fonts (ADR-0027).
+fonts (ADR-0012).
 
 ## Decision
 
@@ -110,7 +109,7 @@ registers and colours given as numbers.
   identifier; it selects the node as a click on the node does. It reaches the host application
   through `Comb.onContentClick(listener)`, which returns the function that removes the listener,
   as `{ node, row, column, kind, action? }`. A press on a node waits for the slop of a press on an
-  edge (ADR-0025), 4 screen pixels from the press: released within it, the press is a click; once
+  edge (ADR-0013), 4 screen pixels from the press: released within it, the press is a click; once
   the pointer has moved beyond it, the node is dragged from the press and no click is reported.
   The engine's hit test names the element whose rectangle holds the point, of those drawn at the
   level of detail: at *near* every element, at *middle* the texts of role title, at *far* none; a
@@ -126,7 +125,7 @@ registers and colours given as numbers.
   them, and at least the least height, 64 world units, so that a node of one row of a title keeps
   the size of the nodes before content. The engine states the padding, the gap between columns,
   and the least height; the shell states each role's line height.
-- **Levels of detail (ADR-0027):** *near* draws every element; *middle* draws the box and the
+- **Levels of detail (ADR-0012):** *near* draws every element; *middle* draws the box and the
   texts of role title, at the place near gives them, and no action, badge, progress bar, metric,
   or icon; *far* draws no element.
 - **Limits (Q-7):** the bridge refuses a node with more rows, a row with more columns, a progress
@@ -141,13 +140,13 @@ registers and colours given as numbers.
 - **No URLs in graph data:** an icon is named, never located; an `action` carries an identifier,
   never a link. The host application turns either into whatever it means. It registers an icon's
   image as an object it has already loaded, never as a URL Comb would fetch (Q-6).
-- **Hit test:** this ADR carries the clauses of ADR-0025, which it supersedes. The engine answers every hit test from its spatial index, in one call that takes a
+- **Hit test:** this ADR carries the clauses of ADR-0013, which it supersedes. The engine answers every hit test from its spatial index, in one call that takes a
   world point, the size of a screen pixel, the level of detail, and whether to look for
   connectors, and returns the target drawn on top there: a connector, else an edge label, else a
   node, with the element of its content under the point, else an edge, else none.
   - **Connector:** within 8 screen pixels of its point, at the near and the middle level, the
-    node and side it belongs to (ADR-0024). The shell asks for connectors only where a connection
-    can begin, where `CombOptions.canConnect` is set (ADR-0023); otherwise the call hits none, and
+    node and side it belongs to (ADR-0025). The shell asks for connectors only where a connection
+    can begin, where `CombOptions.canConnect` is set (ADR-0024); otherwise the call hits none, and
     a press there finds what lies beneath.
   - **Edge label:** at the near level only, where labels are drawn, the label whose pill holds
     the point. The shell hands the engine the half width and half height of each label's pill, in
@@ -157,7 +156,7 @@ registers and colours given as numbers.
     (*Clicks*).
   - **Edge:** within 4 screen pixels of its path as the stroke flattens it at the current zoom,
     at every level.
-  - **On top:** within one kind, the item drawn last: the node of the highest rank (ADR-0022),
+  - **On top:** within one kind, the item drawn last: the node of the highest rank (ADR-0023),
     and the edge or label in the highest slot.
   - **One call:** the result crosses as one generated structured value (ADR-0010) naming the kind
     and the slot, for a connector its side, and for a node the element hit. Interaction calls it
@@ -223,7 +222,7 @@ string, a URL, an image that has not loaded, and a name no icon can give, and re
 `packages/comb/src/render/icons.test.ts` asserts that the replaced texture is destroyed. Each
 cites this ADR with `Verifies: ADR-0013`, and the first also `Verifies: Q-4`.
 
-The tests of the hit test verify its clauses here too; they cite `Verifies: ADR-0025` until this
+The tests of the hit test verify its clauses here too; they cite `Verifies: ADR-0013` until this
 ADR supersedes it:
 
 - **Against a scan:** a test of `crates/engine/src/graph.rs` hits random points of random graphs

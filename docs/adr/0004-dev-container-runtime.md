@@ -1,7 +1,7 @@
 # ADR-0004: The Dev Container keeps the host daemon out of reach and its Features locked
 
-- **Status:** ⚪ superseded by [ADR-draft-dev-container-runtime](draft-dev-container-runtime.md)
-- **Date:** 2026-09-05
+- **Status:** 🟢 accepted
+- **Date:** 2026-11-03
 - **Deciders:** NUC maintainer, Markus Brigl
 - **Applies to:** `.devcontainer/`, `.vscode/settings.json`, `scripts/check-devcontainer.sh`, and everything the container pulls in
 
@@ -61,7 +61,10 @@ fails when [`devcontainer.json`](../../.devcontainer/devcontainer.json) mounts a
 adds a Feature that would, when a Feature carries no major version tag, when the lock is missing
 or names other Features than the definition, or when
 [`.vscode/settings.json`](../../.vscode/settings.json) no longer pins the container-management
-extension to the host side. Its self-test cites this ADR
+extension to the host side, or when the container's `postStartCommand` no longer enables the
+repository's git hooks with the merge settings they rely on (`core.hooksPath`, `merge.ff`,
+`pull.ff`, `merge.adr-index.driver`), the container's share of the local gate of
+[ADR-0002](0002-decisions-verified-by-tests.md). Its self-test cites this ADR
 ([ADR-0002](0002-decisions-verified-by-tests.md)). Not checked: a variant definition under a
 subdirectory of `.devcontainer/`, whether the lock's digests are the ones the tags currently
 resolve to, and the container itself — no CI job builds it.

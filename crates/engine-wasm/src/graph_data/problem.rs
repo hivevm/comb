@@ -16,7 +16,7 @@ pub enum GraphList {
 /// Why Comb refused graph data in `load`, `updateNode`, or `addNode` (Q-7): what the bridge
 /// refused, what the shell could not read, and what only the shell's map from identifiers to slots
 /// knows, a node `updateNode` names that the graph does not hold and one `addNode` adds that it
-/// holds already (ADR-0028). The shell builds the last three as values of this type; no kind of it
+/// holds already (ADR-0009). The shell builds the last three as values of this type; no kind of it
 /// is written by hand in TypeScript.
 /// `query` refuses a rectangle without its shape as malformed too, which no host application
 /// meets.
@@ -59,7 +59,7 @@ pub enum GraphDataProblem {
     InvalidSize { node: String },
     /// The content of the node at `index`, `id` where its identifier was read, holds a shape the
     /// bridge cannot read at row `row`: a row that is no list, or, where `column` is given, an
-    /// element that is no object; `expected` says in words what it should be (ADR-0034).
+    /// element that is no object; `expected` says in words what it should be (ADR-0010).
     #[serde(rename_all = "camelCase")]
     InvalidContentShape {
         index: u32,
@@ -199,7 +199,7 @@ pub enum GraphDataProblem {
     /// `removeEdges` or `updateEdge` names an edge the graph does not hold.
     #[serde(rename_all = "camelCase")]
     UnknownEdge { edge: String },
-    /// `addEdge` hands over an edge from a node to itself, which a load accepts (ADR-0024).
+    /// `addEdge` hands over an edge from a node to itself, which a load accepts (ADR-0025).
     #[serde(rename_all = "camelCase")]
     SelfEdge { edge: String },
     /// A patch of `updateEdge` holds a field other than `color`, `dash`, `arrow`, `label`,
@@ -263,8 +263,8 @@ pub(super) const A_SEGMENT_LIST: &str = "a list of segments";
 /// What an identifier, a source, or a target expects, by `MAX_ID`.
 pub(super) const AN_ID: &str = "a well-formed string of at most 256 code units";
 
-// The malformed-data tests of graph data verify ADR-0034 (see `graph_data::tests`).
-// Verifies: ADR-0034
+// The malformed-data tests of graph data verify ADR-0010 (see `graph_data::tests`).
+// Verifies: ADR-0010
 #[cfg(test)]
 mod tests {
     use super::super::MAX_ID;

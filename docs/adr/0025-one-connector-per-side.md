@@ -1,4 +1,4 @@
-# ADR-0024: Every node has one connector in the middle of each side, and an edge records the side it leaves and the side it enters
+# ADR-0025: Every node has one connector in the middle of each side, and an edge records the side it leaves and the side it enters
 
 - **Status:** 🟢 accepted
 - **Date:** 2026-10-24
@@ -21,7 +21,7 @@ least 40 world units, so that an edge leaves and enters level. G-9's metric tree
 to right, which that path draws. A tree that flows top to bottom, or an edge back to a node
 further left, cannot be drawn so that it reads.
 
-The stroke (ADR-0027) relies on three properties of the path, not on its direction: it is one
+The stroke (ADR-0012) relies on three properties of the path, not on its direction: it is one
 cubic, so it lies in the hull of its four control points, which the rectangle's chords rest on; a
 cubic crosses each of the four lines of the grown rectangle at most three times, which bounds the
 split points at sixteen; and the arrowhead's tip is the path's end, its direction the path's
@@ -51,7 +51,7 @@ points pull out of each end along that side's outward normal.
   a source node when it belongs to another node, and no edge from the source node to that node,
   in that direction, exists, whatever sides that edge has; an edge the other way does not count.
   A connection is made only to a compatible connector, and only after the host's veto allows it
-  (ADR-0023). The node the user drags from is the edge's source, the one released over its
+  (ADR-0024). The node the user drags from is the edge's source, the one released over its
   target.
 - **Self-edges:** a user's connection and `addEdge` refuse an edge from a node to itself, the
   connection by never counting a connector of its own source as compatible, `addEdge` with a
@@ -62,7 +62,7 @@ points pull out of each end along that side's outward normal.
   `load` does; the rule of compatibility binds the user's gesture alone.
 - **Levels:** at the far level no connector is drawn, and no connection is begun. How a
   connector is hit is decided with the other hit tests.
-- **Drawing:** a `connectors` layer joins the world above the nodes and edge labels (ADR-0027),
+- **Drawing:** a `connectors` layer joins the world above the nodes and edge labels (ADR-0012),
   with the four connectors of the node under the pointer, and while the user drags a connection,
   those of the source and of the node under the pointer, each compatible one drawn apart from the
   others. The connection being dragged is drawn in the overlay as a line from the source's
@@ -95,7 +95,7 @@ which the host does through `updateEdge`.
 ## Sources / Prior art
 
 - `EdgePath::horizontal` and `EdgePath::between` in `crates/engine/src/geometry.rs`, and the
-  stroke's argument of ADR-0027 (*The rectangle*, *Sixteen split points*), as they stand (read on
+  stroke's argument of ADR-0012 (*The rectangle*, *Sixteen split points*), as they stand (read on
   2026-10-24).
 - xyflow's `Position` of a handle, `left`, `top`, `right`, and `bottom` —
   <https://reactflow.dev/api-reference/types/position> (read 2026-10-24): the same four sides,
@@ -107,7 +107,7 @@ which the host does through `updateEdge`.
   that names no side looks exactly as it does today, so the reference image of the edges and every
   geometry test stay.
 - Positive: the path is still one cubic, so the rectangle, the sixteen split points, the mesh
-  budget, and the precision far from the world's origin of ADR-0010 and ADR-0027 hold unchanged;
+  budget, and the precision far from the world's origin of ADR-0010 and ADR-0012 hold unchanged;
   since every control point pulls along an axis, graph data still describes no straight slanted
   edge.
 - Negative / trade-offs: an edge record grows by two sides, a byte each in the engine.
@@ -122,13 +122,13 @@ which the host does through `updateEdge`.
 
 ## Enforcement
 
-Each test below cites this ADR with `Verifies: ADR-0024`.
+Each test below cites this ADR with `Verifies: ADR-0025`.
 
 - **The path:** tests in `crates/engine/src/geometry.rs` assert, for each of the sixteen pairs of
   sides, that the path starts and ends at the two connectors and leaves and enters along each
   side's normal, and that `right` to `left` is the path of today for the cases the existing tests
   hold, edges that run backwards among them. The property test of the budget,
-  `crates/engine/src/graph/budget.rs`, draws its random edges with random sides, so that ADR-0027's
+  `crates/engine/src/graph/budget.rs`, draws its random edges with random sides, so that ADR-0012's
   assertions hold for every pair; it also `Verifies: Q-4`.
 - **Graph data:** the property test of the bridge crate generates the two side fields, a value
   outside the four among them, and a test asserts that an edge without them is drawn from `right`

@@ -31,7 +31,7 @@ async function labels(page: Page) {
 test("a label dragged off its edge is drawn where it was dropped, and tells one labelMoved", async ({
   page,
 }) => {
-  // Verifies: G-6, ADR-0030, ADR-0013
+  // Verifies: G-6, ADR-0024, ADR-0013
   await open(page);
   await loaded(page, PAIR);
   // Grabbed 6 to the right of its point, dropped with the point at (410, -60).
@@ -108,7 +108,7 @@ test("at the middle level a press where a label's point lies drags no label", as
 test("a label the host clears mid-drag ends the drag: no error, and no labelMoved", async ({
   page,
 }) => {
-  // Verifies: ADR-0030, Q-7
+  // Verifies: ADR-0024, Q-7
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -128,7 +128,7 @@ test("a label the host clears mid-drag ends the drag: no error, and no labelMove
 test("a label drag past every finite world point moves nothing and throws nothing", async ({
   page,
 }) => {
-  // Verifies: ADR-0013, ADR-0030, ADR-0031
+  // Verifies: ADR-0013, ADR-0024, ADR-0022
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);

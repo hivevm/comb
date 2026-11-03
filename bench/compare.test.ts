@@ -532,7 +532,7 @@ describe("the parts of the reference", () => {
 
 describe("the edit gesture", () => {
   test("a baseline without it reports the run's edits unjudged, and judges the others", () => {
-    // Verifies: ADR-0008, ADR-0022
+    // Verifies: ADR-0008, ADR-0023
     const verdict = compare({ ...run(200, 100), edit: { p95: 900 } }, run(200, 100));
     expect(verdict).toMatchObject({ kind: "compared", regressions: [] });
     expect((verdict as { lines: string[] }).lines).toContain("edit p95 (ms): 900.0, no baseline");
@@ -543,7 +543,7 @@ describe("the edit gesture", () => {
   });
 
   test("a baseline with it judges the run's edits as the other gestures", () => {
-    // Verifies: ADR-0008, ADR-0022
+    // Verifies: ADR-0008, ADR-0023
     const verdict = compare(
       { ...run(200, 100), edit: { p95: 200 } },
       { ...run(200, 100), edit: { p95: 100 } },
@@ -588,7 +588,7 @@ const CONTENT = {
 
 describe("the gestures at each level of detail", () => {
   test("are named by gesture and level, after those at the view the example opens with", () => {
-    // Verifies: ADR-0008, ADR-0027
+    // Verifies: ADR-0008, ADR-0012
     const each = (level: string) =>
       ["drag", "pan", "zoom", "edit"].map((gesture) => `${gesture} ${level}`);
     expect(gestures(everyLevel(run(200, 100), 100)).map(([name]) => name)).toEqual([
@@ -689,7 +689,7 @@ describe("the content a run loaded", () => {
 
 describe("benchmark comparison of the browser and the CPU a run measured with", () => {
   test("the median of attached, slowed runs keeps both, so that a baseline taken from it compares", () => {
-    // Verifies: ADR-0038, ADR-0039
+    // Verifies: ADR-0028, ADR-0029
     const slowed = {
       ...run(200, 100),
       headed: true,
@@ -704,7 +704,7 @@ describe("benchmark comparison of the browser and the CPU a run measured with", 
   });
 
   test("a run of an attached browser is not compared with a baseline of a launched one", () => {
-    // Verifies: ADR-0038
+    // Verifies: ADR-0028
     const attached = { ...run(200, 100), headed: true, attached: true };
     const verdict = compare(attached, { ...run(200, 100), headed: true });
     expect(verdict).toMatchObject({
@@ -715,7 +715,7 @@ describe("benchmark comparison of the browser and the CPU a run measured with", 
   });
 
   test("a run of a CPU slowed by another factor than the baseline's is not compared", () => {
-    // Verifies: ADR-0039
+    // Verifies: ADR-0029
     const slowed = { ...run(200, 100), cpuThrottle: 2 };
     const verdict = compare(slowed, run(200, 100));
     expect(verdict).toMatchObject({

@@ -1,8 +1,8 @@
-// The snapshot of the host application's graph data (ADR-0028): every value read once, in
+// The snapshot of the host application's graph data (ADR-0009): every value read once, in
 // JavaScript, into plain data whose every field is a primitive of the type the field expects, so
 // that the bridge checks it and the store keeps it, and no value of the host application, nor any
 // of its code, reaches the engine; a load's nodes and edges are handed over as columns besides
-// (ADR-0034). A value of another type is replaced by `false`, which the bridge refuses naming the
+// (ADR-0010). A value of another type is replaced by `false`, which the bridge refuses naming the
 // node or edge and the field; a text of content, a label text, and the arrow are handed over no
 // longer than one code unit beyond the bridge's limit for texts, an identifier no longer than one
 // beyond its limit for identifiers, and a node's content no more rows, nor a row more columns, nor
@@ -167,7 +167,7 @@ interface ContentSink {
 /** Reads `content`, a node's content, once by `read` and hands it to `sink`: at most one row
  *  beyond `limits.rows`, each at most one element beyond `limits.columns`, and a progress bar at
  *  most one segment beyond `limits.segments`, so that content of any size costs at most that much
- *  to check. The one walk of content both crossings of ADR-0034 read it by: a load hands the
+ *  to check. The one walk of content both crossings of ADR-0010 read it by: a load hands the
  *  sink that writes its columns, `addNode` and `updateNode` the one that builds plain data. */
 function walkContent(read: Reader, content: unknown, sink: ContentSink, limits: Limits): void {
   if (!Array.isArray(content)) {

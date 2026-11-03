@@ -20,7 +20,7 @@ use super::{
 };
 
 /// Why an edit of an edge was refused: its data, which the host application handed over, or a
-/// slot that holds nothing, which is the shell's mistake (ADR-0022), and crosses as `SlotError`
+/// slot that holds nothing, which is the shell's mistake (ADR-0023), and crosses as `SlotError`
 /// as from the removals, `edgesAt`, `setLabelSize`, and `moveLabel`.
 #[derive(Debug, PartialEq)]
 pub enum EdgeRefusal {
@@ -52,10 +52,10 @@ impl From<AddEdgeError> for EdgeRefusal {
 }
 
 /// Checks the edge `addEdge` hands over as a load checks an edge, the only one of its batch at
-/// index 0, and refuses one from a node to itself (ADR-0024) and one past `MAX_ITEMS` edges in
+/// index 0, and refuses one from a node to itself (ADR-0025) and one past `MAX_ITEMS` edges in
 /// use; adds it to `graph` between the node slots `source` and `target`, which `api` resolved
 /// against the map only it keeps, and returns the slot the engine chose. That the graph holds no
-/// edge of its identifier and holds its ends is `api`'s to check (ADR-0028); a slot of an end that
+/// edge of its identifier and holds its ends is `api`'s to check (ADR-0009); a slot of an end that
 /// holds no node is the shell's mistake. A refused edge leaves the graph as it was.
 pub(crate) fn add_edge_to(
     graph: &mut Graph,
@@ -268,8 +268,8 @@ pub(crate) fn patch_of(
     Ok(checked)
 }
 
-// The malformed-data tests of graph data verify ADR-0034 (see `graph_data::tests`).
-// Verifies: ADR-0034
+// The malformed-data tests of graph data verify ADR-0010 (see `graph_data::tests`).
+// Verifies: ADR-0010
 #[cfg(test)]
 mod tests {
     use super::super::tests::{content, invalid_text, titled};
@@ -317,7 +317,7 @@ mod tests {
 
     #[test]
     fn an_edge_the_engine_cannot_number_is_refused_as_a_node_it_cannot_number() {
-        // Verifies: ADR-0022
+        // Verifies: ADR-0023
         let node = GraphDataProblem::from(TooManySlots);
         assert_eq!(
             EdgeRefusal::from(AddEdgeError::TooManySlots(TooManySlots)),

@@ -1,4 +1,4 @@
-//! The limits of a load and of the graph (ADR-0028): how many nodes and edges, how long an
+//! The limits of a load and of the graph (ADR-0009): how many nodes and edges, how long an
 //! identifier and a text, and how many code units the identifiers of one load hold together, with
 //! the checks behind the exports `checkIdBudget` and `checkGraphSize`.
 
@@ -56,8 +56,8 @@ pub(crate) fn check_graph_size(nodes: f64, edges: f64) -> Result<(), GraphDataPr
     Ok(())
 }
 
-// The malformed-data tests of graph data verify ADR-0034 (see `graph_data::tests`).
-// Verifies: ADR-0034
+// The malformed-data tests of graph data verify ADR-0010 (see `graph_data::tests`).
+// Verifies: ADR-0010
 #[cfg(test)]
 mod tests {
     use super::*;

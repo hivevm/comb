@@ -191,7 +191,7 @@ export function work(comb: Comb): Work {
 /** The screen point, relative to the canvas, of every vertex the edge mesh of `comb` draws, `x, y`
  *  each, as its shader computes it: in `f32`, from the positions PixiJS uploads and the two
  *  transforms it hands the shader as `f32` uniforms, the world's and the mesh's within the world
- *  (ADR-0034). The shader multiplies the projection into clip space first, a scale and a shift
+ *  (ADR-0010). The shader multiplies the projection into clip space first, a scale and a shift
  *  by the canvas's size, which rounds by about 2^-24 of the canvas's size more; it is left out,
  *  since that cannot move a vertex by a quarter pixel. WebGL only: the Canvas 2D fallback has no
  *  such mesh. */
@@ -253,7 +253,7 @@ export function sceneNumbers(): {
 }
 
 /** Whether the bridge runs in test mode, in which every view kept across an engine call reads
- *  empty (ADR-0034): what the browser tests assert before they trust that a stale view fails. */
+ *  empty (ADR-0010): what the browser tests assert before they trust that a stale view fails. */
 export function testMode(): boolean {
   return TEST_MODE;
 }
@@ -264,5 +264,5 @@ export function testMode(): boolean {
 export { trapNextCall };
 
 /** Test mode only: how often the bridge's call `name` was made on the page, such as `loadGraph`,
- *  so that a test sees what crossed into the engine (ADR-0028). Throws outside test mode. */
+ *  so that a test sees what crossed into the engine (ADR-0009). Throws outside test mode. */
 export { bridgeCalls };

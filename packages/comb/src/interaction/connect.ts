@@ -1,10 +1,10 @@
-// The user connects two nodes (G-3, ADR-0024): a press on a connector begins a connection, which
+// The user connects two nodes (G-3, ADR-0025): a press on a connector begins a connection, which
 // follows the pointer and marks the connectors of the node under it compatible where the source
 // does not reach that node yet; released over a compatible connector, it proposes the edge to the
 // host application's veto, through `connect`, which `api` gives where `canConnect` is set. The
 // store holds what the connection is from and over, which changes rarely; the world point it is
 // dragged to, which changes on every move, is the context's `pointer`, which the store's
-// `pointerMoved` signals, as a drag of a node signals its moves (ADR-0041). The
+// `pointerMoved` signals, as a drag of a node signals its moves (ADR-0011). The
 // gesture holds nothing of it but the identifier of its source.
 import type { Bridge, Hit } from "../bridge";
 import type { Connection, GraphStore, Side } from "../store";
@@ -20,11 +20,11 @@ export interface Proposal {
 }
 
 /** Proposes the user's connection to the host application's veto, and adds the edge it allows;
- *  an error it throws is thrown on once the gesture has ended (ADR-0030). */
+ *  an error it throws is thrown on once the gesture has ended (ADR-0024). */
 export type Connect = (proposal: Proposal) => void;
 
 /** Whether an edge from the node in slot `source` to the node in slot `target` exists, in that
- *  direction, by any sides (ADR-0024). */
+ *  direction, by any sides (ADR-0025). */
 function reaches(store: GraphStore, bridge: Bridge, source: number, target: number): boolean {
   const { nodes, edges } = store.getState();
   const [from, to] = [nodes[source]?.id, nodes[target]?.id];

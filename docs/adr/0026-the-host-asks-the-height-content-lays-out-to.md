@@ -1,4 +1,4 @@
-# ADR-0035: The host application asks Comb the height a node's content lays out to
+# ADR-0026: The host application asks Comb the height a node's content lays out to
 
 - **Status:** 🟢 accepted
 - **Date:** 2026-10-31
@@ -35,7 +35,7 @@ Content's height does not depend on its texts or its width today: texts are trun
 column, never wrapped (ADR-0013), so `height` in `crates/engine/src/content.rs` sums each row's
 height from the kinds of its elements and the fonts alone. A graph of 50,000 nodes (Q-1) asked
 node by node would cross the bridge 50,000 times before its first load, the cost per crossing that
-ADR-0034 moved a load's fields out of.
+ADR-0010 moved a load's fields out of.
 
 ## Decision
 
@@ -70,7 +70,7 @@ of an edge label, which Comb places along its edge (G-6); a method that takes ma
   host application; and a layout algorithm needs every size before the first load.
 - **An anchor in `NodeData`** — the host application gives the node's middle, or another point,
   and Comb places the corner. It serves centring but not a layout algorithm, and widens
-  `NodeData` and the columns of a load (ADR-0034).
+  `NodeData` and the columns of a load (ADR-0010).
 - **The height in the change `nodeAdded`** — the host application hears it after the node is
   drawn, too late to place it.
 - **`heightsOf(contents, width)`, many contents in one crossing** — serves a layout of 50,000
@@ -117,7 +117,7 @@ of an edge label, which Comb places along its edge (G-6); a method that takes ma
 
 ## Enforcement
 
-A browser test of the example, citing `Verifies: ADR-0035`, adds a node of each type of the metric
+A browser test of the example, citing `Verifies: ADR-0026`, adds a node of each type of the metric
 tree and asserts that the drawn height equals `heightOf` of its content and width, that content
 of the same shape with other texts and at another width has the same height, and that malformed
 content, and a width `addNode` refuses, is refused with the problem `addNode` gives it, naming

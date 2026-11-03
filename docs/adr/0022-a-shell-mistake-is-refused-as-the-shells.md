@@ -1,4 +1,4 @@
-# ADR-0031: A number the shell computes is refused as the shell's mistake, never as malformed graph data
+# ADR-0022: A number the shell computes is refused as the shell's mistake, never as malformed graph data
 
 - **Status:** 🟢 accepted
 - **Date:** 2026-10-25
@@ -40,7 +40,7 @@ shell guards each such number before it calls the export, or rests on an invaria
 call, so no refusal of this type is reached from an input event.
 
 **Out of scope:** the shape of `SlotError`, which stays as it is; the refusals of graph data,
-which ADR-0010 and ADR-0028 decide; what the shell answers in place of a refused call, which each
+which ADR-0010 and ADR-0009 decide; what the shell answers in place of a refused call, which each
 caller decides as `targetAt` and the label drag do today.
 
 ## Alternatives considered
@@ -65,7 +65,7 @@ caller decides as `targetAt` and the label drag do today.
 - Commits 0abc64e (the refusal of a point at the bridge), 5a58413 (the shell's guard after it
   became a page error), and 7230e6a (`TranslateError` narrowed to `nonFiniteDelta`) of this
   repository.
-- ADR-0010 (*Errors*), ADR-0028 (the bridge's refusals of what is not finite), and the
+- ADR-0010 (*Errors*), ADR-0009 (the bridge's refusals of what is not finite), and the
   overview's *Bridge* entry.
 
 ## Consequences

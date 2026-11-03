@@ -1,7 +1,7 @@
 # ADR-0006: Work larger than one session is planned in the tree as a feature spec cut into tracer-bullet tickets, files deleted when their work lands, and the design is revised when a spec closes or after a number of changes
 
-- **Status:** ⚪ superseded by [ADR-draft-feature-layer](draft-feature-layer.md)
-- **Date:** 2026-09-17
+- **Status:** 🟢 accepted
+- **Date:** 2026-11-03
 - **Deciders:** NUC maintainer, Markus Brigl
 - **Applies to:** every change larger than one agent session, `docs/plan/`, the spec and ticket templates of the `plan-feature` skill, the pull request template, the `Last design revision` line of `docs/ARCHITECTURE.md`, `scripts/sensor-revision-due.sh`, `scripts/sensor-plan-frontier.sh`, and the claim script `.agents/skills/work-tickets/claim.sh`
 
@@ -19,7 +19,7 @@ and a plan written from the user's side alone says nothing about what the system
 must stay as it is, and how what exists gets from the old behaviour to the new — the part a session
 without memory gets wrong first. And every feature adds structure faster than anyone revisits it:
 a concept lands in one more file, a piece of logic is written a second time, an interface widens
-by one parameter — none of it wrong in the pull request that brought it, all of it entropy no
+by one parameter — none of it wrong in the change that brought it, all of it entropy no
 check sees. A record protects decisions (ADR-0002); nothing in the process protects the shape.
 The moment to look is while the work that added the structure is still known, and a project that
 is not writing features never reaches it: one in maintenance, with tickets and fixes only,
@@ -35,7 +35,7 @@ vendor-neutral.
 
 We will plan every change larger than one agent session in the tree, under `docs/plan/` — as a
 **feature spec** broken into **tracer-bullet tickets** that each declare which tickets block them
-— and treat both as **disposable**: a ticket's file is deleted by the pull request that lands its
+— and treat both as **disposable**: a ticket's file is deleted by the branch that lands its
 work, a spec's by the design revision that closes it, and whatever in them has to last moves into
 the specification, an ADR, the architecture overview, the glossary, or the conventions. The
 history keeps the deleted files.
@@ -70,10 +70,11 @@ unchanged, so the checks have nothing to decide.
 That push is the one the harness ADR may grant without an instruction per push
 ([`AGENTS.md` §6](../../AGENTS.md#6-project-rules)); a project whose sessions share a
 repository grants none. A ticket is claimable once it is on `main`, where the worker's branch
-starts and other clones read it, and a claim given up is released by a human deleting its
-branch. Sessions that run in parallel each work in a worktree or a container of
+starts and other clones read it. A claim given up is released by deleting its branch: a local
+one by the session that made it, one on a remote by a human, since the push the harness ADR
+grants only creates. Sessions that run in parallel each work in a worktree or a container of
 their own, as the harness ADR says, which also says how a claim is made among sessions that
-share neither a repository nor a remote. A pull request deletes the ticket file it lands. A
+share neither a repository nor a remote. The branch that lands a ticket's work deletes its file. A
 feature spec closes when its tickets have merged and a fresh session has revisited the design
 of what they touched — the modules, the accepted ADRs that bind them, and the specification
 criteria they serve — and filed what it found
@@ -82,8 +83,10 @@ criteria they serve — and filed what it found
 The revision also comes due **without a spec**, on a count of the work done rather than on a
 date. [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) carries on one line the date of the last
 revision and the number of changes after which the next is due — `**Last design revision:**
-<YYYY-MM-DD or none yet>, due after <N> changes.` — and a sensor counts the changes since
-the commit that set that date, so the history decides where the count starts, not the clock. A
+<YYYY-MM-DD [(<n>)] or none yet>, due after <N> changes.` — and a sensor counts the changes since
+the commit that set that date, so the history decides where the count starts, not the clock; a
+second revision on one day writes its ordinal after the date, `(2)`, so that its commit sets a
+line of its own to count from. A
 **change** is a commit that touches anything outside `docs/`, merges excluded. The number ships
 as 20 and is the project's to set, on the line rather than in the sensor. The count is
 reported, never enforced: once the number is reached the revision runs over the modules those
@@ -101,7 +104,7 @@ received and triaged; whether a due revision blocks a merge, which it does not.
   is gone by the next session.
 - **The repository's issue tracker.** Closes itself and carries assignment and sub-issues, at the
   price of one vendor's tracker: an agent needs its API or CLI and an account to read the plan,
-  the plan is out of reach offline and of review in the pull request, and a project that moves
+  the plan is out of reach offline and of review with the code, and a project that moves
   host loses it. Claiming by assignment needs no shared repository, which is the one thing a file
   in the tree cannot give.
 - **A long-lived document per feature under `docs/`.** Read by every later session whether still
@@ -128,7 +131,7 @@ received and triaged; whether a due revision blocks a merge, which it does not.
 - **A standing "improve the architecture" chore on a calendar.** Nothing ties it to the work that
   caused the entropy, so it is skipped when busy and pointless when idle; a spec that closes and
   a count of changes are both moments the touched modules are still known.
-- **A failing check once the revision is due.** Blocks every pull request until a session that
+- **A failing check once the revision is due.** Blocks every merge until a session that
   ships no behaviour has run; this layer makes entropy visible, not impossible.
 - **The number of changes inside the sensor.** The sensor belongs to the template and travels
   with it; how much drift a project tolerates belongs in the project's own document.
@@ -170,7 +173,7 @@ ticket rather than judged by the session that is stopping.
 ## Consequences
 
 - Positive: the slicing rule has a carrier; a session reads `docs/plan/` instead of re-deriving
-  the plan, with the file tools every agent has; the plan is reviewed in the pull request like
+  the plan, with the file tools every agent has; the plan is reviewed like
   the code, works offline, and moves with the repository; "may this run unattended?" and "when
   does it stop?" are answered by the ticket, so a session that is not converging hands off
   instead of widening its scope; the history is an audit trail of closed work that costs nothing
@@ -184,10 +187,10 @@ ticket rather than judged by the session that is stopping.
   questions cannot all be asked at once has no artifact of its own and is charted in the
   conversation, which is gone by the next session. Blocking is a list of paths, and the
   sensor that resolves it reports the frontier and refuses only a ticket it cannot place. A plan
-  lands through a pull request like any change, so it is on `main` only once merged. A claim
+  lands on `main` like any change, so it is claimable only once merged. A claim
   across clones costs a push the harness ADR has to grant, an empty commit on the branch, and a
   fetch before every read of the frontier, and holds only where the sessions share a remote. A
-  ticket file whose deletion a pull request forgot stays open until review notices. A feature
+  ticket file whose deletion a branch forgot stays open until review notices. A feature
   spec stays open one session longer, and the revision costs a session that ships no behaviour;
   what it files is tickets, so nothing obliges anyone to work them — the decision makes entropy
   visible, not impossible. A commit is a coarse measure of drift, so a project that squashes
@@ -211,8 +214,8 @@ and runs the claim script of the `work-tickets` skill, in one repository and acr
 one remote, where the second claim of a ticket must lose.
 
 **Not mechanically decidable:** whether an effort was larger than one session and so had to be
-specced and sliced, whether a pull request that landed a ticket's work deleted its file, and
+specced and sliced, whether the branch that landed a ticket's work deleted its file, and
 whether a spec was deleted without its design revision are review, as is whether a due revision
 was run at all and the date moved with it. The templates of the
-[`plan-feature`](../../.agents/skills/plan-feature/) skill carry the shape, and the pull request
-template asks for the ticket a change deletes.
+[`plan-feature`](../../.agents/skills/plan-feature/) skill carry the shape, and the merge message
+names the ticket a change deletes ([`AGENTS.md` §6](../../AGENTS.md#6-project-rules)).

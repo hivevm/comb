@@ -19,7 +19,7 @@
   ],
 
   // The host's address on the Docker bridge, by which the benchmark reaches a Chrome on the host
-  // that a forwarder there bridges to its debugging port (ADR-0038).
+  // that a forwarder there bridges to its debugging port (ADR-0028).
   "runArgs": ["--add-host=host.docker.internal:host-gateway"],
 
   "shutdownAction": "stopContainer",
@@ -82,7 +82,7 @@
   },
 
   // The example's development server (G-9), which the launch configuration opens in the host's
-  // browser, and the benchmark's preview server, which a Chrome on the host loads (ADR-0038).
+  // browser, and the benchmark's preview server, which a Chrome on the host loads (ADR-0028).
   "forwardPorts": [5173, 4173],
   "portsAttributes": {
     "5173": { "label": "Comb example", "onAutoForward": "silent" },

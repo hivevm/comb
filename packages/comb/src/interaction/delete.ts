@@ -1,7 +1,7 @@
-// The user deletes the selection (G-4, ADR-0030): with the canvas focused, Delete or Backspace
+// The user deletes the selection (G-4, ADR-0024): with the canvas focused, Delete or Backspace
 // hands what would go, a selected node with every edge at it or a selected edge alone, to the
 // deletion `api` gives, which asks the host application's `canDelete` and records the removal as
-// the user's (ADR-0030).
+// the user's (ADR-0024).
 import { refuseIfLost, type Bridge } from "../bridge";
 import type { GraphStore } from "../store";
 import { untilLost } from "./guard";
@@ -21,7 +21,7 @@ export type Delete = (deletion: Deletion) => void;
 const DELETE_KEYS = new Set(["Delete", "Backspace"]);
 
 /** What deleting the selection removes: a node with every edge at it, named by the engine
- *  before anything is removed (ADR-0022), or an edge alone; none for no selection or one the
+ *  before anything is removed (ADR-0023), or an edge alone; none for no selection or one the
  *  graph no longer holds. */
 function doomed(store: GraphStore, bridge: Bridge): Deletion | undefined {
   const { selection, slots, edgeSlots, edges } = store.getState();
@@ -37,7 +37,7 @@ function doomed(store: GraphStore, bridge: Bridge): Deletion | undefined {
 }
 
 /** Hands what deleting the selection would remove to `remove`, which asks the veto; an error it
- *  throws is thrown on once nothing has changed (ADR-0030). */
+ *  throws is thrown on once nothing has changed (ADR-0024). */
 export function deleteSelection(store: GraphStore, bridge: Bridge, remove: Delete): void {
   refuseIfLost();
   const found = doomed(store, bridge);

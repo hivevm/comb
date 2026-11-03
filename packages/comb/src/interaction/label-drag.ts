@@ -1,5 +1,5 @@
 // The drag of an edge's label along its edge (G-6): the engine places the label nearest the
-// pointer, and the release records, once, where the drag left it (ADR-0030).
+// pointer, and the release records, once, where the drag left it (ADR-0024).
 import type { Hit } from "../bridge";
 import type { Context, Gesture } from "./gesture";
 import { toWorld } from "../store/viewport";

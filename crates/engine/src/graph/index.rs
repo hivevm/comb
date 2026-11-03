@@ -1,5 +1,5 @@
 //! The spatial index over the graph: a grid each for nodes and edges, built over the slots in use,
-//! which edits keep current in place, and the rule that builds it again (ADR-0022, *The spatial
+//! which edits keep current in place, and the rule that builds it again (ADR-0023, *The spatial
 //! index*). A rebuild builds the grids from the edges as they are placed and places none: a load
 //! places every edge once, and every edit places the edges it changes before it asks for one.
 
@@ -14,7 +14,7 @@ fn stale(beyond: usize, items: usize) -> bool {
 }
 
 impl Graph {
-    /// Builds the index again where the rule of ADR-0022 asks for it, after every addition and
+    /// Builds the index again where the rule of ADR-0023 asks for it, after every addition and
     /// move: where the slots in use of a kind pass twice the count it was built for, or more than
     /// an eighth of them, and at least 16, lie beyond its extent.
     pub(super) fn keep_index(&mut self) {
@@ -53,7 +53,7 @@ impl Graph {
 
     /// Rebuilds both grids from the current positions of the slots in use and the edges as they
     /// are placed: free slots count for nothing, neither in the extent nor in the cell side, and
-    /// stay out of the grids (ADR-0022). It places no edge: a load places every edge before the
+    /// stay out of the grids (ADR-0023). It places no edge: a load places every edge before the
     /// first build, and every edit after it places the edges it changes before it asks for one.
     pub(super) fn index(&mut self) {
         #[cfg(test)]
@@ -105,7 +105,7 @@ mod tests {
 
     #[test]
     fn a_rebuild_places_no_edge_and_finds_every_edge_placed_as_it_lies() {
-        // Verifies: ADR-0022
+        // Verifies: ADR-0023
         let mut rng = Lcg(11);
         let mut graph = random_graph(&mut rng, 200, 300);
         graph.remove_edges(&[5, 9, 40]).unwrap();
@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn a_node_and_an_edge_removed_and_added_within_the_extent_of_50_000_build_nothing() {
-        // Verifies: ADR-0022
+        // Verifies: ADR-0023
         let mut graph = plane(50_000);
         let edges = (0..1_000)
             .map(|i| EdgeSpec {
@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn edges_added_within_the_extent_go_into_the_index_in_place_until_they_double() {
-        // Verifies: ADR-0022
+        // Verifies: ADR-0023
         let mut graph = paired(100);
         let builds = graph.builds;
         for i in 0..100 {
@@ -248,7 +248,7 @@ mod tests {
 
     #[test]
     fn the_rule_that_rebuilds_the_index_counts_the_edges_in_use() {
-        // Verifies: ADR-0022
+        // Verifies: ADR-0023
         // 20 edges dragged beyond the extent: of 400 edges in use, fewer than an eighth.
         let far: Vec<u32> = (0..20).map(|i| 2 * i).collect();
         let mut graph = paired(400);
@@ -264,7 +264,7 @@ mod tests {
 
     #[test]
     fn a_rebuild_after_removals_covers_only_the_slots_in_use() {
-        // Verifies: ADR-0022
+        // Verifies: ADR-0023
         // Nine nodes in a row, and one far away, which a rebuild would stretch the extent to.
         let mut positions: Vec<f32> = (0..9).flat_map(|i| [i as f32 * 100.0, 0.0]).collect();
         positions.extend([1e6, 1e6]);
@@ -290,7 +290,7 @@ mod tests {
 
     #[test]
     fn a_node_added_within_the_extent_of_50_000_is_found_without_building_the_index() {
-        // Verifies: ADR-0022
+        // Verifies: ADR-0023
         let mut graph = plane(50_000);
         assert_eq!(graph.builds, 1);
         let slot = graph.add_node(1_020.0, 1_020.0, 50.0, 50.0).unwrap();
@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn a_graph_grown_by_additions_inside_its_extent_is_indexed_again_at_each_doubling() {
-        // Verifies: ADR-0022
+        // Verifies: ADR-0023
         let mut rng = Lcg(5);
         let mut graph = plane(100);
         let mut built_at = Vec::new();
@@ -332,7 +332,7 @@ mod tests {
 
     #[test]
     fn nodes_added_far_beyond_the_extent_build_the_index_again() {
-        // Verifies: ADR-0022
+        // Verifies: ADR-0023
         // 200 nodes: once more than an eighth of the nodes in use lie beyond the extent, it is
         // built again; 28 of 228 are not more than 228 / 8 = 28, and 29 of 229 are.
         let mut graph = row(200);

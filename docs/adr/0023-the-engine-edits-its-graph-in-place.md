@@ -1,4 +1,4 @@
-# ADR-0022: The engine edits its graph in place, one node or edge at a time, reuses freed slots, and draws a node added last on top
+# ADR-0023: The engine edits its graph in place, one node or edge at a time, reuses freed slots, and draws a node added last on top
 
 - **Status:** 🟢 accepted
 - **Date:** 2026-10-24
@@ -27,7 +27,7 @@ in slot order and the hit test takes the node in the highest slot as the one on 
 node the host application adds has to come to the front, where the user dropped it, also when it
 takes a freed slot below others.
 
-ADR-0012 bound the pooled display objects to the slots a query found "in slot order". ADR-0027,
+ADR-0012 bound the pooled display objects to the slots a query found "in slot order". ADR-0012,
 which supersedes it, binds node views and particles in the order of the nodes' ranks below, and
 edges and edge labels in slot order, as before.
 
@@ -77,7 +77,7 @@ carries a rank that orders drawing and hitting, a node added taking the highest.
   hold the point, the one of the highest rank: what is drawn on top is hit first. Where the next
   rank would pass `u32::MAX`, the engine first renumbers the ranks in use from 0 in their order,
   once per four billion additions. Edges and edge labels keep slot order.
-- **The limits of a load** (ADR-0026) hold after every edit: the slots in use of each kind stay
+- **The limits of a load** (ADR-0009) hold after every edit: the slots in use of each kind stay
   within the limit, and because a free slot is taken before a new one, so does the highest slot.
 - **The shell's side:** the map from identifiers to slots drops the identifier of a removed item
   and gains that of an added one with the slot the engine returned. The store's per-slot lists of
@@ -144,7 +144,7 @@ application owns (ADR-0011).
 
 ## Enforcement
 
-Each test below cites this ADR with `Verifies: ADR-0022`.
+Each test below cites this ADR with `Verifies: ADR-0023`.
 
 - **Edits against a scan:** a property test of `crates/engine/src/graph.rs` applies random
   sequences of additions, removals, and moves of nodes and edges to a graph and asserts after

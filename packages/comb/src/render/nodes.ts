@@ -1,4 +1,4 @@
-// The nodes layer at the near and the middle level (ADR-0027): a pooled view per node in view, its
+// The nodes layer at the near and the middle level (ADR-0012): a pooled view per node in view, its
 // box and its content (ADR-0013), every text as `BitmapText`. The engine lays the content out and
 // the view draws each text where the engine placed it, cut where it was cut, an action's in the
 // link colour, a badge's on its pill, each progress bar as the segments and the track the engine
@@ -339,7 +339,7 @@ interface PooledText {
 /** The text objects and the sprites the node views of one layer share: a view holds those it
  *  draws while it is bound and returns them here once it draws fewer or is released, so that the
  *  layer makes one only where more are drawn at once than ever before, whichever view draws them
- *  (ADR-0027). */
+ *  (ADR-0012). */
 class ElementPool {
   readonly texts: PooledText[] = [];
   readonly sprites: Sprite[] = [];
@@ -618,7 +618,7 @@ export class NodesContainer extends Container {
   }
 
   /** Moves the views bound to `slots`, the nodes a drag moves, to their places in `positions`,
-   *  keeping their content, their size, and their place among the views (ADR-0040). */
+   *  keeping their content, their size, and their place among the views (ADR-0027). */
   place(slots: readonly number[], positions: Float32Array): void {
     for (const slot of slots)
       this.views.boundTo(slot)?.position.set(positions[slot * 2], positions[slot * 2 + 1]);

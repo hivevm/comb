@@ -1,4 +1,4 @@
-//! The nodes of a load as columns (ADR-0034): whether they fit together, the first value the
+//! The nodes of a load as columns (ADR-0010): whether they fit together, the first value the
 //! shell refused by its type, and the nodes read off them.
 
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -10,7 +10,7 @@ use super::{
     unshaped, value_at, values,
 };
 
-/// A field of a node that a load's first pass refuses by its type (ADR-0034), as the shell names
+/// A field of a node that a load's first pass refuses by its type (ADR-0010), as the shell names
 /// the first such value it reads: `Item` for a node that is no object, refused as malformed;
 /// `Content` for content that is no list; and of the shapes of content the snapshot cannot
 /// flatten, `Row` for a row that is no list, `Element` for an element that is no object,
@@ -43,7 +43,7 @@ pub struct Refused {
     pub column: Option<u32>,
 }
 
-/// The nodes of one load as columns (ADR-0034), each in slot order. The identifiers are the
+/// The nodes of one load as columns (ADR-0010), each in slot order. The identifiers are the
 /// values concatenated and cut into pieces, each ending where a value ends, with their boundaries
 /// in UTF-16 code units across all pieces, one more than there are nodes, a refused value empty.
 /// The numbers are as the host application handed them; the content crosses as the columns of
@@ -193,8 +193,8 @@ impl NodeColumns<'_> {
     }
 }
 
-// The malformed-data tests of graph data verify ADR-0034 (see `graph_data::tests`).
-// Verifies: ADR-0034
+// The malformed-data tests of graph data verify ADR-0010 (see `graph_data::tests`).
+// Verifies: ADR-0010
 #[cfg(test)]
 mod tests {
     use super::super::tests::{TITLE, a_and, add, added, b_of, batch, beyond, load_columns};
@@ -208,7 +208,7 @@ mod tests {
     #[test]
     fn a_progress_bar_s_segments_that_are_no_list_or_a_segment_that_is_no_object_are_refused_where_they_lie()
      {
-        // Verifies: ADR-0034
+        // Verifies: ADR-0010
         let shape = |column, expected: &str| GraphDataProblem::InvalidContentShape {
             index: 1,
             id: Some("b".into()),
@@ -283,7 +283,7 @@ mod tests {
 
     #[test]
     fn every_refusal_of_a_node_crosses_as_columns_with_its_kind_and_names() {
-        // Verifies: ADR-0034
+        // Verifies: ADR-0010
         let b = || "b".to_owned();
         let field =
             |field: &str, id: Option<String>, expected: &str| GraphDataProblem::InvalidField {
@@ -358,7 +358,7 @@ mod tests {
 
     #[test]
     fn a_shape_of_content_the_snapshot_cannot_flatten_is_refused_where_it_lies() {
-        // Verifies: ADR-0034
+        // Verifies: ADR-0010
         let shape = |row, column: Option<u32>| GraphDataProblem::InvalidContentShape {
             index: 1,
             id: Some("b".into()),
@@ -402,7 +402,7 @@ mod tests {
 
     #[test]
     fn columns_that_do_not_fit_together_are_refused_as_malformed() {
-        // Verifies: ADR-0034
+        // Verifies: ADR-0010
         let fits = || a_and(|_| {});
         let changes: [fn(&mut OwnedColumns); 7] = [
             |c| _ = c.x.pop(),

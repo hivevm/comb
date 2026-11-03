@@ -386,7 +386,7 @@ function removed(nodes: readonly string[], edges: readonly string[]): void {
 }
 
 /** How the example's copy of the graph takes each kind of change, as a host application that
- *  persists keeps its own from `onChange` alone (ADR-0030); the type checker fails it where a
+ *  persists keeps its own from `onChange` alone (ADR-0024); the type checker fails it where a
  *  kind is left out. */
 const MIRROR: { [K in GraphChange["kind"]]: (change: Extract<GraphChange, { kind: K }>) => void } =
   {
@@ -440,7 +440,7 @@ let dropped = 0;
 
 /** Adds a node of the palette's `kind`, a type of node, centred by the height Comb gives its
  *  content on the world point under the drop at (`clientX`, `clientY`) of the page (G-1,
- *  ADR-0035). */
+ *  ADR-0026). */
 function drop(kind: string, clientX: number, clientY: number): void {
   const type = PALETTE.find((each) => each === kind);
   if (!type) return;

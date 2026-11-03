@@ -158,9 +158,9 @@ test("picking the largest copies option shows at least 50,000 nodes and edges", 
     edges: report.edges,
     texts: 0,
   });
-  // Verifies: ADR-0027
+  // Verifies: ADR-0012
   // The world, the edges layer and its mesh, the particle container, the moving layer's edges and
-  // their mesh and its particle container (ADR-0040), and the empty layers of node views, labels,
+  // their mesh and its particle container (ADR-0027), and the empty layers of node views, labels,
   // and connectors.
   expect(await page.evaluate(() => window.inspect().displayObjects)).toBe(10);
 });

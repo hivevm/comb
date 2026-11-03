@@ -18,7 +18,7 @@ const CONNECTOR_REACH: f64 = 8.0;
 /// slot, a node, or an edge, by its slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
-    /// The connector of a side of the node in a slot (ADR-0024).
+    /// The connector of a side of the node in a slot (ADR-0025).
     Connector(u32, Side),
     /// The label of the edge in a slot (ADR-0013).
     Label(u32),
@@ -126,7 +126,7 @@ impl Graph {
     }
 
     /// The node at `point`: of the nodes whose bounds hold it, the one drawn on top, which is the
-    /// one of the highest rank (ADR-0022).
+    /// one of the highest rank (ADR-0023).
     pub(super) fn node_at(&mut self, point: Point) -> Option<u32> {
         self.node_grid
             .candidates(&Rect::at(point), &mut self.scratch);
@@ -147,7 +147,7 @@ mod tests {
 
     #[test]
     fn a_pixel_beyond_any_zoom_hits_as_the_largest_a_query_strokes_for() {
-        // Verifies: ADR-0028
+        // Verifies: ADR-0009
         // Two nodes near the world's limit, an edge between them, and presses near them and twice
         // that far away: an unbounded pixel would reach everything from anywhere.
         let edges = vec![super::super::EdgeSpec {
@@ -299,7 +299,7 @@ mod tests {
 
     #[test]
     fn a_hit_finds_a_connector_before_a_node_as_a_scan_finds_and_none_at_the_far_level() {
-        // Verifies: ADR-0013, ADR-0024
+        // Verifies: ADR-0013, ADR-0025
         for seed in 1..=6 {
             let mut rng = Lcg(seed);
             let (mut model, mut graph) = Model::random(&mut rng, 40, 20);

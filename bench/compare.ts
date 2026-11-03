@@ -10,7 +10,7 @@
 // from the baseline's by at most MARGIN, or the run is refused as taken on a runner not in the
 // state the baseline was taken in. The reference decides only whether to compare, never by how
 // much a number moved. Runs of another size, mode, or GPU than the baseline's are refused as well,
-// as are runs of an attached browser (ADR-0038) or of a CPU slowed by another factor (ADR-0039),
+// as are runs of an attached browser (ADR-0028) or of a CPU slowed by another factor (ADR-0029),
 // and so is a run that names no GPU, as one on a fallback renderer would, and a run without a
 // reference against a baseline with one. Against a baseline without a reference the numbers are
 // compared and the gate is reported as not checked. The median, with the CPU model and each
@@ -39,7 +39,7 @@ interface Gesture {
   truncated?: boolean;
 }
 
-/** The levels of detail (ADR-0027), in the order a run lists them. */
+/** The levels of detail (ADR-0012), in the order a run lists them. */
 export const LEVELS = ["near", "middle", "far"] as const;
 
 /** The gestures timed at a level of detail, in the order a run lists them. An older run timed
@@ -70,10 +70,10 @@ export interface Run {
   /** The renderer WebGL reports, as bench/run.ts reads it. */
   gpu?: string;
   /** Whether the run attached to a browser started outside it rather than launching Chromium,
-   *  and that browser's version (ADR-0038); absent in a run recorded before. */
+   *  and that browser's version (ADR-0028); absent in a run recorded before. */
   attached?: boolean;
   browser?: string;
-  /** The factor the measured page's CPU was slowed by (ADR-0039); 1, or absent in a run recorded
+  /** The factor the measured page's CPU was slowed by (ADR-0029); 1, or absent in a run recorded
    *  before, where nothing was. */
   cpuThrottle?: number;
   /** The reference workload of the run, in milliseconds; absent in a run recorded without it. */
@@ -84,7 +84,7 @@ export interface Run {
   pan: Gesture;
   zoom: Gesture;
   levels?: Levels<Gesture>;
-  /** Edits, one a frame: a node and an edge added and removed again (ADR-0022); absent in a run
+  /** Edits, one a frame: a node and an edge added and removed again (ADR-0023); absent in a run
    *  recorded before the gesture, whose baseline then reports it unjudged. */
   edit?: Gesture;
 }
@@ -219,7 +219,7 @@ function levelsMedian(runs: Run[]): Levels<Gesture> | undefined {
 /** The run whose every number is the median of that number over `runs`, which must all be of
  *  one kind, size, and mode; or why they are not. */
 /** What a baseline taken from `run` is compared by beside its kind: the browser where the run
- *  attached to one (ADR-0038), and the factor its CPU was slowed by (ADR-0039). */
+ *  attached to one (ADR-0028), and the factor its CPU was slowed by (ADR-0029). */
 function measuredWith(run: Run): Partial<Run> {
   return {
     ...(run.attached && { attached: true, ...(run.browser && { browser: run.browser }) }),

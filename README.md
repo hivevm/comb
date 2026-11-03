@@ -47,7 +47,7 @@ Inside the Dev Container, which provides Bun, Rust, wasm-pack, and Chromium
 [`scripts/check-code.sh`](scripts/check-code.sh) runs, in order, the first three below, build,
 lint, and test, the engine check before the tests, and then the bundle budget of Q-3
 (`bun run build:lib`, at most 300 kB gzipped without PixiJS). The checks that need no toolchain,
-the structural check of [ADR-0028](docs/adr/0028-the-graph-lies-within-a-world.md), the
+the structural check of [ADR-0009](docs/adr/0009-functional-core-imperative-shell.md), the
 dependency check, the container check, the overview check of
 [ADR-0001](docs/adr/0001-agent-governance-model.md), and the check that no comment of a Rust or
 TypeScript source runs past 100 columns, run beside it in `scripts/check-all.sh`, each after its
@@ -74,7 +74,7 @@ self-test, as do the self-tests of the engine and the bundle checks.
   that uses the machine's GPU, which is how the numbers on the reference machine are taken;
   `BENCH_COPIES` sets another size.
   The Dev Container has no display and no GPU, so from it the run measures in a Chrome on the host
-  ([ADR-0038](docs/adr/0038-the-benchmark-drives-a-chrome-on-the-host.md)). On the host, for the
+  ([ADR-0028](docs/adr/0028-the-benchmark-drives-a-chrome-on-the-host.md)). On the host, for the
   measurement only, start Chrome with a throwaway profile and bridge its debugging port to the
   Docker bridge alone (`ip -4 addr show docker0` names its address, often `172.17.0.1`):
   `google-chrome --remote-debugging-port=9222 --user-data-dir="$(mktemp -d)"` and
@@ -83,7 +83,7 @@ self-test, as do the self-tests of the engine and the bundle checks.
   the example from the port VS Code forwards, 4173; the record says `attached` and names the
   browser. `BENCH_CPU_THROTTLE=2` slows the measured page's CPU by that factor, where the machine's
   processor outruns the reference's
-  ([ADR-0039](docs/adr/0039-the-benchmark-can-slow-the-measured-pages-cpu.md)); the record names
+  ([ADR-0029](docs/adr/0029-the-benchmark-can-slow-the-measured-pages-cpu.md)); the record names
   `cpuThrottle`, and a run is compared only with baselines of the same factor and kind of browser.
   Stop Chrome and socat after the measurement: the port gives whoever reaches it the browser.
   After the load and the first frame, before the gestures, each run times a fixed reference
@@ -314,8 +314,8 @@ docs/GLOSSARY.md      # the vocabulary everyone uses, kept current inline
 docs/CONVENTIONS.md   # how this project writes what no check decides, kept current inline
 docs/ARCHITECTURE.md  # the system as it currently stands
 docs/adr/             # Architecture Decision Records (+ template)
-crates/engine/        # the engine's pure Rust core: geometry over values and buffers (ADR-0028)
-crates/engine-wasm/   # the bridge's Rust side: every WebAssembly export (ADR-0034)
+crates/engine/        # the engine's pure Rust core: geometry over values and buffers (ADR-0009)
+crates/engine-wasm/   # the bridge's Rust side: every WebAssembly export (ADR-0010)
 packages/comb/        # the library: api, store, interaction, render, bridge
 examples/metric-tree/ # the example host application, with its browser tests (G-9)
 bench/                # the benchmark: the example in Chromium against Q-1 and Q-2, and the baselines
