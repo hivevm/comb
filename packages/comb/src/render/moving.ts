@@ -14,7 +14,7 @@ import { edited, editsSince, NO_EDITS, type Edits } from "./edits";
 
 const NONE = new Uint32Array(0);
 const NONE_F32 = new Float32Array(0);
-/** The mesh of no edge, which the moving layer draws once a drag is released. */
+/** The mesh of no edge, which the moving layer draws once no drag or edit is left to draw. */
 const EMPTY_MESH = {
   mesh: {
     positions: NONE_F32,

@@ -58,7 +58,8 @@ const ATTRIBUTES = [
 ] as const;
 
 /** A mesh an edges layer draws: a query's, which names the edges it found and where each one's
- *  indices start, or the moving mesh of a drag, which names none (ADR-0027). */
+ *  indices start, or the moving layer's of a drag and of edits, which names its edges but not
+ *  where their indices start, since nothing is hidden in it (ADR-0027). */
 export interface DrawnMesh {
   mesh: EdgeMesh;
   edges?: Uint32Array;
