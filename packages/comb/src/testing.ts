@@ -224,6 +224,24 @@ export function edgeVertices(comb: Comb): Float64Array {
 
 type Six = [number, number, number, number, number, number];
 
+/** The indices the GPU buffer of the edge mesh of `comb` holds, read back from it: what the mesh
+ *  draws, whatever was marked for upload. Read through the copy target, so that the binding of
+ *  the vertex array PixiJS keeps stays as it is. WebGL only. */
+export function gpuEdgeIndices(comb: Comb): Uint32Array {
+  const { app, edges } = sceneOf(comb);
+  if (app.renderer.name !== "webgl" || !(edges instanceof EdgesContainer)) {
+    throw new UncountedRendererError(app.renderer.name);
+  }
+  const renderer = app.renderer as WebGLRenderer;
+  const { gl } = renderer;
+  const { buffer, byteLength } = renderer.buffer.getGlBuffer(edges.geometry.indexBuffer);
+  const indices = new Uint32Array(byteLength / Uint32Array.BYTES_PER_ELEMENT);
+  gl.bindBuffer(gl.COPY_READ_BUFFER, buffer);
+  gl.getBufferSubData(gl.COPY_READ_BUFFER, 0, indices);
+  gl.bindBuffer(gl.COPY_READ_BUFFER, null);
+  return indices;
+}
+
 /** Shows or hides layers of the canvas of `comb`, so that a reference image can hold one layer
  *  alone, without the text of the others, whose fonts differ between machines. */
 export function showLayers(comb: Comb, layers: { nodes?: boolean; edgeLabels?: boolean }): void {

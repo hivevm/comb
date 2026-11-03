@@ -33,6 +33,23 @@ test("a hide after a set keeps the set's mark of the whole index buffer until th
   expect(marked()).toEqual({ offset: 6, size: 6 });
 });
 
+test("a set before the draw marks what the sets since the last draw marked", () => {
+  // Verifies: ADR-0027
+  const geometry = meshGeometry();
+  const buffers = new MeshBuffers(geometry);
+  const marked = () => geometry.indexBuffer._updateSize / 4;
+  buffers.set(mesh);
+  buffers.drawn();
+  // A mesh of none, which is hidden and not drawn, then a mesh of one edge: the upload at the
+  // draw covers the indices of both edges, which the first set zeroed.
+  buffers.set({ ...mesh, indices: new Uint32Array(0) });
+  buffers.set({ ...mesh, indices: mesh.indices.subarray(0, 6) });
+  expect(marked()).toBe(12);
+  buffers.drawn();
+  buffers.set({ ...mesh, indices: mesh.indices.subarray(0, 6) });
+  expect(marked()).toBe(6);
+});
+
 test("a mesh's ascending edge slots hold a slot by halving, at either end and in between", () => {
   // Verifies: ADR-0027
   const slots = Uint32Array.from([2, 5, 9, 40]);
