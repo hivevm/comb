@@ -116,6 +116,7 @@ is the table a session reads.
 | [0027](0027-a-drag-or-an-edit-redraws-what-it-changed.md) | A drag, or an edit at the far level, redraws what it changed in a moving layer, and the scene keeps its query | the scene's culling and binding in `packages/comb/src/render/`, the edge meshes of `crates/engine` and `crates/engine-wasm` and their export in `packages/comb/src/bridge/`, the store's signals of a move and of an added node in `packages/comb/src/store/`, and the node drag of `packages/comb/src/interaction/` | 🟢 accepted |
 | [0028](0028-the-benchmark-drives-a-chrome-on-the-host.md) | The benchmark can drive a Chrome on the host, through its debugging port bridged to the Dev Container | `bench/run.ts` and its tests under `bench/`, `.devcontainer/devcontainer.json`, and the **Benchmark** part of `README.md` | 🟢 accepted |
 | [0029](0029-the-benchmark-can-slow-the-measured-pages-cpu.md) | The benchmark can slow the measured page's CPU, by a factor its record names | `bench/run.ts` and its tests under `bench/`, `bench/compare.ts`, and the **Benchmark** part of `README.md` | 🟢 accepted |
+| [draft-each-project-under-a-path-of-its-own](draft-each-project-under-a-path-of-its-own.md) | The Dev Container keeps the host daemon out of reach, its Features locked, and each project under a path of its own | `.devcontainer/`, `.vscode/settings.json`, `scripts/check-devcontainer.sh`, and everything the container pulls in | 🟡 proposed |
 
 ### Superseded and rejected
 
