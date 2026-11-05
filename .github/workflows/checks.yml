@@ -3,10 +3,10 @@ name: Checks
 # Enforces the repository's rules as CI. Pure bash + coreutils — nothing is installed
 # (ShellCheck, used by the shell job, ships preinstalled on the GitHub-hosted runner image).
 # scripts/check-all.sh is the local equivalent; check 9 of scripts/check-docs.sh holds its list,
-# the jobs of this workflow, and the required checks named in CONTRIBUTING.md together. Each job runs
-# a check after its own self-test, and each script's header says what it checks and which ADR it
-# holds. The documentation job also runs scripts/check-plan-modes.sh, which refuses an unattended
-# ticket that names a protected part of ADR-0007.
+# the jobs of this workflow, and the required checks named in CONTRIBUTING.md together. Each job
+# runs a check after its own self-test, and each script's header says what it checks and which ADR
+# it holds. The documentation job also runs scripts/check-plan-modes.sh, which refuses an
+# unattended ticket that names a protected part of ADR-0007.
 #
 # The sensors report for the reviewer and fail on nothing they count, except the action
 # references, which fail on any action not referenced by its commit SHA (ADR-0017); their
