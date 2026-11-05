@@ -3,7 +3,7 @@
 # Structural test of the shape of the code (ADR-0009), of how the scene draws (ADR-0012,
 # ADR-0018), and of one boundary between the shell's modules, a rule of the check's own that
 # docs/ARCHITECTURE.md describes.
-# Verifies: ADR-0009, ADR-0012, ADR-0018
+# Verifies: ADR-0009, ADR-0012, ADR-0018, ADR-draft-one-workspace-per-example
 #
 # ADR-0009 builds Comb as a functional core of pure Rust and a TypeScript shell whose only door to
 # the engine is its bridge; ADR-0012 draws every text as BitmapText and the edges as one mesh. This
@@ -23,7 +23,10 @@
 #   4. Examples: no file under examples/ imports a path inside the library: only the package's
 #      entries `comb` and `comb/testing`, and the engine file it exports as `comb/engine.wasm`,
 #      bare or as a URL with Vite's `?url` (ADR-0019), never another `comb/...`, a path through
-#      node_modules/comb/, or into packages/comb.
+#      node_modules/comb/, or into packages/comb. And no example imports another (the successor
+#      of ADR-0009, ADR-draft-one-workspace-per-example): no file under examples/<name>/ imports,
+#      by a relative path, a file under another directory of examples/, or another example by
+#      the package name its package.json gives.
 #   5. Drawing: no file of the render layer names PixiJS's Text, HTMLText, or SplitText, which
 #      redraw a canvas and upload a texture on every change; and the edges layer,
 #      packages/comb/src/render/edges.ts, which exists wherever the render layer does, names no
@@ -133,6 +136,37 @@ while IFS= read -r file; do
   report "$file" "${specifier}((comb|${inside}*/comb)/${inside}*|${inside}*packages/comb${inside}*)${quote}" \
     "an example imports only the package entries \"comb\", \"comb/testing\", and \"comb/engine.wasm\"" \
     "${specifier}comb/(testing|engine\.wasm(\?url)?)${quote}"
+done < <(sources examples)
+# No example imports another: a relative specifier that resolves into the directory of another
+# example, or the package name of another example's workspace, bare or with a path below it.
+names=()
+for manifest in examples/*/package.json; do
+  [[ -f "$manifest" ]] || continue
+  name="$(sed -nE 's/^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$manifest" | head -n 1)"
+  if [[ -n "$name" ]]; then
+    names+=("${manifest%/package.json}|$name")
+  else
+    problems+=("$manifest: no \"name\" the check can read, to find the example's imports by")
+  fi
+done
+while IFS= read -r file; do
+  own="${file#examples/}"
+  own="examples/${own%%/*}"
+  while IFS=: read -r line target; do
+    target="$(realpath -m --relative-to=. "$(dirname "$file")/$target")"
+    if [[ "$target" == examples/*/* && "$target" != "$own"/* ]]; then
+      problems+=("$file:$line: no example imports another, here ${target%%/*}/$(cut -d/ -f2 <<< "$target")")
+    fi
+  done < <(grep -noE "${specifier}\.\.?/${inside}*${quote}" "$file" \
+    | sed -E "s/^([0-9]+):.*${quote}(${inside}*)${quote}\$/\1:\2/")
+  for entry in "${names[@]}"; do
+    [[ "${entry%%|*}" == "$own" ]] && continue
+    # A package name holds lower-case letters, digits, and "-._~@/"; of these only "." is special.
+    escaped="${entry#*|}"
+    escaped="${escaped//./\\.}"
+    report "$file" "${specifier}${escaped}(/${inside}*)?${quote}" \
+      "no example imports another, here ${entry%%|*}"
+  done
 done < <(sources examples)
 
 # 5. Drawing

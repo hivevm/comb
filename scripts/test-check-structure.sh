@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# Self-test of scripts/check-structure.sh. Verifies: ADR-0009, ADR-0012, ADR-0018
+# Self-test of scripts/check-structure.sh.
+# Verifies: ADR-0009, ADR-0012, ADR-0018, ADR-draft-one-workspace-per-example
 #
 # Each case builds a fixture tree under a temporary directory — a core crate with its lock, a
 # library with a bridge, a store, and a render layer, and an example — runs the check against it,
@@ -237,6 +238,38 @@ d="$(fixture same-line)"
 echo 'import t from "comb/testing"; import i from "comb/internal";' >> "$d/examples/demo/src/main.ts"
 expect fail "an allowed import does not hide a forbidden one on its line" "$d" \
   "examples/demo/src/main.ts:2"
+
+d="$(fixture example-imports-example)"
+mkdir -p "$d/examples/other/src" "$d/examples/demo/e2e"
+echo 'export const x = 1;' > "$d/examples/other/src/graph.ts"
+echo 'import { x } from "../../other/src/graph";' >> "$d/examples/demo/src/main.ts"
+echo 'import { titled } from "../../other/src/graph.ts";' > "$d/examples/demo/e2e/a.spec.ts"
+expect fail "an example importing a file of another example fails" "$d" \
+  "examples/demo/src/main.ts:2: no example imports another"
+expect fail "an example's test importing a file of another example fails" "$d" \
+  "examples/demo/e2e/a.spec.ts:1: no example imports another"
+
+d="$(fixture example-imports-example-package)"
+mkdir -p "$d/examples/other"
+printf '{\n  "name": "other-example",\n  "private": true\n}\n' > "$d/examples/other/package.json"
+echo 'import { x } from "other-example/src/graph";' >> "$d/examples/demo/src/main.ts"
+expect fail "an example importing another example by its package name fails" "$d" \
+  "examples/demo/src/main.ts:2: no example imports another"
+
+d="$(fixture example-unnamed)"
+printf '{\n  "private": true\n}\n' > "$d/examples/demo/package.json"
+expect fail "an example whose package.json names no package fails" "$d" \
+  "examples/demo/package.json: no \"name\""
+
+d="$(fixture example-imports-itself)"
+mkdir -p "$d/examples/demo/e2e"
+printf '{\n  "name": "demo-example"\n}\n' > "$d/examples/demo/package.json"
+echo 'export const x = 1;' > "$d/examples/demo/src/graph.ts"
+echo 'import { x } from "./graph";' >> "$d/examples/demo/src/main.ts"
+echo 'import { x } from "../src/graph";' > "$d/examples/demo/e2e/a.spec.ts"
+echo 'import { defineConfig } from "vite"; import p from "demo-example-plugin";' \
+  >> "$d/examples/demo/src/main.ts"
+expect pass "an example importing its own files, and a name only starting like one, passes" "$d"
 
 d="$(fixture renamed-core)"
 printf '[package]\nname = "comb-core"\n\n[dependencies]\n' > "$d/crates/engine/Cargo.toml"
