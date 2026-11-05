@@ -1,4 +1,5 @@
-// Browser tests run against the example, served by Vite (ADR-0008).
+// Browser tests run against the examples, each served by Vite (ADR-0008): the metric tree's by the
+// projects chromium and chromium-built, the UML example's by the project uml.
 import { defineConfig, devices } from "@playwright/test";
 import { chromiumEnv } from "./bench/chromium";
 
@@ -28,6 +29,15 @@ export default defineConfig({
         launchOptions: { env: chromiumEnv(windowed) },
       },
     },
+    {
+      name: "uml",
+      testDir: "examples/uml/e2e",
+      use: {
+        ...devices["Desktop Chrome"],
+        baseURL: "http://localhost:5177",
+        launchOptions: { env: chromiumEnv(windowed) },
+      },
+    },
   ],
   // Vite's test mode puts the bridge in test mode, which detaches every view kept across an
   // engine call (packages/comb/src/bridge). It serves on a port of its own, so that a server it
@@ -45,6 +55,13 @@ export default defineConfig({
       cwd: "examples/metric-tree",
       url: "http://localhost:5175",
       reuseExistingServer: false,
+    },
+    // The UML example in test mode, under the policy, on a port of its own.
+    {
+      command: "bunx --bun vite --mode test --port 5177 --strictPort",
+      cwd: "examples/uml",
+      url: "http://localhost:5177",
+      reuseExistingServer: !process.env.CI,
     },
   ],
 });

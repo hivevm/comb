@@ -53,14 +53,16 @@ dependency check, the container check, the overview check of
 TypeScript source runs past 100 columns, run beside it in `scripts/check-all.sh`, each after its
 self-test, as do the self-tests of the engine and the bundle checks.
 
-- **Build:** `bun run build` — the engine with wasm-pack, the type check, and the example
+- **Build:** `bun run build` — the engine with wasm-pack, the type check, and both examples
 - **Test:** `bun run test` — `cargo test`, `bun test`, and the Playwright browser tests; it
   refuses to start on a missing engine or one older than a file under `crates/` that a build
   reads, than `Cargo.toml`, or than `Cargo.lock` (`scripts/check-engine.sh`), naming the file and
   `bun run build:engine`; so does `bun run dev`, which serves the example to Playwright
 - **Lint:** `bun run lint` — rustfmt, clippy, ESLint, and Prettier
 - **Run:** `bun run example`, or the launch configuration **Example: metric tree** in VS Code,
-  which opens the example in the host's browser; `?copies=3334` opens it with 50,010 nodes
+  which opens the example in the host's browser; `?copies=3334` opens it with 50,010 nodes;
+  `bun run example:uml`, or the launch configuration **Example: UML**, opens the UML example the
+  same way (G-12)
 - **Benchmark:** `bun run bench` — the example at 50,010 nodes and edges, each node with the
   content of its type, in Chromium: time to the first frame and p95 frame times of drag, pan,
   zoom, and edits against Q-1 and Q-2, at the fitted view the example opens with and at each level

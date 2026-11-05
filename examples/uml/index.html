@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Comb · UML</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <main id="canvas"></main>
+    <aside id="sidebar">
+      <h1>UML</h1>
+      <label>
+        Diagram
+        <select id="diagram">
+          <option value="class">Class diagram</option>
+        </select>
+      </label>
+      <p id="count"></p>
+      <section id="legend">
+        <h2>Relationships</h2>
+        <ul id="legend-kinds"></ul>
+      </section>
+    </aside>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

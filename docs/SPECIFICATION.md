@@ -77,6 +77,16 @@ Only a normalization renumbers them ([`AGENTS.md` §3](../AGENTS.md#3-adr-rules)
 11. **G-11** — When the host application gives an edge a colour, a dash pattern, or an arrowhead,
     or gives an edge label a background colour, the system shall draw the edge or the label that
     way.
+12. **G-12** — When the developer starts the launch configuration *Example: UML* in VS Code, the
+    system shall build the engine, serve a second example host application, and open it in the
+    browser. Its sidebar switches between two UML diagrams of Comb itself. A class diagram of
+    Comb's public interface shows each class or interface as a node with its stereotype, its name,
+    its attributes, and its operations, and each relationship as an edge whose colour, dash
+    pattern, arrowhead, and label tell its kind. A package diagram of Comb's modules and crates
+    shows each package as a node with the stereotype «package» and its name, and each dependency
+    as a dashed edge with an arrowhead and the label «import» or «use». A palette adds classes,
+    interfaces, and packages; a connection adds a relationship, which the example refuses where
+    UML does not allow it; and the sidebar edits the selected node or edge.
 
 ## Quality Goals
 
