@@ -3,7 +3,7 @@
 # Structural test of the shape of the code (ADR-0009), of how the scene draws (ADR-0012,
 # ADR-0018), and of one boundary between the shell's modules, a rule of the check's own that
 # docs/ARCHITECTURE.md describes.
-# Verifies: ADR-0009, ADR-0012, ADR-0018, ADR-draft-one-workspace-per-example
+# Verifies: ADR-0009, ADR-0012, ADR-0018, ADR-0030
 #
 # ADR-0009 builds Comb as a functional core of pure Rust and a TypeScript shell whose only door to
 # the engine is its bridge; ADR-0012 draws every text as BitmapText and the edges as one mesh. This
@@ -24,7 +24,7 @@
 #      entries `comb` and `comb/testing`, and the engine file it exports as `comb/engine.wasm`,
 #      bare or as a URL with Vite's `?url` (ADR-0019), never another `comb/...`, a path through
 #      node_modules/comb/, or into packages/comb. And no example imports another (the successor
-#      of ADR-0009, ADR-draft-one-workspace-per-example): no file under examples/<name>/ imports,
+#      of ADR-0009, ADR-0030): no file under examples/<name>/ imports,
 #      by a relative path, a file under another directory of examples/, or another example by
 #      the package name its package.json gives.
 #   5. Drawing: no file of the render layer names PixiJS's Text, HTMLText, or SplitText, which
