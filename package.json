@@ -8,13 +8,15 @@
   ],
   "scripts": {
     "build:engine": "bunx --bun wasm-pack build crates/engine-wasm --release --target web --out-dir ../../packages/comb/wasm --out-name engine --no-pack && bunx --bun wasm-pack build crates/engine-wasm --release --target web --out-dir ../../packages/comb/wasm/test-mode --out-name engine --no-pack -- --features test-mode",
-    "build": "bun run build:engine && bun run typecheck && bun run --cwd examples/metric-tree build",
+    "build": "bun run build:engine && bun run typecheck && bun run --cwd examples/metric-tree build && bun run --cwd examples/uml build",
     "build:lib": "bun run --cwd packages/comb build",
     "typecheck": "bunx --bun tsc -p tsconfig.json",
     "test": "bash scripts/check-engine.sh && cargo test --workspace && bun test packages/comb/src bench && bunx --bun playwright test",
     "lint": "cargo fmt --all --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && bunx --bun eslint . && bunx --bun prettier --check .",
     "dev": "bash scripts/check-engine.sh && bun run --cwd examples/metric-tree dev",
     "example": "bun run build:engine && bun run dev",
+    "dev:uml": "bash scripts/check-engine.sh && bun run --cwd examples/uml dev",
+    "example:uml": "bun run build:engine && bun run dev:uml",
     "bench": "bun run build:engine && bun run --cwd examples/metric-tree build && bun --bun bench/run.ts"
   },
   "devDependencies": {

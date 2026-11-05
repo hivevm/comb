@@ -452,6 +452,19 @@ The functional core and its shell follow
   `window.engineUrl` let a browser test make a second Comb in a host element of its own,
   `window.useGraph` loads a graph as the example's own, and the functions of `comb/testing` stand on
   `window`, bound to its Comb.
+- **UML example** (`examples/uml`) — a second host application, of its own workspace, which
+  imports Comb by its entries alone and nothing of the metric tree (G-12,
+  ADR-draft-one-workspace-per-example); a sidebar chooses the diagram, the class diagram the one
+  so far, and lists the legend of the kinds of relationship, each a line drawn in its colour, dash
+  pattern, and arrowhead beside its name and label. `src/class-diagram.ts` describes Comb's public
+  interface, and the render layer's edges layer for its one realization, as classifiers whose
+  content is a caption for the stereotype, a title for the name, and a body text per member, at
+  most the eight rows Comb lays out and "…" for those left out, placed in rows laid out by hand by
+  the heights `heightOf` gives; `src/relationships.ts` maps each kind of relationship to the
+  colour, dash pattern, arrowhead, and label `docs/CONVENTIONS.md` records. Its hooks stand under
+  `window.uml`, so that it declares nothing on `window` the metric tree declares; Vite serves it
+  on port 5176, the launch configuration **Example: UML** opens it, and its browser tests run in
+  the Playwright project `uml` against it in test mode on port 5177.
 - **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, each node with the
   content of its type, measuring the time to the first frame and p95 frame times over the frames
   Comb rendered of drag, pan, zoom, and edits one a frame, a node and an edge added and removed

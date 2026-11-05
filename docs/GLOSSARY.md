@@ -76,8 +76,13 @@ to invent.
   over its vertex positions and label points, and at whose screen point the shell draws the world.
 - **Runner kind** — the CPU model a benchmark run records of the machine it ran on; runs are
   compared only with the baseline of their own kind.
+- **Relationship kind** — what a relationship of a UML class diagram means, one of association,
+  directed association, generalization, realization, dependency, aggregation, and composition;
+  the UML example tells each by the colour, dash pattern, arrowhead, and edge label of its edge.
 - **Rank** — the place of a node in the order nodes are drawn and hit, kept by the engine; a load
   ranks nodes by slot, and a node added takes the highest rank.
+- **Stereotype** — the guillemet-quoted word above a UML classifier's name, such as «interface» or
+  «package», which the UML example shows as a caption of the node's content.
 - **Selection** — the one node or edge the user has picked on the canvas, which the sidebar edits
   and a delete removes.
 - **Side** — one of the four sides of a node, `top`, `right`, `bottom`, or `left`, each with one

@@ -18,6 +18,20 @@
         "uriFormat": "http://localhost:%s",
         "action": "openExternally"
       }
+    },
+    // "Example: UML" does the same for the UML example, on a port of its own (G-12).
+    {
+      "name": "Example: UML",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "BUN_INSPECT= bun run example:uml",
+      "cwd": "${workspaceFolder}",
+      "env": { "NO_COLOR": "1" },
+      "serverReadyAction": {
+        "pattern": "localhost:([0-9]+)",
+        "uriFormat": "http://localhost:%s",
+        "action": "openExternally"
+      }
     }
   ]
 }
