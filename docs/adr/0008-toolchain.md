@@ -259,7 +259,7 @@ Mutation testing:
 - The golden path's test, `examples/metric-tree/e2e/example.spec.ts`, cites this ADR with a
   `Verifies: ADR-0008` marker.
 - Check 9 of `scripts/check-docs.sh` holds the build job, `scripts/check-code.sh`, and the
-  required checks of the README together.
+  required checks of `CONTRIBUTING.md` together.
 - `scripts/check-dependencies.sh` fails when a lockfile of another package manager
   (`package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`, or `pnpm-lock.yaml`) exists beside
   `bun.lock`; its self-test, `scripts/test-check-dependencies.sh`, cites this ADR.

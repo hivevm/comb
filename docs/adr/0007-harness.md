@@ -95,4 +95,4 @@ the `review` skill.
 **Not mechanically decidable:** who reviews, who decides, and what runs unattended are decided
 outside the tree. What the harness relies on mechanically is already checked: the git hooks under
 `.githooks/`, the required checks, and the Code Owners review of the repository settings listed in
-the README.
+`CONTRIBUTING.md`.
