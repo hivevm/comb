@@ -163,6 +163,10 @@ done
 # The commits that landed on the first-parent line outside any merge: no merge's line names them.
 mapfile -t linear < <(git rev-list --first-parent --no-merges --reverse "$base..$head")
 
+# below <n> — what the headline says of the n findings listed under it, so that a reader of the
+# headline alone, such as check-all.sh, learns that there are some.
+below() { (($1)) && echo "; $1 finding$( (($1 == 1)) || echo s) below"; }
+
 # The hand-off of the whole branch first: a review of its head covers every merge it carries and
 # every commit outside one, whatever a rework did to the lines in their messages.
 hand_off_bound=1
@@ -173,7 +177,7 @@ fi
 if ((hand_off_bound == 0)); then
   covered=""
   ((${#merges[@]})) && covered=", which covers the ${#merges[@]} merge$( ((${#merges[@]} == 1)) || echo s) it carries"
-  echo "Review binding sensor: the hand-off was reviewed at the head, $(git rev-parse --short "$head")$covered."
+  echo "Review binding sensor: the hand-off was reviewed at the head, $(git rev-parse --short "$head")$covered$(below $(( ${#mixed[@]} > 0 )))."
   report_mixed
   exit 0
 fi
@@ -194,9 +198,9 @@ if ((${#linear[@]} && hand_off_bound != 2)); then
 fi
 
 if ((${#merges[@]} == 0)); then
-  echo "Review binding sensor: no merge since $(git rev-parse --short "$base")$( ((${#findings[@]} + ${#mixed[@]})) || echo " — nothing to read")."
+  echo "Review binding sensor: no merge since $(git rev-parse --short "$base")$( ((${#findings[@]} + ${#mixed[@]})) || echo " — nothing to read")$(below $(( ${#findings[@]} + (${#mixed[@]} > 0) )))."
 else
-  echo "Review binding sensor: ${#merges[@]} merge$( ((${#merges[@]} == 1)) || echo s) since $(git rev-parse --short "$base"), $at_tip reviewed at the tip of its branch."
+  echo "Review binding sensor: ${#merges[@]} merge$( ((${#merges[@]} == 1)) || echo s) since $(git rev-parse --short "$base"), $at_tip reviewed at the tip of its branch$(below $(( ${#findings[@]} + (${#mixed[@]} > 0) )))."
 fi
 for f in "${findings[@]}"; do
   printf '  - %s\n' "$f"

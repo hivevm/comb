@@ -599,7 +599,7 @@ and the self-tests of the check runner and the hooks), the structural, the depen
 container, the overview, and the comment width checks below, each after its self-test, the
 self-tests of the engine, the bundle, and the mutants checks, and `scripts/check-code.sh`, which
 runs the build, the lint, the tests, and then the bundle check; the `pre-commit` and `pre-push`
-hooks run `scripts/check-all.sh --changed`, as the README's Git hooks say.
+hooks run `scripts/check-all.sh --changed`, as the Git hooks of CONTRIBUTING.md say.
 `scripts/check-engine.sh`, which `bun run test`, `bun run dev`, and the bundle check run first,
 fails when `engine_bg.wasm` of `packages/comb/wasm/` or of `packages/comb/wasm/test-mode/` is
 missing or older than a file under `crates/` other than those no build reads (the list of surviving

@@ -13,8 +13,8 @@
 # runs only the documentation check on a clean merge. Any other commit that stages a Markdown file
 # runs scripts/check-docs.sh on the working tree first and is refused while it fails or is
 # missing, its output shown, so that a document lands green rather than a commit later; about half
-# a minute. A commit that stages no Markdown file runs no check. Enabled as the README's "Git
-# hooks" says.
+# a minute. A commit that stages no Markdown file runs no check. Enabled as the "Git hooks" of
+# CONTRIBUTING.md says.
 #
 # Bypassable with 'git commit --no-verify'; AGENTS.md, section 6 says who may.
 # scripts/test-git-hooks.sh exercises this hook.

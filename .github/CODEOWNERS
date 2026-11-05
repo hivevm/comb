@@ -1,8 +1,8 @@
 # Code owners for what only a human decides, and for the protected parts of ADR-0007, which the
 # maintainer reviews as well as the reviewing session. The rules themselves are stated in
 # AGENTS.md, section 3, and in ADR-0007; the review this file drives is a repository setting,
-# listed under "Repository settings" in ../README.md, and until that setting is enabled this file
-# changes nothing.
+# listed under "Repository settings" in ../CONTRIBUTING.md, and until that setting is enabled this
+# file changes nothing.
 
 # The specification and the decision record, an ADR's Status line included (AGENTS.md, section 3).
 /docs/SPECIFICATION.md @mbrigl

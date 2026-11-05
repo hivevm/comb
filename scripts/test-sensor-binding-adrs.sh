@@ -8,6 +8,9 @@
 # path its prose only resembles, an ADR no longer in force, an ADR the change itself adds, a
 # change no ADR names, nothing to compare, and a base that does not resolve; a Rust file binds the
 # modules under the directory of its name, a Rust library root and a file of another kind do not.
+# Paths named with --path stand in for a change, and --sections prints the header, Decision, and
+# Enforcement of each ADR listed, and nothing else of it, and the Applies to of each other ADR in
+# force whose Applies to is prose.
 #
 # Verifies: ADR-0002
 # Inputs: scripts/sensor-binding-adrs.sh scripts/lib/
@@ -72,6 +75,38 @@ expect() {
   fi
   failed=$((failed + 1))
   echo "FAIL: $name (expected exit $want with \"$needle\", got exit $rc)" >&2
+  while IFS= read -r l; do printf '    %s\n' "$l"; done <<< "$out" >&2
+}
+
+# expect_with <exit code> <name> <dir> <needle> <argument>... — run the sensor in the repository
+# with the given arguments; the output must contain the needle.
+expect_with() {
+  local want="$1" name="$2" dir="$3" needle="$4" out rc
+  shift 4
+  fixture "$dir"
+  out="$(bash "$SENSOR" --root "$dir" "$@" 2>&1)"; rc=$?
+  if [[ $rc -eq "$want" && "$out" == *"$needle"* ]]; then
+    passed=$((passed + 1))
+    return
+  fi
+  failed=$((failed + 1))
+  echo "FAIL: $name (expected exit $want with \"$needle\", got exit $rc)" >&2
+  while IFS= read -r l; do printf '    %s\n' "$l"; done <<< "$out" >&2
+}
+
+# lacks_with <name> <dir> <needle> <argument>... — with the given arguments, the sensor's output
+# must not contain the needle.
+lacks_with() {
+  local name="$1" dir="$2" needle="$3" out
+  shift 3
+  fixture "$dir"
+  out="$(bash "$SENSOR" --root "$dir" "$@" 2>&1)"
+  if [[ "$out" != *"$needle"* ]]; then
+    passed=$((passed + 1))
+    return
+  fi
+  failed=$((failed + 1))
+  echo "FAIL: $name (\"$needle\" in the output)" >&2
   while IFS= read -r l; do printf '    %s\n' "$l"; done <<< "$out" >&2
 }
 
@@ -204,6 +239,55 @@ expect 0 "a path outside ASCII binds" "$d" "— docs/über.md"
 git -C "${d:?}" checkout -q -- docs
 rm "$d/Makefile"
 expect 0 "a deleted file binds" "$d" "$(adr_id 4) (docs/adr/0004-fixture.md) — Makefile"
+
+d="$(repo named)"
+expect_with 0 "a named path binds before anything changed" "$d" \
+  "1 path(s) named; 1 ADR(s) in force name one of them" --path src/app.sh
+expect_with 0 "a named path lists the ADR that names it" "$d" \
+  "- $(adr_id 3) (docs/adr/0003-fixture.md) — src/app.sh" --path ./src/app.sh
+expect_with 0 "a named directory binds an ADR that names a path under it" "$d" \
+  "- $(adr_id 1) (docs/adr/0001-fixture.md) — docs/" --path docs/
+expect_with 2 "--path without a path fails" "$d" "--path needs a path" --path
+
+d="$(repo sections)"
+{
+  printf '\n## Context\n\nWhy it came up.\n\n## Decision\n\nWe will plan in the tree.\n'
+  printf '\n## Alternatives considered\n\n- None.\n\n## Enforcement\n\nA sensor lists it.\n'
+} >> "$d/docs/adr/0001-fixture.md"
+# shellcheck disable=SC2016  # the backticks are literal Markdown, not a command substitution
+{
+  printf '# ADRs\n\n## Mechanics\n\nHow the record is kept.\n\n## Index\n\n### Binding\n\n'
+  printf '| ADR | Title | Applies to | Status |\n|-----|-------|-----|-----|\n'
+  printf '| [0001](0001-fixture.md) | Fixture | the plan under `docs/plan/` and `README.md` | 🟢 |\n'
+  printf '| [0003](0003-fixture.md) | Code | the code under `src/`, and the `pull request` template | 🟡 |\n'
+  printf '| [0005](0005-fixture.md) | Paths | `tools/`, `lib/x.sh`, and `Makefile` | 🟢 |\n'
+  printf '\n### Superseded and rejected\n\n| [0002](0002-fixture.md) | Old | prose too | ⚪ |\n'
+} > "$d/docs/adr/README.md"
+base "$d"
+expect_with 0 "--sections prints the Applies to of an ADR in force with prose" "$d" \
+  "- $(adr_id 3): the code under" --sections --path README.md
+lacks_with "--sections leaves out an ADR it lists" "$d" "- $(adr_id 1):" --sections --path README.md
+lacks_with "--sections leaves out an ADR whose Applies to is paths alone" "$d" "- $(adr_id 5):" \
+  --sections --path README.md
+expect_with 0 "--sections prints the header" "$d" "- **Applies to:** the plan" --sections --path README.md
+expect_with 0 "--sections prints the Decision" "$d" "We will plan in the tree." --sections --path README.md
+expect_with 0 "--sections prints the Enforcement" "$d" "A sensor lists it." --sections --path README.md
+lacks_with "--sections leaves out the Context" "$d" "Why it came up." --sections --path README.md
+lacks_with "--sections leaves out the Alternatives" "$d" "- None." --sections --path README.md
+lacks_with "--sections leaves out the mechanics of the index" "$d" "How the record is kept." \
+  --sections --path README.md
+lacks_with "--sections leaves out the rows of dead ADRs" "$d" "prose too" --sections --path README.md
+expect_with 0 "--sections points at the ADRs it prints, not at the index" "$d" \
+  "Read these, and the ADRs whose Applies to is prose, below:" --sections --path README.md
+lacks_with "--sections sends no session to the index" "$d" "Read the index" --sections --path NOTES.txt
+expect_with 0 "without --sections the index is named" "$d" "Read the index" --path NOTES.txt
+lacks_with "without --sections nothing of an ADR is printed" "$d" "We will plan" --path README.md
+mv "$d/docs/adr/README.md" "$d/README.adr"
+expect_with 0 "--sections says so when it finds no Binding table" "$d" "No row found under '### Binding'" \
+  --sections --path README.md
+mv "$d/README.adr" "$d/docs/adr/README.md"
+expect_with 0 "--sections prints the ADRs with prose when nothing changed" "$d" \
+  "- $(adr_id 1): the plan under" --sections base
 
 # --- summary ---------------------------------------------------------------------------------
 
