@@ -7,7 +7,8 @@
 # it, and the editor settings that pin the container-management extension to the host — runs the
 # check against it, and asserts the exit code and, for a failing case, the message that names the
 # violation. The baseline passes; every other case breaks one thing ADR-0004 decides, or drops a
-# git setting from the postStartCommand.
+# git setting from the postStartCommand. The mount path passes when left to the default or set to
+# it, and fails when set to a path every project shares.
 #
 # Inputs: scripts/check-devcontainer.sh scripts/lib/
 #
@@ -208,6 +209,29 @@ config "$d" "ghcr.io/devcontainers/features/github-cli:1"
 post_start="$POST_START"
 expect fail "the merge driver without the arguments git passes it" "$d" \
   "postStartCommand does not run 'git config $DRIVER'"
+
+# shellcheck disable=SC2016  # the variables are devcontainer.json's, not the shell's
+own='/workspaces/${localWorkspaceFolderBasename}'
+d="$(repo mount-own)"
+config "$d" "ghcr.io/devcontainers/features/github-cli:1" "\"workspaceFolder\": \"$own\"," \
+  "\"workspaceMount\": \"source=\${localWorkspaceFolder},target=$own,type=bind\","
+expect pass "a project mounted under a path of its own" "$d" "a path of its own"
+
+d="$(repo mount-target-last)"
+config "$d" "ghcr.io/devcontainers/features/github-cli:1" \
+  "\"workspaceMount\": \"source=\${localWorkspaceFolder},type=bind,dst=$own\","
+expect pass "a mount whose target comes last, under another of its names" "$d" "a path of its own"
+
+d="$(repo mount-shared-folder)"
+config "$d" "ghcr.io/devcontainers/features/github-cli:1" '"workspaceFolder": "/workspace",'
+expect fail "a workspaceFolder every project shares" "$d" "workspaceFolder is not '$own'"
+
+d="$(repo mount-shared-target)"
+# shellcheck disable=SC2016  # the variable is devcontainer.json's, not the shell's
+config "$d" "ghcr.io/devcontainers/features/github-cli:1" "\"workspaceFolder\": \"$own\"," \
+  '"workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",'
+expect fail "a workspaceMount that targets a path every project shares" "$d" \
+  "workspaceMount does not target '$own'"
 
 d="$(repo post-start-missing)"
 post_start=""

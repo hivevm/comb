@@ -4,8 +4,8 @@
   // Built from the Dockerfile beside this file: the base image and Bun, pinned by digest
   // (ADR-0014).
   "build": { "dockerfile": "Dockerfile" },
-  "workspaceFolder": "/workspace",
-  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+  // No workspaceFolder or workspaceMount: the default, /workspaces/<directory name>, keeps each
+  // project under a path of its own, and an agent keys its memory by the path (ADR-0004).
 
   "remoteUser": "vscode",
   "containerEnv": {
@@ -35,7 +35,7 @@
   // Runs inside the container on every start, so the settings are set again should a session
   // have changed them: the repository's git hooks under .githooks/ and the merge settings they
   // rely on. What each refuses, and the same commands for a clone outside the container,
-  // are under "Git hooks" in the README.
+  // are under "Git hooks" in CONTRIBUTING.md.
   "postStartCommand": {
     "hooks": "git config core.hooksPath .githooks",
     "merge": "git config merge.ff false && git config pull.ff only",
@@ -51,8 +51,8 @@
 
   // DevContainer Features layered on top of the image. The container intentionally has NO access
   // to any container engine (no socket mount, no engine inside) — see ADR-0004 and ADR-0015.
-  // Manage the host's containers from a host-side VS Code extension instead (README → "Host
-  // container management").
+  // Manage the host's containers from a host-side VS Code extension instead (CONTRIBUTING.md →
+  // "Host container management").
   "features": {
     // GitHub CLI (`gh`) — used by the coding agent for GitHub operations and as the git
     // credential helper. A push and every gh action wait for a human instruction
