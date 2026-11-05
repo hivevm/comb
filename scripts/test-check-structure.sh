@@ -249,6 +249,13 @@ expect fail "an example importing a file of another example fails" "$d" \
 expect fail "an example's test importing a file of another example fails" "$d" \
   "examples/demo/e2e/a.spec.ts:1: no example imports another"
 
+d="$(fixture example-imports-example-dir)"
+mkdir -p "$d/examples/other"
+echo 'export const x = 1;' > "$d/examples/other/index.ts"
+echo 'import { x } from "../../other";' >> "$d/examples/demo/src/main.ts"
+expect fail "an example importing another example's directory itself fails" "$d" \
+  "examples/demo/src/main.ts:2: no example imports another"
+
 d="$(fixture example-imports-example-package)"
 mkdir -p "$d/examples/other"
 printf '{\n  "name": "other-example",\n  "private": true\n}\n' > "$d/examples/other/package.json"

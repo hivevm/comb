@@ -156,7 +156,7 @@ export const CLASSIFIERS: Classifier[] = [
     id: "NodeContent",
     stereotype: "«type»",
     name: "NodeContent",
-    attributes: ["+rows: ContentElement[][]"],
+    attributes: ["= ContentElement[][]"],
     operations: [],
   },
   {

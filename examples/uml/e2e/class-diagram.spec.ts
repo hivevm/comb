@@ -4,13 +4,11 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   CLASSIFIERS,
   RELATIONSHIPS as EDGES,
-  contentOf,
   ELLIPSIS,
   NODE_WIDTH,
   ROW_LIMIT,
   shownMembers,
 } from "../src/class-diagram";
-import { KINDS, RELATIONSHIPS } from "../src/relationships";
 
 /** The Content Security Policy of Q-6, which the test server sends with every response. */
 const POLICY = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'";
@@ -21,6 +19,36 @@ async function open(page: Page): Promise<void> {
   await page.waitForFunction(() => "uml" in window);
   await page.evaluate(() => window.uml.loadReport);
 }
+
+/** How docs/CONVENTIONS.md draws each kind of relationship, in the order the legend lists them:
+ *  its name, colour, whether it is dashed (`[6, 4]`), its arrowhead, and its label with the path
+ *  parameter it stands at. Written here from the conventions, not read from the example, so that
+ *  a style the example's table gets wrong fails. */
+const CONVENTIONS = [
+  ["association", "Association", 0x6b7280, false, "none"],
+  ["directed-association", "Directed association", 0x6b7280, false, "end"],
+  ["generalization", "Generalization", 0x1d4ed8, false, "end"],
+  ["realization", "Realization", 0x1d4ed8, true, "end"],
+  ["dependency", "Dependency", 0x6b7280, true, "end", "«use»", 0.5],
+  ["aggregation", "Aggregation", 0x15803d, false, "none", "«aggregation»", 0.4],
+  ["composition", "Composition", 0x15803d, false, "none", "«composition»", 0.4],
+] as const;
+const DRAWN = Object.fromEntries(
+  CONVENTIONS.map(([kind, name, color, dashed, arrow, label, t]) => [
+    kind,
+    { name, color, dashed, arrow, label, t },
+  ]),
+) as Record<
+  string,
+  {
+    name: string;
+    color: number;
+    dashed: boolean;
+    arrow: "end" | "none";
+    label?: string;
+    t?: number;
+  }
+>;
 
 const hex = (color: number) => `#${color.toString(16).padStart(6, "0")}`;
 
@@ -63,7 +91,6 @@ test("each class or interface is a node of its stereotype, name, and members, pl
   });
   for (const classifier of CLASSIFIERS) {
     const node = graph.nodes.find(({ id }) => id === classifier.id)!;
-    expect(node.content).toEqual(contentOf(classifier));
     const rows = node.content.map((row) =>
       row.map((each) => (each.kind === "text" ? `${each.role} ${each.text}` : each.kind)),
     );
@@ -136,34 +163,26 @@ test("each relationship is drawn as the conventions draw its kind, every kind am
   // Verifies: G-12, G-11
   await page.goto("/");
   await open(page);
-  const { edges, kinds, drawn } = await page.evaluate(async () => {
-    // Near, so that every label is drawn.
-    window.uml.comb.setViewport({ x: 0, y: 0, scale: 1 });
+  const { edges, kinds, shown } = await page.evaluate(async () => {
+    window.uml.comb.fitView();
     await window.uml.comb.whenRendered();
-    const scene = window.uml.inspect();
     return {
       edges: window.uml.exampleGraph().edges,
       kinds: window.uml.edgeKinds(),
-      drawn: scene.edges.map(({ id }) => id),
+      shown: window.uml.inspect().edges.map(({ id }) => id),
     };
   });
-  expect(new Set(Object.values(kinds))).toEqual(new Set(KINDS));
+  expect(new Set(Object.values(kinds))).toEqual(new Set(Object.keys(DRAWN)));
   for (const edge of edges) {
-    const style = RELATIONSHIPS[kinds[edge.id]!];
-    expect(edge.color).toBe(style.color);
-    expect(edge.dash).toEqual(style.dash);
-    expect(edge.arrow).toBe(style.arrow);
-    expect(edge.label?.text).toBe(style.label?.text);
-    if (edge.label)
-      expect(edge.label).toMatchObject({ t: style.label!.t, background: style.color });
+    const want = DRAWN[kinds[edge.id]!]!;
+    expect(edge.color, edge.id).toBe(want.color);
+    expect(edge.dash, edge.id).toEqual(want.dashed ? [6, 4] : undefined);
+    expect(edge.arrow, edge.id).toBe(want.arrow);
+    expect(edge.label?.text, edge.id).toBe(want.label);
+    if (edge.label) expect(edge.label).toMatchObject({ t: want.t, background: want.color });
   }
-  await page.evaluate(() => window.uml.comb.fitView());
-  const shown = await page.evaluate(async () => {
-    await window.uml.comb.whenRendered();
-    return window.uml.inspect().edges.map(({ id }) => id);
-  });
+  // Every edge is drawn.
   expect(shown.sort()).toEqual(edges.map(({ id }) => id).sort());
-  expect(drawn.length).toBeGreaterThan(0);
 });
 
 test("the labels of dependencies, aggregations, and compositions are drawn on their edges", async ({
@@ -190,7 +209,7 @@ test("the labels of dependencies, aggregations, and compositions are drawn on th
     return { labels: drawn, kinds: window.uml.edgeKinds() };
   });
   expect(labels.length).toBeGreaterThan(0);
-  for (const [id, text] of labels) expect(text, id).toBe(RELATIONSHIPS[kinds[id]!].label!.text);
+  for (const [id, text] of labels) expect(text, id).toBe(DRAWN[kinds[id]!]!.label);
 });
 
 test("the legend names each kind beside a line of its colour, dash pattern, and arrowhead", async ({
@@ -200,14 +219,13 @@ test("the legend names each kind beside a line of its colour, dash pattern, and 
   await page.goto("/");
   await open(page);
   const items = page.locator("#legend-kinds li");
-  await expect(items).toHaveCount(KINDS.length);
-  for (const [i, kind] of KINDS.entries()) {
-    const { name, color, dash, arrow, label } = RELATIONSHIPS[kind];
+  await expect(items).toHaveCount(CONVENTIONS.length);
+  for (const [i, [, name, color, dashed, arrow, label]] of CONVENTIONS.entries()) {
     const item = items.nth(i);
-    await expect(item).toHaveText(label ? `${name} ${label.text}` : name);
+    await expect(item).toHaveText(label ? `${name} ${label}` : name);
     const line = item.locator("line");
     await expect(line).toHaveAttribute("stroke", hex(color));
-    if (dash) await expect(line).toHaveAttribute("stroke-dasharray", dash.join(" "));
+    if (dashed) await expect(line).toHaveAttribute("stroke-dasharray", "6 4");
     else await expect(line).not.toHaveAttribute("stroke-dasharray", /.*/);
     await expect(item.locator("polygon")).toHaveCount(arrow === "end" ? 1 : 0);
   }

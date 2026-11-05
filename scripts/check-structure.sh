@@ -154,8 +154,11 @@ while IFS= read -r file; do
   own="examples/${own%%/*}"
   while IFS=: read -r line target; do
     target="$(realpath -m --relative-to=. "$(dirname "$file")/$target")"
-    if [[ "$target" == examples/*/* && "$target" != "$own"/* ]]; then
-      problems+=("$file:$line: no example imports another, here ${target%%/*}/$(cut -d/ -f2 <<< "$target")")
+    # The directory under examples/ the path lies in, or names itself.
+    other="${target#examples/}"
+    other="examples/${other%%/*}"
+    if [[ "$target" == examples/* && -d "$other" && "$other" != "$own" ]]; then
+      problems+=("$file:$line: no example imports another, here $other")
     fi
   done < <(grep -noE "${specifier}\.\.?/${inside}*${quote}" "$file" \
     | sed -E "s/^([0-9]+):.*${quote}(${inside}*)${quote}\$/\1:\2/")

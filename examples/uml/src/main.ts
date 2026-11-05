@@ -3,7 +3,7 @@
 // and nothing of the other example (ADR-draft-one-workspace-per-example).
 import { createComb, type Comb, type GraphData } from "comb";
 import engineUrl from "comb/engine.wasm?url";
-import { inspect, screenPoint, showLayers, type SceneSnapshot } from "comb/testing";
+import { inspect, type SceneSnapshot } from "comb/testing";
 import { classDiagram } from "./class-diagram";
 import { KINDS, RELATIONSHIPS, type RelationshipKind } from "./relationships";
 
@@ -25,8 +25,6 @@ export interface UmlHooks {
   edgeKinds: () => Record<string, RelationshipKind>;
   /** What the canvas draws, from comb/testing. */
   inspect: () => SceneSnapshot;
-  screenPoint: (x: number, y: number) => ReturnType<typeof screenPoint>;
-  showLayers: (layers: Parameters<typeof showLayers>[1]) => void;
 }
 
 declare global {
@@ -106,15 +104,10 @@ async function load(): Promise<UmlLoadReport> {
 }
 
 fillLegend();
-diagram.addEventListener("change", () => {
-  window.uml.loadReport = load();
-});
 window.uml = {
   comb,
   loadReport: load(),
   exampleGraph: () => structuredClone(graph),
   edgeKinds: () => Object.fromEntries(kinds),
   inspect: () => inspect(comb),
-  screenPoint: (x, y) => screenPoint(comb, x, y),
-  showLayers: (layers) => showLayers(comb, layers),
 };
