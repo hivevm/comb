@@ -1,7 +1,8 @@
 // Browser tests of editing the UML example's state diagram (G-12): the palette's state, initial
 // state, final state, and choice, each in its node shape; the sidebar's name of a state and event
 // of a transition; a connection that adds a transition docked on the outline (ADR-0031), a drag
-// back onto a state that adds a loop, Delete, and the edits each of the three diagrams keeps.
+// back onto a state that adds a loop, Delete, and the edits each of the three diagrams keeps; and
+// of all three, that a drop is the example's only once Comb took its node.
 import { expect, test, type Page } from "@playwright/test";
 import { clickNode, clickWorld, drawnNode, open, pagePoint, setViewport } from "./shared";
 
@@ -267,4 +268,50 @@ test("edits on all three diagrams are kept as the user switches between them", a
   // The state dropped is still a state the sidebar renames.
   await clickNode(page, "state-1");
   await expect(page.locator("#name")).toHaveValue("NewState");
+});
+
+test("a drop is the example's own only once Comb took its node, and not at all where Comb refuses it", async ({
+  page,
+}) => {
+  // Verifies: G-12
+  await page.goto("/");
+  await open(page);
+  // Comb's addNode, wrapped to note whether the example's copy holds the node it is handed
+  // already, and to refuse the first node it is handed.
+  await page.evaluate(() => {
+    const { comb } = window.uml;
+    const addNode = comb.addNode.bind(comb);
+    const noted = { held: [] as boolean[], refuse: true };
+    Object.assign(window, { noted });
+    comb.addNode = (node) => {
+      noted.held.push(node.id in window.uml.nodeKinds());
+      if (noted.refuse) {
+        noted.refuse = false;
+        throw new Error("refused");
+      }
+      addNode(node);
+    };
+  });
+  for (const [diagram, kind] of [
+    ["class", "class"],
+    ["package", "package"],
+    ["state", "choice"],
+  ] as const) {
+    await choose(page, diagram);
+    const before = await state(page);
+    await dropAt(page, kind);
+    const refused = await page.evaluate(() => window.uml.nodeKinds());
+    expect({ diagram, refused: `${kind}-1` in refused }).toEqual({ diagram, refused: false });
+    expect(await state(page)).toEqual(before);
+    await dropAt(page, kind);
+    const kinds = await page.evaluate(() => window.uml.nodeKinds());
+    expect({ diagram, kind: kinds[`${kind}-2`] }).toEqual({ diagram, kind });
+    const held = await page.evaluate(() => {
+      const { noted } = window as unknown as { noted: { held: boolean[]; refuse: boolean } };
+      const seen = [...noted.held];
+      Object.assign(noted, { held: [], refuse: true });
+      return seen;
+    });
+    expect({ diagram, held }).toEqual({ diagram, held: [false, false] });
+  }
 });
