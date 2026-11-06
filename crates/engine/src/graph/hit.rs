@@ -126,7 +126,7 @@ impl Graph {
     }
 
     /// The node at `point`: of the nodes whose outline holds it, the one drawn on top, which is
-    /// the one of the highest rank (ADR-0023, ADR-draft-node-shapes).
+    /// the one of the highest rank (ADR-0023, ADR-0032).
     pub(super) fn node_at(&mut self, point: Point) -> Option<u32> {
         self.node_grid
             .candidates(&Rect::at(point), &mut self.scratch);
@@ -197,7 +197,7 @@ mod tests {
 
     #[test]
     fn a_node_is_hit_within_its_node_shape_and_a_press_beside_its_outline_finds_what_lies_below() {
-        // Verifies: ADR-draft-node-shapes
+        // Verifies: ADR-0032
         // A rectangle below and a diamond above it, both at the origin, 100 × 60, and a node away
         // from the origin given a node shape, at the middle level, where no connector is hit.
         let positions = vec![0.0, 0.0, 0.0, 0.0, 1e6, 1e6];

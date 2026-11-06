@@ -73,7 +73,7 @@ pub enum GraphDataProblem {
         expected: String,
     },
     /// A node of a filled node shape, a circle, a ringed circle, or a bar, holds content
-    /// (ADR-draft-node-shapes).
+    /// (ADR-0032).
     #[serde(rename_all = "camelCase")]
     ContentInFilledShape { node: String },
     /// A node's content holds more than `limit` rows.

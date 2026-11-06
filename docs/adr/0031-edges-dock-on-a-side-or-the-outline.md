@@ -1,4 +1,4 @@
-# ADR-draft-edges-dock-on-a-side-or-the-outline: Every node has one connector in the middle of each side, an edge's end docks on a side or on the node's outline, and a loop is accepted where the host application allows loops
+# ADR-0031: Every node has one connector in the middle of each side, an edge's end docks on a side or on the node's outline, and a loop is accepted where the host application allows loops
 
 - **Status:** 🟡 proposed
 - **Date:** 2026-11-06
@@ -17,7 +17,7 @@ the user's connection and by `addEdge`. A state diagram needs two things that ru
 - a loop, a transition from a state back to itself.
 
 The feature spec `docs/plan/state-diagram/` asks for both as G-13, drafted there for the
-maintainer to land. The decision on node shapes (ADR-draft-node-shapes) gives the engine the
+maintainer to land. The decision on node shapes (ADR-0032) gives the engine the
 point where a line crosses a node's outline.
 
 The forces:

@@ -14,7 +14,7 @@ use super::{ContentInput, Field};
 
 /// A node as the host application hands it over: its identifier, the position of its top-left
 /// corner, its width, its node shape, and its content, from which and its node shape the engine
-/// computes its height (ADR-0013, ADR-draft-node-shapes).
+/// computes its height (ADR-0013, ADR-0032).
 // The tests read each `Field` of it through `Refusable` in `snapshot`, which names them all.
 #[derive(Tsify, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -27,7 +27,7 @@ pub struct NodeInput {
     pub y: Field<f64>,
     #[tsify(type = "number")]
     pub width: Field<f64>,
-    /// Its node shape; `api` fills in `rectangle` (ADR-draft-node-shapes).
+    /// Its node shape; `api` fills in `rectangle` (ADR-0032).
     #[tsify(type = "NodeShape")]
     pub shape: Field<NodeShape>,
     #[tsify(type = "NodeContent")]
@@ -35,7 +35,7 @@ pub struct NodeInput {
 }
 
 /// The node shape a node is drawn and hit in, from the closed set the engine owns
-/// (ADR-draft-node-shapes).
+/// (ADR-0032).
 #[derive(Tsify, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum NodeShape {

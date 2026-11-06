@@ -167,7 +167,7 @@ impl Graph {
     }
 
     /// The node shape of the node in `slot`, a rectangle where none was given
-    /// (ADR-draft-node-shapes).
+    /// (ADR-0032).
     pub fn shape(&self, slot: u32) -> NodeShape {
         self.shapes.get(slot as usize).copied().unwrap_or_default()
     }

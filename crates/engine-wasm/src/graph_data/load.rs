@@ -69,7 +69,7 @@ pub(crate) fn load_of(
 /// Checks the content of one node, as a load checks a node's, named `id`, of node shape `shape`
 /// and `width` wide, its strings counted against the budget on from `held`, the code units of
 /// content the graph holds besides it, and returns it with its texts mapped and the height the
-/// node lays out to in `fonts` (ADR-draft-node-shapes).
+/// node lays out to in `fonts` (ADR-0032).
 pub(super) fn checked_content(
     id: &str,
     (shape, width): (NodeShape, f32),
@@ -421,7 +421,7 @@ mod tests {
 
     #[test]
     fn a_node_lays_out_to_the_height_of_its_node_shape_loaded_added_and_asked_for() {
-        // Verifies: ADR-draft-node-shapes
+        // Verifies: ADR-0032
         use crate::NodeShape as S;
         // A node 100 wide of one title is 64 high as a rectangle, the least height of content.
         let empty = || ContentInput::new().into();
@@ -461,7 +461,7 @@ mod tests {
 
     #[test]
     fn content_in_a_filled_node_shape_is_refused_naming_the_node() {
-        // Verifies: ADR-draft-node-shapes, Q-7
+        // Verifies: ADR-0032, Q-7
         use crate::NodeShape as S;
         let refused = || GraphDataProblem::ContentInFilledShape { node: "b".into() };
         for shape in [S::Circle, S::RingedCircle, S::Bar] {
@@ -483,7 +483,7 @@ mod tests {
 
     #[test]
     fn a_node_shape_that_names_none_is_refused_naming_the_node_and_the_field() {
-        // Verifies: ADR-draft-node-shapes, Q-7
+        // Verifies: ADR-0032, Q-7
         let shape = |index, id: &str| GraphDataProblem::InvalidField {
             list: GraphList::Nodes,
             index,

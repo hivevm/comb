@@ -171,7 +171,7 @@ function load({ store, bridge, limits }: Editing, graph: GraphData): void {
 
 /** `heightOf`: the content, width, and node shape read once as the node `addNode` reads, named
  *  `""` and at the origin, and checked by the bridge as `addNode` checks it; the graph is not
- *  asked and nothing changes (ADR-0026, ADR-draft-node-shapes). */
+ *  asked and nothing changes (ADR-0026, ADR-0032). */
 function heightOf(
   { bridge, limits }: Editing,
   content: unknown,

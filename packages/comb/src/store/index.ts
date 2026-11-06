@@ -9,7 +9,7 @@ export type { ContentElement, NodeContent, NodeShape, TextRole } from "../bridge
 
 /** A node as the host application hands it over: `x` and `y` are its initial position, `shape`
  *  the node shape it is drawn and hit in, and `content` what it shows, rows of weighted columns,
- *  from which and its node shape Comb computes its height (ADR-0013, ADR-draft-node-shapes). */
+ *  from which and its node shape Comb computes its height (ADR-0013, ADR-0032). */
 export interface NodeData {
   id: string;
   x: number;

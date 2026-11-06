@@ -1478,7 +1478,7 @@ mod tests {
 
     #[test]
     fn a_node_s_content_lies_in_its_node_shape_s_inner_rectangle_and_is_hit_there() {
-        // Verifies: ADR-draft-node-shapes
+        // Verifies: ADR-0032
         use graph_data::tests::{TITLE, a_and, content, load_into, titled};
         // Node `b`, at (300, 0), a diamond 100 wide of one title: 64 high as a rectangle, so 128,
         // its inner rectangle (25, 32) 50 × 64, its title at the padding inside it.

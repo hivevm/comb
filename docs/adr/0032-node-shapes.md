@@ -1,6 +1,6 @@
-# ADR-draft-node-shapes: A node is drawn and hit in a node shape from a closed set the engine owns
+# ADR-0032: A node is drawn and hit in a node shape from a closed set the engine owns
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-06
 - **Deciders:** Markus Brigl
 - **Applies to:** the node fields of `crates/engine-wasm/` and of `NodeData` in `packages/comb/src/store/`, the node-shape geometry of `crates/engine`, the layout of content and `heightOf` in `crates/engine/src/content.rs` and `packages/comb/src/api/`, the hit test of `crates/engine/src/graph.rs`, and the drawing of nodes in `packages/comb/src/render/`
@@ -52,6 +52,10 @@ node shape from the engine's numbers.
     - `ellipse`: the rectangle inscribed in it, its sides 1/√2 of the ellipse's axes, less the
       padding.
     - `diamond`: the rectangle half its width and half its height, centred, less the padding.
+
+    The content is laid out from the inner rectangle's left and top rounded down to whole world
+    units, so that the layout's sums in `f32` stay as exact there as at a node's corner. Its
+    padding at the left and the top shrinks so by less than 1 world unit.
   - The *filled node shapes* are `circle`, `ringed-circle`, and `bar`. They hold no content: the
     bridge crate refuses content in one with a kind of its own that names the node.
 - **Height:**
