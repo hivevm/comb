@@ -55,11 +55,12 @@ actions' identifiers of a load's content holding more than 1,000,000,000 code un
 each naming the node and, where it has them, the row and column, a label background that is
 not an integer from `0` to `0xFFFFFF`, more than 1,000,000 nodes or edges, an identifier, source, or
 target longer than 256 UTF-16 code units, and identifiers of one load that hold more than 64,000,000
-code units together, and an edge side other than `top`, `right`, `bottom`, and `left`. `api`
-refuses, against the store's map from identifiers to slots (ADR-0030), an identifier `updateNode` or
-`removeNodes` names that the graph does not hold (`unknownNode`), one `updateEdge` or `removeEdges`
-names (`unknownEdge`), one `addNode`, `addEdge`, or a user's connection adds that it holds already
-(`duplicateNode`, `duplicateEdge`), and an end of an added edge it does not hold (`missingNode`).
+code units together, and an edge side other than `top`, `right`, `bottom`, `left`, and
+`outline`. `api` refuses, against the store's map from identifiers to slots (ADR-0030), an
+identifier `updateNode` or `removeNodes` names that the graph does not hold (`unknownNode`), one
+`updateEdge` or `removeEdges` names (`unknownEdge`), one `addNode`, `addEdge`, or a user's
+connection adds that it holds already (`duplicateNode`, `duplicateEdge`), and an end of an added
+edge it does not hold (`missingNode`).
 The bridge crate checks the node `addNode` and the edge `addEdge` hand over as a load checks one,
 refuses an edge from a node to itself (`selfEdge`) and an addition past the 1,000,000 nodes or edges
 a load may hold, and `api` has it check the code units of identifiers the store counts with the new
@@ -120,20 +121,22 @@ The functional core and its shell follow
 one workspace for each example.
 
 - **Engine** (`crates/engine`) — pure geometry: `geometry` holds edge paths as cubic Bézier curves
-  from the connector of a side of one node, the middle of its `top`, `right`, `bottom`, or `left`,
-  to that of a side of another, their control points pulled out along each side's outward normal
-  ([ADR-0025](adr/0025-one-connector-per-side.md)), their exact bounds, the point and normal at a
-  path parameter, and edge-label placement. `shape` holds the closed set of node shapes
-  ([ADR-0032](adr/0032-node-shapes.md)): each one's height for content of a given
-  height, the inner rectangle its content is laid out in, its hit test, and the point where a line
-  from its centre crosses its outline, all in the node's own coordinates. `graph` keeps the loaded
-  graph, node positions and sizes per slot, a node shape per node slot, a rectangle by default, by
-  which `node_at` hits a node within its outline, and edges per slot, a rank per node slot, a list
-  of the edges at each node slot, a list each of free node and edge slots, and a spatial index
-  (`spatial`, a uniform grid each for nodes and edges, with an overflow list for items that cover
-  many cells) that loads, additions, and moves keep current and that is built again once many items
-  have moved or been added beyond its extent, or the nodes or the edges in use pass twice the count
-  it was built for
+  between the docks of two nodes, each end at the connector of a side, the middle of its `top`,
+  `right`, `bottom`, or `left`, its control point pulled out along the side's outward normal, or on
+  the outline, where the line from its node's centre towards the other node's centre crosses it, its
+  control point pulled out along that line
+  ([ADR-0031](adr/0031-edges-dock-on-a-side-or-the-outline.md)), their exact bounds, the point and
+  normal at a path parameter, and edge-label placement. `shape` holds the closed set of node shapes
+  ([ADR-0032](adr/0032-node-shapes.md)): each one's height for content of a given height, the inner
+  rectangle its content is laid out in, its hit test, and the point where a line from its centre
+  crosses its outline, all in the node's own coordinates. `graph` keeps the loaded graph, node
+  positions and sizes per slot, a node shape per node slot, a rectangle by default, by which
+  `node_at` hits a node within its outline and its edges' ends on the outline lie, and edges per
+  slot, a rank per node slot, a list of the edges at each node slot, a list each of free node and
+  edge slots, and a spatial index (`spatial`, a uniform grid each for nodes and edges, with an
+  overflow list for items that cover many cells) that loads, additions, and moves keep current and
+  that is built again once many items have moved or been added beyond its extent, or the nodes or
+  the edges in use pass twice the count it was built for
   ([ADR-0023](adr/0023-the-engine-edits-its-graph-in-place.md)). Its modules under `graph/` follow
   its concepts: `slots`, the free slots of a kind, one type kept once for nodes and once for edges;
   `nodes` and `edges`, the edits of each, each with the one check that the slots a call names hold
@@ -464,41 +467,40 @@ one workspace for each example.
   `window.engineUrl` let a browser test make a second Comb in a host element of its own,
   `window.useGraph` loads a graph as the example's own, and the functions of `comb/testing` stand on
   `window`, bound to its Comb.
-- **UML example** (`examples/uml`) — a second host application, of its own workspace, which
-  imports Comb by its entries alone and nothing of the metric tree (G-12,
-  ADR-0030); a sidebar chooses between its three diagrams, the class diagram first, and lists the
-  legend of the kinds of relationship, each a line drawn in its colour, dash pattern, and
-  arrowhead beside its name and label, one legend for the class and the package diagram. Chosen,
-  the state diagram (`src/state-diagram.ts`) shows a Comb's life, its states rounded rectangles
-  of their name, its initial state a circle, its final states ringed circles, and the choice of
-  whether its engine loaded a diamond, placed by the heights `heightOf` gives their node shapes,
-  and its transitions grey edges by sides labelled by their event or guard; it is shown only, its
-  palette and legend hidden. Chosen, the package diagram
-  (`src/package-diagram.ts`) shows Comb's modules and crates as nodes of «package» and their
-  name and their dependencies as dashed edges with an arrowhead and the label «import» or «use»;
-  each diagram is kept as it was left, its edits among it, while the other is shown, for as
-  long as the page lives. `src/class-diagram.ts` describes Comb's public
-  interface, and the render layer's edges layer for its one realization, as classifiers whose
-  content is a caption for the stereotype, a title for the name, and a body text per member, at
-  most the eight rows Comb lays out and "…" for those left out, placed in rows laid out by hand by
-  the heights `heightOf` gives; `src/relationships.ts` maps each kind of relationship to the
-  colour, dash pattern, arrowhead, and label `docs/CONVENTIONS.md` records. The diagram is edited
-  as the metric tree is, and so is the package diagram: the palette drops a class, an interface,
-  or an abstract class, or on the package diagram a package, centred on the drop; the sidebar
-  (`src/sidebar.ts`) edits the selected classifier's name, stereotype, and members, one per line
-  of two text areas, or a package's name, through `updateNode`, and the selected relationship's
-  kind and label, or a dependency's «import» or «use», through `updateEdge`; a connection becomes
-  an association, or on the package diagram a dependency «use», where the rules of
-  `src/rules.ts`, a pure function of the kinds of the ends and of the relationship, allow it,
-  which so far refuse nothing, Comb itself refusing an edge of a node with itself; and Delete
-  removes the selection. A node's kind, class, interface, abstract class, or package, is read
-  from its stereotype (`kindOf`), and the shared layout by rows (`laidOut`) and the content of a
-  node (`contentOf`) stand in `src/class-diagram.ts`, which the package diagram imports.
-  `src/diagram.ts` keeps the example's copy of the graph, the classifier of each node, and the
-  kind of each edge from every change `onChange` tells, and `src/legend.ts` draws the legend. Its
-  hooks stand under `window.uml`, so that it declares nothing on `window` the metric tree
-  declares; Vite serves it on port 5176, the launch configuration **Example: UML** opens it, and
-  its browser tests run in the Playwright project `uml` against it in test mode on port 5177.
+- **UML example** (`examples/uml`) — a second host application, of its own workspace, which imports
+  Comb by its entries alone and nothing of the metric tree (G-12, ADR-0030); a sidebar chooses
+  between its three diagrams, the class diagram first, and lists the legend of the kinds of
+  relationship, each a line drawn in its colour, dash pattern, and arrowhead beside its name and
+  label, one legend for the class and the package diagram. Chosen, the state diagram
+  (`src/state-diagram.ts`) shows a Comb's life, its states rounded rectangles of their name, its
+  initial state a circle, its final states ringed circles, and the choice of whether its engine
+  loaded a diamond, placed by the heights `heightOf` gives their node shapes, and its transitions
+  grey edges docked on the outline labelled by their event or guard; it is shown only, its palette
+  and legend hidden. Chosen, the package diagram (`src/package-diagram.ts`) shows Comb's modules and
+  crates as nodes of «package» and their name and their dependencies as dashed edges with an
+  arrowhead and the label «import» or «use»; each diagram is kept as it was left, its edits among
+  it, while the other is shown, for as long as the page lives. `src/class-diagram.ts` describes
+  Comb's public interface, and the render layer's edges layer for its one realization, as
+  classifiers whose content is a caption for the stereotype, a title for the name, and a body text
+  per member, at most the eight rows Comb lays out and "…" for those left out, placed in rows laid
+  out by hand by the heights `heightOf` gives; `src/relationships.ts` maps each kind of relationship
+  to the colour, dash pattern, arrowhead, and label `docs/CONVENTIONS.md` records. The diagram is
+  edited as the metric tree is, and so is the package diagram: the palette drops a class, an
+  interface, or an abstract class, or on the package diagram a package, centred on the drop; the
+  sidebar (`src/sidebar.ts`) edits the selected classifier's name, stereotype, and members, one per
+  line of two text areas, or a package's name, through `updateNode`, and the selected relationship's
+  kind and label, or a dependency's «import» or «use», through `updateEdge`; a connection becomes an
+  association, or on the package diagram a dependency «use», where the rules of `src/rules.ts`, a
+  pure function of the kinds of the ends and of the relationship, allow it, which so far refuse
+  nothing, Comb itself refusing an edge of a node with itself; and Delete removes the selection. A
+  node's kind, class, interface, abstract class, or package, is read from its stereotype (`kindOf`),
+  and the shared layout by rows (`laidOut`) and the content of a node (`contentOf`) stand in
+  `src/class-diagram.ts`, which the package diagram imports. `src/diagram.ts` keeps the example's
+  copy of the graph, the classifier of each node, and the kind of each edge from every change
+  `onChange` tells, and `src/legend.ts` draws the legend. Its hooks stand under `window.uml`, so
+  that it declares nothing on `window` the metric tree declares; Vite serves it on port 5176, the
+  launch configuration **Example: UML** opens it, and its browser tests run in the Playwright
+  project `uml` against it in test mode on port 5177.
 - **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, each node with the
   content of its type, measuring the time to the first frame and p95 frame times over the frames
   Comb rendered of drag, pan, zoom, and edits one a frame, a node and an edge added and removed
