@@ -17,8 +17,8 @@ const RELATIONSHIP_KINDS = [
 
 /** The conventions' table: between a class, an interface, an abstract class, and a package, in
  *  either direction, every kind of relationship is allowed; none is refused. No case is needed of
- *  a node with itself, which Comb refuses, nor of a class and a package, which never share a
- *  diagram. */
+ *  a node with itself, which `Diagram.allows` refuses before it asks the rules, nor of a class and
+ *  a package, which never share a diagram. */
 const REFUSED: readonly string[] = [];
 
 const KINDS_OF_NODE = ["class", "interface", "abstract-class", "package"] as const;

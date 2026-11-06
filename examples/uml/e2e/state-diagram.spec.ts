@@ -2,7 +2,7 @@
 // rectangles of their name, its initial state a filled circle, its final states ringed circles,
 // and the choice of whether the engine loaded a diamond, each a node shape of Comb's own
 // (ADR-0032), its transitions edges docked on the outline (ADR-0031), labelled by their event or
-// guard.
+// guard, and a loop on ready for each edit Comb applies (ADR-0031).
 import { expect, test, type Page } from "@playwright/test";
 import { open } from "./shared";
 
@@ -41,7 +41,7 @@ test("the state diagram shows a Comb's life in the node shapes of its states, in
   await page.goto("/");
   await open(page);
   await chooseStates(page);
-  await expect(page.locator("#count")).toHaveText("10 states, 11 transitions");
+  await expect(page.locator("#count")).toHaveText("10 states, 12 transitions");
   // It is shown only: the palette offers nothing to add, and the legend of the kinds of
   // relationship names none of its transitions.
   await expect(page.locator("#palette")).toBeHidden();
@@ -81,6 +81,7 @@ test("the state diagram shows a Comb's life in the node shapes of its states, in
       "engine lost",
       "destroy",
       "destroy",
+      "edit",
     ].sort(),
   );
 });
@@ -158,7 +159,10 @@ test("every transition of the state diagram docks on the outline of its states, 
       })),
     };
   });
-  expect(edges).toHaveLength(11);
+  // The loop on ready docks on a side, which the next test decides.
+  expect(edges).toHaveLength(12);
+  const docked = edges.filter(({ id }) => id !== "ready-ready");
+  expect(docked).toHaveLength(11);
   const byId = new Map(nodes.map((node) => [node.id, node]));
   // Half a pixel at the zoom it is drawn at (Q-4), in world units.
   const within = 0.5 / viewport.scale;
@@ -166,7 +170,7 @@ test("every transition of the state diagram docks on the outline of its states, 
     x: x + width / 2,
     y: y + height / 2,
   });
-  const ends = edges.flatMap(({ id, source, target }) => {
+  const ends = docked.flatMap(({ id, source, target }) => {
     const [from, to] = id.split("-").map((each) => byId.get(each)!);
     return [
       { id, end: source, node: from!, other: to! },
@@ -197,4 +201,34 @@ test("every transition of the state diagram docks on the outline of its states, 
     for (const b of atReady.slice(i + 1))
       if (a.other.id !== b.other.id)
         expect(Math.hypot(a.end.x - b.end.x, a.end.y - b.end.y)).toBeGreaterThan(1);
+});
+
+test("a loop on ready, labelled edit, leaves and re-enters its left side, its label at the loop's outermost point", async ({
+  page,
+}) => {
+  // Verifies: G-12, ADR-0031
+  await page.goto("/");
+  await open(page);
+  await chooseStates(page);
+  const { ready, loop, label } = await page.evaluate(() => {
+    const scene = window.uml.inspect();
+    return {
+      ready: scene.nodes.find(({ id }) => id === "ready")!,
+      loop: scene.edges.find(({ id }) => id === "ready-ready"),
+      label: scene.edgeLabels.find(({ edge }) => edge === "ready-ready"),
+    };
+  });
+  // Clockwise on the left: up from a quarter of the side's length below its middle to a quarter
+  // above, pulled out as far as the side is long, and at least 40.
+  const middle = ready.y + ready.height / 2;
+  expect(loop).toEqual({
+    id: "ready-ready",
+    source: { x: ready.x, y: middle + ready.height / 4 },
+    target: { x: ready.x, y: middle - ready.height / 4 },
+  });
+  // At the path parameter 0.5, three quarters of the pull out, and 14 further, left of travel.
+  const pull = Math.max(ready.height, 40);
+  expect(label?.text).toBe("edit");
+  expect(label?.x).toBeCloseTo(ready.x - 0.75 * pull - 14, 3);
+  expect(label?.y).toBeCloseTo(middle, 3);
 });

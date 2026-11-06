@@ -37,8 +37,10 @@ export class Diagram {
     return this.graph.edges.find((each) => each.id === id);
   }
 
-  /** Whether the rules allow a relationship of `kind` from `source` to `target`. */
+  /** Whether the rules allow a relationship of `kind` from `source` to `target`: never one of a
+   *  node with itself, which Comb offers since it allows loops for the state diagram. */
   allows(source: string, target: string, kind: RelationshipKind): boolean {
+    if (source === target) return false;
     const [from, to] = [this.classifiers.get(source), this.classifiers.get(target)];
     if (!from || !to) return false;
     return allows({ source: kindOf(from), target: kindOf(to), kind });

@@ -4,12 +4,14 @@
 
 A drafted change of G-12 in `docs/SPECIFICATION.md` for the maintainer to land
 ([`AGENTS.md` §3](../../../AGENTS.md#3-adr-rules), rule 7). G-12 says that "a connection adds a
-relationship, which the example refuses where UML does not allow it". The UML example refuses
-nothing, and by the maintainer's decision during docs/plan/uml-example it implements no refusal
-that cannot arise:
+relationship, which the example refuses where UML does not allow it". The rules of the UML
+example refuse nothing, and by the maintainer's decision during docs/plan/uml-example they
+implement no refusal that cannot arise:
 
-- Comb refuses every edge of a node with itself (`selfEdge`), and its connect gesture never
-  offers one, so a generalization or realization of a node by itself never reaches the example.
+- The example's Comb allows loops, for the state diagram (docs/plan/state-diagram, ticket 03),
+  so its connect gesture offers one in the class and the package diagram too; `Diagram.allows`
+  in `examples/uml/src/diagram.ts` refuses every edge of a node with itself in the veto before
+  it asks the rules, so a generalization or realization of a node by itself never reaches them.
 - A class and a package never share a diagram, so no connection joins them.
 
 `examples/uml/src/rules.test.ts` cites G-12 and decides that every combination is allowed, the

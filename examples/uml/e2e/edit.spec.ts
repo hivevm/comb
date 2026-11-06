@@ -122,22 +122,33 @@ test("a connection adds an association, which the sidebar changes to a generaliz
   expect(edge.label).toBeUndefined();
 });
 
-test("no edge joins a class with itself: Comb refuses one, so the rules need no case for it", async ({
+test("no edge joins a class with itself: Comb offers the loop, and the rules refuse it", async ({
   page,
 }) => {
-  // Verifies: G-12
+  // Verifies: G-12, G-3
   await page.goto("/");
   await open(page);
+  await showNear(page, "Error");
   const before = await edges(page);
-  const refused = await page.evaluate(() => {
-    try {
-      window.uml.comb.addEdge({ id: "itself", source: "Error", target: "Error" });
-      return null;
-    } catch (error) {
-      return (error as { problem?: { kind?: string } }).problem?.kind ?? String(error);
-    }
+  const node = (await drawnNode(page, "Error"))!;
+  // From Error's right connector back onto its bottom one.
+  const start = await pagePoint(page, node.x + node.width, node.y + node.height / 2);
+  const end = await pagePoint(page, node.x + node.width / 2, node.y + node.height);
+  await page.mouse.move(start.x - 20, start.y);
+  await page.mouse.move(start.x, start.y, { steps: 4 });
+  await page.mouse.down();
+  await page.mouse.move(end.x, end.y, { steps: 8 });
+  const offered = await page.evaluate(async () => {
+    await window.uml.comb.whenRendered();
+    return window.uml
+      .inspect()
+      .connectors.filter(({ node: owner, compatible }) => owner === "Error" && compatible)
+      .map(({ side }) => side);
   });
-  expect(refused).toBe("selfEdge");
+  await page.mouse.up();
+  // Comb allows loops, for the state diagram, and offers Error's other connectors; the rules of
+  // the class diagram refuse the loop in the veto.
+  expect(offered).toEqual(["top", "bottom", "left"]);
   expect(await edges(page)).toEqual(before);
 });
 
