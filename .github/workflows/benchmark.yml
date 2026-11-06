@@ -11,7 +11,8 @@ name: Benchmark
 # the baseline's by more than the margin; against a baseline that has no reference it compares and
 # says the runner gate is not checked. It does all of this for each graph the benchmark measures
 # (ADR-0033): the metric tree, and the shaped graph of node shapes, docking, and loops, each
-# compared with its own baseline, bench/baselines/<kind>.json and <kind>.shaped.json. The runs and
+# compared with its own baseline, bench/baselines/<kind>.json and <kind>.shaped.json; the shaped
+# graph gates the job only where its kind has a baseline, and is otherwise reported. The runs and
 # their medians are uploaded as an artefact; a kind's baseline changes only in a pull request that
 # says why, from the median of a run on main.
 #
@@ -63,7 +64,14 @@ jobs:
             bun --bun bench/run.ts
             cp bench-results/latest.json "bench-results/run-$i.json"
           done
+      # Verifies: ADR-0010, ADR-0008 — the median first frame of the runner's kind stays within the
+      # margin of its baseline, so a load that grows slow again is found at the next run.
+      - name: Compare the median with the baseline of the runner's kind
+        run: bun bench/compare.ts bench/baselines bench-results/run-*.json
+      # After the metric tree's comparison, so that a shaped run that fails cannot skip it; and
+      # whether that comparison passes or not, so that both graphs are reported (ADR-0033).
       - name: Run the benchmark three times on the shaped graph
+        if: ${{ !cancelled() }}
         env:
           BENCH_GRAPH: shaped
         run: |
@@ -71,14 +79,22 @@ jobs:
             bun --bun bench/run.ts
             cp bench-results/latest.json "bench-results/shaped-$i.json"
           done
-      # Verifies: ADR-0010, ADR-0008 — the median first frame of the runner's kind stays within the
-      # margin of its baseline, so a load that grows slow again is found at the next run.
-      - name: Compare the median with the baseline of the runner's kind
-        run: bun bench/compare.ts bench/baselines bench-results/run-*.json
-      # Compared whether the metric tree's comparison passes or not, so that both are reported.
+      # Verifies: ADR-0033 — compared whether the metric tree's comparison passes or not, so that
+      # both are reported. It gates the job only where the shaped graph's baseline exists on the
+      # runner's kind: where none does (exit 3), it reports the median and the file the baseline
+      # would be saved as, and passes, so that the job fails on the metric tree alone.
       - name: Compare the shaped graph's median with its baseline of the runner's kind
         if: ${{ !cancelled() }}
-        run: bun bench/compare.ts bench/baselines bench-results/shaped-*.json
+        run: |
+          status=0
+          bun bench/compare.ts bench/baselines bench-results/shaped-*.json || status=$?
+          if [ "$status" -eq 3 ]; then
+            echo "::notice::The shaped graph has no baseline on this kind: not gated; its median" \
+              "is median.shaped.json in the artefact, its baseline's file named above."
+            { echo "### The shaped graph's median, not compared"; echo '```json'; cat bench-results/median.shaped.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          exit "$status"
       # Uploaded whether the comparisons pass or not, so a regression can be read and a new
       # baseline taken from median.json or median.shaped.json.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

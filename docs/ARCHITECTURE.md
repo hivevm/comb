@@ -533,15 +533,18 @@ one workspace for each example.
   `bench/reference.ts` in the same page, which uses the browser's JavaScript, WebAssembly, and
   WebGL2 and none of Comb's code. `bench/compare.ts` compares the median of several runs with the
   baseline of the runner's kind, the CPU model the run records, and of the run's graph, in
-  `bench/baselines/` (`<kind>.json` for the metric tree, `<kind>.shaped.json`), with a margin of
-  25 %, reports a gesture the baseline lacks as `no baseline` without judging it, refuses a run on a
-  kind without a baseline of its graph, a run of another graph, a run whose reference differs from
-  its kind's baseline by more than 25 % in a part, a run of another size, mode, or GPU or of none
-  named, a run of an attached browser against a launched baseline or the reverse, a run of another
-  CPU slowdown factor, and a median of runs that differ in these; a kind's baseline is the median of
-  three runs on a GitHub runner of that kind on `main`; the **Benchmark** workflow
-  (`.github/workflows/benchmark.yml`) runs the benchmark three times on each graph and compares each
-  graph's median with its own baseline on a GitHub runner, weekly and on demand, within 90 minutes.
+  `bench/baselines/` (`<kind>.json` for the metric tree, `<kind>.shaped.json` for the shaped
+  graph), with a margin of 25 %, reports a gesture the baseline lacks as `no baseline` without
+  judging it, refuses a run on a kind without a baseline of its graph, a run of another graph, a run
+  whose reference differs from its kind's baseline by more than 25 % in a part, a run of another
+  size, mode, or GPU or of none named, a run of an attached browser against a launched baseline or
+  the reverse, a run of another CPU slowdown factor, and a median of runs that differ in these; a
+  kind's baseline is the median of three runs on a GitHub runner of that kind on `main`; the
+  **Benchmark** workflow (`.github/workflows/benchmark.yml`) runs the benchmark three times on each
+  graph and compares each graph's median with its own baseline on a GitHub runner, weekly and on
+  demand, within 90 minutes; the shaped graph's comparison fails the job only where its kind has a
+  baseline, and otherwise reports its median (`bench/compare.ts` exits 3 for a kind without a
+  baseline of the runs' graph, 2 for the other refusals).
 - **Mutation testing** (`.github/workflows/mutation.yml`) — cargo-mutants mutates `crates/engine`
   on a GitHub runner, weekly and on demand; `scripts/check-mutants.sh` compares the surviving
   mutants with `crates/engine/mutants-missed.txt` by file, function, and replacement, and fails
@@ -557,7 +560,8 @@ reads nothing of it; Bun tests beside their module as `*.test.ts`, the bridge's 
 WebAssembly module, the lint's rules for Comb's library sources in `packages/comb/src/lint.test.ts`,
 and those of `bench/compare.ts`, `bench/chromium.ts`, `bench/options.ts`, and `bench/fitted.ts`
 beside them, with
-`bench/content.test.ts` of the content the benchmark names as loaded; browser
+`bench/content.test.ts` of the content the benchmark names as loaded and `bench/workflow.test.ts`
+of the Benchmark workflow's gate, its comparison steps run with a stand-in for `bun`; browser
 tests under `examples/*/e2e`, a file for the golden path and one for each concern they verify,
 each example sharing its helpers through its own `e2e/shared.ts` (the metric tree's: a graph
 loaded as the example's own through `useGraph` with what Comb tells recorded, the one read of the

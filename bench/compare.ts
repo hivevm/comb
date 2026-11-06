@@ -26,7 +26,9 @@
 //   bun bench/compare.ts <baseline> <run>...     one baseline file, of the runs' CPU model
 //
 // Exit code 0 when no number regressed; 1 when a number regressed, naming each; 2 when the runs
-// cannot be compared, the runner kind and the runner gate included.
+// cannot be compared, the runner gate included; 3 when the runs' kind has no baseline of their
+// graph, a refusal of its own, by which the Benchmark workflow passes a shaped graph without a
+// baseline on its kind, and fails the metric tree's (ADR-0033).
 import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { Graph } from "./options";
@@ -472,20 +474,25 @@ function kinds(baselines: Map<string, Run>): string {
  *  graph, picked by its name, or the one file given; or why there is none. compare() holds the CPU
  *  model and the graph the baseline records to the run's, so two models of one file name, or a
  *  lone file of another kind or graph, are not compared. */
-async function choose(run: Run, path: string): Promise<{ picked: string; baseline: Run } | string> {
+async function choose(
+  run: Run,
+  path: string,
+): Promise<{ picked: string; baseline: Run } | { refused: string; code: 2 | 3 }> {
   const read = await readBaselines(path);
-  if (typeof read === "string") return read;
+  if (typeof read === "string") return { refused: read, code: 2 };
   const { directory, baselines } = read;
-  if (!run.cpu) return `the runs name no CPU model; ${kinds(baselines)}`;
+  if (!run.cpu) return { refused: `the runs name no CPU model; ${kinds(baselines)}`, code: 2 };
   const own = join(path, baselineFile(run));
   const picked = directory ? own : path;
   const baseline = baselines.get(picked);
   if (!baseline) {
     const graph = graphOf(run) === "metric-tree" ? "" : ` and the graph ${graphOf(run)}`;
-    return (
-      `no baseline of the kind ${run.cpu}${graph} in ${path}; ${kinds(baselines)}. ` +
-      `A baseline of this kind${graph ? " and graph" : ""} is saved as ${own}`
-    );
+    return {
+      code: 3,
+      refused:
+        `no baseline of the kind ${run.cpu}${graph} in ${path}; ${kinds(baselines)}. ` +
+        `A baseline of this kind${graph ? " and graph" : ""} is saved as ${own}`,
+    };
   }
   return { picked, baseline };
 }
@@ -500,9 +507,9 @@ async function main(baselinePath: string, runPaths: string[]): Promise<number> {
   mkdirSync("bench-results", { recursive: true });
   writeFileSync(`bench-results/median${suffix(run)}.json`, JSON.stringify(run, null, 2) + "\n");
   const chosen = await choose(run, baselinePath);
-  if (typeof chosen === "string") {
-    say("error", `Not compared: ${chosen}.`);
-    return 2;
+  if ("refused" in chosen) {
+    say("error", `Not compared: ${chosen.refused}.`);
+    return chosen.code;
   }
   const { picked, baseline } = chosen;
   const verdict = compare(run, baseline);

@@ -417,9 +417,9 @@ describe("the command, by runner kind", () => {
     expect(out).toContain("against baselines/intel-r-xeon-r-platinum-8370c-cpu-2-80ghz.json");
   });
 
-  test("exits 2 on a kind without a baseline, naming it, the kinds with one, and its file", async () => {
+  test("exits 3 on a kind without a baseline, naming it, the kinds with one, and its file", async () => {
     const { code, err } = await command([run(200, 100)], [{ ...run(200, 100), cpu: XEON_8370C }]);
-    expect(code).toBe(2);
+    expect(code).toBe(3);
     expect(err).toContain(`no baseline of the kind ${XEON_8370C}`);
     expect(err).toContain(`kinds with a baseline: ${EPYC_7763}`);
     expect(err).toContain("saved as baselines/intel-r-xeon-r-platinum-8370c-cpu-2-80ghz.json");
@@ -796,9 +796,11 @@ describe("the command, by graph", () => {
     expect(ofTree.out).toContain("against baselines/amd-epyc-7763-64-core-processor.json");
   });
 
-  test("exits 2 on a graph without a baseline on its kind, naming the file it would be saved as", async () => {
+  test("exits 3 on a graph without a baseline on its kind, naming the file it would be saved as", async () => {
+    // Verifies: ADR-0033 — a code of its own, by which the workflow tells a missing baseline of
+    // the shaped graph from a refusal or a regression.
     const { code, err } = await command([run(200, 100)], [shaped()]);
-    expect(code).toBe(2);
+    expect(code).toBe(3);
     expect(err).toContain(`no baseline of the kind ${EPYC_7763} and the graph shaped`);
     expect(err).toContain(`saved as baselines/${SHAPED_FILE}`);
     const other = { ...shaped(), cpu: XEON_8370C };
@@ -806,7 +808,7 @@ describe("the command, by graph", () => {
     const elsewhere = await command([run(200, 100)], [other], ["baselines"], {
       [SHAPED_FILE]: JSON.stringify(shaped()),
     });
-    expect(elsewhere.code).toBe(2);
+    expect(elsewhere.code).toBe(3);
     expect(elsewhere.err).toContain(
       `kinds with a baseline: ${EPYC_7763}; ${EPYC_7763} (of the graph shaped)`,
     );
