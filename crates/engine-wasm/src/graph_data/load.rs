@@ -193,7 +193,7 @@ mod tests {
 
     #[test]
     fn an_added_node_is_refused_as_a_load_refuses_it_and_the_graph_kept() {
-        // Verifies: ADR-0009, Q-7
+        // Verifies: ADR-0030, Q-7
         let named = || "n".to_owned();
         let cases: Vec<(NodeInput, GraphDataProblem)> = vec![
             (
@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn a_node_added_to_a_graph_at_the_limit_of_a_load_is_refused() {
-        // Verifies: ADR-0009, Q-7
+        // Verifies: ADR-0030, Q-7
         let count = MAX_ITEMS as usize;
         let positions = (0..count).flat_map(|i| [i as f32, 0.0]).collect();
         let mut graph = Graph::new(positions, vec![1.0; count * 2], Vec::new()).unwrap();

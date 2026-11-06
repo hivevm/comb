@@ -15,7 +15,7 @@ const limits = {
 };
 
 test("an edge read once fills its defaults and keeps no key for a field left out", () => {
-  // Verifies: ADR-0009, ADR-0025
+  // Verifies: ADR-0030, ADR-0025
   const { snapshot } = edgeSnapshotOf(
     { id: "e", source: "a", target: "b", label: { text: "x", t: 0.5, offset: 0 } },
     limits,

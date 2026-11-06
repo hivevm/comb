@@ -152,7 +152,7 @@ const REFUSED: { name: string; call: [string, unknown]; problem: unknown }[] = [
 
 for (const { name, call, problem } of REFUSED) {
   test(`a removal of ${name} throws a GraphDataError and removes nothing`, async ({ page }) => {
-    // Verifies: Q-7, ADR-0009
+    // Verifies: Q-7, ADR-0030
     await open(page);
     await loaded(page, STAR, HALF);
     const before = await drawn(page);
@@ -239,7 +239,7 @@ test("a node the host removes during a drag ends it: no error, and no move of th
 test("a removal reads a hostile list's length once and refuses a list too long quickly", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0030
   await open(page);
   await loaded(page, STAR, HALF);
   const before = await drawn(page);
@@ -298,7 +298,7 @@ test("a removal reads a hostile list's length once and refuses a list too long q
 test("a removal names an unknown identifier cut to the limit, and an empty one tells nothing", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0030
   await open(page);
   await loaded(page, STAR, HALF);
   const before = await drawn(page);

@@ -211,7 +211,7 @@ const REFUSED: { name: string; added: unknown; problem: unknown }[] = [
 
 for (const { name, added, problem } of REFUSED) {
   test(`addNode refuses ${name} with a GraphDataError, and nothing changes`, async ({ page }) => {
-    // Verifies: Q-7, ADR-0009, ADR-0024
+    // Verifies: Q-7, ADR-0030, ADR-0024
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
@@ -250,7 +250,7 @@ for (const { name, added, problem } of REFUSED) {
 test("addNode reads each field of the node once, and a getter that throws refuses it", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0030
   await open(page);
   await loaded(page, { nodes: [node("a")], edges: [] });
   const result = await page.evaluate(() => {
@@ -291,7 +291,7 @@ test("addNode reads each field of the node once, and a getter that throws refuse
 });
 
 test("addNode refuses a node past the limit of a load, and nothing changes", async ({ page }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0030
   test.setTimeout(120_000);
   await open(page);
   const result = await page.evaluate(async () => {
@@ -330,7 +330,7 @@ test("addNode refuses a node past the limit of a load, and nothing changes", asy
 test("addNode refuses a node whose identifier passes the budget of a load, and nothing changes", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0030
   test.setTimeout(120_000);
   await open(page);
   const result = await page.evaluate(async () => {
@@ -421,7 +421,7 @@ test("a listener that throws keeps no other listener from being told, and its er
 test("a getter of updateNode's patch that removes the node refuses the patch as unknownNode", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0030
   await open(page);
   await loaded(page, { nodes: [node("a"), node("b", 300)], edges: [] });
   const result = await page.evaluate(() => {

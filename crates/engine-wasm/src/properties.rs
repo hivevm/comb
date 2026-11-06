@@ -17,7 +17,7 @@
 //! such a field (`invalidField`), and refuses as malformed only what has no such shape, and no
 //! message names a Rust type or crate. A last property holds the engine's count of the code units
 //! of content to what the graph holds through loads, additions, updates, and removals.
-// Verifies: Q-7, ADR-0009, ADR-0010
+// Verifies: Q-7, ADR-0030, ADR-0010
 
 use proptest::prelude::*;
 use serde::Deserialize;
@@ -1618,7 +1618,7 @@ proptest! {
         value in prop_oneof![9 => edge(true, 0, 2), 1 => anything()],
         bound in piece_bound(),
     ) {
-        // Verifies: ADR-0009, ADR-0025, Q-7
+        // Verifies: ADR-0030, ADR-0025, Q-7
         let as_load = loaded(bound, two_nodes(vec![value.clone()]));
         // An end the graph does not hold is `api`'s to refuse, against its map.
         prop_assume!(!matches!(as_load, Err(GraphDataProblem::MissingNode { .. })));
@@ -1670,7 +1670,7 @@ proptest! {
         patch in edge_patch(),
         bound in piece_bound(),
     ) {
-        // Verifies: ADR-0009, ADR-0024, Q-7
+        // Verifies: ADR-0030, ADR-0024, Q-7
         let mut graph = loaded(bound, two_nodes(vec![Value::Object(base_edge())])).unwrap();
         let before = graph.edge(0);
         let other = patch
@@ -1710,7 +1710,7 @@ proptest! {
         value in added_node(),
         bound in piece_bound(),
     ) {
-        // Verifies: ADR-0009, ADR-0023, Q-7
+        // Verifies: ADR-0030, ADR-0023, Q-7
         let with_a = || {
             let a = Value::Object(vec![
                 ("id".to_owned(), Value::Text("a".to_owned())),

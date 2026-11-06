@@ -162,7 +162,7 @@ for (const { name, call, problem } of REFUSED) {
   test(`${call[0]} refuses ${name} with a GraphDataError, and nothing changes`, async ({
     page,
   }) => {
-    // Verifies: Q-7, ADR-0009, ADR-0025
+    // Verifies: Q-7, ADR-0030, ADR-0025
     await open(page);
     await loaded(page, PAIR);
     const edge = { id: "a-b", source: "a", target: "b", color: RED, dash: [8, 8] as const };
@@ -186,7 +186,7 @@ for (const { name, call, problem } of REFUSED) {
 }
 
 test("addEdge refuses an edge past the limit of a load as tooMany", async ({ page }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0030
   test.setTimeout(120_000);
   await open(page);
   const result = await page.evaluate(() => {
@@ -250,7 +250,7 @@ test("a patch of one field keeps the label and the dash, and moves a label the e
 test("a getter of a patch that removes the edge refuses the patch, and no other edge changes", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0030
   await open(page);
   await loaded(page, PAIR);
   await page.evaluate(
@@ -286,7 +286,7 @@ test("a getter of a patch that removes the edge refuses the patch, and no other 
 test("a listener that writes into a delivered change reaches nothing Comb keeps", async ({
   page,
 }) => {
-  // Verifies: Q-7, ADR-0009
+  // Verifies: Q-7, ADR-0030
   await open(page);
   await loaded(page, PAIR);
   await page.evaluate(() => {

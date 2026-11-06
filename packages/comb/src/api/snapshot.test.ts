@@ -22,7 +22,7 @@ const cases: [name: string, value: string, read: string | false][] = [
 
 for (const [name, value, read] of cases) {
   test(`the snapshot reads an identifier and a text with ${name}`, () => {
-    // Verifies: ADR-0009
+    // Verifies: ADR-0030
     const content = [[{ kind: "text", role: "title", text: value }]];
     const node = nodeSnapshotOf({ id: value, x: 0, y: 0, width: 1, content }, limits);
     const title = { kind: "text", role: "title", text: read };
@@ -83,7 +83,7 @@ function counting(name: string, fields: Record<string, unknown>, reads: Record<s
 }
 
 test("the snapshot reads each field of an element once, and a progress bar's and a metric's text and role not at all", () => {
-  // Verifies: ADR-0009, ADR-0010
+  // Verifies: ADR-0030, ADR-0010
   const elements = (reads: Record<string, number>) => {
     const segment = counting("segment", { fraction: 0.5, color: 0x22c55e }, reads);
     const trend = counting("trend", { text: "+3%", direction: "up", color: 0x22c55e }, reads);
@@ -142,7 +142,7 @@ test("the snapshot reads each field of an element once, and a progress bar's and
 });
 
 test("the snapshot reads an icon's kind, weight, and name once, and its text, role, and identifier not at all", () => {
-  // Verifies: ADR-0009, ADR-0010
+  // Verifies: ADR-0030, ADR-0010
   const icon = (reads: Record<string, number>) => [
     [
       counting(
@@ -170,7 +170,7 @@ test("the snapshot reads an icon's kind, weight, and name once, and its text, ro
 });
 
 test("the snapshot reads content no further than one row, element, and segment past its limits, for a load and a single node alike", () => {
-  // Verifies: ADR-0009, ADR-0010
+  // Verifies: ADR-0030, ADR-0010
   const read = (crossing: "load" | "single") => {
     const reads: Record<string, number> = {};
     const element = counting("element", { kind: "text", role: "body", text: "t" }, reads);
@@ -196,7 +196,7 @@ test("the snapshot reads content no further than one row, element, and segment p
 });
 
 test("the snapshot reads the length of content, a row, and a progress bar's segments once, for a load and a single node alike", () => {
-  // Verifies: ADR-0009
+  // Verifies: ADR-0030
   const read = (crossing: "load" | "single") => {
     const reads: Record<string, number> = {};
     // A list whose length the host's code answers, counted, smaller on its first read than after.
