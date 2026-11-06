@@ -2,7 +2,7 @@
 // G-11, ADR-0024): the next frame draws them with their colour, dash pattern, and label,
 // `onChange` tells each change once, and an edge or a patch a load would refuse, an edge the graph
 // cannot hold, and a patch of an unknown edge or field change nothing (ADR-0009, Q-7).
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import type { EdgeData, GraphData } from "comb";
 import { loaded, node, open, strokeOf, told } from "./shared";
 
@@ -51,6 +51,113 @@ test("addEdge draws the edge with its colour, dash, and label, and tells edgeAdd
   expect(stroke.drawn).toBeLessThan(250);
   expect(errors).toEqual([]);
 });
+
+/** Node `a` at (0, 300), 220 × 64, and `b` beside it: a loop on `a`'s top leaves it at (55, 300),
+ *  re-enters at (165, 300), and reaches up to (110, 135), its control points 220 out. */
+const LOOPED: GraphData = { nodes: [node("a", 0, 300), node("b", 600, 300)], edges: [] };
+const LOOP: EdgeData = {
+  id: "a-a",
+  source: "a",
+  target: "a",
+  color: RED,
+  label: { text: "edit", t: 0.5, offset: 0 },
+};
+
+/** Whether the canvas draws `color` within a pixel of each of the world points `points`, read off
+ *  a screenshot with the nodes and labels hidden. */
+async function inkAt(page: Page, color: number, points: [number, number][]): Promise<boolean[]> {
+  await page.evaluate(async () => {
+    window.showLayers({ nodes: false, edgeLabels: false });
+    await window.comb.whenRendered();
+  });
+  const png = await page.locator("#canvas canvas").screenshot();
+  return page.evaluate(
+    async ({ png: shot, color: ink, points: at }) => {
+      const bytes = Uint8Array.from(atob(shot), (char) => char.charCodeAt(0));
+      const image = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+      const ratio = image.width / document.querySelector("#canvas canvas")!.clientWidth;
+      const copy = document.createElement("canvas");
+      [copy.width, copy.height] = [image.width, image.height];
+      const context = copy.getContext("2d")!;
+      context.drawImage(image, 0, 0);
+      const want = [(ink >> 16) & 0xff, (ink >> 8) & 0xff, ink & 0xff];
+      return at.map(([x, y]) => {
+        const screen = window.screenPoint(x, y);
+        const [px, py] = [Math.round(screen.x * ratio), Math.round(screen.y * ratio)];
+        const { data } = context.getImageData(px - 1, py - 1, 3, 3);
+        return Array.from({ length: 9 }, (_, i) => i * 4).some((i) =>
+          want.every((value, channel) => Math.abs(data[i + channel]! - value) < 48),
+        );
+      });
+    },
+    { png: png.toString("base64"), color, points },
+  );
+}
+
+test("with loops allowed, addEdge draws a loop above the node, its arrowhead into it and its label at the top", async ({
+  page,
+}) => {
+  // Verifies: ADR-0031, ADR-0024
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await open(page, "?loops=allow");
+  await loaded(page, LOOPED, { x: 100, y: -100, scale: 2 });
+  await page.evaluate((added) => window.comb.addEdge(added), LOOP);
+  expect(await told(page)).toEqual([
+    {
+      kind: "edgeAdded",
+      by: "host",
+      edge: { ...LOOP, arrow: "end", sourceSide: "right", targetSide: "left" },
+    },
+  ]);
+  const drawn = await page.evaluate(async () => {
+    await window.comb.whenRendered();
+    const { edges, edgeLabels } = window.inspect();
+    return { edges, labels: edgeLabels.map(({ edge, x, y }) => ({ edge, x, y })) };
+  });
+  // `addEdge` fills in the right side, which loops on the right: `top` is asked for below.
+  expect(drawn.edges).toEqual([
+    { id: "a-a", source: { x: 220, y: 316 }, target: { x: 220, y: 348 } },
+  ]);
+  await page.evaluate(() => window.comb.updateEdge("a-a", { sourceSide: "top" }));
+  const top = await page.evaluate(async () => {
+    await window.comb.whenRendered();
+    const { edges, edgeLabels } = window.inspect();
+    return { edges, labels: edgeLabels.map(({ edge, x, y }) => ({ edge, x, y })) };
+  });
+  expect(top).toEqual({
+    edges: [{ id: "a-a", source: { x: 55, y: 300 }, target: { x: 165, y: 300 } }],
+    labels: [{ edge: "a-a", x: 110, y: 135 }],
+  });
+  // Drawn up to its top, and its arrowhead, 10 world units long and 10 wide, at the end it
+  // re-enters by: 2.5 either side of the path 8 above the node lie within the arrowhead there, and
+  // beside the start, where no arrowhead is, off the stroke.
+  const ink = await inkAt(page, RED, [
+    [110, 135],
+    [162.5, 292],
+    [167.5, 292],
+    [52.5, 292],
+    [57.5, 292],
+  ]);
+  expect(ink).toEqual([true, true, true, false, false]);
+  expect(errors).toEqual([]);
+});
+
+for (const query of ["", "?loops=allow"]) {
+  test(`a load accepts a loop and draws it as one, ${query ? "with" : "without"} loops allowed`, async ({
+    page,
+  }) => {
+    // Verifies: ADR-0031
+    await open(page, query);
+    await loaded(page, { ...LOOPED, edges: [{ ...LOOP, sourceSide: "outline" }] });
+    const edges = await page.evaluate(async () => {
+      await window.comb.whenRendered();
+      return window.inspect().edges;
+    });
+    // The outline loops on the top.
+    expect(edges).toEqual([{ id: "a-a", source: { x: 55, y: 300 }, target: { x: 165, y: 300 } }]);
+  });
+}
 
 test("updateEdge recolours an edge, clears its dash, moves its label, and tells edgeUpdated once", async ({
   page,
@@ -162,7 +269,7 @@ for (const { name, call, problem } of REFUSED) {
   test(`${call[0]} refuses ${name} with a GraphDataError, and nothing changes`, async ({
     page,
   }) => {
-    // Verifies: Q-7, ADR-0030, ADR-0025
+    // Verifies: Q-7, ADR-0030, ADR-0031
     await open(page);
     await loaded(page, PAIR);
     const edge = { id: "a-b", source: "a", target: "b", color: RED, dash: [8, 8] as const };

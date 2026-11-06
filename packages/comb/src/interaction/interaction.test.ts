@@ -45,9 +45,14 @@ function fakeApp() {
 }
 
 /** Attaches interaction to `app` over `store` and `bridge`, connections proposed to `connect`
- *  where given, and no click heard. */
-const attached = (app: Application, store: GraphStore, bridge: Bridge, connect?: Connect) =>
-  attachInteraction(app, store, bridge, connect, () => {});
+ *  where given, loops where `loops` allows them, and no click heard. */
+const attached = (
+  app: Application,
+  store: GraphStore,
+  bridge: Bridge,
+  connect?: Connect,
+  loops = false,
+) => attachInteraction(app, store, bridge, connect, () => {}, loops);
 
 /** A bridge with one node under every point, which records the moves it is asked for. */
 function fakeBridge(
@@ -236,7 +241,7 @@ function pressed(element?: Hit, hit?: (x: number) => unknown) {
     hit ?? { kind: "node", slot: 0, ...(element && { element }) },
   );
   const clicks: unknown[] = [];
-  attachInteraction(app, store, bridge, undefined, (click) => clicks.push(click));
+  attachInteraction(app, store, bridge, undefined, (click) => clicks.push(click), false);
   return { store, emit, clicks, moves };
 }
 const action = { row: 1, column: 0, kind: "action", action: "details" };
@@ -488,7 +493,7 @@ describe("interaction keeps the point a connection is dragged to", () => {
 
 describe("interaction writes a connection whose target changed", () => {
   test("a move from one connector of a node to another of it retargets the connection", () => {
-    // Verifies: ADR-0025
+    // Verifies: ADR-0031
     const store = createGraphStore();
     load(store, {
       nodes: [
@@ -524,9 +529,69 @@ describe("interaction writes a connection whose target changed", () => {
   });
 });
 
+describe("interaction connects a node back to itself where loops are allowed", () => {
+  /** Node `a` alone; a press at x = 100 meets its right connector, x = 50 its top one, and
+   *  elsewhere its body. */
+  function single() {
+    const store = createGraphStore();
+    load(store, { nodes: [{ id: "a", x: 0, y: 0, width: 100, content: titled("A") }], edges: [] });
+    const hit = (x: number) =>
+      x === 100
+        ? { kind: "connector", slot: 0, side: "right" }
+        : x === 50
+          ? { kind: "connector", slot: 0, side: "top" }
+          : { kind: "node", slot: 0 };
+    return { store, bridge: fakeBridge(hit).bridge };
+  }
+
+  for (const loops of [true, false]) {
+    test(`a release over another connector of the source proposes a loop ${loops ? "where loops are allowed" : "only where loops are allowed"}`, () => {
+      // Verifies: ADR-0031
+      const { store, bridge } = single();
+      const { app, emit } = fakeApp();
+      const proposals: unknown[] = [];
+      attached(app, store, bridge, (proposal) => proposals.push(proposal), loops);
+      emit("pointerdown", 100, 20);
+      emit("globalpointermove", 50, 0);
+      expect(store.getState().connection).toEqual({
+        source: 0,
+        side: "right",
+        over: 0,
+        compatible: loops,
+        target: loops ? { slot: 0, side: "top" } : null,
+      });
+      emit("pointerup", 50, 0);
+      expect(proposals).toEqual(
+        loops ? [{ source: "a", sourceSide: "right", target: "a", targetSide: "top" }] : [],
+      );
+    });
+  }
+
+  test("a release over the connector the connection starts from proposes nothing", () => {
+    // Verifies: ADR-0031
+    const { store, bridge } = single();
+    const { app, emit } = fakeApp();
+    const proposals: unknown[] = [];
+    attached(app, store, bridge, (proposal) => proposals.push(proposal), true);
+    emit("pointerdown", 100, 20);
+    // Over its own node, the source is compatible, but its own connector is no target.
+    expect(store.getState().connection).toEqual({
+      source: 0,
+      side: "right",
+      over: 0,
+      compatible: true,
+      target: null,
+    });
+    emit("globalpointermove", 50, 0);
+    emit("globalpointermove", 100, 20);
+    emit("pointerup", 100, 20);
+    expect(proposals).toEqual([]);
+  });
+});
+
 describe("interaction writes a connection whose compatibility changed", () => {
   test("a move over a node the source came to reach since the last move marks it incompatible", () => {
-    // Verifies: ADR-0025
+    // Verifies: ADR-0031
     const store = createGraphStore();
     load(store, {
       nodes: [
@@ -561,7 +626,7 @@ describe("interaction writes a connection whose compatibility changed", () => {
 
 describe("interaction connects", () => {
   test("a connection a later press ends, its release never having come, proposes no edge", () => {
-    // Verifies: ADR-0024, ADR-0025
+    // Verifies: ADR-0024, ADR-0031
     const store = createGraphStore();
     load(store, {
       nodes: [

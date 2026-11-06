@@ -53,22 +53,24 @@ impl From<AddEdgeError> for EdgeRefusal {
 }
 
 /// Checks the edge `addEdge` hands over as a load checks an edge, the only one of its batch at
-/// index 0, and refuses one from a node to itself (ADR-0025) and one past `MAX_ITEMS` edges in
-/// use; adds it to `graph` between the node slots `source` and `target`, which `api` resolved
-/// against the map only it keeps, and returns the slot the engine chose. That the graph holds no
-/// edge of its identifier and holds its ends is `api`'s to check (ADR-0009); a slot of an end that
-/// holds no node is the shell's mistake. A refused edge leaves the graph as it was.
+/// index 0, and refuses one from a node to itself unless `loops` allows loops (ADR-0031) and one
+/// past `MAX_ITEMS` edges in use; adds it to `graph` between the node slots `source` and
+/// `target`, which `api` resolved against the map only it keeps, and returns the slot the engine
+/// chose. That the graph holds no edge of its identifier and holds its ends is `api`'s to check
+/// (ADR-0009); a slot of an end that holds no node is the shell's mistake. A refused edge leaves
+/// the graph as it was.
 pub(crate) fn add_edge_to(
     graph: &mut Graph,
     edge: &EdgeInput,
     source: u32,
     target: u32,
+    loops: bool,
 ) -> Result<u32, EdgeRefusal> {
     check_graph_size(0.0, f64::from(graph.edges_in_use()) + 1.0)?;
     let edge = edge_of(0, edge)?;
     let lengths = [edge.id, edge.source, edge.target].map(utf16_length);
     edge_ids_of(0, lengths)?;
-    if edge.source == edge.target {
+    if edge.source == edge.target && !loops {
         return Err(GraphDataProblem::SelfEdge {
             edge: edge.id.to_owned(),
         }

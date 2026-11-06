@@ -127,9 +127,10 @@ export type StoreChange =
       readonly content: boolean;
     };
 
-/** A connection the user drags from the connector `side` of the node in slot `source` (ADR-0025):
+/** A connection the user drags from the connector `side` of the node in slot `source` (ADR-0031):
  *  over the node in slot `over`, whose connectors are `compatible` where the source does not reach
- *  it yet, and over its connector `target` where a release connects. The world point it is dragged
+ *  it yet, the source's own only where loops are allowed and but for `side`, and over its
+ *  connector `target` where a release connects. The world point it is dragged
  *  to is no part of it: interaction keeps that point and signals its moves by `pointerVersion`
  *  (ADR-0011). */
 export interface Connection {
@@ -158,7 +159,7 @@ export interface GraphView {
     Readonly<Omit<EdgeData, "label"> & { readonly label?: Readonly<EdgeLabelData> }> | undefined
   )[];
   readonly selection: Readonly<Selection>;
-  /** The node whose connectors the pointer shows, or none (ADR-0025). */
+  /** The node whose connectors the pointer shows, or none (ADR-0031). */
   readonly hovered: number | null;
   /** The connection the user drags, or none. A load or a removal of its source leaves it, for its
    *  gesture to end before anything reads the store after the change. */

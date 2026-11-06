@@ -32,7 +32,7 @@ function editing(around: (bridge: Bridge) => Bridge = (bridge) => bridge) {
     columns: bridge.columnLimit(),
     segments: bridge.segmentLimit(),
   };
-  const editors = editorsOf(store, bridge, limits, {});
+  const editors = editorsOf(store, bridge, limits, {}, false);
   editors.host.load({
     nodes: [node("a"), node("b", 300)],
     edges: [{ id: "a-b", source: "a", target: "b" }],

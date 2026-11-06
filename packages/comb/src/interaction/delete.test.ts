@@ -38,7 +38,7 @@ function selected(canDelete?: (deletion: unknown) => unknown) {
     columns: 6,
     segments: 8,
   };
-  const remove = editorsOf(store, bridge, limits, { canDelete }).user.delete;
+  const remove = editorsOf(store, bridge, limits, { canDelete }, false).user.delete;
   return { store, bridge, remove, calls };
 }
 

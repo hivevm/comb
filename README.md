@@ -209,7 +209,8 @@ not hold or a patch it refuses, and `addNode` one on a node of an identifier the
 and `removeEdges` one on an identifier the graph does not hold among those they name (`unknownNode`,
 `unknownEdge`) or identifiers that are no list of strings, `addEdge` one on an edge of an
 identifier the graph holds (`duplicateEdge`), to a node it does not hold (`missingNode`), from a
-node to itself (`selfEdge`, which a load accepts), one a load would refuse, or one past the limits
+node to itself unless `CombOptions.allowLoops` allows loops (`selfEdge`, which a load accepts
+either way), one a load would refuse, or one past the limits
 of a load, and `updateEdge` one on an edge the graph does not hold, a patch of another field
 (`unknownEdgePatchField`), or a field a load would refuse; each keeps the graph it had and tells
 `onChange` nothing (Q-7). The error's `problem` is a `GraphDataProblem`, which `comb` exports, and
@@ -295,7 +296,9 @@ that would go; without `canDelete` a deletion is allowed, and the host applicati
 node shows its four connectors, and a drag from one to a connector of another node the source does
 not reach yet connects them: `canConnect({ source, sourceSide, target, targetSide })` names the
 new edge, checked as `addEdge` checks one, or refuses with `false`; the edge is told as
-`edgeAdded` with `by: "user"`. Without `canConnect`, no connection begins. A veto during whose call
+`edgeAdded` with `by: "user"`. Where `CombOptions.allowLoops` allows loops, a drag back onto
+another connector of the source, which has no loop yet, proposes a loop the same way. Without
+`canConnect`, no connection begins. A veto during whose call
 Comb tells a change to `onChange` ends its gesture with nothing done, whatever it returns. The
 example names each edge after its ends. At the near level a press inside an edge label's pill
 selects its edge and drags the label, which stays where it is dropped: the engine places it at the

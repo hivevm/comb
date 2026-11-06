@@ -1,5 +1,5 @@
 // The user connects two nodes by dragging from a connector of one to a compatible connector of
-// another (G-3, ADR-0025): the host application's `canConnect` names the edge, which is told as
+// another (G-3, ADR-0031): the host application's `canConnect` names the edge, which is told as
 // `edgeAdded` by the user; a release anywhere else, over the source, or over a node it already
 // reaches makes none, and a refused name reaches the page as an error (ADR-0024).
 import { expect, test, type Page } from "@playwright/test";
@@ -37,7 +37,7 @@ const C_LEFT: [number, number] = [500, 32];
 test("a drag from a's bottom connector to b's top one connects them by those sides", async ({
   page,
 }) => {
-  // Verifies: G-3, ADR-0025, ADR-0024
+  // Verifies: G-3, ADR-0031, ADR-0024
   await open(page);
   await loaded(page, NODES);
   await page.evaluate(() => {
@@ -83,7 +83,7 @@ for (const [side, at] of [
   test(`a's ${side} connector and a connection from it are drawn where the engine begins its edge`, async ({
     page,
   }) => {
-    // Verifies: ADR-0025
+    // Verifies: ADR-0031
     await open(page);
     await loaded(page, NODES);
     await page.evaluate(() => (window.canConnect = () => "e7"));
@@ -119,7 +119,7 @@ for (const [name, to] of [
   ["a node the source reaches already, by another side", C_LEFT],
 ] as const) {
   test(`a connection released over ${name} makes no edge`, async ({ page }) => {
-    // Verifies: G-3, ADR-0025
+    // Verifies: G-3, ADR-0031
     await open(page);
     await loaded(page, NODES);
     const midway = await drag(page, A_BOTTOM, to as [number, number]);
@@ -128,6 +128,99 @@ for (const [name, to] of [
     expect(await after(page)).toEqual({ edges: ["a-c"], told: [] });
   });
 }
+
+// a's right connector, back onto which a connection from its bottom one leads a loop.
+const A_RIGHT: [number, number] = [220, 32];
+
+for (const allowed of [true, false]) {
+  test(`with loops allowed, a drag from a back onto it asks the veto, which ${allowed ? "adds" : "refuses"} the loop`, async ({
+    page,
+  }) => {
+    // Verifies: G-3, ADR-0031, ADR-0024
+    await open(page, "?loops=allow");
+    await loaded(page, NODES);
+    await page.evaluate((allows) => {
+      const w = window as unknown as { proposals: unknown[] };
+      w.proposals = [];
+      window.canConnect = (proposal) => {
+        w.proposals.push(proposal);
+        return allows ? "a-a" : false;
+      };
+    }, allowed);
+    const midway = await drag(page, A_BOTTOM, A_RIGHT);
+    // The source's connectors are compatible but for the one the connection starts from.
+    expect(midway.connectors.filter(({ node: owner }) => owner === "a")).toEqual(
+      ["top", "right", "bottom", "left"].map((side) => ({
+        node: "a",
+        side,
+        compatible: side !== "bottom",
+      })),
+    );
+    const proposals = await page.evaluate(
+      () => (window as unknown as { proposals: unknown[] }).proposals,
+    );
+    expect(proposals).toEqual([
+      { source: "a", sourceSide: "bottom", target: "a", targetSide: "right" },
+    ]);
+    const result = await after(page);
+    if (!allowed) {
+      expect(result).toEqual({ edges: ["a-c"], told: [] });
+      return;
+    }
+    expect(result.edges).toEqual(["a-a", "a-c"]);
+    expect(result.told).toEqual([
+      {
+        kind: "edgeAdded",
+        by: "user",
+        edge: {
+          id: "a-a",
+          source: "a",
+          target: "a",
+          sourceSide: "bottom",
+          targetSide: "right",
+          color: 0x9aa1ad,
+          arrow: "end",
+        },
+      },
+    ]);
+    // A loop on a's bottom, a quarter of its width either side of the middle, clockwise.
+    const ends = await page.evaluate(() => window.inspect().edges.find(({ id }) => id === "a-a"));
+    expect(ends).toEqual({ id: "a-a", source: { x: 165, y: 64 }, target: { x: 55, y: 64 } });
+  });
+}
+
+test("with loops allowed, a press and release on one connector proposes nothing", async ({
+  page,
+}) => {
+  // Verifies: ADR-0031
+  await open(page, "?loops=allow");
+  await loaded(page, NODES);
+  await page.evaluate(() => {
+    window.canConnect = () => {
+      throw new Error("asked");
+    };
+  });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const at = await pagePoint(page, ...A_BOTTOM);
+  await page.mouse.click(at.x, at.y);
+  expect(await after(page)).toEqual({ edges: ["a-c"], told: [] });
+  expect(errors).toEqual([]);
+});
+
+test("with loops allowed, a node that has a loop offers none of its connectors to itself", async ({
+  page,
+}) => {
+  // Verifies: ADR-0031
+  await open(page, "?loops=allow");
+  await loaded(page, {
+    ...NODES,
+    edges: [...NODES.edges, { id: "a-a", source: "a", target: "a" }],
+  });
+  const midway = await drag(page, A_BOTTOM, A_RIGHT);
+  expect(midway.connectors.some(({ compatible }) => compatible)).toBe(false);
+  expect(await after(page)).toEqual({ edges: ["a-a", "a-c"], told: [] });
+});
 
 for (const name of ["false", "undefined", "a number", "a throw"] as const) {
   test(`canConnect returning ${name} makes no edge`, async ({ page }) => {
@@ -207,7 +300,7 @@ test("hitKind finds a connector just outside a node only where the Comb lets the
 test("at the far level no connector is drawn and a press where one would be connects nothing", async ({
   page,
 }) => {
-  // Verifies: ADR-0025, ADR-0013
+  // Verifies: ADR-0031, ADR-0013
   await open(page);
   await loaded(page, NODES);
   await setViewport(page, { x: 100, y: 100, scale: 0.25 });
@@ -217,7 +310,7 @@ test("at the far level no connector is drawn and a press where one would be conn
 });
 
 test("an edge the other way does not count: c connects to a, which reaches c", async ({ page }) => {
-  // Verifies: ADR-0025
+  // Verifies: ADR-0031
   await open(page);
   await loaded(page, NODES);
   await page.evaluate(() => (window.canConnect = () => "c-a"));

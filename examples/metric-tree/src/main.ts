@@ -134,6 +134,8 @@ const fallback = query.get("fallback") === "canvas";
 const comb = await createComb(element("canvas"), {
   engine: form ? await engineAs(form) : fetch(engineUrl),
   allowCanvasFallback: fallback,
+  // `?loops=allow` allows loops, edges from a node back to itself (ADR-0031).
+  allowLoops: query.get("loops") === "allow",
   canDelete: (deletion) => (window.canDelete ? window.canDelete(deletion) : true) as boolean,
   // `?connect=none` gives Comb no veto of connections, so that the user connects nothing.
   ...(query.get("connect") === "none"
