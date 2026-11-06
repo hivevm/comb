@@ -63,20 +63,22 @@ side of the node.
     counts a connector of its own source as compatible, and `addEdge` refuses with its own kind,
     `selfEdge`.
   - Where it is on, `addEdge` accepts a loop. The user's connection counts the source's own
-    connectors as compatible while no loop of that node exists, and proposes it to the veto as
-    any connection.
+    connectors as compatible while no loop of that node exists, all but the connector it starts
+    from, so that a press and release on one connector proposes nothing, and proposes it to the
+    veto as any connection.
   - `load` accepts a loop whatever the option, as it does today.
   - A loop leaves and re-enters the side its `sourceSide` names, the top where it names
     `outline`. It starts and ends a quarter of that side's length either side of the middle, as
     one cubic whose control points lie outward along the side's normal, as far out as the side is
-    long and at least 40 world units. Its arrowhead enters the node there. Its label's path
-    parameter 0.5 is the loop's outermost point.
+    long and at least 40 world units. It runs clockwise around the node, so that a positive label
+    offset stands outside it. Its arrowhead enters the node there. Its label's path parameter 0.5
+    is the loop's outermost point.
 - **Compatible:**
   - A connector is compatible with a connection the user drags from a connector of a source node
     when it belongs to another node, and no edge from the source node to that node exists in that
     direction, whatever its sides; an edge the other way does not count.
   - Where loops are allowed, a connector of the source itself is compatible as well, under the
-    same rule.
+    same rule, but for the connector the connection starts from.
   - A connection is made only to a compatible connector, and only after the host's veto allows it
     ([ADR-0024](0024-edits-are-reported-as-typed-changes.md)). The node the user drags from is
     the edge's source, the one released over its target. The gesture records the sides of the two
