@@ -16,8 +16,8 @@ use super::checks::{color_of, dash_of, edge_ids_of, label_placement, spec_of};
 use super::item::{Item, content_of, edge_of, label_of};
 use super::load::checked_content;
 use super::{
-    Arrow, Checked, ContentInput, EdgeField, EdgeInput, Field, GraphDataProblem, GraphList,
-    LabelInput, Pair, Side, check_graph_size, utf16_length,
+    Arrow, Checked, ContentInput, Dock, EdgeField, EdgeInput, Field, GraphDataProblem, GraphList,
+    LabelInput, Pair, check_graph_size, utf16_length,
 };
 
 /// Why an edit of an edge was refused: its data, which the host application handed over, or a
@@ -85,15 +85,15 @@ pub(crate) fn add_edge_to(
 #[derive(Tsify, Default)]
 #[tsify(
     type = "{ color?: number; dash?: [number, number] | null; arrow?: Arrow; \
-                 label?: LabelInput | null; sourceSide?: Side; targetSide?: Side }"
+                 label?: LabelInput | null; sourceSide?: Dock; targetSide?: Dock }"
 )]
 pub struct EdgePatch {
     color: Option<Field<f64>>,
     dash: Option<Field<Option<Pair>>>,
     arrow: Option<Field<Arrow>>,
     label: Option<Field<Option<LabelInput>>>,
-    source_side: Option<Field<Side>>,
-    target_side: Option<Field<Side>>,
+    source_side: Option<Field<Dock>>,
+    target_side: Option<Field<Dock>>,
     other: Option<String>,
 }
 

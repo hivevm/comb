@@ -1,9 +1,12 @@
 //! Edge paths and edge-label placement.
 //!
-//! An edge is a cubic Bézier curve from its source connector to its target connector. An edge
-//! label sits at the point of the path parameter `t` and is moved by the label offset along the
-//! path's normal there (G-6). An edge leaves its source node at the middle of its right side and
-//! enters its target node at the middle of its left side.
+//! An edge is a cubic Bézier curve from its source end to its target end, each at the connector
+//! of a side or on the node's outline (ADR-0031). An edge label sits at the point of the path
+//! parameter `t` and is moved by the label offset along the path's normal there (G-6). An edge
+//! that names no side leaves its source node at the middle of its right side and enters its
+//! target node at the middle of its left side.
+
+use crate::shape::NodeShape;
 
 /// How far from the world's origin the graph lies, in world units, 2^120: every node within it on
 /// each axis, its far side included, and every label offset within it. Every point the engine
@@ -159,7 +162,7 @@ fn extrema(p0: f64, p1: f64, p2: f64, p3: f64) -> impl Iterator<Item = f64> {
     [q / a, c / q].into_iter().filter(|t| !t.is_nan())
 }
 
-/// A side of a node, at whose middle its connector sits (ADR-0025).
+/// A side of a node, at whose middle its connector sits (ADR-0031).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Side {
     Top,
@@ -169,19 +172,33 @@ pub enum Side {
     Left,
 }
 
-/// The sides an edge leaves its source by and enters its target by: by default the right of its
-/// source and the left of its target (ADR-0025).
+/// Where an end of an edge docks: at the connector of a side, or on the node's outline
+/// (ADR-0031).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Dock {
+    Side(Side),
+    Outline,
+}
+
+impl From<Side> for Dock {
+    fn from(side: Side) -> Self {
+        Self::Side(side)
+    }
+}
+
+/// Where an edge leaves its source and enters its target: by default the right side of its
+/// source and the left side of its target (ADR-0031).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Sides {
-    pub source: Side,
-    pub target: Side,
+    pub source: Dock,
+    pub target: Dock,
 }
 
 impl Default for Sides {
     fn default() -> Self {
         Self {
-            source: Side::Right,
-            target: Side::Left,
+            source: Dock::Side(Side::Right),
+            target: Dock::Side(Side::Left),
         }
     }
 }
@@ -201,21 +218,44 @@ impl Side {
         }
     }
 
-    /// How far `to` lies from `from` along this side's normal's axis.
-    fn along(self, from: Point, to: Point) -> f64 {
+    /// This side's outward normal.
+    const fn outward(self) -> Point {
         match self {
-            Self::Left | Self::Right => (to.x - from.x).abs(),
-            Self::Top | Self::Bottom => (to.y - from.y).abs(),
+            Self::Top => Point::new(0.0, -1.0),
+            Self::Right => Point::new(1.0, 0.0),
+            Self::Bottom => Point::new(0.0, 1.0),
+            Self::Left => Point::new(-1.0, 0.0),
         }
     }
+}
 
-    /// `point` pulled `pull` out along this side's outward normal.
-    fn pulled(self, point: Point, pull: f64) -> Point {
-        match self {
-            Self::Top => Point::new(point.x, point.y - pull),
-            Self::Right => Point::new(point.x + pull, point.y),
-            Self::Bottom => Point::new(point.x, point.y + pull),
-            Self::Left => Point::new(point.x - pull, point.y),
+/// The centre of `node`.
+fn centre(node: &Rect) -> Point {
+    Point::new(
+        (node.min_x + node.max_x) / 2.0,
+        (node.min_y + node.max_y) / 2.0,
+    )
+}
+
+/// Where an edge's end docked by `dock` on `node`, of node shape `shape`, lies, and the unit
+/// direction its control point pulls out in: a side's connector and its outward normal, or the
+/// point where the line from the node's centre towards `other`, the centre of the node at the
+/// edge's other end, crosses its outline, and that line's direction, none where the two centres
+/// meet (ADR-0031).
+fn end_of(dock: Dock, node: &Rect, shape: NodeShape, other: Point) -> (Point, Point) {
+    match dock {
+        Dock::Side(side) => (side.connector(node), side.outward()),
+        Dock::Outline => {
+            let from = centre(node);
+            let (dx, dy) = (other.x - from.x, other.y - from.y);
+            let (x, y) = shape.crossing(node.max_x - node.min_x, node.max_y - node.min_y, dx, dy);
+            let length = length(dx, dy);
+            let direction = if length == 0.0 {
+                Point::default()
+            } else {
+                Point::new(dx / length, dy / length)
+            };
+            (Point::new(node.min_x + x, node.min_y + y), direction)
         }
     }
 }
@@ -245,20 +285,40 @@ impl EdgePath {
         }
     }
 
-    /// The path from the connector of `sides.source` of `source` to that of `sides.target` of
-    /// `target`: each control point lies on its end's outward normal, half the distance between
-    /// the ends along that normal's axis out, and at least `MIN_PULL` (ADR-0025). From the right
-    /// to the left it is `horizontal`'s path, to the bit.
+    /// `docked`'s path between two rectangles, the node shape of a node that names none.
+    #[cfg(test)]
     pub(crate) fn between(source: &Rect, target: &Rect, sides: Sides) -> Self {
-        let (from, to) = (
-            sides.source.connector(source),
-            sides.target.connector(target),
-        );
-        let pull = |side: Side| (side.along(from, to) / 2.0).max(MIN_PULL);
+        Self::docked(
+            (source, NodeShape::Rectangle),
+            (target, NodeShape::Rectangle),
+            sides,
+        )
+    }
+
+    /// The path from the end of `sides.source` on the `source` node to that of `sides.target` on
+    /// the `target` node, each node by its rectangle and its node shape (ADR-0031). An end on a
+    /// side lies at that side's connector and pulls out along its outward normal; an end on the
+    /// outline lies where the line from its node's centre towards the other node's centre crosses
+    /// its outline and pulls out along that line. Each control point lies half the distance
+    /// between the ends along its direction out, and at least `MIN_PULL`. From the right to the
+    /// left it is `horizontal`'s path, to the bit.
+    pub(crate) fn docked(
+        (source, source_shape): (&Rect, NodeShape),
+        (target, target_shape): (&Rect, NodeShape),
+        sides: Sides,
+    ) -> Self {
+        let (source_centre, target_centre) = (centre(source), centre(target));
+        let (from, out) = end_of(sides.source, source, source_shape, target_centre);
+        let (to, back) = end_of(sides.target, target, target_shape, source_centre);
+        let pulled = |end: Point, n: Point| {
+            let along = ((to.x - from.x) * n.x + (to.y - from.y) * n.y).abs();
+            let pull = (along / 2.0).max(MIN_PULL);
+            Point::new(end.x + n.x * pull, end.y + n.y * pull)
+        };
         Self {
             source: from,
-            control_source: sides.source.pulled(from, pull(sides.source)),
-            control_target: sides.target.pulled(to, pull(sides.target)),
+            control_source: pulled(from, out),
+            control_target: pulled(to, back),
             target: to,
         }
     }
@@ -389,7 +449,7 @@ impl EdgePath {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     const EPS: f64 = 1e-9;
@@ -418,7 +478,7 @@ mod tests {
 
     #[test]
     fn each_of_the_sixteen_pairs_of_sides_runs_from_connector_to_connector_along_their_normals() {
-        // Verifies: ADR-0025
+        // Verifies: ADR-0031
         let sides = [Side::Top, Side::Right, Side::Bottom, Side::Left];
         let outward = |side: Side| match side {
             Side::Top => (0.0, -1.0),
@@ -441,8 +501,8 @@ mod tests {
                     &source,
                     &target,
                     Sides {
-                        source: from,
-                        target: to,
+                        source: from.into(),
+                        target: to.into(),
                     },
                 );
                 let (sx, sy) = (
@@ -486,9 +546,174 @@ mod tests {
         }
     }
 
+    /// Asserts that `end` lies on the outline of `node`, of node shape `shape`, on the line from
+    /// its centre towards `other`: hit a hair inside it, not a hair outside it, and off that line
+    /// by no more than `tolerance` world units, on the side of `other`.
+    pub(crate) fn on_the_outline_towards(
+        end: Point,
+        node: &Rect,
+        shape: NodeShape,
+        other: Point,
+        tolerance: f64,
+    ) {
+        let (width, height) = (node.max_x - node.min_x, node.max_y - node.min_y);
+        let c = centre(node);
+        let (px, py) = (end.x - c.x, end.y - c.y);
+        let (dx, dy) = (other.x - c.x, other.y - c.y);
+        let towards = dx.hypot(dy);
+        let context = format!("{shape:?} {node:?} towards {other:?}: {end:?}");
+        assert!(
+            (px * dy - py * dx).abs() / towards <= tolerance,
+            "off the line, {context}"
+        );
+        assert!(px * dx + py * dy > 0.0, "backwards, {context}");
+        let length = px.hypot(py);
+        let hair = |by: f64| {
+            shape.contains(
+                width,
+                height,
+                width / 2.0 + px * (1.0 + by / length),
+                height / 2.0 + py * (1.0 + by / length),
+            )
+        };
+        assert!(hair(-tolerance), "outside the outline, {context}");
+        assert!(!hair(tolerance), "inside the outline, {context}");
+    }
+
+    #[test]
+    fn an_end_on_the_outline_lies_where_the_line_between_the_centres_crosses_it_for_every_node_shape()
+     {
+        // Verifies: ADR-0031, Q-4
+        // Every pair of node shapes, the target all around the source: level, above, below,
+        // behind, overlapping it, and far from the world's origin, where the end still lies
+        // within Q-4's half pixel at the zoom of 1, its world units.
+        let offsets = (0..24).map(|i| {
+            let angle = f64::from(i) * core::f64::consts::TAU / 24.0;
+            (angle.cos(), angle.sin())
+        });
+        let outline = Sides {
+            source: Dock::Outline,
+            target: Dock::Outline,
+        };
+        for (ox, oy) in offsets {
+            for (origin, distance) in [(0.0, 400.0), (0.0, 90.0), (-3e6, 2e5), (1e7, 600.0)] {
+                for from in NodeShape::ALL {
+                    for to in NodeShape::ALL {
+                        let source = Rect::of_node(origin, origin * 0.5, 120.0, 60.0);
+                        let c = centre(&source);
+                        let (tx, ty) = (c.x + ox * distance, c.y + oy * distance);
+                        let target = Rect::of_node(tx - 40.0, ty - 25.0, 80.0, 50.0);
+                        let path = EdgePath::docked((&source, from), (&target, to), outline);
+                        let tolerance = 1e-9 * (1.0 + origin.abs());
+                        on_the_outline_towards(
+                            path.source,
+                            &source,
+                            from,
+                            centre(&target),
+                            tolerance,
+                        );
+                        on_the_outline_towards(path.target, &target, to, c, tolerance);
+                        // Each control point lies on that line, outward, half the distance
+                        // between the ends along it and at least 40 out; the arrowhead's tip is
+                        // the target's end, and it points along the line into the target.
+                        let gap =
+                            (path.target.x - path.source.x).hypot(path.target.y - path.source.y);
+                        let pull = (gap / 2.0).max(MIN_PULL);
+                        let (ux, uy) = (ox, oy);
+                        let expected =
+                            Point::new(path.source.x + ux * pull, path.source.y + uy * pull);
+                        assert!(
+                            (path.control_source.x - expected.x).abs() <= tolerance * 10.0
+                                && (path.control_source.y - expected.y).abs() <= tolerance * 10.0,
+                            "{from:?} to {to:?}: {path:?}"
+                        );
+                        let enter = path.tangent_at(1.0);
+                        assert!(
+                            (enter.x - ux).abs() < 1e-6 && (enter.y - uy).abs() < 1e-6,
+                            "{from:?} to {to:?}: enters along {enter:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_end_naming_a_side_keeps_its_connector_beside_an_end_on_the_outline() {
+        // Verifies: ADR-0031
+        let source = Rect::of_node(0.0, 0.0, 220.0, 64.0);
+        let target = Rect::of_node(500.0, -300.0, 80.0, 80.0);
+        for side in [Side::Top, Side::Right, Side::Bottom, Side::Left] {
+            let path = EdgePath::docked(
+                (&source, NodeShape::Diamond),
+                (&target, NodeShape::Circle),
+                Sides {
+                    source: side.into(),
+                    target: Dock::Outline,
+                },
+            );
+            assert_eq!(path.source, side.connector(&source), "{side:?}");
+            // It leaves along the side's outward normal.
+            let n = side.outward();
+            let leave = path.tangent_at(0.0);
+            assert!((leave.x * n.y - leave.y * n.x).abs() < 1e-12, "{side:?}");
+            assert!(leave.x * n.x + leave.y * n.y > 0.0, "{side:?}");
+            // Its other end lies on the target's outline, towards the source's centre.
+            on_the_outline_towards(
+                path.target,
+                &target,
+                NodeShape::Circle,
+                centre(&source),
+                1e-9,
+            );
+            // And the other way round: on the outline at the source, the side at the target.
+            let back = EdgePath::docked(
+                (&source, NodeShape::Diamond),
+                (&target, NodeShape::Circle),
+                Sides {
+                    source: Dock::Outline,
+                    target: side.into(),
+                },
+            );
+            assert_eq!(back.target, side.connector(&target), "{side:?}");
+            on_the_outline_towards(
+                back.source,
+                &source,
+                NodeShape::Diamond,
+                centre(&target),
+                1e-9,
+            );
+        }
+    }
+
+    #[test]
+    fn an_end_on_the_outline_of_two_nodes_with_one_centre_lies_at_the_centre() {
+        // Decides no criterion: two nodes stacked on one centre give no line between them; the
+        // path stays finite, its ends at the centre.
+        let node = Rect::of_node(10.0, 20.0, 100.0, 50.0);
+        let path = EdgePath::docked(
+            (&node, NodeShape::Ellipse),
+            (&node, NodeShape::Ellipse),
+            Sides {
+                source: Dock::Outline,
+                target: Dock::Outline,
+            },
+        );
+        let c = centre(&node);
+        assert_eq!(
+            path,
+            EdgePath {
+                source: c,
+                control_source: c,
+                control_target: c,
+                target: c
+            }
+        );
+    }
+
     #[test]
     fn from_the_right_to_the_left_the_path_is_the_horizontal_one_to_the_bit() {
-        // Verifies: ADR-0025
+        // Verifies: ADR-0031
         let source = Rect::of_node(10.0, 20.0, 220.0, 64.0);
         for target in [
             Rect::of_node(400.0, 300.0, 220.0, 64.0),

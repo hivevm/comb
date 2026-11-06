@@ -21,8 +21,12 @@ export interface NodeData {
   content: NodeContent;
 }
 
-/** A side of a node, at whose middle its connector sits (ADR-0025). */
+/** A side of a node, at whose middle its connector sits (ADR-0031). */
 export type Side = "top" | "right" | "bottom" | "left";
+
+/** What an end of an edge docks on: the connector of one of the four sides, or the node's outline,
+ *  where the line towards the edge's other end crosses it (ADR-0031). */
+export type Dock = Side | "outline";
 
 /** An edge label: placed by its path parameter `t` and its label offset in pixels (G-6). */
 export interface EdgeLabelData {
@@ -32,17 +36,17 @@ export interface EdgeLabelData {
   background?: number;
 }
 
-/** An edge from a connector of one node to a connector of another, drawn in `color`
- *  (`0xRRGGBB`), dashed by `dash` (dash and gap lengths in world units; solid without), and
- *  with an arrowhead at its target unless `arrow` is `"none"` (G-11). */
+/** An edge from one node to another, each end at a side's connector or on the outline, drawn in
+ *  `color` (`0xRRGGBB`), dashed by `dash` (dash and gap lengths in world units; solid without),
+ *  and with an arrowhead at its target unless `arrow` is `"none"` (G-11). */
 export interface EdgeData {
   id: string;
   source: string;
   target: string;
-  /** The side of its source it leaves by, `right` where left out (ADR-0025). */
-  sourceSide?: Side;
-  /** The side of its target it enters by, `left` where left out. */
-  targetSide?: Side;
+  /** What it leaves its source by, a side or the outline, `right` where left out (ADR-0031). */
+  sourceSide?: Dock;
+  /** What it enters its target by, a side or the outline, `left` where left out. */
+  targetSide?: Dock;
   color?: number;
   dash?: readonly [number, number];
   arrow?: "end" | "none";
@@ -67,8 +71,8 @@ export interface Viewport {
 export interface EdgePatch {
   color?: number;
   arrow?: "end" | "none";
-  sourceSide?: Side;
-  targetSide?: Side;
+  sourceSide?: Dock;
+  targetSide?: Dock;
   dash?: readonly [number, number] | null;
   label?: EdgeLabelData | null;
 }

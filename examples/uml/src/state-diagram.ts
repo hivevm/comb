@@ -2,9 +2,9 @@
 // states are rounded rectangles of their name; its initial state a filled circle, its final
 // states ringed circles, and the choice of whether the engine loaded a diamond, each a node shape
 // of Comb's own (ADR-0032). Its transitions are edges labelled by their event or
-// their guard, each leaving and entering by a side. It is shown only; the user edits none of it
-// yet.
-import type { Comb, EdgeData, NodeContent, NodeData, NodeShape, Side } from "comb";
+// their guard, each end docked on its state's outline (ADR-0031). It is shown only; the user
+// edits none of it yet.
+import type { Comb, EdgeData, NodeContent, NodeData, NodeShape } from "comb";
 import type { DiagramData } from "./class-diagram";
 import { GREY } from "./relationships";
 
@@ -34,7 +34,9 @@ const STATE_NODES: StateNode[] = [
 ];
 
 /** The rows of the diagram from top to bottom, each node by the left of its column; a node
- *  is centred on its column's middle, `STATE_WIDTH` wide. */
+ *  is centred on its column's middle, `STATE_WIDTH` wide. An edge docked on the outline runs
+ *  between the two centres, so no state lies between the two ends of a transition: the lost
+ *  engine stands aside, out of the way from ready to destroyed. */
 const ROWS: [string, number][][] = [
   [["initial", 0]],
   [["created", 0]],
@@ -47,47 +49,52 @@ const ROWS: [string, number][][] = [
     ["ready", 0],
     ["rendering", 1],
   ],
-  [["lost", 0]],
+  [["lost", 1]],
   [["destroyed", 0]],
   [["final", 0]],
 ];
 const COLUMN = 320;
 const ROW_GAP = 56;
 
-/** Each transition: its source, its target, its label, the event that fires it or the guard of a
- *  choice's branch, none for one a pseudostate takes at once, and the sides it leaves and enters
- *  by. */
-const TRANSITIONS: [string, string, string | null, Side, Side][] = [
-  ["initial", "created", null, "bottom", "top"],
-  ["created", "loading", "createComb", "bottom", "top"],
-  ["loading", "loaded", "engine settled", "bottom", "top"],
-  ["loaded", "ready", "[loaded]", "bottom", "top"],
-  ["loaded", "refused", "[refused]", "right", "left"],
-  ["ready", "rendering", "change", "right", "left"],
-  ["rendering", "ready", "rendered", "top", "top"],
-  ["ready", "lost", "engine lost", "bottom", "top"],
-  ["ready", "destroyed", "destroy", "left", "left"],
-  ["lost", "destroyed", "destroy", "bottom", "top"],
-  ["destroyed", "final", null, "bottom", "top"],
+/** Each transition: its source, its target, and its label, the event that fires it or the guard
+ *  of a choice's branch, none for one a pseudostate takes at once. */
+const TRANSITIONS: [string, string, string | null][] = [
+  ["initial", "created", null],
+  ["created", "loading", "createComb"],
+  ["loading", "loaded", "engine settled"],
+  ["loaded", "ready", "[loaded]"],
+  ["loaded", "refused", "[refused]"],
+  ["ready", "rendering", "change"],
+  ["rendering", "ready", "rendered"],
+  ["ready", "lost", "engine lost"],
+  ["ready", "destroyed", "destroy"],
+  ["lost", "destroyed", "destroy"],
+  ["destroyed", "final", null],
 ];
+
+/** How far a label stands off its transition, to the left of its direction of travel, so that the
+ *  labels of the two transitions between ready and rendering, which run along one line in
+ *  opposite directions, stand either side of it. */
+const LABEL_OFFSET = 14;
 
 /** The content of the node of `node`: a state's name as its title, none of a pseudostate. */
 function contentOf({ name }: StateNode): NodeContent {
   return name === undefined ? [] : [[{ kind: "text", role: "title", text: name }]];
 }
 
-/** The edge of a transition, grey with an arrowhead, its label in grey where it has one. */
-function edgeOf([source, target, label, sourceSide, targetSide]: (typeof TRANSITIONS)[number]) {
+/** The edge of a transition, grey with an arrowhead, docked on the outline at both ends, its
+ *  label in grey where it has one. */
+function edgeOf([source, target, label]: (typeof TRANSITIONS)[number]) {
   const edge: EdgeData = {
     id: `${source}-${target}`,
     source,
     target,
-    sourceSide,
-    targetSide,
+    sourceSide: "outline",
+    targetSide: "outline",
     color: GREY,
     arrow: "end",
   };
-  if (label !== null) edge.label = { text: label, t: 0.5, offset: 0, background: GREY };
+  if (label !== null) edge.label = { text: label, t: 0.5, offset: LABEL_OFFSET, background: GREY };
   return edge;
 }
 

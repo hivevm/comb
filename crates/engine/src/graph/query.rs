@@ -533,8 +533,8 @@ mod tests {
             style: EdgeStyle::unstyled(),
         };
         let crossed = Sides {
-            source: Side::Bottom,
-            target: Side::Top,
+            source: Side::Bottom.into(),
+            target: Side::Top.into(),
         };
         let mut graph = Graph::new(
             vec![0.0, 0.0, 300.0, 0.0, -300.0, 0.0],
