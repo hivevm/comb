@@ -99,7 +99,7 @@ function handsOver(
 }
 
 test("the bridge refuses graph data and patches that are no snapshot at compile time", () => {
-  // Verifies: ADR-0009
+  // Verifies: ADR-0030
   expect(typeof handsOver).toBe("function");
 });
 

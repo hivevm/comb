@@ -1275,7 +1275,7 @@ const RUST =
 
 describe("bridge fields the engine does not keep", () => {
   test("a title, label text, or label background of the wrong kind comes back as a typed error", () => {
-    // Verifies: ADR-0009, ADR-0010
+    // Verifies: ADR-0030, ADR-0010
     const label = (fields: object) => ({ text: "x", t: 0.5, offset: 0, ...fields });
     const errors = [
       graph([{ ...node("a", 0, 0), content: titled(5 as unknown as string) }]),
@@ -1296,7 +1296,7 @@ describe("bridge fields the engine does not keep", () => {
   });
 
   test("a patch of a node comes back as a typed error unless it holds only content", () => {
-    // Verifies: ADR-0009, ADR-0010
+    // Verifies: ADR-0030, ADR-0010
     bridge.loadGraph(graph([node("a", 0, 0)]));
     expect(bridge.updateNode(0, "a", plain({ content: titled("A") }))).toBeUndefined();
     expect(bridge.updateNode(0, "a", plain({}))).toBeUndefined();
@@ -1444,7 +1444,7 @@ describe("bridge additions", () => {
   });
 
   test("an added node the bridge refuses comes back as a typed error, the graph as it was", () => {
-    // Verifies: ADR-0009, Q-7
+    // Verifies: ADR-0030, Q-7
     bridge.loadGraph(graph([node("a", 0, 0)]));
     const refusals = [
       added({ ...node("c", 0, 0), x: Number.POSITIVE_INFINITY }),

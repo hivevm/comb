@@ -397,7 +397,7 @@ mod tests {
 
     #[test]
     fn a_node_whose_place_or_far_side_lies_past_the_world_names_it_and_the_field() {
-        // Verifies: Q-7, ADR-0009
+        // Verifies: Q-7, ADR-0030
         // 3e38 is a finite f32, as is 3e38 + 3e38 in f64, which f32 cannot hold.
         let mut data = batch(&[("a", 0.0, 0.0), ("b", 3e38, 0.0)], &[]);
         data.nodes[1].width = 3e38.into();
@@ -439,7 +439,7 @@ mod tests {
 
     #[test]
     fn a_label_offset_past_the_world_names_its_edge_and_the_field() {
-        // Verifies: Q-7, ADR-0009
+        // Verifies: Q-7, ADR-0030
         let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[("e", "a", "b")]);
         data.edges[0].label = Some(LabelInput {
             text_length: Some(1),
