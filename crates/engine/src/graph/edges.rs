@@ -133,16 +133,21 @@ impl Graph {
         }
     }
 
-    /// The path, its bounds, and the label point of the edge in `slot` from the current positions.
+    /// The path, its bounds, and the label point of the edge in `slot` from the current positions:
+    /// a loop's where it leads its node back to itself (ADR-0031).
     pub(super) fn placement(&self, slot: u32) -> (EdgePath, Rect, Option<Point>) {
         #[cfg(test)]
         self.placements.set(self.placements.get() + 1);
         let spec = self.edges[slot as usize];
-        let path = EdgePath::docked(
-            (&self.node_bounds(spec.source), self.shape(spec.source)),
-            (&self.node_bounds(spec.target), self.shape(spec.target)),
-            spec.sides,
-        );
+        let path = if spec.source == spec.target {
+            EdgePath::looped(&self.node_bounds(spec.source), spec.sides.source)
+        } else {
+            EdgePath::docked(
+                (&self.node_bounds(spec.source), self.shape(spec.source)),
+                (&self.node_bounds(spec.target), self.shape(spec.target)),
+                spec.sides,
+            )
+        };
         let label = spec
             .label
             .map(|label| path.label_position(label.t, label.offset));
@@ -206,8 +211,68 @@ impl Graph {
 #[cfg(test)]
 mod tests {
     use super::super::TooManySlots;
-    use super::super::tests::{Lcg, paired, random_graph};
+    use super::super::tests::{Lcg, paired, path_of, random_graph};
     use super::*;
+
+    #[test]
+    fn an_edge_from_a_node_to_itself_is_placed_as_a_loop_and_follows_its_node() {
+        // Verifies: ADR-0031
+        // A loop on `a` of each dock, labelled at the middle parameter, and an edge from `a` to
+        // `b`: the loop is drawn on the side it names, the top for the outline, by a load, an
+        // addition, a move, and a change of node shape, its label at its outermost point.
+        use crate::geometry::{Dock, Side};
+        use crate::shape::NodeShape;
+        let looped = |sides: Sides| EdgeSpec {
+            sides,
+            source: 0,
+            target: 0,
+            label: Some(LabelPlacement {
+                t: 0.5,
+                offset: 0.0,
+            }),
+            style: EdgeStyle::unstyled(),
+        };
+        let on = |dock: Dock| Sides {
+            source: dock,
+            target: Dock::Outline,
+        };
+        let mut graph = Graph::new(
+            vec![0.0, 0.0, 400.0, 0.0],
+            vec![200.0, 40.0, 100.0, 40.0],
+            vec![
+                looped(on(Dock::Outline)),
+                EdgeSpec {
+                    sides: Sides::default(),
+                    source: 0,
+                    target: 1,
+                    label: None,
+                    style: EdgeStyle::unstyled(),
+                },
+            ],
+        )
+        .unwrap();
+        for side in [Side::Top, Side::Right, Side::Bottom, Side::Left] {
+            graph.add_edge(looped(on(side.into()))).unwrap();
+        }
+        let check = |graph: &Graph, context: &str| {
+            let node = graph.node_bounds(0);
+            let docks = [Dock::Outline, Side::Top.into(), Side::Right.into()];
+            let docks = docks
+                .into_iter()
+                .chain([Side::Bottom.into(), Side::Left.into()]);
+            for (slot, dock) in [0, 2, 3, 4, 5].into_iter().zip(docks) {
+                let path = EdgePath::looped(&node, dock);
+                assert_eq!(graph.paths[slot], path, "{context}: edge {slot}");
+                assert_eq!(graph.bounds[slot], path.bounds(), "{context}: edge {slot}");
+                assert_eq!(graph.labels[slot], Some(path.point_at(0.5)), "{context}");
+            }
+        };
+        check(&graph, "loaded and added");
+        graph.translate(&[0], 37.0, -1200.0).unwrap();
+        check(&graph, "moved");
+        graph.set_shape(0, NodeShape::Ellipse).unwrap();
+        check(&graph, "shaped");
+    }
 
     #[test]
     fn the_bounds_kept_per_edge_are_those_of_its_path_after_moves() {
@@ -220,10 +285,10 @@ mod tests {
         }
         for e in 0..graph.edge_slots.count() {
             let spec = graph.edges[e as usize];
-            let fresh = EdgePath::between(
+            let fresh = path_of(
+                &spec,
                 &graph.node_bounds(spec.source),
                 &graph.node_bounds(spec.target),
-                spec.sides,
             )
             .bounds();
             assert_eq!(graph.bounds[e as usize], fresh, "edge {e}");

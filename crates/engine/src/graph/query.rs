@@ -188,7 +188,7 @@ pub struct MeshAt {
 mod tests {
     use super::super::{EdgeSpec, LabelPlacement};
     use super::*;
-    use crate::geometry::{Side, Sides, WORLD_LIMIT};
+    use crate::geometry::{Dock, EdgePath, Side, Sides, WORLD_LIMIT};
     use crate::stroke::{Detail, EdgeStyle};
 
     #[test]
@@ -594,5 +594,96 @@ mod tests {
         assert!(!out.edges.is_empty());
         // A press anywhere still answers.
         graph.hit_at(Point::new(1e300, 1e300), 1e300, Level::Near, true);
+    }
+
+    /// Whether `p` is a point `f32` holds.
+    fn held(p: Point) -> bool {
+        p.x.abs() < f64::from(f32::MAX) && p.y.abs() < f64::from(f32::MAX)
+    }
+
+    /// A small node and one as wide and high as the world, each with a loop on every side and
+    /// one of the outline, labelled, carried to opposite corners of the world; and the loops.
+    fn loops_at_the_world_limit() -> (Graph, Vec<EdgeSpec>) {
+        let docks = [Side::Top, Side::Right, Side::Bottom, Side::Left].map(Dock::Side);
+        let docks = docks.into_iter().chain([Dock::Outline]);
+        let specs: Vec<EdgeSpec> = docks
+            .flat_map(|dock| [0, 1].map(|node| (node, dock)))
+            .map(|(node, dock)| EdgeSpec {
+                sides: Sides {
+                    source: dock,
+                    target: Dock::Outline,
+                },
+                source: node,
+                target: node,
+                label: Some(LabelPlacement {
+                    t: 0.5,
+                    offset: 40.0,
+                }),
+                style: EdgeStyle::unstyled(),
+            })
+            .collect();
+        let world = 2.0 * WORLD_LIMIT as f32;
+        let mut graph = Graph::new(
+            vec![0.0, 0.0, -1e3, -1e3],
+            vec![220.0, 64.0, world, world],
+            specs.clone(),
+        )
+        .unwrap();
+        for _ in 0..4 {
+            graph.translate(&[0], f32::MAX, f32::MAX).unwrap();
+            graph.translate(&[1], -f32::MAX, -f32::MAX).unwrap();
+        }
+        let limit = WORLD_LIMIT as f32;
+        assert_eq!(&graph.positions[..2], [limit - 220.0, limit - 64.0]);
+        assert_eq!(&graph.positions[2..], [-limit, -limit]);
+        (graph, specs)
+    }
+
+    /// Asserts that every point of the loop in `slot`, its control points and its label's
+    /// before and after a drag of it far beyond the world, is one `f32` holds; returns whether a
+    /// control point lies past twice the world's limit.
+    fn assert_loop_held(graph: &mut Graph, slot: usize, spec: &EdgeSpec) -> bool {
+        let path = graph.paths[slot];
+        let node = graph.node_bounds(spec.source);
+        assert_eq!(path, EdgePath::looped(&node, spec.sides.source), "{slot}");
+        let points = (0..=64).map(|t| path.point_at(f64::from(t) / 64.0));
+        let controls = [path.control_source, path.control_target];
+        assert!(points.chain(controls).all(held), "edge {slot}: {path:?}");
+        assert!(held(graph.labels[slot].unwrap()), "edge {slot}");
+        let far = graph
+            .move_label(slot as u32, Point::new(1e300, -1e300))
+            .unwrap();
+        assert_eq!(far.offset.abs(), WORLD_LIMIT);
+        assert!(held(graph.labels[slot].unwrap()), "edge {slot}");
+        controls
+            .iter()
+            .any(|p| p.x.abs().max(p.y.abs()) > 2.0 * WORLD_LIMIT)
+    }
+
+    #[test]
+    fn every_point_of_a_loop_is_one_f32_holds_where_its_node_lies_at_the_world_limit() {
+        // Verifies: ADR-0031, ADR-0030, Q-4
+        // A loop pulls out as far as its side is long, so the large node's reaches three times
+        // the limit out; its points, and every coordinate a query writes, stay within f32.
+        let (mut graph, specs) = loops_at_the_world_limit();
+        let beyond = (0..specs.len())
+            .filter(|&slot| assert_loop_held(&mut graph, slot, &specs[slot]))
+            .count();
+        // The large node's loops reach past twice the limit, which the test rests on.
+        assert!(beyond >= 4, "{beyond}");
+        let limit = WORLD_LIMIT;
+        for rect in [
+            Rect::new(-1e300, -1e300, 1e300, 1e300),
+            Rect::new(-3.5 * limit, -3.5 * limit, -limit, -limit),
+            Rect::new(-1e3, -3.1 * limit, 1e3, -2.9 * limit),
+            Rect::new(limit - 1e3, limit - 1e3, limit + 1e3, limit + 1e3),
+        ] {
+            let written = written(&mut graph, &rect);
+            assert!(!written.is_empty(), "{rect:?}");
+            assert!(
+                written.iter().all(|v| v.abs() < f64::from(f32::MAX)),
+                "{rect:?} wrote a coordinate that f32 does not hold",
+            );
+        }
     }
 }
