@@ -323,23 +323,32 @@ impl EdgePath {
         }
     }
 
-    /// The path of a loop, an edge from `node` back to itself (ADR-0031): it leaves and re-enters
-    /// the side `dock` names, the top where it names the outline, a quarter of that side's length
-    /// either side of its middle, the source end first clockwise, and its control points lie
-    /// outward along the side's normal, as far out as the side is long and at least `MIN_PULL`.
-    /// So its path parameter 0.5 is its outermost point, where the path runs along the side and
-    /// a label offset to its left stands outward, and it enters the node against the normal.
-    pub(crate) fn looped(node: &Rect, dock: Dock) -> Self {
+    /// The path of a loop, an edge from `node`, of node shape `shape`, back to itself
+    /// (ADR-0031): it leaves and re-enters the side `dock` names, the top where it names the
+    /// outline, a quarter of that side's length either side of its middle, the source end first
+    /// clockwise, and its control points lie outward along the side's normal, as far out as the
+    /// side is long and at least `MIN_PULL`. Each end then moves inward along the normal onto the
+    /// outline of `shape`, its control point with it; both by the same distance, so the loop
+    /// keeps its shape. So its path parameter 0.5 is its outermost point, where the path runs
+    /// along the side and a label offset to its left stands outward, and it enters the node
+    /// against the normal. On a rectangle and a bar nothing moves.
+    pub(crate) fn looped(node: &Rect, shape: NodeShape, dock: Dock) -> Self {
         let side = match dock {
             Dock::Side(side) => side,
             Dock::Outline => Side::Top,
         };
-        let (middle, n) = (side.connector(node), side.outward());
-        let length = match side {
-            Side::Top | Side::Bottom => node.max_x - node.min_x,
-            Side::Right | Side::Left => node.max_y - node.min_y,
+        let (mut middle, n) = (side.connector(node), side.outward());
+        let (width, height) = (node.max_x - node.min_x, node.max_y - node.min_y);
+        let (length, across) = match side {
+            Side::Top | Side::Bottom => (width, height),
+            Side::Right | Side::Left => (height, width),
         };
         let (quarter, pull) = (length / 4.0, length.max(MIN_PULL));
+        // Left alone where it is nil, so that a loop whose ends do not move is today's to the bit.
+        let inset = shape.inset(length, across, quarter);
+        if inset > 0.0 {
+            middle = Point::new(middle.x - n.x * inset, middle.y - n.y * inset);
+        }
         // Clockwise: the normal turned a quarter against the clock points to the source's end.
         let along = Point::new(n.y * quarter, -n.x * quarter);
         let source = Point::new(middle.x + along.x, middle.y + along.y);
@@ -762,7 +771,7 @@ pub(crate) mod tests {
             let node = Rect::of_node(x, y, w, h);
             for (dock, from, to, (nx, ny)) in cases {
                 let at = |(fx, fy): (f64, f64)| Point::new(x + fx * w, y + fy * h);
-                let path = EdgePath::looped(&node, dock);
+                let path = EdgePath::looped(&node, NodeShape::Rectangle, dock);
                 let context = format!("{dock:?} on {node:?}: {path:?}");
                 assert!(close(path.source, at(from)), "{context}");
                 assert!(close(path.target, at(to)), "{context}");
@@ -794,6 +803,149 @@ pub(crate) mod tests {
                 assert!((side(label) - side(top) - 14.0).abs() < EPS, "{context}");
             }
         }
+    }
+
+    /// The docks a loop names: each side, and the outline, which loops on the top.
+    const LOOP_DOCKS: [(Dock, Side); 5] = [
+        (Dock::Side(Side::Top), Side::Top),
+        (Dock::Side(Side::Right), Side::Right),
+        (Dock::Side(Side::Bottom), Side::Bottom),
+        (Dock::Side(Side::Left), Side::Left),
+        (Dock::Outline, Side::Top),
+    ];
+
+    #[test]
+    fn a_loop_ends_on_the_outline_of_each_node_shape_on_each_side_and_enters_the_node() {
+        // Verifies: ADR-0031, Q-4
+        // Each node shape, each dock, wide, square, tall, small, and thin nodes, near and far
+        // from the world's origin: both ends lie on the outline within Q-4's half pixel at the
+        // zoom of 1, its world units; the loop leaves along the side's normal and enters against
+        // it; and its four points moved inward together along the normal from where they lie on
+        // the node's rectangle, so it keeps its shape and its width.
+        for (w, h) in [
+            (200.0, 40.0),
+            (24.0, 24.0),
+            (60.0, 300.0),
+            (40.0, 40.0),
+            (200.0, 24.0),
+            (12.0, 8.0),
+        ] {
+            for origin in [0.0, -3e6, 1e7] {
+                let node = Rect::of_node(origin, origin * 0.5, w, h);
+                let tolerance = 1e-9 * (1.0 + origin.abs());
+                for shape in NodeShape::ALL {
+                    for (dock, side) in LOOP_DOCKS {
+                        let n = side.outward();
+                        let path = EdgePath::looped(&node, shape, dock);
+                        let boxed = EdgePath::looped(&node, NodeShape::Rectangle, dock);
+                        let context = format!("{shape:?} {dock:?} on {node:?}: {path:?}");
+                        // On the outline: hit a hair inside along the normal, not a hair outside.
+                        let hit = |p: Point, by: f64| {
+                            shape.contains(
+                                w,
+                                h,
+                                p.x + n.x * by - node.min_x,
+                                p.y + n.y * by - node.min_y,
+                            )
+                        };
+                        for end in [path.source, path.target] {
+                            assert!(hit(end, -tolerance), "outside the outline, {context}");
+                            assert!(!hit(end, tolerance), "inside the outline, {context}");
+                        }
+                        // It enters the node against the normal, the arrowhead's tip at the end.
+                        let enter = path.tangent_at(1.0);
+                        assert!(
+                            (enter.x + n.x).abs() < 1e-9 && (enter.y + n.y).abs() < 1e-9,
+                            "{context}: enters along {enter:?}"
+                        );
+                        let leave = path.tangent_at(0.0);
+                        assert!(
+                            (leave.x - n.x).abs() < 1e-9 && (leave.y - n.y).abs() < 1e-9,
+                            "{context}: leaves along {leave:?}"
+                        );
+                        // Moved as a whole, inward along the normal, by no more than the node.
+                        let moved = |p: Point, q: Point| (p.x - q.x, p.y - q.y);
+                        let (dx, dy) = moved(path.source, boxed.source);
+                        let inward = -(dx * n.x + dy * n.y);
+                        assert!((dx * n.y - dy * n.x).abs() <= tolerance, "{context}");
+                        assert!(inward >= 0.0 && inward <= w.max(h) / 2.0, "{context}");
+                        for (p, q) in [
+                            (path.control_source, boxed.control_source),
+                            (path.control_target, boxed.control_target),
+                            (path.target, boxed.target),
+                        ] {
+                            let (ex, ey) = moved(p, q);
+                            assert!(
+                                (ex - dx).abs() <= tolerance && (ey - dy).abs() <= tolerance,
+                                "{context}: not moved as a whole"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_loop_on_a_rectangle_a_bar_or_a_rounded_rectangle_of_a_long_side_is_todays_to_the_bit() {
+        // Verifies: ADR-0031
+        // Today's loop, as it was computed before loops docked on the node shape, against the
+        // loop of a rectangle, a bar, and a rounded rectangle whose side is at least four times
+        // `ROUNDED_RADIUS` long, 40 among them, compared bit for bit.
+        let todays = |node: &Rect, side: Side| {
+            let (middle, n) = (side.connector(node), side.outward());
+            let length = match side {
+                Side::Top | Side::Bottom => node.max_x - node.min_x,
+                Side::Right | Side::Left => node.max_y - node.min_y,
+            };
+            let (quarter, pull) = (length / 4.0, length.max(MIN_PULL));
+            let along = Point::new(n.y * quarter, -n.x * quarter);
+            let source = Point::new(middle.x + along.x, middle.y + along.y);
+            let target = Point::new(middle.x - along.x, middle.y - along.y);
+            let out = |end: Point| Point::new(end.x + n.x * pull, end.y + n.y * pull);
+            [source, out(source), out(target), target]
+        };
+        let bits = |points: [Point; 4]| points.map(|p| (p.x.to_bits(), p.y.to_bits()));
+        let long = 4.0 * crate::shape::ROUNDED_RADIUS;
+        let mut rounded = 0;
+        for (x, y, w, h) in [
+            (0.0, 0.0, 200.0, 40.0),
+            (-0.0, -0.0, 40.0, 40.0),
+            (10.0, -30.0, 24.0, 24.0),
+            (-500.0, 300.0, 60.0, 300.0),
+            (3e7, -1e7, 220.0, 8.0),
+            (1.5e36, 1.5e36, 120.0, 41.0),
+        ] {
+            let node = Rect::of_node(x, y, w, h);
+            for (dock, side) in LOOP_DOCKS {
+                let length = if side.outward().x == 0.0 { w } else { h };
+                for shape in [
+                    NodeShape::Rectangle,
+                    NodeShape::Bar,
+                    NodeShape::RoundedRectangle,
+                ] {
+                    if shape == NodeShape::RoundedRectangle {
+                        if length < long {
+                            continue;
+                        }
+                        rounded += 1;
+                    }
+                    let path = EdgePath::looped(&node, shape, dock);
+                    let path = [
+                        path.source,
+                        path.control_source,
+                        path.control_target,
+                        path.target,
+                    ];
+                    assert_eq!(
+                        bits(path),
+                        bits(todays(&node, side)),
+                        "{shape:?} {dock:?} on {node:?}"
+                    );
+                }
+            }
+        }
+        assert!(rounded >= 15, "{rounded}");
     }
 
     #[test]

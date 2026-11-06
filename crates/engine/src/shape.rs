@@ -1,6 +1,7 @@
 //! The node shapes of the closed set the engine owns (ADR-0032): each node shape's
 //! height for content of a given height, the inner rectangle its content is laid out in, its hit
-//! test, and the point where a line from its centre crosses its outline. All of it is in the
+//! test, the point where a line from its centre crosses its outline, and how far inside a side
+//! the outline lies at a distance from the side's middle (`inset`). All of it is in the
 //! node's own coordinates, its top-left corner at the origin, so that it holds wherever the node
 //! lies in the world.
 
@@ -147,6 +148,38 @@ impl NodeShape {
             Self::Diamond => 1.0 / (ux.abs() / a + uy.abs() / b),
         };
         (a + t * ux, b + t * uy)
+    }
+
+    /// How far inward along a side's normal the outline of a node of this shape lies from that
+    /// side, at `offset` from the side's middle along it: `along` is the side's length, `across`
+    /// the node's extent along the normal, and the offset lies within half the side's length. It
+    /// is nil for a rectangle and a bar, for an empty node, and for a rounded rectangle where the
+    /// offset lies off its corners' arcs. Every node shape is symmetric about both axes, so the
+    /// side and the sign of the offset do not matter.
+    pub fn inset(self, along: f64, across: f64, offset: f64) -> f64 {
+        let (a, b) = (along / 2.0, across / 2.0);
+        if a <= 0.0 || b <= 0.0 {
+            return 0.0;
+        }
+        let u = offset.abs();
+        match self {
+            Self::Rectangle | Self::Bar => 0.0,
+            Self::RoundedRectangle => {
+                let r = ROUNDED_RADIUS.min(a).min(b);
+                let e = u - (a - r);
+                if e <= 0.0 {
+                    0.0
+                } else {
+                    r - (r * r - e * e).sqrt()
+                }
+            }
+            // b (1 − √(1 − s²)), in the form that keeps its digits where s is small.
+            Self::Ellipse | Self::Circle | Self::RingedCircle => {
+                let s = u / a;
+                b * s * s / (1.0 + (1.0 - s * s).sqrt())
+            }
+            Self::Diamond => b * (u / a),
+        }
     }
 }
 
@@ -359,6 +392,16 @@ mod tests {
             assert!(shape.contains(0.0, 60.0, 0.0, 30.0), "{shape:?}");
             assert!(shape.contains(0.0, 0.0, 0.0, 0.0), "{shape:?}");
             assert!(!shape.contains(0.0, 60.0, 0.5, 30.0), "{shape:?}");
+        }
+    }
+
+    #[test]
+    fn an_inset_of_an_empty_node_is_nil() {
+        // Decides no criterion: a node rounded to a line or a point has no outline inside its
+        // rectangle, so a loop's ends stay on its side, finite.
+        for shape in NodeShape::ALL {
+            assert_eq!(shape.inset(0.0, 40.0, 0.0), 0.0, "{shape:?}");
+            assert_eq!(shape.inset(40.0, 0.0, 10.0), 0.0, "{shape:?}");
         }
     }
 

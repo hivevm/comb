@@ -127,12 +127,14 @@ one workspace for each example.
   the outline, where the line from its node's centre towards the other node's centre crosses it, its
   control point pulled out along that line, and loops, an edge from a node back to itself, which
   leave and re-enter one side, the top for the outline, a quarter of its length either side of
-  its middle, clockwise, pulled out as far as the side is long
+  its middle, clockwise, pulled out as far as the side is long, and moved inward as a whole along
+  the side's normal until their ends meet the outline of the node's node shape
   ([ADR-0031](adr/0031-edges-dock-on-a-side-or-the-outline.md)), their exact bounds, the point and
   normal at a path parameter, and edge-label placement. `shape` holds the closed set of node shapes
   ([ADR-0032](adr/0032-node-shapes.md)): each one's height for content of a given height, the inner
-  rectangle its content is laid out in, its hit test, and the point where a line from its centre
-  crosses its outline, all in the node's own coordinates. `graph` keeps the loaded graph, node
+  rectangle its content is laid out in, its hit test, the point where a line from its centre
+  crosses its outline, and how far inward from a side its outline lies at an offset along it, all
+  in the node's own coordinates. `graph` keeps the loaded graph, node
   positions and sizes per slot, a node shape per node slot, a rectangle by default, by which
   `node_at` hits a node within its outline and its edges' ends on the outline lie, and edges per
   slot, a rank per node slot, a list of the edges at each node slot, a list each of free node and
