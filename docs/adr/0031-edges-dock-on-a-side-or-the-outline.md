@@ -42,7 +42,8 @@ side of the node.
 
 - **Graph data:**
   - `EdgeData` keeps `sourceSide` and `targetSide`, each one of `top`, `right`, `bottom`, `left`,
-    or `outline`. `api` fills in `right` and `left` where the host leaves them out.
+    or `outline`. `api` fills in `right` and `left` where the host leaves them out, and `top`
+    for both of a loop, so that a loop the host adds without a side is drawn above its node.
   - The bridge crate refuses another value as `invalidField`, naming the field and the five
     values.
   - The engine keeps both with the edge, a byte each, as before.
