@@ -1,4 +1,4 @@
-# ADR-draft-the-benchmark-measures-a-graph-by-name: The benchmark measures the graph a run names, the metric tree or a shaped one, each against baselines of its own
+# ADR-0033: The benchmark measures the graph a run names, the metric tree or a shaped one, each against baselines of its own
 
 - **Status:** 🟡 proposed
 - **Date:** 2026-11-06

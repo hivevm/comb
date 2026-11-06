@@ -1,4 +1,4 @@
-# ADR-draft-node-shapes: A node is drawn and hit in a node shape from a closed set the engine owns
+# ADR-0032: A node is drawn and hit in a node shape from a closed set the engine owns
 
 - **Status:** 🟢 accepted
 - **Date:** 2026-11-06
