@@ -2,9 +2,12 @@
 //! read, or the refusal that names the first field missing or of another type.
 
 use comb_engine::geometry::Sides;
+use comb_engine::shape::NodeShape;
 
 use super::content;
-use super::problem::{A_CONTENT, A_NUMBER, A_ROW, A_SEGMENT_LIST, A_SIZE, AN_ELEMENT, AN_ID};
+use super::problem::{
+    A_CONTENT, A_NUMBER, A_ROW, A_SEGMENT_LIST, A_SHAPE, A_SIZE, AN_ELEMENT, AN_ID,
+};
 #[cfg(test)]
 use super::snapshot::GraphBatch;
 use super::{
@@ -18,6 +21,7 @@ pub(super) struct Node<'a> {
     pub(super) x: f64,
     pub(super) y: f64,
     pub(super) width: f64,
+    pub(super) shape: NodeShape,
 }
 
 /// An edge label with every field read.
@@ -135,6 +139,7 @@ pub(super) fn node_of(
         x: item.read("x", node.x, A_NUMBER)?,
         y: item.read("y", node.y, A_NUMBER)?,
         width: item.read("width", node.width, A_SIZE)?,
+        shape: item.read("shape", node.shape, A_SHAPE)?.into(),
     };
     let content = content_of(&item, node.content.0.as_ref())?;
     Ok((read, content))

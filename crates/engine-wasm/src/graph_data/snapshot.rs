@@ -8,8 +8,8 @@ use super::field::{Refusable, items};
 use super::node_columns::Refused;
 use super::{
     Arrow, ArrowCode, ContentData, ContentInput, EdgeColumns, EdgeField, EdgeInput, Field,
-    LabelInput, NodeColumns, NodeField, NodeInput, Pair, Side, SideCode, Unflat, numbered,
-    utf16_length,
+    LabelInput, NodeColumns, NodeField, NodeInput, NodeShapeCode, Pair, Side, SideCode, Unflat,
+    numbered, utf16_length,
 };
 
 /// The nodes and edges of one load as the tests write them, each in slot order: the nodes as the
@@ -24,7 +24,7 @@ pub(crate) struct GraphBatch {
     pub edges: Vec<EdgeInput>,
 }
 
-/// A node whose identifier, place, width, or content is missing or of another type.
+/// A node whose identifier, place, width, node shape, or content is missing or of another type.
 impl Refusable for NodeInput {
     fn refused(&self) -> bool {
         [
@@ -32,6 +32,7 @@ impl Refusable for NodeInput {
             self.x.0.is_none(),
             self.y.0.is_none(),
             self.width.0.is_none(),
+            self.shape.0.is_none(),
             self.content.0.is_none(),
         ]
         .contains(&true)
@@ -106,6 +107,7 @@ pub(crate) struct OwnedColumns {
     pub(super) x: Vec<f64>,
     pub(super) y: Vec<f64>,
     pub(super) width: Vec<f64>,
+    pub(super) shape: Vec<u8>,
     pub(crate) content: ContentData,
     pub(crate) refused: Option<Refused>,
 }
@@ -114,8 +116,9 @@ pub(crate) struct OwnedColumns {
 impl OwnedColumns {
     /// The columns of `nodes` as the snapshot builds them, `None` for an item that is no object: a
     /// field missing or of another type empty or NaN, and the first such one named, a shape of
-    /// content at its row and column; the content of each node one after another; each string
-    /// column in pieces of at most 2^28 UTF-16 code units.
+    /// content at its row and column, but a node shape missing or naming none by its code; the
+    /// content of each node one after another; each string column in pieces of at most 2^28 UTF-16
+    /// code units.
     pub(crate) fn of<'n>(nodes: impl IntoIterator<Item = Option<&'n NodeInput>>) -> Self {
         Self::in_pieces(SNAPSHOT_PIECE, nodes)
     }
@@ -156,6 +159,7 @@ impl OwnedColumns {
                 for numbers in [&mut columns.x, &mut columns.y, &mut columns.width] {
                     numbers.push(f64::NAN);
                 }
+                columns.shape.push(NodeShapeCode::Rectangle as u8);
                 columns.content.end_node();
                 continue;
             };
@@ -180,6 +184,15 @@ impl OwnedColumns {
                 }
                 column.push(value.0.unwrap_or(f64::NAN));
             }
+            // A node shape of another type or naming none crosses as the code of none, which the
+            // first pass refuses at its place.
+            let shape = node.shape.0.map_or(NodeShapeCode::Unnamed as u8, |shape| {
+                comb_engine::shape::NodeShape::ALL
+                    .iter()
+                    .position(|&of| of == shape.into())
+                    .map_or(NodeShapeCode::Unnamed as u8, |code| code as u8)
+            });
+            columns.shape.push(shape);
             columns.push_content(index, node.content.0.as_ref(), &mut texts, &mut names);
             columns.content.end_node();
         }
@@ -231,6 +244,7 @@ impl OwnedColumns {
             x: &self.x,
             y: &self.y,
             width: &self.width,
+            shape: &self.shape,
             content: self.content.view(),
             refused: self.refused,
         }
@@ -615,6 +629,7 @@ mod tests {
             x: _,
             y: _,
             width: _,
+            shape: _,
             content: _,
         } = NodeInput::default();
         let node = [
@@ -622,9 +637,10 @@ mod tests {
             ("x", Value::Number(0.0)),
             ("y", Value::Number(0.0)),
             ("width", Value::Number(100.0)),
+            ("shape", Value::Text("diamond".to_owned())),
             ("content", titled("A")),
         ];
-        let required = ["id", "x", "y", "width", "content"].map(|name| (name, true));
+        let required = ["id", "x", "y", "width", "shape", "content"].map(|name| (name, true));
         assert_refusable::<NodeInput>(&node, &required);
     }
 

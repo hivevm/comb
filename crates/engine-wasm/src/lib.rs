@@ -35,8 +35,8 @@ pub use graph_data::{
     Arrow, ArrowCode, ContentElement, DirectionCode, EdgeField, EdgeInput, EdgePatch, ElementHit,
     ElementKind, Field, GraphDataProblem, GraphList, KindCode, LabelInput, MAX_COLUMNS,
     MAX_CONTENT_UNITS, MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_ROWS, MAX_SEGMENTS, MAX_TEXT,
-    NodeContent, NodeField, NodeInput, NodePatch, Pair, RoleCode, Segment, Side, SideCode,
-    TextRole, Trend, TrendDirection,
+    NodeContent, NodeField, NodeInput, NodePatch, NodeShape, NodeShapeCode, Pair, RoleCode,
+    Segment, Side, SideCode, TextRole, Trend, TrendDirection,
 };
 
 use kept::{ContentStore, Drawn};
@@ -457,17 +457,17 @@ impl Engine {
     /// (ADR-0010), each in slot order, and serde-wasm-bindgen converts nothing of a load. Of the
     /// nodes: the identifiers as pieces of at most 2^28 UTF-16 code units, each ending where a
     /// value ends, with the boundaries across all pieces in UTF-16 code units, the numbers as
-    /// `Float64Array`, the content as the columns of `ContentColumns`, its texts in pieces as the
-    /// identifiers are, with per text whether it is a text, and the first value the shell refused
-    /// by its type, the index of its node, the code of its `NodeField`, and for a shape of content
-    /// its row and column, or none. Each node is as high as its content lays out to in the fonts
-    /// `setFont` handed over (ADR-0013). Of the edges: the identifiers, sources, targets, and label
-    /// texts each as pieces with their boundaries, per label text whether it is a text; whether a
-    /// label, its background, and a dash are present, as bytes; the label's `t` and offset, the
-    /// background, the colour, and the dash and gap as `Float64Array`; the arrowhead and the sides
-    /// as the codes of `ArrowCode` and `SideCode`; and the first value the shell refused by its
-    /// type, the index of its edge and the code of its `EdgeField`, or none. A refused load leaves
-    /// the loaded graph as it was.
+    /// `Float64Array`, the node shapes as the codes of `NodeShapeCode`, the content as the columns
+    /// of `ContentColumns`, its texts in pieces as the identifiers are, with per text whether it is
+    /// a text, and the first value the shell refused by its type, the index of its node, the code
+    /// of its `NodeField`, and for a shape of content its row and column, or none. Each node is as
+    /// high as its content lays out to in the fonts `setFont` handed over (ADR-0013). Of the edges:
+    /// the identifiers, sources, targets, and label texts each as pieces with their boundaries, per
+    /// label text whether it is a text; whether a label, its background, and a dash are present, as
+    /// bytes; the label's `t` and offset, the background, the colour, and the dash and gap as
+    /// `Float64Array`; the arrowhead and the sides as the codes of `ArrowCode` and `SideCode`; and
+    /// the first value the shell refused by its type, the index of its edge and the code of its
+    /// `EdgeField`, or none. A refused load leaves the loaded graph as it was.
     #[wasm_bindgen(js_name = loadGraph)]
     #[expect(
         clippy::too_many_arguments,
@@ -485,6 +485,7 @@ impl Engine {
         x: &[f64],
         y: &[f64],
         width: &[f64],
+        shape: &[u8],
         row_bounds: Vec<u32>,
         element_bounds: Vec<u32>,
         kinds: Vec<u8>,
@@ -581,6 +582,7 @@ impl Engine {
             x,
             y,
             width,
+            shape,
             content: content.view(),
             refused,
         };
@@ -916,7 +918,16 @@ impl Engine {
     /// from those the graph holds besides the node's.
     fn update(&mut self, slot: u32, id: &str, patch: &NodePatch) -> Result<(), CallRefusal> {
         let held = self.content.held_besides(slot);
-        let Some((content, height)) = patch_of(id, patch, &self.fonts, held)? else {
+        // A slot that holds no node is refused below as a slot, whatever node shape it held.
+        let shaped = if self.graph.holds_node(slot) {
+            (
+                self.graph.shape(slot),
+                self.graph.sizes()[slot as usize * 2],
+            )
+        } else {
+            (comb_engine::shape::NodeShape::Rectangle, 0.0)
+        };
+        let Some((content, height)) = patch_of(id, shaped, patch, &self.fonts, held)? else {
             return Ok(());
         };
         if !self.graph.holds_node(slot) {
@@ -937,12 +948,12 @@ impl Engine {
         }
         let at = slot as usize * 2;
         let [x, y] = [0, 1].map(|axis| f64::from(self.graph.positions()[at + axis]));
-        let width = self.graph.sizes()[at];
+        let size = [self.graph.sizes()[at], self.graph.sizes()[at + 1]];
         let (content, node) = self.content.of(slot);
         let (mut cells, mut rows, mut placed) = (Vec::new(), Vec::new(), Vec::new());
         content.element_at(
             node,
-            width,
+            (self.graph.shape(slot), size),
             &self.fonts,
             (point.x - x, point.y - y),
             level.into(),
@@ -980,7 +991,9 @@ impl Engine {
                 continue;
             }
             let (content, node) = self.content.of(slot);
+            let width = self.graph.sizes()[slot as usize * 2];
             let height = content.height(node, &self.fonts);
+            let height = graph_data::shaped_height(self.graph.shape(slot), width, height);
             if self.graph.sizes()[slot as usize * 2 + 1] != height {
                 // A slot that holds a node, as the check above found, which no resize refuses.
                 let _ = self.graph.resize_node(slot, height);
@@ -1004,11 +1017,12 @@ impl Engine {
             let sizes = self.graph.sizes();
             let level = level.into();
             for &slot in &self.visible.nodes {
-                let width = sizes[slot as usize * 2];
+                let at = slot as usize * 2;
+                let frame = (self.graph.shape(slot), [sizes[at], sizes[at + 1]]);
                 let (content, node) = self.content.of(slot);
                 let fonts = &self.fonts;
                 laid.clear();
-                content.lay_out(node, width, fonts, &mut cells, &mut rows, &mut laid);
+                content.lay_out(node, frame, fonts, &mut cells, &mut rows, &mut laid);
                 self.drawn.draw(content, node, &cells, &laid, level, fonts);
                 let drawn = cells.iter().zip(&laid);
                 let drawn = drawn.filter(|(cell, _)| drawn_at(&cell.element, level));
@@ -1463,6 +1477,57 @@ mod tests {
     }
 
     #[test]
+    fn a_node_s_content_lies_in_its_node_shape_s_inner_rectangle_and_is_hit_there() {
+        // Verifies: ADR-draft-node-shapes
+        use graph_data::tests::{TITLE, a_and, content, load_into, titled};
+        // Node `b`, at (300, 0), a diamond 100 wide of one title: 64 high as a rectangle, so 128,
+        // its inner rectangle (25, 32) 50 × 64, its title at the padding inside it.
+        let mut engine = fonted();
+        let nodes = a_and(|n| n.shape = NodeShape::Diamond.into());
+        let edges = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &edges), Ok(2));
+        assert_eq!(engine.graph.sizes()[2..], [100.0, 128.0]);
+        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
+        assert_eq!(engine.content_bounds, [0, 1, 2]);
+        assert_eq!(engine.content_rects[4..], [37.0, 42.0, 26.0, 18.0]);
+        // The title is hit where it lies, not where a rectangle lays it out.
+        let title = hit(0, 0, ElementKind::Text, None);
+        assert_eq!(element(&engine, 1, 340.0, 50.0, DetailLevel::Near), title);
+        assert_eq!(element(&engine, 1, 313.0, 15.0, DetailLevel::Near), None);
+        // A patch of content to a circle is refused, and the circle kept.
+        let nodes = a_and(|n| {
+            n.shape = NodeShape::Circle.into();
+            n.content = graph_data::ContentInput::new().into();
+        });
+        assert_eq!(load_into(&mut engine, &nodes, &edges), Ok(2));
+        let patch = NodePatch(vec![("content".to_owned(), titled("t"))]);
+        assert_eq!(
+            engine.update(1, "b", &patch),
+            Err(CallRefusal::Data(GraphDataProblem::ContentInFilledShape {
+                node: "b".into()
+            }))
+        );
+        assert_eq!(engine.graph.sizes()[2..], [100.0, 100.0]);
+        // Once removed, its slot is refused as a slot that holds no node, not by the node shape
+        // the circle held.
+        engine.graph.remove_nodes(&[1]).unwrap();
+        assert_eq!(
+            engine.update(1, "b", &patch),
+            Err(CallRefusal::Slot(SlotError::NoNode { slot: 1 }))
+        );
+        // A patch of a diamond's content lays it out to the diamond's height.
+        let nodes = a_and(|n| n.shape = NodeShape::Diamond.into());
+        assert_eq!(load_into(&mut engine, &nodes, &edges), Ok(2));
+        let two = content(&[&[TITLE], &[TITLE]]);
+        let patch = NodePatch(vec![("content".to_owned(), two.into())]);
+        assert_eq!(engine.update(1, "b", &patch), Ok(()));
+        assert_eq!(
+            engine.graph.sizes()[3],
+            2.0 * (10.0 + 18.0 + 18.0 + 10.0 + 8.0)
+        );
+    }
+
+    #[test]
     fn nodes_of_different_content_are_as_high_as_their_rows_and_are_hit_and_joined_there() {
         // Verifies: ADR-0013
         // Node `a`, 100 wide at (0, 0), holds one title; `b`, at (300, 0), five rows: a title and
@@ -1581,7 +1646,9 @@ mod tests {
             "content".to_owned(),
             named_content(&[&[action("Next", "next")]]).into(),
         )]);
-        let (checked, height) = patch_of("b", &patch, &engine.fonts, 0).unwrap().unwrap();
+        let (checked, height) = patch_of("b", graph_data::RECTANGLE, &patch, &engine.fonts, 0)
+            .unwrap()
+            .unwrap();
         engine.graph.resize_node(1, height).unwrap();
         engine.content.set(1, checked);
         assert_eq!(
@@ -2034,7 +2101,9 @@ mod tests {
         let rows = content(&[&[long], &[body], &[body], &[body], &[body]]);
         let patch = NodePatch(vec![("content".to_owned(), rows.into())]);
         let slot = 1;
-        let (checked, height) = patch_of("b", &patch, &engine.fonts, 0).unwrap().unwrap();
+        let (checked, height) = patch_of("b", graph_data::RECTANGLE, &patch, &engine.fonts, 0)
+            .unwrap()
+            .unwrap();
         engine.graph.resize_node(slot, height).unwrap();
         engine.content.set(slot, checked);
         assert_eq!(engine.graph.sizes()[2..], [100.0, 102.0]);
@@ -2062,7 +2131,7 @@ mod tests {
             "content".to_owned(),
             content(&[&[(KindCode::Unnamed, 1.0, RoleCode::Title, None)]]).into(),
         )]);
-        assert!(patch_of("b", &refused, &engine.fonts, 0).is_err());
+        assert!(patch_of("b", graph_data::RECTANGLE, &refused, &engine.fonts, 0).is_err());
         assert_eq!(engine.graph.sizes()[2..], [100.0, 102.0]);
         // A slot that holds no node is the shell's mistake.
         assert_eq!(
@@ -2090,7 +2159,9 @@ mod tests {
         assert_eq!(engine.drawn.bounds, [0, 0, 0]);
         // A node patched to no rows at all lays out to none, the least height high.
         let patch = NodePatch(vec![("content".to_owned(), content(&[]).into())]);
-        let (checked, height) = patch_of("b", &patch, &engine.fonts, 0).unwrap().unwrap();
+        let (checked, height) = patch_of("b", graph_data::RECTANGLE, &patch, &engine.fonts, 0)
+            .unwrap()
+            .unwrap();
         engine.graph.resize_node(1, height).unwrap();
         engine.content.set(1, checked);
         near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);

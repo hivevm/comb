@@ -188,7 +188,7 @@ impl ContentColumns<'_> {
     }
 
     /// The range of the rows of the node at `node`.
-    pub(super) fn rows(&self, node: usize) -> std::ops::Range<usize> {
+    pub(crate) fn rows(&self, node: usize) -> std::ops::Range<usize> {
         self.row_bounds[node] as usize..self.row_bounds[node + 1] as usize
     }
 

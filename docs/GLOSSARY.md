@@ -66,7 +66,8 @@ to invent.
 - **Moving layer** — what a drag, or an edit at the far level, draws above the edges and the
   particles while the scene keeps its query: the edges at the dragged nodes and the added edges,
   and at the far level the dragged and the added nodes' particles.
-- **Node** — a box on the canvas that stands for one element of the host application's graph.
+- **Node** — an item on the canvas, drawn in its node shape, that stands for one element of the
+  host application's graph.
   _Avoid:_ vertex, block.
 - **Node shape** — the form, from a closed set the engine knows, in which a node is drawn and hit:
   a rectangle, a rounded rectangle, an ellipse, a circle, a ringed circle, a diamond, or a bar.

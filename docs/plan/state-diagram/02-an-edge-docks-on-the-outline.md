@@ -30,7 +30,7 @@ connector.
 
 ## Blocked by
 
-- docs/plan/state-diagram/01-a-node-is-drawn-in-its-node shape.md
+- docs/plan/state-diagram/01-a-node-is-drawn-in-its-shape.md
 
 ## Mode
 

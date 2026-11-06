@@ -4,6 +4,7 @@
 
 use comb_engine::content::{self as layout, Cell, Element, Fonts, Placed, Role};
 use comb_engine::graph::Level;
+use comb_engine::shape::NodeShape;
 use serde::Serialize;
 use tsify::Tsify;
 
@@ -80,12 +81,14 @@ impl ContentData {
         &self.fractions[self.view().segments(element)]
     }
 
-    /// Lays out the content of the node at `node`, `width` wide, in `fonts`, and pushes where its
-    /// elements lie onto `out`; `cells` and `rows` are the caller's to reuse.
+    /// Lays out the content of the node at `node`, of node shape `shape` and `[width, height]`,
+    /// in `fonts`, within its node shape's inner rectangle (ADR-draft-node-shapes), and pushes
+    /// where its elements lie onto `out`, relative to the node's top-left corner; `cells` and
+    /// `rows` are the caller's to reuse.
     pub(crate) fn lay_out<'a>(
         &'a self,
         node: usize,
-        width: f32,
+        (shape, [width, height]): (NodeShape, [f32; 2]),
         fonts: &Fonts,
         cells: &mut Vec<Cell<'a>>,
         rows: &mut Vec<u32>,
@@ -107,10 +110,25 @@ impl ContentData {
                 element: self.element(element, at.text),
             });
         }
-        layout::lay_out(cells, rows, width, fonts, out);
+        let inner = shape.inner(f64::from(width), f64::from(height));
+        let start = out.len();
+        // The inner rectangle moved left and up to whole world units, still within the node, so
+        // that the layout's sums stay as exact in `f32` as they are at the node's corner.
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a share of at most 1 of a width and a height f32 holds"
+        )]
+        let [x, y, inner_width] =
+            [inner.x.floor(), inner.y.floor(), inner.width].map(|value| value as f32);
+        layout::lay_out(cells, rows, inner_width, fonts, out);
+        for placed in &mut out[start..] {
+            placed.x += x;
+            placed.y += y;
+        }
     }
 
-    /// The element of the node at `node`, `width` wide and laid out in `fonts`, whose rectangle
+    /// The element of the node at `node`, of the node shape and size of `frame` and laid out in
+    /// `fonts`, whose rectangle
     /// holds the point `(x, y)` relative to the node's top-left corner, of the elements drawn at
     /// `level` (`layout::drawn_at`, ADR-0013); `cells`, `rows`, and `placed` are the caller's to
     /// reuse.
@@ -121,7 +139,7 @@ impl ContentData {
     pub(crate) fn element_at<'a>(
         &'a self,
         node: usize,
-        width: f32,
+        frame: (NodeShape, [f32; 2]),
         fonts: &Fonts,
         (x, y): (f64, f64),
         level: Level,
@@ -130,7 +148,7 @@ impl ContentData {
         placed: &mut Vec<Placed>,
     ) -> Option<ElementHit> {
         placed.clear();
-        self.lay_out(node, width, fonts, cells, rows, placed);
+        self.lay_out(node, frame, fonts, cells, rows, placed);
         let hit = layout::element_at(cells, placed, x, y, level)?;
         let (row, column, element, at) = self.elements_of(node).nth(hit)?;
         let (kind, action) = match self.element(element, at.text) {
@@ -149,15 +167,15 @@ impl ContentData {
         })
     }
 
-    /// The height the content of the node at `node` lays out to in `fonts`, as the `f32` the engine
-    /// keeps; that of no rows for a node without content, as only the tests build one.
-    pub(crate) fn height(&self, node: usize, fonts: &Fonts) -> f32 {
+    /// The height the content of the node at `node` lays out to in `fonts`, before its node shape
+    /// (`shaped_height`); that of no rows for a node without content, as only the tests build one.
+    pub(crate) fn height(&self, node: usize, fonts: &Fonts) -> f64 {
         let view = self.view();
         let rows = if node + 1 < self.row_bounds.len() {
             view.rows(node)
         } else {
             0..0
         };
-        super::kept_height(view.height(rows, fonts))
+        view.height(rows, fonts)
     }
 }

@@ -28,6 +28,7 @@ export type {
   NodeContent,
   NodeData,
   NodePatch,
+  NodeShape,
   Selection,
   Side,
   TextRole,

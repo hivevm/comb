@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 use comb_engine::content::Fonts;
 use comb_engine::geometry::WORLD_LIMIT;
 use comb_engine::graph::{EdgeSpec, LabelPlacement};
+use comb_engine::shape::NodeShape;
 use comb_engine::stroke::EdgeStyle;
 
 use super::item::{Batch, Edge, Label, Node};
@@ -16,10 +17,11 @@ use super::{
 };
 
 /// The nodes of a batch as the engine takes them: positions and sizes, `x, y` and `width, height`
-/// per slot, and the map from identifier to slot.
+/// per slot, their node shapes, and the map from identifier to slot.
 pub(super) struct Nodes<'a> {
     pub(super) positions: Vec<f32>,
     pub(super) sizes: Vec<f32>,
+    pub(super) shapes: Vec<NodeShape>,
     pub(super) slots: HashMap<&'a str, u32>,
     /// The code units of the strings of all their content, as the budget counted them.
     pub(super) units: u64,
@@ -80,10 +82,32 @@ pub(crate) fn within_by_height(id: &str, y: f32, height: f32) -> Result<(), Grap
 /// keeps.
 #[expect(
     clippy::cast_possible_truncation,
-    reason = "the padding and at most MAX_ROWS rows of a line height of at most MAX_METRIC"
+    reason = "the padding and at most MAX_ROWS rows of a line height of at most MAX_METRIC, \
+              grown by a node shape's inner rectangle, or a width f32 holds"
 )]
 pub(crate) const fn kept_height(height: f64) -> f32 {
     height as f32
+}
+
+/// The height of the node of node shape `shape`, `width` wide, whose content lays out to
+/// `content` high in its inner rectangle, as the engine keeps it (ADR-draft-node-shapes).
+pub(crate) fn shaped_height(shape: NodeShape, width: f32, content: f64) -> f32 {
+    kept_height(shape.height(f64::from(width), content))
+}
+
+/// Refuses content of `rows` rows in the node `id` of the filled node shape `shape`, which holds
+/// none (ADR-draft-node-shapes).
+pub(crate) fn content_fits_shape(
+    id: &str,
+    shape: NodeShape,
+    rows: usize,
+) -> Result<(), GraphDataProblem> {
+    if rows > 0 && !shape.holds_content() {
+        return Err(GraphDataProblem::ContentInFilledShape {
+            node: id.to_owned(),
+        });
+    }
+    Ok(())
 }
 
 /// Checks the nodes, their content in `content` laid out in `fonts`, and flattens them, or names
@@ -96,11 +120,13 @@ pub(super) fn nodes_of<'a>(
     let mut slots = HashMap::with_capacity(batch.nodes.len());
     let mut positions = Vec::with_capacity(batch.nodes.len() * 2);
     let mut sizes = Vec::with_capacity(batch.nodes.len() * 2);
+    let mut shapes = Vec::with_capacity(batch.nodes.len());
     let mut cursor = Cursor::default();
     for (index, node) in batch.nodes.iter().enumerate() {
         let (position, width) = checked_node(node)?;
+        content_fits_shape(node.id, node.shape, content.rows(index).len())?;
         let height = content.check(index, node.id, &mut cursor, fonts)?;
-        let height = kept_height(height);
+        let height = shaped_height(node.shape, width, height);
         within_by_height(node.id, position[1], height)?;
         if slots.insert(node.id, slot(index)?).is_some() {
             return Err(GraphDataProblem::DuplicateNode {
@@ -109,10 +135,12 @@ pub(super) fn nodes_of<'a>(
         }
         positions.extend(position);
         sizes.extend([width, height]);
+        shapes.push(node.shape);
     }
     Ok(Nodes {
         positions,
         sizes,
+        shapes,
         slots,
         units: cursor.units(),
     })
@@ -585,6 +613,7 @@ mod tests {
                     x: 0.0.into(),
                     y: 0.0.into(),
                     width: 1.0.into(),
+                    shape: crate::NodeShape::Rectangle.into(),
                     content: titled("x"),
                 })
                 .collect(),

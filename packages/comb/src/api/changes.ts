@@ -162,9 +162,9 @@ function deliveryOf(change: StoreChange, state: GraphState, bridge: Bridge): Gra
     }
     case "nodeAdded": {
       const slot = state.slots.get(change.id)!;
-      const { id, width } = state.nodes[slot]!;
+      const { id, width, shape } = state.nodes[slot]!;
       const { x, y } = positionAt(bridge.positions(), slot);
-      const node = { id, x, y, width, content: bridge.content(slot) };
+      const node = { id, x, y, width, shape, content: bridge.content(slot) };
       return { kind: change.kind, by: change.by, node };
     }
   }
