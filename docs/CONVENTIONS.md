@@ -109,10 +109,11 @@ skimmed. The design revision drops what prevented nothing
   crate's use of the core.
 - **The UML example's rules of connection are a table of what they refuse.** `allows` in
   `examples/uml/src/rules.ts` answers from the kinds of the two ends and of the relationship,
-  against a set of refused combinations; between a class, an interface, and an abstract class it
-  refuses none, in either direction, and its test writes that table out. No case is needed of a
-  classifier with itself, since Comb refuses every edge of a node with itself (`selfEdge`). A
-  diagram that adds kinds of node adds its refusals here and to the table.
+  against a set of refused combinations; between a class, an interface, an abstract class, and a
+  package it refuses none, in either direction, and its test writes that table out. No case is
+  needed of a node with itself, since Comb refuses every edge of a node with itself (`selfEdge`)
+  and its connect gesture offers none, nor of a class and a package, which never share a diagram.
+  A diagram that adds kinds of node adds its refusals here and to the table.
 - **A ticket names its paths in full.** *What to build* and *Acceptance criteria* write every path
   from the repository root, `packages/comb/src/api/editors.ts` and not `api/editors.ts`, so that
   `scripts/check-plan-modes.sh` reads each one against the protected parts of
