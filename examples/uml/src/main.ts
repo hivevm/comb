@@ -12,6 +12,7 @@ import {
   type DiagramData,
 } from "./class-diagram";
 import { packageDiagram } from "./package-diagram";
+import { stateDiagram } from "./state-diagram";
 import { Diagram } from "./diagram";
 import { fillLegend } from "./legend";
 import type { RelationshipKind } from "./relationships";
@@ -79,14 +80,16 @@ const sidebar = new Sidebar(diagram);
 const choice = element<HTMLSelectElement>("diagram");
 const count = element("count");
 
-/** The diagrams the sidebar chooses between: how each is built, what its count names, and the
- *  kind a connection adds to it. */
+/** The diagrams the sidebar chooses between: how each is built, what its count names, the kind
+ *  a connection adds to it, and whether the legend of the kinds of relationship tells its edges
+ *  apart. */
 const DIAGRAMS: Record<
   string,
   {
     build: (heightOf: Comb["heightOf"]) => DiagramData;
     nouns: [string, string];
     connected: RelationshipKind;
+    legend?: false;
   }
 > = {
   class: {
@@ -95,12 +98,21 @@ const DIAGRAMS: Record<
     connected: "association",
   },
   package: { build: packageDiagram, nouns: ["packages", "dependencies"], connected: "dependency" },
+  // Shown only: it has no classifiers, so the rules refuse every connection.
+  state: {
+    build: stateDiagram,
+    nouns: ["states", "transitions"],
+    connected: "association",
+    legend: false,
+  },
 };
 /** Each diagram as it was left, while another is shown; the example stores nothing beyond the
  *  page. */
 const kept = new Map<string, DiagramData>();
 let shown: string | null = null;
-const paletteItems = document.querySelectorAll<HTMLElement>("#palette [data-kind]");
+const palette = element("palette");
+const legend = element("legend");
+const paletteItems = palette.querySelectorAll<HTMLElement>("[data-kind]");
 
 /** Shows the size of the diagram. */
 function counted(): void {
@@ -116,10 +128,13 @@ async function load(): Promise<UmlLoadReport> {
   if (shown !== null) kept.set(shown, { graph, classifiers, kinds });
   shown = choice.value;
   const next =
-    kept.get(shown) ?? DIAGRAMS[shown]!.build((content, width) => comb.heightOf(content, width));
+    kept.get(shown) ??
+    DIAGRAMS[shown]!.build((content, width, shape) => comb.heightOf(content, width, shape));
   diagram.load(next.graph, next.classifiers, next.kinds, DIAGRAMS[shown]!.connected);
-  // The palette offers what the diagram shown holds.
+  // The palette offers what the diagram shown holds, and is hidden where it offers nothing.
   for (const item of paletteItems) item.hidden = item.dataset.diagram !== shown;
+  palette.hidden = [...paletteItems].every((item) => item.hidden);
+  legend.hidden = DIAGRAMS[shown]!.legend === false;
   counted();
   comb.fitView();
   await comb.whenRendered();
