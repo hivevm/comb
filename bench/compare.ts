@@ -9,14 +9,18 @@
 // follows: each part of the reference workload timed in the run (bench/reference.ts) may differ
 // from the baseline's by at most MARGIN, or the run is refused as taken on a runner not in the
 // state the baseline was taken in. The reference decides only whether to compare, never by how
-// much a number moved. Runs of another size, mode, or GPU than the baseline's are refused as well,
+// much a number moved. A run names the graph it measured, the metric tree where it names none
+// (ADR-0033): the shaped graph's baseline of a kind is bench/baselines/<kind>.shaped.json, a run is
+// compared only with the baseline of its graph, and runs of different graphs have no median. Runs
+// of another size, mode, or GPU than the baseline's are refused as well,
 // as are runs of an attached browser (ADR-0028) or of a CPU slowed by another factor (ADR-0029),
 // and so is a run that names no GPU, as one on a fallback renderer would, and a run without a
 // reference against a baseline with one. Against a baseline without a reference the numbers are
 // compared and the gate is reported as not checked. The median, with the CPU model and each
-// gesture's steps and frames, is written as bench-results/median.json, the file a new baseline is
-// taken from: a median of runs on `main` on a GitHub runner of that kind, saved under the file
-// name the refusal prints in a pull request that says why.
+// gesture's steps and frames, is written as bench-results/median.json, of the shaped graph as
+// bench-results/median.shaped.json, the file a new baseline is taken from: a median of runs on
+// `main` on a GitHub runner of that kind, saved under the file name the refusal prints in a pull
+// request that says why.
 //
 //   bun bench/compare.ts <baselines> <run>...    e.g. bench/baselines bench-results/run-*.json
 //   bun bench/compare.ts <baseline> <run>...     one baseline file, of the runs' CPU model
@@ -25,6 +29,7 @@
 // cannot be compared, the runner kind and the runner gate included.
 import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import type { Graph } from "./options";
 import { PARTS, type Reference } from "./reference";
 
 /** How much a number may exceed its baseline, and a part of the reference differ from the
@@ -63,6 +68,9 @@ export interface Content {
 
 /** The parts of a run of bench/run.ts that are compared. */
 export interface Run {
+  /** The graph the run measured (ADR-0033); absent in a run recorded before, of the metric
+   *  tree. */
+  graph?: Graph;
   copies: number;
   headed?: boolean;
   /** The CPU model of the runner, as bench/run.ts reads it: the runner's kind. */
@@ -141,6 +149,22 @@ export const contentOf = ({ nodes, elements }: Content) =>
 /** The runner kind of a run, as a comparison names it. */
 const on = (run: Run) => (run.cpu ? `on ${run.cpu}` : "on no CPU model");
 
+/** The graph a run measured: the metric tree where it names none. */
+const graphOf = (run: Run): Graph => run.graph ?? "metric-tree";
+
+/** The graph a run measured, as a comparison names it. */
+const ofGraph = (run: Run) => `of the graph ${graphOf(run)}`;
+
+/** What the file names of a graph's baseline and median add before `.json`: nothing for the
+ *  metric tree, `.shaped` for the shaped graph. */
+const suffix = (run: Run) => (graphOf(run) === "metric-tree" ? "" : `.${graphOf(run)}`);
+
+/** The file name of the baseline a run of `run`'s kind and graph is compared with: its kind's name
+ *  and `.json` for the metric tree, `.shaped.json` for the shaped graph (ADR-0033). */
+export function baselineFile(run: Run): string {
+  return `${baselineName(run.cpu ?? "")}${suffix(run)}.json`;
+}
+
 /** The file name of a kind's baseline, without `.json`: the CPU model in lower case, every run of
  *  characters other than a–z and 0–9 one hyphen, and no hyphen at either end. Two models may
  *  share a name; the baseline names its model, and a comparison holds it to the run's. */
@@ -171,6 +195,8 @@ function differ(runs: Run[], first: Run): string | null {
   if (nameless) return nameless;
   const elsewhere = runs.find((run) => run.cpu !== first.cpu);
   if (elsewhere) return `the runs differ: ${on(first)} and ${on(elsewhere)}`;
+  const another = runs.find((run) => graphOf(run) !== graphOf(first));
+  if (another) return `the runs differ: ${ofGraph(first)} and ${ofGraph(another)}`;
   const other = runs.find((run) => setting(run) !== setting(first));
   if (other) return `the runs differ: ${setting(first)} and ${setting(other)}`;
   const referenced = runs.filter((run) => run.reference).length;
@@ -237,6 +263,7 @@ export function median(runs: Run[]): Run | string {
   const gesture = (pick: (run: Run) => Gesture) => gestureMedian(runs, pick);
   const levels = levelsMedian(runs);
   return {
+    ...(graphOf(first) !== "metric-tree" && { graph: graphOf(first) }),
     copies: first.copies,
     headed: first.headed ?? false,
     ...(first.cpu && { cpu: first.cpu }),
@@ -324,6 +351,8 @@ function mismatch(run: Run, baseline: Run): string | null {
   if (!run.cpu) return "the run names no CPU model";
   if (!baseline.cpu) return "the baseline names no CPU model";
   if (run.cpu !== baseline.cpu) return `the run is ${on(run)}, the baseline ${on(baseline)}`;
+  if (graphOf(run) !== graphOf(baseline))
+    return `the run is ${ofGraph(run)}, the baseline ${ofGraph(baseline)}`;
   const nameless = unnamed(run) ?? unnamed(baseline);
   if (nameless) return nameless;
   return setting(run) !== setting(baseline)
@@ -413,7 +442,7 @@ async function readBaselines(
 }
 
 /** The baseline in `file`, or why it is unusable: it is not JSON, or in a directory of kinds its
- *  name is not the one its CPU model derives, so that it would never be picked. */
+ *  name is not the one its CPU model and graph derive, so that it would never be picked. */
 async function readBaseline(file: string, directory: boolean): Promise<Run | string> {
   let baseline: Run;
   try {
@@ -421,34 +450,41 @@ async function readBaseline(file: string, directory: boolean): Promise<Run | str
   } catch {
     return `the baseline ${file} is not JSON`;
   }
-  const own = `${baselineName(baseline.cpu ?? "")}.json`;
+  const own = baselineFile(baseline);
+  const graph = graphOf(baseline) === "metric-tree" ? "" : ` and the graph ${graphOf(baseline)}`;
   return directory && basename(file) !== own
-    ? `the baseline ${file} names ${baseline.cpu ?? "no CPU model"}, whose file is ${own}`
+    ? `the baseline ${file} names ${baseline.cpu ?? "no CPU model"}${graph}, whose file is ${own}`
     : baseline;
 }
 
-/** The kinds that have a baseline, as a refusal names them. */
+/** The kinds that have a baseline, as a refusal names them, a baseline of the shaped graph by its
+ *  kind and graph. */
 function kinds(baselines: Map<string, Run>): string {
-  const named = [...baselines.values()].map((b) => b.cpu ?? "a baseline naming no CPU model");
+  const named = [...baselines.values()].map(
+    (b) =>
+      (b.cpu ?? "a baseline naming no CPU model") +
+      (graphOf(b) === "metric-tree" ? "" : ` (${ofGraph(b)})`),
+  );
   return `kinds with a baseline: ${named.length ? named.join("; ") : "none"}`;
 }
 
-/** The baseline `run` is compared with, by its path: in a directory the file of the run's kind,
- *  picked by its name, or the one file given; or why there is none. compare() holds the CPU model
- *  the baseline records to the run's, so two models of one file name, or a lone file of another
- *  kind, are not compared. */
+/** The baseline `run` is compared with, by its path: in a directory the file of the run's kind and
+ *  graph, picked by its name, or the one file given; or why there is none. compare() holds the CPU
+ *  model and the graph the baseline records to the run's, so two models of one file name, or a
+ *  lone file of another kind or graph, are not compared. */
 async function choose(run: Run, path: string): Promise<{ picked: string; baseline: Run } | string> {
   const read = await readBaselines(path);
   if (typeof read === "string") return read;
   const { directory, baselines } = read;
   if (!run.cpu) return `the runs name no CPU model; ${kinds(baselines)}`;
-  const own = join(path, `${baselineName(run.cpu)}.json`);
+  const own = join(path, baselineFile(run));
   const picked = directory ? own : path;
   const baseline = baselines.get(picked);
   if (!baseline) {
+    const graph = graphOf(run) === "metric-tree" ? "" : ` and the graph ${graphOf(run)}`;
     return (
-      `no baseline of the kind ${run.cpu} in ${path}; ${kinds(baselines)}. ` +
-      `A baseline of this kind is saved as ${own}`
+      `no baseline of the kind ${run.cpu}${graph} in ${path}; ${kinds(baselines)}. ` +
+      `A baseline of this kind${graph ? " and graph" : ""} is saved as ${own}`
     );
   }
   return { picked, baseline };
@@ -462,7 +498,7 @@ async function main(baselinePath: string, runPaths: string[]): Promise<number> {
     return 2;
   }
   mkdirSync("bench-results", { recursive: true });
-  writeFileSync("bench-results/median.json", JSON.stringify(run, null, 2) + "\n");
+  writeFileSync(`bench-results/median${suffix(run)}.json`, JSON.stringify(run, null, 2) + "\n");
   const chosen = await choose(run, baselinePath);
   if (typeof chosen === "string") {
     say("error", `Not compared: ${chosen}.`);

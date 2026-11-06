@@ -32,7 +32,7 @@ import { cpus } from "node:os";
 import type { LoadReport } from "../examples/metric-tree/src/main";
 import { chromiumEnv } from "./chromium";
 import { contentOf, gestures, type LEVELS, type Run } from "./compare";
-import { browserFor, cpuThrottleFor } from "./options";
+import { browserFor, cpuThrottleFor, graphFor } from "./options";
 import { gesturesAtFitted, type View } from "./fitted";
 import { PARTS, referenceWorkload } from "./reference";
 
@@ -42,6 +42,7 @@ const HEADED = Boolean(process.env.BENCH_HEADED);
 // Read before anything starts, so that a value the run cannot take refuses it at once.
 const BROWSER = browserFor(process.env);
 const CPU_THROTTLE = cpuThrottleFor(process.env);
+const GRAPH = graphFor(process.env);
 const STEPS = 120;
 const ACTION_BUDGET_MS = Number(process.env.BENCH_ACTION_MS ?? 30_000);
 const LOAD_TIMEOUT_MS = 300_000;
@@ -604,6 +605,7 @@ try {
     const result = await measure(page);
     const commit = (await Bun.$`git describe --always --dirty`.nothrow().text()).trim();
     const record = {
+      graph: GRAPH,
       date: new Date().toISOString(),
       commit,
       headed: HEADED || attached,
