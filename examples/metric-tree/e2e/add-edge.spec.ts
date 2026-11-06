@@ -103,11 +103,12 @@ test("with loops allowed, addEdge draws a loop above the node, its arrowhead int
   await open(page, "?loops=allow");
   await loaded(page, LOOPED, { x: 100, y: -100, scale: 2 });
   await page.evaluate((added) => window.comb.addEdge(added), LOOP);
+  // `api` fills in the top for both sides of a loop the host names no side of.
   expect(await told(page)).toEqual([
     {
       kind: "edgeAdded",
       by: "host",
-      edge: { ...LOOP, arrow: "end", sourceSide: "right", targetSide: "left" },
+      edge: { ...LOOP, arrow: "end", sourceSide: "top", targetSide: "top" },
     },
   ]);
   const drawn = await page.evaluate(async () => {
@@ -115,17 +116,7 @@ test("with loops allowed, addEdge draws a loop above the node, its arrowhead int
     const { edges, edgeLabels } = window.inspect();
     return { edges, labels: edgeLabels.map(({ edge, x, y }) => ({ edge, x, y })) };
   });
-  // `addEdge` fills in the right side, which loops on the right: `top` is asked for below.
-  expect(drawn.edges).toEqual([
-    { id: "a-a", source: { x: 220, y: 316 }, target: { x: 220, y: 348 } },
-  ]);
-  await page.evaluate(() => window.comb.updateEdge("a-a", { sourceSide: "top" }));
-  const top = await page.evaluate(async () => {
-    await window.comb.whenRendered();
-    const { edges, edgeLabels } = window.inspect();
-    return { edges, labels: edgeLabels.map(({ edge, x, y }) => ({ edge, x, y })) };
-  });
-  expect(top).toEqual({
+  expect(drawn).toEqual({
     edges: [{ id: "a-a", source: { x: 55, y: 300 }, target: { x: 165, y: 300 } }],
     labels: [{ edge: "a-a", x: 110, y: 135 }],
   });

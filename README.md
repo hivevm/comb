@@ -187,7 +187,8 @@ every edge at them, and `removeEdges(ids)` those edges, without a load. `addEdge
 edge between two nodes the graph holds, and `updateEdge(id, patch)` changes an edge's `color`,
 `dash`, `arrow`, `label`, `sourceSide`, or `targetSide`, `null` clearing a dash or a label. An
 edge leaves its source by `sourceSide` and enters its target by `targetSide`, each `top`, `right`,
-`bottom`, or `left`, by default `right` and `left`. `onChange` tells every
+`bottom`, `left`, or `outline`, by default `right` and `left`, and `top` for both of a loop, an
+edge from a node back to itself, which is drawn on that side of its node. `onChange` tells every
 change of the graph, a `GraphChange` that `comb` exports, typed by its `kind` and by `by`, `"user"`
 or `"host"`: `loaded` after `load`, `nodeAdded` with the node as Comb took it after `addNode`,
 `nodeUpdated` with the merged patch after `updateNode`, `nodesRemoved` with the nodes and the edges

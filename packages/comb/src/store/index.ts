@@ -43,9 +43,11 @@ export interface EdgeData {
   id: string;
   source: string;
   target: string;
-  /** What it leaves its source by, a side or the outline, `right` where left out (ADR-0031). */
+  /** What it leaves its source by, a side or the outline, `right` where left out, and `top` for a
+   *  loop (ADR-0031). */
   sourceSide?: Dock;
-  /** What it enters its target by, a side or the outline, `left` where left out. */
+  /** What it enters its target by, a side or the outline, `left` where left out, and `top` for a
+   *  loop. */
   targetSide?: Dock;
   color?: number;
   dash?: readonly [number, number];
