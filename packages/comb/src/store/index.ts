@@ -3,18 +3,21 @@
 // a drag moved its nodes (ADR-0027); the point a connection is dragged to lives in interaction, and
 // `pointerVersion` tells them that it moved.
 import { createStore } from "zustand/vanilla";
-import type { NodeContent } from "../bridge";
+import type { NodeContent, NodeShape } from "../bridge";
 
-export type { ContentElement, NodeContent, TextRole } from "../bridge";
+export type { ContentElement, NodeContent, NodeShape, TextRole } from "../bridge";
 
-/** A node as the host application hands it over: `x` and `y` are its initial position, and
- *  `content` what it shows, rows of weighted columns, from which Comb computes its height
- *  (ADR-0013). */
+/** A node as the host application hands it over: `x` and `y` are its initial position, `shape`
+ *  the node shape it is drawn and hit in, and `content` what it shows, rows of weighted columns,
+ *  from which and its node shape Comb computes its height (ADR-0013, ADR-draft-node-shapes). */
 export interface NodeData {
   id: string;
   x: number;
   y: number;
   width: number;
+  /** Its node shape, `rectangle` where left out; a circle, a ringed circle, and a bar hold no
+   *  content. */
+  shape?: NodeShape;
   content: NodeContent;
 }
 
@@ -70,10 +73,10 @@ export interface EdgePatch {
   label?: EdgeLabelData | null;
 }
 
-/** A node as the store keeps it: its identifier and its width. Its position, its content, and
- *  its height are the engine's (ADR-0011, ADR-0013); a new object for every change of its
- *  content, so that a view tells the change by identity. */
-export type NodeView = Pick<NodeData, "id" | "width">;
+/** A node as the store keeps it: its identifier, its width, and its node shape, which `api`
+ *  fills in. Its position, its content, and its height are the engine's (ADR-0011, ADR-0013); a
+ *  new object for every change of its content, so that a view tells the change by identity. */
+export type NodeView = Pick<NodeData, "id" | "width" | "shape">;
 
 /** A graph as the store takes it once the bridge took it: of each node what the store keeps. */
 export interface KeptGraph {
@@ -273,7 +276,7 @@ function loadedFrom(state: GraphView, graph: KeptGraph, idUnits: number): Partia
   const edgeSlots = new Map<string, number>();
   for (let slot = 0; slot < graph.edges.length; slot++) edgeSlots.set(graph.edges[slot]!.id, slot);
   return {
-    nodes: graph.nodes.map(({ id, width }) => ({ id, width })),
+    nodes: graph.nodes.map(({ id, width, shape }) => ({ id, width, shape })),
     slots,
     edgeSlots,
     edges: graph.edges,
@@ -421,10 +424,10 @@ export function createGraphStore() {
     movesVersion: 0,
     pointerVersion: 0,
     load: (graph, idUnits) => set((state) => loadedFrom(state, graph, idUnits)),
-    addNode: ({ id, width }, slot) =>
+    addNode: ({ id, width, shape }, slot) =>
       set((state) => {
         const nodes = state.nodes.slice();
-        nodes[slot] = { id, width };
+        nodes[slot] = { id, width, shape };
         return {
           nodes,
           slots: new Map(state.slots).set(id, slot),

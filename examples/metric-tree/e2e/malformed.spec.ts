@@ -1335,6 +1335,7 @@ function installKinds() {
     beyondWorld: nodes({ x: 3e38, width: 3e38 }),
     invalidSize: nodes({ width: -1 }),
     invalidContentShape: nodes({ content: [5] }),
+    contentInFilledShape: nodes({ shape: "circle" }),
     tooManyRows: nodes({ content: Array.from({ length: 9 }, () => [title]) }),
     tooManyColumns: nodes({ content: [Array.from({ length: 7 }, () => title)] }),
     invalidElementKind: element({ kind: "chart" }),
@@ -1407,5 +1408,5 @@ test("load and the methods that edit the graph throw every kind of GraphDataProb
   const thrown = await page.evaluate(everyKind);
   expect(errors).toEqual([]);
   expect(thrown).toEqual(Object.fromEntries(Object.keys(thrown).map((kind) => [kind, kind])));
-  expect(Object.keys(thrown).length).toBe(35);
+  expect(Object.keys(thrown).length).toBe(36);
 });

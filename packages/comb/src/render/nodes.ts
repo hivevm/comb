@@ -1,11 +1,11 @@
 // The nodes layer at the near and the middle level (ADR-0012): a pooled view per node in view, its
-// box and its content (ADR-0013), every text as `BitmapText`. The engine lays the content out and
-// the view draws each text where the engine placed it, cut where it was cut, an action's in the
-// link colour, a badge's on its pill, each progress bar as the segments and the track the engine
-// cut its bar into, and each metric as its caption, its value, and its trend's text and arrow, the
-// last two in the trend's colour, and each icon as a sprite of the texture the host application
-// registered under its name, fitted into its square. It draws what the query placed, which elements
-// a level of detail keeps being the engine's to decide.
+// node shape (ADR-draft-node-shapes) and its content (ADR-0013), every text as `BitmapText`. The
+// engine lays the content out and the view draws each text where the engine placed it, cut where it
+// was cut, an action's in the link colour, a badge's on its pill, each progress bar as the segments
+// and the track the engine cut its bar into, and each metric as its caption, its value, and its
+// trend's text and arrow, the last two in the trend's colour, and each icon as a sprite of the
+// texture the host application registered under its name, fitted into its square. It draws what the
+// query placed, which elements a level of detail keeps being the engine's to decide.
 import {
   BitmapFontManager,
   BitmapText,
@@ -21,6 +21,7 @@ import {
   ROLE_NAMES,
   type ContentElement,
   type FontMetrics,
+  type NodeShape,
   type Placed,
   type TextRole,
 } from "../bridge";
@@ -34,6 +35,14 @@ const SELECTED_STROKE = 0x3b82f6;
 const TEXT_COLOR = 0x1f2430;
 const CAPTION_COLOR = 0x6b7280;
 const LINK_COLOR = 0x2563eb;
+/** The radius of a rectangle's corners and of a rounded rectangle's, the engine's
+ *  `RECTANGLE_RADIUS` and `ROUNDED_RADIUS`, which it hits them by. */
+const RECTANGLE_RADIUS = 6;
+const ROUNDED_RADIUS = 10;
+/** The width of a ringed circle's ring. */
+const RING_WIDTH = 2;
+/** The colour of a node shape the engine fills, the near-black of a node's texts. */
+const FILLED_COLOR = TEXT_COLOR;
 /** The colour of the rest of a progress bar, past its segments. */
 const TRACK_COLOR = 0xe5e7eb;
 /** The radius of a progress bar's ends, at most half its height and half its length. */
@@ -345,10 +354,69 @@ class ElementPool {
   readonly sprites: Sprite[] = [];
 }
 
-/** One node: its box, its badges' pills, its progress bars, its metrics' arrows, its texts, and
- *  its icons. A pooled view, bound to one node slot at a time; its texts and sprites come from the
- *  layer's element pool. */
+/** Draws the node shape `shape` of a node `width` × `height` into `box`, its outline in the node's
+ *  rectangle at its origin (ADR-draft-node-shapes): a content node shape white with the border
+ *  of a node, blue and wider while it is selected; a filled one in the near-black of a node's
+ *  texts, the ringed circle as a filled circle of half the radius inside an unfilled ring, and
+ *  outlined in blue while it is selected. */
+function drawShape(
+  box: Graphics,
+  shape: NodeShape,
+  width: number,
+  height: number,
+  selected: boolean,
+): void {
+  box.clear();
+  const [cx, cy] = [width / 2, height / 2];
+  const border = { color: selected ? SELECTED_STROKE : NODE_STROKE, width: selected ? 2 : 1 };
+  const outlined = OUTLINES[shape];
+  if (outlined) {
+    outlined(box, width, height).fill({ color: NODE_FILL }).stroke(border);
+    return;
+  }
+  if (shape === "bar") {
+    box.rect(0, 0, width, height).fill({ color: FILLED_COLOR });
+    if (selected)
+      box.rect(-2, -2, width + 4, height + 4).stroke({ color: SELECTED_STROKE, width: 2 });
+    return;
+  }
+  if (shape === "ringed-circle") {
+    const ring = Math.max(cx - RING_WIDTH / 2, 0);
+    box.circle(cx, cy, ring).stroke({ color: FILLED_COLOR, width: RING_WIDTH });
+  }
+  box.circle(cx, cy, shape === "circle" ? cx : cx / 2).fill({ color: FILLED_COLOR });
+  if (selected) box.circle(cx, cy, cx + 2).stroke({ color: SELECTED_STROKE, width: 2 });
+}
+
+/** The outline of each content node shape in a node `width` × `height`, which `drawShape` fills
+ *  and borders as a node. */
+const OUTLINES: Partial<
+  Record<NodeShape, (box: Graphics, width: number, height: number) => Graphics>
+> = {
+  rectangle: (box, width, height) => box.roundRect(0, 0, width, height, RECTANGLE_RADIUS),
+  "rounded-rectangle": (box, width, height) => box.roundRect(0, 0, width, height, ROUNDED_RADIUS),
+  ellipse: (box, width, height) => box.ellipse(width / 2, height / 2, width / 2, height / 2),
+  diamond: (box, width, height) =>
+    box.poly([width / 2, 0, width, height / 2, width / 2, height, 0, height / 2]),
+};
+
+/** A part of a node shape a view drew, as its `Graphics` holds it: the kind of the primitive,
+ *  its bounds in its node, and its fill's or its stroke's colour. */
+export interface DrawnOutline {
+  kind: string;
+  action: "fill" | "stroke";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color: number;
+}
+
+/** One node: its node shape, its badges' pills, its progress bars, its metrics' arrows, its texts,
+ *  and its icons. A pooled view, bound to one node slot at a time; its texts and sprites come from
+ *  the layer's element pool. */
 export class NodeGraphic extends Container {
+  /** The node's node shape. */
   private readonly box = new Graphics();
   /** The pills of the node's badges, drawn together. */
   private readonly pills = new Graphics();
@@ -450,6 +518,20 @@ export class NodeGraphic extends Container {
     });
   }
 
+  /** The node shape the view draws, the parts of it its `Graphics` holds. */
+  drawnShape(): { shape: NodeShape; outline: DrawnOutline[] } {
+    const outline = this.box.context.instructions.flatMap((instruction) => {
+      const { action } = instruction;
+      if (action !== "fill" && action !== "stroke") return [];
+      const { path, style } = instruction.data;
+      return path.shapePath.shapePrimitives.map(({ shape }) => {
+        const { x, y, width, height } = shape.getBounds();
+        return { kind: shape.type, action, x, y, width, height, color: style.color };
+      });
+    });
+    return { shape: this.drawn.node?.shape ?? "rectangle", outline };
+  }
+
   /** The size the node was last drawn at. */
   size = { width: 0, height: 0 };
 
@@ -479,11 +561,7 @@ export class NodeGraphic extends Container {
       return;
     this.drawn = { node, width, height, selected, elements: end - start, icons: icons.version };
     this.size = { width, height };
-    this.box
-      .clear()
-      .roundRect(0, 0, width, height, 6)
-      .fill({ color: NODE_FILL })
-      .stroke({ color: selected ? SELECTED_STROKE : NODE_STROKE, width: selected ? 2 : 1 });
+    drawShape(this.box, node.shape ?? "rectangle", width, height, selected);
     this.showTexts(textsOf(placed, start, end));
     this.showBars(barsOf(placed, start, end));
     this.showArrows(arrowsOf(placed, start, end));

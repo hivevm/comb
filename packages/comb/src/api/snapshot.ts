@@ -376,24 +376,32 @@ function copied<T>(
   return items;
 }
 
+/** The node shape of a node, `rectangle` where it is left out (ADR-draft-node-shapes). */
+const NODE_SHAPE = "rectangle";
+
 function nodeOf(read: Reader, node: Fields) {
-  const { id, x, y, width, content } = node;
+  const { id, x, y, width, shape, content } = node;
   return {
     id: read.id(id),
     x: read.number(x),
     y: read.number(y),
     width: read.number(width),
+    shape: read.text(shape) ?? NODE_SHAPE,
     content: read.content(content),
   };
 }
 
 /** Writes the node `node` into `columns`, read once by `read`, its content walked straight into
- *  its columns, and returns what the store keeps of it: its identifier and its width, no copy of
- *  its content (ADR-0013). */
+ *  its columns, and returns what the store keeps of it: its identifier, its width, and its node
+ *  shape, no copy of its content (ADR-0013). */
 function written(read: Reader, node: Fields, columns: NodeColumnWriter, limits: Limits) {
-  const { id, x, y, width, content } = node;
-  const kept = { id: read.id(id), width: read.number(width) };
-  columns.node(kept.id, read.number(x), read.number(y), kept.width);
+  const { id, x, y, width, shape, content } = node;
+  const kept: { id: unknown; width: unknown; shape: unknown } = {
+    id: read.id(id),
+    width: read.number(width),
+    shape: read.text(shape) ?? NODE_SHAPE,
+  };
+  columns.node(kept.id, read.number(x), read.number(y), kept.width, kept.shape);
   walkContent(read, content, columnSink(read, columns, limits, kept.id), limits);
   return kept;
 }

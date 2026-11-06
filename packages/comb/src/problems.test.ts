@@ -26,6 +26,7 @@ const DESCRIBE: { [K in Kind]: (problem: Of<K>) => string } = {
   nonFiniteCoordinate: (p) => p.node,
   beyondWorld: (p) => `${p.list} ${p.id} ${p.field} ${p.limit}`,
   invalidSize: (p) => p.node,
+  contentInFilledShape: (p) => p.node,
   invalidContentShape: (p) =>
     `${p.index} ${p.id ?? "-"} ${p.row} ${p.column ?? "-"}: ${p.expected}`,
   tooManyRows: (p) => `${p.node} ${p.limit}`,

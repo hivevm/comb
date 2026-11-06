@@ -108,8 +108,8 @@ const graph = (nodes: readonly PlainNode[], edges: readonly object[] = [], bound
   for (const n of nodes as readonly unknown[]) {
     if (typeof n !== "object" || n === null) columns.noObject();
     else {
-      const { id, x, y, width, content } = n as Record<string, unknown>;
-      columns.node(id, x, y, width);
+      const { id, x, y, width, shape, content } = n as Record<string, unknown>;
+      columns.node(id, x, y, width, shape ?? "rectangle");
       writeContent(columns, content);
     }
   }
@@ -127,7 +127,7 @@ const graph = (nodes: readonly PlainNode[], edges: readonly object[] = [], bound
   return { nodes: columns.columns(), edges: written.columns() } as GraphSnapshot;
 };
 const plain = (patch: NodePatch) => patch as PlainPatch;
-const added = (fields: object) => fields as NodeSnapshot;
+const added = (fields: object) => ({ shape: "rectangle", ...fields }) as NodeSnapshot;
 const edgeOf = (fields: object) =>
   ({ color: 0, arrow: "end", sourceSide: "right", targetSide: "left", ...fields }) as EdgeSnapshot;
 const plainEdge = (patch: object) => patch as PlainEdgePatch;

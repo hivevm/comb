@@ -307,3 +307,51 @@ describe("a slot the shell names that holds nothing", () => {
     }
   });
 });
+
+describe("a node's node shape", () => {
+  test("is a rectangle where left out, kept by the store, and heightOf answers for it", () => {
+    // Verifies: ADR-draft-node-shapes
+    const { store, bridge, host } = editing();
+    const heightAt = (slot: number) => bridge.nodeBuffers().sizes[slot * 2 + 1];
+    // A node loaded without one is a rectangle, as high as before.
+    expect(store.getState().nodes[0]!.shape).toBe("rectangle");
+    expect(host.heightOf(titled("a"), 100)).toBe(heightAt(0)!);
+    expect(host.heightOf(titled("a"), 100, "rectangle")).toBe(heightAt(0)!);
+    // A diamond of the same content is twice as high, its inner rectangle half its height.
+    host.addNode({ ...node("c"), shape: "diamond" });
+    const slot = store.getState().slots.get("c")!;
+    expect(store.getState().nodes[slot]!.shape).toBe("diamond");
+    expect(heightAt(slot)).toBe(2 * heightAt(0)!);
+    expect(host.heightOf(titled("c"), 100, "diamond")).toBe(heightAt(slot)!);
+    // A circle is as high as wide, and a bar 8 high; neither holds content.
+    expect(host.heightOf([], 40, "circle")).toBe(40);
+    expect(host.heightOf([], 40, "ringed-circle")).toBe(40);
+    expect(host.heightOf([], 300, "bar")).toBe(8);
+  });
+
+  test("of another type or naming none is refused naming the node and the field, and content in a filled one naming the node", () => {
+    // Verifies: ADR-draft-node-shapes, Q-7
+    const { store, host } = editing();
+    const before = store.getState();
+    const field = (id: string) => ({
+      kind: "invalidField",
+      list: "nodes",
+      index: 0,
+      id,
+      field: "shape",
+      expected: `"rectangle", "rounded-rectangle", "ellipse", "circle", "ringed-circle", "diamond", or "bar"`,
+    });
+    for (const shape of ["hexagon", 5]) {
+      const shaped = { ...node("c"), shape } as unknown as NodeData;
+      expect(refusal(() => host.addNode(shaped))).toEqual(field("c"));
+      expect(refusal(() => host.load({ nodes: [shaped], edges: [] }))).toEqual(field("c"));
+      expect(refusal(() => host.heightOf([], 100, shape as never))).toEqual(field(""));
+    }
+    const filled = { ...node("c"), shape: "ringed-circle" } as const;
+    expect(refusal(() => host.addNode(filled))).toEqual({
+      kind: "contentInFilledShape",
+      node: "c",
+    });
+    expect(store.getState()).toBe(before);
+  });
+});

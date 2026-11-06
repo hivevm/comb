@@ -36,6 +36,7 @@ import init, {
   type NodeContent,
   type NodeInput,
   type NodePatch,
+  type NodeShape,
   type NumberError,
   type SlotError,
   type TextRole,
@@ -53,6 +54,7 @@ export type {
   Hit,
   NodeInput,
   NodePatch,
+  NodeShape,
   NumberError,
   SlotError,
   TextRole,
@@ -512,15 +514,16 @@ function wrap(exports: InitOutput): Bridge {
   return guarded(TEST_MODE ? detaching(bridge, memory) : bridge);
 }
 
-/** Hands `engine` the load of `snapshot`, a parameter per column. */
-function load(engine: Engine, { nodes, edges }: GraphSnapshot): number {
-  const { ids, idBounds, x, y, width, content: c, refused } = nodes;
-  const columns = [
+/** The columns of a load's nodes, as `loadGraph` takes them before the first value refused. */
+function nodeValues(nodes: NodeColumns) {
+  const { ids, idBounds, x, y, width, shape, content: c } = nodes;
+  return [
     ids,
     idBounds,
     x,
     y,
     width,
+    shape,
     c.rowBounds,
     c.elementBounds,
     c.kinds,
@@ -538,6 +541,12 @@ function load(engine: Engine, { nodes, edges }: GraphSnapshot): number {
     c.nameBounds,
     c.nameValid,
   ] as const;
+}
+
+/** Hands `engine` the load of `snapshot`, a parameter per column. */
+function load(engine: Engine, { nodes, edges }: GraphSnapshot): number {
+  const { refused } = nodes;
+  const columns = nodeValues(nodes);
   const e = edges;
   const edgeColumnValues = [
     e.ids,

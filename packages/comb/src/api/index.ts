@@ -41,6 +41,7 @@ import {
   type NodeContent,
   type NodeData,
   type NodePatch,
+  type NodeShape,
   type NodeView,
   type Selection,
   type Viewport,
@@ -106,14 +107,16 @@ export interface Comb {
    *  the limits of a load, and changes nothing then (Q-7); and an `EngineLostError` once the
    *  engine is lost. */
   addNode(node: NodeData): void;
-  /** The height, in world units, a node of `content` and `width` lays out to in the fonts Comb
-   *  draws with: the height `addNode` gives such a node, without one in the graph and changing
-   *  nothing. Content whose rows hold elements of the same kinds, row by row and in the same
-   *  order, has the same height whatever its texts and width, so a layout asks once per shape.
-   *  Throws a `GraphDataError` with the problem `addNode` gives the content or the width, its
-   *  texts counted against the budget alone, as in an empty graph, naming the node `""` (Q-7),
-   *  and an `EngineLostError` once the engine is lost (ADR-0026). */
-  heightOf(content: NodeContent, width: number): number;
+  /** The height, in world units, a node of `content`, `width`, and the node shape `shape`,
+   *  `rectangle` where left out, lays out to in the fonts Comb draws with: the height `addNode`
+   *  gives such a node, without one in the graph and changing nothing. Content whose rows hold
+   *  elements of the same kinds, row by row and in the same order, has the same height in a
+   *  rectangle whatever its texts and width, so a layout asks once per shape of content; a
+   *  circle and a ringed circle are as high as wide, and a bar 8 high (ADR-draft-node-shapes).
+   *  Throws a `GraphDataError` with the problem `addNode` gives the content, the width, or the
+   *  node shape, its texts counted against the budget alone, as in an empty graph, naming the
+   *  node `""` (Q-7), and an `EngineLostError` once the engine is lost (ADR-0026). */
+  heightOf(content: NodeContent, width: number, shape?: NodeShape): number;
   /** Adds `edge` between two nodes the graph holds, without a load, drawn with its colour, dash
    *  pattern, arrowhead, and label (G-11). Throws a `GraphDataError` where the graph holds an edge
    *  `edge.id` already (`duplicateEdge`) or no node at one of its ends (`missingNode`), where the

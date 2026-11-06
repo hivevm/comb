@@ -21,7 +21,7 @@
 // the world's origin the viewport lies; the particles, whose shader takes their container's whole
 // transform, keep the rounding they had.
 import { Application, BitmapText, Container } from "pixi.js";
-import type { Bridge, Detail, Level, NodeContent, Rect } from "../bridge";
+import type { Bridge, Detail, Level, NodeContent, NodeShape, Rect } from "../bridge";
 import type { GraphView } from "../store";
 import { EdgesContainer, type EdgeLayer, type MeshSize } from "./edges";
 import { EdgeFill } from "./edges-canvas";
@@ -30,6 +30,7 @@ import {
   NodeGraphic,
   NodesContainer,
   type DrawnArrow,
+  type DrawnOutline,
   type DrawnPill,
   type DrawnSprite,
   type DrawnText,
@@ -70,7 +71,9 @@ export interface SceneSnapshot {
    *  `arrows` the triangles of metrics' trends it draws, each its points and its colour,
    *  `icons` the sprites of icons it draws, each the name its texture is registered under and its
    *  rectangle, `content` the node's content as the engine keeps it, built
-   *  when asked, and `title` the text of its first title; a particle draws none of them. */
+   *  when asked, `title` the text of its first title, `shape` its node shape, and `outline` the
+   *  parts of it the view draws, each its primitive, its bounds, and its fill's or its stroke's
+   *  colour; a particle draws none of them. */
   nodes: {
     id: string;
     x: number;
@@ -79,6 +82,8 @@ export interface SceneSnapshot {
     height: number;
     title?: string;
     content?: NodeContent;
+    shape?: NodeShape;
+    outline?: DrawnOutline[];
     texts?: (Omit<DrawnText, "pill"> & { drawnWidth: number; fill: unknown })[];
     pills?: DrawnPill[];
     bars?: DrawnPill[];
@@ -325,6 +330,7 @@ export class Scene {
           x: view.x,
           y: view.y,
           ...this.contentOf((view as NodeGraphic).slot),
+          ...(view as NodeGraphic).drawnShape(),
           texts: (view as NodeGraphic).inspected(),
           pills: (view as NodeGraphic).drawnPills(),
           bars: (view as NodeGraphic).drawnBars(),

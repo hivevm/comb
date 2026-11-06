@@ -9,10 +9,12 @@ import {
   EdgeField,
   KindCode,
   NodeField,
+  NodeShapeCode,
   RoleCode,
   SideCode,
   type Arrow,
   type ContentElement,
+  type NodeShape,
   type Side,
   type TextRole,
   type TrendDirection,
@@ -53,18 +55,19 @@ export interface ContentColumns {
 }
 
 /** The nodes of a load as the engine's `loadGraph` takes them (ADR-0010), each column in slot
- *  order: the identifiers as the values concatenated and cut into pieces, each ending where a
- *  value ends, with their boundaries in UTF-16 code units across all pieces, one more than there
- *  are nodes, a refused value empty; the numbers as the host application handed them; the
- *  content as its columns; and the first value the engine's first pass refuses by its type, the
- *  index of its node and its field, `item` for a node that is no object, and for a shape of
- *  content its row and, below a row, its column. */
+ *  order: the identifiers as the values concatenated and cut into pieces, each ending where a value
+ *  ends, with their boundaries in UTF-16 code units across all pieces, one more than there are
+ *  nodes, a refused value empty; the numbers as the host application handed them; the node shapes
+ *  as codes, one for a string that names none; the content as its columns; and the first value the
+ *  engine's first pass refuses by its type, the index of its node and its field, `item` for a node
+ *  that is no object, and for a shape of content its row and, below a row, its column. */
 export interface NodeColumns {
   readonly ids: string[];
   readonly idBounds: Uint32Array;
   readonly x: Float64Array;
   readonly y: Float64Array;
   readonly width: Float64Array;
+  readonly shape: Uint8Array;
   readonly content: ContentColumns;
   readonly refused:
     | {
@@ -82,8 +85,9 @@ export interface NodeColumns {
  *  element is a progress bar, whose segments follow it before its row ends. */
 export interface NodeColumnWriter {
   /** Starts the next node: an identifier that is a string is one, a number that is a number is
-   *  one, and any other value is refused by its type, the first of them named. */
-  node(id: unknown, x: unknown, y: unknown, width: unknown): void;
+   *  one, a node shape that is a string crosses as its code, and any other value is refused by
+   *  its type, the first of them named. */
+  node(id: unknown, x: unknown, y: unknown, width: unknown, shape: unknown): void;
   /** The node's content is no list: refused by its type, and the node holds no rows. */
   noContent(): void;
   /** The next element of the row: an element's kind and role cross as their codes, its weight as
@@ -267,6 +271,7 @@ class NodeWriter implements NodeColumnWriter {
   private readonly x: Float64Array;
   private readonly y: Float64Array;
   private readonly width: Float64Array;
+  private readonly shape: ReturnType<typeof codeColumn<NodeShapeCode>>;
   /** The index of the node being written, and whether one is. */
   private at = 0;
   private open = false;
@@ -297,6 +302,7 @@ class NodeWriter implements NodeColumnWriter {
     this.x = new Float64Array(count);
     this.y = new Float64Array(count);
     this.width = new Float64Array(count);
+    this.shape = codeColumn(count, SHAPES, NodeShapeCode.Unnamed);
     this.rowBounds = new Uint32Array(count + 1);
     this.elementBounds = new Uint32Array(count + 1);
     this.kinds = new Uint8Array(count);
@@ -325,13 +331,14 @@ class NodeWriter implements NodeColumnWriter {
     else this.refuse(field);
   }
 
-  node(id: unknown, x: unknown, y: unknown, width: unknown): void {
+  node(id: unknown, x: unknown, y: unknown, width: unknown, shape: unknown): void {
     if (this.open) this.endNode();
     this.open = true;
     if (!this.ids.add(id)) this.refuse(NodeField.Id);
     this.number(this.x, x, NodeField.X);
     this.number(this.y, y, NodeField.Y);
     this.number(this.width, width, NodeField.Width);
+    if (this.shape.add(this.at, shape)) this.refuse(NodeField.Shape);
   }
 
   noObject(): void {
@@ -483,6 +490,7 @@ class NodeWriter implements NodeColumnWriter {
       x: this.x.subarray(0, this.at),
       y: this.y.subarray(0, this.at),
       width: this.width.subarray(0, this.at),
+      shape: this.shape.column(this.at),
       content: this.contentColumns(),
       refused: this.refused,
     };
@@ -590,9 +598,18 @@ export interface EdgeColumnWriter {
   columns(): EdgeColumns;
 }
 
-/** The code of each arrowhead and side by its name, typed by the generated names so that one
- *  added in the engine fails here until it has its code. */
+/** The code of each arrowhead, side, and node shape by its name, typed by the generated names so
+ *  that one added in the engine fails here until it has its code. */
 const ARROWS: Readonly<Record<Arrow, ArrowCode>> = { end: ArrowCode.End, none: ArrowCode.None };
+const SHAPES: Readonly<Record<NodeShape, NodeShapeCode>> = {
+  rectangle: NodeShapeCode.Rectangle,
+  "rounded-rectangle": NodeShapeCode.RoundedRectangle,
+  ellipse: NodeShapeCode.Ellipse,
+  circle: NodeShapeCode.Circle,
+  "ringed-circle": NodeShapeCode.RingedCircle,
+  diamond: NodeShapeCode.Diamond,
+  bar: NodeShapeCode.Bar,
+};
 const SIDES: Readonly<Record<Side, SideCode>> = {
   top: SideCode.Top,
   right: SideCode.Right,
