@@ -95,7 +95,7 @@ to invent.
 - **Query origin** — the world point near a query's rectangle relative to which the query hands
   over its vertex positions and label points, and at whose screen point the shell draws the world.
 - **Runner kind** — the CPU model a benchmark run records of the machine it ran on; runs are
-  compared only with the baseline of their own kind.
+  compared only with the baseline of their own kind and their graph.
 - **Relationship kind** — what a relationship of a UML class diagram means, one of association,
   directed association, generalization, realization, dependency, aggregation, and composition;
   the UML example tells each by the colour, dash pattern, arrowhead, and edge label of its edge.
@@ -105,6 +105,9 @@ to invent.
   «package», which the UML example shows as a caption of the node's content.
 - **Selection** — the one diagram element the user has picked on the canvas, which the sidebar
   edits and a delete removes.
+- **Shaped graph** — the graph the benchmark measures beside the metric tree, named `shaped`: the
+  metric tree's nodes and edges in the same places, the nodes in the node shapes in turn, every end
+  docked on the outline, and a loop on one node in a hundred.
 - **Side** — one of the four sides of a node, `top`, `right`, `bottom`, or `left`, each with one
   connector; an edge records the side it leaves and the side it enters.
 - **Sidebar** — the host application's HTML panel, outside the canvas, in which the attributes of

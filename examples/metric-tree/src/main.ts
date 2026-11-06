@@ -38,6 +38,7 @@ import {
   newFields,
   NODE_WIDTH,
   retitled,
+  shaped,
   STATUSES,
   titleOf,
   TYPES,
@@ -49,8 +50,13 @@ import {
 /** The type of the data a palette item carries in a drag. */
 const PALETTE_TYPE = "application/x-metric-tree-kind";
 
+/** The graphs the example loads: the metric tree, or, with `?graph=shaped`, the shaped graph the
+ *  benchmark measures beside it (ADR-0033). */
+export type GraphName = "metric-tree" | "shaped";
+
 /** How the last load went: what the benchmark and the browser tests read. */
 export interface LoadReport {
+  graph: GraphName;
   copies: number;
   nodes: number;
   edges: number;
@@ -126,6 +132,8 @@ async function engineAs(form: string): Promise<EngineSource> {
 }
 
 const form = query.get("engine");
+/** The graph `?graph=shaped` asks for, the metric tree without it. */
+const graphName: GraphName = query.get("graph") === "shaped" ? "shaped" : "metric-tree";
 /** How many edges the user connected, for the name of the next. */
 let connected = 0;
 // `?fallback=canvas` lets Comb draw on Canvas 2D where the browser offers no WebGL2.
@@ -134,8 +142,9 @@ const fallback = query.get("fallback") === "canvas";
 const comb = await createComb(element("canvas"), {
   engine: form ? await engineAs(form) : fetch(engineUrl),
   allowCanvasFallback: fallback,
-  // `?loops=allow` allows loops, edges from a node back to itself (ADR-0031).
-  allowLoops: query.get("loops") === "allow",
+  // `?loops=allow` allows loops, edges from a node back to itself (ADR-0031), as the shaped graph
+  // does, whose nodes have loops (ADR-0033).
+  allowLoops: query.get("loops") === "allow" || graphName === "shaped",
   canDelete: (deletion) => (window.canDelete ? window.canDelete(deletion) : true) as boolean,
   // `?connect=none` gives Comb no veto of connections, so that the user connects nothing.
   ...(query.get("connect") === "none"
@@ -250,6 +259,7 @@ async function load(): Promise<LoadReport> {
   ({ graph, fields } = metricTree(Number(copies.value), (content, width) =>
     comb.heightOf(content, width),
   ));
+  if (graphName === "shaped") graph = shaped(graph);
   counted();
   const start = performance.now();
   comb.load(graph);
@@ -257,6 +267,7 @@ async function load(): Promise<LoadReport> {
   await comb.whenRendered();
   const firstFrameMs = performance.now() - start;
   return {
+    graph: graphName,
     copies: Number(copies.value),
     nodes: graph.nodes.length,
     edges: graph.edges.length,
