@@ -56,7 +56,7 @@ each naming the node and, where it has them, the row and column, a label backgro
 not an integer from `0` to `0xFFFFFF`, more than 1,000,000 nodes or edges, an identifier, source, or
 target longer than 256 UTF-16 code units, and identifiers of one load that hold more than 64,000,000
 code units together, and an edge side other than `top`, `right`, `bottom`, and `left`. `api`
-refuses, against the store's map from identifiers to slots (ADR-0009), an identifier `updateNode` or
+refuses, against the store's map from identifiers to slots (ADR-0030), an identifier `updateNode` or
 `removeNodes` names that the graph does not hold (`unknownNode`), one `updateEdge` or `removeEdges`
 names (`unknownEdge`), one `addNode`, `addEdge`, or a user's connection adds that it holds already
 (`duplicateNode`, `duplicateEdge`), and an end of an added edge it does not hold (`missingNode`).
@@ -114,7 +114,8 @@ patched JavaScript's built-ins, such as a setter on `Object.prototype` or a `Sym
 ## Building blocks
 
 The functional core and its shell follow
-[ADR-0009](adr/0009-functional-core-imperative-shell.md).
+[ADR-0030](adr/0030-one-workspace-per-example.md), which restates the superseded ADR-0009 with
+one workspace for each example.
 
 - **Engine** (`crates/engine`) — pure geometry: `geometry` holds edge paths as cubic Bézier curves
   from the connector of a side of one node, the middle of its `top`, `right`, `bottom`, or `left`,
@@ -253,7 +254,7 @@ The functional core and its shell follow
   `updateEdge` reach alike, and a node and an edge of a load's columns by the checks of the node of
   `addNode` and the edge of `addEdge`, mapping the columns' boundaries onto the identifiers and the
   texts of content only once their lengths are checked
-  ([ADR-0009](adr/0009-functional-core-imperative-shell.md)). It is split by concept: `limits` holds
+  ([ADR-0030](adr/0030-one-workspace-per-example.md)). It is split by concept: `limits` holds
   the limits of a load, `field` the lenient reading of a field, `input` the types the host
   application hands over, `strings` the decoding of every string column, `node_columns` and
   `edge_columns` the columns of a load's nodes and edges, `problem` the refusals, `item` the reading
@@ -454,9 +455,9 @@ The functional core and its shell follow
   `window`, bound to its Comb.
 - **UML example** (`examples/uml`) — a second host application, of its own workspace, which
   imports Comb by its entries alone and nothing of the metric tree (G-12,
-  ADR-0030); a sidebar chooses the diagram, the class diagram the one
-  so far, and lists the legend of the kinds of relationship, each a line drawn in its colour, dash
-  pattern, and arrowhead beside its name and label. Chosen, the package diagram
+  ADR-0030); a sidebar chooses between its two diagrams, the class diagram first, and lists the
+  legend of the kinds of relationship, each a line drawn in its colour, dash pattern, and
+  arrowhead beside its name and label, one legend for both. Chosen, the package diagram
   (`src/package-diagram.ts`) shows Comb's modules and crates as nodes of «package» and their
   name and their dependencies as dashed edges with an arrowhead and the label «import» or «use»;
   each diagram is kept as it was left, its edits among it, while the other is shown, for as
@@ -472,13 +473,16 @@ The functional core and its shell follow
   of two text areas, or a package's name, through `updateNode`, and the selected relationship's
   kind and label, or a dependency's «import» or «use», through `updateEdge`; a connection becomes
   an association, or on the package diagram a dependency «use», where the rules of
-  `src/rules.ts`, a pure function of the kinds of the ends and of the relationship, allow it; and
-  Delete removes the selection. `src/diagram.ts` keeps the example's copy of the graph, the
-  classifier of each node, and the kind of each edge from every change `onChange` tells, and
-  `src/legend.ts` draws the legend. Its hooks stand under
-  `window.uml`, so that it declares nothing on `window` the metric tree declares; Vite serves it
-  on port 5176, the launch configuration **Example: UML** opens it, and its browser tests run in
-  the Playwright project `uml` against it in test mode on port 5177.
+  `src/rules.ts`, a pure function of the kinds of the ends and of the relationship, allow it,
+  which so far refuse nothing, Comb itself refusing an edge of a node with itself; and Delete
+  removes the selection. A node's kind, class, interface, abstract class, or package, is read
+  from its stereotype (`kindOf`), and the shared layout by rows (`laidOut`) and the content of a
+  node (`contentOf`) stand in `src/class-diagram.ts`, which the package diagram imports.
+  `src/diagram.ts` keeps the example's copy of the graph, the classifier of each node, and the
+  kind of each edge from every change `onChange` tells, and `src/legend.ts` draws the legend. Its
+  hooks stand under `window.uml`, so that it declares nothing on `window` the metric tree
+  declares; Vite serves it on port 5176, the launch configuration **Example: UML** opens it, and
+  its browser tests run in the Playwright project `uml` against it in test mode on port 5177.
 - **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, each node with the
   content of its type, measuring the time to the first frame and p95 frame times over the frames
   Comb rendered of drag, pan, zoom, and edits one a frame, a node and an edge added and removed
@@ -522,10 +526,12 @@ and those of `bench/compare.ts`, `bench/chromium.ts`, `bench/options.ts`, and `b
 beside them, with
 `bench/content.test.ts` of the content the benchmark names as loaded; browser
 tests under `examples/*/e2e`, a file for the golden path and one for each concern they verify,
-sharing their helpers through `e2e/shared.ts` (a graph loaded as the example's own through
-`useGraph` with what Comb tells recorded, the one read of the drawn nodes and edges each spec
-narrows, a node of the size the example's source states, also in the page as `window.node`, and the
-page point of a world point, a click and a drag there), run by Playwright on Bun against the
+each example sharing its helpers through its own `e2e/shared.ts` (the metric tree's: a graph
+loaded as the example's own through `useGraph` with what Comb tells recorded, the one read of the
+drawn nodes and edges each spec narrows, a node of the size the example's source states, also in
+the page as `window.node`, and the page point of a world point, a click and a drag there; the UML
+example's: opening it, the styles of the kinds of relationship as the conventions record them, and
+the page point, a click, and the drawn place of a node), run by Playwright on Bun against each
 example, reading what is drawn through `comb/testing` rather than pixels, apart from one reference
 image of the edges alone.
 
@@ -542,7 +548,7 @@ Vite configuration hands that engine, from `packages/comb/wasm/test-mode/`, over
 process of its own (`packages/comb/src/bridge/trap.fixture.ts`), since a trap loses the engine for
 the process; and the bundle check fails an engine file that carries the export.
 
-In test mode the example's Vite configuration also sends every response with the Content Security
+In test mode each example's Vite configuration also sends every response with the Content Security
 Policy of Q-6, `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'`, from the development
 server and from `vite preview`, so every browser test runs under it. `e2e/policy.spec.ts` records
 every request and `securitypolicyviolation` while the graph loads, is panned, and is zoomed, once
@@ -635,7 +641,8 @@ mutants, proptest's regressions, a run of cargo-mutants, editors' swap files), `
 the engine's core names or, through `Cargo.lock`, reaches a crate that touches the browser, the
 clock, randomness, or I/O, when a module other than the bridge imports the WebAssembly package, when
 the render layer reaches the store instead of the action-free `GraphView`, or when an example
-imports past the library's entries and its engine file (ADR-0009, ADR-0019), and when the render
+imports past the library's entries and its engine file or imports another example (ADR-0030,
+ADR-0019), and when the render
 layer names PixiJS's `Text`, `HTMLText`, or `SplitText` or the edges layer a `Graphics` (ADR-0012),
 and when its Canvas 2D fallback names `Graphics` outside its imports and its one field (ADR-0018);
 it also fails a render file that imports from interaction by a relative path, a boundary no ADR
