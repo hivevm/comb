@@ -109,6 +109,11 @@ impl NodeShape {
         if dx > a || dy > b {
             return false;
         }
+        // A node so small against where it lies that rounding made it a line or a point is hit
+        // as its rectangle, as before node shapes.
+        if a <= 0.0 || b <= 0.0 {
+            return true;
+        }
         match self {
             Self::Rectangle | Self::Bar => true,
             Self::RoundedRectangle => {
@@ -117,9 +122,9 @@ impl NodeShape {
                 ex <= 0.0 || ey <= 0.0 || ex * ex + ey * ey <= r * r
             }
             Self::Ellipse | Self::Circle | Self::RingedCircle => {
-                a > 0.0 && b > 0.0 && (dx / a).powi(2) + (dy / b).powi(2) <= 1.0
+                (dx / a).powi(2) + (dy / b).powi(2) <= 1.0
             }
-            Self::Diamond => a > 0.0 && b > 0.0 && dx / a + dy / b <= 1.0,
+            Self::Diamond => dx / a + dy / b <= 1.0,
         }
     }
 
@@ -345,6 +350,15 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn a_node_rounded_to_a_line_or_a_point_is_hit_as_its_rectangle() {
+        for shape in NodeShape::ALL {
+            assert!(shape.contains(0.0, 60.0, 0.0, 30.0), "{shape:?}");
+            assert!(shape.contains(0.0, 0.0, 0.0, 0.0), "{shape:?}");
+            assert!(!shape.contains(0.0, 60.0, 0.5, 30.0), "{shape:?}");
         }
     }
 

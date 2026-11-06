@@ -11,6 +11,7 @@
 //! `labels` the edge labels, and `query` what a rectangle meets.
 
 use crate::geometry::{EdgePath, Point, Rect, Sides};
+use crate::shape::NodeShape;
 use crate::spatial::Grid;
 use crate::stroke::EdgeStyle;
 
@@ -135,6 +136,9 @@ pub fn slot(index: usize) -> Result<u32, TooManySlots> {
 pub struct Graph {
     positions: Vec<f32>,
     sizes: Vec<f32>,
+    /// The node shape of each node slot (ADR-draft-node-shapes); a slot past its end is a
+    /// rectangle, so that a graph that names no node shape keeps none.
+    shapes: Vec<NodeShape>,
     edges: Vec<EdgeSpec>,
     /// The node slots, free ones among them (ADR-0023).
     node_slots: Slots,
