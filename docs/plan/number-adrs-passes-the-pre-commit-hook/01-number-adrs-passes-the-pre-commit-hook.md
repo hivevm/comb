@@ -45,11 +45,8 @@ docs/plan/revision-2026-11-03/06-propose-the-check-extensions-to-nuc.md.
 
 ## Mode
 
-unattended:
-- a test decides it: the self-test's fixture with the hook installed;
-- its scope is isolated to the script and its self-test, a wrong result costs one revert;
-- it touches no protected part of ADR-0007 (`.githooks/` is read, not changed), and fits the cap;
-- a wrong result shows as a red self-test or a `ready-for-main.sh` that stops at step 3, undone by
-  the revert;
-- the stop: three attempts at a fixture that reproduces the refusal, or any need to change the
-  hook, after which the session writes what it found here and hands off.
+with the human: the script it changes writes `docs/adr/` in every real run, and it is held against
+`.githooks/pre-commit` and `scripts/check-docs.sh`, all protected parts of ADR-0007; the
+maintainer also decides what goes to NUC. A test decides its criteria (the self-test's fixture
+with the hook installed), and the stop is three attempts at a fixture that reproduces the refusal,
+or any need to change the hook, after which the session writes what it found here and hands off.
