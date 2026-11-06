@@ -147,7 +147,7 @@ mod tests {
 
     #[test]
     fn a_pixel_beyond_any_zoom_hits_as_the_largest_a_query_strokes_for() {
-        // Verifies: ADR-0009
+        // Verifies: ADR-0030
         // Two nodes near the world's limit, an edge between them, and presses near them and twice
         // that far away: an unbounded pixel would reach everything from anywhere.
         let edges = vec![super::super::EdgeSpec {

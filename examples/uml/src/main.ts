@@ -1,11 +1,22 @@
-// The UML example host application (G-12): Comb on the canvas, the choice of diagram and the
-// legend of the kinds of relationship in the HTML sidebar. It imports Comb by its entries alone
-// and nothing of the other example (ADR-0030).
-import { createComb, type Comb, type GraphData } from "comb";
+// The UML example host application (G-12): Comb on the canvas; in the HTML sidebar the choice of
+// diagram, the palette, the form of the selection, and the legend of the kinds of relationship.
+// It imports Comb by its entries alone and nothing of the other example (ADR-0030).
+import { createComb, type Comb, type GraphData, type Proposal } from "comb";
 import engineUrl from "comb/engine.wasm?url";
-import { inspect, type SceneSnapshot } from "comb/testing";
-import { classDiagram } from "./class-diagram";
-import { KINDS, RELATIONSHIPS, type RelationshipKind } from "./relationships";
+import { inspect, screenPoint, type SceneSnapshot } from "comb/testing";
+import {
+  classDiagram,
+  contentOf,
+  newClassifier,
+  NODE_WIDTH,
+  type DiagramData,
+} from "./class-diagram";
+import { packageDiagram } from "./package-diagram";
+import { Diagram } from "./diagram";
+import { fillLegend } from "./legend";
+import type { RelationshipKind } from "./relationships";
+import { NODE_KINDS } from "./rules";
+import { Sidebar } from "./sidebar";
 
 /** How the last load went: what the browser tests read. */
 export interface UmlLoadReport {
@@ -25,6 +36,8 @@ export interface UmlHooks {
   edgeKinds: () => Record<string, RelationshipKind>;
   /** What the canvas draws, from comb/testing. */
   inspect: () => SceneSnapshot;
+  /** The canvas point at which the world point `(x, y)` is drawn, from comb/testing. */
+  screenPoint: (x: number, y: number) => ReturnType<typeof screenPoint>;
 }
 
 declare global {
@@ -39,75 +52,134 @@ function element<T extends HTMLElement>(id: string): T {
   return found as T;
 }
 
-const SVG = "http://www.w3.org/2000/svg";
+/** The type of the data a palette item carries in a drag. */
+const PALETTE_TYPE = "application/x-uml-kind";
 
-/** A short line drawn as `kind` is, for the legend: its colour, its dash pattern, and its
- *  arrowhead, each set as an attribute, so that the policy of Q-6 lets it through. */
-function swatchOf(kind: RelationshipKind): SVGSVGElement {
-  const { color, dash, arrow } = RELATIONSHIPS[kind];
-  const hex = `#${color.toString(16).padStart(6, "0")}`;
-  const svg = document.createElementNS(SVG, "svg");
-  svg.setAttribute("viewBox", "0 0 48 12");
-  svg.setAttribute("width", "48");
-  svg.setAttribute("height", "12");
-  const line = document.createElementNS(SVG, "line");
-  const attributes: Record<string, string> = {
-    x1: "1",
-    y1: "6",
-    x2: arrow === "end" ? "40" : "47",
-    y2: "6",
-    stroke: hex,
-    "stroke-width": "2",
-  };
-  for (const [name, value] of Object.entries(attributes)) line.setAttribute(name, value);
-  if (dash) line.setAttribute("stroke-dasharray", dash.join(" "));
-  svg.append(line);
-  if (arrow === "end") {
-    const head = document.createElementNS(SVG, "polygon");
-    head.setAttribute("points", "38,1 47,6 38,11");
-    head.setAttribute("fill", hex);
-    svg.append(head);
-  }
-  return svg;
+/** How many nodes of each kind the palette dropped and edges the user connected, for their
+ *  identifiers. */
+const dropped = new Map<string, number>();
+let connected = 0;
+
+/** Names the user's connection where the rules allow the kind a connection adds between its
+ *  ends; refuses it otherwise. */
+function canConnect({ source, target }: Proposal): string | false {
+  const kind = diagram.connected;
+  if (!diagram.allows(source, target, kind)) return false;
+  connected += 1;
+  return `${source}-${kind}-${target}-${connected}`;
 }
 
-/** Fills the legend with one entry per kind: its swatch, its name, and its label where it has
- *  one. */
-function fillLegend(): void {
-  const list = element("legend-kinds");
-  for (const kind of KINDS) {
-    const { name, label } = RELATIONSHIPS[kind];
-    const item = document.createElement("li");
-    item.dataset.kind = kind;
-    const text = document.createElement("span");
-    text.textContent = label ? `${name} ${label.text}` : name;
-    item.append(swatchOf(kind), text);
-    list.append(item);
-  }
-}
-
-const comb = await createComb(element("canvas"), { engine: fetch(engineUrl) });
-const diagram = element<HTMLSelectElement>("diagram");
+const comb = await createComb(element("canvas"), {
+  engine: fetch(engineUrl),
+  canConnect,
+  canDelete: () => true,
+});
+const diagram = new Diagram(comb);
+const sidebar = new Sidebar(diagram);
+const choice = element<HTMLSelectElement>("diagram");
 const count = element("count");
 
-let graph: GraphData = { nodes: [], edges: [] };
-let kinds = new Map<string, RelationshipKind>();
+/** The diagrams the sidebar chooses between: how each is built, what its count names, and the
+ *  kind a connection adds to it. */
+const DIAGRAMS: Record<
+  string,
+  {
+    build: (heightOf: Comb["heightOf"]) => DiagramData;
+    nouns: [string, string];
+    connected: RelationshipKind;
+  }
+> = {
+  class: {
+    build: classDiagram,
+    nouns: ["classes and interfaces", "relationships"],
+    connected: "association",
+  },
+  package: { build: packageDiagram, nouns: ["packages", "dependencies"], connected: "dependency" },
+};
+/** Each diagram as it was left, while another is shown; the example stores nothing beyond the
+ *  page. */
+const kept = new Map<string, DiagramData>();
+let shown: string | null = null;
+const paletteItems = document.querySelectorAll<HTMLElement>("#palette [data-kind]");
 
-/** Loads the diagram the sidebar has chosen, the class diagram the one so far. */
-async function load(): Promise<UmlLoadReport> {
-  ({ graph, kinds } = classDiagram((content, width) => comb.heightOf(content, width)));
-  count.textContent = `${graph.nodes.length} classes and interfaces, ${graph.edges.length} relationships`;
-  comb.load(graph);
-  comb.fitView();
-  await comb.whenRendered();
-  return { diagram: diagram.value, nodes: graph.nodes.length, edges: graph.edges.length };
+/** Shows the size of the diagram. */
+function counted(): void {
+  const { nodes, edges } = diagram.graph;
+  const [things, links] = DIAGRAMS[shown ?? "class"]!.nouns;
+  count.textContent = `${nodes.length} ${things}, ${edges.length} ${links}`;
 }
 
-fillLegend();
+/** Loads the diagram the sidebar has chosen, as it was left where it was shown before, and keeps
+ *  the one it replaces. */
+async function load(): Promise<UmlLoadReport> {
+  const { graph, classifiers, kinds } = diagram;
+  if (shown !== null) kept.set(shown, { graph, classifiers, kinds });
+  shown = choice.value;
+  const next =
+    kept.get(shown) ?? DIAGRAMS[shown]!.build((content, width) => comb.heightOf(content, width));
+  diagram.load(next.graph, next.classifiers, next.kinds, DIAGRAMS[shown]!.connected);
+  // The palette offers what the diagram shown holds.
+  for (const item of paletteItems) item.hidden = item.dataset.diagram !== shown;
+  counted();
+  comb.fitView();
+  await comb.whenRendered();
+  return { diagram: shown, nodes: next.graph.nodes.length, edges: next.graph.edges.length };
+}
+
+choice.addEventListener("change", () => {
+  window.uml.loadReport = load();
+});
+
+/** Adds a classifier of the palette's `kind`, centred by the height Comb gives its content on
+ *  the world point under the drop at (`clientX`, `clientY`) of the page (G-1, ADR-0026). */
+function drop(kind: string, clientX: number, clientY: number): void {
+  const nodeKind = NODE_KINDS.find((each) => each === kind);
+  if (!nodeKind) return;
+  const { x, y } = comb.worldPointAt(clientX, clientY);
+  const number = (dropped.get(kind) ?? 0) + 1;
+  dropped.set(kind, number);
+  const classifier = newClassifier(`${kind}-${number}`, nodeKind);
+  const content = contentOf(classifier);
+  diagram.classifiers.set(classifier.id, classifier);
+  try {
+    comb.addNode({
+      id: classifier.id,
+      x: x - NODE_WIDTH / 2,
+      y: y - comb.heightOf(content, NODE_WIDTH) / 2,
+      width: NODE_WIDTH,
+      content,
+    });
+  } catch (error) {
+    // A lost engine, or a node past the limits of a load: the drop adds nothing.
+    diagram.classifiers.delete(classifier.id);
+    console.warn("uml: the dropped node was not added", error);
+  }
+}
+
+for (const item of paletteItems) {
+  item.addEventListener("dragstart", (event) => {
+    event.dataTransfer?.setData(PALETTE_TYPE, item.dataset.kind ?? "");
+  });
+}
+const canvas = element("canvas");
+canvas.addEventListener("dragover", (event) => {
+  if (event.dataTransfer?.types.includes(PALETTE_TYPE)) event.preventDefault();
+});
+canvas.addEventListener("drop", (event) => {
+  event.preventDefault();
+  drop(event.dataTransfer?.getData(PALETTE_TYPE) ?? "", event.clientX, event.clientY);
+});
+comb.onChange((change) => {
+  diagram.mirror(change);
+  counted();
+});
+comb.onSelectionChange((selection) => sidebar.show(selection));
+fillLegend(element("legend-kinds"));
 window.uml = {
   comb,
   loadReport: load(),
-  exampleGraph: () => structuredClone(graph),
-  edgeKinds: () => Object.fromEntries(kinds),
+  exampleGraph: () => structuredClone(diagram.graph),
+  edgeKinds: () => Object.fromEntries(diagram.kinds),
   inspect: () => inspect(comb),
+  screenPoint: (x, y) => screenPoint(comb, x, y),
 };

@@ -11,7 +11,8 @@ type Same<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 
 // The engine's `loadGraph` takes a load's nodes and edges as columns, strings in pieces and typed
-// arrays its glue copies whole, and no `GraphBatch` and no `EdgeList` (ADR-0010): its generated
+// arrays its glue copies whole, or plain arrays of numbers, which the glue of wasm-bindgen 0.2.130
+// takes as well, and no `GraphBatch` and no `EdgeList` (ADR-0010): its generated
 // parameters, pinned, the content columns of `text`, `action`, `badge`, `progress`, and `metric`
 // among them and no title or height column. A
 // refused field crosses as the code of its `NodeField` or `EdgeField`, a plain number, and a shape
@@ -20,51 +21,51 @@ const columns: Same<
   Parameters<Engine["loadGraph"]>,
   [
     ids: string[],
-    idBounds: Uint32Array,
-    x: Float64Array,
-    y: Float64Array,
-    width: Float64Array,
-    rowBounds: Uint32Array,
-    elementBounds: Uint32Array,
-    kinds: Uint8Array,
-    weights: Float64Array,
-    roles: Uint8Array,
-    directions: Uint8Array,
-    colors: Float64Array,
-    segmentBounds: Uint32Array,
-    fractions: Float64Array,
-    segmentColors: Float64Array,
+    idBounds: Uint32Array | number[],
+    x: Float64Array | number[],
+    y: Float64Array | number[],
+    width: Float64Array | number[],
+    rowBounds: Uint32Array | number[],
+    elementBounds: Uint32Array | number[],
+    kinds: Uint8Array | number[],
+    weights: Float64Array | number[],
+    roles: Uint8Array | number[],
+    directions: Uint8Array | number[],
+    colors: Float64Array | number[],
+    segmentBounds: Uint32Array | number[],
+    fractions: Float64Array | number[],
+    segmentColors: Float64Array | number[],
     texts: string[],
-    textBounds: Uint32Array,
-    textValid: Uint8Array,
+    textBounds: Uint32Array | number[],
+    textValid: Uint8Array | number[],
     names: string[],
-    nameBounds: Uint32Array,
-    nameValid: Uint8Array,
+    nameBounds: Uint32Array | number[],
+    nameValid: Uint8Array | number[],
     refusedAt: number | null | undefined,
     refusedField: number | null | undefined,
     refusedRow: number | null | undefined,
     refusedColumn: number | null | undefined,
     edgeIds: string[],
-    edgeIdBounds: Uint32Array,
+    edgeIdBounds: Uint32Array | number[],
     sources: string[],
-    sourceBounds: Uint32Array,
+    sourceBounds: Uint32Array | number[],
     targets: string[],
-    targetBounds: Uint32Array,
-    hasLabel: Uint8Array,
+    targetBounds: Uint32Array | number[],
+    hasLabel: Uint8Array | number[],
     labels: string[],
-    labelBounds: Uint32Array,
-    labelTexts: Uint8Array,
-    labelT: Float64Array,
-    labelOffset: Float64Array,
-    hasBackground: Uint8Array,
-    background: Float64Array,
-    color: Float64Array,
-    hasDash: Uint8Array,
-    dash: Float64Array,
-    gap: Float64Array,
-    arrow: Uint8Array,
-    sourceSide: Uint8Array,
-    targetSide: Uint8Array,
+    labelBounds: Uint32Array | number[],
+    labelTexts: Uint8Array | number[],
+    labelT: Float64Array | number[],
+    labelOffset: Float64Array | number[],
+    hasBackground: Uint8Array | number[],
+    background: Float64Array | number[],
+    color: Float64Array | number[],
+    hasDash: Uint8Array | number[],
+    dash: Float64Array | number[],
+    gap: Float64Array | number[],
+    arrow: Uint8Array | number[],
+    sourceSide: Uint8Array | number[],
+    targetSide: Uint8Array | number[],
     edgeRefusedAt?: number | null,
     edgeRefusedField?: number | null,
   ]
@@ -98,7 +99,7 @@ function handsOver(
 }
 
 test("the bridge refuses graph data and patches that are no snapshot at compile time", () => {
-  // Verifies: ADR-0009
+  // Verifies: ADR-0030
   expect(typeof handsOver).toBe("function");
 });
 

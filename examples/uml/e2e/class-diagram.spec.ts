@@ -9,50 +9,11 @@ import {
   ROW_LIMIT,
   shownMembers,
 } from "../src/class-diagram";
-
-/** The Content Security Policy of Q-6, which the test server sends with every response. */
-const POLICY = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'";
-
-/** Opens the example and waits until its first load has drawn. */
-async function open(page: Page): Promise<void> {
-  // The example sets its hooks after a top-level await, which the load event does not wait for.
-  await page.waitForFunction(() => "uml" in window);
-  await page.evaluate(() => window.uml.loadReport);
-}
-
-/** How docs/CONVENTIONS.md draws each kind of relationship, in the order the legend lists them:
- *  its name, colour, whether it is dashed (`[6, 4]`), its arrowhead, and its label with the path
- *  parameter it stands at. Written here from the conventions, not read from the example, so that
- *  a style the example's table gets wrong fails. */
-const CONVENTIONS = [
-  ["association", "Association", 0x6b7280, false, "none"],
-  ["directed-association", "Directed association", 0x6b7280, false, "end"],
-  ["generalization", "Generalization", 0x1d4ed8, false, "end"],
-  ["realization", "Realization", 0x1d4ed8, true, "end"],
-  ["dependency", "Dependency", 0x6b7280, true, "end", "«use»", 0.5],
-  ["aggregation", "Aggregation", 0x15803d, false, "none", "«aggregation»", 0.4],
-  ["composition", "Composition", 0x15803d, false, "none", "«composition»", 0.4],
-] as const;
-const DRAWN = Object.fromEntries(
-  CONVENTIONS.map(([kind, name, color, dashed, arrow, label, t]) => [
-    kind,
-    { name, color, dashed, arrow, label, t },
-  ]),
-) as Record<
-  string,
-  {
-    name: string;
-    color: number;
-    dashed: boolean;
-    arrow: "end" | "none";
-    label?: string;
-    t?: number;
-  }
->;
+import { CONVENTIONS, DRAWN, open, POLICY } from "./shared";
 
 const hex = (color: number) => `#${color.toString(16).padStart(6, "0")}`;
 
-test("the UML example draws the class diagram beside its sidebar, the class diagram its one choice", async ({
+test("the UML example draws the class diagram beside its sidebar, the class diagram chosen first", async ({
   page,
 }) => {
   // Verifies: G-12
@@ -62,7 +23,7 @@ test("the UML example draws the class diagram beside its sidebar, the class diag
   expect(response?.headers()["content-security-policy"]).toBe(POLICY);
   await open(page);
   await expect(page.locator("#canvas canvas")).toBeVisible();
-  await expect(page.locator("#diagram option")).toHaveText(["Class diagram"]);
+  await expect(page.locator("#diagram")).toHaveValue("class");
   const report = await page.evaluate(() => window.uml.loadReport);
   expect(report).toEqual({ diagram: "class", nodes: CLASSIFIERS.length, edges: EDGES.length });
   await expect(page.locator("#count")).toHaveText(

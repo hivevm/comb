@@ -742,7 +742,7 @@ mod tests {
 
     #[test]
     fn a_stroke_at_the_largest_pixel_stays_within_a_sixth_of_the_worlds_limit() {
-        // Verifies: ADR-0009
+        // Verifies: ADR-0030
         for level in [Level::Near, Level::Middle, Level::Far] {
             let stroke = Stroke::at(level, PIXEL_LIMIT);
             assert!(stroke.width <= WORLD_LIMIT / 6.0, "{level:?}");

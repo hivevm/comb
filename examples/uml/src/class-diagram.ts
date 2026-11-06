@@ -9,6 +9,7 @@
 // (ADR-0018), the one realization in Comb.
 import type { Comb, EdgeData, GraphData, NodeContent, NodeData, Side } from "comb";
 import { styleOf, type RelationshipKind } from "./relationships";
+import type { NodeKind } from "./rules";
 
 /** A class or an interface of the diagram, as its node shows it. */
 export interface Classifier {
@@ -300,16 +301,17 @@ function edgeOf({ source, target, kind, sides }: Relationship): EdgeData {
   };
 }
 
-/** The class diagram as graph data, each node placed by the height `heightOf` gives its content,
- *  with the kind of each edge by its identifier. */
-export function classDiagram(heightOf: Comb["heightOf"]): {
-  graph: GraphData;
-  kinds: Map<string, RelationshipKind>;
-} {
+/** The nodes of `classifiers` laid out in `rows` from top to bottom, each by its column from the
+ *  left: a node's top lies on its row's, and a row starts below the highest node of the row
+ *  above, by the height `heightOf` gives its content. */
+export function laidOut(
+  rows: readonly (readonly [string, number])[][],
+  classifiers: ReadonlyMap<string, Classifier>,
+  heightOf: Comb["heightOf"],
+): Map<string, NodeData> {
   const byId = new Map<string, NodeData>();
-  const classifiers = new Map(CLASSIFIERS.map((each) => [each.id, each]));
   let top = 0;
-  for (const row of ROWS) {
+  for (const row of rows) {
     let bottom = top;
     for (const [id, column] of row) {
       const content = contentOf(classifiers.get(id)!);
@@ -319,9 +321,62 @@ export function classDiagram(heightOf: Comb["heightOf"]): {
     }
     top = bottom + ROW_GAP;
   }
+  return byId;
+}
+
+/** A diagram as graph data, with the classifier of each node and the kind of each edge by their
+ *  identifiers. */
+export interface DiagramData {
+  graph: GraphData;
+  classifiers: Map<string, Classifier>;
+  kinds: Map<string, RelationshipKind>;
+}
+
+/** The class diagram as graph data, each node placed by the height `heightOf` gives its content,
+ *  with the classifier of each node and the kind of each edge by their identifiers. */
+export function classDiagram(heightOf: Comb["heightOf"]): DiagramData {
+  const classifiers = new Map(CLASSIFIERS.map((each) => [each.id, structuredClone(each)]));
+  const byId = laidOut(ROWS, classifiers, heightOf);
   const edges = RELATIONSHIPS.map(edgeOf);
   return {
     graph: { nodes: CLASSIFIERS.map(({ id }) => byId.get(id)!), edges },
+    classifiers,
     kinds: new Map(RELATIONSHIPS.map((each, i) => [edges[i]!.id, each.kind])),
+  };
+}
+
+/** The stereotype of each kind of node, none for a plain class. */
+const STEREOTYPES: Record<NodeKind, string | undefined> = {
+  class: undefined,
+  interface: INTERFACE,
+  "abstract-class": "«abstract»",
+  package: "«package»",
+};
+
+/** The kind of node `classifier` is, told by its stereotype: «interface» an interface,
+ *  «abstract» an abstract class, «package» a package, any other or none a class. */
+export function kindOf({ stereotype }: Pick<Classifier, "stereotype">): NodeKind {
+  if (stereotype === INTERFACE) return "interface";
+  if (stereotype === STEREOTYPES.package) return "package";
+  return stereotype === STEREOTYPES["abstract-class"] ? "abstract-class" : "class";
+}
+
+/** The name a node of each kind dropped from the palette starts with. */
+const DROPPED: Record<NodeKind, string> = {
+  class: "NewClass",
+  interface: "NewInterface",
+  "abstract-class": "NewAbstractClass",
+  package: "NewPackage",
+};
+
+/** A classifier of `kind`, as the palette drops it: its stereotype, a default name, no members. */
+export function newClassifier(id: string, kind: NodeKind): Classifier {
+  const stereotype = STEREOTYPES[kind];
+  return {
+    id,
+    ...(stereotype ? { stereotype } : {}),
+    name: DROPPED[kind],
+    attributes: [],
+    operations: [],
   };
 }

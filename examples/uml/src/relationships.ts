@@ -3,7 +3,7 @@
 // it has no hollow triangle, no diamond, and no arrowhead at the source. So each kind is told by a
 // family of colour, its dash pattern, and its arrowhead, and by its label where those cannot tell
 // it; docs/CONVENTIONS.md records the mapping, and the sidebar's legend lists it.
-import type { EdgeData } from "comb";
+import type { EdgeData, EdgePatch } from "comb";
 
 export type RelationshipKind =
   | "association"
@@ -74,4 +74,10 @@ export function styleOf(
     ...(dash ? { dash } : {}),
     ...(label ? { label: { ...label, offset: 0, background: color } } : {}),
   };
+}
+
+/** The patch that draws an edge as `kind`, clearing a dash or a label the kind has none of. */
+export function patchOf(kind: RelationshipKind): EdgePatch {
+  const { color, arrow, dash = null, label = null } = styleOf(kind);
+  return { color, arrow, dash, label };
 }

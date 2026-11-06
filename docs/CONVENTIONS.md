@@ -104,6 +104,16 @@ skimmed. The design revision drops what prevented nothing
   is the whole. Each colour carries white label text at a contrast of at least 4.5. The label
   names the kind wherever colour, dash, and arrowhead leave two kinds alike, since Comb has no
   hollow triangle, no diamond, and no arrowhead at the source, and its font no glyph for one.
+  The package diagram draws each dependency as a dependency, its label «import» for a module's
+  import of another and «use» for the bridge's load of the WebAssembly package and the bridge
+  crate's use of the core.
+- **The UML example's rules of connection are a table of what they refuse.** `allows` in
+  `examples/uml/src/rules.ts` answers from the kinds of the two ends and of the relationship,
+  against a set of refused combinations; between a class, an interface, an abstract class, and a
+  package it refuses none, in either direction, and its test writes that table out. No case is
+  needed of a node with itself, since Comb refuses every edge of a node with itself (`selfEdge`)
+  and its connect gesture offers none, nor of a class and a package, which never share a diagram.
+  A diagram that adds kinds of node adds its refusals here and to the table.
 - **A ticket names its paths in full.** *What to build* and *Acceptance criteria* write every path
   from the repository root, `packages/comb/src/api/editors.ts` and not `api/editors.ts`, so that
   `scripts/check-plan-modes.sh` reads each one against the protected parts of
@@ -111,7 +121,15 @@ skimmed. The design revision drops what prevented nothing
 - **A premise is read in the code.** An ADR or a ticket that states how the system behaves today,
   such as the order the scene draws in or what a counter signals, names the function, the test, or
   the ADR it read that in. A premise written from memory reads as true to the reviewer, who has no
-  reason to open the engine, and a decision built on a false one decides the wrong problem.
+  reason to open the engine, and a decision built on a false one decides the wrong problem. A
+  spec or a ticket that asks for a refusal names, in the same way, the gesture or the call that
+  can hand over what it refuses, and what Comb refuses of it already: a criterion that refuses
+  what Comb refuses first, such as an edge of a node with itself (`selfEdge`), or what no gesture
+  produces, cannot arise, and its ticket closes with the criterion disputed.
+- **A host application's copy follows what Comb took.** The UML example, like any host
+  application that keeps its own copy of the graph, writes into that copy only after Comb took the
+  change, from what `onChange` tells or after the call returned, never before the call: Comb may
+  refuse it, as a text past its limits, and the copy then holds what the canvas does not show.
 - **A stacked pull request is retargeted before its base branch goes.** A pull request based on
   another's branch, rather than on `main`, waits for that one to merge; the base merges without
   deleting its branch, the dependent one is moved to `main` and updated, and only then is the base's

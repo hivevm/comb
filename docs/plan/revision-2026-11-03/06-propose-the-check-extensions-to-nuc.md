@@ -16,6 +16,14 @@ next take-up, so they go upstream as a proposal for NUC:
   once, on the working tree that is checked out, however many branches one push sends.
   On 2026-11-02 a push of two branches passed the hook on one while #62 carried a lint error,
   and CI went red.
+- **The numbering of drafts passes the pre-commit hook.** `scripts/number-adrs.sh` commits twice,
+  `docs/adr/` first and the references outside it second, and says the checks fail on the first.
+  But `.githooks/pre-commit` runs `scripts/check-docs.sh` on every commit that stages Markdown and
+  refuses the first, since the tree still cites the draft identifier elsewhere: on 2026-11-05 both
+  `scripts/ready-for-main.sh` and a direct run stopped there, and ADR-0030 was numbered in one
+  commit against rule 4 of [`AGENTS.md` §3](../../../AGENTS.md#3-adr-rules) (#79). Either the hook
+  lets the script's first commit through, or the script commits once where rule 4 allows it; the
+  self-test of the hooks or of the script plays the case.
 - **A merge in a normalization leaves no citation doubled.** Merging two old ADRs into ADR-0027
   left "(ADR-0027, ADR-0027)" in a comment of `packages/comb/src/bridge/index.ts`.
   Neither `.agents/skills/normalize/remap.sh` nor a check reports it.
@@ -46,6 +54,7 @@ The proposal names each with its evidence and a draft of the change against NUC'
 
 - ADR-0005 (template releases), the normalize skill's take-up steps.
 - `scripts/check-docs.sh` (check 9), `scripts/test-check-docs.sh`, `.githooks/pre-push`,
+  `.githooks/pre-commit`, `scripts/number-adrs.sh`, `scripts/ready-for-main.sh`,
   `.agents/skills/normalize/remap.sh`, [`AGENTS.md` §4](../../../AGENTS.md#4-working-style) and
   [`AGENTS.md` §6](../../../AGENTS.md#6-project-rules).
 
