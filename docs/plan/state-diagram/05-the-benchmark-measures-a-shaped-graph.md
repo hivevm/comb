@@ -1,9 +1,9 @@
-# Ticket: The benchmark measures a graph of shapes, docking, and loops
+# Ticket: The benchmark measures a graph of node shapes, docking, and loops
 
 ## What to build
 
 The benchmark gains a variant at 50,010 nodes:
-- its nodes take the shapes in turn;
+- its nodes take the node shapes in turn;
 - its edges dock on the outline;
 - one node in a hundred has a loop.
 

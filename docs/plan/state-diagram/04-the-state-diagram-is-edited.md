@@ -3,7 +3,7 @@
 ## What to build
 
 While the state diagram is shown, the palette offers a state, an initial state, a final state,
-and a choice, each dropped under the pointer in its shape. The sidebar renames a selected state
+and a choice, each dropped under the pointer in its node shape. The sidebar renames a selected state
 and names the event of a selected transition. A connection adds a transition docked on the
 outline, a drag back onto a state adds a loop, and Delete removes the selection. Each diagram
 keeps its edits while another is shown.

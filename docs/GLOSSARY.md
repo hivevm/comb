@@ -60,12 +60,18 @@ to invent.
 - **Level of detail** — how much of the graph the canvas draws at the current zoom: near draws
   nodes with their whole content and edge labels, middle nodes with their titles, far nodes as
   plain boxes and edges as thin lines, without text.
+- **Loop** — an edge from a node back to itself.
+  _Avoid:_ self-edge in prose, self-loop, reflexive edge.
 - **Mesh budget** — the most vertices the edge mesh of one query may hold.
 - **Moving layer** — what a drag, or an edit at the far level, draws above the edges and the
   particles while the scene keeps its query: the edges at the dragged nodes and the added edges,
   and at the far level the dragged and the added nodes' particles.
 - **Node** — a box on the canvas that stands for one element of the host application's graph.
   _Avoid:_ vertex, block.
+- **Node shape** — the form, from a closed set the engine knows, in which a node is drawn and hit:
+  a rectangle, a rounded rectangle, an ellipse, a circle, a ringed circle, a diamond, or a bar.
+  It is a property of a node, not a diagram element of its own.
+  _Avoid:_ shape alone, figure, symbol.
 - **Node content** — the host application's description of what a node shows, as a list of
   content elements that Comb draws.
   _Avoid:_ node template, node renderer.
@@ -74,6 +80,9 @@ to invent.
   A progress bar is divided into *segments*, each a fraction of the bar in a colour, from its
   left; the rest of the bar is its *track*. A *metric* is a caption above a value and its
   *trend*, a text with a direction, up, down, or flat, drawn as an arrow, and a colour.
+- **Outline** — the border of a node's shape, inside which the node is hit; an edge's end that
+  *docks on the outline* lies where the line towards the edge's other end crosses it, instead of
+  at a connector.
 - **Palette** — the host application's HTML list of node types, from which the user drags new nodes
   onto the canvas.
 - **Path parameter** — a number `t` from 0.0 to 1.0 that marks a point along an edge's path, from

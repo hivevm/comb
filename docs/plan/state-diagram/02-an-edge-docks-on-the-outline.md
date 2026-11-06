@@ -10,7 +10,7 @@ connector.
 
 ## Acceptance criteria
 
-- [ ] Given two nodes of each shape and an edge docked on the outline at both ends, when the
+- [ ] Given two nodes of each node shape and an edge docked on the outline at both ends, when the
   canvas draws it, then each end lies on its node's outline on the line between the two centres,
   within the accuracy of Q-4 (G-13).
 - [ ] Given five edges docked on one node from five directions, when the node is dragged, then
@@ -30,7 +30,7 @@ connector.
 
 ## Blocked by
 
-- docs/plan/state-diagram/01-a-node-is-drawn-in-its-shape.md
+- docs/plan/state-diagram/01-a-node-is-drawn-in-its-node shape.md
 
 ## Mode
 
