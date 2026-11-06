@@ -9,7 +9,8 @@
 // (ADR-0018), the one realization in Comb.
 import type { Comb, EdgeData, GraphData, NodeContent, NodeData, Side } from "comb";
 import { styleOf, type RelationshipKind } from "./relationships";
-import type { NodeKind } from "./rules";
+import type { ClassifierKind } from "./rules";
+import type { State } from "./state-diagram";
 
 /** A class or an interface of the diagram, as its node shows it. */
 export interface Classifier {
@@ -324,11 +325,12 @@ export function laidOut(
   return byId;
 }
 
-/** A diagram as graph data, with the classifier of each node and the kind of each edge by their
- *  identifiers. */
+/** A diagram as graph data, with the classifier or the state of each node and the kind of each
+ *  edge by their identifiers. */
 export interface DiagramData {
   graph: GraphData;
   classifiers: Map<string, Classifier>;
+  states: Map<string, State>;
   kinds: Map<string, RelationshipKind>;
 }
 
@@ -341,12 +343,13 @@ export function classDiagram(heightOf: Comb["heightOf"]): DiagramData {
   return {
     graph: { nodes: CLASSIFIERS.map(({ id }) => byId.get(id)!), edges },
     classifiers,
+    states: new Map(),
     kinds: new Map(RELATIONSHIPS.map((each, i) => [edges[i]!.id, each.kind])),
   };
 }
 
 /** The stereotype of each kind of node, none for a plain class. */
-const STEREOTYPES: Record<NodeKind, string | undefined> = {
+const STEREOTYPES: Record<ClassifierKind, string | undefined> = {
   class: undefined,
   interface: INTERFACE,
   "abstract-class": "«abstract»",
@@ -355,14 +358,14 @@ const STEREOTYPES: Record<NodeKind, string | undefined> = {
 
 /** The kind of node `classifier` is, told by its stereotype: «interface» an interface,
  *  «abstract» an abstract class, «package» a package, any other or none a class. */
-export function kindOf({ stereotype }: Pick<Classifier, "stereotype">): NodeKind {
+export function kindOf({ stereotype }: Pick<Classifier, "stereotype">): ClassifierKind {
   if (stereotype === INTERFACE) return "interface";
   if (stereotype === STEREOTYPES.package) return "package";
   return stereotype === STEREOTYPES["abstract-class"] ? "abstract-class" : "class";
 }
 
 /** The name a node of each kind dropped from the palette starts with. */
-const DROPPED: Record<NodeKind, string> = {
+const DROPPED: Record<ClassifierKind, string> = {
   class: "NewClass",
   interface: "NewInterface",
   "abstract-class": "NewAbstractClass",
@@ -370,7 +373,7 @@ const DROPPED: Record<NodeKind, string> = {
 };
 
 /** A classifier of `kind`, as the palette drops it: its stereotype, a default name, no members. */
-export function newClassifier(id: string, kind: NodeKind): Classifier {
+export function newClassifier(id: string, kind: ClassifierKind): Classifier {
   const stereotype = STEREOTYPES[kind];
   return {
     id,

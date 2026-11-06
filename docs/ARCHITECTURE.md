@@ -479,13 +479,16 @@ one workspace for each example.
   (`src/state-diagram.ts`) shows a Comb's life, its states rounded rectangles of their name, its
   initial state a circle, its final states ringed circles, and the choice of whether its engine
   loaded a diamond, placed by the heights `heightOf` gives their node shapes, and its transitions
-  grey edges docked on the outline labelled by their event or guard, and a loop on ready's left
-  side labelled edit, for which the example's Comb allows loops; it is shown only, its palette
-  and legend hidden. Chosen, the package diagram (`src/package-diagram.ts`) shows Comb's modules and
-  crates as nodes of «package» and their name and their dependencies as dashed edges with an
-  arrowhead and the label «import» or «use»; each diagram is kept as it was left, its edits among
-  it, while the other is shown, for as long as the page lives. `src/class-diagram.ts` describes
-  Comb's public interface, and the render layer's edges layer for its one realization, as
+  grey edges docked on the outline labelled by their event or guard, and a loop on ready's left side
+  labelled edit, for which the example's Comb allows loops; its legend hidden, it is edited as the
+  others are: the palette drops a state, an initial state, a final state, or a choice, each in its
+  node shape and centred on the drop; the sidebar renames a selected state and names a selected
+  transition's event, its label; a connection adds a transition docked on the outline at both ends,
+  or a loop on the side it left by. Chosen, the package diagram (`src/package-diagram.ts`) shows
+  Comb's modules and crates as nodes of «package» and their name and their dependencies as dashed
+  edges with an arrowhead and the label «import» or «use»; each diagram is kept as it was left, its
+  edits among it, while another is shown, for as long as the page lives. `src/class-diagram.ts`
+  describes Comb's public interface, and the render layer's edges layer for its one realization, as
   classifiers whose content is a caption for the stereotype, a title for the name, and a body text
   per member, at most the eight rows Comb lays out and "…" for those left out, placed in rows laid
   out by hand by the heights `heightOf` gives; `src/relationships.ts` maps each kind of relationship
@@ -495,18 +498,19 @@ one workspace for each example.
   sidebar (`src/sidebar.ts`) edits the selected classifier's name, stereotype, and members, one per
   line of two text areas, or a package's name, through `updateNode`, and the selected relationship's
   kind and label, or a dependency's «import» or «use», through `updateEdge`; a connection becomes an
-  association, or on the package diagram a dependency «use», where the rules of `src/rules.ts`, a
-  pure function of the kinds of the ends and of the relationship, allow it, which so far refuse
-  nothing, the diagram (`src/diagram.ts`) refusing before them an edge of a node with itself,
-  which Comb offers since it allows loops; and Delete removes the selection. A
-  node's kind, class, interface, abstract class, or package, is read from its stereotype (`kindOf`),
-  and the shared layout by rows (`laidOut`) and the content of a node (`contentOf`) stand in
-  `src/class-diagram.ts`, which the package diagram imports. `src/diagram.ts` keeps the example's
-  copy of the graph, the classifier of each node, and the kind of each edge from every change
-  `onChange` tells, and `src/legend.ts` draws the legend. Its hooks stand under `window.uml`, so
-  that it declares nothing on `window` the metric tree declares; Vite serves it on port 5176, the
-  launch configuration **Example: UML** opens it, and its browser tests run in the Playwright
-  project `uml` against it in test mode on port 5177.
+  association, on the package diagram a dependency «use», and on the state diagram a transition,
+  where the rules of `src/rules.ts`, a pure function of the kinds of the ends, of the relationship,
+  and of whether it is a loop, allow it: they refuse a transition into an initial state or out of a
+  final state, and every loop but a state's, which Comb offers in every diagram since it allows
+  loops; and Delete removes the selection. A classifier's kind, class, interface, abstract class, or
+  package, is read from its stereotype (`kindOf`), a state's kind, state, initial, final, or choice,
+  is kept with its state, and the shared layout by rows (`laidOut`) and the content of a node
+  (`contentOf`) stand in `src/class-diagram.ts`, which the package diagram imports. `src/diagram.ts`
+  keeps the example's copy of the graph, the classifier or the state of each node, and the kind of
+  each edge from every change `onChange` tells, and `src/legend.ts` draws the legend. Its hooks
+  stand under `window.uml`, so that it declares nothing on `window` the metric tree declares; Vite
+  serves it on port 5176, the launch configuration **Example: UML** opens it, and its browser tests
+  run in the Playwright project `uml` against it in test mode on port 5177.
 - **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, each node with the
   content of its type, measuring the time to the first frame and p95 frame times over the frames
   Comb rendered of drag, pan, zoom, and edits one a frame, a node and an edge added and removed
