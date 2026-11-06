@@ -13,6 +13,8 @@ to invent.
 - **Bridge** — the boundary across which TypeScript and the engine exchange data.
 - **Canvas** — the WebGL2 surface on which Comb draws, and on which the user manipulates nodes,
   edges, and edge labels.
+- **Classifier** — a class, an interface, or an abstract class of a UML class diagram, as the UML
+  example shows it in one node: its stereotype, its name, and its members.
 - **Column** — the values of one field of every node or edge of a load, in slot order, crossing
   the bridge as one typed array, or as pieces, strings of at most 2^28 UTF-16 code units that each
   end where a value ends, with the boundaries of its values in UTF-16 code units across all

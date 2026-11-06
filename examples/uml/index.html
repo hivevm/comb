@@ -17,6 +17,46 @@
         </select>
       </label>
       <p id="count"></p>
+      <section id="palette">
+        <h2>Add a classifier</h2>
+        <p>Drag a kind onto the canvas.</p>
+        <ul>
+          <li draggable="true" data-kind="class">Class</li>
+          <li draggable="true" data-kind="interface">Interface</li>
+          <li draggable="true" data-kind="abstract-class">Abstract class</li>
+        </ul>
+      </section>
+      <section id="node-form" hidden>
+        <h2>Selected classifier</h2>
+        <label>
+          Name
+          <input id="name" type="text" />
+        </label>
+        <label>
+          Stereotype
+          <input id="stereotype" type="text" placeholder="«interface»" />
+        </label>
+        <label>
+          Attributes, one per line
+          <textarea id="attributes" rows="4" spellcheck="false"></textarea>
+        </label>
+        <label>
+          Operations, one per line
+          <textarea id="operations" rows="4" spellcheck="false"></textarea>
+        </label>
+      </section>
+      <section id="edge-form" hidden>
+        <h2>Selected relationship</h2>
+        <label>
+          Kind
+          <select id="kind"></select>
+        </label>
+        <label>
+          Label
+          <input id="label" type="text" />
+        </label>
+      </section>
+      <p id="empty">Select a classifier or a relationship to edit it here; Delete removes it.</p>
       <section id="legend">
         <h2>Relationships</h2>
         <ul id="legend-kinds"></ul>

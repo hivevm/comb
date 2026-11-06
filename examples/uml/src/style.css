@@ -43,9 +43,51 @@ body {
   font-size: 13px;
 }
 
-#sidebar select {
+#sidebar input,
+#sidebar select,
+#sidebar textarea {
   font: inherit;
   padding: 6px 8px;
+}
+
+#sidebar textarea {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  resize: vertical;
+}
+
+#sidebar [hidden] {
+  display: none;
+}
+
+#empty {
+  font-size: 13px;
+  color: #5a6170;
+  margin: 0;
+}
+
+#palette p {
+  font-size: 13px;
+  margin: 0 0 8px;
+  color: #5a6170;
+}
+
+#palette ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#palette li {
+  border: 1px solid #d0d4dc;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+  background: #f7f8fa;
+  cursor: grab;
 }
 
 #count {
