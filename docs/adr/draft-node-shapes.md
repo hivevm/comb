@@ -52,6 +52,11 @@ node shape from the engine's numbers.
     - `ellipse`: the rectangle inscribed in it, its sides 1/√2 of the ellipse's axes, less the
       padding.
     - `diamond`: the rectangle half its width and half its height, centred, less the padding.
+
+    The content is laid out from the inner rectangle's left and top rounded down to whole world
+    units, so that the layout's sums in `f32` stay as exact there as at a node's corner. Its
+    padding at the left and the top shrinks so by less than 1 world unit, and the content stays
+    within the inner rectangle.
   - The *filled node shapes* are `circle`, `ringed-circle`, and `bar`. They hold no content: the
     bridge crate refuses content in one with a kind of its own that names the node.
 - **Height:**
