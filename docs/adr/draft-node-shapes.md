@@ -55,8 +55,7 @@ node shape from the engine's numbers.
 
     The content is laid out from the inner rectangle's left and top rounded down to whole world
     units, so that the layout's sums in `f32` stay as exact there as at a node's corner. Its
-    padding at the left and the top shrinks so by less than 1 world unit, and the content stays
-    within the inner rectangle.
+    padding at the left and the top shrinks so by less than 1 world unit.
   - The *filled node shapes* are `circle`, `ringed-circle`, and `bar`. They hold no content: the
     bridge crate refuses content in one with a kind of its own that names the node.
 - **Height:**
