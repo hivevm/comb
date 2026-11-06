@@ -104,6 +104,9 @@ skimmed. The design revision drops what prevented nothing
   is the whole. Each colour carries white label text at a contrast of at least 4.5. The label
   names the kind wherever colour, dash, and arrowhead leave two kinds alike, since Comb has no
   hollow triangle, no diamond, and no arrowhead at the source, and its font no glyph for one.
+  The package diagram draws each dependency as a dependency, its label «import» for a module's
+  import of another and «use» for the bridge's load of the WebAssembly package and the bridge
+  crate's use of the core.
 - **The UML example's rules of connection are a table of what they refuse.** `allows` in
   `examples/uml/src/rules.ts` answers from the kinds of the two ends and of the relationship,
   against a set of refused combinations; between a class, an interface, and an abstract class it

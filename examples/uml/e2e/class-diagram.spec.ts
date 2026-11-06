@@ -13,7 +13,7 @@ import { CONVENTIONS, DRAWN, open, POLICY } from "./shared";
 
 const hex = (color: number) => `#${color.toString(16).padStart(6, "0")}`;
 
-test("the UML example draws the class diagram beside its sidebar, the class diagram its one choice", async ({
+test("the UML example draws the class diagram beside its sidebar, the class diagram chosen first", async ({
   page,
 }) => {
   // Verifies: G-12
@@ -23,7 +23,7 @@ test("the UML example draws the class diagram beside its sidebar, the class diag
   expect(response?.headers()["content-security-policy"]).toBe(POLICY);
   await open(page);
   await expect(page.locator("#canvas canvas")).toBeVisible();
-  await expect(page.locator("#diagram option")).toHaveText(["Class diagram"]);
+  await expect(page.locator("#diagram")).toHaveValue("class");
   const report = await page.evaluate(() => window.uml.loadReport);
   expect(report).toEqual({ diagram: "class", nodes: CLASSIFIERS.length, edges: EDGES.length });
   await expect(page.locator("#count")).toHaveText(
