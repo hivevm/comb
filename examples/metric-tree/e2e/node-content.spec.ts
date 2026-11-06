@@ -511,7 +511,7 @@ test("a text of characters beyond the measured ones is cut within its column", a
 });
 
 test("a node's connectors follow the height its content lays out to", async ({ page }) => {
-  // Verifies: ADR-0013, ADR-0025
+  // Verifies: ADR-0013, ADR-0025, ADR-0031
   await open(page);
   await loaded(page, { nodes: [{ ...node("b"), content: TALL }], edges: [] });
   /** The connectors drawn while the pointer is over the node, by side. */

@@ -87,6 +87,11 @@ export interface CombOptions {
    *  `onChange` connects nothing, whatever it returns, and its identifier is neither checked nor
    *  thrown (ADR-0024). */
   canConnect?: (proposal: Proposal) => string | false;
+  /** Whether the host application allows loops, edges from a node back to itself: `addEdge`
+   *  then accepts one, and the user's connection counts the source's own connectors compatible,
+   *  but for the one it starts from, while the source has no loop. Without it, both refuse a loop,
+   *  `addEdge` as `selfEdge`. A load accepts loops either way (ADR-0031). Default false. */
+  allowLoops?: boolean;
 }
 
 /** Once the engine is lost for the page, `load`, `updateNode`, `addNode`, `heightOf`, `addEdge`,
@@ -120,9 +125,9 @@ export interface Comb {
   /** Adds `edge` between two nodes the graph holds, without a load, drawn with its colour, dash
    *  pattern, arrowhead, and label (G-11). Throws a `GraphDataError` where the graph holds an edge
    *  `edge.id` already (`duplicateEdge`) or no node at one of its ends (`missingNode`), where the
-   *  edge runs from a node to itself (`selfEdge`), where a load would refuse it, or where the
-   *  graph would pass the limits of a load, and changes nothing then (Q-7); and an
-   *  `EngineLostError` once the engine is lost. */
+   *  edge runs from a node to itself and `allowLoops` is not set (`selfEdge`), where a load would
+   *  refuse it, or where the graph would pass the limits of a load, and changes nothing then
+   *  (Q-7); and an `EngineLostError` once the engine is lost. */
   addEdge(edge: EdgeData): void;
   /** Changes the colour, dash pattern, arrowhead, or label of the edge `id`, a dash or a label
    *  cleared with `null`; the canvas shows the change (G-5). Throws a `GraphDataError` where the
@@ -308,12 +313,13 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
 
   const store = createGraphStore();
   const scene = new Scene(app);
-  const { host: edits, user } = editorsOf(store, bridge, limits, options);
+  const loops = !!options.allowLoops;
+  const { host: edits, user } = editorsOf(store, bridge, limits, options, loops);
   // Interaction subscribes before the listeners, and the frames read the store only on the next
   // frame, so that a gesture a change takes, a connection among them, is over before anything
   // reads the store after that change.
   const clicks = contentClicksOf();
-  const interaction = attachInteraction(app, store, bridge, user.connect, clicks.tell);
+  const interaction = attachInteraction(app, store, bridge, user.connect, clicks.tell, loops);
   const frames = createFrames(() => scene.render(store.getState(), bridge, interaction.pointer));
   const unsubscribe = store.subscribe(frames.schedule);
   // A larger canvas shows more of the world, so what is culled changes with its size.

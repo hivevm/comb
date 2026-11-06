@@ -1,6 +1,7 @@
-// The connectors layer and the connection being dragged (ADR-0025, ADR-0012): the four connectors
+// The connectors layer and the connection being dragged (ADR-0031, ADR-0012): the four connectors
 // of the node under the pointer, and while the user drags a connection those of its source and of
-// the node under the pointer, the compatible ones drawn apart; and in the overlay, a line from the
+// the node under the pointer, the compatible ones drawn apart, the source's own where loops are
+// allowed but for the one it starts from; and in the overlay, a line from the
 // source's connector to the pointer. It reads the store, the engine's positions, and the point
 // interaction keeps for the pointer, and writes none of them (ADR-0011, ADR-0009).
 import { Graphics } from "pixi.js";
@@ -85,12 +86,17 @@ export class ConnectorsLayer extends Graphics {
     this.redraws += 1;
     this.drawn = [];
     this.points = [];
+    const start = state.connection && {
+      slot: state.connection.source,
+      side: state.connection.side,
+    };
     for (const [slot, compatible] of shown)
-      this.drawNode(state, positions, sizes, origin, slot, compatible);
+      this.drawNode(state, positions, sizes, origin, slot, compatible, start);
   }
 
   /** Draws the four connectors of the node in `slot`, at the place `positions` and the size
-   *  `sizes` hold for it. */
+   *  `sizes` hold for it, those `compatible` says drawn compatible but for the connector `from` a
+   *  connection starts from. */
   private drawNode(
     state: GraphView,
     positions: Float32Array,
@@ -98,16 +104,18 @@ export class ConnectorsLayer extends Graphics {
     origin: { x: number; y: number },
     slot: number,
     compatible: boolean,
+    from: { slot: number; side: Side } | null,
   ): void {
     const node = state.nodes[slot];
     if (!node) return;
     const [x, y] = [positions[slot * 2]!, positions[slot * 2 + 1]!];
     for (const side of SIDES) {
       const at = connectorPoint(x, y, node.width, sizes[slot * 2 + 1]!, side);
+      const onto = compatible && !(from?.slot === slot && from.side === side);
       this.circle(at.x - origin.x, at.y - origin.y, RADIUS / state.viewport.scale).fill(
-        compatible ? COMPATIBLE : PLAIN,
+        onto ? COMPATIBLE : PLAIN,
       );
-      this.drawn.push({ node: node.id, side, compatible });
+      this.drawn.push({ node: node.id, side, compatible: onto });
       this.points.push({ node: node.id, side, x: at.x, y: at.y });
     }
   }
@@ -133,13 +141,14 @@ function drawnFrom(state: GraphView, origin: { x: number; y: number }, far: bool
 }
 
 /** The nodes whose connectors `state` shows, each with whether they are drawn compatible: while
- *  the user connects, the source and the node under the pointer, else the node under it. */
+ *  the user connects, the source and the node under the pointer, the source compatible where the
+ *  pointer is over it and loops are allowed, else the node under it. */
 function shownBy(state: GraphView): [number, boolean][] {
   const { connection, hovered } = state;
   if (!connection) return hovered === null ? [] : [[hovered, false]];
   const over = connection.over;
   return over === null || over === connection.source
-    ? [[connection.source, false]]
+    ? [[connection.source, connection.compatible]]
     : [
         [connection.source, false],
         [over, connection.compatible],

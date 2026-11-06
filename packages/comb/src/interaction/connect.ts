@@ -1,7 +1,8 @@
-// The user connects two nodes (G-3, ADR-0025): a press on a connector begins a connection, which
+// The user connects two nodes (G-3, ADR-0031): a press on a connector begins a connection, which
 // follows the pointer and marks the connectors of the node under it compatible where the source
-// does not reach that node yet; released over a compatible connector, it proposes the edge to the
-// host application's veto, through `connect`, which `api` gives where `canConnect` is set. The
+// does not reach that node yet, the source's own where loops are allowed but for the one it starts
+// from; released over a compatible connector, it proposes the edge to the host application's veto,
+// through `connect`, which `api` gives where `canConnect` is set. The
 // store holds what the connection is from and over, which changes rarely; the world point it is
 // dragged to, which changes on every move, is the context's `pointer`, which the store's
 // `pointerMoved` signals, as a drag of a node signals its moves (ADR-0011). The
@@ -24,7 +25,7 @@ export interface Proposal {
 export type Connect = (proposal: Proposal) => void;
 
 /** Whether an edge from the node in slot `source` to the node in slot `target` exists, in that
- *  direction, by any sides (ADR-0025). */
+ *  direction, by any sides, a loop where the two are one (ADR-0031). */
 function reaches(store: GraphStore, bridge: Bridge, source: number, target: number): boolean {
   const { nodes, edges } = store.getState();
   const [from, to] = [nodes[source]?.id, nodes[target]?.id];
@@ -35,17 +36,21 @@ function reaches(store: GraphStore, bridge: Bridge, source: number, target: numb
 }
 
 /** The connection from the connector `side` of the node in slot `source` with the pointer over
- *  what `hit` says. */
+ *  what `hit` says: the source itself compatible only where `loops` allows loops, and the
+ *  connector it starts from never its target (ADR-0031). */
 function connectionOver(
   store: GraphStore,
   bridge: Bridge,
   source: number,
   side: Side,
   hit: Hit,
+  loops: boolean,
 ): Connection {
   const over = hit.kind === "connector" || hit.kind === "node" ? hit.slot : null;
-  const compatible = over !== null && over !== source && !reaches(store, bridge, source, over);
-  const target = compatible && hit.kind === "connector" ? { slot: hit.slot, side: hit.side } : null;
+  const own = over === source;
+  const compatible = over !== null && (!own || loops) && !reaches(store, bridge, source, over);
+  const onto = hit.kind === "connector" && compatible && !(own && hit.side === side);
+  const target = onto ? { slot: hit.slot, side: hit.side } : null;
   return { source, side, over, compatible, target };
 }
 
@@ -85,21 +90,22 @@ function endConnection(store: GraphStore, ended: Connection | null, connect: Con
 }
 
 /** A connection begun by a press on the connector `hit` names, at the screen point
- *  `(pressX, pressY)`, which a release proposes through `connect`; none where `hit` names no
- *  connector of a node held. */
+ *  `(pressX, pressY)`, which a release proposes through `connect`, a loop only where `loops`
+ *  allows loops; none where `hit` names no connector of a node held. */
 export function connection(
   context: Context,
   hit: Hit,
   pressX: number,
   pressY: number,
   connect: Connect,
+  loops: boolean,
 ): Gesture | undefined {
   const { store, bridge } = context;
   const from = hit.kind === "connector" ? store.getState().nodes[hit.slot] : undefined;
   if (hit.kind !== "connector" || !from) return undefined;
   const { id } = from;
   follow(context, pressX, pressY);
-  store.getState().connect(connectionOver(store, bridge, hit.slot, hit.side, hit));
+  store.getState().connect(connectionOver(store, bridge, hit.slot, hit.side, hit, loops));
   return {
     grabs: false,
     // The store hears of the point once a move, and of the connection only where it changed.
@@ -107,7 +113,8 @@ export function connection(
       const held = store.getState().connection;
       if (!held) return;
       follow(context, x, y);
-      const next = connectionOver(store, bridge, held.source, held.side, context.hitAt(x, y));
+      const over = context.hitAt(x, y);
+      const next = connectionOver(store, bridge, held.source, held.side, over, loops);
       if (!same(held, next)) store.getState().connect(next);
       store.getState().pointerMoved();
     },

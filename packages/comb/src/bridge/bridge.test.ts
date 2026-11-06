@@ -173,7 +173,7 @@ describe("bridge views", () => {
       ["query", () => bridge.query(everywhere, "near", 4, 0)],
       ["drawnEdges", () => bridge.drawnEdges()],
       ["hit", () => bridge.hit(0, 0, 1, "near", true)],
-      ["addEdge", () => bridge.addEdge(edgeOf(edge("x", "n0", "n2")), 0, 2)],
+      ["addEdge", () => bridge.addEdge(edgeOf(edge("x", "n0", "n2")), 0, 2, false)],
       ["updateEdge", () => bridge.updateEdge(0, "e0", plainEdge({ color: 0 }))],
       ["removeEdges", () => bridge.removeEdges(new Uint32Array([0]))],
       ["removeNodes", () => bridge.removeNodes(new Uint32Array([1]))],
@@ -1544,7 +1544,7 @@ describe("bridge removals", () => {
       slot: 2,
     });
     // addEdge and updateEdge throw the shell's mistake as the other exports do, no problem of data.
-    expect(refused(() => bridge.addEdge(edgeOf(edge("x", "n0", "n2")), 0, 2))).toEqual({
+    expect(refused(() => bridge.addEdge(edgeOf(edge("x", "n0", "n2")), 0, 2, false))).toEqual({
       kind: "noNode",
       slot: 2,
     });

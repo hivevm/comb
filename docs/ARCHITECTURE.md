@@ -62,7 +62,8 @@ identifier `updateNode` or `removeNodes` names that the graph does not hold (`un
 connection adds that it holds already (`duplicateNode`, `duplicateEdge`), and an end of an added
 edge it does not hold (`missingNode`).
 The bridge crate checks the node `addNode` and the edge `addEdge` hand over as a load checks one,
-refuses an edge from a node to itself (`selfEdge`) and an addition past the 1,000,000 nodes or edges
+refuses an edge from a node to itself (`selfEdge`) unless `CombOptions.allowLoops` allows loops,
+which a load accepts either way (ADR-0031), and an addition past the 1,000,000 nodes or edges
 a load may hold, and `api` has it check the code units of identifiers the store counts with the new
 ones. The engine keeps the count of the code units of the strings of content its nodes hold, set by
 a load and moved by every addition, patch, and removal of a node, and refuses an addition or a
@@ -124,7 +125,9 @@ one workspace for each example.
   between the docks of two nodes, each end at the connector of a side, the middle of its `top`,
   `right`, `bottom`, or `left`, its control point pulled out along the side's outward normal, or on
   the outline, where the line from its node's centre towards the other node's centre crosses it, its
-  control point pulled out along that line
+  control point pulled out along that line, and loops, an edge from a node back to itself, which
+  leave and re-enter one side, the top for the outline, a quarter of its length either side of
+  its middle, clockwise, pulled out as far as the side is long
   ([ADR-0031](adr/0031-edges-dock-on-a-side-or-the-outline.md)), their exact bounds, the point and
   normal at a path parameter, and edge-label placement. `shape` holds the closed set of node shapes
   ([ADR-0032](adr/0032-node-shapes.md)): each one's height for content of a given height, the inner
@@ -315,7 +318,8 @@ one workspace for each example.
   the cursor over what a press would hit;
   `connect.ts` begins a connection on a press on a connector, where `CombOptions.canConnect` is set,
   follows the pointer with it, marks compatible the connectors of a node the source does not reach
-  yet, and proposes the edge on a release over one, through the connection `api` hands it;
+  yet, the source's own where `CombOptions.allowLoops` allows loops but for the one it starts from,
+  and proposes the edge on a release over one, through the connection `api` hands it;
   `delete.ts` makes the canvas focusable and, on Delete or Backspace, names what deleting the
   selection would remove, a node with the edges the engine names at it (`edgesAt`) before anything
   is removed, and hands it to the deletion `api` hands it; neither asks a veto itself;
@@ -475,7 +479,8 @@ one workspace for each example.
   (`src/state-diagram.ts`) shows a Comb's life, its states rounded rectangles of their name, its
   initial state a circle, its final states ringed circles, and the choice of whether its engine
   loaded a diamond, placed by the heights `heightOf` gives their node shapes, and its transitions
-  grey edges docked on the outline labelled by their event or guard; it is shown only, its palette
+  grey edges docked on the outline labelled by their event or guard, and a loop on ready's left
+  side labelled edit, for which the example's Comb allows loops; it is shown only, its palette
   and legend hidden. Chosen, the package diagram (`src/package-diagram.ts`) shows Comb's modules and
   crates as nodes of «package» and their name and their dependencies as dashed edges with an
   arrowhead and the label «import» or «use»; each diagram is kept as it was left, its edits among
@@ -492,7 +497,8 @@ one workspace for each example.
   kind and label, or a dependency's «import» or «use», through `updateEdge`; a connection becomes an
   association, or on the package diagram a dependency «use», where the rules of `src/rules.ts`, a
   pure function of the kinds of the ends and of the relationship, allow it, which so far refuse
-  nothing, Comb itself refusing an edge of a node with itself; and Delete removes the selection. A
+  nothing, the diagram (`src/diagram.ts`) refusing before them an edge of a node with itself,
+  which Comb offers since it allows loops; and Delete removes the selection. A
   node's kind, class, interface, abstract class, or package, is read from its stereotype (`kindOf`),
   and the shared layout by rows (`laidOut`) and the content of a node (`contentOf`) stand in
   `src/class-diagram.ts`, which the package diagram imports. `src/diagram.ts` keeps the example's

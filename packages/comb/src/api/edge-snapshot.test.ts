@@ -32,3 +32,14 @@ test("an edge read once fills its defaults and keeps no key for a field left out
   expect("dash" in bare || "label" in bare).toBe(false);
   expect(bare).toMatchObject({ arrow: "end", sourceSide: "right", targetSide: "left" });
 });
+
+test("a loop read once without sides fills in the top for both, and keeps the sides it names", () => {
+  // Verifies: ADR-0031
+  const loop = edgeSnapshotOf({ id: "e", source: "a", target: "a" }, limits).snapshot;
+  expect(loop).toMatchObject({ sourceSide: "top", targetSide: "top" });
+  const named = edgeSnapshotOf(
+    { id: "e", source: "a", target: "a", sourceSide: "left" },
+    limits,
+  ).snapshot;
+  expect(named).toMatchObject({ sourceSide: "left", targetSide: "top" });
+});

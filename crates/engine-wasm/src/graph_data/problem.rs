@@ -203,7 +203,8 @@ pub enum GraphDataProblem {
     /// `removeEdges` or `updateEdge` names an edge the graph does not hold.
     #[serde(rename_all = "camelCase")]
     UnknownEdge { edge: String },
-    /// `addEdge` hands over an edge from a node to itself, which a load accepts (ADR-0025).
+    /// `addEdge` hands over an edge from a node to itself where loops are not allowed; a load
+    /// accepts one (ADR-0031).
     #[serde(rename_all = "camelCase")]
     SelfEdge { edge: String },
     /// A patch of `updateEdge` holds a field other than `color`, `dash`, `arrow`, `label`,

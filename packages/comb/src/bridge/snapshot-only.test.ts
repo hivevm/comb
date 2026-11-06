@@ -92,7 +92,7 @@ function handsOver(
   // @ts-expect-error the host application's node is no snapshot of one
   bridge.addNode(node);
   // @ts-expect-error the host application's edge is no snapshot of one
-  bridge.addEdge(edge, 0, 1);
+  bridge.addEdge(edge, 0, 1, false);
   // @ts-expect-error the host application's patch of an edge is no plain patch
   bridge.updateEdge(0, "e", edgePatch);
   // @ts-expect-error an object literal is no plain patch of an edge either

@@ -23,7 +23,8 @@ to invent.
   sides.
   _Avoid:_ port, handle, socket, pin.
 - **Connection** — the gesture of dragging from a connector of one node to a connector of another,
-  which creates an edge where it is released over a compatible one.
+  or of the same node where the host application allows loops, which creates an edge where it is
+  released over a compatible one.
 - **Change** — one edit of the graph as Comb reports it to the host application, typed by its
   kind and saying whether the user or the host application made it.
 - **Coarsened** — said of an edge mesh in which some edges are drawn less exactly than the

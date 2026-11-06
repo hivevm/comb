@@ -118,9 +118,10 @@ skimmed. The design revision drops what prevented nothing
   `examples/uml/src/rules.ts` answers from the kinds of the two ends and of the relationship,
   against a set of refused combinations; between a class, an interface, an abstract class, and a
   package it refuses none, in either direction, and its test writes that table out. No case is
-  needed of a node with itself, since Comb refuses every edge of a node with itself (`selfEdge`)
-  and its connect gesture offers none, nor of a class and a package, which never share a diagram.
-  A diagram that adds kinds of node adds its refusals here and to the table.
+  needed of a node with itself, since `Diagram.allows` refuses every edge of a node with itself
+  before it asks the table: the example's Comb allows loops for the state diagram, so its gesture
+  offers them in every diagram. Nor is one needed of a class and a package, which never share a
+  diagram. A diagram that adds kinds of node adds its refusals here and to the table.
 - **A ticket names its paths in full.** *What to build* and *Acceptance criteria* write every path
   from the repository root, `packages/comb/src/api/editors.ts` and not `api/editors.ts`, so that
   `scripts/check-plan-modes.sh` reads each one against the protected parts of
@@ -131,8 +132,9 @@ skimmed. The design revision drops what prevented nothing
   reason to open the engine, and a decision built on a false one decides the wrong problem. A
   spec or a ticket that asks for a refusal names, in the same way, the gesture or the call that
   can hand over what it refuses, and what Comb refuses of it already: a criterion that refuses
-  what Comb refuses first, such as an edge of a node with itself (`selfEdge`), or what no gesture
-  produces, cannot arise, and its ticket closes with the criterion disputed.
+  what Comb refuses first, such as an edge of a node with itself where the host application does
+  not allow loops (`selfEdge`), or what no gesture produces, cannot arise, and its ticket closes
+  with the criterion disputed.
 - **A host application's copy follows what Comb took.** The UML example, like any host
   application that keeps its own copy of the graph, writes into that copy only after Comb took the
   change, from what `onChange` tells or after the call returned, never before the call: Comb may

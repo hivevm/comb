@@ -19,6 +19,8 @@
 //! of content to what the graph holds through loads, additions, updates, and removals.
 // Verifies: Q-7, ADR-0030, ADR-0010, ADR-0031
 
+use std::sync::atomic::{AtomicU32, Ordering};
+
 use proptest::prelude::*;
 use serde::Deserialize;
 use serde::de::value::{MapDeserializer, SeqDeserializer};
@@ -40,6 +42,12 @@ use crate::{CallRefusal, Engine};
 
 /// How many random batches one run feeds the bridge: the ticket's floor, which runs in seconds.
 const CASES: u32 = 10_000;
+
+/// The cases the property test of an added edge has run, and of them the loops it added where
+/// loops were allowed and refused where they were not, counted across its cases for its floor.
+static ADDED_EDGE_RUNS: AtomicU32 = AtomicU32::new(0);
+static LOOPS_ADDED: AtomicU32 = AtomicU32::new(0);
+static LOOPS_REFUSED: AtomicU32 = AtomicU32::new(0);
 
 /// A value as JavaScript hands it over: of any shape, whatever the field expects.
 #[derive(Clone, Debug)]
@@ -1676,14 +1684,17 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(CASES))]
 
     #[test]
-    fn an_added_edge_is_refused_exactly_as_a_load_of_it_alone_and_a_self_edge_besides(
+    fn an_added_edge_is_refused_exactly_as_a_load_of_it_alone_and_a_loop_besides_unless_allowed(
         value in prop_oneof![9 => edge(true, 0, 2), 1 => anything()],
         bound in piece_bound(),
+        loops in any::<bool>(),
     ) {
-        // Verifies: ADR-0030, ADR-0025, Q-7
+        // Verifies: ADR-0030, ADR-0031, Q-7
+        // Where loops are allowed, a loop is added exactly as a load of it alone takes it.
         let as_load = loaded(bound, two_nodes(vec![value.clone()]));
         // An end the graph does not hold is `api`'s to refuse, against its map.
         prop_assume!(!matches!(as_load, Err(GraphDataProblem::MissingNode { .. })));
+        let run = ADDED_EDGE_RUNS.fetch_add(1, Ordering::Relaxed) + 1;
         let end = |name: &str| match &value {
             Value::Object(fields) => fields.iter().find(|(k, _)| k == name).and_then(|(_, v)| match v {
                 Value::Text(t) if t == "n0" || t == "n1" => Some(t.clone()),
@@ -1696,13 +1707,26 @@ proptest! {
         let mut graph = loaded(bound, two_nodes(Vec::new())).unwrap();
         let added = EdgeInput::deserialize(value.clone())
             .map_err(|error| EdgeRefusal::Data(unshaped(error)))
-            .and_then(|edge| add_edge_to(&mut graph, &edge, slot_of(&source), slot_of(&target)));
+            .and_then(|edge| add_edge_to(&mut graph, &edge, slot_of(&source), slot_of(&target), loops));
         let typed = matches!(
             as_load,
             Err(GraphDataProblem::InvalidField { .. } | GraphDataProblem::IdTooLong { .. }
                 | GraphDataProblem::Malformed { .. })
         );
-        if source.is_some() && source == target && !typed {
+        let looped = source.is_some() && source == target;
+        if looped && loops && added.is_ok() {
+            LOOPS_ADDED.fetch_add(1, Ordering::Relaxed);
+        }
+        if looped && !typed && !loops {
+            LOOPS_REFUSED.fetch_add(1, Ordering::Relaxed);
+        }
+        // Once the last case has run, each clause rests on loops enough.
+        if run == CASES {
+            let (taken, refused) =
+                (LOOPS_ADDED.load(Ordering::Relaxed), LOOPS_REFUSED.load(Ordering::Relaxed));
+            prop_assert!(taken >= 200 && refused >= 200, "{} added, {} refused", taken, refused);
+        }
+        if looped && !typed && !loops {
             prop_assert!(
                 matches!(added, Err(EdgeRefusal::Data(GraphDataProblem::SelfEdge { .. }))),
                 "{:?}",
