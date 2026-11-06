@@ -454,7 +454,7 @@ The functional core and its shell follow
   `window`, bound to its Comb.
 - **UML example** (`examples/uml`) — a second host application, of its own workspace, which
   imports Comb by its entries alone and nothing of the metric tree (G-12,
-  ADR-draft-one-workspace-per-example); a sidebar chooses the diagram, the class diagram the one
+  ADR-0030); a sidebar chooses the diagram, the class diagram the one
   so far, and lists the legend of the kinds of relationship, each a line drawn in its colour, dash
   pattern, and arrowhead beside its name and label. `src/class-diagram.ts` describes Comb's public
   interface, and the render layer's edges layer for its one realization, as classifiers whose

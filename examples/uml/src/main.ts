@@ -1,6 +1,6 @@
 // The UML example host application (G-12): Comb on the canvas, the choice of diagram and the
 // legend of the kinds of relationship in the HTML sidebar. It imports Comb by its entries alone
-// and nothing of the other example (ADR-draft-one-workspace-per-example).
+// and nothing of the other example (ADR-0030).
 import { createComb, type Comb, type GraphData } from "comb";
 import engineUrl from "comb/engine.wasm?url";
 import { inspect, type SceneSnapshot } from "comb/testing";

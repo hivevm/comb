@@ -1,4 +1,4 @@
-# ADR-draft-one-workspace-per-example: A pure Rust engine as functional core, and a TypeScript shell around it, the shell refusing what only its map of identifiers knows, the graph within a world's limit, and one workspace for each example
+# ADR-0030: A pure Rust engine as functional core, and a TypeScript shell around it, the shell refusing what only its map of identifiers knows, the graph within a world's limit, and one workspace for each example
 
 - **Status:** 🟡 proposed
 - **Date:** 2026-11-05

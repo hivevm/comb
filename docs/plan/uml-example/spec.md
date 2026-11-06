@@ -39,7 +39,7 @@ tree and the benchmark's own tests pin that; they run unchanged after every tick
 
 The layout of the repository names one example
 ([ADR-0009](../../adr/0009-functional-core-imperative-shell.md)). The proposed
-ADR-draft-one-workspace-per-example restates it with one workspace for each example.
+ADR-0030 restates it with one workspace for each example.
 
 ## Goals served
 
@@ -140,7 +140,7 @@ ADR-draft-one-workspace-per-example restates it with one workspace for each exam
 ## ADR impact
 
 - Binding: [ADR-0009](../../adr/0009-functional-core-imperative-shell.md) names the metric tree as
-  the one example of the layout. **ADR-draft-one-workspace-per-example** (proposed on this branch)
+  the one example of the layout. **ADR-0030** (proposed on this branch)
   restates it with one workspace for each example the specification asks for. No ticket starts
   before the maintainer has reviewed it and landed G-12. Its acceptance moves every
   `Verifies: ADR-0009` marker to its number.
