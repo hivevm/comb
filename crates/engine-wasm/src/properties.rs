@@ -17,7 +17,7 @@
 //! such a field (`invalidField`), and refuses as malformed only what has no such shape, and no
 //! message names a Rust type or crate. A last property holds the engine's count of the code units
 //! of content to what the graph holds through loads, additions, updates, and removals.
-// Verifies: Q-7, ADR-0030, ADR-0010
+// Verifies: Q-7, ADR-0030, ADR-0010, ADR-0031
 
 use proptest::prelude::*;
 use serde::Deserialize;
@@ -537,7 +537,9 @@ fn edge(loose: bool, j: usize, nodes: usize) -> impl Strategy<Value = Value> {
     ];
     let text = |arrow: &str| Value::Text(arrow.to_owned());
     let arrow = one_of(vec![text("end"), text("none")], vec![text("start")], loose);
-    let sides = ["top", "right", "bottom", "left"].map(text).to_vec();
+    let sides = ["top", "right", "bottom", "left", "outline"]
+        .map(text)
+        .to_vec();
     let side = || {
         one_of(
             sides.clone(),
@@ -983,7 +985,7 @@ fn mistyped(list: GraphList, item: &Fields) -> Vec<&'static str> {
                 matches!(get(item, "arrow"), Some(Value::Text(a)) if a == "end" || a == "none");
             check("arrow", arrow);
             for name in ["sourceSide", "targetSide"] {
-                let sides = ["top", "right", "bottom", "left"];
+                let sides = ["top", "right", "bottom", "left", "outline"];
                 let side =
                     matches!(get(item, name), Some(Value::Text(s)) if sides.contains(&s.as_str()));
                 check(name, side);

@@ -1,6 +1,6 @@
 //! The edges of the graph: the lists of the edges at each node, an addition into the free slot
 //! freed last or a new one, a change of an edge's label placement, style, and sides, a removal,
-//! and the path of each edge, its bounds, and the point of its label (ADR-0023, ADR-0025).
+//! and the path of each edge, its bounds, and the point of its label (ADR-0023, ADR-0031).
 
 use super::slots::put;
 use super::{AddEdgeError, EdgeSpec, Graph, LabelPlacement, SlotError};
@@ -83,7 +83,7 @@ impl Graph {
     }
 
     /// Gives the edge in `slot` the label placement `label`, the style `style`, and the sides
-    /// `sides`, and places it again in place (ADR-0023, ADR-0025). A slot that holds no edge
+    /// `sides`, and places it again in place (ADR-0023, ADR-0031). A slot that holds no edge
     /// refuses the change.
     pub fn update_edge(
         &mut self,
@@ -138,9 +138,9 @@ impl Graph {
         #[cfg(test)]
         self.placements.set(self.placements.get() + 1);
         let spec = self.edges[slot as usize];
-        let path = EdgePath::between(
-            &self.node_bounds(spec.source),
-            &self.node_bounds(spec.target),
+        let path = EdgePath::docked(
+            (&self.node_bounds(spec.source), self.shape(spec.source)),
+            (&self.node_bounds(spec.target), self.shape(spec.target)),
             spec.sides,
         );
         let label = spec
@@ -177,10 +177,11 @@ impl Graph {
     /// step with `slots`.
     #[expect(
         clippy::cast_possible_truncation,
-        reason = "an end is the middle of a side of a node, whose position and size the engine \
-                  keeps as f32; the ends cross without an origin, rounded by their distance from \
-                  the world's origin (ADR-0010); a node lies within `WORLD_LIMIT`, its far side \
-                  included, so an end does too, far within f32"
+        reason = "an end is the middle of a side of a node or a point of its outline, within the \
+                  node, whose position and size the engine keeps as f32; the ends cross without \
+                  an origin, rounded by their distance from the world's origin (ADR-0010); a \
+                  node lies within `WORLD_LIMIT`, its far side included, so an end does too, \
+                  far within f32"
     )]
     pub fn edge_ends(&self, slots: &[u32], out: &mut Vec<f32>) {
         out.clear();

@@ -174,7 +174,7 @@ pub enum Arrow {
     None,
 }
 
-/// A side of a node, at whose middle its connector sits (ADR-0025).
+/// A side of a node, at whose middle its connector sits (ADR-0031).
 #[derive(Tsify, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum Side {
@@ -206,6 +206,30 @@ impl From<Side> for graph_side::Side {
     }
 }
 
+/// Where an end of an edge docks: at the connector of one of the four sides, or on the node's
+/// outline (ADR-0031).
+#[derive(Tsify, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum Dock {
+    Top,
+    Right,
+    Bottom,
+    Left,
+    Outline,
+}
+
+impl From<Dock> for graph_side::Dock {
+    fn from(dock: Dock) -> Self {
+        match dock {
+            Dock::Top => graph_side::Side::Top.into(),
+            Dock::Right => graph_side::Side::Right.into(),
+            Dock::Bottom => graph_side::Side::Bottom.into(),
+            Dock::Left => graph_side::Side::Left.into(),
+            Dock::Outline => Self::Outline,
+        }
+    }
+}
+
 /// An edge between two nodes, named by their identifiers, with the style it is drawn with: its
 /// colour as `0xRRGGBB`, its dash pattern as dash and gap lengths in world units (none for a
 /// solid line), and whether an arrowhead marks its end (G-11).
@@ -227,12 +251,12 @@ pub struct EdgeInput {
     pub dash: Field<Option<Pair>>,
     #[tsify(type = "Arrow")]
     pub arrow: Field<Arrow>,
-    /// The side of its source it leaves by; `api` fills in `right` (ADR-0025).
-    #[tsify(type = "Side")]
-    pub source_side: Field<Side>,
-    /// The side of its target it enters by; `api` fills in `left`.
-    #[tsify(type = "Side")]
-    pub target_side: Field<Side>,
+    /// The side of its source it leaves by, or its outline; `api` fills in `right` (ADR-0031).
+    #[tsify(type = "Dock")]
+    pub source_side: Field<Dock>,
+    /// The side of its target it enters by, or its outline; `api` fills in `left`.
+    #[tsify(type = "Dock")]
+    pub target_side: Field<Dock>,
 }
 
 /// A dash pattern: a list of exactly two numbers, the dash and the gap.

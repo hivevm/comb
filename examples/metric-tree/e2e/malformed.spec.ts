@@ -131,7 +131,7 @@ const SIZE = "a finite number of 0 or more";
 const COLOR = "an integer from 0 to 0xFFFFFF";
 const DASH = "a list of two finite numbers, or none";
 const ID = "a well-formed string of at most 256 code units";
-const SIDE = '"top", "right", "bottom", or "left"';
+const SIDE = '"top", "right", "bottom", "left", or "outline"';
 const ROWS = "a list of rows";
 /** A text element of node `b`'s content where it lies, as a problem of its text names it. */
 const TEXT_AT = { node: "b", row: 0, column: 0, field: "text" };

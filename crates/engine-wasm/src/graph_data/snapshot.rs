@@ -7,9 +7,9 @@ use serde::Deserialize;
 use super::field::{Refusable, items};
 use super::node_columns::Refused;
 use super::{
-    Arrow, ArrowCode, ContentData, ContentInput, EdgeColumns, EdgeField, EdgeInput, Field,
-    LabelInput, NodeColumns, NodeField, NodeInput, NodeShapeCode, Pair, Side, SideCode, Unflat,
-    numbered, utf16_length,
+    Arrow, ArrowCode, ContentData, ContentInput, Dock, EdgeColumns, EdgeField, EdgeInput, Field,
+    LabelInput, NodeColumns, NodeField, NodeInput, NodeShapeCode, Pair, SideCode, Unflat, numbered,
+    utf16_length,
 };
 
 /// The nodes and edges of one load as the tests write them, each in slot order: the nodes as the
@@ -301,12 +301,13 @@ impl EdgeCells {
 impl From<&EdgeInput> for EdgeCells {
     fn from(edge: &EdgeInput) -> Self {
         let named = |value: Option<&str>| Field(value.map(str::to_owned));
-        let side = |side: Field<Side>| {
+        let side = |side: Field<Dock>| {
             named(side.0.map(|side| match side {
-                Side::Top => "top",
-                Side::Right => "right",
-                Side::Bottom => "bottom",
-                Side::Left => "left",
+                Dock::Top => "top",
+                Dock::Right => "right",
+                Dock::Bottom => "bottom",
+                Dock::Left => "left",
+                Dock::Outline => "outline",
             }))
         };
         Self {
@@ -453,6 +454,7 @@ impl OwnedEdgeColumns {
                 "right" => SideCode::Right,
                 "bottom" => SideCode::Bottom,
                 "left" => SideCode::Left,
+                "outline" => SideCode::Outline,
                 _ => SideCode::Unnamed,
             }) as u8
         };

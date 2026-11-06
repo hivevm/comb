@@ -1226,7 +1226,7 @@ describe("bridge columns that do not fit", () => {
       { ...edges, refused: { index: 0, field: 12 } },
       { ...edges, refused: { index: 1, field: 1 } },
       { ...edges, arrow: new Uint8Array([3]) },
-      { ...edges, targetSide: new Uint8Array([5]) },
+      { ...edges, targetSide: new Uint8Array([SideCode.Unnamed + 1]) },
       { ...edges, gap: new Float64Array(0) },
     ];
     for (const columns of misfits) {
@@ -1263,7 +1263,7 @@ describe("bridge columns that do not fit", () => {
       index: 0,
       id: "e",
       field: "targetSide",
-      expected: '"top", "right", "bottom", or "left"',
+      expected: '"top", "right", "bottom", "left", or "outline"',
     });
   });
 });

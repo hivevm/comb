@@ -260,7 +260,7 @@ pub(super) const A_DASH: &str = "a list of two finite numbers, or none";
 pub(super) const AN_ARROW: &str = "\"end\" or \"none\"";
 pub(super) const A_SHAPE: &str = "\"rectangle\", \"rounded-rectangle\", \"ellipse\", \"circle\", \
                                    \"ringed-circle\", \"diamond\", or \"bar\"";
-pub(super) const A_SIDE: &str = "\"top\", \"right\", \"bottom\", or \"left\"";
+pub(super) const A_SIDE: &str = "\"top\", \"right\", \"bottom\", \"left\", or \"outline\"";
 pub(super) const A_CONTENT: &str = "a list of rows";
 pub(super) const A_ROW: &str = "a list of elements";
 pub(super) const AN_ELEMENT: &str = "an object";

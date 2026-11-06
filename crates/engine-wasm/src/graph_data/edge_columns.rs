@@ -2,7 +2,7 @@
 //! of its arrowhead and sides, whether the columns fit together, the first value refused by its
 //! type, and the edges read off them.
 
-use comb_engine::geometry::{self as graph_side, Sides};
+use comb_engine::geometry::{Dock, Side, Sides};
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use super::item::{Edge, Item, Label};
@@ -108,8 +108,8 @@ pub enum ArrowCode {
     Unnamed,
 }
 
-/// The code of a side of an edge in its column (ADR-0010): `Unnamed` for a string that names
-/// none of the four, which the first pass refuses at its place.
+/// The code of a side of an edge, or its outline, in its column (ADR-0010, ADR-0031): `Unnamed`
+/// for a string that names none of the five, which the first pass refuses at its place.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SideCode {
@@ -117,6 +117,7 @@ pub enum SideCode {
     Right,
     Bottom,
     Left,
+    Outline,
     Unnamed,
 }
 
@@ -128,18 +129,18 @@ fn arrow_of(code: u8) -> Option<Arrow> {
         .map(|(_, arrow)| arrow)
 }
 
-/// The side of `code`, or none for `Unnamed` and for a code no side has.
-fn side_of(code: u8) -> Option<graph_side::Side> {
-    use graph_side::Side;
+/// Where the end of `code` docks, or none for `Unnamed` and for a code no side has.
+fn side_of(code: u8) -> Option<Dock> {
     [
-        (SideCode::Top, Side::Top),
-        (SideCode::Right, Side::Right),
-        (SideCode::Bottom, Side::Bottom),
-        (SideCode::Left, Side::Left),
+        (SideCode::Top, Side::Top.into()),
+        (SideCode::Right, Side::Right.into()),
+        (SideCode::Bottom, Side::Bottom.into()),
+        (SideCode::Left, Side::Left.into()),
+        (SideCode::Outline, Dock::Outline),
     ]
     .into_iter()
     .find(|&(of, _)| of as u8 == code)
-    .map(|(_, side)| side)
+    .map(|(_, dock)| dock)
 }
 
 /// The edges of one load as columns (ADR-0010), each in slot order. The identifiers, sources,
@@ -387,7 +388,7 @@ mod tests {
             .collect();
         cases.extend([
             // A string that names no arrowhead or side crosses as its code and is refused at its
-            // place, a side outside the four naming the four.
+            // place, a side outside the five naming the five.
             (
                 d_and(|e| e.arrow = text("start")),
                 field("arrow", Some(e()), AN_ARROW),
@@ -424,6 +425,35 @@ mod tests {
         for (columns, problem) in cases {
             assert_eq!(load_edges(&columns).err(), Some(problem));
         }
+    }
+
+    #[test]
+    fn each_of_the_four_sides_and_the_outline_crosses_as_where_the_end_docks() {
+        // Verifies: ADR-0031
+        let text = |value: &str| Field(Some(value.to_owned()));
+        for (name, dock) in [
+            ("top", Side::Top.into()),
+            ("right", Side::Right.into()),
+            ("bottom", Side::Bottom.into()),
+            ("left", Side::Left.into()),
+            ("outline", Dock::Outline),
+        ] {
+            let graph = load_edges(&d_and(|e| {
+                (e.source_side, e.target_side) = (text(name), text("outline"));
+            }))
+            .unwrap();
+            let sides = graph.edge(1).unwrap().sides;
+            assert_eq!(
+                (sides.source, sides.target),
+                (dock, Dock::Outline),
+                "{name}"
+            );
+        }
+        // Edge `d` names its sides as `labelled` left them: from the right to the left.
+        assert_eq!(
+            load_edges(&d_and(|_| {})).unwrap().edge(0).unwrap().sides,
+            Sides::default()
+        );
     }
 
     #[test]
