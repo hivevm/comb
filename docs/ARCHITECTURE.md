@@ -461,7 +461,15 @@ The functional core and its shell follow
   content is a caption for the stereotype, a title for the name, and a body text per member, at
   most the eight rows Comb lays out and "…" for those left out, placed in rows laid out by hand by
   the heights `heightOf` gives; `src/relationships.ts` maps each kind of relationship to the
-  colour, dash pattern, arrowhead, and label `docs/CONVENTIONS.md` records. Its hooks stand under
+  colour, dash pattern, arrowhead, and label `docs/CONVENTIONS.md` records. The diagram is edited
+  as the metric tree is: a palette drops a class, an interface, or an abstract class centred on
+  the drop; the sidebar (`src/sidebar.ts`) edits the selected classifier's name, stereotype, and
+  members, one per line of two text areas, through `updateNode`, and the selected relationship's
+  kind and label through `updateEdge`; a connection becomes an association where the rules of
+  `src/rules.ts`, a pure function of the kinds of the ends and of the relationship, allow it; and
+  Delete removes the selection. `src/diagram.ts` keeps the example's copy of the graph, the
+  classifier of each node, and the kind of each edge from every change `onChange` tells, and
+  `src/legend.ts` draws the legend. Its hooks stand under
   `window.uml`, so that it declares nothing on `window` the metric tree declares; Vite serves it
   on port 5176, the launch configuration **Example: UML** opens it, and its browser tests run in
   the Playwright project `uml` against it in test mode on port 5177.

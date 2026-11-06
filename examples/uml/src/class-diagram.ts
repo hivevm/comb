@@ -9,6 +9,7 @@
 // (ADR-0018), the one realization in Comb.
 import type { Comb, EdgeData, GraphData, NodeContent, NodeData, Side } from "comb";
 import { styleOf, type RelationshipKind } from "./relationships";
+import type { NodeKind } from "./rules";
 
 /** A class or an interface of the diagram, as its node shows it. */
 export interface Classifier {
@@ -304,6 +305,7 @@ function edgeOf({ source, target, kind, sides }: Relationship): EdgeData {
  *  with the kind of each edge by its identifier. */
 export function classDiagram(heightOf: Comb["heightOf"]): {
   graph: GraphData;
+  classifiers: Map<string, Classifier>;
   kinds: Map<string, RelationshipKind>;
 } {
   const byId = new Map<string, NodeData>();
@@ -322,6 +324,40 @@ export function classDiagram(heightOf: Comb["heightOf"]): {
   const edges = RELATIONSHIPS.map(edgeOf);
   return {
     graph: { nodes: CLASSIFIERS.map(({ id }) => byId.get(id)!), edges },
+    classifiers: new Map(CLASSIFIERS.map((each) => [each.id, structuredClone(each)])),
     kinds: new Map(RELATIONSHIPS.map((each, i) => [edges[i]!.id, each.kind])),
+  };
+}
+
+/** The stereotype of each kind of node, none for a plain class. */
+const STEREOTYPES: Record<NodeKind, string | undefined> = {
+  class: undefined,
+  interface: INTERFACE,
+  "abstract-class": "«abstract»",
+};
+
+/** The kind of node `classifier` is, told by its stereotype: «interface» an interface,
+ *  «abstract» an abstract class, any other or none a class. */
+export function kindOf({ stereotype }: Pick<Classifier, "stereotype">): NodeKind {
+  if (stereotype === INTERFACE) return "interface";
+  return stereotype === STEREOTYPES["abstract-class"] ? "abstract-class" : "class";
+}
+
+/** The name a node of each kind dropped from the palette starts with. */
+const DROPPED: Record<NodeKind, string> = {
+  class: "NewClass",
+  interface: "NewInterface",
+  "abstract-class": "NewAbstractClass",
+};
+
+/** A classifier of `kind`, as the palette drops it: its stereotype, a default name, no members. */
+export function newClassifier(id: string, kind: NodeKind): Classifier {
+  const stereotype = STEREOTYPES[kind];
+  return {
+    id,
+    ...(stereotype ? { stereotype } : {}),
+    name: DROPPED[kind],
+    attributes: [],
+    operations: [],
   };
 }
