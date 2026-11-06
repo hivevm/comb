@@ -19,40 +19,48 @@
       </label>
       <p id="count"></p>
       <section id="palette">
-        <h2>Add a classifier</h2>
+        <h2>Add a node</h2>
         <p>Drag a kind onto the canvas.</p>
         <ul>
-          <li draggable="true" data-kind="class">Class</li>
-          <li draggable="true" data-kind="interface">Interface</li>
-          <li draggable="true" data-kind="abstract-class">Abstract class</li>
+          <li draggable="true" data-kind="class" data-diagram="class">Class</li>
+          <li draggable="true" data-kind="interface" data-diagram="class">Interface</li>
+          <li draggable="true" data-kind="abstract-class" data-diagram="class">Abstract class</li>
+          <li draggable="true" data-kind="package" data-diagram="package" hidden>Package</li>
         </ul>
       </section>
       <section id="node-form" hidden>
-        <h2>Selected classifier</h2>
+        <h2>Selected node</h2>
         <label>
           Name
           <input id="name" type="text" />
         </label>
-        <label>
+        <label id="stereotype-field">
           Stereotype
           <input id="stereotype" type="text" placeholder="«interface»" />
         </label>
-        <label>
+        <label id="attributes-field">
           Attributes, one per line
           <textarea id="attributes" rows="4" spellcheck="false"></textarea>
         </label>
-        <label>
+        <label id="operations-field">
           Operations, one per line
           <textarea id="operations" rows="4" spellcheck="false"></textarea>
         </label>
       </section>
       <section id="edge-form" hidden>
         <h2>Selected relationship</h2>
-        <label>
+        <label id="kind-field">
           Kind
           <select id="kind"></select>
         </label>
-        <label>
+        <label id="dependency-field">
+          Dependency
+          <select id="dependency">
+            <option>«import»</option>
+            <option>«use»</option>
+          </select>
+        </label>
+        <label id="label-field">
           Label
           <input id="label" type="text" />
         </label>

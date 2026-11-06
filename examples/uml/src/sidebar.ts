@@ -1,8 +1,9 @@
 // The sidebar's forms (G-12, G-5): the selected classifier's name, stereotype, attributes, and
-// operations, one member per line, and the selected relationship's kind and label. Each edit
-// shows on the canvas at once.
+// operations, one member per line, or the selected package's name; the selected relationship's
+// kind and label, or the selected dependency's «import» or «use». Each edit shows on the canvas
+// at once.
 import type { EdgeLabelData, Selection } from "comb";
-import type { Classifier } from "./class-diagram";
+import { kindOf, type Classifier } from "./class-diagram";
 import type { Diagram } from "./diagram";
 import { KINDS, RELATIONSHIPS, type RelationshipKind } from "./relationships";
 
@@ -29,6 +30,15 @@ export class Sidebar {
   private readonly operations = element<HTMLTextAreaElement>("operations");
   private readonly kind = element<HTMLSelectElement>("kind");
   private readonly label = element<HTMLInputElement>("label");
+  private readonly dependency = element<HTMLSelectElement>("dependency");
+  /** The fields a classifier shows and a package does not. */
+  private readonly classifierFields = [
+    "stereotype-field",
+    "attributes-field",
+    "operations-field",
+  ].map((id) => element(id));
+  private readonly relationshipFields = ["kind-field", "label-field"].map((id) => element(id));
+  private readonly dependencyField = element("dependency-field");
   private node: string | null = null;
   private edge: string | null = null;
 
@@ -38,6 +48,7 @@ export class Sidebar {
       field.addEventListener("input", () => this.editNode());
     this.kind.addEventListener("change", () => this.changeKind());
     this.label.addEventListener("input", () => this.changeLabel());
+    this.dependency.addEventListener("change", () => this.changeDependency());
   }
 
   /** Shows the form of what `selection` names, or the hint where it names nothing. */
@@ -53,7 +64,10 @@ export class Sidebar {
     if (kind) this.fillEdge(kind);
   }
 
-  private fillNode({ name, stereotype, attributes, operations }: Classifier): void {
+  private fillNode(classifier: Classifier): void {
+    const { name, stereotype, attributes, operations } = classifier;
+    const isPackage = kindOf(classifier) === "package";
+    for (const field of this.classifierFields) field.hidden = isPackage;
     this.name.value = name;
     this.stereotype.value = stereotype ?? "";
     this.attributes.value = attributes.join("\n");
@@ -61,8 +75,21 @@ export class Sidebar {
   }
 
   private fillEdge(kind: RelationshipKind): void {
+    const edge = this.diagram.edge(this.edge!);
+    const source = edge && this.diagram.classifiers.get(edge.source);
+    const ofPackages = !!source && kindOf(source) === "package";
+    for (const field of this.relationshipFields) field.hidden = ofPackages;
+    this.dependencyField.hidden = !ofPackages;
     this.kind.value = kind;
-    this.label.value = this.diagram.edge(this.edge!)?.label?.text ?? "";
+    this.label.value = edge?.label?.text ?? "";
+    this.dependency.value = edge?.label?.text ?? "«use»";
+  }
+
+  /** Gives the selected dependency of packages the chosen «import» or «use» as its label. */
+  private changeDependency(): void {
+    if (this.edge === null) return;
+    this.label.value = this.dependency.value;
+    this.changeLabel();
   }
 
   /** Replaces the selected classifier with what the form holds. */

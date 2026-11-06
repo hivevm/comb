@@ -12,7 +12,7 @@ import {
   type DiagramData,
 } from "./class-diagram";
 import { packageDiagram } from "./package-diagram";
-import { CONNECTED, Diagram } from "./diagram";
+import { Diagram } from "./diagram";
 import { fillLegend } from "./legend";
 import type { RelationshipKind } from "./relationships";
 import { NODE_KINDS } from "./rules";
@@ -55,16 +55,18 @@ function element<T extends HTMLElement>(id: string): T {
 /** The type of the data a palette item carries in a drag. */
 const PALETTE_TYPE = "application/x-uml-kind";
 
-/** How many nodes the palette dropped and edges the user connected, for their identifiers. */
-let dropped = 0;
+/** How many nodes of each kind the palette dropped and edges the user connected, for their
+ *  identifiers. */
+const dropped = new Map<string, number>();
 let connected = 0;
 
-/** Names the user's connection where the rules allow an association between its ends; refuses
- *  it otherwise. */
+/** Names the user's connection where the rules allow the kind a connection adds between its
+ *  ends; refuses it otherwise. */
 function canConnect({ source, target }: Proposal): string | false {
-  if (!diagram.allows(source, target, CONNECTED)) return false;
+  const kind = diagram.connected;
+  if (!diagram.allows(source, target, kind)) return false;
   connected += 1;
-  return `${source}-${CONNECTED}-${target}-${connected}`;
+  return `${source}-${kind}-${target}-${connected}`;
 }
 
 const comb = await createComb(element("canvas"), {
@@ -77,20 +79,28 @@ const sidebar = new Sidebar(diagram);
 const choice = element<HTMLSelectElement>("diagram");
 const count = element("count");
 
-/** The diagrams the sidebar chooses between: how each is built, what its count names, and
- *  whether the palette adds to it. */
+/** The diagrams the sidebar chooses between: how each is built, what its count names, and the
+ *  kind a connection adds to it. */
 const DIAGRAMS: Record<
   string,
-  { build: (heightOf: Comb["heightOf"]) => DiagramData; nouns: [string, string]; palette: boolean }
+  {
+    build: (heightOf: Comb["heightOf"]) => DiagramData;
+    nouns: [string, string];
+    connected: RelationshipKind;
+  }
 > = {
-  class: { build: classDiagram, nouns: ["classes and interfaces", "relationships"], palette: true },
-  package: { build: packageDiagram, nouns: ["packages", "dependencies"], palette: false },
+  class: {
+    build: classDiagram,
+    nouns: ["classes and interfaces", "relationships"],
+    connected: "association",
+  },
+  package: { build: packageDiagram, nouns: ["packages", "dependencies"], connected: "dependency" },
 };
 /** Each diagram as it was left, while another is shown; the example stores nothing beyond the
  *  page. */
 const kept = new Map<string, DiagramData>();
 let shown: string | null = null;
-const palette = element("palette");
+const paletteItems = document.querySelectorAll<HTMLElement>("#palette [data-kind]");
 
 /** Shows the size of the diagram. */
 function counted(): void {
@@ -107,8 +117,9 @@ async function load(): Promise<UmlLoadReport> {
   shown = choice.value;
   const next =
     kept.get(shown) ?? DIAGRAMS[shown]!.build((content, width) => comb.heightOf(content, width));
-  diagram.load(next.graph, next.classifiers, next.kinds);
-  palette.hidden = !DIAGRAMS[shown]!.palette;
+  diagram.load(next.graph, next.classifiers, next.kinds, DIAGRAMS[shown]!.connected);
+  // The palette offers what the diagram shown holds.
+  for (const item of paletteItems) item.hidden = item.dataset.diagram !== shown;
   counted();
   comb.fitView();
   await comb.whenRendered();
@@ -125,8 +136,9 @@ function drop(kind: string, clientX: number, clientY: number): void {
   const nodeKind = NODE_KINDS.find((each) => each === kind);
   if (!nodeKind) return;
   const { x, y } = comb.worldPointAt(clientX, clientY);
-  dropped += 1;
-  const classifier = newClassifier(`${kind}-${dropped}`, nodeKind);
+  const number = (dropped.get(kind) ?? 0) + 1;
+  dropped.set(kind, number);
+  const classifier = newClassifier(`${kind}-${number}`, nodeKind);
   const content = contentOf(classifier);
   diagram.classifiers.set(classifier.id, classifier);
   try {
@@ -144,7 +156,7 @@ function drop(kind: string, clientX: number, clientY: number): void {
   }
 }
 
-for (const item of document.querySelectorAll<HTMLElement>("#palette [data-kind]")) {
+for (const item of paletteItems) {
   item.addEventListener("dragstart", (event) => {
     event.dataTransfer?.setData(PALETTE_TYPE, item.dataset.kind ?? "");
   });

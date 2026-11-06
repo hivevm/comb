@@ -350,12 +350,14 @@ const STEREOTYPES: Record<NodeKind, string | undefined> = {
   class: undefined,
   interface: INTERFACE,
   "abstract-class": "«abstract»",
+  package: "«package»",
 };
 
 /** The kind of node `classifier` is, told by its stereotype: «interface» an interface,
- *  «abstract» an abstract class, any other or none a class. */
+ *  «abstract» an abstract class, «package» a package, any other or none a class. */
 export function kindOf({ stereotype }: Pick<Classifier, "stereotype">): NodeKind {
   if (stereotype === INTERFACE) return "interface";
+  if (stereotype === STEREOTYPES.package) return "package";
   return stereotype === STEREOTYPES["abstract-class"] ? "abstract-class" : "class";
 }
 
@@ -364,6 +366,7 @@ const DROPPED: Record<NodeKind, string> = {
   class: "NewClass",
   interface: "NewInterface",
   "abstract-class": "NewAbstractClass",
+  package: "NewPackage",
 };
 
 /** A classifier of `kind`, as the palette drops it: its stereotype, a default name, no members. */

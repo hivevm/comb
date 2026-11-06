@@ -459,17 +459,19 @@ The functional core and its shell follow
   pattern, and arrowhead beside its name and label. Chosen, the package diagram
   (`src/package-diagram.ts`) shows Comb's modules and crates as nodes of «package» and their
   name and their dependencies as dashed edges with an arrowhead and the label «import» or «use»;
-  each diagram is kept as it was left while the other is shown, for as long as the page lives,
-  and the palette adds to the class diagram alone. `src/class-diagram.ts` describes Comb's public
+  each diagram is kept as it was left, its edits among it, while the other is shown, for as
+  long as the page lives. `src/class-diagram.ts` describes Comb's public
   interface, and the render layer's edges layer for its one realization, as classifiers whose
   content is a caption for the stereotype, a title for the name, and a body text per member, at
   most the eight rows Comb lays out and "…" for those left out, placed in rows laid out by hand by
   the heights `heightOf` gives; `src/relationships.ts` maps each kind of relationship to the
   colour, dash pattern, arrowhead, and label `docs/CONVENTIONS.md` records. The diagram is edited
-  as the metric tree is: a palette drops a class, an interface, or an abstract class centred on
-  the drop; the sidebar (`src/sidebar.ts`) edits the selected classifier's name, stereotype, and
-  members, one per line of two text areas, through `updateNode`, and the selected relationship's
-  kind and label through `updateEdge`; a connection becomes an association where the rules of
+  as the metric tree is, and so is the package diagram: the palette drops a class, an interface,
+  or an abstract class, or on the package diagram a package, centred on the drop; the sidebar
+  (`src/sidebar.ts`) edits the selected classifier's name, stereotype, and members, one per line
+  of two text areas, or a package's name, through `updateNode`, and the selected relationship's
+  kind and label, or a dependency's «import» or «use», through `updateEdge`; a connection becomes
+  an association, or on the package diagram a dependency «use», where the rules of
   `src/rules.ts`, a pure function of the kinds of the ends and of the relationship, allow it; and
   Delete removes the selection. `src/diagram.ts` keeps the example's copy of the graph, the
   classifier of each node, and the kind of each edge from every change `onChange` tells, and

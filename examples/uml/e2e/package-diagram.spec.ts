@@ -67,7 +67,7 @@ test("the package diagram shows only Comb's modules and crates, each a «package
     expect(texts.map(({ drawn: text }) => text)).toEqual(["«package»", name]);
   }
   await expect(page.locator("#count")).toHaveText("7 packages, 11 dependencies");
-  await expect(page.locator("#palette")).toBeHidden();
+  await expect(page.locator("#palette li:visible")).toHaveText(["Package"]);
 });
 
 test("each dependency of the package diagram is dashed, has an arrowhead, and says «import» or «use»", async ({
@@ -116,5 +116,9 @@ test("chosen again, the class diagram is shown with the nodes and edges it had, 
     nodes: before.graph.nodes.map(({ id }) => id).sort(),
     edges: before.graph.edges.map(({ id }) => id).sort(),
   });
-  await expect(page.locator("#palette")).toBeVisible();
+  await expect(page.locator("#palette li:visible")).toHaveText([
+    "Class",
+    "Interface",
+    "Abstract class",
+  ]);
 });

@@ -4,8 +4,8 @@
 // (`selfEdge`), so the rules need no case for it.
 import type { RelationshipKind } from "./relationships";
 
-/** The kinds of node of the class diagram. */
-export const NODE_KINDS = ["class", "interface", "abstract-class"] as const;
+/** The kinds of node: those of the class diagram, and the package of the package diagram. */
+export const NODE_KINDS = ["class", "interface", "abstract-class", "package"] as const;
 export type NodeKind = (typeof NODE_KINDS)[number];
 
 /** A relationship of `kind` from a node of kind `source` to one of kind `target`. */
@@ -15,8 +15,8 @@ export interface Proposed {
   kind: RelationshipKind;
 }
 
-/** The relationships the rules refuse, each as "source target kind": between the classifiers of
- *  the class diagram, none. */
+/** The relationships the rules refuse, each as "source target kind": none. A class and a package
+ *  never share a diagram, and Comb refuses every edge of a node with itself. */
 const REFUSED: ReadonlySet<string> = new Set();
 
 /** Whether the rules allow the relationship `proposed`. */

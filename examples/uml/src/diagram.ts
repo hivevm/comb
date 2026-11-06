@@ -1,30 +1,31 @@
 // The diagram the example edits (G-12): its copy of the graph, the classifier of each node, and
 // the kind of each relationship, kept from every change Comb tells (ADR-0024), as a host
 // application that persists keeps its own. An edge the user connected arrives without a kind;
-// it becomes an association, drawn as one.
+// it becomes the kind a connection adds in the diagram shown, drawn as one.
 import type { Comb, EdgeData, EdgeLabelData, EdgePatch, GraphChange, GraphData } from "comb";
 import { contentOf, kindOf, type Classifier } from "./class-diagram";
 import { patchOf, styleOf, type RelationshipKind } from "./relationships";
 import { allows } from "./rules";
 
-/** The kind a connection of the user adds. */
-export const CONNECTED: RelationshipKind = "association";
-
 export class Diagram {
   graph: GraphData = { nodes: [], edges: [] };
   classifiers = new Map<string, Classifier>();
   kinds = new Map<string, RelationshipKind>();
+  /** The kind a connection of the user adds: an association of classifiers, a dependency
+   *  «use» of packages. */
+  connected: RelationshipKind = "association";
 
   constructor(private readonly comb: Comb) {}
 
-  /** Takes `graph`, its classifiers, and its kinds as the diagram's own, and hands Comb the
-   *  graph. */
+  /** Takes `graph`, its classifiers, and its kinds as the diagram's own, a connection adding
+   *  `connected`, and hands Comb the graph. */
   load(
     graph: GraphData,
     classifiers: Map<string, Classifier>,
     kinds: Map<string, RelationshipKind>,
+    connected: RelationshipKind,
   ): void {
-    Object.assign(this, { graph, classifiers, kinds });
+    Object.assign(this, { graph, classifiers, kinds, connected });
     this.comb.load(graph);
   }
 
@@ -88,13 +89,14 @@ export class Diagram {
     for (const id of edges) this.kinds.delete(id);
   }
 
-  /** Adds `edge`; one without a kind, as the user connects it, becomes an association. */
+  /** Adds `edge`; one without a kind, as the user connects it, becomes the kind a connection
+   *  adds. */
   added(edge: EdgeData): void {
     this.graph.edges.push({ ...edge });
     if (this.kinds.has(edge.id)) return;
-    this.kinds.set(edge.id, CONNECTED);
-    // The association's style, adding what it draws and clearing nothing the edge brought.
-    this.comb.updateEdge(edge.id, styleOf(CONNECTED));
+    this.kinds.set(edge.id, this.connected);
+    // The kind's style, adding what it draws and clearing nothing the edge brought.
+    this.comb.updateEdge(edge.id, styleOf(this.connected));
   }
 }
 

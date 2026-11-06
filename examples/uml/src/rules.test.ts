@@ -15,16 +15,20 @@ const RELATIONSHIP_KINDS = [
   "composition",
 ] as const;
 
-/** The conventions' table: between a class, an interface, and an abstract class, in either
- *  direction, every kind of relationship is allowed; none is refused. */
+/** The conventions' table: between a class, an interface, an abstract class, and a package, in
+ *  either direction, every kind of relationship is allowed; none is refused. No case is needed of
+ *  a node with itself, which Comb refuses, nor of a class and a package, which never share a
+ *  diagram. */
 const REFUSED: readonly string[] = [];
 
-test("the node kinds are a class, an interface, and an abstract class", () => {
-  expect([...NODE_KINDS].sort()).toEqual(["abstract-class", "class", "interface"]);
+const KINDS_OF_NODE = ["class", "interface", "abstract-class", "package"] as const;
+
+test("the node kinds are a class, an interface, an abstract class, and a package", () => {
+  expect([...NODE_KINDS].sort()).toEqual([...KINDS_OF_NODE].sort());
 });
 
-for (const source of ["class", "interface", "abstract-class"] as const)
-  for (const target of ["class", "interface", "abstract-class"] as const)
+for (const source of KINDS_OF_NODE)
+  for (const target of KINDS_OF_NODE)
     for (const kind of RELATIONSHIP_KINDS) {
       const refused = REFUSED.includes(`${kind} ${source} ${target}`);
       test(`${kind} from ${source} to ${target}: ${refused ? "refused" : "allowed"}`, () => {
