@@ -36,6 +36,10 @@ to invent.
   engine, what is bound may reach up to twice as far.
 - **Dash pattern** — the lengths of the dashes and the gaps between them along an edge, in world
   units; an edge without one is solid.
+- **Diagram element** — a node or an edge, the two things a diagram is made of, as OMG's Diagram
+  Interchange names them together (`DiagramElement`); an edge label belongs to its edge. Not a
+  content element, which is a piece of a node's content.
+  _Avoid:_ figure, shape, and element alone.
 - **Edge** — a connection drawn from a connector of one node to a connector of another.
   _Avoid:_ link, wire, connection.
 - **Edge mesh** — the triangles of all edges in the viewport and its culling margin, which the
@@ -85,8 +89,8 @@ to invent.
   ranks nodes by slot, and a node added takes the highest rank.
 - **Stereotype** — the guillemet-quoted word above a UML classifier's name, such as «interface» or
   «package», which the UML example shows as a caption of the node's content.
-- **Selection** — the one node or edge the user has picked on the canvas, which the sidebar edits
-  and a delete removes.
+- **Selection** — the one diagram element the user has picked on the canvas, which the sidebar
+  edits and a delete removes.
 - **Side** — one of the four sides of a node, `top`, `right`, `bottom`, or `left`, each with one
   connector; an edge records the side it leaves and the side it enters.
 - **Sidebar** — the host application's HTML panel, outside the canvas, in which the attributes of
