@@ -53,7 +53,12 @@ A run records that name, and is compared only with baselines of its runner kind 
     - a run of a graph without a baseline on its kind, naming the file the baseline would be
       saved as.
 - **The workflow:** the **Benchmark** workflow runs each graph three times on its runner and
-  compares each median with its own baseline, weekly and on demand.
+  compares each median with its own baseline, weekly and on demand. The shaped graph's comparison
+  gates the workflow only where its baseline exists on the runner's kind; where none exists, the
+  workflow reports the shaped graph's median and the file its baseline would be saved as, and
+  fails on the metric tree alone. A shaped run that fails, rather than measures slow, fails the
+  workflow on every kind. The metric tree is compared before the shaped graph runs, so its
+  comparison is reported either way.
 
 **Out of scope:** other graphs, such as a UML diagram at scale or graphs of other sizes, and a
 benchmark of the UML example; the reference workload, which stays one per run.
@@ -85,8 +90,7 @@ benchmark of the UML example; the reference workload, which stays one per run.
 - Negative / trade-offs: the workflow runs twice as long, and every runner kind needs a second
   baseline, which the maintainer records as the first.
 - Negative / trade-offs: the metric tree's example gains a query that only the benchmark uses.
-- Follow-ups: whether the gate of Q-1 and Q-2 in the workflow fails on either graph or only on the
-  metric tree, until the shaped graph's baselines exist on every kind.
+- Follow-ups: the maintainer records the shaped graph's baselines on each runner kind.
 
 ## Enforcement
 
@@ -101,3 +105,7 @@ Each test below cites this decision with `Verifies:` and its identifier.
 - **The graph:** a browser test of the metric tree's example, on its production build, asserts
   that `?graph=shaped` loads 50,010 nodes in the node shapes in turn, edges docked on the outline,
   and a loop on one node in a hundred. It asserts that without the query the graph is today's.
+- **The workflow:** tests of `.github/workflows/benchmark.yml` assert that the metric tree's
+  comparison fails on every refusal, that the shaped graph's passes where its kind has no
+  baseline and reports its median, and that the metric tree is compared before the shaped graph
+  runs, whose steps run whether that comparison passes or not.

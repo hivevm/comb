@@ -2,7 +2,15 @@
 // to one north-star metric, and that to KPIs. Each node's type is told only by the content the
 // example describes for it (G-10). Edges between metrics carry their correlation; every edge ends
 // in an arrowhead at its target.
-import type { Comb, ContentElement, EdgeData, GraphData, NodeContent, NodeData } from "comb";
+import type {
+  Comb,
+  ContentElement,
+  EdgeData,
+  GraphData,
+  NodeContent,
+  NodeData,
+  NodeShape,
+} from "comb";
 
 const GREY = 0x9aa1ad;
 const GREEN = 0x22a55b;
@@ -298,6 +306,41 @@ function edgesOf(copy: number): EdgeData[] {
           : { text: correlation.toFixed(3), t: 0.5, offset: 0, background: color },
     };
   });
+}
+
+/** The node shapes the nodes of the shaped graph take in turn: the content node shapes, then the
+ *  filled ones, which hold no content (ADR-0032). */
+const SHAPES: readonly NodeShape[] = [
+  "rectangle",
+  "rounded-rectangle",
+  "ellipse",
+  "diamond",
+  "circle",
+  "ringed-circle",
+  "bar",
+];
+const FILLED: readonly NodeShape[] = ["circle", "ringed-circle", "bar"];
+/** One node in this many of the shaped graph has a loop, from the first. */
+const LOOP_EVERY = 100;
+
+/** The shaped graph the benchmark measures beside the metric tree (ADR-0033): `tree`'s nodes and
+ *  edges in the same places, the nodes taking the node shapes in turn, a filled one without its
+ *  content, every end docked on the outline, and a loop on one node in a hundred, which the Comb
+ *  that loads it allows. */
+export function shaped(tree: GraphData): GraphData {
+  const nodes = tree.nodes.map((node, i) => {
+    const shape = SHAPES[i % SHAPES.length]!;
+    return { ...node, shape, content: FILLED.includes(shape) ? [] : node.content };
+  });
+  const loops = nodes
+    .filter((_, i) => i % LOOP_EVERY === 0)
+    .map(({ id }) => ({ id: `${id}-loop`, source: id, target: id }));
+  const edges = [...tree.edges, ...loops].map((edge) => ({
+    ...edge,
+    sourceSide: "outline" as const,
+    targetSide: "outline" as const,
+  }));
+  return { nodes, edges };
 }
 
 /** The tree `copies` times, in a grid about as wide as it is tall, so that fitting the view

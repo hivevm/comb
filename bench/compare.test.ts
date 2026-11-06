@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  baselineFile,
   baselineName,
   compare,
   contentOf,
@@ -416,9 +417,9 @@ describe("the command, by runner kind", () => {
     expect(out).toContain("against baselines/intel-r-xeon-r-platinum-8370c-cpu-2-80ghz.json");
   });
 
-  test("exits 2 on a kind without a baseline, naming it, the kinds with one, and its file", async () => {
+  test("exits 3 on a kind without a baseline, naming it, the kinds with one, and its file", async () => {
     const { code, err } = await command([run(200, 100)], [{ ...run(200, 100), cpu: XEON_8370C }]);
-    expect(code).toBe(2);
+    expect(code).toBe(3);
     expect(err).toContain(`no baseline of the kind ${XEON_8370C}`);
     expect(err).toContain(`kinds with a baseline: ${EPYC_7763}`);
     expect(err).toContain("saved as baselines/intel-r-xeon-r-platinum-8370c-cpu-2-80ghz.json");
@@ -471,7 +472,7 @@ describe("bench/baselines", () => {
     expect(files).toContain("amd-epyc-7763-64-core-processor.json");
     for (const f of files) {
       const baseline = JSON.parse(readFileSync(join(recorded, f), "utf8")) as Run;
-      expect(`${baselineName(baseline.cpu ?? "")}.json`).toBe(f);
+      expect(baselineFile(baseline)).toBe(f);
     }
   });
 });
@@ -725,5 +726,108 @@ describe("benchmark comparison of the browser and the CPU a run measured with", 
     // A factor of 1 is no factor: a run recorded before the option compares with it.
     expect(compare({ ...run(200, 100), cpuThrottle: 1 }, run(200, 100)).kind).toBe("compared");
     expect(compare(slowed, { ...run(200, 100), cpuThrottle: 2 }).kind).toBe("compared");
+  });
+});
+
+/** The file of the shaped graph's baseline on the kind of the fixtures. */
+const SHAPED_FILE = "amd-epyc-7763-64-core-processor.shaped.json";
+
+/** A run of the shaped graph, slower than the metric tree's `run`, so that a comparison with the
+ *  metric tree's baseline would regress. */
+const shaped = (firstFrameMs = 400, p95 = 200): Run => ({
+  ...run(firstFrameMs, p95),
+  graph: "shaped",
+});
+
+// Verifies: ADR-0033 — a run names the graph it measured, the metric tree where it names none, and
+// is compared only with the baseline of its kind and graph: bench/baselines/<kind>.json for the
+// metric tree, bench/baselines/<kind>.shaped.json for the shaped graph.
+describe("the graph a run measured", () => {
+  test("names a baseline's file by its kind and graph", () => {
+    expect(baselineFile(run(200, 100))).toBe("amd-epyc-7763-64-core-processor.json");
+    expect(baselineFile({ ...run(200, 100), graph: "metric-tree" })).toBe(
+      "amd-epyc-7763-64-core-processor.json",
+    );
+    expect(baselineFile(shaped())).toBe(SHAPED_FILE);
+  });
+
+  test("a run of another graph than the baseline's is refused, naming both", () => {
+    expect(compare(shaped(), run(400, 200))).toEqual({
+      kind: "incomparable",
+      reason: "the run is of the graph shaped, the baseline of the graph metric-tree",
+    });
+    expect(compare(run(400, 200), shaped())).toEqual({
+      kind: "incomparable",
+      reason: "the run is of the graph metric-tree, the baseline of the graph shaped",
+    });
+    // A run that names no graph is of the metric tree, as every run recorded before.
+    expect(compare(run(200, 100), { ...run(200, 100), graph: "metric-tree" }).kind).toBe(
+      "compared",
+    );
+    expect(compare(shaped(), shaped())).toMatchObject({ kind: "compared", regressions: [] });
+  });
+
+  test("runs of different graphs have no median, and the median keeps the graph", () => {
+    expect(median([run(200, 100), shaped(), run(200, 100)])).toBe(
+      "the runs differ: of the graph metric-tree and of the graph shaped",
+    );
+    const middle = median([shaped(), shaped(), shaped()]);
+    if (typeof middle === "string") throw new Error(middle);
+    expect(middle.graph).toBe("shaped");
+    expect(compare(shaped(), middle).kind).toBe("compared");
+  });
+});
+
+// Verifies: ADR-0033 — the command picks the baseline of the runs' kind and graph, and refuses a
+// graph without one on the kind, naming the file it would be saved as.
+describe("the command, by graph", () => {
+  test("the command compares each graph's runs with the baseline of their kind and graph", async () => {
+    const both = { [SHAPED_FILE]: JSON.stringify(shaped()) };
+    const ofShaped = await command([run(200, 100)], [shaped(), shaped()], ["baselines"], both);
+    expect(ofShaped.code).toBe(0);
+    expect(ofShaped.out).toContain(`against baselines/${SHAPED_FILE}`);
+    const written = JSON.parse(
+      readFileSync(join(dir, "bench-results", "median.shaped.json"), "utf8"),
+    ) as Run;
+    expect(written.graph).toBe("shaped");
+    rmSync(dir, { recursive: true, force: true });
+    const ofTree = await command([run(200, 100)], [run(200, 100)], ["baselines"], both);
+    expect(ofTree.code).toBe(0);
+    expect(ofTree.out).toContain("against baselines/amd-epyc-7763-64-core-processor.json");
+  });
+
+  test("exits 3 on a graph without a baseline on its kind, naming the file it would be saved as", async () => {
+    // Verifies: ADR-0033 — a code of its own, by which the workflow tells a missing baseline of
+    // the shaped graph from a refusal or a regression.
+    const { code, err } = await command([run(200, 100)], [shaped()]);
+    expect(code).toBe(3);
+    expect(err).toContain(`no baseline of the kind ${EPYC_7763} and the graph shaped`);
+    expect(err).toContain(`saved as baselines/${SHAPED_FILE}`);
+    const other = { ...shaped(), cpu: XEON_8370C };
+    rmSync(dir, { recursive: true, force: true });
+    const elsewhere = await command([run(200, 100)], [other], ["baselines"], {
+      [SHAPED_FILE]: JSON.stringify(shaped()),
+    });
+    expect(elsewhere.code).toBe(3);
+    expect(elsewhere.err).toContain(
+      `kinds with a baseline: ${EPYC_7763}; ${EPYC_7763} (of the graph shaped)`,
+    );
+  });
+
+  test("exits 2 on runs of different graphs", async () => {
+    const { code, err } = await command([run(200, 100)], [run(200, 100), shaped()]);
+    expect(code).toBe(2);
+    expect(err).toContain("Not compared: the runs differ: of the graph metric-tree and of the");
+  });
+
+  test("exits 2 on a baseline in the directory under another graph's file name", async () => {
+    const misnamed = await command([], [run(200, 100)], ["baselines"], {
+      "amd-epyc-7763-64-core-processor.json": JSON.stringify(shaped()),
+    });
+    expect(misnamed.code).toBe(2);
+    expect(misnamed.err).toContain(
+      `the baseline baselines/amd-epyc-7763-64-core-processor.json names ${EPYC_7763} ` +
+        `and the graph shaped, whose file is ${SHAPED_FILE}`,
+    );
   });
 });
