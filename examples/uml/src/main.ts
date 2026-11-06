@@ -4,7 +4,14 @@
 import { createComb, type Comb, type GraphData, type Proposal } from "comb";
 import engineUrl from "comb/engine.wasm?url";
 import { inspect, screenPoint, type SceneSnapshot } from "comb/testing";
-import { classDiagram, contentOf, newClassifier, NODE_WIDTH } from "./class-diagram";
+import {
+  classDiagram,
+  contentOf,
+  newClassifier,
+  NODE_WIDTH,
+  type DiagramData,
+} from "./class-diagram";
+import { packageDiagram } from "./package-diagram";
 import { CONNECTED, Diagram } from "./diagram";
 import { fillLegend } from "./legend";
 import type { RelationshipKind } from "./relationships";
@@ -70,23 +77,47 @@ const sidebar = new Sidebar(diagram);
 const choice = element<HTMLSelectElement>("diagram");
 const count = element("count");
 
+/** The diagrams the sidebar chooses between: how each is built, what its count names, and
+ *  whether the palette adds to it. */
+const DIAGRAMS: Record<
+  string,
+  { build: (heightOf: Comb["heightOf"]) => DiagramData; nouns: [string, string]; palette: boolean }
+> = {
+  class: { build: classDiagram, nouns: ["classes and interfaces", "relationships"], palette: true },
+  package: { build: packageDiagram, nouns: ["packages", "dependencies"], palette: false },
+};
+/** Each diagram as it was left, while another is shown; the example stores nothing beyond the
+ *  page. */
+const kept = new Map<string, DiagramData>();
+let shown: string | null = null;
+const palette = element("palette");
+
 /** Shows the size of the diagram. */
 function counted(): void {
   const { nodes, edges } = diagram.graph;
-  count.textContent = `${nodes.length} classes and interfaces, ${edges.length} relationships`;
+  const [things, links] = DIAGRAMS[shown ?? "class"]!.nouns;
+  count.textContent = `${nodes.length} ${things}, ${edges.length} ${links}`;
 }
 
-/** Loads the diagram the sidebar has chosen, the class diagram the one so far. */
+/** Loads the diagram the sidebar has chosen, as it was left where it was shown before, and keeps
+ *  the one it replaces. */
 async function load(): Promise<UmlLoadReport> {
-  const { graph, classifiers, kinds } = classDiagram((content, width) =>
-    comb.heightOf(content, width),
-  );
-  diagram.load(graph, classifiers, kinds);
+  const { graph, classifiers, kinds } = diagram;
+  if (shown !== null) kept.set(shown, { graph, classifiers, kinds });
+  shown = choice.value;
+  const next =
+    kept.get(shown) ?? DIAGRAMS[shown]!.build((content, width) => comb.heightOf(content, width));
+  diagram.load(next.graph, next.classifiers, next.kinds);
+  palette.hidden = !DIAGRAMS[shown]!.palette;
   counted();
   comb.fitView();
   await comb.whenRendered();
-  return { diagram: choice.value, nodes: graph.nodes.length, edges: graph.edges.length };
+  return { diagram: shown, nodes: next.graph.nodes.length, edges: next.graph.edges.length };
 }
+
+choice.addEventListener("change", () => {
+  window.uml.loadReport = load();
+});
 
 /** Adds a classifier of the palette's `kind`, centred by the height Comb gives its content on
  *  the world point under the drop at (`clientX`, `clientY`) of the page (G-1, ADR-0026). */

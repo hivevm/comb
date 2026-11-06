@@ -301,17 +301,17 @@ function edgeOf({ source, target, kind, sides }: Relationship): EdgeData {
   };
 }
 
-/** The class diagram as graph data, each node placed by the height `heightOf` gives its content,
- *  with the kind of each edge by its identifier. */
-export function classDiagram(heightOf: Comb["heightOf"]): {
-  graph: GraphData;
-  classifiers: Map<string, Classifier>;
-  kinds: Map<string, RelationshipKind>;
-} {
+/** The nodes of `classifiers` laid out in `rows` from top to bottom, each by its column from the
+ *  left: a node's top lies on its row's, and a row starts below the highest node of the row
+ *  above, by the height `heightOf` gives its content. */
+export function laidOut(
+  rows: readonly (readonly [string, number])[][],
+  classifiers: ReadonlyMap<string, Classifier>,
+  heightOf: Comb["heightOf"],
+): Map<string, NodeData> {
   const byId = new Map<string, NodeData>();
-  const classifiers = new Map(CLASSIFIERS.map((each) => [each.id, each]));
   let top = 0;
-  for (const row of ROWS) {
+  for (const row of rows) {
     let bottom = top;
     for (const [id, column] of row) {
       const content = contentOf(classifiers.get(id)!);
@@ -321,10 +321,26 @@ export function classDiagram(heightOf: Comb["heightOf"]): {
     }
     top = bottom + ROW_GAP;
   }
+  return byId;
+}
+
+/** A diagram as graph data, with the classifier of each node and the kind of each edge by their
+ *  identifiers. */
+export interface DiagramData {
+  graph: GraphData;
+  classifiers: Map<string, Classifier>;
+  kinds: Map<string, RelationshipKind>;
+}
+
+/** The class diagram as graph data, each node placed by the height `heightOf` gives its content,
+ *  with the classifier of each node and the kind of each edge by their identifiers. */
+export function classDiagram(heightOf: Comb["heightOf"]): DiagramData {
+  const classifiers = new Map(CLASSIFIERS.map((each) => [each.id, structuredClone(each)]));
+  const byId = laidOut(ROWS, classifiers, heightOf);
   const edges = RELATIONSHIPS.map(edgeOf);
   return {
     graph: { nodes: CLASSIFIERS.map(({ id }) => byId.get(id)!), edges },
-    classifiers: new Map(CLASSIFIERS.map((each) => [each.id, structuredClone(each)])),
+    classifiers,
     kinds: new Map(RELATIONSHIPS.map((each, i) => [edges[i]!.id, each.kind])),
   };
 }

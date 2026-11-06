@@ -456,7 +456,11 @@ The functional core and its shell follow
   imports Comb by its entries alone and nothing of the metric tree (G-12,
   ADR-0030); a sidebar chooses the diagram, the class diagram the one
   so far, and lists the legend of the kinds of relationship, each a line drawn in its colour, dash
-  pattern, and arrowhead beside its name and label. `src/class-diagram.ts` describes Comb's public
+  pattern, and arrowhead beside its name and label. Chosen, the package diagram
+  (`src/package-diagram.ts`) shows Comb's modules and crates as nodes of «package» and their
+  name and their dependencies as dashed edges with an arrowhead and the label «import» or «use»;
+  each diagram is kept as it was left while the other is shown, for as long as the page lives,
+  and the palette adds to the class diagram alone. `src/class-diagram.ts` describes Comb's public
   interface, and the render layer's edges layer for its one realization, as classifiers whose
   content is a caption for the stereotype, a title for the name, and a body text per member, at
   most the eight rows Comb lays out and "…" for those left out, placed in rows laid out by hand by
