@@ -119,6 +119,7 @@ pub(crate) fn batch(nodes: &[(&str, f64, f64)], edges: &[(&str, &str, &str)]) ->
                 x: x.into(),
                 y: y.into(),
                 width: 100.0.into(),
+                shape: crate::NodeShape::Rectangle.into(),
                 content: titled("x"),
             })
             .collect(),
@@ -179,7 +180,7 @@ pub(super) fn load_columns(columns: &OwnedColumns) -> Result<Graph, GraphDataPro
 }
 
 /// The columns of node `a` and of `b`, made by `change` from a well-formed one.
-pub(super) fn a_and(change: impl FnOnce(&mut NodeInput)) -> OwnedColumns {
+pub(crate) fn a_and(change: impl FnOnce(&mut NodeInput)) -> OwnedColumns {
     let nodes = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]).nodes;
     let mut b = added(300.0, 0.0, |n| n.id = "b".to_owned().into());
     change(&mut b);
@@ -280,6 +281,7 @@ pub(crate) fn load_into(
         &n.x,
         &n.y,
         &n.width,
+        &n.shape,
         c.row_bounds.clone(),
         c.element_bounds.clone(),
         c.kinds.clone(),

@@ -27,7 +27,7 @@ mod snapshot;
 mod strings;
 
 use checks::rgb;
-pub(crate) use checks::{kept_height, within_by_height};
+pub(crate) use checks::{shaped_height, within_by_height};
 use content::Cursor;
 #[cfg(test)]
 pub(crate) use content::TEST_BUDGET;
@@ -45,8 +45,8 @@ pub use edit::{EdgePatch, EdgeRefusal, NodePatch};
 pub(crate) use edit::{add_edge_to, patch_of, update_edge_in};
 pub use field::Field;
 pub use input::{
-    Arrow, ContentElement, EdgeInput, LabelInput, NodeContent, NodeInput, Pair, Segment, Side,
-    TextRole, Trend, TrendDirection,
+    Arrow, ContentElement, EdgeInput, LabelInput, NodeContent, NodeInput, NodeShape, Pair, Segment,
+    Side, TextRole, Trend, TrendDirection,
 };
 pub(crate) use limits::{ID_LIMIT, TEXT_LIMIT, check_graph_size, check_id_budget};
 pub use limits::{MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_TEXT};
@@ -54,13 +54,18 @@ pub use limits::{MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_TEXT};
 pub(crate) use load::graph_of;
 pub(crate) use load::{add_node_to, height_of, load_of};
 pub(crate) use node_columns::refused_of;
-pub use node_columns::{NodeColumns, NodeField};
+pub use node_columns::{NodeColumns, NodeField, NodeShapeCode};
 pub use problem::{GraphDataProblem, GraphList};
 pub(crate) use problem::{malformed, slot, unshaped};
 #[cfg(test)]
 pub(crate) use snapshot::{EdgeCells, GraphBatch, OwnedColumns, OwnedEdgeColumns};
 use strings::{bounds_fit, lengths, runs_fit, string_at, value_at, values};
 pub(crate) use strings::{numbered, text_spans, utf16_length};
+
+/// The node shape and width of a rectangle 100 wide, as the tests patch a node of.
+#[cfg(test)]
+pub(crate) const RECTANGLE: (comb_engine::shape::NodeShape, f32) =
+    (comb_engine::shape::NodeShape::Rectangle, 100.0);
 
 /// The value of `values` whose code, its discriminant, is `code`, or none for a code none has.
 fn coded<T: Copy + Into<u32>>(values: &[T], code: u32) -> Option<T> {

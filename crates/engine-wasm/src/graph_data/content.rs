@@ -27,6 +27,6 @@ pub use layout::{ElementHit, ElementKind};
 
 use super::{
     ContentElement, GraphDataProblem, MAX_TEXT, NodeContent, Segment, TEXT_LIMIT, TextRole, Trend,
-    TrendDirection, bounds_fit, kept_height, malformed, numbered, rgb, runs_fit, string_at,
-    text_spans, utf16_length,
+    TrendDirection, bounds_fit, malformed, numbered, rgb, runs_fit, string_at, text_spans,
+    utf16_length,
 };

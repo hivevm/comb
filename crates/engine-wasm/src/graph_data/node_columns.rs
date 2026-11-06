@@ -1,23 +1,24 @@
-//! The nodes of a load as columns (ADR-0010): whether they fit together, the first value the
-//! shell refused by its type, and the nodes read off them.
+//! The nodes of a load as columns (ADR-0010): the codes of their node shapes, whether they fit
+//! together, the first value refused by its type, and the nodes read off them.
 
+use comb_engine::shape::NodeShape;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use super::item::{Item, Node};
-use super::problem::{A_CONTENT, A_NUMBER, A_SIZE, AN_ID};
+use super::problem::{A_CONTENT, A_NUMBER, A_SHAPE, A_SIZE, AN_ID};
 use super::{
-    ContentColumns, Field, GraphDataProblem, GraphList, Unflat, bounds_fit, malformed, refused_by,
-    unshaped, value_at, values,
+    ContentColumns, Field, GraphDataProblem, GraphList, Unflat, bounds_fit, malformed, numbered,
+    refused_by, unshaped, value_at, values,
 };
 
-/// A field of a node that a load's first pass refuses by its type (ADR-0010), as the shell names
-/// the first such value it reads: `Item` for a node that is no object, refused as malformed;
-/// `Content` for content that is no list; and of the shapes of content the snapshot cannot
-/// flatten, `Row` for a row that is no list, `Element` for an element that is no object,
-/// `Segments` for a progress bar's segments that are no list, and `Segment` for a segment that is
-/// no object. It
-/// crosses as its code, a plain number, so that a code it does not know is refused as malformed
-/// rather than thrown by the glue while the engine is borrowed, which would wedge it.
+/// A field of a node that a load's first pass refuses by its type (ADR-0010), in the order a node's
+/// fields are read, as the shell names the first such value it reads: `Item` for a node that is no
+/// object, refused as malformed; `Content` for content that is no list; and of the shapes of
+/// content the snapshot cannot flatten, `Row` for a row that is no list, `Element` for an element
+/// that is no object, `Segments` for a progress bar's segments that are no list, and `Segment` for
+/// a segment that is no object. It crosses as its code, a plain number, so that a code it does not
+/// know is refused as malformed rather than thrown by the glue while the engine is borrowed, which
+/// would wedge it.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NodeField {
@@ -26,11 +27,28 @@ pub enum NodeField {
     X,
     Y,
     Width,
+    Shape,
     Content,
     Row,
     Element,
     Segments,
     Segment,
+}
+
+/// The code of a node's node shape in its column (ADR-0010): the place of the node shape in
+/// `NodeShape::ALL`, and `Unnamed` for a value that names none, which the first pass refuses at
+/// its place.
+#[wasm_bindgen]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NodeShapeCode {
+    Rectangle,
+    RoundedRectangle,
+    Ellipse,
+    Circle,
+    RingedCircle,
+    Diamond,
+    Bar,
+    Unnamed,
 }
 
 /// The first value of the nodes the first pass refuses, as the shell names it: the index of its
@@ -46,15 +64,17 @@ pub struct Refused {
 /// The nodes of one load as columns (ADR-0010), each in slot order. The identifiers are the
 /// values concatenated and cut into pieces, each ending where a value ends, with their boundaries
 /// in UTF-16 code units across all pieces, one more than there are nodes, a refused value empty.
-/// The numbers are as the host application handed them; the content crosses as the columns of
-/// `ContentColumns`. `refused` is the first value the shell read that the first pass refuses, or
-/// none.
+/// The numbers are as the host application handed them; the node shapes as their codes; the
+/// content crosses as the columns of `ContentColumns`. `refused` is the first value the shell read
+/// that the first pass refuses, or none; a node shape that names none is no such value, and the
+/// first pass finds its code.
 pub struct NodeColumns<'a> {
     pub ids: &'a [String],
     pub id_bounds: &'a [u32],
     pub x: &'a [f64],
     pub y: &'a [f64],
     pub width: &'a [f64],
+    pub shape: &'a [u8],
     pub content: ContentColumns<'a>,
     pub refused: Option<Refused>,
 }
@@ -65,12 +85,13 @@ pub(super) fn unfit() -> GraphDataProblem {
 }
 
 impl NodeField {
-    pub(super) const ALL: [Self; 10] = [
+    pub(super) const ALL: [Self; 11] = [
         Self::Item,
         Self::Id,
         Self::X,
         Self::Y,
         Self::Width,
+        Self::Shape,
         Self::Content,
         Self::Row,
         Self::Element,
@@ -137,6 +158,11 @@ impl NodeColumns<'_> {
         let count = self.x.len();
         let numbers = [self.y, self.width].map(<[f64]>::len);
         let fit = numbers.iter().all(|&len| len == count)
+            && self.shape.len() == count
+            && self
+                .shape
+                .iter()
+                .all(|&code| code <= NodeShapeCode::Unnamed as u8)
             && bounds_fit(self.id_bounds, count, self.ids)
             && self.content.fit(count)
             && self.refused.is_none_or(|refused| {
@@ -145,11 +171,27 @@ impl NodeColumns<'_> {
         if fit { Ok(count) } else { Err(unfit()) }
     }
 
-    /// The first pass over the nodes: the first value the shell refused by its type, named as a
-    /// node of the batch names it, its identifier where it was read.
+    /// The first pass over the nodes: the first value refused by its type, the one the shell
+    /// named or a node shape whose code names none, whichever comes first in the order of the
+    /// nodes and of their fields, named as a node of the batch names it, its identifier where it
+    /// was read.
     pub(super) fn first_refused(&self) -> Result<(), GraphDataProblem> {
-        let Some(refused) = self.refused else {
-            return Ok(());
+        let last = self
+            .refused
+            .map_or(self.shape.len(), |refused| refused.index as usize + 1);
+        let unnamed = (0..last).find(|&index| self.shape[index] == NodeShapeCode::Unnamed as u8);
+        let refused = match (self.refused, unnamed) {
+            // A node shape that names none, at a node before the one the shell named, or at that
+            // node before the field it named.
+            (Some(refused), Some(index))
+                if index < refused.index as usize
+                    || (NodeField::Shape as u32) < (refused.field as u32) =>
+            {
+                self.shape_at(index)
+            }
+            (None, Some(index)) => self.shape_at(index),
+            (Some(refused), _) => refused,
+            (None, None) => return Ok(()),
         };
         let index = refused.index as usize;
         let id =
@@ -162,6 +204,7 @@ impl NodeColumns<'_> {
             NodeField::X => ("x", A_NUMBER),
             NodeField::Y => ("y", A_NUMBER),
             NodeField::Width => ("width", A_SIZE),
+            NodeField::Shape => ("shape", A_SHAPE),
             NodeField::Content => ("content", A_CONTENT),
             NodeField::Row | NodeField::Element | NodeField::Segments | NodeField::Segment => {
                 let unread = match refused.field {
@@ -177,19 +220,33 @@ impl NodeColumns<'_> {
         item.read(name, Field::<()>(None), expected)
     }
 
+    /// The refusal of the node shape of the node at `index`, which names none.
+    fn shape_at(&self, index: usize) -> Refused {
+        Refused {
+            index: numbered(index),
+            field: NodeField::Shape,
+            row: None,
+            column: None,
+        }
+    }
+
     /// The nodes with every field read, their identifiers mapped onto the string Rust holds.
     pub(super) fn nodes(&self) -> Result<Vec<Node<'_>>, GraphDataProblem> {
         let ids = values(self.ids, self.id_bounds)?;
-        Ok(ids
-            .into_iter()
+        ids.into_iter()
             .enumerate()
-            .map(|(i, id)| Node {
-                id,
-                x: self.x[i],
-                y: self.y[i],
-                width: self.width[i],
+            .map(|(i, id)| {
+                // The first pass refused every code that names none.
+                let shape = NodeShape::of_code(self.shape[i]).ok_or_else(unfit)?;
+                Ok(Node {
+                    id,
+                    x: self.x[i],
+                    y: self.y[i],
+                    width: self.width[i],
+                    shape,
+                })
             })
-            .collect())
+            .collect()
     }
 }
 
@@ -404,8 +461,10 @@ mod tests {
     fn columns_that_do_not_fit_together_are_refused_as_malformed() {
         // Verifies: ADR-0010
         let fits = || a_and(|_| {});
-        let changes: [fn(&mut OwnedColumns); 7] = [
+        let changes: [fn(&mut OwnedColumns); 9] = [
             |c| _ = c.x.pop(),
+            |c| _ = c.shape.pop(),
+            |c| c.shape[0] = NodeShapeCode::Unnamed as u8 + 1,
             |c| _ = c.content.text_valid.pop(),
             |c| _ = c.id_bounds.pop(),
             |c| c.id_bounds[0] = 1,
@@ -442,7 +501,7 @@ mod tests {
                 Ok(Some((1, field)))
             );
         }
-        for code in [10, 255, u32::MAX] {
+        for code in [11, 255, u32::MAX] {
             assert_eq!(refused_of(Some(0), Some(code), None, None), Err(unfit()));
         }
     }
