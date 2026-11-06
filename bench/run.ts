@@ -15,8 +15,12 @@
 // gestures it times the reference workload of bench/reference.ts in the same page, by which
 // bench/compare.ts tells whether the runner is in the state its kind's baseline was taken in; the
 // CPU model it records names the runner's kind, the content the example counts names what was
-// loaded, and each gesture records the steps it sent and the frames Comb rendered. The numbers go
-// to bench-results/latest.json and are printed beside the targets.
+// loaded, and each gesture records the steps it sent and the frames Comb rendered. It measures the
+// graph BENCH_GRAPH names (ADR-0033): the metric tree, or the shaped graph, the metric tree's
+// nodes and edges in the same places in the node shapes in turn, docked on the outline, with a
+// loop on one node in a hundred, which the example loads with `?graph=shaped`; it records the
+// graph's name and checks that the example loaded it. The numbers go to bench-results/latest.json
+// and are printed beside the targets.
 //
 //   bun run bench                   headless Chromium, software WebGL
 //   BENCH_HEADED=1 bun run bench    a visible window, which uses the machine's GPU
@@ -26,6 +30,8 @@
 //                                   attach to a Chrome started outside the run, through its
 //                                   debugging port, instead of launching Chromium (ADR-0028)
 //   BENCH_CPU_THROTTLE=2            slow the measured page's CPU by that factor (ADR-0029)
+//   BENCH_GRAPH=shaped              measure the shaped graph instead of the metric tree
+//                                   (ADR-0033)
 import { chromium, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { cpus } from "node:os";
@@ -144,26 +150,31 @@ async function zoom(page: Page, at: Point, scales: number[], wheel = WHEEL): Pro
   });
 }
 
-/** The drawn node whose centre lies nearest the canvas centre, with that centre on screen. */
-async function nodeNearCentre(page: Page): Promise<{ id: string; at: Point }> {
-  return page.evaluate(() => {
+/** The drawn node whose centre lies nearest the canvas centre, with that centre on screen; for a
+ *  drag, `pressed`, the nearest whose centre a press hits as the node, since a node shape as low
+ *  as a bar of the shaped graph has its connectors over its centre at the near level. */
+async function nodeNearCentre(page: Page, pressed = false): Promise<{ id: string; at: Point }> {
+  return page.evaluate((mustHit) => {
     const snapshot = window.inspect();
     const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();
     const centre = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-    let best: { id: string; at: { x: number; y: number }; d: number } | null = null;
-    for (const node of snapshot.nodes) {
-      const local = window.screenPoint(node.x + node.width / 2, node.y + node.height / 2);
-      const at = { x: rect.left + local.x, y: rect.top + local.y };
-      const d = Math.hypot(at.x - centre.x, at.y - centre.y);
-      if (!best || d < best.d) best = { id: node.id, at, d };
-    }
+    const nearest = snapshot.nodes
+      .map((node) => {
+        const local = window.screenPoint(node.x + node.width / 2, node.y + node.height / 2);
+        const at = { x: rect.left + local.x, y: rect.top + local.y };
+        return { id: node.id, local, at, d: Math.hypot(at.x - centre.x, at.y - centre.y) };
+      })
+      .sort((one, other) => one.d - other.d);
+    const best = nearest.find(
+      ({ local }) => !mustHit || window.hitKind(local.x, local.y) === "node",
+    );
     if (!best) throw new Error("no node is drawn");
     const { at } = best;
     if (at.x < rect.left || at.x > rect.right || at.y < rect.top || at.y > rect.bottom) {
       throw new Error(`node ${best.id} is not on screen`);
     }
     return { id: best.id, at };
-  });
+  }, pressed);
 }
 
 async function drawnNode(page: Page, id: string) {
@@ -336,7 +347,7 @@ async function panGesture(page: Page, name: string): Promise<Measure> {
 /** The drag of the node nearest the centre of the view by 120 pixels down, checked for having
  *  moved it. */
 async function dragGesture(page: Page, name: string): Promise<Measure> {
-  const node = await nodeNearCentre(page);
+  const node = await nodeNearCentre(page, true);
   const before = await drawnNode(page, node.id);
   const dragged = await frameTimes(page, () => drag(page, node.at, 0, 120));
   const after = await drawnNode(page, node.id);
@@ -416,7 +427,7 @@ async function emptyPoint(page: Page): Promise<Point> {
  *  levels timed them: the drag of the node nearest the centre, the pan from the canvas's top left,
  *  the zoom around its centre, and the edits, which begin at `fitted` again (bench/fitted.ts). */
 async function atFittedView(page: Page, fitted: View) {
-  const node = await nodeNearCentre(page);
+  const node = await nodeNearCentre(page, true);
   const box = (await page.locator("#canvas canvas").boundingBox())!;
   const shown = {
     read: () => viewport(page),
@@ -486,7 +497,10 @@ async function atEveryLevel(page: Page, middle: Point, fitted: number) {
 async function measure(page: Page) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`http://localhost:${PORT}/?copies=${COPIES}`, { timeout: LOAD_TIMEOUT_MS });
+  const graph = GRAPH === "metric-tree" ? "" : `&graph=${GRAPH}`;
+  await page.goto(`http://localhost:${PORT}/?copies=${COPIES}${graph}`, {
+    timeout: LOAD_TIMEOUT_MS,
+  });
   // The example sets loadReport after a top-level await, which the load event does not wait for.
   await page.waitForFunction(() => "loadReport" in window, null, { timeout: LOAD_TIMEOUT_MS });
   // A build in test mode grows the engine's memory before every call: no number of it holds.
@@ -494,8 +508,9 @@ async function measure(page: Page) {
     throw new Error("the example runs the bridge in test mode; no number holds");
   const load: LoadReport = await page.evaluate(() => window.loadReport);
   if (errors.length) throw new Error(`the example failed: ${errors.join("; ")}`);
+  if (load.graph !== GRAPH) throw new Error(`the example loaded ${load.graph}, not ${GRAPH}`);
   console.log(
-    `Loaded ${load.nodes} nodes in ${load.firstFrameMs.toFixed(1)} ms to the first frame.`,
+    `Loaded the ${load.graph} graph's ${load.nodes} nodes in ${load.firstFrameMs.toFixed(1)} ms to the first frame.`,
   );
   const renderer = await page.evaluate(() => window.inspect().renderer);
   if (renderer !== "webgl")
@@ -553,7 +568,9 @@ function report(result: Awaited<ReturnType<typeof measure>>): void {
         ],
     ),
   ];
-  console.log(`${result.load.nodes} nodes, ${result.load.edges} edges — GPU: ${result.gpu}`);
+  console.log(
+    `${GRAPH}: ${result.load.nodes} nodes, ${result.load.edges} edges — GPU: ${result.gpu}`,
+  );
   console.log(`content: ${contentOf(result.load.content)}`);
   const { fitted, levels } = result;
   const draws =

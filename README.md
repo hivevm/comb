@@ -74,7 +74,13 @@ self-test, as do the self-tests of the engine and the bundle checks.
   a smaller graph whose fitted view is nearer times all four gestures at far as well. A gesture
   the kind's baseline lacks is reported as new and not judged. `BENCH_HEADED=1` opens a window
   that uses the machine's GPU, which is how the numbers on the reference machine are taken;
-  `BENCH_COPIES` sets another size.
+  `BENCH_COPIES` sets another size. `BENCH_GRAPH=shaped` measures the shaped graph instead of the
+  metric tree ([ADR-0033](docs/adr/0033-the-benchmark-measures-a-graph-by-name.md)): the same
+  nodes and edges in the same places, the nodes in the node shapes in turn, a filled one without
+  content, every end docked on the outline, and a loop on one node in a hundred, which the example
+  loads with `?graph=shaped`. The record names `graph`, and a run is compared only with baselines
+  of its graph: the metric tree's under `bench/baselines/<kind>.json`, the shaped graph's under
+  `bench/baselines/<kind>.shaped.json`.
   The Dev Container has no display and no GPU, so from it the run measures in a Chrome on the host
   ([ADR-0028](docs/adr/0028-the-benchmark-drives-a-chrome-on-the-host.md)). On the host, for the
   measurement only, start Chrome with a throwaway profile and bridge its debugging port to the
@@ -88,25 +94,26 @@ self-test, as do the self-tests of the engine and the bundle checks.
   ([ADR-0029](docs/adr/0029-the-benchmark-can-slow-the-measured-pages-cpu.md)); the record names
   `cpuThrottle`, and a run is compared only with baselines of the same factor and kind of browser.
   Stop Chrome and socat after the measurement: the port gives whoever reaches it the browser.
-  After the load and the first frame, before the gestures, each run times a fixed reference
-  workload in the same page (`bench/reference.ts`: a JavaScript loop, a WebAssembly loop, and a
-  WebGL2 draw of a fixed mesh), recorded as `reference` with its parts. The **Benchmark** workflow
-  runs it three times on a GitHub runner, weekly and on demand (*Actions* → *Benchmark* → *Run
-  workflow*), and fails when the median of a number exceeds the baseline of the runner's kind,
-  the CPU model the run records, under `bench/baselines/` by more than 25 %, naming it. The
-  reference is a gate within a kind: when a part of it differs from the kind's baseline by more
-  than 25 %, either way, the runner is not comparable and the comparison is refused, naming the
-  parts; every part's ratio to the baseline is in the log. The runs and their median are
-  uploaded as the artefact `bench-results` (`bun bench/compare.ts bench/baselines <run>...`
-  compares locally; a run in the Dev Container is refused, since its CPU model has no baseline,
-  unless a baseline recorded on the same CPU model is passed). The maintainer records a kind's
-  baseline: take `median.json` from the artefact of a workflow run on `main` on that kind, save it
-  under the file name the refusal prints, and open a pull request that says why. Against a
-  baseline without a reference, the comparison says that the runner gate is not checked and
-  judges the numbers alone. A runner's numbers are compared only with a runner's of its kind:
-  runs on a kind without a baseline or naming no CPU model, runs of another size, mode, or GPU
-  than the baseline's, runs that name no GPU, and runs without a reference against a baseline
-  with one are refused.
+  After the load and the first frame, before the gestures, each run times a fixed reference workload
+  in the same page (`bench/reference.ts`: a JavaScript loop, a WebAssembly loop, and a WebGL2 draw
+  of a fixed mesh), recorded as `reference` with its parts. The **Benchmark** workflow runs each
+  graph three times on a GitHub runner, weekly and on demand (*Actions* → *Benchmark* → *Run
+  workflow*), and fails when the median of a number exceeds the baseline of the runner's kind and
+  the graph, the kind the CPU model the run records, under `bench/baselines/` by more than 25 %,
+  naming it. The reference is a gate within a kind: when a part of it differs from the kind's
+  baseline by more than 25 %, either way, the runner is not comparable and the comparison is
+  refused, naming the parts; every part's ratio to the baseline is in the log. The runs and their
+  median are uploaded as the artefact `bench-results` (`bun bench/compare.ts bench/baselines
+  <run>...` compares locally; a run in the Dev Container is refused, since its CPU model has no
+  baseline, unless a baseline recorded on the same CPU model is passed). The maintainer records a
+  kind's baseline: take `median.json`, or `median.shaped.json` for the shaped graph, from the
+  artefact of a workflow run on `main` on that kind, save it under the file name the refusal prints,
+  and open a pull request that says why. Against a baseline without a reference, the comparison says
+  that the runner gate is not checked and judges the numbers alone. A runner's numbers are compared
+  only with a runner's of its kind: runs on a kind without a baseline of their graph or naming no
+  CPU model, runs of another graph, size, mode, or GPU than the baseline's, runs of different graphs
+  together, runs that name no GPU, and runs without a reference against a baseline with one are
+  refused.
 - **Mutation testing:** `cargo mutants -p comb-engine --no-shuffle --timeout 30` mutates
   `crates/engine` and runs its tests against each mutant, in about half an hour, writing
   `mutants.out/`; it needs cargo-mutants 27.1.0
