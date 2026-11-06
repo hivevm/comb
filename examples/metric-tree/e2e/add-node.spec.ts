@@ -102,11 +102,15 @@ test("onChange receives one nodeAdded before addNode returns, and one loaded for
   expect(result).toEqual({
     told: [
       { kind: "loaded", by: "host" },
-      // Its content as Comb keeps it, each weight given.
+      // Its content as Comb keeps it, each weight given, and its node shape filled in.
       {
         kind: "nodeAdded",
         by: "host",
-        node: { ...node("b", 300.5, -40.25), content: [[{ ...titled("b")[0]![0]!, weight: 1 }]] },
+        node: {
+          ...node("b", 300.5, -40.25),
+          shape: "rectangle",
+          content: [[{ ...titled("b")[0]![0]!, weight: 1 }]],
+        },
       },
       {
         kind: "nodeUpdated",

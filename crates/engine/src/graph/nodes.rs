@@ -5,6 +5,7 @@
 use super::slots::put;
 use super::{Graph, MoveError, SlotError, TooManySlots};
 use crate::geometry::{Rect, WORLD_LIMIT};
+use crate::shape::NodeShape;
 
 /// Why the positions refused a move: a delta that is NaN or infinite.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,6 +53,11 @@ impl Graph {
         put(&mut self.sizes, i * 2, width);
         put(&mut self.sizes, i * 2 + 1, height);
         put(&mut self.ranks, i, rank);
+        // A node added is a rectangle until it is given another node shape; a freed slot taken
+        // again forgets the node shape of the node it held.
+        if let Some(shape) = self.shapes.get_mut(i) {
+            *shape = NodeShape::default();
+        }
         // A node added has no edges yet.
         put(&mut self.incident, i, Vec::new());
         self.next_rank += 1;
@@ -158,6 +164,25 @@ impl Graph {
     /// The node sizes, `width, height` per slot.
     pub fn sizes(&self) -> &[f32] {
         &self.sizes
+    }
+
+    /// The node shape of the node in `slot`, a rectangle where none was given
+    /// (ADR-draft-node-shapes).
+    pub fn shape(&self, slot: u32) -> NodeShape {
+        self.shapes.get(slot as usize).copied().unwrap_or_default()
+    }
+
+    /// Gives the node in `slot` the node shape `shape`. Its bounds stay its rectangle, so the
+    /// index needs nothing; its height is the caller's, through `resize_node`. A slot that holds
+    /// no node refuses the call, which then changes nothing.
+    pub fn set_shape(&mut self, slot: u32, shape: NodeShape) -> Result<(), SlotError> {
+        self.nodes_held(&[slot])?;
+        let i = slot as usize;
+        if self.shapes.len() <= i {
+            self.shapes.resize(i + 1, NodeShape::default());
+        }
+        self.shapes[i] = shape;
+        Ok(())
     }
 }
 

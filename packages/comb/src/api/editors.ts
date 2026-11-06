@@ -18,6 +18,7 @@ import type {
   GraphState,
   GraphStore,
   NodeContent,
+  NodeShape,
   NodeData,
   NodePatch,
 } from "../store";
@@ -168,13 +169,18 @@ function load({ store, bridge, limits }: Editing, graph: GraphData): void {
   });
 }
 
-/** `heightOf`: the content and width read once as the node `addNode` reads, named `""` and at the
- *  origin, and checked by the bridge as `addNode` checks it; the graph is not asked and nothing
- *  changes (ADR-0026). */
-function heightOf({ bridge, limits }: Editing, content: unknown, width: unknown): number {
+/** `heightOf`: the content, width, and node shape read once as the node `addNode` reads, named
+ *  `""` and at the origin, and checked by the bridge as `addNode` checks it; the graph is not
+ *  asked and nothing changes (ADR-0026, ADR-draft-node-shapes). */
+function heightOf(
+  { bridge, limits }: Editing,
+  content: unknown,
+  width: unknown,
+  shape: unknown,
+): number {
   refuseIfLost();
   const { snapshot } = readOnce(bridge, () =>
-    nodeSnapshotOf({ id: "", x: 0, y: 0, width, content }, limits),
+    nodeSnapshotOf({ id: "", x: 0, y: 0, width, shape, content }, limits),
   );
   return checked(() => bridge.heightOf(snapshot));
 }
@@ -338,7 +344,8 @@ export function editorsOf(store: GraphStore, bridge: Bridge, limits: Limits, vet
     load: (graph: GraphData) => load(editing, graph),
     updateNode: (id: string, patch: NodePatch) => updateNode(editing, id, patch),
     addNode: (node: NodeData) => addNode(editing, node),
-    heightOf: (content: NodeContent, width: number) => heightOf(editing, content, width),
+    heightOf: (content: NodeContent, width: number, shape?: NodeShape) =>
+      heightOf(editing, content, width, shape),
     addEdge: (edge: EdgeData) => addEdge(editing, edge, "host"),
     updateEdge: (id: string, patch: EdgePatch) => updateEdge(editing, id, patch),
     removeNodes: (ids: readonly string[]) => removeNodes(editing, ids, "host"),

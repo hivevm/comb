@@ -72,6 +72,10 @@ pub enum GraphDataProblem {
         column: Option<u32>,
         expected: String,
     },
+    /// A node of a filled node shape, a circle, a ringed circle, or a bar, holds content
+    /// (ADR-draft-node-shapes).
+    #[serde(rename_all = "camelCase")]
+    ContentInFilledShape { node: String },
     /// A node's content holds more than `limit` rows.
     #[serde(rename_all = "camelCase")]
     TooManyRows { node: String, limit: u32 },
@@ -254,6 +258,8 @@ pub(super) const A_COLOR: &str = "an integer from 0 to 0xFFFFFF";
 pub(super) const A_LABEL: &str = "an object, or none";
 pub(super) const A_DASH: &str = "a list of two finite numbers, or none";
 pub(super) const AN_ARROW: &str = "\"end\" or \"none\"";
+pub(super) const A_SHAPE: &str = "\"rectangle\", \"rounded-rectangle\", \"ellipse\", \"circle\", \
+                                   \"ringed-circle\", \"diamond\", or \"bar\"";
 pub(super) const A_SIDE: &str = "\"top\", \"right\", \"bottom\", or \"left\"";
 pub(super) const A_CONTENT: &str = "a list of rows";
 pub(super) const A_ROW: &str = "a list of elements";

@@ -107,6 +107,13 @@ skimmed. The design revision drops what prevented nothing
   The package diagram draws each dependency as a dependency, its label «import» for a module's
   import of another and «use» for the bridge's load of the WebAssembly package and the bridge
   crate's use of the core.
+- **The UML example draws a state diagram in UML's node shapes.** A state is a rounded rectangle
+  of its name as a title, an initial state a circle, a final state a ringed circle, and a choice a
+  diamond without content, its branches' guards on their edges in square brackets; a transition is
+  a grey `#6b7280` solid edge with an arrowhead, labelled by its event on a pill of its colour, and
+  none from a pseudostate taken at once. A pseudostate is as small as its node shape allows: a
+  circle 24 wide, a ringed circle 28, and a diamond as wide as the 128 its empty content makes it
+  high.
 - **The UML example's rules of connection are a table of what they refuse.** `allows` in
   `examples/uml/src/rules.ts` answers from the kinds of the two ends and of the relationship,
   against a set of refused combinations; between a class, an interface, an abstract class, and a

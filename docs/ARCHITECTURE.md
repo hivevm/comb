@@ -83,7 +83,8 @@ of nodes and edges before anything is copied, then the code units of the identif
 the snapshot is read and read no further once they exceed the budget, then the code units of the
 texts of content, counted and stopped at their budget alike (`checkContentBudget`, naming the node
 whose text passed it), then the snapshot, and the
-store keeps the snapshot's edges and of each node its identifier and width; a node's content is the
+store keeps the snapshot's edges and of each node its identifier, width, and node shape, which
+`api` fills in as `rectangle` where the host leaves it out; a node's content is the
 engine's alone, which the snapshot of a load writes straight into its columns, and which the
 engine's `content` builds when inspection or a change Comb tells asks for it. One walk reads a
 node's content, `walkContent`, and hands what it read to a sink: a load's writes its columns and
@@ -95,7 +96,8 @@ the texts of content, and its names, the actions' identifiers, as pieces of at
 most 2^28 UTF-16 code units, each ending where a value ends, with its boundaries in UTF-16 code
 units across all pieces, per label text, text, and name of content whether it is a string, the
 numbers as
-`Float64Array`, an arrowhead, the sides, an element's kind, and a text's role as byte codes, the
+`Float64Array`, an arrowhead, the sides, a node shape, an element's kind, and a text's role as
+byte codes, the
 boundaries of each node's rows and each row's elements as `Uint32Array`, whether a label, its
 background, and a dash are present as bytes, and the first value refused by its type as its
 position, a shape of
@@ -121,12 +123,17 @@ one workspace for each example.
   from the connector of a side of one node, the middle of its `top`, `right`, `bottom`, or `left`,
   to that of a side of another, their control points pulled out along each side's outward normal
   ([ADR-0025](adr/0025-one-connector-per-side.md)), their exact bounds, the point and normal at a
-  path parameter, and edge-label placement. `graph` keeps the loaded graph, node positions and
-  sizes per slot and edges per slot, a rank per node slot, a list of the edges at each node slot, a
-  list each of free node and edge slots, and a spatial index (`spatial`, a uniform grid each for
-  nodes and edges, with an overflow list for items that cover many cells) that loads, additions,
-  and moves keep current and that is built again once many items have moved or been added beyond
-  its extent, or the nodes or the edges in use pass twice the count it was built for
+  path parameter, and edge-label placement. `shape` holds the closed set of node shapes
+  ([ADR-draft-node-shapes](adr/draft-node-shapes.md)): each one's height for content of a given
+  height, the inner rectangle its content is laid out in, its hit test, and the point where a line
+  from its centre crosses its outline, all in the node's own coordinates. `graph` keeps the loaded
+  graph, node positions and sizes per slot, a node shape per node slot, a rectangle by default, by
+  which `node_at` hits a node within its outline, and edges per slot, a rank per node slot, a list
+  of the edges at each node slot, a list each of free node and edge slots, and a spatial index
+  (`spatial`, a uniform grid each for nodes and edges, with an overflow list for items that cover
+  many cells) that loads, additions, and moves keep current and that is built again once many items
+  have moved or been added beyond its extent, or the nodes or the edges in use pass twice the count
+  it was built for
   ([ADR-0023](adr/0023-the-engine-edits-its-graph-in-place.md)). Its modules under `graph/` follow
   its concepts: `slots`, the free slots of a kind, one type kept once for nodes and once for edges;
   `nodes` and `edges`, the edits of each, each with the one check that the slots a call names hold
@@ -195,8 +202,10 @@ one workspace for each example.
   public; the rest is private to the crate, so that the `dead_code` lint finds what only tests
   reach.
 - **Bridge** — `crates/engine-wasm` holds every WebAssembly export: `loadGraph` checks graph data
-  and resolves edge ends to slots, keeps the content of the nodes, and makes each node as high as
-  its content lays out to in the fonts `setFont` handed over, which the sizes buffer holds beside
+  and resolves edge ends to slots, keeps the content of the nodes, gives each node its node shape,
+  refusing content in a filled one, and makes each node as high as its node shape needs for its
+  content laid out in its inner rectangle in the fonts `setFont` handed over
+  ([ADR-draft-node-shapes](adr/draft-node-shapes.md)), which the sizes buffer holds beside
   the positions buffer, and a font handed over later lays every node out anew; a node whose far
   side, by that height, lies past the world's limit is refused; `updateNode` checks a patch of a
   node's content as a load checks it and gives the node the new content and its height, `addNode`
@@ -358,7 +367,9 @@ one workspace for each example.
   remembers how much of its index buffer the syncs marked for upload until PixiJS next draws it,
   a hidden mesh, which it does not draw, included, so that a later sync and a hide in between keep
   that mark, since WebGL uploads by the range marked last. A node
-  view draws its box and its content ([ADR-0013](adr/0013-node-content-model.md)): each text a
+  view draws its node shape (`drawShape`, in the pooled `Graphics` that drew a node's box, the
+  content node shapes white and bordered, the filled ones near-black, inspection reading its
+  primitives back) and its content ([ADR-0013](adr/0013-node-content-model.md)): each text a
   pooled `BitmapText` of its role's style where the query placed it, cut where the engine cut it and
   followed by an ellipsis, a badge's on its pill, which one `Graphics` per view draws of the colour
   the query hands over, placed by the padding the engine states (`badgePaddingX`, `badgePaddingY`),
@@ -455,9 +466,14 @@ one workspace for each example.
   `window`, bound to its Comb.
 - **UML example** (`examples/uml`) — a second host application, of its own workspace, which
   imports Comb by its entries alone and nothing of the metric tree (G-12,
-  ADR-0030); a sidebar chooses between its two diagrams, the class diagram first, and lists the
+  ADR-0030); a sidebar chooses between its three diagrams, the class diagram first, and lists the
   legend of the kinds of relationship, each a line drawn in its colour, dash pattern, and
-  arrowhead beside its name and label, one legend for both. Chosen, the package diagram
+  arrowhead beside its name and label, one legend for the class and the package diagram. Chosen,
+  the state diagram (`src/state-diagram.ts`) shows a Comb's life, its states rounded rectangles
+  of their name, its initial state a circle, its final states ringed circles, and the choice of
+  whether its engine loaded a diamond, placed by the heights `heightOf` gives their node shapes,
+  and its transitions grey edges by sides labelled by their event or guard; it is shown only, its
+  palette and legend hidden. Chosen, the package diagram
   (`src/package-diagram.ts`) shows Comb's modules and crates as nodes of «package» and their
   name and their dependencies as dashed edges with an arrowhead and the label «import» or «use»;
   each diagram is kept as it was left, its edits among it, while the other is shown, for as

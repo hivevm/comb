@@ -125,16 +125,31 @@ impl Graph {
         best.map(|(slot, side, _)| (slot, side))
     }
 
-    /// The node at `point`: of the nodes whose bounds hold it, the one drawn on top, which is the
-    /// one of the highest rank (ADR-0023).
+    /// The node at `point`: of the nodes whose outline holds it, the one drawn on top, which is
+    /// the one of the highest rank (ADR-0023, ADR-draft-node-shapes).
     pub(super) fn node_at(&mut self, point: Point) -> Option<u32> {
         self.node_grid
             .candidates(&Rect::at(point), &mut self.scratch);
         self.scratch
             .iter()
             .copied()
-            .filter(|&slot| self.node_bounds(slot).contains(point))
+            .filter(|&slot| self.within_outline(slot, point))
             .max_by_key(|&slot| self.ranks[slot as usize])
+    }
+}
+
+impl Graph {
+    /// Whether `point` lies within the outline of the node in `slot`: within its rectangle, and
+    /// within its node shape there.
+    fn within_outline(&self, slot: u32, point: Point) -> bool {
+        let bounds = self.node_bounds(slot);
+        bounds.contains(point)
+            && self.shape(slot).contains(
+                bounds.max_x - bounds.min_x,
+                bounds.max_y - bounds.min_y,
+                point.x - bounds.min_x,
+                point.y - bounds.min_y,
+            )
     }
 }
 
@@ -178,6 +193,43 @@ mod tests {
         ));
         assert_eq!(graph.hit_at(far, 1e308, Level::Middle, false), None);
         assert!(bounded_pixel(1e308) * CONNECTOR_REACH < f64::MAX);
+    }
+
+    #[test]
+    fn a_node_is_hit_within_its_node_shape_and_a_press_beside_its_outline_finds_what_lies_below() {
+        // Verifies: ADR-draft-node-shapes
+        // A rectangle below and a diamond above it, both at the origin, 100 × 60, and a node away
+        // from the origin given a node shape, at the middle level, where no connector is hit.
+        let positions = vec![0.0, 0.0, 0.0, 0.0, 1e6, 1e6];
+        let sizes = vec![100.0, 60.0, 100.0, 60.0, 100.0, 60.0];
+        let mut graph = Graph::new(positions, sizes, Vec::new()).unwrap();
+        graph
+            .set_shape(1, crate::shape::NodeShape::Diamond)
+            .unwrap();
+        graph
+            .set_shape(2, crate::shape::NodeShape::Ellipse)
+            .unwrap();
+        let at = |graph: &mut Graph, x: f64, y: f64| {
+            graph.hit_at(Point::new(x, y), 1.0, Level::Middle, false)
+        };
+        // Within the diamond: the diamond, which lies above.
+        assert_eq!(at(&mut graph, 50.0, 30.0), Some(Target::Node(1)));
+        // In the diamond's corner, beside its outline: the rectangle below.
+        assert_eq!(at(&mut graph, 5.0, 5.0), Some(Target::Node(0)));
+        // Away from the origin, the ellipse is hit at its centre and not at its rectangle's corner.
+        assert_eq!(
+            at(&mut graph, 1e6 + 50.0, 1e6 + 30.0),
+            Some(Target::Node(2))
+        );
+        assert_eq!(at(&mut graph, 1e6 + 1.0, 1e6 + 1.0), None);
+        // A node shape set on a slot that holds no node is refused.
+        assert!(graph.set_shape(7, crate::shape::NodeShape::Circle).is_err());
+        // A node added into a slot keeps no node shape of before: a rectangle.
+        assert_eq!(graph.shape(1), crate::shape::NodeShape::Diamond);
+        graph.remove_nodes(&[1]).unwrap();
+        let slot = graph.add_node(0.0, 0.0, 100.0, 60.0).unwrap();
+        assert_eq!(slot, 1);
+        assert_eq!(graph.shape(1), crate::shape::NodeShape::Rectangle);
     }
 
     #[test]

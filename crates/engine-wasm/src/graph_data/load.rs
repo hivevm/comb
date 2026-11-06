@@ -3,9 +3,11 @@
 
 use comb_engine::content::Fonts;
 use comb_engine::graph::Graph;
+use comb_engine::shape::NodeShape;
 
 use super::checks::{
-    checked_node, edges_of, id_length, ids_of, kept_height, nodes_of, within_by_height,
+    checked_node, content_fits_shape, edges_of, id_length, ids_of, nodes_of, shaped_height,
+    within_by_height,
 };
 use super::item::{Batch, node_of};
 #[cfg(test)]
@@ -49,33 +51,44 @@ pub(crate) fn load_of(
     let spans = text_spans(content.texts, content.text_bounds)?;
     let name_spans = text_spans(content.names, content.name_bounds)?;
     let edges = edges_of(&batch, &nodes.slots)?;
+    let mut graph = Graph::new(nodes.positions, nodes.sizes, edges)?;
+    for (slot, &shape) in (0..).zip(&nodes.shapes) {
+        if shape != NodeShape::Rectangle {
+            // A slot of a node just built, which no node shape refuses.
+            let _ = graph.set_shape(slot, shape);
+        }
+    }
     Ok(Loaded {
-        graph: Graph::new(nodes.positions, nodes.sizes, edges)?,
+        graph,
         spans,
         name_spans,
         units: nodes.units,
     })
 }
 
-/// Checks the content of one node, as a load checks a node's, named `id`, its strings counted
-/// against the budget on from `held`, the code units of content the graph holds besides it, and
-/// returns it with its texts mapped and the height it lays out to in `fonts`.
+/// Checks the content of one node, as a load checks a node's, named `id`, of node shape `shape`
+/// and `width` wide, its strings counted against the budget on from `held`, the code units of
+/// content the graph holds besides it, and returns it with its texts mapped and the height the
+/// node lays out to in `fonts` (ADR-draft-node-shapes).
 pub(super) fn checked_content(
     id: &str,
+    (shape, width): (NodeShape, f32),
     content: &ContentData,
     fonts: &Fonts,
     held: u64,
 ) -> Result<(Checked, f32), GraphDataProblem> {
+    content_fits_shape(id, shape, content.view().rows(0).len())?;
     let (checked, height) = Checked::of(id, content, fonts, held)?;
-    Ok((checked, kept_height(height)))
+    Ok((checked, shaped_height(shape, width, height)))
 }
 
-/// A node one crossing hands over, checked: its place, its width, its content with its texts
-/// mapped, and the height that content lays out to.
+/// A node one crossing hands over, checked: its place, its width, its node shape, its content
+/// with its texts mapped, and the height it lays out to.
 struct Single {
     x: f32,
     y: f32,
     width: f32,
+    shape: NodeShape,
     content: Checked,
     height: f32,
 }
@@ -89,12 +102,14 @@ fn single_of(node: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, Graph
     let (node, content) = node_of(0, node)?;
     id_length("nodes", 0, "id", node.id)?;
     let ([x, y], width) = checked_node(&node)?;
-    let (content, height) = checked_content(node.id, content, fonts, held)?;
+    let shape = node.shape;
+    let (content, height) = checked_content(node.id, (shape, width), content, fonts, held)?;
     within_by_height(node.id, y, height)?;
     Ok(Single {
         x,
         y,
         width,
+        shape,
         content,
         height,
     })
@@ -118,10 +133,14 @@ pub(crate) fn add_node_to(
         x,
         y,
         width,
+        shape,
         content,
         height,
     } = single_of(node, fonts, held)?;
-    Ok((graph.add_node(x, y, width, height)?, content))
+    let slot = graph.add_node(x, y, width, height)?;
+    // A slot just added, which no node shape refuses.
+    let _ = graph.set_shape(slot, shape);
+    Ok((slot, content))
 }
 
 /// The height the content of `node` lays out to at its width in `fonts`, checked as `add_node_to`
@@ -147,9 +166,13 @@ pub(crate) fn graph_of(batch: &GraphBatch) -> Result<Graph, GraphDataProblem> {
 // Verifies: ADR-0010
 #[cfg(test)]
 mod tests {
+    use super::super::node_columns::Refused;
+    use super::super::problem::A_SHAPE;
     use super::super::tests::{
-        add, added, badged, batch, content, invalid_text, labelled, load_edges, metricked, titled,
+        a_and, add, added, badged, batch, content, invalid_text, labelled, load_columns,
+        load_edges, metricked, titled,
     };
+    use super::super::{ContentInput, NodeField, NodeShapeCode, OwnedColumns};
     use super::super::{
         Field, GraphList, ID_LIMIT, KindCode, MAX_ID, MAX_ITEMS, MAX_TEXT, RoleCode, TEXT_LIMIT,
         item::batch_of, problem::A_NUMBER, problem::AN_ARROW, problem::AN_ID,
@@ -383,5 +406,117 @@ mod tests {
             load_edges(&edges).err(),
             Some(refused(GraphList::Edges, 1, None, "id", AN_ID))
         );
+    }
+
+    /// Node `b` of the node shape `shape` and `change` made to it, beside a rectangle `a`.
+    fn shaped_b(
+        shape: crate::NodeShape,
+        change: impl FnOnce(&mut NodeInput),
+    ) -> Result<Graph, GraphDataProblem> {
+        load_columns(&a_and(|n| {
+            n.shape = shape.into();
+            change(n);
+        }))
+    }
+
+    #[test]
+    fn a_node_lays_out_to_the_height_of_its_node_shape_loaded_added_and_asked_for() {
+        // Verifies: ADR-draft-node-shapes
+        use crate::NodeShape as S;
+        // A node 100 wide of one title is 64 high as a rectangle, the least height of content.
+        let empty = || ContentInput::new().into();
+        let cases: [(S, f32, bool); 7] = [
+            (S::Rectangle, 64.0, true),
+            (S::RoundedRectangle, 64.0, true),
+            (
+                S::Ellipse,
+                (64.0 / core::f64::consts::FRAC_1_SQRT_2) as f32,
+                true,
+            ),
+            (S::Diamond, 128.0, true),
+            (S::Circle, 100.0, false),
+            (S::RingedCircle, 100.0, false),
+            (S::Bar, 8.0, false),
+        ];
+        for (shape, height, holds) in cases {
+            let change = |n: &mut NodeInput| {
+                if !holds {
+                    n.content = empty();
+                }
+            };
+            let graph = shaped_b(shape, change).unwrap();
+            assert_eq!(graph.sizes()[3], height, "{shape:?} loaded");
+            assert_eq!(graph.shape(1), shape.into(), "{shape:?} loaded");
+            let node = added(0.0, 0.0, |n| {
+                n.shape = shape.into();
+                change(n);
+            });
+            let mut graph = Graph::default();
+            assert_eq!(add(&mut graph, &node), Ok(0));
+            assert_eq!(graph.sizes()[1], height, "{shape:?} added");
+            assert_eq!(graph.shape(0), shape.into(), "{shape:?} added");
+            assert_eq!(height_of(&node, &Fonts::default()), Ok(height), "{shape:?}");
+        }
+    }
+
+    #[test]
+    fn content_in_a_filled_node_shape_is_refused_naming_the_node() {
+        // Verifies: ADR-draft-node-shapes, Q-7
+        use crate::NodeShape as S;
+        let refused = || GraphDataProblem::ContentInFilledShape { node: "b".into() };
+        for shape in [S::Circle, S::RingedCircle, S::Bar] {
+            assert_eq!(shaped_b(shape, |_| {}).err(), Some(refused()), "{shape:?}");
+            let node = added(0.0, 0.0, |n| {
+                n.id = "b".to_owned().into();
+                n.shape = shape.into();
+            });
+            assert_eq!(add(&mut Graph::default(), &node), Err(refused()));
+            // Before the rules of the content it holds.
+            let node = added(0.0, 0.0, |n| {
+                n.id = "b".to_owned().into();
+                n.shape = shape.into();
+                n.content = titled(&"x".repeat(MAX_TEXT + 1));
+            });
+            assert_eq!(height_of(&node, &Fonts::default()), Err(refused()));
+        }
+    }
+
+    #[test]
+    fn a_node_shape_that_names_none_is_refused_naming_the_node_and_the_field() {
+        // Verifies: ADR-draft-node-shapes, Q-7
+        let shape = |index, id: &str| GraphDataProblem::InvalidField {
+            list: GraphList::Nodes,
+            index,
+            id: Some(id.into()),
+            field: "shape".into(),
+            expected: A_SHAPE.into(),
+        };
+        // A load, its code naming none, as the snapshot hands over a node shape of another type
+        // or naming none.
+        let mut columns = a_and(|_| {});
+        columns.shape[1] = NodeShapeCode::Unnamed as u8;
+        assert_eq!(load_columns(&columns).err(), Some(shape(1, "b")));
+        // Named before a field the shell refused after it, of its node or of a later one, and
+        // after one before it.
+        let refuse = |columns: &mut OwnedColumns, index, field| {
+            columns.refused = Some(Refused {
+                index,
+                field,
+                row: None,
+                column: None,
+            });
+        };
+        refuse(&mut columns, 1, NodeField::Content);
+        assert_eq!(load_columns(&columns).err(), Some(shape(1, "b")));
+        refuse(&mut columns, 1, NodeField::Width);
+        assert!(matches!(
+            load_columns(&columns),
+            Err(GraphDataProblem::InvalidField { field, .. }) if field == "width"
+        ));
+        columns.shape = vec![NodeShapeCode::Unnamed as u8, 0];
+        assert_eq!(load_columns(&columns).err(), Some(shape(0, "a")));
+        // `addNode`, as serde reads a name of none.
+        let node = added(0.0, 0.0, |n| n.shape = Field(None));
+        assert_eq!(add(&mut Graph::default(), &node), Err(shape(0, "n")));
     }
 }

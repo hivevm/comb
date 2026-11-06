@@ -7,6 +7,7 @@ use std::fmt;
 use comb_engine::content::Fonts;
 use comb_engine::geometry::Sides;
 use comb_engine::graph::{AddEdgeError, Graph, SlotError};
+use comb_engine::shape::NodeShape;
 use serde::de::{self, IgnoredAny, Visitor};
 use serde::{Deserialize, Deserializer};
 use tsify::Tsify;
@@ -242,12 +243,14 @@ impl<'de> Visitor<'de> for PatchVisitor {
     }
 }
 
-/// Checks a patch of the node `node` and returns the content it sets, checked as a load checks a
-/// node's at index 0, its strings counted against the budget on from `held`, the code units of
-/// content the graph holds besides the node's, and laid out in `fonts` to the height it returns
-/// with it, or none where it sets none; or names its first offending field.
+/// Checks a patch of the node `node`, of the node shape and width of `shaped`, and returns the
+/// content it sets, checked as a load checks a node's at index 0, its strings counted against the
+/// budget on from `held`, the code units of content the graph holds besides the node's, and the
+/// height the node lays out to in `fonts` with it, or none where it sets none; or names its first
+/// offending field.
 pub(crate) fn patch_of(
     node: &str,
+    shaped: (NodeShape, f32),
     patch: &NodePatch,
     fonts: &Fonts,
     held: u64,
@@ -263,7 +266,7 @@ pub(crate) fn patch_of(
         let mut item = Item::new(GraphList::Nodes, 0);
         item.id = Some(node);
         let content = content_of(&item, value.0.as_ref())?;
-        checked = Some(checked_content(node, content, fonts, held)?);
+        checked = Some(checked_content(node, shaped, content, fonts, held)?);
     }
     Ok(checked)
 }
@@ -273,7 +276,7 @@ pub(crate) fn patch_of(
 #[cfg(test)]
 mod tests {
     use super::super::tests::{content, invalid_text, titled};
-    use super::super::{KindCode, MAX_TEXT, RoleCode};
+    use super::super::{KindCode, MAX_TEXT, RECTANGLE, RoleCode};
     use super::*;
     use comb_engine::graph::TooManySlots;
 
@@ -281,9 +284,14 @@ mod tests {
     fn a_patch_with_another_field_or_a_title_not_text_names_its_node() {
         let patch = |entries: Vec<(&str, Field<ContentInput>)>| {
             let fields = entries.into_iter().map(|(k, v)| (k.to_owned(), v));
-            patch_of("a", &NodePatch(fields.collect()), &Fonts::default(), 0).map(|checked| {
-                checked.map(|(content, height)| (content.text(0).to_owned(), height))
-            })
+            patch_of(
+                "a",
+                RECTANGLE,
+                &NodePatch(fields.collect()),
+                &Fonts::default(),
+                0,
+            )
+            .map(|checked| checked.map(|(content, height)| (content.text(0).to_owned(), height)))
         };
         assert_eq!(patch(Vec::new()), Ok(None));
         assert_eq!(

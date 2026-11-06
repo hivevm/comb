@@ -297,8 +297,29 @@ fn node(loose: bool, i: usize) -> impl Strategy<Value = Value> {
         field("x", num(), loose),
         field("y", num(), loose),
         field("width", size(), loose),
+        field("shape", node_shape(loose), loose),
         field("content", content(loose), loose),
     ])
+}
+
+/// Mostly a rectangle, now and then another node shape, a filled one among them, which refuses
+/// content; loose, now and then a name of none or a value of another type
+/// (ADR-draft-node-shapes).
+fn node_shape(loose: bool) -> BoxedStrategy<Value> {
+    let text = |name: &str| Value::Text(name.to_owned());
+    let mut good = vec![text("rectangle"); 6];
+    good.extend(
+        [
+            "rounded-rectangle",
+            "ellipse",
+            "circle",
+            "ringed-circle",
+            "diamond",
+            "bar",
+        ]
+        .map(text),
+    );
+    one_of(good, vec![text("hexagon"), Value::Number(1.0)], loose)
 }
 
 /// Mostly a weight, now and then null, which is 1, or one the bridge refuses or of another type.
@@ -601,12 +622,29 @@ fn acceptable_in(batch: &GraphBatch, data: &Value, lines: [f64; 3]) -> bool {
     accepts(batch).unwrap_or(false)
         && nodes_of_data(data)
             .iter()
-            .all(|node| content_ok(node) && far_side_ok(node, lines))
+            .all(|node| shape_ok(node) && content_ok(node) && far_side_ok(node, lines))
+}
+
+/// The node shape `node` names, a rectangle where it names none.
+fn shape_name(node: &Value) -> &str {
+    match fields_of(node).and_then(|fields| get(fields, "shape")) {
+        Some(Value::Text(shape)) => shape,
+        _ => "rectangle",
+    }
+}
+
+/// Whether `node` holds no content in a filled node shape, which holds none
+/// (ADR-draft-node-shapes).
+fn shape_ok(node: &Value) -> bool {
+    let filled = ["circle", "ringed-circle", "bar"].contains(&shape_name(node));
+    let rows = fields_of(node).and_then(|fields| get(fields, "content"));
+    !(filled && matches!(rows, Some(Value::List(rows)) if !rows.is_empty()))
 }
 
 /// Whether the far side of `node`, its content well formed, lies within the world's limit: its
-/// `y`, as `f32` holds it, and the height of its rows, each as high as its tallest text, and its
-/// padding of 10 above and below, at least 64.
+/// `y`, as `f32` holds it, and its height by its node shape: of a content node shape, the height
+/// of its rows, each as high as its tallest text, and its padding of 10 above and below, at least
+/// 64, grown to its inner rectangle; of a circle its width; and of a bar 8.
 fn far_side_ok(node: &Value, lines: [f64; 3]) -> bool {
     let Some(fields) = fields_of(node) else {
         return true;
@@ -641,6 +679,17 @@ fn far_side_ok(node: &Value, lines: [f64; 3]) -> bool {
         _ => 0.0,
     };
     let height = (20.0 + rows.iter().map(row).sum::<f64>()).max(64.0);
+    let width = match get(fields, "width") {
+        Some(Value::Number(width)) => f64::from(*width as f32),
+        _ => 0.0,
+    };
+    let height = match shape_name(node) {
+        "ellipse" => height / core::f64::consts::FRAC_1_SQRT_2,
+        "diamond" => height / 0.5,
+        "circle" | "ringed-circle" => width,
+        "bar" => 8.0,
+        _ => height,
+    };
     let height = f64::from(height as f32);
     // NaN beside a coordinate the oracle names elsewhere: within, as `<=` reads it here.
     (height <= 2f64.powi(120) - f64::from(*y as f32)) || y.is_nan()
@@ -895,6 +944,18 @@ fn mistyped(list: GraphList, item: &Fields) -> Vec<&'static str> {
             for name in ["x", "y", "width"] {
                 check(name, number(item, name));
             }
+            let shapes = [
+                "rectangle",
+                "rounded-rectangle",
+                "ellipse",
+                "circle",
+                "ringed-circle",
+                "diamond",
+                "bar",
+            ];
+            let shape =
+                matches!(get(item, "shape"), Some(Value::Text(s)) if shapes.contains(&s.as_str()));
+            check("shape", shape);
             check(
                 "content",
                 matches!(get(item, "content"), Some(Value::List(_))),
@@ -1012,6 +1073,7 @@ fn the_items_after_one_with_a_refused_field_are_left_unread() {
         let size = [("y", 0.0), ("width", 1.0)].map(|(k, v)| (k.to_owned(), Value::Number(v)));
         node.push(("x".to_owned(), x));
         node.extend(size);
+        node.push(("shape".to_owned(), Value::Text("rectangle".into())));
         node.push(("content".to_owned(), titled("A")));
         Value::Object(node)
     };
@@ -1288,6 +1350,7 @@ fn two_nodes(edges: Vec<Value>) -> Value {
             ("x".to_owned(), Value::Number(0.0)),
             ("y".to_owned(), Value::Number(0.0)),
             ("width".to_owned(), Value::Number(1.0)),
+            ("shape".to_owned(), Value::Text("rectangle".to_owned())),
             ("content".to_owned(), titled(id)),
         ])
     };
@@ -1366,14 +1429,11 @@ fn loaded_in(
     for node in 0..loaded.graph.nodes_in_use() as usize {
         let [width, height] = [0, 1].map(|axis| f64::from(loaded.graph.sizes()[node * 2 + axis]));
         let start = placed.len();
-        content.lay_out(
-            node,
-            width as f32,
-            fonts,
-            &mut cells,
-            &mut rows,
-            &mut placed,
+        let frame = (
+            loaded.graph.shape(node as u32),
+            [width, height].map(|v| v as f32),
         );
+        content.lay_out(node, frame, fonts, &mut cells, &mut rows, &mut placed);
         let laid = &placed[start..];
         drawn.draw(&content, node, &cells, laid, Level::Near, fonts);
         for (_, _, element, at) in content.elements_of(node) {
@@ -1717,6 +1777,7 @@ proptest! {
                 ("x".to_owned(), Value::Number(0.0)),
                 ("y".to_owned(), Value::Number(0.0)),
                 ("width".to_owned(), Value::Number(1.0)),
+                ("shape".to_owned(), Value::Text("rectangle".to_owned())),
                 ("content".to_owned(), titled("A")),
             ]);
             let data = Value::Object(vec![
@@ -1823,7 +1884,7 @@ proptest! {
                     *key == "content" && content_ok(&node)
                 });
                 let sets = read.iter().any(|(key, _)| *key == "content");
-                match patch_of("n", &patch, &Fonts::default(), 0) {
+                match patch_of("n", crate::graph_data::RECTANGLE, &patch, &Fonts::default(), 0) {
                     Ok(checked) => prop_assert!(fine && checked.is_some() == sets),
                     Err(error) => {
                         prop_assert!(!fine);
@@ -1922,6 +1983,7 @@ fn counted_node(id: String, rows: &[Vec<Counted>]) -> NodeInput {
         x: 0.0.into(),
         y: 0.0.into(),
         width: 100.0.into(),
+        shape: crate::NodeShape::Rectangle.into(),
         content: content_input(rows).into(),
     }
 }

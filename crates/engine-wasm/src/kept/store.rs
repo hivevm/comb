@@ -132,6 +132,7 @@ mod tests {
             x: 0.0.into(),
             y: 200.0.into(),
             width: 100.0.into(),
+            shape: crate::NodeShape::Rectangle.into(),
             content: content.into(),
         }
     }

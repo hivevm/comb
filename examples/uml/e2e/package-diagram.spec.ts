@@ -49,7 +49,11 @@ test("the package diagram shows only Comb's modules and crates, each a «package
   // Verifies: G-12
   await page.goto("/");
   await open(page);
-  await expect(page.locator("#diagram option")).toHaveText(["Class diagram", "Package diagram"]);
+  await expect(page.locator("#diagram option")).toHaveText([
+    "Class diagram",
+    "Package diagram",
+    "State diagram",
+  ]);
   await choose(page, "package");
   const graph = await page.evaluate(() => window.uml.exampleGraph());
   expect(graph.nodes.map(({ id }) => id).sort()).toEqual([...PACKAGES].sort());

@@ -1,9 +1,10 @@
 //! The types of graph data the host application hands over and is handed back: a node and its
-//! content, an edge and its label, and their arrowheads, sides, and dash patterns.
+//! content and node shape, an edge and its label, and their arrowheads, sides, and dash patterns.
 
 use std::fmt;
 
 use comb_engine::geometry as graph_side;
+use comb_engine::shape;
 use serde::de::{self, IgnoredAny, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use tsify::Tsify;
@@ -12,7 +13,8 @@ use super::field::{optional_number, text_length};
 use super::{ContentInput, Field};
 
 /// A node as the host application hands it over: its identifier, the position of its top-left
-/// corner, its width, and its content, from which the engine computes its height (ADR-0013).
+/// corner, its width, its node shape, and its content, from which and its node shape the engine
+/// computes its height (ADR-0013, ADR-draft-node-shapes).
 // The tests read each `Field` of it through `Refusable` in `snapshot`, which names them all.
 #[derive(Tsify, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -25,8 +27,39 @@ pub struct NodeInput {
     pub y: Field<f64>,
     #[tsify(type = "number")]
     pub width: Field<f64>,
+    /// Its node shape; `api` fills in `rectangle` (ADR-draft-node-shapes).
+    #[tsify(type = "NodeShape")]
+    pub shape: Field<NodeShape>,
     #[tsify(type = "NodeContent")]
     pub content: Field<ContentInput>,
+}
+
+/// The node shape a node is drawn and hit in, from the closed set the engine owns
+/// (ADR-draft-node-shapes).
+#[derive(Tsify, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum NodeShape {
+    Rectangle,
+    RoundedRectangle,
+    Ellipse,
+    Circle,
+    RingedCircle,
+    Diamond,
+    Bar,
+}
+
+impl From<NodeShape> for shape::NodeShape {
+    fn from(shape: NodeShape) -> Self {
+        match shape {
+            NodeShape::Rectangle => Self::Rectangle,
+            NodeShape::RoundedRectangle => Self::RoundedRectangle,
+            NodeShape::Ellipse => Self::Ellipse,
+            NodeShape::Circle => Self::Circle,
+            NodeShape::RingedCircle => Self::RingedCircle,
+            NodeShape::Diamond => Self::Diamond,
+            NodeShape::Bar => Self::Bar,
+        }
+    }
 }
 
 /// The role of a text, which chooses its font (ADR-0013).
