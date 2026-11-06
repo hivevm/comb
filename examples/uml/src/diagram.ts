@@ -1,32 +1,36 @@
-// The diagram the example edits (G-12): its copy of the graph, the classifier of each node, and
-// the kind of each relationship, kept from every change Comb tells (ADR-0024), as a host
-// application that persists keeps its own. An edge the user connected arrives without a kind;
-// it becomes the kind a connection adds in the diagram shown, drawn as one.
+// The diagram the example edits (G-12): its copy of the graph, the classifier or the state of
+// each node, and the kind of each relationship, kept from every change Comb tells (ADR-0024), as
+// a host application that persists keeps its own. An edge the user connected arrives without a
+// kind; it becomes the kind a connection adds in the diagram shown, drawn as one, and a transition
+// docked as the state diagram docks one.
 import type { Comb, EdgeData, EdgeLabelData, EdgePatch, GraphChange, GraphData } from "comb";
-import { contentOf, kindOf, type Classifier } from "./class-diagram";
+import { contentOf, kindOf, type Classifier, type DiagramData } from "./class-diagram";
 import { patchOf, styleOf, type RelationshipKind } from "./relationships";
-import { allows } from "./rules";
+import { allows, type NodeKind } from "./rules";
+import { contentOf as stateContentOf, dockingOf, type State } from "./state-diagram";
 
 export class Diagram {
   graph: GraphData = { nodes: [], edges: [] };
   classifiers = new Map<string, Classifier>();
+  states = new Map<string, State>();
   kinds = new Map<string, RelationshipKind>();
   /** The kind a connection of the user adds: an association of classifiers, a dependency
-   *  «use» of packages. */
+   *  «use» of packages, a transition of states. */
   connected: RelationshipKind = "association";
 
   constructor(private readonly comb: Comb) {}
 
-  /** Takes `graph`, its classifiers, and its kinds as the diagram's own, a connection adding
-   *  `connected`, and hands Comb the graph. */
-  load(
-    graph: GraphData,
-    classifiers: Map<string, Classifier>,
-    kinds: Map<string, RelationshipKind>,
-    connected: RelationshipKind,
-  ): void {
-    Object.assign(this, { graph, classifiers, kinds, connected });
+  /** Takes `data`, its graph, its classifiers, its states, and its kinds, as the diagram's own, a
+   *  connection adding `connected`, and hands Comb the graph. */
+  load({ graph, classifiers, states, kinds }: DiagramData, connected: RelationshipKind): void {
+    Object.assign(this, { graph, classifiers, states, kinds, connected });
     this.comb.load(graph);
+  }
+
+  /** The diagram's own data, as `load` takes it. */
+  data(): DiagramData {
+    const { graph, classifiers, states, kinds } = this;
+    return { graph, classifiers, states, kinds };
   }
 
   node(id: string) {
@@ -37,13 +41,18 @@ export class Diagram {
     return this.graph.edges.find((each) => each.id === id);
   }
 
-  /** Whether the rules allow a relationship of `kind` from `source` to `target`: never one of a
-   *  node with itself, which Comb offers since it allows loops for the state diagram. */
+  /** The kind of node `id`: its classifier's or its state's, none for a node of neither. */
+  kindOf(id: string): NodeKind | undefined {
+    const classifier = this.classifiers.get(id);
+    return classifier ? kindOf(classifier) : this.states.get(id)?.kind;
+  }
+
+  /** Whether the rules allow a relationship of `kind` from `source` to `target`, a loop where the
+   *  two are one. */
   allows(source: string, target: string, kind: RelationshipKind): boolean {
-    if (source === target) return false;
-    const [from, to] = [this.classifiers.get(source), this.classifiers.get(target)];
+    const [from, to] = [this.kindOf(source), this.kindOf(target)];
     if (!from || !to) return false;
-    return allows({ source: kindOf(from), target: kindOf(to), kind });
+    return allows({ source: from, target: to, kind, loop: source === target });
   }
 
   /** Replaces the content of node `id` with what `next` shows, and its classifier with `next`
@@ -58,6 +67,18 @@ export class Diagram {
       return;
     }
     this.classifiers.set(id, next);
+  }
+
+  /** Replaces the content of state `id` with what `next` shows, and its state with `next` once
+   *  Comb took the content, as `edit` does a classifier. */
+  editState(id: string, next: State): void {
+    try {
+      this.comb.updateNode(id, { content: stateContentOf(next) });
+    } catch (error) {
+      console.warn("uml: the edit was not taken", error);
+      return;
+    }
+    this.states.set(id, next);
   }
 
   /** Changes edge `id` to `kind`, drawn as the kind is. Every kind is allowed between two
@@ -82,23 +103,28 @@ export class Diagram {
     (MIRROR[change.kind] as (diagram: Diagram, change: GraphChange) => void)(this, change);
   }
 
-  /** Drops the nodes, their classifiers, and the edges a removal names. */
+  /** Drops the nodes, their classifiers or states, and the edges a removal names. */
   removed(nodes: readonly string[], edges: readonly string[]): void {
     const [goneNodes, goneEdges] = [new Set(nodes), new Set(edges)];
     this.graph.nodes = this.graph.nodes.filter(({ id }) => !goneNodes.has(id));
     this.graph.edges = this.graph.edges.filter(({ id }) => !goneEdges.has(id));
-    for (const id of nodes) this.classifiers.delete(id);
+    for (const id of nodes) {
+      this.classifiers.delete(id);
+      this.states.delete(id);
+    }
     for (const id of edges) this.kinds.delete(id);
   }
 
   /** Adds `edge`; one without a kind, as the user connects it, becomes the kind a connection
-   *  adds. */
+   *  adds, and a transition is docked as `dockingOf` says. */
   added(edge: EdgeData): void {
     this.graph.edges.push({ ...edge });
     if (this.kinds.has(edge.id)) return;
-    this.kinds.set(edge.id, this.connected);
+    const kind = this.connected;
+    this.kinds.set(edge.id, kind);
     // The kind's style, adding what it draws and clearing nothing the edge brought.
-    this.comb.updateEdge(edge.id, styleOf(this.connected));
+    const docking = kind === "transition" ? dockingOf(edge) : {};
+    this.comb.updateEdge(edge.id, { ...styleOf(kind), ...docking });
   }
 }
 

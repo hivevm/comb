@@ -113,15 +113,19 @@ skimmed. The design revision drops what prevented nothing
   a grey `#6b7280` solid edge with an arrowhead, labelled by its event on a pill of its colour, and
   none from a pseudostate taken at once. A pseudostate is as small as its node shape allows: a
   circle 24 wide, a ringed circle 28, and a diamond as wide as the 128 its empty content makes it
-  high.
+  high. A state is 200 wide, and one the palette drops is named NewState. A transition the user
+  connects docks on the outline at both ends, and a loop on the side the connection left by at
+  both; its event's label stands 14 to the left of its direction of travel.
 - **The UML example's rules of connection are a table of what they refuse.** `allows` in
   `examples/uml/src/rules.ts` answers from the kinds of the two ends and of the relationship,
-  against a set of refused combinations; between a class, an interface, an abstract class, and a
-  package it refuses none, in either direction, and its test writes that table out. No case is
-  needed of a node with itself, since `Diagram.allows` refuses every edge of a node with itself
-  before it asks the table: the example's Comb allows loops for the state diagram, so its gesture
-  offers them in every diagram. Nor is one needed of a class and a package, which never share a
-  diagram. A diagram that adds kinds of node adds its refusals here and to the table.
+  against a set of refused combinations, and its test writes that table out. Between a class, an
+  interface, an abstract class, and a package it refuses none, in either direction. Between a
+  state, an initial state, a final state, and a choice it refuses a transition into an initial
+  state and one out of a final state. A loop, an edge of a node with itself, is allowed only as a
+  transition of a state; the example's Comb allows loops for it, so its gesture offers them in
+  every diagram, and the table refuses every other. No case is needed of a class, a package, and
+  a state together, which never share a diagram. A diagram that adds kinds of node adds its
+  refusals here and to the table.
 - **A ticket names its paths in full.** *What to build* and *Acceptance criteria* write every path
   from the repository root, `packages/comb/src/api/editors.ts` and not `api/editors.ts`, so that
   `scripts/check-plan-modes.sh` reads each one against the protected parts of

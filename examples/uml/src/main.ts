@@ -1,7 +1,14 @@
 // The UML example host application (G-12): Comb on the canvas; in the HTML sidebar the choice of
 // diagram, the palette, the form of the selection, and the legend of the kinds of relationship.
 // It imports Comb by its entries alone and nothing of the other example (ADR-0030).
-import { createComb, type Comb, type GraphData, type Proposal } from "comb";
+import {
+  createComb,
+  type Comb,
+  type GraphData,
+  type NodeContent,
+  type NodeShape,
+  type Proposal,
+} from "comb";
 import engineUrl from "comb/engine.wasm?url";
 import { inspect, screenPoint, type SceneSnapshot } from "comb/testing";
 import {
@@ -12,11 +19,11 @@ import {
   type DiagramData,
 } from "./class-diagram";
 import { packageDiagram } from "./package-diagram";
-import { stateDiagram } from "./state-diagram";
+import { contentOf as stateContentOf, newState, STATE_SHAPES, stateDiagram } from "./state-diagram";
 import { Diagram } from "./diagram";
 import { fillLegend } from "./legend";
 import type { RelationshipKind } from "./relationships";
-import { NODE_KINDS } from "./rules";
+import { CLASSIFIER_KINDS, STATE_KINDS, type NodeKind } from "./rules";
 import { Sidebar } from "./sidebar";
 
 /** How the last load went: what the browser tests read. */
@@ -35,6 +42,8 @@ export interface UmlHooks {
   exampleGraph: () => GraphData;
   /** The kind of each relationship of the diagram, by its edge's identifier. */
   edgeKinds: () => Record<string, RelationshipKind>;
+  /** The kind of each node the example keeps a classifier or a state of, by its identifier. */
+  nodeKinds: () => Record<string, NodeKind | undefined>;
   /** What the canvas draws, from comb/testing. */
   inspect: () => SceneSnapshot;
   /** The canvas point at which the world point `(x, y)` is drawn, from comb/testing. */
@@ -71,7 +80,7 @@ function canConnect({ source, target }: Proposal): string | false {
 }
 
 // Loops are allowed for the state diagram's transitions from a state back to itself; the rules
-// of the class and the package diagram refuse them in the veto (ADR-0031).
+// refuse every other loop in the veto (ADR-0031).
 const comb = await createComb(element("canvas"), {
   engine: fetch(engineUrl),
   allowLoops: true,
@@ -101,11 +110,10 @@ const DIAGRAMS: Record<
     connected: "association",
   },
   package: { build: packageDiagram, nouns: ["packages", "dependencies"], connected: "dependency" },
-  // Shown only: it has no classifiers, so the rules refuse every connection.
   state: {
     build: stateDiagram,
     nouns: ["states", "transitions"],
-    connected: "association",
+    connected: "transition",
     legend: false,
   },
 };
@@ -127,13 +135,12 @@ function counted(): void {
 /** Loads the diagram the sidebar has chosen, as it was left where it was shown before, and keeps
  *  the one it replaces. */
 async function load(): Promise<UmlLoadReport> {
-  const { graph, classifiers, kinds } = diagram;
-  if (shown !== null) kept.set(shown, { graph, classifiers, kinds });
+  if (shown !== null) kept.set(shown, diagram.data());
   shown = choice.value;
   const next =
     kept.get(shown) ??
     DIAGRAMS[shown]!.build((content, width, shape) => comb.heightOf(content, width, shape));
-  diagram.load(next.graph, next.classifiers, next.kinds, DIAGRAMS[shown]!.connected);
+  diagram.load(next, DIAGRAMS[shown]!.connected);
   // The palette offers what the diagram shown holds, and is hidden where it offers nothing.
   for (const item of paletteItems) item.hidden = item.dataset.diagram !== shown;
   palette.hidden = [...paletteItems].every((item) => item.hidden);
@@ -148,30 +155,63 @@ choice.addEventListener("change", () => {
   window.uml.loadReport = load();
 });
 
-/** Adds a classifier of the palette's `kind`, centred by the height Comb gives its content on
- *  the world point under the drop at (`clientX`, `clientY`) of the page (G-1, ADR-0026). */
+/** The content, width, and node shape of a node the palette drops. */
+interface DroppedNode {
+  content: NodeContent;
+  width: number;
+  shape?: NodeShape;
+}
+
+/** What the palette drops of `kind` as node `id`: the node's content, width, and node shape, and
+ *  how the diagram records its classifier or its state; none for a kind the palette lacks. */
+function droppedOf(
+  kind: string,
+  id: string,
+): { node: DroppedNode; record: () => void } | undefined {
+  const classifierKind = CLASSIFIER_KINDS.find((each) => each === kind);
+  if (classifierKind) {
+    const classifier = newClassifier(id, classifierKind);
+    return {
+      node: { content: contentOf(classifier), width: NODE_WIDTH },
+      record: () => void diagram.classifiers.set(id, classifier),
+    };
+  }
+  const stateKind = STATE_KINDS.find((each) => each === kind);
+  if (!stateKind) return undefined;
+  const state = newState(id, stateKind);
+  return {
+    node: { content: stateContentOf(state), ...STATE_SHAPES[stateKind] },
+    record: () => void diagram.states.set(id, state),
+  };
+}
+
+/** Adds a node of the palette's `kind`, a classifier or a state, centred by the height Comb gives
+ *  its content and node shape on the world point under the drop at (`clientX`, `clientY`) of the
+ *  page (G-1, ADR-0026). The classifier or the state is the diagram's once Comb took the node, and
+ *  never where Comb refuses it. */
 function drop(kind: string, clientX: number, clientY: number): void {
-  const nodeKind = NODE_KINDS.find((each) => each === kind);
-  if (!nodeKind) return;
-  const { x, y } = comb.worldPointAt(clientX, clientY);
   const number = (dropped.get(kind) ?? 0) + 1;
+  const id = `${kind}-${number}`;
+  const added = droppedOf(kind, id);
+  if (!added) return;
   dropped.set(kind, number);
-  const classifier = newClassifier(`${kind}-${number}`, nodeKind);
-  const content = contentOf(classifier);
-  diagram.classifiers.set(classifier.id, classifier);
+  const { x, y } = comb.worldPointAt(clientX, clientY);
+  const { content, width, shape } = added.node;
   try {
     comb.addNode({
-      id: classifier.id,
-      x: x - NODE_WIDTH / 2,
-      y: y - comb.heightOf(content, NODE_WIDTH) / 2,
-      width: NODE_WIDTH,
+      id,
+      x: x - width / 2,
+      y: y - comb.heightOf(content, width, shape) / 2,
+      width,
       content,
+      ...(shape ? { shape } : {}),
     });
   } catch (error) {
     // A lost engine, or a node past the limits of a load: the drop adds nothing.
-    diagram.classifiers.delete(classifier.id);
     console.warn("uml: the dropped node was not added", error);
+    return;
   }
+  added.record();
 }
 
 for (const item of paletteItems) {
@@ -198,6 +238,13 @@ window.uml = {
   loadReport: load(),
   exampleGraph: () => structuredClone(diagram.graph),
   edgeKinds: () => Object.fromEntries(diagram.kinds),
+  nodeKinds: () =>
+    Object.fromEntries(
+      [...diagram.classifiers.keys(), ...diagram.states.keys()].map((id) => [
+        id,
+        diagram.kindOf(id),
+      ]),
+    ),
   inspect: () => inspect(comb),
   screenPoint: (x, y) => screenPoint(comb, x, y),
 };
