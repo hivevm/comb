@@ -42,7 +42,8 @@ use slots::Slots;
 pub struct EdgeSpec {
     pub source: u32,
     pub target: u32,
-    /// The sides it leaves its source by and enters its target by (ADR-0025).
+    /// Where it leaves its source and enters its target: at a side's connector or on the outline
+    /// (ADR-0031).
     pub sides: Sides,
     pub label: Option<LabelPlacement>,
     pub style: EdgeStyle,

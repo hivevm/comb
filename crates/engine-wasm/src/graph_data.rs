@@ -45,8 +45,8 @@ pub use edit::{EdgePatch, EdgeRefusal, NodePatch};
 pub(crate) use edit::{add_edge_to, patch_of, update_edge_in};
 pub use field::Field;
 pub use input::{
-    Arrow, ContentElement, EdgeInput, LabelInput, NodeContent, NodeInput, NodeShape, Pair, Segment,
-    Side, TextRole, Trend, TrendDirection,
+    Arrow, ContentElement, Dock, EdgeInput, LabelInput, NodeContent, NodeInput, NodeShape, Pair,
+    Segment, Side, TextRole, Trend, TrendDirection,
 };
 pub(crate) use limits::{ID_LIMIT, TEXT_LIMIT, check_graph_size, check_id_budget};
 pub use limits::{MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_TEXT};

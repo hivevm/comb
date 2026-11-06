@@ -1226,7 +1226,7 @@ describe("bridge columns that do not fit", () => {
       { ...edges, refused: { index: 0, field: 12 } },
       { ...edges, refused: { index: 1, field: 1 } },
       { ...edges, arrow: new Uint8Array([3]) },
-      { ...edges, targetSide: new Uint8Array([5]) },
+      { ...edges, targetSide: new Uint8Array([SideCode.Unnamed + 1]) },
       { ...edges, gap: new Float64Array(0) },
     ];
     for (const columns of misfits) {
@@ -1263,7 +1263,7 @@ describe("bridge columns that do not fit", () => {
       index: 0,
       id: "e",
       field: "targetSide",
-      expected: '"top", "right", "bottom", or "left"',
+      expected: '"top", "right", "bottom", "left", or "outline"',
     });
   });
 });
@@ -1370,6 +1370,20 @@ describe("bridge query", () => {
     expect([
       ...bridge.query({ minX: 140, minY: -100, maxX: 160, maxY: 0 }, "near", 4, 19).labels,
     ]).toEqual([]);
+  });
+});
+
+describe("bridge edges docked on the outline", () => {
+  test("an edge's end on the outline crosses as the outline's code and loads", () => {
+    // Verifies: ADR-0031
+    const snapshot = graph(two(), [
+      { ...edge("d", "a", "b"), sourceSide: "outline" as const },
+      { ...edge("e", "b", "a"), targetSide: "outline" as const },
+    ]);
+    expect([...snapshot.edges.sourceSide]).toEqual([SideCode.Outline, SideCode.Right]);
+    expect([...snapshot.edges.targetSide]).toEqual([SideCode.Left, SideCode.Outline]);
+    expect(snapshot.edges.refused).toBeUndefined();
+    expect(bridge.loadGraph(snapshot)).toBe(2);
   });
 });
 

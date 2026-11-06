@@ -133,8 +133,8 @@ pub(crate) fn batch(nodes: &[(&str, f64, f64)], edges: &[(&str, &str, &str)]) ->
                 color: f64::from(0x9a_a1ad).into(),
                 dash: None.into(),
                 arrow: Arrow::End.into(),
-                source_side: Side::Right.into(),
-                target_side: Side::Left.into(),
+                source_side: Dock::Right.into(),
+                target_side: Dock::Left.into(),
             })
             .collect(),
     }

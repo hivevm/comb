@@ -14,8 +14,8 @@ import {
   SideCode,
   type Arrow,
   type ContentElement,
+  type Dock,
   type NodeShape,
-  type Side,
   type TextRole,
   type TrendDirection,
 } from "../../wasm/engine.js";
@@ -610,11 +610,12 @@ const SHAPES: Readonly<Record<NodeShape, NodeShapeCode>> = {
   diamond: NodeShapeCode.Diamond,
   bar: NodeShapeCode.Bar,
 };
-const SIDES: Readonly<Record<Side, SideCode>> = {
+const SIDES: Readonly<Record<Dock, SideCode>> = {
   top: SideCode.Top,
   right: SideCode.Right,
   bottom: SideCode.Bottom,
   left: SideCode.Left,
+  outline: SideCode.Outline,
 };
 
 /** The code of `name` in `codes`, `unnamed` for a string that names none of them, or none for a

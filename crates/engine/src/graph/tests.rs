@@ -3,17 +3,24 @@
 //! and moves (ADR-0023), and the refusals of a load and of a slot that holds nothing.
 
 use super::*;
-use crate::geometry::Side;
+use crate::geometry::{Dock, Side};
 
-/// Sides of an edge, mostly the default, now and then any of the sixteen pairs.
+/// Sides of an edge, mostly the default, now and then any pair of the four sides and the
+/// outline (ADR-0031).
 pub(super) fn random_sides(rng: &mut Lcg) -> Sides {
     if rng.next() < 0.5 {
         return Sides::default();
     }
-    let sides = [Side::Top, Side::Right, Side::Bottom, Side::Left];
+    let docks = [
+        Dock::Side(Side::Top),
+        Dock::Side(Side::Right),
+        Dock::Side(Side::Bottom),
+        Dock::Side(Side::Left),
+        Dock::Outline,
+    ];
     Sides {
-        source: sides[rng.below(4) as usize],
-        target: sides[rng.below(4) as usize],
+        source: docks[rng.below(5) as usize],
+        target: docks[rng.below(5) as usize],
     }
 }
 

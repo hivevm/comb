@@ -320,7 +320,7 @@ test("a listener that writes into a delivered change reaches nothing Comb keeps"
 test("updateEdge moves an edge's end to another side, and the next frame draws it entering there", async ({
   page,
 }) => {
-  // Verifies: ADR-0025, ADR-0024
+  // Verifies: ADR-0031, ADR-0024
   await open(page);
   // b below and to the right of a, so that its top and left connectors differ.
   await loaded(page, { nodes: [node("a"), node("b", 600, 300)], edges: [] });
@@ -350,7 +350,7 @@ for (const [name, value] of [
   ["a side that is a number", 1],
 ] as const) {
   test(`load, addEdge, and updateEdge refuse ${name} as invalidField`, async ({ page }) => {
-    // Verifies: Q-7, ADR-0025
+    // Verifies: Q-7, ADR-0031
     await open(page);
     await loaded(page, PAIR);
     const problems = await page.evaluate((side) => {
@@ -379,7 +379,7 @@ for (const [name, value] of [
       index,
       id: "x",
       field,
-      expected: '"top", "right", "bottom", or "left"',
+      expected: '"top", "right", "bottom", "left", or "outline"',
     });
     expect(problems).toEqual([
       expected(0, "targetSide"),

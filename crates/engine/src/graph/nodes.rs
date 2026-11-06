@@ -172,9 +172,10 @@ impl Graph {
         self.shapes.get(slot as usize).copied().unwrap_or_default()
     }
 
-    /// Gives the node in `slot` the node shape `shape`. Its bounds stay its rectangle, so the
-    /// index needs nothing; its height is the caller's, through `resize_node`. A slot that holds
-    /// no node refuses the call, which then changes nothing.
+    /// Gives the node in `slot` the node shape `shape`, and places its edges again, whose ends
+    /// on its outline move with it (ADR-0031). Its bounds stay its rectangle; its height is the
+    /// caller's, through `resize_node`. A slot that holds no node refuses the call, which then
+    /// changes nothing.
     pub fn set_shape(&mut self, slot: u32, shape: NodeShape) -> Result<(), SlotError> {
         self.nodes_held(&[slot])?;
         let i = slot as usize;
@@ -182,6 +183,12 @@ impl Graph {
             self.shapes.resize(i + 1, NodeShape::default());
         }
         self.shapes[i] = shape;
+        let edges = std::mem::take(&mut self.incident[i]);
+        for &edge in &edges {
+            self.place_edge(edge);
+        }
+        self.incident[i] = edges;
+        self.keep_index();
         Ok(())
     }
 }
@@ -219,11 +226,215 @@ fn translate_positions(
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::{paired, row};
+    use super::super::tests::{Lcg, paired, row};
     use super::super::{EdgeSpec, Level, Visible};
     use super::*;
-    use crate::geometry::{Point, Sides};
+    use crate::geometry::tests::on_the_outline_towards;
+    use crate::geometry::{Dock, Point, Sides};
     use crate::stroke::EdgeStyle;
+
+    /// The centre of the node in `slot`.
+    fn centre_of(graph: &Graph, slot: u32) -> Point {
+        let b = graph.node_bounds(slot);
+        Point::new((b.min_x + b.max_x) / 2.0, (b.min_y + b.max_y) / 2.0)
+    }
+
+    const OUTLINE: Sides = Sides {
+        source: Dock::Outline,
+        target: Dock::Outline,
+    };
+
+    #[test]
+    fn five_ends_on_the_outline_of_one_node_follow_it_as_it_is_dragged_and_never_meet() {
+        // Verifies: ADR-0031, G-2
+        // A hub and five nodes around it, every 72°, the edges in both directions, every end on
+        // the outline; the hub an ellipse, the others a circle, a diamond, a rounded rectangle, a
+        // rectangle, and a ringed circle.
+        let mut positions = vec![-80.0, -40.0];
+        let mut sizes = vec![160.0, 80.0];
+        let mut specs = Vec::new();
+        for i in 0..5_u32 {
+            let angle = f64::from(i) * core::f64::consts::TAU / 5.0 + 0.3;
+            positions.extend([
+                (angle.cos() * 400.0 - 30.0) as f32,
+                (angle.sin() * 400.0 - 30.0) as f32,
+            ]);
+            sizes.extend([60.0, 60.0]);
+            let (source, target) = if i % 2 == 0 { (0, i + 1) } else { (i + 1, 0) };
+            specs.push(EdgeSpec {
+                sides: OUTLINE,
+                source,
+                target,
+                label: None,
+                style: EdgeStyle::unstyled(),
+            });
+        }
+        let mut graph = Graph::new(positions, sizes, specs).unwrap();
+        let shapes = [
+            NodeShape::Ellipse,
+            NodeShape::Circle,
+            NodeShape::Diamond,
+            NodeShape::RoundedRectangle,
+            NodeShape::Rectangle,
+            NodeShape::RingedCircle,
+        ];
+        for (slot, shape) in (0..).zip(shapes) {
+            graph.set_shape(slot, shape).unwrap();
+        }
+        // Dragged in steps, past some of the others and back.
+        for (dx, dy) in [
+            (0.0, 0.0),
+            (35.0, -12.0),
+            (300.0, 50.0),
+            (-640.0, 210.0),
+            (0.5, 0.25),
+        ] {
+            graph.translate(&[0], dx, dy).unwrap();
+            let hub = centre_of(&graph, 0);
+            let mut at_hub = Vec::new();
+            for edge in 0..5_u32 {
+                let path = graph.paths[edge as usize];
+                let other = edge + 1;
+                let (end, far) = if edge % 2 == 0 {
+                    (path.source, path.target)
+                } else {
+                    (path.target, path.source)
+                };
+                on_the_outline_towards(
+                    end,
+                    &graph.node_bounds(0),
+                    NodeShape::Ellipse,
+                    centre_of(&graph, other),
+                    1e-9,
+                );
+                on_the_outline_towards(
+                    far,
+                    &graph.node_bounds(other),
+                    shapes[other as usize],
+                    hub,
+                    1e-9,
+                );
+                at_hub.push(end);
+            }
+            for (i, a) in at_hub.iter().enumerate() {
+                for b in &at_hub[i + 1..] {
+                    assert!(
+                        (a.x - b.x).hypot(a.y - b.y) > 1.0,
+                        "two ends meet at {a:?} after ({dx}, {dy})"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_new_node_shape_moves_the_ends_on_its_outline_onto_it() {
+        // Verifies: ADR-0031
+        let mut graph = Graph::new(
+            vec![0.0, 0.0, 300.0, 200.0],
+            vec![100.0, 60.0, 100.0, 60.0],
+            vec![EdgeSpec {
+                sides: OUTLINE,
+                source: 0,
+                target: 1,
+                label: None,
+                style: EdgeStyle::unstyled(),
+            }],
+        )
+        .unwrap();
+        graph.set_shape(1, NodeShape::Diamond).unwrap();
+        let path = graph.paths[0];
+        on_the_outline_towards(
+            path.target,
+            &graph.node_bounds(1),
+            NodeShape::Diamond,
+            centre_of(&graph, 0),
+            1e-9,
+        );
+        assert_eq!(graph.bounds[0], path.bounds());
+    }
+
+    #[test]
+    fn every_end_on_the_outline_lies_on_it_within_q4_far_from_the_origin_too() {
+        // Verifies: ADR-0032, ADR-0031, Q-4
+        // Random nodes of random node shapes, near the origin and as far out as 2^40, and random
+        // edges between them docked on the outline: every end lies on its node's outline, on
+        // the line towards the other centre, within the precision `f64` keeps at that distance.
+        // Each node stands in a cell of its own of a 6 × 6 grid whose step is at least the
+        // spacing of `f32` at that distance, so that no two nodes round onto one place.
+        const TIERS: [f64; 4] = [0.0, 1e4, 3e7, 1_099_511_627_776.0];
+        let mut rng = Lcg(32);
+        let mut per_shape = [0_u32; NodeShape::ALL.len()];
+        let mut per_tier = [0_u32; TIERS.len()];
+        for case in 0..200 {
+            let tier = case % TIERS.len();
+            let far = TIERS[tier];
+            // The spacing of `f32` at `far`, 2^-23 of its power of two, and 131072 at 2^40.
+            let spacing = if far == 0.0 {
+                0.0
+            } else {
+                2f64.powi(far.log2().floor() as i32 - 23)
+            };
+            let step = spacing.max(400.0);
+            let mut cells: Vec<u32> = (0..36).collect();
+            let mut positions = Vec::new();
+            let mut sizes = Vec::new();
+            for _ in 0..12 {
+                let cell = cells.swap_remove(rng.below(cells.len()) as usize);
+                let (column, row) = (f64::from(cell % 6), f64::from(cell / 6));
+                positions.extend([(far + column * step) as f32, (-far + row * step) as f32]);
+                sizes.extend([rng.range(4.0, 300.0) as f32, rng.range(4.0, 160.0) as f32]);
+            }
+            let specs = (0..20)
+                .map(|_| (rng.below(12), rng.below(12)))
+                .filter(|(a, b)| a != b)
+                .map(|(source, target)| EdgeSpec {
+                    sides: OUTLINE,
+                    source,
+                    target,
+                    label: None,
+                    style: EdgeStyle::unstyled(),
+                })
+                .collect();
+            let mut graph = Graph::new(positions, sizes, specs).unwrap();
+            let mut shapes = Vec::new();
+            for slot in 0..12 {
+                let shape = rng.below(NodeShape::ALL.len()) as usize;
+                graph.set_shape(slot, NodeShape::ALL[shape]).unwrap();
+                shapes.push(shape);
+            }
+            for edge in 0..graph.edges_in_use() {
+                let spec = graph.edges[edge as usize];
+                let (a, b) = (
+                    centre_of(&graph, spec.source),
+                    centre_of(&graph, spec.target),
+                );
+                assert_ne!(a, b, "case {case}: two nodes on one centre");
+                let path = graph.paths[edge as usize];
+                let tolerance = 1e-9 * 500.0 + 8.0 * f64::EPSILON * far;
+                for (end, slot, other) in
+                    [(path.source, spec.source, b), (path.target, spec.target, a)]
+                {
+                    on_the_outline_towards(
+                        end,
+                        &graph.node_bounds(slot),
+                        graph.shape(slot),
+                        other,
+                        tolerance,
+                    );
+                    per_shape[shapes[slot as usize]] += 1;
+                    per_tier[tier] += 1;
+                }
+            }
+        }
+        // Every node shape and every distance has ends enough to rest on.
+        for (shape, count) in NodeShape::ALL.iter().zip(per_shape) {
+            assert!(count >= 200, "{shape:?}: {count} ends");
+        }
+        for (far, count) in TIERS.iter().zip(per_tier) {
+            assert!(count >= 500, "at {far}: {count} ends");
+        }
+    }
 
     #[test]
     fn a_moved_node_takes_its_edges_along() {
