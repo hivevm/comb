@@ -124,7 +124,7 @@ one workspace for each example.
   to that of a side of another, their control points pulled out along each side's outward normal
   ([ADR-0025](adr/0025-one-connector-per-side.md)), their exact bounds, the point and normal at a
   path parameter, and edge-label placement. `shape` holds the closed set of node shapes
-  ([ADR-draft-node-shapes](adr/draft-node-shapes.md)): each one's height for content of a given
+  ([ADR-0032](adr/0032-node-shapes.md)): each one's height for content of a given
   height, the inner rectangle its content is laid out in, its hit test, and the point where a line
   from its centre crosses its outline, all in the node's own coordinates. `graph` keeps the loaded
   graph, node positions and sizes per slot, a node shape per node slot, a rectangle by default, by
@@ -205,7 +205,7 @@ one workspace for each example.
   and resolves edge ends to slots, keeps the content of the nodes, gives each node its node shape,
   refusing content in a filled one, and makes each node as high as its node shape needs for its
   content laid out in its inner rectangle in the fonts `setFont` handed over
-  ([ADR-draft-node-shapes](adr/draft-node-shapes.md)), which the sizes buffer holds beside
+  ([ADR-0032](adr/0032-node-shapes.md)), which the sizes buffer holds beside
   the positions buffer, and a font handed over later lays every node out anew; a node whose far
   side, by that height, lies past the world's limit is refused; `updateNode` checks a patch of a
   node's content as a load checks it and gives the node the new content and its height, `addNode`

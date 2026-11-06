@@ -1,4 +1,4 @@
-//! The node shapes of the closed set the engine owns (ADR-draft-node-shapes): each node shape's
+//! The node shapes of the closed set the engine owns (ADR-0032): each node shape's
 //! height for content of a given height, the inner rectangle its content is laid out in, its hit
 //! test, and the point where a line from its centre crosses its outline. All of it is in the
 //! node's own coordinates, its top-left corner at the origin, so that it holds wherever the node
@@ -187,7 +187,7 @@ fn rounded_distance(a: f64, b: f64, ux: f64, uy: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    // Verifies: ADR-draft-node-shapes
+    // Verifies: ADR-0032
     use super::*;
 
     /// Directions around the full turn, the axes and the diagonals among them.

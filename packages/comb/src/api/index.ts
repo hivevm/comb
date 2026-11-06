@@ -112,7 +112,7 @@ export interface Comb {
    *  gives such a node, without one in the graph and changing nothing. Content whose rows hold
    *  elements of the same kinds, row by row and in the same order, has the same height in a
    *  rectangle whatever its texts and width, so a layout asks once per shape of content; a
-   *  circle and a ringed circle are as high as wide, and a bar 8 high (ADR-draft-node-shapes).
+   *  circle and a ringed circle are as high as wide, and a bar 8 high (ADR-0032).
    *  Throws a `GraphDataError` with the problem `addNode` gives the content, the width, or the
    *  node shape, its texts counted against the budget alone, as in an empty graph, naming the
    *  node `""` (Q-7), and an `EngineLostError` once the engine is lost (ADR-0026). */

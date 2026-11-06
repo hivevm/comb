@@ -310,7 +310,7 @@ describe("a slot the shell names that holds nothing", () => {
 
 describe("a node's node shape", () => {
   test("is a rectangle where left out, kept by the store, and heightOf answers for it", () => {
-    // Verifies: ADR-draft-node-shapes
+    // Verifies: ADR-0032
     const { store, bridge, host } = editing();
     const heightAt = (slot: number) => bridge.nodeBuffers().sizes[slot * 2 + 1];
     // A node loaded without one is a rectangle, as high as before.
@@ -330,7 +330,7 @@ describe("a node's node shape", () => {
   });
 
   test("of another type or naming none is refused naming the node and the field, and content in a filled one naming the node", () => {
-    // Verifies: ADR-draft-node-shapes, Q-7
+    // Verifies: ADR-0032, Q-7
     const { store, host } = editing();
     const before = store.getState();
     const field = (id: string) => ({

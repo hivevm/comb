@@ -82,7 +82,7 @@ impl ContentData {
     }
 
     /// Lays out the content of the node at `node`, of node shape `shape` and `[width, height]`,
-    /// in `fonts`, within its node shape's inner rectangle (ADR-draft-node-shapes), and pushes
+    /// in `fonts`, within its node shape's inner rectangle (ADR-0032), and pushes
     /// where its elements lie onto `out`, relative to the node's top-left corner; `cells` and
     /// `rows` are the caller's to reuse.
     pub(crate) fn lay_out<'a>(

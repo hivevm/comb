@@ -304,7 +304,7 @@ fn node(loose: bool, i: usize) -> impl Strategy<Value = Value> {
 
 /// Mostly a rectangle, now and then another node shape, a filled one among them, which refuses
 /// content; loose, now and then a name of none or a value of another type
-/// (ADR-draft-node-shapes).
+/// (ADR-0032).
 fn node_shape(loose: bool) -> BoxedStrategy<Value> {
     let text = |name: &str| Value::Text(name.to_owned());
     let mut good = vec![text("rectangle"); 6];
@@ -634,7 +634,7 @@ fn shape_name(node: &Value) -> &str {
 }
 
 /// Whether `node` holds no content in a filled node shape, which holds none
-/// (ADR-draft-node-shapes).
+/// (ADR-0032).
 fn shape_ok(node: &Value) -> bool {
     let filled = ["circle", "ringed-circle", "bar"].contains(&shape_name(node));
     let rows = fields_of(node).and_then(|fields| get(fields, "content"));

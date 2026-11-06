@@ -1,5 +1,5 @@
 // The nodes layer at the near and the middle level (ADR-0012): a pooled view per node in view, its
-// node shape (ADR-draft-node-shapes) and its content (ADR-0013), every text as `BitmapText`. The
+// node shape (ADR-0032) and its content (ADR-0013), every text as `BitmapText`. The
 // engine lays the content out and the view draws each text where the engine placed it, cut where it
 // was cut, an action's in the link colour, a badge's on its pill, each progress bar as the segments
 // and the track the engine cut its bar into, and each metric as its caption, its value, and its
@@ -355,7 +355,7 @@ class ElementPool {
 }
 
 /** Draws the node shape `shape` of a node `width` × `height` into `box`, its outline in the node's
- *  rectangle at its origin (ADR-draft-node-shapes): a content node shape white with the border
+ *  rectangle at its origin (ADR-0032): a content node shape white with the border
  *  of a node, blue and wider while it is selected; a filled one in the near-black of a node's
  *  texts, the ringed circle as a filled circle of half the radius inside an unfilled ring, and
  *  outlined in blue while it is selected. */

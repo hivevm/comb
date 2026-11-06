@@ -136,7 +136,7 @@ pub fn slot(index: usize) -> Result<u32, TooManySlots> {
 pub struct Graph {
     positions: Vec<f32>,
     sizes: Vec<f32>,
-    /// The node shape of each node slot (ADR-draft-node-shapes); a slot past its end is a
+    /// The node shape of each node slot (ADR-0032); a slot past its end is a
     /// rectangle, so that a graph that names no node shape keeps none.
     shapes: Vec<NodeShape>,
     edges: Vec<EdgeSpec>,

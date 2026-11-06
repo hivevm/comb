@@ -90,13 +90,13 @@ pub(crate) const fn kept_height(height: f64) -> f32 {
 }
 
 /// The height of the node of node shape `shape`, `width` wide, whose content lays out to
-/// `content` high in its inner rectangle, as the engine keeps it (ADR-draft-node-shapes).
+/// `content` high in its inner rectangle, as the engine keeps it (ADR-0032).
 pub(crate) fn shaped_height(shape: NodeShape, width: f32, content: f64) -> f32 {
     kept_height(shape.height(f64::from(width), content))
 }
 
 /// Refuses content of `rows` rows in the node `id` of the filled node shape `shape`, which holds
-/// none (ADR-draft-node-shapes).
+/// none (ADR-0032).
 pub(crate) fn content_fits_shape(
     id: &str,
     shape: NodeShape,

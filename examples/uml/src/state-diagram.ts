@@ -1,7 +1,7 @@
 // The state diagram of the example (G-12): the life of a Comb, from `createComb` to `destroy`. Its
 // states are rounded rectangles of their name; its initial state a filled circle, its final
 // states ringed circles, and the choice of whether the engine loaded a diamond, each a node shape
-// of Comb's own (ADR-draft-node-shapes). Its transitions are edges labelled by their event or
+// of Comb's own (ADR-0032). Its transitions are edges labelled by their event or
 // their guard, each leaving and entering by a side. It is shown only; the user edits none of it
 // yet.
 import type { Comb, EdgeData, NodeContent, NodeData, NodeShape, Side } from "comb";

@@ -376,7 +376,7 @@ function copied<T>(
   return items;
 }
 
-/** The node shape of a node, `rectangle` where it is left out (ADR-draft-node-shapes). */
+/** The node shape of a node, `rectangle` where it is left out (ADR-0032). */
 const NODE_SHAPE = "rectangle";
 
 function nodeOf(read: Reader, node: Fields) {

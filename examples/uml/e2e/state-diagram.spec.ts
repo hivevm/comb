@@ -1,7 +1,7 @@
 // Browser tests of the UML example's state diagram (G-12): the life of a Comb, its states rounded
 // rectangles of their name, its initial state a filled circle, its final states ringed circles,
 // and the choice of whether the engine loaded a diamond, each a node shape of Comb's own
-// (ADR-draft-node-shapes), its transitions edges by sides labelled by their event or guard.
+// (ADR-0032), its transitions edges by sides labelled by their event or guard.
 import { expect, test, type Page } from "@playwright/test";
 import { open } from "./shared";
 
@@ -36,7 +36,7 @@ async function chooseStates(page: Page): Promise<void> {
 test("the state diagram shows a Comb's life in the node shapes of its states, initial and final states, and choice", async ({
   page,
 }) => {
-  // Verifies: G-12, ADR-draft-node-shapes
+  // Verifies: G-12, ADR-0032
   await page.goto("/");
   await open(page);
   await chooseStates(page);
