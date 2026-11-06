@@ -79,6 +79,17 @@ pub(super) fn random_inputs(
     (positions, sizes, specs)
 }
 
+/// The path of the edge `spec` between `source` and `target`, the rectangles of its ends, from
+/// the geometry alone: a loop's where it leads a node back to itself, else `between`'s
+/// (ADR-0031).
+pub(super) fn path_of(spec: &EdgeSpec, source: &Rect, target: &Rect) -> EdgePath {
+    if spec.source == spec.target {
+        EdgePath::looped(source, spec.sides.source)
+    } else {
+        EdgePath::between(source, target, spec.sides)
+    }
+}
+
 pub(super) fn random_graph(rng: &mut Lcg, nodes: usize, edges: usize) -> Graph {
     let (positions, sizes, specs) = random_inputs(rng, nodes, edges);
     Graph::new(positions, sizes, specs).unwrap()
@@ -143,11 +154,7 @@ impl Model {
 
     pub(super) fn path(&self, edge: u32) -> EdgePath {
         let spec = self.specs[edge as usize];
-        EdgePath::between(
-            &self.bounds(spec.source),
-            &self.bounds(spec.target),
-            spec.sides,
-        )
+        path_of(&spec, &self.bounds(spec.source), &self.bounds(spec.target))
     }
 
     /// The point of the label of `edge`, where it holds one.
@@ -204,10 +211,10 @@ fn brute_force(graph: &Graph, rect: &Rect, reach: f64) -> (Vec<u32>, Vec<u32>, V
         .filter(|&e| graph.holds_edge(e))
         .filter(|&e| {
             let spec = graph.edges[e as usize];
-            EdgePath::between(
+            path_of(
+                &spec,
                 &graph.node_bounds(spec.source),
                 &graph.node_bounds(spec.target),
-                spec.sides,
             )
             .bounds()
             .meets(rect)
@@ -218,10 +225,10 @@ fn brute_force(graph: &Graph, rect: &Rect, reach: f64) -> (Vec<u32>, Vec<u32>, V
         .filter(|&e| {
             let spec = graph.edges[e as usize];
             spec.label.is_some_and(|label| {
-                let path = EdgePath::between(
+                let path = path_of(
+                    &spec,
                     &graph.node_bounds(spec.source),
                     &graph.node_bounds(spec.target),
-                    spec.sides,
                 );
                 label_rect.contains(path.label_position(label.t, label.offset))
             })

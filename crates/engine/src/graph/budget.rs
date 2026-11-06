@@ -228,8 +228,9 @@ fn assert_within(out: &Visible, budget: u32, context: &str) {
 /// Asserts that the complete mesh of `full` draws its edges within a quarter pixel inside `rect`,
 /// measured on the polyline it strokes, before its vertices are rounded to `f32`. The stroke of an
 /// edge with an arrowhead stops at its base, off the path where it bends there, which the
-/// arrowhead's own tests decide; the flattening is the same for all edges.
-fn assert_accurate(graph: &Graph, full: &Visible, rect: &Rect, level: Level, scale: f64) {
+/// arrowhead's own tests decide; the flattening is the same for all edges. Returns how many of
+/// the edges measured are loops.
+fn assert_accurate(graph: &Graph, full: &Visible, rect: &Rect, level: Level, scale: f64) -> u32 {
     let stroke = Stroke::at(level, 1.0 / scale);
     let plain =
         |&(&slot, _): &(&u32, _)| level == Level::Far || !graph.edges[slot as usize].style.arrow;
@@ -239,7 +240,10 @@ fn assert_accurate(graph: &Graph, full: &Visible, rect: &Rect, level: Level, sca
         .zip(runs(&full.mesh))
         .filter(plain)
         .take(MEASURED);
+    let mut loops = 0;
     for (&slot, (_, range)) in measured {
+        let spec = graph.edges[slot as usize];
+        loops += u32::from(spec.source == spec.target);
         let path = graph.paths[slot as usize];
         let points = flattened(&path, &stroke, rect);
         assert_stroke_of(full, range, &points, stroke.width);
@@ -250,10 +254,12 @@ fn assert_accurate(graph: &Graph, full: &Visible, rect: &Rect, level: Level, sca
             "{rect:?} at {scale}: edge {slot} strays {worst} px"
         );
     }
+    loops
 }
 
-/// Checks one query of `graph` with a budget the rng picks against the same query unbounded.
-fn check(graph: &mut Graph, rng: &mut Lcg, case: u64) {
+/// Checks one query of `graph` with a budget the rng picks against the same query unbounded, and
+/// returns how many loops it measured the accuracy of.
+fn check(graph: &mut Graph, rng: &mut Lcg, case: u64) -> u32 {
     // Each level at the scales the scene draws it at: near from 0.6, middle from 0.3, far below.
     let (level, least, most) = [
         (Level::Near, 0.6, 10.0),
@@ -265,7 +271,7 @@ fn check(graph: &mut Graph, rng: &mut Lcg, case: u64) {
     let mut full = Visible::default();
     graph.query_within(&rect, level, 1.0 / scale, 0.0, u32::MAX, &mut full);
     assert_eq!(full.mesh.detail, Detail::Complete, "case {case}");
-    assert_accurate(graph, &full, &rect, level, scale);
+    let loops = assert_accurate(graph, &full, &rect, level, scale);
     let need = full.mesh.distances.len();
     let budget = any_budget(rng, full.edges.len(), need);
     let mut out = Visible::default();
@@ -286,15 +292,19 @@ fn check(graph: &mut Graph, rng: &mut Lcg, case: u64) {
         Detail::Coarsened
     };
     assert_eq!(out.mesh.detail, expected, "{context}");
+    loops
 }
 
 #[test]
 fn every_query_keeps_its_mesh_within_the_budget_and_draws_every_edge_it_finds() {
     let mut rng = Lcg(2026);
+    let mut loops = 0;
     for case in 0..CASES {
         let mut graph = any_graph(&mut rng);
-        check(&mut graph, &mut rng, case);
+        loops += check(&mut graph, &mut rng, case);
     }
+    // Loops among the edges measured, which the graphs of few nodes draw often (ADR-0031).
+    assert!(loops >= 200, "{loops} loops measured");
 }
 
 /// The graph of the reproduction: `a` at (0, 0) and `b` at (-1e7, 3e6), and `edges` edges from `a`

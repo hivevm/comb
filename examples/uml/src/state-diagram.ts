@@ -2,8 +2,9 @@
 // states are rounded rectangles of their name; its initial state a filled circle, its final
 // states ringed circles, and the choice of whether the engine loaded a diamond, each a node shape
 // of Comb's own (ADR-0032). Its transitions are edges labelled by their event or
-// their guard, each end docked on its state's outline (ADR-0031). It is shown only; the user
-// edits none of it yet.
+// their guard, each end docked on its state's outline, and a loop on ready, which stands for each
+// edit Comb applies, on ready's left side (ADR-0031). It is shown only; the user edits none of it
+// yet.
 import type { Comb, EdgeData, NodeContent, NodeData, NodeShape } from "comb";
 import type { DiagramData } from "./class-diagram";
 import { GREY } from "./relationships";
@@ -64,6 +65,7 @@ const TRANSITIONS: [string, string, string | null][] = [
   ["loading", "loaded", "engine settled"],
   ["loaded", "ready", "[loaded]"],
   ["loaded", "refused", "[refused]"],
+  ["ready", "ready", "edit"],
   ["ready", "rendering", "change"],
   ["rendering", "ready", "rendered"],
   ["ready", "lost", "engine lost"],
@@ -82,15 +84,17 @@ function contentOf({ name }: StateNode): NodeContent {
   return name === undefined ? [] : [[{ kind: "text", role: "title", text: name }]];
 }
 
-/** The edge of a transition, grey with an arrowhead, docked on the outline at both ends, its
- *  label in grey where it has one. */
+/** The edge of a transition, grey with an arrowhead, docked on the outline at both ends, a loop
+ *  on the left side of its state, where the column leaves room, its label in grey where it has
+ *  one. */
 function edgeOf([source, target, label]: (typeof TRANSITIONS)[number]) {
+  const side = source === target ? "left" : "outline";
   const edge: EdgeData = {
     id: `${source}-${target}`,
     source,
     target,
-    sourceSide: "outline",
-    targetSide: "outline",
+    sourceSide: side,
+    targetSide: side,
     color: GREY,
     arrow: "end",
   };

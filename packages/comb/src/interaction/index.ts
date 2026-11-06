@@ -37,10 +37,16 @@ const CURSORS: Record<Hit["kind"], string> = {
  *  label, a drag of it, its edge selected; on a node, a drag of it that waits for the slop, or
  *  within it a click, the node selected; on an edge, a pan that waits for the slop, the edge
  *  selected; on nothing, a pan, the selection cleared. */
-function begin(context: Context, x: number, y: number, connect?: Connect): Gesture {
+function begin(
+  context: Context,
+  x: number,
+  y: number,
+  connect: Connect | undefined,
+  loops: boolean,
+): Gesture {
   const hit = context.hitAt(x, y);
   return (
-    (connect && connection(context, hit, x, y, connect)) ||
+    (connect && connection(context, hit, x, y, connect, loops)) ||
     labelDrag(context, hit, x, y) ||
     nodeDrag(context, hit, x, y) ||
     pan(context, hit, x, y)
@@ -122,13 +128,15 @@ function attachRelease(
 }
 
 /** Wires pointer and wheel input on the canvas; a click on an element of a node's content is told
- *  to `click`, and a connection proposed to `connect`, where the host lets the user connect. */
+ *  to `click`, and a connection proposed to `connect`, where the host lets the user connect, one
+ *  back to its source where `loops` allows loops (ADR-0031). */
 export function attachInteraction(
   app: Application,
   store: GraphStore,
   bridge: Bridge,
   connect: Connect | undefined,
   click: (click: ContentClick) => void,
+  loops: boolean,
 ): Interaction {
   const connecting = connect !== undefined;
   const hitAt = (x: number, y: number) => targetAt({ store, bridge }, x, y, connecting);
@@ -158,7 +166,7 @@ export function attachInteraction(
     untilLost((event: FederatedPointerEvent) => {
       // A gesture whose release never came ends where the next press begins.
       release(false);
-      gesture = begin(context, event.global.x, event.global.y, connect);
+      gesture = begin(context, event.global.x, event.global.y, connect, loops);
       if (gesture.grabs) app.canvas.style.cursor = "grabbing";
     }),
   );

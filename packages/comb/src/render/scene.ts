@@ -111,7 +111,7 @@ export interface SceneSnapshot {
   renders: number;
   /** How many of the renders queried the engine; the others moved the world alone. */
   queries: number;
-  /** The connectors the connectors layer draws (ADR-0025). */
+  /** The connectors the connectors layer draws (ADR-0031). */
   connectors: DrawnConnector[];
   /** Where each connector the layer draws is centred, in world units, in the order of
    *  `connectors`. */

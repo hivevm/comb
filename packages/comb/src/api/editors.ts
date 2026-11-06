@@ -136,11 +136,13 @@ function edit<P, R, T>(store: GraphStore, bridge: Bridge, step: Edit<P, R, T>): 
   step.record(store.getState(), resolved, result);
 }
 
-/** What one Comb's edits need: its store, its bridge, and the bridge's limits. */
+/** What one Comb's edits need: its store, its bridge, the bridge's limits, and whether the host
+ *  application allows loops (ADR-0031). */
 interface Editing {
   readonly store: GraphStore;
   readonly bridge: Bridge;
   readonly limits: Limits;
+  readonly loops: boolean;
 }
 
 /** `load`: the graph data read once, its lists' lengths checked before any item is, and handed
@@ -237,13 +239,13 @@ function endsOf(snapshot: unknown, state: GraphState, limits: Limits): [number, 
 }
 
 /** `addEdge`, and the user's connection, as `by` makes it: the edge added between the slots of
- *  its ends (ADR-0023). */
-function addEdge({ store, bridge, limits }: Editing, edge: unknown, by: By): void {
+ *  its ends (ADR-0023), a loop only where the host application allows loops (ADR-0031). */
+function addEdge({ store, bridge, limits, loops }: Editing, edge: unknown, by: By): void {
   edit(store, bridge, {
     read: () => edgeSnapshotOf(edge, limits),
     resolve: (plain, state) => ({ ...plain, ends: endsOf(plain.snapshot, state, limits) }),
     idUnits: (plain, state) => state.idUnits + plain.idUnits,
-    engine: ({ snapshot, ends: [from, to] }) => bridge.addEdge(snapshot, from, to),
+    engine: ({ snapshot, ends: [from, to] }) => bridge.addEdge(snapshot, from, to, loops),
     // The bridge took the edge, so each field holds a value of its type.
     record: (state, { snapshot }, slot) => state.addEdge(snapshot as unknown as EdgeData, slot, by),
   });
@@ -337,9 +339,15 @@ function answerOf(store: GraphStore, ask: () => unknown): unknown {
 /** The edits of one Comb on `store` through `bridge`: `host`, the methods of `Comb` that change
  *  the graph, and `user`, the user's connection and deletion after the host's `vetoes`, which
  *  interaction is handed; `connect` none without `canConnect`, since Comb has no name to give the
- *  edge. */
-export function editorsOf(store: GraphStore, bridge: Bridge, limits: Limits, vetoes: Vetoes) {
-  const editing: Editing = { store, bridge, limits };
+ *  edge. Each adds a loop only where `loops` allows loops (ADR-0031). */
+export function editorsOf(
+  store: GraphStore,
+  bridge: Bridge,
+  limits: Limits,
+  vetoes: Vetoes,
+  loops: boolean,
+) {
+  const editing: Editing = { store, bridge, limits, loops };
   const host = {
     load: (graph: GraphData) => load(editing, graph),
     updateNode: (id: string, patch: NodePatch) => updateNode(editing, id, patch),

@@ -241,11 +241,12 @@ export interface Bridge {
    *  `addNode` checks a node and added to nothing; `api` names it `""` and puts it at the origin
    *  (ADR-0026). Throws a `GraphDataProblem`. */
   heightOf(node: NodeSnapshot): number;
-  /** Checks `edge` as a load checks an edge, refuses one from a node to itself, and adds it
-   *  between the node slots `source` and `target`, which `api` resolved; returns the slot the
-   *  engine chose for it (ADR-0023). Throws a `GraphDataProblem`, and a `SlotError` where a slot
-   *  of an end holds no node, the graph as it was. */
-  addEdge(edge: EdgeSnapshot, source: number, target: number): number;
+  /** Checks `edge` as a load checks an edge, refuses one from a node to itself unless `loops`
+   *  allows loops (ADR-0031), and adds it between the node slots `source` and `target`, which
+   *  `api` resolved; returns the slot the engine chose for it (ADR-0023). Throws a
+   *  `GraphDataProblem`, and a `SlotError` where a slot of an end holds no node, the graph as it
+   *  was. */
+  addEdge(edge: EdgeSnapshot, source: number, target: number, loops: boolean): number;
   /** Checks the patch of the edge `id` in `slot` as a load checks those fields and gives the edge
    *  its new style and label placement. Throws a `GraphDataProblem`, and a `SlotError` where
    *  `slot` holds no edge, the graph as it was. */
@@ -668,7 +669,7 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
     content: (slot) => engine.content(slot),
     setFont: (role, { codes, advances, fallback, lineHeight }) =>
       engine.setFont(ROLES[role], codes, advances, fallback, lineHeight),
-    addEdge: (edge, source, target) => engine.addEdge(edge, source, target),
+    addEdge: (edge, source, target, loops) => engine.addEdge(edge, source, target, loops),
     updateEdge: (slot, id, patch) => engine.updateEdge(slot, id, patch),
     textLimit,
     rowLimit,

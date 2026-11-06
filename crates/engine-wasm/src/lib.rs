@@ -682,19 +682,21 @@ impl Engine {
     }
 
     /// Checks the edge `addEdge` hands over as a load checks an edge, refuses one from a node to
-    /// itself (ADR-0025), adds it between the node slots `source` and `target`, which the shell
-    /// resolved, and returns the slot the engine chose for it (ADR-0023). A refused edge leaves
-    /// the graph as it was; a slot of an end that holds no node throws a `SlotError`.
+    /// itself unless `allow_loops` allows loops (ADR-0031), adds it between the node slots
+    /// `source` and `target`, which the shell resolved, and returns the slot the engine chose for
+    /// it (ADR-0023). A refused edge leaves the graph as it was; a slot of an end that holds no
+    /// node throws a `SlotError`.
     #[wasm_bindgen(js_name = addEdge)]
     pub fn add_edge(
         &mut self,
         edge: Ts<EdgeInput>,
         source: u32,
         target: u32,
+        allow_loops: bool,
     ) -> Result<u32, EdgeRefusal> {
         trap::spring();
         let edge = edge.to_rust().map_err(unshaped)?;
-        add_edge_to(&mut self.graph, &edge, source, target)
+        add_edge_to(&mut self.graph, &edge, source, target, allow_loops)
     }
 
     /// Checks the patch `updateEdge` hands over for the edge `id` in `slot`, reading it once, as a

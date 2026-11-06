@@ -323,6 +323,36 @@ impl EdgePath {
         }
     }
 
+    /// The path of a loop, an edge from `node` back to itself (ADR-0031): it leaves and re-enters
+    /// the side `dock` names, the top where it names the outline, a quarter of that side's length
+    /// either side of its middle, the source end first clockwise, and its control points lie
+    /// outward along the side's normal, as far out as the side is long and at least `MIN_PULL`.
+    /// So its path parameter 0.5 is its outermost point, where the path runs along the side and
+    /// a label offset to its left stands outward, and it enters the node against the normal.
+    pub(crate) fn looped(node: &Rect, dock: Dock) -> Self {
+        let side = match dock {
+            Dock::Side(side) => side,
+            Dock::Outline => Side::Top,
+        };
+        let (middle, n) = (side.connector(node), side.outward());
+        let length = match side {
+            Side::Top | Side::Bottom => node.max_x - node.min_x,
+            Side::Right | Side::Left => node.max_y - node.min_y,
+        };
+        let (quarter, pull) = (length / 4.0, length.max(MIN_PULL));
+        // Clockwise: the normal turned a quarter against the clock points to the source's end.
+        let along = Point::new(n.y * quarter, -n.x * quarter);
+        let source = Point::new(middle.x + along.x, middle.y + along.y);
+        let target = Point::new(middle.x - along.x, middle.y - along.y);
+        let out = |end: Point| Point::new(end.x + n.x * pull, end.y + n.y * pull);
+        Self {
+            source,
+            control_source: out(source),
+            control_target: out(target),
+            target,
+        }
+    }
+
     /// The smallest rectangle that holds the whole path: its ends and the points where it turns.
     pub(crate) fn bounds(&self) -> Rect {
         let (p0, p1, p2, p3) = (
@@ -709,6 +739,61 @@ pub(crate) mod tests {
                 target: c
             }
         );
+    }
+
+    #[test]
+    fn a_loop_leaves_and_reenters_the_side_it_names_its_outermost_point_at_the_middle_parameter() {
+        // Verifies: ADR-0031
+        // Per dock: where the loop leaves, where it re-enters, and the side's outward normal, as
+        // fractions of the node's width and height, worked out by hand; the outline loops on top.
+        type Fractions = (f64, f64);
+        let cases: [(Dock, Fractions, Fractions, Fractions); 5] = [
+            (Side::Top.into(), (0.25, 0.0), (0.75, 0.0), (0.0, -1.0)),
+            (Side::Right.into(), (1.0, 0.25), (1.0, 0.75), (1.0, 0.0)),
+            (Side::Bottom.into(), (0.75, 1.0), (0.25, 1.0), (0.0, 1.0)),
+            (Side::Left.into(), (0.0, 0.75), (0.0, 0.25), (-1.0, 0.0)),
+            (Dock::Outline, (0.25, 0.0), (0.75, 0.0), (0.0, -1.0)),
+        ];
+        for (x, y, w, h) in [
+            (0.0, 0.0, 200.0, 40.0),
+            (10.0, -30.0, 24.0, 24.0),
+            (-500.0, 300.0, 60.0, 300.0),
+        ] {
+            let node = Rect::of_node(x, y, w, h);
+            for (dock, from, to, (nx, ny)) in cases {
+                let at = |(fx, fy): (f64, f64)| Point::new(x + fx * w, y + fy * h);
+                let path = EdgePath::looped(&node, dock);
+                let context = format!("{dock:?} on {node:?}: {path:?}");
+                assert!(close(path.source, at(from)), "{context}");
+                assert!(close(path.target, at(to)), "{context}");
+                // Out as far as the side is long, and at least the minimum.
+                let pull = if nx == 0.0 { w } else { h }.max(MIN_PULL);
+                let out = |p: Point| Point::new(p.x + nx * pull, p.y + ny * pull);
+                assert!(close(path.control_source, out(at(from))), "{context}");
+                assert!(close(path.control_target, out(at(to))), "{context}");
+                // It leaves along the normal and enters the node against it, the arrowhead's way.
+                assert!(close(path.tangent_at(0.0), Point::new(nx, ny)), "{context}");
+                assert!(
+                    close(path.tangent_at(1.0), Point::new(-nx, -ny)),
+                    "{context}"
+                );
+                // Its outermost point is at 0.5: three quarters of the pull beyond the middle of
+                // the side, where a label offset to the left of travel stands further out.
+                let side = |p: Point| (p.x - x - w / 2.0) * nx + (p.y - y - h / 2.0) * ny;
+                let top = path.point_at(0.5);
+                let reach = if nx == 0.0 { h } else { w } / 2.0;
+                assert!((side(top) - reach - 0.75 * pull).abs() < EPS, "{context}");
+                for i in 0..=100 {
+                    let t = f64::from(i) / 100.0;
+                    assert!(
+                        side(path.point_at(t)) <= side(top) + EPS,
+                        "{context} at {t}"
+                    );
+                }
+                let label = path.label_position(0.5, 14.0);
+                assert!((side(label) - side(top) - 14.0).abs() < EPS, "{context}");
+            }
+        }
     }
 
     #[test]

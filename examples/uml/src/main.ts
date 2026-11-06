@@ -70,8 +70,11 @@ function canConnect({ source, target }: Proposal): string | false {
   return `${source}-${kind}-${target}-${connected}`;
 }
 
+// Loops are allowed for the state diagram's transitions from a state back to itself; the rules
+// of the class and the package diagram refuse them in the veto (ADR-0031).
 const comb = await createComb(element("canvas"), {
   engine: fetch(engineUrl),
+  allowLoops: true,
   canConnect,
   canDelete: () => true,
 });

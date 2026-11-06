@@ -472,8 +472,12 @@ function dashOf(read: Reader, dash: unknown) {
   return [read.number(dash[0]), read.number(dash[1])];
 }
 
+/** An edge read once, its defaults filled: the right side to the left, and the top for both of a
+ *  loop the host names no side of, so that it is drawn above its node (ADR-0031). */
 function edgeOf(read: Reader, edge: Fields) {
   const { id, source, target, label, color, dash, arrow, sourceSide, targetSide } = edge;
+  const [readId, from, to] = [read.id(id), read.id(source), read.id(target)];
+  const loop = typeof from === "string" && from === to;
   const snapshot: {
     id: unknown;
     source: unknown;
@@ -485,13 +489,13 @@ function edgeOf(read: Reader, edge: Fields) {
     label?: ReturnType<typeof labelOf>;
     dash?: ReturnType<typeof dashOf>;
   } = {
-    id: read.id(id),
-    source: read.id(source),
-    target: read.id(target),
+    id: readId,
+    source: from,
+    target: to,
     color: edgeColor({ color: read.number(color) as number | undefined }),
     arrow: read.text(arrow) ?? EDGE_ARROW,
-    sourceSide: read.text(sourceSide) ?? "right",
-    targetSide: read.text(targetSide) ?? "left",
+    sourceSide: read.text(sourceSide) ?? (loop ? "top" : "right"),
+    targetSide: read.text(targetSide) ?? (loop ? "top" : "left"),
   };
   // No key for a label or a dash left out: each set where present, since spreading an object of
   // one key per edge costs a large load milliseconds.
