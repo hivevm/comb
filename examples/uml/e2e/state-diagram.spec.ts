@@ -42,9 +42,7 @@ test("the state diagram shows a Comb's life in the node shapes of its states, in
   await open(page);
   await chooseStates(page);
   await expect(page.locator("#count")).toHaveText("10 states, 12 transitions");
-  // It is shown only: the palette offers nothing to add, and the legend of the kinds of
-  // relationship names none of its transitions.
-  await expect(page.locator("#palette")).toBeHidden();
+  // The legend of the kinds of relationship names none of its transitions.
   await expect(page.locator("#legend")).toBeHidden();
   const drawn = await page.evaluate(() => {
     const { nodes, level, edgeLabels } = window.uml.inspect();

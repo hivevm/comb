@@ -2,7 +2,8 @@
 // edge in one colour, solid or dashed, with an arrowhead at its target or none, and with one label;
 // it has no hollow triangle, no diamond, and no arrowhead at the source. So each kind is told by a
 // family of colour, its dash pattern, and its arrowhead, and by its label where those cannot tell
-// it; docs/CONVENTIONS.md records the mapping, and the sidebar's legend lists it.
+// it; docs/CONVENTIONS.md records the mapping, and the sidebar's legend lists it. The state
+// diagram's transition is a kind of its own, drawn grey with an arrowhead.
 import type { EdgeData, EdgePatch } from "comb";
 
 export type RelationshipKind =
@@ -12,7 +13,8 @@ export type RelationshipKind =
   | "realization"
   | "dependency"
   | "aggregation"
-  | "composition";
+  | "composition"
+  | "transition";
 
 /** The colour families, each dark enough that the white text Comb draws on a label in it has a
  *  contrast ratio of at least 4.5: grey for plain links, blue for inheritance, green for a whole
@@ -58,10 +60,21 @@ export const RELATIONSHIPS: Record<RelationshipKind, RelationshipStyle> = {
     arrow: "none",
     label: { text: "«composition»", t: 0.4 },
   },
+  // The state diagram's one kind, which its sidebar labels by its event.
+  transition: { name: "Transition", color: GREY, arrow: "end" },
 };
 
-/** The kinds in the order the legend lists them. */
-export const KINDS = Object.keys(RELATIONSHIPS) as RelationshipKind[];
+/** The kinds of the class and the package diagram, in the order the legend lists them and the
+ *  sidebar offers them; the state diagram's transition is none of them. */
+export const KINDS: RelationshipKind[] = [
+  "association",
+  "directed-association",
+  "generalization",
+  "realization",
+  "dependency",
+  "aggregation",
+  "composition",
+];
 
 /** The fields of an edge of `kind` that draw it, its label in its kind's colour. */
 export function styleOf(

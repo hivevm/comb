@@ -27,10 +27,14 @@
           <li draggable="true" data-kind="interface" data-diagram="class">Interface</li>
           <li draggable="true" data-kind="abstract-class" data-diagram="class">Abstract class</li>
           <li draggable="true" data-kind="package" data-diagram="package" hidden>Package</li>
+          <li draggable="true" data-kind="state" data-diagram="state" hidden>State</li>
+          <li draggable="true" data-kind="initial" data-diagram="state" hidden>Initial state</li>
+          <li draggable="true" data-kind="final" data-diagram="state" hidden>Final state</li>
+          <li draggable="true" data-kind="choice" data-diagram="state" hidden>Choice</li>
         </ul>
       </section>
       <section id="node-form" hidden>
-        <h2>Selected node</h2>
+        <h2 id="node-heading">Selected node</h2>
         <label>
           Name
           <input id="name" type="text" />
@@ -49,7 +53,7 @@
         </label>
       </section>
       <section id="edge-form" hidden>
-        <h2>Selected relationship</h2>
+        <h2 id="edge-heading">Selected relationship</h2>
         <label id="kind-field">
           Kind
           <select id="kind"></select>
@@ -65,8 +69,12 @@
           Label
           <input id="label" type="text" />
         </label>
+        <label id="event-field">
+          Event
+          <input id="event" type="text" placeholder="destroy" />
+        </label>
       </section>
-      <p id="empty">Select a classifier or a relationship to edit it here; Delete removes it.</p>
+      <p id="empty">Select a node or an edge to edit it here; Delete removes it.</p>
       <section id="legend">
         <h2>Relationships</h2>
         <ul id="legend-kinds"></ul>
