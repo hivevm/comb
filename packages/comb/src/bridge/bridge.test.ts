@@ -1373,6 +1373,20 @@ describe("bridge query", () => {
   });
 });
 
+describe("bridge edges docked on the outline", () => {
+  test("an edge's end on the outline crosses as the outline's code and loads", () => {
+    // Verifies: ADR-0031
+    const snapshot = graph(two(), [
+      { ...edge("d", "a", "b"), sourceSide: "outline" as const },
+      { ...edge("e", "b", "a"), targetSide: "outline" as const },
+    ]);
+    expect([...snapshot.edges.sourceSide]).toEqual([SideCode.Outline, SideCode.Right]);
+    expect([...snapshot.edges.targetSide]).toEqual([SideCode.Left, SideCode.Outline]);
+    expect(snapshot.edges.refused).toBeUndefined();
+    expect(bridge.loadGraph(snapshot)).toBe(2);
+  });
+});
+
 describe("bridge mesh and hit", () => {
   test("a query builds the mesh of the edges it found, in their colours", () => {
     bridge.loadGraph(

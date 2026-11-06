@@ -21,6 +21,7 @@ export type {
 } from "./api";
 export type {
   ContentElement,
+  Dock,
   EdgeData,
   EdgeLabelData,
   EdgePatch,

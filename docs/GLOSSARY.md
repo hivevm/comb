@@ -40,7 +40,10 @@ to invent.
   Interchange names them together (`DiagramElement`); an edge label belongs to its edge. Not a
   content element, which is a piece of a node's content.
   _Avoid:_ figure, shape, and element alone.
-- **Edge** — a connection drawn from a connector of one node to a connector of another.
+- **Dock** — what an end of an edge docks on: the connector of one of the node's four sides, or
+  its outline. An edge records one for its source and one for its target.
+- **Edge** — a connection drawn from one node to another, each end docked at the connector of a
+  side or on the node's outline.
   _Avoid:_ link, wire, connection.
 - **Edge mesh** — the triangles of all edges in the viewport and its culling margin, which the
   engine computes and the canvas draws in one call.
