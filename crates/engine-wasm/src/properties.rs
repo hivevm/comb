@@ -19,9 +19,10 @@
 //! of content to what the graph holds through loads, additions, updates, and removals.
 // Verifies: Q-7, ADR-0030, ADR-0010, ADR-0031
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::cell::Cell;
 
 use proptest::prelude::*;
+use proptest::test_runner::TestRunner;
 use serde::Deserialize;
 use serde::de::value::{MapDeserializer, SeqDeserializer};
 use serde::de::{self, IntoDeserializer, Visitor};
@@ -42,12 +43,6 @@ use crate::{CallRefusal, Engine};
 
 /// How many random batches one run feeds the bridge: the ticket's floor, which runs in seconds.
 const CASES: u32 = 10_000;
-
-/// The cases the property test of an added edge has run, and of them the loops it added where
-/// loops were allowed and refused where they were not, counted across its cases for its floor.
-static ADDED_EDGE_RUNS: AtomicU32 = AtomicU32::new(0);
-static LOOPS_ADDED: AtomicU32 = AtomicU32::new(0);
-static LOOPS_REFUSED: AtomicU32 = AtomicU32::new(0);
 
 /// A value as JavaScript hands it over: of any shape, whatever the field expects.
 #[derive(Clone, Debug)]
@@ -1680,76 +1675,116 @@ fn edge_patch() -> impl Strategy<Value = Vec<(String, Value)>> {
         })
 }
 
-proptest! {
-    #![proptest_config(ProptestConfig::with_cases(CASES))]
+/// Runs the cases of an added edge through a runner of its own, so that the floor of loops is
+/// asserted once, after its last case, from counts this test alone holds: a case proptest replays
+/// before the new ones, from a persisted regression, cannot move when the floor is checked.
+#[test]
+fn an_added_edge_is_refused_exactly_as_a_load_of_it_alone_and_a_loop_besides_unless_allowed() {
+    // Verifies: ADR-0030, ADR-0031, Q-7
+    let (taken, refused) = (Cell::new(0_u32), Cell::new(0_u32));
+    let mut config = ProptestConfig::with_cases(CASES);
+    config.source_file = Some(file!());
+    // As `proptest!` does: the environment's `PROPTEST_*` variables, `PROPTEST_CASES` among them,
+    // override the cases, as they do for every other test of this file.
+    let mut runner = TestRunner::new(proptest::test_runner::contextualize_config(config));
+    let cases = (
+        prop_oneof![9 => edge(true, 0, 2), 1 => anything()],
+        piece_bound(),
+        any::<bool>(),
+    );
+    let result = runner.run(&cases, |(value, bound, loops)| {
+        added_edge_case(value, bound, loops, &taken, &refused)
+    });
+    if let Err(error) = result {
+        panic!("{error}\n{runner}");
+    }
+    // Every case has run: each clause rests on loops enough.
+    let (taken, refused) = (taken.get(), refused.get());
+    assert!(
+        taken >= 200 && refused >= 200,
+        "{taken} added, {refused} refused"
+    );
+}
 
-    #[test]
-    fn an_added_edge_is_refused_exactly_as_a_load_of_it_alone_and_a_loop_besides_unless_allowed(
-        value in prop_oneof![9 => edge(true, 0, 2), 1 => anything()],
-        bound in piece_bound(),
-        loops in any::<bool>(),
-    ) {
-        // Verifies: ADR-0030, ADR-0031, Q-7
-        // Where loops are allowed, a loop is added exactly as a load of it alone takes it.
-        let as_load = loaded(bound, two_nodes(vec![value.clone()]));
-        // An end the graph does not hold is `api`'s to refuse, against its map.
-        prop_assume!(!matches!(as_load, Err(GraphDataProblem::MissingNode { .. })));
-        let run = ADDED_EDGE_RUNS.fetch_add(1, Ordering::Relaxed) + 1;
-        let end = |name: &str| match &value {
-            Value::Object(fields) => fields.iter().find(|(k, _)| k == name).and_then(|(_, v)| match v {
-                Value::Text(t) if t == "n0" || t == "n1" => Some(t.clone()),
-                _ => None,
-            }),
-            _ => None,
-        };
-        let (source, target) = (end("source"), end("target"));
-        let slot_of = |end: &Option<String>| u32::from(end.as_deref() == Some("n1"));
-        let mut graph = loaded(bound, two_nodes(Vec::new())).unwrap();
-        let added = EdgeInput::deserialize(value.clone())
-            .map_err(|error| EdgeRefusal::Data(unshaped(error)))
-            .and_then(|edge| add_edge_to(&mut graph, &edge, slot_of(&source), slot_of(&target), loops));
-        let typed = matches!(
-            as_load,
-            Err(GraphDataProblem::InvalidField { .. } | GraphDataProblem::IdTooLong { .. }
-                | GraphDataProblem::Malformed { .. })
+/// One case of the test above: the edge `value` added to two nodes whose strings cross in pieces
+/// of `bound`, loops allowed or not, the loops it adds counted in `taken` and those it refuses in
+/// `refused`.
+fn added_edge_case(
+    value: Value,
+    bound: usize,
+    loops: bool,
+    taken: &Cell<u32>,
+    refused: &Cell<u32>,
+) -> Result<(), TestCaseError> {
+    // Where loops are allowed, a loop is added exactly as a load of it alone takes it.
+    let as_load = loaded(bound, two_nodes(vec![value.clone()]));
+    // An end the graph does not hold is `api`'s to refuse, against its map.
+    prop_assume!(!matches!(
+        as_load,
+        Err(GraphDataProblem::MissingNode { .. })
+    ));
+    let end = |name: &str| match &value {
+        Value::Object(fields) => {
+            fields
+                .iter()
+                .find(|(k, _)| k == name)
+                .and_then(|(_, v)| match v {
+                    Value::Text(t) if t == "n0" || t == "n1" => Some(t.clone()),
+                    _ => None,
+                })
+        }
+        _ => None,
+    };
+    let (source, target) = (end("source"), end("target"));
+    let slot_of = |end: &Option<String>| u32::from(end.as_deref() == Some("n1"));
+    let mut graph = loaded(bound, two_nodes(Vec::new())).unwrap();
+    let added = EdgeInput::deserialize(value.clone())
+        .map_err(|error| EdgeRefusal::Data(unshaped(error)))
+        .and_then(|edge| add_edge_to(&mut graph, &edge, slot_of(&source), slot_of(&target), loops));
+    let typed = matches!(
+        as_load,
+        Err(GraphDataProblem::InvalidField { .. }
+            | GraphDataProblem::IdTooLong { .. }
+            | GraphDataProblem::Malformed { .. })
+    );
+    let looped = source.is_some() && source == target;
+    if looped && loops && added.is_ok() {
+        taken.set(taken.get() + 1);
+    }
+    if looped && !typed && !loops {
+        refused.set(refused.get() + 1);
+        prop_assert!(
+            matches!(
+                added,
+                Err(EdgeRefusal::Data(GraphDataProblem::SelfEdge { .. }))
+            ),
+            "{:?}",
+            added
         );
-        let looped = source.is_some() && source == target;
-        if looped && loops && added.is_ok() {
-            LOOPS_ADDED.fetch_add(1, Ordering::Relaxed);
+        prop_assert_eq!(graph.edges_in_use(), 0);
+        return Ok(());
+    }
+    // Held to the oracle on its own too, so that a check a load shares with it, dropped,
+    // is seen.
+    prop_assert_eq!(added.is_ok(), accepted_alone(value.clone()), "{:?}", added);
+    match (added, as_load) {
+        (Ok(slot), Ok(expected)) => {
+            prop_assert_eq!(slot, 0);
+            prop_assert_eq!(graph.edge(0), expected.edge(0));
         }
-        if looped && !typed && !loops {
-            LOOPS_REFUSED.fetch_add(1, Ordering::Relaxed);
-        }
-        // Once the last case has run, each clause rests on loops enough.
-        if run == CASES {
-            let (taken, refused) =
-                (LOOPS_ADDED.load(Ordering::Relaxed), LOOPS_REFUSED.load(Ordering::Relaxed));
-            prop_assert!(taken >= 200 && refused >= 200, "{} added, {} refused", taken, refused);
-        }
-        if looped && !typed && !loops {
-            prop_assert!(
-                matches!(added, Err(EdgeRefusal::Data(GraphDataProblem::SelfEdge { .. }))),
-                "{:?}",
-                added
-            );
+        (Err(error), Err(expected)) => {
+            prop_assert_eq!(error, EdgeRefusal::Data(expected));
             prop_assert_eq!(graph.edges_in_use(), 0);
-            return Ok(());
         }
-        // Held to the oracle on its own too, so that a check a load shares with it, dropped,
-        // is seen.
-        prop_assert_eq!(added.is_ok(), accepted_alone(value.clone()), "{:?}", added);
-        match (added, as_load) {
-            (Ok(slot), Ok(expected)) => {
-                prop_assert_eq!(slot, 0);
-                prop_assert_eq!(graph.edge(0), expected.edge(0));
-            }
-            (Err(error), Err(expected)) => {
-                prop_assert_eq!(error, EdgeRefusal::Data(expected));
-                prop_assert_eq!(graph.edges_in_use(), 0);
-            }
-            (added, as_load) => prop_assert!(false, "added {:?}, loaded {:?}", added, as_load.map(|_| ())),
+        (added, as_load) => {
+            prop_assert!(false, "added {:?}, loaded {:?}", added, as_load.map(|_| ()))
         }
     }
+    Ok(())
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(CASES))]
 
     #[test]
     fn an_edge_patch_is_refused_exactly_as_a_load_of_the_edge_it_makes_and_the_edge_kept(
