@@ -76,11 +76,12 @@ self-test, as do the self-tests of the engine and the bundle checks.
   that uses the machine's GPU, which is how the numbers on the reference machine are taken;
   `BENCH_COPIES` sets another size. `BENCH_GRAPH=shaped` measures the shaped graph instead of the
   metric tree ([ADR-0033](docs/adr/0033-the-benchmark-measures-a-graph-by-name.md)): the same
-  nodes and edges in the same places, the nodes in the node shapes in turn, a filled one without
-  content, every end docked on the outline, and a loop on one node in a hundred, which the example
-  loads with `?graph=shaped`. The record names `graph`, and a run is compared only with baselines
-  of its graph: the metric tree's under `bench/baselines/<kind>.json`, the shaped graph's under
-  `bench/baselines/<kind>.shaped.json`.
+  nodes and edges in the same columns and order, the nodes in the node shapes in turn, a filled one
+  without content and a circle 64 wide, each centred on its row and column, the rows spaced for the
+  tallest node so that no two overlap, every end docked on the outline, and a loop on one node in
+  a hundred, which the example loads with `?graph=shaped`. The record names `graph`, and a run is
+  compared only with baselines of its graph: the metric tree's under
+  `bench/baselines/<kind>.json`, the shaped graph's under `bench/baselines/<kind>.shaped.json`.
   The Dev Container has no display and no GPU, so from it the run measures in a Chrome on the host
   ([ADR-0028](docs/adr/0028-the-benchmark-drives-a-chrome-on-the-host.md)). On the host, for the
   measurement only, start Chrome with a throwaway profile and bridge its debugging port to the

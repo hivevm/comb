@@ -114,8 +114,9 @@ to invent.
 - **Selection** — the one diagram element the user has picked on the canvas, which the sidebar
   edits and a delete removes.
 - **Shaped graph** — the graph the benchmark measures beside the metric tree, named `shaped`: the
-  metric tree's nodes and edges in the same places, the nodes in the node shapes in turn, every end
-  docked on the outline, and a loop on one node in a hundred.
+  metric tree's nodes and edges in the same columns and order, the nodes in the node shapes in turn,
+  each centred on its row and column, the rows spaced for the tallest node so that no two nodes
+  overlap, every end docked on the outline, and a loop on one node in a hundred.
 - **Side** — one of the four sides of a node, `top`, `right`, `bottom`, or `left`, each with one
   connector; an edge records the side it leaves and the side it enters.
 - **Sidebar** — the host application's HTML panel, outside the canvas, in which the attributes of

@@ -256,10 +256,10 @@ function counted(): void {
 }
 
 async function load(): Promise<LoadReport> {
-  ({ graph, fields } = metricTree(Number(copies.value), (content, width) =>
-    comb.heightOf(content, width),
+  const build = graphName === "shaped" ? shaped : metricTree;
+  ({ graph, fields } = build(Number(copies.value), (content, width, shape) =>
+    comb.heightOf(content, width, shape),
   ));
-  if (graphName === "shaped") graph = shaped(graph);
   counted();
   const start = performance.now();
   comb.load(graph);
