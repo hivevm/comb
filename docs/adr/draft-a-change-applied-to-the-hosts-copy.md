@@ -30,8 +30,8 @@ nodes names the edges it took with them are Comb's rules. A host application wri
 time from the documentation, and a change of the merge, such as a further field that `null`
 clears, reaches its copy only where its author reads the change. As with the heights that
 [ADR-0026](0026-the-host-asks-the-height-content-lays-out-to.md) answered by `heightOf`, the copied
-rule is a public interface nobody declared. The design revision of 2026-11-07 found the two copies
-(docs/plan/state-diagram, its survey of `examples/`).
+rule is a public interface nobody declared. The design revision of 2026-11-07, which closed the
+state-diagram feature, found the two copies in its survey of `examples/`.
 
 xyflow, which ADR-0024 names for the controlled data flow, exports `applyNodeChanges(changes,
 nodes)` and `applyEdgeChanges` for the same need, returning the nodes with the changes applied.
