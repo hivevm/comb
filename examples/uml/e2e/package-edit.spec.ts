@@ -2,7 +2,7 @@
 // sidebar's name of a package and «import» or «use» of a dependency, a connection that adds a
 // dependency «use», none of a package with itself, and the edits each diagram keeps.
 import { expect, test, type Page } from "@playwright/test";
-import { NODE_WIDTH } from "../src/class-diagram";
+import { NODE_WIDTH } from "../src/shared";
 import { clickNode, clickWorld, drawnNode, DRAWN, open, pagePoint, setViewport } from "./shared";
 
 /** Chooses `diagram` in the sidebar and waits until its load has drawn. */

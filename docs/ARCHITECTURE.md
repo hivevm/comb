@@ -513,15 +513,20 @@ one workspace for each example.
   where the rules of `src/rules.ts`, a pure function of the kinds of the ends, of the relationship,
   and of whether it is a loop, allow it: they refuse a transition into an initial state or out of a
   final state, and every loop but a state's, which Comb offers in every diagram since it allows
-  loops; and Delete removes the selection. A classifier's kind, class, interface, abstract class, or
-  package, is read from its stereotype (`kindOf`), a state's kind, state, initial, final, or choice,
-  is kept with its state, and the shared layout by rows (`laidOut`) and the content of a node
-  (`contentOf`) stand in `src/class-diagram.ts`, which the package diagram imports. `src/diagram.ts`
-  keeps the example's copy of the graph, the classifier or the state of each node, and the kind of
-  each edge from every change `onChange` tells, and `src/legend.ts` draws the legend. Its hooks
-  stand under `window.uml`, so that it declares nothing on `window` the metric tree declares; Vite
-  serves it on port 5176, the launch configuration **Example: UML** opens it, and its browser tests
-  run in the Playwright project `uml` against it in test mode on port 5177.
+  loops; and Delete removes the selection. Each node keeps its node kind, set when it is created
+  from the diagram's data or the palette: a class, an interface, an abstract class, or a package,
+  kept in its record `Classifier` (which carries a package too, though UML counts no package as a
+  classifier), and changed by no edit of its stereotype; and a state's, state, initial, final, or
+  choice, with its state. What the diagrams share stands in `src/shared.ts`, which imports no
+  diagram's file and no diagram's file imports another's: the diagram as data (`DiagramData`), the
+  classifier and the state, the classifier's content (`contentOf`), and the layout by rows
+  (`laidOut`) of the class and the package diagram; the lookup of an element of the page stands in
+  `src/element.ts`. `src/diagram.ts` keeps the example's copy of the graph, the classifier or the
+  state of each node, and the kind of each edge, each from a change `onChange` tells or after Comb
+  took the call that changes it, and `src/legend.ts` draws the legend. Its hooks stand under
+  `window.uml`, so that it declares nothing on `window` the metric tree declares; Vite serves it on
+  port 5176, the launch configuration **Example: UML** opens it, and its browser tests run in the
+  Playwright project `uml` against it in test mode on port 5177.
 - **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, each node with the
   content of its type, measuring the time to the first frame and p95 frame times over the frames
   Comb rendered of drag, pan, zoom, and edits one a frame, a node and an edge added and removed

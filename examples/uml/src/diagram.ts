@@ -4,10 +4,10 @@
 // kind; it becomes the kind a connection adds in the diagram shown, drawn as one, and a transition
 // docked as the state diagram docks one.
 import type { Comb, EdgeData, EdgeLabelData, EdgePatch, GraphChange, GraphData } from "comb";
-import { contentOf, kindOf, type Classifier, type DiagramData } from "./class-diagram";
 import { patchOf, styleOf, type RelationshipKind } from "./relationships";
 import { allows, type NodeKind } from "./rules";
-import { contentOf as stateContentOf, dockingOf, type State } from "./state-diagram";
+import { contentOf, type Classifier, type DiagramData, type State } from "./shared";
+import { contentOf as stateContentOf, dockingOf } from "./state-diagram";
 
 export class Diagram {
   graph: GraphData = { nodes: [], edges: [] };
@@ -43,8 +43,7 @@ export class Diagram {
 
   /** The kind of node `id`: its classifier's or its state's, none for a node of neither. */
   kindOf(id: string): NodeKind | undefined {
-    const classifier = this.classifiers.get(id);
-    return classifier ? kindOf(classifier) : this.states.get(id)?.kind;
+    return this.classifiers.get(id)?.kind ?? this.states.get(id)?.kind;
   }
 
   /** Whether the rules allow a relationship of `kind` from `source` to `target`, a loop where the
@@ -81,11 +80,17 @@ export class Diagram {
     this.states.set(id, next);
   }
 
-  /** Changes edge `id` to `kind`, drawn as the kind is. Every kind is allowed between two
-   *  classifiers (`rules.ts`), so the sidebar asks no rule. */
+  /** Changes edge `id` to `kind`, drawn as the kind is, and its kind once Comb took the change.
+   *  Every kind is allowed between two classifiers (`rules.ts`), so the sidebar asks no rule. */
   rekind(id: string, kind: RelationshipKind): void {
+    try {
+      this.comb.updateEdge(id, patchOf(kind));
+    } catch (error) {
+      // A lost engine, or an edge Comb no longer holds: the edge keeps its kind.
+      console.warn("uml: the change of kind was not taken", error);
+      return;
+    }
     this.kinds.set(id, kind);
-    this.comb.updateEdge(id, patchOf(kind));
   }
 
   /** Gives edge `id` the label `label`, or none for `null`. */

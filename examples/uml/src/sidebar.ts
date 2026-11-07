@@ -3,16 +3,11 @@
 // relationship's kind and label, the selected dependency's «import» or «use», or the selected
 // transition's event. A pseudostate has nothing to edit. Each edit shows on the canvas at once.
 import type { EdgeLabelData, Selection } from "comb";
-import { kindOf, type Classifier } from "./class-diagram";
 import type { Diagram } from "./diagram";
+import { element } from "./element";
 import { KINDS, RELATIONSHIPS, type RelationshipKind } from "./relationships";
-import { eventLabel, type State } from "./state-diagram";
-
-function element<T extends HTMLElement>(id: string): T {
-  const found = document.getElementById(id);
-  if (!found) throw new Error(`missing #${id}`);
-  return found as T;
-}
+import type { Classifier, State } from "./shared";
+import { eventLabel } from "./state-diagram";
 
 /** The lines of a textarea, each trimmed, the empty ones left out. */
 const linesOf = (text: string) =>
@@ -87,8 +82,8 @@ export class Sidebar {
   }
 
   private fillNode(classifier: Classifier): void {
-    const { name, stereotype, attributes, operations } = classifier;
-    const isPackage = kindOf(classifier) === "package";
+    const { kind, name, stereotype, attributes, operations } = classifier;
+    const isPackage = kind === "package";
     for (const field of this.classifierFields) field.hidden = isPackage;
     this.nodeHeading.textContent = "Selected node";
     this.name.value = name;
@@ -108,7 +103,7 @@ export class Sidebar {
   private formOf(kind: RelationshipKind): "transition" | "dependency" | "relationship" {
     if (kind === "transition") return "transition";
     const source = this.diagram.classifiers.get(this.diagram.edge(this.edge!)?.source ?? "");
-    return source && kindOf(source) === "package" ? "dependency" : "relationship";
+    return source?.kind === "package" ? "dependency" : "relationship";
   }
 
   private fillEdge(kind: RelationshipKind): void {
@@ -131,7 +126,8 @@ export class Sidebar {
     this.changeLabel();
   }
 
-  /** Replaces the selected classifier, or the selected state's name, with what the form holds. */
+  /** Replaces the selected classifier, or the selected state's name, with what the form holds;
+   *  the classifier keeps its kind whatever its stereotype reads. */
   private editNode(): void {
     const state = this.namedState();
     if (state) {
@@ -143,6 +139,7 @@ export class Sidebar {
     const stereotype = this.stereotype.value.trim();
     this.diagram.edit(current.id, {
       id: current.id,
+      kind: current.kind,
       ...(stereotype ? { stereotype } : {}),
       name: this.name.value,
       attributes: linesOf(this.attributes.value),
