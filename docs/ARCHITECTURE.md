@@ -549,9 +549,12 @@ one workspace for each example.
   started by `bench/chromium.ts`, or attached through its debugging port to a Chrome on the host
   where `BENCH_CDP` names one (ADR-0028); `BENCH_CPU_THROTTLE` slows the measured page's CPU
   (ADR-0029); `BENCH_GRAPH` names the graph, `metric-tree` or `shaped`, which the example loads
-  with `?graph=shaped`: the metric tree's nodes and edges in the same places, the nodes in the
-  node shapes in turn, a node in a filled node shape without content, the ends docked on the
-  outline, and a loop on one node in a hundred (`shaped` in `src/graph.ts`, ADR-0033).
+  with `?graph=shaped`: the metric tree's nodes and edges in the same columns and order, the
+  nodes in the node shapes in turn, a node in a filled node shape without content, a circle and a
+  ringed circle 64 wide, each node centred on its row and column, the rows spaced for the tallest
+  node by the gap the metric tree leaves under its own, so that no two nodes overlap, the ends
+  docked on the outline, and a loop on one node in a hundred (`shaped` in `src/graph.ts`,
+  ADR-0033).
   `bench/options.ts` reads all three and refuses a value it cannot take; a run records `graph`, and
   checks that the example loaded it, and the type checker holds the graphs `bench/options.ts` names
   to the example's `GraphName`, which ADR-0030 keeps from importing `bench`. After the first frame
