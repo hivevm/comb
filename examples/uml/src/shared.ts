@@ -5,7 +5,7 @@
 // and the layout by rows of the class and the package diagram. A classifier keeps its kind, set
 // when it is created, from the diagram's data or the palette; its stereotype is text it shows and
 // tells nothing of its kind.
-import type { Comb, EdgeData, EdgePatch, GraphData, NodeContent, NodeData } from "comb";
+import type { Comb, EdgePatch, GraphChange, GraphData, NodeContent, NodeData } from "comb";
 import type { RelationshipKind } from "./relationships";
 
 /** The kinds of classifier: those of the class diagram, and the package of the package diagram. */
@@ -49,6 +49,9 @@ export interface DiagramData {
   kinds: Map<string, RelationshipKind>;
 }
 
+/** An edge as Comb tells its addition, its colour, arrowhead, and sides filled in. */
+export type AddedEdge = Extract<GraphChange, { kind: "edgeAdded" }>["edge"];
+
 /** What the sidebar edits of a selected node: a classifier's name, stereotype, and members, a
  *  name alone, or nothing. */
 export type NodeForm = "classifier" | "name" | "none";
@@ -61,8 +64,9 @@ export type EdgeForm = "relationship" | "import-or-use" | "event";
  *  the choice of diagram, how it is built, what its count names, the kinds of node the palette
  *  drops, each with its name there and the form the sidebar edits it in, the kind a connection
  *  adds and how it docks, the form the sidebar edits an edge in, what the sidebar's headings call
- *  a selected node and edge, and whether the legend of the kinds of relationship tells its edges
- *  apart. The host application, the diagram, and the sidebar read it instead of branching on a
+ *  a selected node and edge, whether the legend of the kinds of relationship tells its edges
+ *  apart, and the labels the legend names for a kind whose edges carry others than its own. The
+ *  host application, the diagram, and the sidebar read it instead of branching on a
  *  kind. */
 export interface DiagramDescriptor {
   id: string;
@@ -72,10 +76,11 @@ export interface DiagramDescriptor {
   nodes: readonly { kind: NodeKind; name: string; form: NodeForm }[];
   connected: RelationshipKind;
   /** The sides of an edge the user connected, none where it keeps those it was connected by. */
-  docking?: (edge: EdgeData) => EdgePatch;
+  docking?: (edge: AddedEdge) => EdgePatch;
   edgeForm: EdgeForm;
   selected: { node: string; edge: string };
   legend: boolean;
+  labels?: Partial<Record<RelationshipKind, readonly string[]>>;
 }
 
 export const NODE_WIDTH = 260;

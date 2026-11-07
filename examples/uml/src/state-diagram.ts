@@ -6,17 +6,9 @@
 // edit Comb applies, on ready's left side (ADR-0031). The user edits it as the other diagrams: the
 // palette drops each kind of state, and a connection adds a transition docked on the outline, or
 // a loop on the side it leaves.
-import type {
-  Comb,
-  EdgeData,
-  EdgeLabelData,
-  EdgePatch,
-  NodeContent,
-  NodeData,
-  NodeShape,
-} from "comb";
-import { GREY } from "./relationships";
-import type { DiagramData, DiagramDescriptor, State, StateKind } from "./shared";
+import type { Comb, EdgeData, EdgePatch, NodeContent, NodeData, NodeShape } from "comb";
+import { labelOf, styleOf } from "./relationships";
+import type { AddedEdge, DiagramData, DiagramDescriptor, State, StateKind } from "./shared";
 
 const STATE_WIDTH = 200;
 
@@ -84,44 +76,32 @@ const TRANSITIONS: [string, string, string | null][] = [
   ["destroyed", "final", null],
 ];
 
-/** How far a label stands off its transition, to the left of its direction of travel, so that the
- *  labels of the two transitions between ready and rendering, which run along one line in
- *  opposite directions, stand either side of it. */
-const LABEL_OFFSET = 14;
-
 /** The content of the node of a state: its name as its title, none of a pseudostate. */
 export function contentOf({ name }: Pick<State, "name">): NodeContent {
   return name === undefined ? [] : [[{ kind: "text", role: "title", text: name }]];
 }
 
-/** The edge of a transition, grey with an arrowhead, docked on the outline at both ends, a loop
- *  on the left side of its state, where the column leaves room, its label in grey where it has
- *  one. */
-function edgeOf([source, target, label]: (typeof TRANSITIONS)[number]) {
+/** The edge of a transition, drawn as a transition is, docked on the outline at both ends, a loop
+ *  on the left side of its state, where the column leaves room, labelled where it has a label.
+ *  The labels of the two transitions between ready and rendering, which run along one line in
+ *  opposite directions, stand either side of it. */
+function edgeOf([source, target, label]: (typeof TRANSITIONS)[number]): EdgeData {
   const side = source === target ? "left" : "outline";
-  const edge: EdgeData = {
+  return {
     id: `${source}-${target}`,
     source,
     target,
     sourceSide: side,
     targetSide: side,
-    color: GREY,
-    arrow: "end",
+    ...styleOf("transition"),
+    ...(label === null ? {} : { label: labelOf("transition", label) }),
   };
-  if (label !== null) edge.label = eventLabel(label);
-  return edge;
-}
-
-/** The label of a transition that reads `text`, its event or its guard, on a pill of the
- *  transition's grey, placed where `current` stands, or in the middle at `LABEL_OFFSET`. */
-export function eventLabel(text: string, current?: EdgeLabelData): EdgeLabelData {
-  return { t: 0.5, offset: LABEL_OFFSET, ...current, background: GREY, text };
 }
 
 /** The sides of a transition the user connected: docked on the outline at both ends, or for a
  *  loop the side it left by at both, since a loop leaves and re-enters one side (ADR-0031). */
-export function dockingOf({ source, target, sourceSide }: EdgeData): EdgePatch {
-  if (source === target) return { targetSide: sourceSide ?? "right" };
+export function dockingOf({ source, target, sourceSide }: AddedEdge): EdgePatch {
+  if (source === target) return { targetSide: sourceSide };
   return { sourceSide: "outline", targetSide: "outline" };
 }
 

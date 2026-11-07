@@ -113,16 +113,16 @@ skimmed. The design revision drops what prevented nothing
   hollow triangle, no diamond, and no arrowhead at the source, and its font no glyph for one.
   The package diagram draws each dependency as a dependency, its label «import» for a module's
   import of another and «use» for the bridge's load of the WebAssembly package and the bridge
-  crate's use of the core.
-- **The UML example draws a state diagram in UML's node shapes.** A state is a rounded rectangle
-  of its name as a title, an initial state a circle, a final state a ringed circle, and a choice a
-  diamond without content, its branches' guards on their edges in square brackets; a transition is
-  a grey `#6b7280` solid edge with an arrowhead, labelled by its event on a pill of its colour, and
-  none from a pseudostate taken at once. A pseudostate is as small as its node shape allows: a
-  circle 24 wide, a ringed circle 28, and a diamond as wide as the 128 its empty content makes it
-  high. A state is 200 wide, and one the palette drops is named NewState. A transition the user
-  connects docks on the outline at both ends, and a loop on the side the connection left by at
-  both; its event's label stands 14 to the left of its direction of travel.
+  crate's use of the core; its legend names the dependency by both labels, since one naming «use»
+  alone leaves the diagram's most common edge, «import», unexplained.
+- **The UML example draws a state diagram in UML's node shapes.** Each kind of state takes the
+  node shape UML gives it, so that a reader who knows UML reads the kind from the shape and no
+  label names it. A pseudostate has no content and is as small as its node shape allows, so that
+  it reads as a mark on the path and never as a state. A transition the user connects docks on the
+  outline at both ends, as the seeded ones do, so that several transitions leave one state from
+  different directions instead of meeting in the middle of one side (ADR-0031); a loop docks at
+  both ends on the side the connection left by, since a loop on the outline is drawn above its
+  node (ADR-0031) and not where the user dragged it.
 - **The UML example's rules of connection are a table of what they refuse.** `allows` in
   `examples/uml/src/rules.ts` answers from the kinds of the two ends and of the relationship,
   against a set of refused combinations, and its test writes that table out. Between a class, an

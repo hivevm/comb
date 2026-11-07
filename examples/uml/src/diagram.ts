@@ -3,11 +3,20 @@
 // a host application that persists keeps its own. An edge the user connected arrives without a
 // kind; it becomes the kind a connection adds in the diagram shown, drawn as one, and docked as
 // the diagram's descriptor says.
-import type { Comb, EdgeData, EdgeLabelData, EdgePatch, GraphChange, GraphData } from "comb";
+import type {
+  Comb,
+  EdgeData,
+  EdgeLabelData,
+  EdgePatch,
+  GraphChange,
+  GraphData,
+  NodeContent,
+} from "comb";
 import { patchOf, styleOf, type RelationshipKind } from "./relationships";
 import { allows } from "./rules";
 import {
   contentOf,
+  type AddedEdge,
   type Classifier,
   type DiagramData,
   type DiagramDescriptor,
@@ -66,27 +75,26 @@ export class Diagram {
   /** Replaces the content of node `id` with what `next` shows, and its classifier with `next`
    *  once Comb took the content; Comb lays it out anew, its height following. */
   edit(id: string, next: Classifier): void {
-    try {
-      this.comb.updateNode(id, { content: contentOf(next) });
-    } catch (error) {
-      // Content past Comb's limits, such as a text longer than one may be: the node keeps its
-      // content and the classifier its members.
-      console.warn("uml: the edit was not taken", error);
-      return;
-    }
-    this.classifiers.set(id, next);
+    if (this.updateContent(id, contentOf(next))) this.classifiers.set(id, next);
   }
 
   /** Replaces the content of state `id` with what `next` shows, and its state with `next` once
    *  Comb took the content, as `edit` does a classifier. */
   editState(id: string, next: State): void {
+    if (this.updateContent(id, stateContentOf(next))) this.states.set(id, next);
+  }
+
+  /** Gives node `id` the content `content`; whether Comb took it. */
+  private updateContent(id: string, content: NodeContent): boolean {
     try {
-      this.comb.updateNode(id, { content: stateContentOf(next) });
+      this.comb.updateNode(id, { content });
     } catch (error) {
+      // Content past Comb's limits, such as a text longer than one may be: the node keeps its
+      // content, and its classifier or its state what it held.
       console.warn("uml: the edit was not taken", error);
-      return;
+      return false;
     }
-    this.states.set(id, next);
+    return true;
   }
 
   /** Changes edge `id` to `kind`, drawn as the kind is, and its kind once Comb took the change.
@@ -131,7 +139,7 @@ export class Diagram {
 
   /** Adds `edge`; one without a kind, as the user connects it, becomes the kind a connection
    *  adds, docked as the descriptor says. */
-  added(edge: EdgeData): void {
+  added(edge: AddedEdge): void {
     this.graph.edges.push({ ...edge });
     if (this.kinds.has(edge.id)) return;
     const { connected, docking } = this.descriptor;

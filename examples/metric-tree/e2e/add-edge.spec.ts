@@ -150,6 +150,20 @@ for (const query of ["", "?loops=allow"]) {
   });
 }
 
+test("a load of a loop that names no side draws both its ends on the top of its node", async ({
+  page,
+}) => {
+  // Verifies: ADR-0031
+  await open(page, "?loops=allow");
+  await loaded(page, { ...LOOPED, edges: [LOOP] });
+  const edges = await page.evaluate(async () => {
+    await window.comb.whenRendered();
+    return window.inspect().edges;
+  });
+  // A load fills in the top for both sides, as `addEdge` does, not the right side to the left.
+  expect(edges).toEqual([{ id: "a-a", source: { x: 55, y: 300 }, target: { x: 165, y: 300 } }]);
+});
+
 test("updateEdge recolours an edge, clears its dash, moves its label, and tells edgeUpdated once", async ({
   page,
 }) => {

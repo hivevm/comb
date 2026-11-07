@@ -29,9 +29,11 @@ import {
   newClassifier,
   NODE_WIDTH,
   STATE_KINDS,
+  type Classifier,
   type DiagramData,
   type DiagramDescriptor,
   type NodeKind,
+  type State,
 } from "./shared";
 import { Sidebar } from "./sidebar";
 
@@ -105,6 +107,7 @@ const kept = new Map<string, DiagramData>();
 let shown: string | null = null;
 const palette = element("palette");
 const legend = element("legend");
+const legendKinds = element("legend-kinds");
 
 /** The palette's item of each kind of node a diagram's descriptor names, by the kind's name. */
 function paletteItemOf(
@@ -134,7 +137,8 @@ function counted(): void {
  *  the one it replaces. */
 async function load(): Promise<UmlLoadReport> {
   if (shown !== null) kept.set(shown, diagram.data());
-  const descriptor = DIAGRAMS.find(({ id }) => id === choice.value) ?? DIAGRAMS[0];
+  // The choice offers the diagrams alone, so one of them is chosen.
+  const descriptor = DIAGRAMS.find(({ id }) => id === choice.value)!;
   shown = descriptor.id;
   const next =
     kept.get(shown) ??
@@ -144,6 +148,7 @@ async function load(): Promise<UmlLoadReport> {
   for (const item of paletteItems) item.hidden = item.dataset.diagram !== shown;
   palette.hidden = paletteItems.every((item) => item.hidden);
   legend.hidden = !descriptor.legend;
+  fillLegend(legendKinds, descriptor.labels);
   counted();
   comb.fitView();
   await comb.whenRendered();
@@ -162,26 +167,20 @@ interface DroppedNode {
 }
 
 /** What the palette drops of `kind` as node `id`: the node's content, width, and node shape, and
- *  how the diagram records its classifier or its state; none for a kind the palette lacks. */
+ *  its classifier or its state; none for a kind the palette lacks. */
 function droppedOf(
   kind: string,
   id: string,
-): { node: DroppedNode; record: () => void } | undefined {
+): { node: DroppedNode; classifier?: Classifier; state?: State } | undefined {
   const classifierKind = CLASSIFIER_KINDS.find((each) => each === kind);
   if (classifierKind) {
     const classifier = newClassifier(id, classifierKind);
-    return {
-      node: { content: contentOf(classifier), width: NODE_WIDTH },
-      record: () => void diagram.classifiers.set(id, classifier),
-    };
+    return { node: { content: contentOf(classifier), width: NODE_WIDTH }, classifier };
   }
   const stateKind = STATE_KINDS.find((each) => each === kind);
   if (!stateKind) return undefined;
   const state = newState(id, stateKind);
-  return {
-    node: { content: stateContentOf(state), ...STATE_SHAPES[stateKind] },
-    record: () => void diagram.states.set(id, state),
-  };
+  return { node: { content: stateContentOf(state), ...STATE_SHAPES[stateKind] }, state };
 }
 
 /** Adds a node of the palette's `kind`, a classifier or a state, centred by the height Comb gives
@@ -210,7 +209,8 @@ function drop(kind: string, clientX: number, clientY: number): void {
     console.warn("uml: the dropped node was not added", error);
     return;
   }
-  added.record();
+  if (added.classifier) diagram.classifiers.set(id, added.classifier);
+  if (added.state) diagram.states.set(id, added.state);
 }
 
 for (const item of paletteItems) {
@@ -231,7 +231,6 @@ comb.onChange((change) => {
   counted();
 });
 comb.onSelectionChange((selection) => sidebar.show(selection));
-fillLegend(element("legend-kinds"));
 window.uml = {
   comb,
   loadReport: load(),

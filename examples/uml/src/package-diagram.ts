@@ -5,7 +5,7 @@
 // `packages/comb/src` without its tests and the dependency of `crates/engine-wasm/Cargo.toml`, as
 // the layout of ADR-0030 allows them.
 import type { Comb, EdgeData } from "comb";
-import { styleOf } from "./relationships";
+import { labelOf, styleOf } from "./relationships";
 import {
   laidOut,
   newClassifier,
@@ -17,8 +17,12 @@ import {
 /** Comb's modules, under `packages/comb/src`, and its crates, under `crates`. */
 const PACKAGES = ["api", "bridge", "store", "interaction", "render", "engine-wasm", "engine"];
 
+/** The labels of a dependency, which the legend names; the sidebar's choice of label, the options
+ *  of `#dependency` in `index.html`, offers the same two. */
+const LABELS = ["«import»", "«use»"] as const;
+
 /** Each dependency, from the package that depends to the one it depends on, with its label. */
-const DEPENDENCIES: [string, string, "«import»" | "«use»"][] = [
+const DEPENDENCIES: [string, string, (typeof LABELS)[number]][] = [
   ["api", "interaction", "«import»"],
   ["api", "render", "«import»"],
   ["api", "store", "«import»"],
@@ -52,7 +56,6 @@ const ROWS: [string, number][][] = [
  *  bottom of its source for the top of its target, or the right of its source for the left of
  *  its target within a row. */
 function edgeOf([source, target, label]: (typeof DEPENDENCIES)[number]): EdgeData {
-  const style = styleOf("dependency");
   const within = ROWS.some(
     (row) => row.some(([id]) => id === source) && row.some(([id]) => id === target),
   );
@@ -61,8 +64,8 @@ function edgeOf([source, target, label]: (typeof DEPENDENCIES)[number]): EdgeDat
     source,
     target,
     ...(within ? {} : { sourceSide: "bottom", targetSide: "top" }),
-    ...style,
-    label: { ...style.label!, text: label },
+    ...styleOf("dependency"),
+    label: labelOf("dependency", label),
   };
 }
 
@@ -84,7 +87,7 @@ export function packageDiagram(heightOf: Comb["heightOf"]): DiagramData {
 
 /** The package diagram as the host application chooses it: a package is edited by its name, a
  *  connection adds a dependency «use», which the sidebar makes an «import» or a «use», and the
- *  legend tells the dependency apart. */
+ *  legend names the dependency by either label. */
 export const PACKAGE_DIAGRAM: DiagramDescriptor = {
   id: "package",
   name: "Package diagram",
@@ -95,4 +98,5 @@ export const PACKAGE_DIAGRAM: DiagramDescriptor = {
   edgeForm: "import-or-use",
   selected: { node: "node", edge: "relationship" },
   legend: true,
+  labels: { dependency: LABELS },
 };
