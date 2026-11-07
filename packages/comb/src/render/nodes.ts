@@ -12,6 +12,7 @@ import {
   Container,
   Graphics,
   type Polygon,
+  type RoundedRectangle,
   Sprite,
   TextStyle,
   type TextStyleOptions,
@@ -401,7 +402,8 @@ const OUTLINES: Partial<
 };
 
 /** A part of a node shape a view drew, as its `Graphics` holds it: the kind of the primitive,
- *  its bounds in its node, and its fill's or its stroke's colour. */
+ *  its bounds in its node, its fill's or its stroke's colour, and a rounded rectangle's corner
+ *  radius. */
 export interface DrawnOutline {
   kind: string;
   action: "fill" | "stroke";
@@ -410,6 +412,7 @@ export interface DrawnOutline {
   width: number;
   height: number;
   color: number;
+  radius?: number;
 }
 
 /** One node: its node shape, its badges' pills, its progress bars, its metrics' arrows, its texts,
@@ -526,7 +529,10 @@ export class NodeGraphic extends Container {
       const { path, style } = instruction.data;
       return path.shapePath.shapePrimitives.map(({ shape }) => {
         const { x, y, width, height } = shape.getBounds();
-        return { kind: shape.type, action, x, y, width, height, color: style.color };
+        const drawn = { kind: shape.type, action, x, y, width, height, color: style.color };
+        return shape.type === "roundedRectangle"
+          ? { ...drawn, radius: (shape as RoundedRectangle).radius }
+          : drawn;
       });
     });
     return { shape: this.drawn.node?.shape ?? "rectangle", outline };

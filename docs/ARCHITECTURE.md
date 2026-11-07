@@ -437,27 +437,25 @@ one workspace for each example.
   scene draws, each node view's texts with where they lie and what of them is drawn, its icons'
   sprites with their rectangles and the names their textures are registered under, its content and
   the text of its first title, which the engine builds when asked (`content`), its node shape
-  (`shape`) and the primitives of its outline (`outline`), its pills, bars, and arrows, and the
-  labels drawn included, the connectors drawn with where
-  each is centred and how often the layer drew them anew, and the size and detail of the edge mesh,
-  which the host application is not told; `viewport` and `renderCount`, cheap enough for every
+  (`shape`) and the primitives of its outline (`outline`), a rounded rectangle's with its corner
+  radius, its pills, bars, and arrows, and the labels drawn included, the connectors drawn with
+  where each is centred and how often the layer drew them anew, and the size and detail of the edge
+  mesh, which the host application is not told; `viewport` and `renderCount`, cheap enough for every
   frame, return its transform and how often it rendered; `screenPoint` and `visibleRect` apply the
   scene's transform between world and screen; `hitKind` names what a press at a screen point hits,
   asking interaction's hit test from the viewport a press reads, which is the drawn one once
   `whenRendered` resolves, connectors only where the Comb lets the user connect; `isDrawn` finds
-  whether one node or edge is drawn without building every drawn view, as `inspect` does, an
-  edge from the slots the scene holds, the query's and the moving layer's, without asking the
-  engine;
-  `showLayers` hides layers for a reference image;
-  `sceneNumbers` gives the numbers the scene draws by (where the levels of detail begin, the culling
-  margin, the label reach, the rescale); `work` counts what the canvas did: GPU buffers created and
-  allocated, bytes uploaded, those of the edge mesh among them, and texture uploads, counted at the
-  WebGL context from its first call, resizes of the edge mesh's buffers, and views the pools made,
-  and refuses with an `UncountedRendererError` where the canvas draws without WebGL;
-  `edgeVertices` gives the screen point of every vertex of the edge mesh as its shader computes it
-  in `f32`, and `gpuEdgeIndices` the indices its GPU buffer holds, read back; for tests, the
-  benchmark, and tooling.
-  Its shape follows the scene and is outside the stable interface of `comb`.
+  whether one node or edge is drawn without building every drawn view, as `inspect` does, an edge
+  from the slots the scene holds, the query's and the moving layer's, without asking the engine;
+  `showLayers` hides layers for a reference image; `sceneNumbers` gives the numbers the scene draws
+  by (where the levels of detail begin, the culling margin, the label reach, the rescale); `work`
+  counts what the canvas did: GPU buffers created and allocated, bytes uploaded, those of the edge
+  mesh among them, and texture uploads, counted at the WebGL context from its first call, resizes of
+  the edge mesh's buffers, and views the pools made, and refuses with an `UncountedRendererError`
+  where the canvas draws without WebGL; `edgeVertices` gives the screen point of every vertex of the
+  edge mesh as its shader computes it in `f32`, and `gpuEdgeIndices` the indices its GPU buffer
+  holds, read back; for tests, the benchmark, and tooling. Its shape follows the scene and is
+  outside the stable interface of `comb`.
 - **Example** (`examples/metric-tree`) — a host application with a metric tree and an HTML sidebar
   (G-9), each type of node told only by the content the example describes from its fields (G-10):
   a bet its hypothesis and status badge, an epic its progress bar and status badge, an input

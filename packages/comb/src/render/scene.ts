@@ -72,8 +72,8 @@ export interface SceneSnapshot {
    *  `icons` the sprites of icons it draws, each the name its texture is registered under and its
    *  rectangle, `content` the node's content as the engine keeps it, built
    *  when asked, `title` the text of its first title, `shape` its node shape, and `outline` the
-   *  parts of it the view draws, each its primitive, its bounds, and its fill's or its stroke's
-   *  colour; a particle draws none of them. */
+   *  parts of it the view draws, each its primitive, its bounds, its fill's or its stroke's
+   *  colour, and a rounded rectangle's corner radius; a particle draws none of them. */
   nodes: {
     id: string;
     x: number;
