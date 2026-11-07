@@ -30,6 +30,12 @@ worked:
    becomes a check" of [`AGENTS.md` §5](../../../AGENTS.md#5-quality-bar--definition-of-done)
    asks of the mistake the reviews kept finding.
 
+A conflict to settle with the maintainer first: ADR-0002, accepted, has `scripts/number-adrs.sh`
+number the drafts in two commits, "the checks fail on the first and pass on the second", since the
+first commit's tree still cites draft identifiers outside `docs/adr/`. The check would flag every
+first commit of a numbering, so either it exempts that commit by name, or the numbering's shape
+changes, which supersedes ADR-0002's clause.
+
 ## Acceptance criteria
 
 - [ ] Given a branch, when `scripts/check-commits.sh` runs, then it runs the decided checks on
