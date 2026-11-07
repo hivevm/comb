@@ -200,16 +200,57 @@ test("a rounded rectangle is hit just inside the corner arc it is drawn with, an
   });
 });
 
-test("each node shape is drawn at the far level as a particle, as every node is", async ({
+/** Whether the canvas shows the colour `color` (`0xRRGGBB`) within a pixel of each world point
+ *  `points`, read off a screenshot of what the browser last presented. */
+async function inkAt(page: Page, color: number, points: [number, number][]): Promise<boolean[]> {
+  const png = await page.locator("#canvas canvas").screenshot();
+  return page.evaluate(
+    async ({ png: shot, color: ink, points: at }) => {
+      const bytes = Uint8Array.from(atob(shot), (char) => char.charCodeAt(0));
+      const image = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+      const ratio = image.width / document.querySelector("#canvas canvas")!.clientWidth;
+      const copy = document.createElement("canvas");
+      [copy.width, copy.height] = [image.width, image.height];
+      const context = copy.getContext("2d")!;
+      context.drawImage(image, 0, 0);
+      const want = [(ink >> 16) & 0xff, (ink >> 8) & 0xff, ink & 0xff];
+      return at.map(([x, y]) => {
+        const screen = window.screenPoint(x, y);
+        const [px, py] = [Math.round(screen.x * ratio), Math.round(screen.y * ratio)];
+        const { data } = context.getImageData(px - 1, py - 1, 3, 3);
+        return Array.from({ length: 9 }, (_, i) => i * 4).some((i) =>
+          want.every((value, channel) => Math.abs(data[i + channel]! - value) < 24),
+        );
+      });
+    },
+    { png: png.toString("base64"), color, points },
+  );
+}
+
+test("each node shape is drawn at the far level as a particle of the far level's colour, as every node is", async ({
   page,
 }) => {
-  // Verifies: ADR-0032
+  // Verifies: ADR-0032, ADR-0012
   await open(page);
   await loaded(page, shaped, { x: 20, y: 20, scale: 0.2 });
   const { level, nodes } = await drawnShapes(page);
   expect(level).toBe("far");
+  // A particle for each node, none of them a view: no node shape, no outline.
+  expect(await page.evaluate(() => window.inspect().particles)).toBe(SHAPES.length);
   expect(nodes.map(({ id, shape, outline }) => ({ id, shape, outline }))).toEqual(
     SHAPES.map(({ shape }) => ({ id: shape, shape: undefined, outline: undefined })),
+  );
+  // Each as wide as its node and as high as heightOf gives its node shape.
+  for (const { id, width, height, asked } of nodes)
+    expect({ id, width, height }).toEqual({ id, width: WIDTH, height: asked });
+  // Each drawn on the canvas at its centre in the grey of a node at the far level.
+  const centres = nodes.map(({ id, height }): [number, number] => {
+    const { x, y } = placeOf(id as NodeShape);
+    return [x + WIDTH / 2, y + height / 2];
+  });
+  const ink = await inkAt(page, 0xc3c8d1, centres);
+  expect(nodes.map(({ id }, i) => ({ id, ink: ink[i] }))).toEqual(
+    SHAPES.map(({ shape }) => ({ id: shape, ink: true })),
   );
 });
 
