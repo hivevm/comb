@@ -1,6 +1,6 @@
 # ADR-0031: Every node has one connector in the middle of each side, an edge's end docks on a side or on the node's outline, and a loop is accepted where the host application allows loops
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-06
 - **Deciders:** Markus Brigl
 - **Applies to:** the edge paths of `crates/engine/src/geometry.rs`, the point where a loop's end meets a node shape's outline in `crates/engine/src/shape.rs`, the edge records of `crates/engine/src/graph.rs`, the edge fields of `crates/engine-wasm/` and of `EdgeData` in `packages/comb/src/store/`, `CombOptions` and `addEdge` in `packages/comb/src/api/`, the connect gesture of `packages/comb/src/interaction/`, and the connectors layer of `packages/comb/src/render/`
