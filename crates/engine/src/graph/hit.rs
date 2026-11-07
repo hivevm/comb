@@ -351,7 +351,7 @@ mod tests {
 
     #[test]
     fn a_hit_finds_a_connector_before_a_node_as_a_scan_finds_and_none_at_the_far_level() {
-        // Verifies: ADR-0013, ADR-0025, ADR-0031
+        // Verifies: ADR-0013, ADR-0031
         for seed in 1..=6 {
             let mut rng = Lcg(seed);
             let (mut model, mut graph) = Model::random(&mut rng, 40, 20);
