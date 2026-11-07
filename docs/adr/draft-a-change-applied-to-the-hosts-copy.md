@@ -36,10 +36,9 @@ state-diagram feature, found the two copies in its survey of `examples/`.
 xyflow, which ADR-0024 names for the controlled data flow, exports `applyNodeChanges(changes,
 nodes)` and `applyEdgeChanges` for the same need, returning the nodes with the changes applied.
 
-The interrogation of [`propose-adr`](../../.agents/skills/propose-adr/SKILL.md) has not been held:
-the revision ran without the maintainer. Its open questions are the goal this serves (no `G-n` or
-`Q-n` names a host's copy; Q-3 asks for a fully typed public interface), whether the function
-belongs to the entry `comb` or to one of its own, and whether it changes the copy in place.
+Open questions: which goal this serves, since no `G-n` or `Q-n` names a host's copy and Q-3 asks
+for a fully typed public interface; whether the function belongs to the entry `comb` or to one of
+its own; and whether it changes the copy in place.
 
 ## Decision
 
