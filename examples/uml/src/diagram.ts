@@ -1,29 +1,38 @@
 // The diagram the example edits (G-12): its copy of the graph, the classifier or the state of
 // each node, and the kind of each relationship, kept from every change Comb tells (ADR-0024), as
 // a host application that persists keeps its own. An edge the user connected arrives without a
-// kind; it becomes the kind a connection adds in the diagram shown, drawn as one, and a transition
-// docked as the state diagram docks one.
+// kind; it becomes the kind a connection adds in the diagram shown, drawn as one, and docked as
+// the diagram's descriptor says.
 import type { Comb, EdgeData, EdgeLabelData, EdgePatch, GraphChange, GraphData } from "comb";
 import { patchOf, styleOf, type RelationshipKind } from "./relationships";
-import { allows, type NodeKind } from "./rules";
-import { contentOf, type Classifier, type DiagramData, type State } from "./shared";
-import { contentOf as stateContentOf, dockingOf } from "./state-diagram";
+import { allows } from "./rules";
+import {
+  contentOf,
+  type Classifier,
+  type DiagramData,
+  type DiagramDescriptor,
+  type NodeKind,
+  type State,
+} from "./shared";
+import { contentOf as stateContentOf } from "./state-diagram";
 
 export class Diagram {
   graph: GraphData = { nodes: [], edges: [] };
   classifiers = new Map<string, Classifier>();
   states = new Map<string, State>();
   kinds = new Map<string, RelationshipKind>();
-  /** The kind a connection of the user adds: an association of classifiers, a dependency
-   *  «use» of packages, a transition of states. */
-  connected: RelationshipKind = "association";
 
-  constructor(private readonly comb: Comb) {}
+  /** `descriptor` describes the diagram shown: the kind a connection of the user adds and how it
+   *  docks, among the rest. */
+  constructor(
+    private readonly comb: Comb,
+    public descriptor: DiagramDescriptor,
+  ) {}
 
-  /** Takes `data`, its graph, its classifiers, its states, and its kinds, as the diagram's own, a
-   *  connection adding `connected`, and hands Comb the graph. */
-  load({ graph, classifiers, states, kinds }: DiagramData, connected: RelationshipKind): void {
-    Object.assign(this, { graph, classifiers, states, kinds, connected });
+  /** Takes `data`, its graph, its classifiers, its states, and its kinds, as the diagram's own,
+   *  described by `descriptor`, and hands Comb the graph. */
+  load({ graph, classifiers, states, kinds }: DiagramData, descriptor: DiagramDescriptor): void {
+    Object.assign(this, { graph, classifiers, states, kinds, descriptor });
     this.comb.load(graph);
   }
 
@@ -121,15 +130,14 @@ export class Diagram {
   }
 
   /** Adds `edge`; one without a kind, as the user connects it, becomes the kind a connection
-   *  adds, and a transition is docked as `dockingOf` says. */
+   *  adds, docked as the descriptor says. */
   added(edge: EdgeData): void {
     this.graph.edges.push({ ...edge });
     if (this.kinds.has(edge.id)) return;
-    const kind = this.connected;
-    this.kinds.set(edge.id, kind);
+    const { connected, docking } = this.descriptor;
+    this.kinds.set(edge.id, connected);
     // The kind's style, adding what it draws and clearing nothing the edge brought.
-    const docking = kind === "transition" ? dockingOf(edge) : {};
-    this.comb.updateEdge(edge.id, { ...styleOf(kind), ...docking });
+    this.comb.updateEdge(edge.id, { ...styleOf(connected), ...docking?.(edge) });
   }
 }
 

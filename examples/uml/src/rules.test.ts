@@ -3,7 +3,8 @@
 // loop. The table is written here from the conventions, not read from the rules.
 // Verifies: G-12
 import { expect, test } from "bun:test";
-import { allows, NODE_KINDS } from "./rules";
+import { allows } from "./rules";
+import { NODE_KINDS } from "./shared";
 
 const RELATIONSHIP_KINDS = [
   "association",

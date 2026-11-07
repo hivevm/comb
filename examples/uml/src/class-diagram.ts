@@ -10,7 +10,7 @@
 // a «type» is a class.
 import type { Comb, EdgeData, Side } from "comb";
 import { styleOf, type RelationshipKind } from "./relationships";
-import { laidOut, type Classifier, type DiagramData } from "./shared";
+import { laidOut, type Classifier, type DiagramData, type DiagramDescriptor } from "./shared";
 
 /** A relationship of the diagram, from `source` to `target`; the whole is the source of an
  *  aggregation or a composition, the specific the source of a generalization or a realization. */
@@ -291,3 +291,21 @@ export function classDiagram(heightOf: Comb["heightOf"]): DiagramData {
     kinds: new Map(RELATIONSHIPS.map((each, i) => [edges[i]!.id, each.kind])),
   };
 }
+
+/** The class diagram as the host application chooses it: a connection adds an association, and
+ *  the legend tells its kinds of relationship apart. */
+export const CLASS_DIAGRAM: DiagramDescriptor = {
+  id: "class",
+  name: "Class diagram",
+  build: classDiagram,
+  nouns: ["classes and interfaces", "relationships"],
+  nodes: [
+    { kind: "class", name: "Class", form: "classifier" },
+    { kind: "interface", name: "Interface", form: "classifier" },
+    { kind: "abstract-class", name: "Abstract class", form: "classifier" },
+  ],
+  connected: "association",
+  edgeForm: "relationship",
+  selected: { node: "node", edge: "relationship" },
+  legend: true,
+};

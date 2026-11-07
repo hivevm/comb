@@ -1,12 +1,14 @@
 // The sidebar's forms (G-12, G-5): the selected classifier's name, stereotype, attributes, and
 // operations, one member per line, or the selected package's or state's name; the selected
 // relationship's kind and label, the selected dependency's «import» or «use», or the selected
-// transition's event. A pseudostate has nothing to edit. Each edit shows on the canvas at once.
+// transition's event. A pseudostate has nothing to edit. Which form a node or an edge shows, and
+// what its heading calls it, the descriptor of the diagram shown says. Each edit shows on the
+// canvas at once.
 import type { EdgeLabelData, Selection } from "comb";
 import type { Diagram } from "./diagram";
 import { element } from "./element";
 import { KINDS, RELATIONSHIPS, type RelationshipKind } from "./relationships";
-import type { Classifier, State } from "./shared";
+import type { Classifier, NodeForm } from "./shared";
 import { eventLabel } from "./state-diagram";
 
 /** The lines of a textarea, each trimmed, the empty ones left out. */
@@ -56,12 +58,11 @@ export class Sidebar {
   show(selection: Selection): void {
     this.node = selection?.kind === "node" ? selection.id : null;
     this.edge = selection?.kind === "edge" ? selection.id : null;
-    const [classifier, state, kind] = [this.classifier(), this.namedState(), this.kindOf()];
-    this.nodeForm.hidden = !classifier && !state;
+    const [form, kind] = [this.formOfNode(), this.kindOf()];
+    this.nodeForm.hidden = form === "none";
     this.edgeForm.hidden = !kind;
     this.empty.hidden = !this.nodeForm.hidden || !this.edgeForm.hidden;
-    if (classifier) this.fillNode(classifier);
-    if (state) this.fillState(state);
+    if (form !== "none") this.fillNode(form);
     if (kind) this.fillEdge(kind);
   }
 
@@ -70,48 +71,36 @@ export class Sidebar {
     return this.edge === null ? undefined : this.diagram.kinds.get(this.edge);
   }
 
-  /** The selected node's classifier, none where no classifier is selected. */
-  private classifier(): Classifier | undefined {
-    return this.node === null ? undefined : this.diagram.classifiers.get(this.node);
+  /** The form the selected node is edited in, by its kind in the diagram shown; "none" where no
+   *  node is selected, or its kind has nothing to edit. */
+  private formOfNode(): NodeForm {
+    const kind = this.node === null ? undefined : this.diagram.kindOf(this.node);
+    return this.diagram.descriptor.nodes.find((each) => each.kind === kind)?.form ?? "none";
   }
 
-  /** The selected node's state where it is a state, which has a name; none for a pseudostate. */
-  private namedState(): State | undefined {
-    const state = this.node === null ? undefined : this.diagram.states.get(this.node);
-    return state?.kind === "state" ? state : undefined;
-  }
-
-  private fillNode(classifier: Classifier): void {
-    const { kind, name, stereotype, attributes, operations } = classifier;
-    const isPackage = kind === "package";
-    for (const field of this.classifierFields) field.hidden = isPackage;
-    this.nodeHeading.textContent = "Selected node";
-    this.name.value = name;
-    this.stereotype.value = stereotype ?? "";
-    this.attributes.value = attributes.join("\n");
-    this.operations.value = operations.join("\n");
-  }
-
-  private fillState({ name }: State): void {
-    for (const field of this.classifierFields) field.hidden = true;
-    this.nodeHeading.textContent = "Selected state";
-    this.name.value = name ?? "";
-  }
-
-  /** What the selected edge of `kind` shows: a transition its event, a dependency of packages
-   *  its «import» or «use», any other relationship its kind and label. */
-  private formOf(kind: RelationshipKind): "transition" | "dependency" | "relationship" {
-    if (kind === "transition") return "transition";
-    const source = this.diagram.classifiers.get(this.diagram.edge(this.edge!)?.source ?? "");
-    return source?.kind === "package" ? "dependency" : "relationship";
+  /** Fills the node form of `form` from the selected node's classifier, or from its state, which
+   *  has a name and no stereotype or members. */
+  private fillNode(form: Exclude<NodeForm, "none">): void {
+    const id = this.node!;
+    const shown: Omit<Classifier, "id" | "kind"> = this.diagram.classifiers.get(id) ?? {
+      name: this.diagram.states.get(id)?.name ?? "",
+      attributes: [],
+      operations: [],
+    };
+    for (const field of this.classifierFields) field.hidden = form !== "classifier";
+    this.nodeHeading.textContent = `Selected ${this.diagram.descriptor.selected.node}`;
+    this.name.value = shown.name;
+    this.stereotype.value = shown.stereotype ?? "";
+    this.attributes.value = shown.attributes.join("\n");
+    this.operations.value = shown.operations.join("\n");
   }
 
   private fillEdge(kind: RelationshipKind): void {
-    const form = this.formOf(kind);
+    const { edgeForm: form, selected } = this.diagram.descriptor;
     for (const field of this.relationshipFields) field.hidden = form !== "relationship";
-    this.dependencyField.hidden = form !== "dependency";
-    this.eventField.hidden = form !== "transition";
-    this.edgeHeading.textContent = `Selected ${form === "transition" ? "transition" : "relationship"}`;
+    this.dependencyField.hidden = form !== "import-or-use";
+    this.eventField.hidden = form !== "event";
+    this.edgeHeading.textContent = `Selected ${selected.edge}`;
     const text = this.diagram.edge(this.edge!)?.label?.text;
     this.kind.value = kind;
     this.label.value = text ?? "";
@@ -129,7 +118,8 @@ export class Sidebar {
   /** Replaces the selected classifier, or the selected state's name, with what the form holds;
    *  the classifier keeps its kind whatever its stereotype reads. */
   private editNode(): void {
-    const state = this.namedState();
+    if (this.formOfNode() === "none") return;
+    const state = this.diagram.states.get(this.node!);
     if (state) {
       this.diagram.editState(state.id, { ...state, name: this.name.value });
       return;

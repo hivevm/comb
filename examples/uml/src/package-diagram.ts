@@ -6,7 +6,13 @@
 // the layout of ADR-0030 allows them.
 import type { Comb, EdgeData } from "comb";
 import { styleOf } from "./relationships";
-import { laidOut, newClassifier, type Classifier, type DiagramData } from "./shared";
+import {
+  laidOut,
+  newClassifier,
+  type Classifier,
+  type DiagramData,
+  type DiagramDescriptor,
+} from "./shared";
 
 /** Comb's modules, under `packages/comb/src`, and its crates, under `crates`. */
 const PACKAGES = ["api", "bridge", "store", "interaction", "render", "engine-wasm", "engine"];
@@ -75,3 +81,18 @@ export function packageDiagram(heightOf: Comb["heightOf"]): DiagramData {
     kinds: new Map(edges.map(({ id }) => [id, "dependency"])),
   };
 }
+
+/** The package diagram as the host application chooses it: a package is edited by its name, a
+ *  connection adds a dependency «use», which the sidebar makes an «import» or a «use», and the
+ *  legend tells the dependency apart. */
+export const PACKAGE_DIAGRAM: DiagramDescriptor = {
+  id: "package",
+  name: "Package diagram",
+  build: packageDiagram,
+  nouns: ["packages", "dependencies"],
+  nodes: [{ kind: "package", name: "Package", form: "name" }],
+  connected: "dependency",
+  edgeForm: "import-or-use",
+  selected: { node: "node", edge: "relationship" },
+  legend: true,
+};

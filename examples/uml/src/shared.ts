@@ -1,12 +1,25 @@
 // What more than one diagram of the UML example (G-12) uses, so that no diagram's file imports
-// another's, nor this module any diagram's: a diagram as data, the classifier a node of the class
-// or the package diagram shows, the state a node of the state diagram shows, the classifier's
-// content, and the layout by rows of the class and the package diagram. A classifier keeps its
-// kind, set when it is created, from the diagram's data or the palette; its stereotype is text it
-// shows and tells nothing of its kind.
-import type { Comb, GraphData, NodeContent, NodeData } from "comb";
+// another's, nor this module any diagram's: a diagram as data, the descriptor of a diagram, the
+// kinds of node, which the rules of connection import, the classifier a node of the class or the
+// package diagram shows, the state a node of the state diagram shows, the classifier's content,
+// and the layout by rows of the class and the package diagram. A classifier keeps its kind, set
+// when it is created, from the diagram's data or the palette; its stereotype is text it shows and
+// tells nothing of its kind.
+import type { Comb, EdgeData, EdgePatch, GraphData, NodeContent, NodeData } from "comb";
 import type { RelationshipKind } from "./relationships";
-import type { ClassifierKind, StateKind } from "./rules";
+
+/** The kinds of classifier: those of the class diagram, and the package of the package diagram. */
+export const CLASSIFIER_KINDS = ["class", "interface", "abstract-class", "package"] as const;
+export type ClassifierKind = (typeof CLASSIFIER_KINDS)[number];
+
+/** The kinds of state of the state diagram: a state, and the pseudostates where its machine
+ *  starts, where it ends, and where it chooses. */
+export const STATE_KINDS = ["state", "initial", "final", "choice"] as const;
+export type StateKind = (typeof STATE_KINDS)[number];
+
+/** The kinds of node: the kinds of classifier and the kinds of state. */
+export const NODE_KINDS = [...CLASSIFIER_KINDS, ...STATE_KINDS] as const;
+export type NodeKind = (typeof NODE_KINDS)[number];
 
 /** A class, an interface, an abstract class, or a package of a diagram, as its node shows it, and
  *  its kind, which no edit of its stereotype changes. */
@@ -34,6 +47,35 @@ export interface DiagramData {
   classifiers: Map<string, Classifier>;
   states: Map<string, State>;
   kinds: Map<string, RelationshipKind>;
+}
+
+/** What the sidebar edits of a selected node: a classifier's name, stereotype, and members, a
+ *  name alone, or nothing. */
+export type NodeForm = "classifier" | "name" | "none";
+
+/** What the sidebar edits of a selected edge: a relationship's kind and label, a dependency's
+ *  «import» or «use», or a transition's event. */
+export type EdgeForm = "relationship" | "import-or-use" | "event";
+
+/** What makes a diagram of the example what it is, in one place: its identifier and its name in
+ *  the choice of diagram, how it is built, what its count names, the kinds of node the palette
+ *  drops, each with its name there and the form the sidebar edits it in, the kind a connection
+ *  adds and how it docks, the form the sidebar edits an edge in, what the sidebar's headings call
+ *  a selected node and edge, and whether the legend of the kinds of relationship tells its edges
+ *  apart. The host application, the diagram, and the sidebar read it instead of branching on a
+ *  kind. */
+export interface DiagramDescriptor {
+  id: string;
+  name: string;
+  build: (heightOf: Comb["heightOf"]) => DiagramData;
+  nouns: readonly [string, string];
+  nodes: readonly { kind: NodeKind; name: string; form: NodeForm }[];
+  connected: RelationshipKind;
+  /** The sides of an edge the user connected, none where it keeps those it was connected by. */
+  docking?: (edge: EdgeData) => EdgePatch;
+  edgeForm: EdgeForm;
+  selected: { node: string; edge: string };
+  legend: boolean;
 }
 
 export const NODE_WIDTH = 260;

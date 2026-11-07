@@ -2,19 +2,7 @@
 // nodes, the kind of the relationship, and whether it leads a node back to itself, read from a
 // table that docs/CONVENTIONS.md records. The veto of a connection asks it.
 import type { RelationshipKind } from "./relationships";
-
-/** The kinds of classifier: those of the class diagram, and the package of the package diagram. */
-export const CLASSIFIER_KINDS = ["class", "interface", "abstract-class", "package"] as const;
-export type ClassifierKind = (typeof CLASSIFIER_KINDS)[number];
-
-/** The kinds of state of the state diagram: a state, and the pseudostates where its machine
- *  starts, where it ends, and where it chooses. */
-export const STATE_KINDS = ["state", "initial", "final", "choice"] as const;
-export type StateKind = (typeof STATE_KINDS)[number];
-
-/** The kinds of node: the kinds of classifier and the kinds of state. */
-export const NODE_KINDS = [...CLASSIFIER_KINDS, ...STATE_KINDS] as const;
-export type NodeKind = (typeof NODE_KINDS)[number];
+import { STATE_KINDS, type NodeKind } from "./shared";
 
 /** A relationship of `kind` from a node of kind `source` to one of kind `target`, a loop where
  *  `loop` says that the two are one node. */
