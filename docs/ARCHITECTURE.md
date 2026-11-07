@@ -167,9 +167,10 @@ one workspace for each example.
   of the highest rank, else the edge in the highest slot within 4 screen pixels of its path as the
   stroke of the level flattens it, the parts of the path far from the point as chords; where the
   shell asks for connectors, at the near and middle level, a connector within 8 screen pixels, of
-  the node of the highest rank, comes before them all. Inside its node's rectangle a connector
+  the node of the highest rank, comes before them all. Inside its node's outline a connector
   reaches no further than a quarter of the node's height (top, bottom) or width (right, left), so
-  that the middle half of a node, a bar's too, is the node's. At the near level a label whose pill,
+  that the middle half of a node, a bar's too, is the node's; beside the outline, in a corner of
+  a circle's rectangle too, it reaches the 8 pixels. At the near level a label whose pill,
   as the labels layer measures and hands it over (`setLabelSize`), holds the point comes before a
   node; `move_label` places a dragged label at the path parameter nearest a point and its distance
   along the normal there; `mesh_at` meshes every edge at given node slots and of given edge slots,
@@ -549,9 +550,12 @@ one workspace for each example.
   started by `bench/chromium.ts`, or attached through its debugging port to a Chrome on the host
   where `BENCH_CDP` names one (ADR-0028); `BENCH_CPU_THROTTLE` slows the measured page's CPU
   (ADR-0029); `BENCH_GRAPH` names the graph, `metric-tree` or `shaped`, which the example loads
-  with `?graph=shaped`: the metric tree's nodes and edges in the same places, the nodes in the
-  node shapes in turn, a node in a filled node shape without content, the ends docked on the
-  outline, and a loop on one node in a hundred (`shaped` in `src/graph.ts`, ADR-0033).
+  with `?graph=shaped`: the metric tree's nodes and edges in the same columns and order, the
+  nodes in the node shapes in turn, a node in a filled node shape without content, a circle and a
+  ringed circle 64 wide, each node centred on its row and column, the rows spaced for the tallest
+  node by the gap the metric tree leaves under its own, so that no two nodes overlap, the ends
+  docked on the outline, and a loop on one node in a hundred (`shaped` in `src/graph.ts`,
+  ADR-0033).
   `bench/options.ts` reads all three and refuses a value it cannot take; a run records `graph`, and
   checks that the example loaded it, and the type checker holds the graphs `bench/options.ts` names
   to the example's `GraphName`, which ADR-0030 keeps from importing `bench`. After the first frame
@@ -581,7 +585,7 @@ bridge crate's validation (`crates/engine-wasm/src/properties.rs`, proptest) tha
 random batches per run against a brute-force oracle, and one of the mesh budget
 (`crates/engine/src/graph/budget.rs`) that queries random graphs of long edges with the budget
 lowered; the hit test held to one scan of every kind, whose oracle, `Model` of `graph/tests.rs`,
-computes bounds, connectors and their reach clipped within the node, paths, and label points from
+computes bounds, connectors and their reach clipped by the outline, paths, and label points from
 the inputs the test gave the graph and reads nothing of it; Bun tests beside their module as
 `*.test.ts`, the bridge's against the built WebAssembly module, the lint's rules for Comb's library
 sources in `packages/comb/src/lint.test.ts`, and those of `bench/compare.ts`, `bench/chromium.ts`,

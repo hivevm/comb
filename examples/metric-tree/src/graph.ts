@@ -267,29 +267,6 @@ const links: [string, string, number?][] = [
   ["3.0", "4.2", 0.998],
 ];
 
-function nodesOf(
-  copy: number,
-  left: number,
-  top: number,
-  fields: Map<string, Fields>,
-  heights: number[][],
-): NodeData[] {
-  return columns.flatMap((column, c) =>
-    column.map((each, r) => {
-      const id = `${copy}:${c}.${r}`;
-      fields.set(id, each);
-      const middle = top + (r - (column.length - 1) / 2) * ROW + NODE_HEIGHT / 2;
-      return {
-        id,
-        x: left + c * COLUMN,
-        y: middle - heights[c]![r]! / 2,
-        width: NODE_WIDTH,
-        content: contents[c]![r]!,
-      };
-    }),
-  );
-}
-
 function edgesOf(copy: number): EdgeData[] {
   return links.map(([from, to, correlation]) => {
     const color = correlation === undefined ? GREY : correlation < 0 ? RED : GREEN;
@@ -320,52 +297,96 @@ const SHAPES: readonly NodeShape[] = [
   "bar",
 ];
 const FILLED: readonly NodeShape[] = ["circle", "ringed-circle", "bar"];
+/** The width of a circle and a ringed circle in the shaped graph: the least height of a node. */
+const CIRCLE = NODE_HEIGHT;
 /** One node in this many of the shaped graph has a loop, from the first. */
 const LOOP_EVERY = 100;
 
-/** The shaped graph the benchmark measures beside the metric tree (ADR-0033): `tree`'s nodes and
- *  edges in the same places, the nodes taking the node shapes in turn, a filled one without its
- *  content, every end docked on the outline, and a loop on one node in a hundred, which the Comb
- *  that loads it allows. */
-export function shaped(tree: GraphData): GraphData {
-  const nodes = tree.nodes.map((node, i) => {
-    const shape = SHAPES[i % SHAPES.length]!;
-    return { ...node, shape, content: FILLED.includes(shape) ? [] : node.content };
-  });
-  const loops = nodes
-    .filter((_, i) => i % LOOP_EVERY === 0)
-    .map(({ id }) => ({ id: `${id}-loop`, source: id, target: id }));
-  const edges = [...tree.edges, ...loops].map((edge) => ({
-    ...edge,
-    sourceSide: "outline" as const,
-    targetSide: "outline" as const,
-  }));
-  return { nodes, edges };
+/** What a node of a laid-out tree draws: its node shape, its width, and its content. */
+interface Drawn {
+  shape?: NodeShape;
+  width: number;
+  content: NodeContent;
 }
 
-/** The tree `copies` times, in a grid about as wide as it is tall, so that fitting the view
- *  shows all of them, with the fields of each node by its identifier. Each node lies with its
- *  middle on its row, by the height `heightOf` gives its content, asked once per node of the tree
- *  whatever the copies, since every copy shares that content. */
+/** The tree `copies` times, in a grid about as wide as the metric tree is tall (the shaped graph,
+ *  its rows spaced further, about 1.76 times as tall), so that fitting the view shows all of them,
+ *  with the fields of each node by its identifier. Node `i` draws what `drawn` makes of its
+ *  content, and lies centred on its column and on its row, by the height `heightOf` gives it, asked
+ *  once per node of the tree and drawing whatever the copies. The rows are spaced for the tallest
+ *  node: the metric tree's `ROW`, by as much more as its tallest node is taller than the metric
+ *  tree's, and each copy is seven rows high. */
+function laidOut(
+  copies: number,
+  heightOf: Comb["heightOf"],
+  drawn: (content: NodeContent, i: number) => Drawn,
+): { graph: GraphData; fields: Map<string, Fields> } {
+  const tallestOfTree = Math.max(
+    ...contents.flatMap((column) => column.map((each) => heightOf(each, NODE_WIDTH))),
+  );
+  const width = columns.length * COLUMN;
+  const perRow = Math.ceil(Math.sqrt((copies * 7 * ROW) / width));
+  const asked = new Map<string, number>();
+  const fields = new Map<string, Fields>();
+  const trees = Array.from({ length: copies }, (_, copy) => copy);
+  const cells = trees.flatMap((copy) =>
+    columns.flatMap((column, c) => column.map((each, r) => ({ copy, c, r, each }))),
+  );
+  const placed = cells.map(({ copy, c, r, each }, i) => {
+    const node = drawn(contents[c]![r]!, i);
+    const key = `${c}.${r}:${node.shape}`;
+    if (!asked.has(key)) asked.set(key, heightOf(node.content, node.width, node.shape));
+    fields.set(`${copy}:${c}.${r}`, each);
+    return { copy, c, r, node, height: asked.get(key)! };
+  });
+  const pitch = ROW + Math.max(...asked.values()) - tallestOfTree;
+  const nodes = placed.map(({ copy, c, r, node, height }): NodeData => {
+    const rows = columns[c]!.length;
+    const left = (copy % perRow) * width + c * COLUMN;
+    const top = Math.floor(copy / perRow) * 7 * pitch;
+    const middle = top + (r - (rows - 1) / 2) * pitch + NODE_HEIGHT / 2;
+    return {
+      id: `${copy}:${c}.${r}`,
+      x: left + (NODE_WIDTH - node.width) / 2,
+      y: middle - height / 2,
+      ...node,
+    };
+  });
+  return { graph: { nodes, edges: trees.flatMap((copy) => edgesOf(copy)) }, fields };
+}
+
+/** The tree `copies` times (see `laidOut`), each node a rectangle of its content. */
 export function metricTree(
   copies: number,
   heightOf: Comb["heightOf"],
 ): { graph: GraphData; fields: Map<string, Fields> } {
-  const heights = contents.map((column) => column.map((each) => heightOf(each, NODE_WIDTH)));
-  const width = columns.length * COLUMN;
-  const height = 7 * ROW;
-  const perRow = Math.ceil(Math.sqrt((copies * height) / width));
-  const trees = Array.from({ length: copies }, (_, copy) => copy);
-  const fields = new Map<string, Fields>();
-  return {
-    graph: {
-      nodes: trees.flatMap((copy) =>
-        nodesOf(copy, (copy % perRow) * width, Math.floor(copy / perRow) * height, fields, heights),
-      ),
-      edges: trees.flatMap((copy) => edgesOf(copy)),
-    },
-    fields,
-  };
+  return laidOut(copies, heightOf, (content) => ({ width: NODE_WIDTH, content }));
+}
+
+/** The shaped graph the benchmark measures beside the metric tree (ADR-0033): the metric tree's
+ *  copies, the same nodes and edges in the same columns and order, the nodes taking the node
+ *  shapes in turn, laid out by `laidOut` so that no two overlap. A circle and a ringed circle are
+ *  64 wide, a bar keeps the node's width, and a filled node holds no content; a content node keeps
+ *  its content, as high as its node shape makes it. Every end docks on the outline, and one node in
+ *  a hundred has a loop, which the Comb that loads it allows. */
+export function shaped(
+  copies: number,
+  heightOf: Comb["heightOf"],
+): { graph: GraphData; fields: Map<string, Fields> } {
+  const { graph, fields } = laidOut(copies, heightOf, (content, i) => {
+    const shape = SHAPES[i % SHAPES.length]!;
+    if (!FILLED.includes(shape)) return { shape, width: NODE_WIDTH, content };
+    return { shape, width: shape === "bar" ? NODE_WIDTH : CIRCLE, content: [] };
+  });
+  const loops = graph.nodes
+    .filter((_, i) => i % LOOP_EVERY === 0)
+    .map(({ id }) => ({ id: `${id}-loop`, source: id, target: id }));
+  const edges = [...graph.edges, ...loops].map((edge) => ({
+    ...edge,
+    sourceSide: "outline" as const,
+    targetSide: "outline" as const,
+  }));
+  return { graph: { nodes: graph.nodes, edges }, fields };
 }
 
 /** What a graph holds as content, as the benchmark names what it loaded: its nodes by type, those

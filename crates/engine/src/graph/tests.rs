@@ -112,6 +112,7 @@ pub(super) struct Model {
     pub(super) free_nodes: Vec<bool>,
     pub(super) free_edges: Vec<bool>,
     pub(super) pills: Vec<Option<(f64, f64)>>,
+    pub(super) shapes: Vec<crate::shape::NodeShape>,
 }
 
 impl Model {
@@ -131,6 +132,7 @@ impl Model {
             free_nodes: vec![false; nodes],
             free_edges: vec![false; edges],
             pills: vec![None; edges],
+            shapes: vec![crate::shape::NodeShape::Rectangle; nodes],
             specs,
         };
         (model, graph)
@@ -163,15 +165,21 @@ impl Model {
 
     /// The connector a press at `p` hits where a connector reaches `reach` world units, written
     /// from ADR-0013 alone: of the nodes with a connector within its reach, the one of the highest
-    /// slot, and its nearest connector there. Within the node's rectangle a connector reaches at
+    /// slot, and its nearest connector there. Within the node's outline a connector reaches at
     /// most a quarter of the node's height for the top and the bottom side, of its width for the
-    /// right and the left.
+    /// right and the left; beside the outline, within its rectangle too, the whole reach.
     pub(super) fn connector_at(&self, p: Point, reach: f64) -> Option<(u32, Side, f64)> {
         self.nodes()
             .filter_map(|n| {
                 let bounds = self.bounds(n);
                 let (width, height) = (bounds.max_x - bounds.min_x, bounds.max_y - bounds.min_y);
-                let inside = bounds.contains(p);
+                let inside = bounds.contains(p)
+                    && self.shapes[n as usize].contains(
+                        width,
+                        height,
+                        p.x - bounds.min_x,
+                        p.y - bounds.min_y,
+                    );
                 [Side::Top, Side::Right, Side::Bottom, Side::Left]
                     .into_iter()
                     .map(|side| {
