@@ -34,7 +34,8 @@ docs/plan/revision-2026-11-03/06-propose-the-check-extensions-to-nuc.md.
 
 ## Read first
 
-- Touches: `scripts/number-adrs.sh`, `scripts/test-number-adrs.sh`
+- Touches: `scripts/number-adrs.sh`, `scripts/test-number-adrs.sh`,
+  `docs/plan/revision-2026-11-03/06-propose-the-check-extensions-to-nuc.md`
 - `.githooks/pre-commit` (read, not changed); ADR-0002 on draft identifiers and their numbering;
   `CONTRIBUTING.md`, *Integration branches*, step 7.
 - The merge of PR #82 (3be6c60), its *Doubts*.
