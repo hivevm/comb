@@ -34,3 +34,10 @@ test("the lookup of an element of the page is written once", () => {
     .filter((file) => /\bfunction element\b/.test(readFileSync(join(SRC, file), "utf8")));
   expect(defining).toHaveLength(1);
 });
+
+test("rules.ts defines no kind of node, and imports them from shared.ts", () => {
+  const source = readFileSync(join(SRC, "rules.ts"), "utf8");
+  expect(source).not.toMatch(/\b(CLASSIFIER|STATE|NODE)_KINDS\s*=/);
+  expect(source).not.toMatch(/\btype\s+(Classifier|State|Node)Kind\s*=/);
+  expect(importsOf("rules.ts")).toContain("shared");
+});

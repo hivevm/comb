@@ -18,8 +18,15 @@ import { Diagram } from "./diagram";
 import { element } from "./element";
 import { fillLegend } from "./legend";
 import type { RelationshipKind } from "./relationships";
-import { CLASSIFIER_KINDS, STATE_KINDS, type NodeKind } from "./rules";
-import { contentOf, newClassifier, NODE_WIDTH, type DiagramData } from "./shared";
+import {
+  CLASSIFIER_KINDS,
+  contentOf,
+  newClassifier,
+  NODE_WIDTH,
+  STATE_KINDS,
+  type DiagramData,
+  type NodeKind,
+} from "./shared";
 import { Sidebar } from "./sidebar";
 
 /** How the last load went: what the browser tests read. */

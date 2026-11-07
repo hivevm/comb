@@ -5,8 +5,8 @@
 // docked as the state diagram docks one.
 import type { Comb, EdgeData, EdgeLabelData, EdgePatch, GraphChange, GraphData } from "comb";
 import { patchOf, styleOf, type RelationshipKind } from "./relationships";
-import { allows, type NodeKind } from "./rules";
-import { contentOf, type Classifier, type DiagramData, type State } from "./shared";
+import { allows } from "./rules";
+import { contentOf, type Classifier, type DiagramData, type NodeKind, type State } from "./shared";
 import { contentOf as stateContentOf, dockingOf } from "./state-diagram";
 
 export class Diagram {

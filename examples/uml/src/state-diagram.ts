@@ -16,8 +16,7 @@ import type {
   NodeShape,
 } from "comb";
 import { GREY } from "./relationships";
-import type { StateKind } from "./rules";
-import type { DiagramData, State } from "./shared";
+import type { DiagramData, State, StateKind } from "./shared";
 
 const STATE_WIDTH = 200;
 

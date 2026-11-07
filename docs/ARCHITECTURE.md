@@ -519,11 +519,12 @@ one workspace for each example.
   classifier), and changed by no edit of its stereotype; and a state's, state, initial, final, or
   choice, with its state. What the diagrams share stands in `src/shared.ts`, which imports no
   diagram's file and no diagram's file imports another's: the diagram as data (`DiagramData`), the
-  classifier and the state, the classifier's content (`contentOf`), and the layout by rows
-  (`laidOut`) of the class and the package diagram; the lookup of an element of the page stands in
-  `src/element.ts`. `src/diagram.ts` keeps the example's copy of the graph, the classifier or the
-  state of each node, and the kind of each edge, each from a change `onChange` tells or after Comb
-  took the call that changes it, and `src/legend.ts` draws the legend. Its hooks stand under
+  kinds of node, which the rules import, the classifier and the state, the classifier's content
+  (`contentOf`), and the layout by rows (`laidOut`) of the class and the package diagram; the
+  lookup of an element of the page stands in `src/element.ts`. `src/diagram.ts` keeps the
+  example's copy of the graph, the classifier or the state of each node, and the kind of each edge,
+  each from a change `onChange` tells or after Comb took the call that changes it, and
+  `src/legend.ts` draws the legend. Its hooks stand under
   `window.uml`, so that it declares nothing on `window` the metric tree declares; Vite serves it on
   port 5176, the launch configuration **Example: UML** opens it, and its browser tests run in the
   Playwright project `uml` against it in test mode on port 5177.

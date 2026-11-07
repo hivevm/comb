@@ -1,12 +1,24 @@
 // What more than one diagram of the UML example (G-12) uses, so that no diagram's file imports
-// another's, nor this module any diagram's: a diagram as data, the classifier a node of the class
-// or the package diagram shows, the state a node of the state diagram shows, the classifier's
-// content, and the layout by rows of the class and the package diagram. A classifier keeps its
-// kind, set when it is created, from the diagram's data or the palette; its stereotype is text it
-// shows and tells nothing of its kind.
+// another's, nor this module any diagram's: a diagram as data, the kinds of node, which the rules
+// of connection import, the classifier a node of the class or the package diagram shows, the state
+// a node of the state diagram shows, the classifier's content, and the layout by rows of the class
+// and the package diagram. A classifier keeps its kind, set when it is created, from the diagram's
+// data or the palette; its stereotype is text it shows and tells nothing of its kind.
 import type { Comb, GraphData, NodeContent, NodeData } from "comb";
 import type { RelationshipKind } from "./relationships";
-import type { ClassifierKind, StateKind } from "./rules";
+
+/** The kinds of classifier: those of the class diagram, and the package of the package diagram. */
+export const CLASSIFIER_KINDS = ["class", "interface", "abstract-class", "package"] as const;
+export type ClassifierKind = (typeof CLASSIFIER_KINDS)[number];
+
+/** The kinds of state of the state diagram: a state, and the pseudostates where its machine
+ *  starts, where it ends, and where it chooses. */
+export const STATE_KINDS = ["state", "initial", "final", "choice"] as const;
+export type StateKind = (typeof STATE_KINDS)[number];
+
+/** The kinds of node: the kinds of classifier and the kinds of state. */
+export const NODE_KINDS = [...CLASSIFIER_KINDS, ...STATE_KINDS] as const;
+export type NodeKind = (typeof NODE_KINDS)[number];
 
 /** A class, an interface, an abstract class, or a package of a diagram, as its node shows it, and
  *  its kind, which no edit of its stereotype changes. */
