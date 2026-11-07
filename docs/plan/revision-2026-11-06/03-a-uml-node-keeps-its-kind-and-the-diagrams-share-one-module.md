@@ -21,6 +21,11 @@ Three findings of the design revision in `examples/uml/src/`, which touch the sa
   asks the reverse. (The palette's drop, which stored the classifier before `addNode`, follows
   Comb since 3cc0c4e.)
 
+Since the ticket was cut, the state diagram (`examples/uml/src/state-diagram.ts`) joined the two:
+its nodes keep their kind in their `State` already, but it imports `DiagramData` from
+`examples/uml/src/class-diagram.ts`, and `class-diagram.ts` imports its `State` back, so it takes
+what is shared from the new module too.
+
 Give each node a kind of its own, set when it is created (from the diagram's data or the
 palette) and never changed by its stereotype's text; the stereotype stays text the node shows.
 Move what both diagrams share into a module of its own, which neither diagram's file imports
@@ -42,8 +47,9 @@ change.
 ## Read first
 
 - Touches: `examples/uml/src/class-diagram.ts`, `examples/uml/src/package-diagram.ts`,
-  `examples/uml/src/sidebar.ts`, `examples/uml/src/main.ts`, `examples/uml/src/diagram.ts`,
-  `examples/uml/src/rules.ts`, `examples/uml/e2e/`, `docs/ARCHITECTURE.md`, `docs/GLOSSARY.md`
+  `examples/uml/src/state-diagram.ts`, `examples/uml/src/sidebar.ts`, `examples/uml/src/main.ts`,
+  `examples/uml/src/diagram.ts`, the new shared module under `examples/uml/src/`,
+  `examples/uml/e2e/`, `docs/ARCHITECTURE.md`, `docs/GLOSSARY.md`
 - Glossary: *Classifier*, *Stereotype*, *Relationship kind*.
 - Conventions: *A host application's copy follows what Comb took*.
 - Golden path: `examples/uml/e2e/edit.spec.ts`, its refused-edit test.
