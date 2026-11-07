@@ -29,11 +29,12 @@ pub enum Target {
 impl Graph {
     /// What a press at `point` hits where a screen pixel is `pixel` world units, at `level`: where
     /// `connectors` asks for them, at the near and middle level, a connector within
-    /// `CONNECTOR_REACH` screen pixels, and inside its node within a quarter of the node's extent
-    /// as well (`connector_at`), of the node of the highest rank; else at the near level a label
-    /// whose measured pill holds it, of the highest edge slot; else a node whose bounds hold it,
-    /// the one of the highest rank; else an edge within `EDGE_REACH` screen pixels of its path as
-    /// the stroke of `level` flattens it, the one in the highest slot; else nothing (ADR-0013).
+    /// `CONNECTOR_REACH` screen pixels, and inside its node's outline within a quarter of the
+    /// node's extent as well (`connector_at`), of the node of the highest rank; else at the near
+    /// level a label whose measured pill holds it, of the highest edge slot; else a node whose
+    /// outline holds it, the one of the highest rank; else an edge within `EDGE_REACH` screen
+    /// pixels of its path as the stroke of `level` flattens it, the one in the highest slot; else
+    /// nothing (ADR-0013).
     /// A pixel beyond any zoom hits as the largest a query strokes for.
     pub fn hit_at(
         &mut self,
@@ -96,10 +97,11 @@ impl Graph {
     }
 
     /// The connector within `reach` of `point`: of the nodes with one there, the one drawn on top,
-    /// and of its connectors the nearest. Within the node's rectangle a connector reaches at most
-    /// a quarter of the node's extent across its side, its height for the top and the bottom, its
+    /// and of its connectors the nearest. Within the node's outline a connector reaches at most a
+    /// quarter of the node's extent across its side, its height for the top and the bottom, its
     /// width for the right and the left, so that the middle half of a node is the node's however
-    /// thin it is on screen (ADR-0013).
+    /// thin it is on screen; beside the outline, within its rectangle too, the whole reach
+    /// (ADR-0013, ADR-0032).
     fn connector_at(&mut self, point: Point, reach: f64) -> Option<(u32, Side)> {
         self.node_grid
             .candidates(&Rect::at(point).grown(reach), &mut self.scratch);
@@ -109,7 +111,7 @@ impl Graph {
             if !bounds.grown(reach).contains(point) {
                 continue;
             }
-            let inside = bounds.contains(point);
+            let inside = self.within_outline(slot, point);
             let near = SIDES
                 .iter()
                 .map(|&side| {
@@ -372,6 +374,14 @@ mod tests {
             let (mut model, mut graph) = Model::random(&mut rng, 40, 20);
             graph.remove_nodes(&[5]).unwrap();
             model.remove_nodes(&[5]);
+            // Every node shape, so that the reach is clipped by outlines that leave corners of
+            // their rectangles as well as by rectangles.
+            for node in model.nodes().collect::<Vec<_>>() {
+                let shape = crate::shape::NodeShape::ALL
+                    [rng.below(crate::shape::NodeShape::ALL.len()) as usize];
+                graph.set_shape(node, shape).unwrap();
+                model.shapes[node as usize] = shape;
+            }
             for _ in 0..400 {
                 let level = [Level::Near, Level::Middle, Level::Far][rng.below(3) as usize];
                 let pixel = [0.25, 1.0, 4.0][rng.below(3) as usize];
@@ -387,8 +397,8 @@ mod tests {
                     Point::new(rng.range(-2500.0, 2500.0), rng.range(-2500.0, 2500.0))
                 };
                 // The scan: of the nodes in use with a connector within the reach, clipped within
-                // the node, the one of the highest rank, the highest slot, and its nearest
-                // connector.
+                // the node's outline, the one of the highest rank, the highest slot, and its
+                // nearest connector.
                 let scan = model.connector_at(p, reach);
                 let without = graph.hit_at(p, pixel, level, false);
                 let with = graph.hit_at(p, pixel, level, true);
@@ -498,6 +508,82 @@ mod tests {
     }
 
     #[test]
+    fn a_small_shaped_node_pressed_beside_its_outline_within_its_rectangle_hits_its_connector() {
+        // Verifies: ADR-0013, ADR-0032
+        // Nodes under 32 screen pixels whose outline leaves corners of their rectangle, alone, so
+        // that a press beside the outline finds nothing below: there a connector reaches its 8
+        // pixels, unclipped by the rectangle, and beyond them nothing is hit.
+        use crate::shape::NodeShape;
+        let cases = [
+            (NodeShape::Circle, 20.0, 20.0),
+            (NodeShape::Circle, 31.0, 31.0),
+            (NodeShape::RingedCircle, 24.0, 24.0),
+            (NodeShape::Ellipse, 28.0, 16.0),
+            (NodeShape::Ellipse, 12.0, 30.0),
+            (NodeShape::Diamond, 24.0, 24.0),
+            (NodeShape::Diamond, 30.0, 14.0),
+            (NodeShape::RoundedRectangle, 10.0, 16.0),
+            (NodeShape::RoundedRectangle, 16.0, 10.0),
+        ];
+        for (shape, screen_width, screen_height) in cases {
+            for pixel in [0.25, 1.0, 4.0] {
+                let (width, height) = (screen_width * pixel, screen_height * pixel);
+                let sizes = vec![width as f32, height as f32];
+                let mut graph = Graph::new(vec![0.0, 0.0], sizes, Vec::new()).unwrap();
+                graph.set_shape(0, shape).unwrap();
+                let bounds = graph.node_bounds(0);
+                let (width, height) = (bounds.max_x - bounds.min_x, bounds.max_y - bounds.min_y);
+                let reach = CONNECTOR_REACH * pixel;
+                // Presses beside the outline beyond a quarter of the node from the connector,
+                // within its reach, where the rectangle's clip found nothing.
+                let mut beyond_a_quarter = 0;
+                for i in 0..=40 {
+                    for j in 0..=40 {
+                        let (x, y) = (width * f64::from(i) / 40.0, height * f64::from(j) / 40.0);
+                        if shape.contains(width, height, x, y) {
+                            continue;
+                        }
+                        let p = Point::new(bounds.min_x + x, bounds.min_y + y);
+                        let distances = SIDES.map(|side| {
+                            let c = side.connector(&bounds);
+                            (side, length(c.x - p.x, c.y - p.y))
+                        });
+                        let nearest = distances.iter().map(|d| d.1).fold(f64::MAX, f64::min);
+                        let at = format!("{shape:?} {width} × {height} at {p:?}, pixel {pixel}");
+                        for level in [Level::Near, Level::Middle] {
+                            let hit = graph.hit_at(p, pixel, level, true);
+                            if nearest > reach {
+                                assert_eq!(hit, None, "{at}, {level:?}");
+                                continue;
+                            }
+                            let Some(Target::Connector(0, side)) = hit else {
+                                panic!("{hit:?} where a connector reaches, {at}, {level:?}");
+                            };
+                            let d = distances.iter().find(|d| d.0 == side).unwrap().1;
+                            assert!(d <= nearest * (1.0 + 1e-9), "{side:?} not nearest, {at}");
+                        }
+                        let (side, d) = distances
+                            .into_iter()
+                            .min_by(|a, b| a.1.total_cmp(&b.1))
+                            .unwrap();
+                        let across = match side {
+                            Side::Top | Side::Bottom => height,
+                            Side::Right | Side::Left => width,
+                        };
+                        if across / 4.0 < d && d <= reach {
+                            beyond_a_quarter += 1;
+                        }
+                    }
+                }
+                assert!(
+                    beyond_a_quarter > 0,
+                    "{shape:?} {width} × {height}, pixel {pixel}: no press beyond a quarter"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn a_node_at_least_32_screen_pixels_high_and_wide_hits_as_it_did_before_the_reach_was_clipped()
     {
         // Verifies: ADR-0013
@@ -521,6 +607,13 @@ mod tests {
                     sizes.iter().map(|&v| v as f32).collect(),
                 );
                 let (model, mut graph) = Model::of(positions, sizes, Vec::new());
+                // Of every node shape: from 32 pixels a quarter of the node is at least the reach,
+                // so no clip binds, whatever the outline.
+                for node in 0..40 {
+                    let shape = crate::shape::NodeShape::ALL
+                        [rng.below(crate::shape::NodeShape::ALL.len()) as usize];
+                    graph.set_shape(node, shape).unwrap();
+                }
                 for _ in 0..400 {
                     let side = SIDES[rng.below(4) as usize];
                     let c = side.connector(&model.bounds(rng.below(40)));
