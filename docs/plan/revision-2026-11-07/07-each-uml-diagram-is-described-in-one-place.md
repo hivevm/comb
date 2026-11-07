@@ -14,9 +14,8 @@ over several files, which the third diagram widened.
 Give each diagram one descriptor, its kinds of node, the kind a connection adds, how that kind
 docks, its edge form, and its legend, which `Diagram` and `Sidebar` read instead of branching on a
 kind; and move the kinds of node into the module that defines the nodes, which `rules.ts` imports.
-The remnant of
-docs/plan/revision-2026-11-06/02-the-uml-example-drops-the-rules-that-refuse-nothing.md that still
-holds, moving `NODE_KINDS` out of `rules.ts`, is this.
+This carries what still holds of the withdrawn ticket revision-2026-11-06/02, whose premise, that
+the rules refuse nothing, no longer holds: moving `NODE_KINDS` out of `rules.ts`.
 
 ## Acceptance criteria
 

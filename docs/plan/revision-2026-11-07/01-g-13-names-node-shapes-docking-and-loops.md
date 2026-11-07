@@ -24,12 +24,16 @@ the specification changed, and no test cites G-13. Its text lives on here and in
    the package diagram's: "A state diagram of a Comb's life shows each state in the node shape UML
    gives it, an initial state, a final state, and a choice among them, and each transition as an
    edge docked on the outline, labelled by its event." The palette's sentence adds states, initial
-   and final states, and choices. The clause "which the example refuses where UML does not allow
-   it" is the subject of
-   docs/plan/revision-2026-11-06/01-g-12-asks-for-no-refusal-that-cannot-arise.md, whose premise
-   ticket 04 of the state diagram made false: `examples/uml/src/rules.ts` now refuses a transition
-   into an initial state, one out of a final state, and every loop but a state's. Both drafts of
-   G-12 are settled together, in one change of G-12.
+   and final states, and choices. The clause "a connection adds a relationship, which the example
+   refuses where UML does not allow it" now names refusals that arise: `examples/uml/src/rules.ts`
+   refuses a transition into an initial state, one out of a final state, and every loop but a
+   state's (state-diagram tickets 03 and 04), so the draft keeps it. It folds in the withdrawn
+   ticket revision-2026-11-06/01, whose premise, that the rules refuse nothing, those tickets made
+   false; its alternative, dropping the clause for "a connection adds a relationship of the
+   diagram's default kind, an association between classes and a dependency «use» between
+   packages", is the maintainer's to weigh instead. The palette also drops an abstract class,
+   which G-12 should name. `examples/uml/src/rules.test.ts` cites G-12; it is checked against the
+   text landed.
 
 3. **G-3, amended.** "releases over a compatible connector of another node" no longer holds where
    the host application allows loops: the gesture offers the source's own other connectors
@@ -63,8 +67,8 @@ the loop tests of `examples/metric-tree/e2e/add-edge.spec.ts`.
       which draft was declined and why.
 - [ ] Given G-13 landed, when `scripts/check-traceability.sh` runs, then at least one test cites
       G-13 with a `Verifies:` marker, added in the change that lands it or in a ticket it files.
-- [ ] Given G-12 settled, when tickets 01 and 02 of docs/plan/revision-2026-11-06/ are read, then
-      each is closed, withdrawn, or rewritten to match it.
+- [ ] Given G-12 landed, when `examples/uml/src/rules.test.ts` is read, then what it decides
+      matches G-12's text about refusals.
 
 ## Read first
 
@@ -73,7 +77,8 @@ the loop tests of `examples/metric-tree/e2e/add-edge.spec.ts`.
 - `git show 4192d2e:docs/plan/state-diagram/spec.md`, *Goals served*.
 - The merge messages of the state-diagram tickets, their lines "G-13 is not in the
   specification": `git log --merges --grep='Merge ticket/state-diagram'`.
-- docs/plan/revision-2026-11-06/01-g-12-asks-for-no-refusal-that-cannot-arise.md.
+- `examples/uml/src/rules.ts` and `rules.test.ts`; the withdrawn ticket revision-2026-11-06/01:
+  `git log --diff-filter=D -- docs/plan/revision-2026-11-06/`.
 
 ## Blocked by
 

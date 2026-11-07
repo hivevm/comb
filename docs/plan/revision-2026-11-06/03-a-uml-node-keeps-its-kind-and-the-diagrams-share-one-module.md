@@ -16,16 +16,16 @@ Three findings of the design revision in `examples/uml/src/`, which touch the sa
   `examples/uml/src/class-diagram.ts`, and `examples/uml/src/package-diagram.ts` imports them
   from there. `element()` is written twice, in `examples/uml/src/main.ts` and
   `examples/uml/src/sidebar.ts`.
-- **The copy runs ahead of Comb.** The palette's drop in `examples/uml/src/main.ts` stores the
-  classifier before `addNode` and deletes it again when Comb refuses, and `Diagram.rekind` in
-  `examples/uml/src/diagram.ts` sets the kind before `updateEdge`. The convention *A host
-  application's copy follows what Comb took* asks the reverse.
+- **The copy runs ahead of Comb.** `Diagram.rekind` in `examples/uml/src/diagram.ts` sets the
+  kind before `updateEdge`. The convention *A host application's copy follows what Comb took*
+  asks the reverse. (The palette's drop, which stored the classifier before `addNode`, follows
+  Comb since 3cc0c4e.)
 
 Give each node a kind of its own, set when it is created (from the diagram's data or the
 palette) and never changed by its stereotype's text; the stereotype stays text the node shows.
 Move what both diagrams share into a module of its own, which neither diagram's file imports
-the other for, and write `element()` once. Store a dropped node's classifier and a kind only
-after Comb took the change.
+the other for, and write `element()` once. Store a relationship's kind only after Comb took the
+change.
 
 ## Acceptance criteria
 
@@ -34,8 +34,8 @@ after Comb took the change.
       and operations, and the node is still a class.
 - [ ] Given `examples/uml/src/package-diagram.ts`, when it is read, then it imports nothing from
       `examples/uml/src/class-diagram.ts`.
-- [ ] Given a drop Comb refuses, when the drop ends, then the example's copy never held the
-      node, as a browser test that makes `addNode` throw decides.
+- [ ] Given a change of a relationship's kind Comb refuses, when it ends, then the example's copy
+      keeps the old kind, as a test that makes `updateEdge` throw decides.
 - [ ] Given the UML browser tests and `bun test`, when they run, then they pass, each test the
       change alters with a reason.
 
