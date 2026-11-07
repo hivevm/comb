@@ -5,8 +5,8 @@
 // `packages/comb/src` without its tests and the dependency of `crates/engine-wasm/Cargo.toml`, as
 // the layout of ADR-0030 allows them.
 import type { Comb, EdgeData } from "comb";
-import { laidOut, type Classifier, type DiagramData } from "./class-diagram";
 import { styleOf } from "./relationships";
+import { laidOut, newClassifier, type Classifier, type DiagramData } from "./shared";
 
 /** Comb's modules, under `packages/comb/src`, and its crates, under `crates`. */
 const PACKAGES = ["api", "bridge", "store", "interaction", "render", "engine-wasm", "engine"];
@@ -64,10 +64,7 @@ function edgeOf([source, target, label]: (typeof DEPENDENCIES)[number]): EdgeDat
  *  content, with the classifier of each node and the kind of each edge by their identifiers. */
 export function packageDiagram(heightOf: Comb["heightOf"]): DiagramData {
   const classifiers = new Map(
-    PACKAGES.map((name): [string, Classifier] => [
-      name,
-      { id: name, stereotype: "«package»", name, attributes: [], operations: [] },
-    ]),
+    PACKAGES.map((name): [string, Classifier] => [name, newClassifier(name, "package", name)]),
   );
   const byId = laidOut(ROWS, classifiers, heightOf);
   const edges = DEPENDENCIES.map(edgeOf);

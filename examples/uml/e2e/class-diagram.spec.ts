@@ -1,14 +1,8 @@
 // Browser tests of the UML example's class diagram (G-12), through the hooks the example sets
 // under `window.uml` and the functions of comb/testing.
 import { expect, test, type Page } from "@playwright/test";
-import {
-  CLASSIFIERS,
-  RELATIONSHIPS as EDGES,
-  ELLIPSIS,
-  NODE_WIDTH,
-  ROW_LIMIT,
-  shownMembers,
-} from "../src/class-diagram";
+import { CLASSIFIERS, RELATIONSHIPS as EDGES } from "../src/class-diagram";
+import { ELLIPSIS, NODE_WIDTH, ROW_LIMIT, shownMembers } from "../src/shared";
 import { CONVENTIONS, DRAWN, open, POLICY } from "./shared";
 
 const hex = (color: number) => `#${color.toString(16).padStart(6, "0")}`;

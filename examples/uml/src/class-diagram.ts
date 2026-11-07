@@ -6,20 +6,11 @@
 // then "…", UML's own mark of members left out; its data keeps every member. The nodes lie in
 // rows laid out by hand, each as high as `heightOf` gives its content (ADR-0026). Three nodes are
 // not of the public interface: the render layer's edges layer and the two classes that realize it
-// (ADR-0018), the one realization in Comb.
-import type { Comb, EdgeData, GraphData, NodeContent, NodeData, Side } from "comb";
+// (ADR-0018), the one realization in Comb. Each classifier names its kind, class or interface;
+// a «type» is a class.
+import type { Comb, EdgeData, Side } from "comb";
 import { styleOf, type RelationshipKind } from "./relationships";
-import type { ClassifierKind } from "./rules";
-import type { State } from "./state-diagram";
-
-/** A class or an interface of the diagram, as its node shows it. */
-export interface Classifier {
-  id: string;
-  stereotype?: string;
-  name: string;
-  attributes: string[];
-  operations: string[];
-}
+import { laidOut, type Classifier, type DiagramData } from "./shared";
 
 /** A relationship of the diagram, from `source` to `target`; the whole is the source of an
  *  aggregation or a composition, the specific the source of a generalization or a realization. */
@@ -32,20 +23,11 @@ export interface Relationship {
   sides?: readonly [Side, Side];
 }
 
-export const NODE_WIDTH = 260;
-/** The distance between the left sides of two columns, and the gap between two rows. */
-const COLUMN = 360;
-const ROW_GAP = 80;
-
-/** The most rows of a node's content Comb lays out; a load of more is refused (`tooManyRows`). */
-export const ROW_LIMIT = 8;
-/** The row that stands for the members a node leaves out. */
-export const ELLIPSIS = "…";
-
 const INTERFACE = "«interface»";
 
 const comb: Classifier = {
   id: "Comb",
+  kind: "interface",
   stereotype: INTERFACE,
   name: "Comb",
   attributes: [],
@@ -75,6 +57,7 @@ const comb: Classifier = {
 
 const errorOf = (name: string, attribute?: string): Classifier => ({
   id: name,
+  kind: "class",
   name,
   attributes: attribute ? [attribute] : [],
   operations: [],
@@ -84,6 +67,7 @@ const errorOf = (name: string, attribute?: string): Classifier => ({
 export const CLASSIFIERS: Classifier[] = [
   {
     id: "CombOptions",
+    kind: "interface",
     stereotype: INTERFACE,
     name: "CombOptions",
     attributes: [
@@ -98,6 +82,7 @@ export const CLASSIFIERS: Classifier[] = [
   comb,
   {
     id: "Selection",
+    kind: "class",
     stereotype: "«type»",
     name: "Selection",
     attributes: ['+kind: "node" | "edge"', "+id: string"],
@@ -105,6 +90,7 @@ export const CLASSIFIERS: Classifier[] = [
   },
   {
     id: "Viewport",
+    kind: "interface",
     stereotype: INTERFACE,
     name: "Viewport",
     attributes: ["+x: number", "+y: number", "+scale: number"],
@@ -112,6 +98,7 @@ export const CLASSIFIERS: Classifier[] = [
   },
   {
     id: "GraphChange",
+    kind: "class",
     stereotype: "«type»",
     name: "GraphChange",
     attributes: ['+kind: "loaded" | "nodeAdded" | "nodeUpdated" | "nodeMoved" | …'],
@@ -119,6 +106,7 @@ export const CLASSIFIERS: Classifier[] = [
   },
   {
     id: "GraphData",
+    kind: "interface",
     stereotype: INTERFACE,
     name: "GraphData",
     attributes: ["+nodes: NodeData[]", "+edges: EdgeData[]"],
@@ -126,6 +114,7 @@ export const CLASSIFIERS: Classifier[] = [
   },
   {
     id: "NodeData",
+    kind: "interface",
     stereotype: INTERFACE,
     name: "NodeData",
     attributes: [
@@ -139,6 +128,7 @@ export const CLASSIFIERS: Classifier[] = [
   },
   {
     id: "EdgeData",
+    kind: "interface",
     stereotype: INTERFACE,
     name: "EdgeData",
     attributes: [
@@ -156,6 +146,7 @@ export const CLASSIFIERS: Classifier[] = [
   },
   {
     id: "NodeContent",
+    kind: "class",
     stereotype: "«type»",
     name: "NodeContent",
     attributes: ["= ContentElement[][]"],
@@ -163,6 +154,7 @@ export const CLASSIFIERS: Classifier[] = [
   },
   {
     id: "EdgeLabelData",
+    kind: "interface",
     stereotype: INTERFACE,
     name: "EdgeLabelData",
     attributes: ["+text: string", "+t: number", "+offset: number", "+background?: number"],
@@ -170,6 +162,7 @@ export const CLASSIFIERS: Classifier[] = [
   },
   {
     id: "Error",
+    kind: "class",
     name: "Error",
     attributes: ["+name: string", "+message: string", "+cause?: unknown"],
     operations: [],
@@ -181,6 +174,7 @@ export const CLASSIFIERS: Classifier[] = [
   errorOf("EngineLostError"),
   {
     id: "EdgeLayer",
+    kind: "interface",
     stereotype: INTERFACE,
     name: "EdgeLayer",
     attributes: [],
@@ -194,12 +188,14 @@ export const CLASSIFIERS: Classifier[] = [
   },
   {
     id: "EdgesContainer",
+    kind: "class",
     name: "EdgesContainer",
     attributes: ["+geometry: Geometry", "+mesh: Mesh", "-buffers: MeshBuffers"],
     operations: [],
   },
   {
     id: "EdgeFill",
+    kind: "class",
     name: "EdgeFill",
     attributes: ["+drawing: Graphics", "-drawn: MeshSize"],
     operations: [],
@@ -271,26 +267,6 @@ export const RELATIONSHIPS: Relationship[] = [
   { source: "EdgeFill", target: "EdgeLayer", kind: "realization", sides: UP },
 ];
 
-/** The member texts `classifier`'s node shows, one row each: every attribute and then every
- *  operation where they fit beside its stereotype and name, otherwise as many as fit before a row
- *  of "…". */
-export function shownMembers({ stereotype, attributes, operations }: Classifier): string[] {
-  const members = [...attributes, ...operations];
-  const rows = ROW_LIMIT - (stereotype ? 2 : 1);
-  return members.length <= rows ? members : [...members.slice(0, rows - 1), ELLIPSIS];
-}
-
-/** The content of `classifier`'s node: its stereotype as a caption where it has one, its name as
- *  the title, and each member it shows as a body text, one row each. */
-export function contentOf(classifier: Classifier): NodeContent {
-  const { stereotype, name } = classifier;
-  return [
-    ...(stereotype ? [[{ kind: "text", role: "caption", text: stereotype } as const]] : []),
-    [{ kind: "text", role: "title", text: name }],
-    ...shownMembers(classifier).map((text) => [{ kind: "text", role: "body", text } as const]),
-  ];
-}
-
 /** The edge of a relationship, drawn as its kind is. */
 function edgeOf({ source, target, kind, sides }: Relationship): EdgeData {
   return {
@@ -300,38 +276,6 @@ function edgeOf({ source, target, kind, sides }: Relationship): EdgeData {
     ...(sides ? { sourceSide: sides[0], targetSide: sides[1] } : {}),
     ...styleOf(kind),
   };
-}
-
-/** The nodes of `classifiers` laid out in `rows` from top to bottom, each by its column from the
- *  left: a node's top lies on its row's, and a row starts below the highest node of the row
- *  above, by the height `heightOf` gives its content. */
-export function laidOut(
-  rows: readonly (readonly [string, number])[][],
-  classifiers: ReadonlyMap<string, Classifier>,
-  heightOf: Comb["heightOf"],
-): Map<string, NodeData> {
-  const byId = new Map<string, NodeData>();
-  let top = 0;
-  for (const row of rows) {
-    let bottom = top;
-    for (const [id, column] of row) {
-      const content = contentOf(classifiers.get(id)!);
-      const height = heightOf(content, NODE_WIDTH);
-      byId.set(id, { id, x: column * COLUMN, y: top, width: NODE_WIDTH, content });
-      bottom = Math.max(bottom, top + height);
-    }
-    top = bottom + ROW_GAP;
-  }
-  return byId;
-}
-
-/** A diagram as graph data, with the classifier or the state of each node and the kind of each
- *  edge by their identifiers. */
-export interface DiagramData {
-  graph: GraphData;
-  classifiers: Map<string, Classifier>;
-  states: Map<string, State>;
-  kinds: Map<string, RelationshipKind>;
 }
 
 /** The class diagram as graph data, each node placed by the height `heightOf` gives its content,
@@ -345,41 +289,5 @@ export function classDiagram(heightOf: Comb["heightOf"]): DiagramData {
     classifiers,
     states: new Map(),
     kinds: new Map(RELATIONSHIPS.map((each, i) => [edges[i]!.id, each.kind])),
-  };
-}
-
-/** The stereotype of each kind of node, none for a plain class. */
-const STEREOTYPES: Record<ClassifierKind, string | undefined> = {
-  class: undefined,
-  interface: INTERFACE,
-  "abstract-class": "«abstract»",
-  package: "«package»",
-};
-
-/** The kind of node `classifier` is, told by its stereotype: «interface» an interface,
- *  «abstract» an abstract class, «package» a package, any other or none a class. */
-export function kindOf({ stereotype }: Pick<Classifier, "stereotype">): ClassifierKind {
-  if (stereotype === INTERFACE) return "interface";
-  if (stereotype === STEREOTYPES.package) return "package";
-  return stereotype === STEREOTYPES["abstract-class"] ? "abstract-class" : "class";
-}
-
-/** The name a node of each kind dropped from the palette starts with. */
-const DROPPED: Record<ClassifierKind, string> = {
-  class: "NewClass",
-  interface: "NewInterface",
-  "abstract-class": "NewAbstractClass",
-  package: "NewPackage",
-};
-
-/** A classifier of `kind`, as the palette drops it: its stereotype, a default name, no members. */
-export function newClassifier(id: string, kind: ClassifierKind): Classifier {
-  const stereotype = STEREOTYPES[kind];
-  return {
-    id,
-    ...(stereotype ? { stereotype } : {}),
-    name: DROPPED[kind],
-    attributes: [],
-    operations: [],
   };
 }

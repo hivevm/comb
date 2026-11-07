@@ -15,17 +15,9 @@ import type {
   NodeData,
   NodeShape,
 } from "comb";
-import type { DiagramData } from "./class-diagram";
 import { GREY } from "./relationships";
 import type { StateKind } from "./rules";
-
-/** A state or a pseudostate, as its node shows it: its kind, and a state's name, none for a
- *  pseudostate. */
-export interface State {
-  id: string;
-  kind: StateKind;
-  name?: string;
-}
+import type { DiagramData, State } from "./shared";
 
 const STATE_WIDTH = 200;
 
