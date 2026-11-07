@@ -11,19 +11,15 @@ import {
 } from "comb";
 import engineUrl from "comb/engine.wasm?url";
 import { inspect, screenPoint, type SceneSnapshot } from "comb/testing";
-import {
-  classDiagram,
-  contentOf,
-  newClassifier,
-  NODE_WIDTH,
-  type DiagramData,
-} from "./class-diagram";
+import { classDiagram } from "./class-diagram";
 import { packageDiagram } from "./package-diagram";
 import { contentOf as stateContentOf, newState, STATE_SHAPES, stateDiagram } from "./state-diagram";
 import { Diagram } from "./diagram";
+import { element } from "./element";
 import { fillLegend } from "./legend";
 import type { RelationshipKind } from "./relationships";
 import { CLASSIFIER_KINDS, STATE_KINDS, type NodeKind } from "./rules";
+import { contentOf, newClassifier, NODE_WIDTH, type DiagramData } from "./shared";
 import { Sidebar } from "./sidebar";
 
 /** How the last load went: what the browser tests read. */
@@ -54,12 +50,6 @@ declare global {
   interface Window {
     uml: UmlHooks;
   }
-}
-
-function element<T extends HTMLElement>(id: string): T {
-  const found = document.getElementById(id);
-  if (!found) throw new Error(`missing #${id}`);
-  return found as T;
 }
 
 /** The type of the data a palette item carries in a drag. */

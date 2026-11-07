@@ -2,7 +2,7 @@
 // forms, the connection and its change of kind, and the deletion, through the hooks the example
 // sets under `window.uml`.
 import { expect, test, type Page } from "@playwright/test";
-import { NODE_WIDTH } from "../src/class-diagram";
+import { NODE_WIDTH } from "../src/shared";
 import { clickNode, clickWorld, drawnNode, DRAWN, open, pagePoint, setViewport } from "./shared";
 
 /** The texts the canvas draws of node `id`. */
@@ -42,6 +42,7 @@ test("an interface dropped from the palette is a node of «interface» and a def
   const added = await page.evaluate(() => window.uml.exampleGraph().nodes.at(-1)!);
   expect(added.id).toBe("interface-1");
   expect(await textsOf(page, added.id)).toEqual(["«interface»", "NewInterface"]);
+  expect(await page.evaluate(() => window.uml.nodeKinds()["interface-1"])).toBe("interface");
   // Centred on the drop, by the height Comb gives its content.
   const drawn = (await drawnNode(page, added.id))!;
   const centre = await pagePoint(page, drawn.x + NODE_WIDTH / 2, drawn.y + drawn.height / 2);
@@ -194,5 +195,63 @@ test("an edit Comb refuses changes neither the canvas nor the example's copy, an
   await clickWorld(page, -2000, -2000);
   await clickNode(page, "IconError");
   await expect(page.locator("#name")).toHaveValue("IconError");
+  expect(errors).toEqual([]);
+});
+
+test("a class whose stereotype the user types as «package» is still a class the sidebar edits", async ({
+  page,
+}) => {
+  // Verifies: G-12, G-5
+  await page.goto("/");
+  await open(page);
+  await showNear(page, "IconError");
+  await clickNode(page, "IconError");
+  await page.locator("#stereotype").fill("«package»");
+  expect(await textsOf(page, "IconError")).toEqual([
+    "«package»",
+    "IconError",
+    "+reason: IconProblem",
+  ]);
+  await clickWorld(page, -2000, -2000);
+  await clickNode(page, "IconError");
+  await expect(page.locator("#stereotype")).toHaveValue("«package»");
+  await expect(page.locator("#attributes")).toHaveValue("+reason: IconProblem");
+  for (const field of ["#stereotype", "#attributes", "#operations"])
+    await expect(page.locator(field)).toBeVisible();
+  expect(await page.evaluate(() => window.uml.nodeKinds()["IconError"])).toBe("class");
+});
+
+test("a change of kind Comb refuses leaves the example's copy with the old kind, and throws nothing on the page", async ({
+  page,
+}) => {
+  // Verifies: G-12
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/");
+  await open(page);
+  await showNear(page, "IconError");
+  const [from, to] = [
+    (await drawnNode(page, "IconError"))!,
+    (await drawnNode(page, "RendererUnavailableError"))!,
+  ];
+  // A connection from IconError's right connector to RendererUnavailableError's left one.
+  const start = await pagePoint(page, from.x + from.width, from.y + from.height / 2);
+  const end = await pagePoint(page, to.x, to.y + to.height / 2);
+  await page.mouse.move(start.x - 20, start.y);
+  await page.mouse.move(start.x, start.y, { steps: 4 });
+  await page.mouse.down();
+  await page.mouse.move(end.x, end.y, { steps: 8 });
+  await page.mouse.up();
+  await clickWorld(page, (from.x + from.width + to.x) / 2, from.y + from.height / 2);
+  await expect(page.locator("#kind")).toHaveValue("association");
+  const before = await edges(page);
+  // Comb's updateEdge, wrapped to refuse every change from here on.
+  await page.evaluate(() => {
+    window.uml.comb.updateEdge = () => {
+      throw new Error("refused");
+    };
+  });
+  await page.locator("#kind").selectOption("generalization");
+  expect(await edges(page)).toEqual(before);
   expect(errors).toEqual([]);
 });

@@ -14,7 +14,8 @@ to invent.
 - **Canvas** — the WebGL2 surface on which Comb draws, and on which the user manipulates nodes,
   edges, and edge labels.
 - **Classifier** — a class, an interface, or an abstract class of a UML class diagram, as the UML
-  example shows it in one node: its stereotype, its name, and its members.
+  example shows it in one node: its stereotype, its name, and its members; it keeps its node kind
+  apart from its stereotype.
 - **Column** — the values of one field of every node or edge of a load, in slot order, crossing
   the bridge as one typed array, or as pieces, strings of at most 2^28 UTF-16 code units that each
   end where a value ends, with the boundaries of its values in UTF-16 code units across all
@@ -77,6 +78,11 @@ to invent.
   a rectangle, a rounded rectangle, an ellipse, a circle, a ringed circle, a diamond, or a bar.
   It is a property of a node, not a diagram element of its own.
   _Avoid:_ shape alone, figure, symbol.
+- **Node kind** — what a node of the UML example is, a class, an interface, an abstract class, a
+  package, a state, an initial state, a final state, or a choice, set when the node is created and
+  kept with its classifier or its state; the rules of connection ask it. The example's record of a
+  classifier also carries a package of the package diagram, its members none, though UML does not
+  count a package as a classifier.
 - **Node content** — the host application's description of what a node shows, as a list of
   content elements that Comb draws.
   _Avoid:_ node template, node renderer.
@@ -96,13 +102,15 @@ to invent.
   over its vertex positions and label points, and at whose screen point the shell draws the world.
 - **Runner kind** — the CPU model a benchmark run records of the machine it ran on; runs are
   compared only with the baseline of their own kind and their graph.
-- **Relationship kind** — what a relationship of a UML class diagram means, one of association,
-  directed association, generalization, realization, dependency, aggregation, and composition;
-  the UML example tells each by the colour, dash pattern, arrowhead, and edge label of its edge.
+- **Relationship kind** — what a relationship of a UML diagram means, one of association,
+  directed association, generalization, realization, dependency, aggregation, and composition of
+  a class or a package diagram, and the transition of a state diagram; the UML example tells each
+  by the colour, dash pattern, arrowhead, and edge label of its edge.
 - **Rank** — the place of a node in the order nodes are drawn and hit, kept by the engine; a load
   ranks nodes by slot, and a node added takes the highest rank.
-- **Stereotype** — the guillemet-quoted word above a UML classifier's name, such as «interface» or
-  «package», which the UML example shows as a caption of the node's content.
+- **Stereotype** — the guillemet-quoted word above the name of a UML element, such as «interface» or
+  «package», which the UML example shows as a caption of the node's content; text the user edits,
+  which never changes the node kind.
 - **Selection** — the one diagram element the user has picked on the canvas, which the sidebar
   edits and a delete removes.
 - **Shaped graph** — the graph the benchmark measures beside the metric tree, named `shaped`: the
