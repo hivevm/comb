@@ -45,7 +45,8 @@ docs/plan/revision-2026-11-06/03-a-uml-node-keeps-its-kind-and-the-diagrams-shar
 
 ## Blocked by
 
-- None (can start immediately)
+- docs/plan/revision-2026-11-07/07-each-uml-diagram-is-described-in-one-place.md: its descriptor
+  reshapes the files this ticket writes once.
 
 ## Mode
 

@@ -16,7 +16,9 @@ Two behaviours the state diagram's tickets changed are not decided by a test tha
 
 Add a browser test of each through `comb/testing`, each watched failing under the breakage it
 claims: the far test with particles of shaped nodes skipped, the load test with the load's default
-set back to `right` and `left`.
+set back to `right` and `left`. Both breakages are local edits, made to watch the test fail and
+reverted before any commit; the load's default stands in the shell's `api` module, a protected
+part of ADR-0007, which the ticket's change does not touch.
 
 ## Acceptance criteria
 

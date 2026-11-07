@@ -26,8 +26,7 @@ of 6 included", so the 6 is the shell's alone and the engine hits no radius of i
 
 ## Read first
 
-- Touches: `packages/comb/src/render/nodes.ts`, `crates/engine/src/shape.rs`,
-  `examples/metric-tree/e2e/node-shapes.spec.ts`
+- Touches: `packages/comb/src/render/nodes.ts`, `examples/metric-tree/e2e/node-shapes.spec.ts`
 - ADR-0032, *Decision* (drawing) and *Enforcement*.
 - The convention *Break the feature once, and watch its test fail*.
 - The seam: `inspect` of `comb/testing`, its `outline` per node.
