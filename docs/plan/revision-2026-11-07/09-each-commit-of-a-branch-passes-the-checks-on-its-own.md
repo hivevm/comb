@@ -17,26 +17,33 @@ as a check:
 1. Which checks: the type checker, the linters, and the unit tests (Bun and Cargo), with the fast
    ones that need no build (`scripts/check-docs.sh`, `scripts/check-traceability.sh`,
    `scripts/check-comment-width.sh`, the formatters); the browser tests stay at the head.
-2. Where it runs: a script that runs those checks on every commit between the branch's base and
-   its head in a temporary worktree, before the merge, reporting each commit that fails.
-3. The rule stands in `CONTRIBUTING.md`; as a rule of agents in `AGENTS.md`, which is the
-   template's, it goes to NUC as a proposal, as
+2. Where it runs: a check, `scripts/check-commits.sh`, that runs those checks on every commit
+   between the branch's base and its head in a temporary worktree, before the merge, reporting
+   each commit that fails.
+3. Where the rule stands: `CONTRIBUTING.md` holds no rule of its own (ADR-0001), so the rule
+   belongs to `AGENTS.md`, which is the template's, and goes to NUC as a proposal, as
    docs/plan/revision-2026-11-03/06-propose-the-check-extensions-to-nuc.md does for its findings.
+   Until NUC takes it up, `CONTRIBUTING.md` carries only the mechanics: under *Integration
+   branches*, the step that runs the check before a merge.
 
 ## Acceptance criteria
 
-- [ ] Given a branch, when the script runs, then it runs the decided checks on each commit
-      between the base and the head and fails, naming each commit and check that failed.
+- [ ] Given a branch, when `scripts/check-commits.sh` runs, then it runs the decided checks on
+      each commit between the base and the head and fails, naming each commit and check that
+      failed.
 - [ ] Given a fixture branch whose middle commit fails the docs check, when the script's
       self-test runs, then the script names that commit and the check and exits non-zero.
-- [ ] Given `CONTRIBUTING.md`, when it is read, then it states the rule and names the script.
+- [ ] Given `CONTRIBUTING.md`, when it is read, then its *Integration branches* names the step
+      that runs the check before a merge, and states no rule of its own.
+- [ ] Given the rule, when this ticket lands, then a proposal for `AGENTS.md` is filed for NUC.
 
 ## Read first
 
-- Touches: `scripts/`, `CONTRIBUTING.md`, `.agents/skills/review/SKILL.md`
+- Touches: `scripts/`, `CONTRIBUTING.md`
 - The merge messages of 4069304, 72831ce, f2646dd, and 9e8f882, *Review* and *Doubts*.
 - `scripts/sensor-review-binding.sh` and its self-test, the shape of a sensor.
-- ADR-0002, for the checks and sensors as bash scripts; ADR-0005, for what goes to NUC.
+- ADR-0001, for what `CONTRIBUTING.md` may hold; ADR-0002, for the checks as bash scripts;
+  ADR-0005, for what goes to NUC.
 
 ## Blocked by
 

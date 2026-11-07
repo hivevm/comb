@@ -3,8 +3,9 @@
 ## What to build
 
 The state diagram's ticket 04 (merge 1187802) named lesser review findings in `examples/uml/src/`,
-and the design revision of 2026-11-07 found more beside them. None is covered by
-docs/plan/revision-2026-11-06/03-a-uml-node-keeps-its-kind-and-the-diagrams-share-one-module.md:
+and the design revision of 2026-11-07 found more beside them. Only `rekind`'s guard is covered by
+docs/plan/revision-2026-11-06/03-a-uml-node-keeps-its-kind-and-the-diagrams-share-one-module.md,
+which runs before this ticket (this one waits for 07, which waits for it):
 
 - **A label is built in three places:** `styleOf` in `examples/uml/src/relationships.ts`,
   `Sidebar.changeLabel` in `examples/uml/src/sidebar.ts` by hand, and `eventLabel` in
@@ -13,7 +14,7 @@ docs/plan/revision-2026-11-06/03-a-uml-node-keeps-its-kind-and-the-diagrams-shar
 - **The transition's style is written twice:** `edgeOf` in `examples/uml/src/state-diagram.ts`
   sets the colour and arrowhead that `RELATIONSHIPS.transition` holds; it spreads `styleOf`.
 - **`edit` and `editState` in `examples/uml/src/diagram.ts` are one try and catch written twice;**
-  one private function updates a node's content, and `rekind` gets the same guard.
+  one private function updates a node's content; `rekind`'s guard comes from 11-06/03.
 - **The kinds of relationship are listed three times:** the `RelationshipKind` union, the
   `RELATIONSHIPS` table, and `KINDS` in `examples/uml/src/relationships.ts`. The union and `KINDS`
   follow from the table.
@@ -57,7 +58,4 @@ unattended:
 - a wrong result shows as a failing browser test or a label drawn other than before;
   `scripts/check-all.sh` green proves it right;
 - stop: when a browser test's assertion has to change, or `scripts/check-all.sh` is still red
-  after three attempts at a fix, the session leaves its state here and hands off. It does not run
-  beside
-  docs/plan/revision-2026-11-06/03-a-uml-node-keeps-its-kind-and-the-diagrams-share-one-module.md,
-  which touches the same files.
+  after three attempts at a fix, the session leaves its state here and hands off.

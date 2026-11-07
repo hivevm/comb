@@ -72,7 +72,7 @@ the loop tests of `examples/metric-tree/e2e/add-edge.spec.ts`.
 
 ## Read first
 
-- Touches: `docs/SPECIFICATION.md`
+- Touches: `docs/SPECIFICATION.md`, `examples/uml/src/rules.test.ts`
 - G-3, G-12, Q-4, and *Assumptions* in `docs/SPECIFICATION.md`.
 - `git show 4192d2e:docs/plan/state-diagram/spec.md`, *Goals served*.
 - The merge messages of the state-diagram tickets, their lines "G-13 is not in the
