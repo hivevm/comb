@@ -42,11 +42,23 @@ export function cpuThrottleFor(env: Record<string, string | undefined>): number 
 export const GRAPHS = ["metric-tree", "shaped"] as const;
 export type Graph = (typeof GRAPHS)[number];
 
+/** The graph a run measures where it names none: the metric tree. */
+export const DEFAULT_GRAPH: Graph = "metric-tree";
+
+/** What the file names of a graph's baseline and median add before `.json`: nothing for the
+ *  default graph, `.shaped` for the shaped graph (ADR-0033). */
+export const graphSuffix = (graph: Graph) => (graph === DEFAULT_GRAPH ? "" : `.${graph}`);
+
+/** What a sentence naming a run's kind adds of its graph: nothing for the default graph,
+ *  ` and the graph shaped` for the shaped graph. */
+export const graphPhrase = (graph: Graph) =>
+  graph === DEFAULT_GRAPH ? "" : ` and the graph ${graph}`;
+
 /** The graph `BENCH_GRAPH` names: the metric tree where it is not set, one of `GRAPHS` as it is;
  *  anything else is refused. */
 export function graphFor(env: Record<string, string | undefined>): Graph {
   const value = env.BENCH_GRAPH;
-  if (value === undefined || value === "") return "metric-tree";
+  if (value === undefined || value === "") return DEFAULT_GRAPH;
   const graph = GRAPHS.find((name) => name === value);
   if (!graph)
     throw new Error(`BENCH_GRAPH is ${JSON.stringify(value)}, not one of ${GRAPHS.join(", ")}`);

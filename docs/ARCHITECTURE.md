@@ -553,22 +553,24 @@ one workspace for each example.
   node shapes in turn, a node in a filled node shape without content, the ends docked on the
   outline, and a loop on one node in a hundred (`shaped` in `src/graph.ts`, ADR-0033).
   `bench/options.ts` reads all three and refuses a value it cannot take; a run records `graph`, and
-  checks that the example loaded it. After the first frame and before the gestures it times the
-  reference workload of `bench/reference.ts` in the same page, which uses the browser's JavaScript,
-  WebAssembly, and WebGL2 and none of Comb's code. `bench/compare.ts` compares the median of several
-  runs with the baseline of the runner's kind, the CPU model the run records, and of the run's
-  graph, in `bench/baselines/` (`<kind>.json` for the metric tree, `<kind>.shaped.json` for the
-  shaped graph), with a margin of 25 %, reports a gesture the baseline lacks as `no baseline`
-  without judging it, refuses a run on a kind without a baseline of its graph, a run of another
-  graph, a run whose reference differs from its kind's baseline by more than 25 % in a part, a run
-  of another size, mode, or GPU or of none named, a run of an attached browser against a launched
-  baseline or the reverse, a run of another CPU slowdown factor, and a median of runs that differ in
-  these; a kind's baseline is the median of three runs on a GitHub runner of that kind on `main`;
-  the **Benchmark** workflow (`.github/workflows/benchmark.yml`) runs the benchmark three times on
-  each graph and compares each graph's median with its own baseline on a GitHub runner, weekly and
-  on demand, within 90 minutes; the shaped graph's comparison fails the job only where its kind has
-  a baseline, and otherwise reports its median (`bench/compare.ts` exits 3 for a kind without a
-  baseline of the runs' graph, 2 for the other refusals).
+  checks that the example loaded it, and the type checker holds the graphs `bench/options.ts` names
+  to the example's `GraphName`, which ADR-0030 keeps from importing `bench`. After the first frame
+  and before the gestures it times the reference workload of `bench/reference.ts` in the same page,
+  which uses the browser's JavaScript, WebAssembly, and WebGL2 and none of Comb's code.
+  `bench/compare.ts` compares the median of several runs with the baseline of the runner's kind, the
+  CPU model the run records, and of the run's graph, in `bench/baselines/` (`<kind>.json` for the
+  metric tree, `<kind>.shaped.json` for the shaped graph), with a margin of 25 %, reports a gesture
+  the baseline lacks as `no baseline` without judging it, refuses a run on a kind without a baseline
+  of its graph, a run of another graph, a run whose reference differs from its kind's baseline by
+  more than 25 % in a part, a run of another size, mode, or GPU or of none named, a run of an
+  attached browser against a launched baseline or the reverse, a run of another CPU slowdown factor,
+  and a median of runs that differ in these; a kind's baseline is the median of three runs on a
+  GitHub runner of that kind on `main`; the **Benchmark** workflow
+  (`.github/workflows/benchmark.yml`) runs the benchmark three times on each graph and compares each
+  graph's median with its own baseline on a GitHub runner, weekly and on demand, within 90 minutes;
+  the shaped graph's comparison fails the job only where its kind has a baseline, and otherwise
+  reports its median (`bench/compare.ts` exits 3 for a kind without a baseline of the runs' graph, 2
+  for the other refusals).
 - **Mutation testing** (`.github/workflows/mutation.yml`) — cargo-mutants mutates `crates/engine`
   on a GitHub runner, weekly and on demand; `scripts/check-mutants.sh` compares the surviving
   mutants with `crates/engine/mutants-missed.txt` by file, function, and replacement, and fails
