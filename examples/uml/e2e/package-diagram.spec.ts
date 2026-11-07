@@ -1,6 +1,7 @@
 // Browser tests of the UML example's package diagram (G-12): the choice in the sidebar, Comb's
 // modules and crates as packages, their dependencies as dashed edges with an arrowhead and the
-// label «import» or «use», and the class diagram kept while the package diagram is shown.
+// label «import» or «use», which the legend names, and the class diagram kept while the package
+// diagram is shown.
 import { expect, test, type Page } from "@playwright/test";
 import { DRAWN, open, setViewport } from "./shared";
 
@@ -93,6 +94,53 @@ test("each dependency of the package diagram is dashed, has an arrowhead, and sa
     expect(edge.label?.background, edge.id).toBe(color);
   }
 });
+
+test("the package diagram's legend names a dependency «import» and a dependency «use»", async ({
+  page,
+}) => {
+  // Verifies: G-12, G-11
+  await page.goto("/");
+  await open(page);
+  await choose(page, "package");
+  await expect(page.locator("#legend")).toBeVisible();
+  const dependency = page.locator('#legend-kinds li[data-kind="dependency"]');
+  await expect(dependency).toContainText("«import»");
+  await expect(dependency).toContainText("«use»");
+});
+
+test("chosen again after the package diagram, the class diagram's legend names a dependency «use» alone", async ({
+  page,
+}) => {
+  // Verifies: G-12, G-11
+  await page.goto("/");
+  await open(page);
+  const dependency = page.locator('#legend-kinds li[data-kind="dependency"]');
+  await choose(page, "package");
+  await expect(dependency).toHaveText("Dependency «import» or «use»");
+  await choose(page, "class");
+  await expect(dependency).toHaveText("Dependency «use»");
+});
+
+for (const diagram of ["class", "package"] as const)
+  test(`the legend names each label an edge of the ${diagram} diagram carries, beside its kind`, async ({
+    page,
+  }) => {
+    // Verifies: G-12, G-11
+    await page.goto("/");
+    await open(page);
+    await choose(page, diagram);
+    const { labels, kinds } = await page.evaluate(() => ({
+      labels: window.uml
+        .exampleGraph()
+        .edges.flatMap(({ id, label }) => (label ? [[id, label.text] as const] : [])),
+      kinds: window.uml.edgeKinds(),
+    }));
+    expect(labels.length).toBeGreaterThan(0);
+    for (const [id, text] of labels)
+      await expect(page.locator(`#legend-kinds li[data-kind="${kinds[id]}"]`), id).toContainText(
+        text,
+      );
+  });
 
 test("chosen again, the class diagram is shown with the nodes and edges it had, an edit among them", async ({
   page,
