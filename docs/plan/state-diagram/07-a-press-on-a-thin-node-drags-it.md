@@ -11,20 +11,17 @@ screen. Ticket 05's benchmark ran into it: its first shaped run failed at `drag 
 and the drag gesture now skips nodes whose centre does not hit as the node.
 
 Make a press on a node's body drag the node wherever a connector's reach would otherwise cover
-it, while each connector stays reachable. Which rule does it is a decision for ADR-0013 (or
-ADR-0031), revised with the maintainer before it is implemented. Candidates are:
-
-- a reach clipped at the node's centre line;
-- a connector hit only outside the node's bounds;
-- a minimum height on screen below which connectors are not offered.
+it, while each connector stays reachable. The maintainer decided the rule in ADR-0013's revision:
+within the node's bounds a connector reaches at most a quarter of the node's extent across its
+side, so the middle half of a node is the node's.
 
 ## Acceptance criteria
 
 - [ ] Given a bar at the near and the middle level, when it is pressed at its centre and dragged,
       then the bar moves and no connection starts.
 - [ ] Given a bar, when each of its four connectors is pressed, then a connection starts from it.
-- [ ] Given a node at least twice the reach in both dimensions on screen, when anything is
-      pressed, then the hit is the one it is today.
+- [ ] Given a node at least 32 screen pixels high and wide, when anything is pressed, then the
+      hit is the one it is today.
 
 ## Read first
 
