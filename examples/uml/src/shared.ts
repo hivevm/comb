@@ -1,10 +1,11 @@
 // What more than one diagram of the UML example (G-12) uses, so that no diagram's file imports
-// another's, nor this module any diagram's: a diagram as data, the kinds of node, which the rules
-// of connection import, the classifier a node of the class or the package diagram shows, the state
-// a node of the state diagram shows, the classifier's content, and the layout by rows of the class
-// and the package diagram. A classifier keeps its kind, set when it is created, from the diagram's
-// data or the palette; its stereotype is text it shows and tells nothing of its kind.
-import type { Comb, GraphData, NodeContent, NodeData } from "comb";
+// another's, nor this module any diagram's: a diagram as data, the descriptor of a diagram, the
+// kinds of node, which the rules of connection import, the classifier a node of the class or the
+// package diagram shows, the state a node of the state diagram shows, the classifier's content,
+// and the layout by rows of the class and the package diagram. A classifier keeps its kind, set
+// when it is created, from the diagram's data or the palette; its stereotype is text it shows and
+// tells nothing of its kind.
+import type { Comb, EdgeData, EdgePatch, GraphData, NodeContent, NodeData } from "comb";
 import type { RelationshipKind } from "./relationships";
 
 /** The kinds of classifier: those of the class diagram, and the package of the package diagram. */
@@ -46,6 +47,35 @@ export interface DiagramData {
   classifiers: Map<string, Classifier>;
   states: Map<string, State>;
   kinds: Map<string, RelationshipKind>;
+}
+
+/** What the sidebar edits of a selected node: a classifier's name, stereotype, and members, a
+ *  name alone, or nothing. */
+export type NodeForm = "classifier" | "name" | "none";
+
+/** What the sidebar edits of a selected edge: a relationship's kind and label, a dependency's
+ *  «import» or «use», or a transition's event. */
+export type EdgeForm = "relationship" | "import-or-use" | "event";
+
+/** What makes a diagram of the example what it is, in one place: its identifier and its name in
+ *  the choice of diagram, how it is built, what its count names, the kinds of node the palette
+ *  drops, each with its name there and the form the sidebar edits it in, the kind a connection
+ *  adds and how it docks, the form the sidebar edits an edge in, what the sidebar's headings call
+ *  a selected node and edge, and whether the legend of the kinds of relationship tells its edges
+ *  apart. The host application, the diagram, and the sidebar read it instead of branching on a
+ *  kind. */
+export interface DiagramDescriptor {
+  id: string;
+  name: string;
+  build: (heightOf: Comb["heightOf"]) => DiagramData;
+  nouns: readonly [string, string];
+  nodes: readonly { kind: NodeKind; name: string; form: NodeForm }[];
+  connected: RelationshipKind;
+  /** The sides of an edge the user connected, none where it keeps those it was connected by. */
+  docking?: (edge: EdgeData) => EdgePatch;
+  edgeForm: EdgeForm;
+  selected: { node: string; edge: string };
+  legend: boolean;
 }
 
 export const NODE_WIDTH = 260;

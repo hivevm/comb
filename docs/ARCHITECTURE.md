@@ -521,13 +521,19 @@ one workspace for each example.
   diagram's file and no diagram's file imports another's: the diagram as data (`DiagramData`), the
   kinds of node, which the rules import, the classifier and the state, the classifier's content
   (`contentOf`), and the layout by rows (`laidOut`) of the class and the package diagram; the
-  lookup of an element of the page stands in `src/element.ts`. `src/diagram.ts` keeps the
-  example's copy of the graph, the classifier or the state of each node, and the kind of each edge,
-  each from a change `onChange` tells or after Comb took the call that changes it, and
-  `src/legend.ts` draws the legend. Its hooks stand under
-  `window.uml`, so that it declares nothing on `window` the metric tree declares; Vite serves it on
-  port 5176, the launch configuration **Example: UML** opens it, and its browser tests run in the
-  Playwright project `uml` against it in test mode on port 5177.
+  lookup of an element of the page stands in `src/element.ts`. Each diagram is described in one
+  place, the descriptor (`DiagramDescriptor`) its file exports: its identifier and name in the
+  choice of diagram, how it is built, its kinds of node with their names in the palette and the
+  form the sidebar edits each in, the kind a connection adds and how it docks, the form the
+  sidebar edits an edge in, the headings of a selection, and whether the legend shows. The host
+  application fills the choice of diagram and the palette from the descriptors, and
+  `src/diagram.ts` and `src/sidebar.ts` read the one of the diagram shown instead of branching on
+  a kind. `src/diagram.ts` keeps the example's copy of the graph, the classifier or the state of
+  each node, and the kind of each edge, each from a change `onChange` tells or after Comb took the
+  call that changes it, and `src/legend.ts` draws the legend. Its hooks stand under `window.uml`, so
+  that it declares nothing on `window` the metric tree declares; Vite serves it on port 5176, the
+  launch configuration **Example: UML** opens it, and its browser tests run in the Playwright
+  project `uml` against it in test mode on port 5177.
 - **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, each node with the
   content of its type, measuring the time to the first frame and p95 frame times over the frames
   Comb rendered of drag, pan, zoom, and edits one a frame, a node and an edge added and removed

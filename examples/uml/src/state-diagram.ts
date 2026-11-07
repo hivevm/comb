@@ -16,7 +16,7 @@ import type {
   NodeShape,
 } from "comb";
 import { GREY } from "./relationships";
-import type { DiagramData, State, StateKind } from "./shared";
+import type { DiagramData, DiagramDescriptor, State, StateKind } from "./shared";
 
 const STATE_WIDTH = 200;
 
@@ -165,3 +165,24 @@ export function stateDiagram(heightOf: Comb["heightOf"]): DiagramData {
     kinds: new Map(edges.map(({ id }) => [id, "transition"])),
   };
 }
+
+/** The state diagram as the host application chooses it: a state is edited by its name and a
+ *  pseudostate not at all, a connection adds a transition docked as `dockingOf` says, which the
+ *  sidebar names by its event, and the legend of the kinds of relationship is hidden. */
+export const STATE_DIAGRAM: DiagramDescriptor = {
+  id: "state",
+  name: "State diagram",
+  build: stateDiagram,
+  nouns: ["states", "transitions"],
+  nodes: [
+    { kind: "state", name: "State", form: "name" },
+    { kind: "initial", name: "Initial state", form: "none" },
+    { kind: "final", name: "Final state", form: "none" },
+    { kind: "choice", name: "Choice", form: "none" },
+  ],
+  connected: "transition",
+  docking: dockingOf,
+  edgeForm: "event",
+  selected: { node: "state", edge: "transition" },
+  legend: false,
+};
