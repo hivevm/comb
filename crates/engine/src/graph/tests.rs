@@ -84,7 +84,11 @@ pub(super) fn random_inputs(
 /// (ADR-0031).
 pub(super) fn path_of(spec: &EdgeSpec, source: &Rect, target: &Rect) -> EdgePath {
     if spec.source == spec.target {
-        EdgePath::looped(source, spec.sides.source)
+        EdgePath::looped(
+            source,
+            crate::shape::NodeShape::Rectangle,
+            spec.sides.source,
+        )
     } else {
         EdgePath::between(source, target, spec.sides)
     }

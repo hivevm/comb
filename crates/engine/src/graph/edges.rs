@@ -140,7 +140,11 @@ impl Graph {
         self.placements.set(self.placements.get() + 1);
         let spec = self.edges[slot as usize];
         let path = if spec.source == spec.target {
-            EdgePath::looped(&self.node_bounds(spec.source), spec.sides.source)
+            EdgePath::looped(
+                &self.node_bounds(spec.source),
+                self.shape(spec.source),
+                spec.sides.source,
+            )
         } else {
             EdgePath::docked(
                 (&self.node_bounds(spec.source), self.shape(spec.source)),
@@ -219,7 +223,8 @@ mod tests {
         // Verifies: ADR-0031
         // A loop on `a` of each dock, labelled at the middle parameter, and an edge from `a` to
         // `b`: the loop is drawn on the side it names, the top for the outline, by a load, an
-        // addition, a move, and a change of node shape, its label at its outermost point.
+        // addition, a move, and a change of node shape, which its ends follow onto the outline,
+        // its label at its outermost point.
         use crate::geometry::{Dock, Side};
         use crate::shape::NodeShape;
         let looped = |sides: Sides| EdgeSpec {
@@ -254,24 +259,24 @@ mod tests {
         for side in [Side::Top, Side::Right, Side::Bottom, Side::Left] {
             graph.add_edge(looped(on(side.into()))).unwrap();
         }
-        let check = |graph: &Graph, context: &str| {
+        let check = |graph: &Graph, shape: NodeShape, context: &str| {
             let node = graph.node_bounds(0);
             let docks = [Dock::Outline, Side::Top.into(), Side::Right.into()];
             let docks = docks
                 .into_iter()
                 .chain([Side::Bottom.into(), Side::Left.into()]);
             for (slot, dock) in [0, 2, 3, 4, 5].into_iter().zip(docks) {
-                let path = EdgePath::looped(&node, dock);
+                let path = EdgePath::looped(&node, shape, dock);
                 assert_eq!(graph.paths[slot], path, "{context}: edge {slot}");
                 assert_eq!(graph.bounds[slot], path.bounds(), "{context}: edge {slot}");
                 assert_eq!(graph.labels[slot], Some(path.point_at(0.5)), "{context}");
             }
         };
-        check(&graph, "loaded and added");
+        check(&graph, NodeShape::Rectangle, "loaded and added");
         graph.translate(&[0], 37.0, -1200.0).unwrap();
-        check(&graph, "moved");
+        check(&graph, NodeShape::Rectangle, "moved");
         graph.set_shape(0, NodeShape::Ellipse).unwrap();
-        check(&graph, "shaped");
+        check(&graph, NodeShape::Ellipse, "shaped");
     }
 
     #[test]

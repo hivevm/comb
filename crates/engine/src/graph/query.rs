@@ -189,6 +189,7 @@ mod tests {
     use super::super::{EdgeSpec, LabelPlacement};
     use super::*;
     use crate::geometry::{Dock, EdgePath, Side, Sides, WORLD_LIMIT};
+    use crate::shape::NodeShape;
     use crate::stroke::{Detail, EdgeStyle};
 
     #[test]
@@ -645,7 +646,11 @@ mod tests {
     fn assert_loop_held(graph: &mut Graph, slot: usize, spec: &EdgeSpec) -> bool {
         let path = graph.paths[slot];
         let node = graph.node_bounds(spec.source);
-        assert_eq!(path, EdgePath::looped(&node, spec.sides.source), "{slot}");
+        assert_eq!(
+            path,
+            EdgePath::looped(&node, graph.shape(spec.source), spec.sides.source),
+            "{slot}"
+        );
         let points = (0..=64).map(|t| path.point_at(f64::from(t) / 64.0));
         let controls = [path.control_source, path.control_target];
         assert!(points.chain(controls).all(held), "edge {slot}: {path:?}");
@@ -672,13 +677,62 @@ mod tests {
         // The large node's loops reach past twice the limit, which the test rests on.
         assert!(beyond >= 4, "{beyond}");
         let limit = WORLD_LIMIT;
-        for rect in [
-            Rect::new(-1e300, -1e300, 1e300, 1e300),
-            Rect::new(-3.5 * limit, -3.5 * limit, -limit, -limit),
-            Rect::new(-1e3, -3.1 * limit, 1e3, -2.9 * limit),
-            Rect::new(limit - 1e3, limit - 1e3, limit + 1e3, limit + 1e3),
-        ] {
-            let written = written(&mut graph, &rect);
+        assert_written_held(
+            &mut graph,
+            &[
+                Rect::new(-1e300, -1e300, 1e300, 1e300),
+                Rect::new(-3.5 * limit, -3.5 * limit, -limit, -limit),
+                Rect::new(-1e3, -3.1 * limit, 1e3, -2.9 * limit),
+                Rect::new(limit - 1e3, limit - 1e3, limit + 1e3, limit + 1e3),
+            ],
+        );
+    }
+
+    #[test]
+    fn every_point_of_a_loop_on_an_ellipse_is_one_f32_holds_where_its_node_lies_at_the_world_limit()
+    {
+        // Verifies: ADR-0031, ADR-0030, Q-4
+        // The same loops on two ellipses: their ends move inward onto the outline, the large
+        // node's by a share of the world, and their points, and every coordinate a query writes,
+        // stay within f32.
+        let (mut graph, specs) = loops_at_the_world_limit();
+        graph.set_shape(0, NodeShape::Ellipse).unwrap();
+        graph.set_shape(1, NodeShape::Ellipse).unwrap();
+        let beyond = (0..specs.len())
+            .filter(|&slot| assert_loop_held(&mut graph, slot, &specs[slot]))
+            .count();
+        assert!(beyond >= 4, "{beyond}");
+        // The large node's loops left its rectangle's sides for the outline.
+        let large = graph.node_bounds(1);
+        let inside = |p: Point| {
+            p.x > large.min_x && p.x < large.max_x && p.y > large.min_y && p.y < large.max_y
+        };
+        for (slot, _) in specs.iter().enumerate().filter(|(_, s)| s.source == 1) {
+            let path = graph.paths[slot];
+            assert!(
+                inside(path.source) && inside(path.target),
+                "{slot}: {path:?}"
+            );
+        }
+        // Its top loop leaves 0.13 of the limit within the node's top side, at `-limit`, and its
+        // outermost point lies 1.5 times the limit out from there, about -2.37 times the limit.
+        let limit = WORLD_LIMIT;
+        assert_written_held(
+            &mut graph,
+            &[
+                Rect::new(-1e300, -1e300, 1e300, 1e300),
+                Rect::new(-3.5 * limit, -3.5 * limit, -limit, -limit),
+                Rect::new(-1e3, -2.6 * limit, 1e3, -2.2 * limit),
+                Rect::new(limit - 1e3, limit - 1e3, limit + 1e3, limit + 1e3),
+            ],
+        );
+    }
+
+    /// Asserts that each region in `regions` holds some of the graph, and that every coordinate
+    /// a query of it writes is one `f32` holds.
+    fn assert_written_held(graph: &mut Graph, regions: &[Rect]) {
+        for rect in regions {
+            let written = written(graph, rect);
             assert!(!written.is_empty(), "{rect:?}");
             assert!(
                 written.iter().all(|v| v.abs() < f64::from(f32::MAX)),
