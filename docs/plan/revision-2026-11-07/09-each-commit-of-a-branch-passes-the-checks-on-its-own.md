@@ -12,7 +12,9 @@ commit pass the checks; the reviews hold the branches to a standard no document 
 work to meet it is done by hand each time.
 
 The maintainer decided (2026-11-07) that each commit of a branch passes the checks on its own,
-as a check:
+as a check, the rule in `CONTRIBUTING.md`. Item 3 departs from the last part by ADR-0001, which
+keeps `CONTRIBUTING.md` free of rules of its own; the maintainer confirms it when the ticket is
+worked:
 
 1. Which checks: the type checker, the linters, and the unit tests (Bun and Cargo), with the fast
    ones that need no build (`scripts/check-docs.sh`, `scripts/check-traceability.sh`,
@@ -24,24 +26,31 @@ as a check:
    belongs to `AGENTS.md`, which is the template's, and goes to NUC as a proposal, as
    docs/plan/revision-2026-11-03/06-propose-the-check-extensions-to-nuc.md does for its findings.
    Until NUC takes it up, `CONTRIBUTING.md` carries only the mechanics: under *Integration
-   branches*, the step that runs the check before a merge.
+   branches*, the step that runs the check before a merge, as "a mistake a check could have caught
+   becomes a check" of [`AGENTS.md` §5](../../../AGENTS.md#5-quality-bar--definition-of-done)
+   asks of the mistake the reviews kept finding.
 
 ## Acceptance criteria
 
 - [ ] Given a branch, when `scripts/check-commits.sh` runs, then it runs the decided checks on
-      each commit between the base and the head and fails, naming each commit and check that
-      failed.
+      each commit between the base and the head; it fails when any commit fails a check, naming
+      each commit and check that failed, and passes when every commit passes.
 - [ ] Given a fixture branch whose middle commit fails the docs check, when the script's
       self-test runs, then the script names that commit and the check and exits non-zero.
 - [ ] Given `CONTRIBUTING.md`, when it is read, then its *Integration branches* names the step
       that runs the check before a merge, and states no rule of its own.
-- [ ] Given the rule, when this ticket lands, then a proposal for `AGENTS.md` is filed for NUC.
+- [ ] Given the rule, when this ticket lands, then it is one more item of
+      docs/plan/revision-2026-11-03/06-propose-the-check-extensions-to-nuc.md, whose proposal is
+      filed as a pull request to NUC.
 
 ## Read first
 
-- Touches: `scripts/`, `CONTRIBUTING.md`
+- Touches: `scripts/`, `CONTRIBUTING.md`, `.github/workflows/checks.yml`,
+  `docs/plan/revision-2026-11-03/06-propose-the-check-extensions-to-nuc.md`
 - The merge messages of 4069304, 72831ce, f2646dd, and 9e8f882, *Review* and *Doubts*.
-- `scripts/sensor-review-binding.sh` and its self-test, the shape of a sensor.
+- `scripts/check-docs.sh` and `scripts/test-check-docs.sh`, the shape of a check and its
+  self-test; check 9 of `scripts/check-docs.sh`, which asks that every script be run by
+  `scripts/check-all.sh` and a workflow or named on an `# On instruction:` line.
 - ADR-0001, for what `CONTRIBUTING.md` may hold; ADR-0002, for the checks as bash scripts;
   ADR-0005, for what goes to NUC.
 

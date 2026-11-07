@@ -3,9 +3,10 @@
 ## What to build
 
 The state diagram's ticket 04 (merge 1187802) named lesser review findings in `examples/uml/src/`,
-and the design revision of 2026-11-07 found more beside them. Only `rekind`'s guard is covered by
+and the design revision of 2026-11-07 found more beside them. It waits for ticket 07, whose
+descriptor of each diagram reshapes the files this ticket writes once, and 07 waits for
 docs/plan/revision-2026-11-06/03-a-uml-node-keeps-its-kind-and-the-diagrams-share-one-module.md,
-which runs before this ticket (this one waits for 07, which waits for it):
+which makes `rekind` store its kind only after Comb took the change. The rest is this ticket's:
 
 - **A label is built in three places:** `styleOf` in `examples/uml/src/relationships.ts`,
   `Sidebar.changeLabel` in `examples/uml/src/sidebar.ts` by hand, and `eventLabel` in
@@ -14,7 +15,7 @@ which runs before this ticket (this one waits for 07, which waits for it):
 - **The transition's style is written twice:** `edgeOf` in `examples/uml/src/state-diagram.ts`
   sets the colour and arrowhead that `RELATIONSHIPS.transition` holds; it spreads `styleOf`.
 - **`edit` and `editState` in `examples/uml/src/diagram.ts` are one try and catch written twice;**
-  one private function updates a node's content; `rekind`'s guard comes from 11-06/03.
+  one private function updates a node's content.
 - **The kinds of relationship are listed three times:** the `RelationshipKind` union, the
   `RELATIONSHIPS` table, and `KINDS` in `examples/uml/src/relationships.ts`. The union and `KINDS`
   follow from the table.
@@ -46,8 +47,7 @@ which runs before this ticket (this one waits for 07, which waits for it):
 
 ## Blocked by
 
-- docs/plan/revision-2026-11-07/07-each-uml-diagram-is-described-in-one-place.md: its descriptor
-  reshapes the files this ticket writes once.
+- docs/plan/revision-2026-11-07/07-each-uml-diagram-is-described-in-one-place.md
 
 ## Mode
 
