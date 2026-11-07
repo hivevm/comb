@@ -35,22 +35,29 @@ test("the lookup of an element of the page is written once", () => {
   expect(defining).toHaveLength(1);
 });
 
-/** The kinds of node and of relationship of the diagrams, written here from the glossary, not read
- *  from the example. */
-const KINDS = [
-  ...["class", "interface", "abstract-class", "package"],
-  ...["state", "initial", "final", "choice"],
+/** The kinds of relationship of the diagrams, and with them the kinds of node, written here from
+ *  the glossary, not read from the example. */
+const RELATIONSHIP_KINDS = [
   ...["association", "directed-association", "generalization", "realization", "dependency"],
   ...["aggregation", "composition", "transition"],
 ];
+const KINDS = [
+  ...["class", "interface", "abstract-class", "package"],
+  ...["state", "initial", "final", "choice"],
+  ...RELATIONSHIP_KINDS,
+];
+
+/** The code of `file`, its comments left out. */
+function codeOf(file: string): string {
+  return readFileSync(join(SRC, file), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+}
 
 /** The string literals of `file`'s code, its comments and the identifiers of the page's elements
  *  it looks up left out: a field of the sidebar may be named as a kind is. */
 function literalsOf(file: string): string[] {
-  const code = readFileSync(join(SRC, file), "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "")
-    .replace(/\belement(<[^>]*>)?\("[^"]*"\)/g, "");
+  const code = codeOf(file).replace(/\belement(<[^>]*>)?\("[^"]*"\)/g, "");
   return [...code.matchAll(/"([^"\n]*)"|'([^'\n]*)'|`([^`$\n]*)`/g)].map(
     ([, double, single, template]) => double ?? single ?? template!,
   );
@@ -66,4 +73,33 @@ test("rules.ts defines no kind of node, and imports them from shared.ts", () => 
   expect(source).not.toMatch(/\b(CLASSIFIER|STATE|NODE)_KINDS\s*=/);
   expect(source).not.toMatch(/\btype\s+(Classifier|State|Node)Kind\s*=/);
   expect(importsOf("rules.ts")).toContain("shared");
+});
+
+/** The example's sources, its tests left out. */
+const SOURCES = readdirSync(SRC).filter(
+  (file) => file.endsWith(".ts") && !file.endsWith(".test.ts"),
+);
+
+test("an edge's colour, arrowhead, and label's pill are written in relationships.ts alone", () => {
+  // A colour or a pill given as a constant or a hex number, an arrowhead as a string.
+  const style = /\b(?:color|background)\s*:\s*(?:0x[0-9a-fA-F]+|[A-Z][A-Z0-9_]*)\b|\barrow\s*:\s*"/;
+  const writing = SOURCES.filter((file) => style.test(codeOf(file)));
+  expect(writing).toEqual(["relationships.ts"]);
+});
+
+test("one function builds an edge's label, the one place that gives it its pill", () => {
+  expect(codeOf("relationships.ts").match(/\bbackground\s*:/g)).toHaveLength(1);
+});
+
+test("relationships.ts names each kind of relationship once, as a key of its table", () => {
+  const code = codeOf("relationships.ts");
+  for (const kind of RELATIONSHIP_KINDS) {
+    // As a string literal, or as a key of an object written without quotes.
+    const named = code.match(new RegExp(`"${kind}"|(?<![\\w"-])${kind}\\s*:`, "g")) ?? [];
+    expect({ kind, named: named.length }).toEqual({ kind, named: 1 });
+  }
+});
+
+test("diagram.ts updates a node's content in one place", () => {
+  expect(codeOf("diagram.ts").match(/\.updateNode\(/g)).toHaveLength(1);
 });

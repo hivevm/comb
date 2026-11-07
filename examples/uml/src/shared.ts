@@ -5,7 +5,7 @@
 // and the layout by rows of the class and the package diagram. A classifier keeps its kind, set
 // when it is created, from the diagram's data or the palette; its stereotype is text it shows and
 // tells nothing of its kind.
-import type { Comb, EdgeData, EdgePatch, GraphData, NodeContent, NodeData } from "comb";
+import type { Comb, EdgePatch, GraphChange, GraphData, NodeContent, NodeData } from "comb";
 import type { RelationshipKind } from "./relationships";
 
 /** The kinds of classifier: those of the class diagram, and the package of the package diagram. */
@@ -49,6 +49,9 @@ export interface DiagramData {
   kinds: Map<string, RelationshipKind>;
 }
 
+/** An edge as Comb tells its addition, its colour, arrowhead, and sides filled in. */
+export type AddedEdge = Extract<GraphChange, { kind: "edgeAdded" }>["edge"];
+
 /** What the sidebar edits of a selected node: a classifier's name, stereotype, and members, a
  *  name alone, or nothing. */
 export type NodeForm = "classifier" | "name" | "none";
@@ -72,7 +75,7 @@ export interface DiagramDescriptor {
   nodes: readonly { kind: NodeKind; name: string; form: NodeForm }[];
   connected: RelationshipKind;
   /** The sides of an edge the user connected, none where it keeps those it was connected by. */
-  docking?: (edge: EdgeData) => EdgePatch;
+  docking?: (edge: AddedEdge) => EdgePatch;
   edgeForm: EdgeForm;
   selected: { node: string; edge: string };
   legend: boolean;
