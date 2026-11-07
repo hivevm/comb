@@ -29,10 +29,11 @@ pub enum Target {
 impl Graph {
     /// What a press at `point` hits where a screen pixel is `pixel` world units, at `level`: where
     /// `connectors` asks for them, at the near and middle level, a connector within
-    /// `CONNECTOR_REACH` screen pixels, of the node of the highest rank; else at the near level a
-    /// label whose measured pill holds it, of the highest edge slot; else a node whose bounds hold
-    /// it, the one of the highest rank; else an edge within `EDGE_REACH` screen pixels of its path
-    /// as the stroke of `level` flattens it, the one in the highest slot; else nothing (ADR-0013).
+    /// `CONNECTOR_REACH` screen pixels, and inside its node within a quarter of the node's extent
+    /// as well (`connector_at`), of the node of the highest rank; else at the near level a label
+    /// whose measured pill holds it, of the highest edge slot; else a node whose bounds hold it,
+    /// the one of the highest rank; else an edge within `EDGE_REACH` screen pixels of its path as
+    /// the stroke of `level` flattens it, the one in the highest slot; else nothing (ADR-0013).
     /// A pixel beyond any zoom hits as the largest a query strokes for.
     pub fn hit_at(
         &mut self,
@@ -95,7 +96,10 @@ impl Graph {
     }
 
     /// The connector within `reach` of `point`: of the nodes with one there, the one drawn on top,
-    /// and of its connectors the nearest (ADR-0013).
+    /// and of its connectors the nearest. Within the node's rectangle a connector reaches at most
+    /// a quarter of the node's extent across its side, its height for the top and the bottom, its
+    /// width for the right and the left, so that the middle half of a node is the node's however
+    /// thin it is on screen (ADR-0013).
     fn connector_at(&mut self, point: Point, reach: f64) -> Option<(u32, Side)> {
         self.node_grid
             .candidates(&Rect::at(point).grown(reach), &mut self.scratch);
@@ -105,13 +109,24 @@ impl Graph {
             if !bounds.grown(reach).contains(point) {
                 continue;
             }
+            let inside = bounds.contains(point);
             let near = SIDES
                 .iter()
                 .map(|&side| {
                     let c = side.connector(&bounds);
                     (side, length(c.x - point.x, c.y - point.y))
                 })
-                .filter(|&(_, d)| d <= reach)
+                .filter(|&(side, d)| {
+                    let across = match side {
+                        Side::Top | Side::Bottom => bounds.max_y - bounds.min_y,
+                        Side::Right | Side::Left => bounds.max_x - bounds.min_x,
+                    };
+                    d <= if inside {
+                        reach.min(across / 4.0)
+                    } else {
+                        reach
+                    }
+                })
                 .min_by(|a, b| a.1.total_cmp(&b.1));
             if let Some((side, d)) = near {
                 let above = best.is_none_or(|(other, _, _)| {
@@ -371,22 +386,10 @@ mod tests {
                 } else {
                     Point::new(rng.range(-2500.0, 2500.0), rng.range(-2500.0, 2500.0))
                 };
-                // The scan: of the nodes in use with a connector within the reach, the one of the
-                // highest rank, the highest slot, and its nearest connector.
-                let scan = model
-                    .nodes()
-                    .filter_map(|n| {
-                        let bounds = model.bounds(n);
-                        SIDES
-                            .iter()
-                            .map(|&side| {
-                                let c = side.connector(&bounds);
-                                (n, side, (c.x - p.x).hypot(c.y - p.y))
-                            })
-                            .filter(|&(_, _, d)| d <= reach)
-                            .min_by(|a, b| a.2.total_cmp(&b.2))
-                    })
-                    .max_by_key(|&(n, _, _)| n);
+                // The scan: of the nodes in use with a connector within the reach, clipped within
+                // the node, the one of the highest rank, the highest slot, and its nearest
+                // connector.
+                let scan = model.connector_at(p, reach);
                 let without = graph.hit_at(p, pixel, level, false);
                 let with = graph.hit_at(p, pixel, level, true);
                 match scan {
@@ -396,6 +399,156 @@ mod tests {
                     _ => assert_eq!(with, without, "no connector at {p:?}, {level:?}"),
                 }
                 assert!(!matches!(without, Some(Target::Connector(..))));
+            }
+        }
+    }
+
+    /// Thin nodes and a large one beside them, far apart: a bar of the shaped graph, 220 wide and
+    /// `BAR_HEIGHT` high; a node as thin the other way; a node 6 by 6; and a node 220 by 64, the
+    /// metric tree's. Each by its slot and rectangle.
+    fn thin_nodes() -> (Graph, Vec<(u32, Rect)>) {
+        use crate::shape::{BAR_HEIGHT, NodeShape};
+        let bar = BAR_HEIGHT as f32;
+        let positions = vec![0.0, 0.0, 1000.0, 0.0, 0.0, 1000.0, 1000.0, 1000.0];
+        let sizes = vec![220.0, bar, bar, 220.0, 6.0, 6.0, 220.0, 64.0];
+        let mut graph = Graph::new(positions, sizes, Vec::new()).unwrap();
+        graph.set_shape(0, NodeShape::Bar).unwrap();
+        let nodes = (0..4).map(|slot| (slot, graph.node_bounds(slot))).collect();
+        (graph, nodes)
+    }
+
+    /// The scales of the near level's beginning and of the middle level's, and pixels beyond, as
+    /// the size of a screen pixel in world units.
+    const THIN_PIXELS: [f64; 4] = [1.0 / 0.6, 1.0 / 0.3, 4.0, 1.0 / 0.15];
+
+    #[test]
+    fn a_press_in_the_middle_half_of_a_thin_node_hits_the_node_at_the_near_and_middle_level() {
+        // Verifies: ADR-0013, G-5
+        let (mut graph, nodes) = thin_nodes();
+        for (slot, bounds) in nodes {
+            let (width, height) = (bounds.max_x - bounds.min_x, bounds.max_y - bounds.min_y);
+            for pixel in THIN_PIXELS {
+                for level in [Level::Near, Level::Middle] {
+                    for i in 0..=10 {
+                        for j in 0..=10 {
+                            // From just past a quarter of the node to just short of three.
+                            let (fx, fy) =
+                                (0.26 + 0.048 * f64::from(i), 0.26 + 0.048 * f64::from(j));
+                            let p =
+                                Point::new(bounds.min_x + fx * width, bounds.min_y + fy * height);
+                            let hit = graph.hit_at(p, pixel, level, true);
+                            assert_eq!(
+                                hit,
+                                Some(Target::Node(slot)),
+                                "{p:?} of node {slot}, pixel {pixel}, {level:?}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn each_connector_of_a_thin_node_is_hit_at_its_point_and_within_its_reach_outside_it() {
+        // Verifies: ADR-0013, G-3
+        let (mut graph, nodes) = thin_nodes();
+        let outward = |side: Side| match side {
+            Side::Top => (0.0, -1.0),
+            Side::Right => (1.0, 0.0),
+            Side::Bottom => (0.0, 1.0),
+            Side::Left => (-1.0, 0.0),
+        };
+        for (slot, bounds) in nodes {
+            let (width, height) = (bounds.max_x - bounds.min_x, bounds.max_y - bounds.min_y);
+            for pixel in THIN_PIXELS {
+                let reach = CONNECTOR_REACH * pixel;
+                for level in [Level::Near, Level::Middle] {
+                    for side in SIDES {
+                        let c = side.connector(&bounds);
+                        let (ox, oy) = outward(side);
+                        let across = match side {
+                            Side::Top | Side::Bottom => height,
+                            Side::Right | Side::Left => width,
+                        };
+                        let quarter = reach.min(across / 4.0);
+                        let at = |d: f64| Point::new(c.x + ox * d, c.y + oy * d);
+                        // At its point, outside the node within the reach, and inside the node
+                        // within a quarter of it: the connector.
+                        for d in [0.0, 0.5 * reach, 0.99 * reach, -0.99 * quarter] {
+                            assert_eq!(
+                                graph.hit_at(at(d), pixel, level, true),
+                                Some(Target::Connector(slot, side)),
+                                "{side:?} of node {slot} at {d}, pixel {pixel}, {level:?}"
+                            );
+                        }
+                        // Inside the node beyond a quarter of it, within the reach: the node.
+                        if quarter < reach {
+                            let d = -(quarter + 0.01 * (reach - quarter).min(across / 4.0));
+                            assert_eq!(
+                                graph.hit_at(at(d), pixel, level, true),
+                                Some(Target::Node(slot)),
+                                "{side:?} of node {slot} at {d}, pixel {pixel}, {level:?}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_node_at_least_32_screen_pixels_high_and_wide_hits_as_it_did_before_the_reach_was_clipped()
+    {
+        // Verifies: ADR-0013
+        for seed in 1..=4 {
+            let mut rng = Lcg(200 + seed);
+            for pixel in [0.25, 1.0, 4.0] {
+                let reach = CONNECTOR_REACH * pixel;
+                // Nodes from 32 screen pixels, now and then exactly 32, high and wide.
+                let least = 4.0 * reach;
+                let extent = |rng: &mut Lcg| match rng.next() < 0.2 {
+                    true => least,
+                    false => least + rng.range(0.0, 300.0),
+                };
+                let (mut positions, mut sizes) = (Vec::new(), Vec::new());
+                for _ in 0..40 {
+                    positions.extend([rng.range(-1500.0, 1500.0), rng.range(-1500.0, 1500.0)]);
+                    sizes.extend([extent(&mut rng), extent(&mut rng)]);
+                }
+                let (positions, sizes): (Vec<f32>, Vec<f32>) = (
+                    positions.iter().map(|&v| v as f32).collect(),
+                    sizes.iter().map(|&v| v as f32).collect(),
+                );
+                let (model, mut graph) = Model::of(positions, sizes, Vec::new());
+                for _ in 0..400 {
+                    let side = SIDES[rng.below(4) as usize];
+                    let c = side.connector(&model.bounds(rng.below(40)));
+                    let off = 1.5 * reach;
+                    let p = Point::new(c.x + rng.range(-off, off), c.y + rng.range(-off, off));
+                    // The hit of before: every connector within the reach, inside the node too.
+                    let before = model
+                        .nodes()
+                        .filter_map(|n| {
+                            let bounds = model.bounds(n);
+                            SIDES
+                                .iter()
+                                .map(|&side| {
+                                    let c = side.connector(&bounds);
+                                    (n, side, (c.x - p.x).hypot(c.y - p.y))
+                                })
+                                .filter(|&(_, _, d)| d <= reach)
+                                .min_by(|a, b| a.2.total_cmp(&b.2))
+                        })
+                        .max_by_key(|&(n, _, _)| n)
+                        .map(|(n, side, _)| Target::Connector(n, side));
+                    let level = [Level::Near, Level::Middle][rng.below(2) as usize];
+                    let hit = graph.hit_at(p, pixel, level, true);
+                    match before {
+                        Some(target) => assert_eq!(hit, Some(target), "at {p:?}, pixel {pixel}"),
+                        None => assert_eq!(hit, graph.hit_at(p, pixel, level, false), "at {p:?}"),
+                    }
+                }
             }
         }
     }
@@ -413,21 +566,7 @@ mod tests {
     }
 
     fn scan(model: &Model, p: Point, pixel: f64, level: Level, connectors: bool) -> Scan {
-        let reach = CONNECTOR_REACH * pixel;
-        let connector = model
-            .nodes()
-            .filter_map(|n| {
-                let bounds = model.bounds(n);
-                SIDES
-                    .iter()
-                    .map(|&side| {
-                        let c = side.connector(&bounds);
-                        (n, side, (c.x - p.x).hypot(c.y - p.y))
-                    })
-                    .filter(|&(_, _, d)| d <= reach)
-                    .min_by(|a, b| a.2.total_cmp(&b.2))
-            })
-            .max_by_key(|&(n, _, _)| n);
+        let connector = model.connector_at(p, CONNECTOR_REACH * pixel);
         if let Some((n, side, _)) = connector.filter(|_| connectors && level != Level::Far) {
             return Scan::Exactly(Target::Connector(n, side));
         }
