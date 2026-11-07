@@ -14,7 +14,10 @@ skimmed. The design revision drops what prevented nothing
 
 - **A rule changes everywhere it is stated** — a change to a rule, a step, or a name searches
   the tree for its old wording and for every citation of its anchor, and corrects them in the
-  same change. A link check sees the anchor, never a sentence that restates it.
+  same change. A link check sees the anchor, never a sentence that restates it. A ticket under
+  `docs/plan/` whose premise the change makes false, a refusal it adds or a step it already
+  takes, is rewritten or withdrawn in the same change: named in a hand-off only, it is claimed and
+  worked against a tree that no longer has its problem.
 - **A self-test asserts what it builds** — it takes its fixtures from the tree it copies or writes
   them itself, never from the template's own ADRs, scripts, or numbers, so it holds in a derived
   project and after a normalization.
@@ -73,7 +76,11 @@ skimmed. The design revision drops what prevented nothing
   that run backwards (target left of source), level edges, edges shorter than their arrowhead,
   and edges far from the world's origin and far longer than the viewport, where `f32` rounds by
   more than a pixel; distances are measured to the segment, not to its line. The easy forward
-  curve near the origin hides the errors that matter.
+  curve near the origin hides the errors that matter. A new kind of node or end, such as a node
+  shape or a dock, is crossed with every rule already reading its neighbours: each dock and the
+  loop on each node shape, and the hit test at the near and middle level on the thinnest node it
+  allows, a bar 8 high among them. A loop that ignored the node shape and a bar whose connectors
+  covered its centre each reached a later ticket because no test crossed them.
 - **A bulk path is tried at the limits of a load.** A format or a path that carries a whole load,
   a column, a buffer, a budget's count, is run once at the most a load may hold (the counts,
   lengths, and budgets the bridge crate states), not only at the benchmark's size, before its
@@ -126,6 +133,11 @@ skimmed. The design revision drops what prevented nothing
   every diagram, and the table refuses every other. No case is needed of a class, a package, and
   a state together, which never share a diagram. A diagram that adds kinds of node adds its
   refusals here and to the table.
+- **What stays is pinned by assertions, not by unchanged files.** A spec's *Existing behaviour*
+  or a ticket's criterion that existing tests run unchanged names the assertions that must hold,
+  and expects a test that only follows a new field, argument, or signature to change with it;
+  such a change is listed in the hand-off with its reason. A promise that test files stay as they
+  are breaks at the first new field, and its criterion closes disputed while the behaviour held.
 - **A ticket names its paths in full.** *What to build* and *Acceptance criteria* write every path
   from the repository root, `packages/comb/src/api/editors.ts` and not `api/editors.ts`, so that
   `scripts/check-plan-modes.sh` reads each one against the protected parts of
