@@ -4,12 +4,11 @@
 // transition's event. A pseudostate has nothing to edit. Which form a node or an edge shows, and
 // what its heading calls it, the descriptor of the diagram shown says. Each edit shows on the
 // canvas at once.
-import type { EdgeLabelData, Selection } from "comb";
+import type { Selection } from "comb";
 import type { Diagram } from "./diagram";
 import { element } from "./element";
-import { KINDS, RELATIONSHIPS, type RelationshipKind } from "./relationships";
-import type { Classifier, NodeForm } from "./shared";
-import { eventLabel } from "./state-diagram";
+import { KINDS, labelOf, RELATIONSHIPS, type RelationshipKind } from "./relationships";
+import type { NodeForm } from "./shared";
 
 /** The lines of a textarea, each trimmed, the empty ones left out. */
 const linesOf = (text: string) =>
@@ -49,9 +48,9 @@ export class Sidebar {
     for (const field of [this.name, this.stereotype, this.attributes, this.operations])
       field.addEventListener("input", () => this.editNode());
     this.kind.addEventListener("change", () => this.changeKind());
-    this.label.addEventListener("input", () => this.changeLabel());
-    this.dependency.addEventListener("change", () => this.changeDependency());
-    this.event.addEventListener("input", () => this.changeEvent());
+    this.label.addEventListener("input", () => this.relabel(this.label.value));
+    this.dependency.addEventListener("change", () => this.relabel(this.dependency.value));
+    this.event.addEventListener("input", () => this.relabel(this.event.value));
   }
 
   /** Shows the form of what `selection` names, or the hint where it names nothing to edit. */
@@ -81,18 +80,14 @@ export class Sidebar {
   /** Fills the node form of `form` from the selected node's classifier, or from its state, which
    *  has a name and no stereotype or members. */
   private fillNode(form: Exclude<NodeForm, "none">): void {
-    const id = this.node!;
-    const shown: Omit<Classifier, "id" | "kind"> = this.diagram.classifiers.get(id) ?? {
-      name: this.diagram.states.get(id)?.name ?? "",
-      attributes: [],
-      operations: [],
-    };
+    const classifier = this.diagram.classifiers.get(this.node!);
+    const { stereotype = "", attributes = [], operations = [] } = classifier ?? {};
     for (const field of this.classifierFields) field.hidden = form !== "classifier";
     this.nodeHeading.textContent = `Selected ${this.diagram.descriptor.selected.node}`;
-    this.name.value = shown.name;
-    this.stereotype.value = shown.stereotype ?? "";
-    this.attributes.value = shown.attributes.join("\n");
-    this.operations.value = shown.operations.join("\n");
+    this.name.value = classifier?.name ?? this.diagram.states.get(this.node!)?.name ?? "";
+    this.stereotype.value = stereotype;
+    this.attributes.value = attributes.join("\n");
+    this.operations.value = operations.join("\n");
   }
 
   private fillEdge(kind: RelationshipKind): void {
@@ -102,17 +97,12 @@ export class Sidebar {
     this.eventField.hidden = form !== "event";
     this.edgeHeading.textContent = `Selected ${selected.edge}`;
     const text = this.diagram.edge(this.edge!)?.label?.text;
-    this.kind.value = kind;
+    // The kind select offers the kinds a relationship's form changes between, and is set only
+    // where that form shows.
+    if (form === "relationship") this.kind.value = kind;
     this.label.value = text ?? "";
     this.dependency.value = text ?? "«use»";
     this.event.value = text ?? "";
-  }
-
-  /** Gives the selected dependency of packages the chosen «import» or «use» as its label. */
-  private changeDependency(): void {
-    if (this.edge === null) return;
-    this.label.value = this.dependency.value;
-    this.changeLabel();
   }
 
   /** Replaces the selected classifier, or the selected state's name, with what the form holds;
@@ -137,14 +127,6 @@ export class Sidebar {
     });
   }
 
-  /** Gives the selected transition the event's text as its label, or none for no text. */
-  private changeEvent(): void {
-    if (this.edge === null) return;
-    const text = this.event.value;
-    const current = this.diagram.edge(this.edge)?.label;
-    this.diagram.updateLabel(this.edge, text === "" ? null : eventLabel(text, current));
-  }
-
   /** Changes the selected edge to the chosen kind; its label becomes the kind's, or none. */
   private changeKind(): void {
     if (this.edge === null) return;
@@ -152,20 +134,13 @@ export class Sidebar {
     this.label.value = this.diagram.edge(this.edge)?.label?.text ?? "";
   }
 
-  /** Gives the selected edge the label's text, in its kind's colour, or none for no text. */
-  private changeLabel(): void {
+  /** Gives the selected edge a label of its kind that reads `text`, where its label stands, or none
+   *  for no text: a relationship's label, a dependency's «import» or «use», or a transition's
+   *  event. */
+  private relabel(text: string): void {
     if (this.edge === null) return;
     const kind = this.diagram.kinds.get(this.edge)!;
-    const { color, label } = RELATIONSHIPS[kind];
-    const text = this.label.value;
     const current = this.diagram.edge(this.edge)?.label;
-    const next: EdgeLabelData = {
-      t: label?.t ?? 0.5,
-      offset: 0,
-      ...current,
-      background: color,
-      text,
-    };
-    this.diagram.updateLabel(this.edge, text === "" ? null : next);
+    this.diagram.updateLabel(this.edge, text === "" ? null : labelOf(kind, text, current));
   }
 }

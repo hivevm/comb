@@ -42,7 +42,7 @@ export function fillLegend(list: HTMLElement): void {
     const item = document.createElement("li");
     item.dataset.kind = kind;
     const text = document.createElement("span");
-    text.textContent = label ? `${name} ${label.text}` : name;
+    text.textContent = label ? `${name} ${label}` : name;
     item.append(swatchOf(kind), text);
     list.append(item);
   }

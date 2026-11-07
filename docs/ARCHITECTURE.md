@@ -500,9 +500,12 @@ one workspace for each example.
   describes Comb's public interface, and the render layer's edges layer for its one realization, as
   classifiers whose content is a caption for the stereotype, a title for the name, and a body text
   per member, at most the eight rows Comb lays out and "…" for those left out, placed in rows laid
-  out by hand by the heights `heightOf` gives; `src/relationships.ts` maps each kind of relationship
-  to the colour, dash pattern, arrowhead, and label `docs/CONVENTIONS.md` records. The diagram is
-  edited as the metric tree is, and so is the package diagram: the palette drops a class, an
+  out by hand by the heights `heightOf` gives; `src/relationships.ts` maps each kind of
+  relationship, the state diagram's transition among them, to the colour, dash pattern,
+  arrowhead, and label `docs/CONVENTIONS.md` records, in one table from which the kinds and the
+  legend's list follow, and builds every edge's label, for the diagrams' data and the sidebar's
+  edits alike, from its kind, its text, and the place it already has. The diagram is edited as
+  the metric tree is, and so is the package diagram: the palette drops a class, an
   interface, or an abstract class, or on the package diagram a package, centred on the drop; the
   sidebar (`src/sidebar.ts`) edits the selected classifier's name, stereotype, and members, one per
   line of two text areas, or a package's name, through `updateNode`, and the selected relationship's

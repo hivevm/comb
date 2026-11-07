@@ -3,80 +3,92 @@
 // it has no hollow triangle, no diamond, and no arrowhead at the source. So each kind is told by a
 // family of colour, its dash pattern, and its arrowhead, and by its label where those cannot tell
 // it; docs/CONVENTIONS.md records the mapping, and the sidebar's legend lists it. The state
-// diagram's transition is a kind of its own, drawn grey with an arrowhead.
-import type { EdgeData, EdgePatch } from "comb";
-
-export type RelationshipKind =
-  | "association"
-  | "directed-association"
-  | "generalization"
-  | "realization"
-  | "dependency"
-  | "aggregation"
-  | "composition"
-  | "transition";
+// diagram's transition is a kind of its own, drawn grey with an arrowhead. The label of an edge of
+// any kind is built here, by `labelOf`.
+import type { EdgeData, EdgeLabelData, EdgePatch } from "comb";
 
 /** The colour families, each dark enough that the white text Comb draws on a label in it has a
  *  contrast ratio of at least 4.5: grey for plain links, blue for inheritance, green for a whole
  *  and its parts. */
-export const GREY = 0x6b7280;
-export const BLUE = 0x1d4ed8;
-export const GREEN = 0x15803d;
+const GREY = 0x6b7280;
+const BLUE = 0x1d4ed8;
+const GREEN = 0x15803d;
 /** The dash pattern of a dashed relationship, as the metric tree's dashed edges. */
-export const DASH = [6, 4] as const;
+const DASH = [6, 4] as const;
 
-/** How a kind is drawn: its colour, its dash pattern (solid without), its arrowhead, and its
- *  label's text and place along the edge (none without). A whole is the source of an aggregation
- *  or a composition, so their label lies near the source, where UML draws the diamond. */
+/** How a kind is drawn: its name, its colour, its dash pattern (solid without), its arrowhead,
+ *  the text of the label each of its edges starts with (none without), and where its label stands,
+ *  at `t` along the edge and `offset` to the left of its direction of travel (in the middle and on
+ *  the edge without), and whether the legend lists it and the sidebar offers it. A whole is the
+ *  source of an aggregation or a composition, so their label lies near the source, where UML draws
+ *  the diamond. */
 export interface RelationshipStyle {
   name: string;
   color: number;
   dash?: readonly [number, number];
   arrow: "end" | "none";
-  label?: { text: string; t: number };
+  label?: string;
+  place?: { t: number; offset: number };
+  listed?: false;
 }
 
-export const RELATIONSHIPS: Record<RelationshipKind, RelationshipStyle> = {
+/** The kinds of relationship, each drawn as its style says, in the order the legend lists them and
+ *  the sidebar offers them. */
+const STYLES = {
   association: { name: "Association", color: GREY, arrow: "none" },
   "directed-association": { name: "Directed association", color: GREY, arrow: "end" },
   generalization: { name: "Generalization", color: BLUE, arrow: "end" },
   realization: { name: "Realization", color: BLUE, dash: DASH, arrow: "end" },
-  dependency: {
-    name: "Dependency",
-    color: GREY,
-    dash: DASH,
-    arrow: "end",
-    label: { text: "«use»", t: 0.5 },
-  },
+  dependency: { name: "Dependency", color: GREY, dash: DASH, arrow: "end", label: "«use»" },
   aggregation: {
     name: "Aggregation",
     color: GREEN,
     arrow: "none",
-    label: { text: "«aggregation»", t: 0.4 },
+    label: "«aggregation»",
+    place: { t: 0.4, offset: 0 },
   },
   composition: {
     name: "Composition",
     color: GREEN,
     arrow: "none",
-    label: { text: "«composition»", t: 0.4 },
+    label: "«composition»",
+    place: { t: 0.4, offset: 0 },
   },
-  // The state diagram's one kind, which its sidebar labels by its event.
-  transition: { name: "Transition", color: GREY, arrow: "end" },
-};
+  // The state diagram's one kind, which its sidebar labels by its event, and which neither the
+  // legend nor the class and the package diagram's kind select lists. Its label stands 14 to the
+  // left of its direction of travel, so that the labels of two transitions that run along one line
+  // in opposite directions stand either side of it.
+  transition: {
+    name: "Transition",
+    color: GREY,
+    arrow: "end",
+    place: { t: 0.5, offset: 14 },
+    listed: false,
+  },
+} satisfies Record<string, RelationshipStyle>;
 
-/** The kinds of the class and the package diagram, in the order the legend lists them and the
- *  sidebar offers them; the state diagram's transition is none of them. */
-export const KINDS: RelationshipKind[] = [
-  "association",
-  "directed-association",
-  "generalization",
-  "realization",
-  "dependency",
-  "aggregation",
-  "composition",
-];
+export type RelationshipKind = keyof typeof STYLES;
 
-/** The fields of an edge of `kind` that draw it, its label in its kind's colour. */
+export const RELATIONSHIPS: Readonly<Record<RelationshipKind, RelationshipStyle>> = STYLES;
+
+/** The kinds the legend lists and the sidebar's kind select offers, those of the class and the
+ *  package diagram, in the table's order. */
+export const KINDS = (Object.keys(RELATIONSHIPS) as RelationshipKind[]).filter(
+  (kind) => RELATIONSHIPS[kind].listed !== false,
+);
+
+/** The label of an edge of `kind` that reads `text`, on a pill of the kind's colour, standing where
+ *  `current`, the label the edge has, stands, or else where the kind places it. */
+export function labelOf(
+  kind: RelationshipKind,
+  text: string,
+  current?: EdgeLabelData,
+): EdgeLabelData {
+  const { color, place } = RELATIONSHIPS[kind];
+  return { t: 0.5, offset: 0, ...place, ...current, background: color, text };
+}
+
+/** The fields of an edge of `kind` that draw it, its label where the kind has one. */
 export function styleOf(
   kind: RelationshipKind,
 ): Pick<EdgeData, "color" | "dash" | "arrow" | "label"> {
@@ -85,7 +97,7 @@ export function styleOf(
     color,
     arrow,
     ...(dash ? { dash } : {}),
-    ...(label ? { label: { ...label, offset: 0, background: color } } : {}),
+    ...(label ? { label: labelOf(kind, label) } : {}),
   };
 }
 

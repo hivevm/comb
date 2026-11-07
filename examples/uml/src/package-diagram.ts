@@ -5,7 +5,7 @@
 // `packages/comb/src` without its tests and the dependency of `crates/engine-wasm/Cargo.toml`, as
 // the layout of ADR-0030 allows them.
 import type { Comb, EdgeData } from "comb";
-import { styleOf } from "./relationships";
+import { labelOf, styleOf } from "./relationships";
 import {
   laidOut,
   newClassifier,
@@ -52,7 +52,6 @@ const ROWS: [string, number][][] = [
  *  bottom of its source for the top of its target, or the right of its source for the left of
  *  its target within a row. */
 function edgeOf([source, target, label]: (typeof DEPENDENCIES)[number]): EdgeData {
-  const style = styleOf("dependency");
   const within = ROWS.some(
     (row) => row.some(([id]) => id === source) && row.some(([id]) => id === target),
   );
@@ -61,8 +60,8 @@ function edgeOf([source, target, label]: (typeof DEPENDENCIES)[number]): EdgeDat
     source,
     target,
     ...(within ? {} : { sourceSide: "bottom", targetSide: "top" }),
-    ...style,
-    label: { ...style.label!, text: label },
+    ...styleOf("dependency"),
+    label: labelOf("dependency", label),
   };
 }
 

@@ -179,6 +179,29 @@ test("a connection of two states adds a transition docked on the outline, whose 
   expect(edge.label).toMatchObject({ text: "redraw", background: 0x6b7280 });
 });
 
+test("a selected transition leaves the hidden kind select on a kind it offers", async ({
+  page,
+}) => {
+  // Verifies: G-12
+  await page.goto("/");
+  await open(page);
+  await choose(page, "state");
+  await showNear(page, "created");
+  const ends = await page.evaluate(async () => {
+    await window.uml.comb.whenRendered();
+    return window.uml.inspect().edges.find((edge) => edge.id === "created-loading")!;
+  });
+  // On its path a fifth of the way, clear of its label in the middle.
+  const along = (from: number, to: number) => from + (to - from) / 5;
+  await clickWorld(page, along(ends.source.x, ends.target.x), along(ends.source.y, ends.target.y));
+  await expect(page.locator("#event")).toHaveValue("createComb");
+  const select = await page.locator("#kind").evaluate((kind: HTMLSelectElement) => ({
+    value: kind.value,
+    offered: [...kind.options].map(({ value }) => value),
+  }));
+  expect(select.offered).toContain(select.value);
+});
+
 test("a connection dragged from a state back onto it adds a loop on the side it left", async ({
   page,
 }) => {
