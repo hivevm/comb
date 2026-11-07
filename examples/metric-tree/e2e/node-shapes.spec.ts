@@ -62,7 +62,8 @@ const OUTLINES: Record<NodeShape, { kind: string; action: string; color: number 
   bar: [{ kind: "rectangle", action: "fill", color: 0x1f2430 }],
 };
 
-/** What the canvas draws of each node, once drawn: its node shape and outline, its height and the
+/** What the canvas draws of each node, once drawn: its node shape and outline, the corner radius
+ *  of each part of its outline, its height and the
  *  height `heightOf` gives its content, width, and node shape, and the rectangles of its texts. */
 async function drawnShapes(page: Page) {
   return page.evaluate(async (graph) => {
@@ -81,12 +82,20 @@ async function drawnShapes(page: Page) {
           fills: outline
             ?.filter(({ action }) => action === "fill")
             .map(({ x, y, width: w, height: h }) => [x, y, w, h]),
+          radii: outline?.map(({ radius }) => radius),
           asked: window.comb.heightOf(data.content, data.width, data.shape),
           texts: (texts ?? []).map(({ x, y, width: w, height: h }) => ({ x, y, w, h })),
         };
       }),
     };
   }, shaped);
+}
+
+/** The node a click at world point (`x`, `y`) selects, or `null` for none. */
+async function selected(page: Page, x: number, y: number): Promise<string | null> {
+  await clickWorld(page, x, y);
+  const reported = (await selections(page)) as ({ id: string } | null)[];
+  return reported.at(-1)?.id ?? null;
 }
 
 test("each node shape is drawn at the near level in its outline, its content in its inner rectangle, as high as heightOf gives", async ({
@@ -150,24 +159,45 @@ test("a press beside the outline of each node shape that leaves its rectangle's 
   // Verifies: ADR-0032, G-5
   await open(page);
   await loaded(page, shaped, { x: 20, y: 20, scale: 1 });
-  const selected = async (x: number, y: number) => {
-    await clickWorld(page, x, y);
-    const reported = (await selections(page)) as ({ id: string } | null)[];
-    return reported.at(-1)?.id ?? null;
-  };
   const { nodes } = await drawnShapes(page);
   const beside = ["rounded-rectangle", "ellipse", "diamond", "circle", "ringed-circle"] as const;
   for (const id of beside) {
     const { x, y } = placeOf(id);
     const height = nodes.find((node) => node.id === id)!.height;
     // Within the node's rectangle, at its top-left corner, outside its outline: nothing.
-    expect({ id, corner: await selected(x + 2, y + 2) }).toEqual({ id, corner: null });
+    expect({ id, corner: await selected(page, x + 2, y + 2) }).toEqual({ id, corner: null });
     // At its centre: the node.
-    const centre = await selected(x + WIDTH / 2, y + height / 2);
+    const centre = await selected(page, x + WIDTH / 2, y + height / 2);
     expect({ id, centre }).toEqual({ id, centre: id });
     // A rectangle is hit at the same corner, as before node shapes.
-    expect(await selected(2, 2)).toBe("rectangle");
+    expect(await selected(page, 2, 2)).toBe("rectangle");
   }
+});
+
+test("a rounded rectangle is hit just inside the corner arc it is drawn with, and not just outside it", async ({
+  page,
+}) => {
+  // Verifies: ADR-0032
+  await open(page);
+  await loaded(page, shaped, { x: 20, y: 20, scale: 1 });
+  const { level, nodes } = await drawnShapes(page);
+  expect(level).toBe("near");
+  // The radius the canvas draws the rounded rectangle's corners by, which the engine hits it by.
+  const radii = nodes.find((node) => node.id === "rounded-rectangle")!.radii!;
+  expect(radii).toEqual([expect.any(Number), radii[0]]);
+  const radius = radii[0]!;
+  // On the diagonal from the centre of the top-left corner's arc to the node's corner, a quarter
+  // unit within the arc and a quarter beyond it, both inside the node's bounding rectangle: a drawn
+  // radius off by more than about 0.6 moves the arc past one of the two presses.
+  const { x, y } = placeOf("rounded-rectangle");
+  const at = (distance: number) => radius - distance / Math.SQRT2;
+  const inside = await selected(page, x + at(radius - 0.25), y + at(radius - 0.25));
+  const outside = await selected(page, x + at(radius + 0.25), y + at(radius + 0.25));
+  expect({ radius, inside, outside }).toEqual({
+    radius,
+    inside: "rounded-rectangle",
+    outside: null,
+  });
 });
 
 test("each node shape is drawn at the far level as a particle, as every node is", async ({
