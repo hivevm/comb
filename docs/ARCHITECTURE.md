@@ -164,12 +164,14 @@ one workspace for each example.
   of the highest rank, else the edge in the highest slot within 4 screen pixels of its path as the
   stroke of the level flattens it, the parts of the path far from the point as chords; where the
   shell asks for connectors, at the near and middle level, a connector within 8 screen pixels, of
-  the node of the highest rank, comes before them all. At the near level a label whose pill, as the
-  labels layer measures and hands it over (`setLabelSize`), holds the point comes before a node;
-  `move_label` places a dragged label at the path parameter nearest a point and its distance along
-  the normal there; `mesh_at` meshes every edge at given node slots and of given edge slots,
-  found by a query or not, as the query meshes the edges it found, what a drag redraws of the
-  nodes it moves and an edit of what it added
+  the node of the highest rank, comes before them all. Inside its node's rectangle a connector
+  reaches no further than a quarter of the node's height (top, bottom) or width (right, left), so
+  that the middle half of a node, a bar's too, is the node's. At the near level a label whose pill,
+  as the labels layer measures and hands it over (`setLabelSize`), holds the point comes before a
+  node; `move_label` places a dragged label at the path parameter nearest a point and its distance
+  along the normal there; `mesh_at` meshes every edge at given node slots and of given edge slots,
+  found by a query or not, as the query meshes the edges it found, what a drag redraws of the nodes
+  it moves and an edit of what it added
   ([ADR-0027](adr/0027-a-drag-or-an-edit-redraws-what-it-changed.md)). `stroke` flattens the found
   edges within a tolerance and strokes them into the triangles of one mesh, with each edge's
   colour, dash pattern, and arrowhead, or as thin lines alone at the far level of detail; it decides
@@ -557,11 +559,11 @@ bridge crate's validation (`crates/engine-wasm/src/properties.rs`, proptest) tha
 random batches per run against a brute-force oracle, and one of the mesh budget
 (`crates/engine/src/graph/budget.rs`) that queries random graphs of long edges with the budget
 lowered; the hit test held to one scan of every kind, whose oracle, `Model` of `graph/tests.rs`,
-computes bounds, connectors, paths, and label points from the inputs the test gave the graph and
-reads nothing of it; Bun tests beside their module as `*.test.ts`, the bridge's against the built
-WebAssembly module, the lint's rules for Comb's library sources in `packages/comb/src/lint.test.ts`,
-and those of `bench/compare.ts`, `bench/chromium.ts`, `bench/options.ts`, and `bench/fitted.ts`
-beside them, with
+computes bounds, connectors and their reach clipped within the node, paths, and label points from
+the inputs the test gave the graph and reads nothing of it; Bun tests beside their module as
+`*.test.ts`, the bridge's against the built WebAssembly module, the lint's rules for Comb's library
+sources in `packages/comb/src/lint.test.ts`, and those of `bench/compare.ts`, `bench/chromium.ts`,
+`bench/options.ts`, and `bench/fitted.ts` beside them, with
 `bench/content.test.ts` of the content the benchmark names as loaded and `bench/workflow.test.ts`
 of the Benchmark workflow's gate, its comparison steps run with a stand-in for `bun`; browser
 tests under `examples/*/e2e`, a file for the golden path and one for each concern they verify,

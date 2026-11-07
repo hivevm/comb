@@ -151,8 +151,9 @@ async function zoom(page: Page, at: Point, scales: number[], wheel = WHEEL): Pro
 }
 
 /** The drawn node whose centre lies nearest the canvas centre, with that centre on screen; for a
- *  drag, `pressed`, the nearest whose centre a press hits as the node, since a node shape as low
- *  as a bar of the shaped graph has its connectors over its centre at the near level. */
+ *  drag, `pressed`, the nearest whose centre a press hits as the node, since the shaped graph's
+ *  circles, as high as they are wide, overlap the nodes beside them, and at the near and middle
+ *  level a press at the centre of a bar on the edge of one hits the circle's connector there. */
 async function nodeNearCentre(page: Page, pressed = false): Promise<{ id: string; at: Point }> {
   return page.evaluate((mustHit) => {
     const snapshot = window.inspect();
