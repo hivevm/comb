@@ -64,8 +64,9 @@ export type EdgeForm = "relationship" | "import-or-use" | "event";
  *  the choice of diagram, how it is built, what its count names, the kinds of node the palette
  *  drops, each with its name there and the form the sidebar edits it in, the kind a connection
  *  adds and how it docks, the form the sidebar edits an edge in, what the sidebar's headings call
- *  a selected node and edge, and whether the legend of the kinds of relationship tells its edges
- *  apart. The host application, the diagram, and the sidebar read it instead of branching on a
+ *  a selected node and edge, whether the legend of the kinds of relationship tells its edges
+ *  apart, and the labels the legend names for a kind whose edges carry others than its own. The
+ *  host application, the diagram, and the sidebar read it instead of branching on a
  *  kind. */
 export interface DiagramDescriptor {
   id: string;
@@ -79,6 +80,7 @@ export interface DiagramDescriptor {
   edgeForm: EdgeForm;
   selected: { node: string; edge: string };
   legend: boolean;
+  labels?: Partial<Record<RelationshipKind, readonly string[]>>;
 }
 
 export const NODE_WIDTH = 260;

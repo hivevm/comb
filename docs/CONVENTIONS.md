@@ -113,7 +113,8 @@ skimmed. The design revision drops what prevented nothing
   hollow triangle, no diamond, and no arrowhead at the source, and its font no glyph for one.
   The package diagram draws each dependency as a dependency, its label «import» for a module's
   import of another and «use» for the bridge's load of the WebAssembly package and the bridge
-  crate's use of the core.
+  crate's use of the core; its legend names the dependency by both labels, since one naming «use»
+  alone leaves the diagram's most common edge, «import», unexplained.
 - **The UML example draws a state diagram in UML's node shapes.** Each kind of state takes the
   node shape UML gives it, so that a reader who knows UML reads the kind from the shape and no
   label names it. A pseudostate has no content and is as small as its node shape allows, so that

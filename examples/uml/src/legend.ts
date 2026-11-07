@@ -1,5 +1,6 @@
 // The legend of the kinds of relationship in the sidebar (G-12, G-11): one entry per kind, a
-// short line drawn as the kind is beside its name and its label.
+// short line drawn as the kind is beside its name and its label, or the labels the diagram shown
+// gives its edges of that kind.
 import { KINDS, RELATIONSHIPS, type RelationshipKind } from "./relationships";
 
 const SVG = "http://www.w3.org/2000/svg";
@@ -34,16 +35,22 @@ function swatchOf(kind: RelationshipKind): SVGSVGElement {
   return svg;
 }
 
-/** Fills the legend with one entry per kind: its swatch, its name, and its label where it has
- *  one. */
-export function fillLegend(list: HTMLElement): void {
-  for (const kind of KINDS) {
-    const { name, label } = RELATIONSHIPS[kind];
-    const item = document.createElement("li");
-    item.dataset.kind = kind;
-    const text = document.createElement("span");
-    text.textContent = label ? `${name} ${label}` : name;
-    item.append(swatchOf(kind), text);
-    list.append(item);
-  }
+/** Fills the legend afresh with one entry per kind: its swatch, its name, and the labels
+ *  `labels` gives it, or else its own label where it has one. */
+export function fillLegend(
+  list: HTMLElement,
+  labels: Partial<Record<RelationshipKind, readonly string[]>> = {},
+): void {
+  list.replaceChildren(
+    ...KINDS.map((kind) => {
+      const { name, label } = RELATIONSHIPS[kind];
+      const named = labels[kind] ?? (label ? [label] : []);
+      const item = document.createElement("li");
+      item.dataset.kind = kind;
+      const text = document.createElement("span");
+      text.textContent = [name, named.join(" or ")].filter(Boolean).join(" ");
+      item.append(swatchOf(kind), text);
+      return item;
+    }),
+  );
 }

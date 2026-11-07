@@ -17,8 +17,12 @@ import {
 /** Comb's modules, under `packages/comb/src`, and its crates, under `crates`. */
 const PACKAGES = ["api", "bridge", "store", "interaction", "render", "engine-wasm", "engine"];
 
+/** The labels of a dependency, which the legend names; the sidebar's choice of label, the options
+ *  of `#dependency` in `index.html`, offers the same two. */
+const LABELS = ["«import»", "«use»"] as const;
+
 /** Each dependency, from the package that depends to the one it depends on, with its label. */
-const DEPENDENCIES: [string, string, "«import»" | "«use»"][] = [
+const DEPENDENCIES: [string, string, (typeof LABELS)[number]][] = [
   ["api", "interaction", "«import»"],
   ["api", "render", "«import»"],
   ["api", "store", "«import»"],
@@ -83,7 +87,7 @@ export function packageDiagram(heightOf: Comb["heightOf"]): DiagramData {
 
 /** The package diagram as the host application chooses it: a package is edited by its name, a
  *  connection adds a dependency «use», which the sidebar makes an «import» or a «use», and the
- *  legend tells the dependency apart. */
+ *  legend names the dependency by either label. */
 export const PACKAGE_DIAGRAM: DiagramDescriptor = {
   id: "package",
   name: "Package diagram",
@@ -94,4 +98,5 @@ export const PACKAGE_DIAGRAM: DiagramDescriptor = {
   edgeForm: "import-or-use",
   selected: { node: "node", edge: "relationship" },
   legend: true,
+  labels: { dependency: LABELS },
 };

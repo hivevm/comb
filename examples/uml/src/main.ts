@@ -107,6 +107,7 @@ const kept = new Map<string, DiagramData>();
 let shown: string | null = null;
 const palette = element("palette");
 const legend = element("legend");
+const legendKinds = element("legend-kinds");
 
 /** The palette's item of each kind of node a diagram's descriptor names, by the kind's name. */
 function paletteItemOf(
@@ -147,6 +148,7 @@ async function load(): Promise<UmlLoadReport> {
   for (const item of paletteItems) item.hidden = item.dataset.diagram !== shown;
   palette.hidden = paletteItems.every((item) => item.hidden);
   legend.hidden = !descriptor.legend;
+  fillLegend(legendKinds, descriptor.labels);
   counted();
   comb.fitView();
   await comb.whenRendered();
@@ -229,7 +231,6 @@ comb.onChange((change) => {
   counted();
 });
 comb.onSelectionChange((selection) => sidebar.show(selection));
-fillLegend(element("legend-kinds"));
 window.uml = {
   comb,
   loadReport: load(),
