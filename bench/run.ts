@@ -35,10 +35,10 @@
 import { chromium, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { cpus } from "node:os";
-import type { LoadReport } from "../examples/metric-tree/src/main";
+import type { GraphName, LoadReport } from "../examples/metric-tree/src/main";
 import { chromiumEnv } from "./chromium";
 import { contentOf, gestures, type LEVELS, type Run } from "./compare";
-import { browserFor, cpuThrottleFor, graphFor } from "./options";
+import { browserFor, cpuThrottleFor, DEFAULT_GRAPH, type Graph, graphFor } from "./options";
 import { gesturesAtFitted, type View } from "./fitted";
 import { PARTS, referenceWorkload } from "./reference";
 
@@ -48,7 +48,9 @@ const HEADED = Boolean(process.env.BENCH_HEADED);
 // Read before anything starts, so that a value the run cannot take refuses it at once.
 const BROWSER = browserFor(process.env);
 const CPU_THROTTLE = cpuThrottleFor(process.env);
-const GRAPH = graphFor(process.env);
+// ADR-0030 keeps the example from importing bench, so its GraphName names the graphs a second
+// time: GRAPH's type compiles only while every graph of each list is one of the other.
+const GRAPH: Within<Graph, GraphName> & Within<GraphName, Graph> = graphFor(process.env);
 const STEPS = 120;
 const ACTION_BUDGET_MS = Number(process.env.BENCH_ACTION_MS ?? 30_000);
 const LOAD_TIMEOUT_MS = 300_000;
@@ -57,6 +59,9 @@ const TARGET_FRAME_MS = 16.8;
 // Verifies: Q-2 — the first frame of 50,000 nodes and edges within 1 s, judged by the report below
 // on the reference machine or its stand-in, the record naming the CPU's factor (ADR-0029).
 const TARGET_FIRST_FRAME_MS = 1000;
+
+/** `A`, which compiles only while every member of `A` is one of `B`. */
+type Within<A extends B, B> = A;
 
 type Point = { x: number; y: number };
 
@@ -498,7 +503,7 @@ async function atEveryLevel(page: Page, middle: Point, fitted: number) {
 async function measure(page: Page) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  const graph = GRAPH === "metric-tree" ? "" : `&graph=${GRAPH}`;
+  const graph = GRAPH === DEFAULT_GRAPH ? "" : `&graph=${GRAPH}`;
   await page.goto(`http://localhost:${PORT}/?copies=${COPIES}${graph}`, {
     timeout: LOAD_TIMEOUT_MS,
   });

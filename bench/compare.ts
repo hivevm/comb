@@ -31,7 +31,7 @@
 // baseline on its kind, and fails the metric tree's (ADR-0033).
 import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import type { Graph } from "./options";
+import { DEFAULT_GRAPH, type Graph, graphPhrase, graphSuffix } from "./options";
 import { PARTS, type Reference } from "./reference";
 
 /** How much a number may exceed its baseline, and a part of the reference differ from the
@@ -151,20 +151,16 @@ export const contentOf = ({ nodes, elements }: Content) =>
 /** The runner kind of a run, as a comparison names it. */
 const on = (run: Run) => (run.cpu ? `on ${run.cpu}` : "on no CPU model");
 
-/** The graph a run measured: the metric tree where it names none. */
-const graphOf = (run: Run): Graph => run.graph ?? "metric-tree";
+/** The graph a run measured: the default graph where it names none. */
+const graphOf = (run: Run): Graph => run.graph ?? DEFAULT_GRAPH;
 
 /** The graph a run measured, as a comparison names it. */
 const ofGraph = (run: Run) => `of the graph ${graphOf(run)}`;
 
-/** What the file names of a graph's baseline and median add before `.json`: nothing for the
- *  metric tree, `.shaped` for the shaped graph. */
-const suffix = (run: Run) => (graphOf(run) === "metric-tree" ? "" : `.${graphOf(run)}`);
-
 /** The file name of the baseline a run of `run`'s kind and graph is compared with: its kind's name
  *  and `.json` for the metric tree, `.shaped.json` for the shaped graph (ADR-0033). */
 export function baselineFile(run: Run): string {
-  return `${baselineName(run.cpu ?? "")}${suffix(run)}.json`;
+  return `${baselineName(run.cpu ?? "")}${graphSuffix(graphOf(run))}.json`;
 }
 
 /** The file name of a kind's baseline, without `.json`: the CPU model in lower case, every run of
@@ -265,7 +261,7 @@ export function median(runs: Run[]): Run | string {
   const gesture = (pick: (run: Run) => Gesture) => gestureMedian(runs, pick);
   const levels = levelsMedian(runs);
   return {
-    ...(graphOf(first) !== "metric-tree" && { graph: graphOf(first) }),
+    ...(graphOf(first) !== DEFAULT_GRAPH && { graph: graphOf(first) }),
     copies: first.copies,
     headed: first.headed ?? false,
     ...(first.cpu && { cpu: first.cpu }),
@@ -453,7 +449,7 @@ async function readBaseline(file: string, directory: boolean): Promise<Run | str
     return `the baseline ${file} is not JSON`;
   }
   const own = baselineFile(baseline);
-  const graph = graphOf(baseline) === "metric-tree" ? "" : ` and the graph ${graphOf(baseline)}`;
+  const graph = graphPhrase(graphOf(baseline));
   return directory && basename(file) !== own
     ? `the baseline ${file} names ${baseline.cpu ?? "no CPU model"}${graph}, whose file is ${own}`
     : baseline;
@@ -465,7 +461,7 @@ function kinds(baselines: Map<string, Run>): string {
   const named = [...baselines.values()].map(
     (b) =>
       (b.cpu ?? "a baseline naming no CPU model") +
-      (graphOf(b) === "metric-tree" ? "" : ` (${ofGraph(b)})`),
+      (graphOf(b) === DEFAULT_GRAPH ? "" : ` (${ofGraph(b)})`),
   );
   return `kinds with a baseline: ${named.length ? named.join("; ") : "none"}`;
 }
@@ -486,7 +482,7 @@ async function choose(
   const picked = directory ? own : path;
   const baseline = baselines.get(picked);
   if (!baseline) {
-    const graph = graphOf(run) === "metric-tree" ? "" : ` and the graph ${graphOf(run)}`;
+    const graph = graphPhrase(graphOf(run));
     return {
       code: 3,
       refused:
@@ -505,7 +501,10 @@ async function main(baselinePath: string, runPaths: string[]): Promise<number> {
     return 2;
   }
   mkdirSync("bench-results", { recursive: true });
-  writeFileSync(`bench-results/median${suffix(run)}.json`, JSON.stringify(run, null, 2) + "\n");
+  writeFileSync(
+    `bench-results/median${graphSuffix(graphOf(run))}.json`,
+    JSON.stringify(run, null, 2) + "\n",
+  );
   const chosen = await choose(run, baselinePath);
   if ("refused" in chosen) {
     say("error", `Not compared: ${chosen.refused}.`);
