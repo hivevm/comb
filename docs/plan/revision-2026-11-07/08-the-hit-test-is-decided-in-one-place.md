@@ -17,27 +17,25 @@ within 8 pixels of a connector now hits neither the connector, whose reach the r
 nor the node, which is hit within its outline. No test fixes the rectangle's edge, which counts as
 inside.
 
-For the maintainer to decide:
+The maintainer decided (2026-11-07):
 
-1. Whether the hit test's decisions, the order, the connector's reach and its clip, the outline,
-   and what lies below, have grown into one that a superseding ADR states, superseding the parts
-   of ADR-0013, ADR-0031, and ADR-0032 that hold them. An ADR supersedes whole ADRs between
-   normalizations ([`docs/adr/README.md`](../../adr/README.md#mechanics)), so the alternative is
-   to leave the three as they stand and restate the hit test as one ADR at the next normalization.
-2. Whether the dead zone is meant. If not, "within the node's bounds" reads as within its outline
-   for the clip, a one-line change of `connector_at` in `crates/engine/src/graph/hit.rs` and of
-   `Model::connector_at` in `crates/engine/src/graph/tests.rs`, decided by a test of a small
-   circle's corner.
+1. The hit test is consolidated now: one proposed ADR states the order, the connector's reach and
+   its clip, the outline, and what lies below, and supersedes what holds them. An ADR supersedes
+   whole ADRs between normalizations ([`docs/adr/README.md`](../../adr/README.md#mechanics)), so
+   the new ADR restates what else of ADR-0013, ADR-0031, and ADR-0032 it supersedes, or the
+   session proposes to the maintainer which of the three to supersede whole and how.
+2. The dead zone is not meant: inside its node a connector's reach is clipped by the node
+   shape's outline, not by its bounding rectangle, a change of `connector_at` in
+   `crates/engine/src/graph/hit.rs` and of `Model::connector_at` in
+   `crates/engine/src/graph/tests.rs`, decided by a test of a small circle's corner.
 
 ## Acceptance criteria
 
-- [ ] Given the maintainer's decision on 1, when it is taken, then either a consolidating ADR is
-      proposed through `propose-adr`, or this ticket records that the hit test waits for the next
-      normalization.
-- [ ] Given the maintainer's decision on 2, when it is taken, then a test of
-      `crates/engine/src/graph/hit.rs` presses a circle under 32 screen pixels inside its
-      rectangle, outside its outline, within 8 pixels of a connector, and asserts what the
-      decision says it hits.
+- [ ] Given decision 1, when the ticket is worked, then a consolidating ADR of the hit test is
+      proposed through `propose-adr`, its supersessions agreed with the maintainer.
+- [ ] Given a circle under 32 screen pixels, when it is pressed inside its rectangle, outside its
+      outline, within 8 pixels of a connector, then the connector is hit, as a test of
+      `crates/engine/src/graph/hit.rs` decides, and the scan oracle clips by the outline too.
 
 ## Read first
 
