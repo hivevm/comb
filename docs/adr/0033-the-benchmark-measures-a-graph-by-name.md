@@ -24,15 +24,19 @@ assumed. The forces:
 - **ADR-0028 and ADR-0029:** a run may attach to a Chrome on the host and slow its CPU, and
   records both. A third choice of the run belongs in the same record and the same refusals.
 - **The gestures:** drag, pan, zoom, and edits, at the fitted view and at each level, are
-  measured on any graph of the same size, so the shaped graph keeps the metric tree's layout and
-  size.
+  measured on any graph of the same size, so the shaped graph keeps the metric tree's nodes,
+  columns, and order. Its node shapes are taller than the metric tree's rows: a circle is as high
+  as wide, and a diamond with one title 128 high, in rows 110 apart. Kept in the metric tree's
+  places they overlap, a layout no host application draws, and a press of the benchmark lands on
+  the wrong node.
 
 ## Decision
 
 We will let a run of the benchmark name the graph it measures:
 - `metric-tree`, the default;
 - `shaped`, the metric tree at the same size, whose nodes take the node shapes in turn, whose
-  edges dock on the outline, and of whose nodes one in a hundred has a loop.
+  edges dock on the outline, of whose nodes one in a hundred has a loop, and of whose nodes no
+  two overlap.
 
 A run records that name, and is compared only with baselines of its runner kind and its graph.
 
@@ -40,8 +44,12 @@ A run records that name, and is compared only with baselines of its runner kind 
   - `BENCH_GRAPH` names the graph. `bench/options.ts` reads it as it reads the other variables,
     and refuses a value outside the two.
   - The run opens the example with `?graph=shaped` where it names `shaped`. The example builds
-    the shaped graph from the metric tree's copies, the same nodes and edges in the same places,
-    and allows loops for it.
+    the shaped graph from the metric tree's copies, the same nodes and edges in the same columns
+    and order, and allows loops for it.
+  - Its rows are spaced for the tallest node of the shaped graph, and each node is centred on
+    its row and its column. A circle and a ringed circle are as wide as the metric tree's least
+    node is high (64); a bar keeps the node's width; a content node keeps its content, and its
+    height is the one its node shape gives it (ADR-0032).
   - Without the query, the example is the metric tree as today.
 - **Recording:** a run records `graph` beside its size, mode, GPU, attachment, and CPU slowdown.
 - **Comparing:**
@@ -104,7 +112,8 @@ Each test below cites this decision with `Verifies:` and its identifier.
     refused, the last naming its file.
 - **The graph:** a browser test of the metric tree's example, on its production build, asserts
   that `?graph=shaped` loads 50,010 nodes in the node shapes in turn, edges docked on the outline,
-  and a loop on one node in a hundred. It asserts that without the query the graph is today's.
+  a loop on one node in a hundred, and no two nodes overlapping. It asserts that without the query
+  the graph is today's.
 - **The workflow:** tests of `.github/workflows/benchmark.yml` assert that the metric tree's
   comparison fails on every refusal, that the shaped graph's passes where its kind has no
   baseline and reports its median, and that the metric tree is compared before the shaped graph
