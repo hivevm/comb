@@ -3,7 +3,9 @@
 ## What to build
 
 The sidebar's legend (`examples/uml/src/legend.ts`) lists each kind of relationship once, from
-`examples/uml/src/relationships.ts`, and so names the dependency with the label «use» alone. The
+`KINDS` and the `STYLES` table of `examples/uml/src/relationships.ts`, and is filled once for
+every diagram; each diagram's `DiagramDescriptor` (`examples/uml/src/shared.ts`) says only whether
+it shows. So it names the dependency with the label «use» alone. The
 package diagram draws most of its dependencies with the label «import», which the legend does not
 name, as `docs/CONVENTIONS.md` records (*The UML example tells a relationship by its kind's
 family of colour*). The hand-offs of tickets 02 and 04 of docs/plan/uml-example both left it as
@@ -26,6 +28,7 @@ legend against the labels the diagram shown draws.
 ## Read first
 
 - Touches: `examples/uml/src/legend.ts`, `examples/uml/src/relationships.ts`,
+  `examples/uml/src/shared.ts`, `examples/uml/src/package-diagram.ts`,
   `examples/uml/src/main.ts`, `examples/uml/e2e/package-diagram.spec.ts`,
   `examples/uml/e2e/class-diagram.spec.ts`
 - Conventions: *The UML example tells a relationship by its kind's family of colour*.
