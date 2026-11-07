@@ -1,4 +1,4 @@
-# Ticket: The hit test is decided in one place, and a small circle has no dead zone
+# Ticket: A connector's reach is clipped by its node's outline, and a small circle has no dead zone
 
 ## What to build
 
@@ -19,28 +19,28 @@ inside.
 
 The maintainer decided (2026-11-07):
 
-1. The hit test is consolidated now: one proposed ADR states the order, the connector's reach and
-   its clip, the outline, and what lies below, and supersedes what holds them. An ADR supersedes
-   whole ADRs between normalizations ([`docs/adr/README.md`](../../adr/README.md#mechanics)), so
-   the new ADR restates what else of ADR-0013, ADR-0031, and ADR-0032 it supersedes, or the
-   session proposes to the maintainer which of the three to supersede whole and how.
-2. The dead zone is not meant: inside its node a connector's reach is clipped by the node
-   shape's outline, not by its bounding rectangle, a change of `connector_at` in
+1. The consolidation of the hit test waits for the next normalization: an ADR supersedes whole
+   ADRs between normalizations ([`docs/adr/README.md`](../../adr/README.md#mechanics)), and the
+   hit test's parts stand in ADR-0012, ADR-0013, ADR-0031, and ADR-0032, so consolidating now
+   would restate most of them. Ticket 13 of this directory carries it.
+2. The dead zone is not meant: inside its node's outline a connector's reach is clipped (ADR-0013,
+   revised in ba4a5c0), not by its bounding rectangle, a change of `connector_at` in
    `crates/engine/src/graph/hit.rs` and of `Model::connector_at` in
    `crates/engine/src/graph/tests.rs`, decided by a test of a small circle's corner.
 
 ## Acceptance criteria
 
-- [ ] Given decision 1, when the ticket is worked, then a consolidating ADR of the hit test is
-      proposed through `propose-adr`, its supersessions agreed with the maintainer.
 - [ ] Given a circle under 32 screen pixels, when it is pressed inside its rectangle, outside its
       outline, within 8 pixels of a connector, then the connector is hit, as a test of
       `crates/engine/src/graph/hit.rs` decides, and the scan oracle clips by the outline too.
+- [ ] Given a node at least 32 screen pixels high and wide, or a rectangle, a bar, or a rounded
+      rectangle of any size whose press lies inside its outline, when it is pressed, then the
+      hit is the one it is today.
 
 ## Read first
 
 - Touches: `docs/adr/`, `crates/engine/src/graph/hit.rs`, `crates/engine/src/graph/tests.rs`
-- ADR-0013 *Hit test*, ADR-0031 *Decision*, ADR-0032 *Hit test*.
+- ADR-0013 *Hit test*, revised in ba4a5c0; ADR-0032 *Hit test* and `NodeShape::contains`.
 - The merge message of 25eb7f9, *Doubts* and *Review*.
 
 ## Blocked by
@@ -49,5 +49,4 @@ The maintainer decided (2026-11-07):
 
 ## Mode
 
-with the human: it decides whether to supersede accepted ADRs, which only the maintainer may, and
-`crates/engine/src/graph/` is a protected part of ADR-0007.
+with the human: `crates/engine/src/graph/` is a protected part of ADR-0007.
