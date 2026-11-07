@@ -1,4 +1,4 @@
-# ADR-draft-a-change-applied-to-the-hosts-copy: Comb exports the function that applies a change to the host application's copy of the graph
+# ADR-0034: Comb exports the function that applies a change to the host application's copy of the graph
 
 - **Status:** 🟡 proposed
 - **Date:** 2026-11-07
@@ -95,7 +95,7 @@ undo; persisting the copy anywhere.
 
 ## Enforcement
 
-A test of `packages/comb/src/api/`, citing `Verifies: ADR-draft-a-change-applied-to-the-hosts-copy`,
+A test of `packages/comb/src/api/`, citing `Verifies: ADR-0034`,
 drives an edit of every kind of `GraphChange`, by the host application and by the user, and
 asserts after each that a copy kept by `applyChange` from `onChange` alone equals the graph Comb
 holds, field by field, `null` clearing a dash and a label among them; and that a change naming an
