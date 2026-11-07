@@ -3,7 +3,7 @@
 - **Status:** 🟡 proposed
 - **Date:** 2026-11-06
 - **Deciders:** Markus Brigl
-- **Applies to:** the edge paths of `crates/engine/src/geometry.rs`, the edge records of `crates/engine/src/graph.rs`, the edge fields of `crates/engine-wasm/` and of `EdgeData` in `packages/comb/src/store/`, `CombOptions` and `addEdge` in `packages/comb/src/api/`, the connect gesture of `packages/comb/src/interaction/`, and the connectors layer of `packages/comb/src/render/`
+- **Applies to:** the edge paths of `crates/engine/src/geometry.rs`, the point where a loop's end meets a node shape's outline in `crates/engine/src/shape.rs`, the edge records of `crates/engine/src/graph.rs`, the edge fields of `crates/engine-wasm/` and of `EdgeData` in `packages/comb/src/store/`, `CombOptions` and `addEdge` in `packages/comb/src/api/`, the connect gesture of `packages/comb/src/interaction/`, and the connectors layer of `packages/comb/src/render/`
 - **Supersedes:** [ADR-0025](0025-one-connector-per-side.md)
 
 ## Context
@@ -74,6 +74,13 @@ side of the node.
     long and at least 40 world units. It runs clockwise around the node, so that a positive label
     offset stands outside it. Its arrowhead enters the node there. Its label's path parameter 0.5
     is the loop's outermost point.
+  - Each end lies on the node's outline: from its point on the rectangle's side it moves inward
+    along the side's normal until it meets the outline of the node's node shape, and its control
+    point moves with it. Both ends move by the same distance, so the loop keeps its shape and its
+    width and moves inward as a whole, by up to a quarter of the node's height on a diamond. On a
+    rectangle and a bar the ends do not move, so their loops are today's to the bit; on a rounded
+    rectangle neither, while the side is at least four times its corners' radius long, and on a
+    shorter side the ends meet the arc of its corners.
 - **Compatible:**
   - A connector is compatible with a connection the user drags from a connector of a source node
     when it belongs to another node, and no edge from the source node to that node exists in that
@@ -167,6 +174,9 @@ Each test below cites this decision with `Verifies:` and its identifier.
     two centres, for each node shape and from every direction.
   - Added tests assert that a loop leaves and enters the side it names, its outermost point at
     the parameter 0.5, within `f32` far from the origin.
+  - Added tests assert that a loop's ends lie on the outline of each node shape on each side,
+    its tangent there pointing into the node, and that a loop on a rectangle, a bar, and a
+    rounded rectangle whose side is at least four times `ROUNDED_RADIUS` is today's to the bit.
   - The property test of the budget, `crates/engine/src/graph/budget.rs`, draws its random edges
     with random sides, `outline` and loops among them.
 - **Graph data:** the property test of the bridge crate generates the two side fields, `outline`
