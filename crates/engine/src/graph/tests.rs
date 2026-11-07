@@ -161,6 +161,39 @@ impl Model {
         path_of(&spec, &self.bounds(spec.source), &self.bounds(spec.target))
     }
 
+    /// The connector a press at `p` hits where a connector reaches `reach` world units, written
+    /// from ADR-0013 alone: of the nodes with a connector within its reach, the one of the highest
+    /// slot, and its nearest connector there. Within the node's rectangle a connector reaches at
+    /// most a quarter of the node's height for the top and the bottom side, of its width for the
+    /// right and the left.
+    pub(super) fn connector_at(&self, p: Point, reach: f64) -> Option<(u32, Side, f64)> {
+        self.nodes()
+            .filter_map(|n| {
+                let bounds = self.bounds(n);
+                let (width, height) = (bounds.max_x - bounds.min_x, bounds.max_y - bounds.min_y);
+                let inside = bounds.contains(p);
+                [Side::Top, Side::Right, Side::Bottom, Side::Left]
+                    .into_iter()
+                    .map(|side| {
+                        let c = side.connector(&bounds);
+                        let across = match side {
+                            Side::Top | Side::Bottom => height,
+                            Side::Right | Side::Left => width,
+                        };
+                        let reach = if inside {
+                            reach.min(across / 4.0)
+                        } else {
+                            reach
+                        };
+                        (n, side, (c.x - p.x).hypot(c.y - p.y), reach)
+                    })
+                    .filter(|&(_, _, d, reach)| d <= reach)
+                    .map(|(n, side, d, _)| (n, side, d))
+                    .min_by(|a, b| a.2.total_cmp(&b.2))
+            })
+            .max_by_key(|&(n, _, _)| n)
+    }
+
     /// The point of the label of `edge`, where it holds one.
     pub(super) fn label_point(&self, edge: u32) -> Option<Point> {
         let label = self.specs[edge as usize].label?;

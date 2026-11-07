@@ -158,6 +158,11 @@ registers and colours given as numbers.
     node and side it belongs to (ADR-0025). The shell asks for connectors only where a connection
     can begin, where `CombOptions.canConnect` is set (ADR-0024); otherwise the call hits none, and
     a press there finds what lies beneath.
+    - Within the node's bounds a connector reaches at most a quarter of the node's extent across
+      its side: of its height for the top and the bottom connector, of its width for the right
+      and the left. So the middle half of a node is the node's, and a node too thin on screen for
+      both reaches, such as a bar, is still pressed and dragged as a node. Outside the bounds
+      the reach is the 8 pixels; a node at least 32 screen pixels high and wide hits as before.
   - **Edge label:** at the near level only, where labels are drawn, the label whose pill holds
     the point. The shell hands the engine the half width and half height of each label's pill, in
     world units, when it draws the label's text and whenever that text changes; a label the shell
@@ -268,6 +273,9 @@ The tests of the hit test cite this ADR with `Verifies: ADR-0013` too:
 - **Precedence:** browser tests in `examples/metric-tree/e2e/` press on a label above a node, on
   a connector on a node, on a node above an edge, on an edge, and on the empty canvas, and assert
   what is selected or dragged; they also `Verifies: G-5, G-6`.
+- **Thin nodes:** a test of `crates/engine/src/graph/hit.rs` asserts that a press in the middle
+  half of a node hits the node however thin it is on screen, that each connector is hit within
+  its reach outside the node, and the scan above clips the reach as the decision does.
 - **Connectors asked for:** a browser test asserts that a press on a connector without
   `canConnect` begins no connection, and one asks `hitKind` beside a connector with and without
   connectors and asserts a connector only where they are asked for.
