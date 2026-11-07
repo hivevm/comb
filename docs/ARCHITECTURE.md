@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([ADR-0001](adr/0001-agent-governance-model.md)).
 >
-> **Last design revision:** 2026-11-03, due after 20 changes. The revision that took the count
+> **Last design revision:** 2026-11-07, due after 20 changes. The revision that took the count
 > moves the date; the number is this project's to set; a sensor counts the changes outside
 > `docs/` since the commit that set the date and says when the next is due
 > ([ADR-0006](adr/0006-feature-layer.md)).
@@ -55,12 +55,14 @@ actions' identifiers of a load's content holding more than 1,000,000,000 code un
 each naming the node and, where it has them, the row and column, a label background that is
 not an integer from `0` to `0xFFFFFF`, more than 1,000,000 nodes or edges, an identifier, source, or
 target longer than 256 UTF-16 code units, and identifiers of one load that hold more than 64,000,000
-code units together, and an edge side other than `top`, `right`, `bottom`, `left`, and
-`outline`. `api` refuses, against the store's map from identifiers to slots (ADR-0030), an
-identifier `updateNode` or `removeNodes` names that the graph does not hold (`unknownNode`), one
-`updateEdge` or `removeEdges` names (`unknownEdge`), one `addNode`, `addEdge`, or a user's
-connection adds that it holds already (`duplicateNode`, `duplicateEdge`), and an end of an added
-edge it does not hold (`missingNode`).
+code units together, a node shape other than `rectangle`, `rounded-rectangle`, `ellipse`,
+`circle`, `ringed-circle`, `diamond`, and `bar` (`invalidField`), content in a filled node shape,
+a circle, a ringed circle, or a bar (`contentInFilledShape`), and an edge side other than `top`,
+`right`, `bottom`, `left`, and `outline`. `api` refuses, against the store's map from identifiers to
+slots (ADR-0030), an identifier `updateNode` or `removeNodes` names that the graph does not hold
+(`unknownNode`), one `updateEdge` or `removeEdges` names (`unknownEdge`), one `addNode`, `addEdge`,
+or a user's connection adds that it holds already (`duplicateNode`, `duplicateEdge`), and an end of
+an added edge it does not hold (`missingNode`).
 The bridge crate checks the node `addNode` and the edge `addEdge` hand over as a load checks one,
 refuses an edge from a node to itself (`selfEdge`) unless `CombOptions.allowLoops` allows loops,
 which a load accepts either way (ADR-0031), and an addition past the 1,000,000 nodes or edges
@@ -85,8 +87,9 @@ of nodes and edges before anything is copied, then the code units of the identif
 the snapshot is read and read no further once they exceed the budget, then the code units of the
 texts of content, counted and stopped at their budget alike (`checkContentBudget`, naming the node
 whose text passed it), then the snapshot, and the
-store keeps the snapshot's edges and of each node its identifier, width, and node shape, which
-`api` fills in as `rectangle` where the host leaves it out; a node's content is the
+store keeps the snapshot's edges, whose sides `api` fills in where the host leaves them out,
+`right` to `left`, and `top` for both of a loop, and of each node its identifier, width, and node
+shape, which `api` fills in as `rectangle` where the host leaves it out; a node's content is the
 engine's alone, which the snapshot of a load writes straight into its columns, and which the
 engine's `content` builds when inspection or a change Comb tells asks for it. One walk reads a
 node's content, `walkContent`, and hands what it read to a sink: a load's writes its columns and
@@ -126,13 +129,13 @@ one workspace for each example.
   `right`, `bottom`, or `left`, its control point pulled out along the side's outward normal, or on
   the outline, where the line from its node's centre towards the other node's centre crosses it, its
   control point pulled out along that line, and loops, an edge from a node back to itself, which
-  leave and re-enter one side, the top for the outline, a quarter of its length either side of
-  its middle, clockwise, pulled out as far as the side is long, and moved inward as a whole along
-  the side's normal until their ends meet the outline of the node's node shape
-  ([ADR-0031](adr/0031-edges-dock-on-a-side-or-the-outline.md)), their exact bounds, the point and
-  normal at a path parameter, and edge-label placement. `shape` holds the closed set of node shapes
-  ([ADR-0032](adr/0032-node-shapes.md)): each one's height for content of a given height, the inner
-  rectangle its content is laid out in, its hit test, the point where a line from its centre
+  leave and re-enter the one side their source's dock names, the top for the outline, a quarter of
+  its length either side of its middle, clockwise, pulled out as far as the side is long, and moved
+  inward as a whole along the side's normal until their ends meet the outline of the node's node
+  shape ([ADR-0031](adr/0031-edges-dock-on-a-side-or-the-outline.md)), their exact bounds, the point
+  and normal at a path parameter, and edge-label placement. `shape` holds the closed set of node
+  shapes ([ADR-0032](adr/0032-node-shapes.md)): each one's height for content of a given height, the
+  inner rectangle its content is laid out in, its hit test, the point where a line from its centre
   crosses its outline, and how far inward from a side its outline lies at an offset along it, all
   in the node's own coordinates. `graph` keeps the loaded graph, node
   positions and sizes per slot, a node shape per node slot, a rectangle by default, by which
@@ -222,30 +225,30 @@ one workspace for each example.
   checks one node as a load would and returns the slot the engine chose for it, `heightOf` checks
   a node named `""` at the origin as `addNode` does and returns the height its content lays out to,
   adding nothing (ADR-0026), `addEdge` checks one edge as a load would, refuses one from a node to
-  itself, and adds it between the node slots `api` resolved, `updateEdge` checks a patch of an
-  edge's colour, dash, arrowhead, label, and sides as a load checks those fields and restyles and
-  re-places the edge, `edgesAt` names the edges at given nodes without removing anything,
-  `removeNodes` removes nodes and the edges at them and returns those edges' slots, `removeEdges`
-  removes edges, `translate` moves nodes, each as far as keeps it within the world's limit, so that
-  every point the engine derives stays within `f32`, `query` takes a rectangle, a level of detail,
-  the size of a screen pixel, at most 2^114 world units for a stroke, and how far an edge label's
-  pill reaches from its point, and writes the found node slots, the edge-label slots and points (at
-  the near level only), at the near and the middle level where the elements of each found node
-  drawn at the level lie (`drawn_at`), and their kinds, roles, and colours (`contentBounds…`,
-  `contentRects…`, `contentKinds…`, `contentRoles…`, `contentColors…`), the pieces of each
-  progress bar's bar and their colours (`contentBarBounds…`, `contentBars…`, `contentBarColors…`),
-  the parts of each metric and the end of each part's text (`contentPartBounds…`, `contentParts…`,
-  `contentPartEnds…`) and its arrow (`contentArrowBounds…`, `contentArrows…`), what of each text is
-  drawn, and each icon's registered name whole, as one string `contentTexts` returns, cut by
-  `contentTextBounds…`, the found edge slots, and the edge mesh into buffers the engine owns, the
-  label points and the mesh's positions relative to the query's origin, which `originX` and
-  `originY` read ([ADR-0010](adr/0010-bridge-data-format.md)), and returns the mesh's
-  detail, complete or coarsened, and refuses a pixel that is not a finite number above zero,
-  with where each found edge's indices start in the mesh (`meshEdgeStarts…`); `meshAt` meshes the
-  edges at given node slots and the given edge slots, each once, in the rectangle, at the level,
-  and at the pixel of the query the scene keeps, relative to its origin, into a mesh of their own,
-  their slots in `movingEdges…`, refuses a slot that holds no node or no edge and a pixel as
-  `query` does, and returns the mesh's detail
+  itself unless it is handed that loops are allowed, and adds it between the node slots `api`
+  resolved, `updateEdge` checks a patch of an edge's colour, dash, arrowhead, label, and sides as a
+  load checks those fields and restyles and re-places the edge, `edgesAt` names the edges at given
+  nodes without removing anything, `removeNodes` removes nodes and the edges at them and returns
+  those edges' slots, `removeEdges` removes edges, `translate` moves nodes, each as far as keeps it
+  within the world's limit, so that every point the engine derives stays within `f32`, `query` takes
+  a rectangle, a level of detail, the size of a screen pixel, at most 2^114 world units for a
+  stroke, and how far an edge label's pill reaches from its point, and writes the found node slots,
+  the edge-label slots and points (at the near level only), at the near and the middle level where
+  the elements of each found node drawn at the level lie (`drawn_at`), and their kinds, roles, and
+  colours (`contentBounds…`, `contentRects…`, `contentKinds…`, `contentRoles…`, `contentColors…`),
+  the pieces of each progress bar's bar and their colours (`contentBarBounds…`, `contentBars…`,
+  `contentBarColors…`), the parts of each metric and the end of each part's text
+  (`contentPartBounds…`, `contentParts…`, `contentPartEnds…`) and its arrow (`contentArrowBounds…`,
+  `contentArrows…`), what of each text is drawn, and each icon's registered name whole, as one
+  string `contentTexts` returns, cut by `contentTextBounds…`, the found edge slots, and the edge
+  mesh into buffers the engine owns, the label points and the mesh's positions relative to the
+  query's origin, which `originX` and `originY` read ([ADR-0010](adr/0010-bridge-data-format.md)),
+  and returns the mesh's detail, complete or coarsened, and refuses a pixel that is not a finite
+  number above zero, with where each found edge's indices start in the mesh (`meshEdgeStarts…`);
+  `meshAt` meshes the edges at given node slots and the given edge slots, each once, in the
+  rectangle, at the level, and at the pixel of the query the scene keeps, relative to its origin,
+  into a mesh of their own, their slots in `movingEdges…`, refuses a slot that holds no node or no
+  edge and a pixel as `query` does, and returns the mesh's detail
   (ADR-0027); `meshPtr` and `meshLen` read a buffer of either mesh, named by a `MeshOf`, the
   query's or the moving layer's, by a `MeshBuffer`, so that the shell reads both through one
   function;
@@ -260,9 +263,10 @@ one workspace for each example.
   the type of every problem of graph data the methods of `Comb` throw, `GraphDataProblem`, which
   `comb` exports, and keeps the refusals of the shell's mistakes in types of their own: `SlotError`
   of a slot that holds nothing, which `translate`, the removals, `edgesAt`, `setLabelSize`,
-  `moveLabel`, `addEdge`, and `updateEdge` throw alike, and `NumberError` of a number the shell
-  computed that an export cannot take, whose kind names it: `nonFinitePoint` of `hit` and
-  `moveLabel`, `invalidPixel` of `query` and `hit`, and `nonFiniteDelta` of `translate`, which
+  `moveLabel`, `content`, `updateNode`, `addEdge`, and `updateEdge` throw alike, and `NumberError`
+  of a number the shell computed that an export cannot take, whose kind names it: `nonFinitePoint`
+  of `hit` and `moveLabel`, `invalidPixel` of `query` and `hit`, `invalidFont` of `setFont`, and
+  `nonFiniteDelta` of `translate`, which
   `TranslateError` names, never a `GraphDataProblem`
   ([ADR-0022](adr/0022-a-shell-mistake-is-refused-as-the-shells.md)). The shell
   guards each such number before it calls the export. It checks the screen
@@ -413,7 +417,8 @@ one workspace for each example.
   `removeNodes`, `removeEdges`), read once into a snapshot (`api/snapshot.ts`) and handed to the
   engine by `api/editors.ts`, which also gives interaction the user's connection and deletion,
   each after its veto, `CombOptions.canConnect` or `CombOptions.canDelete`, `heightOf`, the
-  height a node's content lays out to, read and checked there as `addNode` reads and checks a
+  height a node's content lays out to in a node shape, the rectangle where none is named, read
+  and checked there as `addNode` reads and checks a
   node, changing nothing ([ADR-0026](adr/0026-the-host-asks-the-height-content-lays-out-to.md)),
   the viewport (`fitView`, `setViewport`, `viewport`, and `worldPointAt`,
   the world point under a point of the page, which needs no engine), the events to the host
@@ -431,8 +436,9 @@ one workspace for each example.
 - **Testing entry** (`comb/testing`, `packages/comb/src/testing.ts`) — `inspect` returns what the
   scene draws, each node view's texts with where they lie and what of them is drawn, its icons'
   sprites with their rectangles and the names their textures are registered under, its content and
-  the text of its first title, which the engine builds when asked (`content`), and the labels drawn
-  included, the connectors drawn with where
+  the text of its first title, which the engine builds when asked (`content`), its node shape
+  (`shape`) and the primitives of its outline (`outline`), its pills, bars, and arrows, and the
+  labels drawn included, the connectors drawn with where
   each is centred and how often the layer drew them anew, and the size and detail of the edge mesh,
   which the host application is not told; `viewport` and `renderCount`, cheap enough for every
   frame, return its transform and how often it rendered; `screenPoint` and `visibleRect` apply the
@@ -469,12 +475,13 @@ one workspace for each example.
   vetoes to `window.canConnect` and `window.canDelete` where a browser test sets them;
   `?connect=none` gives Comb no `canConnect`; `?copies=` sets its size, the copies lie in a grid
   about as wide as tall, and it reports its load time as `window.loadReport`; `?fallback=canvas`
-  allows the Canvas 2D fallback; it fetches the engine file Vite emits for its
+  allows the Canvas 2D fallback; `?loops=allow` sets `allowLoops`, and `?graph=shaped` loads the
+  benchmark's shaped graph with loops allowed; it fetches the engine file Vite emits for its
   `comb/engine.wasm?url` import and hands over the promise of the response, or with
   `?engine=response`, `module`, `bytes`, or `view` that form; `window.createComb` and
   `window.engineUrl` let a browser test make a second Comb in a host element of its own,
-  `window.useGraph` loads a graph as the example's own, and the functions of `comb/testing` stand on
-  `window`, bound to its Comb.
+  `window.useGraph` loads a graph as the example's own, `window.comb` is its Comb, and the functions
+  of `comb/testing` stand on `window`, bound to its Comb.
 - **UML example** (`examples/uml`) — a second host application, of its own workspace, which imports
   Comb by its entries alone and nothing of the metric tree (G-12, ADR-0030); a sidebar chooses
   between its three diagrams, the class diagram first, and lists the legend of the kinds of
@@ -530,24 +537,24 @@ one workspace for each example.
   where `BENCH_CDP` names one (ADR-0028); `BENCH_CPU_THROTTLE` slows the measured page's CPU
   (ADR-0029); `BENCH_GRAPH` names the graph, `metric-tree` or `shaped`, which the example loads
   with `?graph=shaped`: the metric tree's nodes and edges in the same places, the nodes in the
-  node shapes in turn, the ends docked on the outline, and a loop on one node in a hundred
-  (`shaped` in `src/graph.ts`, ADR-0033). `bench/options.ts` reads all three and refuses a value
-  it cannot take; a run records `graph`, and checks that the example loaded it.
-  After the first frame and before the gestures it times the reference workload of
-  `bench/reference.ts` in the same page, which uses the browser's JavaScript, WebAssembly, and
-  WebGL2 and none of Comb's code. `bench/compare.ts` compares the median of several runs with the
-  baseline of the runner's kind, the CPU model the run records, and of the run's graph, in
-  `bench/baselines/` (`<kind>.json` for the metric tree, `<kind>.shaped.json` for the shaped
-  graph), with a margin of 25 %, reports a gesture the baseline lacks as `no baseline` without
-  judging it, refuses a run on a kind without a baseline of its graph, a run of another graph, a run
-  whose reference differs from its kind's baseline by more than 25 % in a part, a run of another
-  size, mode, or GPU or of none named, a run of an attached browser against a launched baseline or
-  the reverse, a run of another CPU slowdown factor, and a median of runs that differ in these; a
-  kind's baseline is the median of three runs on a GitHub runner of that kind on `main`; the
-  **Benchmark** workflow (`.github/workflows/benchmark.yml`) runs the benchmark three times on each
-  graph and compares each graph's median with its own baseline on a GitHub runner, weekly and on
-  demand, within 90 minutes; the shaped graph's comparison fails the job only where its kind has a
-  baseline, and otherwise reports its median (`bench/compare.ts` exits 3 for a kind without a
+  node shapes in turn, a node in a filled node shape without content, the ends docked on the
+  outline, and a loop on one node in a hundred (`shaped` in `src/graph.ts`, ADR-0033).
+  `bench/options.ts` reads all three and refuses a value it cannot take; a run records `graph`, and
+  checks that the example loaded it. After the first frame and before the gestures it times the
+  reference workload of `bench/reference.ts` in the same page, which uses the browser's JavaScript,
+  WebAssembly, and WebGL2 and none of Comb's code. `bench/compare.ts` compares the median of several
+  runs with the baseline of the runner's kind, the CPU model the run records, and of the run's
+  graph, in `bench/baselines/` (`<kind>.json` for the metric tree, `<kind>.shaped.json` for the
+  shaped graph), with a margin of 25 %, reports a gesture the baseline lacks as `no baseline`
+  without judging it, refuses a run on a kind without a baseline of its graph, a run of another
+  graph, a run whose reference differs from its kind's baseline by more than 25 % in a part, a run
+  of another size, mode, or GPU or of none named, a run of an attached browser against a launched
+  baseline or the reverse, a run of another CPU slowdown factor, and a median of runs that differ in
+  these; a kind's baseline is the median of three runs on a GitHub runner of that kind on `main`;
+  the **Benchmark** workflow (`.github/workflows/benchmark.yml`) runs the benchmark three times on
+  each graph and compares each graph's median with its own baseline on a GitHub runner, weekly and
+  on demand, within 90 minutes; the shaped graph's comparison fails the job only where its kind has
+  a baseline, and otherwise reports its median (`bench/compare.ts` exits 3 for a kind without a
   baseline of the runs' graph, 2 for the other refusals).
 - **Mutation testing** (`.github/workflows/mutation.yml`) — cargo-mutants mutates `crates/engine`
   on a GitHub runner, weekly and on demand; `scripts/check-mutants.sh` compares the surviving
