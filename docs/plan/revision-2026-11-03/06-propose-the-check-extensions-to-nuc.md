@@ -21,9 +21,17 @@ next take-up, so they go upstream as a proposal for NUC:
   But `.githooks/pre-commit` runs `scripts/check-docs.sh` on every commit that stages Markdown and
   refuses the first, since the tree still cites the draft identifier elsewhere: on 2026-11-05 both
   `scripts/ready-for-main.sh` and a direct run stopped there, and ADR-0030 was numbered in one
-  commit against rule 4 of [`AGENTS.md` §3](../../../AGENTS.md#3-adr-rules) (#79). Either the hook
-  lets the script's first commit through, or the script commits once where rule 4 allows it; the
-  self-test of the hooks or of the script plays the case.
+  commit against rule 4 of [`AGENTS.md` §3](../../../AGENTS.md#3-adr-rules) (#79). It stopped
+  again for #82 on 2026-11-06, and ADR-0034 was numbered by hand on 2026-11-07. Comb fixed it in
+  the script, the hook unchanged: `scripts/number-adrs.sh` rewrites every reference in the working
+  tree first, then commits `docs/adr/` alone and the rest after it, and its header no longer says
+  the checks fail on the first commit. Since the hook reads the working tree, the first commit
+  passes it, and rule 4 holds for both. A case of `scripts/test-number-adrs.sh` runs the script
+  with `.githooks/` enabled in the fixture and a stand-in for check 5 of `scripts/check-docs.sh`;
+  it fails against the old script with the hook's refusal. The proposal carries both files. The
+  sentence of NUC's ADR on tests that says the checks fail on the first commit stays true of
+  that commit's tree, which still cites the drafts outside `docs/adr/`; NUC decides whether it
+  says more.
 - **A merge in a normalization leaves no citation doubled.** Merging two old ADRs into ADR-0027
   left "(ADR-0027, ADR-0027)" in a comment of `packages/comb/src/bridge/index.ts`.
   Neither `.agents/skills/normalize/remap.sh` nor a check reports it.
