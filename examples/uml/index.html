@@ -12,26 +12,13 @@
       <h1>UML</h1>
       <label>
         Diagram
-        <select id="diagram">
-          <option value="class">Class diagram</option>
-          <option value="package">Package diagram</option>
-          <option value="state">State diagram</option>
-        </select>
+        <select id="diagram"></select>
       </label>
       <p id="count"></p>
       <section id="palette">
         <h2>Add a node</h2>
         <p>Drag a kind onto the canvas.</p>
-        <ul>
-          <li draggable="true" data-kind="class" data-diagram="class">Class</li>
-          <li draggable="true" data-kind="interface" data-diagram="class">Interface</li>
-          <li draggable="true" data-kind="abstract-class" data-diagram="class">Abstract class</li>
-          <li draggable="true" data-kind="package" data-diagram="package" hidden>Package</li>
-          <li draggable="true" data-kind="state" data-diagram="state" hidden>State</li>
-          <li draggable="true" data-kind="initial" data-diagram="state" hidden>Initial state</li>
-          <li draggable="true" data-kind="final" data-diagram="state" hidden>Final state</li>
-          <li draggable="true" data-kind="choice" data-diagram="state" hidden>Choice</li>
-        </ul>
+        <ul id="palette-kinds"></ul>
       </section>
       <section id="node-form" hidden>
         <h2 id="node-heading">Selected node</h2>

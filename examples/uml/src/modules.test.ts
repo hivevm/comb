@@ -34,3 +34,36 @@ test("the lookup of an element of the page is written once", () => {
     .filter((file) => /\bfunction element\b/.test(readFileSync(join(SRC, file), "utf8")));
   expect(defining).toHaveLength(1);
 });
+
+/** The kinds of node and of relationship of the diagrams, written here from the glossary, not read
+ *  from the example. */
+const KINDS = [
+  ...["class", "interface", "abstract-class", "package"],
+  ...["state", "initial", "final", "choice"],
+  ...["association", "directed-association", "generalization", "realization", "dependency"],
+  ...["aggregation", "composition", "transition"],
+];
+
+/** The string literals of `file`'s code, its comments and the identifiers of the page's elements
+ *  it looks up left out: a field of the sidebar may be named as a kind is. */
+function literalsOf(file: string): string[] {
+  const code = readFileSync(join(SRC, file), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "")
+    .replace(/\belement(<[^>]*>)?\("[^"]*"\)/g, "");
+  return [...code.matchAll(/"([^"\n]*)"|'([^'\n]*)'|`([^`$\n]*)`/g)].map(
+    ([, double, single, template]) => double ?? single ?? template!,
+  );
+}
+
+for (const file of ["diagram.ts", "sidebar.ts"])
+  test(`${file} names no kind of node or of relationship of one diagram`, () => {
+    expect(literalsOf(file).filter((literal) => KINDS.includes(literal))).toEqual([]);
+  });
+
+test("rules.ts defines no kind of node, and imports them from shared.ts", () => {
+  const source = readFileSync(join(SRC, "rules.ts"), "utf8");
+  expect(source).not.toMatch(/\b(CLASSIFIER|STATE|NODE)_KINDS\s*=/);
+  expect(source).not.toMatch(/\btype\s+(Classifier|State|Node)Kind\s*=/);
+  expect(importsOf("rules.ts")).toContain("shared");
+});

@@ -12,6 +12,7 @@ import {
   Container,
   Graphics,
   type Polygon,
+  type RoundedRectangle,
   Sprite,
   TextStyle,
   type TextStyleOptions,
@@ -35,9 +36,11 @@ const SELECTED_STROKE = 0x3b82f6;
 const TEXT_COLOR = 0x1f2430;
 const CAPTION_COLOR = 0x6b7280;
 const LINK_COLOR = 0x2563eb;
-/** The radius of a rectangle's corners and of a rounded rectangle's, the engine's
- *  `RECTANGLE_RADIUS` and `ROUNDED_RADIUS`, which it hits them by. */
+/** The radius of a rectangle's corners, the shell's alone: the engine hits a rectangle as its
+ *  bounding rectangle, its corners included (ADR-0032). */
 const RECTANGLE_RADIUS = 6;
+/** The radius of a rounded rectangle's corners, the engine's `ROUNDED_RADIUS`, which it hits them
+ *  by. */
 const ROUNDED_RADIUS = 10;
 /** The width of a ringed circle's ring. */
 const RING_WIDTH = 2;
@@ -401,7 +404,8 @@ const OUTLINES: Partial<
 };
 
 /** A part of a node shape a view drew, as its `Graphics` holds it: the kind of the primitive,
- *  its bounds in its node, and its fill's or its stroke's colour. */
+ *  its bounds in its node, its fill's or its stroke's colour, and a rounded rectangle's corner
+ *  radius. */
 export interface DrawnOutline {
   kind: string;
   action: "fill" | "stroke";
@@ -410,6 +414,7 @@ export interface DrawnOutline {
   width: number;
   height: number;
   color: number;
+  radius?: number;
 }
 
 /** One node: its node shape, its badges' pills, its progress bars, its metrics' arrows, its texts,
@@ -526,7 +531,10 @@ export class NodeGraphic extends Container {
       const { path, style } = instruction.data;
       return path.shapePath.shapePrimitives.map(({ shape }) => {
         const { x, y, width, height } = shape.getBounds();
-        return { kind: shape.type, action, x, y, width, height, color: style.color };
+        const drawn = { kind: shape.type, action, x, y, width, height, color: style.color };
+        return shape.type === "roundedRectangle"
+          ? { ...drawn, radius: (shape as RoundedRectangle).radius }
+          : drawn;
       });
     });
     return { shape: this.drawn.node?.shape ?? "rectangle", outline };

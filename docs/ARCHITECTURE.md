@@ -437,27 +437,25 @@ one workspace for each example.
   scene draws, each node view's texts with where they lie and what of them is drawn, its icons'
   sprites with their rectangles and the names their textures are registered under, its content and
   the text of its first title, which the engine builds when asked (`content`), its node shape
-  (`shape`) and the primitives of its outline (`outline`), its pills, bars, and arrows, and the
-  labels drawn included, the connectors drawn with where
-  each is centred and how often the layer drew them anew, and the size and detail of the edge mesh,
-  which the host application is not told; `viewport` and `renderCount`, cheap enough for every
+  (`shape`) and the primitives of its outline (`outline`), a rounded rectangle's with its corner
+  radius, its pills, bars, and arrows, and the labels drawn included, the connectors drawn with
+  where each is centred and how often the layer drew them anew, and the size and detail of the edge
+  mesh, which the host application is not told; `viewport` and `renderCount`, cheap enough for every
   frame, return its transform and how often it rendered; `screenPoint` and `visibleRect` apply the
   scene's transform between world and screen; `hitKind` names what a press at a screen point hits,
   asking interaction's hit test from the viewport a press reads, which is the drawn one once
   `whenRendered` resolves, connectors only where the Comb lets the user connect; `isDrawn` finds
-  whether one node or edge is drawn without building every drawn view, as `inspect` does, an
-  edge from the slots the scene holds, the query's and the moving layer's, without asking the
-  engine;
-  `showLayers` hides layers for a reference image;
-  `sceneNumbers` gives the numbers the scene draws by (where the levels of detail begin, the culling
-  margin, the label reach, the rescale); `work` counts what the canvas did: GPU buffers created and
-  allocated, bytes uploaded, those of the edge mesh among them, and texture uploads, counted at the
-  WebGL context from its first call, resizes of the edge mesh's buffers, and views the pools made,
-  and refuses with an `UncountedRendererError` where the canvas draws without WebGL;
-  `edgeVertices` gives the screen point of every vertex of the edge mesh as its shader computes it
-  in `f32`, and `gpuEdgeIndices` the indices its GPU buffer holds, read back; for tests, the
-  benchmark, and tooling.
-  Its shape follows the scene and is outside the stable interface of `comb`.
+  whether one node or edge is drawn without building every drawn view, as `inspect` does, an edge
+  from the slots the scene holds, the query's and the moving layer's, without asking the engine;
+  `showLayers` hides layers for a reference image; `sceneNumbers` gives the numbers the scene draws
+  by (where the levels of detail begin, the culling margin, the label reach, the rescale); `work`
+  counts what the canvas did: GPU buffers created and allocated, bytes uploaded, those of the edge
+  mesh among them, and texture uploads, counted at the WebGL context from its first call, resizes of
+  the edge mesh's buffers, and views the pools made, and refuses with an `UncountedRendererError`
+  where the canvas draws without WebGL; `edgeVertices` gives the screen point of every vertex of the
+  edge mesh as its shader computes it in `f32`, and `gpuEdgeIndices` the indices its GPU buffer
+  holds, read back; for tests, the benchmark, and tooling. Its shape follows the scene and is
+  outside the stable interface of `comb`.
 - **Example** (`examples/metric-tree`) — a host application with a metric tree and an HTML sidebar
   (G-9), each type of node told only by the content the example describes from its fields (G-10):
   a bet its hypothesis and status badge, an epic its progress bar and status badge, an input
@@ -519,14 +517,21 @@ one workspace for each example.
   classifier), and changed by no edit of its stereotype; and a state's, state, initial, final, or
   choice, with its state. What the diagrams share stands in `src/shared.ts`, which imports no
   diagram's file and no diagram's file imports another's: the diagram as data (`DiagramData`), the
-  classifier and the state, the classifier's content (`contentOf`), and the layout by rows
-  (`laidOut`) of the class and the package diagram; the lookup of an element of the page stands in
-  `src/element.ts`. `src/diagram.ts` keeps the example's copy of the graph, the classifier or the
-  state of each node, and the kind of each edge, each from a change `onChange` tells or after Comb
-  took the call that changes it, and `src/legend.ts` draws the legend. Its hooks stand under
-  `window.uml`, so that it declares nothing on `window` the metric tree declares; Vite serves it on
-  port 5176, the launch configuration **Example: UML** opens it, and its browser tests run in the
-  Playwright project `uml` against it in test mode on port 5177.
+  kinds of node, which the rules import, the classifier and the state, the classifier's content
+  (`contentOf`), and the layout by rows (`laidOut`) of the class and the package diagram; the
+  lookup of an element of the page stands in `src/element.ts`. Each diagram is described in one
+  place, the descriptor (`DiagramDescriptor`) its file exports: its identifier and name in the
+  choice of diagram, how it is built, its kinds of node with their names in the palette and the
+  form the sidebar edits each in, the kind a connection adds and how it docks, the form the
+  sidebar edits an edge in, the headings of a selection, and whether the legend shows. The host
+  application fills the choice of diagram and the palette from the descriptors, and
+  `src/diagram.ts` and `src/sidebar.ts` read the one of the diagram shown instead of branching on
+  a kind. `src/diagram.ts` keeps the example's copy of the graph, the classifier or the state of
+  each node, and the kind of each edge, each from a change `onChange` tells or after Comb took the
+  call that changes it, and `src/legend.ts` draws the legend. Its hooks stand under `window.uml`, so
+  that it declares nothing on `window` the metric tree declares; Vite serves it on port 5176, the
+  launch configuration **Example: UML** opens it, and its browser tests run in the Playwright
+  project `uml` against it in test mode on port 5177.
 - **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, each node with the
   content of its type, measuring the time to the first frame and p95 frame times over the frames
   Comb rendered of drag, pan, zoom, and edits one a frame, a node and an edge added and removed

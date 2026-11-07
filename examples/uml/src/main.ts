@@ -11,15 +11,28 @@ import {
 } from "comb";
 import engineUrl from "comb/engine.wasm?url";
 import { inspect, screenPoint, type SceneSnapshot } from "comb/testing";
-import { classDiagram } from "./class-diagram";
-import { packageDiagram } from "./package-diagram";
-import { contentOf as stateContentOf, newState, STATE_SHAPES, stateDiagram } from "./state-diagram";
+import { CLASS_DIAGRAM } from "./class-diagram";
+import { PACKAGE_DIAGRAM } from "./package-diagram";
+import {
+  contentOf as stateContentOf,
+  newState,
+  STATE_DIAGRAM,
+  STATE_SHAPES,
+} from "./state-diagram";
 import { Diagram } from "./diagram";
 import { element } from "./element";
 import { fillLegend } from "./legend";
 import type { RelationshipKind } from "./relationships";
-import { CLASSIFIER_KINDS, STATE_KINDS, type NodeKind } from "./rules";
-import { contentOf, newClassifier, NODE_WIDTH, type DiagramData } from "./shared";
+import {
+  CLASSIFIER_KINDS,
+  contentOf,
+  newClassifier,
+  NODE_WIDTH,
+  STATE_KINDS,
+  type DiagramData,
+  type DiagramDescriptor,
+  type NodeKind,
+} from "./shared";
 import { Sidebar } from "./sidebar";
 
 /** How the last load went: what the browser tests read. */
@@ -60,10 +73,14 @@ const PALETTE_TYPE = "application/x-uml-kind";
 const dropped = new Map<string, number>();
 let connected = 0;
 
+/** The diagrams the sidebar chooses between, in the order it offers them, the class diagram
+ *  first: each described in one place, its file. */
+const DIAGRAMS = [CLASS_DIAGRAM, PACKAGE_DIAGRAM, STATE_DIAGRAM] as const;
+
 /** Names the user's connection where the rules allow the kind a connection adds between its
  *  ends; refuses it otherwise. */
 function canConnect({ source, target }: Proposal): string | false {
-  const kind = diagram.connected;
+  const kind = diagram.descriptor.connected;
   if (!diagram.allows(source, target, kind)) return false;
   connected += 1;
   return `${source}-${kind}-${target}-${connected}`;
@@ -77,48 +94,39 @@ const comb = await createComb(element("canvas"), {
   canConnect,
   canDelete: () => true,
 });
-const diagram = new Diagram(comb);
+const diagram = new Diagram(comb, DIAGRAMS[0]);
 const sidebar = new Sidebar(diagram);
 const choice = element<HTMLSelectElement>("diagram");
 const count = element("count");
 
-/** The diagrams the sidebar chooses between: how each is built, what its count names, the kind
- *  a connection adds to it, and whether the legend of the kinds of relationship tells its edges
- *  apart. */
-const DIAGRAMS: Record<
-  string,
-  {
-    build: (heightOf: Comb["heightOf"]) => DiagramData;
-    nouns: [string, string];
-    connected: RelationshipKind;
-    legend?: false;
-  }
-> = {
-  class: {
-    build: classDiagram,
-    nouns: ["classes and interfaces", "relationships"],
-    connected: "association",
-  },
-  package: { build: packageDiagram, nouns: ["packages", "dependencies"], connected: "dependency" },
-  state: {
-    build: stateDiagram,
-    nouns: ["states", "transitions"],
-    connected: "transition",
-    legend: false,
-  },
-};
 /** Each diagram as it was left, while another is shown; the example stores nothing beyond the
  *  page. */
 const kept = new Map<string, DiagramData>();
 let shown: string | null = null;
 const palette = element("palette");
 const legend = element("legend");
-const paletteItems = palette.querySelectorAll<HTMLElement>("[data-kind]");
+
+/** The palette's item of each kind of node a diagram's descriptor names, by the kind's name. */
+function paletteItemOf(
+  { id }: DiagramDescriptor,
+  { kind, name }: DiagramDescriptor["nodes"][number],
+) {
+  const item = document.createElement("li");
+  Object.assign(item, { draggable: true, textContent: name });
+  Object.assign(item.dataset, { kind, diagram: id });
+  return item;
+}
+
+choice.append(...DIAGRAMS.map(({ id, name }) => new Option(name, id)));
+const paletteItems = DIAGRAMS.flatMap((each) =>
+  each.nodes.map((node) => paletteItemOf(each, node)),
+);
+element("palette-kinds").append(...paletteItems);
 
 /** Shows the size of the diagram. */
 function counted(): void {
   const { nodes, edges } = diagram.graph;
-  const [things, links] = DIAGRAMS[shown ?? "class"]!.nouns;
+  const [things, links] = diagram.descriptor.nouns;
   count.textContent = `${nodes.length} ${things}, ${edges.length} ${links}`;
 }
 
@@ -126,15 +134,16 @@ function counted(): void {
  *  the one it replaces. */
 async function load(): Promise<UmlLoadReport> {
   if (shown !== null) kept.set(shown, diagram.data());
-  shown = choice.value;
+  const descriptor = DIAGRAMS.find(({ id }) => id === choice.value) ?? DIAGRAMS[0];
+  shown = descriptor.id;
   const next =
     kept.get(shown) ??
-    DIAGRAMS[shown]!.build((content, width, shape) => comb.heightOf(content, width, shape));
-  diagram.load(next, DIAGRAMS[shown]!.connected);
+    descriptor.build((content, width, shape) => comb.heightOf(content, width, shape));
+  diagram.load(next, descriptor);
   // The palette offers what the diagram shown holds, and is hidden where it offers nothing.
   for (const item of paletteItems) item.hidden = item.dataset.diagram !== shown;
-  palette.hidden = [...paletteItems].every((item) => item.hidden);
-  legend.hidden = DIAGRAMS[shown]!.legend === false;
+  palette.hidden = paletteItems.every((item) => item.hidden);
+  legend.hidden = !descriptor.legend;
   counted();
   comb.fitView();
   await comb.whenRendered();
