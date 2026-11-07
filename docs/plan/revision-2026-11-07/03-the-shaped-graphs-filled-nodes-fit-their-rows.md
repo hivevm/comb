@@ -11,11 +11,14 @@ beside them. That overlap is why `bench/run.ts` picks the drag's node by
 bottom connector of the circle above it still does. A benchmark whose graph overlaps its own nodes
 measures a layout no host application would draw, and its press needs a filter for it.
 
-Give the filled node shapes of the shaped graph a size that fits the metric tree's row, such as a
-circle as wide as the row is high, centred where the rectangle was, so that no two nodes of the
-shaped graph overlap; then drop the `pressed` flag of `nodeNearCentre` in `bench/run.ts`. This
-changes what ADR-0033 calls the same nodes in the same places, so its text is revised first, in a
-commit of ADRs only, while it is still proposed.
+Lay the shaped graph out as the revised ADR-0033 (d1a0c51) decides: the metric tree's nodes,
+edges, columns, and order, the rows spaced for the shaped graph's tallest node, and each node
+centred on its row and its column. A circle and a ringed circle are 64 wide, the metric tree's
+least node height; a bar keeps the node's width; a content node keeps its content, as high as its
+node shape makes it (ADR-0032). So no two nodes of the shaped graph overlap; then drop the `pressed`
+flag of `nodeNearCentre` in `bench/run.ts`. (The first suggestion here, a circle as wide as the row
+is high in the metric tree's places, was superseded by that decision.) The maintainer revised
+ADR-0033 first, in a commit of ADRs only, while it is still proposed.
 
 ## Acceptance criteria
 
