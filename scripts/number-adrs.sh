@@ -12,13 +12,16 @@
 #      included. Its body carries the map from each draft identifier to its number.
 #
 # Neither commit changes the text of an ADR together with another path, so rule 4 of AGENTS.md,
-# section 3 holds for both. Between the two, the rest of the tree cites draft identifiers no file
-# carries; the checks fail on the first commit and pass on the second, and they run on the tip.
+# section 3 holds for both. Every reference, inside docs/adr/ and outside it, is moved in the
+# working tree before the first commit, and each commit stages only its own paths. The pre-commit
+# hook checks the working tree, which cites only numbers by then, so both commits pass it with no
+# hook bypassed; the tree of the first commit alone still cites draft identifiers outside
+# docs/adr/, so the checks are run on the tip.
 #
 # It refuses the checkout of main, a working tree with changes or untracked files, since it
 # commits, and a branch that has not taken up the tip of origin/main, else main: a number free on
 # an older main may be taken. A commit that fails leaves what it would have held in the working
-# tree, and says so.
+# tree, and says so; when the first fails, the moved references outside docs/adr/ stay there too.
 #
 # Pure bash + coreutils/grep/sed/find, plus git.
 #
@@ -139,18 +142,21 @@ subject_numbers="ADR-${numbers[0]}"
 ((${#numbers[@]} > 1)) && subject_numbers+=" to ADR-${numbers[-1]}"
 body="$(printf '%s\n' "${map[@]}")"
 
-# 1. The record.
+# Every reference is moved in the working tree before either commit: the pre-commit hook checks
+# the working tree, not the commit, so the first commit passes it only once the rest of the tree
+# cites the numbers too.
 for i in "${!slugs[@]}"; do
   git mv "docs/adr/draft-${slugs[$i]}.md" "docs/adr/${numbers[$i]}-${slugs[$i]}.md"
 done
-while IFS= read -r f; do rewrite "$f"; done < <(text_files docs/adr/)
+while IFS= read -r f; do rewrite "$f"; done < <(text_files .)
 sort_rows docs/adr/README.md
+
+# 1. The record.
 git add -A -- docs/adr/
 git commit -q -m "docs(adr): number the drafts as $subject_numbers" -m "$body" \
-  || refuse "the commit of the record failed; the renames and rewrites stand uncommitted (git status)"
+  || refuse "the commit of the record failed; the renames and every rewrite stand uncommitted (git status)"
 
 # 2. What cites it.
-while IFS= read -r f; do rewrite "$f"; done < <(text_files . ':(exclude)docs/adr/')
 git add -u -- . ':(exclude)docs/adr/'
 git commit -q --allow-empty -m "chore: cite $subject_numbers by number, no longer as drafts" -m "$body" \
   || refuse "the commit of the references failed; the record is committed, the rewrites outside docs/adr/ stand uncommitted (git status)"

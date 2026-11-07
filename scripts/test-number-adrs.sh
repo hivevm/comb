@@ -7,13 +7,15 @@
 # main that gains a number of its own meanwhile. The script runs on the branch, and the case
 # asserts the numbers it gave, the references it moved, the paths each of its two commits
 # touched, the map in the second commit's body, and that the review binding sensor lists neither
-# commit as one that changes ADR text together with other paths. The refusals have a case each.
+# commit as one that changes ADR text together with other paths. One case runs the script with
+# the repository's git hooks enabled in the fixture, so that .githooks/pre-commit checks each of
+# its commits. The refusals have a case each.
 #
 # Draft identifiers and ADR numbers inside fixtures are assembled, never written literally, so
 # that scripts/check-docs.sh does not read this script's fixtures as references into this
 # repository.
 #
-# Inputs: scripts/number-adrs.sh scripts/lib/ scripts/sensor-review-binding.sh .gitattributes .githooks/merge-adr-index
+# Inputs: scripts/number-adrs.sh scripts/lib/ scripts/sensor-review-binding.sh .gitattributes .githooks/
 #
 # Usage:
 #     scripts/test-number-adrs.sh
@@ -152,6 +154,43 @@ bash "$SCRIPT" --root "$d" > /dev/null 2>&1; rc=$?
 check "a renamed draft is numbered" test "$rc" -eq 0
 check "a draft renamed on the branch keeps the place it was added in" \
   grep -q "^# $(id 3): " "$d/docs/adr/0003-zeta.md"
+
+# With the git hooks enabled: .githooks/pre-commit runs the fixture's scripts/check-docs.sh on the
+# working tree before each commit that stages Markdown, as it does in a clone with the hooks on.
+# The fixture's check stands in for check 5 of the real one, which a fixture this small cannot
+# pass as a whole: it fails while a tracked file cites a draft no file under docs/adr/ carries.
+d="$(repo hooked)"
+cat > "$d/scripts/check-docs.sh" <<'EOF'
+#!/usr/bin/env bash
+# Fails while a tracked file cites a draft identifier that no file under docs/adr/ carries, and
+# counts its runs in a file git does not track, so the case sees that the hook ran it.
+cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
+echo run >> "$(git rev-parse --git-dir)/docs-checked"
+d=draft rc=0
+while IFS= read -r ref; do
+  [[ -f "docs/adr/$d-${ref#ADR-"$d"-}.md" ]] || { echo "cites $ref, which no file carries"; rc=1; }
+done < <(git ls-files -z | xargs -0 grep -ohIE "ADR-$d-[a-z0-9]+(-[a-z0-9]+)*" 2>/dev/null | sort -u)
+exit "$rc"
+EOF
+g "$d" add -A && g "$d" commit -q -m "the documentation check"
+take_up "$d"
+g "$d" config core.hooksPath "$ROOT/.githooks"
+start="$(g "$d" rev-parse HEAD)"
+out="$(bash "$SCRIPT" --root "$d" 2>&1)"; rc=$?
+check "with the hooks enabled, the script succeeds" test "$rc" -eq 0
+((rc)) && while IFS= read -r l; do printf '    %s\n' "$l"; done <<< "$out" >&2
+check "with the hooks enabled, it makes both commits" \
+  test "$(g "$d" rev-list --count "$start..HEAD")" -eq 2
+check "with the hooks enabled, the first commit changes only docs/adr/" \
+  test -z "$(g "$d" diff-tree -r --no-commit-id --name-only "$start" HEAD~1 | grep -v '^docs/adr/')"
+check "with the hooks enabled, the second commit holds the references outside docs/adr/" \
+  test "$(g "$d" diff-tree -r --no-commit-id --name-only HEAD | LC_ALL=C sort | tr '\n' ' ')" \
+    = "docs/note.md scripts/test-x.sh "
+check "with the hooks enabled, the tree is clean afterwards" \
+  test -z "$(g "$d" status --porcelain)"
+check "with the hooks enabled, the hook ran the documentation check before each commit" \
+  test "$({ wc -l < "$(g "$d" rev-parse --absolute-git-dir)/docs-checked"; } 2> /dev/null)" = 2
+check "the fixture's documentation check passes on the tip" bash "$d/scripts/check-docs.sh"
 
 # --- cases: refusals and nothing to do ----------------------------------------------------
 
