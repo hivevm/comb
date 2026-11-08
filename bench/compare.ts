@@ -12,12 +12,13 @@
 // much a number moved. A run names the graph it measured, the metric tree where it names none
 // (ADR-0033): the shaped graph's baseline of a kind is bench/baselines/<kind>.shaped.json, a run is
 // compared only with the baseline of its graph, and runs of different graphs have no median. Runs
-// of another size, mode, or GPU than the baseline's are refused as well,
-// as are runs of an attached browser (ADR-0028) or of a CPU slowed by another factor (ADR-0029),
-// and so is a run that names no GPU, as one on a fallback renderer would, and a run without a
-// reference against a baseline with one. Against a baseline without a reference the numbers are
-// compared and the gate is reported as not checked. The median, with the CPU model and each
-// gesture's steps and frames, is written as bench-results/median.json, of the shaped graph as
+// of another size, mode, or GPU than the baseline's are refused as well, as are runs that attached
+// to a browser against a baseline that launched one, or the other way round, though not runs of
+// different versions of the attached browser (ADR-0028), and runs of a CPU slowed by another factor
+// (ADR-0029); and so is a run that names no GPU, as one on a fallback renderer would, and a run
+// without a reference against a baseline with one. Against a baseline without a reference the
+// numbers are compared and the gate is reported as not checked. The median, with the CPU model and
+// each gesture's steps and frames, is written as bench-results/median.json, of the shaped graph as
 // bench-results/median.shaped.json, the file a new baseline is taken from: a median of runs on
 // `main` on a GitHub runner of that kind, saved under the file name the refusal prints in a pull
 // request that says why.
@@ -132,11 +133,30 @@ function numbers(run: Run): Record<string, number> {
   ]);
 }
 
-/** The size, mode, and GPU of a run, which a comparison and a median require to be the same. */
-const setting = (run: Run) =>
-  `${run.load.nodes} nodes (${run.copies} copies), ${run.headed ? "headed" : "headless"}, on ${run.gpu}` +
-  (run.attached ? ", attached" : "") +
-  ((run.cpuThrottle ?? 1) === 1 ? "" : `, the CPU slowed ${run.cpuThrottle} times`);
+/** What a run measured with beside its kind, size, mode, and GPU, as a median and a baseline taken
+ *  from it record it: whether it attached to a browser started outside it, that browser's version
+ *  (ADR-0028), and the factor its CPU was slowed by where not 1 (ADR-0029). A comparison and a
+ *  median require the attachment and the factor to agree, through `setting`; the version is only
+ *  recorded, so runs of different versions of the attached browser compare and median together,
+ *  and the median records the first run's. */
+function measuredWith(run: Run): Pick<Run, "attached" | "browser" | "cpuThrottle"> {
+  const throttle = run.cpuThrottle ?? 1;
+  return {
+    ...(run.attached && { attached: true, ...(run.browser && { browser: run.browser }) }),
+    ...(throttle !== 1 && { cpuThrottle: throttle }),
+  };
+}
+
+/** The size, mode, and GPU of a run, and whether it attached to a browser and the factor its CPU
+ *  was slowed by, which a comparison and a median require to be the same. */
+const setting = (run: Run) => {
+  const { attached, cpuThrottle } = measuredWith(run);
+  return (
+    `${run.load.nodes} nodes (${run.copies} copies), ${run.headed ? "headed" : "headless"}, on ${run.gpu}` +
+    (attached ? ", attached" : "") +
+    (cpuThrottle === undefined ? "" : `, the CPU slowed ${cpuThrottle} times`)
+  );
+};
 
 /** The content a run names, as bench/run.ts prints it: nodes by type, then elements by kind. */
 export const contentOf = ({ nodes, elements }: Content) =>
@@ -242,15 +262,6 @@ function levelsMedian(runs: Run[]): Levels<Gesture> | undefined {
 
 /** The run whose every number is the median of that number over `runs`, which must all be of
  *  one kind, size, and mode; or why they are not. */
-/** What a baseline taken from `run` is compared by beside its kind: the browser where the run
- *  attached to one (ADR-0028), and the factor its CPU was slowed by (ADR-0029). */
-function measuredWith(run: Run): Partial<Run> {
-  return {
-    ...(run.attached && { attached: true, ...(run.browser && { browser: run.browser }) }),
-    ...((run.cpuThrottle ?? 1) !== 1 && { cpuThrottle: run.cpuThrottle }),
-  };
-}
-
 export function median(runs: Run[]): Run | string {
   const [first] = runs;
   if (!first) return "no run";

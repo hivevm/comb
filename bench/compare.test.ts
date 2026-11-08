@@ -715,6 +715,17 @@ describe("benchmark comparison of the browser and the CPU a run measured with", 
     expect(compare(attached, { ...attached }).kind).toBe("compared");
   });
 
+  test("runs of an attached browser that differ only in its version compare and median together", () => {
+    // Verifies: ADR-0028 — the version is recorded, and decides neither a comparison nor a median.
+    const older = { ...run(200, 100), headed: true, attached: true, browser: "155" };
+    const newer = { ...older, browser: "156" };
+    expect(compare(newer, older)).toMatchObject({ kind: "compared", regressions: [] });
+    const middle = median([older, newer, { ...newer }]);
+    if (typeof middle === "string") throw new Error(middle);
+    expect(middle).toMatchObject({ attached: true });
+    expect(compare(newer, middle).kind).toBe("compared");
+  });
+
   test("a run of a CPU slowed by another factor than the baseline's is not compared", () => {
     // Verifies: ADR-0029
     const slowed = { ...run(200, 100), cpuThrottle: 2 };
