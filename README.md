@@ -37,7 +37,11 @@ statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), th
    nothing lands on `main` locally, the documentation checks run before a commit that stages a
    Markdown file and before a merge, and the checks before a push. Working outside the container?
    Run the commands listed there yourself, once per clone.
-2. Authenticate your coding agent inside the container (for Claude Code: `claude login`).
+2. Authenticate your coding agent inside the container (for Claude Code: `claude login`), and
+   the GitHub CLI with `gh auth login`. Both logins lie on the host, in `~/.claude` and
+   `~/.config/gh`, which the container mounts, so they outlive a rebuild; the container sets `gh`
+   up as git's credential helper on every start
+   ([ADR-draft-gh-login-outlives-a-rebuild](docs/adr/draft-gh-login-outlives-a-rebuild.md)).
 3. Start working with the agent. Drive the work from the specification and the ADRs.
 
 ## Build, Test & Run

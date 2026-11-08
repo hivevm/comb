@@ -749,7 +749,10 @@ whatever form the entry takes, and on a listed state library other than zustand 
 dependency lists (ADR-0011).
 `scripts/check-devcontainer.sh`, the template's, which `scripts/check-all.sh` and the **Checks**
 workflow run beside `scripts/check-code.sh`, fails on a host Docker socket mounted, a Feature not
-referenced by its major tag alone, or a lock that does not name the Features (ADR-0004).
+referenced by its major tag alone, or a lock that does not name the Features (ADR-0004), and on a
+container that no longer mounts the host's `~/.config/gh` writable, no longer creates that source
+in `initializeCommand`, or no longer runs `gh auth setup-git --force` on start
+(ADR-draft-gh-login-outlives-a-rebuild).
 `scripts/check-container.sh` fails where the Dev Container does not build from its Dockerfile,
 where the Dockerfile names an image without a digest, or where a Feature installs Node.js
 (ADR-0014), on a Feature that brings a container engine or a Compose file (ADR-0015), and where
