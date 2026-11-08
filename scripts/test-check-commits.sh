@@ -132,7 +132,7 @@ run_script() {
 }
 
 # The assertions, which check runs.
-# shellcheck disable=SC2317 # run by check
+# shellcheck disable=SC2317,SC2329 # run by check
 {
   not() { ! "$@"; }
   has() { [[ "$out" == *"$1"* ]]; }
