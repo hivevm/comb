@@ -124,22 +124,29 @@ if [[ ! "$max_jobs" =~ ^[1-9][0-9]*$ ]]; then
 fi
 out="$(mktemp -d)"
 labels=() kinds=() running=0
-# stop — on every exit, a signal's included: stop every job the runner still has, the one started
-# an instant before included, wait for them, and remove their files.
+# stop — on every exit, a signal's included: stop the check of every job the runner still has, the
+# one started an instant before included, wait for them, and remove their files. It sends the
+# TERM to the check itself, never to the job's subshell, which traps nothing: a trap there is
+# inherited by the check's process until its exec, and a TERM that reaches it in between is lost
+# on the exec. Untrapped, a TERM before the exec ends that process before the check starts, and
+# one after it reaches the check. The check's id is known once the subshell has written it, so
+# stop() waits for it, or for the subshell to have ended.
 # shellcheck disable=SC2317 # run by the trap
 stop() {
-  local running_jobs
-  running_jobs="$(jobs -p)"
-  # shellcheck disable=SC2086 # one process id per word
-  [[ -n "$running_jobs" ]] && kill $running_jobs 2>/dev/null
+  local job
+  for job in $(jobs -p); do
+    until [[ -e "$out/check.$job" ]] || ! kill -0 "$job" 2>/dev/null; do sleep 0.01; done
+    [[ -e "$out/check.$job" ]] && kill "$(cat "$out/check.$job" 2>/dev/null)" 2>/dev/null
+  done
   wait
   rm -rf "$out"
 }
 trap stop EXIT
 
 # run <label> <script> [args...] — start one check, its output and exit code kept under $out. The
-# subshell passes a TERM on to the check and waits for it, so stop() returns once each has ended;
-# its trap stands before the check starts, so a TERM never finds the check without it.
+# subshell writes the check's id to check.<its own id> for stop(), at once by a rename, and
+# removes it once the check has ended. Its last writes may find $out removed by stop(); what they
+# would print then is dropped, and nothing else the subshell prints, such as a failed fork.
 run() {
   local label="$1" script="$2" i="${#labels[@]}"
   shift 2
@@ -152,12 +159,12 @@ run() {
   fi
   while ((running >= max_jobs)); do wait -n; running=$((running - 1)); done
   {
-    check=""
-    trap '[[ -n "$check" ]] && kill "$check" 2>/dev/null && wait "$check"; exit 143' TERM
     bash "$ROOT/$script" "$@" > "$out/$i" 2>&1 &
-    check=$!
-    wait "$check"
-    echo $? > "$out/$i.rc"
+    echo "$!" > "$out/new.$BASHPID" && mv "$out/new.$BASHPID" "$out/check.$BASHPID"
+    wait "$!"
+    rc=$?
+    rm -f "$out/check.$BASHPID" 2>/dev/null
+    echo "$rc" 2>/dev/null > "$out/$i.rc"
   } &
   running=$((running + 1))
 }

@@ -535,7 +535,7 @@ one workspace for each example.
   call that changes it, and `src/legend.ts` draws the legend. Its hooks stand under `window.uml`, so
   that it declares nothing on `window` the metric tree declares; Vite serves it on port 5176, the
   launch configuration **Example: UML** opens it, and its browser tests run in the Playwright
-  project `uml` against it in test mode on port 5177.
+  project `uml` against it in test mode on a port of their own.
 - **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, each node with the
   content of its type, measuring the time to the first frame and p95 frame times over the frames
   Comb rendered of drag, pan, zoom, and edits one a frame, a node and an edge added and removed
@@ -606,8 +606,8 @@ The Bun tests and the browser tests on the development server run the bridge in 
 grows the engine's memory before each of its calls, so a view kept across a call reads empty, and
 counts each call by its name, which `bridgeCalls(name)` of `comb/testing` reads, so that a test
 sees whether a load crossed into the engine. The browser tests serve the example in Vite's `test`
-mode for it, on port 5174, and assert it through `testMode()` of `comb/testing`; the bundle check
-fails a bundle that carries it. In test mode the
+mode for it, and assert it through `testMode()` of `comb/testing`; the bundle check fails a
+bundle that carries it. In test mode the
 engine traps on demand: `trapNextCall()` of `comb/testing` arms an export the bridge crate carries
 only when built with its feature `test-mode`, and the next call of an `Engine` traps. The example's
 Vite configuration hands that engine, from `packages/comb/wasm/test-mode/`, over in place of
@@ -620,9 +620,14 @@ Policy of Q-6, `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'`, from 
 server and from `vite preview`, so every browser test runs under it. `e2e/policy.spec.ts` records
 every request and `securitypolicyviolation` while the graph loads, is panned, and is zoomed, once
 on the development server and once, tagged `@built`, on the example's production build, which
-`vite preview` serves on port 5175; that build runs without test mode, as a host application ships
-it. Playwright and the benchmark start headless Chromium without the displays a Dev Container
-forwards, so WebGL2 runs on SwiftShader instead of PixiJS falling back to Canvas 2D.
+`vite preview` serves; that build runs without test mode, as a host application ships it. The
+three servers of a run listen on ports the system had free when it began, which
+`playwright.config.ts` chooses once and hands its workers in `COMB_TEST_PORTS`, so that runs in two
+worktrees at once neither collide nor test each other's tree. Two such runs also fit the Dev
+Container's process limit: `devcontainer.json` raises it with `--pids-limit=8192` from Podman's
+default of 2048 tasks, threads included, and one run peaks at about 1400 tasks, most of them
+Chromium's. Playwright and the benchmark start headless Chromium without the displays a Dev
+Container forwards, so WebGL2 runs on SwiftShader instead of PixiJS falling back to Canvas 2D.
 
 ## How it runs
 

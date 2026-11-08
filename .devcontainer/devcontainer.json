@@ -19,8 +19,12 @@
   ],
 
   // The host's address on the Docker bridge, by which the benchmark reaches a Chrome on the host
-  // that a forwarder there bridges to its debugging port (ADR-0028).
-  "runArgs": ["--add-host=host.docker.internal:host-gateway"],
+  // that a forwarder there bridges to its debugging port (ADR-0028). And a limit of 8192 tasks,
+  // threads included, in place of Podman's default of 2048: one `CI=1 scripts/check-all.sh` peaks
+  // at about 1400, most of it the Playwright workers' Chromium, so two worktrees running the checks
+  // at once need about 2800 beside the editor and the agents, and 8192 leaves room for a third.
+  // The limit takes effect when the container is rebuilt.
+  "runArgs": ["--add-host=host.docker.internal:host-gateway", "--pids-limit=8192"],
 
   "shutdownAction": "stopContainer",
 

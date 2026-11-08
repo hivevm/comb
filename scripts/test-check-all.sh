@@ -250,25 +250,48 @@ check "the checks run side by side" test "$(at_once "$d" "${#scripts[@]}")" -gt 
 d="$(repo jobs-zero)"
 CHECK_ALL_JOBS=0 expect_exit "CHECK_ALL_JOBS=0 exits 2" 2 "$d"
 
-# A runner stopped by TERM stops the checks it started and waits for them: none finishes after
-# it, and one that cleans up on TERM has done so when the runner returns.
+# A runner stopped by TERM stops the checks it started and waits for them: none is still running
+# after it, and one that cleans up on TERM has done so when the runner returns. Each case waits on
+# a condition, never on a time, so a loaded machine decides it as an idle one does. The runner
+# holds descriptor 3 open on a pipe, and every process it starts inherits it; each check runs
+# until the test releases it, and what a check starts in turn closes it, since that may outlive
+# the check. Once the runner has returned, the pipe reads its end at once if no check is left,
+# and nothing until the release if one is.
 d="$(repo stopped)"
 # shellcheck disable=SC2016 # the stub's variable, not this script's
-printf 'trap '\''sleep 0.3; touch "%s/cleaned"; exit 1'\'' TERM; sleep 5 & wait $!\n' "$d" \
-  >> "$d/${scripts[0]}"
+{
+  printf 'trap '\''sleep 0.3 3>&-; touch "%s/cleaned" 3>&-; exit 1'\'' TERM\n' "$d"
+  printf 'touch "%s/trapped" 3>&-; sleep 5 3>&- & wait $!\n' "$d"
+} >> "$d/${scripts[0]}"
 for s in "${scripts[@]}"; do
-  printf 'touch "%s/started"; sleep 1; touch "%s/finished"\n' "$d" "$d" >> "$d/$s"
+  printf 'touch "%s/started" 3>&-; until [[ -e "%s/released" ]]; do sleep 0.1 3>&-; done\n' \
+    "$d" "$d" >> "$d/$s"
 done
-bash "$d/scripts/check-all.sh" > /dev/null 2>&1 &
+mkfifo "$d/held"
+bash "$d/scripts/check-all.sh" > /dev/null 2>&1 3> "$d/held" &
 runner=$!
-for _ in 1 2 3 4 5 6 7 8 9 10; do [[ -e "$d/started" ]] && break; sleep 0.1; done
+exec 4< "$d/held"
+# Until the check that cleans up has its trap and another check runs; the bound only ends a wait
+# that would otherwise not end, on a runner that starts nothing.
+for _ in $(seq 600); do [[ -e "$d/trapped" && -e "$d/started" ]] && break; sleep 0.1; done
 kill -TERM "$runner"
+# A runner that waits for its checks without stopping them would wait for ever; after a minute
+# the test releases them, and notes that it had to.
+(
+  for _ in $(seq 600); do kill -0 "$runner" 2> /dev/null || exit 0; sleep 0.1; done
+  touch "$d/waited" "$d/released"
+) &
+watchdog=$!
 wait "$runner"; rc=$?
+kill "$watchdog" 2> /dev/null; wait "$watchdog"
+read -r -t 5 -u 4 _; held=$?
+exec 4<&-
+touch "$d/released"
 check "a runner stopped by TERM exits 143" test "$rc" -eq 143
 check "and had started a check" test -e "$d/started"
+check "and stops its checks instead of waiting for them to end" test ! -e "$d/waited"
 check "and returns once a check that cleans up on TERM has done so" test -e "$d/cleaned"
-sleep 1.2
-check "and no check it started finishes after it" test ! -e "$d/finished"
+check "and no check it started is still running after it" test "$held" -eq 1
 
 d="$(repo unknown)"
 expect_exit "an unknown argument exits 2" 2 "$d" --everything

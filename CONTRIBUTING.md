@@ -96,6 +96,11 @@ or adding extensions. Features are pinned by major tag and resolved in the commi
 `devcontainer-lock.json`. Extensions are listed by identifier only, because a published extension
 version cannot be repointed and a version suffix is VS Code-specific.
 
+The container allows 8192 tasks, threads included (`--pids-limit=8192` in `runArgs`), in place of
+Podman's default of 2048, so that two worktrees can run `CI=1 scripts/check-all.sh` at once: one
+run peaks at about 1400, most of it Chromium under Playwright. A changed limit takes effect only
+once the container is rebuilt; `cat /sys/fs/cgroup/pids.max` inside it shows the limit in force.
+
 ### Host container management
 
 The Dev Container deliberately has **no access to the host Docker daemon**: the socket is not

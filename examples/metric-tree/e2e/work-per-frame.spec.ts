@@ -49,14 +49,30 @@ async function pan(
   );
 }
 
+/**
+ * Awaits `step`, then grows the test's timeout by three times what it took: a loaded machine
+ * takes longer for each step and is given longer, while a step that never ends still ends the
+ * test once the time the steps before it bought has run out.
+ */
+async function paced<T>(step: Promise<T>): Promise<T> {
+  const begun = Date.now();
+  const result = await step;
+  test.setTimeout(test.info().timeout + 3 * (Date.now() - begun));
+  return result;
+}
+
 test("a pan within the queried rectangle creates, resizes, and uploads nothing, at every level", async ({
   page,
 }) => {
   // Verifies: ADR-0012
+  // Each level does the same work, waiting on each render, and a loaded machine does it slower:
+  // the test's time follows the machine's speed. It has the minute it had, and each step it
+  // waits on, the pan ten frames at a time, adds three times what it took (`paced`).
   test.setTimeout(60_000);
-  await open(page, "?copies=100");
+  await paced(open(page, "?copies=100"));
   const { cullingMargin } = await sceneNumbers(page);
   const frames = 60;
+  const chunk = 10;
   // One screen pixel a frame stays within the margin the last query reached beyond the viewport.
   expect(frames).toBeLessThan(cullingMargin);
   for (const [scale, level] of [
@@ -66,14 +82,16 @@ test("a pan within the queried rectangle creates, resizes, and uploads nothing, 
   ] as const) {
     const start = await centred(page, scale);
     const before = await work(page);
-    await setViewport(page, { ...start, x: start.x + 5000 });
-    await setViewport(page, start);
+    await paced(setViewport(page, { ...start, x: start.x + 5000 }));
+    await paced(setViewport(page, start));
     expect(await page.evaluate(() => window.inspect().level)).toBe(level);
     // The query that warmed the scene up uploaded its mesh: the counters see the uploads.
     expect((await work(page)).meshBytesUploaded).toBeGreaterThan(before.meshBytesUploaded);
     const { queries, renders } = await page.evaluate(() => window.inspect());
     const warm = await work(page);
-    await pan(page, start, frames);
+    for (let frame = 0; frame < frames; frame += chunk) {
+      await paced(pan(page, { ...start, x: start.x - frame }, chunk));
+    }
     const panned = await page.evaluate(() => window.inspect());
     expect(panned.renders).toBe(renders + frames);
     expect(panned.queries).toBe(queries);
