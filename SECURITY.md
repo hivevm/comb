@@ -28,9 +28,13 @@ These properties shape the security posture of the coding agents working here:
 - **Nothing leaves the machine without a human.** The rule is
   [`AGENTS.md` §6](AGENTS.md#6-project-rules). It is documentation: no file in the repository can
   stop an agent from running `git push`, and a tool's own configuration enforces none.
-  Authentication uses the web flow of `gh` with no stored tokens. What the repository's own git
-  hooks guarantee for every agent and every human, and what bypasses each, is under
-  [Git hooks](CONTRIBUTING.md#git-hooks) in the contributing guide.
+  Authentication uses the web flow of `gh`, and no token is written into the repository. The
+  token that flow grants lies in plain text in the host's `~/.config/gh`, which the container
+  mounts so the login outlives a rebuild, in reach of everything the container runs; a leak is
+  remedied by revoking it on GitHub
+  ([ADR-draft-gh-login-outlives-a-rebuild](docs/adr/draft-gh-login-outlives-a-rebuild.md)).
+  What the repository's own git hooks guarantee for every agent and every human, and what
+  bypasses each, is under [Git hooks](CONTRIBUTING.md#git-hooks) in the contributing guide.
 - **The specification and the decision record change only by human decision**
   ([`AGENTS.md` §3](AGENTS.md#3-adr-rules), rules 4 and 7). The gate is
   [`.github/CODEOWNERS`](.github/CODEOWNERS) together with the Code-Owner review requirement

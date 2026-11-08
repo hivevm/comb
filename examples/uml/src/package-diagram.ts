@@ -3,7 +3,7 @@
 // arrowhead and the label «import», a module's import of another, or «use», the bridge's load of
 // the WebAssembly package and the bridge crate's use of the core. They are the imports of
 // `packages/comb/src` without its tests and the dependency of `crates/engine-wasm/Cargo.toml`, as
-// the layout of ADR-0030 allows them.
+// the layout of ADR-0030 allows them; `comb-source.test.ts` holds them to that source.
 import type { Comb, EdgeData } from "comb";
 import { labelOf, styleOf } from "./relationships";
 import {

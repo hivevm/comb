@@ -501,7 +501,11 @@ one workspace for each example.
   describes Comb's public interface, and the render layer's edges layer for its one realization, as
   classifiers whose content is a caption for the stereotype, a title for the name, and a body text
   per member, at most the eight rows Comb lays out and "…" for those left out, placed in rows laid
-  out by hand by the heights `heightOf` gives; `src/relationships.ts` maps each kind of
+  out by hand by the heights `heightOf` gives; both diagrams are held to Comb's source by a Bun
+  test (`src/comb-source.test.ts`), which reads the library's files by path, never by import,
+  and fails where a package, a dependency between the modules of `packages/comb/src` or the
+  crates, or a member of the `Comb` interface is missing from the diagram or drawn there and
+  not in the source, and on a source it reads nothing from; `src/relationships.ts` maps each kind of
   relationship, the state diagram's transition among them, to the colour, dash pattern,
   arrowhead, and label `docs/CONVENTIONS.md` records, in one table from which the kinds and the
   legend's list follow, and builds every edge's label, for the diagrams' data and the sidebar's
@@ -510,7 +514,11 @@ one workspace for each example.
   interface, or an abstract class, or on the package diagram a package, centred on the drop; the
   sidebar (`src/sidebar.ts`) edits the selected classifier's name, stereotype, and members, one per
   line of two text areas, or a package's name, through `updateNode`, and the selected relationship's
-  kind and label, or a dependency's «import» or «use», through `updateEdge`; a connection becomes an
+  kind and label, or a dependency's «import» or «use», through `updateEdge`, an edit Comb refuses
+  staying in its field, which is marked invalid and says why under it until the next edit of the
+  form Comb takes clears every mark of the form, since a classifier's edit sends every field of
+  it, and a change of kind keeping a label the user typed and replacing only the old kind's own
+  label, or none, by the new kind's, or none; a connection becomes an
   association, on the package diagram a dependency «use», and on the state diagram a transition,
   where the rules of `src/rules.ts`, a pure function of the kinds of the ends, of the relationship,
   and of whether it is a loop, allow it: they refuse a transition into an initial state or out of a
@@ -535,7 +543,7 @@ one workspace for each example.
   call that changes it, and `src/legend.ts` draws the legend. Its hooks stand under `window.uml`, so
   that it declares nothing on `window` the metric tree declares; Vite serves it on port 5176, the
   launch configuration **Example: UML** opens it, and its browser tests run in the Playwright
-  project `uml` against it in test mode on port 5177.
+  project `uml` against it in test mode on a port of their own.
 - **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, each node with the
   content of its type, measuring the time to the first frame and p95 frame times over the frames
   Comb rendered of drag, pan, zoom, and edits one a frame, a node and an edge added and removed
@@ -606,8 +614,8 @@ The Bun tests and the browser tests on the development server run the bridge in 
 grows the engine's memory before each of its calls, so a view kept across a call reads empty, and
 counts each call by its name, which `bridgeCalls(name)` of `comb/testing` reads, so that a test
 sees whether a load crossed into the engine. The browser tests serve the example in Vite's `test`
-mode for it, on port 5174, and assert it through `testMode()` of `comb/testing`; the bundle check
-fails a bundle that carries it. In test mode the
+mode for it, and assert it through `testMode()` of `comb/testing`; the bundle check fails a
+bundle that carries it. In test mode the
 engine traps on demand: `trapNextCall()` of `comb/testing` arms an export the bridge crate carries
 only when built with its feature `test-mode`, and the next call of an `Engine` traps. The example's
 Vite configuration hands that engine, from `packages/comb/wasm/test-mode/`, over in place of
@@ -620,9 +628,14 @@ Policy of Q-6, `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'`, from 
 server and from `vite preview`, so every browser test runs under it. `e2e/policy.spec.ts` records
 every request and `securitypolicyviolation` while the graph loads, is panned, and is zoomed, once
 on the development server and once, tagged `@built`, on the example's production build, which
-`vite preview` serves on port 5175; that build runs without test mode, as a host application ships
-it. Playwright and the benchmark start headless Chromium without the displays a Dev Container
-forwards, so WebGL2 runs on SwiftShader instead of PixiJS falling back to Canvas 2D.
+`vite preview` serves; that build runs without test mode, as a host application ships it. The
+three servers of a run listen on ports the system had free when it began, which
+`playwright.config.ts` chooses once and hands its workers in `COMB_TEST_PORTS`, so that runs in two
+worktrees at once neither collide nor test each other's tree. Two such runs also fit the Dev
+Container's process limit: `devcontainer.json` raises it with `--pids-limit=8192` from Podman's
+default of 2048 tasks, threads included, and one run peaks at about 1400 tasks, most of them
+Chromium's. Playwright and the benchmark start headless Chromium without the displays a Dev
+Container forwards, so WebGL2 runs on SwiftShader instead of PixiJS falling back to Canvas 2D.
 
 ## How it runs
 
@@ -736,7 +749,10 @@ whatever form the entry takes, and on a listed state library other than zustand 
 dependency lists (ADR-0011).
 `scripts/check-devcontainer.sh`, the template's, which `scripts/check-all.sh` and the **Checks**
 workflow run beside `scripts/check-code.sh`, fails on a host Docker socket mounted, a Feature not
-referenced by its major tag alone, or a lock that does not name the Features (ADR-0004).
+referenced by its major tag alone, or a lock that does not name the Features (ADR-0004), and on a
+container that no longer mounts the host's `~/.config/gh` writable, no longer creates that source
+in `initializeCommand`, or no longer runs `gh auth setup-git --force` on start
+(ADR-draft-gh-login-outlives-a-rebuild).
 `scripts/check-container.sh` fails where the Dev Container does not build from its Dockerfile,
 where the Dockerfile names an image without a digest, or where a Feature installs Node.js
 (ADR-0014), on a Feature that brings a container engine or a Compose file (ADR-0015), and where

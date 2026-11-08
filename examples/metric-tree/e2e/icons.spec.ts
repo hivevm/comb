@@ -239,6 +239,7 @@ test("the icon is Comb's copy of the image: closing the ImageBitmap or painting 
 
 test("an image of another origin whose pixels the page may not read is refused, and nothing breaks a frame", async ({
   page,
+  baseURL,
 }) => {
   // Verifies: ADR-0013, Q-6
   // The policy of Q-6 lets no image of another origin into the page, so this test serves the
@@ -246,7 +247,7 @@ test("an image of another origin whose pixels the page may not read is refused, 
   // from another origin, 127.0.0.1, which the test serves; Comb requests nothing.
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  const origin = "http://127.0.0.1:5174";
+  const origin = `http://127.0.0.1:${new URL(baseURL!).port}`;
   const png = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
     "base64",

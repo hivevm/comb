@@ -70,7 +70,7 @@ impl<'a> Item<'a> {
     #[expect(
         clippy::cast_possible_truncation,
         reason = "an index below the count of its list, which the bridge checked against \
-                  `MAX_ITEMS` first (ADR-0009)"
+                  `MAX_ITEMS` first (ADR-0030)"
     )]
     pub(super) fn read<T>(
         &self,
@@ -98,7 +98,7 @@ impl<'a> Item<'a> {
     #[expect(
         clippy::cast_possible_truncation,
         reason = "an index below the count of its list, which the bridge checked against \
-                  `MAX_ITEMS` first (ADR-0009)"
+                  `MAX_ITEMS` first (ADR-0030)"
     )]
     pub(super) fn shape(&self, (row, column): content::Shape, unread: Unflat) -> GraphDataProblem {
         let expected = match unread {

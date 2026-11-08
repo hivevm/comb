@@ -5,7 +5,8 @@
 # The identifier of an ADR is read one way too: its number, or the draft identifier of an ADR that
 # has not reached main, 'ADR-draft-<slug>' in the file 'draft-<slug>.md' (ADR-0002).
 # Sourced by scripts/check-docs.sh, scripts/check-traceability.sh,
-# scripts/sensor-binding-adrs.sh, and scripts/number-adrs.sh.
+# scripts/sensor-binding-adrs.sh, scripts/sensor-superseded-citations.sh, and
+# scripts/number-adrs.sh.
 
 # The slug of a draft identifier: lower case letters and digits, joined by single hyphens.
 ADR_SLUG_RE='[a-z0-9]+(-[a-z0-9]+)*'

@@ -138,7 +138,7 @@ function offOutline(
 test("every transition of the state diagram docks on the outline of its states, on the line between their centres", async ({
   page,
 }) => {
-  // Verifies: G-12, ADR-0031, Q-4
+  // Verifies: G-12, G-13, ADR-0031, Q-4
   await page.goto("/");
   await open(page);
   await chooseStates(page);
@@ -204,7 +204,7 @@ test("every transition of the state diagram docks on the outline of its states, 
 test("a loop on ready, labelled edit, leaves and re-enters its left side, its label at the loop's outermost point", async ({
   page,
 }) => {
-  // Verifies: G-12, ADR-0031
+  // Verifies: G-12, G-13, ADR-0031
   await page.goto("/");
   await open(page);
   await chooseStates(page);

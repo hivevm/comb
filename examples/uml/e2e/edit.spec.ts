@@ -255,3 +255,203 @@ test("a change of kind Comb refuses leaves the example's copy with the old kind,
   expect(await edges(page)).toEqual(before);
   expect(errors).toEqual([]);
 });
+
+/** Connects IconError to RendererUnavailableError, which adds an association, selects it on its
+ *  path, and returns its identifier. */
+async function connectAndSelect(page: Page): Promise<string> {
+  await showNear(page, "IconError");
+  const [from, to] = [
+    (await drawnNode(page, "IconError"))!,
+    (await drawnNode(page, "RendererUnavailableError"))!,
+  ];
+  // From IconError's right connector to RendererUnavailableError's left one.
+  const start = await pagePoint(page, from.x + from.width, from.y + from.height / 2);
+  const end = await pagePoint(page, to.x, to.y + to.height / 2);
+  await page.mouse.move(start.x - 20, start.y);
+  await page.mouse.move(start.x, start.y, { steps: 4 });
+  await page.mouse.down();
+  await page.mouse.move(end.x, end.y, { steps: 8 });
+  await page.mouse.up();
+  const { edges: connected } = await edges(page);
+  const added = connected.find(
+    (each) => each.source === "IconError" && each.target === "RendererUnavailableError",
+  )!;
+  await clickWorld(page, (from.x + from.width + to.x) / 2, from.y + from.height / 2);
+  await expect(page.locator("#kind")).toHaveValue("association");
+  return added.id;
+}
+
+/** The label of edge `id` in the example's copy, its text and its background. */
+async function labelOf(page: Page, id: string) {
+  const edge = (await edges(page)).edges.find((each) => each.id === id)!;
+  return edge.label && { text: edge.label.text, background: edge.label.background };
+}
+
+test("a member Comb refuses stays in its field, which is marked invalid and says why until an edit of it is taken", async ({
+  page,
+}) => {
+  // Verifies: G-12, G-5
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/");
+  await open(page);
+  await showNear(page, "IconError");
+  await clickNode(page, "IconError");
+  const field = page.locator("#attributes");
+  const valid = await field.evaluate((element) => getComputedStyle(element).borderColor);
+  await expect(field).not.toHaveAttribute("aria-invalid", "true");
+  // A member of more than the 1,000 code units a text of content may hold.
+  const refused = `+${"x".repeat(1000)}`;
+  await field.fill(refused);
+  await expect(field).toHaveValue(refused);
+  await expect(field).toHaveAttribute("aria-invalid", "true");
+  await expect(field).toHaveAccessibleDescription(/1,000/);
+  const message = page.locator("#attributes-refusal");
+  await expect(message).toBeVisible();
+  await expect(message).toContainText("1,000");
+  const invalid = await field.evaluate((element) => getComputedStyle(element).borderColor);
+  expect(invalid).not.toBe(valid);
+  // Another refused character leaves the message as it is, so that its alert is not announced
+  // anew with each keystroke.
+  await message.evaluate((element) => {
+    const changes = { count: 0 };
+    new MutationObserver((records) => (changes.count += records.length)).observe(element, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+    (window as unknown as { refusalChanges: typeof changes }).refusalChanges = changes;
+  });
+  await field.press("x");
+  await expect(field).toHaveValue(`${refused}x`);
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { refusalChanges: { count: number } }).refusalChanges.count,
+    ),
+  ).toBe(0);
+  await expect(message).toContainText("1,000");
+  // The node and the example's copy keep what Comb kept.
+  expect(await textsOf(page, "IconError")).toEqual(["IconError", "+reason: IconProblem"]);
+  expect(await page.evaluate(() => window.uml.exampleGraph().nodes)).toContainEqual(
+    expect.objectContaining({
+      id: "IconError",
+      content: [
+        [{ kind: "text", role: "title", text: "IconError" }],
+        [{ kind: "text", role: "body", text: "+reason: IconProblem" }],
+      ],
+    }),
+  );
+  // An edit of the field Comb takes clears the mark and the message.
+  await field.fill("+reason: string");
+  expect(await textsOf(page, "IconError")).toEqual(["IconError", "+reason: string"]);
+  await expect(field).not.toHaveAttribute("aria-invalid", "true");
+  await expect(message).toBeHidden();
+  await expect(field).toHaveAccessibleDescription("");
+  expect(errors).toEqual([]);
+});
+
+test("a label the user typed survives a change of kind, drawn in the new kind's colour", async ({
+  page,
+}) => {
+  // Verifies: G-12, G-3
+  await page.goto("/");
+  await open(page);
+  const id = await connectAndSelect(page);
+  await page.locator("#label").fill("renders");
+  await page.locator("#kind").selectOption("generalization");
+  expect(await labelOf(page, id)).toEqual({
+    text: "renders",
+    background: DRAWN.generalization!.color,
+  });
+  await expect(page.locator("#label")).toHaveValue("renders");
+  // A kind of its own label does not replace a typed one either.
+  await page.locator("#kind").selectOption("dependency");
+  expect(await labelOf(page, id)).toEqual({ text: "renders", background: DRAWN.dependency!.color });
+  await expect(page.locator("#label")).toHaveValue("renders");
+});
+
+test("a kind's own label, or none, gives way to the new kind's own label, or to none", async ({
+  page,
+}) => {
+  // Verifies: G-12, G-3
+  await page.goto("/");
+  await open(page);
+  const id = await connectAndSelect(page);
+  // No label: the new kind's own.
+  await page.locator("#kind").selectOption("dependency");
+  expect(await labelOf(page, id)).toEqual({ text: "«use»", background: DRAWN.dependency!.color });
+  await expect(page.locator("#label")).toHaveValue("«use»");
+  // The old kind's own label: the new kind's own.
+  await page.locator("#kind").selectOption("aggregation");
+  expect(await labelOf(page, id)).toEqual({
+    text: "«aggregation»",
+    background: DRAWN.aggregation!.color,
+  });
+  await expect(page.locator("#label")).toHaveValue("«aggregation»");
+  // The old kind's own label, and a new kind of none: no label.
+  await page.locator("#kind").selectOption("generalization");
+  expect(await labelOf(page, id)).toBeUndefined();
+  await expect(page.locator("#label")).toHaveValue("");
+});
+
+test("a typed label that reads another kind's own label survives a change of kind", async ({
+  page,
+}) => {
+  // Verifies: G-12, G-3
+  await page.goto("/");
+  await open(page);
+  const id = await connectAndSelect(page);
+  // «use» is the dependency's own label, not the association's, which has none.
+  await page.locator("#label").fill("«use»");
+  await page.locator("#kind").selectOption("generalization");
+  expect(await labelOf(page, id)).toEqual({
+    text: "«use»",
+    background: DRAWN.generalization!.color,
+  });
+  const drawn = await page.evaluate(async (wanted) => {
+    await window.uml.comb.whenRendered();
+    return window.uml
+      .inspect()
+      .edgeLabels.filter(({ edge }) => edge === wanted)
+      .map(({ text }) => text);
+  }, id);
+  expect(drawn).toEqual(["«use»"]);
+  await expect(page.locator("#label")).toHaveValue("«use»");
+});
+
+test("a label Comb refuses leaves the edge its label, throws nothing, and the sidebar says why", async ({
+  page,
+}) => {
+  // Verifies: G-12
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/");
+  await open(page);
+  const id = await connectAndSelect(page);
+  await page.locator("#kind").selectOption("dependency");
+  const before = await labelOf(page, id);
+  expect(before?.text).toBe("«use»");
+  const field = page.locator("#label");
+  // A label of more than the 1,000 code units its text may hold.
+  const refused = "x".repeat(1001);
+  await field.fill(refused);
+  expect(await labelOf(page, id)).toEqual(before);
+  const drawn = await page.evaluate(async (wanted) => {
+    await window.uml.comb.whenRendered();
+    return window.uml
+      .inspect()
+      .edgeLabels.filter(({ edge }) => edge === wanted)
+      .map(({ text }) => text);
+  }, id);
+  expect(drawn).toEqual(["«use»"]);
+  await expect(field).toHaveValue(refused);
+  await expect(field).toHaveAttribute("aria-invalid", "true");
+  await expect(field).toHaveAccessibleDescription(/1,000/);
+  await expect(page.locator("#label-refusal")).toBeVisible();
+  // An edit of the field Comb takes clears the mark and the message.
+  await field.fill("uses");
+  expect((await labelOf(page, id))?.text).toBe("uses");
+  await expect(field).not.toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#label-refusal")).toBeHidden();
+  expect(errors).toEqual([]);
+});

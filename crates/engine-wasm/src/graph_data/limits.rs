@@ -1,4 +1,4 @@
-//! The limits of a load and of the graph (ADR-0009): how many nodes and edges, how long an
+//! The limits of a load and of the graph (ADR-0030): how many nodes and edges, how long an
 //! identifier and a text, and how many code units the identifiers of one load hold together, with
 //! the checks behind the exports `checkIdBudget` and `checkGraphSize`.
 

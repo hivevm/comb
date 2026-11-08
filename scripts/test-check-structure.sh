@@ -6,7 +6,7 @@
 # Each case builds a fixture tree under a temporary directory — a core crate with its lock, a
 # library with a bridge, a store, and a render layer, and an example — runs the check against it,
 # and asserts the exit code and, for a failing case, the message that names the offence. The
-# baseline passes; every failing case breaks one rule of ADR-0009, ADR-0012, or ADR-0018, or the
+# baseline passes; every failing case breaks one rule of ADR-0030, ADR-0012, or ADR-0018, or the
 # boundary the check holds as its own rule, in one form, and the passing cases are near
 # misses the check must not mistake for offences.
 #

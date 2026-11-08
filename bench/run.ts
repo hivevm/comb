@@ -332,26 +332,35 @@ interface Level {
   within: [number, number];
 }
 
-/** The pan from an empty point by 400 and 200 pixels, checked for having moved the viewport; it
- *  leaves the culling margin, so the scene queries. */
-async function panGesture(page: Page, name: string): Promise<Measure> {
-  const start = await emptyPoint(page);
+/** The pan from `start` by `by` pixels, checked for having moved the viewport: by default from an
+ *  empty point by 400 and 200, which leaves the culling margin, so the scene queries. */
+async function panGesture(
+  page: Page,
+  name: string,
+  start?: Point,
+  by: Point = { x: 400, y: 200 },
+): Promise<Measure> {
+  const at = start ?? (await emptyPoint(page));
   const from = await viewport(page);
-  const pan = await frameTimes(page, () => drag(page, start, 400, 200));
+  const pan = await frameTimes(page, () => drag(page, at, by.x, by.y));
   const to = await viewport(page);
   expectEffect(to.x !== from.x || to.y !== from.y, name);
   console.log(`${name}: ${pan.frames} frames, p95 ${pan.p95.toFixed(1)} ms`);
   return pan;
 }
 
-/** The drag of the node nearest the centre of the view by 120 pixels down, checked for having
- *  moved it. */
-async function dragGesture(page: Page, name: string): Promise<Measure> {
-  const node = await nodeNearCentre(page);
-  const before = await drawnNode(page, node.id);
-  const dragged = await frameTimes(page, () => drag(page, node.at, 0, 120));
-  const after = await drawnNode(page, node.id);
-  expectEffect(after.y !== before.y, `${name} of node ${node.id}`);
+/** The drag of `node`, by default the node nearest the centre of the view, by 120 pixels down,
+ *  checked for having moved it. */
+async function dragGesture(
+  page: Page,
+  name: string,
+  node?: { id: string; at: Point },
+): Promise<Measure> {
+  const { id, at } = node ?? (await nodeNearCentre(page));
+  const before = await drawnNode(page, id);
+  const dragged = await frameTimes(page, () => drag(page, at, 0, 120));
+  const after = await drawnNode(page, id);
+  expectEffect(after.y !== before.y, `${name} of node ${id}`);
   console.log(`${name}: ${dragged.frames} frames, p95 ${dragged.p95.toFixed(1)} ms`);
   return dragged;
 }
@@ -434,24 +443,8 @@ async function atFittedView(page: Page, fitted: View) {
     show: (view: View) => show(page, view),
   };
   const measured = await gesturesAtFitted(shown, fitted, {
-    drag: async () => {
-      const before = await drawnNode(page, node.id);
-      const dragged = await frameTimes(page, () => drag(page, node.at, 0, 120));
-      const after = await drawnNode(page, node.id);
-      expectEffect(after.y !== before.y, `drag of node ${node.id}`);
-      console.log(`drag: ${dragged.frames} frames, p95 ${dragged.p95.toFixed(1)} ms`);
-      return dragged;
-    },
-    pan: async () => {
-      const panFrom = await viewport(page);
-      const pan = await frameTimes(page, () =>
-        drag(page, { x: box.x + 4, y: box.y + 4 }, 200, 100),
-      );
-      const panTo = await viewport(page);
-      expectEffect(panTo.x !== panFrom.x || panTo.y !== panFrom.y, "pan");
-      console.log(`pan: ${pan.frames} frames, p95 ${pan.p95.toFixed(1)} ms`);
-      return pan;
-    },
+    drag: () => dragGesture(page, "drag", node),
+    pan: () => panGesture(page, "pan", { x: box.x + 4, y: box.y + 4 }, { x: 200, y: 100 }),
     zoom: () => zoomGesture(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 }),
     edit: () => editGesture(page),
   });

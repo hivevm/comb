@@ -11,35 +11,46 @@
   "containerEnv": {
     "CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
   },
-  // The host's agent config directory. HOME is set on Linux and macOS, USERPROFILE on Windows;
-  // exactly one of the two is non-empty, so concatenating both yields the home directory on every
-  // host (the pattern the Dev Containers documentation recommends).
+  // The host's agent config directory, and the host's ~/.config/gh, where the GitHub CLI keeps
+  // the login made by `gh auth login`, so that it outlives a rebuild
+  // (ADR-draft-gh-login-outlives-a-rebuild). HOME is set on Linux and macOS, USERPROFILE on
+  // Windows; exactly one of the two is non-empty, so concatenating both yields the home directory
+  // on every host (the pattern the Dev Containers documentation recommends).
   "mounts": [
-    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.claude,target=/home/vscode/.claude,type=bind"
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.claude,target=/home/vscode/.claude,type=bind",
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.config/gh,target=/home/vscode/.config/gh,type=bind"
   ],
 
   // The host's address on the Docker bridge, by which the benchmark reaches a Chrome on the host
-  // that a forwarder there bridges to its debugging port (ADR-0028).
-  "runArgs": ["--add-host=host.docker.internal:host-gateway"],
+  // that a forwarder there bridges to its debugging port (ADR-0028). And a limit of 8192 tasks,
+  // threads included, in place of Podman's default of 2048: one `CI=1 scripts/check-all.sh` peaks
+  // at about 1400, most of it the Playwright workers' Chromium, so two worktrees running the checks
+  // at once need about 2800 beside the editor and the agents, and 8192 leaves room for a third.
+  // The limit takes effect when the container is rebuilt.
+  "runArgs": ["--add-host=host.docker.internal:host-gateway", "--pids-limit=8192"],
 
   "shutdownAction": "stopContainer",
 
-  // Runs on the host before the container is created. Ensures the bind-mount source for the agent
-  // config exists, so Docker does not auto-create it as a root-owned directory (which breaks
-  // credential writes inside the container). Written to work in both a POSIX shell and cmd.exe:
-  // plain `mkdir` (cmd.exe knows no `-p`; the parent is the home directory and always exists) and
-  // `|| exit 0` so an already existing directory — an error for both shells — does not abort the
-  // container build.
-  "initializeCommand": "mkdir \"${localEnv:HOME}${localEnv:USERPROFILE}/.claude\" || exit 0",
+  // Runs on the host before the container is created. Ensures the bind-mount sources exist, so
+  // Docker does not auto-create them as root-owned directories (which breaks credential writes
+  // inside the container). Written to work in both a POSIX shell and cmd.exe: one plain `mkdir`
+  // per directory, parent first (cmd.exe knows no `-p`, and ~/.config may not exist yet); each in
+  // parentheses with `|| cd .`, a no-op that succeeds in both shells, so an already existing
+  // directory — an error for both — neither aborts the chain nor the container build; and a
+  // final `exit 0`, so the command's exit code is 0 in cmd.exe too, whose error level a failed
+  // `mkdir` may have left set.
+  "initializeCommand": "(mkdir \"${localEnv:HOME}${localEnv:USERPROFILE}/.claude\" || cd .) && (mkdir \"${localEnv:HOME}${localEnv:USERPROFILE}/.config\" || cd .) && (mkdir \"${localEnv:HOME}${localEnv:USERPROFILE}/.config/gh\" || cd .) && exit 0",
 
   // Runs inside the container on every start, so the settings are set again should a session
   // have changed them: the repository's git hooks under .githooks/ and the merge settings they
-  // rely on. What each refuses, and the same commands for a clone outside the container,
-  // are under "Git hooks" in CONTRIBUTING.md.
+  // rely on, and gh as git's credential helper for github.com, which --force sets up while
+  // nobody is logged in (ADR-draft-gh-login-outlives-a-rebuild). What each hook refuses, and the
+  // same commands for a clone outside the container, are under "Git hooks" in CONTRIBUTING.md.
   "postStartCommand": {
     "hooks": "git config core.hooksPath .githooks",
     "merge": "git config merge.ff false && git config pull.ff only",
-    "index": "git config merge.adr-index.driver '.githooks/merge-adr-index %O %A %B %S %X %Y'"
+    "index": "git config merge.adr-index.driver '.githooks/merge-adr-index %O %A %B %S %X %Y'",
+    "credentials": "gh auth setup-git --hostname github.com --force"
   },
 
   // Runs inside the container once it is created. The dependencies come from bun.lock;

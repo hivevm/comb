@@ -83,6 +83,8 @@ jobs:
         run: bash scripts/test-ready-for-main.sh
       - name: Self-test the drop script of a merged branch
         run: bash scripts/test-drop-merged-branch.sh
+      - name: Self-test the commit check of a branch
+        run: bash scripts/test-check-commits.sh
       - name: Self-test the plan modes check
         run: bash scripts/test-check-plan-modes.sh
       - name: Check that no unattended ticket names a protected part
@@ -151,6 +153,10 @@ jobs:
         run: bash scripts/sensor-action-refs.sh --require sha
       - name: Self-test the review binding sensor
         run: bash scripts/test-sensor-review-binding.sh
+      - name: Self-test the superseded citations sensor
+        run: bash scripts/test-sensor-superseded-citations.sh
+      - name: Report the lines outside docs/adr/ that cite a superseded ADR
+        run: bash scripts/sensor-superseded-citations.sh
       # The repository settings sensor itself runs on a human's instruction (ADR-0002).
       - name: Self-test the repository settings sensor
         run: bash scripts/test-sensor-repo-settings.sh
@@ -192,7 +198,7 @@ jobs:
           bunx --bun playwright install --with-deps chromium
       - name: Self-test the structure check
         run: bash scripts/test-check-structure.sh
-      - name: Check the shape of the code (ADR-0009)
+      - name: Check the shape of the code (ADR-0030)
         run: bash scripts/check-structure.sh
       - name: Self-test the dependency check
         run: bash scripts/test-check-dependencies.sh

@@ -1,4 +1,4 @@
-//! The engine's functional core: pure geometry over values and buffers handed to it (ADR-0009).
+//! The engine's functional core: pure geometry over values and buffers handed to it (ADR-0030).
 
 #![cfg_attr(
     test,

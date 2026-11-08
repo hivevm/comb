@@ -1,5 +1,5 @@
 // The facade of the engine, in the bridge, the one module that imports the WebAssembly package
-// (ADR-0009), beside the writers of a load's columns in `columns.ts`. Structured data crosses as
+// (ADR-0030), beside the writers of a load's columns in `columns.ts`. Structured data crosses as
 // generated types through serde-wasm-bindgen, but for a load's nodes and edges, which cross as
 // columns of strings in pieces or one typed array each; node positions and the results of a
 // viewport query are read through views on the engine's buffers, created anew on every read
@@ -77,7 +77,7 @@ export {
 export type TranslateError = NumberError;
 
 /** The mark of plain data `api/snapshot.ts` read once from the host application's value
- *  (ADR-0009). It is exported nowhere, so that handing the bridge a value of the host
+ *  (ADR-0030). It is exported nowhere, so that handing the bridge a value of the host
  *  application, which may hold a getter or a Proxy, takes a cast a reviewer sees. */
 declare const read: unique symbol;
 
@@ -371,7 +371,7 @@ const callCounts = new Map<string, number>();
 
 /** Test mode only: how often the bridge's call `name` was made on the page, by every Comb on it,
  *  so that a test sees whether something crossed into the engine, such as a load refused before
- *  its columns are handed over (ADR-0009). Throws outside test mode. */
+ *  its columns are handed over (ADR-0030). Throws outside test mode. */
 export function bridgeCalls(name: keyof Bridge): number {
   if (!TEST_MODE) throw new Error("comb: the bridge counts its calls in test mode only");
   return callCounts.get(name) ?? 0;

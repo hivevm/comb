@@ -37,7 +37,11 @@ statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), th
    nothing lands on `main` locally, the documentation checks run before a commit that stages a
    Markdown file and before a merge, and the checks before a push. Working outside the container?
    Run the commands listed there yourself, once per clone.
-2. Authenticate your coding agent inside the container (for Claude Code: `claude login`).
+2. Authenticate your coding agent inside the container (for Claude Code: `claude login`), and
+   the GitHub CLI with `gh auth login`. Both logins lie on the host, in `~/.claude` and
+   `~/.config/gh`, which the container mounts, so they outlive a rebuild; the container sets `gh`
+   up as git's credential helper on every start
+   ([ADR-draft-gh-login-outlives-a-rebuild](docs/adr/draft-gh-login-outlives-a-rebuild.md)).
 3. Start working with the agent. Drive the work from the specification and the ADRs.
 
 ## Build, Test & Run
@@ -47,7 +51,7 @@ Inside the Dev Container, which provides Bun, Rust, wasm-pack, and Chromium
 [`scripts/check-code.sh`](scripts/check-code.sh) runs, in order, the first three below, build,
 lint, and test, the engine check before the tests, and then the bundle budget of Q-3
 (`bun run build:lib`, at most 300 kB gzipped without PixiJS). The checks that need no toolchain,
-the structural check of [ADR-0009](docs/adr/0009-functional-core-imperative-shell.md), the
+the structural check of [ADR-0030](docs/adr/0030-one-workspace-per-example.md), the
 dependency check, the container check, the overview check of
 [ADR-0001](docs/adr/0001-agent-governance-model.md), and the check that no comment of a Rust or
 TypeScript source runs past 100 columns, run beside it in `scripts/check-all.sh`, each after its

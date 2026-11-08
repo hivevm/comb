@@ -25,6 +25,12 @@ import {
 } from "./shared";
 import { contentOf as stateContentOf } from "./state-diagram";
 
+/** An edit Comb refused, and what it threw: a `GraphDataError` for data past its limits, such as
+ *  a text longer than one may be, or an `EngineLostError` once its engine is lost. */
+export interface Refusal {
+  error: unknown;
+}
+
 export class Diagram {
   graph: GraphData = { nodes: [], edges: [] };
   classifiers = new Map<string, Classifier>();
@@ -73,35 +79,43 @@ export class Diagram {
   }
 
   /** Replaces the content of node `id` with what `next` shows, and its classifier with `next`
-   *  once Comb took the content; Comb lays it out anew, its height following. */
-  edit(id: string, next: Classifier): void {
-    if (this.updateContent(id, contentOf(next))) this.classifiers.set(id, next);
+   *  once Comb took the content; Comb lays it out anew, its height following. Returns Comb's
+   *  refusal where it refused the content. */
+  edit(id: string, next: Classifier): Refusal | undefined {
+    const refusal = this.updateContent(id, contentOf(next));
+    if (!refusal) this.classifiers.set(id, next);
+    return refusal;
   }
 
   /** Replaces the content of state `id` with what `next` shows, and its state with `next` once
    *  Comb took the content, as `edit` does a classifier. */
-  editState(id: string, next: State): void {
-    if (this.updateContent(id, stateContentOf(next))) this.states.set(id, next);
+  editState(id: string, next: State): Refusal | undefined {
+    const refusal = this.updateContent(id, stateContentOf(next));
+    if (!refusal) this.states.set(id, next);
+    return refusal;
   }
 
-  /** Gives node `id` the content `content`; whether Comb took it. */
-  private updateContent(id: string, content: NodeContent): boolean {
+  /** Gives node `id` the content `content`; Comb's refusal where it refused it. */
+  private updateContent(id: string, content: NodeContent): Refusal | undefined {
     try {
       this.comb.updateNode(id, { content });
     } catch (error) {
       // Content past Comb's limits, such as a text longer than one may be: the node keeps its
       // content, and its classifier or its state what it held.
       console.warn("uml: the edit was not taken", error);
-      return false;
+      return { error };
     }
-    return true;
+    return undefined;
   }
 
-  /** Changes edge `id` to `kind`, drawn as the kind is, and its kind once Comb took the change.
-   *  Every kind is allowed between two classifiers (`rules.ts`), so the sidebar asks no rule. */
+  /** Changes edge `id` to `kind`, drawn as the kind is, its label as `patchOf` says, and its kind
+   *  once Comb took the change. Every kind is allowed between two classifiers (`rules.ts`), so
+   *  the sidebar asks no rule. */
   rekind(id: string, kind: RelationshipKind): void {
+    // The sidebar shows the form of an edge only where the edge has a kind.
+    const from = this.kinds.get(id)!;
     try {
-      this.comb.updateEdge(id, patchOf(kind));
+      this.comb.updateEdge(id, patchOf(from, kind, this.edge(id)?.label));
     } catch (error) {
       // A lost engine, or an edge Comb no longer holds: the edge keeps its kind.
       console.warn("uml: the change of kind was not taken", error);
@@ -110,14 +124,16 @@ export class Diagram {
     this.kinds.set(id, kind);
   }
 
-  /** Gives edge `id` the label `label`, or none for `null`. */
-  updateLabel(id: string, label: EdgeLabelData | null): void {
+  /** Gives edge `id` the label `label`, or none for `null`; Comb's refusal where it refused it. */
+  updateLabel(id: string, label: EdgeLabelData | null): Refusal | undefined {
     try {
       this.comb.updateEdge(id, { label });
     } catch (error) {
       // A label past Comb's limits: the edge keeps its label.
       console.warn("uml: the label was not taken", error);
+      return { error };
     }
+    return undefined;
   }
 
   /** Takes `change` into the diagram. */

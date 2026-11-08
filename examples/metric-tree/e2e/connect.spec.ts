@@ -136,7 +136,7 @@ for (const allowed of [true, false]) {
   test(`with loops allowed, a drag from a back onto it asks the veto, which ${allowed ? "adds" : "refuses"} the loop`, async ({
     page,
   }) => {
-    // Verifies: G-3, ADR-0031, ADR-0024
+    // Verifies: G-3, G-13, ADR-0031, ADR-0024
     await open(page, "?loops=allow");
     await loaded(page, NODES);
     await page.evaluate((allows) => {

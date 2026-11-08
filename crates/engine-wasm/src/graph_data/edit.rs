@@ -57,7 +57,7 @@ impl From<AddEdgeError> for EdgeRefusal {
 /// past `MAX_ITEMS` edges in use; adds it to `graph` between the node slots `source` and
 /// `target`, which `api` resolved against the map only it keeps, and returns the slot the engine
 /// chose. That the graph holds no edge of its identifier and holds its ends is `api`'s to check
-/// (ADR-0009); a slot of an end that holds no node is the shell's mistake. A refused edge leaves
+/// (ADR-0030); a slot of an end that holds no node is the shell's mistake. A refused edge leaves
 /// the graph as it was.
 pub(crate) fn add_edge_to(
     graph: &mut Graph,

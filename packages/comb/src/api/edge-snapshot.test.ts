@@ -1,4 +1,4 @@
-// The edge `addEdge` hands the bridge, read once (ADR-0009): defaults filled where the host left
+// The edge `addEdge` hands the bridge, read once (ADR-0030): defaults filled where the host left
 // a field out, and no key for a dash, a label, or a label's background it left out, so that the
 // edge as Comb keeps it, and as `edgeAdded` delivers it, holds none.
 import { expect, test } from "bun:test";

@@ -32,8 +32,8 @@ const TEST_ENGINE = {
 };
 
 // Port 5173 is the one the Dev Container forwards and the launch configuration opens. The browser
-// tests serve the example in test mode on 5174 and its build on 5175 (playwright.config.ts), both
-// under the policy.
+// tests serve the example in test mode and its build on ports free when their run begins
+// (playwright.config.ts), both under the policy.
 export default defineConfig(({ command, mode }) => ({
   plugins: mode === "test" ? [strictPolicy()] : [],
   resolve: { alias: command === "serve" && mode === "test" ? [TEST_ENGINE] : [] },

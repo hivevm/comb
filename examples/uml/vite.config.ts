@@ -21,7 +21,8 @@ function strictPolicy(): Plugin {
 }
 
 // Port 5176 is the one the launch configuration "Example: UML" opens, beside the metric tree's
-// 5173; the browser tests serve the example in test mode on 5177 (playwright.config.ts).
+// 5173; the browser tests serve the example in test mode on a port free when their run begins
+// (playwright.config.ts).
 export default defineConfig(({ mode }) => ({
   plugins: mode === "test" ? [strictPolicy()] : [],
   // Node resolves `localhost` to ::1 alone, and the Dev Container's forwarding dials 127.0.0.1;

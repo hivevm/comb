@@ -6,7 +6,7 @@
 //! which the shell reads as typed-array views created anew after every call.
 //!
 //! This root holds the exports and their conversions; the reading and checking of graph data,
-//! which the bridge alone does (ADR-0009), is the module `graph_data`, and what the bridge keeps
+//! which the bridge alone does (ADR-0030), is the module `graph_data`, and what the bridge keeps
 //! of node content between calls, and draws of it, the module `kept`.
 
 #![cfg_attr(
@@ -104,7 +104,7 @@ pub enum TranslateRefusal {
 
 /// Why the engine refused a call that names slots: a slot that holds no node or no edge, beyond
 /// the slots or free. The shell's own mistake, never one of graph data, since `api` refuses an
-/// identifier the graph does not hold before it names a slot (ADR-0009).
+/// identifier the graph does not hold before it names a slot (ADR-0030).
 #[derive(Tsify, Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum SlotError {

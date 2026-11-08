@@ -4,7 +4,7 @@
 // family of colour, its dash pattern, and its arrowhead, and by its label where those cannot tell
 // it; docs/CONVENTIONS.md records the mapping, and the sidebar's legend lists it. The state
 // diagram's transition is a kind of its own, drawn grey with an arrowhead. The label of an edge of
-// any kind is built here, by `labelOf`.
+// any kind is built here, by `labelOf`, and so is the label a change of kind leaves, by `patchOf`.
 import type { EdgeData, EdgeLabelData, EdgePatch } from "comb";
 
 /** The colour families, each dark enough that the white text Comb draws on a label in it has a
@@ -101,8 +101,16 @@ export function styleOf(
   };
 }
 
-/** The patch that draws an edge as `kind`, clearing a dash or a label the kind has none of. */
-export function patchOf(kind: RelationshipKind): EdgePatch {
-  const { color, arrow, dash = null, label = null } = styleOf(kind);
-  return { color, arrow, dash, label };
+/** The patch that draws an edge of `kind` as `to`, clearing a dash the kind has none of. Its
+ *  label, `current`, survives where the user typed it, drawn in the colour of `to` where it
+ *  stands; one that reads the label of `kind` itself, or none, becomes the label of `to`, or none
+ *  where `to` has none. */
+export function patchOf(
+  kind: RelationshipKind,
+  to: RelationshipKind,
+  current?: EdgeLabelData,
+): EdgePatch {
+  const { color, arrow, dash = null, label = null } = styleOf(to);
+  const typed = current !== undefined && current.text !== RELATIONSHIPS[kind].label;
+  return { color, arrow, dash, label: typed ? labelOf(to, current.text, current) : label };
 }

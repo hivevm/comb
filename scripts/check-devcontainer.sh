@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #
-# Dev Container check for this repository (ADR-0004).
+# Dev Container check for this repository (ADR-0004, ADR-draft-gh-login-outlives-a-rebuild).
 #
 # ADR-0004 keeps the host container engine out of the Dev Container's reach and pins its Features.
-# This check reads the files the decision names and fails on what would break it, and on a
-# container that would not enable the repository's git hooks:
+# This check reads the files the decision names and fails on what would break it, on a container
+# that would not enable the repository's git hooks, and on one that would lose its GitHub login
+# with a rebuild:
 #
 #   1. Socket: .devcontainer/devcontainer.json mounts no host Docker socket — no 'docker.sock'
 #      and no '/var/run/docker' on any line that is not a full-line comment — and adds no
@@ -29,6 +30,15 @@
 #      are '/workspaces/${localWorkspaceFolderBasename}', the default of Dev Containers, so that
 #      every project sits under a path of its own and an agent's memory, keyed by that path,
 #      stays with it (ADR-0004).
+#   7. GitHub login: one entry of 'mounts' bind-mounts the host's
+#      '${localEnv:HOME}${localEnv:USERPROFILE}/.config/gh' at '/home/vscode/.config/gh' (its
+#      comma-separated options, the target under any of its names, and 'type=bind', not
+#      read-only), the initializeCommand runs 'mkdir' on that source, quoted or not, so the host
+#      user owns it rather than the engine creating it as root, and the postStartCommand runs
+#      'gh auth setup-git' with '--force', which makes gh git's credential helper even while
+#      nobody is logged in. The login made in the container lies
+#      on the host and outlives a rebuild (ADR-draft-gh-login-outlives-a-rebuild). A mount
+#      written in the object form is not read and fails.
 #
 # Only the default definition is read; a variant under a subdirectory of .devcontainer/ is not.
 # devcontainer.json allows comments, so full-line '//' comments are dropped before reading; a
@@ -52,6 +62,9 @@ ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" && pwd)"
 CONFIG=".devcontainer/devcontainer.json"
 LOCK=".devcontainer/devcontainer-lock.json"
 SETTINGS=".vscode/settings.json"
+# shellcheck disable=SC2016  # the variables are devcontainer.json's, not the shell's
+GH_SOURCE='${localEnv:HOME}${localEnv:USERPROFILE}/.config/gh'
+GH_TARGET='/home/vscode/.config/gh'
 
 # uncommented <file> — the file without its full-line '//' comments.
 uncommented() { grep -vE '^[[:space:]]*//' "$1"; }
@@ -167,6 +180,32 @@ else
   done
   ((mount_own)) \
     || add_error "$CONFIG: workspaceMount does not target '$own' — a path every project shares gives every project one agent memory (ADR-0004)"
+
+  # 7. GitHub login: each string of the mounts array is one mount, its options split at commas.
+  gh_mounted=0
+  while IFS= read -r entry; do
+    gh_source=0 gh_target=0 gh_bind=0 gh_readonly=0
+    IFS=',' read -ra options <<< "${entry//\"/}"
+    for option in "${options[@]}"; do
+      case "$option" in
+        source="$GH_SOURCE" | src="$GH_SOURCE") gh_source=1 ;;
+        target="$GH_TARGET" | dst="$GH_TARGET" | destination="$GH_TARGET") gh_target=1 ;;
+        type=bind) gh_bind=1 ;;
+        readonly | ro | readonly=true | ro=true | readonly=1 | ro=1) gh_readonly=1 ;;
+      esac
+    done
+    ((gh_source && gh_target && gh_bind && !gh_readonly)) && gh_mounted=1
+  done < <(top_level_value "$ROOT/$CONFIG" mounts | tr -d ' \t\n' | grep -oE '"[^"]*"')
+  ((gh_mounted)) \
+    || add_error "$CONFIG: mounts does not bind-mount '$GH_SOURCE' at '$GH_TARGET' — the GitHub login made in the container is lost with every rebuild (ADR-draft-gh-login-outlives-a-rebuild)"
+  # The source, its quotes dropped, stands for a token, so that a longer path does not match.
+  init="$(top_level_value "$ROOT/$CONFIG" initializeCommand | sed 's/\\"//g' | tr '\t\n' '  ')"
+  init="${init//"$GH_SOURCE"/@source@}"
+  [[ "$init" =~ mkdir([[:space:]]+-[[:alnum:]]+)*[[:space:]]+@source@([^[:alnum:]_./-]|$) ]] \
+    || add_error "$CONFIG: initializeCommand does not create '$GH_SOURCE' — the engine would create the mount's source owned by root (ADR-draft-gh-login-outlives-a-rebuild)"
+  # The entry's string is quoted, so the flag must stand between the command and its closing quote.
+  [[ "$post" =~ gh\ auth\ setup-git[^\"]*--force ]] \
+    || add_error "$CONFIG: postStartCommand does not run 'gh auth setup-git' with '--force' — git would not take its GitHub credentials from gh, or the start fails while nobody is logged in (ADR-draft-gh-login-outlives-a-rebuild)"
 fi
 
 # 4. Host side: the pair has to sit inside the 'remote.extensionKind' object, so the text is
@@ -184,5 +223,5 @@ if ((${#errors[@]})); then
   exit 1
 fi
 
-echo "Dev Container check passed (${#features[@]} Features pinned and locked, no host socket, git hooks enabled, a path of its own)."
+echo "Dev Container check passed (${#features[@]} Features pinned and locked, no host socket, git hooks enabled, a path of its own, the GitHub login kept)."
 exit 0

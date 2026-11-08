@@ -1,4 +1,4 @@
-// Only the snapshot of `api/snapshot.ts` reaches the bridge (ADR-0009): each call below hands the
+// Only the snapshot of `api/snapshot.ts` reaches the bridge (ADR-0030): each call below hands the
 // bridge a value the host application could have written, which may hold a getter or a Proxy,
 // and must not compile; `tsc` fails on a `@ts-expect-error` that has no error to expect.
 import { expect, test } from "bun:test";

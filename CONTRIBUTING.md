@@ -46,7 +46,7 @@ docs/GLOSSARY.md      # the vocabulary everyone uses, kept current inline
 docs/CONVENTIONS.md   # how this project writes what no check decides, kept current inline
 docs/ARCHITECTURE.md  # the system as it currently stands
 docs/adr/             # Architecture Decision Records (+ template)
-crates/engine/        # the engine's pure Rust core: geometry over values and buffers (ADR-0009)
+crates/engine/        # the engine's pure Rust core: geometry over values and buffers (ADR-0030)
 crates/engine-wasm/   # the bridge's Rust side: every WebAssembly export (ADR-0010)
 packages/comb/        # the library: api, store, interaction, render, bridge
 examples/metric-tree/ # the example host application, with its browser tests (G-9)
@@ -95,6 +95,11 @@ Compose file is required. Customise the environment by adding Features, switchin
 or adding extensions. Features are pinned by major tag and resolved in the committed
 `devcontainer-lock.json`. Extensions are listed by identifier only, because a published extension
 version cannot be repointed and a version suffix is VS Code-specific.
+
+The container allows 8192 tasks, threads included (`--pids-limit=8192` in `runArgs`), in place of
+Podman's default of 2048, so that two worktrees can run `CI=1 scripts/check-all.sh` at once: one
+run peaks at about 1400, most of it Chromium under Playwright. A changed limit takes effect only
+once the container is rebuilt; `cat /sys/fs/cgroup/pids.max` inside it shows the limit in force.
 
 ### Host container management
 
@@ -181,13 +186,17 @@ Each step waits for a human's instruction.
 
 1. Start it at the remote's `main`: `git fetch origin`, then
    `git switch -c feat/<topic> origin/main`.
-2. Merge a reviewed branch into it with its hand-off as the message, written to a file since an
-   editor strips its headings: `git merge --no-ff -F .scratch/<hand-off>.md <branch>`. The
-   documentation check gates the merge, and the push of step 6 runs the rest. One that stops on a
-   conflict is concluded, once resolved and staged, with `git commit -F .scratch/<hand-off>.md`,
-   and all the checks gate that commit.
-3. Or merge it by a pull request against the `feat/` branch, so that its pipelines run what the
-   local gate cannot, such as another platform or a service
+2. Run the checks on each commit a reviewed branch adds:
+   [`scripts/check-commits.sh`](scripts/check-commits.sh) `feat/<topic> <branch>` checks out each
+   in a temporary worktree, runs the checks that need no browser, and names every commit and
+   check that fails. Then merge the branch into it with its hand-off as the message, written to a
+   file since an editor strips its headings:
+   `git merge --no-ff -F .scratch/<hand-off>.md <branch>`. The documentation check gates the
+   merge, and the push of step 6 runs the rest. One that stops on a conflict is concluded, once
+   resolved and staged, with `git commit -F .scratch/<hand-off>.md`, and all the checks gate that
+   commit.
+3. Or, after the same run, merge it by a pull request against the `feat/` branch, so that its
+   pipelines run what the local gate cannot, such as another platform or a service
    ([`AGENTS.md` §6](AGENTS.md#6-project-rules)). With both branches pushed, on the branch:
    `gh pr create --base feat/<topic> --body-file .scratch/<hand-off>.md`, and once it is green,
    `gh pr merge <number> --merge --body-file .scratch/<hand-off>.md`, never by the web interface,
