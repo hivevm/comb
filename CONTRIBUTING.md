@@ -46,7 +46,7 @@ docs/GLOSSARY.md      # the vocabulary everyone uses, kept current inline
 docs/CONVENTIONS.md   # how this project writes what no check decides, kept current inline
 docs/ARCHITECTURE.md  # the system as it currently stands
 docs/adr/             # Architecture Decision Records (+ template)
-crates/engine/        # the engine's pure Rust core: geometry over values and buffers (ADR-0009)
+crates/engine/        # the engine's pure Rust core: geometry over values and buffers (ADR-0030)
 crates/engine-wasm/   # the bridge's Rust side: every WebAssembly export (ADR-0010)
 packages/comb/        # the library: api, store, interaction, render, bridge
 examples/metric-tree/ # the example host application, with its browser tests (G-9)

@@ -1,7 +1,7 @@
 // The host application adds a node through `addNode` (ADR-0023, ADR-0024): the canvas draws it
 // where it was placed, above every node it overlaps, without a load, and `onChange` tells every
 // change of the graph before the call that made it returns. A node a load would refuse, or one of
-// an identifier the graph holds already, is refused, and nothing changes (ADR-0009, Q-7).
+// an identifier the graph holds already, is refused, and nothing changes (ADR-0030, Q-7).
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphChange } from "comb";
 import { drawnGraph, loaded, node, open, screenCentre, selections, titled } from "./shared";

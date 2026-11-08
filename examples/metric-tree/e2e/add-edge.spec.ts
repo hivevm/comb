@@ -1,7 +1,7 @@
 // The host application adds edges through `addEdge` and changes them through `updateEdge` (G-5,
 // G-11, ADR-0024): the next frame draws them with their colour, dash pattern, and label,
 // `onChange` tells each change once, and an edge or a patch a load would refuse, an edge the graph
-// cannot hold, and a patch of an unknown edge or field change nothing (ADR-0009, Q-7).
+// cannot hold, and a patch of an unknown edge or field change nothing (ADR-0030, Q-7).
 import { expect, test, type Page } from "@playwright/test";
 import type { EdgeData, GraphData } from "comb";
 import { loaded, node, open, strokeOf, told } from "./shared";

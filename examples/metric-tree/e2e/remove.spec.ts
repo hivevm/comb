@@ -1,7 +1,7 @@
 // The host application removes nodes and edges through `removeNodes` and `removeEdges` (G-4,
 // ADR-0023, ADR-0024): the canvas draws them no more, a node takes its edges along, `onChange`
 // tells one change, a freed slot is the next addition's, and an identifier the graph does not hold
-// refuses the call, which then removes nothing (ADR-0009, Q-7).
+// refuses the call, which then removes nothing (ADR-0030, Q-7).
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData } from "comb";
 import { drawnGraph, loaded, node, open, screenCentre, told } from "./shared";

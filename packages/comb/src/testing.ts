@@ -290,5 +290,5 @@ export function testMode(): boolean {
 export { trapNextCall };
 
 /** Test mode only: how often the bridge's call `name` was made on the page, such as `loadGraph`,
- *  so that a test sees what crossed into the engine (ADR-0009). Throws outside test mode. */
+ *  so that a test sees what crossed into the engine (ADR-0030). Throws outside test mode. */
 export { bridgeCalls };

@@ -51,7 +51,7 @@ const edge = (id: string, source: string, target: string) => ({
   sourceSide: "right" as const,
   targetSide: "left" as const,
 });
-// The bridge takes only what `api/snapshot.ts` produces (ADR-0009); its own tests stand in for
+// The bridge takes only what `api/snapshot.ts` produces (ADR-0030); its own tests stand in for
 // that module and hand it plain data of their own, the nodes and edges written into columns as
 // it writes them (ADR-0010).
 type PlainNode = ReturnType<typeof node>;

@@ -16,7 +16,7 @@ pub enum GraphList {
 /// Why Comb refused graph data in `load`, `updateNode`, or `addNode` (Q-7): what the bridge
 /// refused, what the shell could not read, and what only the shell's map from identifiers to slots
 /// knows, a node `updateNode` names that the graph does not hold and one `addNode` adds that it
-/// holds already (ADR-0009). The shell builds the last three as values of this type; no kind of it
+/// holds already (ADR-0030). The shell builds the last three as values of this type; no kind of it
 /// is written by hand in TypeScript.
 /// `query` refuses a rectangle without its shape as malformed too, which no host application
 /// meets.

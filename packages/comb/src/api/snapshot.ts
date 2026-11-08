@@ -1,4 +1,4 @@
-// The snapshot of the host application's graph data (ADR-0009): every value read once, in
+// The snapshot of the host application's graph data (ADR-0030): every value read once, in
 // JavaScript, into plain data whose every field is a primitive of the type the field expects, so
 // that the bridge checks it and the store keeps it, and no value of the host application, nor any
 // of its code, reaches the engine; a load's nodes and edges are handed over as columns besides

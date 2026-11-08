@@ -1,5 +1,5 @@
 // The edits of the graph: every method of `Comb` that changes it, and the user's connection and
-// deletion, each run through `edit`, which holds their order (Q-7, ADR-0024, ADR-0009); and
+// deletion, each run through `edit`, which holds their order (Q-7, ADR-0024, ADR-0030); and
 // `heightOf`, which reads and checks as `addNode` does and changes nothing (ADR-0026). Refuse
 // once the engine is lost; read the host's input once, whole, into plain data; refuse what the
 // store's map shows, as it stands after the read, since a getter of the input is the host's code

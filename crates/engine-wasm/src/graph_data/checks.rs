@@ -1,4 +1,4 @@
-//! The rules of a node and of an edge (ADR-0009): a node's place, width, and height within the
+//! The rules of a node and of an edge (ADR-0030): a node's place, width, and height within the
 //! world, an edge's ends, label, colour, and dash, and the lengths of the identifiers, each rule
 //! through one function that a load, `addNode`, `addEdge`, and `updateEdge` reach alike.
 
@@ -60,7 +60,7 @@ pub(super) fn checked_node(node: &Node) -> Result<([f32; 2], f32), GraphDataProb
 }
 
 /// Refuses the node `id` at `y` whose far side, `y + height`, its height the one its content lays
-/// out to, lies past the world's limit (ADR-0009), naming the field `height`, as the world's
+/// out to, lies past the world's limit (ADR-0030), naming the field `height`, as the world's
 /// limit refuses a far side `x + width`.
 pub(crate) fn within_by_height(id: &str, y: f32, height: f32) -> Result<(), GraphDataProblem> {
     // `y` lies within the limit and the height is not negative, so only the far side past the

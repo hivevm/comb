@@ -120,7 +120,7 @@ fn single_of(node: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, Graph
 /// content lays out to in `fonts`, its strings of content counted against the budget on from
 /// `held`, the code units of content the graph holds; returns the slot the engine chose and the
 /// content it keeps, with its count. A refused node leaves the graph as it was. That the graph
-/// holds no node of its identifier is `api`'s to check, against the map only it keeps (ADR-0009).
+/// holds no node of its identifier is `api`'s to check, against the map only it keeps (ADR-0030).
 pub(crate) fn add_node_to(
     graph: &mut Graph,
     node: &NodeInput,

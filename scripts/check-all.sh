@@ -208,6 +208,8 @@ run "Action references sensor self-test" scripts/test-sensor-action-refs.sh
 run "Action references by commit SHA" scripts/sensor-action-refs.sh --require sha
 run "Review binding sensor self-test" scripts/test-sensor-review-binding.sh
 run "Review binding sensor" scripts/sensor-review-binding.sh
+run "Superseded citations sensor self-test" scripts/test-sensor-superseded-citations.sh
+run "Superseded citations sensor" scripts/sensor-superseded-citations.sh
 # The repository settings sensor reads GitHub and runs on a human's instruction (ADR-0002); its
 # self-test runs here.
 # On instruction: scripts/sensor-repo-settings.sh
