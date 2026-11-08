@@ -96,11 +96,11 @@ else
     grep -qx "strict${tab}true" <<< "$rules" \
       || finding "main: a branch need not be up to date with main before it merges"
     for name in "${expected[@]}"; do
-      printf '%s\n' "${actual[@]}" | grep -qxF -- "$name" \
+      grep -qxF -- "$name" <<< "$(printf '%s\n' "${actual[@]}")" \
         || finding "main: the required checks lack '$name', which CONTRIBUTING.md names"
     done
     for name in "${actual[@]}"; do
-      printf '%s\n' "${expected[@]}" | grep -qxF -- "$name" \
+      grep -qxF -- "$name" <<< "$(printf '%s\n' "${expected[@]}")" \
         || finding "main: the required check '$name' is not among those CONTRIBUTING.md names"
     done
   fi
