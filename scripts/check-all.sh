@@ -184,6 +184,11 @@ run "Readiness script self-test" scripts/test-ready-for-main.sh
 # Integration branches of CONTRIBUTING.md; its self-test runs here.
 # On instruction: scripts/drop-merged-branch.sh
 run "Drop script self-test" scripts/test-drop-merged-branch.sh
+# The commit check checks out every commit of a branch and runs the checks on each, before a merge
+# on a human's instruction, as step 2 of the Integration branches of CONTRIBUTING.md; its
+# self-test runs here.
+# On instruction: scripts/check-commits.sh
+run "Commit checks self-test" scripts/test-check-commits.sh
 run "Plan modes self-test" scripts/test-check-plan-modes.sh
 run "Plan modes" scripts/check-plan-modes.sh
 run "Traceability self-test" scripts/test-check-traceability.sh

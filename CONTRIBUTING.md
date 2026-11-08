@@ -186,13 +186,17 @@ Each step waits for a human's instruction.
 
 1. Start it at the remote's `main`: `git fetch origin`, then
    `git switch -c feat/<topic> origin/main`.
-2. Merge a reviewed branch into it with its hand-off as the message, written to a file since an
-   editor strips its headings: `git merge --no-ff -F .scratch/<hand-off>.md <branch>`. The
-   documentation check gates the merge, and the push of step 6 runs the rest. One that stops on a
-   conflict is concluded, once resolved and staged, with `git commit -F .scratch/<hand-off>.md`,
-   and all the checks gate that commit.
-3. Or merge it by a pull request against the `feat/` branch, so that its pipelines run what the
-   local gate cannot, such as another platform or a service
+2. Run the checks on each commit a reviewed branch adds:
+   [`scripts/check-commits.sh`](scripts/check-commits.sh) `feat/<topic> <branch>` checks out each
+   in a temporary worktree, runs the checks that need no browser, and names every commit and
+   check that fails. Then merge the branch into it with its hand-off as the message, written to a
+   file since an editor strips its headings:
+   `git merge --no-ff -F .scratch/<hand-off>.md <branch>`. The documentation check gates the
+   merge, and the push of step 6 runs the rest. One that stops on a conflict is concluded, once
+   resolved and staged, with `git commit -F .scratch/<hand-off>.md`, and all the checks gate that
+   commit.
+3. Or, after the same run, merge it by a pull request against the `feat/` branch, so that its
+   pipelines run what the local gate cannot, such as another platform or a service
    ([`AGENTS.md` §6](AGENTS.md#6-project-rules)). With both branches pushed, on the branch:
    `gh pr create --base feat/<topic> --body-file .scratch/<hand-off>.md`, and once it is green,
    `gh pr merge <number> --merge --body-file .scratch/<hand-off>.md`, never by the web interface,

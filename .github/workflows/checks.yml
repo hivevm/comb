@@ -83,6 +83,8 @@ jobs:
         run: bash scripts/test-ready-for-main.sh
       - name: Self-test the drop script of a merged branch
         run: bash scripts/test-drop-merged-branch.sh
+      - name: Self-test the commit check of a branch
+        run: bash scripts/test-check-commits.sh
       - name: Self-test the plan modes check
         run: bash scripts/test-check-plan-modes.sh
       - name: Check that no unattended ticket names a protected part
