@@ -46,8 +46,8 @@ Only a normalization renumbers them ([`AGENTS.md` §3](../AGENTS.md#3-adr-rules)
 2. **G-2** — When the user drags a node, the system shall move it with the pointer, and every
    edge attached to it shall follow in the same frame.
 3. **G-3** — When the user drags from a connector of one node and releases over a compatible
-   connector of another node, the system shall create an edge between them; released anywhere
-   else, it shall create none.
+   connector of another node, or of the same node where the host application allows loops, the
+   system shall create an edge between them; released anywhere else, it shall create none.
 4. **G-4** — When the user deletes a selected node or edge, the system shall remove it, together
    with every edge attached to a removed node.
 5. **G-5** — When the user selects a node or edge, the system shall report the selection to the
@@ -79,14 +79,25 @@ Only a normalization renumbers them ([`AGENTS.md` §3](../AGENTS.md#3-adr-rules)
     way.
 12. **G-12** — When the developer starts the launch configuration *Example: UML* in VS Code, the
     system shall build the engine, serve a second example host application, and open it in the
-    browser. Its sidebar switches between two UML diagrams of Comb itself. A class diagram of
+    browser. Its sidebar switches between three UML diagrams of Comb itself. A class diagram of
     Comb's public interface shows each class or interface as a node with its stereotype, its name,
     its attributes, and its operations, and each relationship as an edge whose colour, dash
     pattern, arrowhead, and label tell its kind. A package diagram of Comb's modules and crates
     shows each package as a node with the stereotype «package» and its name, and each dependency
-    as a dashed edge with an arrowhead and the label «import» or «use». A palette adds classes,
-    interfaces, and packages; a connection adds a relationship, which the example refuses where
+    as a dashed edge with an arrowhead and the label «import» or «use». A state diagram of a
+    Comb's life shows each state in the node shape UML gives it, an initial state, a final state,
+    and a choice among them, and each transition as an edge docked on the outline, labelled by its
+    event. A palette adds classes, interfaces, abstract classes, packages, states, initial and
+    final states, and choices; a connection adds a relationship, which the example refuses where
     UML does not allow it; and the sidebar edits the selected node or edge.
+13. **G-13** — When the host application sets a node's node shape (a rectangle, a rounded
+    rectangle, an ellipse, a circle, a ringed circle, a diamond, or a bar), the system shall draw
+    the node in that node shape, hit it within its outline, and lay its content out inside it.
+    When the host application lets an edge dock on the outline, the system shall end the edge
+    where the line towards its other end crosses the node's outline, for any number of edges on
+    one node. When the host application allows loops, the system shall accept an edge from a
+    node back to itself, from `addEdge` and from the user's connection, and draw it as a loop on
+    one side of the node.
 
 ## Quality Goals
 
@@ -115,7 +126,7 @@ i7-13700 slowed two times, is one.
   deviate by at most 0.5 px from a reference computation at every zoom level, for everything the
   viewport shows. An edge path holds
   this where every point of the path lies within 2^21 px of the viewport, and its dash pattern where
-  it lies at most 2^21 px along the path from the source connector, in pixels at the current zoom.
+  it lies at most 2^21 px along the path from the path's source end, in pixels at the current zoom.
   Past these bounds the accuracy is that of single precision: the deviation grows beyond 0.5 px by
   at most 2^-22 of the distance in pixels from the viewport of the path's farthest point, and for a
   dash by at most 2^-22 of its distance in pixels along the path. Where the mesh budget or memory
@@ -203,8 +214,8 @@ maintained.
 - Developers outside the maintainers want such a framework. No user research backs this yet.
 - Graphs that matter stay around 50,000 nodes and 50,000 edges; Comb is not designed for
   millions.
-- Every edge connects one connector of a node to one connector of another node; there are no
-  hyperedges and no edges without both ends. An edge of a load may join a node to itself.
+- Every edge joins two ends, each at a connector of a node or on its outline; there are no
+  hyperedges and no edges without both ends. An edge may join a node to itself.
 - The reference machine represents the hardware of the people who use applications built on Comb.
 - PixiJS, wasm-bindgen, and serde-wasm-bindgen stay maintained and keep their WebGL2 and
   WebAssembly support.

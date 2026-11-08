@@ -97,7 +97,7 @@ async function inkAt(page: Page, color: number, points: [number, number][]): Pro
 test("with loops allowed, addEdge draws a loop above the node, its arrowhead into it and its label at the top", async ({
   page,
 }) => {
-  // Verifies: ADR-0031, ADR-0024
+  // Verifies: G-13, ADR-0031, ADR-0024
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page, "?loops=allow");
@@ -138,7 +138,7 @@ for (const query of ["", "?loops=allow"]) {
   test(`a load accepts a loop and draws it as one, ${query ? "with" : "without"} loops allowed`, async ({
     page,
   }) => {
-    // Verifies: ADR-0031
+    // Verifies: G-13, ADR-0031
     await open(page, query);
     await loaded(page, { ...LOOPED, edges: [{ ...LOOP, sourceSide: "outline" }] });
     const edges = await page.evaluate(async () => {

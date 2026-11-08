@@ -1,4 +1,4 @@
-// A node drawn and hit in its node shape (ADR-0032): the host application sets it from
+// A node drawn and hit in its node shape (G-13, ADR-0032): the host application sets it from
 // the closed set, the canvas draws its outline and lays its content out in its inner rectangle,
 // `heightOf` answers for its height, and a press beside its outline selects nothing.
 import { expect, test, type Page } from "@playwright/test";
@@ -101,7 +101,7 @@ async function selected(page: Page, x: number, y: number): Promise<string | null
 test("each node shape is drawn at the near level in its outline, its content in its inner rectangle, as high as heightOf gives", async ({
   page,
 }) => {
-  // Verifies: ADR-0032, ADR-0026
+  // Verifies: G-13, ADR-0032, ADR-0026
   await open(page);
   await loaded(page, shaped, { x: 20, y: 20, scale: 1 });
   const { level, nodes } = await drawnShapes(page);
@@ -141,7 +141,7 @@ test("each node shape is drawn at the near level in its outline, its content in 
 test("each node shape is drawn at the middle level in its outline, with its title", async ({
   page,
 }) => {
-  // Verifies: ADR-0032
+  // Verifies: G-13, ADR-0032
   await open(page);
   await loaded(page, shaped, { x: 20, y: 20, scale: 0.4 });
   const { level, nodes } = await drawnShapes(page);
@@ -156,7 +156,7 @@ test("each node shape is drawn at the middle level in its outline, with its titl
 test("a press beside the outline of each node shape that leaves its rectangle's corner selects nothing, and one within selects it", async ({
   page,
 }) => {
-  // Verifies: ADR-0032, G-5
+  // Verifies: G-13, ADR-0032, G-5
   await open(page);
   await loaded(page, shaped, { x: 20, y: 20, scale: 1 });
   const { nodes } = await drawnShapes(page);
@@ -177,7 +177,7 @@ test("a press beside the outline of each node shape that leaves its rectangle's 
 test("a rounded rectangle is hit just inside the corner arc it is drawn with, and not just outside it", async ({
   page,
 }) => {
-  // Verifies: ADR-0032
+  // Verifies: G-13, ADR-0032
   await open(page);
   await loaded(page, shaped, { x: 20, y: 20, scale: 1 });
   const { level, nodes } = await drawnShapes(page);

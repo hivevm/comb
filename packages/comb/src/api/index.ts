@@ -78,14 +78,14 @@ export interface CombOptions {
    *  (ADR-0024). */
   canDelete?: (deletion: Deletion) => boolean;
   /** The veto of a connection of the user's (G-3): called when the user releases a connection
-   *  over a compatible connector of another node, with the identifiers of both nodes and the sides
-   *  of both connectors. It returns the identifier of the new edge, which is checked as `addEdge`
-   *  checks one, or `false` to refuse; any other value refuses as `false` does. An error it
-   *  throws, or one of the identifier it returns, refuses the connection and is thrown on from the
-   *  input event. Never called for the host application's own calls. Without it, no connection
-   *  begins: Comb has no name to give the edge. One during whose call Comb tells a change to
-   *  `onChange` connects nothing, whatever it returns, and its identifier is neither checked nor
-   *  thrown (ADR-0024). */
+   *  over a compatible connector of another node, or of the same node where `allowLoops` allows
+   *  loops, with the identifiers of both nodes and the sides of both connectors. It returns the
+   *  identifier of the new edge, which is checked as `addEdge` checks one, or `false` to refuse;
+   *  any other value refuses as `false` does. An error it throws, or one of the identifier it
+   *  returns, refuses the connection and is thrown on from the input event. Never called for the
+   *  host application's own calls. Without it, no connection begins: Comb has no name to give the
+   *  edge. One during whose call Comb tells a change to `onChange` connects nothing, whatever it
+   *  returns, and its identifier is neither checked nor thrown (ADR-0024). */
   canConnect?: (proposal: Proposal) => string | false;
   /** Whether the host application allows loops, edges from a node back to itself: `addEdge`
    *  then accepts one, and the user's connection counts the source's own connectors compatible,
