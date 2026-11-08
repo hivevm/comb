@@ -501,7 +501,11 @@ one workspace for each example.
   describes Comb's public interface, and the render layer's edges layer for its one realization, as
   classifiers whose content is a caption for the stereotype, a title for the name, and a body text
   per member, at most the eight rows Comb lays out and "…" for those left out, placed in rows laid
-  out by hand by the heights `heightOf` gives; `src/relationships.ts` maps each kind of
+  out by hand by the heights `heightOf` gives; both diagrams are held to Comb's source by a Bun
+  test (`src/comb-source.test.ts`), which reads the library's files by path, never by import,
+  and fails where a package, a dependency between the modules of `packages/comb/src` or the
+  crates, or a member of the `Comb` interface is missing from the diagram or drawn there and
+  not in the source, and on a source it reads nothing from; `src/relationships.ts` maps each kind of
   relationship, the state diagram's transition among them, to the colour, dash pattern,
   arrowhead, and label `docs/CONVENTIONS.md` records, in one table from which the kinds and the
   legend's list follow, and builds every edge's label, for the diagrams' data and the sidebar's
@@ -510,7 +514,11 @@ one workspace for each example.
   interface, or an abstract class, or on the package diagram a package, centred on the drop; the
   sidebar (`src/sidebar.ts`) edits the selected classifier's name, stereotype, and members, one per
   line of two text areas, or a package's name, through `updateNode`, and the selected relationship's
-  kind and label, or a dependency's «import» or «use», through `updateEdge`; a connection becomes an
+  kind and label, or a dependency's «import» or «use», through `updateEdge`, an edit Comb refuses
+  staying in its field, which is marked invalid and says why under it until the next edit of the
+  form Comb takes clears every mark of the form, since a classifier's edit sends every field of
+  it, and a change of kind keeping a label the user typed and replacing only the old kind's own
+  label, or none, by the new kind's, or none; a connection becomes an
   association, on the package diagram a dependency «use», and on the state diagram a transition,
   where the rules of `src/rules.ts`, a pure function of the kinds of the ends, of the relationship,
   and of whether it is a loop, allow it: they refuse a transition into an initial state or out of a

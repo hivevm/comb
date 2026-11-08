@@ -24,20 +24,39 @@
         <h2 id="node-heading">Selected node</h2>
         <label>
           Name
-          <input id="name" type="text" />
+          <input id="name" aria-describedby="name-refusal" type="text" />
         </label>
+        <p id="name-refusal" class="refusal" role="alert"></p>
         <label id="stereotype-field">
           Stereotype
-          <input id="stereotype" type="text" placeholder="«interface»" />
+          <input
+            id="stereotype"
+            aria-describedby="stereotype-refusal"
+            type="text"
+            placeholder="«interface»"
+          />
         </label>
+        <p id="stereotype-refusal" class="refusal" role="alert"></p>
         <label id="attributes-field">
           Attributes, one per line
-          <textarea id="attributes" rows="4" spellcheck="false"></textarea>
+          <textarea
+            id="attributes"
+            aria-describedby="attributes-refusal"
+            rows="4"
+            spellcheck="false"
+          ></textarea>
         </label>
+        <p id="attributes-refusal" class="refusal" role="alert"></p>
         <label id="operations-field">
           Operations, one per line
-          <textarea id="operations" rows="4" spellcheck="false"></textarea>
+          <textarea
+            id="operations"
+            aria-describedby="operations-refusal"
+            rows="4"
+            spellcheck="false"
+          ></textarea>
         </label>
+        <p id="operations-refusal" class="refusal" role="alert"></p>
       </section>
       <section id="edge-form" hidden>
         <h2 id="edge-heading">Selected relationship</h2>
@@ -47,19 +66,22 @@
         </label>
         <label id="dependency-field">
           Dependency
-          <select id="dependency">
+          <select id="dependency" aria-describedby="dependency-refusal">
             <option>«import»</option>
             <option>«use»</option>
           </select>
         </label>
+        <p id="dependency-refusal" class="refusal" role="alert"></p>
         <label id="label-field">
           Label
-          <input id="label" type="text" />
+          <input id="label" aria-describedby="label-refusal" type="text" />
         </label>
+        <p id="label-refusal" class="refusal" role="alert"></p>
         <label id="event-field">
           Event
-          <input id="event" type="text" placeholder="destroy" />
+          <input id="event" aria-describedby="event-refusal" type="text" placeholder="destroy" />
         </label>
+        <p id="event-refusal" class="refusal" role="alert"></p>
       </section>
       <p id="empty">Select a node or an edge to edit it here; Delete removes it.</p>
       <section id="legend">
