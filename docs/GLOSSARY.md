@@ -26,8 +26,8 @@ inside a longer term of this glossary, such as "shape" in **Node shape**, is no 
   end where a value ends, with the boundaries of its values in UTF-16 code units across all
   pieces.
 - **Connector** — a point on a node where an edge starts or ends: the middle of one of its four
-  sides.
-  _Avoid:_ port, handle, socket, pin.
+  sides. A pin of UML is a border node, not a connector.
+  _Avoid:_ port, handle, socket.
 - **Connection** — the gesture of dragging from a connector of one node to a connector of another,
   or of the same node where the host application allows loops, which creates an edge where it is
   released over a compatible one.
