@@ -57,7 +57,7 @@ line() { printf '%s%s' "$1" "$(words_of $(($2 - ${#1})))"; }
 expect() {
   local name="$1" code="$2" needle="$3" root="$4"
   local out rc
-  out="$(bash "$CHECK" "$root" 2>&1)"; rc=$?
+  out="$(bash "$CHECK" --root "$root" 2>&1)"; rc=$?
   if ((rc == code)) && [[ "$out" == *"$needle"* ]]; then
     passed=$((passed + 1))
     return

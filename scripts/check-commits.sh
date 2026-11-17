@@ -49,17 +49,17 @@
 
 set -uo pipefail
 
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
 # shellcheck source-path=SCRIPTDIR source=lib/git.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/git.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
 
-usage="usage: scripts/check-commits.sh [--root <dir>] [<base> [<head>]]"
-enter_root "check-commits" "${BASH_SOURCE[0]}" "$@"
-shift "$ROOT_TAKEN"
-for arg in "$@"; do
-  [[ "$arg" == -* ]] && { echo "check-commits: unknown argument '$arg' — $usage" >&2; exit 2; }
-done
-(($# <= 2)) || { echo "check-commits: too many arguments — $usage" >&2; exit 2; }
-ROOT="$(pwd)"
+usage="scripts/check-commits.sh [--root <dir>] [<base> [<head>]]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
+rest_args "${BASH_SOURCE[0]}" "$usage" 2 "$@"
 
 head_rev="${2:-HEAD}"
 head="$(git rev-parse -q --verify "$head_rev^{commit}")" \

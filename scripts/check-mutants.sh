@@ -31,7 +31,14 @@
 
 set -uo pipefail
 
-usage() {
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-mutants.sh [--root <dir>] [--record] <mutants.out> [<list>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
+usage_exit() {
   echo "Usage: scripts/check-mutants.sh <mutants.out> <list> | --record <mutants.out> [<list>]" >&2
   exit 2
 }
@@ -40,9 +47,12 @@ record=0
 if [[ "${1:-}" == "--record" ]]; then
   record=1
   shift
-  (($# == 1 || $# == 2)) || usage
+fi
+rest_args "${BASH_SOURCE[0]}" "$usage" 2 "$@"
+if ((record)); then
+  (($# == 1 || $# == 2)) || usage_exit
 else
-  (($# == 2)) || usage
+  (($# == 2)) || usage_exit
 fi
 out="$1"
 list="${2:-}"

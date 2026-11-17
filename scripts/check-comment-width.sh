@@ -31,14 +31,20 @@
 # Pure bash, coreutils, sed, and git.
 #
 # Usage:
-#     scripts/check-comment-width.sh [repository root]
+#     scripts/check-comment-width.sh [--root <dir>]
 # The root defaults to this repository; scripts/test-check-comment-width.sh passes fixtures.
 # Exit code 0 when every comment line fits, 1 otherwise.
 
 set -uo pipefail
 
-ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" 2>/dev/null && pwd)" \
-  || { echo "Comment width check FAILED: '${1:-}' is not a directory." >&2; exit 1; }
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-comment-width.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "$@"
 LC_ALL=C.UTF-8
 export LC_ALL
 

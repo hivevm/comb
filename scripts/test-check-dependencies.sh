@@ -61,7 +61,7 @@ depend() {
 # failure, that the output contains the pattern.
 expect() {
   local want="$1" desc="$2" dir="$3" pattern="${4:-}" out rc
-  out="$(bash "$CHECK" "$dir" 2>&1)"; rc=$?
+  out="$(bash "$CHECK" --root "$dir" 2>&1)"; rc=$?
   if [[ "$want" == pass && $rc -eq 0 ]] \
     || [[ "$want" == fail && $rc -eq 1 && ( -z "$pattern" || "$out" == *"$pattern"* ) ]]; then
     passed=$((passed + 1))

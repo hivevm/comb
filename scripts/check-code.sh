@@ -13,13 +13,20 @@
 # that skips itself is one somebody believes in and does not have.
 #
 # Usage:
-#     scripts/check-code.sh
+#     scripts/check-code.sh [--root <dir>]
 # Exit code 0 when the build, the lint, the tests, and the bundle budget pass, non-zero at the
 # first that fails.
 
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-code.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "$@"
 cd "$ROOT"
 
 missing=()

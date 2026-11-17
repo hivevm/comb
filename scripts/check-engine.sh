@@ -15,13 +15,20 @@
 # scripts/check-bundle.sh run it before anything else.
 #
 # Usage:
-#     scripts/check-engine.sh [repository root]
+#     scripts/check-engine.sh [--root <dir>]
 # The root defaults to this repository; scripts/test-check-engine.sh passes fixture trees.
 # Exit code 0 when both engine files are newer than every source, 1 otherwise.
 
 set -uo pipefail
 
-ROOT="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-engine.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "$@"
 cd "$ROOT" || exit 1
 if [[ ! -d crates || ! -f Cargo.toml || ! -f Cargo.lock ]]; then
   echo "Engine check FAILED: $ROOT holds no crates/, Cargo.toml, and Cargo.lock to compare with." >&2

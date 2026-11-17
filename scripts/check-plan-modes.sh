@@ -26,13 +26,20 @@
 # below it.
 #
 # Pure bash + coreutils/awk. Usage:
-#     scripts/check-plan-modes.sh [repository root]
+#     scripts/check-plan-modes.sh [--root <dir>]
 # The root defaults to this repository; scripts/test-check-plan-modes.sh passes fixtures.
 # Exit code 0 when the check passes, 1 otherwise.
 
 set -uo pipefail
 
-ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-plan-modes.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "$@"
 PLAN="docs/plan"
 OWNERS=".github/CODEOWNERS"
 

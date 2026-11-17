@@ -33,7 +33,7 @@
 # scripts/check-engine.sh and fails on an engine older than its sources.
 #
 # Usage:
-#     scripts/check-bundle.sh [directory [budget in bytes]]
+#     scripts/check-bundle.sh [--root <dir>] [<directory> [<budget in bytes>]]
 # Exit code 0 when the bundle is under the budget, 1 otherwise. For its self-test, a run without
 # arguments takes the repository root, whose bridge's source names the marks, from
 # CHECK_BUNDLE_ROOT, and the commands that build the
@@ -42,7 +42,15 @@
 
 set -uo pipefail
 
-ROOT="${CHECK_BUNDLE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-bundle.sh [--root <dir>] [<directory> [<budget>]]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
+rest_args "${BASH_SOURCE[0]}" "$usage" 2 "$@"
+ROOT="${CHECK_BUNDLE_ROOT:-$ROOT}"
 BUDGET="${2:-300000}"
 BUILD="${CHECK_BUNDLE_BUILD:-bun run build:lib > /dev/null}"
 TEST_BUILD="${CHECK_BUNDLE_TEST_BUILD:-cd packages/comb && bunx --bun vite build --mode test --outDir \"\$1\" > /dev/null}"

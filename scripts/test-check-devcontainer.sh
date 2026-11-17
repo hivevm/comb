@@ -163,7 +163,7 @@ table_cases() {
       case "$op" in extra | post | feature) config "$d" "$feature" "${extras[@]}" ;; esac
     done <<< "${tree//; /$'\n'}"
     post_start="$POST_START"
-    out="$(bash "$CHECK" "$d" 2>&1)"
+    out="$(bash "$CHECK" --root "$d" 2>&1)"
     table_case "$name" "$want" "$needle" "$?" "$out"
   done < "$TABLE"
   ((n > 0)) || { echo "FAIL: no case read from $TABLE" >&2; failed=$((failed + 1)); }
@@ -225,7 +225,7 @@ check "a failing case that names no key is refused" test "$?" -eq 2
 expect() {
   local out rc want=0
   [[ "$1" == pass ]] || want=1
-  out="$(bash "$ROOT/scripts/check-devcontainer.sh" "$3" 2>&1)"; rc=$?
+  out="$(bash "$ROOT/scripts/check-devcontainer.sh" --root "$3" 2>&1)"; rc=$?
   [[ $rc -eq $want && "$out" == *"$4"* ]] && rc=0 || rc=1
   check "$2" test "$rc" -eq 0
 }

@@ -18,13 +18,20 @@
 # Pure bash and POSIX awk.
 #
 # Usage:
-#     scripts/check-overview.sh [repository root]
+#     scripts/check-overview.sh [--root <dir>]
 # The root defaults to this repository; scripts/test-check-overview.sh passes fixture trees.
 # Exit code 0 when the overview names every entry point, 1 otherwise.
 
 set -uo pipefail
 
-ROOT="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-overview.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "$@"
 API="$ROOT/packages/comb/src/api/index.ts"
 TESTING="$ROOT/packages/comb/src/testing.ts"
 OVERVIEW="$ROOT/docs/ARCHITECTURE.md"

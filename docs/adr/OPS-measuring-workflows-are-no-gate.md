@@ -3,7 +3,7 @@
 - **Status:** 🟡 proposed
 - **Date:** 2026-11-17
 - **Deciders:** Markus Brigl
-- **Applies to:** the `# Not a gate:` and `# On instruction:` lines of `scripts/check-all.sh`, check 9 of `scripts/check-docs.sh` and its cases in `scripts/fixtures/check-docs-record.txt`, `.github/workflows/benchmark.yml`, `.github/workflows/mutation.yml`, `.github/workflows/devcontainer.yml`
+- **Applies to:** the `# Not a gate:` and `# On instruction:` lines of `scripts/check-all.sh`, the rule `docs/check-lists` of `scripts/check-docs.sh` and its cases in `scripts/fixtures/check-docs-record.txt`, `.github/workflows/benchmark.yml`, `.github/workflows/mutation.yml`, `.github/workflows/devcontainer.yml`
 - **Extends:** NUC-checks-are-bash §5
 
 ## Context
@@ -17,7 +17,8 @@ be a required check, which a push cannot satisfy, or run no script the lists cou
 
 Comb also builds before it checks what the build wrote. A script that `scripts/check-all.sh` runs
 calls another one by a line `bash scripts/<name>.sh`, so the inner one runs after the build, in the
-same job. Under the base clause the inner script stands in neither list and fails check 9 as a
+same job. Under the base clause the inner script stands in neither list and fails the rule
+`docs/check-lists` as a
 script nobody runs.
 
 Until the take-up of NUC v0.9.1 these two rules stood in the inherited ADR-0002, which Comb had
@@ -48,9 +49,9 @@ where the script that runs it runs.
 
 - **Every workflow a gate** — the benchmark and the mutation run would be required checks that no
   push can meet, and every pull request would wait an hour on one.
-- **The measuring workflows run no script of `scripts/`** — their commands inline, so check 9 has
-  nothing to count. Then the local runner cannot run the same steps by hand, and the steps drift
-  apart.
+- **The measuring workflows run no script of `scripts/`** — their commands inline, so the rule
+  `docs/check-lists` has nothing to count. Then the local runner cannot run the same steps by hand,
+  and the steps drift apart.
 - **The nested scripts on run lines of their own** — the inner check would run beside the build,
   before what it reads exists, and fail on every clean tree.
 
@@ -71,11 +72,11 @@ where the script that runs it runs.
 
 ## Enforcement
 
-Check 9 of [`scripts/check-docs.sh`](../../scripts/check-docs.sh) holds the three clauses. Its cases
-stand in [`scripts/fixtures/check-docs-record.txt`](../../scripts/fixtures/check-docs-record.txt)
-under the comment that names this ADR, and
-[`scripts/test-check-docs.sh`](../../scripts/test-check-docs.sh) runs them
-([NUC-decisions-cite-tests](NUC-decisions-cite-tests.md)).
+The rule `docs/check-lists` of [`scripts/check-docs.sh`](../../scripts/check-docs.sh) holds the
+three clauses. Its cases stand in
+[`scripts/fixtures/check-docs-record.txt`](../../scripts/fixtures/check-docs-record.txt) under the
+comment that names this ADR, and [`scripts/test-check-docs.sh`](../../scripts/test-check-docs.sh)
+runs them ([NUC-decisions-cite-tests](NUC-decisions-cite-tests.md)).
 
 **Not mechanically decidable:** that a workflow named as no gate does check what the local gate
 cannot, which the review of the change that names it judges.

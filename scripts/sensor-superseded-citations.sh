@@ -22,13 +22,20 @@
 
 set -uo pipefail
 
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
 # shellcheck source-path=SCRIPTDIR source=lib/git.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/git.sh"
 # shellcheck source-path=SCRIPTDIR source=lib/adr.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/adr.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
 
 NAME="Superseded citations sensor"
-enter_root "$NAME" "${BASH_SOURCE[0]}" "$@"
+usage="scripts/sensor-superseded-citations.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "$@"
 
 ADR_DIR=docs/adr
 adr_categories "$ADR_DIR/README.md"
