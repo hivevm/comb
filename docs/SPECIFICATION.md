@@ -124,7 +124,8 @@ Only a normalization renumbers them
     folded corner), or a frame (a rectangle with its name in a tab at its top left), the system
     shall draw, hit, and lay out the node as G-13 says of the other node shapes. When the host
     application gives a node's outline a dash pattern, or none, the system shall draw the outline
-    that way.
+    that way. When the host application separates rows of a node's content by a line, the system
+    shall draw the line across the node.
 19. **G-19** — When the host application gives an edge several edge labels, each at its own path
     parameter and label offset, the system shall draw each and keep each as G-6 says. When the
     host application ends an edge on another edge, at a path parameter of that edge, the system
@@ -132,28 +133,30 @@ Only a normalization renumbers them
     application draws an edge as a lightning bolt, the system shall draw a zigzag in the middle
     of its path.
 20. **G-20** — When the developer starts the launch configuration *Example: UML* in VS Code, its
-    sidebar switches, beside the diagrams of G-12, to an activity diagram and a use case diagram
-    of Comb itself, and its state diagram uses the full notation. Together they show every
-    notation element that UML 2.5.1 defines for these three kinds of diagram, each in the
-    notation UML 2.5.1 gives it. The activity diagram shows actions, call behavior actions, send
-    signal actions, accept event actions, accept time event actions, object nodes, data stores,
-    central buffers, pins, activity parameter nodes, initial nodes, activity final nodes, flow
-    final nodes, decision and merge nodes, fork and join nodes, control flows and object flows
-    with their guards and weights, activity partitions, nested ones among them, interruptible
-    activity regions with their interrupting edges, expansion regions with their expansion nodes,
-    exception handlers, connectors, and the frame of the activity. The use case diagram shows
-    actors, use cases with their extension points, subjects, associations with their
-    multiplicities, include and extend relationships, the condition of an extend, and
-    generalizations between actors and between use cases. The state diagram shows states with
-    their entry, do, and exit behaviours and their internal transitions, composite states,
-    orthogonal regions, submachine states, initial, terminate, choice, junction, fork, and join
-    pseudostates, final states, shallow and deep history, entry and exit points, transitions with
-    their trigger, guard, and effect, and the frame of the state machine. Each diagram shows
-    comments, attached to the diagram element they annotate. A palette adds each of these
-    notation elements; a connection adds each relationship, flow, or transition, which the
-    example refuses where UML 2.5.1 does not allow it; and the sidebar edits every property the
-    notation shows, such as a name, a guard, a trigger, an effect, a multiplicity, a stereotype,
-    or a condition.
+    sidebar switches, beside the diagrams of G-12, to an activity diagram and a use case diagram of
+    Comb itself, and its state diagram uses the full notation. Together they show these notation
+    elements of UML 2.5.1, each in the notation UML 2.5.1 gives it. The activity diagram shows
+    actions, call behavior actions, send signal actions, accept event actions, accept time event
+    actions, structured activity nodes, conditional nodes, loop nodes, object nodes, data stores,
+    central buffers, pins, value pins, activity parameter nodes, parameter sets, streaming
+    parameters, initial nodes, activity final nodes, flow final nodes, decision and merge nodes,
+    fork and join nodes, control flows and object flows with their guards and weights, activity
+    partitions, nested ones among them, interruptible activity regions with their interrupting
+    edges, expansion regions with their expansion nodes, exception handlers, connectors, and the
+    frame of the activity. The use case diagram shows actors, use cases with their extension points,
+    subjects, associations with their multiplicities, include and extend relationships, the
+    condition of an extend, and generalizations between actors and between use cases. The state
+    diagram shows states with their entry, do, and exit behaviours, their internal transitions, and
+    their deferred triggers, state lists, composite states, orthogonal regions, submachine states,
+    initial, terminate, choice, junction, fork, and join pseudostates, final states, shallow and
+    deep history, entry and exit points, connection point references, transitions with their
+    trigger, guard, and effect, the send and receive signal symbols of a transition, and the frame
+    of the state machine. Each diagram shows comments, attached to the diagram element they
+    annotate. A palette adds each of these notation elements; a connection adds each relationship,
+    flow, or transition, which the example refuses between notation elements that UML 2.5.1 does not
+    let it connect, by a table of the allowed pairs that the example states and its tests hold; and
+    the sidebar edits every property the notation shows, such as a name, a guard, a trigger, an
+    effect, a multiplicity, a stereotype, or a condition.
 
 
 ## Quality Goals
