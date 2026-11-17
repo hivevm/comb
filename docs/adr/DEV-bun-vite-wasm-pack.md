@@ -48,11 +48,11 @@ mutation testing finds. cargo-mutants mutates a Rust crate and runs its tests ag
 mutant; on `crates/engine` it tries about 540 mutants in roughly half an hour. For TypeScript on
 Bun, StrykerJS has no runner of its own; the Bun runners are community packages.
 
-This ADR restates [DEV-bun-vite-and-wasm-pack](DEV-bun-vite-and-wasm-pack.md) with one change.
-Its Enforcement named "Check 9 of `scripts/check-docs.sh`", a number the checks of that script
-carried until NUC v0.10.0. Since then each check is named by its rule key, and by the notes of
-v0.10.0 an ADR that names a check by number binds the whole script. Check 9 is the rule
-`docs/check-lists`.
+This ADR restates [DEV-bun-vite-and-wasm-pack](DEV-bun-vite-and-wasm-pack.md) with one change,
+and the marker of the golden path's test names this ADR. Its Enforcement named "Check 9 of
+`scripts/check-docs.sh`", a number the checks of that script carried until NUC v0.10.0. Since
+then each check is named by its rule key, and by the notes of v0.10.0 an ADR that names a check
+by number binds the whole script. Check 9 is the rule `docs/check-lists`.
 
 ## Decision
 
@@ -271,7 +271,7 @@ Mutation testing:
 ## Enforcement
 
 - The golden path's test, `examples/metric-tree/e2e/example.spec.ts`, cites this ADR with a
-  `Verifies: DEV-bun-vite-and-wasm-pack` marker.
+  `Verifies: DEV-bun-vite-wasm-pack` marker.
 - The rule `docs/check-lists` of `scripts/check-docs.sh` holds the build job,
   `scripts/check-code.sh`, and the required checks of `CONTRIBUTING.md` together.
 - `scripts/check-dependencies.sh` fails when a lockfile of another package manager
