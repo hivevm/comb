@@ -39,7 +39,7 @@ is a curve, drawn
 one pixel wide at the far level and a few pixels wide nearer, so it can only be hit within a
 tolerance. An edge label is a pill whose width follows its text, which the shell measures with its
 `BitmapText` font and the engine cannot; the query receives only the widest pill's reach, one
-number for all labels (API-bridge-takes-serde-and-columns). ARCH-one-workspace-per-example
+number for all labels (API-bridge-columns-carry-nesting). ARCH-one-workspace-per-example
 keeps geometry out of the shell, and the engine's
 spatial index already holds the nodes, the edges, and the label points.
 
@@ -59,8 +59,14 @@ citations of ADRs superseded beside it name their successors.
 We will describe node content as rows of weighted columns, each holding one element of the closed
 set `text`, `icon`, `progress`, `badge`, `metric`, and `action`, laid out by the engine from glyph
 advances the shell hands it once per font, with icons named from images the host application
-registers and colours given as numbers.
+registers and colours given as numbers. A row may instead be a separator, a line across the
+node.
 
+- **Separator:** a row that is a separator holds no column. It is a line across the node's inner
+  rectangle, 1 world unit thick, in the colour of the node's border, with the padding of a row
+  above and below it, drawn at the near and the middle level. It divides a node's name from its
+  compartments, as UML 2.5.1 draws a state's internal behaviours and a use case's extension points
+  (G-20).
 - **Elements:** `text` with a role of title, body, or caption; `icon` by registered name; `progress`
   as segments, each a fraction and a colour; `badge` as text on a colour; `metric` as a caption, a
   value, and a trend with a text, a direction, and a colour; `action` as text with an identifier,
@@ -101,7 +107,7 @@ registers and colours given as numbers.
   to the column less the gap before the arrow and the arrow, the gap shrinking where even that
   leaves no room, so that the arrow ends at the column's end; a column narrower than the arrow, or a
   value's line of no height, draws none. Once the value is cut, the trend's text shows nothing,
-  though a glyph of it would fit in the room the value's cut leaves. The engine places each part and
+  even where a glyph of it fits in the room the value's cut leaves. The engine places each part and
   the arrow's three points, and the shell draws the caption in the caption's colour, `0x6B7280`, the
   value in the near-black of the node's texts, `0x1F2430`, and the arrow and the trend's text in the
   trend's colour. A metric lies at its row's top as every element does, and in a row that holds a
@@ -146,14 +152,16 @@ registers and colours given as numbers.
   reported is the one under the release, asked anew, since the host application may change the
   node's content when it hears of the selection; a release off that node or off its elements, a
   release outside the canvas, and a cancelled pointer report none.
-- **Layout:** the host application gives a node's width; the engine computes each row's height,
-  each element's rectangle, and where each text is truncated, and the node's height from its rows,
-  or the height its data gives where that is more.
-  A row is as high as its tallest element, and a row's columns share its width by their weights,
-  a weight left out counting as 1. A node is as high as its rows and the padding above and below
-  them, and at least the least height, 64 world units, so that a node of one row of a title keeps
-  the size of the nodes before content. The engine states the padding, the gap between columns,
-  and the least height; the shell states each role's line height.
+- **Layout:** the host application gives a node's width; the engine computes each row's height, each
+  element's rectangle, and where each text is truncated, and the node's height from its rows, or the
+  height its data gives where that is more. A row is as high as its tallest element, and a row's
+  columns share its width by their weights, a weight left out counting as 1. A node with content is
+  as high as its rows and the padding above and below them, and at least the least height, 64 world
+  units, so that a node of one row of a title keeps the size of the nodes before content. A node
+  without content is as high as its data gives, or as high as it is wide where its data gives no
+  height, however small, so that a pin or an entry point can be a small open node shape. The engine
+  states the padding, the gap between columns, and the least height; the shell states each role's
+  line height.
 - **Levels of detail (REN-virtualized-nested-scene):** *near* draws every element; *middle* draws
   the box and the texts of role title, at the place near gives them, and no action, badge, progress
   bar, metric, or icon; *far* draws no element.
@@ -172,8 +180,11 @@ registers and colours given as numbers.
 - **Hit test:** the engine answers every hit test from its spatial index, in one call that takes a
   world point, the size of a screen pixel, the level of detail, and whether to look for
   connectors, and returns the target drawn on top there: a resize handle, else a line between
-  regions, else a connector, else an edge label, else a node, with the element of its content
-  under the point, else an edge, else none.
+  regions, else a connector, else an edge label, else a node that is no container, with the
+  element of its content under the point, else an edge, else a container, with the element of its
+  content under the point, else none. Containers lie below the edges
+  ([REN-virtualized-nested-scene](REN-virtualized-nested-scene.md)), so an edge drawn over a
+  container is hit before it.
   - **Resize handle:** within 6 screen pixels of one of the eight resize handles of the selected
     node, where its `resizable` is `true`, at the near and the middle level.
   - **Line between regions:** within 4 screen pixels of a line between two regions, at the near
@@ -203,7 +214,7 @@ registers and colours given as numbers.
     ARCH-engine-edits-nested-graph, and the edge or label in the highest slot; the line of the
     innermost regions.
   - **One call:** the result crosses as one generated structured value
-    (API-bridge-takes-serde-and-columns) naming the kind
+    (API-bridge-columns-carry-nesting) naming the kind
     and the slot, for a connector its side, and for a node the element hit. Interaction calls it
     on press, on hover, and on the release of a press on a node, and draws the cursor from it.
   - **What a press does:** on a resize handle it begins a resize; on a line between regions it
@@ -214,7 +225,8 @@ registers and colours given as numbers.
     moved more than 4 screen pixels from the press, begins a pan from it, so that a canvas dense
     with edges still pans by dragging; on none it clears the selection and begins a pan.
 
-**Out of scope:** elements beyond the six, each a revision of this ADR; a callback in which the
+**Out of scope:** elements beyond the six and rows beyond the separator, each a revision of this
+ADR; a callback in which the
 host application draws; styling beyond colours and roles, such as fonts per node; a selection of
 more than one item; hitting an edge's arrowhead apart from its path.
 
@@ -327,4 +339,7 @@ The tests of the hit test cite this ADR with `Verifies: REN-node-content-and-hit
   handles and lines between regions, in the order of the decision; a test of the layout asserts
   that a node's height is the greater of its content's and its data's; and a browser test of the
   UML example presses a resize handle on a node above another, and a line between two partitions,
-  and asserts the resize and the line's drag.
+  and asserts the resize and the line's drag, and presses an edge drawn over a partition and
+  asserts that the edge is selected. A test of the layout asserts that a node without content
+  takes the height its data gives, below the least height, and a browser test that a separator
+  is drawn between a state's name and its internal behaviours.

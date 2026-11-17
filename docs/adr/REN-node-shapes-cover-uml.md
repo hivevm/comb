@@ -17,11 +17,11 @@ drafted there for the maintainer to land.
 The forces:
 
 - **Q-1 and Q-2:** a graph of node shapes stays as fluid at 50,000 nodes as one of rectangles.
-  The engine owns geometry, culling, and hit tests (REN-virtualized-scene-graph,
-  REN-node-content-in-rows), and the shell draws
+  The engine owns geometry, culling, and hit tests (REN-virtualized-nested-scene,
+  REN-node-content-and-hits), and the shell draws
   from pooled views. A node shape that only the shell knows would leave the engine hitting and
   culling a rectangle the user does not see.
-- **REN-node-content-in-rows:** content is a closed set of elements the engine lays out. A closed
+- **REN-node-content-and-hits:** content is a closed set of elements the engine lays out. A closed
   set of node
   shapes keeps the same split: the host describes, the engine computes, the shell draws.
 - **API-host-asks-content-height:** the host gives a node's width, and the engine gives its height
@@ -101,7 +101,8 @@ node shape from the engine's numbers.
   - A content node shape is as high as its inner rectangle needs to hold its content laid out to
     the inner rectangle's width. For a rectangle that is today's height.
   - A circle and a ringed circle are as high as wide.
-  - A bar is 8 world units high.
+  - A bar is 8 world units high where its data gives no height; with a height it is that high, so
+    that a bar 8 wide and given a height stands upright, as a vertical fork or join.
   - A crossed circle and a cross are as high as wide.
   - A captioned node shape is as high as its drawing and its content.
   - A node whose data gives a height is that high, never less than its content needs; a height
@@ -157,14 +158,17 @@ decision of its own takes up.
 - **A node shape as a content element** — a shape drawn inside the node's rectangle, which keeps
   the data format. The node stays hit and culled as a rectangle, an edge still ends at the
   rectangle, and a diamond's corners would be clicked through.
-- **A node shape by a registered icon** — cheap, since icons exist (REN-node-content-in-rows), but
+- **A node shape by a registered icon** — cheap, since icons exist (REN-node-content-and-hits), but
   an icon is a
   texture: it neither scales crisply at every zoom nor gives an outline to hit or to dock on.
 - **The height from the content alone** — the choice of
   [REN-closed-set-of-node-shapes](REN-closed-set-of-node-shapes.md), against a height the host gives
-  that would let content overflow; but a container, a region's node, or a frame needs room below
-  its content for the nodes it holds, and G-15 resizes a node. A height never less than the
-  content needs keeps content from overflowing.
+  that would let content overflow, and against a second source of height beside the one
+  API-host-asks-content-height promises the host, so that the host places a node where Comb draws
+  it; but a container, a region's node, or a frame needs room below its content for the nodes it
+  holds, and G-15 resizes a node. A height never less than the content needs keeps content from
+  overflowing, and `heightOf` still answers the content's height: a host that gives a height knows
+  the one it gave, and the node is the greater of the two.
 - **A pentagon and a notch on every side** — four node shapes each instead of one, for a
   direction UML 2.5.1 does not draw.
 - **Dashes drawn by the shell** — no export, but the shell would walk every outline in
@@ -178,7 +182,7 @@ decision of its own takes up.
 
 - [REN-closed-set-of-node-shapes](REN-closed-set-of-node-shapes.md), which this ADR restates with
   the node shapes of G-18, the outline, and the height.
-- REN-node-content-in-rows and API-host-asks-content-height, and `crates/engine/src/content.rs` for
+- REN-node-content-and-hits and API-host-asks-content-height, and `crates/engine/src/content.rs` for
   the padding and the rows (read on
   2026-11-06).
 - The notation of states and pseudostates in OMG's UML 2.5.1, chapter 14 (State Machines): a state

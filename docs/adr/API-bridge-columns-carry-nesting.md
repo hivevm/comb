@@ -50,7 +50,7 @@ serde-wasm-bindgen pays for each field it reads: a `Reflect.get`, an `in` check,
 copy into WebAssembly memory, of the order of 100 ns each, times every node and edge of a load.
 Q-2 bounds a load of 50,000 nodes and 50,000 edges to its first frame at 1 s on the reference
 machine; the Benchmark workflow judges the first frame on each runner kind against that kind's
-baseline, with a margin of 25 % ([DEV-bun-vite-and-wasm-pack](DEV-bun-vite-and-wasm-pack.md)). On
+baseline, with a margin of 25 % ([DEV-bun-vite-wasm-pack](DEV-bun-vite-wasm-pack.md)). On
 the AMD EPYC 7763, with an
 identical reference workload, the first frame of the benchmark's 50,010 nodes and edges measured
 366 to 391 ms (median 378) with only the fields the engine keeps crossing (Benchmark run
@@ -287,9 +287,10 @@ reads and writes as typed-array views created anew after every engine call.
     as `Float32Array`, with `width, height` per node slot, the height the node has
     ([REN-node-content-and-hits](REN-node-content-and-hits.md)), the greater of its content's and
     its data's;
-  - the results of a viewport query: the found node slots, and the found edge labels as pairs of
-    their edge's slot and their place in that edge's list of labels, as `Uint32Array`, and the
-    point of each found label as `Float32Array`;
+  - the results of a viewport query: the found node slots as two lists, the containers and the other
+    nodes, each in the order [ARCH-engine-edits-nested-graph](ARCH-engine-edits-nested-graph.md)
+    gives, and the found edge labels as pairs of their edge's slot and their place in that edge's
+    list of labels, as `Uint32Array`, and the point of each found label as `Float32Array`;
   - at the near and the middle level, where the content of the found nodes lies: per found node, in
     their order, the boundaries of its placed elements as `Uint32Array`; per placed element its
     rectangle relative to its node as `Float32Array` and its role's code as `Uint8Array`; and what
@@ -713,8 +714,14 @@ Each test below cites this ADR with `Verifies: API-bridge-columns-carry-nesting`
   `Verifies: Q-4`.
 - **The first frame:** the comparison step of `.github/workflows/benchmark.yml`, which fails when
   the median first frame of the runner's kind exceeds its baseline under `bench/baselines/` by more
-  than the margin, cites this ADR and [DEV-bun-vite-and-wasm-pack](DEV-bun-vite-and-wasm-pack.md);
+  than the margin, cites this ADR and [DEV-bun-vite-wasm-pack](DEV-bun-vite-wasm-pack.md);
   on the AMD EPYC 7763 its
   baseline holds 378.6 ms. It cites no Q-2, which is defined on the reference machine. A number of
   the workflow decides the goal, not a test of the suite: the workflow runs weekly and on demand, so
   a load that grows slow again is found at its next run, not in the pull request.
+- **The columns of nesting:** the property test of the bridge crate generates the fields G-14 to
+  G-19 add, values of another type, a container that names no container, a cycle, a border node
+  attached to a border node, regions that do not add up, and an end on an edge with a path
+  parameter outside 0 to 1 among them, and asserts each refusal and that a valid load crosses
+  them unchanged; a test asserts that a height below the content's is raised to it, and a browser
+  test that a query returns containers and the other nodes as two lists.

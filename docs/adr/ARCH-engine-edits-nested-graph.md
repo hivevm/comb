@@ -20,21 +20,18 @@ Q-2's second, so an edit that reloads costs that much per edit, and a host appli
 nodes in a loop pays it each time. A frame of 16.7 ms has no room for it.
 
 A slot is the index of a node or an edge in the engine's buffers, the same on both sides of the
-bridge ([API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md)). The shell
-keeps the map from identifiers to slots,
-and every call into the engine after a load names slots
-([API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md),
-*Slots*). [API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md) leaves open
-when slots are compacted after
-deletions. Removing an item leaves its slot empty; what fills it decides whether slots stay dense,
-whether the buffers grow with every edit, and in what order nodes are drawn, since the scene and the
-hit test need an order of nodes that says which one is on top
-([REN-virtualized-scene-graph](REN-virtualized-scene-graph.md)). A node the host application adds
-has to come to the
-front, where the user dropped it, also when it takes a freed slot below others; slot order alone
-cannot give that. [REN-virtualized-scene-graph](REN-virtualized-scene-graph.md) binds node views and
-particles in the
-order of the nodes' ranks below, and edges and edge labels in slot order.
+bridge ([API-bridge-columns-carry-nesting](API-bridge-columns-carry-nesting.md)). The shell keeps
+the map from identifiers to slots, and every call into the engine after a load names slots
+([API-bridge-columns-carry-nesting](API-bridge-columns-carry-nesting.md), *Slots*).
+[API-bridge-columns-carry-nesting](API-bridge-columns-carry-nesting.md) leaves open when slots are
+compacted after deletions. Removing an item leaves its slot empty; what fills it decides whether
+slots stay dense, whether the buffers grow with every edit, and in what order nodes are drawn, since
+the scene and the hit test need an order of nodes that says which one is on top
+([REN-virtualized-nested-scene](REN-virtualized-nested-scene.md)). A node the host application adds
+has to come to the front, where the user dropped it, also when it takes a freed slot below others;
+slot order alone cannot give that. [REN-virtualized-nested-scene](REN-virtualized-nested-scene.md)
+binds node views and particles in the order of the nodes' ranks below, and edges and edge labels in
+slot order.
 
 The spatial index is a uniform grid over the extent it was built for; items beyond the extent
 fall into its border cells, it counts them, and it is built again once more than an eighth of the
@@ -49,7 +46,7 @@ position relative to its container, so that a container's move is one change of 
 may reach past its container's outline. Removing a container removes what it contains. These
 answers are the human's (2026-11-17).
 
-Every edge lies below every node ([REN-virtualized-scene-graph](REN-virtualized-scene-graph.md)),
+Every edge lies below every node ([REN-virtualized-nested-scene](REN-virtualized-nested-scene.md)),
 so a container drawn as a node would cover the edges between the nodes it contains. A container
 is therefore drawn below every edge, and every other node above every container. That parts with
 the rule of [ARCH-engine-edits-graph-in-place](ARCH-engine-edits-graph-in-place.md) that a node
@@ -112,17 +109,20 @@ and hit below the other nodes.
 - **Draw order of nodes:** the engine keeps a rank per node slot, a `u32`. A load ranks node `i` as
   `i`, so that after a load rank order is slot order; each node added takes the next rank, one above
   the highest given. Containers come before all other nodes. Among containers, a container comes
-  after its own container, and containers in one container, or on the canvas, come in the order
-  of their ranks, each followed by what it contains. The other nodes come in the order of their
-  ranks, whatever container they lie in. A query returns the containers it found and the other
-  nodes it found as two lists in that order, and the shell binds node views and particles in the
-  order it returns them, so the last bound is drawn on top. The hit test of nodes takes, of the
-  nodes that hold the point, the last in that order: a node that is no container before every
-  container, and among containers the last. Where the next rank would pass `u32::MAX`, the engine
-  first renumbers the ranks in use from 0 in their order, once per four billion additions. Edges
-  and edge labels keep slot order.
+  after its own container, and containers in one container, or on the canvas, come in the order of
+  their ranks, each followed by what it contains. The other nodes come in the order of their ranks,
+  whatever container they lie in, each followed directly by the border nodes attached to it
+  ([ARCH-border-nodes-ride-sides](ARCH-border-nodes-ride-sides.md)) in the order of their ranks; a
+  border node of a container follows every container, at the place of the container's rank among the
+  other nodes. This is the one order of drawing and hitting nodes. A query returns the containers it
+  found and the other nodes it found as two lists in that order, and the shell binds node views and
+  particles in the order it returns them, so the last bound is drawn on top. The hit test of nodes
+  takes, of the nodes that hold the point, the last in that order: a node that is no container
+  before every container, and among containers the last. Where the next rank would pass `u32::MAX`,
+  the engine first renumbers the ranks in use from 0 in their order, once per four billion
+  additions. Edges and edge labels keep slot order.
 - **The limits of a load**
-  ([ARCH-functional-core-imperative-shell](ARCH-functional-core-imperative-shell.md)) hold after
+  ([ARCH-one-workspace-per-example](ARCH-one-workspace-per-example.md)) hold after
   every
   edit: the slots in use of each kind stay within the limit, and because a free slot is taken before
   a new one, so does the highest slot.
@@ -163,7 +163,7 @@ container's content with it; undo, which the host application owns
 - **Append only, removed slots left as holes** — a new node always takes the highest slot, so it is
   drawn on top, but every addition grows the buffers and the grids for good. A session that adds and
   removes reaches the limit of 1,000,000 slots without holding as many items, and needs the
-  compaction [API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md) leaves
+  compaction [API-bridge-columns-carry-nesting](API-bridge-columns-carry-nesting.md) leaves
   open, which renumbers slots under the
   shell's map.
 - **A draw-order key the shell keeps** — the scene would sort the found node slots by a key of
@@ -249,6 +249,11 @@ Each test below cites this ADR with `Verifies: ARCH-engine-edits-nested-graph`.
   containers, moves containers and moves nodes into and out of them, and asserts after each step
   that every node's world position is the sum along its chain, that a query and a hit test find
   what a scan of the world positions finds, and that a move into a node it contains is refused.
-  A test asserts that removing a container removes everything it contains and every edge at it.
+  A test asserts that removing a container removes everything it contains and every edge at it,
+  that a container's box does not grow when a node it holds moves past its outline, and that a
+  load or an edit putting a node in a node that is no container is refused.
+- **Border nodes in the order:** a test of `crates/engine/src/graph.rs` adds a node above an action
+  with pins and moves the action into a container, and asserts that a query returns each pin
+  directly after the action and the hit test finds a pin before the action.
 - **Free slots refused:** a test of `crates/engine-wasm/src/lib.rs` names a freed slot in each
   export that takes slots and asserts the refusal of a slot beyond the graph.

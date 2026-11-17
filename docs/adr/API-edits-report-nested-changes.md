@@ -44,7 +44,7 @@ The methods below need refusals only the store's map from identifiers to slots c
 identifier `removeNodes`, `removeEdges`, or `updateEdge` names that the graph does not hold, an
 `addNode`, `addEdge`, or user's connection whose identifier the graph holds already, and an
 `addEdge` whose end the graph does not hold. The engine keeps no identifiers
-([API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md)), so the bridge crate
+([API-bridge-columns-carry-nesting](API-bridge-columns-carry-nesting.md)), so the bridge crate
 cannot check them against the graph it
 holds; [ARCH-one-workspace-per-example](ARCH-one-workspace-per-example.md) makes them
 `api`'s.
@@ -75,12 +75,11 @@ node. [ARCH-engine-edits-nested-graph](ARCH-engine-edits-nested-graph.md),
 [ARCH-regions-are-container-slots](ARCH-regions-are-container-slots.md), and
 [ARCH-border-nodes-ride-sides](ARCH-border-nodes-ride-sides.md) leave to the public interface how
 the host application describes them and how their changes are reported and refused.
-
-The human decided on 2026-11-17: a container is marked by a field, so an empty one is still a
-container; a dragged node goes to the topmost container under the pointer that the host
-application accepts; `nodeMoved` carries the new container, so one drag is one change; a refused
-move takes the whole drag back; a resize at the left or the top keeps the content's world
-position, and reports its new positions; and eight resize handles stand on a selected node.
+ The human decided on 2026-11-17: a container is marked by a field, so an empty one is still a
+container; a dragged node goes to the topmost container under the pointer, which the host
+application may refuse; `nodeMoved` carries the new container, so one drag is one change; a refused
+move takes the whole drag back; a resize at the left or the top keeps the content's world position,
+and reports its new positions; and eight resize handles stand on a selected node.
 
 [API-edits-reported-as-typed-changes](API-edits-reported-as-typed-changes.md) reports none of
 these, and its vetoes cover a connection and a deletion alone. This ADR restates it with them.
@@ -116,7 +115,9 @@ Comb told no change of the graph during the veto's call.
     `offset` instead of `x`, `y`, and `container`.
   - `nodeResized`: the node's new position, relative to its container, and size; `moved` lists
     `{ id, x, y }` for each node the node holds whose position relative to it changed, since a
-    resize at the left or the top keeps the content's world position.
+    resize at the left or the top keeps the content's world position; `regions` lists
+    `{ id, size }` for each of its regions whose size the resize changed
+    ([ARCH-regions-are-container-slots](ARCH-regions-are-container-slots.md)).
   - `regionsMoved`: the divided node, `regions` as `{ id, size }` for each region whose size the
     drag of a line changed, and `moved` as above for the nodes in them.
   - `nodesRemoved` names, beside the nodes the gesture or the call named, everything they hold and
@@ -154,14 +155,16 @@ Comb told no change of the graph during the veto's call.
 - **New methods of `Comb`:** `addNode(node: NodeData)`; `removeNodes(ids: readonly string[])`, which
   removes with those nodes everything they hold, their border nodes, and the edges at any of them;
   `addEdge(edge: EdgeData)`; `updateEdge(id, patch)`, whose patch may set `color`, `arrow`,
-  `sourceSide`, and `targetSide`, set `dash` or clear it with `null`, and set `labels` or clear them
-  with `null`; `removeEdges(ids: readonly string[])`; and `worldPointAt(clientX, clientY)`, the
-  world point under a point of the page in the coordinates of the browser's viewport, for a drop
-  from the host's palette (G-1). Each returns nothing. Each method that changes the graph changes
-  all it names or nothing, and throws a `GraphDataError` on a refusal and an `EngineLostError` once
-  the engine is lost ([API-trapped-engine-is-lost](API-trapped-engine-is-lost.md)); `worldPointAt`
-  needs no engine and keeps working, and throws a `RangeError` on a coordinate that is not finite,
-  like `setViewport`.
+  `sourceSide`, and `targetSide`, set `dash` or clear it with `null`, set `labels` or clear them
+  with `null`, and set `lightning`; `updateNode(id, patch)` may also set `height`, `outline`,
+  `resizable`, `regions` and `divide`, where a region the patch leaves out goes with everything it
+  holds, and a border node's `side` and `offset`; `removeEdges(ids: readonly string[])`; and
+  `worldPointAt(clientX, clientY)`, the world point under a point of the page in the coordinates of
+  the browser's viewport, for a drop from the host's palette (G-1). Each returns nothing. Each
+  method that changes the graph changes all it names or nothing, and throws a `GraphDataError` on a
+  refusal and an `EngineLostError` once the engine is lost
+  ([API-trapped-engine-is-lost](API-trapped-engine-is-lost.md)); `worldPointAt` needs no engine and
+  keeps working, and throws a `RangeError` on a coordinate that is not finite, like `setViewport`.
 - **Validation:** `api` reads each input once into primitives
   ([ARCH-one-workspace-per-example](ARCH-one-workspace-per-example.md)). The bridge
   crate checks what a load would
@@ -174,7 +177,7 @@ Comb told no change of the graph during the veto's call.
   [ARCH-one-workspace-per-example](ARCH-one-workspace-per-example.md) decides. Every
   new kind
   is a kind of the generated `GraphDataProblem`
-  ([API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md)), never one
+  ([API-bridge-columns-carry-nesting](API-bridge-columns-carry-nesting.md)), never one
   written in TypeScript.
 - **Vetoes:** each is called synchronously, in the input event that ends the gesture, and
   neither for the host application's own calls. Where one throws, Comb makes no edit, ends the
@@ -184,18 +187,19 @@ Comb told no change of the graph during the veto's call.
     as a string, or `false` to refuse. Any other value refuses as `false` does, with no error, so
     a callback that forgets to return makes no edge. Without `canConnect`, no connection is begun:
     Comb has no name to give the edge.
-  - `canDelete({ nodes, edges })` is called when the user deletes the selection, `edges` holding
-    every edge that would go with the nodes, as the engine names them before it removes anything
-    ([ARCH-engine-edits-nested-graph](ARCH-engine-edits-nested-graph.md)), all as
-    `readonly string[]`. Comb
-    deletes only where it returns `true`. Without `canDelete`, a deletion is allowed.
+  - `canDelete({ nodes, edges })` is called when the user deletes the selection, `nodes` holding the
+    selected node and everything that would go with it, what it holds and its border nodes, `edges`
+    holding every edge that would go with the nodes, as the engine names them before it removes
+    anything ([ARCH-engine-edits-nested-graph](ARCH-engine-edits-nested-graph.md)), all as `readonly
+    string[]`. Comb deletes only where it returns `true`. Without `canDelete`, a deletion is
+    allowed.
   - `canMoveInto({ node, container })` is called when the user releases a dragged node over a
     container or a region other than its own, or outside every container while it lies in one,
-    `container` the identifier of the topmost container or region under the pointer, or `null`
-    for the canvas. Comb moves the node into it only where it returns `true`; otherwise the whole
-    drag is taken back, the node stands where it stood before it, and no change is delivered.
-    Without `canMoveInto`, a move into a container is allowed. A drag that ends in the node's own
-    container asks nothing.
+    `container` the identifier of the topmost container or region under the pointer, or `null` for
+    the canvas; the dragged node, what it holds, and its regions are never that container. Comb
+    moves the node into it only where it returns `true`; otherwise the whole drag is taken back, the
+    node stands where it stood before it, and no change is delivered. Without `canMoveInto`, a move
+    into a container is allowed. A drag that ends in the node's own container asks nothing.
 - **A veto during whose call Comb tells a change:** where the store records a change of the graph
   between a veto's call and its return, which Comb tells to the listeners of `onChange` as it
   records it, the gesture ends with nothing done, whatever the veto returned: no edge is added and
@@ -399,6 +403,9 @@ Each test below cites this ADR with `Verifies: API-edits-report-nested-changes`.
   the node back where it stood and no change; resize an activity at its left edge and assert
   `nodeResized` with the moved content; drag the line between two partitions and assert
   `regionsMoved`; drag a pin and assert `nodeMoved` with its side and offset; and delete a
-  composite state and assert that `nodesRemoved` names its content and the edges at it.
+  composite state and assert that `nodesRemoved` names its content and the edges at it. Browser
+  tests release a drop with a `canMoveInto` that removes the target container and returns `true`,
+  and assert that the drag is taken back and no change of the user's is told, and drag a
+  container over a container it holds and assert that `canMoveInto` is not asked for it.
 - **Types:** a type test in `packages/comb/src/` asserts that `GraphChange` admits exactly the
   kinds of the table.

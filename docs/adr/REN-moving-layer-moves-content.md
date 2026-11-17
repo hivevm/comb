@@ -14,7 +14,7 @@ follow it in the same frame. A drag writes the node's position into the engine's
 pointer move ([ARCH-graph-in-zustand-store](ARCH-graph-in-zustand-store.md)), and the scene binds
 its views, its particles, and one edge
 mesh to what a query of the engine found
-([REN-virtualized-scene-graph](REN-virtualized-scene-graph.md)).
+([REN-virtualized-nested-scene](REN-virtualized-nested-scene.md)).
 
 A query of the far view is far more than a frame can hold. A profile of a drag that queries anew
 each frame, at the fitted view at 50,010 nodes, the far level (ticket 07 of revision-2026-10-31),
@@ -38,7 +38,7 @@ Apart from what this decision keeps, the scene keeps a query only while the stor
 `packages/comb/src/render/scene.ts`), and every edit replaces an array. The store replaces the
 object in a slot on an edit that adds or removes, on a change of a node's content or an edge's style
 or label, and when the engine reuses a freed slot
-([ARCH-engine-edits-graph-in-place](ARCH-engine-edits-graph-in-place.md)). PixiJS uploads a
+([ARCH-engine-edits-nested-graph](ARCH-engine-edits-nested-graph.md)). PixiJS uploads a
 sub-range of a buffer
 (`Buffer.update(sizeInBytes, offsetInBytes)`); its `ParticleContainer` uploads every particle when a
 property marked static changes, and `packages/comb/src/render/particles.ts` marks every property
@@ -63,9 +63,12 @@ query drew what they move or remove, and query anew at the release, past those f
 
 - **A drag's signal:** at its first move, interaction writes the slots it drags into the store's
   `dragged`, a dragged container's with the slots of everything it contains at every depth, and
-  clears them at the release; each pointer move increments `movesVersion`, which a
-  kept query survives, and the release increments `positionsVersion`
-  ([ARCH-graph-in-zustand-store](ARCH-graph-in-zustand-store.md)).
+  every dragged node's with the slots of its border nodes
+  ([ARCH-border-nodes-ride-sides](ARCH-border-nodes-ride-sides.md)), and clears them at the release;
+  a resize (G-15) and the drag of a line between regions (G-16) are drags of the nodes whose boxes
+  they change, the resized or divided node, its regions, and what they hold, and signal as a drag
+  does; each pointer move increments `movesVersion`, which a kept query survives, and the release
+  increments `positionsVersion` ([ARCH-graph-in-zustand-store](ARCH-graph-in-zustand-store.md)).
 - **An edit, as the scene sees it:** the slots in which the store's `nodes` and `edges` differ from
   the arrays of the query it keeps, compared slot by slot when either array is a new one since the
   last render, so that several edits within a frame count as the slots they changed. A slot empty
@@ -140,10 +143,9 @@ level (ticket 18 of revision-2026-10-18).
 - **Overlay without hiding** — draw the moved node and edges on top and leave the old ones in the
   kept query; the old edges stay visible where the node was.
 - **The dragged slots named at the press** — the hiding and the moving layer begin before the
-  pointer moves, but a press within the slop is a click on the node or one of its elements, not
-  a drag ([REN-node-content-in-rows](REN-node-content-in-rows.md)), and would hide and upload for a
-  gesture that
-  moves nothing.
+  pointer moves, but a press within the slop is a click on the node or one of its elements, not a
+  drag ([REN-node-content-and-hits](REN-node-content-and-hits.md)), and would hide and upload for a
+  gesture that moves nothing.
 
 ## Sources / Prior art
 
@@ -190,7 +192,10 @@ Browser tests of the example, citing `Verifies: REN-moving-layer-moves-content`:
   removed one is not, as `isDrawn` and `inspect()` report; 257 slots changed at once query anew,
   and so does a removal of a dragged node;
 - a drag of a container that holds nodes and an edge between them moves every node and edge it
-  holds in each frame, at each level of detail, and keeps the container's particle below the edges.
+  holds in each frame, at each level of detail, and keeps the container's particle below the edges;
+- a drag of an action with pins moves the pins and the edges at them in each frame, and a resize
+  of a partition and the drag of a line between two partitions query in no frame before the
+  release.
 
 `examples/metric-tree/e2e/remove.spec.ts` keeps deciding that `isDrawn` answers as `inspect()` does
 at the far level before and after a removal. A Rust test of the engine asserts that the mesh of

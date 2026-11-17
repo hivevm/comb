@@ -18,7 +18,7 @@ the user's connection and by `addEdge`. A state diagram needs two things that ru
 - a loop, a transition from a state back to itself.
 
 The feature spec `docs/plan/state-diagram/` asks for both as G-13, drafted there for the
-maintainer to land. The decision on node shapes (REN-closed-set-of-node-shapes) gives the engine the
+maintainer to land. The decision on node shapes (REN-node-shapes-cover-uml) gives the engine the
 point where a line crosses a node's outline.
 
 The forces:
@@ -26,10 +26,10 @@ The forces:
 - **What exists stays:** the metric tree, its reference image of the edges, the benchmark, and
   the UML example's class and package diagrams draw their edges by sides. The maintainer chose an
   opt-in: today's sides stay the default.
-- **Q-1, Q-2, and REN-virtualized-scene-graph:** an edge stays one cubic in the one edge mesh, so
+- **Q-1, Q-2, and REN-virtualized-nested-scene:** an edge stays one cubic in the one edge mesh, so
   the rectangle, the
   split points, the mesh budget, and the precision far from the origin hold.
-- **API-edits-reported-as-typed-changes:** the user's connection is proposed to the host's veto. A
+- **API-edits-report-nested-changes:** the user's connection is proposed to the host's veto. A
   loop the gesture offers
   is a proposal an existing host has never seen. The maintainer chose an option that allows
   loops, off by default, over leaving them to the veto alone.
@@ -125,7 +125,7 @@ side of the node.
   - Where loops are allowed, a connector of the source itself is compatible as well, under the
     same rule, but for the connector the connection starts from.
   - A connection is made only to a compatible connector, and only after the host's veto allows it
-    ([API-edits-reported-as-typed-changes](API-edits-reported-as-typed-changes.md)). The node the
+    ([API-edits-report-nested-changes](API-edits-report-nested-changes.md)). The node the
     user drags from is
     the edge's source, the one released over its target. The gesture records the sides of the two
     connectors; a host that wants an end on the outline sets it through `updateEdge`.
@@ -133,12 +133,11 @@ side of the node.
   `load` does; the rule of compatibility binds the user's gesture alone.
 - **Levels:** at the far level no connector is drawn, and no connection is begun. How a
   connector is hit is decided with the other hit tests
-  ([REN-node-content-in-rows](REN-node-content-in-rows.md)).
+  ([REN-node-content-and-hits](REN-node-content-and-hits.md)).
 - **Drawing:**
   - A `connectors` layer joins the world above the nodes and edge labels
-    ([REN-virtualized-scene-graph](REN-virtualized-scene-graph.md)). It holds the four connectors of
-    the node under
-    the pointer.
+    ([REN-virtualized-nested-scene](REN-virtualized-nested-scene.md)). It holds the four connectors
+    of the node under the pointer.
   - While the user drags a connection, it holds those of the source and of the node under the
     pointer, each compatible one drawn apart from the others.
   - The connection being dragged is drawn in the overlay as a line from the source's connector to
@@ -174,7 +173,7 @@ placements of the control points. Added here:
 
 - **Anchors as entities of their own, several per node, each with an identifier** — as Eclipse
   Draw2d's `ConnectionAnchor`. They are the most general, but give an edge's end an identity the
-  bridge, the store, and the changes of API-edits-reported-as-typed-changes would carry, for a need
+  bridge, the store, and the changes of API-edits-report-nested-changes would carry, for a need
   the outline already
   meets.
 - **A field of its own for docking, beside the sides** — clearer to read, but it allows two
@@ -255,4 +254,6 @@ Each test below cites this decision with `Verifies:` and its identifier.
   and 0.55. The property test of the bridge crate generates ends on edges, chains and cycles among
   them, and lists of labels. A browser test of the UML example asserts that an extend's condition
   stays anchored on the extend as its use cases move, and that an association draws a
-  multiplicity at each end.
+  multiplicity at each end; that removing an edge removes the edges that end on it and reports
+  them; and that dragging one of an edge's two labels moves that label alone and delivers
+  `labelMoved` naming it.

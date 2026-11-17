@@ -41,7 +41,9 @@ of the regions.
    of the node it divides, never alone.
 3. **Division.** A node or a region is divided side by side or one above the other, never both.
    Each region has a size along that direction in world units; the sizes and the name bands add up
-   to the extent of what they divide, and the engine derives each region's box from them. A region
+   to the extent of what they divide, and the engine derives each region's box from them. The
+   regions of a node divide the part of its box below its content: a composite state's name and
+   compartments, or a frame's tab, stand above its regions, never in them. A region
    may be divided again, to any depth.
 4. **Name band.** A region with a name has a band at its start, at the top of a region side by
    side with others, at the left of one above or below others, its name turned there by a quarter
@@ -108,4 +110,7 @@ Each test below cites this ADR with `Verifies: ARCH-regions-are-container-slots`
 - A browser test of the UML example divides an activity into partitions, one of them divided
   again, drags a line between two, and asserts through inspection that the regions' boxes and the
   nodes in them are drawn where the engine reports them, and that a node dropped into a partition
-  lies in it.
+  lies in it; it presses a partition where no node lies and asserts that the activity is selected
+  and dragged, and removes a partition through the host application and asserts that its content
+  goes and its neighbours share its size. A test of the engine asserts that a composite state's
+  regions lie below its content.

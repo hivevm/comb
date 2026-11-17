@@ -17,9 +17,9 @@ A border node is unlike a node in a container
 ([ARCH-engine-edits-nested-graph](ARCH-engine-edits-nested-graph.md)): the node it is attached to
 need not be a container, an action with pins is none, and it sits on the outline, not inside.
 Comb already names places on a node by its four sides: an edge docks at the connector of a side or
-on the outline ([API-edges-dock-side-or-outline](API-edges-dock-side-or-outline.md)), and every
+on the outline ([API-edges-dock-nodes-or-edges](API-edges-dock-nodes-or-edges.md)), and every
 node shape is drawn and hit within its outline
-([REN-closed-set-of-node-shapes](REN-closed-set-of-node-shapes.md)).
+([REN-node-shapes-cover-uml](REN-node-shapes-cover-uml.md)).
 
 The human decided on 2026-11-17 that a border node's place is a side and an offset along it.
 
@@ -35,17 +35,17 @@ with that node.
 2. **Place.** Its place is one of the four sides of the box of the node it is attached to and an
    offset along that side, in world units from the side's start, its left end or its top end. Its
    centre lies where the line through that point at right angles to the side meets the node's
-   outline, so on a rectangle on the side, and on an ellipse or a diamond on the curve or the edge
-   of the node shape. The engine keeps its world position from these, as it keeps the world
-   positions of nodes in containers.
+   outline, at the meeting point nearer that side, so on a rectangle on the side, and on an ellipse
+   or a diamond on the curve or the edge of the node shape. The engine keeps its world position from
+   these, as it keeps the world positions of nodes in containers.
 3. **Moves and resizes.** A move of the node it is attached to moves it in the same call. A resize
    keeps its side and its offset, the offset held within the side's length.
 4. **Drag.** A drag of a border node moves its place along the outline, to the point of the
    outline nearest the pointer, onto another side where that one is nearer. It never leaves the
    node it is attached to.
-5. **Order.** A border node is drawn and hit directly above the node it is attached to and the
-   other nodes of lower rank, its border nodes in the order of their ranks; on a container it lies
-   above every container, as every node that is no container does
+5. **Order.** A border node is drawn and hit directly after the node it is attached to, in the one
+   order of nodes that [ARCH-engine-edits-nested-graph](ARCH-engine-edits-nested-graph.md)
+   states; on a container it lies above every container, as every node that is no container does
    ([REN-virtualized-nested-scene](REN-virtualized-nested-scene.md)).
 6. **Edges.** An edge docks on a border node as on any node.
 7. **Removal.** Removing a node removes its border nodes and every edge at them, in the same call.
@@ -89,4 +89,6 @@ Each test below cites this ADR with `Verifies: ARCH-border-nodes-ride-sides`.
   accuracy of Q-4, on its side, and that removing a node removes its border nodes and their edges.
 - A browser test of the UML example drags a pin of an action around the action's corner and
   asserts through inspection that it stays on the action's outline, then moves the action and
-  asserts that the pin and the edge docked on it follow.
+  asserts that the pin and the edge docked on it follow. A test of the order is
+  [ARCH-engine-edits-nested-graph](ARCH-engine-edits-nested-graph.md)'s; this ADR's browser test
+  also asserts that a pin is drawn above an action added after its own action.
