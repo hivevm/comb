@@ -106,24 +106,32 @@ function bytesOf(data: unknown, offset = 0, length = 0): number {
   return length > 0 ? length * element : data.byteLength - offset * element;
 }
 
+/** The method of PixiJS's buffer system through which every buffer's upload runs: `updateBuffer`
+ *  when a geometry is bound, the listener of a buffer's `update` event, and the index buffer's. It
+ *  is internal to PixiJS, so a version without it fails here rather than count no upload. */
+type Upload = (buffer: Buffer, ...rest: unknown[]) => unknown;
+
 /** Counts the calls of `renderer`'s WebGL context into `counts`, from now on; uploads while
- *  PixiJS updates one of `mesh` count as the mesh's too. Both buffer upload calls take the offset
+ *  PixiJS uploads one of `mesh` count as the mesh's too. Both buffer upload calls take the offset
  *  and the length of their data, in elements, fourth and fifth. */
 function countCalls(renderer: WebGLRenderer, mesh: Set<Buffer>, counts: Counts): void {
   const { gl } = renderer;
-  const system = renderer.buffer;
+  const system = renderer.buffer as unknown as { _upload?: Upload };
+  const uploadBuffer = system._upload;
+  if (typeof uploadBuffer !== "function") {
+    throw new Error("comb/testing: PixiJS's buffer system has no _upload to count the mesh by");
+  }
   const { createBuffer, bufferData, bufferSubData } = gl;
-  const { updateBuffer } = system;
   let updating: Buffer | null = null;
   const uploaded = (bytes: number) => {
     counts.bytesUploaded += bytes;
     if (updating && mesh.has(updating)) counts.meshBytesUploaded += bytes;
   };
   type Args = [unknown, unknown, unknown, number?, number?];
-  system.updateBuffer = function (this: typeof system, buffer: Buffer) {
+  system._upload = function (this: typeof system, buffer: Buffer, ...rest: unknown[]) {
     updating = buffer;
     try {
-      return updateBuffer.call(this, buffer);
+      return uploadBuffer.call(this, buffer, ...rest);
     } finally {
       updating = null;
     }
