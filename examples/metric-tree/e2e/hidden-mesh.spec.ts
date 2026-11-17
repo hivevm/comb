@@ -1,12 +1,13 @@
-// An edge mesh hidden while it holds no edge still uploads what it was marked for (ADR-0027): the
-// GPU holds the indices the mesh's arrays hold, so that no edge of an earlier query draws again.
+// An edge mesh hidden while it holds no edge still uploads what it was marked for
+// (REN-moving-layer-redraws-changes): the GPU holds the indices the mesh's arrays hold, so that no
+// edge of an earlier query draws again.
 import { expect, test } from "@playwright/test";
 import { canvasSize, open, setViewport } from "./shared";
 
 test("a query of none between one of many edges and one of fewer leaves no index of the first on the GPU", async ({
   page,
 }) => {
-  // Verifies: ADR-0027
+  // Verifies: REN-moving-layer-redraws-changes
   await open(page);
   await page.evaluate(async () => {
     const edges = (from: string, to: string, count: number) =>

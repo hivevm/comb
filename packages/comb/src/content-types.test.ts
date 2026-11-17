@@ -1,10 +1,10 @@
-// The type of node content as a host application imports it from `comb` (ADR-0013): the kinds of
-// element and the roles of a text it admits are exactly those the engine generates, so that a
-// `switch` on `element.kind` without a `default` covers them. The type check decides it: each
-// table below holds one entry per kind or role, and lacks one for a kind the union gains and holds
-// one for a kind it loses, which the type check refuses either way. It admits the six kinds of
-// ADR-0013: `text`, `action`, `badge`, `progress`, `metric`, and `icon`.
-// Verifies: ADR-0013
+// The type of node content as a host application imports it from `comb` (REN-node-content-in-rows):
+// the kinds of element and the roles of a text it admits are exactly those the engine generates, so
+// that a `switch` on `element.kind` without a `default` covers them. The type check decides it:
+// each table below holds one entry per kind or role, and lacks one for a kind the union gains and
+// holds one for a kind it loses, which the type check refuses either way. It admits the six kinds
+// of REN-node-content-in-rows: `text`, `action`, `badge`, `progress`, `metric`, and `icon`.
+// Verifies: REN-node-content-in-rows
 import { describe, expect, test } from "bun:test";
 import type { ContentClick, ContentElement, NodeContent, NodeData, TextRole } from ".";
 

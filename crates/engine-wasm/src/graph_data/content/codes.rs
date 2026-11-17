@@ -1,6 +1,7 @@
-//! The codes and limits of node content (ADR-0013, ADR-0010): the most rows, columns, and
-//! segments, the code of each of the six kinds, `text`, `action`, `badge`, `progress`, `metric`,
-//! and `icon`, of a text's role and of a trend's direction, and how many strings each kind fills.
+//! The codes and limits of node content (REN-node-content-in-rows,
+//! API-bridge-takes-serde-and-columns): the most rows, columns, and segments, the code of each of
+//! the six kinds, `text`, `action`, `badge`, `progress`, `metric`, and `icon`, of a text's role and
+//! of a trend's direction, and how many strings each kind fills.
 
 use comb_engine::content::{Direction, Role};
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -14,7 +15,7 @@ pub const MAX_COLUMNS: usize = COLUMN_LIMIT as usize;
 /// The most UTF-16 code units of the strings of all content in one load together, the texts and
 /// the names alike, and of all content the graph holds after every edit: at least the titles a
 /// load held before content, 1,000 code units for each of 1,000,000 nodes, and below 2^32, so
-/// that every boundary fits a `Uint32Array` (ADR-0010).
+/// that every boundary fits a `Uint32Array` (API-bridge-takes-serde-and-columns).
 pub const MAX_CONTENT_UNITS: u32 = 1_000_000_000;
 
 /// `MAX_ROWS` as the `u32` a refusal and `rowLimit` name.
@@ -29,8 +30,9 @@ pub const MAX_SEGMENTS: usize = SEGMENT_LIMIT as usize;
 /// `MAX_SEGMENTS` as the `u32` a refusal and `segmentLimit` name.
 pub(crate) const SEGMENT_LIMIT: u32 = 8;
 
-/// The code of an element's kind in its column (ADR-0010): `Unnamed` for an element whose kind
-/// names none the snapshot codes, or that is no object, which its rule refuses.
+/// The code of an element's kind in its column (API-bridge-takes-serde-and-columns): `Unnamed` for
+/// an element whose kind names none the snapshot codes, or that is no object, which its rule
+/// refuses.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KindCode {
@@ -122,7 +124,8 @@ pub(crate) fn role_of(code: u8) -> Option<Role> {
     .map(|(_, role)| role)
 }
 
-/// How many strings an element of `kind` fills of the texts and of the names (ADR-0010).
+/// How many strings an element of `kind` fills of the texts and of the names
+/// (API-bridge-takes-serde-and-columns).
 pub(super) fn filled(kind: u8) -> (usize, usize) {
     match kind {
         k if k == KindCode::Text as u8 => (1, 0),

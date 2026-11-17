@@ -1,10 +1,10 @@
 //! Edge paths and edge-label placement.
 //!
 //! An edge is a cubic Bézier curve from its source end to its target end, each at the connector
-//! of a side or on the node's outline (ADR-0031). An edge label sits at the point of the path
-//! parameter `t` and is moved by the label offset along the path's normal there (G-6). An edge
-//! that names no side leaves its source node at the middle of its right side and enters its
-//! target node at the middle of its left side.
+//! of a side or on the node's outline (API-edges-dock-side-or-outline). An edge label sits at the
+//! point of the path parameter `t` and is moved by the label offset along the path's normal there
+//! (G-6). An edge that names no side leaves its source node at the middle of its right side and
+//! enters its target node at the middle of its left side.
 
 use crate::shape::NodeShape;
 
@@ -13,7 +13,8 @@ use crate::shape::NodeShape;
 /// derives from them, a connector, a control point, a vertex, a label point, lies within three
 /// times this, and the width of a stroke within `PIXEL_LIMIT`'s, so that each stays far within
 /// `f32`, whose largest value is about 2^128; relative to the origin of a query that draws it,
-/// which lies within half its grid of the rectangle's centre, at most 2^127 (ADR-0010), too.
+/// which lies within half its grid of the rectangle's centre, at most 2^127
+/// (API-bridge-takes-serde-and-columns), too.
 pub const WORLD_LIMIT: f64 = 1_329_227_995_784_915_872_903_807_060_280_344_576.0;
 
 /// The largest screen pixel a query strokes for, 2^114 world units: far beyond the shell's least
@@ -162,7 +163,7 @@ fn extrema(p0: f64, p1: f64, p2: f64, p3: f64) -> impl Iterator<Item = f64> {
     [q / a, c / q].into_iter().filter(|t| !t.is_nan())
 }
 
-/// A side of a node, at whose middle its connector sits (ADR-0031).
+/// A side of a node, at whose middle its connector sits (API-edges-dock-side-or-outline).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Side {
     Top,
@@ -173,7 +174,7 @@ pub enum Side {
 }
 
 /// Where an end of an edge docks: at the connector of a side, or on the node's outline
-/// (ADR-0031).
+/// (API-edges-dock-side-or-outline).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Dock {
     Side(Side),
@@ -187,7 +188,7 @@ impl From<Side> for Dock {
 }
 
 /// Where an edge leaves its source and enters its target: by default the right side of its
-/// source and the left side of its target (ADR-0031).
+/// source and the left side of its target (API-edges-dock-side-or-outline).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Sides {
     pub source: Dock,
@@ -241,7 +242,7 @@ fn centre(node: &Rect) -> Point {
 /// direction its control point pulls out in: a side's connector and its outward normal, or the
 /// point where the line from the node's centre towards `other`, the centre of the node at the
 /// edge's other end, crosses its outline, and that line's direction, none where the two centres
-/// meet (ADR-0031).
+/// meet (API-edges-dock-side-or-outline).
 fn end_of(dock: Dock, node: &Rect, shape: NodeShape, other: Point) -> (Point, Point) {
     match dock {
         Dock::Side(side) => (side.connector(node), side.outward()),
@@ -296,12 +297,12 @@ impl EdgePath {
     }
 
     /// The path from the end of `sides.source` on the `source` node to that of `sides.target` on
-    /// the `target` node, each node by its rectangle and its node shape (ADR-0031). An end on a
-    /// side lies at that side's connector and pulls out along its outward normal; an end on the
-    /// outline lies where the line from its node's centre towards the other node's centre crosses
-    /// its outline and pulls out along that line. Each control point lies half the distance
-    /// between the ends along its direction out, and at least `MIN_PULL`. From the right to the
-    /// left it is `horizontal`'s path, to the bit.
+    /// the `target` node, each node by its rectangle and its node shape
+    /// (API-edges-dock-side-or-outline). An end on a side lies at that side's connector and pulls
+    /// out along its outward normal; an end on the outline lies where the line from its node's
+    /// centre towards the other node's centre crosses its outline and pulls out along that line.
+    /// Each control point lies half the distance between the ends along its direction out, and at
+    /// least `MIN_PULL`. From the right to the left it is `horizontal`'s path, to the bit.
     pub(crate) fn docked(
         (source, source_shape): (&Rect, NodeShape),
         (target, target_shape): (&Rect, NodeShape),
@@ -324,13 +325,13 @@ impl EdgePath {
     }
 
     /// The path of a loop, an edge from `node`, of node shape `shape`, back to itself
-    /// (ADR-0031): it leaves and re-enters the side `dock` names, the top where it names the
-    /// outline, a quarter of that side's length either side of its middle, the source end first
-    /// clockwise, and its control points lie outward along the side's normal, as far out as the
-    /// side is long and at least `MIN_PULL`. Each end then moves inward along the normal onto the
-    /// outline of `shape`, its control point with it; both by the same distance, so the loop
-    /// keeps its shape. So its path parameter 0.5 is its outermost point, where the path runs
-    /// along the side and a label offset to its left stands outward, and it enters the node
+    /// (API-edges-dock-side-or-outline): it leaves and re-enters the side `dock` names, the top
+    /// where it names the outline, a quarter of that side's length either side of its middle, the
+    /// source end first clockwise, and its control points lie outward along the side's normal, as
+    /// far out as the side is long and at least `MIN_PULL`. Each end then moves inward along the
+    /// normal onto the outline of `shape`, its control point with it; both by the same distance, so
+    /// the loop keeps its shape. So its path parameter 0.5 is its outermost point, where the path
+    /// runs along the side and a label offset to its left stands outward, and it enters the node
     /// against the normal. On a rectangle and a bar nothing moves.
     pub(crate) fn looped(node: &Rect, shape: NodeShape, dock: Dock) -> Self {
         let side = match dock {
@@ -517,7 +518,7 @@ pub(crate) mod tests {
 
     #[test]
     fn each_of_the_sixteen_pairs_of_sides_runs_from_connector_to_connector_along_their_normals() {
-        // Verifies: ADR-0031
+        // Verifies: API-edges-dock-side-or-outline
         let sides = [Side::Top, Side::Right, Side::Bottom, Side::Left];
         let outward = |side: Side| match side {
             Side::Top => (0.0, -1.0),
@@ -622,7 +623,7 @@ pub(crate) mod tests {
     #[test]
     fn an_end_on_the_outline_lies_where_the_line_between_the_centres_crosses_it_for_every_node_shape()
      {
-        // Verifies: ADR-0031, Q-4
+        // Verifies: API-edges-dock-side-or-outline, Q-4
         // Every pair of node shapes, the target all around the source: level, above, below,
         // behind, overlapping it, and far from the world's origin, where the end still lies
         // within Q-4's half pixel at the zoom of 1, its world units.
@@ -679,7 +680,7 @@ pub(crate) mod tests {
 
     #[test]
     fn an_end_naming_a_side_keeps_its_connector_beside_an_end_on_the_outline() {
-        // Verifies: ADR-0031
+        // Verifies: API-edges-dock-side-or-outline
         let source = Rect::of_node(0.0, 0.0, 220.0, 64.0);
         let target = Rect::of_node(500.0, -300.0, 80.0, 80.0);
         for side in [Side::Top, Side::Right, Side::Bottom, Side::Left] {
@@ -752,7 +753,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_loop_leaves_and_reenters_the_side_it_names_its_outermost_point_at_the_middle_parameter() {
-        // Verifies: ADR-0031
+        // Verifies: API-edges-dock-side-or-outline
         // Per dock: where the loop leaves, where it re-enters, and the side's outward normal, as
         // fractions of the node's width and height, worked out by hand; the outline loops on top.
         type Fractions = (f64, f64);
@@ -816,7 +817,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_loop_ends_on_the_outline_of_each_node_shape_on_each_side_and_enters_the_node() {
-        // Verifies: ADR-0031, Q-4
+        // Verifies: API-edges-dock-side-or-outline, Q-4
         // Each node shape, each dock, wide, square, tall, small, and thin nodes, near and far
         // from the world's origin: both ends lie on the outline within Q-4's half pixel at the
         // zoom of 1, its world units; the loop leaves along the side's normal and enters against
@@ -888,7 +889,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_loop_on_a_rectangle_a_bar_or_a_rounded_rectangle_of_a_long_side_is_todays_to_the_bit() {
-        // Verifies: ADR-0031
+        // Verifies: API-edges-dock-side-or-outline
         // Today's loop, as it was computed before loops docked on the node shape, against the
         // loop of a rectangle, a bar, and a rounded rectangle whose side is at least four times
         // `ROUNDED_RADIUS` long, 40 among them, compared bit for bit.
@@ -950,7 +951,7 @@ pub(crate) mod tests {
 
     #[test]
     fn from_the_right_to_the_left_the_path_is_the_horizontal_one_to_the_bit() {
-        // Verifies: ADR-0031
+        // Verifies: API-edges-dock-side-or-outline
         let source = Rect::of_node(10.0, 20.0, 220.0, 64.0);
         for target in [
             Rect::of_node(400.0, 300.0, 220.0, 64.0),
@@ -1321,7 +1322,7 @@ pub(crate) mod tests {
     }
 
     /// A small generator of numbers with a fixed seed (SplitMix64): the core takes no crate that
-    /// reaches randomness (ADR-0030).
+    /// reaches randomness (ARCH-one-workspace-per-example).
     struct Numbers(u64);
 
     impl Numbers {

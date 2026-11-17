@@ -6,7 +6,7 @@ const NEAR_BLACK = 0x1f2430;
 
 describe("a badge's text colour", () => {
   test("is white or near-black, whichever contrasts more with the pill, white on a tie", () => {
-    // Verifies: ADR-0013
+    // Verifies: REN-node-content-in-rows
     // By WCAG's relative luminance, against white and against 0x1F2430: the greys switch between
     // 0x808080, whose contrast with white is 3.95 and with the near-black 3.93, and 0x818181,
     // 3.90 and 3.98.

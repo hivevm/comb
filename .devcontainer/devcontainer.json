@@ -2,10 +2,11 @@
   "name": "Comb DevContainer",
 
   // Built from the Dockerfile beside this file: the base image and Bun, pinned by digest
-  // (ADR-0014).
+  // (DEV-container-adds-bun-and-rust).
   "build": { "dockerfile": "Dockerfile" },
   // No workspaceFolder or workspaceMount: the default, /workspaces/<directory name>, keeps each
-  // project under a path of its own, and an agent keys its memory by the path (ADR-0004).
+  // project under a path of its own, and an agent keys its memory by the path
+  // (NUC-container-hides-host-daemon §5).
 
   "remoteUser": "vscode",
   "containerEnv": {
@@ -13,7 +14,7 @@
   },
   // The host's agent config directory, and the host's ~/.config/gh, where the GitHub CLI keeps
   // the login made by `gh auth login`, so that it outlives a rebuild
-  // (ADR-draft-gh-login-outlives-a-rebuild). HOME is set on Linux and macOS, USERPROFILE on
+  // (DEV-gh-login-outlives-rebuild). HOME is set on Linux and macOS, USERPROFILE on
   // Windows; exactly one of the two is non-empty, so concatenating both yields the home directory
   // on every host (the pattern the Dev Containers documentation recommends).
   "mounts": [
@@ -22,7 +23,7 @@
   ],
 
   // The host's address on the Docker bridge, by which the benchmark reaches a Chrome on the host
-  // that a forwarder there bridges to its debugging port (ADR-0028). And a limit of 8192 tasks,
+  // that a forwarder there bridges to its debugging port (PERF-benchmark-drives-host-chrome). And a limit of 8192 tasks,
   // threads included, in place of Podman's default of 2048: one `CI=1 scripts/check-all.sh` peaks
   // at about 1400, most of it the Playwright workers' Chromium, so two worktrees running the checks
   // at once need about 2800 beside the editor and the agents, and 8192 leaves room for a third.
@@ -44,7 +45,7 @@
   // Runs inside the container on every start, so the settings are set again should a session
   // have changed them: the repository's git hooks under .githooks/ and the merge settings they
   // rely on, and gh as git's credential helper for github.com, which --force sets up while
-  // nobody is logged in (ADR-draft-gh-login-outlives-a-rebuild). What each hook refuses, and the
+  // nobody is logged in (DEV-gh-login-outlives-rebuild). What each hook refuses, and the
   // same commands for a clone outside the container, are under "Git hooks" in CONTRIBUTING.md.
   "postStartCommand": {
     "hooks": "git config core.hooksPath .githooks",
@@ -55,21 +56,22 @@
 
   // Runs inside the container once it is created. The dependencies come from bun.lock;
   // Playwright's installer adds Chromium and its system libraries for the browser tests
-  // (ADR-0008). ShellCheck comes with the image (Dockerfile).
+  // (DEV-bun-vite-and-wasm-pack). ShellCheck comes with the image (Dockerfile).
   "postCreateCommand": {
     "deps": "bun install --frozen-lockfile && bunx --bun playwright install --with-deps chromium"
   },
 
   // DevContainer Features layered on top of the image. The container intentionally has NO access
-  // to any container engine (no socket mount, no engine inside) — see ADR-0004 and ADR-0015.
+  // to any container engine (no socket mount, no engine inside) — see
+  // NUC-container-hides-host-daemon §2 and SEC-no-container-engine.
   // Manage the host's containers from a host-side VS Code extension instead (CONTRIBUTING.md →
   // "Host container management").
   "features": {
     // GitHub CLI (`gh`) — used by the coding agent for GitHub operations and as the git
     // credential helper. A push and every gh action wait for a human instruction
-    // (AGENTS.md, section 6).
+    // (NUC-main-only-via-pr §2).
     "ghcr.io/devcontainers/features/github-cli:1": {},
-    // Rust stable with the WebAssembly target for the engine (ADR-0014).
+    // Rust stable with the WebAssembly target for the engine (DEV-container-adds-bun-and-rust).
     "ghcr.io/devcontainers/features/rust:1": {
       "version": "stable",
       "targets": "wasm32-unknown-unknown",
@@ -93,7 +95,7 @@
   },
 
   // The example's development server (G-9), which the launch configuration opens in the host's
-  // browser, and the benchmark's preview server, which a Chrome on the host loads (ADR-0028).
+  // browser, and the benchmark's preview server, which a Chrome on the host loads (PERF-benchmark-drives-host-chrome).
   "forwardPorts": [5173, 4173],
   "portsAttributes": {
     "5173": { "label": "Comb example", "onAutoForward": "silent" },

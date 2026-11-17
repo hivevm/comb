@@ -28,7 +28,7 @@ describe("exported errors", () => {
 
   for (const errorClass of errorClasses) {
     test(`${errorClass.name} carries its own name`, () => {
-      // Verifies: ADR-0021 (the table holds EngineLostError)
+      // Verifies: API-trapped-engine-is-lost (the table holds EngineLostError)
       const args = ARGUMENTS[errorClass.name];
       if (!args) throw new Error(`${errorClass.name} has no entry in the table of arguments`);
       const error = new errorClass(...args);

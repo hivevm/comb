@@ -10,12 +10,12 @@ function rgba(r: number, g: number, b: number, a: number): number {
 
 describe("edges on Canvas 2D", () => {
   test("a vertex colour fills in the colour and alpha of its bytes R, G, B, A", () => {
-    // Verifies: ADR-0018
+    // Verifies: REN-webgl2-or-canvas-fallback
     expect(fillOf(rgba(0x12, 0x34, 0x56, 0x80))).toEqual({ color: 0x123456, alpha: 0x80 / 255 });
   });
 
   test("each run of triangles of one colour is one fill of the one drawing", () => {
-    // Verifies: ADR-0018
+    // Verifies: REN-webgl2-or-canvas-fallback
     // Three triangles over a strip of five vertices: two green, then one red.
     const green = rgba(0x22, 0xa5, 0x5b, 0xff);
     const red = rgba(0xe0, 0x45, 0x3a, 0xff);

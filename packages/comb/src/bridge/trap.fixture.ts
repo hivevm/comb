@@ -1,6 +1,6 @@
-// A trap loses the engine for the process, as for a page (ADR-0021), and Bun runs every test file
-// in one process: bridge.test.ts runs this in a process of its own and reads what it prints, the
-// outcome of each call after the trap.
+// A trap loses the engine for the process, as for a page (API-trapped-engine-is-lost), and Bun runs
+// every test file in one process: bridge.test.ts runs this in a process of its own and reads what
+// it prints, the outcome of each call after the trap.
 import {
   createBridgeSync,
   EngineLostError,
@@ -14,8 +14,9 @@ import {
 
 const url = new URL("../../wasm/test-mode/engine_bg.wasm", import.meta.url);
 const bridge = createBridgeSync(await Bun.file(url).arrayBuffer());
-// Plain data of its own in place of a snapshot of `api/snapshot.ts` (ADR-0030), its node and its
-// edges, none, written into columns (ADR-0010).
+// Plain data of its own in place of a snapshot of `api/snapshot.ts`
+// (ARCH-one-workspace-per-example), its node and its edges, none, written into columns
+// (API-bridge-takes-serde-and-columns).
 const columns = nodeColumns(1, PIECE_BOUND);
 columns.node("a", 0, 0, 100, "rectangle");
 columns.element("text", "title", 1, undefined, "a", undefined, true);

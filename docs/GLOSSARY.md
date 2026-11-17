@@ -2,12 +2,15 @@
 
 > The **vocabulary** of this project: the terms everyone, humans and agents alike, uses in code,
 > comments, documentation, and ADRs. It defines words and decides nothing. Whoever resolves a term
-> adds it here in the same change ([ADR-0001](adr/0001-agent-governance-model.md)).
+> adds it here in the same change ([NUC-documents-are-fixed §5](adr/NUC-documents-are-fixed.md)).
 
 One term per concept, only terms specific to this domain. Say what a term *is* in one or two
 sentences, and list under _Avoid:_ the synonyms it displaces, where there are any. A term the
 specification, an ADR, or the code uses without an entry here is a gap to close, not a convention
 to invent.
+
+List each synonym under _Avoid:_ as one to three words, without prose around them. A synonym
+inside a longer term of this glossary, such as "shape" in **Node shape**, is no synonym there.
 
 - **Arrowhead** — the triangle that marks where an edge ends, its tip at the target connector.
 - **Bridge** — the boundary across which TypeScript and the engine exchange data.
@@ -31,8 +34,9 @@ to invent.
 - **Coarsened** — said of an edge mesh in which some edges are drawn less exactly than the
   flattening asks, or not at all, because the mesh budget or memory ran short.
 - **Culling** — leaving out of the draw everything that lies entirely outside the viewport grown
-  by two culling margins.
-  _Avoid:_ frustum culling, outside the wording of the constraint that requires it.
+  by two culling margins. Frustum culling is said only in the wording of the constraint that
+  requires it.
+  _Avoid:_ frustum culling.
 - **Culling margin** — the band around the viewport, in screen pixels, within which display
   objects are bound already, so that a small pan finds them drawn; between two queries of the
   engine, what is bound may reach up to twice as far.

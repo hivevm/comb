@@ -1,7 +1,9 @@
 // The options of a benchmark run taken from its environment: which browser it measures in, one it
-// launches or one started outside it whose debugging port it attaches to (ADR-0028), by what
-// factor it slows the measured page's CPU (ADR-0029), and which graph it measures (ADR-0033). Each
-// refuses a value it cannot take, before anything is measured.
+// launches or one started outside it whose debugging port it attaches to
+// (PERF-benchmark-drives-host-chrome), by what factor it slows the measured page's CPU
+// (PERF-benchmark-slows-page-cpu), and which graph it measures
+// (PERF-benchmark-measures-named-graph). Each refuses a value it cannot take, before anything is
+// measured.
 
 /** Where the run measures: in a Chromium it launches, or attached to the browser whose debugging
  *  port `endpoint` names. */
@@ -36,7 +38,8 @@ export function cpuThrottleFor(env: Record<string, string | undefined>): number 
   return factor;
 }
 
-/** The graphs a run measures (ADR-0033): the metric tree, and the metric tree at the same size
+/** The graphs a run measures (PERF-benchmark-measures-named-graph): the metric tree, and the metric
+ *  tree at the same size
  *  whose nodes take the node shapes in turn, whose edges dock on the outline, and of whose nodes
  *  one in a hundred has a loop. */
 export const GRAPHS = ["metric-tree", "shaped"] as const;
@@ -46,7 +49,7 @@ export type Graph = (typeof GRAPHS)[number];
 export const DEFAULT_GRAPH: Graph = "metric-tree";
 
 /** What the file names of a graph's baseline and median add before `.json`: nothing for the
- *  default graph, `.shaped` for the shaped graph (ADR-0033). */
+ *  default graph, `.shaped` for the shaped graph (PERF-benchmark-measures-named-graph). */
 export const graphSuffix = (graph: Graph) => (graph === DEFAULT_GRAPH ? "" : `.${graph}`);
 
 /** What a sentence naming a run's kind adds of its graph: nothing for the default graph,

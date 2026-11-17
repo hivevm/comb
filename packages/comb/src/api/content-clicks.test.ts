@@ -1,6 +1,6 @@
-// The listeners of `onContentClick` (ADR-0013): each registration is told, the function returned
-// removes it, and one that throws keeps none of the others from being told.
-// Verifies: ADR-0013
+// The listeners of `onContentClick` (REN-node-content-in-rows): each registration is told, the
+// function returned removes it, and one that throws keeps none of the others from being told.
+// Verifies: REN-node-content-in-rows
 import { describe, expect, test } from "bun:test";
 import { contentClicksOf } from "./changes";
 

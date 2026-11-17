@@ -1,5 +1,5 @@
-//! The hit test (ADR-0013): what a press at a point hits, a connector before an edge label, a
-//! node, and an edge.
+//! The hit test (REN-node-content-in-rows): what a press at a point hits, a connector before an
+//! edge label, a node, and an edge.
 
 use super::{Graph, Level};
 use crate::geometry::{Point, Rect, Side, bounded_pixel, length};
@@ -8,19 +8,21 @@ use crate::stroke::{Stroke, near_path};
 /// The four sides, each with a connector.
 const SIDES: [Side; 4] = [Side::Top, Side::Right, Side::Bottom, Side::Left];
 
-/// How near a press has to come to an edge's path to hit it, in screen pixels (ADR-0013).
+/// How near a press has to come to an edge's path to hit it, in screen pixels
+/// (REN-node-content-in-rows).
 const EDGE_REACH: f64 = 4.0;
 
-/// How near a press has to come to a connector to hit it, in screen pixels (ADR-0013).
+/// How near a press has to come to a connector to hit it, in screen pixels
+/// (REN-node-content-in-rows).
 const CONNECTOR_REACH: f64 = 8.0;
 
-/// What a press hits (ADR-0013): a connector by its node's slot and side, a label by its edge's
-/// slot, a node, or an edge, by its slot.
+/// What a press hits (REN-node-content-in-rows): a connector by its node's slot and side, a label
+/// by its edge's slot, a node, or an edge, by its slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
-    /// The connector of a side of the node in a slot (ADR-0031).
+    /// The connector of a side of the node in a slot (API-edges-dock-side-or-outline).
     Connector(u32, Side),
-    /// The label of the edge in a slot (ADR-0013).
+    /// The label of the edge in a slot (REN-node-content-in-rows).
     Label(u32),
     Node(u32),
     Edge(u32),
@@ -34,7 +36,7 @@ impl Graph {
     /// level a label whose measured pill holds it, of the highest edge slot; else a node whose
     /// outline holds it, the one of the highest rank; else an edge within `EDGE_REACH` screen
     /// pixels of its path as the stroke of `level` flattens it, the one in the highest slot; else
-    /// nothing (ADR-0013).
+    /// nothing (REN-node-content-in-rows).
     /// A pixel beyond any zoom hits as the largest a query strokes for.
     pub fn hit_at(
         &mut self,
@@ -73,7 +75,8 @@ impl Graph {
         found.map(Target::Edge)
     }
 
-    /// The label whose measured pill holds `point`, of the edge in the highest slot (ADR-0013).
+    /// The label whose measured pill holds `point`, of the edge in the highest slot
+    /// (REN-node-content-in-rows).
     fn label_at(&mut self, point: Point) -> Option<u32> {
         if self.widest_pill <= 0.0 {
             return None;
@@ -101,7 +104,7 @@ impl Graph {
     /// quarter of the node's extent across its side, its height for the top and the bottom, its
     /// width for the right and the left, so that the middle half of a node is the node's however
     /// thin it is on screen; beside the outline, within its rectangle too, the whole reach
-    /// (ADR-0013, ADR-0032).
+    /// (REN-node-content-in-rows, REN-closed-set-of-node-shapes).
     fn connector_at(&mut self, point: Point, reach: f64) -> Option<(u32, Side)> {
         self.node_grid
             .candidates(&Rect::at(point).grown(reach), &mut self.scratch);
@@ -143,7 +146,8 @@ impl Graph {
     }
 
     /// The node at `point`: of the nodes whose outline holds it, the one drawn on top, which is
-    /// the one of the highest rank (ADR-0023, ADR-0032).
+    /// the one of the highest rank (ARCH-engine-edits-graph-in-place,
+    /// REN-closed-set-of-node-shapes).
     pub(super) fn node_at(&mut self, point: Point) -> Option<u32> {
         self.node_grid
             .candidates(&Rect::at(point), &mut self.scratch);
@@ -179,7 +183,7 @@ mod tests {
 
     #[test]
     fn a_pixel_beyond_any_zoom_hits_as_the_largest_a_query_strokes_for() {
-        // Verifies: ADR-0030
+        // Verifies: ARCH-one-workspace-per-example
         // Two nodes near the world's limit, an edge between them, and presses near them and twice
         // that far away: an unbounded pixel would reach everything from anywhere.
         let edges = vec![super::super::EdgeSpec {
@@ -214,7 +218,7 @@ mod tests {
 
     #[test]
     fn a_node_is_hit_within_its_node_shape_and_a_press_beside_its_outline_finds_what_lies_below() {
-        // Verifies: ADR-0032
+        // Verifies: REN-closed-set-of-node-shapes
         // A rectangle below and a diamond above it, both at the origin, 100 × 60, and a node away
         // from the origin given a node shape, at the middle level, where no connector is hit.
         let positions = vec![0.0, 0.0, 0.0, 0.0, 1e6, 1e6];
@@ -312,7 +316,7 @@ mod tests {
 
     #[test]
     fn a_hit_finds_a_node_before_an_edge_and_an_edge_only_near_its_flattened_path() {
-        // Verifies: ADR-0013
+        // Verifies: REN-node-content-in-rows
         for seed in 1..=4 {
             let mut rng = Lcg(seed);
             let (mut model, mut graph) = Model::random(&mut rng, 30, 40);
@@ -368,7 +372,7 @@ mod tests {
 
     #[test]
     fn a_hit_finds_a_connector_before_a_node_as_a_scan_finds_and_none_at_the_far_level() {
-        // Verifies: ADR-0013, ADR-0031
+        // Verifies: REN-node-content-in-rows, API-edges-dock-side-or-outline
         for seed in 1..=6 {
             let mut rng = Lcg(seed);
             let (mut model, mut graph) = Model::random(&mut rng, 40, 20);
@@ -433,7 +437,7 @@ mod tests {
 
     #[test]
     fn a_press_in_the_middle_half_of_a_thin_node_hits_the_node_at_the_near_and_middle_level() {
-        // Verifies: ADR-0013, G-5
+        // Verifies: REN-node-content-in-rows, G-5
         let (mut graph, nodes) = thin_nodes();
         for (slot, bounds) in nodes {
             let (width, height) = (bounds.max_x - bounds.min_x, bounds.max_y - bounds.min_y);
@@ -461,7 +465,7 @@ mod tests {
 
     #[test]
     fn each_connector_of_a_thin_node_is_hit_at_its_point_and_within_its_reach_outside_it() {
-        // Verifies: ADR-0013, G-3
+        // Verifies: REN-node-content-in-rows, G-3
         let (mut graph, nodes) = thin_nodes();
         let outward = |side: Side| match side {
             Side::Top => (0.0, -1.0),
@@ -509,7 +513,7 @@ mod tests {
 
     #[test]
     fn a_small_shaped_node_pressed_beside_its_outline_within_its_rectangle_hits_its_connector() {
-        // Verifies: ADR-0013, ADR-0032
+        // Verifies: REN-node-content-in-rows, REN-closed-set-of-node-shapes
         // Nodes under 32 screen pixels whose outline leaves corners of their rectangle, alone, so
         // that a press beside the outline finds nothing below: there a connector reaches its 8
         // pixels, unclipped by the rectangle, and beyond them nothing is hit.
@@ -586,7 +590,7 @@ mod tests {
     #[test]
     fn a_node_at_least_32_screen_pixels_high_and_wide_hits_as_it_did_before_the_reach_was_clipped()
     {
-        // Verifies: ADR-0013
+        // Verifies: REN-node-content-in-rows
         for seed in 1..=4 {
             let mut rng = Lcg(200 + seed);
             for pixel in [0.25, 1.0, 4.0] {
@@ -646,10 +650,10 @@ mod tests {
         }
     }
 
-    /// What a scan of every kind finds at `p`, in the order of ADR-0013, from the model alone: a
-    /// connector where they are asked for, at the near and middle level; a measured label at the
-    /// near level; a node; and an edge, which the flattening's tolerance blurs, given as the edge
-    /// surely hit and the distance bounds of each.
+    /// What a scan of every kind finds at `p`, in the order of REN-node-content-in-rows, from the
+    /// model alone: a connector where they are asked for, at the near and middle level; a measured
+    /// label at the near level; a node; and an edge, which the flattening's tolerance blurs, given
+    /// as the edge surely hit and the distance bounds of each.
     enum Scan {
         Exactly(Target),
         Edge {
@@ -800,7 +804,7 @@ mod tests {
 
     #[test]
     fn a_hit_finds_what_a_scan_of_every_kind_finds_in_the_order_connector_label_node_edge() {
-        // Verifies: ADR-0013
+        // Verifies: REN-node-content-in-rows
         // How often the scan found each kind, connector, label, node, and edge, so that none goes
         // untested.
         let mut found = [0; 4];
@@ -846,7 +850,7 @@ mod tests {
 
     #[test]
     fn a_hit_at_the_near_level_finds_a_measured_label_inside_its_pill_before_a_node() {
-        // Verifies: ADR-0013
+        // Verifies: REN-node-content-in-rows
         let mut rng = Lcg(9);
         let (mut model, mut graph) = Model::random(&mut rng, 30, 60);
         let measured: Vec<u32> = (0..60).filter(|e| e % 3 != 0).collect();

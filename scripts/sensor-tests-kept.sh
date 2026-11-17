@@ -29,6 +29,9 @@
 
 set -uo pipefail
 
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
 # shellcheck source-path=SCRIPTDIR source=lib/git.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/git.sh"
 
@@ -47,19 +50,8 @@ cs fs vb	Skip *= *"
 TABLE
 )"
 
-base="${1:-}"
-head="${2:-HEAD}"
-
-[[ "$base" =~ ^0+$ ]] && base=""
-[[ -n "$base" ]] || base="$(main_merge_base "$head")"
-if [[ -z "$base" ]]; then
-  echo "Tests kept sensor: nothing to compare — no base given and no main to compare with."
-  exit 0
-fi
-for ref in "$base" "$head"; do
-  git rev-parse --verify -q "$ref^{commit}" >/dev/null \
-    || { echo "Tests kept sensor: '$ref' does not resolve to a commit." >&2; exit 2; }
-done
+resolve_change "Tests kept sensor" "${1:-}" "${2:-HEAD}" || exit 0
+base="$CHANGE_BASE" head="$CHANGE_HEAD"
 if [[ "$(git rev-parse "$base^{commit}")" == "$(git rev-parse "$head^{commit}")" ]]; then
   echo "Tests kept sensor: nothing to compare — base and head are the same commit."
   exit 0

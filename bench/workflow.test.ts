@@ -1,8 +1,8 @@
-// The Benchmark workflow's gate (ADR-0033): each comparison step's script, run with a stand-in for
-// `bun` that exits as bench/compare.ts would, fails the job or not. The metric tree's comparison
-// fails on every refusal and regression; the shaped graph's fails on those too, but where its kind
-// has no baseline (exit 3) it reports the median and the file its baseline would be saved as, and
-// passes.
+// The Benchmark workflow's gate (PERF-benchmark-measures-named-graph): each comparison step's
+// script, run with a stand-in for `bun` that exits as bench/compare.ts would, fails the job or not.
+// The metric tree's comparison fails on every refusal and regression; the shaped graph's fails on
+// those too, but where its kind has no baseline (exit 3) it reports the median and the file its
+// baseline would be saved as, and passes.
 import { expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -58,14 +58,14 @@ function runStep(script: string, code: number) {
 }
 
 test("the metric tree's comparison fails the job on every exit but 0", () => {
-  // Verifies: ADR-0033
+  // Verifies: PERF-benchmark-measures-named-graph
   const script = compareStep("run-*.json");
   for (const code of [1, 2, 3]) expect(runStep(script, code).status).not.toBe(0);
   expect(runStep(script, 0).status).toBe(0);
 });
 
 test("the shaped graph's comparison passes without a baseline on its kind, reporting the median", () => {
-  // Verifies: ADR-0033
+  // Verifies: PERF-benchmark-measures-named-graph
   const script = compareStep("shaped-*.json");
   for (const code of [1, 2]) expect(runStep(script, code).status).toBe(code);
   expect(runStep(script, 0).status).toBe(0);
@@ -77,7 +77,7 @@ test("the shaped graph's comparison passes without a baseline on its kind, repor
 });
 
 test("the metric tree is compared before the shaped graph runs, which cannot skip it", () => {
-  // Verifies: ADR-0033
+  // Verifies: PERF-benchmark-measures-named-graph
   const steps = workflow.jobs.bench.steps;
   const compared = steps.findIndex((step) => step.run?.includes("run-*.json"));
   const shaped = steps.findIndex((step) => step.env?.BENCH_GRAPH === "shaped");

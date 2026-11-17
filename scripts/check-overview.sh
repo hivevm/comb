@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# The overview names every entry point of Comb (ADR-0001, AGENTS.md §5).
+# The overview names every entry point of Comb (NUC-documents-are-fixed, AGENTS.md §5).
 #
 # docs/ARCHITECTURE.md is believed, so a method a host application calls or a probe a test reads
 # that it does not name is a part of the system a reader does not know is there. This check reads
@@ -30,7 +30,7 @@ TESTING="$ROOT/packages/comb/src/testing.ts"
 OVERVIEW="$ROOT/docs/ARCHITECTURE.md"
 
 fail() {
-  echo "Overview check FAILED (ADR-0001): $1" >&2
+  echo "Overview check FAILED (NUC-documents-are-fixed): $1" >&2
   exit 1
 }
 
@@ -182,7 +182,7 @@ check "CombOptions option" "members CombOptions"
 check "comb/testing export" exported
 
 if ((${#missing[@]})); then
-  echo "Overview check FAILED (ADR-0001): docs/ARCHITECTURE.md names none of these in a code span:" >&2
+  echo "Overview check FAILED (NUC-documents-are-fixed): docs/ARCHITECTURE.md names none of these in a code span:" >&2
   printf '  - %s\n' "${missing[@]}" >&2
   exit 1
 fi

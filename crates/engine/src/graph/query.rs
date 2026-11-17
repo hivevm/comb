@@ -1,13 +1,13 @@
 //! The query: which node slots, edge slots, and edge labels a rectangle meets, at a level of
-//! detail, and the mesh of the edges it found, written relative to an origin (ADR-0010,
-//! ADR-0012).
+//! detail, and the mesh of the edges it found, written relative to an origin
+//! (API-bridge-takes-serde-and-columns, REN-virtualized-scene-graph).
 
 use super::{Graph, SlotError};
 use crate::geometry::{Point, Rect, bounded_pixel};
 use crate::stroke::{MESH_BUDGET, Mesh, Stroke};
 
-/// The level of detail a query serves (ADR-0012): near draws edge labels, middle does not, and
-/// far draws edges as plain lines one pixel wide.
+/// The level of detail a query serves (REN-virtualized-scene-graph): near draws edge labels, middle
+/// does not, and far draws edges as plain lines one pixel wide.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Level {
     Near,
@@ -18,7 +18,7 @@ pub enum Level {
 /// What a query found: node slots in ascending rank, edge and label slots in ascending order, per
 /// found label its
 /// point, and the mesh of the found edges with its detail; the label points and the mesh's
-/// positions relative to `origin` (ADR-0010).
+/// positions relative to `origin` (API-bridge-takes-serde-and-columns).
 #[derive(Debug, Default)]
 pub struct Visible {
     pub nodes: Vec<u32>,
@@ -29,17 +29,17 @@ pub struct Visible {
     pub origin: Point,
 }
 
-/// The origin of a query in `rect` (ADR-0010): its centre snapped to a grid whose side is the
-/// smallest power of two at least the rectangle's larger side, so that it stays across pans
-/// shorter than that, and taken to the nearest `f32`, so that it holds exactly in both; (0, 0)
-/// for a rectangle that is not finite or has no area to snap to.
+/// The origin of a query in `rect` (API-bridge-takes-serde-and-columns): its centre snapped to a
+/// grid whose side is the smallest power of two at least the rectangle's larger side, so that it
+/// stays across pans shorter than that, and taken to the nearest `f32`, so that it holds exactly in
+/// both; (0, 0) for a rectangle that is not finite or has no area to snap to.
 pub(crate) fn origin_of(rect: &Rect) -> Point {
     let side = (rect.max_x - rect.min_x).max(rect.max_y - rect.min_y);
     let grid = side.log2().ceil().exp2();
     #[expect(
         clippy::cast_possible_truncation,
         reason = "taken to the nearest f32 on purpose, so that the origin holds exactly in both \
-                  (ADR-0010); a centre beyond f32 turns infinite and falls back to (0, 0) below"
+                  (API-bridge-takes-serde-and-columns); a centre beyond f32 turns infinite and falls back to (0, 0) below"
     )]
     let snap = |min: f64, max: f64| f64::from((((min + max) / 2.0 / grid).round() * grid) as f32);
     let origin = Point::new(snap(rect.min_x, rect.max_x), snap(rect.min_y, rect.max_y));
@@ -53,8 +53,8 @@ pub(crate) fn origin_of(rect: &Rect) -> Point {
 impl Graph {
     /// Writes into `out` the nodes and edges whose bounds meet `rect` and the mesh of the edges,
     /// stroked for `level` where a screen pixel is `pixel` world units, within the mesh budget
-    /// (ADR-0012); at the near level also the labels whose point lies within `label_reach` of it,
-    /// and at the others no label.
+    /// (REN-virtualized-scene-graph); at the near level also the labels whose point lies within
+    /// `label_reach` of it, and at the others no label.
     pub fn query(
         &mut self,
         rect: &Rect,
@@ -108,9 +108,9 @@ impl Graph {
                 #[expect(
                     clippy::cast_possible_truncation,
                     reason = "a label point within `label_rect`, less the query's origin and only \
-                              then rounded, rounds by its distance from the rectangle (ADR-0010); \
+                              then rounded, rounds by its distance from the rectangle (API-bridge-takes-serde-and-columns); \
                               a label point lies within three times `WORLD_LIMIT`, and the \
-                              origin of a rectangle that finds it within 2^127 of it (ADR-0010), \
+                              origin of a rectangle that finds it within 2^127 of it (API-bridge-takes-serde-and-columns), \
                               within f32"
                 )]
                 out.label_points
@@ -130,9 +130,9 @@ impl Graph {
     /// `also`, found by a query or not, each once, in ascending order, and into `out` their mesh,
     /// stroked as `query` strokes the edges it found in `rect` at `level` where a screen pixel is
     /// `pixel` world units, relative to `origin`, within the mesh budget: what a drag redraws of
-    /// the nodes it moves and an edit of what it added (ADR-0027). A slot of `slots`
-    /// that holds no node, or of `also` that holds no edge, refuses the call, and nothing is
-    /// written.
+    /// the nodes it moves and an edit of what it added (REN-moving-layer-redraws-changes). A slot
+    /// of `slots` that holds no node, or of `also` that holds no edge, refuses the call, and
+    /// nothing is written.
     pub fn mesh_at(
         &mut self,
         slots: &[u32],
@@ -154,7 +154,8 @@ impl Graph {
     /// Writes into `out` the mesh of the edge slots `edges`, each from its path and its style,
     /// stroked for `at`'s level where a screen pixel is its pixel's world units, in its rectangle,
     /// relative to its origin, within `budget` vertices: the step from an edge slot to its stroke,
-    /// which the query and the moving mesh both take (ADR-0012, ADR-0027).
+    /// which the query and the moving mesh both take (REN-virtualized-scene-graph,
+    /// REN-moving-layer-redraws-changes).
     fn mesh_edges(&mut self, edges: &[u32], at: &MeshAt, budget: u32, out: &mut Mesh) {
         let found = edges.iter().map(|&slot| {
             let slot = slot as usize;
@@ -174,8 +175,8 @@ impl Graph {
 
 /// Where an edge mesh is stroked: for `mesh_at`, the edges at the nodes a drag moves and the
 /// edges an edit at the far level added, in the rectangle, at the level, and where a screen pixel
-/// is the pixel's world units of the query the scene keeps, relative to its origin (ADR-0027);
-/// for a query, its own.
+/// is the pixel's world units of the query the scene keeps, relative to its origin
+/// (REN-moving-layer-redraws-changes); for a query, its own.
 #[derive(Clone, Copy, Debug)]
 pub struct MeshAt {
     pub rect: Rect,
@@ -216,7 +217,7 @@ mod tests {
 
     #[test]
     fn the_mesh_at_a_node_holds_every_edge_at_it_found_or_not_and_no_other() {
-        // Verifies: ADR-0027
+        // Verifies: REN-moving-layer-redraws-changes
         // Nodes 0 and 1 side by side, node 2 far off; edges 0–1, 1–2, and 0–2, then one between
         // 1 and 2 alone, which no edge at 0 is.
         let positions = vec![0.0, 0.0, 300.0, 0.0, 1e6, 1e6];
@@ -269,7 +270,7 @@ mod tests {
 
     #[test]
     fn the_mesh_of_edge_slots_holds_those_edges_and_the_ones_at_the_nodes_each_once() {
-        // Verifies: ADR-0027
+        // Verifies: REN-moving-layer-redraws-changes
         let positions = vec![0.0, 0.0, 300.0, 0.0, 600.0, 0.0];
         let sizes = vec![220.0, 64.0, 220.0, 64.0, 220.0, 64.0];
         let edge = |source, target| EdgeSpec {
@@ -353,7 +354,7 @@ mod tests {
 
     #[test]
     fn a_query_origin_is_its_centre_snapped_to_the_power_of_two_of_its_larger_side() {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         // 400 by 100 around (5e7 + 100, 100): a grid of 512, and 97,656 of it the nearest in x.
         let rect = Rect::new(5e7 - 100.0, 50.0, 5e7 + 300.0, 150.0);
         assert_eq!(origin_of(&rect), Point::new(49_999_872.0, 0.0));
@@ -364,7 +365,7 @@ mod tests {
 
     #[test]
     fn a_query_origin_stays_across_a_pan_shorter_than_half_its_grid() {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         let around = |x: f64| Rect::new(x - 200.0, -200.0, x + 200.0, 200.0);
         let origin = Point::new(49_999_872.0, 0.0);
         for pan in [-250.0, -100.0, 0.0, 100.0, 250.0] {
@@ -378,7 +379,7 @@ mod tests {
 
     #[test]
     fn a_query_origin_holds_in_f32_and_is_the_world_origin_where_nothing_snaps() {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         // A grid finer than f32 holds at 1e8: the origin is the nearest f32, within its spacing.
         let origin = origin_of(&Rect::new(1e8 + 0.3, 0.3, 1e8 + 0.301, 0.301));
         assert_eq!(f64::from(origin.x as f32), origin.x);
@@ -419,7 +420,7 @@ mod tests {
 
     #[test]
     fn an_edge_far_from_the_world_origin_hands_over_its_mesh_as_precisely_as_near_it() {
-        // Verifies: ADR-0010, Q-4
+        // Verifies: API-bridge-takes-serde-and-columns, Q-4
         // At 5e7 an f32 holds every fourth number, at 3e7 every second; near the world's origin,
         // the same edge rounds by under 2^-23 of 512, which stands for the engine's f64 stroke.
         let at = Point::new(5e7, -3e7);
@@ -519,7 +520,7 @@ mod tests {
 
     #[test]
     fn no_coordinate_turns_infinite_where_nodes_and_labels_are_dragged_to_the_world_limit() {
-        // Verifies: Q-4, Q-7, ADR-0030
+        // Verifies: Q-4, Q-7, ARCH-one-workspace-per-example
         // Node `a` between `b` and `c`, an edge from each to `a` with a label, which the drags
         // below carry to opposite corners of the world, and the labels beyond them.
         let label = Some(LabelPlacement {
@@ -667,7 +668,7 @@ mod tests {
 
     #[test]
     fn every_point_of_a_loop_is_one_f32_holds_where_its_node_lies_at_the_world_limit() {
-        // Verifies: ADR-0031, ADR-0030, Q-4
+        // Verifies: API-edges-dock-side-or-outline, ARCH-one-workspace-per-example, Q-4
         // A loop pulls out as far as its side is long, so the large node's reaches three times
         // the limit out; its points, and every coordinate a query writes, stay within f32.
         let (mut graph, specs) = loops_at_the_world_limit();
@@ -691,7 +692,7 @@ mod tests {
     #[test]
     fn every_point_of_a_loop_on_an_ellipse_is_one_f32_holds_where_its_node_lies_at_the_world_limit()
     {
-        // Verifies: ADR-0031, ADR-0030, Q-4
+        // Verifies: API-edges-dock-side-or-outline, ARCH-one-workspace-per-example, Q-4
         // The same loops on two ellipses: their ends move inward onto the outline, the large
         // node's by a share of the world, and their points, and every coordinate a query writes,
         // stay within f32.

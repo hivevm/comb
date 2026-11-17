@@ -1,6 +1,6 @@
-//! Node content as the engine's layout and hit test read it (ADR-0013): each element of a node
-//! with its text, laid out to a width in the fonts handed over, the height a node lays out to,
-//! and the element a point hits.
+//! Node content as the engine's layout and hit test read it (REN-node-content-in-rows): each
+//! element of a node with its text, laid out to a width in the fonts handed over, the height a node
+//! lays out to, and the element a point hits.
 
 use comb_engine::content::{self as layout, Cell, Element, Fonts, Placed, Role};
 use comb_engine::graph::Level;
@@ -10,7 +10,8 @@ use tsify::Tsify;
 
 use super::{ContentData, KindCode, numbered, role_of};
 
-/// The kind of an element a click reports (ADR-0013): one of the kinds the bridge accepts.
+/// The kind of an element a click reports (REN-node-content-in-rows): one of the kinds the bridge
+/// accepts.
 #[derive(Tsify, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ElementKind {
@@ -22,8 +23,8 @@ pub enum ElementKind {
     Icon,
 }
 
-/// The element of a node a press hits (ADR-0013): its row and column, its kind, and for an
-/// action its identifier.
+/// The element of a node a press hits (REN-node-content-in-rows): its row and column, its kind, and
+/// for an action its identifier.
 #[derive(Tsify, Serialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ElementHit {
@@ -82,9 +83,9 @@ impl ContentData {
     }
 
     /// Lays out the content of the node at `node`, of node shape `shape` and `[width, height]`,
-    /// in `fonts`, within its node shape's inner rectangle (ADR-0032), and pushes
-    /// where its elements lie onto `out`, relative to the node's top-left corner; `cells` and
-    /// `rows` are the caller's to reuse.
+    /// in `fonts`, within its node shape's inner rectangle (REN-closed-set-of-node-shapes), and
+    /// pushes where its elements lie onto `out`, relative to the node's top-left corner; `cells`
+    /// and `rows` are the caller's to reuse.
     pub(crate) fn lay_out<'a>(
         &'a self,
         node: usize,
@@ -130,8 +131,8 @@ impl ContentData {
     /// The element of the node at `node`, of the node shape and size of `frame` and laid out in
     /// `fonts`, whose rectangle
     /// holds the point `(x, y)` relative to the node's top-left corner, of the elements drawn at
-    /// `level` (`layout::drawn_at`, ADR-0013); `cells`, `rows`, and `placed` are the caller's to
-    /// reuse.
+    /// `level` (`layout::drawn_at`, REN-node-content-in-rows); `cells`, `rows`, and `placed` are
+    /// the caller's to reuse.
     #[expect(
         clippy::too_many_arguments,
         reason = "the node, its point, and the buffers the caller reuses, as `lay_out` takes them"

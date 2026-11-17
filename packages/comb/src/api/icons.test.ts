@@ -32,7 +32,7 @@ function reason(name: unknown, image: unknown): IconProblem | undefined {
 
 describe("an icon the host application registers", () => {
   test("a name that is no string, holds a lone surrogate, or is too long is refused", () => {
-    // Verifies: ADR-0013
+    // Verifies: REN-node-content-in-rows
     const url = "https://example.test/bet.png";
     for (const name of [undefined, null, 5, {}, "b\uD800t"])
       expect(reason(name, url)).toBe("invalidName");
@@ -42,7 +42,7 @@ describe("an icon the host application registers", () => {
   });
 
   test("a string, URL, or Request is refused and never fetched; anything else is no image", () => {
-    // Verifies: ADR-0013, Q-6
+    // Verifies: REN-node-content-in-rows, Q-6
     const url = "https://example.test/bet.png";
     for (const image of [url, "/bet.png", "", new URL(url), new Request(url)])
       expect(reason("bet", image)).toBe("fetchable");

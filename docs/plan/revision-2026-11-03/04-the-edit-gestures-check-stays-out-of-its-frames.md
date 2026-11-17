@@ -49,8 +49,9 @@ reports it deletes this ticket.
 
 ## Read first
 
-- ADR-0027 (*Inspection*), ADR-0028, the conventions *A number says where it was taken* and
-  *Work that should not happen is pinned by a count, never by a time*.
+- REN-moving-layer-redraws-changes (*Inspection*), PERF-benchmark-drives-host-chrome, the
+  conventions *A number says where it was taken* and *Work that should not happen is pinned by a
+  count, never by a time*.
 - `bench/run.ts` (`benchEdit`, `editGesture`, `frameTimes`), `packages/comb/src/render/scene.ts`
   (`draws`, `edgeDrawn`).
 

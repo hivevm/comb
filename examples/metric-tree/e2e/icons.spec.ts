@@ -1,8 +1,8 @@
-// An icon the host application registered (ADR-0013): an image it loaded itself, drawn as a sprite
-// of its texture in the square the engine laid the icon out in, fitted with its aspect kept; an
-// icon none is registered under draws nothing until one is, without a new load; a name registered
-// again draws the new image; and registerIcon refuses with a typed error what Comb would have to
-// fetch or cannot draw, and fetches nothing (Q-6).
+// An icon the host application registered (REN-node-content-in-rows): an image it loaded itself,
+// drawn as a sprite of its texture in the square the engine laid the icon out in, fitted with its
+// aspect kept; an icon none is registered under draws nothing until one is, without a new load; a
+// name registered again draws the new image; and registerIcon refuses with a typed error what Comb
+// would have to fetch or cannot draw, and fetches nothing (Q-6).
 import { expect, test, type Page } from "@playwright/test";
 import type { NodeContent } from "comb";
 import { loaded, node, open, setViewport, told } from "./shared";
@@ -66,7 +66,7 @@ function expectNear(
 test("a registered icon is drawn as a sprite of its texture in the square the engine laid out", async ({
   page,
 }) => {
-  // Verifies: ADR-0013, Q-4
+  // Verifies: REN-node-content-in-rows, Q-4
   await openIcon(page);
   await registerCanvas(page, "flag", 64, 64);
   const [sprite, ...others] = await sprites(page);
@@ -94,7 +94,7 @@ test("a registered icon is drawn as a sprite of its texture in the square the en
 test("an icon not yet registered draws nothing, and once registered it is drawn without a new load", async ({
   page,
 }) => {
-  // Verifies: ADR-0013
+  // Verifies: REN-node-content-in-rows
   await openIcon(page);
   expect(await sprites(page)).toEqual([]);
   // The title is drawn, and the node laid out, as with the icon.
@@ -116,7 +116,7 @@ test("an icon not yet registered draws nothing, and once registered it is drawn 
 test("a name registered again draws the new image wherever the old one was drawn", async ({
   page,
 }) => {
-  // Verifies: ADR-0013
+  // Verifies: REN-node-content-in-rows
   await openIcon(page);
   await registerCanvas(page, "flag", 16, 16);
   expectNear((await sprites(page))[0]!, SQUARE);
@@ -131,7 +131,7 @@ test("a name registered again draws the new image wherever the old one was drawn
 test("registerIcon refuses a string, a URL, an image that has not loaded, and a name no icon can give, and requests nothing", async ({
   page,
 }) => {
-  // Verifies: ADR-0013, Q-6
+  // Verifies: REN-node-content-in-rows, Q-6
   await openIcon(page);
   const requests: string[] = [];
   page.on("request", (request) => requests.push(request.url()));
@@ -207,7 +207,7 @@ async function pixelAt(page: Page, x: number, y: number): Promise<number[]> {
 test("the icon is Comb's copy of the image: closing the ImageBitmap or painting the canvas after registering changes nothing", async ({
   page,
 }) => {
-  // Verifies: ADR-0013
+  // Verifies: REN-node-content-in-rows
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await openIcon(page);
@@ -241,7 +241,7 @@ test("an image of another origin whose pixels the page may not read is refused, 
   page,
   baseURL,
 }) => {
-  // Verifies: ADR-0013, Q-6
+  // Verifies: REN-node-content-in-rows, Q-6
   // The policy of Q-6 lets no image of another origin into the page, so this test serves the
   // document without it, as a host application without that policy would, and the image itself
   // from another origin, 127.0.0.1, which the test serves; Comb requests nothing.
@@ -296,7 +296,7 @@ test("an image of another origin whose pixels the page may not read is refused, 
 test("after destroy, registerIcon checks its arguments as before and keeps nothing", async ({
   page,
 }) => {
-  // Verifies: ADR-0013
+  // Verifies: REN-node-content-in-rows
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await openIcon(page);
@@ -335,7 +335,7 @@ test("after destroy, registerIcon checks its arguments as before and keeps nothi
 test("once the engine is lost, a name registered again is drawn at once and nothing breaks a frame", async ({
   page,
 }) => {
-  // Verifies: ADR-0013, ADR-0021
+  // Verifies: REN-node-content-in-rows, API-trapped-engine-is-lost
   // No query runs once the engine is lost, and inspection asks the engine; the canvas is read
   // instead. The views take the new texture as it is registered, and the old one is destroyed
   // then, which a frame that drew it would report as an error.

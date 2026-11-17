@@ -111,7 +111,8 @@ async function drawnFrame(page: Page, id: string) {
 test("a node dragged across frames stays under the pointer, its edges' ends at its connectors in the same frame", async ({
   page,
 }) => {
-  // Verifies: G-2, ADR-0027 — the dragged edges, in the moving layer, follow in the same frame.
+  // Verifies: G-2, REN-moving-layer-redraws-changes — the dragged edges, in the moving layer,
+  // follow in the same frame.
   await open(page);
   const northStar = "0:3.0";
   const origin = await canvasOrigin(page);
@@ -130,7 +131,8 @@ test("a node dragged across frames stays under the pointer, its edges' ends at i
     const pointer = { x: from.x, y: from.y + i * step };
     const renders = await page.evaluate(() => window.renderCount());
     await page.mouse.move(pointer.x, pointer.y);
-    // The frame that drew this move, read before any other: one render per move (ADR-0011).
+    // The frame that drew this move, read before any other: one render per move
+    // (ARCH-graph-in-zustand-store).
     const frame = await drawnFrame(page, northStar);
     expect(frame.renders).toBe(renders + 1);
     const local = { x: pointer.x - origin.left, y: pointer.y - origin.top };
@@ -164,7 +166,7 @@ test("a node dragged across frames stays under the pointer, its edges' ends at i
 test("a node dragged across frames and released tells one nodeMoved, where inspection draws it", async ({
   page,
 }) => {
-  // Verifies: ADR-0024
+  // Verifies: API-edits-reported-as-typed-changes
   await open(page);
   await recordChanges(page);
   const id = "0:3.0";
@@ -183,7 +185,7 @@ test("a node dragged across frames and released tells one nodeMoved, where inspe
 });
 
 test("a press and release on a node without a move tells no change", async ({ page }) => {
-  // Verifies: ADR-0024
+  // Verifies: API-edits-reported-as-typed-changes
   await open(page);
   await recordChanges(page);
   const from = await screenCentre(page, "0:3.0");
@@ -193,7 +195,7 @@ test("a press and release on a node without a move tells no change", async ({ pa
 });
 
 test("a drag released outside the canvas tells nodeMoved as on it", async ({ page }) => {
-  // Verifies: ADR-0024
+  // Verifies: API-edits-reported-as-typed-changes
   await open(page);
   await recordChanges(page);
   const id = "0:3.0";
@@ -211,7 +213,7 @@ test("a drag released outside the canvas tells nodeMoved as on it", async ({ pag
 test("a drag whose engine is lost before the release tells no change, and throws nothing", async ({
   page,
 }) => {
-  // Verifies: ADR-0024, ADR-0021
+  // Verifies: API-edits-reported-as-typed-changes, API-trapped-engine-is-lost
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -240,8 +242,9 @@ test("a drag whose engine is lost before the release tells no change, and throws
 test("a query during a drag uploads the whole new mesh, its indices all, not the span it hides", async ({
   page,
 }) => {
-  // Verifies: ADR-0027 — WebGL uploads at the draw by the range marked last, so a render that
-  // queries and then hides must mark the whole index buffer, not the hidden span.
+  // Verifies: REN-moving-layer-redraws-changes — WebGL uploads at the draw by the range marked
+  // last, so a render that queries and then hides must mark the whole index buffer, not the hidden
+  // span.
   await open(page);
   const from = await screenCentre(page, "0:3.0");
   await page.mouse.move(from.x, from.y);

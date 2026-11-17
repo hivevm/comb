@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# Self-test of scripts/check-container.sh. Verifies: ADR-0014, ADR-0015, ADR-0028
+# Self-test of scripts/check-container.sh. Verifies: DEV-container-adds-bun-and-rust, SEC-no-container-engine, PERF-benchmark-drives-host-chrome
 #
 # Each case builds a fixture under a temporary directory — a devcontainer.json with comments that
 # builds from the Dockerfile and adds the Rust Feature, and a Dockerfile that pins its base image
 # and the image it copies Bun from by digest — runs the check against it, and asserts the exit code
 # and, for a failing case, the message that names the violation. The baseline passes; every
-# failing case breaks one thing ADR-0014 or ADR-0015 decides, and the passing cases are near
+# failing case breaks one thing DEV-container-adds-bun-and-rust or SEC-no-container-engine decides, and the passing cases are near
 # misses the check must not mistake for one.
 #
 # Usage:
@@ -27,7 +27,7 @@ passed=0
 SHA="sha256:$(printf '0%.0s' {1..64})"
 
 # The run argument and the forwarded ports a fixture names, by which the benchmark reaches a
-# Chrome on the host (ADR-0028); a case clears one to break it.
+# Chrome on the host (PERF-benchmark-drives-host-chrome); a case clears one to break it.
 RUN_ARGS='"runArgs": ["--add-host=host.docker.internal:host-gateway"],'
 PORTS='"forwardPorts": [5173, 4173],'
 
@@ -92,7 +92,7 @@ d="$(repo baseline)"
 expect pass "a container built from a pinned Dockerfile, with Rust and no engine, passes" "$d" \
   "2 images pinned by digest, 1 Features"
 
-# ADR-0014: the build.
+# DEV-container-adds-bun-and-rust: the build.
 
 d="$(repo from-image)"
 config "$d" '"image": "mcr.microsoft.com/devcontainers/base:debian",' "ghcr.io/devcontainers/features/rust:1"
@@ -110,7 +110,7 @@ d="$(repo no-config)"
 rm "$d/.devcontainer/devcontainer.json"
 expect fail "no devcontainer.json" "$d" "devcontainer.json: not found"
 
-# ADR-0014: the digests.
+# DEV-container-adds-bun-and-rust: the digests.
 
 d="$(repo base-by-tag)"
 dockerfile "$d" \
@@ -159,7 +159,7 @@ d="$(repo no-dockerfile)"
 rm "$d/.devcontainer/Dockerfile"
 expect fail "no Dockerfile" "$d" "Dockerfile: not found"
 
-# ADR-0014: no Node.js.
+# DEV-container-adds-bun-and-rust: no Node.js.
 
 d="$(repo node-feature)"
 config "$d" '"build": { "dockerfile": "Dockerfile" },' \
@@ -188,7 +188,7 @@ d="$(repo settings-glob)"
 } > "$d/.devcontainer/devcontainer.json"
 expect pass "a settings glob with a slash outside the features is no Feature" "$d" "1 Features"
 
-# ADR-0015: no container engine.
+# SEC-no-container-engine: no container engine.
 
 d="$(repo docker-in-docker)"
 config "$d" '"build": { "dockerfile": "Dockerfile" },' \
@@ -210,7 +210,7 @@ printf '{ "build": { "dockerfile": "Dockerfile" }, "features": { "ghcr.io/devcon
 expect fail "a configuration on one line, with a string-valued Feature, is read like any other" "$d" \
   "docker-in-docker:2' brings a container engine"
 
-# ADR-0028: the way to a Chrome on the host.
+# PERF-benchmark-drives-host-chrome: the way to a Chrome on the host.
 
 d="$(repo no-host)"
 RUN_ARGS='"runArgs": [],' config "$d" '"build": { "dockerfile": "Dockerfile" },' \

@@ -39,7 +39,7 @@ async function refusal(options: unknown): Promise<{ error: unknown; added: unkno
 
 describe("the engine the host application hands over", () => {
   test("without an engine, createComb refuses before it touches the host element", async () => {
-    // Verifies: ADR-0019
+    // Verifies: API-host-hands-comb-engine
     for (const options of [
       undefined,
       {},
@@ -57,7 +57,7 @@ describe("the engine the host application hands over", () => {
   });
 
   test("a string, URL, or Request, which would be fetched, is refused and never fetched", async () => {
-    // Verifies: ADR-0019
+    // Verifies: API-host-hands-comb-engine
     const url = "https://example.test/engine.wasm";
     const fetchable = [url, "/engine.wasm", new URL(url), new Request(url)];
     for (const engine of [...fetchable, ...fetchable.map((source) => Promise.resolve(source))]) {
@@ -70,7 +70,7 @@ describe("the engine the host application hands over", () => {
   });
 
   test("what is neither a Response, a module, nor the bytes is refused as invalid", async () => {
-    // Verifies: ADR-0019
+    // Verifies: API-host-hands-comb-engine
     for (const engine of [42, { module_or_path: "/engine.wasm" }, Promise.resolve(42)]) {
       const { error, added } = await refusal({ engine });
       expect(error).toBeInstanceOf(EngineSourceError);

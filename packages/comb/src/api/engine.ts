@@ -1,6 +1,6 @@
-// The engine's WebAssembly, which the host application hands over (ADR-0019): Comb never
-// resolves, fetches, or inlines the file itself, so the request for it is the host application's
-// own and its Content Security Policy governs it (Q-6).
+// The engine's WebAssembly, which the host application hands over (API-host-hands-comb-engine):
+// Comb never resolves, fetches, or inlines the file itself, so the request for it is the host
+// application's own and its Content Security Policy governs it (Q-6).
 
 /** What the host application hands over as the engine: the `Response` of its own request, or a
  *  promise of one, which the browser compiles while it streams; a compiled `WebAssembly.Module`;

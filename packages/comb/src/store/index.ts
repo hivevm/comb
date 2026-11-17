@@ -1,7 +1,7 @@
-// The state of the graph and the viewport (ADR-0011). Coordinates are not kept here: positions live
-// in the engine's buffer, and `positionsVersion` tells readers that they moved, `movesVersion` that
-// a drag moved its nodes (ADR-0027); the point a connection is dragged to lives in interaction, and
-// `pointerVersion` tells them that it moved.
+// The state of the graph and the viewport (ARCH-graph-in-zustand-store). Coordinates are not kept
+// here: positions live in the engine's buffer, and `positionsVersion` tells readers that they
+// moved, `movesVersion` that a drag moved its nodes (REN-moving-layer-redraws-changes); the point a
+// connection is dragged to lives in interaction, and `pointerVersion` tells them that it moved.
 import { createStore } from "zustand/vanilla";
 import type { NodeContent, NodeShape } from "../bridge";
 
@@ -9,7 +9,8 @@ export type { ContentElement, NodeContent, NodeShape, TextRole } from "../bridge
 
 /** A node as the host application hands it over: `x` and `y` are its initial position, `shape`
  *  the node shape it is drawn and hit in, and `content` what it shows, rows of weighted columns,
- *  from which and its node shape Comb computes its height (ADR-0013, ADR-0032). */
+ *  from which and its node shape Comb computes its height (REN-node-content-in-rows,
+ *  REN-closed-set-of-node-shapes). */
 export interface NodeData {
   id: string;
   x: number;
@@ -21,11 +22,11 @@ export interface NodeData {
   content: NodeContent;
 }
 
-/** A side of a node, at whose middle its connector sits (ADR-0031). */
+/** A side of a node, at whose middle its connector sits (API-edges-dock-side-or-outline). */
 export type Side = "top" | "right" | "bottom" | "left";
 
 /** What an end of an edge docks on: the connector of one of the four sides, or the node's outline,
- *  where the line towards the edge's other end crosses it (ADR-0031). */
+ *  where the line towards the edge's other end crosses it (API-edges-dock-side-or-outline). */
 export type Dock = Side | "outline";
 
 /** An edge label: placed by its path parameter `t` and its label offset in pixels (G-6). */
@@ -44,7 +45,7 @@ export interface EdgeData {
   source: string;
   target: string;
   /** What it leaves its source by, a side or the outline, `right` where left out, and `top` for a
-   *  loop (ADR-0031). */
+   *  loop (API-edges-dock-side-or-outline). */
   sourceSide?: Dock;
   /** What it enters its target by, a side or the outline, `left` where left out, and `top` for a
    *  loop. */
@@ -80,7 +81,8 @@ export interface EdgePatch {
 }
 
 /** A node as the store keeps it: its identifier, its width, and its node shape, which `api`
- *  fills in. Its position, its content, and its height are the engine's (ADR-0011, ADR-0013); a
+ *  fills in. Its position, its content, and its height are the engine's
+ *  (ARCH-graph-in-zustand-store, REN-node-content-in-rows); a
  *  new object for every change of its content, so that a view tells the change by identity. */
 export type NodeView = Pick<NodeData, "id" | "width" | "shape">;
 
@@ -90,7 +92,8 @@ export interface KeptGraph {
   edges: EdgeData[];
 }
 
-/** What `updateNode` may change of a node: its content, which it replaces whole (ADR-0013). */
+/** What `updateNode` may change of a node: its content, which it replaces whole
+ *  (REN-node-content-in-rows). */
 export interface NodePatch {
   content?: NodeContent;
 }
@@ -99,8 +102,9 @@ export interface NodePatch {
 export type By = "user" | "host";
 
 /** The change the last action that changed the graph made, by kind and the identifier it touched,
- *  never a coordinate (ADR-0011, ADR-0024): `api` delivers it to the host application, reading
- *  what it carries from the store and the engine's buffers. A new object for every change, so
+ *  never a coordinate (ARCH-graph-in-zustand-store, API-edits-reported-as-typed-changes): `api`
+ *  delivers it to the host application, reading what it carries from the store and the engine's
+ *  buffers. A new object for every change, so
  *  that one is told from the next by identity. */
 export type StoreChange =
   | { readonly kind: "loaded"; readonly by: "host" }
@@ -129,12 +133,13 @@ export type StoreChange =
       readonly content: boolean;
     };
 
-/** A connection the user drags from the connector `side` of the node in slot `source` (ADR-0031):
+/** A connection the user drags from the connector `side` of the node in slot `source`
+ *  (API-edges-dock-side-or-outline):
  *  over the node in slot `over`, whose connectors are `compatible` where the source does not reach
  *  it yet, the source's own only where loops are allowed and but for `side`, and over its
  *  connector `target` where a release connects. The world point it is dragged
  *  to is no part of it: interaction keeps that point and signals its moves by `pointerVersion`
- *  (ADR-0011). */
+ *  (ARCH-graph-in-zustand-store). */
 export interface Connection {
   readonly source: number;
   readonly side: Side;
@@ -144,34 +149,36 @@ export interface Connection {
 }
 
 /** The state without its actions, read-only to its leaves: what the render layer sees, so the
- *  type checker refuses a write (ADR-0030). */
+ *  type checker refuses a write (ARCH-one-workspace-per-example). */
 export interface GraphView {
-  /** The node in each slot, none at a free slot (ADR-0023). */
+  /** The node in each slot, none at a free slot (ARCH-engine-edits-graph-in-place). */
   readonly nodes: readonly (Readonly<NodeView> | undefined)[];
   readonly slots: ReadonlyMap<string, number>;
   /** The slot of each edge the graph holds, by its identifier. */
   readonly edgeSlots: ReadonlyMap<string, number>;
   /** The UTF-16 code units of every identifier the graph holds, a node's, an edge's, and each
-   *  edge's source and target, which the limits of a load bound after every edit (ADR-0024). */
+   *  edge's source and target, which the limits of a load bound after every edit
+   *  (API-edits-reported-as-typed-changes). */
   readonly idUnits: number;
   /** The change the last action that changed the graph made, or none before the first. */
   readonly change: StoreChange | null;
-  /** The edge in each slot, none at a free slot (ADR-0023). */
+  /** The edge in each slot, none at a free slot (ARCH-engine-edits-graph-in-place). */
   readonly edges: readonly (
     Readonly<Omit<EdgeData, "label"> & { readonly label?: Readonly<EdgeLabelData> }> | undefined
   )[];
   readonly selection: Readonly<Selection>;
-  /** The node whose connectors the pointer shows, or none (ADR-0031). */
+  /** The node whose connectors the pointer shows, or none (API-edges-dock-side-or-outline). */
   readonly hovered: number | null;
   /** The connection the user drags, or none. A load or a removal of its source leaves it, for its
    *  gesture to end before anything reads the store after the change. */
   readonly connection: Connection | null;
   readonly viewport: Readonly<Viewport>;
   /** Counts the changes of the engine's positions that a query the scene keeps does not survive:
-   *  a load, the release of a drag, a move of a label drag (ADR-0011, ADR-0027). */
+   *  a load, the release of a drag, a move of a label drag (ARCH-graph-in-zustand-store,
+   *  REN-moving-layer-redraws-changes). */
   readonly positionsVersion: number;
   /** The node slots a drag moves, from its first move to its release, or none; a load, or a
-   *  removal of one of them, leaves none (ADR-0027). */
+   *  removal of one of them, leaves none (REN-moving-layer-redraws-changes). */
   readonly dragged: readonly number[] | null;
   /** Counts the moves of the nodes in `dragged`, which a query the scene keeps survives. */
   readonly movesVersion: number;
@@ -297,12 +304,12 @@ function loadedFrom(state: GraphView, graph: KeptGraph, idUnits: number): Partia
 }
 
 /** What a removal leaving `nodes` changes of a drag of `state`: none dragged where it removed one
- *  of the nodes the drag moves (ADR-0027). */
+ *  of the nodes the drag moves (REN-moving-layer-redraws-changes). */
 function draggedWithout(state: GraphView, nodes: GraphView["nodes"]): Partial<GraphView> {
   return state.dragged?.some((slot) => !nodes[slot]) ? { dragged: null } : {};
 }
 
-/** The actions of a drag of nodes (ADR-0027), by the store's `set`. */
+/** The actions of a drag of nodes (REN-moving-layer-redraws-changes), by the store's `set`. */
 function dragsOf(set: (change: (state: GraphState) => Partial<GraphState>) => void) {
   return {
     dragStarted: (slots: readonly number[]) =>
@@ -440,7 +447,8 @@ export function createGraphStore() {
           slots: new Map(state.slots).set(id, slot),
           idUnits: state.idUnits + nodeUnits({ id }),
           // Its slot in `nodes` is the signal of the new node, which a kept query at the far level
-          // survives (ADR-0027, ADR-0011); no counter moves.
+          // survives (REN-moving-layer-redraws-changes, ARCH-graph-in-zustand-store); no counter
+          // moves.
           change: { kind: "nodeAdded", by: "host", id },
         };
       }),

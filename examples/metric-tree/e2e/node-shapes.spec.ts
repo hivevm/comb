@@ -1,6 +1,7 @@
-// A node drawn and hit in its node shape (G-13, ADR-0032): the host application sets it from
-// the closed set, the canvas draws its outline and lays its content out in its inner rectangle,
-// `heightOf` answers for its height, and a press beside its outline selects nothing.
+// A node drawn and hit in its node shape (G-13, REN-closed-set-of-node-shapes): the host
+// application sets it from the closed set, the canvas draws its outline and lays its content out in
+// its inner rectangle, `heightOf` answers for its height, and a press beside its outline selects
+// nothing.
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData, NodeShape } from "comb";
 import { clickWorld, loaded, open, selections, titled } from "./shared";
@@ -101,7 +102,7 @@ async function selected(page: Page, x: number, y: number): Promise<string | null
 test("each node shape is drawn at the near level in its outline, its content in its inner rectangle, as high as heightOf gives", async ({
   page,
 }) => {
-  // Verifies: G-13, ADR-0032, ADR-0026
+  // Verifies: G-13, REN-closed-set-of-node-shapes, API-host-asks-content-height
   await open(page);
   await loaded(page, shaped, { x: 20, y: 20, scale: 1 });
   const { level, nodes } = await drawnShapes(page);
@@ -141,7 +142,7 @@ test("each node shape is drawn at the near level in its outline, its content in 
 test("each node shape is drawn at the middle level in its outline, with its title", async ({
   page,
 }) => {
-  // Verifies: G-13, ADR-0032
+  // Verifies: G-13, REN-closed-set-of-node-shapes
   await open(page);
   await loaded(page, shaped, { x: 20, y: 20, scale: 0.4 });
   const { level, nodes } = await drawnShapes(page);
@@ -156,7 +157,7 @@ test("each node shape is drawn at the middle level in its outline, with its titl
 test("a press beside the outline of each node shape that leaves its rectangle's corner selects nothing, and one within selects it", async ({
   page,
 }) => {
-  // Verifies: G-13, ADR-0032, G-5
+  // Verifies: G-13, REN-closed-set-of-node-shapes, G-5
   await open(page);
   await loaded(page, shaped, { x: 20, y: 20, scale: 1 });
   const { nodes } = await drawnShapes(page);
@@ -177,7 +178,7 @@ test("a press beside the outline of each node shape that leaves its rectangle's 
 test("a rounded rectangle is hit just inside the corner arc it is drawn with, and not just outside it", async ({
   page,
 }) => {
-  // Verifies: G-13, ADR-0032
+  // Verifies: G-13, REN-closed-set-of-node-shapes
   await open(page);
   await loaded(page, shaped, { x: 20, y: 20, scale: 1 });
   const { level, nodes } = await drawnShapes(page);
@@ -230,7 +231,7 @@ async function inkAt(page: Page, color: number, points: [number, number][]): Pro
 test("each node shape is drawn at the far level as a particle of the far level's colour, as every node is", async ({
   page,
 }) => {
-  // Verifies: ADR-0032, ADR-0012
+  // Verifies: REN-closed-set-of-node-shapes, REN-virtualized-scene-graph
   await open(page);
   await loaded(page, shaped, { x: 20, y: 20, scale: 0.2 });
   const { level, nodes } = await drawnShapes(page);
@@ -257,7 +258,7 @@ test("each node shape is drawn at the far level as a particle of the far level's
 test("a node whose node shape names none is refused naming the node and the field, and a graph without node shapes draws rectangles", async ({
   page,
 }) => {
-  // Verifies: ADR-0032, Q-7
+  // Verifies: REN-closed-set-of-node-shapes, Q-7
   await open(page);
   const problem = await page.evaluate(() => {
     const graph = {

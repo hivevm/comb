@@ -1,7 +1,8 @@
 // One render per animation frame, however many changes it carries. PixiJS draws the rendered scene
 // on its own ticker within the next animation frame, so the waiters of a render resolve after that
 // frame and never before the pixels are drawn. A render that finds the engine lost stops the
-// renders: the canvas keeps its last frame, and no trap escapes the frame (ADR-0021).
+// renders: the canvas keeps its last frame, and no trap escapes the frame
+// (API-trapped-engine-is-lost).
 import { EngineLostError } from "../bridge";
 
 export interface Frames {

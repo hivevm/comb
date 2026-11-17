@@ -1,7 +1,7 @@
 // The public interface of Comb, which hands every field of graph data to the bridge before the
-// store keeps any of it, and checks none itself (ADR-0030).
+// store keeps any of it, and checks none itself (ARCH-one-workspace-per-example).
 // First, before any PixiJS renderer is created: PixiJS's code generation without eval, so that Comb
-// draws under a Content Security Policy without `unsafe-eval` (Q-6, ADR-0020).
+// draws under a Content Security Policy without `unsafe-eval` (Q-6, SEC-pixijs-without-eval).
 import "pixi.js/unsafe-eval";
 import { Application } from "pixi.js";
 import {
@@ -61,12 +61,14 @@ export interface CombOptions {
   /** The engine's WebAssembly, the file `comb/engine.wasm`, as the host application loads it:
    *  the `Response` of its own `fetch`, or a promise of one, a compiled `WebAssembly.Module`, or
    *  the bytes, an `ArrayBuffer` or a view on one. Required; Comb requests nothing itself
-   *  (ADR-0019). Instantiated once per page: a later Comb's engine is checked, not used. */
+   *  (API-host-hands-comb-engine). Instantiated once per page: a later Comb's engine is checked,
+   *  not used. */
   engine: EngineSource;
   /** The canvas background. */
   background?: number;
   /** Draw with PixiJS's Canvas 2D renderer where the browser offers no WebGL2, instead of
-   *  refusing: slower, Q-1 not promised, and dash patterns drawn solid (ADR-0018). Default
+   *  refusing: slower, Q-1 not promised, and dash patterns drawn solid
+   *  (REN-webgl2-or-canvas-fallback). Default
    *  false. */
   allowCanvasFallback?: boolean;
   /** The veto of a deletion of the user's: called with the identifiers of every node and edge
@@ -75,7 +77,7 @@ export interface CombOptions {
    *  `true`; an error it throws refuses the deletion and is thrown on from the key's event.
    *  Never called for the host application's own calls. Without it, a deletion is allowed. One
    *  during whose call Comb tells a change to `onChange` deletes nothing, whatever it returns
-   *  (ADR-0024). */
+   *  (API-edits-reported-as-typed-changes). */
   canDelete?: (deletion: Deletion) => boolean;
   /** The veto of a connection of the user's (G-3): called when the user releases a connection
    *  over a compatible connector of another node, or of the same node where `allowLoops` allows
@@ -85,25 +87,28 @@ export interface CombOptions {
    *  returns, refuses the connection and is thrown on from the input event. Never called for the
    *  host application's own calls. Without it, no connection begins: Comb has no name to give the
    *  edge. One during whose call Comb tells a change to `onChange` connects nothing, whatever it
-   *  returns, and its identifier is neither checked nor thrown (ADR-0024). */
+   *  returns, and its identifier is neither checked nor thrown
+   *  (API-edits-reported-as-typed-changes). */
   canConnect?: (proposal: Proposal) => string | false;
   /** Whether the host application allows loops, edges from a node back to itself: `addEdge`
    *  then accepts one, and the user's connection counts the source's own connectors compatible,
    *  but for the one it starts from, while the source has no loop. Without it, both refuse a loop,
-   *  `addEdge` as `selfEdge`. A load accepts loops either way (ADR-0031). Default false. */
+   *  `addEdge` as `selfEdge`. A load accepts loops either way (API-edges-dock-side-or-outline).
+   *  Default false. */
   allowLoops?: boolean;
 }
 
 /** Once the engine is lost for the page, `load`, `updateNode`, `addNode`, `heightOf`, `addEdge`,
  *  `updateEdge`, `removeNodes`, `removeEdges`, `fitView`, and `setViewport` of every Comb on it
- *  throw an `EngineLostError`, and so does `createComb` (ADR-0021). */
+ *  throw an `EngineLostError`, and so does `createComb` (API-trapped-engine-is-lost). */
 export interface Comb {
   /** Replaces the graph. Throws a `GraphDataError` on malformed graph data (Q-7), and an
    *  `EngineLostError` once the engine is lost. */
   load(graph: GraphData): void;
   /** Replaces the content of the node `id` whole; the canvas shows it, the node as high as its
-   *  new rows (G-5, ADR-0013). Throws a `GraphDataError` where the graph holds no node `id`, or the
-   *  patch holds a field other than `content` or content a load would refuse, and changes nothing
+   *  new rows (G-5, REN-node-content-in-rows). Throws a `GraphDataError` where the graph holds no
+   *  node `id`, or the patch holds a field other than `content` or content a load would refuse, and
+   *  changes nothing
    *  then (Q-7), and an `EngineLostError` once the engine is lost. */
   updateNode(id: string, patch: NodePatch): void;
   /** Adds `node` with its top-left corner at `x`, `y`, without a load; the canvas draws it above
@@ -117,10 +122,12 @@ export interface Comb {
    *  gives such a node, without one in the graph and changing nothing. Content whose rows hold
    *  elements of the same kinds, row by row and in the same order, has the same height in a
    *  rectangle whatever its texts and width, so a layout asks once per shape of content; a
-   *  circle and a ringed circle are as high as wide, and a bar 8 high (ADR-0032).
-   *  Throws a `GraphDataError` with the problem `addNode` gives the content, the width, or the
-   *  node shape, its texts counted against the budget alone, as in an empty graph, naming the
-   *  node `""` (Q-7), and an `EngineLostError` once the engine is lost (ADR-0026). */
+   *  circle and a ringed circle are as high as wide, and a bar 8 high
+   *  (REN-closed-set-of-node-shapes). Throws a `GraphDataError` with the problem `addNode` gives
+   *  the content, the width, or the node shape, its texts counted against the budget alone, as in
+   *  an empty graph, naming the
+   *  node `""` (Q-7), and an `EngineLostError` once the engine is lost
+   *  (API-host-asks-content-height). */
   heightOf(content: NodeContent, width: number, shape?: NodeShape): number;
   /** Adds `edge` between two nodes the graph holds, without a load, drawn with its colour, dash
    *  pattern, arrowhead, and label (G-11). Throws a `GraphDataError` where the graph holds an edge
@@ -155,14 +162,14 @@ export interface Comb {
   /** The world point under the point (`clientX`, `clientY`) of the page, in the client
    *  coordinates of a pointer or drop event, for a node dropped from the host's palette (G-1).
    *  Throws a `RangeError` on a coordinate that is not finite; needs no engine, so it keeps
-   *  answering once the engine is lost (ADR-0024). */
+   *  answering once the engine is lost (API-edits-reported-as-typed-changes). */
   worldPointAt(clientX: number, clientY: number): { x: number; y: number };
   /** Calls `listener` whenever the selection changes (G-5); returns the unsubscribe function. */
   onSelectionChange(listener: (selection: Selection) => void): () => void;
   /** Calls `listener` with every change of the graph, whoever made it, once the canvas holds it
    *  and before the call that made it returns, in the order made; where the change also clears
    *  the selection, before `onSelectionChange` reports it. Returns the unsubscribe function
-   *  (ADR-0024). */
+   *  (API-edits-reported-as-typed-changes). */
   onChange(listener: (change: GraphChange) => void): () => void;
   /** Calls `listener` when the user clicks an element of a node's content: presses on it and
    *  releases within 4 screen pixels of the press, which selects the node, after
@@ -170,7 +177,7 @@ export interface Comb {
    *  column, its kind, and for an action its identifier. An element is clicked only where it is
    *  drawn: at the near level every element, at the middle level the texts of role title, at the
    *  far level none; a press that moves further drags the node and clicks nothing. Returns the
-   *  unsubscribe function (ADR-0013). */
+   *  unsubscribe function (REN-node-content-in-rows). */
   onContentClick(listener: (click: ContentClick) => void): () => void;
   /** Registers `image`, an image the host application has loaded, an `ImageBitmap`, an
    *  `HTMLImageElement` that has loaded, or a canvas, as the icon `name`: Comb copies it at its
@@ -184,11 +191,11 @@ export interface Comb {
    *  never fetches (Q-6), is none of the three, has not loaded, or is of another origin whose
    *  pixels the page may not read; and registers nothing then. Needs no engine, so it keeps
    *  working once the engine is lost; after `destroy` it checks its arguments and keeps nothing
-   *  (ADR-0013). */
+   *  (REN-node-content-in-rows). */
   registerIcon(name: string, image: ImageBitmap | HTMLImageElement | HTMLCanvasElement): void;
   /** Calls `listener` once, with the `EngineLostError`, when the engine is lost for the page, and
    *  at once where it is lost already; returns the unsubscribe function. The page recovers only
-   *  by being loaded anew (ADR-0021). */
+   *  by being loaded anew (API-trapped-engine-is-lost). */
   onEngineLost(listener: (error: EngineLostError) => void): () => void;
   /** Resolves once the canvas has drawn every change made before the call, at most one frame
    *  after the drawing; once the engine is lost, the canvas keeps its last frame and it resolves
@@ -305,7 +312,8 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
   // Read at once, as the engine is created: once the canvas is in the host element, nothing may
   // refuse, and a trap of another Comb's on the page would refuse these calls.
   const limits = limitsOf(bridge);
-  // The metrics of the fonts the texts are drawn with, once, before the first layout (ADR-0013).
+  // The metrics of the fonts the texts are drawn with, once, before the first layout
+  // (REN-node-content-in-rows).
   for (const role of ["title", "body", "caption"] as const)
     bridge.setFont(role, fontMetricsOf(role));
   const app = await applicationOf(host, options);

@@ -1,8 +1,8 @@
 // The diagram the example edits (G-12): its copy of the graph, the classifier or the state of
-// each node, and the kind of each relationship, kept from every change Comb tells (ADR-0024), as
-// a host application that persists keeps its own. An edge the user connected arrives without a
-// kind; it becomes the kind a connection adds in the diagram shown, drawn as one, and docked as
-// the diagram's descriptor says.
+// each node, and the kind of each relationship, kept from every change Comb tells
+// (API-edits-reported-as-typed-changes), as a host application that persists keeps its own. An edge
+// the user connected arrives without a kind; it becomes the kind a connection adds in the diagram
+// shown, drawn as one, and docked as the diagram's descriptor says.
 import type {
   Comb,
   EdgeData,

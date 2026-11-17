@@ -14,7 +14,7 @@ use super::{ContentInput, Field};
 
 /// A node as the host application hands it over: its identifier, the position of its top-left
 /// corner, its width, its node shape, and its content, from which and its node shape the engine
-/// computes its height (ADR-0013, ADR-0032).
+/// computes its height (REN-node-content-in-rows, REN-closed-set-of-node-shapes).
 // The tests read each `Field` of it through `Refusable` in `snapshot`, which names them all.
 #[derive(Tsify, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -27,7 +27,7 @@ pub struct NodeInput {
     pub y: Field<f64>,
     #[tsify(type = "number")]
     pub width: Field<f64>,
-    /// Its node shape; `api` fills in `rectangle` (ADR-0032).
+    /// Its node shape; `api` fills in `rectangle` (REN-closed-set-of-node-shapes).
     #[tsify(type = "NodeShape")]
     pub shape: Field<NodeShape>,
     #[tsify(type = "NodeContent")]
@@ -35,7 +35,7 @@ pub struct NodeInput {
 }
 
 /// The node shape a node is drawn and hit in, from the closed set the engine owns
-/// (ADR-0032).
+/// (REN-closed-set-of-node-shapes).
 #[derive(Tsify, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum NodeShape {
@@ -62,7 +62,7 @@ impl From<NodeShape> for shape::NodeShape {
     }
 }
 
-/// The role of a text, which chooses its font (ADR-0013).
+/// The role of a text, which chooses its font (REN-node-content-in-rows).
 #[derive(Tsify, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum TextRole {
@@ -71,15 +71,16 @@ pub enum TextRole {
     Caption,
 }
 
-/// One segment of a progress bar (ADR-0013): the fraction of the bar it fills, finite and not
-/// negative, and its colour as `0xRRGGBB`.
+/// One segment of a progress bar (REN-node-content-in-rows): the fraction of the bar it fills,
+/// finite and not negative, and its colour as `0xRRGGBB`.
 #[derive(Tsify, Serialize, Debug, PartialEq)]
 pub struct Segment {
     pub fraction: f64,
     pub color: u32,
 }
 
-/// The direction of a metric's trend (ADR-0013), drawn as an arrow: up ▲, down ▼, or flat ▶.
+/// The direction of a metric's trend (REN-node-content-in-rows), drawn as an arrow: up ▲, down ▼,
+/// or flat ▶.
 #[derive(Tsify, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum TrendDirection {
@@ -88,8 +89,8 @@ pub enum TrendDirection {
     Flat,
 }
 
-/// The trend of a metric (ADR-0013): its text, its direction, and its colour as `0xRRGGBB`, in
-/// which its arrow and its text are drawn.
+/// The trend of a metric (REN-node-content-in-rows): its text, its direction, and its colour as
+/// `0xRRGGBB`, in which its arrow and its text are drawn.
 #[derive(Tsify, Serialize, Debug, PartialEq)]
 pub struct Trend {
     pub text: String,
@@ -97,14 +98,15 @@ pub struct Trend {
     pub color: u32,
 }
 
-/// One element of node content (ADR-0013): a text in a role; an action, a text whose click
-/// reports its identifier `id` to the host application; a badge, a text on a pill of the colour
-/// `color`, `0xRRGGBB`; a progress bar, a bar the width of its column divided into `segments`
-/// from its left, the rest of it the track; a metric, a `caption` above a `value` and its
-/// `trend`; or an icon, the image the host application registered under `name`, which draws
+/// One element of node content (REN-node-content-in-rows): a text in a role; an action, a text
+/// whose click reports its identifier `id` to the host application; a badge, a text on a pill of
+/// the colour `color`, `0xRRGGBB`; a progress bar, a bar the width of its column divided into
+/// `segments` from its left, the rest of it the track; a metric, a `caption` above a `value` and
+/// its `trend`; or an icon, the image the host application registered under `name`, which draws
 /// nothing while none is registered; each in a column that takes its share of the row's width by
-/// `weight`, 1 where it is left out. This type names exactly the six kinds of ADR-0013.
-/// Its reading is `ContentInput`'s, which takes any value, so that what it refuses is named.
+/// `weight`, 1 where it is left out. This type names exactly the six kinds of
+/// REN-node-content-in-rows. Its reading is `ContentInput`'s, which takes any value, so that what
+/// it refuses is named.
 #[derive(Tsify, Serialize, Debug, PartialEq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ContentElement {
@@ -145,7 +147,8 @@ pub enum ContentElement {
     },
 }
 
-/// What a node shows: rows of weighted columns, each holding one element (ADR-0013).
+/// What a node shows: rows of weighted columns, each holding one element
+/// (REN-node-content-in-rows).
 #[derive(Tsify, Serialize, Debug, PartialEq)]
 pub struct NodeContent(pub Vec<Vec<ContentElement>>);
 
@@ -174,7 +177,7 @@ pub enum Arrow {
     None,
 }
 
-/// A side of a node, at whose middle its connector sits (ADR-0031).
+/// A side of a node, at whose middle its connector sits (API-edges-dock-side-or-outline).
 #[derive(Tsify, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum Side {
@@ -207,7 +210,7 @@ impl From<Side> for graph_side::Side {
 }
 
 /// Where an end of an edge docks: at the connector of one of the four sides, or on the node's
-/// outline (ADR-0031).
+/// outline (API-edges-dock-side-or-outline).
 #[derive(Tsify, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum Dock {
@@ -251,7 +254,8 @@ pub struct EdgeInput {
     pub dash: Field<Option<Pair>>,
     #[tsify(type = "Arrow")]
     pub arrow: Field<Arrow>,
-    /// The side of its source it leaves by, or its outline; `api` fills in `right` (ADR-0031).
+    /// The side of its source it leaves by, or its outline; `api` fills in `right`
+    /// (API-edges-dock-side-or-outline).
     #[tsify(type = "Dock")]
     pub source_side: Field<Dock>,
     /// The side of its target it enters by, or its outline; `api` fills in `left`.

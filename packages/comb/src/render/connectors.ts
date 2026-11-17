@@ -1,9 +1,10 @@
-// The connectors layer and the connection being dragged (ADR-0031, ADR-0012): the four connectors
-// of the node under the pointer, and while the user drags a connection those of its source and of
-// the node under the pointer, the compatible ones drawn apart, the source's own where loops are
-// allowed but for the one it starts from; and in the overlay, a line from the
-// source's connector to the pointer. It reads the store, the engine's positions, and the point
-// interaction keeps for the pointer, and writes none of them (ADR-0011, ADR-0030).
+// The connectors layer and the connection being dragged (API-edges-dock-side-or-outline,
+// REN-virtualized-scene-graph): the four connectors of the node under the pointer, and while the
+// user drags a connection those of its source and of the node under the pointer, the compatible
+// ones drawn apart, the source's own where loops are allowed but for the one it starts from; and in
+// the overlay, a line from the source's connector to the pointer. It reads the store, the engine's
+// positions, and the point interaction keeps for the pointer, and writes none of them
+// (ARCH-graph-in-zustand-store, ARCH-one-workspace-per-example).
 import { Graphics } from "pixi.js";
 import type { GraphView, Side } from "../store";
 import { toScreen } from "../store/viewport";

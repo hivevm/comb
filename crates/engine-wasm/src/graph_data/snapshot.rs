@@ -1,6 +1,6 @@
-//! The columns of a load the snapshot of `api` builds (ADR-0010), written by the tests: a batch
-//! of nodes and edges as the tests write it, each string column cut into pieces as the shell's
-//! writer cuts it.
+//! The columns of a load the snapshot of `api` builds (API-bridge-takes-serde-and-columns), written
+//! by the tests: a batch of nodes and edges as the tests write it, each string column cut into
+//! pieces as the shell's writer cuts it.
 
 use serde::Deserialize;
 
@@ -59,7 +59,8 @@ impl Refusable for EdgeInput {
     }
 }
 
-/// The bound on a piece of a string column the snapshot of `api` passes its writer (ADR-0010).
+/// The bound on a piece of a string column the snapshot of `api` passes its writer
+/// (API-bridge-takes-serde-and-columns).
 #[cfg(test)]
 const SNAPSHOT_PIECE: usize = 1 << 28;
 

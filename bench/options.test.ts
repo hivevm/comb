@@ -1,4 +1,5 @@
-// The options a benchmark run takes from its environment (ADR-0028, ADR-0029, ADR-0033).
+// The options a benchmark run takes from its environment (PERF-benchmark-drives-host-chrome,
+// PERF-benchmark-slows-page-cpu, PERF-benchmark-measures-named-graph).
 import { expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -6,7 +7,7 @@ import ts from "typescript";
 import { browserFor, cpuThrottleFor, graphFor } from "./options";
 
 test("without BENCH_CDP the run launches Chromium, and with it attaches to the address it gives", () => {
-  // Verifies: ADR-0028
+  // Verifies: PERF-benchmark-drives-host-chrome
   expect(browserFor({})).toEqual({ kind: "launch" });
   expect(browserFor({ BENCH_CDP: "" })).toEqual({ kind: "launch" });
   expect(browserFor({ BENCH_CDP: "http://host.docker.internal:9223/" })).toEqual({
@@ -16,13 +17,13 @@ test("without BENCH_CDP the run launches Chromium, and with it attaches to the a
 });
 
 test("BENCH_CDP that is not the http address of a host and port is refused", () => {
-  // Verifies: ADR-0028
+  // Verifies: PERF-benchmark-drives-host-chrome
   for (const value of ["host.docker.internal:9223", "ws://localhost:9222", "http://localhost", "x"])
     expect(() => browserFor({ BENCH_CDP: value })).toThrow("BENCH_CDP");
 });
 
 test("BENCH_CPU_THROTTLE slows by its factor, 1 without it, and refuses one below 1 or not finite", () => {
-  // Verifies: ADR-0029
+  // Verifies: PERF-benchmark-slows-page-cpu
   expect(cpuThrottleFor({})).toBe(1);
   expect(cpuThrottleFor({ BENCH_CPU_THROTTLE: "2" })).toBe(2);
   expect(cpuThrottleFor({ BENCH_CPU_THROTTLE: "1.5" })).toBe(1.5);
@@ -31,7 +32,7 @@ test("BENCH_CPU_THROTTLE slows by its factor, 1 without it, and refuses one belo
 });
 
 test("BENCH_GRAPH names the graph the run measures, the metric tree without it, and refuses another", () => {
-  // Verifies: ADR-0033
+  // Verifies: PERF-benchmark-measures-named-graph
   expect(graphFor({})).toBe("metric-tree");
   expect(graphFor({ BENCH_GRAPH: "" })).toBe("metric-tree");
   expect(graphFor({ BENCH_GRAPH: "metric-tree" })).toBe("metric-tree");
@@ -41,7 +42,7 @@ test("BENCH_GRAPH names the graph the run measures, the metric tree without it, 
 });
 
 test("the default graph is named in bench/options.ts alone, of the benchmark's sources", () => {
-  // Verifies: ADR-0033
+  // Verifies: PERF-benchmark-measures-named-graph
   const naming = readdirSync(import.meta.dir)
     .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))
     .filter((file) => readFileSync(join(import.meta.dir, file), "utf8").includes('"metric-tree"'));
@@ -68,7 +69,7 @@ function runErrors(edit: (options: string) => string): string[] {
 }
 
 test("a graph added to GRAPHS alone fails the type checker, naming it and the example's GraphName", () => {
-  // Verifies: ADR-0033
+  // Verifies: PERF-benchmark-measures-named-graph
   expect(runErrors((options) => options)).toEqual([]);
   const added = (options: string) => {
     const edited = options.replace('"shaped"] as const', '"shaped", "added"] as const');

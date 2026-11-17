@@ -1,6 +1,7 @@
 //! The loaded graph as the engine keeps it: node positions and sizes per node slot, edges per edge
 //! slot, a rank per node slot that orders drawing and hitting, and a spatial index over both that
-//! loads, additions, and moves keep current (ADR-0010, ADR-0023, ADR-0012).
+//! loads, additions, and moves keep current (API-bridge-takes-serde-and-columns,
+//! ARCH-engine-edits-graph-in-place, REN-virtualized-scene-graph).
 //!
 //! A query answers which node slots, edge slots, and edge labels a rectangle meets, and writes
 //! those slots, the points of the labels, and the mesh of the edges into buffers the caller reads;
@@ -43,7 +44,7 @@ pub struct EdgeSpec {
     pub source: u32,
     pub target: u32,
     /// Where it leaves its source and enters its target: at a side's connector or on the outline
-    /// (ADR-0031).
+    /// (API-edges-dock-side-or-outline).
     pub sides: Sides,
     pub label: Option<LabelPlacement>,
     pub style: EdgeStyle,
@@ -78,7 +79,8 @@ impl From<TooManySlots> for GraphError {
     }
 }
 
-/// Why a call that names slots was refused: a slot beyond the slots, or free (ADR-0023).
+/// Why a call that names slots was refused: a slot beyond the slots, or free
+/// (ARCH-engine-edits-graph-in-place).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SlotError {
     /// A slot that holds no node.
@@ -137,27 +139,27 @@ pub fn slot(index: usize) -> Result<u32, TooManySlots> {
 pub struct Graph {
     positions: Vec<f32>,
     sizes: Vec<f32>,
-    /// The node shape of each node slot (ADR-0032); a slot past its end is a
+    /// The node shape of each node slot (REN-closed-set-of-node-shapes); a slot past its end is a
     /// rectangle, so that a graph that names no node shape keeps none.
     shapes: Vec<NodeShape>,
     edges: Vec<EdgeSpec>,
-    /// The node slots, free ones among them (ADR-0023).
+    /// The node slots, free ones among them (ARCH-engine-edits-graph-in-place).
     node_slots: Slots,
-    /// The edge slots, free ones among them (ADR-0023).
+    /// The edge slots, free ones among them (ARCH-engine-edits-graph-in-place).
     edge_slots: Slots,
     paths: Vec<EdgePath>,
     /// The bounds of each path, computed when the path is.
     bounds: Vec<Rect>,
     labels: Vec<Option<Point>>,
     /// Half the width and half the height of each edge label's pill in world units, as the shell
-    /// measured it; a label it has not measured is not hit (ADR-0013).
+    /// measured it; a label it has not measured is not hit (REN-node-content-in-rows).
     pills: Vec<Option<(f64, f64)>>,
     /// The largest half extent of any pill measured, by which a hit looks for labels around it.
     widest_pill: f64,
-    /// The edge slots at each node slot, one list per node slot (ADR-0023).
+    /// The edge slots at each node slot, one list per node slot (ARCH-engine-edits-graph-in-place).
     incident: Vec<Vec<u32>>,
     /// The rank of each node slot: the node of the higher rank is drawn and hit above the other
-    /// (ADR-0023).
+    /// (ARCH-engine-edits-graph-in-place).
     ranks: Vec<u32>,
     /// The rank the next node added takes, one above the highest given.
     next_rank: u64,

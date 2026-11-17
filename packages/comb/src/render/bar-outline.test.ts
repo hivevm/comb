@@ -7,7 +7,7 @@ const pairs = (outline: number[]): [number, number][] =>
 
 describe("the outline of a piece of a progress bar", () => {
   test("rounds only the bar's outer ends, by its radius, and leaves the pieces between square", () => {
-    // Verifies: ADR-0013
+    // Verifies: REN-node-content-in-rows
     // A bar from 12 to 208, 8 high from 32, its ends rounded by 4: a segment from 12 to 70.8, a
     // segment from 70.8 to 110, and the track from 110 to 208.
     const piece = (x: number, width: number) => ({ x, y: 32, width, height: 8, color: 0 });

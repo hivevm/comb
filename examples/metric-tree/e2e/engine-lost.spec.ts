@@ -1,7 +1,7 @@
-// A trap loses the engine for the page (ADR-0021): every later call that needs it throws an
-// `EngineLostError`, no trap escapes as a page error, and the host application is told through
-// `onEngineLost`. The trap is provoked through the test-mode seam of the bridge crate, so that the
-// tests do not depend on a trap the checks may close.
+// A trap loses the engine for the page (API-trapped-engine-is-lost): every later call that needs it
+// throws an `EngineLostError`, no trap escapes as a page error, and the host application is told
+// through `onEngineLost`. The trap is provoked through the test-mode seam of the bridge crate, so
+// that the tests do not depend on a trap the checks may close.
 import { expect, test, type Page } from "@playwright/test";
 import type { Comb } from "comb";
 import { open } from "./shared";
@@ -68,7 +68,7 @@ const NEEDS_THE_ENGINE = [
 test("after a trap in load, every call that needs the engine throws an EngineLostError", async ({
   page,
 }) => {
-  // Verifies: ADR-0021, Q-7
+  // Verifies: API-trapped-engine-is-lost, Q-7
   const errors = await openWithErrors(page);
   const outcomes = await page.evaluate(async () => {
     const graph = { nodes: [window.node("a")] };
@@ -130,7 +130,7 @@ test("after a trap in load, every call that needs the engine throws an EngineLos
 test("a createComb whose engine is lost while PixiJS initialises resolves, or leaves its host element without a child", async ({
   page,
 }) => {
-  // Verifies: ADR-0021
+  // Verifies: API-trapped-engine-is-lost
   const errors = await openWithErrors(page);
   const result = await page.evaluate(async () => {
     const { comb, outcome } = window;
@@ -181,7 +181,7 @@ test("a createComb whose engine is lost while PixiJS initialises resolves, or le
 test("a trap inside the animation frame stops the renders, resolves whenRendered, and tells the host application", async ({
   page,
 }) => {
-  // Verifies: ADR-0021, Q-7
+  // Verifies: API-trapped-engine-is-lost, Q-7
   const errors = await openWithErrors(page);
   const result = await page.evaluate(async () => {
     const { comb, outcome } = window;
@@ -220,7 +220,7 @@ test("a trap inside the animation frame stops the renders, resolves whenRendered
 });
 
 test("a trap in one of two Combs on a page loses the engine for both", async ({ page }) => {
-  // Verifies: ADR-0021, Q-7
+  // Verifies: API-trapped-engine-is-lost, Q-7
   const errors = await openWithErrors(page);
   const result = await page.evaluate(async () => {
     const { comb: first, outcome } = window;
@@ -258,7 +258,7 @@ test("a trap in one of two Combs on a page loses the engine for both", async ({ 
 test("a listener of onEngineLost is called once, also when registered after the loss, and not once removed", async ({
   page,
 }) => {
-  // Verifies: ADR-0021
+  // Verifies: API-trapped-engine-is-lost
   const errors = await openWithErrors(page);
   const told = await page.evaluate(async () => {
     const { comb, outcome } = window;

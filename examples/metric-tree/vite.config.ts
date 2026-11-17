@@ -22,7 +22,8 @@ function strictPolicy(): Plugin {
 }
 
 /** In test mode the example hands Comb the engine built with the bridge crate's feature
- *  `test-mode`, which traps on demand (ADR-0021); its glue is the same as the production engine's.
+ *  `test-mode`, which traps on demand (API-trapped-engine-is-lost); its glue is the same as the
+ *  production engine's.
  *  The build, which the tests tagged @built and the benchmark run, keeps the production engine. */
 const TEST_ENGINE = {
   find: /^comb\/engine\.wasm(?=\?|$)/,

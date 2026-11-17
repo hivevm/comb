@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Self-test of scripts/check-overview.sh. Verifies: ADR-0001
+# Self-test of scripts/check-overview.sh. Verifies: NUC-documents-are-fixed
 #
 # Each case builds a tree in a temporary directory with an api, a testing entry, and an overview,
 # runs the check on it, and asserts the exit code and a line it prints. An overview that names

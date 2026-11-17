@@ -1,5 +1,6 @@
 // A node dropped from the host's palette (G-1): `worldPointAt` names the world point under a
-// point of the page, and the example adds a node of the palette's kind there (ADR-0024).
+// point of the page, and the example adds a node of the palette's kind there
+// (API-edits-reported-as-typed-changes).
 import { expect, test, type Page } from "@playwright/test";
 import { NODE_WIDTH, open, recordChanges, screenCentre, setViewport, told } from "./shared";
 
@@ -21,7 +22,7 @@ for (const scale of [1, 0.5]) {
   test(`worldPointAt returns the world point that screenPoint takes back to the point of the page, at a CSS scale of ${scale}`, async ({
     page,
   }) => {
-    // Verifies: G-1, ADR-0024
+    // Verifies: G-1, API-edits-reported-as-typed-changes
     await open(page);
     await offsetCanvas(page, scale);
     await setViewport(page, { x: -153.25, y: 87.5, scale: 0.37 });
@@ -46,7 +47,7 @@ for (const scale of [1, 0.5]) {
 }
 
 test("worldPointAt refuses a coordinate that is not finite", async ({ page }) => {
-  // Verifies: ADR-0024
+  // Verifies: API-edits-reported-as-typed-changes
   await open(page);
   const refused = await page.evaluate(() =>
     [
@@ -127,7 +128,7 @@ test("each type in the palette drops a node of that type, centred on the drop by
     );
     const { asked, ...drawn } = dropped;
     expect(drawn).toEqual({
-      // Centred by the height Comb gives its content (ADR-0026).
+      // Centred by the height Comb gives its content (API-host-asks-content-height).
       middle: expect.closeTo(at.y - 30, 2),
       height: asked,
       icons: [type],

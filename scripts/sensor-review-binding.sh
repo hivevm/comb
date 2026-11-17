@@ -37,13 +37,14 @@
 # bound to nothing, it leaves them listed.
 #
 # The review of an ADR comes before its implementation, and the commits keep the two apart
-# (AGENTS.md, section 3, rules 3 and 4). Every commit between the base and the head, those of the
-# merged branches included, that changes the text of an ADR and a path outside docs/adr/ is
-# listed too. Its Status, Date, and Deciders lines are not its text here: the flip to accepted,
-# which moves the date, may land with the implementation, and a human adds the project's decider.
-# The index under docs/adr/ goes with its ADRs either way. The commits of the exceptions the rules
-# name, a normalization and the template repository's correction of its own ADRs, are listed like
-# any other, and the human reads them as such.
+# (NUC-decisions-are-proposed-then-accepted §3, §4). Every commit between the base and the head,
+# those of the merged branches included, that changes the text of an ADR and a path outside
+# docs/adr/ is listed too. Its Status, Date, and Deciders lines are not its text here: the flip to
+# accepted, which moves the date, may land with the implementation, and the Deciders line is the
+# human's record of who decided, not the decision. The index under docs/adr/ goes with its ADRs
+# either way. The commits of the exceptions the rules name, a normalization and the template
+# repository's correction of its own ADRs, are listed like any other, and the human reads them as
+# such.
 #
 # Pure bash + git. Usage:
 #     scripts/sensor-review-binding.sh [--root <dir>] [--hand-off <file>] [base [head]]
@@ -58,8 +59,13 @@
 
 set -uo pipefail
 
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
 # shellcheck source-path=SCRIPTDIR source=lib/git.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/git.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/adr.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/adr.sh"
 
 caller="$PWD"
 enter_root "Review binding sensor" "${BASH_SOURCE[0]}" "$@"
@@ -75,19 +81,8 @@ if [[ "${1:-}" == "--hand-off" ]]; then
     || { echo "Review binding sensor: hand-off '$hand_off' is no file." >&2; exit 2; }
 fi
 
-base="${1:-}"
-head="${2:-HEAD}"
-
-[[ "$base" =~ ^0+$ ]] && base=""
-[[ -n "$base" ]] || base="$(main_merge_base "$head")"
-if [[ -z "$base" ]]; then
-  echo "Review binding sensor: nothing to compare — no base given and no main to compare with."
-  exit 0
-fi
-for ref in "$base" "$head"; do
-  git rev-parse --verify -q "$ref^{commit}" >/dev/null \
-    || { echo "Review binding sensor: '$ref' does not resolve to a commit." >&2; exit 2; }
-done
+resolve_change "Review binding sensor" "${1:-}" "${2:-HEAD}" || exit 0
+base="$CHANGE_BASE" head="$CHANGE_HEAD"
 
 at_tip=0
 findings=()
@@ -99,7 +94,7 @@ findings=()
 bind() {
   local label="$1" message="$2" tip="$3" before="$4" what="$5" line reviewed sha n finding c
   line="$(grep -m1 -E '^[[:space:]]*([-*][[:space:]]+)?Reviewed at:[[:space:]]*[^[:space:]]' <<< "$message")"
-  reviewed="$(sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]].*$//; s/`//g' <<< "$line")"
+  reviewed="$(sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:],].*$//; s/`//g' <<< "$line")"
   if [[ -z "$reviewed" ]]; then
     findings+=("$label: no 'Reviewed at:' commit in its message — the review is bound to nothing")
     return 1
@@ -128,11 +123,11 @@ bind() {
 # adr_text <commit> — the ADR files whose text the commit changes, Status, Date, and Deciders
 # lines aside.
 adr_text() {
-  git diff-tree -r --root --no-commit-id -p -U0 --no-color "$1" \
-    -- ':(glob)docs/adr/[0-9][0-9][0-9][0-9]-*.md' ':(glob)docs/adr/draft-*.md' | awk '
+  git diff-tree -r --root --no-commit-id -p -U0 --no-color "$1" -- ":(glob)docs/adr/$ADR_GLOB" \
+    | awk -v flip="^[-+]${ADR_ITEM_RE#^}(Status|Date|Deciders):[*][*]" '
     /^diff --git / { file = $NF; sub(/^b\//, "", file); next }
     /^(\+\+\+|---) / { next }
-    /^[-+]/ && !/^[-+]- \*\*(Status|Date|Deciders):\*\*/ && !(file in seen) { seen[file]; print file }
+    /^[-+]/ && $0 !~ flip && !(file in seen) { seen[file]; print file }
   '
 }
 
@@ -150,7 +145,7 @@ done < <(git rev-list --no-merges --reverse "$base..$head")
 # report_mixed — list the commits that change ADR text together with other paths.
 report_mixed() {
   ((${#mixed[@]})) || return 0
-  echo "Review binding sensor: ${#mixed[@]} commit$( ((${#mixed[@]} == 1)) || echo s) mixing ADR text with other paths, which AGENTS.md section 3 keeps in commits apart:"
+  echo "Review binding sensor: ${#mixed[@]} commit$( ((${#mixed[@]} == 1)) || echo s) mixing ADR text with other paths, which NUC-decisions-are-proposed-then-accepted §4 keeps in commits apart:"
   printf '  - %s\n' "${mixed[@]}"
 }
 

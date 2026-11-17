@@ -3,16 +3,17 @@
 ## What to build
 
 Ticket 05 of the state diagram (merge 9e8f882) made the benchmark measure a shaped graph
-(`BENCH_GRAPH=shaped`, ADR-0033) and wrote no baseline: `bench/baselines/` holds no
-`<kind>.shaped.json`, so the workflow's shaped step passes on exit 3 with a notice on every runner
-kind, and nothing compares a shaped run with anything. The spec's criterion that Q-1 and Q-2 hold
-for a graph of node shapes, outline docking, and loops was left "the maintainer's to confirm".
-The only numbers so far are one headless SwiftShader run in the Dev Container, which is no
-baseline.
+(`BENCH_GRAPH=shaped`, PERF-benchmark-measures-named-graph) and wrote no baseline:
+`bench/baselines/` holds no `<kind>.shaped.json`, so the workflow's shaped step passes on exit 3
+with a notice on every runner kind, and nothing compares a shaped run with anything. The spec's
+criterion that Q-1 and Q-2 hold for a graph of node shapes, outline docking, and loops was left "the
+maintainer's to confirm". The only numbers so far are one headless SwiftShader run in the Dev
+Container, which is no baseline.
 
 Record the shaped graph's baselines as the metric tree's were recorded, from the workflow's
-`median.shaped.json` on each runner kind and from a run on the reference machine (ADR-0028), and
-judge Q-1 and Q-2 for the shaped graph on the reference machine.
+`median.shaped.json` on each runner kind and from a run on the reference machine
+(PERF-benchmark-drives-host-chrome), and judge Q-1 and Q-2 for the shaped graph on the reference
+machine.
 
 Two observations of the hand-offs go with it:
 
@@ -35,7 +36,8 @@ Two observations of the hand-offs go with it:
 ## Read first
 
 - Touches: `bench/baselines/`
-- ADR-0033 (proposed), ADR-0028, ADR-0029; the **Benchmark** part of `README.md`.
+- PERF-benchmark-measures-named-graph (proposed), PERF-benchmark-drives-host-chrome,
+  PERF-benchmark-slows-page-cpu; the **Benchmark** part of `README.md`.
 - The merge message of 9e8f882, *Doubts* and *Demo*.
 
 ## Blocked by

@@ -47,7 +47,8 @@ export function isDrawn(comb: Comb, what: { node: string } | { edge: string }): 
 /** What a press at the screen point `(x, y)`, relative to the canvas of `comb`, hits now: a
  *  connector where `comb` lets the user connect, a label, a node, an edge, or nothing. It asks the
  *  hit test a press asks, from the viewport a press reads, which is the drawn one once
- *  `whenRendered` resolves (ADR-0013); nothing where that viewport puts the point beyond any
+ *  `whenRendered` resolves (REN-node-content-in-rows); nothing where that viewport puts the point
+ *  beyond any
  *  finite world point. */
 export function hitKind(comb: Comb, x: number, y: number): Hit["kind"] {
   return inspectedOf(comb).hitAt(x, y).kind;
@@ -191,9 +192,10 @@ export function work(comb: Comb): Work {
 /** The screen point, relative to the canvas, of every vertex the edge mesh of `comb` draws, `x, y`
  *  each, as its shader computes it: in `f32`, from the positions PixiJS uploads and the two
  *  transforms it hands the shader as `f32` uniforms, the world's and the mesh's within the world
- *  (ADR-0010). The shader multiplies the projection into clip space first, a scale and a shift
- *  by the canvas's size, which rounds by about 2^-24 of the canvas's size more; it is left out,
- *  since that cannot move a vertex by a quarter pixel. WebGL only: the Canvas 2D fallback has no
+ *  (API-bridge-takes-serde-and-columns). The shader multiplies the projection into clip space
+ *  first, a scale and a shift by the canvas's size, which rounds by about 2^-24 of the canvas's
+ *  size more; it is left out, since that cannot move a vertex by a quarter pixel. WebGL only: the
+ *  Canvas 2D fallback has no
  *  such mesh. */
 export function edgeVertices(comb: Comb): Float64Array {
   const { app, edges, world } = sceneOf(comb);
@@ -279,16 +281,19 @@ export function sceneNumbers(): {
 }
 
 /** Whether the bridge runs in test mode, in which every view kept across an engine call reads
- *  empty (ADR-0010): what the browser tests assert before they trust that a stale view fails. */
+ *  empty (API-bridge-takes-serde-and-columns): what the browser tests assert before they trust that
+ *  a stale view fails. */
 export function testMode(): boolean {
   return TEST_MODE;
 }
 
 /** Test mode only: the next call of the engine traps, as a trap that slipped past the bridge's
- *  checks would, so that a test sees the engine lost for the page (ADR-0021). Throws outside test
+ *  checks would, so that a test sees the engine lost for the page (API-trapped-engine-is-lost).
+ *  Throws outside test
  *  mode, and where the engine was built without its trap. */
 export { trapNextCall };
 
 /** Test mode only: how often the bridge's call `name` was made on the page, such as `loadGraph`,
- *  so that a test sees what crossed into the engine (ADR-0030). Throws outside test mode. */
+ *  so that a test sees what crossed into the engine (ARCH-one-workspace-per-example). Throws
+ *  outside test mode. */
 export { bridgeCalls };

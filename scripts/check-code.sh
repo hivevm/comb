@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Builds, tests, and lints Comb: the commands of the README's "Build, Test & Run" (ADR-0008),
+# Builds, tests, and lints Comb: the commands of the README's "Build, Test & Run" (DEV-bun-vite-and-wasm-pack),
 # the tests running the check of the engine's freshness (scripts/check-engine.sh) first, and the
 # bundle budget (scripts/check-bundle.sh, Q-3) last, which runs that check too. Both read what
 # the build writes, so they run here, after it, rather than beside it in
@@ -9,7 +9,7 @@
 # on lines of their own in scripts/check-all.sh and in the code job of checks.yml.
 #
 # Needs Bun, Rust with the wasm32-unknown-unknown target, and Chromium for Playwright, as the Dev
-# Container provides them (ADR-0014). Where Bun or Cargo is missing it fails and says so: a gate
+# Container provides them (DEV-container-adds-bun-and-rust). Where Bun or Cargo is missing it fails and says so: a gate
 # that skips itself is one somebody believes in and does not have.
 #
 # Usage:
@@ -27,7 +27,7 @@ for tool in bun cargo; do
   command -v "$tool" > /dev/null || missing+=("$tool")
 done
 if ((${#missing[@]})); then
-  echo "check-code: ${missing[*]} not found — run it in the Dev Container (ADR-0014)." >&2
+  echo "check-code: ${missing[*]} not found — run it in the Dev Container (DEV-container-adds-bun-and-rust)." >&2
   exit 1
 fi
 

@@ -1,4 +1,4 @@
-# The bridge (ADR-0030, ADR-0010): every #[wasm_bindgen] export, no geometry of its own.
+# The bridge (ARCH-one-workspace-per-example, API-bridge-takes-serde-and-columns): every #[wasm_bindgen] export, no geometry of its own.
 [package]
 name = "comb-engine-wasm"
 version = "0.0.0"
@@ -14,11 +14,11 @@ comb-engine = { path = "../engine" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde-wasm-bindgen = "0.6.5"
 # The `js` feature converts through serde-wasm-bindgen; the default `json` feature would pass JSON
-# strings, which the specification forbids (ADR-0010).
+# strings, which the specification forbids (API-bridge-takes-serde-and-columns).
 tsify = { version = "0.5.8", default-features = false, features = ["js"] }
 wasm-bindgen = "0.2.129"
 
-# Test mode (ADR-0021): an export that traps on demand, for the shell's tests; `bun run
+# Test mode (API-trapped-engine-is-lost): an export that traps on demand, for the shell's tests; `bun run
 # build:engine` builds the engine with it into packages/comb/wasm/test-mode/ beside the one without.
 [features]
 test-mode = []
@@ -32,7 +32,7 @@ proptest = { version = "1.11.0", default-features = false, features = ["std"] }
 workspace = true
 
 # The glue never resolves the engine's file next to itself: the host application hands it over
-# (ADR-0019), so the library build has no file to inline.
+# (API-host-hands-comb-engine), so the library build has no file to inline.
 [package.metadata.wasm-pack.profile.dev.wasm-bindgen]
 omit-default-module-path = true
 

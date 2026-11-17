@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Bundle budget of the library (ADR-0008). Verifies: Q-3
+# Bundle budget of the library (DEV-bun-vite-and-wasm-pack). Verifies: Q-3
 #
 # Q-3 keeps the library bundle — Comb's JavaScript and WebAssembly, gzipped, without PixiJS —
 # under 300 kB. Without arguments this builds the bundle with `bun run build:lib` into
@@ -9,15 +9,15 @@
 # scripts/test-check-bundle.sh passes fixtures. Each file is gzipped at level 9 and the sizes are
 # summed; 1 kB is 1,000 bytes.
 #
-# The host application hands Comb the engine (ADR-0019), so the bundle carries it as a .wasm file
+# The host application hands Comb the engine (API-host-hands-comb-engine), so the bundle carries it as a .wasm file
 # of its own and never inlined in the JavaScript: the check fails on a missing engine file, since a
 # bundle of JavaScript alone would pass while measuring less than Q-3 means, and on an inlined one,
 # as a data URL or as any base64 that begins with the WebAssembly magic number (`AGFzbQ`).
-# Verifies: ADR-0019
+# Verifies: API-host-hands-comb-engine
 #
 # Nor may the bundle carry either seam of the bridge's test mode, which only tests run in: the
 # memory grown before every call of the engine (`detaching`), and the trap the engine exports in
-# test mode, which the bridge looks up. ADR-0021 decides the trap a seam of test mode only;
+# test mode, which the bridge looks up. API-trapped-engine-is-lost decides the trap a seam of test mode only;
 # keeping `detaching` out is the check's own rule, which no ADR decides. Each has a mark of its
 # own, which the check reads from packages/comb/src/bridge/index.ts, `DETACHING_MARK` and
 # `TRAP_EXPORT`: a .js file that carries either, or a file that names the trap's export, fails,
@@ -27,7 +27,7 @@
 # packages/comb/wasm/test-mode/engine_bg.wasm, so a changed mark turns it red rather than blind;
 # and it fails where the glue generated for that engine, wasm/test-mode/engine.js, differs from
 # the production engine's, wasm/engine.js, which the example hands over beside it.
-# Verifies: ADR-0021
+# Verifies: API-trapped-engine-is-lost
 #
 # Without arguments it measures the engine of packages/comb/wasm/, so it first runs
 # scripts/check-engine.sh and fails on an engine older than its sources.
@@ -98,7 +98,7 @@ if (($# == 0)); then
     }' "$package/package.json" 2> /dev/null)
   engine="${engines[0]:-}"
   if ((${#engines[@]} != 1)) || [[ -z "$engine" || ! -f "$package/$engine" ]]; then
-    echo "Bundle check FAILED: packages/comb/package.json exports no engine file as ./engine.wasm that exists (ADR-0019)." >&2
+    echo "Bundle check FAILED: packages/comb/package.json exports no engine file as ./engine.wasm that exists (API-host-hands-comb-engine)." >&2
     exit 1
   fi
   files+=("$package/$engine")
@@ -124,11 +124,11 @@ if ((count == 0)); then
   exit 1
 fi
 if grep -rqs --include='*.js' 'data:application/wasm' "$dir"; then
-  echo "Bundle check FAILED: the JavaScript in $dir inlines the engine as a data URL (ADR-0019)." >&2
+  echo "Bundle check FAILED: the JavaScript in $dir inlines the engine as a data URL (API-host-hands-comb-engine)." >&2
   exit 1
 fi
 if grep -rqs --include='*.js' 'AGFzbQ' "$dir"; then
-  echo "Bundle check FAILED: the JavaScript in $dir inlines the engine as base64 (ADR-0019)." >&2
+  echo "Bundle check FAILED: the JavaScript in $dir inlines the engine as base64 (API-host-hands-comb-engine)." >&2
   exit 1
 fi
 if ((wasm == 0)); then
@@ -148,7 +148,7 @@ carries_trap() {
   return 1
 }
 if carries_trap "${files[@]}"; then
-  echo "Bundle check FAILED: the bundle carries the test mode's seam, the engine's trap (ADR-0021)." >&2
+  echo "Bundle check FAILED: the bundle carries the test mode's seam, the engine's trap (API-trapped-engine-is-lost)." >&2
   exit 1
 fi
 if ((total >= BUDGET)); then
@@ -166,11 +166,11 @@ if (($# == 0)); then
   fi
   mapfile -t built < <(find "$testing" -type f -name '*.js')
   if ! carries_trap "${built[@]}"; then
-    echo "Bundle check FAILED: it does not recognise the trap in the library built in test mode (ADR-0021)." >&2
+    echo "Bundle check FAILED: it does not recognise the trap in the library built in test mode (API-trapped-engine-is-lost)." >&2
     exit 1
   fi
   if ! carries_trap "$package/wasm/test-mode/engine_bg.wasm"; then
-    echo "Bundle check FAILED: it does not recognise the engine built in test mode (ADR-0021)." >&2
+    echo "Bundle check FAILED: it does not recognise the engine built in test mode (API-trapped-engine-is-lost)." >&2
     exit 1
   fi
   for glue in "$package/wasm/engine.js" "$package/wasm/test-mode/engine.js"; do
@@ -180,7 +180,7 @@ if (($# == 0)); then
     fi
   done
   if ! cmp -s "$package/wasm/engine.js" "$package/wasm/test-mode/engine.js"; then
-    echo "Bundle check FAILED: wasm/test-mode/engine.js differs from wasm/engine.js, the glue the example hands the engine built in test mode over with (ADR-0021)." >&2
+    echo "Bundle check FAILED: wasm/test-mode/engine.js differs from wasm/engine.js, the glue the example hands the engine built in test mode over with (API-trapped-engine-is-lost)." >&2
     exit 1
   fi
 fi

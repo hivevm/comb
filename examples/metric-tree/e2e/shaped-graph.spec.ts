@@ -1,15 +1,15 @@
-// The shaped graph the benchmark measures beside the metric tree (ADR-0033): `?graph=shaped`
-// loads the metric tree's copies, the same nodes and edges in the same columns and order, whose
-// nodes take the node shapes in turn, centred on their rows, which are spaced for the tallest
-// node, so that no two overlap; whose edges dock on the outline; and of whose nodes one in a
-// hundred has a loop. Without the query the example loads the metric tree as before. Both on the
-// production build the benchmark serves.
+// The shaped graph the benchmark measures beside the metric tree
+// (PERF-benchmark-measures-named-graph): `?graph=shaped` loads the metric tree's copies, the same
+// nodes and edges in the same columns and order, whose nodes take the node shapes in turn, centred
+// on their rows, which are spaced for the tallest node, so that no two overlap; whose edges dock on
+// the outline; and of whose nodes one in a hundred has a loop. Without the query the example loads
+// the metric tree as before. Both on the production build the benchmark serves.
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData, NodeData } from "comb";
 import { open } from "./shared";
 
 /** The node shapes in the order the nodes take them, written here rather than read from the
- *  example: the content node shapes first, then the filled ones (ADR-0032). */
+ *  example: the content node shapes first, then the filled ones (REN-closed-set-of-node-shapes). */
 const SHAPES = [
   "rectangle",
   "rounded-rectangle",
@@ -20,7 +20,8 @@ const SHAPES = [
   "bar",
 ] as const;
 const FILLED: readonly string[] = ["circle", "ringed-circle", "bar"];
-/** The width of a circle and a ringed circle, the least height of a node (ADR-0033). */
+/** The width of a circle and a ringed circle, the least height of a node
+ *  (PERF-benchmark-measures-named-graph). */
 const CIRCLE = 64;
 /** The distance between the metric tree's rows, written here rather than read from the example. */
 const ROW = 110;
@@ -109,7 +110,7 @@ test(
   "?graph=shaped loads the metric tree's 50,010 nodes in the node shapes in turn, docked on the outline, a loop on one in a hundred",
   { tag: "@built" },
   async ({ page }) => {
-    // Verifies: ADR-0033
+    // Verifies: PERF-benchmark-measures-named-graph
     test.setTimeout(180_000);
     const tree = await loadedGraph(page, "?copies=3334");
     expect(tree.report).toMatchObject({ graph: "metric-tree", nodes: 50_010, edges: 50_010 });

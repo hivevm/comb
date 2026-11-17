@@ -1,6 +1,7 @@
-//! The rules of a node and of an edge (ADR-0030): a node's place, width, and height within the
-//! world, an edge's ends, label, colour, and dash, and the lengths of the identifiers, each rule
-//! through one function that a load, `addNode`, `addEdge`, and `updateEdge` reach alike.
+//! The rules of a node and of an edge (ARCH-one-workspace-per-example): a node's place, width, and
+//! height within the world, an edge's ends, label, colour, and dash, and the lengths of the
+//! identifiers, each rule through one function that a load, `addNode`, `addEdge`, and `updateEdge`
+//! reach alike.
 
 use std::collections::{HashMap, HashSet};
 
@@ -60,8 +61,8 @@ pub(super) fn checked_node(node: &Node) -> Result<([f32; 2], f32), GraphDataProb
 }
 
 /// Refuses the node `id` at `y` whose far side, `y + height`, its height the one its content lays
-/// out to, lies past the world's limit (ADR-0030), naming the field `height`, as the world's
-/// limit refuses a far side `x + width`.
+/// out to, lies past the world's limit (ARCH-one-workspace-per-example), naming the field `height`,
+/// as the world's limit refuses a far side `x + width`.
 pub(crate) fn within_by_height(id: &str, y: f32, height: f32) -> Result<(), GraphDataProblem> {
     // `y` lies within the limit and the height is not negative, so only the far side past the
     // positive limit is beyond. Compared as `height > limit - y`, which `f64` holds exactly where
@@ -90,13 +91,13 @@ pub(crate) const fn kept_height(height: f64) -> f32 {
 }
 
 /// The height of the node of node shape `shape`, `width` wide, whose content lays out to
-/// `content` high in its inner rectangle, as the engine keeps it (ADR-0032).
+/// `content` high in its inner rectangle, as the engine keeps it (REN-closed-set-of-node-shapes).
 pub(crate) fn shaped_height(shape: NodeShape, width: f32, content: f64) -> f32 {
     kept_height(shape.height(f64::from(width), content))
 }
 
 /// Refuses content of `rows` rows in the node `id` of the filled node shape `shape`, which holds
-/// none (ADR-0032).
+/// none (REN-closed-set-of-node-shapes).
 pub(crate) fn content_fits_shape(
     id: &str,
     shape: NodeShape,
@@ -330,8 +331,8 @@ pub(super) fn edge_ids_of(index: usize, lengths: [usize; 3]) -> Result<usize, Gr
     Ok(units)
 }
 
-// The malformed-data tests of graph data verify ADR-0010 (see `graph_data::tests`).
-// Verifies: ADR-0010
+// The malformed-data tests of graph data verify API-bridge-takes-serde-and-columns (see
+// `graph_data::tests`). Verifies: API-bridge-takes-serde-and-columns
 #[cfg(test)]
 mod tests {
     use super::super::tests::{add, added, batch, beyond, d_and, label_in, load_edges, titled};
@@ -425,7 +426,7 @@ mod tests {
 
     #[test]
     fn a_node_whose_place_or_far_side_lies_past_the_world_names_it_and_the_field() {
-        // Verifies: Q-7, ADR-0030
+        // Verifies: Q-7, ARCH-one-workspace-per-example
         // 3e38 is a finite f32, as is 3e38 + 3e38 in f64, which f32 cannot hold.
         let mut data = batch(&[("a", 0.0, 0.0), ("b", 3e38, 0.0)], &[]);
         data.nodes[1].width = 3e38.into();
@@ -467,7 +468,7 @@ mod tests {
 
     #[test]
     fn a_label_offset_past_the_world_names_its_edge_and_the_field() {
-        // Verifies: Q-7, ADR-0030
+        // Verifies: Q-7, ARCH-one-workspace-per-example
         let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[("e", "a", "b")]);
         data.edges[0].label = Some(LabelInput {
             text_length: Some(1),
@@ -636,7 +637,7 @@ mod tests {
 
     #[test]
     fn every_rule_of_an_edge_refuses_its_columns_with_its_kind_and_names() {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         let e = || "e".to_owned();
         let text = |value: &str| Field(Some(value.to_owned()));
         // The rules, after every field's type.

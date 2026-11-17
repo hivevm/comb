@@ -30,10 +30,10 @@
 #
 # One commit is exempt: the first of the two commits by which scripts/number-adrs.sh numbers the
 # drafts, known by its fixed subject 'docs(adr): number the drafts as ADR-…'. Its tree still cites
-# the drafts outside docs/adr/, so the checks fail on it and pass on the second, as ADR-0002
-# decides; the script says so for each one it exempts.
+# the drafts outside docs/adr/, so the checks fail on it and pass on the second, as
+# NUC-checks-are-bash decides; the script says so for each one it exempts.
 #
-# Needs git, and Bun and Cargo as the Dev Container provides them (ADR-0014). Runs before a merge,
+# Needs git, and Bun and Cargo as the Dev Container provides them (DEV-container-adds-bun-and-rust). Runs before a merge,
 # on a human's instruction (step 2 of the Integration branches of CONTRIBUTING.md); it is no gate
 # of scripts/check-all.sh or CI, which run its self-test, scripts/test-check-commits.sh.
 #
@@ -145,7 +145,7 @@ exempt=0
 for c in "${commits[@]}"; do
   label="$(git log -1 --format='%h %s' "$c")"
   if [[ "$(git log -1 --format=%s "$c")" =~ $numbering ]]; then
-    echo "exempt: $label — the first commit of a numbering by scripts/number-adrs.sh, whose tree still cites the drafts outside docs/adr/; the checks run on the second (ADR-0002)"
+    echo "exempt: $label — the first commit of a numbering by scripts/number-adrs.sh, whose tree still cites the drafts outside docs/adr/; the checks run on the second (NUC-checks-are-bash)"
     exempt=$((exempt + 1))
     continue
   fi

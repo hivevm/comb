@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 #
 # Check of the dependencies the toolchain, the bridge, and the store decided.
-# Verifies: ADR-0008, ADR-0010, ADR-0011
+# Verifies: DEV-bun-vite-and-wasm-pack, API-bridge-takes-serde-and-columns, ARCH-graph-in-zustand-store
 #
 # Fails on what would undo those decisions without a word:
 #
-#   1. Lockfiles (ADR-0008): Bun is the package manager, so no package-lock.json,
+#   1. Lockfiles (DEV-bun-vite-and-wasm-pack): Bun is the package manager, so no package-lock.json,
 #      npm-shrinkwrap.json, yarn.lock, or pnpm-lock.yaml lies in the tree beside bun.lock. In a git
 #      repository the tree is what git tracks or would track (.gitignore honoured); elsewhere every
 #      file outside node_modules/, .git/, and target/.
-#   2. Bridge (ADR-0010): the tsify entry of crates/engine-wasm/Cargo.toml, in whatever form —
+#   2. Bridge (API-bridge-takes-serde-and-columns): the tsify entry of crates/engine-wasm/Cargo.toml, in whatever form —
 #      a version string, an inline table over one or more lines, a [dependencies.tsify] table,
 #      under [target.'…'.dependencies] or not, or inherited with `workspace = true` from the root
 #      Cargo.toml's [workspace.dependencies] — says `default-features = false` and enables no
 #      `json` feature; and no serde_json is named, under any key or as a renamed `package`.
-#   3. Store (ADR-0011): the dependency lists of packages/comb/package.json (dependencies,
+#   3. Store (ARCH-graph-in-zustand-store): the dependency lists of packages/comb/package.json (dependencies,
 #      devDependencies, peerDependencies, optionalDependencies) name none of the state libraries
 #      listed below; zustand is the store.
 #
@@ -114,7 +114,7 @@ if [[ -f "$library" ]]; then
 fi
 
 if ((${#problems[@]})); then
-  echo "Dependency check FAILED (ADR-0008, ADR-0010, ADR-0011):" >&2
+  echo "Dependency check FAILED (DEV-bun-vite-and-wasm-pack, API-bridge-takes-serde-and-columns, ARCH-graph-in-zustand-store):" >&2
   printf '  - %s\n' "${problems[@]}" >&2
   exit 1
 fi

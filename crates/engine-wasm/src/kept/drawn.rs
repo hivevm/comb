@@ -1,29 +1,30 @@
-//! The buffers of what a query draws of node content (ADR-0013, ADR-0010): per element placed
-//! its kind, role, colour, and drawn text, the pieces of a progress bar, and the parts and arrow
-//! of a metric, which the shell reads through views on them.
+//! The buffers of what a query draws of node content (REN-node-content-in-rows,
+//! API-bridge-takes-serde-and-columns): per element placed its kind, role, colour, and drawn text,
+//! the pieces of a progress bar, and the parts and arrow of a metric, which the shell reads through
+//! views on them.
 
 use comb_engine::content::{self as layout, Cell, Direction, Element, Fonts, Placed};
 use comb_engine::graph::Level;
 
 use crate::graph_data::{ContentData, RoleCode, direction_of, numbered, rgb_of, utf16_length};
 
-/// The texts of the elements a query placed, as the shell draws them (ADR-0013): per element its
-/// kind's code, the code of the role whose font draws it, its colour as `0xRRGGBB`, a badge's
-/// pill's, 0 for an element of no colour, and what is drawn of its text, the text or as much of it
-/// as fits followed by an ellipsis, those strings one after another in `texts`, with their
-/// boundaries in UTF-16 code units in `bounds`, one more than there are elements; and per element
-/// the boundaries of the pieces of its bar in `bar_bounds`, one more than there are elements, a
-/// progress bar's segments and then its track and no piece of another kind, each piece's
-/// rectangle `x, y, width, height` relative to its node in `bars`, and its colour as `0xRRGGBB` in
-/// `bar_colors`, a segment's, and 0 for a track, whose colour is the shell's. A metric's colour is
-/// its trend's, and its drawn text its caption's, its value's, and its trend's text's one after
-/// another, which its parts cut: per element the boundaries of its parts in `part_bounds`, one
-/// more than there are elements, a metric's three and no part of another kind, each part's
-/// rectangle relative to its node in `parts`, and where its text ends in `texts`, in UTF-16 code
-/// units, in `part_ends`, each part's text starting where the one before it in its element ends,
-/// the first where its element's does; and per element the boundaries of its arrows in
-/// `arrow_bounds`, one more than there are elements, a metric's one where its column holds it and
-/// none of another kind, each arrow's triangle as three points `x, y` relative to its node in
+/// The texts of the elements a query placed, as the shell draws them (REN-node-content-in-rows):
+/// per element its kind's code, the code of the role whose font draws it, its colour as `0xRRGGBB`,
+/// a badge's pill's, 0 for an element of no colour, and what is drawn of its text, the text or as
+/// much of it as fits followed by an ellipsis, those strings one after another in `texts`, with
+/// their boundaries in UTF-16 code units in `bounds`, one more than there are elements; and per
+/// element the boundaries of the pieces of its bar in `bar_bounds`, one more than there are
+/// elements, a progress bar's segments and then its track and no piece of another kind, each
+/// piece's rectangle `x, y, width, height` relative to its node in `bars`, and its colour as
+/// `0xRRGGBB` in `bar_colors`, a segment's, and 0 for a track, whose colour is the shell's. A
+/// metric's colour is its trend's, and its drawn text its caption's, its value's, and its trend's
+/// text's one after another, which its parts cut: per element the boundaries of its parts in
+/// `part_bounds`, one more than there are elements, a metric's three and no part of another kind,
+/// each part's rectangle relative to its node in `parts`, and where its text ends in `texts`, in
+/// UTF-16 code units, in `part_ends`, each part's text starting where the one before it in its
+/// element ends, the first where its element's does; and per element the boundaries of its arrows
+/// in `arrow_bounds`, one more than there are elements, a metric's one where its column holds it
+/// and none of another kind, each arrow's triangle as three points `x, y` relative to its node in
 /// `arrows`, drawn in its element's colour. An icon's text in `texts` is its registered name,
 /// whole, which the shell draws as the image registered under it and never as text.
 #[derive(Debug, Default)]

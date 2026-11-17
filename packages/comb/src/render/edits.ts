@@ -1,6 +1,6 @@
-// The edits since a query the scene keeps at the far level (ADR-0027): the slots in which the
-// store's nodes and edges differ from the arrays the query drew, compared slot by slot, so that
-// several edits within a frame count as the slots they changed.
+// The edits since a query the scene keeps at the far level (REN-moving-layer-redraws-changes): the
+// slots in which the store's nodes and edges differ from the arrays the query drew, compared slot
+// by slot, so that several edits within a frame count as the slots they changed.
 import type { GraphView } from "../store";
 
 /** The slots edits added and removed since a kept query, each in ascending order. */

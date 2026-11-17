@@ -1,7 +1,7 @@
-// The nodes at the far level of detail (ADR-0012): one particle per node in view, a plain box
-// in one ParticleContainer, without text, so that a view of the whole graph binds no display
-// object per node. Every property is static: a sync uploads them once, and the frames between
-// syncs upload nothing.
+// The nodes at the far level of detail (REN-virtualized-scene-graph): one particle per node in
+// view, a plain box in one ParticleContainer, without text, so that a view of the whole graph binds
+// no display object per node. Every property is static: a sync uploads them once, and the frames
+// between syncs upload nothing.
 import { Particle, ParticleContainer, Texture } from "pixi.js";
 import type { GraphView } from "../store";
 
@@ -28,7 +28,8 @@ export class NodeParticles extends ParticleContainer {
   private slots = new Uint32Array(1024);
   private heights = new Float32Array(1024);
   private nodes: GraphView["nodes"] = [];
-  /** The nodes whose particles a drag left undrawn since the last sync (ADR-0027). */
+  /** The nodes whose particles a drag left undrawn since the last sync
+   *  (REN-moving-layer-redraws-changes). */
   private hidden: ReadonlySet<number> = NONE_HIDDEN;
   /** The node the last sync tinted as selected, if it drew it. */
   highlighted: string | null = null;
@@ -47,7 +48,8 @@ export class NodeParticles extends ParticleContainer {
   }
 
   /** Places a particle at each of `slots`, sized as its node in `sizes`, its height the one its
-   *  content lays out to (ADR-0013), and tinted where it is selected, and none elsewhere. */
+   *  content lays out to (REN-node-content-in-rows), and tinted where it is selected, and none
+   *  elsewhere. */
   sync(state: GraphView, slots: Uint32Array, positions: Float32Array, sizes: Float32Array): void {
     const particles = this.particleChildren;
     if (this.slots.length < slots.length) {
@@ -80,7 +82,8 @@ export class NodeParticles extends ParticleContainer {
   }
 
   /** Leaves the particles of the nodes in `hidden` undrawn, which a drag draws in its moving
-   *  layer: every property is static, so this uploads them all, once a drag (ADR-0027). */
+   *  layer: every property is static, so this uploads them all, once a drag
+   *  (REN-moving-layer-redraws-changes). */
   hide(hidden: ReadonlySet<number>): void {
     this.hidden = hidden;
     const count = this.particleChildren.length;

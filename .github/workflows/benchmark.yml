@@ -1,6 +1,6 @@
 name: Benchmark
 
-# The benchmark of Q-1 and Q-2 as a workflow of its own (ADR-0008): bench/run.ts at 50,010 nodes and
+# The benchmark of Q-1 and Q-2 as a workflow of its own (DEV-bun-vite-and-wasm-pack): bench/run.ts at 50,010 nodes and
 # edges on a GitHub runner, headless Chromium with WebGL2 on SwiftShader. Runner numbers are not the
 # reference machine's: they catch regressions against a baseline recorded on a runner, not the
 # targets. One run scatters, so the benchmark runs three times; bench/compare.ts fails when the
@@ -10,15 +10,15 @@ name: Benchmark
 # times a fixed reference workload, and the comparison is refused when a part of it differs from
 # the baseline's by more than the margin; against a baseline that has no reference it compares and
 # says the runner gate is not checked. It does all of this for each graph the benchmark measures
-# (ADR-0033): the metric tree, and the shaped graph of node shapes, docking, and loops, each
+# (PERF-benchmark-measures-named-graph): the metric tree, and the shaped graph of node shapes, docking, and loops, each
 # compared with its own baseline, bench/baselines/<kind>.json and <kind>.shaped.json; the shaped
 # graph gates the job only where its kind has a baseline, and is otherwise reported. The runs and
 # their medians are uploaded as an artefact; a kind's baseline changes only in a pull request that
 # says why, from the median of a run on main.
 #
 # It runs weekly and on demand, not on every pull request: a run takes minutes, and runner numbers
-# scatter too much to gate each change. It needs no secret (ADR-0016); every action it uses is
-# pinned by commit SHA (ADR-0017), and its checkout keeps no credentials.
+# scatter too much to gate each change. It needs no secret (SEC-no-secrets-in-repository); every action it uses is
+# pinned by commit SHA (SEC-actions-pinned-by-sha), and its checkout keeps no credentials.
 
 on:
   workflow_dispatch:
@@ -64,12 +64,12 @@ jobs:
             bun --bun bench/run.ts
             cp bench-results/latest.json "bench-results/run-$i.json"
           done
-      # Verifies: ADR-0010, ADR-0008 — the median first frame of the runner's kind stays within the
+      # Verifies: API-bridge-takes-serde-and-columns, DEV-bun-vite-and-wasm-pack — the median first frame of the runner's kind stays within the
       # margin of its baseline, so a load that grows slow again is found at the next run.
       - name: Compare the median with the baseline of the runner's kind
         run: bun bench/compare.ts bench/baselines bench-results/run-*.json
       # After the metric tree's comparison, so that a shaped run that fails cannot skip it; and
-      # whether that comparison passes or not, so that both graphs are reported (ADR-0033).
+      # whether that comparison passes or not, so that both graphs are reported (PERF-benchmark-measures-named-graph).
       - name: Run the benchmark three times on the shaped graph
         if: ${{ !cancelled() }}
         env:
@@ -79,7 +79,7 @@ jobs:
             bun --bun bench/run.ts
             cp bench-results/latest.json "bench-results/shaped-$i.json"
           done
-      # Verifies: ADR-0033 — compared whether the metric tree's comparison passes or not, so that
+      # Verifies: PERF-benchmark-measures-named-graph — compared whether the metric tree's comparison passes or not, so that
       # both are reported. It gates the job only where the shaped graph's baseline exists on the
       # runner's kind: where none does (exit 3), it reports the median and the file the baseline
       # would be saved as, and passes, so that the job fails on the metric tree alone.

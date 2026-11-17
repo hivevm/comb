@@ -1,9 +1,10 @@
-// The writers of a load's columns on their own, without the engine (ADR-0010).
+// The writers of a load's columns on their own, without the engine
+// (API-bridge-takes-serde-and-columns).
 import { expect, test } from "bun:test";
 import { edgeColumns, nodeColumns } from "./columns";
 
 test("a value longer than the bound on a piece fits in none, and the writer refuses it", () => {
-  // Verifies: ADR-0010
+  // Verifies: API-bridge-takes-serde-and-columns
   expect(() => nodeColumns(1, 16).node("x".repeat(17), 0, 0, 1, "rectangle")).toThrow(RangeError);
   expect(() =>
     nodeColumns(1, 16).element("text", "title", 1, undefined, "x".repeat(17), undefined, true),

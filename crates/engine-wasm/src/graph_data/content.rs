@@ -1,9 +1,9 @@
-//! The node content of graph data (ADR-0013, ADR-0010), split by concept: `codes` holds its
-//! codes and limits, `check` the one check of a load's content columns and of a single node's
-//! content, `data` the content the engine keeps and where its strings lie, `layout` the content as
-//! the engine's layout and hit test read it, `node_content` the content as the host
-//! application's type describes it, and `input` the content of a single node read through
-//! serde-wasm-bindgen.
+//! The node content of graph data (REN-node-content-in-rows, API-bridge-takes-serde-and-columns),
+//! split by concept: `codes` holds its codes and limits, `check` the one check of a load's content
+//! columns and of a single node's content, `data` the content the engine keeps and where its
+//! strings lie, `layout` the content as the engine's layout and hit test read it, `node_content`
+//! the content as the host application's type describes it, and `input` the content of a single
+//! node read through serde-wasm-bindgen.
 
 mod check;
 mod codes;

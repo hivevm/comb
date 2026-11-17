@@ -9,8 +9,8 @@
 # instead. Which of the two a line is, no script can tell, so the sensor reports and never fails:
 # the reviewer of AGENTS.md section 5 judges each line, after each supersession above all.
 #
-# A citation is 'ADR-' and the number of a superseded ADR, not followed by another digit, in a
-# text file of the working tree that git tracks or would track, so that a session sees its new
+# A citation is the identifier of a superseded ADR, '<CAT>-<slug>', standing as a word of its own
+# (NUC-adrs-are-named-by-category §1), in a text file of the working tree that git tracks or would track, so that a session sees its new
 # files before its first commit; docs/adr/ is left out, since the record cites its superseded ADRs
 # by design.
 #
@@ -31,6 +31,7 @@ NAME="Superseded citations sensor"
 enter_root "$NAME" "${BASH_SOURCE[0]}" "$@"
 
 ADR_DIR=docs/adr
+adr_categories "$ADR_DIR/README.md"
 
 # The superseded ADRs, each as its identifier and the successor its status line names.
 superseded=()
@@ -39,7 +40,7 @@ if [[ -d "$ADR_DIR" ]]; then
   while IFS= read -r f; do
     status="$(adr_field_line "$f" Status)"
     [[ "$status" == *"⚪"* ]] || continue
-    id="ADR-$(adr_key "$f")"
+    id="$(adr_id "$f")"
     superseded+=("$id")
     successor["$id"]="$(grep -oE "$ADR_REF_RE" <<< "$status" | head -n1)"
   done < <(adr_files "$ADR_DIR")
@@ -54,7 +55,7 @@ findings=()
 for id in "${superseded[@]}"; do
   by="${successor[$id]:-no successor named}"
   # git grep exits 1 when nothing matches and above 1 when it could not read the tree.
-  hits="$(git -c core.quotePath=false grep --untracked -n -I -E "$id([^0-9]|$)" \
+  hits="$(git -c core.quotePath=false grep --untracked -n -I -E "(^|[^$ADR_WORD_CHARS])$id([^$ADR_WORD_CHARS]|$)" \
             -- . ":(exclude)$ADR_DIR/")"
   rc=$?
   if ((rc > 1)); then

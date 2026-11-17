@@ -1,5 +1,5 @@
-// The guard of every input handler (ADR-0021): once the engine is lost, input changes nothing,
-// and no trap escapes a handler.
+// The guard of every input handler (API-trapped-engine-is-lost): once the engine is lost, input
+// changes nothing, and no trap escapes a handler.
 import { EngineLostError, refuseIfLost } from "../bridge";
 
 /** `handler`, doing nothing once the engine is lost. */

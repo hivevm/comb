@@ -1,6 +1,6 @@
-//! The edges of a load as columns (ADR-0010): the fields an edge reads in their order, the codes
-//! of its arrowhead and sides, whether the columns fit together, the first value refused by its
-//! type, and the edges read off them.
+//! The edges of a load as columns (API-bridge-takes-serde-and-columns): the fields an edge reads in
+//! their order, the codes of its arrowhead and sides, whether the columns fit together, the first
+//! value refused by its type, and the edges read off them.
 
 use comb_engine::geometry::{Dock, Side, Sides};
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -27,10 +27,10 @@ pub(crate) fn edge_refused_of(
     refused_by(at, field, &EdgeField::ALL, unfit_edges)
 }
 
-/// A field of an edge that a load's first pass refuses by its type (ADR-0010), in the order an
-/// edge's fields are read, as the shell names the first such value it reads: `Item` for an edge
-/// that is no object, refused as malformed. It crosses as its code, a plain number, as
-/// `NodeField` does.
+/// A field of an edge that a load's first pass refuses by its type
+/// (API-bridge-takes-serde-and-columns), in the order an edge's fields are read, as the shell names
+/// the first such value it reads: `Item` for an edge that is no object, refused as malformed. It
+/// crosses as its code, a plain number, as `NodeField` does.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EdgeField {
@@ -98,8 +98,8 @@ impl From<EdgeField> for u32 {
     }
 }
 
-/// The code of an edge's arrowhead in its column (ADR-0010): `Unnamed` for a string that names
-/// neither, which the first pass refuses at its place.
+/// The code of an edge's arrowhead in its column (API-bridge-takes-serde-and-columns): `Unnamed`
+/// for a string that names neither, which the first pass refuses at its place.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArrowCode {
@@ -108,8 +108,9 @@ pub enum ArrowCode {
     Unnamed,
 }
 
-/// The code of a side of an edge, or its outline, in its column (ADR-0010, ADR-0031): `Unnamed`
-/// for a string that names none of the five, which the first pass refuses at its place.
+/// The code of a side of an edge, or its outline, in its column
+/// (API-bridge-takes-serde-and-columns, API-edges-dock-side-or-outline): `Unnamed` for a string
+/// that names none of the five, which the first pass refuses at its place.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SideCode {
@@ -143,10 +144,10 @@ fn side_of(code: u8) -> Option<Dock> {
     .map(|(_, dock)| dock)
 }
 
-/// The edges of one load as columns (ADR-0010), each in slot order. The identifiers, sources,
-/// targets, and label texts are each the values concatenated and cut into pieces, each ending
-/// where a value ends, with their boundaries in UTF-16 code units across all pieces, one more
-/// than there are edges, a refused or absent value empty;
+/// The edges of one load as columns (API-bridge-takes-serde-and-columns), each in slot order. The
+/// identifiers, sources, targets, and label texts are each the values concatenated and cut into
+/// pieces, each ending where a value ends, with their boundaries in UTF-16 code units across all
+/// pieces, one more than there are edges, a refused or absent value empty;
 /// `label_texts` holds per edge whether its label's text is a text, 1 or 0. `has_label`,
 /// `has_background`, and `has_dash` hold per edge whether it has one, 1 or 0; where it has none,
 /// the columns of its values hold anything. The numbers are as the host application handed them,
@@ -338,8 +339,8 @@ impl EdgeColumns<'_> {
     }
 }
 
-// The malformed-data tests of graph data verify ADR-0010 (see `graph_data::tests`).
-// Verifies: ADR-0010
+// The malformed-data tests of graph data verify API-bridge-takes-serde-and-columns (see
+// `graph_data::tests`). Verifies: API-bridge-takes-serde-and-columns
 #[cfg(test)]
 mod tests {
     use super::super::tests::{d_and, label_in, labelled, load_edges};
@@ -348,7 +349,7 @@ mod tests {
 
     #[test]
     fn every_refusal_of_an_edge_crosses_as_columns_with_its_kind_and_names() {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         let e = || "e".to_owned();
         let field =
             |field: &str, id: Option<String>, expected: &str| GraphDataProblem::InvalidField {
@@ -429,7 +430,7 @@ mod tests {
 
     #[test]
     fn each_of_the_four_sides_and_the_outline_crosses_as_where_the_end_docks() {
-        // Verifies: ADR-0031
+        // Verifies: API-edges-dock-side-or-outline
         let text = |value: &str| Field(Some(value.to_owned()));
         for (name, dock) in [
             ("top", Side::Top.into()),
@@ -458,7 +459,7 @@ mod tests {
 
     #[test]
     fn edge_columns_that_do_not_fit_together_are_refused_as_malformed() {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         let changes: [fn(&mut OwnedEdgeColumns); 14] = [
             |c| _ = c.color.pop(),
             // A presence or validity byte is 1 or 0.
@@ -505,7 +506,7 @@ mod tests {
 
     #[test]
     fn a_later_edge_refused_by_its_type_is_named_before_an_earlier_one_refused_by_a_rule() {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         // Edge `d`'s label text holds a lone surrogate, which the snapshot hands over as no text
         // and its rule refuses; edge `e`'s colour is of another type, which the first pass
         // refuses, before any rule.

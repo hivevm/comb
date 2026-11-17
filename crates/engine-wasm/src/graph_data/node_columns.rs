@@ -1,5 +1,6 @@
-//! The nodes of a load as columns (ADR-0010): the codes of their node shapes, whether they fit
-//! together, the first value refused by its type, and the nodes read off them.
+//! The nodes of a load as columns (API-bridge-takes-serde-and-columns): the codes of their node
+//! shapes, whether they fit together, the first value refused by its type, and the nodes read off
+//! them.
 
 use comb_engine::shape::NodeShape;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -11,14 +12,14 @@ use super::{
     refused_by, unshaped, value_at, values,
 };
 
-/// A field of a node that a load's first pass refuses by its type (ADR-0010), in the order a node's
-/// fields are read, as the shell names the first such value it reads: `Item` for a node that is no
-/// object, refused as malformed; `Content` for content that is no list; and of the shapes of
-/// content the snapshot cannot flatten, `Row` for a row that is no list, `Element` for an element
-/// that is no object, `Segments` for a progress bar's segments that are no list, and `Segment` for
-/// a segment that is no object. It crosses as its code, a plain number, so that a code it does not
-/// know is refused as malformed rather than thrown by the glue while the engine is borrowed, which
-/// would wedge it.
+/// A field of a node that a load's first pass refuses by its type
+/// (API-bridge-takes-serde-and-columns), in the order a node's fields are read, as the shell names
+/// the first such value it reads: `Item` for a node that is no object, refused as malformed;
+/// `Content` for content that is no list; and of the shapes of content the snapshot cannot flatten,
+/// `Row` for a row that is no list, `Element` for an element that is no object, `Segments` for a
+/// progress bar's segments that are no list, and `Segment` for a segment that is no object. It
+/// crosses as its code, a plain number, so that a code it does not know is refused as malformed
+/// rather than thrown by the glue while the engine is borrowed, which would wedge it.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NodeField {
@@ -35,9 +36,9 @@ pub enum NodeField {
     Segment,
 }
 
-/// The code of a node's node shape in its column (ADR-0010): the place of the node shape in
-/// `NodeShape::ALL`, and `Unnamed` for a value that names none, which the first pass refuses at
-/// its place.
+/// The code of a node's node shape in its column (API-bridge-takes-serde-and-columns): the place of
+/// the node shape in `NodeShape::ALL`, and `Unnamed` for a value that names none, which the first
+/// pass refuses at its place.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NodeShapeCode {
@@ -61,13 +62,13 @@ pub struct Refused {
     pub column: Option<u32>,
 }
 
-/// The nodes of one load as columns (ADR-0010), each in slot order. The identifiers are the
-/// values concatenated and cut into pieces, each ending where a value ends, with their boundaries
-/// in UTF-16 code units across all pieces, one more than there are nodes, a refused value empty.
-/// The numbers are as the host application handed them; the node shapes as their codes; the
-/// content crosses as the columns of `ContentColumns`. `refused` is the first value the shell read
-/// that the first pass refuses, or none; a node shape that names none is no such value, and the
-/// first pass finds its code.
+/// The nodes of one load as columns (API-bridge-takes-serde-and-columns), each in slot order. The
+/// identifiers are the values concatenated and cut into pieces, each ending where a value ends,
+/// with their boundaries in UTF-16 code units across all pieces, one more than there are nodes, a
+/// refused value empty. The numbers are as the host application handed them; the node shapes as
+/// their codes; the content crosses as the columns of `ContentColumns`. `refused` is the first
+/// value the shell read that the first pass refuses, or none; a node shape that names none is no
+/// such value, and the first pass finds its code.
 pub struct NodeColumns<'a> {
     pub ids: &'a [String],
     pub id_bounds: &'a [u32],
@@ -250,8 +251,8 @@ impl NodeColumns<'_> {
     }
 }
 
-// The malformed-data tests of graph data verify ADR-0010 (see `graph_data::tests`).
-// Verifies: ADR-0010
+// The malformed-data tests of graph data verify API-bridge-takes-serde-and-columns (see
+// `graph_data::tests`). Verifies: API-bridge-takes-serde-and-columns
 #[cfg(test)]
 mod tests {
     use super::super::tests::{TITLE, a_and, add, added, b_of, batch, beyond, load_columns};
@@ -265,7 +266,7 @@ mod tests {
     #[test]
     fn a_progress_bar_s_segments_that_are_no_list_or_a_segment_that_is_no_object_are_refused_where_they_lie()
      {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         let shape = |column, expected: &str| GraphDataProblem::InvalidContentShape {
             index: 1,
             id: Some("b".into()),
@@ -340,7 +341,7 @@ mod tests {
 
     #[test]
     fn every_refusal_of_a_node_crosses_as_columns_with_its_kind_and_names() {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         let b = || "b".to_owned();
         let field =
             |field: &str, id: Option<String>, expected: &str| GraphDataProblem::InvalidField {
@@ -415,7 +416,7 @@ mod tests {
 
     #[test]
     fn a_shape_of_content_the_snapshot_cannot_flatten_is_refused_where_it_lies() {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         let shape = |row, column: Option<u32>| GraphDataProblem::InvalidContentShape {
             index: 1,
             id: Some("b".into()),
@@ -459,7 +460,7 @@ mod tests {
 
     #[test]
     fn columns_that_do_not_fit_together_are_refused_as_malformed() {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         let fits = || a_and(|_| {});
         let changes: [fn(&mut OwnedColumns); 9] = [
             |c| _ = c.x.pop(),

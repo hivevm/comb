@@ -1,4 +1,4 @@
-// The work a frame does on the GPU and in the pools (ADR-0012).
+// The work a frame does on the GPU and in the pools (REN-virtualized-scene-graph).
 import { expect, test, type Page } from "@playwright/test";
 import { canvasOrigin, canvasSize, open, sceneNumbers, screenCentre, setViewport } from "./shared";
 
@@ -64,7 +64,7 @@ async function paced<T>(step: Promise<T>): Promise<T> {
 test("a pan within the queried rectangle creates, resizes, and uploads nothing, at every level", async ({
   page,
 }) => {
-  // Verifies: ADR-0012
+  // Verifies: REN-virtualized-scene-graph
   // Each level does the same work, waiting on each render, and a loaded machine does it slower:
   // the test's time follows the machine's speed. It has the minute it had, and each step it
   // waits on, the pan ten frames at a time, adds three times what it took (`paced`).
@@ -102,7 +102,7 @@ test("a pan within the queried rectangle creates, resizes, and uploads nothing, 
 test("a pan across queries at the near level takes every view from the warm pools", async ({
   page,
 }) => {
-  // Verifies: ADR-0012
+  // Verifies: REN-virtualized-scene-graph
   test.setTimeout(60_000);
   await open(page, "?copies=100");
   const { cullingMargin } = await sceneNumbers(page);
@@ -127,7 +127,7 @@ test("a pan across queries at the near level takes every view from the warm pool
 test("a drag at the far level keeps its query, and uploads and reallocates none of its mesh", async ({
   page,
 }) => {
-  // Verifies: ADR-0012, ADR-0027
+  // Verifies: REN-virtualized-scene-graph, REN-moving-layer-redraws-changes
   await open(page);
   const { width, height } = await canvasSize(page);
   await setViewport(page, { x: width / 2, y: height / 2, scale: 0.2 });
@@ -136,9 +136,10 @@ test("a drag at the far level keeps its query, and uploads and reallocates none 
   const frames = 60;
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
-  // Pressing selects the node, and a move past the slop of 4 pixels begins its drag (ADR-0013),
-  // each of which renders once more before the frames counted: the first move hides the node's
-  // edges in the query's mesh and its particle, once a drag (ADR-0027).
+  // Pressing selects the node, and a move past the slop of 4 pixels begins its drag
+  // (REN-node-content-in-rows), each of which renders once more before the frames counted: the
+  // first move hides the node's edges in the query's mesh and its particle, once a drag
+  // (REN-moving-layer-redraws-changes).
   await page.evaluate(() => window.comb.whenRendered());
   const slop = 5;
   await page.mouse.move(from.x, from.y + slop);
@@ -226,7 +227,7 @@ async function countElementViews(page: Page): Promise<void> {
 test("a pan across queries at the near level over the full content creates no element view outside the pools' growth", async ({
   page,
 }) => {
-  // Verifies: ADR-0012, G-10
+  // Verifies: REN-virtualized-scene-graph, G-10
   test.setTimeout(180_000);
   await countElementViews(page);
   await open(page, "?copies=3334");
@@ -327,8 +328,8 @@ test("a pointer moving across the edges and dragging a node hit-tests no layer o
   page,
 }) => {
   // Decides no ADR clause and no criterion: work a frame need not redo, pinned by a count
-  // (docs/CONVENTIONS.md); the engine answers every hit test (ADR-0013), so PixiJS's test of the
-  // world is one nothing reads.
+  // (docs/CONVENTIONS.md); the engine answers every hit test (REN-node-content-in-rows), so
+  // PixiJS's test of the world is one nothing reads.
   await countWorldHitTests(page);
   await open(page, "?copies=100");
   const { width, height } = await canvasSize(page);
@@ -406,7 +407,7 @@ async function dragUploads(page: Page, copies: number, id: string) {
 test("a drag frame uploads what the dragged node and its edge take, not what the graph does", async ({
   page,
 }) => {
-  // Verifies: ADR-0027
+  // Verifies: REN-moving-layer-redraws-changes
   test.setTimeout(180_000);
   // Node 0.1 of a copy, a bet, has one edge.
   const small = await dragUploads(page, 1, "0:0.1");
@@ -425,7 +426,7 @@ test("a drag frame uploads what the dragged node and its edge take, not what the
 test("a drag zoomed from the far level to the middle draws its node once, by its view", async ({
   page,
 }) => {
-  // Verifies: ADR-0027
+  // Verifies: REN-moving-layer-redraws-changes
   await open(page);
   const { width, height } = await canvasSize(page);
   await setViewport(page, { x: width / 2, y: height / 2, scale: 0.2 });
@@ -535,7 +536,7 @@ async function editFrames(page: Page, copies: number) {
 test("an edit a frame at the far level keeps the query and uploads what it changed, not what the graph holds", async ({
   page,
 }) => {
-  // Verifies: ADR-0027
+  // Verifies: REN-moving-layer-redraws-changes
   test.setTimeout(180_000);
   const small = await editFrames(page, 1);
   const large = await editFrames(page, 3334);
@@ -552,8 +553,9 @@ test("an edit a frame at the far level keeps the query and uploads what it chang
 test("isDrawn of an edge in an edit frame at the far level asks the engine for no drawn edges", async ({
   page,
 }) => {
-  // Verifies: ADR-0027 — the benchmark's edit gesture checks each edit by isDrawn within the frames
-  // it times, so an edge's answer comes from what the scene holds, as inspect() reports it.
+  // Verifies: REN-moving-layer-redraws-changes — the benchmark's edit gesture checks each edit by
+  // isDrawn within the frames it times, so an edge's answer comes from what the scene holds, as
+  // inspect() reports it.
   test.setTimeout(120_000);
   await openAtFar(page, 3334);
   const probed = await page.evaluate(async () => {
@@ -594,7 +596,7 @@ test("isDrawn of an edge in an edit frame at the far level asks the engine for n
 });
 
 test("edits past the bound, or a removal of a node a drag moves, query anew", async ({ page }) => {
-  // Verifies: ADR-0027
+  // Verifies: REN-moving-layer-redraws-changes
   await open(page);
   const { width, height } = await canvasSize(page);
   await setViewport(page, { x: width / 2, y: height / 2, scale: 0.2 });

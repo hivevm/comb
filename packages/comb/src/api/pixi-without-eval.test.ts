@@ -1,4 +1,4 @@
-// Where Comb installs PixiJS's code generation without eval (ADR-0020).
+// Where Comb installs PixiJS's code generation without eval (SEC-pixijs-without-eval).
 import { expect, test } from "bun:test";
 import { Glob } from "bun";
 import { readFileSync } from "node:fs";
@@ -12,7 +12,7 @@ function imports(source: string): string[] {
 }
 
 test("the module that creates the renderer imports pixi.js/unsafe-eval before pixi.js", () => {
-  // Verifies: ADR-0020
+  // Verifies: SEC-pixijs-without-eval
   const source = readFileSync(`${SOURCES}/api/index.ts`, "utf8");
   expect(source).toContain("new Application()");
   const named = imports(source);
@@ -21,7 +21,7 @@ test("the module that creates the renderer imports pixi.js/unsafe-eval before pi
 });
 
 test("no other module of Comb's library names it, in any form of import or export", () => {
-  // Verifies: ADR-0020
+  // Verifies: SEC-pixijs-without-eval
   const naming = [...new Glob("**/*.ts").scanSync(SOURCES)]
     .filter((file) => !file.endsWith(".test.ts"))
     .filter((file) =>
