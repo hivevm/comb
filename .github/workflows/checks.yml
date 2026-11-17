@@ -17,7 +17,7 @@ name: Checks
 # review-binding.yml, the repository settings sensor on a human's instruction
 # (NUC-checks-are-bash §7); this workflow runs the self-test of each.
 #
-# Build, test, lint: scripts/check-code.sh (DEV-bun-vite-and-wasm-pack), after Bun, Rust with the
+# Build, test, lint: scripts/check-code.sh (DEV-bun-vite-wasm-pack), after Bun, Rust with the
 # WebAssembly
 # target, and Chromium are set up, and after the self-test of scripts/check-mutants.sh, which the
 # Mutation testing workflow (mutation.yml) runs. It is the one job of this workflow that installs

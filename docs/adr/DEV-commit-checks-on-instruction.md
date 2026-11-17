@@ -1,6 +1,6 @@
 # DEV-commit-checks-on-instruction: The checks on each commit of a branch run on a human's instruction, before its integration
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-17
 - **Deciders:** Markus Brigl
 - **Applies to:** `scripts/check-commits.sh`, its `# On instruction:` line in `scripts/check-all.sh`, and step 2 of the integration branches in `CONTRIBUTING.md`

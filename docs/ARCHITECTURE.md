@@ -572,7 +572,7 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
 - **Mutation testing** (`.github/workflows/mutation.yml`) — cargo-mutants mutates `crates/engine`
   on a GitHub runner, weekly and on demand; `scripts/check-mutants.sh` compares the surviving
   mutants with `crates/engine/mutants-missed.txt` by file, function, and replacement, and fails
-  on a survivor the list does not name, and on a run that caught none (DEV-bun-vite-and-wasm-pack).
+  on a survivor the list does not name, and on a run that caught none (DEV-bun-vite-wasm-pack).
 
 **Test pattern:** Rust unit tests beside the code they test (`#[cfg(test)]`); a property test of the
 bridge crate's validation (`crates/engine-wasm/src/properties.rs`, proptest) that feeds it 10,000
@@ -731,7 +731,7 @@ recognise each in the library built in test mode, and the trap in the engine of
 engine's, which the example hands it over with. The benchmark and the browser test of the built
 example fail where `testMode()` says the build runs the bridge in test mode.
 `scripts/check-dependencies.sh` fails on a lockfile of another package manager beside `bun.lock`
-(DEV-bun-vite-and-wasm-pack), on tsify's default or `json` features or `serde_json` in the bridge
+(DEV-bun-vite-wasm-pack), on tsify's default or `json` features or `serde_json` in the bridge
 crate (API-bridge-takes-serde-and-columns), in whatever form the entry takes, and on a listed state
 library other than zustand in the library's dependency lists (ARCH-graph-in-zustand-store).
 `scripts/check-devcontainer.sh`, the template's, which `scripts/check-all.sh` and the **Checks**

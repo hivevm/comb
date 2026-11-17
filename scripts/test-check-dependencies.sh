@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Self-test of scripts/check-dependencies.sh.
-# Verifies: DEV-bun-vite-and-wasm-pack, API-bridge-takes-serde-and-columns
+# Verifies: DEV-bun-vite-wasm-pack, API-bridge-takes-serde-and-columns
 # Verifies: ARCH-graph-in-zustand-store
 #
 # Each case builds a fixture tree under a temporary directory — bun.lock, the bridge crate's

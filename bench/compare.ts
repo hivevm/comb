@@ -1,4 +1,4 @@
-// Compares benchmark runs with the baseline of their runner kind (DEV-bun-vite-and-wasm-pack).
+// Compares benchmark runs with the baseline of their runner kind (DEV-bun-vite-wasm-pack).
 // Frame times come in steps of a frame and the first frame is a single sample, so one run scatters;
 // the median of each number over several runs is compared instead, and may exceed its baseline by
 // at most MARGIN. Runner kinds differ in ways no reference predicts, so the kind, the CPU model a

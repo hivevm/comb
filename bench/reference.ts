@@ -1,4 +1,4 @@
-// The reference workload of the benchmark (DEV-bun-vite-and-wasm-pack): fixed work timed in the
+// The reference workload of the benchmark (DEV-bun-vite-wasm-pack): fixed work timed in the
 // benchmark's page on the same runner, so that bench/compare.ts can tell a runner unlike the
 // baseline's and refuse to compare its numbers. It uses what Comb's numbers depend on, the
 // browser's JavaScript, WebAssembly, and WebGL2 raster, and none of Comb's code: a JavaScript loop,

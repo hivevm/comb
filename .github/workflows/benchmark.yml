@@ -1,6 +1,6 @@
 name: Benchmark
 
-# The benchmark of Q-1 and Q-2 as a workflow of its own (DEV-bun-vite-and-wasm-pack): bench/run.ts
+# The benchmark of Q-1 and Q-2 as a workflow of its own (DEV-bun-vite-wasm-pack): bench/run.ts
 # at 50,010 nodes and
 # edges on a GitHub runner, headless Chromium with WebGL2 on SwiftShader. Runner numbers are not the
 # reference machine's: they catch regressions against a baseline recorded on a runner, not the
@@ -67,7 +67,7 @@ jobs:
             bun --bun bench/run.ts
             cp bench-results/latest.json "bench-results/run-$i.json"
           done
-      # Verifies: API-bridge-takes-serde-and-columns, DEV-bun-vite-and-wasm-pack — the median first frame of the runner's kind stays within the
+      # Verifies: API-bridge-takes-serde-and-columns, DEV-bun-vite-wasm-pack — the median first frame of the runner's kind stays within the
       # margin of its baseline, so a load that grows slow again is found at the next run.
       - name: Compare the median with the baseline of the runner's kind
         run: bun bench/compare.ts bench/baselines bench-results/run-*.json

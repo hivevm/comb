@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Mutation testing: compares the survivors of a cargo-mutants run with the recorded list
-# (DEV-bun-vite-and-wasm-pack).
+# (DEV-bun-vite-wasm-pack).
 #
 # cargo-mutants writes each mutant to a file of mutants.out by its outcome: missed.txt for the
 # survivors, caught.txt, and timeout.txt for those whose tests ran past the timeout. Each line is
@@ -134,7 +134,7 @@ if [[ -n "$list" ]]; then
 fi
 
 if ((record)); then
-  echo "# Surviving mutants of crates/engine that the mutation workflow accepts (DEV-bun-vite-and-wasm-pack)."
+  echo "# Surviving mutants of crates/engine that the mutation workflow accepts (DEV-bun-vite-wasm-pack)."
   echo "# One per line as '<file> <function> <replacement>', ' (xN)' when one key covers N mutants,"
   echo "# and for an equivalent mutant its reason after ' # '."
   echo "# Recorded with scripts/check-mutants.sh --record; the README says how the list changes."

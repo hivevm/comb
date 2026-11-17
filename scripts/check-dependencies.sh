@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
 # Check of the dependencies the toolchain, the bridge, and the store decided.
-# Verifies: DEV-bun-vite-and-wasm-pack, API-bridge-takes-serde-and-columns, ARCH-graph-in-zustand-store
+# Verifies: DEV-bun-vite-wasm-pack, API-bridge-takes-serde-and-columns, ARCH-graph-in-zustand-store
 #
 # Fails on what would undo those decisions without a word:
 #
-#   1. Lockfiles (DEV-bun-vite-and-wasm-pack): Bun is the package manager, so no package-lock.json,
+#   1. Lockfiles (DEV-bun-vite-wasm-pack): Bun is the package manager, so no package-lock.json,
 #      npm-shrinkwrap.json, yarn.lock, or pnpm-lock.yaml lies in the tree beside bun.lock. In a git
 #      repository the tree is what git tracks or would track (.gitignore honoured); elsewhere every
 #      file outside node_modules/, .git/, and target/.
@@ -123,7 +123,7 @@ if [[ -f "$library" ]]; then
 fi
 
 if ((${#problems[@]})); then
-  echo "Dependency check FAILED (DEV-bun-vite-and-wasm-pack, API-bridge-takes-serde-and-columns, ARCH-graph-in-zustand-store):" >&2
+  echo "Dependency check FAILED (DEV-bun-vite-wasm-pack, API-bridge-takes-serde-and-columns, ARCH-graph-in-zustand-store):" >&2
   printf '  - %s\n' "${problems[@]}" >&2
   exit 1
 fi

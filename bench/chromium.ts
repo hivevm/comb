@@ -1,5 +1,5 @@
 // The environment headless Chromium starts in, for the browser tests and the benchmark alike
-// (DEV-bun-vite-and-wasm-pack). Headless Chromium starts its GPU process on the display server it
+// (DEV-bun-vite-wasm-pack). Headless Chromium starts its GPU process on the display server it
 // finds; a display forwarded into the Dev Container (Wayland or X11) makes that fail, and PixiJS
 // then falls back to its Canvas 2D renderer without a word. Without them, WebGL2 runs on
 // SwiftShader. A run that opens a window keeps them, and so uses the machine's GPU.

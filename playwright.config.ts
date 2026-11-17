@@ -1,4 +1,4 @@
-// Browser tests run against the examples, each served by Vite (DEV-bun-vite-and-wasm-pack): the
+// Browser tests run against the examples, each served by Vite (DEV-bun-vite-wasm-pack): the
 // metric tree's by the projects chromium and chromium-built, the UML example's by the project uml.
 import { execFileSync } from "node:child_process";
 import { defineConfig, devices } from "@playwright/test";

@@ -103,7 +103,7 @@ const TYPES = {
 };
 
 test("the example draws the metric tree on a canvas beside its sidebar", async ({ page }) => {
-  // Verifies: DEV-bun-vite-and-wasm-pack — the golden path, built, served, and driven by the
+  // Verifies: DEV-bun-vite-wasm-pack — the golden path, built, served, and driven by the
   // toolchain it decides.
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

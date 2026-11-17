@@ -25,7 +25,7 @@ const XEON_8370C = "Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz";
  *  it, and only that they share it decides. */
 const DEV_CONTAINER = "13th Gen Intel(R) Core(TM) i7-13700";
 
-/** The file name of each kind's baseline, as DEV-bun-vite-and-wasm-pack derives it, written out. */
+/** The file name of each kind's baseline, as DEV-bun-vite-wasm-pack derives it, written out. */
 const FILE: Record<string, string> = {
   [EPYC_7763]: "amd-epyc-7763-64-core-processor.json",
   [XEON_8370C]: "intel-r-xeon-r-platinum-8370c-cpu-2-80ghz.json",
@@ -148,7 +148,7 @@ describe("compare", () => {
   });
 });
 
-// Verifies: DEV-bun-vite-and-wasm-pack — the runner gate: a run whose reference differs from the
+// Verifies: DEV-bun-vite-wasm-pack — the runner gate: a run whose reference differs from the
 // baseline's by more than the margin in any part is refused; the numbers are compared raw.
 describe("the runner gate", () => {
   test("a runner within the margin in every part is compared, raw, with each part reported", () => {
@@ -191,7 +191,7 @@ describe("the runner gate", () => {
   });
 });
 
-// Verifies: DEV-bun-vite-and-wasm-pack — a run without a reference is refused against a baseline
+// Verifies: DEV-bun-vite-wasm-pack — a run without a reference is refused against a baseline
 // with one; a baseline without one is compared raw, and the gate reported as not checked.
 describe("without a usable reference", () => {
   test("a reference is usable only when its sum and parts are positive and finite", () => {
@@ -343,7 +343,7 @@ describe("the command", () => {
   });
 });
 
-// Verifies: DEV-bun-vite-and-wasm-pack — a run is compared only with the baseline of its runner
+// Verifies: DEV-bun-vite-wasm-pack — a run is compared only with the baseline of its runner
 // kind, the CPU model it records; a run on a kind without a baseline, or naming no CPU model, is
 // refused.
 describe("the runner kind", () => {
@@ -390,7 +390,7 @@ describe("the runner kind", () => {
   });
 
   test("a CPU model that starts and ends with a character other than a letter or digit names a file of none at either end", () => {
-    // Verifies: DEV-bun-vite-and-wasm-pack
+    // Verifies: DEV-bun-vite-wasm-pack
     expect(baselineName(" (Intel) Core i7 @ 3.6GHz ")).toBe("intel-core-i7-3-6ghz");
     expect(baselineName("--AMD Ryzen 9--")).toBe("amd-ryzen-9");
   });
@@ -405,7 +405,7 @@ describe("the runner kind", () => {
   });
 });
 
-// Verifies: DEV-bun-vite-and-wasm-pack — the command picks the baseline of the runs' kind from
+// Verifies: DEV-bun-vite-wasm-pack — the command picks the baseline of the runs' kind from
 // bench/baselines and refuses a kind without one, or runs that name no CPU model, naming the kinds
 // with a baseline.
 describe("the command, by runner kind", () => {
@@ -466,7 +466,7 @@ describe("the command, by runner kind", () => {
   });
 });
 
-// Verifies: DEV-bun-vite-and-wasm-pack — each kind's baseline is a file of its own, named by its
+// Verifies: DEV-bun-vite-wasm-pack — each kind's baseline is a file of its own, named by its
 // CPU model.
 describe("bench/baselines", () => {
   test("each recorded baseline names the CPU model its file name derives from", () => {
@@ -515,7 +515,7 @@ describe("median", () => {
 
 describe("the parts of the reference", () => {
   test("usable and the median take every part the reference lists", () => {
-    // Verifies: DEV-bun-vite-and-wasm-pack
+    // Verifies: DEV-bun-vite-wasm-pack
     for (const [, key] of PARTS) {
       expect(usable({ ...REFERENCE, [key]: Number.NaN })).toBe(false);
       expect(usable({ ...REFERENCE, [key]: 0 })).toBe(false);
@@ -536,7 +536,7 @@ describe("the parts of the reference", () => {
 
 describe("the edit gesture", () => {
   test("a baseline without it reports the run's edits unjudged, and judges the others", () => {
-    // Verifies: DEV-bun-vite-and-wasm-pack, ARCH-engine-edits-graph-in-place
+    // Verifies: DEV-bun-vite-wasm-pack, ARCH-engine-edits-graph-in-place
     const verdict = compare({ ...run(200, 100), edit: { p95: 900 } }, run(200, 100));
     expect(verdict).toMatchObject({ kind: "compared", regressions: [] });
     expect((verdict as { lines: string[] }).lines).toContain("edit p95 (ms): 900.0, no baseline");
@@ -547,7 +547,7 @@ describe("the edit gesture", () => {
   });
 
   test("a baseline with it judges the run's edits as the other gestures", () => {
-    // Verifies: DEV-bun-vite-and-wasm-pack, ARCH-engine-edits-graph-in-place
+    // Verifies: DEV-bun-vite-wasm-pack, ARCH-engine-edits-graph-in-place
     const verdict = compare(
       { ...run(200, 100), edit: { p95: 200 } },
       { ...run(200, 100), edit: { p95: 100 } },
@@ -592,7 +592,7 @@ const CONTENT = {
 
 describe("the gestures at each level of detail", () => {
   test("are named by gesture and level, after those at the view the example opens with", () => {
-    // Verifies: DEV-bun-vite-and-wasm-pack, REN-virtualized-scene-graph
+    // Verifies: DEV-bun-vite-wasm-pack, REN-virtualized-scene-graph
     const each = (level: string) =>
       ["drag", "pan", "zoom", "edit"].map((gesture) => `${gesture} ${level}`);
     expect(gestures(everyLevel(run(200, 100), 100)).map(([name]) => name)).toEqual([
@@ -616,7 +616,7 @@ describe("the gestures at each level of detail", () => {
   });
 
   test("a gesture the baseline lacks is reported as new, never as a regression", () => {
-    // Verifies: DEV-bun-vite-and-wasm-pack
+    // Verifies: DEV-bun-vite-wasm-pack
     const verdict = compare(everyLevel(run(200, 100), 1000), run(200, 1000));
     expect(verdict).toMatchObject({ kind: "compared", regressions: [] });
     const { lines } = verdict as { lines: string[] };
@@ -636,7 +636,7 @@ describe("the gestures at each level of detail", () => {
   });
 
   test("a run of the full content compares with each kind's baseline as recorded", async () => {
-    // Verifies: DEV-bun-vite-and-wasm-pack — a baseline recorded with the gestures at each level
+    // Verifies: DEV-bun-vite-wasm-pack — a baseline recorded with the gestures at each level
     // judges them all, and one recorded before them reports them as new.
     const baselines = join(import.meta.dir, "baselines");
     for (const name of readdirSync(baselines)) {
@@ -657,7 +657,7 @@ describe("the gestures at each level of detail", () => {
 
 describe("the median of the gestures at each level", () => {
   test("the median keeps a level and a gesture at it only where every run timed it", () => {
-    // Verifies: DEV-bun-vite-and-wasm-pack
+    // Verifies: DEV-bun-vite-wasm-pack
     const full = everyLevel(run(200, 100), 50);
     const other = everyLevel(run(200, 100), 70);
     const result = median([full, other]) as Run;
@@ -675,7 +675,7 @@ describe("the median of the gestures at each level", () => {
 
 describe("the content a run loaded", () => {
   test("is named, kept in the median, and decides no comparison", () => {
-    // Verifies: DEV-bun-vite-and-wasm-pack
+    // Verifies: DEV-bun-vite-wasm-pack
     const loaded = (content = CONTENT): Run => {
       const r = run(200, 100);
       return { ...r, load: { ...r.load, content } };

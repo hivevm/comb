@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Bundle budget of the library (DEV-bun-vite-and-wasm-pack). Verifies: Q-3
+# Bundle budget of the library (DEV-bun-vite-wasm-pack). Verifies: Q-3
 #
 # Q-3 keeps the library bundle — Comb's JavaScript and WebAssembly, gzipped, without PixiJS —
 # under 300 kB. Without arguments this builds the bundle with `bun run build:lib` into

@@ -1,4 +1,4 @@
-// The benchmark of Q-1 and Q-2 (DEV-bun-vite-and-wasm-pack): the example at 50,000 nodes and 50,000
+// The benchmark of Q-1 and Q-2 (DEV-bun-vite-wasm-pack): the example at 50,000 nodes and 50,000
 // edges, each node with the content of its type (G-9, G-10), served from its production build. It
 // measures the time from handing the graph to Comb until its first frame is drawn, and the p95
 // frame time of each gesture: a node on screen dragged, the viewport panned, the viewport zoomed in

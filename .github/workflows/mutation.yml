@@ -1,6 +1,6 @@
 name: Mutation testing
 
-# Mutation testing of crates/engine as a workflow of its own (DEV-bun-vite-and-wasm-pack):
+# Mutation testing of crates/engine as a workflow of its own (DEV-bun-vite-wasm-pack):
 # cargo-mutants, at a
 # pinned version, mutates the engine and runs its tests against each mutant. A mutant no test
 # kills is a survivor, written to mutants.out/missed.txt. scripts/check-mutants.sh compares the
