@@ -177,7 +177,8 @@ run "Readiness script self-test" scripts/test-ready-for-main.sh
 # On instruction: scripts/drop-merged-branch.sh
 run "Drop script self-test" scripts/test-drop-merged-branch.sh
 # The commit check checks out every commit of a branch and runs the checks on each, before a merge
-# on a human's instruction, as step 2 of the Integration branches of CONTRIBUTING.md; its
+# on a human's instruction, as step 2 of the Integration branches of CONTRIBUTING.md: a fourth
+# kind beside the three of NUC-checks-are-bash §7 (DEV-commit-checks-on-instruction). Its
 # self-test runs here.
 # On instruction: scripts/check-commits.sh
 run "Commit checks self-test" scripts/test-check-commits.sh

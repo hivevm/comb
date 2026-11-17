@@ -34,9 +34,9 @@
 # NUC-checks-are-bash decides; the script says so for each one it exempts.
 #
 # Needs git, and Bun and Cargo as the Dev Container provides them (DEV-container-adds-bun-and-rust).
-# Runs before a merge,
-# on a human's instruction (step 2 of the Integration branches of CONTRIBUTING.md); it is no gate
-# of scripts/check-all.sh or CI, which run its self-test, scripts/test-check-commits.sh.
+# Runs before a merge, on a human's instruction (step 2 of the Integration branches of
+# CONTRIBUTING.md, DEV-commit-checks-on-instruction); it is no gate of scripts/check-all.sh or CI,
+# which run its self-test, scripts/test-check-commits.sh.
 #
 # Usage:
 #     scripts/check-commits.sh [--root <dir>] [<base> [<head>]]
