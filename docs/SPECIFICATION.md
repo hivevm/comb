@@ -100,6 +100,61 @@ Only a normalization renumbers them
     one node. When the host application allows loops, the system shall accept an edge from a
     node back to itself, from `addEdge` and from the user's connection, and draw it as a loop on
     one side of the node.
+14. **G-14** — When the host application places a node in another node, its container, at any
+    depth, the system shall draw the node above its container and move it with the container.
+    When the user drops a dragged node inside a node that the host application accepts as its
+    container, the system shall place it there, and dropped outside every container, on the
+    canvas; it shall report each such move to the host application, which may refuse it. An edge
+    shall connect nodes at any depth, a node and its own container among them, across the
+    outlines of containers.
+15. **G-15** — When the user drags a resize handle of a selected node that the host application
+    lets the user resize, the system shall resize the node from that side or corner, never smaller
+    than its content and the nodes it contains, and report the new size to the host application.
+16. **G-16** — When the host application divides a node into regions, side by side or one above
+    the other, each with an optional name, the system shall draw the lines between them, solid or
+    dashed as the host application says, and treat each region as a container of its own. When
+    the user drags such a line, the system shall move it, never past the nodes a region contains,
+    and report the new sizes of the regions.
+17. **G-17** — When the host application attaches a node to the outline of another, as a border
+    node, the system shall draw it centred on that outline, move it with the other node, keep it
+    on the outline while the user drags it, and dock edges on it as on any node.
+18. **G-18** — When the host application sets a node's node shape to an actor (a stick figure
+    with its name below it), a pentagon pointing to one side, a rectangle notched on one side, an
+    hourglass, a circle crossed by an X, an X, a small filled circle, a note (a rectangle with a
+    folded corner), or a frame (a rectangle with its name in a tab at its top left), the system
+    shall draw, hit, and lay out the node as G-13 says of the other node shapes. When the host
+    application gives a node's outline a dash pattern, or none, the system shall draw the outline
+    that way.
+19. **G-19** — When the host application gives an edge several edge labels, each at its own path
+    parameter and label offset, the system shall draw each and keep each as G-6 says. When the
+    host application ends an edge on another edge, at a path parameter of that edge, the system
+    shall draw the end there and keep it there as the other edge moves. When the host
+    application draws an edge as a lightning bolt, the system shall draw a zigzag in the middle
+    of its path.
+20. **G-20** — When the developer starts the launch configuration *Example: UML* in VS Code, its
+    sidebar switches, beside the diagrams of G-12, to an activity diagram and a use case diagram
+    of Comb itself, and its state diagram uses the full notation. Together they show every
+    notation element that UML 2.5.1 defines for these three kinds of diagram, each in the
+    notation UML 2.5.1 gives it. The activity diagram shows actions, call behavior actions, send
+    signal actions, accept event actions, accept time event actions, object nodes, data stores,
+    central buffers, pins, activity parameter nodes, initial nodes, activity final nodes, flow
+    final nodes, decision and merge nodes, fork and join nodes, control flows and object flows
+    with their guards and weights, activity partitions, nested ones among them, interruptible
+    activity regions with their interrupting edges, expansion regions with their expansion nodes,
+    exception handlers, connectors, and the frame of the activity. The use case diagram shows
+    actors, use cases with their extension points, subjects, associations with their
+    multiplicities, include and extend relationships, the condition of an extend, and
+    generalizations between actors and between use cases. The state diagram shows states with
+    their entry, do, and exit behaviours and their internal transitions, composite states,
+    orthogonal regions, submachine states, initial, terminate, choice, junction, fork, and join
+    pseudostates, final states, shallow and deep history, entry and exit points, transitions with
+    their trigger, guard, and effect, and the frame of the state machine. Each diagram shows
+    comments, attached to the diagram element they annotate. A palette adds each of these
+    notation elements; a connection adds each relationship, flow, or transition, which the
+    example refuses where UML 2.5.1 does not allow it; and the sidebar edits every property the
+    notation shows, such as a name, a guard, a trigger, an effect, a multiplicity, a stereotype,
+    or a condition.
+
 
 ## Quality Goals
 
