@@ -20,10 +20,11 @@ shell computes is such a mistake. Refused as `GraphDataProblem` `malformed`, it 
 sentence false and hand the host a kind it can do nothing about.
 
 [API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md) asks every export that
-receives graph data to return a typed error naming the node, edge, or field at fault. A point or a
-pixel is not graph data, so
+receives graph data to return a typed
+error naming the node, edge, or field at fault. A point or a pixel is not graph data, so
 [API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md) does not decide how
-either one is refused. Q-7 asks that malformed input never crash or hang the host page.
+either one is refused. Q-7 asks that
+malformed input never crash or hang the host page.
 
 A refusal at the bridge alone shows the cost. A viewport the host may set puts every screen point
 beyond any finite world point: an x of 1e306 at a scale of 0.005 is enough. Every hover and every
@@ -41,9 +42,9 @@ call, so no refusal of this type is reached from an input event.
 
 **Out of scope:** the shape of `SlotError`, which stays as it is; the refusals of graph data, which
 [API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md) and
-[ARCH-functional-core-imperative-shell](ARCH-functional-core-imperative-shell.md) decide; what the
-shell answers in place of a refused call, which each caller decides as `targetAt` and the label drag
-do today.
+[ARCH-functional-core-imperative-shell](ARCH-functional-core-imperative-shell.md)
+decide; what the shell answers in place of a refused call, which each caller decides as `targetAt`
+and the label drag do today.
 
 ## Alternatives considered
 
@@ -68,7 +69,8 @@ do today.
   repository.
 - [API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md) (*Errors*),
   [ARCH-functional-core-imperative-shell](ARCH-functional-core-imperative-shell.md) (the bridge's
-  refusals of what is not finite), and the overview's *Bridge* entry.
+  refusals of what is not
+  finite), and the overview's *Bridge* entry.
 
 ## Consequences
 

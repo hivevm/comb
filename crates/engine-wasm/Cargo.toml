@@ -1,4 +1,5 @@
-# The bridge (ARCH-one-workspace-per-example, API-bridge-takes-serde-and-columns): every #[wasm_bindgen] export, no geometry of its own.
+# The bridge (ARCH-one-workspace-per-example, API-bridge-takes-serde-and-columns): every
+# #[wasm_bindgen] export, no geometry of its own.
 [package]
 name = "comb-engine-wasm"
 version = "0.0.0"
@@ -18,7 +19,8 @@ serde-wasm-bindgen = "0.6.5"
 tsify = { version = "0.5.8", default-features = false, features = ["js"] }
 wasm-bindgen = "0.2.129"
 
-# Test mode (API-trapped-engine-is-lost): an export that traps on demand, for the shell's tests; `bun run
+# Test mode (API-trapped-engine-is-lost): an export that traps on demand, for the shell's tests;
+# `bun run
 # build:engine` builds the engine with it into packages/comb/wasm/test-mode/ beside the one without.
 [features]
 test-mode = []

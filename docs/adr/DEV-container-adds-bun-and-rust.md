@@ -10,20 +10,21 @@
 The specification asks for a Docker-based Dev Container in VS Code with Bun, Rust stable, and
 wasm-pack, and lets Node.js run only what does not yet run on Bun
 ([Constraints](../SPECIFICATION.md#constraints)).
-[DEV-bun-vite-and-wasm-pack](DEV-bun-vite-and-wasm-pack.md) names what runs: Bun for installing,
-building, and testing, the Playwright test runner included, Rust with clippy and rustfmt, wasm-pack
-as a development dependency pinned by `bun.lock`, and Chromium for the browser tests. Nothing of it
-runs on Node.js. G-9 asks for the example to start from a VS Code launch configuration and open in
-the browser.
+[DEV-bun-vite-and-wasm-pack](DEV-bun-vite-and-wasm-pack.md) names what runs: Bun
+for installing, building, and testing, the Playwright test runner included, Rust with clippy and
+rustfmt, wasm-pack as a development dependency pinned by `bun.lock`, and Chromium for the browser
+tests. Nothing of it runs on Node.js. G-9 asks for the example to start from a VS Code launch
+configuration and open in the browser.
 
 [NUC-container-hides-host-daemon](NUC-container-hides-host-daemon.md) keeps the host's container
-engine out of reach and locks the Features by `.devcontainer/devcontainer-lock.json`; it leaves the
-base image, the Features, and the toolchain to the project. What a Dockerfile installs with its own
-commands is outside that lock, so the lock holds only where the toolchain comes as Features. The
-official Feature for Rust takes a version, additional targets, and components. No official Feature
-installs Bun; a community Feature does, at version 0.0.1. The official `oven/bun` image carries the
-Bun binary and can be pinned by digest. The base image the template uses,
-`mcr.microsoft.com/devcontainers/base:debian`, can be pinned by digest as well.
+engine out of reach and locks
+the Features by `.devcontainer/devcontainer-lock.json`; it leaves the base image, the Features, and
+the toolchain to the project. What a Dockerfile installs with its own commands is outside that lock,
+so the lock holds only where the toolchain comes as Features. The official Feature for Rust takes a
+version, additional targets, and components. No official Feature installs Bun; a community Feature
+does, at version 0.0.1. The official `oven/bun` image carries the Bun binary and can be pinned by
+digest. The base image the template uses, `mcr.microsoft.com/devcontainers/base:debian`, can be
+pinned by digest as well.
 
 The container has no browser window. The example's development server runs inside it; VS Code
 forwards its port and can open the forwarded address in the host's browser. The VS Code
@@ -56,11 +57,12 @@ the digests are refreshed; the CI image, which sets up the same versions by its 
 ## Alternatives considered
 
 - **Node.js 24 as a Feature, as Playwright's fallback runtime** — but
-  [DEV-bun-vite-and-wasm-pack](DEV-bun-vite-and-wasm-pack.md) runs Playwright on Bun without it, so
-  it would only enlarge the container.
+  [DEV-bun-vite-and-wasm-pack](DEV-bun-vite-and-wasm-pack.md)
+  runs Playwright on Bun without it, so it would only enlarge the container.
 - **Everything installed by the Dockerfile** — Rust and wasm-pack by their install scripts; one file
   to read, but outside [NUC-container-hides-host-daemon](NUC-container-hides-host-daemon.md)'s lock
-  and with an install script fetched from the network at build time.
+  and with an install script
+  fetched from the network at build time.
 - **The community Bun Feature** — fits the Features model, but at version 0.0.1 from a single
   author it is a supply-chain risk without a gain over the official image.
 - **Bun's install script** — the documented way, but it fetches and runs a script at build time;
@@ -103,11 +105,11 @@ the digests are refreshed; the CI image, which sets up the same versions by its 
 
 `scripts/check-devcontainer.sh` holds the Features and the lock of
 [NUC-container-hides-host-daemon](NUC-container-hides-host-daemon.md). `scripts/check-container.sh`,
-which runs in `scripts/check-all.sh` and in `checks.yml` beside its self-test
-`scripts/test-check-container.sh`, fails when the Dockerfile's `FROM` or `COPY --from` names an
-image without a digest, when `devcontainer.json` builds from anything but
-`.devcontainer/Dockerfile`, or when it names a Node.js Feature. The workflow
-`.github/workflows/devcontainer.yml` builds the container as a smoke test, runs `bun --version`,
-`cargo --version`, and `rustup target list --installed`, asserting the pinned Bun and the
-WebAssembly target, and asserts that `node` is not on `PATH`. The self-test and the workflow each
-cite this ADR with `Verifies: DEV-container-adds-bun-and-rust`.
+which runs in
+`scripts/check-all.sh` and in `checks.yml` beside its self-test `scripts/test-check-container.sh`,
+fails when the Dockerfile's `FROM` or `COPY --from` names an image without a digest, when
+`devcontainer.json` builds from anything but `.devcontainer/Dockerfile`, or when it names a Node.js
+Feature. The workflow `.github/workflows/devcontainer.yml` builds the container as a smoke test,
+runs `bun --version`, `cargo --version`, and `rustup target list --installed`, asserting the pinned
+Bun and the WebAssembly target, and asserts that `node` is not on `PATH`. The self-test and the
+workflow each cite this ADR with `Verifies: DEV-container-adds-bun-and-rust`.

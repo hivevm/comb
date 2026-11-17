@@ -9,9 +9,9 @@
 ## Context
 
 [API-one-connector-per-side](API-one-connector-per-side.md) gives every node one connector in the
-middle of each side. Every edge leaves one side and enters one, and an edge of a node with itself is
-refused by the user's connection and by `addEdge`. A state diagram needs two things that rule
-forbids:
+middle of each
+side. Every edge leaves one side and enters one, and an edge of a node with itself is refused by
+the user's connection and by `addEdge`. A state diagram needs two things that rule forbids:
 
 - several transitions leaving one state from different directions, without all meeting in the
   middle of one side;
@@ -27,10 +27,12 @@ The forces:
   the UML example's class and package diagrams draw their edges by sides. The maintainer chose an
   opt-in: today's sides stay the default.
 - **Q-1, Q-2, and REN-virtualized-scene-graph:** an edge stays one cubic in the one edge mesh, so
-  the rectangle, the split points, the mesh budget, and the precision far from the origin hold.
+  the rectangle, the
+  split points, the mesh budget, and the precision far from the origin hold.
 - **API-edits-reported-as-typed-changes:** the user's connection is proposed to the host's veto. A
-  loop the gesture offers is a proposal an existing host has never seen. The maintainer chose an
-  option that allows loops, off by default, over leaving them to the veto alone.
+  loop the gesture offers
+  is a proposal an existing host has never seen. The maintainer chose an option that allows
+  loops, off by default, over leaving them to the veto alone.
 - **The specification's assumption** that every edge joins two connectors names connectors. An
   end docked on the outline joins no connector; the maintainer amends the assumption with G-13.
 
@@ -50,10 +52,11 @@ side of the node.
   - The engine keeps both with the edge, a byte each, as before.
 - **The path between two nodes:**
   - With both ends on a side, the path is API-one-connector-per-side's. It starts at the connector
-    of the source's side and ends at the connector of the target's side, as one cubic. Each control
-    point lies on its end's outward normal, at half the distance between the two ends along that
-    normal's axis, and at least 40 world units out. For `right` to `left` that is the horizontal
-    path to the bit, so every graph that names no side is drawn by it.
+    of the source's
+    side and ends at the connector of the target's side, as one cubic. Each control point lies on
+    its end's outward normal, at half the distance between the two ends along that normal's
+    axis, and at least 40 world units out. For `right` to `left` that is the horizontal path to
+    the bit, so every graph that names no side is drawn by it.
   - An end on the outline lies where the line from its node's centre towards the other node's
     centre crosses its node's outline. Its control point lies on that line, outward, at the same
     distance rule.
@@ -62,8 +65,9 @@ side of the node.
 - **Loops:**
   - `CombOptions` gains `allowLoops`, off by default. Where it is off, the user's connection and
     `addEdge` refuse an edge from a node to itself, as API-one-connector-per-side decided. The
-    connection never counts a connector of its own source as compatible, and `addEdge` refuses with
-    its own kind, `selfEdge`.
+    connection never
+    counts a connector of its own source as compatible, and `addEdge` refuses with its own kind,
+    `selfEdge`.
   - Where it is on, `addEdge` accepts a loop. The user's connection counts the source's own
     connectors as compatible while no loop of that node exists, all but the connector it starts
     from, so that a press and release on one connector proposes nothing, and proposes it to the
@@ -90,9 +94,9 @@ side of the node.
     same rule, but for the connector the connection starts from.
   - A connection is made only to a compatible connector, and only after the host's veto allows it
     ([API-edits-reported-as-typed-changes](API-edits-reported-as-typed-changes.md)). The node the
-    user drags from is the edge's source, the one released over its target. The gesture records the
-    sides of the two connectors; a host that wants an end on the outline sets it through
-    `updateEdge`.
+    user drags from is
+    the edge's source, the one released over its target. The gesture records the sides of the two
+    connectors; a host that wants an end on the outline sets it through `updateEdge`.
 - **Second edges:** `addEdge` accepts a second edge between two nodes in the same direction, as
   `load` does; the rule of compatibility binds the user's gesture alone.
 - **Levels:** at the far level no connector is drawn, and no connection is begun. How a
@@ -101,7 +105,8 @@ side of the node.
 - **Drawing:**
   - A `connectors` layer joins the world above the nodes and edge labels
     ([REN-virtualized-scene-graph](REN-virtualized-scene-graph.md)). It holds the four connectors of
-    the node under the pointer.
+    the node under
+    the pointer.
   - While the user drags a connection, it holds those of the source and of the node under the
     pointer, each compatible one drawn apart from the others.
   - The connection being dragged is drawn in the overlay as a line from the source's connector to
@@ -119,13 +124,15 @@ side of the node.
 ## Alternatives considered
 
 The alternatives API-one-connector-per-side weighed stand as it records them: two typed connectors,
-the nearest side chosen anew, connectors typed by the host, the two rules of a duplicate, and the
-other placements of the control points. Added here:
+the nearest
+side chosen anew, connectors typed by the host, the two rules of a duplicate, and the other
+placements of the control points. Added here:
 
 - **Anchors as entities of their own, several per node, each with an identifier** — as Eclipse
   Draw2d's `ConnectionAnchor`. They are the most general, but give an edge's end an identity the
   bridge, the store, and the changes of API-edits-reported-as-typed-changes would carry, for a need
-  the outline already meets.
+  the outline already
+  meets.
 - **A field of its own for docking, beside the sides** — clearer to read, but it allows two
   fields that contradict each other. One value of the side, `outline`, says it once.
 - **The outline as the default** — every edge of a graph that names no side would move, and with
@@ -139,7 +146,8 @@ other placements of the control points. Added here:
 ## Sources / Prior art
 
 - API-one-connector-per-side and its sources, and `EdgePath::between` in
-  `crates/engine/src/geometry.rs` (read on 2026-11-06).
+  `crates/engine/src/geometry.rs` (read on
+  2026-11-06).
 - Eclipse Draw2d's `ChopboxAnchor` and `EllipseAnchor`, which end a connection where the line
   between the two figures' centres crosses the figure's bounds or ellipse. Recalled, not re-read
   for this record.
@@ -171,8 +179,8 @@ Each test below cites this decision with `Verifies:` and its identifier.
 
 - **The path:**
   - The tests of API-one-connector-per-side in `crates/engine/src/geometry.rs` stay and are moved to
-    cite this decision. They cover the sixteen pairs of sides and the horizontal path of `right` to
-    `left`.
+    cite this
+    decision. They cover the sixteen pairs of sides and the horizontal path of `right` to `left`.
   - Added tests assert that an end on the outline lies on the outline, on the line between the
     two centres, for each node shape and from every direction.
   - Added tests assert that a loop leaves and enters the side it names, its outermost point at
@@ -188,8 +196,8 @@ Each test below cites this decision with `Verifies:` and its identifier.
   - that `addEdge` refuses a loop without `allowLoops`, and accepts one with it;
   - that `load` accepts a loop either way.
 - **The gesture:** the browser tests of API-one-connector-per-side in `examples/metric-tree/e2e/`
-  stay and are moved to cite this decision. Added browser tests drag from a connector back onto the
-  source:
+  stay and are
+  moved to cite this decision. Added browser tests drag from a connector back onto the source:
   - with loops allowed, they assert one loop proposed to the veto;
   - without, they assert none.
 

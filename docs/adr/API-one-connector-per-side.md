@@ -20,7 +20,8 @@ ends, by half the horizontal distance and at least 40 world units, so that an ed
 enters level. G-9's metric tree flows from left to right, which that path draws. A tree that flows
 top to bottom, or an edge back to a node further left, cannot be drawn by it so that it reads.
 
-The stroke ([REN-virtualized-scene-graph](REN-virtualized-scene-graph.md)) relies on three properties of the path, not
+The stroke ([REN-virtualized-scene-graph](REN-virtualized-scene-graph.md)) relies on three
+properties of the path, not
 on its direction: it is one cubic, so it lies in the hull of its four control points, which the
 rectangle's chords rest on; a cubic crosses each of the four lines of the grown rectangle at most
 three times, which bounds the split points at sixteen; and the arrowhead's tip is the path's end,
@@ -28,7 +29,8 @@ its direction the path's tangent there. Q-4 asks for the path within 0.5 px of a
 computation.
 
 The host application describes what a node means; G-10 gives it node content, and none of it
-types a connector. [REN-node-content-in-rows](REN-node-content-in-rows.md) leaves connectors out of node content.
+types a connector. [REN-node-content-in-rows](REN-node-content-in-rows.md) leaves connectors out of
+node content.
 
 ## Decision
 
@@ -51,7 +53,8 @@ points pull out of each end along that side's outward normal.
   source node when it belongs to another node, and no edge from the source node to that node, in
   that direction, exists, whatever sides that edge has; an edge the other way does not count. A
   connection is made only to a compatible connector, and only after the host's veto allows it
-  ([API-edits-reported-as-typed-changes](API-edits-reported-as-typed-changes.md)). The node the user drags from is the
+  ([API-edits-reported-as-typed-changes](API-edits-reported-as-typed-changes.md)). The node the user
+  drags from is the
   edge's source, the one released over its target.
 - **Self-edges:** a user's connection and `addEdge` refuse an edge from a node to itself, the
   connection by never counting a connector of its own source as compatible, `addEdge` with a
@@ -61,9 +64,11 @@ points pull out of each end along that side's outward normal.
 - **Second edges:** `addEdge` accepts a second edge between two nodes in the same direction, as
   `load` does; the rule of compatibility binds the user's gesture alone.
 - **Levels:** at the far level no connector is drawn, and no connection is begun. How a
-  connector is hit is decided with the other hit tests ([REN-node-content-in-rows](REN-node-content-in-rows.md)).
+  connector is hit is decided with the other hit tests
+  ([REN-node-content-in-rows](REN-node-content-in-rows.md)).
 - **Drawing:** a `connectors` layer joins the world above the nodes and edge labels
-  ([REN-virtualized-scene-graph](REN-virtualized-scene-graph.md)), with the four connectors of the node under the
+  ([REN-virtualized-scene-graph](REN-virtualized-scene-graph.md)), with the four connectors of the
+  node under the
   pointer, and while the user drags a connection, those of the source and of the node under the
   pointer, each compatible one drawn apart from the others. The connection being dragged is drawn in
   the overlay as a line from the source's connector to the pointer, until it is released.
@@ -96,7 +101,8 @@ which the host does through `updateEdge`.
 ## Sources / Prior art
 
 - `EdgePath::horizontal` and `EdgePath::between` in `crates/engine/src/geometry.rs`, and the
-  stroke's argument of [REN-virtualized-scene-graph](REN-virtualized-scene-graph.md) (*The rectangle*, *Sixteen split
+  stroke's argument of [REN-virtualized-scene-graph](REN-virtualized-scene-graph.md) (*The
+  rectangle*, *Sixteen split
   points*) (read on 2026-10-24).
 - xyflow's `Position` of a handle, `left`, `top`, `right`, and `bottom` —
   <https://reactflow.dev/api-reference/types/position> (read 2026-10-24): the same four sides,
@@ -108,8 +114,10 @@ which the host does through `updateEdge`.
   that names no side is drawn by the horizontal path, so the reference image of the edges and every
   geometry test stay.
 - Positive: the path is one cubic, so the rectangle, the sixteen split points, the mesh budget, and
-  the precision far from the world's origin of [API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md) and
-  [REN-virtualized-scene-graph](REN-virtualized-scene-graph.md) hold unchanged; since every control point pulls along
+  the precision far from the world's origin of
+  [API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md) and
+  [REN-virtualized-scene-graph](REN-virtualized-scene-graph.md) hold unchanged; since every control
+  point pulls along
   an axis, graph data describes no straight slanted edge.
 - Negative / trade-offs: an edge record grows by two sides, a byte each in the engine.
 - Negative / trade-offs: with the duplicate rule, a user cannot draw a second edge between two
@@ -130,7 +138,8 @@ Each test below cites this ADR with `Verifies: API-one-connector-per-side`.
   normal, and that `right` to `left` is the horizontal path for the cases the geometry tests hold,
   edges that run backwards among them. The property test of the budget,
   `crates/engine/src/graph/budget.rs`, draws its random edges with random sides, so that
-  [REN-virtualized-scene-graph](REN-virtualized-scene-graph.md)'s assertions hold for every pair; it also `Verifies:
+  [REN-virtualized-scene-graph](REN-virtualized-scene-graph.md)'s assertions hold for every pair; it
+  also `Verifies:
   Q-4`.
 - **Graph data:** the property test of the bridge crate generates the two side fields, a value
   outside the four among them, and a test asserts that an edge without them is drawn from `right`

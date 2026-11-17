@@ -10,11 +10,11 @@
 Q-1 and Q-2 are measured on the reference machine, a laptop with an integrated GPU of the class of
 Intel Iris Xe or AMD Radeon 680M, in current stable Chrome, by `BENCH_HEADED=1 bun run bench`
 ([DEV-bun-vite-and-wasm-pack](DEV-bun-vite-and-wasm-pack.md), ticket 16 of revision-2026-10-18).
-That command launches Playwright's Chromium in the place it runs. The Dev Container has no display
-and no GPU: it sees no `/dev/dri`, and Chromium in it renders on SwiftShader, whose frame times are
-raster-bound and say nothing about a GPU. So the measurement has to run outside the container, with
-Bun, Rust, and the WebAssembly target set up on the host a second time, though the maintainer works
-from the container.
+That command launches
+Playwright's Chromium in the place it runs. The Dev Container has no display and no GPU: it sees no
+`/dev/dri`, and Chromium in it renders on SwiftShader, whose frame times are raster-bound and say
+nothing about a GPU. So the measurement has to run outside the container, with Bun, Rust, and the
+WebAssembly target set up on the host a second time, though the maintainer works from the container.
 
 A Chrome on the host draws with the host's GPU and its drivers, which is what Q-1 and Q-2 ask.
 Playwright attaches to a running Chromium-based browser through the DevTools protocol
@@ -96,10 +96,11 @@ which machine is the reference, which is the specification's.
 ## Enforcement
 
 A test under `bench/`, citing `Verifies: PERF-benchmark-drives-host-chrome`, asserts that the
-benchmark launches Chromium without `BENCH_CDP`, attaches to the address `BENCH_CDP` gives, refuses
-one that is not an `http` address of a host and port, and marks its record as of an attached
-browser. `scripts/check-container.sh` fails where `devcontainer.json` names no
-`--add-host=host.docker.internal:host-gateway` or does not forward port 4173, citing this ADR. **Not
-mechanically decidable:** that the attached Chrome runs on the host with a throwaway profile and
-that the forwarder listens on the bridge alone; the README's steps say so, and the record names the
-browser and the GPU it measured.
+benchmark launches Chromium
+without `BENCH_CDP`, attaches to the address `BENCH_CDP` gives, refuses one that is not an `http`
+address of a host and port, and marks its record as of an attached browser.
+`scripts/check-container.sh` fails where `devcontainer.json` names no
+`--add-host=host.docker.internal:host-gateway` or does not forward port 4173, citing this ADR.
+**Not mechanically decidable:** that the attached Chrome runs on the host with a throwaway profile
+and that the forwarder listens on the bridge alone; the README's steps say so, and the record names
+the browser and the GPU it measured.

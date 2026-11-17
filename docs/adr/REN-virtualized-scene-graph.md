@@ -20,18 +20,20 @@ scale, rotation, tint, and alpha but no children and no events. A render group m
 transform of a container to the GPU, so panning and zooming it costs little CPU.
 
 Culling alone does not hold Q-1. Zoomed out far enough, all 50,000 nodes are in the viewport at
-once, and a display object with full node content for each of them is too much for the CPU and for
-the load time of Q-2. The engine already owns the coordinates (API-bridge-takes-serde-and-columns)
-and is the place for a spatial index (ARCH-functional-core-imperative-shell).
+once, and a display object with full node content for each of them is too much for the CPU and
+for the load time of Q-2. The engine already owns the coordinates
+(API-bridge-takes-serde-and-columns) and is the place for
+a spatial index (ARCH-functional-core-imperative-shell).
 
-The edge mesh grows with what the engine flattens, not with what is visible. A path subdivided into
-up to 2^12 segments, and a query that meshes every edge it finds whole, into vectors that grow
-without bound, run WebAssembly out of memory with graph data the bridge accepts: two nodes, one at
-(0, 0) and one at (-1e7, 3e6), with 20,000 edges between them, trap with `unreachable` at the first
-frame after zooming to a scale of 4, inside the animation frame, where the host application cannot
-catch it; 10,000 such edges at a pixel of 0.25 world units take 3.7 GB before they trap. A load may
-hold up to 1,000,000 edges (ARCH-functional-core-imperative-shell). Rust's standard collections
-abort when an allocation fails, which on WebAssembly is a trap; `try_reserve` returns the failure
+The edge mesh grows with what the engine flattens, not with what is visible. A path subdivided
+into up to 2^12 segments, and a query that meshes every edge it finds whole, into vectors that
+grow without bound, run WebAssembly out of memory with graph data the bridge accepts: two nodes,
+one at (0, 0) and one at (-1e7, 3e6), with 20,000 edges between them, trap with `unreachable` at
+the first frame after zooming to a scale of 4, inside the animation frame, where the host
+application cannot catch it; 10,000 such edges at a pixel of 0.25 world units take 3.7 GB before
+they trap. A load may hold up to 1,000,000 edges (ARCH-functional-core-imperative-shell). Rust's
+standard collections abort
+when an allocation fails, which on WebAssembly is a trap; `try_reserve` returns the failure
 instead.
 
 Q-4 asks for edge paths that deviate by at most 0.5 px from a reference computation at every zoom
@@ -48,8 +50,9 @@ what they claim:
   rectangle, no vertex of a segment that meets the rectangle lies farther from it than the grown
   rectangle reaches, so what the rectangle shows rounds by its distance from the query's origin
   (API-bridge-takes-serde-and-columns), however far the segment's ends lie. A depth of 24 keeps the
-  quarter pixel in the rectangle for an edge from (0, 0) to (-1e8, 3e7); the rectangle and the mesh
-  budget, not the depth, bound what an edge costs.
+  quarter pixel in the
+  rectangle for an edge from (0, 0) to (-1e8, 3e7); the rectangle and the mesh budget, not the
+  depth, bound what an edge costs.
 - **Sixteen split points.** The flattened points lie on the curve, and each split point marks a
   change of side of one of the four lines that bound the grown rectangle between two of them, the
   entry and the exit of one segment by different lines. A cubic crosses each line at most three
@@ -57,16 +60,18 @@ what they claim:
   against the room left as every flattened point is, a rounding that adds more cannot break the
   budget, and the floors and the budget stay as they are.
 - **The budget's size.** The floors of a load at the limit of 1,000,000 edges
-  (ARCH-functional-core-imperative-shell) are 4,000,000 vertices; the next power of two is the size
-  the shell's arrays grow to anyway. It is twelve times the largest mesh measured of the benchmark's
-  graph (Sources), which never reaches it, nor would with 32 more vertices for each of its edges. So
-  every edge found is drawn at every viewport while memory lasts.
+  (ARCH-functional-core-imperative-shell) are
+  4,000,000 vertices; the next power of two is the size the shell's arrays grow to anyway. It is
+  twelve times the largest mesh measured of the benchmark's graph (Sources), which never reaches
+  it, nor would with 32 more vertices for each of its edges. So every edge found is drawn at every
+  viewport while memory lasts.
 
 Editing the graph reuses freed slots (ARCH-engine-edits-graph-in-place), and a node the host
-application adds has to be drawn on top also where it takes a freed slot below others, so slot order
-cannot be the order in which nodes are drawn. ARCH-engine-edits-graph-in-place gives every node a
-rank for that, and the hit test takes the node of the highest rank. Edges and edge labels have no
-such need and keep slot order.
+application adds has to be
+drawn on top also where it takes a freed slot below others, so slot order cannot be the order in
+which nodes are drawn. ARCH-engine-edits-graph-in-place gives every node a rank for that, and the
+hit test takes the node
+of the highest rank. Edges and edge labels have no such need and keep slot order.
 
 ## Decision
 
@@ -80,26 +85,29 @@ vertices per query, and choose by zoom between three levels of detail.
   joins the list with the change that builds it, such as a grid or the connectors.
 - **The world at the query's origin:** `world` stands at the screen point of the last query's origin
   (API-bridge-takes-serde-and-columns), computed in `f64`; the layers that draw from the query's
-  relative streams, now `edges` and `labels`, stand at its (0, 0), and those placed by node
-  positions, now `nodes` and `particles`, at minus the origin. The GPU's `f32` then sees only
-  distances from the origin for the edges, the edge labels, and the node views, whose vertices
-  PixiJS computes in `f64` within the world; the particles of the far level, whose shader takes
-  their container's whole transform, keep the rounding they had. A render that moves the world
-  without a query keeps the origin of the query it drew.
+  relative streams, now `edges`
+  and `labels`, stand at its (0, 0), and those placed by node positions, now `nodes` and
+  `particles`, at minus the origin. The GPU's `f32` then sees only distances from the origin for the
+  edges, the edge labels, and the node views, whose vertices PixiJS computes in `f64` within the
+  world; the particles of the far level, whose shader takes their container's whole transform, keep
+  the rounding they had. A render that moves the world without a query keeps the origin of the query
+  it drew.
 - **Culling:** `render` asks the engine for the slots that meet the viewport grown by a culling
   margin of 128 screen pixels, and binds pooled display objects to exactly those: node views and
   particles in the order of the nodes' ranks (ARCH-engine-edits-graph-in-place), which the query
-  returns, so that the node of the highest rank is drawn on top; edges and edge labels in slot
-  order. While the viewport stays inside the rectangle it last queried, that rectangle reaches at
-  most twice the margin beyond the viewport, the scale stays within a factor of 1.25 of the one it
-  queried at, and the graph and the selection are unchanged, a render moves the world alone without
-  a query. PixiJS's own culling stays off.
+  returns, so that the node
+  of the highest rank is drawn on top; edges and edge labels in slot order.
+  While the viewport stays inside the rectangle it last queried, that rectangle reaches at most
+  twice the margin beyond the viewport, the scale stays within a factor of 1.25 of the one it
+  queried at, and the graph and the selection are unchanged, a render moves the world alone
+  without a query. PixiJS's own culling stays off.
 - **Edges:** the engine owns the stroke. It flattens every edge it finds within a quarter pixel at
   the current zoom inside the query's rectangle and tessellates it into the buffers of one mesh
   (API-bridge-takes-serde-and-columns): per vertex its position, its distance along the path, its
-  colour, and its dash pattern, and an arrowhead whose tip is the edge's end. `edges` uploads them
-  into one mesh whose shader only leaves out the gaps of dash patterns, never a `Graphics` per edge.
-  Appearance the host application adds to edges extends the engine's stroke.
+  colour, and its dash
+  pattern, and an arrowhead whose tip is the edge's end. `edges` uploads them into one mesh whose
+  shader only leaves out the gaps of dash patterns, never a `Graphics` per edge. Appearance the
+  host application adds to edges extends the engine's stroke.
 - **The rectangle:** a part of a path whose control points have a bounding box that misses the
   query's rectangle grown by the stroke's width is drawn as its chord; past a chord, the distance
   along the path advances by the chord's length. A segment of the flattened path that meets the
@@ -220,15 +228,16 @@ What an edge and a query cost:
 - Negative / trade-offs: an edge drawn as its chord for the budget strays beyond 0.5 px and draws
   no arrowhead. Q-4 allows that in a coarsened mesh, which inspection reports.
 - Negative / trade-offs: the query's origin (API-bridge-takes-serde-and-columns) bounds the rounding
-  of vertices near the rectangle, not of every vertex the mesh holds. An end at a distance `d` from
-  the origin strays by up to `d` × 2^-24 world units, which at a scale `s` reaches 0.5 px from `d` =
-  2^23 / `s`, about 2.1e6 at a scale of 4. The split keeps the ends of a segment that meets the
-  rectangle near it; a chord of a part whose control points miss the grown rectangle, a segment that
-  passes outside it, and the chord of an edge coarsened for the budget are not split, and keep the
-  rounding of their ends however far they lie, which Q-4 allows past 2^21 px from the viewport. The
-  first two reach into the rectangle only where that rounding exceeds their clearance, at least half
-  the stroke's width, which takes ends some 2^23 stroke widths from the query's origin; a bend's
-  offset of up to the full width narrows that clearance, and Q-4 bounds the rest at 2^21 px.
+  of vertices near the
+  rectangle, not of every vertex the mesh holds. An end at a distance `d` from the origin strays by
+  up to `d` × 2^-24 world units, which at a scale `s` reaches 0.5 px from `d` = 2^23 / `s`, about
+  2.1e6 at a scale of 4. The split keeps the ends of a segment that meets the rectangle near it; a
+  chord of a part whose control points miss the grown rectangle, a segment that passes outside it,
+  and the chord of an edge coarsened for the budget are not split, and keep the rounding of their
+  ends however far they lie, which Q-4 allows past 2^21 px from the viewport. The first two reach
+  into the rectangle only where that rounding exceeds their clearance, at least half the stroke's
+  width, which takes ends some 2^23 stroke widths from the query's origin; a bend's offset of up to
+  the full width narrows that clearance, and Q-4 bounds the rest at 2^21 px.
 - Negative / trade-offs: a chord is shorter than the part it stands for, so where an edge leaves
   the rectangle and comes back, its dash pattern inside may shift when a query moves the chord.
 - Negative / trade-offs: which edges keep full detail past the budget follows slot order, not

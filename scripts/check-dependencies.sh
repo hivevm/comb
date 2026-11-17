@@ -9,12 +9,14 @@
 #      npm-shrinkwrap.json, yarn.lock, or pnpm-lock.yaml lies in the tree beside bun.lock. In a git
 #      repository the tree is what git tracks or would track (.gitignore honoured); elsewhere every
 #      file outside node_modules/, .git/, and target/.
-#   2. Bridge (API-bridge-takes-serde-and-columns): the tsify entry of crates/engine-wasm/Cargo.toml, in whatever form —
+#   2. Bridge (API-bridge-takes-serde-and-columns): the tsify entry of
+#   crates/engine-wasm/Cargo.toml, in whatever form —
 #      a version string, an inline table over one or more lines, a [dependencies.tsify] table,
 #      under [target.'…'.dependencies] or not, or inherited with `workspace = true` from the root
 #      Cargo.toml's [workspace.dependencies] — says `default-features = false` and enables no
 #      `json` feature; and no serde_json is named, under any key or as a renamed `package`.
-#   3. Store (ARCH-graph-in-zustand-store): the dependency lists of packages/comb/package.json (dependencies,
+#   3. Store (ARCH-graph-in-zustand-store): the dependency lists of packages/comb/package.json
+#   (dependencies,
 #      devDependencies, peerDependencies, optionalDependencies) name none of the state libraries
 #      listed below; zustand is the store.
 #

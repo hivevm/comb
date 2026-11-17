@@ -11,7 +11,8 @@ Q-1 asks dragging a node, and adding or removing a node or an edge, at 50,000 no
 to draw a frame each refresh of a 60 Hz display, and G-2 asks every edge at the dragged node to
 follow it in the same frame. A drag writes the node's position into the engine's buffer once per
 pointer move ([ARCH-graph-in-zustand-store](ARCH-graph-in-zustand-store.md)), and the scene binds
-its views, its particles, and one edge mesh to what a query of the engine found
+its views, its particles, and one edge
+mesh to what a query of the engine found
 ([REN-virtualized-scene-graph](REN-virtualized-scene-graph.md)).
 
 A query of the far view is far more than a frame can hold. A profile of a drag that queries anew
@@ -37,9 +38,10 @@ Apart from what this decision keeps, the scene keeps a query only while the stor
 object in a slot on an edit that adds or removes, on a change of a node's content or an edge's style
 or label, and when the engine reuses a freed slot
 ([ARCH-engine-edits-graph-in-place](ARCH-engine-edits-graph-in-place.md)). PixiJS uploads a
-sub-range of a buffer (`Buffer.update(sizeInBytes, offsetInBytes)`); its `ParticleContainer` uploads
-every particle when a property marked static changes, and `packages/comb/src/render/particles.ts`
-marks every property static so that a pan uploads none.
+sub-range of a buffer
+(`Buffer.update(sizeInBytes, offsetInBytes)`); its `ParticleContainer` uploads every particle when a
+property marked static changes, and `packages/comb/src/render/particles.ts` marks every property
+static so that a pan uploads none.
 
 ## Decision
 
@@ -54,10 +56,11 @@ query drew what they move or remove, and query anew at the release, past those f
   ([ARCH-graph-in-zustand-store](ARCH-graph-in-zustand-store.md)).
 - **An edit, as the scene sees it:** the slots in which the store's `nodes` and `edges` differ from
   the arrays of the query it keeps, compared slot by slot when either array is a new one since the
-  last render, so that several edits within a frame count as the slots they changed. A slot empty in
-  the kept query and filled now is added; one filled then and empty now is removed; one filled in
-  both by another object, a change of content, style, or label or a slot reused, queries anew. An
-  added node increments no counter ([ARCH-graph-in-zustand-store](ARCH-graph-in-zustand-store.md)).
+  last render, so that several edits within a frame count as the slots they changed. A slot empty
+  in the kept query and filled now is added; one filled then and empty now is removed; one filled
+  in both by another object, a change of content, style, or label or a slot reused, queries anew.
+  An added node increments no counter
+  ([ARCH-graph-in-zustand-store](ARCH-graph-in-zustand-store.md)).
 - **Which edits keep the query:** at the far level, at most 256 changed slots since the query, a
   bound on what the moving layer draws each frame and on the comparison; more, an edit at the near
   or the middle level, a load, an edit that clears the selection, and a removal that ends a drag
@@ -75,12 +78,12 @@ query drew what they move or remove, and query anew at the release, past those f
   newest ranks, in slot order, their ranks' but where an edit reused a slot freed since the query.
   At the near and the middle level a dragged node's view stays where the kept query bound it,
   keeping its rank ([ARCH-engine-edits-graph-in-place](ARCH-engine-edits-graph-in-place.md)), and
-  moves to the node's position, and the labels of the dragged nodes' edges move to their points
-  (G-6).
+  moves to the
+  node's position, and the labels of the dragged nodes' edges move to their points (G-6).
 - **Layers:** the moving edges directly above `edges`, the moving particles directly above
   `particles` ([REN-virtualized-scene-graph](REN-virtualized-scene-graph.md)); a dragged particle
-  drawn above the nodes it passes is the one departure from the order of ranks, until the next
-  query.
+  drawn above the
+  nodes it passes is the one departure from the order of ranks, until the next query.
 - **Inspection:** `draws`, `isDrawn`, and `inspect()` report the moving layer's nodes and edges as
   drawn and the hidden ones as not, against the store's arrays, not the query's; the moving mesh's
   detail joins the query's.
@@ -116,9 +119,10 @@ level (ticket 18 of revision-2026-10-18).
 - **Overlay without hiding** — draw the moved node and edges on top and leave the old ones in the
   kept query; the old edges stay visible where the node was.
 - **The dragged slots named at the press** — the hiding and the moving layer begin before the
-  pointer moves, but a press within the slop is a click on the node or one of its elements, not a
-  drag ([REN-node-content-in-rows](REN-node-content-in-rows.md)), and would hide and upload for a
-  gesture that moves nothing.
+  pointer moves, but a press within the slop is a click on the node or one of its elements, not
+  a drag ([REN-node-content-in-rows](REN-node-content-in-rows.md)), and would hide and upload for a
+  gesture that
+  moves nothing.
 
 ## Sources / Prior art
 

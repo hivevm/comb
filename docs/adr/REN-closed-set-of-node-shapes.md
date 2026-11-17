@@ -15,14 +15,17 @@ drafted there for the maintainer to land.
 
 The forces:
 
-- **Q-1 and Q-2:** a graph of node shapes stays as fluid at 50,000 nodes as one of rectangles. The
-  engine owns geometry, culling, and hit tests (REN-virtualized-scene-graph,
-  REN-node-content-in-rows), and the shell draws from pooled views. A node shape that only the shell
-  knows would leave the engine hitting and culling a rectangle the user does not see.
+- **Q-1 and Q-2:** a graph of node shapes stays as fluid at 50,000 nodes as one of rectangles.
+  The engine owns geometry, culling, and hit tests (REN-virtualized-scene-graph,
+  REN-node-content-in-rows), and the shell draws
+  from pooled views. A node shape that only the shell knows would leave the engine hitting and
+  culling a rectangle the user does not see.
 - **REN-node-content-in-rows:** content is a closed set of elements the engine lays out. A closed
-  set of node shapes keeps the same split: the host describes, the engine computes, the shell draws.
+  set of node
+  shapes keeps the same split: the host describes, the engine computes, the shell draws.
 - **API-host-asks-content-height:** the host gives a node's width, and the engine gives its height
-  from its content. A node shape changes how much room the content has, so the height depends on it.
+  from its content.
+  A node shape changes how much room the content has, so the height depends on it.
 - **Q-5 to Q-7:** a new field crosses the bridge, where it is checked, and is refused by a typed
   problem when it is unknown.
 
@@ -100,18 +103,20 @@ up.
   the data format. The node stays hit and culled as a rectangle, an edge still ends at the
   rectangle, and a diamond's corners would be clicked through.
 - **A node shape by a registered icon** — cheap, since icons exist (REN-node-content-in-rows), but
-  an icon is a texture: it neither scales crisply at every zoom nor gives an outline to hit or to
-  dock on.
-- **The host gives the height** — `NodeData` gains a `height` that overrides the content's. It frees
-  a circle of any size, but content may overflow, and API-host-asks-content-height's promise that
-  the host places a node where Comb draws it needs a second source of height.
+  an icon is a
+  texture: it neither scales crisply at every zoom nor gives an outline to hit or to dock on.
+- **The host gives the height** — `NodeData` gains a `height` that overrides the content's. It
+  frees a circle of any size, but content may overflow, and API-host-asks-content-height's promise
+  that the host
+  places a node where Comb draws it needs a second source of height.
 - **Content allowed in the filled node shapes** — a name inside an initial state. UML draws
   none, and a bar of 8 world units holds no line, so a refusal says what a host did wrong.
 
 ## Sources / Prior art
 
 - REN-node-content-in-rows and API-host-asks-content-height, and `crates/engine/src/content.rs` for
-  the padding and the rows (read on 2026-11-06).
+  the padding and the rows (read on
+  2026-11-06).
 - The notation of states and pseudostates in OMG's UML 2.5.1, chapter 14 (State Machines): a state
   as a rounded rectangle, an initial pseudostate as a filled circle, a final state as a circle
   around a filled circle, a choice as a diamond, and a fork or join as a bar. This is recalled,

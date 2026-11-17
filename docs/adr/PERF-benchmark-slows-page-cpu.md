@@ -10,12 +10,13 @@
 The reference machine of Q-1 and Q-2 is a laptop with four cores and an integrated GPU of the class
 of Intel Iris Xe or AMD Radeon 680M. The machine the maintainer measures on
 ([PERF-benchmark-drives-host-chrome](PERF-benchmark-drives-host-chrome.md)) has an Intel UHD
-Graphics 770, weaker than that class, and an Intel Core i7-13700, a desktop processor of sixteen
-cores that is far faster than it. A GPU-bound frame there judges Q-1 more strictly than the
-reference would; the load and the first frame of Q-2, and the WebAssembly of every gesture, run on
-the page's main thread and are judged too kindly. No measurement of a reference laptop exists to set
-the gap by; a core of the i7-13700 is, by the maintainer's estimate, about one and a half to two
-times one of a laptop processor of the Iris Xe's generation.
+Graphics 770,
+weaker than that class, and an Intel Core i7-13700, a desktop processor of sixteen cores that is far
+faster than it. A GPU-bound frame there judges Q-1 more strictly than the reference would; the load
+and the first frame of Q-2, and the WebAssembly of every gesture, run on the page's main thread and
+are judged too kindly. No measurement of a reference laptop exists to set the gap by; a core of the
+i7-13700 is, by the maintainer's estimate, about one and a half to two times one of a laptop
+processor of the Iris Xe's generation.
 
 Chrome slows a page's CPU by a factor through the DevTools protocol,
 `Emulation.setCPUThrottlingRate`, "a slowdown factor (1 is no throttle, 2 is 2x slowdown)"; it
@@ -34,8 +35,9 @@ measures by on their machine is 2.
   every number of one run is slowed alike.
 - **The record:** `cpuThrottle` beside the CPU model and the browser
   ([PERF-benchmark-drives-host-chrome](PERF-benchmark-drives-host-chrome.md)), 1 where nothing was
-  slowed; `bench/compare.ts` compares a run only with baselines of the same factor, and refuses
-  another, naming both.
+  slowed;
+  `bench/compare.ts` compares a run only with baselines of the same factor, and refuses another,
+  naming both.
 
 **Out of scope:** slowing the GPU; deriving the factor from a measurement of a reference laptop,
 which a later change takes up when one exists.
@@ -70,6 +72,6 @@ which a later change takes up when one exists.
 ## Enforcement
 
 A test under `bench/`, citing `Verifies: PERF-benchmark-slows-page-cpu`, asserts that the benchmark
-slows the page by the factor `BENCH_CPU_THROTTLE` gives, refuses one below 1 or not finite, records
-`cpuThrottle`, 1 without it, and that `bench/compare.ts` refuses a run whose factor differs from its
-baselines'.
+slows the page by
+the factor `BENCH_CPU_THROTTLE` gives, refuses one below 1 or not finite, records `cpuThrottle`, 1
+without it, and that `bench/compare.ts` refuses a run whose factor differs from its baselines'.

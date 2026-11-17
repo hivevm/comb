@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 #
-# Self-test of scripts/check-container.sh. Verifies: DEV-container-adds-bun-and-rust, SEC-no-container-engine, PERF-benchmark-drives-host-chrome
+# Self-test of scripts/check-container.sh.
+# Verifies: DEV-container-adds-bun-and-rust, SEC-no-container-engine
+# Verifies: PERF-benchmark-drives-host-chrome
 #
 # Each case builds a fixture under a temporary directory — a devcontainer.json with comments that
 # builds from the Dockerfile and adds the Rust Feature, and a Dockerfile that pins its base image
 # and the image it copies Bun from by digest — runs the check against it, and asserts the exit code
 # and, for a failing case, the message that names the violation. The baseline passes; every
-# failing case breaks one thing DEV-container-adds-bun-and-rust or SEC-no-container-engine decides, and the passing cases are near
+# failing case breaks one thing DEV-container-adds-bun-and-rust or SEC-no-container-engine decides,
+# and the passing cases are near
 # misses the check must not mistake for one.
 #
 # Usage:

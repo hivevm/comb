@@ -9,7 +9,8 @@
 # scripts/test-check-bundle.sh passes fixtures. Each file is gzipped at level 9 and the sizes are
 # summed; 1 kB is 1,000 bytes.
 #
-# The host application hands Comb the engine (API-host-hands-comb-engine), so the bundle carries it as a .wasm file
+# The host application hands Comb the engine (API-host-hands-comb-engine), so the bundle carries it
+# as a .wasm file
 # of its own and never inlined in the JavaScript: the check fails on a missing engine file, since a
 # bundle of JavaScript alone would pass while measuring less than Q-3 means, and on an inlined one,
 # as a data URL or as any base64 that begins with the WebAssembly magic number (`AGFzbQ`).
@@ -17,7 +18,8 @@
 #
 # Nor may the bundle carry either seam of the bridge's test mode, which only tests run in: the
 # memory grown before every call of the engine (`detaching`), and the trap the engine exports in
-# test mode, which the bridge looks up. API-trapped-engine-is-lost decides the trap a seam of test mode only;
+# test mode, which the bridge looks up. API-trapped-engine-is-lost decides the trap a seam of test
+# mode only;
 # keeping `detaching` out is the check's own rule, which no ADR decides. Each has a mark of its
 # own, which the check reads from packages/comb/src/bridge/index.ts, `DETACHING_MARK` and
 # `TRAP_EXPORT`: a .js file that carries either, or a file that names the trap's export, fails,

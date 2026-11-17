@@ -18,8 +18,8 @@
 //! such a field (`invalidField`), and refuses as malformed only what has no such shape, and no
 //! message names a Rust type or crate. A last property holds the engine's count of the code units
 //! of content to what the graph holds through loads, additions, updates, and removals.
-// Verifies: Q-7, ARCH-one-workspace-per-example, API-bridge-takes-serde-and-columns,
-// API-edges-dock-side-or-outline
+// Verifies: Q-7, ARCH-one-workspace-per-example, API-bridge-takes-serde-and-columns
+// Verifies: API-edges-dock-side-or-outline
 
 use std::cell::Cell;
 

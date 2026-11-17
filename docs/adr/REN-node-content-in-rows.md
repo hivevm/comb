@@ -15,28 +15,32 @@ Q-1 asks for 60 fps with 50,000 nodes, Q-4 for geometry exact to 0.5 px, and Q-5
 interpreting graph data as HTML, script, or URL.
 
 A description Comb draws itself can be pooled and batched (REN-virtualized-scene-graph); a callback
-in which the host application draws with PixiJS cannot, and its cost is outside Comb's control. A
-closed set of elements is a public interface the host application relies on, so adding an element is
-a change of that interface.
+in which the host
+application draws with PixiJS cannot, and its cost is outside Comb's control. A closed set of
+elements is a public interface the host application relies on, so adding an element is a change
+of that interface.
 
 Laying out the elements is geometry: the height of each row, the position of each element, the
 truncation of text to its column. ARCH-functional-core-imperative-shell puts geometry into the
-engine, where Q-4 can be tested without a browser. Text widths depend on the font, which the shell
-knows from its `BitmapText` fonts (REN-virtualized-scene-graph).
+engine, where Q-4 can be tested
+without a browser. Text widths depend on the font, which the shell knows from its `BitmapText`
+fonts (REN-virtualized-scene-graph).
 
-What the pointer hits decides what a press and a hover do. G-5 asks that the user selects a node or
-an edge, G-6 that the user drags an edge label, and G-3 starts a connection on a connector
+What the pointer hits decides what a press and a hover do. G-5 asks that the user selects a node
+or an edge, G-6 that the user drags an edge label, and G-3 starts a connection on a connector
 ([API-one-connector-per-side](API-one-connector-per-side.md)); a click on a content element is
-G-10's. The canvas draws, from the bottom, the edges as one mesh in slot order, the nodes in the
-order of their ranks (ARCH-engine-edits-graph-in-place), the edge labels in slot order, and the
-connectors (REN-virtualized-scene-graph, API-one-connector-per-side), and node views take no events
-(REN-virtualized-scene-graph). A user expects to grab what they see on top. An edge is a curve,
-drawn one pixel wide at the far level and a few pixels wide nearer, so it can only be hit within a
+G-10's. The canvas
+draws, from the bottom, the edges as one mesh in slot order, the nodes in the order of their ranks
+(ARCH-engine-edits-graph-in-place), the edge labels in slot order, and the connectors
+(REN-virtualized-scene-graph, API-one-connector-per-side), and node views
+take no events (REN-virtualized-scene-graph). A user expects to grab what they see on top. An edge
+is a curve, drawn
+one pixel wide at the far level and a few pixels wide nearer, so it can only be hit within a
 tolerance. An edge label is a pill whose width follows its text, which the shell measures with its
-`BitmapText` font and the engine cannot; the query receives only the widest pill's reach, one number
-for all labels (API-bridge-takes-serde-and-columns). ARCH-functional-core-imperative-shell keeps
-geometry out of the shell, and the engine's spatial index already holds the nodes, the edges, and
-the label points.
+`BitmapText` font and the engine cannot; the query receives only the widest pill's reach, one
+number for all labels (API-bridge-takes-serde-and-columns). ARCH-functional-core-imperative-shell
+keeps geometry out of the shell, and the engine's
+spatial index already holds the nodes, the edges, and the label points.
 
 ## Decision
 
@@ -138,8 +142,9 @@ registers and colours given as numbers.
   the size of the nodes before content. The engine states the padding, the gap between columns,
   and the least height; the shell states each role's line height.
 - **Levels of detail (REN-virtualized-scene-graph):** *near* draws every element; *middle* draws the
-  box and the texts of role title, at the place near gives them, and no action, badge, progress bar,
-  metric, or icon; *far* draws no element.
+  box and the
+  texts of role title, at the place near gives them, and no action, badge, progress bar, metric,
+  or icon; *far* draws no element.
 - **Limits (Q-7):** the bridge refuses a node with more rows, a row with more columns, a progress
   bar with more segments, a text longer, or a load whose texts hold more code units in all than
   limits it states, each with a typed problem that names the node. The budget of the code units
@@ -156,18 +161,19 @@ registers and colours given as numbers.
   world point, the size of a screen pixel, the level of detail, and whether to look for
   connectors, and returns the target drawn on top there: a connector, else an edge label, else a
   node, with the element of its content under the point, else an edge, else none.
-  - **Connector:** within 8 screen pixels of its point, at the near and the middle level, the node
-    and side it belongs to (API-one-connector-per-side). The shell asks for connectors only where a
-    connection can begin, where `CombOptions.canConnect` is set
-    (API-edits-reported-as-typed-changes); otherwise the call hits none, and a press there finds
-    what lies beneath.
+  - **Connector:** within 8 screen pixels of its point, at the near and the middle level, the
+    node and side it belongs to (API-one-connector-per-side). The shell asks for connectors only
+    where a connection
+    can begin, where `CombOptions.canConnect` is set (API-edits-reported-as-typed-changes);
+    otherwise the call hits none, and
+    a press there finds what lies beneath.
     - Within the node's outline (REN-closed-set-of-node-shapes) a connector reaches at most a
-      quarter of the node's extent across its side: of its height for the top and the bottom
-      connector, of its width for the right and the left. So the middle half of a node is the
-      node's, and a node too thin on screen for both reaches, such as a bar, is still pressed and
-      dragged as a node. Outside the outline the reach is the 8 pixels, also within the node's
-      bounding rectangle, where the node itself is not hit; a node at least 32 screen pixels high
-      and wide hits as before.
+      quarter of the node's
+      extent across its side: of its height for the top and the bottom connector, of its width
+      for the right and the left. So the middle half of a node is the node's, and a node too thin
+      on screen for both reaches, such as a bar, is still pressed and dragged as a node. Outside
+      the outline the reach is the 8 pixels, also within the node's bounding rectangle, where
+      the node itself is not hit; a node at least 32 screen pixels high and wide hits as before.
   - **Edge label:** at the near level only, where labels are drawn, the label whose pill holds
     the point. The shell hands the engine the half width and half height of each label's pill, in
     world units, when it draws the label's text and whenever that text changes; a label the shell
@@ -177,11 +183,12 @@ registers and colours given as numbers.
   - **Edge:** within 4 screen pixels of its path as the stroke flattens it at the current zoom,
     at every level.
   - **On top:** within one kind, the item drawn last: the node of the highest rank
-    (ARCH-engine-edits-graph-in-place), and the edge or label in the highest slot.
+    (ARCH-engine-edits-graph-in-place),
+    and the edge or label in the highest slot.
   - **One call:** the result crosses as one generated structured value
-    (API-bridge-takes-serde-and-columns) naming the kind and the slot, for a connector its side, and
-    for a node the element hit. Interaction calls it on press, on hover, and on the release of a
-    press on a node, and draws the cursor from it.
+    (API-bridge-takes-serde-and-columns) naming the kind
+    and the slot, for a connector its side, and for a node the element hit. Interaction calls it
+    on press, on hover, and on the release of a press on a node, and draws the cursor from it.
   - **What a press does:** on a connector it begins a connection; on an edge label it selects the
     label's edge and begins a drag of the label; on a node it selects the node, and once the
     pointer has moved more than 4 screen pixels from the press, begins a drag of it, a release
@@ -206,8 +213,9 @@ more than one item; hitting an edge's arrowhead apart from its path.
   to interpret.
 - **The shell hit-tests what it drew** — PixiJS's events on the bound views, or their bounds, know
   every label's pill, but node views take no events (REN-virtualized-scene-graph) and particles have
-  none at all; the order between layers would be the shell's, and the distance to a curve geometry
-  the shell does not hold (ARCH-functional-core-imperative-shell).
+  none at all;
+  the order between layers would be the shell's, and the distance to a curve geometry the shell
+  does not hold (ARCH-functional-core-imperative-shell).
 - **A label hit by the widest pill's reach** — no extents cross the bridge, but beside a long
   label every short one would be hit far beyond its pill, grabbing a label where the user meant
   the empty canvas.

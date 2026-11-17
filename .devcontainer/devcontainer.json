@@ -23,11 +23,11 @@
   ],
 
   // The host's address on the Docker bridge, by which the benchmark reaches a Chrome on the host
-  // that a forwarder there bridges to its debugging port (PERF-benchmark-drives-host-chrome). And a limit of 8192 tasks,
-  // threads included, in place of Podman's default of 2048: one `CI=1 scripts/check-all.sh` peaks
-  // at about 1400, most of it the Playwright workers' Chromium, so two worktrees running the checks
-  // at once need about 2800 beside the editor and the agents, and 8192 leaves room for a third.
-  // The limit takes effect when the container is rebuilt.
+  // that a forwarder there bridges to its debugging port (PERF-benchmark-drives-host-chrome). And a
+  // limit of 8192 tasks, threads included, in place of Podman's default of 2048: one
+  // `CI=1 scripts/check-all.sh` peaks at about 1400, most of it the Playwright workers' Chromium,
+  // so two worktrees running the checks at once need about 2800 beside the editor and the agents,
+  // and 8192 leaves room for a third. The limit takes effect when the container is rebuilt.
   "runArgs": ["--add-host=host.docker.internal:host-gateway", "--pids-limit=8192"],
 
   "shutdownAction": "stopContainer",
@@ -95,7 +95,8 @@
   },
 
   // The example's development server (G-9), which the launch configuration opens in the host's
-  // browser, and the benchmark's preview server, which a Chrome on the host loads (PERF-benchmark-drives-host-chrome).
+  // browser, and the benchmark's preview server, which a Chrome on the host loads
+  // (PERF-benchmark-drives-host-chrome).
   "forwardPorts": [5173, 4173],
   "portsAttributes": {
     "5173": { "label": "Comb example", "onAutoForward": "silent" },

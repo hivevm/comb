@@ -10,10 +10,11 @@
 The specification leaves persistence to the host application
 ([Non-Goals](../SPECIFICATION.md#non-goals)), and
 [API-edits-reported-as-typed-changes](API-edits-reported-as-typed-changes.md) has Comb apply each
-edit at once and tell the host application every change as a typed `GraphChange` through one
-listener, so that a host that persists keeps its own copy of the graph from `onChange` alone. The
-convention *A host application's copy follows what Comb took* asks that such a copy be written only
-from what Comb tells.
+edit at once and tell
+the host application every change as a typed `GraphChange` through one listener, so that a host
+that persists keeps its own copy of the graph from `onChange` alone. The convention *A host
+application's copy follows what Comb took* asks that such a copy be written only from what Comb
+tells.
 
 Both examples keep such a copy, and both write the same code for it, which
 [ARCH-one-workspace-per-example](ARCH-one-workspace-per-example.md) keeps them from sharing:
@@ -34,8 +35,8 @@ rule is a public interface nobody declared. The design revision of 2026-11-07, w
 state-diagram feature, found the two copies in its survey of `examples/`.
 
 xyflow, which API-edits-reported-as-typed-changes names for the controlled data flow, exports
-`applyNodeChanges(changes, nodes)` and `applyEdgeChanges` for the same need, returning the nodes
-with the changes applied.
+`applyNodeChanges(changes,
+nodes)` and `applyEdgeChanges` for the same need, returning the nodes with the changes applied.
 
 Open questions: which goal this serves, since no `G-n` or `Q-n` names a host's copy and Q-3 asks
 for a fully typed public interface; whether the function belongs to the entry `comb` or to one of
@@ -66,13 +67,14 @@ undo; persisting the copy anywhere.
 - **Return a new `GraphData`**, as xyflow's helpers return a new array — suits a host application
   that keeps its graph immutable, but copies the lists of 50,000 nodes (Q-1) for every change, and
   both examples change their copy in place today.
-- **Comb hands out its whole graph on request** (`comb.graph()`) — no copy to keep, but a host that
-  persists after each change would read the whole graph each time, and the store keeps no
+- **Comb hands out its whole graph on request** (`comb.graph()`) — no copy to keep, but a host
+  that persists after each change would read the whole graph each time, and the store keeps no
   coordinates ([ARCH-graph-in-zustand-store](ARCH-graph-in-zustand-store.md)), so each read gathers
   them from the engine.
 - **A shared module the examples import** — the least code, but ARCH-one-workspace-per-example keeps
-  each example a workspace that imports no other, and a host application outside the repository
-  would still write the rules itself.
+  each example a
+  workspace that imports no other, and a host application outside the repository would still
+  write the rules itself.
 
 ## Sources / Prior art
 

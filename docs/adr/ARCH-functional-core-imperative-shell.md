@@ -21,13 +21,15 @@ effects. Its *Does not fit* warns of large mutable state copied on every step; w
 to them and stay deterministic and free of effects.
 
 The engine knows nodes and edges by slot only and keeps no identifiers
-([API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md)); the map from identifiers to slots is the store's, in the
+([API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md)); the map from
+identifiers to slots is the store's, in the
 shell. So some refusals of graph data need that map, and the bridge crate cannot make them: an
 identifier that `updateNode`, `removeNodes`, `removeEdges`, or `updateEdge` names and the graph
 does not hold, an identifier that `addNode`, `addEdge`, or a user's connection adds and the graph
 holds already, and an `addEdge` whose end the graph does not hold
 ([ARCH-engine-edits-graph-in-place](ARCH-engine-edits-graph-in-place.md),
-[API-edits-reported-as-typed-changes](API-edits-reported-as-typed-changes.md)). The maintainer decided that `api` makes
+[API-edits-reported-as-typed-changes](API-edits-reported-as-typed-changes.md)). The maintainer
+decided that `api` makes
 every refusal that needs the map, whichever method or gesture asks.
 
 The bridge refuses a coordinate or a size that is not finite as the engine keeps it, `f32`, but
@@ -73,7 +75,9 @@ whose only door to the engine is its `bridge` module.
   within `f32`. A move of nodes stops each where its far side meets the limit, a drag's included,
   and a label dragged to a point beyond it stops at it; a query strokes for at most 2^114 world
   units a screen pixel, far beyond the shell's least zoom. The limit lies far beyond any graph a
-  host application draws: [API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md)'s origin holds the rounding near
+  host application draws:
+  [API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md)'s origin holds the
+  rounding near
   the rectangle to Q-4 at 5e7 world units, 2^25 and more, where 2^120 is about 1.3e36.
 - **What the bridge cannot see:** `api` decides two things itself, each because the bridge cannot. A
   string the store keeps that holds a lone surrogate, which serde-wasm-bindgen hands the bridge
@@ -81,7 +85,8 @@ whose only door to the engine is its `bridge` module.
   `false`, which the bridge refuses as a value of the wrong type; a patch's key, which the store
   does not keep, crosses as written and is named with U+FFFD in its place. And `api` checks, against
   the store's map from identifiers to slots, which only the shell keeps
-  ([API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md)), what only that map knows, whichever method of the public
+  ([API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md)), what only that map
+  knows, whichever method of the public
   interface or gesture asks: an identifier named that the graph does not hold (`unknownNode`,
   `unknownEdge`), as `updateNode`, `removeNodes`, `removeEdges`, and `updateEdge` name one; an
   identifier added that the graph holds already (`duplicateNode`, `duplicateEdge`), as `addNode`,
@@ -121,7 +126,8 @@ graph, and the model of node content, each a decision of its own.
 - **Derived points cut to `f32` as they are written** — nothing refused, but a vertex cut is no
   longer on its path, and the drawing would be wrong where it should be absent.
 - **The query's rectangle cut to the world** — keeps the origin within the world as well, but moves
-  it off what [API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md) decides, the rectangle's centre snapped to its
+  it off what [API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md) decides,
+  the rectangle's centre snapped to its
   grid, and the bound needs it not: an origin of a rectangle that finds anything lies within 2^127
   of it.
 - **`api` refusing against the map only an identifier `updateNode` names** — the narrowest refusal
@@ -140,7 +146,8 @@ graph, and the model of node content, each a decision of its own.
   of [API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md).
 - **Lone surrogates checked in the bridge crate** — one place for that refusal too, but the
   bridge would have to read each string as a JavaScript string before serde-wasm-bindgen converts
-  it, outside the generated types of [API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md), for a refusal `api`
+  it, outside the generated types of
+  [API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md), for a refusal `api`
   makes with one expression.
 - **Validation in `api` alone** — the shell checks all graph data in TypeScript before the
   bridge. The bridge crate would check again in its own types, so every rule would be written
@@ -189,8 +196,10 @@ graph, and the model of node content, each a decision of its own.
 - Negative / trade-offs: a node dragged to the limit stops there without a word; the user sees
   it stop, the host the `nodeMoved` of where it stopped.
 - Follow-ups: none; the data format of the bridge, the store, the scene graph and its culling, and
-  the model of node content are decided in [API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md),
-  [ARCH-graph-in-zustand-store](ARCH-graph-in-zustand-store.md), [REN-virtualized-scene-graph](REN-virtualized-scene-graph.md), and
+  the model of node content are decided in
+  [API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md),
+  [ARCH-graph-in-zustand-store](ARCH-graph-in-zustand-store.md),
+  [REN-virtualized-scene-graph](REN-virtualized-scene-graph.md), and
   [REN-node-content-in-rows](REN-node-content-in-rows.md).
 
 ## Enforcement

@@ -59,8 +59,8 @@ describe("graph store", () => {
   });
 
   test("an added node takes its slot in the map and the lists, and the change names it", () => {
-    // Verifies: ARCH-engine-edits-graph-in-place, API-edits-reported-as-typed-changes,
-    // ARCH-graph-in-zustand-store
+    // Verifies: ARCH-engine-edits-graph-in-place, API-edits-reported-as-typed-changes
+    // Verifies: ARCH-graph-in-zustand-store
     const store = createGraphStore();
     store.getState().load(graph, units);
     const { nodes, positionsVersion, idUnits } = store.getState();

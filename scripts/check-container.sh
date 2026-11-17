@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 #
-# The Dev Container's image and its reach (DEV-container-adds-bun-and-rust, SEC-no-container-engine), and its way to a Chrome on the host
+# The Dev Container's image and its reach (DEV-container-adds-bun-and-rust,
+# SEC-no-container-engine), and its way to a Chrome on the host
 # (PERF-benchmark-drives-host-chrome).
 #
 # scripts/check-devcontainer.sh holds the template's part, the socket, the Features' tags, and the
-# lock (NUC-container-hides-host-daemon). This check holds what Comb decided on top of it, from the files the decisions
+# lock (NUC-container-hides-host-daemon). This check holds what Comb decided on top of it, from the
+# files the decisions
 # name, and fails, naming each, on:
 #
 #   1. Build: .devcontainer/devcontainer.json not building from .devcontainer/Dockerfile — no
@@ -12,7 +14,8 @@
 #   2. Digests: a 'FROM' or a 'COPY --from=' of .devcontainer/Dockerfile that names an image
 #      without '@sha256:' and 64 hex digits; a stage the file itself names with 'AS', in any case,
 #      or a stage by its index is no image and passes (DEV-container-adds-bun-and-rust).
-#   3. Node.js: a Feature whose id is a 'node' Feature ('…/node' or '…/node:N') (DEV-container-adds-bun-and-rust).
+#   3. Node.js: a Feature whose id is a 'node' Feature ('…/node' or '…/node:N')
+#   (DEV-container-adds-bun-and-rust).
 #   4. Engine: a Feature whose id contains 'docker' or 'podman', or a 'dockerComposeFile'
 #      (SEC-no-container-engine).
 #   5. Host: no '--add-host=host.docker.internal:host-gateway' among its run arguments, or no 4173

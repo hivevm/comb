@@ -1,5 +1,7 @@
-# The Dev Container's image (DEV-container-adds-bun-and-rust): the Dev Containers base image and the Bun binary, both
-# pinned by digest. Rust comes as a Feature, locked by devcontainer-lock.json (NUC-container-hides-host-daemon §3); there is
+# The Dev Container's image (DEV-container-adds-bun-and-rust): the Dev Containers base image and the
+# Bun binary, both
+# pinned by digest. Rust comes as a Feature, locked by devcontainer-lock.json
+# (NUC-container-hides-host-daemon §3); there is
 # no Node.js (DEV-bun-vite-and-wasm-pack).
 FROM mcr.microsoft.com/devcontainers/base:debian@sha256:71b6fe7c4e07ec747a94a72b2a17f2f8c286eaa7b1c59862888df764efb8b6c6
 

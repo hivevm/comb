@@ -1,6 +1,8 @@
-# Code owners for what only a human decides, and for the protected parts of DEV-implementer-and-fresh-reviewer, which the
+# Code owners for what only a human decides, and for the protected parts of
+# DEV-implementer-and-fresh-reviewer, which the
 # maintainer reviews as well as the reviewing session. The rules themselves are stated in
-# NUC-documents-are-fixed §2, NUC-decisions-are-proposed-then-accepted §5, and DEV-implementer-and-fresh-reviewer; the
+# NUC-documents-are-fixed §2, NUC-decisions-are-proposed-then-accepted §5, and
+# DEV-implementer-and-fresh-reviewer; the
 # review this file drives is a repository setting, listed under "Repository settings" in
 # ../CONTRIBUTING.md, and until that setting is enabled this file changes nothing.
 
@@ -8,21 +10,25 @@
 /docs/SPECIFICATION.md @mbrigl
 /docs/adr/ @mbrigl
 
-# The public TypeScript interface of Comb; package.json as a whole, for its exports (DEV-implementer-and-fresh-reviewer).
+# The public TypeScript interface of Comb; package.json as a whole, for its exports
+# (DEV-implementer-and-fresh-reviewer).
 /packages/comb/src/index.ts @mbrigl
 /packages/comb/src/api/ @mbrigl
 /packages/comb/package.json @mbrigl
 
-# The data format of the bridge and the validation of graph data that holds Q-5 to Q-7 (DEV-implementer-and-fresh-reviewer).
+# The data format of the bridge and the validation of graph data that holds Q-5 to Q-7
+# (DEV-implementer-and-fresh-reviewer).
 /crates/engine-wasm/ @mbrigl
 /packages/comb/src/bridge/ @mbrigl
 
-# The mesh budget that holds Q-7 for accepted graph data, and its tests (DEV-implementer-and-fresh-reviewer, REN-virtualized-scene-graph).
+# The mesh budget that holds Q-7 for accepted graph data, and its tests
+# (DEV-implementer-and-fresh-reviewer, REN-virtualized-scene-graph).
 /crates/engine/src/stroke.rs @mbrigl
 /crates/engine/src/graph.rs @mbrigl
 /crates/engine/src/graph/ @mbrigl
 
-# The CI, the git hooks, and the checks the ADRs rest on, with their self-tests (DEV-implementer-and-fresh-reviewer).
+# The CI, the git hooks, and the checks the ADRs rest on, with their self-tests
+# (DEV-implementer-and-fresh-reviewer).
 /.github/ @mbrigl
 /.githooks/ @mbrigl
 /scripts/check-*.sh @mbrigl

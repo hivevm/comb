@@ -10,13 +10,15 @@ name: Checks
 # DEV-implementer-and-fresh-reviewer.
 #
 # The sensors report for the reviewer and fail on nothing they count, except the plain rules and
-# the action references, which this workflow runs with --require (SEC-actions-pinned-by-sha for the action
+# the action references, which this workflow runs with --require (SEC-actions-pinned-by-sha for the
+# action
 # references); their self-tests fail like any check's. The sensors job checks out the full history
 # because several sensors read it. The review binding sensor runs in
 # review-binding.yml, the repository settings sensor on a human's instruction
 # (NUC-checks-are-bash §7); this workflow runs the self-test of each.
 #
-# Build, test, lint: scripts/check-code.sh (DEV-bun-vite-and-wasm-pack), after Bun, Rust with the WebAssembly
+# Build, test, lint: scripts/check-code.sh (DEV-bun-vite-and-wasm-pack), after Bun, Rust with the
+# WebAssembly
 # target, and Chromium are set up, and after the self-test of scripts/check-mutants.sh, which the
 # Mutation testing workflow (mutation.yml) runs. It is the one job of this workflow that installs
 # something. Every action of every workflow is referenced by its full commit SHA, with its version

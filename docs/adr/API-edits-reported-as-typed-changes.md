@@ -18,20 +18,21 @@ refused with a typed error, the graph kept as it was.
 
 Beside the editing methods below, the public interface has `load`, `updateNode`, and
 `onSelectionChange`. [ARCH-graph-in-zustand-store](ARCH-graph-in-zustand-store.md) derives the
-events to the host application from store changes in `api`, "so the host application sees one
-sequence of events whatever caused them".
+events to the host application from store
+changes in `api`, "so the host application sees one sequence of events whatever caused them".
 [API-trapped-engine-is-lost](API-trapped-engine-is-lost.md) makes every call that needs the engine
 throw an `EngineLostError` once the engine is lost.
 [ARCH-engine-edits-graph-in-place](ARCH-engine-edits-graph-in-place.md) adds and removes nodes and
-edges in the engine one at a time.
+edges in the
+engine one at a time.
 
 Two shapes of data flow are common. In the *controlled* shape, as xyflow has it, the editor proposes
 each change and the application applies it and hands the graph back; in the *uncontrolled* one, the
 editor applies the change and tells the application. The controlled shape puts the host's code into
 every frame of a drag and every edit round a copy of the graph, against Q-1 at 50,000 nodes; the
 store keeps the structure and the engine the coordinates
-([ARCH-graph-in-zustand-store](ARCH-graph-in-zustand-store.md)), and neither can wait for the host.
-So Comb applies the edit, and the host refuses in advance where it has to.
+([ARCH-graph-in-zustand-store](ARCH-graph-in-zustand-store.md)), and neither
+can wait for the host. So Comb applies the edit, and the host refuses in advance where it has to.
 
 A refusal can be asked for in three ways: a callback that answers before the edit, a promise that
 answers later, or an event the host cancels. A test decides a synchronous answer by its return
@@ -43,8 +44,8 @@ identifier `removeNodes`, `removeEdges`, or `updateEdge` names that the graph do
 `addNode`, `addEdge`, or user's connection whose identifier the graph holds already, and an
 `addEdge` whose end the graph does not hold. The engine keeps no identifiers
 ([API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md)), so the bridge crate
-cannot check them against the graph it holds;
-[ARCH-functional-core-imperative-shell](ARCH-functional-core-imperative-shell.md) makes them
+cannot check them against the graph it
+holds; [ARCH-functional-core-imperative-shell](ARCH-functional-core-imperative-shell.md) makes them
 `api`'s.
 
 The maintainer asked for the editing interface as one decision: the changes, the vetoes, and the
@@ -60,9 +61,10 @@ changed under it, its answer is about a graph that is gone. What `canDelete` was
 longer be what would go; a `canConnect` that removed the source or the target leaves the user's edge
 without an end, and one that added an edge between the two itself would leave the user's edge beside
 its own, which [API-one-connector-per-side](API-one-connector-per-side.md) (*Compatible*) does not
-let the user make. So both gestures end with nothing done once Comb told a change during the veto's
-call, and *The user's edge* below holds with that one exception: a `canConnect` that adds the edge
-`x` and returns `x` throws no `duplicateEdge`.
+let the user make.
+So both gestures end with nothing done once Comb told a change during the veto's call, and *The
+user's edge* below holds with that one exception: a `canConnect` that adds the edge `x` and returns
+`x` throws no `duplicateEdge`.
 
 ## Decision
 
@@ -94,11 +96,11 @@ change of the graph during the veto's call.
   when the pointer is released, not per frame of the drag, and not at all for a drag that moved
   nothing. The store's action records the kind of the change and the identifiers it touched, never a
   coordinate ([ARCH-graph-in-zustand-store](ARCH-graph-in-zustand-store.md), *The graph's
-  coordinates*); `api` derives the delivery from that store change, as
-  [ARCH-graph-in-zustand-store](ARCH-graph-in-zustand-store.md) asks, and reads the positions a
-  change carries from the engine's buffer as it delivers. Where an edit also clears the selection,
-  its change is delivered before `onSelectionChange` reports `null`. Lists of identifiers are
-  `readonly string[]`.
+  coordinates*); `api` derives the delivery from
+  that store change, as [ARCH-graph-in-zustand-store](ARCH-graph-in-zustand-store.md) asks, and
+  reads the positions a change carries
+  from the engine's buffer as it delivers. Where an edit also clears the selection, its change is
+  delivered before `onSelectionChange` reports `null`. Lists of identifiers are `readonly string[]`.
 - **New methods of `Comb`:** `addNode(node: NodeData)`; `removeNodes(ids: readonly string[])`, which
   removes the edges at those nodes with them; `addEdge(edge: EdgeData)`; `updateEdge(id, patch)`,
   whose patch may set `color`, `arrow`, `sourceSide`, and `targetSide`, set `dash` or clear it with
@@ -111,16 +113,18 @@ change of the graph during the veto's call.
   keeps working, and throws a `RangeError` on a coordinate that is not finite, like `setViewport`.
 - **Validation:** `api` reads each input once into primitives
   ([ARCH-functional-core-imperative-shell](ARCH-functional-core-imperative-shell.md)). The bridge
-  crate checks what a load would check of that one node or edge, and a patch of `updateEdge` as a
-  load checks those fields; the limits of a load hold for the graph after the edit, the count of
-  nodes and edges and the code units of all identifiers it holds, which the store counts. `api`
-  refuses, as the store's map shows, an unknown node (`unknownNode`), an unknown edge
-  (`unknownEdge`), an identifier the graph holds already (`duplicateNode`, `duplicateEdge`), and an
-  edge to a node it does not hold (`missingNode`), as
+  crate checks what a load would
+  check of that one node or edge, and a patch of `updateEdge` as a load checks those fields; the
+  limits of a load hold for the graph after the edit, the count of nodes and edges and the code
+  units of all identifiers it holds, which the store counts. `api` refuses, as the store's map
+  shows, an unknown node (`unknownNode`), an unknown edge (`unknownEdge`), an identifier the graph
+  holds already (`duplicateNode`, `duplicateEdge`), and an edge to a node it does not hold
+  (`missingNode`), as
   [ARCH-functional-core-imperative-shell](ARCH-functional-core-imperative-shell.md) decides. Every
-  new kind is a kind of the generated `GraphDataProblem`
-  ([API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md)), never one written
-  in TypeScript.
+  new kind
+  is a kind of the generated `GraphDataProblem`
+  ([API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md)), never one
+  written in TypeScript.
 - **Vetoes:** both are called synchronously, in the input event that ends the gesture, and
   neither for the host application's own calls. Where one throws, Comb makes no edit, ends the
   gesture, and then throws the error on.
@@ -132,8 +136,8 @@ change of the graph during the veto's call.
   - `canDelete({ nodes, edges })` is called when the user deletes the selection, `edges` holding
     every edge that would go with the nodes, as the engine names them before it removes anything
     ([ARCH-engine-edits-graph-in-place](ARCH-engine-edits-graph-in-place.md)), all as
-    `readonly string[]`. Comb deletes only where it returns `true`. Without `canDelete`, a deletion
-    is allowed.
+    `readonly string[]`. Comb
+    deletes only where it returns `true`. Without `canDelete`, a deletion is allowed.
 - **A veto during whose call Comb tells a change:** where the store records a change of the graph
   between a veto's call and its return, which Comb tells to the listeners of `onChange` as it
   records it, the gesture ends with nothing done, whatever the veto returned: no edge is added and
@@ -148,12 +152,12 @@ change of the graph during the veto's call.
   identifier `canConnect` returns is checked as the identifier of an edge `addEdge` receives: read
   once, refused by the bridge crate where it is too long or, handed over as `false`
   ([ARCH-functional-core-imperative-shell](ARCH-functional-core-imperative-shell.md)), holds a lone
-  surrogate, and by `api` where the graph holds an edge of that identifier already. A refused
-  identifier refuses the connection: Comb makes no edge, delivers no change, ends the gesture, and
-  then throws the `GraphDataError` of the generated kind from the input event, as it throws on the
-  error of a callback that threw, so that the host's mistake reaches the page as an error. A
-  connection made is drawn with the defaults of an edge without appearance and delivered as
-  `edgeAdded` with `by: "user"`.
+  surrogate, and by `api` where
+  the graph holds an edge of that identifier already. A refused identifier refuses the connection:
+  Comb makes no edge, delivers no change, ends the gesture, and then throws the `GraphDataError` of
+  the generated kind from the input event, as it throws on the error of a callback that threw, so
+  that the host's mistake reaches the page as an error. A connection made is drawn with the defaults
+  of an edge without appearance and delivered as `edgeAdded` with `by: "user"`.
 - **A drop from the palette** is the host application's own `addNode`, so it arrives as
   `by: "host"`; a host that persists only `by: "user"` persists a drop in its own drop handler.
 - **Deleting:** with the canvas focused, Delete or Backspace deletes the selection, a node with
@@ -172,8 +176,8 @@ gesture.
   hold a graph that is not yet the host's.
 - **Report the user's changes only** — the host never hears back what it did itself, and no `by` is
   needed, but [ARCH-graph-in-zustand-store](ARCH-graph-in-zustand-store.md) asks for one sequence of
-  events whatever caused them, and a host that mirrors the graph from `onChange` would miss its own
-  calls.
+  events whatever caused them, and a
+  host that mirrors the graph from `onChange` would miss its own calls.
 - **A listener per kind of change** (`onNodeAdded`, `onEdgesRemoved`, …) — each narrowly typed,
   but nine listeners where one switch on `kind` does, and a new kind is a new method rather than
   a new member of the union, as the error kinds are.
@@ -212,16 +216,18 @@ gesture.
   removed the source or the target throws `missingNode` from the pointer's release, one that added
   an edge between the two itself gets a second edge from the user's gesture beside its own, which
   [API-one-connector-per-side](API-one-connector-per-side.md) (*Compatible*) does not let the user
-  make, one that adds the edge `x` and returns `x` meets a `duplicateEdge` for a case it made on
-  purpose, and the two vetoes answer the same situation differently.
+  make, one that
+  adds the edge `x` and returns `x` meets a `duplicateEdge` for a case it made on purpose, and the
+  two vetoes answer the same situation differently.
 - **Count only a change that touches the proposal's nodes or edges** — an `updateNode` of a third
   node would leave the gesture to the veto's answer. But a change touches a proposal in more ways
   than by naming its items: an edge the veto adds between the two nodes makes the connection no
   longer compatible ([API-one-connector-per-side](API-one-connector-per-side.md)), one it adds at a
-  node to delete joins what would go, and a slot freed and reused moves what an identifier names.
-  Deciding which changes touch the proposal is a second check of compatibility and of what goes, run
-  on host-made state, where one comparison of the store's change before and after the call is exact
-  and costs nothing.
+  node to delete
+  joins what would go, and a slot freed and reused moves what an identifier names. Deciding which
+  changes touch the proposal is a second check of compatibility and of what goes, run on host-made
+  state, where one comparison of the store's change before and after the call is exact and costs
+  nothing.
 
 ## Sources / Prior art
 

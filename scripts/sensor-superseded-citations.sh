@@ -10,7 +10,8 @@
 # the reviewer of AGENTS.md section 5 judges each line, after each supersession above all.
 #
 # A citation is the identifier of a superseded ADR, '<CAT>-<slug>', standing as a word of its own
-# (NUC-adrs-are-named-by-category §1), in a text file of the working tree that git tracks or would track, so that a session sees its new
+# (NUC-adrs-are-named-by-category §1), in a text file of the working tree that git tracks or would
+# track, so that a session sees its new
 # files before its first commit; docs/adr/ is left out, since the record cites its superseded ADRs
 # by design.
 #

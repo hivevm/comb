@@ -8,10 +8,10 @@
 ## Context
 
 [REN-node-content-in-rows](REN-node-content-in-rows.md) takes a node's height from the host
-application: the engine computes it from the node's content, its width, and the fonts. The host
-application still places each node, by the top-left corner `NodeData` gives (`x`, `y`), and a host
-application that centres a node on a point, or runs a layout algorithm of its own, needs each node's
-size before it places it.
+application: the engine
+computes it from the node's content, its width, and the fonts. The host application still places
+each node, by the top-left corner `NodeData` gives (`x`, `y`), and a host application that centres a
+node on a point, or runs a layout algorithm of its own, needs each node's size before it places it.
 
 The example does both: it lays the metric tree out in rows, each node with its middle on its row,
 and puts a node dropped from the palette centred on the drop (G-1, G-9). A host application that
@@ -35,8 +35,8 @@ never wrapped ([REN-node-content-in-rows](REN-node-content-in-rows.md)), so `hei
 `crates/engine/src/content.rs` sums each row's height from the kinds of its elements and the fonts
 alone. A graph of 50,000 nodes (Q-1) asked node by node would cross the bridge 50,000 times before
 its first load, the cost per crossing that
-[API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md) keeps out of a load by
-crossing its fields as columns.
+[API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md) keeps out of a
+load by crossing its fields as columns.
 
 ## Decision
 
@@ -69,9 +69,9 @@ of an edge label, which Comb places along its edge (G-6); a method that takes ma
 - **The height of a node in the graph, `Comb.nodeSize(id)`** — asks after the node is added, so a
   host application adds, reads, and moves it, and Comb has no method that moves a node for the
   host application; and a layout algorithm needs every size before the first load.
-- **An anchor in `NodeData`** — the host application gives the node's middle, or another point, and
-  Comb places the corner. It serves centring but not a layout algorithm, and widens `NodeData` and
-  the columns of a load
+- **An anchor in `NodeData`** — the host application gives the node's middle, or another point,
+  and Comb places the corner. It serves centring but not a layout algorithm, and widens
+  `NodeData` and the columns of a load
   ([API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md)).
 - **The height in the change `nodeAdded`** — the host application hears it after the node is
   drawn, too late to place it.
@@ -120,7 +120,8 @@ of an edge label, which Comb places along its edge (G-6); a method that takes ma
 ## Enforcement
 
 A browser test of the example, citing `Verifies: API-host-asks-content-height`, adds a node of each
-type of the metric tree and asserts that the drawn height equals `heightOf` of its content and
-width, that content of the same shape with other texts and at another width has the same height, and
-that malformed content, and a width `addNode` refuses, is refused with the problem `addNode` gives
-it, naming the node `""`.
+type of the metric
+tree and asserts that the drawn height equals `heightOf` of its content and width, that content
+of the same shape with other texts and at another width has the same height, and that malformed
+content, and a width `addNode` refuses, is refused with the problem `addNode` gives it, naming
+the node `""`.

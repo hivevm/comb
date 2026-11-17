@@ -22,8 +22,8 @@ assumed. The forces:
 - **What exists stays:** the metric tree's runs, its baselines, and the workflow's three runs
   stay as they are. A run that names no graph is a run of the metric tree.
 - **PERF-benchmark-drives-host-chrome and PERF-benchmark-slows-page-cpu:** a run may attach to a
-  Chrome on the host and slow its CPU, and records both. A third choice of the run belongs in the
-  same record and the same refusals.
+  Chrome on the host and slow its CPU, and
+  records both. A third choice of the run belongs in the same record and the same refusals.
 - **The gestures:** drag, pan, zoom, and edits, at the fitted view and at each level, are
   measured on any graph of the same size, so the shaped graph keeps the metric tree's nodes,
   columns, and order. Its node shapes are taller than the metric tree's rows: a circle is as high

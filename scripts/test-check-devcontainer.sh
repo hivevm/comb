@@ -11,7 +11,8 @@
 # that a port of the check is held to them: the baseline passes, what binds when the project has
 # no Dev Container or no VS Code settings, and the cases that break one clause of
 # NUC-container-hides-host-daemon each, a socket mount also in a config longer than a pipe holds.
-# Comb's container also keeps its GitHub login (DEV-gh-login-outlives-rebuild): every fixture carries
+# Comb's container also keeps its GitHub login (DEV-gh-login-outlives-rebuild): every fixture
+# carries
 # the mount, the initializeCommand, and 'gh auth setup-git --force' of the repository's own, a
 # postStartCommand a case writes gains the last, and the cases after the table break one part each.
 # The table is read twice, the second time against a copy of the check that rewords its messages,

@@ -20,7 +20,7 @@ set -uo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib/selftest.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/selftest.sh"
 SENSOR="$ROOT/scripts/sensor-superseded-citations.sh"
-# The category of a citation, kept apart from the fixture's slugs so that check 5 of
+# The category of a citation, kept apart from the fixture's slugs so that the rule docs/adr-refs of
 # scripts/check-docs.sh does not read them as citations of this repository's record.
 A=SEC-
 
@@ -37,8 +37,10 @@ adr() {
     "$A" "$2" "$3" > "$1/docs/adr/$A$2.md"
 }
 
-# repo <name> [superseded] — a repository with an accepted ADR new-core and a rejected ADR gone-core; with
-# 'superseded', ADR old-core too, superseded by new-core, which cites it in its own record. Printed as its
+# repo <name> [superseded] — a repository with an accepted ADR new-core and a rejected ADR
+# gone-core; with
+# 'superseded', ADR old-core too, superseded by new-core, which cites it in its own record. Printed
+# as its
 # path.
 repo() {
   local dir="$work/$1"

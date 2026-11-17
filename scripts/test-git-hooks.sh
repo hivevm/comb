@@ -120,7 +120,6 @@ expect refuse "a deletion of the remote's main while the checks are red" "$d" "t
 d="$(repo green)"
 git -C "${d:?}" switch -q -c feature
 checks "$d" 0
-docs "$d" 0
 expect pass "a push while the checks are green" "$d" "" push -q origin feature
 
 # A tree the checks passed on passes again without them: the committed check script reads its
@@ -316,6 +315,8 @@ expect pass "concluding a conflicted merge while the checks are green" "$d" "" c
 d="$(conflict conflict-feat 0 feat/x)"
 expect refuse "concluding a conflicted merge on a feat/ branch, though the checks are green" "$d" \
   "which carries no merge commit (NUC-main-only-via-pr §5)" commit -q --no-edit
+expect refuse "the refusal on a feat/ branch names it as git switch takes it" "$d" \
+  "git switch feat/x && git merge --ff-only" commit -q --no-edit
 
 d="$(conflict conflict-main 0 main)"
 expect refuse "concluding a conflicted merge on main, though the checks are green" "$d" "on 'main'" commit -q --no-edit

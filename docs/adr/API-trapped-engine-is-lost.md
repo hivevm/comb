@@ -20,8 +20,10 @@ The engine is instantiated once per page: the glue wasm-bindgen generates caches
 `createComb` after the trap would get the same instance back. After a trap the instance's memory may
 be inconsistent, an allocator stopped halfway, so no call into it is safe again. The checks of the
 bridge ([ARCH-functional-core-imperative-shell](ARCH-functional-core-imperative-shell.md)) and the
-mesh budget ([REN-virtualized-scene-graph](REN-virtualized-scene-graph.md)) close the traps that are
-known; this decision is for one that slips past them.
+mesh budget
+([REN-virtualized-scene-graph](REN-virtualized-scene-graph.md)) close the traps that are known; this
+decision is for
+one that slips past them.
 
 ## Decision
 
@@ -32,7 +34,8 @@ error, and the host application learns of the loss through a listener it registe
 - **Detection:** the bridge recognises a trap as a `WebAssembly.RuntimeError` thrown from a call of
   the engine, or the error the glue throws for an object still borrowed, and marks the engine lost
   for the page. Errors the bridge returns as values
-  ([API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md)) are not traps.
+  ([API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md)) are not
+  traps.
 - **Refusal:** `load`, `updateNode`, `setViewport`, `fitView`, and a `createComb` after the loss
   throw `EngineLostError`, which `comb` exports beside its other errors and which names itself.
   Calls that do not touch the engine (`viewport`, `onSelectionChange`, `destroy`) keep working.
@@ -48,8 +51,8 @@ error, and the host application learns of the loss through a listener it registe
 
 **Out of scope:** instantiating the engine anew within the page, which needs a way past the glue's
 cached instance and the compiled module kept
-([API-host-hands-comb-engine](API-host-hands-comb-engine.md)); persisting the graph across the
-reload.
+([API-host-hands-comb-engine](API-host-hands-comb-engine.md));
+persisting the graph across the reload.
 
 ## Alternatives considered
 
@@ -57,7 +60,8 @@ reload.
   instance after a trap, and loads the graph its store holds. The host sees nothing, but the glue
   caches one instance per page, so this needs a glue built or patched for it, and
   [API-host-hands-comb-engine](API-host-hands-comb-engine.md)'s handover of a `Response` would
-  become one of a module.
+  become one of
+  a module.
 - **Refuse, but allow a new Comb** — as decided, and `createComb` may build a fresh instance. It
   needs the same way past the cache as instantiating anew, for a smaller gain.
 - **Leave it untyped** — what the glue does on its own: a canvas that no longer draws, a page

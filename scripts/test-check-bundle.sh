@@ -14,8 +14,10 @@
 # the engine outside exports, or names that export twice, where the build in test mode fails,
 # where that build lacks either seam's mark, where the engine built in test mode lacks the trap,
 # and where the two engines' glue is missing or differs. The cases of the trap and of the engine
-# built in test mode verify API-trapped-engine-is-lost, whose seam of test mode only they keep out of the shipped
-# bundle; those of `detaching` hold the check's own rule and verify none. Verifies: API-trapped-engine-is-lost
+# built in test mode verify API-trapped-engine-is-lost, whose seam of test mode only they keep out
+# of the shipped
+# bundle; those of `detaching` hold the check's own rule and verify none.
+# Verifies: API-trapped-engine-is-lost
 #
 # Usage:
 #     scripts/test-check-bundle.sh

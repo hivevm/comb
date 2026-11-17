@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# Dev Container check for this repository (NUC-container-hides-host-daemon, DEV-gh-login-outlives-rebuild).
+# Dev Container check for this repository (NUC-container-hides-host-daemon,
+# DEV-gh-login-outlives-rebuild).
 #
 # NUC-container-hides-host-daemon keeps the host daemon out of a Dev Container's reach, locks its
 # Features, and mounts each project under a path of its own. A tree without .devcontainer/ has no
@@ -34,7 +35,8 @@
 #      user owns it rather than the engine creating it as root, and the postStartCommand runs
 #      'gh auth setup-git' with '--force', which makes gh git's credential helper even while
 #      nobody is logged in. The login made in the container lies on the host and outlives a
-#      rebuild (DEV-gh-login-outlives-rebuild). A mount written in the object form is not read and fails.
+#      rebuild (DEV-gh-login-outlives-rebuild). A mount written in the object form is not read and
+#      fails.
 #
 # Only the default definition is read; a variant under a subdirectory of .devcontainer/ is not.
 # devcontainer.json allows comments, so full-line '//' comments are dropped before reading; a

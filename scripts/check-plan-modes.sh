@@ -2,7 +2,8 @@
 #
 # Plan modes check: an unattended ticket names no protected part.
 #
-# DEV-implementer-and-fresh-reviewer keeps its protected parts with the maintainer, and .github/CODEOWNERS names them. This
+# DEV-implementer-and-fresh-reviewer keeps its protected parts with the maintainer, and
+# .github/CODEOWNERS names them. This
 # check is the project's own rule beside that ADR: it decides the paths a ticket names, not what
 # the work touches. It reads the protected patterns from .github/CODEOWNERS, the first field of
 # every line that is neither blank nor a comment, and fails, naming the file, when it reads none.

@@ -26,8 +26,9 @@ These properties shape the security posture of the coding agents working here:
   which keeps that capability outside the container's reach. The container is still not a strong
   security boundary, so run only agents and code you trust in it.
 - **Nothing leaves the machine without a human.** The rule is
-  [`AGENTS.md` §6](AGENTS.md#6-project-rules). It is documentation: no file in the repository can
-  stop an agent from running `git push`, and a tool's own configuration enforces none.
+  [NUC-main-only-via-pr §2](docs/adr/NUC-main-only-via-pr.md). It is documentation: no file in the
+  repository can stop an agent from running `git push`, and a tool's own configuration enforces
+  none.
   Authentication uses the web flow of `gh`, and no token is written into the repository. The
   token that flow grants lies in plain text in the host's `~/.config/gh`, which the container
   mounts so the login outlives a rebuild, in reach of everything the container runs; a leak is

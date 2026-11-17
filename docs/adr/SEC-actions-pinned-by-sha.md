@@ -10,10 +10,11 @@
 The specification names the build pipeline as an asset and dependencies and the build pipeline as
 the supply-chain boundary ([Threats](../SPECIFICATION.md#threats--forbidden-actions)).
 [DEV-bun-vite-and-wasm-pack](DEV-bun-vite-and-wasm-pack.md) adds actions beyond `actions/*` to set
-up Bun, Rust, and Playwright, and
-[DEV-container-adds-bun-and-rust](DEV-container-adds-bun-and-rust.md) a smoke test that builds the
-Dev Container. A tag of an action can be moved to other code by whoever controls its repository, and
-the next run executes that code without a diff in this repository.
+up Bun, Rust, and Playwright,
+and [DEV-container-adds-bun-and-rust](DEV-container-adds-bun-and-rust.md) a smoke test that builds
+the Dev Container. A tag of
+an action can be moved to other code by whoever controls its repository, and the next run executes
+that code without a diff in this repository.
 
 The catalogue offers two forms: a major version tag with Dependabot raising the next major, which
 fits first-party actions and few maintainers, and a full commit SHA with a version comment kept
@@ -53,7 +54,8 @@ schedule of Dependabot's updates.
 
 `scripts/sensor-action-refs.sh --require sha` runs in `scripts/check-all.sh` and in the `sensors`
 job of `checks.yml`, beside a comment that cites this ADR with
-`Verifies: SEC-actions-pinned-by-sha`; it fails on any reference that is not a full commit SHA.
+`Verifies: SEC-actions-pinned-by-sha`; it fails on
+any reference that is not a full commit SHA.
 
 **Not mechanically decidable:** that `.github/dependabot.yml` keeps its `github-actions` entry and
 that each reference carries its version in a trailing comment; review holds both.

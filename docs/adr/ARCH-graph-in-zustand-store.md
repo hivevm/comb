@@ -15,26 +15,28 @@ The specification asks for a lightweight TypeScript store, such as Zustand or si
 What decides Q-1 is not the library but what passes through it. With 50,000 nodes, an immutable
 update of every position on every frame of a drag rebuilds a large object for each frame, and a
 signal per node keeps 50,000 reactive objects alive.
-[API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md) puts node positions,
-edge path points, and culling results into buffers the engine owns. The store then holds what
-changes at the pace of the user's edits, not of the frames: the structure of the graph, attributes,
-node content, edge appearance, the selection, and the viewport.
+[API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md) puts
+node positions, edge path points, and culling results into buffers the engine owns. The store then
+holds what changes at the pace of the user's edits, not of the frames: the structure of the graph,
+attributes, node content, edge appearance, the selection, and the viewport.
 
 Connecting ([API-one-connector-per-side](API-one-connector-per-side.md)) and hovering keep state of
-their own: the node under the pointer, and the connection the user drags, with its source, side, the
-node it is over, compatibility, and the connector a release connects to. That state changes at the
-pace of what the pointer is over, not of its moves, and belongs with the rest of the store. The
-world point a connection is dragged to is a coordinate too, but no part of the graph and in no
-engine buffer: the engine derives nothing from it, and a store update for it every frame is the cost
-the store avoids for positions.
+their own: the
+node under the pointer, and the connection the user drags, with its source, side, the node it is
+over, compatibility, and the connector a release connects to. That state changes at the pace of
+what the pointer is over, not of its moves, and belongs with the rest of the store. The world point
+a connection is dragged to is a coordinate too, but no part of the graph and in no engine buffer:
+the engine derives nothing from it, and a store update for it every frame is the cost the store
+avoids for positions.
 
-A coordinate outside the store reaches its readers only through a signal, and the scene reads each
-signal for what it may keep. A drag keeps the query of its press and redraws what it moves in a
-layer of its own, and an edit at the far level keeps the query too
+A coordinate outside the store reaches its readers only through a signal, and the scene reads
+each signal for what it may keep. A drag keeps the query of its press and redraws what it moves in
+a layer of its own, and an edit at the far level keeps the query too
 ([REN-moving-layer-redraws-changes](REN-moving-layer-redraws-changes.md)); the scene can do that
-only where it tells a move of the dragged nodes, and an added node, from a change of positions no
-kept query survives, such as a load. One counter cannot say which. The scene reads an edit from the
-slots in which the store's arrays differ from the ones it drew, so an added node's slot is a signal
+only where
+it tells a move of the dragged nodes, and an added node, from a change of positions no kept query
+survives, such as a load. One counter cannot say which. The scene reads an edit from the slots in
+which the store's arrays differ from the ones it drew, so an added node's slot is a signal
 already; a drag's moves need a counter of their own, and the store names the nodes a drag moves.
 
 ## Decision
@@ -47,21 +49,24 @@ that the store increments when it moves.
 
 - **Writers:** `api` and `interaction` change the store through its actions; `render` only reads
   it ([ARCH-functional-core-imperative-shell](ARCH-functional-core-imperative-shell.md)).
-- **Rendering:** `api` subscribes to the store and schedules at most one render per animation frame,
-  however many changes it carries; `whenRendered` resolves once every change made before the call is
-  drawn and is part of the public interface. The scene decides itself what changed since it last
-  drew ([REN-virtualized-scene-graph](REN-virtualized-scene-graph.md)), so no selector narrows the
+- **Rendering:** `api` subscribes to the store and schedules at most one render per animation
+  frame, however many changes it carries; `whenRendered` resolves once every change made before
+  the call is drawn and is part of the public interface. The scene decides itself what changed
+  since it last drew ([REN-virtualized-scene-graph](REN-virtualized-scene-graph.md)), so no selector
+  narrows the
   subscription.
-- **The graph's coordinates:** a drag of nodes writes positions into the engine's buffer; its first
-  move names the dragged slots in the store's `dragged`, and each pointer move, which a browser
-  delivers at most once a frame, increments `movesVersion`, which a query the scene keeps survives
-  ([REN-moving-layer-redraws-changes](REN-moving-layer-redraws-changes.md)); its release clears
+- **The graph's coordinates:** a drag of nodes writes positions into the engine's buffer; its
+  first move names the dragged slots in the store's `dragged`, and each pointer move, which a
+  browser delivers at most once a frame, increments `movesVersion`, which a query the scene keeps
+  survives ([REN-moving-layer-redraws-changes](REN-moving-layer-redraws-changes.md)); its release
+  clears
   `dragged` and increments `positionsVersion`. `positionsVersion` counts the changes of positions a
   kept query does not survive: a load, a drag's release, and each move of a label drag. An added
   node increments none of them: its slot in the store's `nodes` is the signal, which the scene
   compares with the arrays it last drew
   ([REN-moving-layer-redraws-changes](REN-moving-layer-redraws-changes.md)). No position is copied
-  into the store. The scene compares the counters with the ones it last drew.
+  into the
+  store. The scene compares the counters with the ones it last drew.
 - **What the pointer is over:** the node under the pointer and the connection the user drags,
   without the point it is dragged to, are written only where one of them changes, so a move that
   changes none writes nothing of them.
@@ -77,8 +82,8 @@ into one notification; where a coordinate of a later gesture lives, which follow
 
 ## Alternatives considered
 
-- **The graph's coordinates in the store** — one place for all state, but an update per frame of a
-  drag through an immutable store works against Q-1, and
+- **The graph's coordinates in the store** — one place for all state, but an update per frame of
+  a drag through an immutable store works against Q-1, and
   [API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md) already moves them
   through buffers.
 - **The dragged point in the store** — one place for all state besides the graph's coordinates,
@@ -91,8 +96,9 @@ into one notification; where a coordinate of a later gesture lives, which follow
   load, so the scene would query every frame, which
   [REN-moving-layer-redraws-changes](REN-moving-layer-redraws-changes.md) decides it does not.
 - **An added node counted in `positionsVersion`** — every change of positions behind one counter,
-  but the scene cannot tell it from a load, so an edit at the far level would query the whole view,
-  which [REN-moving-layer-redraws-changes](REN-moving-layer-redraws-changes.md) decides it does not.
+  but the scene cannot tell it from a load, so an edit at the far level would query the whole
+  view, which [REN-moving-layer-redraws-changes](REN-moving-layer-redraws-changes.md) decides it
+  does not.
 - **A notification without a counter** (`set({})`) — the same render, but a write that names no
   field shows in no test of what a move writes; the counter makes the move visible.
 - **Signals with `@preact/signals-core`** — fine-grained updates without selectors, but one signal
@@ -144,5 +150,6 @@ Each test below cites this ADR with `Verifies: ARCH-graph-in-zustand-store`.
   connectors per move (`examples/metric-tree/e2e/connect.spec.ts`).
 - The structural check of
   [ARCH-functional-core-imperative-shell](ARCH-functional-core-imperative-shell.md) fails when
-  `render` reaches a writing action, and `scripts/check-dependencies.sh` fails when `packages/comb`
-  depends on a store library other than `zustand`.
+  `render`
+  reaches a writing action, and `scripts/check-dependencies.sh` fails when `packages/comb` depends
+  on a store library other than `zustand`.

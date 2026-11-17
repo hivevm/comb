@@ -100,7 +100,8 @@
 #      '# On instruction:' line (OPS-measuring-workflows-are-no-gate). So does a script under
 #      scripts/ that neither list runs, unless check-all.sh names it on such a line; a script a
 #      listed one runs, by a line 'bash scripts/<name>.sh' or 'bash "$ROOT/scripts/<name>.sh"',
-#      runs where that one runs, to any depth. A job with a matrix reports one check run per entry, so
+#      runs where that one runs, to any depth. A job with a matrix reports one check run per entry,
+#      so
 #      CONTRIBUTING.md names it by those, '<job> (<values>)', and never by its bare name.
 #   docs/project-layout
 #      Project Layout integrity: every path listed in the 'Project Layout' block of CONTRIBUTING.md
@@ -1022,14 +1023,6 @@ check_adr_link_targets() {  # docs/adr-link-targets
     done <<< "${MD_LINKS["$f"]-}"
   done
 }
-
-# The three places that list this repository's checks have to agree: the jobs in
-# .github/workflows/checks.yml, the invocations in scripts/check-all.sh, and the required status
-# checks named in CONTRIBUTING.md. NUC-checks-are-bash §5 makes check-all.sh the local equivalent
-# of the workflow, and that list is what a maintainer configures the ruleset from — a check that runs
-# in only one of the three is a gate somebody believes in and does not have. Both files say in their
-# own header that a check added to one is added to the other in the same change; this is that
-# sentence, verified.
 
 # _with_nested <array name> — add to the named array, to any depth, every script under scripts/
 # that a script in it runs by a line 'bash scripts/<name>.sh' or 'bash "$ROOT/scripts/<name>.sh"'.

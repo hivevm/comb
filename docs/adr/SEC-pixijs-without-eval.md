@@ -38,8 +38,9 @@ application to import it.
 - **Version:** the module comes with the `pixi.js` the host application bundles. A PixiJS
   upgrade that renames or drops it breaks the build, not a page at run time.
 
-**Out of scope:** WebGPU, whose code generation the module also replaces but which Comb does not use
-([REN-webgl2-or-canvas-fallback](REN-webgl2-or-canvas-fallback.md)); a policy stricter than Q-6's.
+**Out of scope:** WebGPU, whose code generation the module also replaces but which Comb does not
+use ([REN-webgl2-or-canvas-fallback](REN-webgl2-or-canvas-fallback.md)); a policy stricter than
+Q-6's.
 
 ## Alternatives considered
 
@@ -75,7 +76,8 @@ application to import it.
 
 ## Enforcement
 
-A browser test serves the example under the policy of Q-6, records every `securitypolicyviolation`,
-and asserts that none fires while the graph loads, is panned, and is zoomed. It cites this ADR with
-`Verifies: SEC-pixijs-without-eval`. A Bun test asserts that the module that creates the renderer
-imports `pixi.js/unsafe-eval` before it imports `pixi.js`.
+A browser test serves the example under the policy of Q-6, records every
+`securitypolicyviolation`, and asserts that none fires while the graph loads, is panned, and is
+zoomed. It cites this ADR with `Verifies: SEC-pixijs-without-eval`. A Bun test asserts that the
+module that
+creates the renderer imports `pixi.js/unsafe-eval` before it imports `pixi.js`.

@@ -29,10 +29,10 @@ Authority runs **specification → accepted ADRs → task**
    pull request, and the repository's git hooks run them for you ([Git hooks](#git-hooks)). They
    need bash 4.4 or later and coreutils, already in the Dev Container. Only the shell lint
    additionally needs [ShellCheck](https://www.shellcheck.net), which the Dev Container installs;
-   elsewhere it skips itself where that is missing, and CI runs it always. On macOS, whose bash is
-   3.2, install a current one, such as Homebrew's. On Windows they run under Git Bash in a clone
-   made with `git clone -c core.symlinks=true`, so that `.claude/skills/` holds links and not
-   copies; links need the Developer Mode of Windows. `ln -s` makes a link there under
+   elsewhere it skips itself where that is missing, and CI runs it always. On macOS, whose bash
+   is 3.2, install a current one, such as Homebrew's. On Windows they run under Git Bash in a
+   clone made with `git clone -c core.symlinks=true`, so that `.claude/skills/` holds links and
+   not copies; links need the Developer Mode of Windows. `ln -s` makes a link there under
    `MSYS=winsymlinks:nativestrict`; without such a setting it copies, and the documentation check
    refuses the copy.
 3. **Open a pull request** against `main` and fill in the PR template.

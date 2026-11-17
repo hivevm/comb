@@ -246,7 +246,8 @@ run "Mutants check self-test" scripts/test-check-mutants.sh
 # The build, the lint, and the tests, then the engine and bundle checks that read what the build
 # wrote, one after another in this one line.
 run "Build, test, lint" scripts/check-code.sh
-# The weekly benchmark measures on a runner and compares with the baselines (DEV-bun-vite-and-wasm-pack); the Dev
+# The weekly benchmark measures on a runner and compares with the baselines
+# (DEV-bun-vite-and-wasm-pack); the Dev
 # Container workflow builds the container, which needs a container engine the container lacks
 # (SEC-no-container-engine).
 # Not a gate: .github/workflows/benchmark.yml

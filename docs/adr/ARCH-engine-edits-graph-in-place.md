@@ -20,17 +20,20 @@ nodes in a loop pays it each time. A frame of 16.7 ms has no room for it.
 
 A slot is the index of a node or an edge in the engine's buffers, the same on both sides of the
 bridge ([API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md)). The shell
-keeps the map from identifiers to slots, and every call into the engine after a load names slots
-([API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md), *Slots*).
-[API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md) leaves open when slots
-are compacted after deletions. Removing an item leaves its slot empty; what fills it decides whether
-slots stay dense, whether the buffers grow with every edit, and in what order nodes are drawn, since
-the scene and the hit test need an order of nodes that says which one is on top
+keeps the map from identifiers to slots,
+and every call into the engine after a load names slots
+([API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md),
+*Slots*). [API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md) leaves open
+when slots are compacted after
+deletions. Removing an item leaves its slot empty; what fills it decides whether slots stay dense,
+whether the buffers grow with every edit, and in what order nodes are drawn, since the scene and the
+hit test need an order of nodes that says which one is on top
 ([REN-virtualized-scene-graph](REN-virtualized-scene-graph.md)). A node the host application adds
-has to come to the front, where the user dropped it, also when it takes a freed slot below others;
-slot order alone cannot give that. [REN-virtualized-scene-graph](REN-virtualized-scene-graph.md)
-binds node views and particles in the order of the nodes' ranks below, and edges and edge labels in
-slot order.
+has to come to the
+front, where the user dropped it, also when it takes a freed slot below others; slot order alone
+cannot give that. [REN-virtualized-scene-graph](REN-virtualized-scene-graph.md) binds node views and
+particles in the
+order of the nodes' ranks below, and edges and edge labels in slot order.
 
 The spatial index is a uniform grid over the extent it was built for; items beyond the extent
 fall into its border cells, it counts them, and it is built again once more than an eighth of the
@@ -80,8 +83,9 @@ carries a rank that orders drawing and hitting, a node added taking the highest.
   once per four billion additions. Edges and edge labels keep slot order.
 - **The limits of a load**
   ([ARCH-functional-core-imperative-shell](ARCH-functional-core-imperative-shell.md)) hold after
-  every edit: the slots in use of each kind stay within the limit, and because a free slot is taken
-  before a new one, so does the highest slot.
+  every
+  edit: the slots in use of each kind stay within the limit, and because a free slot is taken before
+  a new one, so does the highest slot.
 - **The shell's side:** the map from identifiers to slots drops the identifier of a removed item
   and gains that of an added one with the slot the engine returned. The store's per-slot lists of
   nodes and edges hold no entry at a free slot; every reader of them skips such a hole, as the
@@ -100,7 +104,8 @@ application owns ([ARCH-graph-in-zustand-store](ARCH-graph-in-zustand-store.md))
   drawn on top, but every addition grows the buffers and the grids for good. A session that adds and
   removes reaches the limit of 1,000,000 slots without holding as many items, and needs the
   compaction [API-bridge-takes-serde-and-columns](API-bridge-takes-serde-and-columns.md) leaves
-  open, which renumbers slots under the shell's map.
+  open, which renumbers slots under the
+  shell's map.
 - **A draw-order key the shell keeps** — the scene would sort the found node slots by a key of
   its own per frame, in JavaScript, and the engine's hit test would still need the same key to
   find what is drawn on top, so the key would cross the bridge anyway.

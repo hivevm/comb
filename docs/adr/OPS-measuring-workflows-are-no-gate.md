@@ -4,7 +4,7 @@
 - **Date:** 2026-11-17
 - **Deciders:** Markus Brigl
 - **Applies to:** the `# Not a gate:` and `# On instruction:` lines of `scripts/check-all.sh`, the rule `docs/check-lists` of `scripts/check-docs.sh` and its cases in `scripts/fixtures/check-docs-record.txt`, `.github/workflows/benchmark.yml`, `.github/workflows/mutation.yml`, `.github/workflows/devcontainer.yml`
-- **Extends:** NUC-checks-are-bash §5
+- **Extends:** NUC-checks-are-bash §5, NUC-checks-are-bash §7
 
 ## Context
 
@@ -18,8 +18,11 @@ be a required check, which a push cannot satisfy, or run no script the lists cou
 Comb also builds before it checks what the build wrote. A script that `scripts/check-all.sh` runs
 calls another one by a line `bash scripts/<name>.sh`, so the inner one runs after the build, in the
 same job. Under the base clause the inner script stands in neither list and fails the rule
-`docs/check-lists` as a
-script nobody runs.
+`docs/check-lists` as a script nobody runs.
+
+[NUC-checks-are-bash §7](NUC-checks-are-bash.md) names three kinds of script that run only on a
+human's instruction. A script that reads what a workflow named as no gate alone produces, such as
+`scripts/check-mutants.sh` on the output of the mutation run, is none of them.
 
 Until the take-up of NUC v0.9.1 these two rules stood in the inherited ADR-0002, which Comb had
 extended in place. The base is fixed now
@@ -33,14 +36,16 @@ where the script that runs it runs.
 1. **No gate.** A workflow that checks or measures what the local gate cannot is no gate, like one
    that publishes. Examples are a build of the container, a measurement on a runner, and a
    mutation run of an hour. `scripts/check-all.sh` names it on a `# Not a gate:` line.
-2. **On instruction.** A script that only workflows named as no gate run, such as one that reads
-   what such a workflow alone produces, may stand on an `# On instruction:` line of
-   `scripts/check-all.sh` instead of a run line. A script that a gating workflow runs too must
-   stand on a run line.
-3. **Nested scripts.** A script that a listed script runs by a line `bash scripts/<name>.sh` or
-   `bash "$ROOT/scripts/<name>.sh"` of its own runs where that one runs, in the same lists, to any
-   depth. A check that reads what a build wrote runs after the build, inside the build's script,
-   not beside it. A line that only mentions such a script, such as a comment, runs nothing.
+2. **On instruction.** A script that only workflows named as no gate run may stand on an
+   `# On instruction:` line of `scripts/check-all.sh` instead of a run line. Such a script is a
+   fourth kind beside the three of NUC-checks-are-bash §7. An example is a script that reads what
+   such a workflow alone produces. A script that a gating workflow runs too must stand on a run
+   line.
+3. **Nested scripts.** A listed script may run another one by a line `bash scripts/<name>.sh` or
+   `bash "$ROOT/scripts/<name>.sh"` of its own. The other script then runs where the listed one
+   runs, in the same lists, to any depth. A check that reads what a build wrote runs after the
+   build, inside the build's script. A line that only mentions a script, such as a comment, runs
+   nothing.
 
 **Out of scope:** which workflows Comb runs, which
 [DEV-bun-vite-and-wasm-pack](DEV-bun-vite-and-wasm-pack.md) and the ADRs of each measurement decide.
@@ -57,8 +62,8 @@ where the script that runs it runs.
 
 ## Sources / Prior art
 
-- [NUC-checks-are-bash §5](NUC-checks-are-bash.md), the clause this ADR extends, and
-  [NUC-checks-are-bash §7](NUC-checks-are-bash.md) on the scripts run on instruction.
+- [NUC-checks-are-bash §5](NUC-checks-are-bash.md) and
+  [NUC-checks-are-bash §7](NUC-checks-are-bash.md), the clauses this ADR extends.
 - The inherited ADR-0002 at NUC v0.7.0, extended in place by Comb, whose added clause this ADR
   restates.
 

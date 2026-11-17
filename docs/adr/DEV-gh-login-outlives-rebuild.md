@@ -10,20 +10,22 @@
 The coding agent and the maintainer reach GitHub from the Dev Container through the GitHub CLI,
 `gh`, which the container takes as a Feature and which serves as git's credential helper
 ([NUC-container-hides-host-daemon](NUC-container-hides-host-daemon.md) keeps the container's other
-boundaries). `gh auth login` stores its token in the system's credential store, and where it finds
-none, as in the container, "in a plain text file", `~/.config/gh/hosts.yml`. That file lives in the
-container and is gone after every rebuild. git uses `gh` only once `gh auth setup-git` has
-configured it as the credential helper, which nothing runs. On 2026-11-07 a push of `feat/dev`
-failed twice on this: `gh` had no valid login, and once it had, git still asked for a user name it
-could not read.
+boundaries). `gh auth
+login` stores its token in the system's credential store, and where it finds none, as in the
+container, "in a plain text file", `~/.config/gh/hosts.yml`. That file lives in the container and
+is gone after every rebuild. git uses `gh` only once `gh auth setup-git` has configured it as the
+credential helper, which nothing runs. On 2026-11-07 a push of `feat/dev` failed twice on this:
+`gh` had no valid login, and once it had, git still asked for a user name it could not read.
 
 [NUC-container-hides-host-daemon](NUC-container-hides-host-daemon.md) names the cost of what the
-container mounts: third-party code, its Features at build time and the dependencies the work
-installs, runs next to the credentials it mounts. It already mounts the agent's configuration from
-the host (`~/.claude`), and keeps the container out of the host's container engine; it leaves
-hardening the container out of scope, since the container is no security boundary.
+container mounts: third-party
+code, its Features at build time and the dependencies the work installs, runs next to the
+credentials it mounts. It already mounts the agent's configuration from the host
+(`~/.claude`), and keeps the container out of the host's container engine; it leaves hardening
+the container out of scope, since the container is no security boundary.
 [SEC-no-secrets-in-repository](SEC-no-secrets-in-repository.md) keeps secrets out of the repository;
-a token in the host's home directory is outside it.
+a token in the host's home
+directory is outside it.
 
 No goal or quality goal of [`docs/SPECIFICATION.md`](../SPECIFICATION.md) is served directly; the
 decision serves the working environment of every session, as NUC-container-hides-host-daemon does.

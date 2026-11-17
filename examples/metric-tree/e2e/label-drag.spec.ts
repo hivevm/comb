@@ -129,8 +129,8 @@ test("a label the host clears mid-drag ends the drag: no error, and no labelMove
 test("a label drag past every finite world point moves nothing and throws nothing", async ({
   page,
 }) => {
-  // Verifies: REN-node-content-in-rows, API-edits-reported-as-typed-changes,
-  // API-shell-mistake-refused-as-shells
+  // Verifies: REN-node-content-in-rows, API-edits-reported-as-typed-changes
+  // Verifies: API-shell-mistake-refused-as-shells
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
