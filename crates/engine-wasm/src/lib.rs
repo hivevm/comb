@@ -1,4 +1,4 @@
-//! The bridge between the shell and the engine (ADR-0010).
+//! The bridge between the shell and the engine (API-bridge-takes-serde-and-columns).
 //!
 //! Structured data crosses through serde-wasm-bindgen as `Ts<T>`, with TypeScript types tsify
 //! generates; the graph data of a load crosses as columns, each a string in pieces or one typed
@@ -6,8 +6,8 @@
 //! which the shell reads as typed-array views created anew after every call.
 //!
 //! This root holds the exports and their conversions; the reading and checking of graph data,
-//! which the bridge alone does (ADR-0030), is the module `graph_data`, and what the bridge keeps
-//! of node content between calls, and draws of it, the module `kept`.
+//! which the bridge alone does (ARCH-one-workspace-per-example), is the module `graph_data`, and
+//! what the bridge keeps of node content between calls, and draws of it, the module `kept`.
 
 #![cfg_attr(
     test,
@@ -48,7 +48,8 @@ use graph_data::{
 };
 
 /// A number the shell computed that an export cannot take: the shell's own mistake, never one of
-/// graph data, so that a host application never meets it (ADR-0022). Its kind names the number.
+/// graph data, so that a host application never meets it (API-shell-mistake-refused-as-shells). Its
+/// kind names the number.
 #[derive(Tsify, Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum NumberError {
@@ -68,7 +69,8 @@ pub enum NumberError {
 pub type TranslateError = NumberError;
 
 /// Why `hit`, `query`, or `moveLabel` was refused, as the shell receives it: a problem of graph
-/// data, a slot that holds nothing, or a number the shell computed (ADR-0022).
+/// data, a slot that holds nothing, or a number the shell computed
+/// (API-shell-mistake-refused-as-shells).
 #[derive(Debug, PartialEq)]
 pub enum CallRefusal {
     Data(GraphDataProblem),
@@ -104,7 +106,7 @@ pub enum TranslateRefusal {
 
 /// Why the engine refused a call that names slots: a slot that holds no node or no edge, beyond
 /// the slots or free. The shell's own mistake, never one of graph data, since `api` refuses an
-/// identifier the graph does not hold before it names a slot (ADR-0030).
+/// identifier the graph does not hold before it names a slot (ARCH-one-workspace-per-example).
 #[derive(Tsify, Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum SlotError {
@@ -189,7 +191,7 @@ impl From<EdgeRefusal> for JsValue {
 
 /// The size of a screen pixel, in world units, a query and a hit test take, or its refusal as the
 /// shell's mistake where it is no finite number above zero, before any edge is flattened
-/// (ADR-0022).
+/// (API-shell-mistake-refused-as-shells).
 fn checked_pixel(pixel: f64) -> Result<f64, NumberError> {
     if pixel.is_finite() && pixel > 0.0 {
         Ok(pixel)
@@ -199,7 +201,8 @@ fn checked_pixel(pixel: f64) -> Result<f64, NumberError> {
 }
 
 /// The world point `(x, y)` a hit test or a label's move takes, or its refusal as the shell's
-/// mistake where a coordinate is NaN or infinite, before anything is hit or moved (ADR-0022).
+/// mistake where a coordinate is NaN or infinite, before anything is hit or moved
+/// (API-shell-mistake-refused-as-shells).
 fn checked_point(x: f64, y: f64) -> Result<Point, NumberError> {
     if x.is_finite() && y.is_finite() {
         Ok(Point::new(x, y))
@@ -252,14 +255,15 @@ pub fn content_budget() -> u32 {
 
 /// Checks how many UTF-16 code units the strings of content of one load hold together, `units`,
 /// as the shell counted them while it read them, and names the node `node` whose string passed
-/// the budget (ADR-0010).
+/// the budget (API-bridge-takes-serde-and-columns).
 #[wasm_bindgen(js_name = checkContentBudget)]
 pub fn check_content_budget(units: f64, node: &str) -> Result<(), GraphDataProblem> {
     graph_data::check_content_budget(node, units)
 }
 
 /// The space between a badge's text and its pill's left and right sides, in world units: the
-/// engine's, by which the shell places the text on the pill the engine laid out (ADR-0013).
+/// engine's, by which the shell places the text on the pill the engine laid out
+/// (REN-node-content-in-rows).
 #[wasm_bindgen(js_name = badgePaddingX)]
 pub fn badge_padding_x() -> f64 {
     comb_engine::content::BADGE_PADDING_X
@@ -293,9 +297,10 @@ pub fn segment_limit() -> u32 {
     SEGMENT_LIMIT
 }
 
-/// What a press hits (ADR-0013): a connector by the slot of its node and its side, a label by the
-/// slot of its edge, a node by its slot and the element of its content drawn there, where one is
-/// (ADR-0013), an edge by its slot, or nothing; one generated value (ADR-0010).
+/// What a press hits (REN-node-content-in-rows): a connector by the slot of its node and its side,
+/// a label by the slot of its edge, a node by its slot and the element of its content drawn there,
+/// where one is (REN-node-content-in-rows), an edge by its slot, or nothing; one generated value
+/// (API-bridge-takes-serde-and-columns).
 #[derive(Tsify, Serialize, Debug, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Hit {
@@ -328,9 +333,10 @@ pub struct RectInput {
     pub max_y: f64,
 }
 
-/// One of the engine's two edge meshes, which `meshPtr` and `meshLen` read (ADR-0027): the last
-/// query's, which `query` writes, or the moving layer's, of the edges at the nodes a drag moves
-/// and of those an edit at the far level added, which `meshAt` writes.
+/// One of the engine's two edge meshes, which `meshPtr` and `meshLen` read
+/// (REN-moving-layer-redraws-changes): the last query's, which `query` writes, or the moving
+/// layer's, of the edges at the nodes a drag moves and of those an edit at the far level added,
+/// which `meshAt` writes.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MeshOf {
@@ -349,7 +355,7 @@ pub enum MeshBuffer {
     Indices,
 }
 
-/// The level of detail a query serves (ADR-0012).
+/// The level of detail a query serves (REN-virtualized-scene-graph).
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DetailLevel {
@@ -368,8 +374,8 @@ impl From<DetailLevel> for Level {
     }
 }
 
-/// The detail of a query's edge mesh (ADR-0012): complete, or coarsened where an edge was drawn
-/// as its chord, or left out, for the mesh budget or for memory.
+/// The detail of a query's edge mesh (REN-virtualized-scene-graph): complete, or coarsened where an
+/// edge was drawn as its chord, or left out, for the mesh budget or for memory.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MeshDetail {
@@ -386,10 +392,10 @@ impl From<Detail> for MeshDetail {
     }
 }
 
-/// A trap on demand, in test mode only (ADR-0021), so that the shell's tests provoke the loss of
-/// the engine without depending on a trap the checks may close. The feature `test-mode` builds it
-/// into the engine the tests run; the production build carries none of it, and
-/// scripts/check-bundle.sh fails an engine file that names its export.
+/// A trap on demand, in test mode only (API-trapped-engine-is-lost), so that the shell's tests
+/// provoke the loss of the engine without depending on a trap the checks may close. The feature
+/// `test-mode` builds it into the engine the tests run; the production build carries none of it,
+/// and scripts/check-bundle.sh fails an engine file that names its export.
 #[cfg(feature = "test-mode")]
 mod trap {
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -419,7 +425,7 @@ mod trap {
 }
 
 /// The engine's state as the shell sees it: the loaded graph, the content of its nodes and the
-/// fonts it is laid out in (ADR-0013), and what the last query found.
+/// fonts it is laid out in (REN-node-content-in-rows), and what the last query found.
 #[wasm_bindgen]
 #[derive(Default)]
 pub struct Engine {
@@ -427,7 +433,8 @@ pub struct Engine {
     visible: Visible,
     ends: Vec<f32>,
     fonts: Fonts,
-    /// The content of the nodes the graph holds and the code units of its strings (ADR-0013).
+    /// The content of the nodes the graph holds and the code units of its strings
+    /// (REN-node-content-in-rows).
     content: ContentStore,
     /// Of the nodes the last query found at the near or middle level, in its order, the
     /// boundaries of each one's elements in `placed`.
@@ -438,7 +445,7 @@ pub struct Engine {
     /// The role and the drawn text of each element of `placed`.
     drawn: Drawn,
     /// The edges at the nodes a drag moves and those an edit at the far level added, and their
-    /// mesh, which `meshAt` writes (ADR-0027).
+    /// mesh, which `meshAt` writes (REN-moving-layer-redraws-changes).
     moving_edges: Vec<u32>,
     moving: Mesh,
     /// The slots of the edges `drawnEdges` computed the ends of.
@@ -454,25 +461,26 @@ impl Engine {
 
     /// Replaces the graph with a load, node slot `i` for its node `i` and edge slot `i` for its
     /// edge `i`, and returns the number of node slots. The nodes and the edges cross as columns
-    /// (ADR-0010), each in slot order, and serde-wasm-bindgen converts nothing of a load. Of the
-    /// nodes: the identifiers as pieces of at most 2^28 UTF-16 code units, each ending where a
-    /// value ends, with the boundaries across all pieces in UTF-16 code units, the numbers as
-    /// `Float64Array`, the node shapes as the codes of `NodeShapeCode`, the content as the columns
-    /// of `ContentColumns`, its texts in pieces as the identifiers are, with per text whether it is
-    /// a text, and the first value the shell refused by its type, the index of its node, the code
-    /// of its `NodeField`, and for a shape of content its row and column, or none. Each node is as
-    /// high as its content lays out to in the fonts `setFont` handed over (ADR-0013). Of the edges:
-    /// the identifiers, sources, targets, and label texts each as pieces with their boundaries, per
-    /// label text whether it is a text; whether a label, its background, and a dash are present, as
-    /// bytes; the label's `t` and offset, the background, the colour, and the dash and gap as
-    /// `Float64Array`; the arrowhead and the sides as the codes of `ArrowCode` and `SideCode`; and
-    /// the first value the shell refused by its type, the index of its edge and the code of its
-    /// `EdgeField`, or none. A refused load leaves the loaded graph as it was.
+    /// (API-bridge-takes-serde-and-columns), each in slot order, and serde-wasm-bindgen converts
+    /// nothing of a load. Of the nodes: the identifiers as pieces of at most 2^28 UTF-16 code
+    /// units, each ending where a value ends, with the boundaries across all pieces in UTF-16 code
+    /// units, the numbers as `Float64Array`, the node shapes as the codes of `NodeShapeCode`, the
+    /// content as the columns of `ContentColumns`, its texts in pieces as the identifiers are, with
+    /// per text whether it is a text, and the first value the shell refused by its type, the index
+    /// of its node, the code of its `NodeField`, and for a shape of content its row and column, or
+    /// none. Each node is as high as its content lays out to in the fonts `setFont` handed over
+    /// (REN-node-content-in-rows). Of the edges: the identifiers, sources, targets, and label texts
+    /// each as pieces with their boundaries, per label text whether it is a text; whether a label,
+    /// its background, and a dash are present, as bytes; the label's `t` and offset, the
+    /// background, the colour, and the dash and gap as `Float64Array`; the arrowhead and the sides
+    /// as the codes of `ArrowCode` and `SideCode`; and the first value the shell refused by its
+    /// type, the index of its edge and the code of its `EdgeField`, or none. A refused load leaves
+    /// the loaded graph as it was.
     #[wasm_bindgen(js_name = loadGraph)]
     #[expect(
         clippy::too_many_arguments,
         reason = "one parameter per column, each a type wasm-bindgen hands over in one copy, \
-                  or one per piece (ADR-0010)"
+                  or one per piece (API-bridge-takes-serde-and-columns)"
     )]
     #[expect(
         clippy::needless_pass_by_value,
@@ -599,8 +607,8 @@ impl Engine {
     /// The texts the last `query` placed, as the shell draws them, one after another, which the
     /// boundaries of `contentTextBounds…` cut: each text, or as much of it as fits followed by an
     /// ellipsis, and an icon's registered name whole, which the shell draws as the image
-    /// registered under it (ADR-0013). One copy per query, of the texts of the nodes it found
-    /// alone.
+    /// registered under it (REN-node-content-in-rows). One copy per query, of the texts of the
+    /// nodes it found alone.
     #[wasm_bindgen(js_name = contentTexts)]
     pub fn content_texts(&mut self) -> String {
         trap::spring();
@@ -608,8 +616,8 @@ impl Engine {
     }
 
     /// The content of the node in `slot`, as the host application's type describes it: built when
-    /// inspection or a change Comb tells asks for it, since the shell keeps none (ADR-0013). A slot
-    /// that holds no node throws a `SlotError`.
+    /// inspection or a change Comb tells asks for it, since the shell keeps none
+    /// (REN-node-content-in-rows). A slot that holds no node throws a `SlotError`.
     pub fn content(&mut self, slot: u32) -> Result<Ts<NodeContent>, CallRefusal> {
         trap::spring();
         if !self.graph.holds_node(slot) {
@@ -623,8 +631,8 @@ impl Engine {
     /// `RoleCode`, with: the advance of the glyph of each code point of `codes` in `advances`,
     /// that of every other character, `fallback`, and its line height, all in world units. Every
     /// layout from then on uses it; the shell hands each over once, before the first load
-    /// (ADR-0013). A role that names none, or metrics that do not pair up or are not finite
-    /// numbers from 0 to 1,024, are refused with a `NumberError`, and nothing changes.
+    /// (REN-node-content-in-rows). A role that names none, or metrics that do not pair up or are
+    /// not finite numbers from 0 to 1,024, are refused with a `NumberError`, and nothing changes.
     #[wasm_bindgen(js_name = setFont)]
     pub fn set_font(
         &mut self,
@@ -646,7 +654,8 @@ impl Engine {
     /// Checks the node `addNode` hands over as a load checks a node, its strings of content
     /// counted against the budget on from those the graph holds, and adds it, drawn and hit
     /// above every other node, and returns the slot the engine chose for it: the free slot freed
-    /// last, or a new one after the highest (ADR-0023). A refused node leaves the graph as it was.
+    /// last, or a new one after the highest (ARCH-engine-edits-graph-in-place). A refused node
+    /// leaves the graph as it was.
     #[wasm_bindgen(js_name = addNode)]
     pub fn add_node(&mut self, node: Ts<NodeInput>) -> Result<u32, GraphDataProblem> {
         trap::spring();
@@ -656,7 +665,7 @@ impl Engine {
 
     /// The height, in world units, the content of the node `heightOf` hands over lays out to at
     /// its width in the fonts the shell handed over, checked as `addNode` checks a node, named
-    /// `""` and at the origin, and added to nothing (ADR-0026).
+    /// `""` and at the origin, and added to nothing (API-host-asks-content-height).
     #[wasm_bindgen(js_name = heightOf)]
     pub fn height_of(&self, node: Ts<NodeInput>) -> Result<f64, GraphDataProblem> {
         trap::spring();
@@ -667,8 +676,8 @@ impl Engine {
     /// Checks the patch `updateNode` hands over for the node `id` in `slot`, reading it once, as a
     /// load checks a node's content, its strings counted against the budget on from those the
     /// graph holds besides the node's, and gives the node its new content and the height it lays
-    /// out to, its edges re-placed (ADR-0013); the store merges the patch. A refused patch changes
-    /// nothing; a slot that holds no node throws a `SlotError`.
+    /// out to, its edges re-placed (REN-node-content-in-rows); the store merges the patch. A
+    /// refused patch changes nothing; a slot that holds no node throws a `SlotError`.
     #[wasm_bindgen(js_name = updateNode)]
     pub fn update_node(
         &mut self,
@@ -682,10 +691,10 @@ impl Engine {
     }
 
     /// Checks the edge `addEdge` hands over as a load checks an edge, refuses one from a node to
-    /// itself unless `allow_loops` allows loops (ADR-0031), adds it between the node slots
-    /// `source` and `target`, which the shell resolved, and returns the slot the engine chose for
-    /// it (ADR-0023). A refused edge leaves the graph as it was; a slot of an end that holds no
-    /// node throws a `SlotError`.
+    /// itself unless `allow_loops` allows loops (API-edges-dock-side-or-outline), adds it between
+    /// the node slots `source` and `target`, which the shell resolved, and returns the slot the
+    /// engine chose for it (ARCH-engine-edits-graph-in-place). A refused edge leaves the graph as
+    /// it was; a slot of an end that holds no node throws a `SlotError`.
     #[wasm_bindgen(js_name = addEdge)]
     pub fn add_edge(
         &mut self,
@@ -716,7 +725,8 @@ impl Engine {
     }
 
     /// Records the half width and half height of the pill of the label of the edge in `slot`, in
-    /// world units, as the shell draws it; a label it has not measured is not hit (ADR-0013).
+    /// world units, as the shell draws it; a label it has not measured is not hit
+    /// (REN-node-content-in-rows).
     #[wasm_bindgen(js_name = setLabelSize)]
     pub fn set_label_size(
         &mut self,
@@ -751,8 +761,8 @@ impl Engine {
     }
 
     /// The slots of the edges at the nodes in `slots`, in ascending order, as a removal of them
-    /// would take along, named before anything is removed (ADR-0023). A slot that holds no node
-    /// refuses the call.
+    /// would take along, named before anything is removed (ARCH-engine-edits-graph-in-place). A
+    /// slot that holds no node refuses the call.
     #[wasm_bindgen(js_name = edgesAt)]
     pub fn edges_at(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
         trap::spring();
@@ -760,8 +770,8 @@ impl Engine {
     }
 
     /// Removes the nodes in `slots` and every edge at them, and returns the slots of those edges
-    /// in ascending order; the slots go onto the free lists (ADR-0023). A slot that holds no node
-    /// refuses the call, which then changes nothing.
+    /// in ascending order; the slots go onto the free lists (ARCH-engine-edits-graph-in-place). A
+    /// slot that holds no node refuses the call, which then changes nothing.
     #[wasm_bindgen(js_name = removeNodes)]
     pub fn remove_nodes(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
         trap::spring();
@@ -770,8 +780,9 @@ impl Engine {
         Ok(edges)
     }
 
-    /// Removes the edges in `slots`; the slots go onto the free list (ADR-0023). A slot that holds
-    /// no edge refuses the call, which then changes nothing.
+    /// Removes the edges in `slots`; the slots go onto the free list
+    /// (ARCH-engine-edits-graph-in-place). A slot that holds no edge refuses the call, which then
+    /// changes nothing.
     #[wasm_bindgen(js_name = removeEdges)]
     pub fn remove_edges(&mut self, slots: &[u32]) -> Result<(), SlotError> {
         trap::spring();
@@ -810,9 +821,9 @@ impl Engine {
     /// found, in `rect` at `level` where a screen pixel is `pixel` world units, relative to the
     /// last query's origin, within the mesh budget, and returns the mesh's detail: what a drag
     /// redraws of the nodes it moves and an edit of what it added, in the moving layer each frame
-    /// (ADR-0027). The edges and their mesh are read through `movingEdges…`, `meshPtr`,
-    /// and `meshLen`. A slot of `slots` that holds no node or of `also` that holds no edge throws a
-    /// `SlotError`, and a pixel is checked as `query` checks it.
+    /// (REN-moving-layer-redraws-changes). The edges and their mesh are read through
+    /// `movingEdges…`, `meshPtr`, and `meshLen`. A slot of `slots` that holds no node or of `also`
+    /// that holds no edge throws a `SlotError`, and a pixel is checked as `query` checks it.
     #[wasm_bindgen(js_name = meshAt)]
     pub fn mesh_at(
         &mut self,
@@ -837,7 +848,7 @@ impl Engine {
 
     /// Computes the ends of the edges the last query found and of those the last `meshAt` meshed,
     /// each once, in ascending slot order, read through the `drawnEdges…` and `edgeEnds…`
-    /// buffers: for inspection, not for drawing (ADR-0027).
+    /// buffers: for inspection, not for drawing (REN-moving-layer-redraws-changes).
     #[wasm_bindgen(js_name = drawnEdges)]
     pub fn drawn_edges(&mut self) {
         trap::spring();
@@ -866,11 +877,11 @@ impl Engine {
     /// at `level`: where `connectors` asks for them, at the near and middle level, a connector
     /// within 8 screen pixels, of the node drawn on top; else, at the near level, the label whose
     /// measured pill holds the point; else the node drawn on top there, else the edge drawn on top
-    /// within 4 screen pixels of its path, else nothing (ADR-0013). Of a node, the element of its
-    /// content whose rectangle holds the point, of those drawn at `level`: at the near level every
-    /// element, at the middle level the texts of role title, at the far level none (ADR-0013). A
-    /// pixel is checked as `query` checks it, and a point that is not finite is refused, both with
-    /// a `NumberError`.
+    /// within 4 screen pixels of its path, else nothing (REN-node-content-in-rows). Of a node, the
+    /// element of its content whose rectangle holds the point, of those drawn at `level`: at the
+    /// near level every element, at the middle level the texts of role title, at the far level none
+    /// (REN-node-content-in-rows). A pixel is checked as `query` checks it, and a point that is not
+    /// finite is refused, both with a `NumberError`.
     pub fn hit(
         &mut self,
         x: f64,
@@ -942,7 +953,8 @@ impl Engine {
     }
 
     /// The element of the content of the node in `slot` whose rectangle holds `point`, of those
-    /// drawn at `level`, by the rule the query places them by (`drawn_at`, ADR-0013).
+    /// drawn at `level`, by the rule the query places them by (`drawn_at`,
+    /// REN-node-content-in-rows).
     fn element_at(&self, slot: u32, point: Point, level: DetailLevel) -> Option<ElementHit> {
         // The far level draws no element (`drawn_at`): no node is laid out for nothing.
         if level == DetailLevel::Far {
@@ -985,7 +997,7 @@ impl Engine {
     }
 
     /// Gives every node the height its content lays out to in the fonts as they are now, its edges
-    /// and its place in the index moved along where it changed (ADR-0013).
+    /// and its place in the index moved along where it changed (REN-node-content-in-rows).
     fn lay_out_heights(&mut self) {
         let slots = graph_data::numbered(self.graph.sizes().len() / 2);
         for slot in 0..slots {
@@ -1006,7 +1018,8 @@ impl Engine {
     /// Lays out the content of the nodes the last query found, at the near and the middle level,
     /// and places into the buffers of placed elements those drawn at `level` (`drawn_at`): at the
     /// middle level the texts of role title alone, at the rectangles the near level gives them; at
-    /// the far level, which draws none, the buffers hold no node (ADR-0013, ADR-0012).
+    /// the far level, which draws none, the buffers hold no node (REN-node-content-in-rows,
+    /// REN-virtualized-scene-graph).
     fn lay_out_found(&mut self, level: DetailLevel) {
         self.content_bounds.clear();
         self.placed.clear();
@@ -1058,7 +1071,8 @@ impl Engine {
     }
 
     /// Where the sizes buffer starts, which `loadGraph`, `addNode`, and `updateNode` write:
-    /// `width, height` per node slot, the height the node's content lays out to (ADR-0013).
+    /// `width, height` per node slot, the height the node's content lays out to
+    /// (REN-node-content-in-rows).
     #[wasm_bindgen(js_name = sizesPtr)]
     pub fn sizes_ptr(&self) -> *const f32 {
         self.graph.sizes().as_ptr()
@@ -1099,7 +1113,7 @@ impl Engine {
     }
 
     /// Where the buffer starts that `query` writes, per placed element, the code of its
-    /// `KindCode` into, which says how the shell draws it (ADR-0013).
+    /// `KindCode` into, which says how the shell draws it (REN-node-content-in-rows).
     #[wasm_bindgen(js_name = contentKindsPtr)]
     pub fn content_kinds_ptr(&self) -> *const u8 {
         self.drawn.kinds.as_ptr()
@@ -1126,7 +1140,7 @@ impl Engine {
     }
 
     /// Where the buffer starts that `query` writes, per placed element, its colour as `0xRRGGBB`
-    /// into: a badge's pill's, 0 for an element of no colour (ADR-0013).
+    /// into: a badge's pill's, 0 for an element of no colour (REN-node-content-in-rows).
     #[wasm_bindgen(js_name = contentColorsPtr)]
     pub fn content_colors_ptr(&self) -> *const u32 {
         self.drawn.colors.as_ptr()
@@ -1140,7 +1154,8 @@ impl Engine {
 
     /// Where the buffer starts that `query` writes, per placed element, the boundaries of the
     /// pieces of its bar in `contentBars…` into: one more than there are placed elements, a
-    /// progress bar's segments and then its track, and no piece of another kind (ADR-0013).
+    /// progress bar's segments and then its track, and no piece of another kind
+    /// (REN-node-content-in-rows).
     #[wasm_bindgen(js_name = contentBarBoundsPtr)]
     pub fn content_bar_bounds_ptr(&self) -> *const u32 {
         self.drawn.bar_bounds.as_ptr()
@@ -1180,7 +1195,7 @@ impl Engine {
 
     /// Where the buffer starts that `query` writes, per placed element, the boundaries of its parts
     /// in `contentParts…` into: one more than there are placed elements, a metric's caption, value,
-    /// and trend's text, and no part of another kind (ADR-0013).
+    /// and trend's text, and no part of another kind (REN-node-content-in-rows).
     #[wasm_bindgen(js_name = contentPartBoundsPtr)]
     pub fn content_part_bounds_ptr(&self) -> *const u32 {
         self.drawn.part_bounds.as_ptr()
@@ -1221,7 +1236,7 @@ impl Engine {
 
     /// Where the buffer starts that `query` writes, per placed element, the boundaries of its
     /// arrows in `contentArrows…` into: one more than there are placed elements, a metric's one
-    /// where its column holds it, and none of another kind (ADR-0013).
+    /// where its column holds it, and none of another kind (REN-node-content-in-rows).
     #[wasm_bindgen(js_name = contentArrowBoundsPtr)]
     pub fn content_arrow_bounds_ptr(&self) -> *const u32 {
         self.drawn.arrow_bounds.as_ptr()
@@ -1322,21 +1337,21 @@ impl Engine {
     }
 
     /// The `x` of the origin the last `query` wrote its vertex positions and label points
-    /// relative to (ADR-0010).
+    /// relative to (API-bridge-takes-serde-and-columns).
     #[wasm_bindgen(js_name = originX)]
     pub fn origin_x(&self) -> f64 {
         self.visible.origin.x
     }
 
     /// The `y` of the origin the last `query` wrote its vertex positions and label points
-    /// relative to (ADR-0010).
+    /// relative to (API-bridge-takes-serde-and-columns).
     #[wasm_bindgen(js_name = originY)]
     pub fn origin_y(&self) -> f64 {
         self.visible.origin.y
     }
 
     /// Where the buffer starts that `query` writes, per edge it found, in its order, the first of
-    /// its vertex indices into (ADR-0027).
+    /// its vertex indices into (REN-moving-layer-redraws-changes).
     #[wasm_bindgen(js_name = meshEdgeStartsPtr)]
     pub fn mesh_edge_starts_ptr(&self) -> *const u32 {
         self.visible.mesh.edge_starts.as_ptr()
@@ -1361,8 +1376,8 @@ impl Engine {
     }
 
     /// Where the buffer `buffer` of the edge mesh `of` starts: the last query's, which `query`
-    /// writes, or the moving layer's, which `meshAt` writes (ADR-0027). Fresh per read, since
-    /// growing memory moves it (ADR-0010).
+    /// writes, or the moving layer's, which `meshAt` writes (REN-moving-layer-redraws-changes).
+    /// Fresh per read, since growing memory moves it (API-bridge-takes-serde-and-columns).
     #[wasm_bindgen(js_name = meshPtr)]
     pub fn mesh_ptr(&self, of: MeshOf, buffer: MeshBuffer) -> *const u8 {
         let mesh = self.mesh_of(of);
@@ -1400,7 +1415,7 @@ mod tests {
 
     #[test]
     fn a_freed_slot_is_refused_by_every_export_that_takes_slots_as_a_slot_beyond_the_graph() {
-        // Verifies: ADR-0023
+        // Verifies: ARCH-engine-edits-graph-in-place
         let data = batch(
             &[("a", 0.0, 0.0), ("b", 300.0, 0.0), ("c", 600.0, 0.0)],
             &[("a-b", "a", "b"), ("b-c", "b", "c")],
@@ -1431,7 +1446,7 @@ mod tests {
 
     #[test]
     fn a_move_by_a_delta_that_is_not_finite_is_refused_after_its_slots_and_nothing_moves() {
-        // Verifies: ADR-0022
+        // Verifies: API-shell-mistake-refused-as-shells
         // A delta is the shell's own mistake, which crosses as `TranslateError`, the
         // `NumberError` of a delta, never as a problem of graph data.
         let mut engine = Engine::new();
@@ -1480,7 +1495,7 @@ mod tests {
 
     #[test]
     fn a_node_s_content_lies_in_its_node_shape_s_inner_rectangle_and_is_hit_there() {
-        // Verifies: ADR-0032
+        // Verifies: REN-closed-set-of-node-shapes
         use graph_data::tests::{TITLE, a_and, content, load_into, titled};
         // Node `b`, at (300, 0), a diamond 100 wide of one title: 64 high as a rectangle, so 128,
         // its inner rectangle (25, 32) 50 × 64, its title at the padding inside it.
@@ -1531,7 +1546,7 @@ mod tests {
 
     #[test]
     fn nodes_of_different_content_are_as_high_as_their_rows_and_are_hit_and_joined_there() {
-        // Verifies: ADR-0013
+        // Verifies: REN-node-content-in-rows
         // Node `a`, 100 wide at (0, 0), holds one title; `b`, at (300, 0), five rows: a title and
         // four bodies, 10 + 18 + 4 * 16 + 10 = 102 high, and the edge from `a` enters it there.
         use graph_data::tests::{TITLE, b_of, load_into, text};
@@ -1624,7 +1639,7 @@ mod tests {
 
     #[test]
     fn actions_are_drawn_in_the_bodys_font_kept_as_given_and_a_patchs_hit_as_it_lays_out() {
-        // Verifies: ADR-0013
+        // Verifies: REN-node-content-in-rows
         use graph_data::tests::{action, named_content};
         let mut engine = with_actions();
         // The near level draws the actions as actions, in the body's font.
@@ -1661,7 +1676,7 @@ mod tests {
 
     #[test]
     fn a_point_in_a_node_hits_the_element_drawn_there_and_an_action_its_identifier() {
-        // Verifies: ADR-0013
+        // Verifies: REN-node-content-in-rows
         let engine = with_actions();
         let at = |slot, x, y, level| element(&engine, slot, x, y, level);
         let close = DetailLevel::Near;
@@ -1699,7 +1714,7 @@ mod tests {
 
     #[test]
     fn a_badge_is_drawn_on_its_colour_kept_as_given_and_hit_on_its_pill_alone() {
-        // Verifies: ADR-0013, ADR-0010
+        // Verifies: REN-node-content-in-rows, API-bridge-takes-serde-and-columns
         // `b`, 100 wide at (300, 0), holds a title row and a badge "Done" on 0x22C55E below it:
         // its pill from (12, 28), the four glyphs of the body's 6 and 8 either side, 40 × 22.
         use graph_data::tests::{badged, load_into};
@@ -1739,7 +1754,7 @@ mod tests {
 
     #[test]
     fn a_progress_bar_is_drawn_as_its_segments_and_track_kept_as_given_and_hit_across_its_line() {
-        // Verifies: ADR-0013, ADR-0010
+        // Verifies: REN-node-content-in-rows, API-bridge-takes-serde-and-columns
         // `b`, 100 wide at (300, 0), holds a title row and a progress bar of 0.3 green and 0.2
         // grey below it: its cell from (12, 28), 76 × 16, its bar 8 high from 32, the segments
         // 22.8 and 15.2 long from 12, and the track the remaining 38.
@@ -1801,7 +1816,7 @@ mod tests {
 
     #[test]
     fn an_icon_hands_the_shell_its_name_and_its_square_kept_as_given_and_hit_on_its_square() {
-        // Verifies: ADR-0013, ADR-0010
+        // Verifies: REN-node-content-in-rows, API-bridge-takes-serde-and-columns
         // `b`, 100 wide at (300, 0), holds a title row and an icon named "bet" below it: its
         // square from (12, 28), the body's line of 16 on a side, in a column 76 wide.
         use graph_data::tests::{icon, load_into, named_content};
@@ -1874,7 +1889,7 @@ mod tests {
 
     #[test]
     fn a_metric_is_drawn_as_its_three_texts_and_its_arrow() {
-        // Verifies: ADR-0013, ADR-0010
+        // Verifies: REN-node-content-in-rows, API-bridge-takes-serde-and-columns
         // `metric_engine`'s metric: its cell from (12, 28), 76 × 30, the node 68 high; the caption
         // on its line of 14; the value from (12, 42), two body glyphs of 6; the arrow 8 after it,
         // a square of 10 from (32, 45); the trend's text 4 after the arrow, from 46 to 88.
@@ -1908,7 +1923,7 @@ mod tests {
 
     #[test]
     fn a_metric_is_kept_as_given_and_hit_across_its_cell() {
-        // Verifies: ADR-0013, ADR-0010
+        // Verifies: REN-node-content-in-rows, API-bridge-takes-serde-and-columns
         let engine = metric_engine();
         // Its content, built when asked, holds the metric as the host application gave it.
         let metric = ContentElement::Metric {
@@ -1986,7 +2001,7 @@ mod tests {
 
     #[test]
     fn the_middle_level_places_the_texts_of_role_title_alone_where_the_near_level_does() {
-        // Verifies: ADR-0013
+        // Verifies: REN-node-content-in-rows
         let mut engine = every_kind();
         every_kind_at(&mut engine, DetailLevel::Near);
         // `a`'s title, then `b`'s eight elements in the order of its rows.
@@ -2021,7 +2036,7 @@ mod tests {
 
     #[test]
     fn the_hit_test_names_at_each_level_an_element_the_query_places_there_and_none_else() {
-        // Verifies: ADR-0013
+        // Verifies: REN-node-content-in-rows
         let mut engine = every_kind();
         every_kind_at(&mut engine, DetailLevel::Near);
         let near_rects = engine.content_rects[4..].to_vec();
@@ -2051,7 +2066,7 @@ mod tests {
 
     #[test]
     fn the_texts_after_a_progress_bar_are_read_as_their_own() {
-        // Verifies: ADR-0013, ADR-0010
+        // Verifies: REN-node-content-in-rows, API-bridge-takes-serde-and-columns
         // A progress bar fills no text, so that the texts of the elements after it, in its node
         // and in the nodes after it, are their own: a load of a node of a bar between two texts,
         // then a node of a title.
@@ -2092,7 +2107,7 @@ mod tests {
 
     #[test]
     fn a_patch_of_content_lays_the_node_out_anew_and_a_refused_one_changes_nothing() {
-        // Verifies: ADR-0013, ADR-0024
+        // Verifies: REN-node-content-in-rows, API-edits-reported-as-typed-changes
         use graph_data::tests::{TITLE, b_of, content, load_into, text};
         let mut engine = fonted();
         let nodes = b_of(&[&[TITLE]]);
@@ -2144,7 +2159,7 @@ mod tests {
 
     #[test]
     fn a_load_whose_texts_are_all_empty_and_a_node_of_no_rows_lay_out() {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         // Every text empty: the column of texts crosses in no piece at all.
         use graph_data::tests::{content, load_into, text};
         let empty = || content(&[&[text(RoleCode::Title, "")]]);
@@ -2173,7 +2188,7 @@ mod tests {
 
     #[test]
     fn a_font_handed_over_after_a_load_lays_every_node_out_anew_and_moves_its_edges() {
-        // Verifies: ADR-0013
+        // Verifies: REN-node-content-in-rows
         // Two nodes of one title, joined by an edge: a title line of 60 makes each 10 + 60 + 10 =
         // 80 high, and the edge leaves and enters at their middles, 40 down.
         use graph_data::tests::load_into;
@@ -2203,7 +2218,7 @@ mod tests {
 
     #[test]
     fn a_font_whose_role_or_metrics_the_engine_cannot_take_is_refused_and_nothing_changes() {
-        // Verifies: ADR-0022
+        // Verifies: API-shell-mistake-refused-as-shells
         let mut engine = Engine::new();
         let refused = Err(CallRefusal::Number(NumberError::InvalidFont));
         assert_eq!(
@@ -2221,7 +2236,7 @@ mod tests {
 
     #[test]
     fn four_vertices_for_each_of_the_most_edges_a_load_holds_fit_the_budget() {
-        // Verifies: ADR-0012
+        // Verifies: REN-virtualized-scene-graph
         assert!(4 * u64::from(MAX_ITEMS) <= u64::from(MESH_BUDGET));
         assert_eq!(MESH_BUDGET, (4 * MAX_ITEMS).next_power_of_two());
     }
@@ -2244,7 +2259,7 @@ mod tests {
 
     #[test]
     fn a_small_graph_queries_complete_and_a_million_curved_edges_whole_far_coarsened() {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         let small = batch(&[("a", 0.0, 0.0), ("b", 300.0, 100.0)], &[("e", "a", "b")]);
         let rect = [-100.0, -100.0, 500.0, 300.0];
         let engine = detail_of(&small, rect, DetailLevel::Near, 1.0);
@@ -2285,7 +2300,7 @@ mod tests {
 
     #[test]
     fn a_hit_refuses_a_pixel_that_is_not_a_finite_number_above_zero() {
-        // Verifies: ADR-0013
+        // Verifies: REN-node-content-in-rows
         let mut engine = Engine::new();
         engine.graph = graph_of(&batch(
             &[("a", 0.0, 0.0), ("b", 300.0, 100.0)],
@@ -2305,7 +2320,7 @@ mod tests {
 
     #[test]
     fn a_hit_refuses_a_pixel_that_is_not_a_finite_number_above_zero_as_the_shells_mistake() {
-        // Verifies: ADR-0022
+        // Verifies: API-shell-mistake-refused-as-shells
         let mut engine = Engine::new();
         let data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 100.0)], &[("e", "a", "b")]);
         engine.graph = graph_of(&data).unwrap();
@@ -2324,7 +2339,7 @@ mod tests {
 
     #[test]
     fn a_hit_and_a_move_of_a_label_refuse_a_point_that_is_not_finite_and_change_nothing() {
-        // Verifies: ADR-0022
+        // Verifies: API-shell-mistake-refused-as-shells
         let mut engine = Engine::new();
         let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 100.0)], &[("e", "a", "b")]);
         data.edges[0].label = Some(LabelInput {
@@ -2353,7 +2368,7 @@ mod tests {
 
     #[test]
     fn a_pixel_that_is_not_a_finite_number_above_zero_is_refused_before_any_edge_is_flattened() {
-        // Verifies: ADR-0012, ADR-0022
+        // Verifies: REN-virtualized-scene-graph, API-shell-mistake-refused-as-shells
         let mut engine = Engine::new();
         let data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 100.0)], &[("e", "a", "b")]);
         engine.graph = graph_of(&data).unwrap();

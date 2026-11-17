@@ -1,10 +1,10 @@
-// Input into commands on the store (ADR-0030): a press begins the gesture of what it hits, the
-// drag of a node or of an edge's label, a connection, or a pan, each a module of its own that
-// says how it moves, how it ends, and whether a change of the graph takes its subject; the wheel
-// zooms, and hover shows what a press would do. The engine answers what lies under the pointer
-// from its spatial index, at every level of detail, also where the scene draws nodes as
-// particles (ADR-0013, ADR-0012). Once the engine is lost, input changes nothing, and no trap
-// escapes a handler (ADR-0021).
+// Input into commands on the store (ARCH-one-workspace-per-example): a press begins the gesture of
+// what it hits, the drag of a node or of an edge's label, a connection, or a pan, each a module of
+// its own that says how it moves, how it ends, and whether a change of the graph takes its subject;
+// the wheel zooms, and hover shows what a press would do. The engine answers what lies under the
+// pointer from its spatial index, at every level of detail, also where the scene draws nodes as
+// particles (REN-node-content-in-rows, REN-virtualized-scene-graph). Once the engine is lost, input
+// changes nothing, and no trap escapes a handler (API-trapped-engine-is-lost).
 import type { Application, FederatedPointerEvent } from "pixi.js";
 import type { Bridge, Hit } from "../bridge";
 import type { GraphStore } from "../store";
@@ -33,9 +33,10 @@ const CURSORS: Record<Hit["kind"], string> = {
 };
 
 /** Begins what a press at the screen point `(x, y)` does where the context's `hitAt` says it hits
- *  (ADR-0013): on a connector, where the host lets the user connect, a connection; on an edge
- *  label, a drag of it, its edge selected; on a node, a drag of it that waits for the slop, or
- *  within it a click, the node selected; on an edge, a pan that waits for the slop, the edge
+ *  (REN-node-content-in-rows): on a connector, where the host lets the user connect, a connection;
+ *  on an edge label, a drag of it, its edge selected; on a node, a drag of it that waits for the
+ *  slop, or within it a click, the node selected; on an edge, a pan that waits for the slop, the
+ *  edge
  *  selected; on nothing, a pan, the selection cleared. */
 function begin(
   context: Context,
@@ -99,10 +100,11 @@ export function canvasPointAt(
 export interface Interaction {
   /** What a press at the screen point `(x, y)` of the canvas hits now, from the store's viewport,
    *  connectors only where the host lets the user connect: the one hit test the press, the hover,
-   *  and the testing entry ask (ADR-0013). */
+   *  and the testing entry ask (REN-node-content-in-rows). */
   hitAt(x: number, y: number): Hit;
   /** The world point the connection the user drags is dragged to, while the store holds one: kept
-   *  here, not in the store, and its moves signalled by the store's `pointerVersion` (ADR-0011). */
+   *  here, not in the store, and its moves signalled by the store's `pointerVersion`
+   *  (ARCH-graph-in-zustand-store). */
   readonly pointer: { readonly x: number; readonly y: number };
   /** Removes the input from the canvas. */
   detach(): void;
@@ -129,7 +131,7 @@ function attachRelease(
 
 /** Wires pointer and wheel input on the canvas; a click on an element of a node's content is told
  *  to `click`, and a connection proposed to `connect`, where the host lets the user connect, one
- *  back to its source where `loops` allows loops (ADR-0031). */
+ *  back to its source where `loops` allows loops (API-edges-dock-side-or-outline). */
 export function attachInteraction(
   app: Application,
   store: GraphStore,

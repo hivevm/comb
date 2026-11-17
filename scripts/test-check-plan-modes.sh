@@ -53,7 +53,7 @@ expect() {
   local want="$1" name="$2" dir="$3"
   shift 3
   local out rc needle
-  out="$(bash "$CHECK" "$dir" 2>&1)"; rc=$?
+  out="$(bash "$CHECK" --root "$dir" 2>&1)"; rc=$?
   local ok=1
   [[ $rc -eq "$want" ]] || ok=0
   for needle in "$@"; do [[ "$out" == *"$needle"* ]] || ok=0; done

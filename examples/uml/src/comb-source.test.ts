@@ -3,8 +3,8 @@
 // `packages/comb/src`, its tests left out, and the path dependencies between the crates; the
 // operations and attributes the class diagram lists for `Comb` are the members of the `Comb`
 // interface. The sources are read by path, never imported, since an example imports nothing of
-// Comb but its entries (ADR-0030), and parsed here, not by any helper of the example's. A source
-// this test reads nothing from fails it, naming the source.
+// Comb but its entries (ARCH-one-workspace-per-example), and parsed here, not by any helper of the
+// example's. A source this test reads nothing from fails it, naming the source.
 // Verifies: G-12
 import { afterAll, describe, expect, test } from "bun:test";
 import {

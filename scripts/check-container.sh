@@ -1,23 +1,26 @@
 #!/usr/bin/env bash
 #
-# The Dev Container's image and its reach (ADR-0014, ADR-0015), and its way to a Chrome on the host
-# (ADR-0028).
+# The Dev Container's image and its reach (DEV-container-adds-bun-and-rust,
+# SEC-no-container-engine), and its way to a Chrome on the host
+# (PERF-benchmark-drives-host-chrome).
 #
 # scripts/check-devcontainer.sh holds the template's part, the socket, the Features' tags, and the
-# lock (ADR-0004). This check holds what Comb decided on top of it, from the files the decisions
+# lock (NUC-container-hides-host-daemon). This check holds what Comb decided on top of it, from the
+# files the decisions
 # name, and fails, naming each, on:
 #
 #   1. Build: .devcontainer/devcontainer.json not building from .devcontainer/Dockerfile — no
-#      '"dockerfile": "Dockerfile"', or an '"image"' of its own (ADR-0014).
+#      '"dockerfile": "Dockerfile"', or an '"image"' of its own (DEV-container-adds-bun-and-rust).
 #   2. Digests: a 'FROM' or a 'COPY --from=' of .devcontainer/Dockerfile that names an image
 #      without '@sha256:' and 64 hex digits; a stage the file itself names with 'AS', in any case,
-#      or a stage by its index is no image and passes (ADR-0014).
-#   3. Node.js: a Feature whose id is a 'node' Feature ('…/node' or '…/node:N') (ADR-0014).
+#      or a stage by its index is no image and passes (DEV-container-adds-bun-and-rust).
+#   3. Node.js: a Feature whose id is a 'node' Feature ('…/node' or '…/node:N')
+#   (DEV-container-adds-bun-and-rust).
 #   4. Engine: a Feature whose id contains 'docker' or 'podman', or a 'dockerComposeFile'
-#      (ADR-0015).
+#      (SEC-no-container-engine).
 #   5. Host: no '--add-host=host.docker.internal:host-gateway' among its run arguments, or no 4173
 #      among its forwarded ports, by which the benchmark reaches a Chrome on the host and that
-#      Chrome its preview server (ADR-0028).
+#      Chrome its preview server (PERF-benchmark-drives-host-chrome).
 #
 # A Feature id is a key directly inside the 'features' object, read by tracking brace depth as
 # check-devcontainer.sh reads it, so that a key elsewhere, such as a settings glob, is none.
@@ -26,13 +29,20 @@
 # (.github/workflows/devcontainer.yml).
 #
 # Pure bash + coreutils/grep. Usage:
-#     scripts/check-container.sh [repository root]
+#     scripts/check-container.sh [--root <dir>]
 # The root defaults to this repository; scripts/test-check-container.sh passes fixtures.
 # Exit code 0 when the check passes, 1 otherwise.
 
 set -uo pipefail
 
-ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-container.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "$@"
 CONFIG=".devcontainer/devcontainer.json"
 DOCKERFILE=".devcontainer/Dockerfile"
 
@@ -70,41 +80,41 @@ DIGEST='@sha256:[0-9a-f]{64}$'
 
 features=()
 if [[ ! -f "$ROOT/$CONFIG" ]]; then
-  add_error "$CONFIG: not found — ADR-0014 builds the Dev Container from it"
+  add_error "$CONFIG: not found — DEV-container-adds-bun-and-rust builds the Dev Container from it"
 else
   config="$(uncommented "$ROOT/$CONFIG" '//')"
 
   # 1. Build.
   grep -qE '"dockerfile"[[:space:]]*:[[:space:]]*"Dockerfile"' <<< "$config" \
-    || add_error "$CONFIG: does not build from \"dockerfile\": \"Dockerfile\" — the Dev Container builds from $DOCKERFILE (ADR-0014)"
+    || add_error "$CONFIG: does not build from \"dockerfile\": \"Dockerfile\" — the Dev Container builds from $DOCKERFILE (DEV-container-adds-bun-and-rust)"
   grep -qE '"image"[[:space:]]*:' <<< "$config" \
-    && add_error "$CONFIG: names an \"image\" — the Dev Container builds from $DOCKERFILE, not from an image (ADR-0014)"
+    && add_error "$CONFIG: names an \"image\" — the Dev Container builds from $DOCKERFILE, not from an image (DEV-container-adds-bun-and-rust)"
 
   # 4. Engine: Compose.
   grep -qE '"dockerComposeFile"[[:space:]]*:' <<< "$config" \
-    && add_error "$CONFIG: names a \"dockerComposeFile\" — the work reaches no container engine and starts no service (ADR-0015)"
+    && add_error "$CONFIG: names a \"dockerComposeFile\" — the work reaches no container engine and starts no service (SEC-no-container-engine)"
 
   # 5. Host.
   grep -qF '"--add-host=host.docker.internal:host-gateway"' <<< "$config" \
-    || add_error "$CONFIG: has no run argument --add-host=host.docker.internal:host-gateway — the benchmark reaches a Chrome on the host by it (ADR-0028)"
+    || add_error "$CONFIG: has no run argument --add-host=host.docker.internal:host-gateway — the benchmark reaches a Chrome on the host by it (PERF-benchmark-drives-host-chrome)"
   grep -qE '"forwardPorts"[[:space:]]*:[[:space:]]*\[[^]]*\b4173\b' <<< "$config" \
-    || add_error "$CONFIG: does not forward port 4173 — a Chrome on the host loads the benchmark's preview server through it (ADR-0028)"
+    || add_error "$CONFIG: does not forward port 4173 — a Chrome on the host loads the benchmark's preview server through it (PERF-benchmark-drives-host-chrome)"
 
   mapfile -t features < <(feature_ids "$config")
   for id in "${features[@]}"; do
     # 3. Node.js.
     [[ "$id" =~ /node(:[^/]*)?$ ]] \
-      && add_error "$CONFIG: Feature '$id' installs Node.js — the container carries Bun and no Node.js (ADR-0014)"
+      && add_error "$CONFIG: Feature '$id' installs Node.js — the container carries Bun and no Node.js (DEV-container-adds-bun-and-rust)"
     # 4. Engine: a Feature.
     [[ "$id" == *docker* || "$id" == *podman* ]] \
-      && add_error "$CONFIG: Feature '$id' brings a container engine — the work inside the Dev Container reaches none (ADR-0015)"
+      && add_error "$CONFIG: Feature '$id' brings a container engine — the work inside the Dev Container reaches none (SEC-no-container-engine)"
   done
 fi
 
 # 2. Digests.
 images=0
 if [[ ! -f "$ROOT/$DOCKERFILE" ]]; then
-  add_error "$DOCKERFILE: not found — ADR-0014 builds the Dev Container from it"
+  add_error "$DOCKERFILE: not found — DEV-container-adds-bun-and-rust builds the Dev Container from it"
 else
   stages=()
   while read -r instruction rest; do
@@ -132,7 +142,7 @@ else
     if ((stage)); then continue; fi
     images=$((images + 1))
     [[ "$image" =~ $DIGEST ]] \
-      || add_error "$DOCKERFILE: ${instruction^^} names '$image' without a digest — every image is pinned by '@sha256:' (ADR-0014)"
+      || add_error "$DOCKERFILE: ${instruction^^} names '$image' without a digest — every image is pinned by '@sha256:' (DEV-container-adds-bun-and-rust)"
   done < <(uncommented "$ROOT/$DOCKERFILE" '#')
   ((images)) || add_error "$DOCKERFILE: names no image in a FROM — there is nothing the Dev Container builds from"
 fi

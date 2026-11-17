@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 #
 # Self-test of scripts/check-structure.sh.
-# Verifies: ADR-0012, ADR-0018, ADR-0030
+# Verifies: REN-virtualized-scene-graph, REN-webgl2-or-canvas-fallback, ARCH-one-workspace-per-example
 #
 # Each case builds a fixture tree under a temporary directory — a core crate with its lock, a
 # library with a bridge, a store, and a render layer, and an example — runs the check against it,
 # and asserts the exit code and, for a failing case, the message that names the offence. The
-# baseline passes; every failing case breaks one rule of ADR-0030, ADR-0012, or ADR-0018, or the
+# baseline passes; every failing case breaks one rule of ARCH-one-workspace-per-example,
+# REN-virtualized-scene-graph, or REN-webgl2-or-canvas-fallback, or the
 # boundary the check holds as its own rule, in one form, and the passing cases are near
 # misses the check must not mistake for offences.
 #
@@ -62,7 +63,7 @@ LOCK
 # failure, that the output contains the pattern.
 expect() {
   local want="$1" desc="$2" dir="$3" pattern="${4:-}" out rc
-  out="$(bash "$CHECK" "$dir" 2>&1)"; rc=$?
+  out="$(bash "$CHECK" --root "$dir" 2>&1)"; rc=$?
   if [[ "$want" == pass && $rc -eq 0 ]] \
     || [[ "$want" == fail && $rc -eq 1 && ( -z "$pattern" || "$out" == *"$pattern"* ) ]]; then
     passed=$((passed + 1))

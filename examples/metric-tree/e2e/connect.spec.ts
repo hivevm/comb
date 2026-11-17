@@ -1,7 +1,8 @@
 // The user connects two nodes by dragging from a connector of one to a compatible connector of
-// another (G-3, ADR-0031): the host application's `canConnect` names the edge, which is told as
-// `edgeAdded` by the user; a release anywhere else, over the source, or over a node it already
-// reaches makes none, and a refused name reaches the page as an error (ADR-0024).
+// another (G-3, API-edges-dock-side-or-outline): the host application's `canConnect` names the
+// edge, which is told as `edgeAdded` by the user; a release anywhere else, over the source, or over
+// a node it already reaches makes none, and a refused name reaches the page as an error
+// (API-edits-reported-as-typed-changes).
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData } from "comb";
 import { dragWorld, drawnGraph, loaded, node, open, pagePoint, setViewport, told } from "./shared";
@@ -37,7 +38,7 @@ const C_LEFT: [number, number] = [500, 32];
 test("a drag from a's bottom connector to b's top one connects them by those sides", async ({
   page,
 }) => {
-  // Verifies: G-3, ADR-0031, ADR-0024
+  // Verifies: G-3, API-edges-dock-side-or-outline, API-edits-reported-as-typed-changes
   await open(page);
   await loaded(page, NODES);
   await page.evaluate(() => {
@@ -83,7 +84,7 @@ for (const [side, at] of [
   test(`a's ${side} connector and a connection from it are drawn where the engine begins its edge`, async ({
     page,
   }) => {
-    // Verifies: ADR-0031
+    // Verifies: API-edges-dock-side-or-outline
     await open(page);
     await loaded(page, NODES);
     await page.evaluate(() => (window.canConnect = () => "e7"));
@@ -119,7 +120,7 @@ for (const [name, to] of [
   ["a node the source reaches already, by another side", C_LEFT],
 ] as const) {
   test(`a connection released over ${name} makes no edge`, async ({ page }) => {
-    // Verifies: G-3, ADR-0031
+    // Verifies: G-3, API-edges-dock-side-or-outline
     await open(page);
     await loaded(page, NODES);
     const midway = await drag(page, A_BOTTOM, to as [number, number]);
@@ -136,7 +137,7 @@ for (const allowed of [true, false]) {
   test(`with loops allowed, a drag from a back onto it asks the veto, which ${allowed ? "adds" : "refuses"} the loop`, async ({
     page,
   }) => {
-    // Verifies: G-3, G-13, ADR-0031, ADR-0024
+    // Verifies: G-3, G-13, API-edges-dock-side-or-outline, API-edits-reported-as-typed-changes
     await open(page, "?loops=allow");
     await loaded(page, NODES);
     await page.evaluate((allows) => {
@@ -192,7 +193,7 @@ for (const allowed of [true, false]) {
 test("with loops allowed, a press and release on one connector proposes nothing", async ({
   page,
 }) => {
-  // Verifies: ADR-0031
+  // Verifies: API-edges-dock-side-or-outline
   await open(page, "?loops=allow");
   await loaded(page, NODES);
   await page.evaluate(() => {
@@ -211,7 +212,7 @@ test("with loops allowed, a press and release on one connector proposes nothing"
 test("with loops allowed, a node that has a loop offers none of its connectors to itself", async ({
   page,
 }) => {
-  // Verifies: ADR-0031
+  // Verifies: API-edges-dock-side-or-outline
   await open(page, "?loops=allow");
   await loaded(page, {
     ...NODES,
@@ -224,7 +225,7 @@ test("with loops allowed, a node that has a loop offers none of its connectors t
 
 for (const name of ["false", "undefined", "a number", "a throw"] as const) {
   test(`canConnect returning ${name} makes no edge`, async ({ page }) => {
-    // Verifies: ADR-0024
+    // Verifies: API-edits-reported-as-typed-changes
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
@@ -253,7 +254,7 @@ for (const [name, id, kind] of [
   test(`canConnect returning ${name} makes no edge, and its GraphDataError reaches the page`, async ({
     page,
   }) => {
-    // Verifies: ADR-0024, Q-7
+    // Verifies: API-edits-reported-as-typed-changes, Q-7
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
@@ -268,7 +269,7 @@ for (const [name, id, kind] of [
 test("without canConnect a press on a connector begins no connection and shows none", async ({
   page,
 }) => {
-  // Verifies: ADR-0024, ADR-0013
+  // Verifies: API-edits-reported-as-typed-changes, REN-node-content-in-rows
   await open(page, "?connect=none");
   await loaded(page, NODES);
   const midway = await drag(page, A_BOTTOM, B_TOP);
@@ -281,7 +282,7 @@ test("without canConnect a press on a connector begins no connection and shows n
 test("hitKind finds a connector just outside a node only where the Comb lets the user connect", async ({
   page,
 }) => {
-  // Verifies: ADR-0013
+  // Verifies: REN-node-content-in-rows
   const kinds = [];
   for (const query of ["", "?connect=none"]) {
     await open(page, query);
@@ -300,7 +301,7 @@ test("hitKind finds a connector just outside a node only where the Comb lets the
 test("at the far level no connector is drawn and a press where one would be connects nothing", async ({
   page,
 }) => {
-  // Verifies: ADR-0031, ADR-0013
+  // Verifies: API-edges-dock-side-or-outline, REN-node-content-in-rows
   await open(page);
   await loaded(page, NODES);
   await setViewport(page, { x: 100, y: 100, scale: 0.25 });
@@ -310,7 +311,7 @@ test("at the far level no connector is drawn and a press where one would be conn
 });
 
 test("an edge the other way does not count: c connects to a, which reaches c", async ({ page }) => {
-  // Verifies: ADR-0031
+  // Verifies: API-edges-dock-side-or-outline
   await open(page);
   await loaded(page, NODES);
   await page.evaluate(() => (window.canConnect = () => "c-a"));
@@ -325,7 +326,7 @@ test("an edge the other way does not count: c connects to a, which reaches c", a
 test("a veto that throws ends the gesture first: no connection is drawn after it", async ({
   page,
 }) => {
-  // Verifies: ADR-0024
+  // Verifies: API-edits-reported-as-typed-changes
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -349,7 +350,7 @@ test("a veto that throws ends the gesture first: no connection is drawn after it
 test("a veto that removes the target and returns an identifier makes no edge and throws nothing", async ({
   page,
 }) => {
-  // Verifies: ADR-0024
+  // Verifies: API-edits-reported-as-typed-changes
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -370,7 +371,7 @@ test("a veto that removes the target and returns an identifier makes no edge and
 test("a veto that adds an edge between the two itself and returns another identifier keeps its edge alone", async ({
   page,
 }) => {
-  // Verifies: ADR-0024
+  // Verifies: API-edits-reported-as-typed-changes
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -393,7 +394,7 @@ test("a veto that adds an edge between the two itself and returns another identi
 test("a veto that sets the viewport and fits the view still connects under its identifier", async ({
   page,
 }) => {
-  // Verifies: ADR-0024
+  // Verifies: API-edits-reported-as-typed-changes
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -417,7 +418,7 @@ test("a veto that sets the viewport and fits the view still connects under its i
 test("a veto that adds an edge and then throws keeps its edge alone, its error thrown after the gesture ended", async ({
   page,
 }) => {
-  // Verifies: ADR-0024
+  // Verifies: API-edits-reported-as-typed-changes
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -441,7 +442,7 @@ test("a veto that adds an edge and then throws keeps its edge alone, its error t
 test("a connection dragged across the empty canvas neither queries the engine nor redraws the connectors per move", async ({
   page,
 }) => {
-  // Verifies: ADR-0011
+  // Verifies: ARCH-graph-in-zustand-store
   await open(page);
   await loaded(page, NODES);
   await page.evaluate(() => (window.canConnect = () => "e7"));

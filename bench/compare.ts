@@ -1,27 +1,28 @@
-// Compares benchmark runs with the baseline of their runner kind (ADR-0008). Frame times come in
-// steps of a frame and the first frame is a single sample, so one run scatters; the median of each
-// number over several runs is compared instead, and may exceed its baseline by at most MARGIN.
-// Runner kinds differ in ways no reference predicts, so the kind, the CPU model a run records,
-// comes first: each kind has a baseline of its own, bench/baselines/<kind>.json, named by
-// baselineName, and a run is compared only with a baseline that names the same CPU model. A run
+// Compares benchmark runs with the baseline of their runner kind (DEV-bun-vite-wasm-pack).
+// Frame times come in steps of a frame and the first frame is a single sample, so one run scatters;
+// the median of each number over several runs is compared instead, and may exceed its baseline by
+// at most MARGIN. Runner kinds differ in ways no reference predicts, so the kind, the CPU model a
+// run records, comes first: each kind has a baseline of its own, bench/baselines/<kind>.json, named
+// by baselineName, and a run is compared only with a baseline that names the same CPU model. A run
 // on a kind without a baseline is refused, naming the kind, the kinds that have one, and the file
 // its baseline would be saved as; so is a run that names no CPU model. Within a kind a runner gate
 // follows: each part of the reference workload timed in the run (bench/reference.ts) may differ
 // from the baseline's by at most MARGIN, or the run is refused as taken on a runner not in the
 // state the baseline was taken in. The reference decides only whether to compare, never by how
 // much a number moved. A run names the graph it measured, the metric tree where it names none
-// (ADR-0033): the shaped graph's baseline of a kind is bench/baselines/<kind>.shaped.json, a run is
-// compared only with the baseline of its graph, and runs of different graphs have no median. Runs
-// of another size, mode, or GPU than the baseline's are refused as well, as are runs that attached
-// to a browser against a baseline that launched one, or the other way round, though not runs of
-// different versions of the attached browser (ADR-0028), and runs of a CPU slowed by another factor
-// (ADR-0029); and so is a run that names no GPU, as one on a fallback renderer would, and a run
-// without a reference against a baseline with one. Against a baseline without a reference the
-// numbers are compared and the gate is reported as not checked. The median, with the CPU model and
-// each gesture's steps and frames, is written as bench-results/median.json, of the shaped graph as
-// bench-results/median.shaped.json, the file a new baseline is taken from: a median of runs on
-// `main` on a GitHub runner of that kind, saved under the file name the refusal prints in a pull
-// request that says why.
+// (PERF-benchmark-measures-named-graph): the shaped graph's baseline of a kind is
+// bench/baselines/<kind>.shaped.json, a run is compared only with the baseline of its graph, and
+// runs of different graphs have no median. Runs of another size, mode, or GPU than the baseline's
+// are refused as well, as are runs that attached to a browser against a baseline that launched one,
+// or the other way round, though not runs of different versions of the attached browser
+// (PERF-benchmark-drives-host-chrome), and runs of a CPU slowed by another factor
+// (PERF-benchmark-slows-page-cpu); and so is a run that names no GPU, as one on a fallback renderer
+// would, and a run without a reference against a baseline with one. Against a baseline without a
+// reference the numbers are compared and the gate is reported as not checked. The median, with the
+// CPU model and each gesture's steps and frames, is written as bench-results/median.json, of the
+// shaped graph as bench-results/median.shaped.json, the file a new baseline is taken from: a median
+// of runs on `main` on a GitHub runner of that kind, saved under the file name the refusal prints
+// in a pull request that says why.
 //
 //   bun bench/compare.ts <baselines> <run>...    e.g. bench/baselines bench-results/run-*.json
 //   bun bench/compare.ts <baseline> <run>...     one baseline file, of the runs' CPU model
@@ -29,7 +30,7 @@
 // Exit code 0 when no number regressed; 1 when a number regressed, naming each; 2 when the runs
 // cannot be compared, the runner gate included; 3 when the runs' kind has no baseline of their
 // graph, a refusal of its own, by which the Benchmark workflow passes a shaped graph without a
-// baseline on its kind, and fails the metric tree's (ADR-0033).
+// baseline on its kind, and fails the metric tree's (PERF-benchmark-measures-named-graph).
 import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { DEFAULT_GRAPH, type Graph, graphPhrase, graphSuffix } from "./options";
@@ -47,7 +48,7 @@ interface Gesture {
   truncated?: boolean;
 }
 
-/** The levels of detail (ADR-0012), in the order a run lists them. */
+/** The levels of detail (REN-virtualized-scene-graph), in the order a run lists them. */
 export const LEVELS = ["near", "middle", "far"] as const;
 
 /** The gestures timed at a level of detail, in the order a run lists them. An older run timed
@@ -71,7 +72,8 @@ export interface Content {
 
 /** The parts of a run of bench/run.ts that are compared. */
 export interface Run {
-  /** The graph the run measured (ADR-0033); absent in a run recorded before, of the metric
+  /** The graph the run measured (PERF-benchmark-measures-named-graph); absent in a run recorded
+   *  before, of the metric
    *  tree. */
   graph?: Graph;
   copies: number;
@@ -81,10 +83,12 @@ export interface Run {
   /** The renderer WebGL reports, as bench/run.ts reads it. */
   gpu?: string;
   /** Whether the run attached to a browser started outside it rather than launching Chromium,
-   *  and that browser's version (ADR-0028); absent in a run recorded before. */
+   *  and that browser's version (PERF-benchmark-drives-host-chrome); absent in a run recorded
+   *  before. */
   attached?: boolean;
   browser?: string;
-  /** The factor the measured page's CPU was slowed by (ADR-0029); 1, or absent in a run recorded
+  /** The factor the measured page's CPU was slowed by (PERF-benchmark-slows-page-cpu); 1, or absent
+   *  in a run recorded
    *  before, where nothing was. */
   cpuThrottle?: number;
   /** The reference workload of the run, in milliseconds; absent in a run recorded without it. */
@@ -95,7 +99,8 @@ export interface Run {
   pan: Gesture;
   zoom: Gesture;
   levels?: Levels<Gesture>;
-  /** Edits, one a frame: a node and an edge added and removed again (ADR-0023); absent in a run
+  /** Edits, one a frame: a node and an edge added and removed again
+   *  (ARCH-engine-edits-graph-in-place); absent in a run
    *  recorded before the gesture, whose baseline then reports it unjudged. */
   edit?: Gesture;
 }
@@ -135,9 +140,10 @@ function numbers(run: Run): Record<string, number> {
 
 /** What a run measured with beside its kind, size, mode, and GPU, as a median and a baseline taken
  *  from it record it: whether it attached to a browser started outside it, that browser's version
- *  (ADR-0028), and the factor its CPU was slowed by where not 1 (ADR-0029). A comparison and a
- *  median require the attachment and the factor to agree, through `setting`; the version is only
- *  recorded, so runs of different versions of the attached browser compare and median together,
+ *  (PERF-benchmark-drives-host-chrome), and the factor its CPU was slowed by where not 1
+ *  (PERF-benchmark-slows-page-cpu). A comparison and a median require the attachment and the factor
+ *  to agree, through `setting`; the version is only recorded, so runs of different versions of the
+ *  attached browser compare and median together,
  *  and the median records the first run's. */
 function measuredWith(run: Run): Pick<Run, "attached" | "browser" | "cpuThrottle"> {
   const throttle = run.cpuThrottle ?? 1;
@@ -178,7 +184,8 @@ const graphOf = (run: Run): Graph => run.graph ?? DEFAULT_GRAPH;
 const ofGraph = (run: Run) => `of the graph ${graphOf(run)}`;
 
 /** The file name of the baseline a run of `run`'s kind and graph is compared with: its kind's name
- *  and `.json` for the metric tree, `.shaped.json` for the shaped graph (ADR-0033). */
+ *  and `.json` for the metric tree, `.shaped.json` for the shaped graph
+ *  (PERF-benchmark-measures-named-graph). */
 export function baselineFile(run: Run): string {
   return `${baselineName(run.cpu ?? "")}${graphSuffix(graphOf(run))}.json`;
 }

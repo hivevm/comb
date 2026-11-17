@@ -25,7 +25,7 @@ const XEON_8370C = "Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz";
  *  it, and only that they share it decides. */
 const DEV_CONTAINER = "13th Gen Intel(R) Core(TM) i7-13700";
 
-/** The file name of each kind's baseline, as ADR-0008 derives it, written out. */
+/** The file name of each kind's baseline, as DEV-bun-vite-wasm-pack derives it, written out. */
 const FILE: Record<string, string> = {
   [EPYC_7763]: "amd-epyc-7763-64-core-processor.json",
   [XEON_8370C]: "intel-r-xeon-r-platinum-8370c-cpu-2-80ghz.json",
@@ -148,8 +148,8 @@ describe("compare", () => {
   });
 });
 
-// Verifies: ADR-0008 — the runner gate: a run whose reference differs from the baseline's by
-// more than the margin in any part is refused; the numbers are compared raw.
+// Verifies: DEV-bun-vite-wasm-pack — the runner gate: a run whose reference differs from the
+// baseline's by more than the margin in any part is refused; the numbers are compared raw.
 describe("the runner gate", () => {
   test("a runner within the margin in every part is compared, raw, with each part reported", () => {
     // Each part 20 % slower; the numbers themselves unchanged, so nothing regresses.
@@ -191,8 +191,8 @@ describe("the runner gate", () => {
   });
 });
 
-// Verifies: ADR-0008 — a run without a reference is refused against a baseline with one; a
-// baseline without one is compared raw, and the gate reported as not checked.
+// Verifies: DEV-bun-vite-wasm-pack — a run without a reference is refused against a baseline
+// with one; a baseline without one is compared raw, and the gate reported as not checked.
 describe("without a usable reference", () => {
   test("a reference is usable only when its sum and parts are positive and finite", () => {
     expect(usable(REFERENCE)).toBe(true);
@@ -343,8 +343,9 @@ describe("the command", () => {
   });
 });
 
-// Verifies: ADR-0008 — a run is compared only with the baseline of its runner kind, the CPU model
-// it records; a run on a kind without a baseline, or naming no CPU model, is refused.
+// Verifies: DEV-bun-vite-wasm-pack — a run is compared only with the baseline of its runner
+// kind, the CPU model it records; a run on a kind without a baseline, or naming no CPU model, is
+// refused.
 describe("the runner kind", () => {
   test("a run on another CPU model than the baseline's is refused, naming both", () => {
     const verdict = compare({ ...run(200, 100), cpu: XEON_8370C }, run(200, 100));
@@ -389,7 +390,7 @@ describe("the runner kind", () => {
   });
 
   test("a CPU model that starts and ends with a character other than a letter or digit names a file of none at either end", () => {
-    // Verifies: ADR-0008
+    // Verifies: DEV-bun-vite-wasm-pack
     expect(baselineName(" (Intel) Core i7 @ 3.6GHz ")).toBe("intel-core-i7-3-6ghz");
     expect(baselineName("--AMD Ryzen 9--")).toBe("amd-ryzen-9");
   });
@@ -404,8 +405,9 @@ describe("the runner kind", () => {
   });
 });
 
-// Verifies: ADR-0008 — the command picks the baseline of the runs' kind from bench/baselines and
-// refuses a kind without one, or runs that name no CPU model, naming the kinds with a baseline.
+// Verifies: DEV-bun-vite-wasm-pack — the command picks the baseline of the runs' kind from
+// bench/baselines and refuses a kind without one, or runs that name no CPU model, naming the kinds
+// with a baseline.
 describe("the command, by runner kind", () => {
   test("picks the baseline of the runs' kind from the directory", async () => {
     const xeon = { ...run(400, 200), cpu: XEON_8370C };
@@ -464,7 +466,8 @@ describe("the command, by runner kind", () => {
   });
 });
 
-// Verifies: ADR-0008 — each kind's baseline is a file of its own, named by its CPU model.
+// Verifies: DEV-bun-vite-wasm-pack — each kind's baseline is a file of its own, named by its
+// CPU model.
 describe("bench/baselines", () => {
   test("each recorded baseline names the CPU model its file name derives from", () => {
     const recorded = join(import.meta.dir, "baselines");
@@ -512,7 +515,7 @@ describe("median", () => {
 
 describe("the parts of the reference", () => {
   test("usable and the median take every part the reference lists", () => {
-    // Verifies: ADR-0008
+    // Verifies: DEV-bun-vite-wasm-pack
     for (const [, key] of PARTS) {
       expect(usable({ ...REFERENCE, [key]: Number.NaN })).toBe(false);
       expect(usable({ ...REFERENCE, [key]: 0 })).toBe(false);
@@ -533,7 +536,7 @@ describe("the parts of the reference", () => {
 
 describe("the edit gesture", () => {
   test("a baseline without it reports the run's edits unjudged, and judges the others", () => {
-    // Verifies: ADR-0008, ADR-0023
+    // Verifies: DEV-bun-vite-wasm-pack, ARCH-engine-edits-graph-in-place
     const verdict = compare({ ...run(200, 100), edit: { p95: 900 } }, run(200, 100));
     expect(verdict).toMatchObject({ kind: "compared", regressions: [] });
     expect((verdict as { lines: string[] }).lines).toContain("edit p95 (ms): 900.0, no baseline");
@@ -544,7 +547,7 @@ describe("the edit gesture", () => {
   });
 
   test("a baseline with it judges the run's edits as the other gestures", () => {
-    // Verifies: ADR-0008, ADR-0023
+    // Verifies: DEV-bun-vite-wasm-pack, ARCH-engine-edits-graph-in-place
     const verdict = compare(
       { ...run(200, 100), edit: { p95: 200 } },
       { ...run(200, 100), edit: { p95: 100 } },
@@ -589,7 +592,7 @@ const CONTENT = {
 
 describe("the gestures at each level of detail", () => {
   test("are named by gesture and level, after those at the view the example opens with", () => {
-    // Verifies: ADR-0008, ADR-0012
+    // Verifies: DEV-bun-vite-wasm-pack, REN-virtualized-scene-graph
     const each = (level: string) =>
       ["drag", "pan", "zoom", "edit"].map((gesture) => `${gesture} ${level}`);
     expect(gestures(everyLevel(run(200, 100), 100)).map(([name]) => name)).toEqual([
@@ -613,7 +616,7 @@ describe("the gestures at each level of detail", () => {
   });
 
   test("a gesture the baseline lacks is reported as new, never as a regression", () => {
-    // Verifies: ADR-0008
+    // Verifies: DEV-bun-vite-wasm-pack
     const verdict = compare(everyLevel(run(200, 100), 1000), run(200, 1000));
     expect(verdict).toMatchObject({ kind: "compared", regressions: [] });
     const { lines } = verdict as { lines: string[] };
@@ -633,8 +636,8 @@ describe("the gestures at each level of detail", () => {
   });
 
   test("a run of the full content compares with each kind's baseline as recorded", async () => {
-    // Verifies: ADR-0008 — a baseline recorded with the gestures at each level judges them all, and
-    // one recorded before them reports them as new.
+    // Verifies: DEV-bun-vite-wasm-pack — a baseline recorded with the gestures at each level
+    // judges them all, and one recorded before them reports them as new.
     const baselines = join(import.meta.dir, "baselines");
     for (const name of readdirSync(baselines)) {
       const baseline = (await Bun.file(join(baselines, name)).json()) as Run;
@@ -654,7 +657,7 @@ describe("the gestures at each level of detail", () => {
 
 describe("the median of the gestures at each level", () => {
   test("the median keeps a level and a gesture at it only where every run timed it", () => {
-    // Verifies: ADR-0008
+    // Verifies: DEV-bun-vite-wasm-pack
     const full = everyLevel(run(200, 100), 50);
     const other = everyLevel(run(200, 100), 70);
     const result = median([full, other]) as Run;
@@ -672,7 +675,7 @@ describe("the median of the gestures at each level", () => {
 
 describe("the content a run loaded", () => {
   test("is named, kept in the median, and decides no comparison", () => {
-    // Verifies: ADR-0008
+    // Verifies: DEV-bun-vite-wasm-pack
     const loaded = (content = CONTENT): Run => {
       const r = run(200, 100);
       return { ...r, load: { ...r.load, content } };
@@ -690,7 +693,7 @@ describe("the content a run loaded", () => {
 
 describe("benchmark comparison of the browser and the CPU a run measured with", () => {
   test("the median of attached, slowed runs keeps both, so that a baseline taken from it compares", () => {
-    // Verifies: ADR-0028, ADR-0029
+    // Verifies: PERF-benchmark-drives-host-chrome, PERF-benchmark-slows-page-cpu
     const slowed = {
       ...run(200, 100),
       headed: true,
@@ -705,7 +708,7 @@ describe("benchmark comparison of the browser and the CPU a run measured with", 
   });
 
   test("a run of an attached browser is not compared with a baseline of a launched one", () => {
-    // Verifies: ADR-0028
+    // Verifies: PERF-benchmark-drives-host-chrome
     const attached = { ...run(200, 100), headed: true, attached: true };
     const verdict = compare(attached, { ...run(200, 100), headed: true });
     expect(verdict).toMatchObject({
@@ -716,7 +719,8 @@ describe("benchmark comparison of the browser and the CPU a run measured with", 
   });
 
   test("runs of an attached browser that differ only in its version compare and median together", () => {
-    // Verifies: ADR-0028 — the version is recorded, and decides neither a comparison nor a median.
+    // Verifies: PERF-benchmark-drives-host-chrome — the version is recorded, and decides neither a
+    // comparison nor a median.
     const older = { ...run(200, 100), headed: true, attached: true, browser: "155" };
     const newer = { ...older, browser: "156" };
     expect(compare(newer, older)).toMatchObject({ kind: "compared", regressions: [] });
@@ -727,7 +731,7 @@ describe("benchmark comparison of the browser and the CPU a run measured with", 
   });
 
   test("a run of a CPU slowed by another factor than the baseline's is not compared", () => {
-    // Verifies: ADR-0029
+    // Verifies: PERF-benchmark-slows-page-cpu
     const slowed = { ...run(200, 100), cpuThrottle: 2 };
     const verdict = compare(slowed, run(200, 100));
     expect(verdict).toMatchObject({
@@ -750,9 +754,10 @@ const shaped = (firstFrameMs = 400, p95 = 200): Run => ({
   graph: "shaped",
 });
 
-// Verifies: ADR-0033 — a run names the graph it measured, the metric tree where it names none, and
-// is compared only with the baseline of its kind and graph: bench/baselines/<kind>.json for the
-// metric tree, bench/baselines/<kind>.shaped.json for the shaped graph.
+// Verifies: PERF-benchmark-measures-named-graph — a run names the graph it measured, the metric
+// tree where it names none, and is compared only with the baseline of its kind and graph:
+// bench/baselines/<kind>.json for the metric tree, bench/baselines/<kind>.shaped.json for the
+// shaped graph.
 describe("the graph a run measured", () => {
   test("names a baseline's file by its kind and graph", () => {
     expect(baselineFile(run(200, 100))).toBe("amd-epyc-7763-64-core-processor.json");
@@ -789,8 +794,8 @@ describe("the graph a run measured", () => {
   });
 });
 
-// Verifies: ADR-0033 — the command picks the baseline of the runs' kind and graph, and refuses a
-// graph without one on the kind, naming the file it would be saved as.
+// Verifies: PERF-benchmark-measures-named-graph — the command picks the baseline of the runs' kind
+// and graph, and refuses a graph without one on the kind, naming the file it would be saved as.
 describe("the command, by graph", () => {
   test("the command compares each graph's runs with the baseline of their kind and graph", async () => {
     const both = { [SHAPED_FILE]: JSON.stringify(shaped()) };
@@ -808,8 +813,8 @@ describe("the command, by graph", () => {
   });
 
   test("exits 3 on a graph without a baseline on its kind, naming the file it would be saved as", async () => {
-    // Verifies: ADR-0033 — a code of its own, by which the workflow tells a missing baseline of
-    // the shaped graph from a refusal or a regression.
+    // Verifies: PERF-benchmark-measures-named-graph — a code of its own, by which the workflow
+    // tells a missing baseline of the shaped graph from a refusal or a regression.
     const { code, err } = await command([run(200, 100)], [shaped()]);
     expect(code).toBe(3);
     expect(err).toContain(`no baseline of the kind ${EPYC_7763} and the graph shaped`);

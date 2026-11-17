@@ -1,11 +1,11 @@
 // The state diagram of the example (G-12): the life of a Comb, from `createComb` to `destroy`. Its
 // states are rounded rectangles of their name; its initial state a filled circle, its final
 // states ringed circles, and the choice of whether the engine loaded a diamond, each a node shape
-// of Comb's own (ADR-0032). Its transitions are edges labelled by their event or
-// their guard, each end docked on its state's outline, and a loop on ready, which stands for each
-// edit Comb applies, on ready's left side (ADR-0031). The user edits it as the other diagrams: the
-// palette drops each kind of state, and a connection adds a transition docked on the outline, or
-// a loop on the side it leaves.
+// of Comb's own (REN-closed-set-of-node-shapes). Its transitions are edges labelled by their event
+// or their guard, each end docked on its state's outline, and a loop on ready, which stands for
+// each edit Comb applies, on ready's left side (API-edges-dock-side-or-outline). The user edits it
+// as the other diagrams: the palette drops each kind of state, and a connection adds a transition
+// docked on the outline, or a loop on the side it leaves.
 import type { Comb, EdgeData, EdgePatch, NodeContent, NodeData, NodeShape } from "comb";
 import { labelOf, styleOf } from "./relationships";
 import type { AddedEdge, DiagramData, DiagramDescriptor, State, StateKind } from "./shared";
@@ -99,7 +99,8 @@ function edgeOf([source, target, label]: (typeof TRANSITIONS)[number]): EdgeData
 }
 
 /** The sides of a transition the user connected: docked on the outline at both ends, or for a
- *  loop the side it left by at both, since a loop leaves and re-enters one side (ADR-0031). */
+ *  loop the side it left by at both, since a loop leaves and re-enters one side
+ *  (API-edges-dock-side-or-outline). */
 export function dockingOf({ source, target, sourceSide }: AddedEdge): EdgePatch {
   if (source === target) return { targetSide: sourceSide };
   return { sourceSide: "outline", targetSide: "outline" };

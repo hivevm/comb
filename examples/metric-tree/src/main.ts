@@ -51,7 +51,7 @@ import {
 const PALETTE_TYPE = "application/x-metric-tree-kind";
 
 /** The graphs the example loads: the metric tree, or, with `?graph=shaped`, the shaped graph the
- *  benchmark measures beside it (ADR-0033). */
+ *  benchmark measures beside it (PERF-benchmark-measures-named-graph). */
 export type GraphName = "metric-tree" | "shaped";
 
 /** How the last load went: what the benchmark and the browser tests read. */
@@ -117,7 +117,7 @@ const query = new URLSearchParams(location.search);
 /** The engine in the form `?engine=response`, `module`, `bytes`, or `view` asks for: the response
  *  to the example's own request for the file Vite emits, the module compiled from it, its bytes,
  *  or a view on them inside a larger buffer, so that the browser tests cover every form a host
- *  application may hand over (ADR-0019). */
+ *  application may hand over (API-host-hands-comb-engine). */
 async function engineAs(form: string): Promise<EngineSource> {
   const response = fetch(engineUrl);
   if (form === "module") return WebAssembly.compileStreaming(response);
@@ -142,8 +142,8 @@ const fallback = query.get("fallback") === "canvas";
 const comb = await createComb(element("canvas"), {
   engine: form ? await engineAs(form) : fetch(engineUrl),
   allowCanvasFallback: fallback,
-  // `?loops=allow` allows loops, edges from a node back to itself (ADR-0031), as the shaped graph
-  // does, whose nodes have loops (ADR-0033).
+  // `?loops=allow` allows loops, edges from a node back to itself (API-edges-dock-side-or-outline),
+  // as the shaped graph does, whose nodes have loops (PERF-benchmark-measures-named-graph).
   allowLoops: query.get("loops") === "allow" || graphName === "shaped",
   canDelete: (deletion) => (window.canDelete ? window.canDelete(deletion) : true) as boolean,
   // `?connect=none` gives Comb no veto of connections, so that the user connects nothing.
@@ -198,7 +198,7 @@ function polygon(context: CanvasRenderingContext2D, xy: readonly number[]): void
 }
 
 /** Registers the icon of each type of node, drawn by the example itself on a canvas, so that no
- *  image is requested (ADR-0013). */
+ *  image is requested (REN-node-content-in-rows). */
 function registerIcons(): void {
   for (const [type, draw] of Object.entries(ICONS) as [NodeType, (typeof ICONS)[NodeType]][]) {
     const canvas = document.createElement("canvas");
@@ -401,7 +401,8 @@ function removed(nodes: readonly string[], edges: readonly string[]): void {
 }
 
 /** How the example's copy of the graph takes each kind of change, as a host application that
- *  persists keeps its own from `onChange` alone (ADR-0024); the type checker fails it where a
+ *  persists keeps its own from `onChange` alone (API-edits-reported-as-typed-changes); the type
+ *  checker fails it where a
  *  kind is left out. */
 const MIRROR: { [K in GraphChange["kind"]]: (change: Extract<GraphChange, { kind: K }>) => void } =
   {
@@ -455,7 +456,7 @@ let dropped = 0;
 
 /** Adds a node of the palette's `kind`, a type of node, centred by the height Comb gives its
  *  content on the world point under the drop at (`clientX`, `clientY`) of the page (G-1,
- *  ADR-0026). */
+ *  API-host-asks-content-height). */
 function drop(kind: string, clientX: number, clientY: number): void {
   const type = PALETTE.find((each) => each === kind);
   if (!type) return;

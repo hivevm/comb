@@ -1,11 +1,11 @@
-// The engine as the host application hands it over (ADR-0019).
+// The engine as the host application hands it over (API-host-hands-comb-engine).
 import { expect, test, type Request } from "@playwright/test";
 import { open } from "./shared";
 
 test("the canvas draws from the engine in every form the host application hands over", async ({
   page,
 }) => {
-  // Verifies: ADR-0019
+  // Verifies: API-host-hands-comb-engine
   const forms = ["", "?engine=response", "?engine=module", "?engine=bytes", "?engine=view"];
   for (const form of forms) {
     const errors: string[] = [];

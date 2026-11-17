@@ -1,7 +1,7 @@
 // The modules of the UML example: no diagram's file imports another diagram's, since what the
 // diagrams share stands in a module of its own, which imports none of them, and the lookup of an
-// element of the page is written once. Read from the sources, as the structural test of ADR-0030
-// reads the imports.
+// element of the page is written once. Read from the sources, as the structural test of
+// ARCH-one-workspace-per-example reads the imports.
 // Verifies: G-12
 import { expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";

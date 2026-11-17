@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Mutation testing: compares the survivors of a cargo-mutants run with the recorded list
-# (ADR-0008).
+# (DEV-bun-vite-wasm-pack).
 #
 # cargo-mutants writes each mutant to a file of mutants.out by its outcome: missed.txt for the
 # survivors, caught.txt, and timeout.txt for those whose tests ran past the timeout. Each line is
@@ -31,7 +31,14 @@
 
 set -uo pipefail
 
-usage() {
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-mutants.sh [--root <dir>] [--record] <mutants.out> [<list>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
+usage_exit() {
   echo "Usage: scripts/check-mutants.sh <mutants.out> <list> | --record <mutants.out> [<list>]" >&2
   exit 2
 }
@@ -40,9 +47,12 @@ record=0
 if [[ "${1:-}" == "--record" ]]; then
   record=1
   shift
-  (($# == 1 || $# == 2)) || usage
+fi
+rest_args "${BASH_SOURCE[0]}" "$usage" 2 "$@"
+if ((record)); then
+  (($# == 1 || $# == 2)) || usage_exit
 else
-  (($# == 2)) || usage
+  (($# == 2)) || usage_exit
 fi
 out="$1"
 list="${2:-}"
@@ -124,7 +134,7 @@ if [[ -n "$list" ]]; then
 fi
 
 if ((record)); then
-  echo "# Surviving mutants of crates/engine that the mutation workflow accepts (ADR-0008)."
+  echo "# Surviving mutants of crates/engine that the mutation workflow accepts (DEV-bun-vite-wasm-pack)."
   echo "# One per line as '<file> <function> <replacement>', ' (xN)' when one key covers N mutants,"
   echo "# and for an equivalent mutant its reason after ' # '."
   echo "# Recorded with scripts/check-mutants.sh --record; the README says how the list changes."

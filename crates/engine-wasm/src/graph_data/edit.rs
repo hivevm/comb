@@ -21,8 +21,8 @@ use super::{
 };
 
 /// Why an edit of an edge was refused: its data, which the host application handed over, or a
-/// slot that holds nothing, which is the shell's mistake (ADR-0023), and crosses as `SlotError`
-/// as from the removals, `edgesAt`, `setLabelSize`, and `moveLabel`.
+/// slot that holds nothing, which is the shell's mistake (ARCH-engine-edits-graph-in-place), and
+/// crosses as `SlotError` as from the removals, `edgesAt`, `setLabelSize`, and `moveLabel`.
 #[derive(Debug, PartialEq)]
 pub enum EdgeRefusal {
     Data(GraphDataProblem),
@@ -53,12 +53,12 @@ impl From<AddEdgeError> for EdgeRefusal {
 }
 
 /// Checks the edge `addEdge` hands over as a load checks an edge, the only one of its batch at
-/// index 0, and refuses one from a node to itself unless `loops` allows loops (ADR-0031) and one
-/// past `MAX_ITEMS` edges in use; adds it to `graph` between the node slots `source` and
-/// `target`, which `api` resolved against the map only it keeps, and returns the slot the engine
-/// chose. That the graph holds no edge of its identifier and holds its ends is `api`'s to check
-/// (ADR-0030); a slot of an end that holds no node is the shell's mistake. A refused edge leaves
-/// the graph as it was.
+/// index 0, and refuses one from a node to itself unless `loops` allows loops
+/// (API-edges-dock-side-or-outline) and one past `MAX_ITEMS` edges in use; adds it to `graph`
+/// between the node slots `source` and `target`, which `api` resolved against the map only it
+/// keeps, and returns the slot the engine chose. That the graph holds no edge of its identifier and
+/// holds its ends is `api`'s to check (ARCH-one-workspace-per-example); a slot of an end that holds
+/// no node is the shell's mistake. A refused edge leaves the graph as it was.
 pub(crate) fn add_edge_to(
     graph: &mut Graph,
     edge: &EdgeInput,
@@ -203,11 +203,11 @@ pub(crate) fn update_edge_in(
 }
 
 /// The attributes `updateNode` changes on a node, by name: only its content, which it replaces
-/// whole (ADR-0013). Read from a plain object alone: `api` hands over a copy of a plain object's
-/// fields up to the first other than `content`, its content as plain data; a patch that is no
-/// plain object, a `Map` or an array among them, or that has a key that is no string, `api` cannot
-/// read, and refuses as malformed before it reaches the bridge. No value of the host application,
-/// and none of its code, reaches the bridge.
+/// whole (REN-node-content-in-rows). Read from a plain object alone: `api` hands over a copy of a
+/// plain object's fields up to the first other than `content`, its content as plain data; a patch
+/// that is no plain object, a `Map` or an array among them, or that has a key that is no string,
+/// `api` cannot read, and refuses as malformed before it reaches the bridge. No value of the host
+/// application, and none of its code, reaches the bridge.
 #[derive(Tsify)]
 #[tsify(type = "{ content?: NodeContent }")]
 pub struct NodePatch(pub Vec<(String, Field<ContentInput>)>);
@@ -273,8 +273,8 @@ pub(crate) fn patch_of(
     Ok(checked)
 }
 
-// The malformed-data tests of graph data verify ADR-0010 (see `graph_data::tests`).
-// Verifies: ADR-0010
+// The malformed-data tests of graph data verify API-bridge-takes-serde-and-columns (see
+// `graph_data::tests`). Verifies: API-bridge-takes-serde-and-columns
 #[cfg(test)]
 mod tests {
     use super::super::tests::{content, invalid_text, titled};
@@ -327,7 +327,7 @@ mod tests {
 
     #[test]
     fn an_edge_the_engine_cannot_number_is_refused_as_a_node_it_cannot_number() {
-        // Verifies: ADR-0023
+        // Verifies: ARCH-engine-edits-graph-in-place
         let node = GraphDataProblem::from(TooManySlots);
         assert_eq!(
             EdgeRefusal::from(AddEdgeError::TooManySlots(TooManySlots)),

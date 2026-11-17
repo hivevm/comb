@@ -5,10 +5,11 @@
 # The sensor reads GitHub through gh; here a stand-in named by GH answers instead, with the lines
 # gh's --jq would print for each endpoint, kept in a fixture directory. Each case writes those
 # answers, runs the sensor, and asserts the exit code and a line the reviewer would read. The
-# settings CONTRIBUTING.md lists report nothing; every other case is one setting that differs. What
+# settings CONTRIBUTING.md lists report nothing, also where the list of checks is longer than a pipe
+# holds; every other case is one setting that differs. What
 # the --jq expressions make of GitHub's JSON is not run here, since it needs gh; that is review.
 #
-# Verifies: ADR-0002
+# Verifies: NUC-main-only-via-pr NUC-checks-are-bash
 # Inputs: scripts/sensor-repo-settings.sh scripts/lib/
 #
 # Usage:
@@ -72,7 +73,7 @@ answer() {
 # contain the needle, and not the second needle when one is given.
 expect() {
   local name="$1" dir="$2" want="$3" needle="$4" absent="${5:-}" out rc
-  out="$(GH="${GH_CMD:-$fake}" FIX="$dir/fix" bash "$SENSOR" "$dir" 2>&1)"; rc=$?
+  out="$(GH="${GH_CMD:-$fake}" FIX="$dir/fix" bash "$SENSOR" --root "$dir" 2>&1)"; rc=$?
   if ((rc == want)) && [[ "$out" == *"$needle"* ]] && [[ -z "$absent" || "$out" != *"$absent"* ]]; then
     passed=$((passed + 1))
     return
@@ -100,6 +101,21 @@ printf '<!-- required-checks begin -->\n%s, `build (ubuntu-latest)`\n<!-- requir
   "$CHECKS" > "$d/CONTRIBUTING.md"
 expect "a check run CONTRIBUTING.md names and the ruleset lacks" "$d" 0 \
   "main: the required checks lack 'build (ubuntu-latest)', which CONTRIBUTING.md names"
+
+# A list of checks longer than a pipe holds, its first name the one sought: a grep that exits at
+# that name before the list is written cuts the writer off, and the name reads as missing.
+# Each name stays below the size of one argument, since a name is grep's pattern.
+pad="$(printf '%*s' 50000 '' | tr ' ' z)"
+named="" rules="$RULES"
+for c in a b c d; do
+  named+=", \`z$c$pad\`"
+  rules+=$'\n'"check${T}z$c$pad"
+done
+d="$(repo long-list)"
+printf '<!-- required-checks begin -->\n%s%s\n<!-- required-checks end -->\n' \
+  "$CHECKS" "$named" > "$d/CONTRIBUTING.md"
+answer "$d" repos/owner/name/rules/branches/main "$rules"
+expect "a list of checks longer than a pipe holds is read whole" "$d" 0 "nothing to report"
 
 d="$(repo no-ruleset)"
 answer "$d" repos/owner/name/rules/branches/main ""

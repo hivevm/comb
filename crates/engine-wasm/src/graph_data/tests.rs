@@ -1,9 +1,10 @@
 //! The graph data the tests of the modules of `graph_data` build: content of each kind, batches
 //! of nodes and edges, and their columns, and a load of them into an engine.
 //!
-//! The malformed-data tests of those modules verify ADR-0010: every export that receives graph
-//! data returns a typed error that names the offender, and none panics. They are the tests
-//! ADR-0010 names as those of `lib.rs`, the crate root of this module.
+//! The malformed-data tests of those modules verify API-bridge-takes-serde-and-columns: every
+//! export that receives graph data returns a typed error that names the offender, and none panics.
+//! They are the tests API-bridge-takes-serde-and-columns names as those of `lib.rs`, the crate root
+//! of this module.
 
 use comb_engine::content::Fonts;
 use comb_engine::geometry::WORLD_LIMIT;

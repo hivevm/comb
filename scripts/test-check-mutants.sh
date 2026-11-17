@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Self-test of scripts/check-mutants.sh. Verifies: ADR-0008
+# Self-test of scripts/check-mutants.sh. Verifies: DEV-bun-vite-wasm-pack
 #
 # Each case writes a mutants.out in cargo-mutants' format and a list, runs the comparison, and
 # asserts the exit code and a line it prints. The run that matches the list passes; a run that

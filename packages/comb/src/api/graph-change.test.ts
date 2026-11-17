@@ -1,6 +1,6 @@
-// The type checker pins `GraphChange` to the table of ADR-0024: exactly its kinds, each with the
-// `by` the table gives it. Each assignment below compiles only while the types are equal, and `tsc`
-// fails on a `@ts-expect-error` that has no error to expect.
+// The type checker pins `GraphChange` to the table of API-edits-reported-as-typed-changes: exactly
+// its kinds, each with the `by` the table gives it. Each assignment below compiles only while the
+// types are equal, and `tsc` fails on a `@ts-expect-error` that has no error to expect.
 import { expect, test } from "bun:test";
 import type { GraphChange } from "../index";
 
@@ -39,7 +39,7 @@ function narrows(change: GraphChange): void {
   change.by = "user";
 }
 
-test("GraphChange admits exactly the kinds of ADR-0024's table, each by whom it names", () => {
-  // Verifies: ADR-0024
+test("GraphChange admits exactly the kinds of API-edits-reported-as-typed-changes's table, each by whom it names", () => {
+  // Verifies: API-edits-reported-as-typed-changes
   expect([kinds, by, typeof narrows]).toEqual([true, true, "function"]);
 });

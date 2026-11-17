@@ -16,7 +16,8 @@ const GREY = 0x9aa1ad;
 const GREEN = 0x22a55b;
 const RED = 0xe0453a;
 export const NODE_WIDTH = 220;
-/** The height Comb lays a node of one title out to, the least height of a node (ADR-0013). */
+/** The height Comb lays a node of one title out to, the least height of a node
+ *  (REN-node-content-in-rows). */
 export const NODE_HEIGHT = 64;
 const COLUMN = 300;
 const ROW = 110;
@@ -286,7 +287,7 @@ function edgesOf(copy: number): EdgeData[] {
 }
 
 /** The node shapes the nodes of the shaped graph take in turn: the content node shapes, then the
- *  filled ones, which hold no content (ADR-0032). */
+ *  filled ones, which hold no content (REN-closed-set-of-node-shapes). */
 const SHAPES: readonly NodeShape[] = [
   "rectangle",
   "rounded-rectangle",
@@ -363,7 +364,8 @@ export function metricTree(
   return laidOut(copies, heightOf, (content) => ({ width: NODE_WIDTH, content }));
 }
 
-/** The shaped graph the benchmark measures beside the metric tree (ADR-0033): the metric tree's
+/** The shaped graph the benchmark measures beside the metric tree
+ *  (PERF-benchmark-measures-named-graph): the metric tree's
  *  copies, the same nodes and edges in the same columns and order, the nodes taking the node
  *  shapes in turn, laid out by `laidOut` so that no two overlap. A circle and a ringed circle are
  *  64 wide, a bar keeps the node's width, and a filled node holds no content; a content node keeps

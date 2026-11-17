@@ -1,23 +1,25 @@
-//! The property test of the bridge's validation (Q-7, ADR-0030): graph data of any shape, well
-//! formed or not, ends in a typed error or a graph, never in a panic, and in a graph exactly when
-//! an oracle written apart from the bridge finds nothing to refuse. Every field crosses, those the
-//! engine does not keep among them: node content, label texts and backgrounds, the patch of
-//! `updateNode`, the node of `addNode` and the edge of `addEdge`, each refused exactly as a load
-//! of it alone is, and the patch of `updateEdge`, refused exactly as a load of the edge it makes.
+//! The property test of the bridge's validation (Q-7, ARCH-one-workspace-per-example): graph data
+//! of any shape, well formed or not, ends in a typed error or a graph, never in a panic, and in a
+//! graph exactly when an oracle written apart from the bridge finds nothing to refuse. Every field
+//! crosses, those the engine does not keep among them: node content, label texts and backgrounds,
+//! the patch of `updateNode`, the node of `addNode` and the edge of `addEdge`, each refused exactly
+//! as a load of it alone is, and the patch of `updateEdge`, refused exactly as a load of the edge
+//! it makes.
 //!
 //! The data starts as a value of any shape, as the host application hands it over. A load's nodes
-//! and edges cross as the columns the snapshot of `api` builds of it (ADR-0010), its strings in
-//! pieces of a bound generated with it, each node read as the node of `addNode` is and each edge
-//! as the edge of `addEdge` is, but for an arrowhead and the sides, any string of which crosses as
-//! its code, so that a value of the wrong type or a missing field at any position among them, a
-//! string that names no arrowhead or side, and an item that is no object, reach the bridge as the
-//! shell hands them over. A
+//! and edges cross as the columns the snapshot of `api` builds of it
+//! (API-bridge-takes-serde-and-columns), its strings in pieces of a bound generated with it, each
+//! node read as the node of `addNode` is and each edge as the edge of `addEdge` is, but for an
+//! arrowhead and the sides, any string of which crosses as its code, so that a value of the wrong
+//! type or a missing field at any position among them, a string that names no arrowhead or side,
+//! and an item that is no object, reach the bridge as the shell hands them over. A
 //! second oracle, written on that value alone, says which field of which node or edge is missing
 //! or of another type, and whether the value has the shape of graph data at all: the bridge names
 //! such a field (`invalidField`), and refuses as malformed only what has no such shape, and no
 //! message names a Rust type or crate. A last property holds the engine's count of the code units
 //! of content to what the graph holds through loads, additions, updates, and removals.
-// Verifies: Q-7, ADR-0030, ADR-0010, ADR-0031
+// Verifies: Q-7, ARCH-one-workspace-per-example, API-bridge-takes-serde-and-columns
+// Verifies: API-edges-dock-side-or-outline
 
 use std::cell::Cell;
 
@@ -307,7 +309,7 @@ fn node(loose: bool, i: usize) -> impl Strategy<Value = Value> {
 
 /// Mostly a rectangle, now and then another node shape, a filled one among them, which refuses
 /// content; loose, now and then a name of none or a value of another type
-/// (ADR-0032).
+/// (REN-closed-set-of-node-shapes).
 fn node_shape(loose: bool) -> BoxedStrategy<Value> {
     let text = |name: &str| Value::Text(name.to_owned());
     let mut good = vec![text("rectangle"); 6];
@@ -639,7 +641,7 @@ fn shape_name(node: &Value) -> &str {
 }
 
 /// Whether `node` holds no content in a filled node shape, which holds none
-/// (ADR-0032).
+/// (REN-closed-set-of-node-shapes).
 fn shape_ok(node: &Value) -> bool {
     let filled = ["circle", "ringed-circle", "bar"].contains(&shape_name(node));
     let rows = fields_of(node).and_then(|fields| get(fields, "content"));
@@ -1109,7 +1111,7 @@ fn the_items_after_one_with_a_refused_field_are_left_unread() {
 
 #[test]
 fn content_read_through_serde_names_its_first_shape_and_reads_the_rest() {
-    // Verifies: ADR-0010
+    // Verifies: API-bridge-takes-serde-and-columns
     // A row that is no list and an element that is no object, as `addNode` and `updateNode`
     // read content: the first named, each read as empty in its place.
     let read = |rows: Vec<Value>| ContentInput::deserialize(Value::List(rows)).unwrap();
@@ -1137,7 +1139,7 @@ fn content_read_through_serde_names_its_first_shape_and_reads_the_rest() {
 
 #[test]
 fn a_progress_bar_read_through_serde_names_its_segments_shape_and_reads_the_rest() {
-    // Verifies: ADR-0010
+    // Verifies: API-bridge-takes-serde-and-columns
     // Segments that are no list, and a segment that is no object, as `addNode` and `updateNode`
     // read content: the first named, the segments read as none and the segment as NaN.
     let read = |segments: Value| {
@@ -1176,7 +1178,7 @@ fn a_progress_bar_read_through_serde_names_its_segments_shape_and_reads_the_rest
 
 #[test]
 fn a_metric_read_through_serde_fills_its_trend_and_a_trend_that_is_no_object_holds_none() {
-    // Verifies: ADR-0010
+    // Verifies: API-bridge-takes-serde-and-columns
     // As `addNode` and `updateNode` read content: a metric's caption, value, and trend's text
     // among the texts, its direction by its code and its colour; a trend that is no object, and
     // a direction or a colour of another type, read as none, which their rules refuse, and no
@@ -1221,7 +1223,7 @@ fn a_metric_read_through_serde_fills_its_trend_and_a_trend_that_is_no_object_hol
 
 #[test]
 fn an_icon_read_through_serde_fills_its_name_among_the_names_and_no_text() {
-    // Verifies: ADR-0010
+    // Verifies: API-bridge-takes-serde-and-columns
     // As `addNode` and `updateNode` read content: an icon's name among the names, read as a text
     // is, an `id` or a `text` beside it read as none of its fields; a name of another type crosses
     // empty and marked as none, which its rule refuses.
@@ -1258,7 +1260,7 @@ fn an_icon_read_through_serde_fills_its_name_among_the_names_and_no_text() {
 
 #[test]
 fn a_trend_read_through_serde_reads_its_text_direction_and_colour_alone() {
-    // Verifies: ADR-0010
+    // Verifies: API-bridge-takes-serde-and-columns
     // A trend that holds a trend of its own and segments, as a host application may hand one:
     // read for its text, its direction, and its colour, the rest ignored and not read as content.
     let text = |value: &str| Value::Text(value.to_owned());
@@ -1368,9 +1370,9 @@ fn two_nodes(edges: Vec<Value>) -> Value {
     ])
 }
 
-/// The bound on a piece of a string column (ADR-0010): mostly a few code units, so that a column
-/// crosses in many pieces, now and then around the longest values, and now and then the
-/// snapshot's.
+/// The bound on a piece of a string column (API-bridge-takes-serde-and-columns): mostly a few code
+/// units, so that a column crosses in many pieces, now and then around the longest values, and now
+/// and then the snapshot's.
 fn piece_bound() -> impl Strategy<Value = usize> {
     prop_oneof![
         6 => 1..=8_usize,
@@ -1680,7 +1682,7 @@ fn edge_patch() -> impl Strategy<Value = Vec<(String, Value)>> {
 /// before the new ones, from a persisted regression, cannot move when the floor is checked.
 #[test]
 fn an_added_edge_is_refused_exactly_as_a_load_of_it_alone_and_a_loop_besides_unless_allowed() {
-    // Verifies: ADR-0030, ADR-0031, Q-7
+    // Verifies: ARCH-one-workspace-per-example, API-edges-dock-side-or-outline, Q-7
     let (taken, refused) = (Cell::new(0_u32), Cell::new(0_u32));
     let mut config = ProptestConfig::with_cases(CASES);
     config.source_file = Some(file!());
@@ -1791,7 +1793,7 @@ proptest! {
         patch in edge_patch(),
         bound in piece_bound(),
     ) {
-        // Verifies: ADR-0030, ADR-0024, Q-7
+        // Verifies: ARCH-one-workspace-per-example, API-edits-reported-as-typed-changes, Q-7
         let mut graph = loaded(bound, two_nodes(vec![Value::Object(base_edge())])).unwrap();
         let before = graph.edge(0);
         let other = patch
@@ -1831,7 +1833,7 @@ proptest! {
         value in added_node(),
         bound in piece_bound(),
     ) {
-        // Verifies: ADR-0030, ADR-0023, Q-7
+        // Verifies: ARCH-one-workspace-per-example, ARCH-engine-edits-graph-in-place, Q-7
         let with_a = || {
             let a = Value::Object(vec![
                 ("id".to_owned(), Value::Text("a".to_owned())),
@@ -1878,7 +1880,7 @@ proptest! {
         bound in piece_bound(),
         (fonts, lines) in fonts(),
     ) {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         // A panic anywhere below fails the case; the runner catches it and shrinks the input.
         // The load crosses as columns, its strings in pieces of the bound generated with it, and
         // is held to the oracles of the value it was built of.
@@ -1926,7 +1928,7 @@ proptest! {
 
     #[test]
     fn any_patch_ends_in_a_typed_error_or_is_accepted(value in patch()) {
-        // Verifies: ADR-0013, Q-7
+        // Verifies: REN-node-content-in-rows, Q-7
         // A patch is accepted exactly where each of its fields is content a load of the node
         // accepts, up to the first field of another name, after which nothing is read.
         let entries = match &value {
@@ -2077,7 +2079,7 @@ proptest! {
         budget in 0..48_u64,
         edits in prop::collection::vec(edit(), 1..12),
     ) {
-        // Verifies: ADR-0013, ADR-0010, Q-7
+        // Verifies: REN-node-content-in-rows, API-bridge-takes-serde-and-columns, Q-7
         // The budget lowered so that edits pass it; each edit is taken exactly where the code
         // units the graph holds besides the node, and the node's, stay within it, and the engine's
         // count is the sum of what the nodes it holds were given, counted apart from the bridge.

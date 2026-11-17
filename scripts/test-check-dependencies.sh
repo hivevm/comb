@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 #
-# Self-test of scripts/check-dependencies.sh. Verifies: ADR-0008, ADR-0010, ADR-0011
+# Self-test of scripts/check-dependencies.sh.
+# Verifies: DEV-bun-vite-wasm-pack, API-bridge-takes-serde-and-columns
+# Verifies: ARCH-graph-in-zustand-store
 #
 # Each case builds a fixture tree under a temporary directory — bun.lock, the bridge crate's
 # Cargo.toml, and the library's package.json — runs the check against it, and asserts the exit
@@ -61,7 +63,7 @@ depend() {
 # failure, that the output contains the pattern.
 expect() {
   local want="$1" desc="$2" dir="$3" pattern="${4:-}" out rc
-  out="$(bash "$CHECK" "$dir" 2>&1)"; rc=$?
+  out="$(bash "$CHECK" --root "$dir" 2>&1)"; rc=$?
   if [[ "$want" == pass && $rc -eq 0 ]] \
     || [[ "$want" == fail && $rc -eq 1 && ( -z "$pattern" || "$out" == *"$pattern"* ) ]]; then
     passed=$((passed + 1))
@@ -109,7 +111,7 @@ printf '\n[dependencies.serde_json]\nversion = "1.0"\n' >> "$d/crates/engine-was
 expect fail "serde_json as a table fails" "$d" "serde_json passes structured data"
 
 d="$(fixture serde-json-comment)"
-echo '# serde_json is not used: ADR-0010' >> "$d/crates/engine-wasm/Cargo.toml"
+echo '# serde_json is not used: API-bridge-takes-serde-and-columns' >> "$d/crates/engine-wasm/Cargo.toml"
 expect pass "serde_json named in a comment passes" "$d"
 
 d="$(fixture redux)"

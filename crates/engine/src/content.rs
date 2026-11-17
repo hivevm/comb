@@ -1,24 +1,24 @@
-//! The layout of node content (ADR-0013): rows of weighted columns, each holding one element,
-//! laid out inside the width the host application gives a node, from the glyph advances and the
-//! line height of each font the shell draws with. The layout computes each row's height, each
-//! element's rectangle, where each text is cut and an ellipsis drawn after it, and the node's
-//! height from its rows; the rest of the engine takes that height as the node's.
+//! The layout of node content (REN-node-content-in-rows): rows of weighted columns, each holding
+//! one element, laid out inside the width the host application gives a node, from the glyph
+//! advances and the line height of each font the shell draws with. The layout computes each row's
+//! height, each element's rectangle, where each text is cut and an ellipsis drawn after it, and the
+//! node's height from its rows; the rest of the engine takes that height as the node's.
 //!
-//! The six elements of ADR-0013 exist: `text`, `icon`, `action`, `badge`, `progress`, and
-//! `metric`. An icon is a square as high as the body's line, at most as wide as its column, at its
-//! column's left and in the middle of that line; which image it shows is the bridge's to keep and
-//! the shell's to draw, since the layout reads none of it. An action is a text in the font of
-//! role body; what it names is the bridge's to keep, since the layout reads none of it. A badge is
-//! a text in the font of role body on a pill, whose rectangle is the badge's: it hugs the text as
-//! far as it is drawn, padded as an edge label's pill is, and stays within its column; its colour
-//! is the bridge's to keep. A progress bar fills its column and a line of the body's height, its
-//! cell, and its bar, `BAR_HEIGHT` high, lies in the middle of that line, cut into its segments
-//! from the column's left by their fractions and the rest of the bar its track (`bar`); the
-//! segments' colours are the bridge's to keep. A metric fills its column and two lines, its cell:
-//! the caption's line in the font of role caption, and below it the value's in the body's, which
-//! holds the value at the column's left, its trend's arrow after it, and the trend's text after
-//! that (`metric_parts`); the trend's direction picks the arrow, and its colour is the bridge's to
-//! keep.
+//! The six elements of REN-node-content-in-rows exist: `text`, `icon`, `action`, `badge`,
+//! `progress`, and `metric`. An icon is a square as high as the body's line, at most as wide as its
+//! column, at its column's left and in the middle of that line; which image it shows is the
+//! bridge's to keep and the shell's to draw, since the layout reads none of it. An action is a text
+//! in the font of role body; what it names is the bridge's to keep, since the layout reads none of
+//! it. A badge is a text in the font of role body on a pill, whose rectangle is the badge's: it
+//! hugs the text as far as it is drawn, padded as an edge label's pill is, and stays within its
+//! column; its colour is the bridge's to keep. A progress bar fills its column and a line of the
+//! body's height, its cell, and its bar, `BAR_HEIGHT` high, lies in the middle of that line, cut
+//! into its segments from the column's left by their fractions and the rest of the bar its track
+//! (`bar`); the segments' colours are the bridge's to keep. A metric fills its column and two
+//! lines, its cell: the caption's line in the font of role caption, and below it the value's in the
+//! body's, which holds the value at the column's left, its trend's arrow after it, and the trend's
+//! text after that (`metric_parts`); the trend's direction picks the arrow, and its colour is the
+//! bridge's to keep.
 
 use crate::graph::Level;
 
@@ -69,7 +69,7 @@ pub const MAX_METRIC: f64 = 1024.0;
 /// The character drawn after a cut text.
 pub const ELLIPSIS: char = '\u{2026}';
 
-/// The role of a text, which chooses its font (ADR-0013).
+/// The role of a text, which chooses its font (REN-node-content-in-rows).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {
     Title,
@@ -77,7 +77,8 @@ pub enum Role {
     Caption,
 }
 
-/// The direction of a metric's trend, which picks its arrow (ADR-0013): up ▲, down ▼, flat ▶.
+/// The direction of a metric's trend, which picks its arrow (REN-node-content-in-rows): up ▲, down
+/// ▼, flat ▶.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Direction {
     Up,
@@ -86,7 +87,8 @@ pub enum Direction {
 }
 
 /// Why a font was refused: advances and code points that do not pair up, or a metric that is no
-/// finite number from 0 to `MAX_METRIC`. Either is the shell's mistake (ADR-0022).
+/// finite number from 0 to `MAX_METRIC`. Either is the shell's mistake
+/// (API-shell-mistake-refused-as-shells).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FontError {
     Unpaired,
@@ -596,14 +598,14 @@ pub struct MetricParts {
 }
 
 /// The parts of a metric placed at `at`, its cell, that shows `caption`, `value`, and the text
-/// `trend` of a trend of `direction`, in `fonts` (ADR-0013). The caption fills the cell's first
-/// line, the caption's, cut to the column. On the line below it, the body's, the value lies at
-/// the column's left as wide as it is drawn; the arrow, a square `ARROW_SIZE` wide and at most as
-/// high as the line, in the middle of the line, `VALUE_GAP` after the value; and the trend's text
-/// `ARROW_GAP` after the arrow, to the column's end. Where the column is too narrow, the trend's
-/// text is cut first, to what the value, the gaps, and the arrow leave; where the value and both
-/// gaps and the arrow do not fit, the trend's text shows nothing and the value is cut to the
-/// column less `VALUE_GAP` and the arrow, the gap before the arrow shrinking where even that
+/// `trend` of a trend of `direction`, in `fonts` (REN-node-content-in-rows). The caption fills the
+/// cell's first line, the caption's, cut to the column. On the line below it, the body's, the value
+/// lies at the column's left as wide as it is drawn; the arrow, a square `ARROW_SIZE` wide and at
+/// most as high as the line, in the middle of the line, `VALUE_GAP` after the value; and the
+/// trend's text `ARROW_GAP` after the arrow, to the column's end. Where the column is too narrow,
+/// the trend's text is cut first, to what the value, the gaps, and the arrow leave; where the value
+/// and both gaps and the arrow do not fit, the trend's text shows nothing and the value is cut to
+/// the column less `VALUE_GAP` and the arrow, the gap before the arrow shrinking where even that
 /// leaves no room; and a column narrower than the arrow, or a line of no height, draws none.
 pub fn metric_parts(
     at: &Placed,
@@ -685,10 +687,10 @@ pub fn metric_parts(
     }
 }
 
-/// Whether `element` is drawn at `level` (ADR-0013): at the near level every element, at the
-/// middle level the texts of role title, and at the far level none; a level keeps a subset of the
-/// near level's. Which elements are kept, not where: the query lays a node out alike at every
-/// level, and hands over and the hit test names only the elements kept.
+/// Whether `element` is drawn at `level` (REN-node-content-in-rows): at the near level every
+/// element, at the middle level the texts of role title, and at the far level none; a level keeps a
+/// subset of the near level's. Which elements are kept, not where: the query lays a node out alike
+/// at every level, and hands over and the hit test names only the elements kept.
 pub const fn drawn_at(element: &Element, level: Level) -> bool {
     match level {
         Level::Near => true,
@@ -772,7 +774,7 @@ mod tests {
 
     #[test]
     fn rows_of_titles_bodies_and_captions_lie_where_the_reference_puts_them() {
-        // Verifies: ADR-0013, Q-4
+        // Verifies: REN-node-content-in-rows, Q-4
         // A title row, a body row of columns weighted 1 and 3, and a caption row of three equal
         // columns, worked out by hand at each width: the columns share the width inside the
         // padding of 12 less gaps of 8, by weight, and the rows stack from 10 down, 18, 16, and
@@ -846,7 +848,7 @@ mod tests {
 
     #[test]
     fn a_node_is_as_high_as_its_rows_and_padding_and_at_least_the_least_height() {
-        // Verifies: ADR-0013
+        // Verifies: REN-node-content-in-rows
         let title = text(Role::Title, "a", 1.0);
         let body = text(Role::Body, "b", 1.0);
         // One title row: 10 + 18 + 10 = 38, below the least height of 64.
@@ -871,7 +873,7 @@ mod tests {
 
     #[test]
     fn a_text_wider_than_its_column_is_cut_before_an_ellipsis_within_it() {
-        // Verifies: ADR-0013
+        // Verifies: REN-node-content-in-rows
         let font = fonts();
         let title = font.of(Role::Title);
         // Ten glyphs of 7 fit in 70, not in 69: then six glyphs, 42, beside the ellipsis's 10.
@@ -894,7 +896,7 @@ mod tests {
 
     #[test]
     fn an_action_lies_and_is_cut_as_a_text_of_role_body() {
-        // Verifies: ADR-0013, Q-4
+        // Verifies: REN-node-content-in-rows, Q-4
         // A title row, then a row of a body text beside an action weighted 1 and 3, at 220: the
         // action takes the body's line, 16, and its column, 141 from 67.
         let action = Cell {
@@ -935,7 +937,7 @@ mod tests {
 
     #[test]
     fn a_badge_s_pill_hugs_its_text_within_its_column_and_its_text_is_cut_inside_the_padding() {
-        // Verifies: ADR-0013, Q-4
+        // Verifies: REN-node-content-in-rows, Q-4
         // A title row, then a row of a caption beside a badge weighted 1 and 3. At 220 the badge's
         // column is 141 wide from 67; its pill lies at the column's left, the text's advance, four
         // body glyphs of 6, and 8 either side wide: 40; and 22 high, the body's line of 16 and 3
@@ -993,7 +995,7 @@ mod tests {
 
     #[test]
     fn the_elements_beside_a_badge_lie_on_its_text_s_line_and_a_row_without_one_is_unchanged() {
-        // Verifies: ADR-0013, Q-4
+        // Verifies: REN-node-content-in-rows, Q-4
         // At 220, a title row, then a row of a body, an action, and a badge, three columns of 60
         // from 12, 80, and 148, then a row of a body and an action alone. Beside the badge the
         // body and the action lie 3 below the row's top, 28, on the line of the badge's text; the
@@ -1052,7 +1054,7 @@ mod tests {
 
     #[test]
     fn rows_mixing_badges_and_texts_lay_out_inside_their_node() {
-        // Verifies: ADR-0013, Q-4
+        // Verifies: REN-node-content-in-rows, Q-4
         // Rows of badges beside texts of every role, in fonts of any line, at widths from none to
         // the largest: every element within the node's width and height.
         let roles = [Role::Title, Role::Body, Role::Caption];
@@ -1085,7 +1087,7 @@ mod tests {
 
     #[test]
     fn a_point_beside_a_badge_s_pill_in_its_column_hits_no_element() {
-        // Verifies: ADR-0013
+        // Verifies: REN-node-content-in-rows
         // The badge "Done" at 220: its pill from (67, 28) 40 × 22, in a column 141 wide.
         let cells = [
             text(Role::Title, "Bet", 1.0),
@@ -1110,7 +1112,7 @@ mod tests {
 
     #[test]
     fn every_level_draws_a_subset_of_the_near_levels_elements_and_the_far_level_none() {
-        // Verifies: ADR-0013
+        // Verifies: REN-node-content-in-rows
         let roles = [Role::Title, Role::Body, Role::Caption];
         let texts = roles.map(|role| Element::Text { role, text: "t" });
         let others = [
@@ -1135,7 +1137,7 @@ mod tests {
 
     #[test]
     fn any_badge_lays_out_inside_its_column() {
-        // Verifies: ADR-0013, Q-4
+        // Verifies: REN-node-content-in-rows, Q-4
         const WIDTHS: [f32; 7] = [0.0, 1.0, 16.0, 23.0, 220.0, 1e6, 1.3e36];
         let texts = ["", "x", &"w".repeat(1_000), &"\u{1F600}".repeat(500)];
         let mut rng = Lcg(11);
@@ -1198,7 +1200,7 @@ mod tests {
 
     #[test]
     fn a_progress_bar_s_segments_lie_in_order_from_its_column_s_left_and_its_track_after_them() {
-        // Verifies: ADR-0013, Q-4
+        // Verifies: REN-node-content-in-rows, Q-4
         // At 220, a title row, then a progress bar alone in its row: its cell the column from 12,
         // 196 wide, and a body's line of 16 from 28; its bar 8 high in the middle of it, from 32.
         // Segments of 0.3 and 0.2 are 58.8 and 39.2 long from the column's left, and the track
@@ -1259,7 +1261,7 @@ mod tests {
 
     #[test]
     fn a_bar_never_reaches_past_its_column_and_is_no_higher_than_its_line() {
-        // Verifies: ADR-0013, Q-4
+        // Verifies: REN-node-content-in-rows, Q-4
         // Fractions that sum a little past 1, as the bridge admits them, or far past it: the
         // segment that would pass the bar's end ends at it, and every one after it is empty.
         let at = Placed {
@@ -1318,7 +1320,7 @@ mod tests {
 
     #[test]
     fn a_progress_bar_is_hit_across_its_line_in_its_column_and_not_at_the_middle_level() {
-        // Verifies: ADR-0013
+        // Verifies: REN-node-content-in-rows
         // The bar of the reference at 220: its cell from (12, 28), 196 × 16, its bar 8 high in
         // the middle of it; a press anywhere in the cell hits it, above or below the bar too.
         let cells = [text(Role::Title, "Bet", 1.0), progress(1.0)];
@@ -1382,7 +1384,7 @@ mod tests {
 
     #[test]
     fn a_metric_s_caption_value_and_trend_lie_where_the_reference_puts_them() {
-        // Verifies: ADR-0013, Q-4
+        // Verifies: REN-node-content-in-rows, Q-4
         // At 220, a title row, then a metric alone in its row: its cell the column from 12, 196
         // wide, from 28 down, 30 high, the caption's line of 14 and the body's of 16 below it;
         // the node 10 + 18 + 30 + 10 = 68. The caption fills its line, 35 of it drawn; the value
@@ -1460,7 +1462,7 @@ mod tests {
 
     #[test]
     fn a_metric_s_row_holds_its_two_lines_and_the_rows_rules_place_it() {
-        // Verifies: ADR-0013, Q-4
+        // Verifies: REN-node-content-in-rows, Q-4
         // Beside a body text, both weighted 1, at 220: two columns of 94 from 12 and 114; the
         // text at the row's top, the metric from there too, and the row 30 high, the metric's.
         let cells = [
@@ -1500,7 +1502,7 @@ mod tests {
 
     #[test]
     fn a_metric_is_hit_across_its_two_lines_and_not_at_the_middle_level() {
-        // Verifies: ADR-0013
+        // Verifies: REN-node-content-in-rows
         // The metric of the reference at 220: its cell from (12, 28), 196 × 30; a press on its
         // caption, beside its value, or on its trend hits it, and below the cell none.
         let cells = [
@@ -1533,7 +1535,7 @@ mod tests {
 
     #[test]
     fn a_metric_whose_value_is_cut_shows_none_of_its_trend_s_text_though_a_glyph_would_fit() {
-        // Verifies: ADR-0013, Q-4
+        // Verifies: REN-node-content-in-rows, Q-4
         // A metric alone in a column of 46 from (12, 10): its value "WWWWWW", 66, does not fit with
         // both gaps and the arrow, so it is cut to 46 less 18, beside the ellipsis of 9 to one W,
         // 20 wide; the arrow 8 after it from 40 to 50, 3 below the value's line at 24; and the
@@ -1556,7 +1558,7 @@ mod tests {
 
     #[test]
     fn an_arrow_is_no_higher_than_the_value_s_line() {
-        // Verifies: ADR-0013, Q-4
+        // Verifies: REN-node-content-in-rows, Q-4
         // With a body's line of 6, the arrow's square is 6 too, in the line from 24 to 30: its
         // value "42", 12, from 12, the arrow 8 after it from 32 to 38, and the trend's text 4
         // after it from 42. With a line of no height, no arrow is drawn.
@@ -1630,7 +1632,7 @@ mod tests {
 
     #[test]
     fn any_metric_s_parts_lie_inside_its_column_and_its_node() {
-        // Verifies: ADR-0013, Q-4
+        // Verifies: REN-node-content-in-rows, Q-4
         // Metrics of any texts, at any width, in fonts of any metric, glyphs of the body's of
         // uneven advances among them: every part lies inside the metric's cell, the arrow in the
         // value's line, drawn only where the column holds it, the parts in order without
@@ -1696,7 +1698,7 @@ mod tests {
 
     #[test]
     fn an_icon_is_a_square_of_the_body_s_line_at_its_column_s_left() {
-        // Verifies: ADR-0013, Q-4
+        // Verifies: REN-node-content-in-rows, Q-4
         // At 220, a row of an icon beside a title weighted 1 and 3, columns of 47 from 12 and 141
         // from 67: the icon's square lies at its column's left, as high and as wide as the body's
         // line, 16, at the row's top; the row is the title's 18 high. Below it a badge beside an
@@ -1743,7 +1745,7 @@ mod tests {
 
     #[test]
     fn an_icon_is_hit_on_its_square_and_not_beside_it_nor_at_the_middle_level() {
-        // Verifies: ADR-0013
+        // Verifies: REN-node-content-in-rows
         // An icon alone in a column 196 wide at 220: its square from (12, 10), 16 × 16.
         let cells = [icon(1.0), text(Role::Body, "b", 1.0)];
         let (placed, _) = laid_out(&cells, &[1, 1], 220.0);
@@ -1760,7 +1762,7 @@ mod tests {
 
     #[test]
     fn any_icon_lies_inside_its_column_and_its_line() {
-        // Verifies: ADR-0013, Q-4
+        // Verifies: REN-node-content-in-rows, Q-4
         const WIDTHS: [f32; 7] = [0.0, 1.0, 16.0, 23.0, 220.0, 1e6, 1.3e36];
         let mut rng = Lcg(17);
         for _ in 0..2_000 {
@@ -1796,7 +1798,7 @@ mod tests {
 
     #[test]
     fn a_point_hits_the_element_whose_rectangle_holds_it_and_none_between() {
-        // Verifies: ADR-0013
+        // Verifies: REN-node-content-in-rows
         // The cells of the test above at 220: a title at (12, 10) 196 × 18, a body at (12, 28)
         // 47 × 16, and an action at (67, 28) 141 × 16, in a node 64 high.
         let cells = [
@@ -1857,7 +1859,7 @@ mod tests {
 
     #[test]
     fn a_node_s_height_from_its_kinds_is_the_height_its_content_lays_out_to() {
-        // Verifies: ADR-0013
+        // Verifies: REN-node-content-in-rows
         // Random content of every kind and role, in fonts of any line, at any width: the height of
         // its rows' kinds alone is exactly the height `lay_out` returns, which stacks its rows by
         // where it places their elements. Lines too small or too inexact for `f64` to sum exactly
@@ -1940,7 +1942,7 @@ mod tests {
 
     #[test]
     fn any_content_the_bridge_accepts_lays_out_finite_inside_its_node() {
-        // Verifies: ADR-0013, Q-4
+        // Verifies: REN-node-content-in-rows, Q-4
         // Up to the bridge's limits, 8 rows of 6 columns of texts and actions of up to 1,000 code
         // units and icons, with weights from the smallest to the largest positive finite numbers,
         // at widths from 0 to the largest the world holds, in fonts of any metric up to the

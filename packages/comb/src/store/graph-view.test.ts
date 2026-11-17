@@ -1,5 +1,6 @@
-// The type checker refuses every write through GraphView (ADR-0030): each line below is a write
-// that must not compile, and `tsc` fails on a `@ts-expect-error` that has no error to expect.
+// The type checker refuses every write through GraphView (ARCH-one-workspace-per-example): each
+// line below is a write that must not compile, and `tsc` fails on a `@ts-expect-error` that has no
+// error to expect.
 import { expect, test } from "bun:test";
 import type { GraphView } from ".";
 

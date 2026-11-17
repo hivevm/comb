@@ -1,7 +1,7 @@
-// The icons the host application registered (ADR-0013): each a texture of Comb's own copy of an
-// image the host application loaded itself, by the name an icon element gives, so that Comb never
-// fetches an image (Q-6). A name registered again draws the new image everywhere, and its old
-// texture is destroyed once the views that drew it have taken the new one.
+// The icons the host application registered (REN-node-content-in-rows): each a texture of Comb's
+// own copy of an image the host application loaded itself, by the name an icon element gives, so
+// that Comb never fetches an image (Q-6). A name registered again draws the new image everywhere,
+// and its old texture is destroyed once the views that drew it have taken the new one.
 import { ImageSource, Texture } from "pixi.js";
 
 /** An image an icon is drawn from: Comb's own copy of what the host application registered. */

@@ -150,7 +150,7 @@ run_script() {
   # in_file <file> <text> — whether the file holds the text.
   in_file() { grep -qF -- "$2" "$1"; }
   # is_step <command> — whether the script runs the command as one of its checks.
-  is_step() { printf '%s\n' "${steps[@]}" | grep -qxF -- "$1"; }
+  is_step() { local s; for s in "${steps[@]}"; do [[ "$s" == "$1" ]] && return 0; done; return 1; }
   # alive <id> — whether the process runs.
   alive() { kill -0 "$1" 2> /dev/null; }
 }

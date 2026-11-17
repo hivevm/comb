@@ -1,5 +1,5 @@
-// The edge-labels layer at the near level (ADR-0012, G-6): a pooled pill per edge label in view,
-// centred on the point the engine placed it at.
+// The edge-labels layer at the near level (REN-virtualized-scene-graph, G-6): a pooled pill per
+// edge label in view, centred on the point the engine placed it at.
 import { BitmapText, Container, Graphics } from "pixi.js";
 import type { Bridge, Visible } from "../bridge";
 import type { GraphView } from "../store";
@@ -83,7 +83,8 @@ export class LabelsContainer extends Container {
   reach = LABEL_REACH;
 
   /** Moves the label views bound to the edges in `slots`, which a drag moves, to their edges'
-   *  points as the engine places them now, relative to `origin` (G-6, ADR-0027). */
+   *  points as the engine places them now, relative to `origin` (G-6,
+   *  REN-moving-layer-redraws-changes). */
   follow(slots: Uint32Array, bridge: Bridge, origin: { x: number; y: number }): void {
     for (const slot of slots) {
       const view = this.views.boundTo(slot);
@@ -94,7 +95,7 @@ export class LabelsContainer extends Container {
 
   /** Binds a label view to every label `visible` found, or to none where `shown` is false, and
    *  hands the engine the half width and half height of each pill it has not measured for that
-   *  edge, as it was drawn, by which a press hits it (ADR-0013). */
+   *  edge, as it was drawn, by which a press hits it (REN-node-content-in-rows). */
   sync(state: GraphView, visible: Visible, shown: boolean, bridge: Bridge): void {
     this.views.begin();
     const pills = shown ? this.bindAll(state, visible) : [];

@@ -1,25 +1,35 @@
 #!/usr/bin/env bash
 #
-# Builds, tests, and lints Comb: the commands of the README's "Build, Test & Run" (ADR-0008),
+# Builds, tests, and lints Comb: the commands of the README's "Build, Test & Run"
+# (DEV-bun-vite-wasm-pack),
 # the tests running the check of the engine's freshness (scripts/check-engine.sh) first, and the
 # bundle budget (scripts/check-bundle.sh, Q-3) last, which runs that check too. Both read what
 # the build writes, so they run here, after it, rather than beside it in
-# scripts/check-all.sh, whose checks run side by side; check 9 of scripts/check-docs.sh counts a
+# scripts/check-all.sh, whose checks run side by side; the rule docs/check-lists of
+# scripts/check-docs.sh counts a
 # script this one runs. The checks that need no toolchain, and the self-tests of these two, run
 # on lines of their own in scripts/check-all.sh and in the code job of checks.yml.
 #
 # Needs Bun, Rust with the wasm32-unknown-unknown target, and Chromium for Playwright, as the Dev
-# Container provides them (ADR-0014). Where Bun or Cargo is missing it fails and says so: a gate
+# Container provides them (DEV-container-adds-bun-and-rust). Where Bun or Cargo is missing it fails
+# and says so: a gate
 # that skips itself is one somebody believes in and does not have.
 #
 # Usage:
-#     scripts/check-code.sh
+#     scripts/check-code.sh [--root <dir>]
 # Exit code 0 when the build, the lint, the tests, and the bundle budget pass, non-zero at the
 # first that fails.
 
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-code.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "$@"
 cd "$ROOT"
 
 missing=()
@@ -27,7 +37,7 @@ for tool in bun cargo; do
   command -v "$tool" > /dev/null || missing+=("$tool")
 done
 if ((${#missing[@]})); then
-  echo "check-code: ${missing[*]} not found — run it in the Dev Container (ADR-0014)." >&2
+  echo "check-code: ${missing[*]} not found — run it in the Dev Container (DEV-container-adds-bun-and-rust)." >&2
   exit 1
 fi
 

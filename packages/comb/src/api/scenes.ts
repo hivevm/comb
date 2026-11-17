@@ -5,7 +5,8 @@ import type { Scene } from "../render/scene";
 
 export interface Inspected {
   readonly scene: Scene;
-  /** What a press at a screen point of the canvas hits, as interaction answers it (ADR-0013). */
+  /** What a press at a screen point of the canvas hits, as interaction answers it
+   *  (REN-node-content-in-rows). */
   readonly hitAt: (x: number, y: number) => Hit;
 }
 

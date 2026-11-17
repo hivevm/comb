@@ -69,7 +69,7 @@ pub(crate) fn load_of(
 /// Checks the content of one node, as a load checks a node's, named `id`, of node shape `shape`
 /// and `width` wide, its strings counted against the budget on from `held`, the code units of
 /// content the graph holds besides it, and returns it with its texts mapped and the height the
-/// node lays out to in `fonts` (ADR-0032).
+/// node lays out to in `fonts` (REN-closed-set-of-node-shapes).
 pub(super) fn checked_content(
     id: &str,
     (shape, width): (NodeShape, f32),
@@ -97,7 +97,7 @@ struct Single {
 /// index 0: every field's type, its identifier's length, its place and width, its content, its
 /// strings counted against the budget on from `held`, laid out in `fonts`, and its far side by that
 /// height; the one sequence both crossings refuse by, so that their problems and their order stay
-/// one (ADR-0026).
+/// one (API-host-asks-content-height).
 fn single_of(node: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, GraphDataProblem> {
     let (node, content) = node_of(0, node)?;
     id_length("nodes", 0, "id", node.id)?;
@@ -120,7 +120,8 @@ fn single_of(node: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, Graph
 /// content lays out to in `fonts`, its strings of content counted against the budget on from
 /// `held`, the code units of content the graph holds; returns the slot the engine chose and the
 /// content it keeps, with its count. A refused node leaves the graph as it was. That the graph
-/// holds no node of its identifier is `api`'s to check, against the map only it keeps (ADR-0030).
+/// holds no node of its identifier is `api`'s to check, against the map only it keeps
+/// (ARCH-one-workspace-per-example).
 pub(crate) fn add_node_to(
     graph: &mut Graph,
     node: &NodeInput,
@@ -145,7 +146,7 @@ pub(crate) fn add_node_to(
 
 /// The height the content of `node` lays out to at its width in `fonts`, checked as `add_node_to`
 /// checks a node, its strings counted against the budget alone, and added to nothing: the node
-/// `heightOf` hands over, named `""` and at the origin (ADR-0026).
+/// `heightOf` hands over, named `""` and at the origin (API-host-asks-content-height).
 pub(crate) fn height_of(node: &NodeInput, fonts: &Fonts) -> Result<f32, GraphDataProblem> {
     Ok(single_of(node, fonts, 0)?.height)
 }
@@ -162,8 +163,8 @@ pub(crate) fn graph_of(batch: &GraphBatch) -> Result<Graph, GraphDataProblem> {
     .map(|loaded| loaded.graph)
 }
 
-// The malformed-data tests of graph data verify ADR-0010 (see `graph_data::tests`).
-// Verifies: ADR-0010
+// The malformed-data tests of graph data verify API-bridge-takes-serde-and-columns (see
+// `graph_data::tests`). Verifies: API-bridge-takes-serde-and-columns
 #[cfg(test)]
 mod tests {
     use super::super::node_columns::Refused;
@@ -204,7 +205,7 @@ mod tests {
 
     #[test]
     fn an_added_node_takes_the_next_slot_where_it_was_placed() {
-        // Verifies: ADR-0023
+        // Verifies: ARCH-engine-edits-graph-in-place
         let mut graph = graph_of(&batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[])).unwrap();
         assert_eq!(add(&mut graph, &added(40.0, 50.0, |_| {})), Ok(2));
         assert_eq!(&graph.positions()[4..], [40.0, 50.0]);
@@ -216,7 +217,7 @@ mod tests {
 
     #[test]
     fn an_added_node_is_refused_as_a_load_refuses_it_and_the_graph_kept() {
-        // Verifies: ADR-0030, Q-7
+        // Verifies: ARCH-one-workspace-per-example, Q-7
         let named = || "n".to_owned();
         let cases: Vec<(NodeInput, GraphDataProblem)> = vec![
             (
@@ -277,7 +278,7 @@ mod tests {
 
     #[test]
     fn the_height_of_content_is_the_one_an_added_node_of_it_takes_whatever_its_texts_and_width() {
-        // Verifies: ADR-0026
+        // Verifies: API-host-asks-content-height
         let shapes = [
             |text: &str| titled(text),
             |text: &str| badged(Some(text), 0x22_a5_5b.into()).into(),
@@ -302,7 +303,7 @@ mod tests {
 
     #[test]
     fn the_height_of_content_is_refused_as_an_added_node_of_it_naming_no_node() {
-        // Verifies: ADR-0026
+        // Verifies: API-host-asks-content-height
         let unnamed = |change: fn(&mut NodeInput)| {
             let node = added(0.0, 0.0, |n| {
                 n.id = String::new().into();
@@ -336,7 +337,7 @@ mod tests {
 
     #[test]
     fn a_node_added_to_a_graph_at_the_limit_of_a_load_is_refused() {
-        // Verifies: ADR-0030, Q-7
+        // Verifies: ARCH-one-workspace-per-example, Q-7
         let count = MAX_ITEMS as usize;
         let positions = (0..count).flat_map(|i| [i as f32, 0.0]).collect();
         let mut graph = Graph::new(positions, vec![1.0; count * 2], Vec::new()).unwrap();
@@ -353,7 +354,7 @@ mod tests {
 
     #[test]
     fn a_coordinate_not_finite_in_an_early_node_is_named_before_a_title_in_a_later_one() {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         // The first pass names only the values `Field<T>` reads; a title is checked at its rule,
         // in the second pass, after the nodes before it.
         let ids: Vec<String> = (0..6).map(|i| format!("n{i}")).collect();
@@ -372,7 +373,7 @@ mod tests {
 
     #[test]
     fn the_first_value_refused_by_its_type_is_named_across_nodes_and_edges() {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         // A node's refused field is named before any edge's, and an earlier edge's arrowhead
         // that names nothing before a later edge's field the shell named.
         let mut nodes = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]).nodes;
@@ -421,7 +422,7 @@ mod tests {
 
     #[test]
     fn a_node_lays_out_to_the_height_of_its_node_shape_loaded_added_and_asked_for() {
-        // Verifies: ADR-0032
+        // Verifies: REN-closed-set-of-node-shapes
         use crate::NodeShape as S;
         // A node 100 wide of one title is 64 high as a rectangle, the least height of content.
         let empty = || ContentInput::new().into();
@@ -461,7 +462,7 @@ mod tests {
 
     #[test]
     fn content_in_a_filled_node_shape_is_refused_naming_the_node() {
-        // Verifies: ADR-0032, Q-7
+        // Verifies: REN-closed-set-of-node-shapes, Q-7
         use crate::NodeShape as S;
         let refused = || GraphDataProblem::ContentInFilledShape { node: "b".into() };
         for shape in [S::Circle, S::RingedCircle, S::Bar] {
@@ -483,7 +484,7 @@ mod tests {
 
     #[test]
     fn a_node_shape_that_names_none_is_refused_naming_the_node_and_the_field() {
-        // Verifies: ADR-0032, Q-7
+        // Verifies: REN-closed-set-of-node-shapes, Q-7
         let shape = |index, id: &str| GraphDataProblem::InvalidField {
             list: GraphList::Nodes,
             index,

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# The overview names every entry point of Comb (ADR-0001, AGENTS.md §5).
+# The overview names every entry point of Comb (NUC-documents-are-fixed, AGENTS.md §5).
 #
 # docs/ARCHITECTURE.md is believed, so a method a host application calls or a probe a test reads
 # that it does not name is a part of the system a reader does not know is there. This check reads
@@ -18,19 +18,26 @@
 # Pure bash and POSIX awk.
 #
 # Usage:
-#     scripts/check-overview.sh [repository root]
+#     scripts/check-overview.sh [--root <dir>]
 # The root defaults to this repository; scripts/test-check-overview.sh passes fixture trees.
 # Exit code 0 when the overview names every entry point, 1 otherwise.
 
 set -uo pipefail
 
-ROOT="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-overview.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "$@"
 API="$ROOT/packages/comb/src/api/index.ts"
 TESTING="$ROOT/packages/comb/src/testing.ts"
 OVERVIEW="$ROOT/docs/ARCHITECTURE.md"
 
 fail() {
-  echo "Overview check FAILED (ADR-0001): $1" >&2
+  echo "Overview check FAILED (NUC-documents-are-fixed): $1" >&2
   exit 1
 }
 
@@ -182,7 +189,7 @@ check "CombOptions option" "members CombOptions"
 check "comb/testing export" exported
 
 if ((${#missing[@]})); then
-  echo "Overview check FAILED (ADR-0001): docs/ARCHITECTURE.md names none of these in a code span:" >&2
+  echo "Overview check FAILED (NUC-documents-are-fixed): docs/ARCHITECTURE.md names none of these in a code span:" >&2
   printf '  - %s\n' "${missing[@]}" >&2
   exit 1
 fi

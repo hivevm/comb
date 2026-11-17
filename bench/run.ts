@@ -1,26 +1,27 @@
-// The benchmark of Q-1 and Q-2 (ADR-0008): the example at 50,000 nodes and 50,000 edges, each
-// node with the content of its type (G-9, G-10), served from its production build. It measures
-// the time from handing the graph to Comb until its first frame is drawn, and the p95 frame time
-// of each gesture: a node on screen dragged, the viewport panned, the viewport zoomed in and out,
-// and the graph edited one edit a frame, a node and an edge added and removed again (ADR-0023).
-// It times them first at the view the example opens with, the whole graph fitted, as the
-// baselines recorded before the levels were measured did, the zoom from there crossing every
-// level, the edits from the fitted view again wherever the zoom stopped, recording their scale;
-// then at each level of detail (ADR-0012), centred in the graph, the pans first: near and
-// middle at the scale where each begins, the least it draws at and so the most it binds. Where
-// the fitted view draws the far level, as at 50,000 nodes, its drag, pan, and edits are far's and
-// far adds only its zoom; otherwise every gesture is timed at far as well. The zoom at a level
-// stays within it. Only frames in which Comb rendered count; each action is checked for its
-// effect, so a gesture that missed fails the run instead of measuring idle frames. Before the
-// gestures it times the reference workload of bench/reference.ts in the same page, by which
-// bench/compare.ts tells whether the runner is in the state its kind's baseline was taken in; the
-// CPU model it records names the runner's kind, the content the example counts names what was
-// loaded, and each gesture records the steps it sent and the frames Comb rendered. It measures the
-// graph BENCH_GRAPH names (ADR-0033): the metric tree, or the shaped graph, the metric tree's nodes
-// and edges in the same columns and order in the node shapes in turn, its rows spaced so that no
-// two nodes overlap, docked on the outline, with a loop on one node in a hundred, which the example
-// loads with `?graph=shaped`; it records the graph's name and checks that the example loaded it.
-// The numbers go to bench-results/latest.json and are printed beside the targets.
+// The benchmark of Q-1 and Q-2 (DEV-bun-vite-wasm-pack): the example at 50,000 nodes and 50,000
+// edges, each node with the content of its type (G-9, G-10), served from its production build. It
+// measures the time from handing the graph to Comb until its first frame is drawn, and the p95
+// frame time of each gesture: a node on screen dragged, the viewport panned, the viewport zoomed in
+// and out, and the graph edited one edit a frame, a node and an edge added and removed again
+// (ARCH-engine-edits-graph-in-place). It times them first at the view the example opens with, the
+// whole graph fitted, as the baselines recorded before the levels were measured did, the zoom from
+// there crossing every level, the edits from the fitted view again wherever the zoom stopped,
+// recording their scale; then at each level of detail (REN-virtualized-scene-graph), centred in the
+// graph, the pans first: near and middle at the scale where each begins, the least it draws at and
+// so the most it binds. Where the fitted view draws the far level, as at 50,000 nodes, its drag,
+// pan, and edits are far's and far adds only its zoom; otherwise every gesture is timed at far as
+// well. The zoom at a level stays within it. Only frames in which Comb rendered count; each action
+// is checked for its effect, so a gesture that missed fails the run instead of measuring idle
+// frames. Before the gestures it times the reference workload of bench/reference.ts in the same
+// page, by which bench/compare.ts tells whether the runner is in the state its kind's baseline was
+// taken in; the CPU model it records names the runner's kind, the content the example counts names
+// what was loaded, and each gesture records the steps it sent and the frames Comb rendered. It
+// measures the graph BENCH_GRAPH names (PERF-benchmark-measures-named-graph): the metric tree, or
+// the shaped graph, the metric tree's nodes and edges in the same columns and order in the node
+// shapes in turn, its rows spaced so that no two nodes overlap, docked on the outline, with a loop
+// on one node in a hundred, which the example loads with `?graph=shaped`; it records the graph's
+// name and checks that the example loaded it. The numbers go to bench-results/latest.json and are
+// printed beside the targets.
 //
 //   bun run bench                   headless Chromium, software WebGL
 //   BENCH_HEADED=1 bun run bench    a visible window, which uses the machine's GPU
@@ -28,10 +29,12 @@
 //   BENCH_ACTION_MS=60000           the time one action may take (default 30 s)
 //   BENCH_CDP=http://host.docker.internal:9223
 //                                   attach to a Chrome started outside the run, through its
-//                                   debugging port, instead of launching Chromium (ADR-0028)
-//   BENCH_CPU_THROTTLE=2            slow the measured page's CPU by that factor (ADR-0029)
-//   BENCH_GRAPH=shaped              measure the shaped graph instead of the metric tree
-//                                   (ADR-0033)
+//                                   debugging port, instead of launching Chromium
+//                                   (PERF-benchmark-drives-host-chrome)
+//   BENCH_CPU_THROTTLE=2 slow the measured page's CPU by that factor
+//   (PERF-benchmark-slows-page-cpu) BENCH_GRAPH=shaped measure the shaped graph instead of the
+//   metric tree
+//                                   (PERF-benchmark-measures-named-graph)
 import { chromium, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { cpus } from "node:os";
@@ -48,8 +51,9 @@ const HEADED = Boolean(process.env.BENCH_HEADED);
 // Read before anything starts, so that a value the run cannot take refuses it at once.
 const BROWSER = browserFor(process.env);
 const CPU_THROTTLE = cpuThrottleFor(process.env);
-// ADR-0030 keeps the example from importing bench, so its GraphName names the graphs a second
-// time: GRAPH's type compiles only while every graph of each list is one of the other.
+// ARCH-one-workspace-per-example keeps the example from importing bench, so its GraphName names the
+// graphs a second time: GRAPH's type compiles only while every graph of each list is one of the
+// other.
 const GRAPH: Within<Graph, GraphName> & Within<GraphName, Graph> = graphFor(process.env);
 const STEPS = 120;
 const ACTION_BUDGET_MS = Number(process.env.BENCH_ACTION_MS ?? 30_000);
@@ -57,7 +61,8 @@ const LOAD_TIMEOUT_MS = 300_000;
 // Q-1: a frame each refresh of a 60 Hz display, which the browser times at 16.7 and 16.8 ms.
 const TARGET_FRAME_MS = 16.8;
 // Verifies: Q-2 — the first frame of 50,000 nodes and edges within 1 s, judged by the report below
-// on the reference machine or its stand-in, the record naming the CPU's factor (ADR-0029).
+// on the reference machine or its stand-in, the record naming the CPU's factor
+// (PERF-benchmark-slows-page-cpu).
 const TARGET_FIRST_FRAME_MS = 1000;
 
 /** `A`, which compiles only while every member of `A` is one of `B`. */
@@ -191,9 +196,10 @@ function expectEffect(ok: boolean, what: string): void {
 
 /** Installs `benchEdit(i)` in the page: edit `i` of the gesture, one of adding a node beside
  *  `near`, adding an edge from `near` to it, removing the edge, and removing the node, over and
- *  over (ADR-0023). Before it edits, it counts in `drawnEdits` whether the canvas drew the edit
- *  before it, by a probe cheap enough not to weigh on the frame it falls in, as `inspect` would at
- *  50,000 nodes; `benchEdit(i + 1, false)` checks edit `i` alone. Every edit is counted in `told`
+ *  over (ARCH-engine-edits-graph-in-place). Before it edits, it counts in `drawnEdits` whether the
+ *  canvas drew the edit before it, by a probe cheap enough not to weigh on the frame it falls in,
+ *  as `inspect` would at 50,000 nodes; `benchEdit(i + 1, false)` checks edit `i` alone. Every edit
+ *  is counted in `told`
  *  once it is told. */
 async function installEdits(page: Page, near: string): Promise<void> {
   const at = await drawnNode(page, near);
@@ -418,7 +424,7 @@ async function restAtLevel(page: Page, middle: Point, level: Level) {
 }
 
 /** A point on the canvas, near its top left, where a press hits nothing, no connector, label,
- *  node or edge, and so pans (ADR-0013). */
+ *  node or edge, and so pans (REN-node-content-in-rows). */
 async function emptyPoint(page: Page): Promise<Point> {
   return page.evaluate(() => {
     const rect = document.querySelector("#canvas canvas")!.getBoundingClientRect();
@@ -599,7 +605,8 @@ const server = Bun.spawn(
 try {
   for (let i = 0; i < 100 && !(await serving()); i++) await Bun.sleep(100);
   if (!(await serving())) throw new Error("the preview server did not start");
-  // An attached browser is one started outside the run with a window of its own (ADR-0028).
+  // An attached browser is one started outside the run with a window of its own
+  // (PERF-benchmark-drives-host-chrome).
   const attached = BROWSER.kind === "attach";
   const browser = attached
     ? await chromium.connectOverCDP(BROWSER.endpoint)

@@ -1,12 +1,13 @@
 // The example keeps its own copy of the graph from what `onChange` tells, as a host application
-// that persists would (ADR-0024): a node dragged, retitled, and an edge restyled are in the copy.
+// that persists would (API-edits-reported-as-typed-changes): a node dragged, retitled, and an edge
+// restyled are in the copy.
 import { expect, test } from "@playwright/test";
 import { open, screenCentre, titled } from "./shared";
 
 test("the example's copy holds a dragged node's position, its new title, and its edge's new style", async ({
   page,
 }) => {
-  // Verifies: ADR-0024
+  // Verifies: API-edits-reported-as-typed-changes
   await open(page);
   const northStar = "0:3.0";
   const edge = "0:2.3-3.0";

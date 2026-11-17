@@ -112,7 +112,7 @@ async function loadPanZoom(page: Page, testMode: boolean) {
 test("under the policy, Comb loads, pans, and zooms without a violation or a request of its own", async ({
   page,
 }) => {
-  // Verifies: Q-6, ADR-0019, ADR-0020
+  // Verifies: Q-6, API-host-hands-comb-engine, SEC-pixijs-without-eval
   const { policy, made } = await loadPanZoom(page, true);
   expect(policy).toBe(POLICY);
   // No request or socket was made by Comb's code, whatever its kind.
@@ -138,7 +138,7 @@ test(
   "the built example, under the policy, loads, pans, and zooms without a violation or a request of Comb's",
   { tag: "@built" },
   async ({ page }) => {
-    // Verifies: Q-6, ADR-0019, ADR-0020
+    // Verifies: Q-6, API-host-hands-comb-engine, SEC-pixijs-without-eval
     // The production build, which the benchmark measures too, runs no seam of test mode.
     const { policy, made } = await loadPanZoom(page, false);
     expect(policy).toBe(POLICY);

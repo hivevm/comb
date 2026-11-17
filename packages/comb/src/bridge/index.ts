@@ -1,9 +1,9 @@
 // The facade of the engine, in the bridge, the one module that imports the WebAssembly package
-// (ADR-0030), beside the writers of a load's columns in `columns.ts`. Structured data crosses as
-// generated types through serde-wasm-bindgen, but for a load's nodes and edges, which cross as
-// columns of strings in pieces or one typed array each; node positions and the results of a
-// viewport query are read through views on the engine's buffers, created anew on every read
-// because growing memory detaches older views (ADR-0010).
+// (ARCH-one-workspace-per-example), beside the writers of a load's columns in `columns.ts`.
+// Structured data crosses as generated types through serde-wasm-bindgen, but for a load's nodes and
+// edges, which cross as columns of strings in pieces or one typed array each; node positions and
+// the results of a viewport query are read through views on the engine's buffers, created anew on
+// every read because growing memory detaches older views (API-bridge-takes-serde-and-columns).
 import init, {
   checkGraphSize,
   checkContentBudget,
@@ -77,7 +77,8 @@ export {
 export type TranslateError = NumberError;
 
 /** The mark of plain data `api/snapshot.ts` read once from the host application's value
- *  (ADR-0030). It is exported nowhere, so that handing the bridge a value of the host
+ *  (ARCH-one-workspace-per-example). It is exported nowhere, so that handing the bridge a value of
+ *  the host
  *  application, which may hold a getter or a Proxy, takes a cast a reviewer sees. */
 declare const read: unique symbol;
 
@@ -120,7 +121,8 @@ export interface EdgeMesh {
   indices: Uint32Array;
 }
 
-/** The detail of a query's edge mesh (ADR-0012): complete, or coarsened where an edge was drawn
+/** The detail of a query's edge mesh (REN-virtualized-scene-graph): complete, or coarsened where an
+ *  edge was drawn
  *  as its chord, or left out, for the mesh budget or for memory. */
 export type Detail = "complete" | "coarsened";
 
@@ -130,21 +132,21 @@ const DETAILS: Record<MeshDetail, Detail> = {
 };
 
 /** Where the elements of the content of the nodes a query found lie and what they draw
- *  (ADR-0013), at the near and the middle level: per found node, in their order, the boundaries
- *  of its elements in the other columns, one more than there are found nodes; per element, its
- *  node's elements in the order of its rows and theirs, its rectangle `x, y, width, height`
- *  relative to its node's top-left corner, its kind's code, the role whose font draws its text,
- *  body for an action, a badge, and a progress bar, its colour as `0xRRGGBB`, a badge's pill's and
- *  0 for an element of no colour, and what is drawn of its text, the text or as much of it as fits
- *  followed by an ellipsis, those strings one after another in `texts`, cut by `textBounds`; and
- *  per element the boundaries of the pieces of its bar in `barBounds`, one more than there are
- *  elements, a progress bar's segments and then its track and no piece of another kind, each
- *  piece's rectangle `x, y, width, height` relative to its node in `bars`, and its colour in
- *  `barColors`, a segment's, 0 for the track. A metric's colour is its trend's, its role body's,
- *  and its drawn text its caption's, value's, and trend's text's one after another: per element
- *  the boundaries of its parts in `partBounds`, a metric's three and no part of another kind,
- *  each part's rectangle relative to its node in `parts`, and where its text ends in `texts` in
- *  `partEnds`, each starting where the one before it in its element ends, the first where its
+ *  (REN-node-content-in-rows), at the near and the middle level: per found node, in their order,
+ *  the boundaries of its elements in the other columns, one more than there are found nodes; per
+ *  element, its node's elements in the order of its rows and theirs, its rectangle
+ *  `x, y, width, height` relative to its node's top-left corner, its kind's code, the role whose
+ *  font draws its text, body for an action, a badge, and a progress bar, its colour as `0xRRGGBB`,
+ *  a badge's pill's and 0 for an element of no colour, and what is drawn of its text, the text or
+ *  as much of it as fits followed by an ellipsis, those strings one after another in `texts`, cut
+ *  by `textBounds`; and per element the boundaries of the pieces of its bar in `barBounds`, one
+ *  more than there are elements, a progress bar's segments and then its track and no piece of
+ *  another kind, each piece's rectangle `x, y, width, height` relative to its node in `bars`, and
+ *  its colour in `barColors`, a segment's, 0 for the track. A metric's colour is its trend's, its
+ *  role body's, and its drawn text its caption's, value's, and trend's text's one after another:
+ *  per element the boundaries of its parts in `partBounds`, a metric's three and no part of another
+ *  kind, each part's rectangle relative to its node in `parts`, and where its text ends in `texts`
+ *  in `partEnds`, each starting where the one before it in its element ends, the first where its
  *  element's text starts; and per element the boundaries of its arrows in `arrowBounds`, a
  *  metric's one where its column holds it, each arrow's triangle as three points `x, y` relative
  *  to its node in `arrows`. An icon's rectangle is its square, and its text in `texts` its
@@ -176,7 +178,8 @@ export interface Placed {
  *  of each found edge label, the mesh of the found edges and its detail, where the found nodes'
  *  content lies, and the positions and sizes buffers, all read after the same call. The label
  *  points and the mesh's positions are relative to `origin`, a world point near the query's
- *  rectangle, so that `f32` rounds them by their distance from it (ADR-0010); the positions buffer
+ *  rectangle, so that `f32` rounds them by their distance from it
+ *  (API-bridge-takes-serde-and-columns); the positions buffer
  *  is not. */
 export interface Visible {
   positions: Float32Array;
@@ -194,7 +197,8 @@ export interface Visible {
 
 /** What `meshAt` meshed for the moving layer: the slots of the edges at the nodes a drag moves
  *  and of those an edit at the far level added, each once, in ascending order, their mesh
- *  relative to the last query's origin, and its detail (ADR-0027). Fresh views; do not keep them
+ *  relative to the last query's origin, and its detail (REN-moving-layer-redraws-changes). Fresh
+ *  views; do not keep them
  *  across calls. */
 export interface Moving {
   edges: Uint32Array;
@@ -202,7 +206,8 @@ export interface Moving {
   detail: Detail;
 }
 
-/** The level of detail a query serves (ADR-0012): near with edge labels, middle without, far
+/** The level of detail a query serves (REN-virtualized-scene-graph): near with edge labels, middle
+ *  without, far
  *  with edges as plain lines one pixel wide. */
 export type Level = "near" | "middle" | "far";
 
@@ -221,7 +226,7 @@ export interface DrawnEdges {
 
 /** The metrics of a font the shell draws the texts of a role with, in world units: the advance
  *  of the glyph of each code point of `codes` in `advances`, of every other character
- *  `fallback`, and the height of a line (ADR-0013). */
+ *  `fallback`, and the height of a line (REN-node-content-in-rows). */
 export interface FontMetrics {
   codes: Uint32Array;
   advances: Float64Array;
@@ -234,17 +239,19 @@ export interface Bridge {
    *  Throws a `GraphDataProblem`. */
   loadGraph(batch: GraphSnapshot): number;
   /** Checks `node` as a load checks a node and adds it, drawn and hit above every other node, and
-   *  returns the slot the engine chose for it (ADR-0023). Throws a `GraphDataProblem`, the graph
+   *  returns the slot the engine chose for it (ARCH-engine-edits-graph-in-place). Throws a
+   *  `GraphDataProblem`, the graph
    *  as it was. */
   addNode(node: NodeSnapshot): number;
   /** The height, in world units, the content of `node` lays out to at its width, checked as
    *  `addNode` checks a node and added to nothing; `api` names it `""` and puts it at the origin
-   *  (ADR-0026). Throws a `GraphDataProblem`. */
+   *  (API-host-asks-content-height). Throws a `GraphDataProblem`. */
   heightOf(node: NodeSnapshot): number;
   /** Checks `edge` as a load checks an edge, refuses one from a node to itself unless `loops`
-   *  allows loops (ADR-0031), and adds it between the node slots `source` and `target`, which
-   *  `api` resolved; returns the slot the engine chose for it (ADR-0023). Throws a
-   *  `GraphDataProblem`, and a `SlotError` where a slot of an end holds no node, the graph as it
+   *  allows loops (API-edges-dock-side-or-outline), and adds it between the node slots `source` and
+   *  `target`, which `api` resolved; returns the slot the engine chose for it
+   *  (ARCH-engine-edits-graph-in-place). Throws a `GraphDataProblem`, and a `SlotError` where a
+   *  slot of an end holds no node, the graph as it
    *  was. */
   addEdge(edge: EdgeSnapshot, source: number, target: number, loops: boolean): number;
   /** Checks the patch of the edge `id` in `slot` as a load checks those fields and gives the edge
@@ -252,11 +259,13 @@ export interface Bridge {
    *  `slot` holds no edge, the graph as it was. */
   updateEdge(slot: number, id: string, patch: PlainEdgePatch): void;
   /** Checks the patch of the node `id` in `slot` as a load checks a node's content and gives the
-   *  node its new content and the height it lays out to (ADR-0013). Throws a `GraphDataProblem`,
+   *  node its new content and the height it lays out to (REN-node-content-in-rows). Throws a
+   *  `GraphDataProblem`,
    *  and a `SlotError` where `slot` holds no node, the graph as it was. */
   updateNode(slot: number, id: string, patch: PlainPatch): void;
   /** Hands over the metrics of the font the texts of `role` are drawn with, for every layout
-   *  from then on (ADR-0013). Throws a `NumberError` `invalidFont` for metrics the engine cannot
+   *  from then on (REN-node-content-in-rows). Throws a `NumberError` `invalidFont` for metrics the
+   *  engine cannot
    *  take. */
   setFont(role: TextRole, font: FontMetrics): void;
   /** The most UTF-16 code units of a text of content or a label text the bridge accepts. */
@@ -283,11 +292,13 @@ export interface Bridge {
    *  `GraphDataProblem`. */
   checkGraphSize(nodes: number, edges: number): void;
   /** Removes the nodes in `slots` and every edge at them, and returns the slots of those edges in
-   *  ascending order (ADR-0023). Throws a `SlotError`, a mistake of the shell's, never one of
+   *  ascending order (ARCH-engine-edits-graph-in-place). Throws a `SlotError`, a mistake of the
+   *  shell's, never one of
    *  graph data, the graph as it was. */
   removeNodes(slots: Uint32Array): Uint32Array;
   /** Records the half width and half height of the pill of the label of the edge in `slot`, in
-   *  world units, as the labels layer draws it; a label not measured is not hit (ADR-0013).
+   *  world units, as the labels layer draws it; a label not measured is not hit
+   *  (REN-node-content-in-rows).
    *  Throws a `SlotError`. */
   setLabelSize(slot: number, halfWidth: number, halfHeight: number): void;
   /** The world point of the label of the edge in `slot`, or none where it holds no edge with a
@@ -296,24 +307,27 @@ export interface Bridge {
   /** Places the label of the edge in `slot` at the world point `(x, y)`: at the path parameter
    *  nearest it and its distance along the normal there, which it returns (G-6). Throws a
    *  `SlotError`, and a `NumberError` `nonFinitePoint` for a point that is not finite, before
-   *  anything moves (ADR-0022). */
+   *  anything moves (API-shell-mistake-refused-as-shells). */
   moveLabel(slot: number, x: number, y: number): { t: number; offset: number };
   /** The slots of the edges at the nodes in `slots`, in ascending order, as a removal of them
-   *  would take along, named before anything is removed (ADR-0023). Throws a `SlotError`. */
+   *  would take along, named before anything is removed (ARCH-engine-edits-graph-in-place). Throws
+   *  a `SlotError`. */
   edgesAt(slots: Uint32Array): Uint32Array;
   /** Removes the edges in `slots`. Throws a `SlotError`, the graph as it was. */
   removeEdges(slots: Uint32Array): void;
   /** Moves the nodes in `slots`, their edges with them. Throws a `SlotError` for a slot that
    *  holds no node and a `NumberError` `nonFiniteDelta` for a delta that is not finite, mistakes
-   *  of the shell's, never of graph data (ADR-0022). */
+   *  of the shell's, never of graph data (API-shell-mistake-refused-as-shells). */
   translate(slots: Uint32Array, dx: number, dy: number): void;
   /** A fresh view on the positions buffer, `x, y` per slot. Do not keep it across calls. */
   positions(): Float32Array;
-  /** The content of the node in `slot`, built when asked, since the shell keeps none (ADR-0013).
+  /** The content of the node in `slot`, built when asked, since the shell keeps none
+   *  (REN-node-content-in-rows).
    *  Throws a `SlotError` where `slot` holds no node. */
   content(slot: number): NodeContent;
   /** Fresh views on the positions buffer and on the sizes buffer, `width, height` per slot, the
-   *  height each node's content lays out to (ADR-0013), both read after the same call. Do not
+   *  height each node's content lays out to (REN-node-content-in-rows), both read after the same
+   *  call. Do not
    *  keep them across calls. */
   nodeBuffers(): { positions: Float32Array; sizes: Float32Array };
   /** The nodes and edges that meet `rect` and the mesh of the edges for `level`, where a screen
@@ -321,26 +335,30 @@ export interface Bridge {
    *  near and the middle level where the found nodes' content lies; at the near level also the
    *  edge labels whose point lies within `labelReach` of it. Fresh views; do
    *  not keep them across calls. Throws a `NumberError` `invalidPixel` for a pixel that is not a
-   *  finite number above zero (ADR-0022). */
+   *  finite number above zero (API-shell-mistake-refused-as-shells). */
   query(rect: Rect, level: Level, pixel: number, labelReach: number): Visible;
   /** The edges at the node slots `slots` and of the edge slots `also`, found by the last query or
    *  not, each once, and their mesh, stroked as `query` strokes the edges it finds in `rect` at
    *  `level` where a screen pixel is `pixel` world units, relative to the last query's origin:
    *  what a drag redraws of the nodes it moves and an edit at the far level of what it added,
-   *  each frame (ADR-0027). Fresh views; do not keep them across calls. Throws a `SlotError`
-   *  where a slot of `slots` holds no node or of `also` no edge, and a `NumberError`
+   *  each frame (REN-moving-layer-redraws-changes). Fresh views; do not keep them across calls.
+   *  Throws a `SlotError` where a slot of `slots` holds no node or of `also` no edge, and a
+   *  `NumberError`
    *  `invalidPixel` as `query` does. */
   meshAt(slots: Uint32Array, also: Uint32Array, rect: Rect, level: Level, pixel: number): Moving;
   /** The edges the last query found and those the last `meshAt` meshed, each once, with their
    *  ends as they lie now, which after a move and before the next query are already moved: for
-   *  inspection, not for drawing (ADR-0027). Fresh views; do not keep them across calls. */
+   *  inspection, not for drawing (REN-moving-layer-redraws-changes). Fresh views; do not keep them
+   *  across calls. */
   drawnEdges(): DrawnEdges;
   /** What a press at the world point `(x, y)` hits where a screen pixel is `pixel` world units,
    *  at `level`: where `connectors` asks for them, at the near and middle level, a connector
    *  within 8 screen pixels, of the node drawn on top; else the node drawn on top there, else the
    *  edge drawn on top within 4 screen pixels of its path as the stroke flattens it, else nothing
-   *  (ADR-0013). Throws a `NumberError`, `invalidPixel` for a pixel that is not a finite number
-   *  above zero and `nonFinitePoint` for a point that is not finite (ADR-0022). */
+   *  (REN-node-content-in-rows). Throws a `NumberError`, `invalidPixel` for a pixel that is not a
+   *  finite number
+   *  above zero and `nonFinitePoint` for a point that is not finite
+   *  (API-shell-mistake-refused-as-shells). */
   hit(x: number, y: number, pixel: number, level: Level, connectors: boolean): Hit;
 }
 
@@ -371,7 +389,7 @@ const callCounts = new Map<string, number>();
 
 /** Test mode only: how often the bridge's call `name` was made on the page, by every Comb on it,
  *  so that a test sees whether something crossed into the engine, such as a load refused before
- *  its columns are handed over (ADR-0030). Throws outside test mode. */
+ *  its columns are handed over (ARCH-one-workspace-per-example). Throws outside test mode. */
 export function bridgeCalls(name: keyof Bridge): number {
   if (!TEST_MODE) throw new Error("comb: the bridge counts its calls in test mode only");
   return callCounts.get(name) ?? 0;
@@ -379,7 +397,8 @@ export function bridgeCalls(name: keyof Bridge): number {
 
 /** `bridge` with the engine's memory grown by a page before each of its calls, so that a view
  *  kept across a call is detached and reads empty in tests, not only when memory happens to grow
- *  (ADR-0010), and each call counted by its name. The message of its error carries
+ *  (API-bridge-takes-serde-and-columns), and each call counted by its name. The message of its
+ *  error carries
  *  `DETACHING_MARK`. */
 function detaching(bridge: Bridge, memory: WebAssembly.Memory): Bridge {
   return each(bridge, (call, name) => (...args) => {
@@ -394,7 +413,8 @@ function detaching(bridge: Bridge, memory: WebAssembly.Memory): Bridge {
 }
 
 /** The engine trapped, in a call of this Comb or of another on the page, and is lost for the
- *  page (ADR-0021): Comb refuses every later call that needs it, and only loading the page anew
+ *  page (API-trapped-engine-is-lost): Comb refuses every later call that needs it, and only loading
+ *  the page anew
  *  brings it back. `cause` is the trap. */
 export class EngineLostError extends Error {
   constructor(options?: ErrorOptions) {
@@ -410,7 +430,8 @@ const lostListeners = new Set<(error: EngineLostError) => void>();
 
 /** Whether `error`, thrown from a call of the engine, is a trap: WebAssembly's own, or the glue's
  *  refusal of an object a trapped call left borrowed, which only a trap no guard saw leaves. Errors
- *  the bridge returns as values are plain objects, never traps (ADR-0010). */
+ *  the bridge returns as values are plain objects, never traps
+ *  (API-bridge-takes-serde-and-columns). */
 function isTrap(error: unknown): boolean {
   return (
     error instanceof WebAssembly.RuntimeError ||
@@ -494,7 +515,8 @@ function guarded(bridge: Bridge): Bridge {
 /** The engine's export that arms its trap, in test mode, where the engine carries it. */
 let trapExport: (() => void) | undefined;
 
-/** Test mode only: the next call of an `Engine` on the page traps (ADR-0021). The engine the
+/** Test mode only: the next call of an `Engine` on the page traps (API-trapped-engine-is-lost). The
+ *  engine the
  *  tests run is built with the feature `test-mode` of the bridge crate, which exports the trap;
  *  the production engine carries none of it. */
 export function trapNextCall(): void {
@@ -634,7 +656,8 @@ function queried(
   };
 }
 
-/** Fresh views on `memory`, one per read, since growing memory detaches older ones (ADR-0010). */
+/** Fresh views on `memory`, one per read, since growing memory detaches older ones
+ *  (API-bridge-takes-serde-and-columns). */
 function viewsOn(memory: WebAssembly.Memory) {
   return {
     u32: (ptr: number, len: number) => new Uint32Array(memory.buffer, ptr, len),
@@ -644,7 +667,8 @@ function viewsOn(memory: WebAssembly.Memory) {
 }
 
 /** The buffers of the edge mesh `of` of `engine` through `views`: the last query's, or the
- *  moving layer's of a drag and of edits, which `meshAt` wrote (ADR-0027). */
+ *  moving layer's of a drag and of edits, which `meshAt` wrote (REN-moving-layer-redraws-changes).
+ */
 function meshOf(engine: Engine, views: ReturnType<typeof viewsOn>, of: MeshOf): EdgeMesh {
   const { u32, f32 } = views;
   const at = (buffer: MeshBuffer) =>
@@ -715,7 +739,8 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
 }
 
 /** The edges at the node slots `slots` and of the edge slots `also`, and their mesh, as `meshAt`
- *  of `engine` writes them, read through fresh views on `memory` (ADR-0027). */
+ *  of `engine` writes them, read through fresh views on `memory`
+ *  (REN-moving-layer-redraws-changes). */
 function moving(
   engine: Engine,
   memory: WebAssembly.Memory,
@@ -742,8 +767,9 @@ export function positionAt(positions: Float32Array, slot: number): { x: number; 
 }
 
 /** Loads the engine from what the host application handed over: a `Response`, which is compiled
- *  while it streams, a compiled module, or the bytes (ADR-0019). Never a string, `URL`, or
- *  `Request`, which the initialiser would fetch itself; the API refuses those before it gets here,
+ *  while it streams, a compiled module, or the bytes (API-host-hands-comb-engine). Never a string,
+ *  `URL`, or `Request`, which the initialiser would fetch itself; the API refuses those before it
+ *  gets here,
  *  and the type here keeps them out. */
 export async function createBridge(
   engine: Response | WebAssembly.Module | BufferSource,

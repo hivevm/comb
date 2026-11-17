@@ -1,5 +1,6 @@
-//! Node content as the host application's type describes it (ADR-0013): what inspection and the
-//! changes Comb tells report, built from the content the engine keeps when asked.
+//! Node content as the host application's type describes it (REN-node-content-in-rows): what
+//! inspection and the changes Comb tells report, built from the content the engine keeps when
+//! asked.
 
 use comb_engine::content::{Direction, Element, Role};
 

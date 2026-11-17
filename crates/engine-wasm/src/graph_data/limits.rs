@@ -1,6 +1,6 @@
-//! The limits of a load and of the graph (ADR-0030): how many nodes and edges, how long an
-//! identifier and a text, and how many code units the identifiers of one load hold together, with
-//! the checks behind the exports `checkIdBudget` and `checkGraphSize`.
+//! The limits of a load and of the graph (ARCH-one-workspace-per-example): how many nodes and
+//! edges, how long an identifier and a text, and how many code units the identifiers of one load
+//! hold together, with the checks behind the exports `checkIdBudget` and `checkGraphSize`.
 
 use super::{GraphDataProblem, malformed};
 
@@ -56,8 +56,8 @@ pub(crate) fn check_graph_size(nodes: f64, edges: f64) -> Result<(), GraphDataPr
     Ok(())
 }
 
-// The malformed-data tests of graph data verify ADR-0010 (see `graph_data::tests`).
-// Verifies: ADR-0010
+// The malformed-data tests of graph data verify API-bridge-takes-serde-and-columns (see
+// `graph_data::tests`). Verifies: API-bridge-takes-serde-and-columns
 #[cfg(test)]
 mod tests {
     use super::*;

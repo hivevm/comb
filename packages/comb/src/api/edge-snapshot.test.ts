@@ -1,6 +1,6 @@
-// The edge `addEdge` hands the bridge, read once (ADR-0030): defaults filled where the host left
-// a field out, and no key for a dash, a label, or a label's background it left out, so that the
-// edge as Comb keeps it, and as `edgeAdded` delivers it, holds none.
+// The edge `addEdge` hands the bridge, read once (ARCH-one-workspace-per-example): defaults filled
+// where the host left a field out, and no key for a dash, a label, or a label's background it left
+// out, so that the edge as Comb keeps it, and as `edgeAdded` delivers it, holds none.
 import { expect, test } from "bun:test";
 import { edgeSnapshotOf } from "./snapshot";
 
@@ -15,7 +15,7 @@ const limits = {
 };
 
 test("an edge read once fills its defaults and keeps no key for a field left out", () => {
-  // Verifies: ADR-0030, ADR-0031
+  // Verifies: ARCH-one-workspace-per-example, API-edges-dock-side-or-outline
   const { snapshot } = edgeSnapshotOf(
     { id: "e", source: "a", target: "b", label: { text: "x", t: 0.5, offset: 0 } },
     limits,
@@ -34,7 +34,7 @@ test("an edge read once fills its defaults and keeps no key for a field left out
 });
 
 test("a loop read once without sides fills in the top for both, and keeps the sides it names", () => {
-  // Verifies: ADR-0031
+  // Verifies: API-edges-dock-side-or-outline
   const loop = edgeSnapshotOf({ id: "e", source: "a", target: "a" }, limits).snapshot;
   expect(loop).toMatchObject({ sourceSide: "top", targetSide: "top" });
   const named = edgeSnapshotOf(

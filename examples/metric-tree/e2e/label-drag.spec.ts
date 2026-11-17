@@ -1,6 +1,7 @@
-// The user drags an edge label, and it stays where it was dropped (G-6, ADR-0013): a press inside
-// its pill at the near level grabs it, the engine places it at the path parameter nearest the
-// pointer and its distance along the normal there, and the release tells one `labelMoved`.
+// The user drags an edge label, and it stays where it was dropped (G-6, REN-node-content-in-rows):
+// a press inside its pill at the near level grabs it, the engine places it at the path parameter
+// nearest the pointer and its distance along the normal there, and the release tells one
+// `labelMoved`.
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData } from "comb";
 import {
@@ -31,7 +32,7 @@ async function labels(page: Page) {
 test("a label dragged off its edge is drawn where it was dropped, and tells one labelMoved", async ({
   page,
 }) => {
-  // Verifies: G-6, ADR-0024, ADR-0013
+  // Verifies: G-6, API-edits-reported-as-typed-changes, REN-node-content-in-rows
   await open(page);
   await loaded(page, PAIR);
   // Grabbed 6 to the right of its point, dropped with the point at (410, -60).
@@ -73,7 +74,7 @@ test("a label dragged off its edge is drawn where it was dropped, and tells one 
 test("a press just beside a short label, beyond its pill, grabs neither it nor a long one", async ({
   page,
 }) => {
-  // Verifies: ADR-0013
+  // Verifies: REN-node-content-in-rows
   await open(page);
   const graph: GraphData = {
     nodes: [node("a"), node("b", 600), node("c", 0, 200), node("d", 600, 200)],
@@ -97,7 +98,7 @@ test("a press just beside a short label, beyond its pill, grabs neither it nor a
 });
 
 test("at the middle level a press where a label's point lies drags no label", async ({ page }) => {
-  // Verifies: ADR-0013
+  // Verifies: REN-node-content-in-rows
   await open(page);
   await loaded(page, PAIR, { x: 100, y: 100, scale: 0.4 });
   expect((await page.evaluate(() => window.inspect())).level).toBe("middle");
@@ -108,7 +109,7 @@ test("at the middle level a press where a label's point lies drags no label", as
 test("a label the host clears mid-drag ends the drag: no error, and no labelMoved", async ({
   page,
 }) => {
-  // Verifies: ADR-0024, Q-7
+  // Verifies: API-edits-reported-as-typed-changes, Q-7
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);
@@ -128,7 +129,8 @@ test("a label the host clears mid-drag ends the drag: no error, and no labelMove
 test("a label drag past every finite world point moves nothing and throws nothing", async ({
   page,
 }) => {
-  // Verifies: ADR-0013, ADR-0024, ADR-0022
+  // Verifies: REN-node-content-in-rows, API-edits-reported-as-typed-changes
+  // Verifies: API-shell-mistake-refused-as-shells
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page);

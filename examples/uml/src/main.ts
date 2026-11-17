@@ -1,6 +1,7 @@
 // The UML example host application (G-12): Comb on the canvas; in the HTML sidebar the choice of
 // diagram, the palette, the form of the selection, and the legend of the kinds of relationship.
-// It imports Comb by its entries alone and nothing of the other example (ADR-0030).
+// It imports Comb by its entries alone and nothing of the other example
+// (ARCH-one-workspace-per-example).
 import {
   createComb,
   type Comb,
@@ -89,7 +90,7 @@ function canConnect({ source, target }: Proposal): string | false {
 }
 
 // Loops are allowed for the state diagram's transitions from a state back to itself; the rules
-// refuse every other loop in the veto (ADR-0031).
+// refuse every other loop in the veto (API-edges-dock-side-or-outline).
 const comb = await createComb(element("canvas"), {
   engine: fetch(engineUrl),
   allowLoops: true,
@@ -185,7 +186,8 @@ function droppedOf(
 
 /** Adds a node of the palette's `kind`, a classifier or a state, centred by the height Comb gives
  *  its content and node shape on the world point under the drop at (`clientX`, `clientY`) of the
- *  page (G-1, ADR-0026). The classifier or the state is the diagram's once Comb took the node, and
+ *  page (G-1, API-host-asks-content-height). The classifier or the state is the diagram's once Comb
+ *  took the node, and
  *  never where Comb refuses it. */
 function drop(kind: string, clientX: number, clientY: number): void {
   const number = (dropped.get(kind) ?? 0) + 1;

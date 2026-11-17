@@ -1,8 +1,8 @@
-// The writers of a load's columns (ADR-0010, *Graph data of a load*): the columns of the nodes,
-// their content among them, and of the edges, which `api/snapshot.ts` writes from the primitives
-// it reads, one string column in pieces and one typed array per field, and the codes of kinds,
-// roles, directions, arrowheads, and sides they cross as. `index.ts` re-exports them and hands the
-// columns to the engine.
+// The writers of a load's columns (API-bridge-takes-serde-and-columns, *Graph data of a load*): the
+// columns of the nodes, their content among them, and of the edges, which `api/snapshot.ts` writes
+// from the primitives it reads, one string column in pieces and one typed array per field, and the
+// codes of kinds, roles, directions, arrowheads, and sides they cross as. `index.ts` re-exports
+// them and hands the columns to the engine.
 import {
   ArrowCode,
   DirectionCode,
@@ -21,10 +21,12 @@ import {
 } from "../../wasm/engine.js";
 
 /** The most UTF-16 code units of a piece of a string column the snapshot hands the engine
- *  (ADR-0010): half of V8's maximum string length, the smallest of the evergreen engines'. */
+ *  (API-bridge-takes-serde-and-columns): half of V8's maximum string length, the smallest of the
+ *  evergreen engines'. */
 export const PIECE_BOUND = 2 ** 28;
 
-/** The content of a load's nodes as the engine's `loadGraph` takes it (ADR-0010), the nodes'
+/** The content of a load's nodes as the engine's `loadGraph` takes it
+ *  (API-bridge-takes-serde-and-columns), the nodes'
  *  elements in slot order, each node's rows in their order and each row's elements in theirs: the
  *  boundaries of each node's rows, one more than there are nodes; of each row's elements, one more
  *  than there are rows; per element its kind's code, its weight, NaN for one of another type, a
@@ -54,7 +56,8 @@ export interface ContentColumns {
   readonly nameValid: Uint8Array;
 }
 
-/** The nodes of a load as the engine's `loadGraph` takes them (ADR-0010), each column in slot
+/** The nodes of a load as the engine's `loadGraph` takes them (API-bridge-takes-serde-and-columns),
+ *  each column in slot
  *  order: the identifiers as the values concatenated and cut into pieces, each ending where a value
  *  ends, with their boundaries in UTF-16 code units across all pieces, one more than there are
  *  nodes, a refused value empty; the numbers as the host application handed them; the node shapes
@@ -185,7 +188,8 @@ function stringColumn(count: number, bound: number) {
 type Typed = Uint8Array | Uint32Array | Float64Array;
 
 /** The code of each kind of element and each role by its name, typed by the generated names so
- *  that a kind or a role added in the engine fails here until it has its code (ADR-0010). */
+ *  that a kind or a role added in the engine fails here until it has its code
+ *  (API-bridge-takes-serde-and-columns). */
 const KINDS: Readonly<Record<ContentElement["kind"], KindCode>> = {
   text: KindCode.Text,
   action: KindCode.Action,
@@ -258,7 +262,7 @@ function roleCode(role: unknown): RoleCode {
 /** Whether `value` stands for a field left out: null or undefined. */
 const absent = (value: unknown) => value === undefined || value === null;
 
-/** The weight of a column left out (ADR-0013). */
+/** The weight of a column left out (REN-node-content-in-rows). */
 const WEIGHT = 1;
 
 /** A writer of the columns of `count` nodes, their content of about one row of one element each,
@@ -427,7 +431,8 @@ class NodeWriter implements NodeColumnWriter {
 
   /** The next element, of the fields read of it: a `text` fills its role and a text, an
    *  `action` a text and a name, a `badge` its colour and a text, a `progress` no string, its
-   *  segments following it, an `icon` a name, and any other kind none (ADR-0010). */
+   *  segments following it, an `icon` a name, and any other kind none
+   *  (API-bridge-takes-serde-and-columns). */
   element(
     kind: unknown,
     role: unknown,
@@ -539,7 +544,8 @@ export function nodeColumns(count: number, bound: number): NodeColumnWriter {
   return new NodeWriter(count, bound);
 }
 
-/** The edges of a load as the engine's `loadGraph` takes them (ADR-0010), each column in slot
+/** The edges of a load as the engine's `loadGraph` takes them (API-bridge-takes-serde-and-columns),
+ *  each column in slot
  *  order: the identifiers, sources, targets, and label texts each as the values concatenated and
  *  cut into pieces, each ending where a value ends, with their boundaries in UTF-16 code units
  *  across all pieces, one more than there are edges, a refused or absent value empty; per label

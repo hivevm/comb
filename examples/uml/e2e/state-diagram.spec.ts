@@ -1,8 +1,9 @@
 // Browser tests of the UML example's state diagram (G-12): the life of a Comb, its states rounded
 // rectangles of their name, its initial state a filled circle, its final states ringed circles,
 // and the choice of whether the engine loaded a diamond, each a node shape of Comb's own
-// (ADR-0032), its transitions edges docked on the outline (ADR-0031), labelled by their event or
-// guard, and a loop on ready for each edit Comb applies (ADR-0031).
+// (REN-closed-set-of-node-shapes), its transitions edges docked on the outline
+// (API-edges-dock-side-or-outline), labelled by their event or guard, and a loop on ready for each
+// edit Comb applies (API-edges-dock-side-or-outline).
 import { expect, test, type Page } from "@playwright/test";
 import { open } from "./shared";
 
@@ -37,7 +38,7 @@ async function chooseStates(page: Page): Promise<void> {
 test("the state diagram shows a Comb's life in the node shapes of its states, initial and final states, and choice", async ({
   page,
 }) => {
-  // Verifies: G-12, ADR-0032
+  // Verifies: G-12, REN-closed-set-of-node-shapes
   await page.goto("/");
   await open(page);
   await chooseStates(page);
@@ -105,8 +106,9 @@ test("the class and the package diagram are kept while the state diagram is show
 });
 
 /** How far `point` lies from the outline of a node of `shape` at `node`, in world units, written
- *  here from ADR-0032's node shapes rather than read from the engine: along the line from the
- *  node's centre for an ellipse, a circle, and a diamond, from the border for a rectangle, and
+ *  here from REN-closed-set-of-node-shapes's node shapes rather than read from the engine: along
+ *  the line from the node's centre for an ellipse, a circle, and a diamond, from the border for a
+ *  rectangle, and
  *  from the arc of a rounded rectangle's corner, rounded by 10. */
 function offOutline(
   shape: string,
@@ -138,7 +140,7 @@ function offOutline(
 test("every transition of the state diagram docks on the outline of its states, on the line between their centres", async ({
   page,
 }) => {
-  // Verifies: G-12, G-13, ADR-0031, Q-4
+  // Verifies: G-12, G-13, API-edges-dock-side-or-outline, Q-4
   await page.goto("/");
   await open(page);
   await chooseStates(page);
@@ -192,7 +194,8 @@ test("every transition of the state diagram docks on the outline of its states, 
     });
   }
   // The ends at one state towards different states never meet: ready has five ends, towards four
-  // states. Its two transitions with rendering share one line, as ADR-0031 accepts.
+  // states. Its two transitions with rendering share one line, as API-edges-dock-side-or-outline
+  // accepts.
   const atReady = ends.filter(({ node }) => node.id === "ready");
   expect(atReady).toHaveLength(5);
   for (const [i, a] of atReady.entries())
@@ -204,7 +207,7 @@ test("every transition of the state diagram docks on the outline of its states, 
 test("a loop on ready, labelled edit, leaves and re-enters its left side, its label at the loop's outermost point", async ({
   page,
 }) => {
-  // Verifies: G-12, G-13, ADR-0031
+  // Verifies: G-12, G-13, API-edges-dock-side-or-outline
   await page.goto("/");
   await open(page);
   await chooseStates(page);

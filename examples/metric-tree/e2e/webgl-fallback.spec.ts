@@ -1,4 +1,4 @@
-// WebGL2, or the Canvas 2D fallback a host application opts in to (ADR-0018).
+// WebGL2, or the Canvas 2D fallback a host application opts in to (REN-webgl2-or-canvas-fallback).
 import { expect, test } from "@playwright/test";
 import { open } from "./shared";
 
@@ -24,7 +24,7 @@ test("without WebGL, Comb refuses instead of drawing without edges", async ({ pa
 test("without WebGL, a host application that opts in gets Canvas 2D with its edges", async ({
   page,
 }) => {
-  // Verifies: ADR-0018
+  // Verifies: REN-webgl2-or-canvas-fallback
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(`${error.name}: ${error.message}`));
   await page.addInitScript(() => {

@@ -26,7 +26,8 @@ async function nearNode(page: Page, id: string) {
  *  status badge, an epic with its progress bar and status badge, an input metric with values over
  *  three periods and coloured trends, the north-star metric, and a KPI, each with the icon of its
  *  type beside its title and "Details". Its height is the engine's padding of 10 above and below
- *  and the shell's rows (ADR-0013): a title's of 18; a hypothesis's or a progress bar's of 16 and
+ *  and the shell's rows (REN-node-content-in-rows): a title's of 18; a hypothesis's or a progress
+ *  bar's of 16 and
  *  a badge's of 22; or a row of metrics of 30 and a caption beside "Details" of 16. */
 const TYPES = {
   "0:0.0": {
@@ -102,7 +103,8 @@ const TYPES = {
 };
 
 test("the example draws the metric tree on a canvas beside its sidebar", async ({ page }) => {
-  // Verifies: ADR-0008 — the golden path, built, served, and driven by the toolchain it decides.
+  // Verifies: DEV-bun-vite-wasm-pack — the golden path, built, served, and driven by the
+  // toolchain it decides.
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   // Verifies: Q-6 — every browser test runs under the policy the test server sends.
@@ -158,10 +160,10 @@ test("picking the largest copies option shows at least 50,000 nodes and edges", 
     edges: report.edges,
     texts: 0,
   });
-  // Verifies: ADR-0012
+  // Verifies: REN-virtualized-scene-graph
   // The world, the edges layer and its mesh, the particle container, the moving layer's edges and
-  // their mesh and its particle container (ADR-0027), and the empty layers of node views, labels,
-  // and connectors.
+  // their mesh and its particle container (REN-moving-layer-redraws-changes), and the empty layers
+  // of node views, labels, and connectors.
   expect(await page.evaluate(() => window.inspect().displayObjects)).toBe(10);
 });
 

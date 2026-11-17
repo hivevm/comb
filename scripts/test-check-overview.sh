@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Self-test of scripts/check-overview.sh. Verifies: ADR-0001
+# Self-test of scripts/check-overview.sh. Verifies: NUC-documents-are-fixed
 #
 # Each case builds a tree in a temporary directory with an api, a testing entry, and an overview,
 # runs the check on it, and asserts the exit code and a line it prints. An overview that names
@@ -86,7 +86,7 @@ ALL='`load`, `scale`, `select`, `engine`, and `CombOptions.canDelete`; `inspect(
 expect() {
   local name="$1" code="$2" needle="$3" root="$4"
   local out rc
-  out="$(bash "$CHECK" "$root" 2>&1)"; rc=$?
+  out="$(bash "$CHECK" --root "$root" 2>&1)"; rc=$?
   if ((rc == code)) && [[ "$out" == *"$needle"* ]]; then
     passed=$((passed + 1))
     return

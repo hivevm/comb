@@ -1,15 +1,16 @@
-// The snapshot of the host application's graph data (ADR-0030): every value read once, in
-// JavaScript, into plain data whose every field is a primitive of the type the field expects, so
-// that the bridge checks it and the store keeps it, and no value of the host application, nor any
-// of its code, reaches the engine; a load's nodes and edges are handed over as columns besides
-// (ADR-0010). A value of another type is replaced by `false`, which the bridge refuses naming the
-// node or edge and the field; a text of content, a label text, and the arrow are handed over no
-// longer than one code unit beyond the bridge's limit for texts, an identifier no longer than one
-// beyond its limit for identifiers, and a node's content no more rows, nor a row more columns, nor
-// a progress bar more segments, than one beyond the bridge's limits, so that a value of any size
-// costs at most that much to check. The code units of all identifiers are counted while they are
-// read, and reading stops once they exceed the bridge's budget, whose check then refuses the load.
-// What cannot be read at all throws an `UnreadableError`.
+// The snapshot of the host application's graph data (ARCH-one-workspace-per-example): every value
+// read once, in JavaScript, into plain data whose every field is a primitive of the type the field
+// expects, so that the bridge checks it and the store keeps it, and no value of the host
+// application, nor any of its code, reaches the engine; a load's nodes and edges are handed over as
+// columns besides (API-bridge-takes-serde-and-columns). A value of another type is replaced by
+// `false`, which the bridge refuses naming the node or edge and the field; a text of content, a
+// label text, and the arrow are handed over no longer than one code unit beyond the bridge's limit
+// for texts, an identifier no longer than one beyond its limit for identifiers, and a node's
+// content no more rows, nor a row more columns, nor a progress bar more segments, than one beyond
+// the bridge's limits, so that a value of any size costs at most that much to check. The code units
+// of all identifiers are counted while they are read, and reading stops once they exceed the
+// bridge's budget, whose check then refuses the load. What cannot be read at all throws an
+// `UnreadableError`.
 import {
   edgeColumns,
   nodeColumns,
@@ -167,7 +168,8 @@ interface ContentSink {
 /** Reads `content`, a node's content, once by `read` and hands it to `sink`: at most one row
  *  beyond `limits.rows`, each at most one element beyond `limits.columns`, and a progress bar at
  *  most one segment beyond `limits.segments`, so that content of any size costs at most that much
- *  to check. The one walk of content both crossings of ADR-0010 read it by: a load hands the
+ *  to check. The one walk of content both crossings of API-bridge-takes-serde-and-columns read it
+ *  by: a load hands the
  *  sink that writes its columns, `addNode` and `updateNode` the one that builds plain data. */
 function walkContent(read: Reader, content: unknown, sink: ContentSink, limits: Limits): void {
   if (!Array.isArray(content)) {
@@ -376,7 +378,7 @@ function copied<T>(
   return items;
 }
 
-/** The node shape of a node, `rectangle` where it is left out (ADR-0032). */
+/** The node shape of a node, `rectangle` where it is left out (REN-closed-set-of-node-shapes). */
 const NODE_SHAPE = "rectangle";
 
 function nodeOf(read: Reader, node: Fields) {
@@ -393,7 +395,7 @@ function nodeOf(read: Reader, node: Fields) {
 
 /** Writes the node `node` into `columns`, read once by `read`, its content walked straight into
  *  its columns, and returns what the store keeps of it: its identifier, its width, and its node
- *  shape, no copy of its content (ADR-0013). */
+ *  shape, no copy of its content (REN-node-content-in-rows). */
 function written(read: Reader, node: Fields, columns: NodeColumnWriter, limits: Limits) {
   const { id, x, y, width, shape, content } = node;
   const kept: { id: unknown; width: unknown; shape: unknown } = {
@@ -473,7 +475,8 @@ function dashOf(read: Reader, dash: unknown) {
 }
 
 /** An edge read once, its defaults filled: the right side to the left, and the top for both of a
- *  loop the host names no side of, so that it is drawn above its node (ADR-0031). */
+ *  loop the host names no side of, so that it is drawn above its node
+ *  (API-edges-dock-side-or-outline). */
 function edgeOf(read: Reader, edge: Fields) {
   const { id, source, target, label, color, dash, arrow, sourceSide, targetSide } = edge;
   const [readId, from, to] = [read.id(id), read.id(source), read.id(target)];

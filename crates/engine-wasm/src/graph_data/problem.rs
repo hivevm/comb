@@ -16,8 +16,8 @@ pub enum GraphList {
 /// Why Comb refused graph data in `load`, `updateNode`, or `addNode` (Q-7): what the bridge
 /// refused, what the shell could not read, and what only the shell's map from identifiers to slots
 /// knows, a node `updateNode` names that the graph does not hold and one `addNode` adds that it
-/// holds already (ADR-0030). The shell builds the last three as values of this type; no kind of it
-/// is written by hand in TypeScript.
+/// holds already (ARCH-one-workspace-per-example). The shell builds the last three as values of
+/// this type; no kind of it is written by hand in TypeScript.
 /// `query` refuses a rectangle without its shape as malformed too, which no host application
 /// meets.
 #[derive(Tsify, Serialize, Deserialize, Debug, PartialEq)]
@@ -59,7 +59,8 @@ pub enum GraphDataProblem {
     InvalidSize { node: String },
     /// The content of the node at `index`, `id` where its identifier was read, holds a shape the
     /// bridge cannot read at row `row`: a row that is no list, or, where `column` is given, an
-    /// element that is no object; `expected` says in words what it should be (ADR-0010).
+    /// element that is no object; `expected` says in words what it should be
+    /// (API-bridge-takes-serde-and-columns).
     #[serde(rename_all = "camelCase")]
     InvalidContentShape {
         index: u32,
@@ -73,7 +74,7 @@ pub enum GraphDataProblem {
         expected: String,
     },
     /// A node of a filled node shape, a circle, a ringed circle, or a bar, holds content
-    /// (ADR-0032).
+    /// (REN-closed-set-of-node-shapes).
     #[serde(rename_all = "camelCase")]
     ContentInFilledShape { node: String },
     /// A node's content holds more than `limit` rows.
@@ -204,7 +205,7 @@ pub enum GraphDataProblem {
     #[serde(rename_all = "camelCase")]
     UnknownEdge { edge: String },
     /// `addEdge` hands over an edge from a node to itself where loops are not allowed; a load
-    /// accepts one (ADR-0031).
+    /// accepts one (API-edges-dock-side-or-outline).
     #[serde(rename_all = "camelCase")]
     SelfEdge { edge: String },
     /// A patch of `updateEdge` holds a field other than `color`, `dash`, `arrow`, `label`,
@@ -270,8 +271,8 @@ pub(super) const A_SEGMENT_LIST: &str = "a list of segments";
 /// What an identifier, a source, or a target expects, by `MAX_ID`.
 pub(super) const AN_ID: &str = "a well-formed string of at most 256 code units";
 
-// The malformed-data tests of graph data verify ADR-0010 (see `graph_data::tests`).
-// Verifies: ADR-0010
+// The malformed-data tests of graph data verify API-bridge-takes-serde-and-columns (see
+// `graph_data::tests`). Verifies: API-bridge-takes-serde-and-columns
 #[cfg(test)]
 mod tests {
     use super::super::MAX_ID;

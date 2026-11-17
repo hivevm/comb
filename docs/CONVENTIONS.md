@@ -4,7 +4,7 @@
 > a module may know, what a test asserts and never does, the shape of an error, how a thing is
 > named when the glossary has no word for it. Whoever settles a convention updates this file
 > inline, an agent included, in the same change as the review or code that settled it. The
-> reviewer always has it ([ADR-0001](adr/0001-agent-governance-model.md)).
+> reviewer always has it ([NUC-documents-are-fixed §6](adr/NUC-documents-are-fixed.md)).
 
 An entry says in a sentence or two what is done and why; the why tells a convention from a habit.
 A convention a check can decide is the check, not an entry. One that constrains future choices is
@@ -44,7 +44,7 @@ skimmed. The design revision drops what prevented nothing
   decide from the graph as it stands then, not from what was found before the call: a slot looked
   up before host code ran may hold another item after it. A veto during whose call Comb tells a
   change to `onChange` ends its gesture with nothing done, a rule `api/editors.ts` writes once for
-  every veto ([ADR-0024](adr/0024-edits-are-reported-as-typed-changes.md)).
+  every veto ([API-edits-reported-as-typed-changes](adr/API-edits-reported-as-typed-changes.md)).
 - **A refusal added at the bridge is traced to the shell's callers.** Before an export refuses a
   value it took until now, each caller in the shell that can hand it that value from inputs the
   host may give, such as an extreme viewport, either guards it or handles the refusal. A browser
@@ -115,14 +115,14 @@ skimmed. The design revision drops what prevented nothing
   import of another and «use» for the bridge's load of the WebAssembly package and the bridge
   crate's use of the core; its legend names the dependency by both labels, since one naming «use»
   alone leaves the diagram's most common edge, «import», unexplained.
-- **The UML example draws a state diagram in UML's node shapes.** Each kind of state takes the
-  node shape UML gives it, so that a reader who knows UML reads the kind from the shape and no
-  label names it. A pseudostate has no content and is as small as its node shape allows, so that
-  it reads as a mark on the path and never as a state. A transition the user connects docks on the
-  outline at both ends, as the seeded ones do, so that several transitions leave one state from
-  different directions instead of meeting in the middle of one side (ADR-0031); a loop docks at
-  both ends on the side the connection left by, since a loop on the outline is drawn above its
-  node (ADR-0031) and not where the user dragged it.
+- **The UML example draws a state diagram in UML's node shapes.** Each kind of state takes the node
+  shape UML gives it, so that a reader who knows UML reads the kind from the shape and no label
+  names it. A pseudostate has no content and is as small as its node shape allows, so that it reads
+  as a mark on the path and never as a state. A transition the user connects docks on the outline at
+  both ends, as the seeded ones do, so that several transitions leave one state from different
+  directions instead of meeting in the middle of one side (API-edges-dock-side-or-outline); a loop
+  docks at both ends on the side the connection left by, since a loop on the outline is drawn above
+  its node (API-edges-dock-side-or-outline) and not where the user dragged it.
 - **The UML example's rules of connection are a table of what they refuse.** `allows` in
   `examples/uml/src/rules.ts` answers from the kinds of the two ends and of the relationship,
   against a set of refused combinations, and its test writes that table out. Between a class, an
@@ -141,7 +141,8 @@ skimmed. The design revision drops what prevented nothing
 - **A ticket names its paths in full.** *What to build* and *Acceptance criteria* write every path
   from the repository root, `packages/comb/src/api/editors.ts` and not `api/editors.ts`, so that
   `scripts/check-plan-modes.sh` reads each one against the protected parts of
-  [ADR-0007](adr/0007-harness.md); a short form passes that check unread.
+  [DEV-implementer-and-fresh-reviewer](adr/DEV-implementer-and-fresh-reviewer.md); a short form
+  passes that check unread.
 - **A premise is read in the code.** An ADR or a ticket that states how the system behaves today,
   such as the order the scene draws in or what a counter signals, names the function, the test, or
   the ADR it read that in. A premise written from memory reads as true to the reviewer, who has no
@@ -162,3 +163,8 @@ skimmed. The design revision drops what prevented nothing
   with git closes every pull request based on it, which GitHub retargets only when the branch goes
   through its own button or its deletion after a merge. A fix of the base is committed on the base's
   branch alone and reaches the dependent through that update, never a second time beside it.
+- **A check's cases are a table** — a new or changed check writes its cases into a table under
+  `scripts/fixtures/` before its code, and its self-test reads the table, so a port of the
+  checks is held to the same cases. A case expects a key, a rule identifier and a reason word that
+  the message ends in, such as `[docs/adr-index:twice]`, and the data of the finding, never its
+  wording, so that rewording a message breaks no port.

@@ -1,8 +1,9 @@
-// The moving layer (ADR-0027): what a drag, and at the far level an edit of a few slots, move or
-// add, drawn above the query the scene keeps, and what they move or remove, hidden in what that
-// query drew. It holds the state of those decisions: the edits read from the store's arrays
-// against the kept query's, what it hides and draws, and what inspection reports of it. The scene
-// asks it each render, and queries anew where it says the kept query does not survive.
+// The moving layer (REN-moving-layer-redraws-changes): what a drag, and at the far level an edit of
+// a few slots, move or add, drawn above the query the scene keeps, and what they move or remove,
+// hidden in what that query drew. It holds the state of those decisions: the edits read from the
+// store's arrays against the kept query's, what it hides and draws, and what inspection reports of
+// it. The scene asks it each render, and queries anew where it says the kept query does not
+// survive.
 import type { Bridge, Detail, DrawnEdges, Level, Rect } from "../bridge";
 import type { GraphView } from "../store";
 import { EdgesContainer, holds, type EdgeLayer } from "./edges";
@@ -54,7 +55,7 @@ export interface QueryLayers {
  *  query's particles. */
 export class MovingLayer {
   /** The edges at the nodes a drag moves and the added edges: a mesh on WebGL2, a fill on
-   *  Canvas 2D (ADR-0018). */
+   *  Canvas 2D (REN-webgl2-or-canvas-fallback). */
   readonly edges: EdgeLayer;
   /** The particles of the nodes a drag moves and of the added nodes, at the far level. */
   readonly particles = new NodeParticles();

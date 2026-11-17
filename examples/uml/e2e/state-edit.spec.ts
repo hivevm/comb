@@ -1,8 +1,9 @@
 // Browser tests of editing the UML example's state diagram (G-12): the palette's state, initial
 // state, final state, and choice, each in its node shape; the sidebar's name of a state and event
-// of a transition; a connection that adds a transition docked on the outline (ADR-0031), a drag
-// back onto a state that adds a loop, Delete, and the edits each of the three diagrams keeps; and
-// of all three, that a drop is the example's only once Comb took its node.
+// of a transition; a connection that adds a transition docked on the outline
+// (API-edges-dock-side-or-outline), a drag back onto a state that adds a loop, Delete, and the
+// edits each of the three diagrams keeps; and of all three, that a drop is the example's only once
+// Comb took its node.
 import { expect, test, type Page } from "@playwright/test";
 import { clickNode, clickWorld, drawnNode, open, pagePoint, setViewport } from "./shared";
 

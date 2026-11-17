@@ -1,24 +1,28 @@
 name: Checks
 
 # Enforces the repository's rules as CI. Pure bash + coreutils — nothing is installed
-# (ShellCheck, used by the shell job, ships preinstalled on the GitHub-hosted runner image).
-# scripts/check-all.sh is the local equivalent; check 9 of scripts/check-docs.sh holds its list,
-# the jobs of this workflow, and the required checks named in CONTRIBUTING.md together. Each job
-# runs a check after its own self-test, and each script's header says what it checks and which ADR
-# it holds. The documentation job also runs scripts/check-plan-modes.sh, which refuses an
-# unattended ticket that names a protected part of ADR-0007.
+# (ShellCheck, used by the shell job, ships preinstalled on the GitHub-hosted runner
+# image). scripts/check-all.sh is the local equivalent; the rule docs/check-lists of
+# scripts/check-docs.sh holds its list, the jobs of this workflow, and the required checks
+# named in CONTRIBUTING.md together. Each job runs a check after its own self-test, and each
+# script's header says what it checks and which ADR it holds. The documentation job also runs
+# scripts/check-plan-modes.sh, which refuses an unattended ticket that names a protected part of
+# DEV-implementer-and-fresh-reviewer.
 #
-# The sensors report for the reviewer and fail on nothing they count, except the action
-# references, which fail on any action not referenced by its commit SHA (ADR-0017); their
-# self-tests fail like any check's. The sensors job checks out the full history because three
-# sensors read it. The review binding sensor runs in review-binding.yml, the repository settings
-# sensor on a human's instruction (ADR-0002); this workflow runs the self-test of each.
+# The sensors report for the reviewer and fail on nothing they count, except the plain rules and
+# the action references, which this workflow runs with --require (SEC-actions-pinned-by-sha for the
+# action
+# references); their self-tests fail like any check's. The sensors job checks out the full history
+# because several sensors read it. The review binding sensor runs in
+# review-binding.yml, the repository settings sensor on a human's instruction
+# (NUC-checks-are-bash §7); this workflow runs the self-test of each.
 #
-# Build, test, lint: scripts/check-code.sh (ADR-0008), after Bun, Rust with the WebAssembly
+# Build, test, lint: scripts/check-code.sh (DEV-bun-vite-wasm-pack), after Bun, Rust with the
+# WebAssembly
 # target, and Chromium are set up, and after the self-test of scripts/check-mutants.sh, which the
 # Mutation testing workflow (mutation.yml) runs. It is the one job of this workflow that installs
 # something. Every action of every workflow is referenced by its full commit SHA, with its version
-# in a trailing comment (ADR-0017).
+# in a trailing comment (SEC-actions-pinned-by-sha).
 #
 # Every job is bounded by a timeout — a hung step would otherwise occupy a runner until the
 # platform's own six-hour limit — and every checkout runs with 'persist-credentials: false': the
@@ -27,12 +31,10 @@ name: Checks
 
 on:
   pull_request:
-    # ready_for_review runs check 16 of check-docs.sh again on a draft pull request marked ready.
-    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
   # Started by hand on a pushed branch that has no pull request yet, such as a feat/ branch
-  # under rework (AGENTS.md, section 6): gh workflow run checks.yml --ref <branch>. GitHub offers
+  # under rework (NUC-main-only-via-pr §5): gh workflow run checks.yml --ref <branch>. GitHub offers
   # it only once this trigger is on the default branch.
   workflow_dispatch:
   # Once a week against main without a change: catches what moves without a commit, the runner
@@ -60,25 +62,23 @@ jobs:
       # Submodules are checked out because the link check resolves relative targets against the
       # working tree: a documentation link into a submodule would otherwise break in CI while
       # working locally. Their *contents* are never read — check-docs.sh enumerates via
-      # `git ls-files`, which lists a submodule as one gitlink entry, not as its files.
+      # `git ls-files`, which lists a submodule as one gitlink entry, not as its files. The whole
+      # history is fetched: the rule docs/adr-identifiers reads the identifiers of deleted ADRs
+      # off it, and the rule docs/template-release the release line at the merge base with main.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           submodules: recursive
+          fetch-depth: 0
       # The check's own tests run first: a check that is wrong passes nothing worth trusting.
       - name: Self-test the documentation checks
         run: bash scripts/test-check-docs.sh
-      # Check 16 reads the branch the change lands on from GitHub's own variables: a draft ADR
-      # fails on a pull request into main once it is ready for review, and on a push to main
-      # (ADR-0002). A draft pull request tests a feat/ branch still under rework, and passes.
       - name: Check documentation consistency
         run: bash scripts/check-docs.sh
         env:
           PULL_REQUEST_DRAFT: ${{ github.event.pull_request.draft }}
       - name: Self-test the map script of the normalize skill
         run: bash scripts/test-normalize-remap.sh
-      - name: Self-test the numbering script of the drafts
-        run: bash scripts/test-number-adrs.sh
       - name: Self-test the readiness script of the pull request into main
         run: bash scripts/test-ready-for-main.sh
       - name: Self-test the drop script of a merged branch
@@ -138,6 +138,12 @@ jobs:
         run: bash scripts/sensor-binding-adrs.sh "$BASE"
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+      - name: Self-test the plain rules sensor
+        run: bash scripts/test-sensor-plain-rules.sh
+      - name: Check the rules the change adds to a project ADR, and report the rest
+        run: bash scripts/sensor-plain-rules.sh --require "$BASE"
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
       - name: Self-test the revision-due sensor
         run: bash scripts/test-sensor-revision-due.sh
       - name: Report the changes since the last design revision
@@ -146,9 +152,13 @@ jobs:
         run: bash scripts/test-sensor-plan-frontier.sh
       - name: Report the tickets that may be claimed, the claimed, and the blocked
         run: bash scripts/sensor-plan-frontier.sh
+      - name: Self-test the backlog sensor
+        run: bash scripts/test-sensor-backlog.sh
+      - name: Report the backlog entries on main and on unmerged local branches
+        run: bash scripts/sensor-backlog.sh
       - name: Self-test the action references sensor
         run: bash scripts/test-sensor-action-refs.sh
-      # Verifies: ADR-0017 — every action is referenced by its full commit SHA.
+      # Verifies: SEC-actions-pinned-by-sha — every action is referenced by its full commit SHA.
       - name: Check that every action is referenced by its commit SHA
         run: bash scripts/sensor-action-refs.sh --require sha
       - name: Self-test the review binding sensor
@@ -157,9 +167,19 @@ jobs:
         run: bash scripts/test-sensor-superseded-citations.sh
       - name: Report the lines outside docs/adr/ that cite a superseded ADR
         run: bash scripts/sensor-superseded-citations.sh
-      # The repository settings sensor itself runs on a human's instruction (ADR-0002).
+      # The repository settings sensor itself runs on a human's instruction
+      # (NUC-checks-are-bash §7).
       - name: Self-test the repository settings sensor
         run: bash scripts/test-sensor-repo-settings.sh
+      # The work measures sensor itself runs on a human's instruction (NUC-checks-are-bash §7).
+      - name: Self-test the work measures sensor
+        run: bash scripts/test-sensor-work-measures.sh
+      # The release notes sensor itself runs on a human's instruction (NUC-checks-are-bash §7).
+      - name: Self-test the release notes sensor
+        run: bash scripts/test-sensor-release-notes.sh
+      # The red commits sensor itself runs on a human's instruction, for its cost.
+      - name: Self-test the red commits sensor
+        run: bash scripts/test-sensor-red-commits.sh
 
   shell:
     runs-on: ubuntu-latest
@@ -198,7 +218,7 @@ jobs:
           bunx --bun playwright install --with-deps chromium
       - name: Self-test the structure check
         run: bash scripts/test-check-structure.sh
-      - name: Check the shape of the code (ADR-0030)
+      - name: Check the shape of the code (ARCH-one-workspace-per-example)
         run: bash scripts/check-structure.sh
       - name: Self-test the dependency check
         run: bash scripts/test-check-dependencies.sh
@@ -206,11 +226,11 @@ jobs:
         run: bash scripts/check-dependencies.sh
       - name: Self-test the container check
         run: bash scripts/test-check-container.sh
-      - name: Check the Dev Container's image and reach (ADR-0014, ADR-0015)
+      - name: Check the Dev Container's image and reach (DEV-container-adds-bun-and-rust, SEC-no-container-engine)
         run: bash scripts/check-container.sh
       - name: Self-test the overview check
         run: bash scripts/test-check-overview.sh
-      - name: Check that the overview names every entry point (ADR-0001)
+      - name: Check that the overview names every entry point (NUC-documents-are-fixed)
         run: bash scripts/check-overview.sh
       - name: Self-test the comment width check
         run: bash scripts/test-check-comment-width.sh

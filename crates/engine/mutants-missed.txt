@@ -1,4 +1,4 @@
-# Surviving mutants of crates/engine that the mutation workflow accepts (ADR-0008).
+# Surviving mutants of crates/engine that the mutation workflow accepts (DEV-bun-vite-wasm-pack).
 # One per line as '<file> <function> <replacement>', ' (xN)' when one key covers N mutants,
 # and for an equivalent mutant its reason after ' # '.
 # Recorded with scripts/check-mutants.sh --record; the README says how the list changes.

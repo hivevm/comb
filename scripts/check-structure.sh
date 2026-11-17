@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 #
-# Structural test of the shape of the code (ADR-0030), of how the scene draws (ADR-0012,
-# ADR-0018), and of one boundary between the shell's modules, a rule of the check's own that
+# Structural test of the shape of the code (ARCH-one-workspace-per-example), of how the scene draws
+# (REN-virtualized-scene-graph,
+# REN-webgl2-or-canvas-fallback), and of one boundary between the shell's modules, a rule of the
+# check's own that
 # docs/ARCHITECTURE.md describes.
-# Verifies: ADR-0012, ADR-0018, ADR-0030
+# Verifies: REN-virtualized-scene-graph, REN-webgl2-or-canvas-fallback, ARCH-one-workspace-per-example
 #
-# ADR-0030 builds Comb as a functional core of pure Rust and a TypeScript shell whose only door to
-# the engine is its bridge; ADR-0012 draws every text as BitmapText and the edges as one mesh. This
+# ARCH-one-workspace-per-example builds Comb as a functional core of pure Rust and a TypeScript
+# shell whose only door to
+# the engine is its bridge; REN-virtualized-scene-graph draws every text as BitmapText and the edges
+# as one mesh. This
 # check reads the tree and fails on what would break that shape:
 #
 #   1. Core: the core crate crates/engine depends on no crate that reaches the browser, the clock,
@@ -22,14 +26,16 @@
 #      getState, setState, or subscribe.
 #   4. Examples: no file under examples/ imports a path inside the library: only the package's
 #      entries `comb` and `comb/testing`, and the engine file it exports as `comb/engine.wasm`,
-#      bare or as a URL with Vite's `?url` (ADR-0019), never another `comb/...`, a path through
-#      node_modules/comb/, or into packages/comb. And no example imports another (ADR-0030):
+#      bare or as a URL with Vite's `?url` (API-host-hands-comb-engine), never another `comb/...`, a
+#      path through
+#      node_modules/comb/, or into packages/comb. And no example imports another
+#      (ARCH-one-workspace-per-example):
 #      no file under examples/<name>/ imports, by a relative path, a file under another
 #      directory of examples/, or another example by the package name its package.json gives.
 #   5. Drawing: no file of the render layer names PixiJS's Text, HTMLText, or SplitText, which
 #      redraw a canvas and upload a texture on every change; and the edges layer,
 #      packages/comb/src/render/edges.ts, which exists wherever the render layer does, names no
-#      Graphics, so no edge is drawn by one. Its Canvas 2D fallback (ADR-0018),
+#      Graphics, so no edge is drawn by one. Its Canvas 2D fallback (REN-webgl2-or-canvas-fallback),
 #      packages/comb/src/render/edges-canvas.ts, where it exists, names Graphics only in import
 #      statements, on one line or several, never renamed with `as`, and on exactly one line that
 #      declares a readonly class field `= new Graphics()`: one drawing, made with the layer, never
@@ -46,13 +52,20 @@
 # other. Dependencies (node_modules/) and the library's generated directories
 # (packages/comb/wasm/ and packages/comb/dist/) are not read. Pure bash + coreutils/grep/awk/find.
 # Usage:
-#     scripts/check-structure.sh [repository root]
+#     scripts/check-structure.sh [--root <dir>]
 # The root defaults to this repository; scripts/test-check-structure.sh passes fixtures.
 # Exit code 0 when the check passes, 1 otherwise.
 
 set -uo pipefail
 
-ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-structure.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "$@"
 cd "$ROOT" || exit 1
 
 problems=()
@@ -215,7 +228,7 @@ while IFS= read -r file; do
 done < <(sources packages/comb/src/render)
 
 if ((${#problems[@]})); then
-  echo "Structure check FAILED (ADR-0030, ADR-0012, ADR-0018):" >&2
+  echo "Structure check FAILED (ARCH-one-workspace-per-example, REN-virtualized-scene-graph, REN-webgl2-or-canvas-fallback):" >&2
   printf '  - %s\n' "${problems[@]}" >&2
   exit 1
 fi

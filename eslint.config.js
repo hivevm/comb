@@ -1,4 +1,4 @@
-// Lint for TypeScript (ADR-0008): typescript-eslint's recommended rules, the maintainability
+// Lint for TypeScript (DEV-bun-vite-wasm-pack): typescript-eslint's recommended rules, the maintainability
 // sensors `complexity` and `max-lines-per-function` as errors, no local that shadows an outer
 // name, and in Comb's library sources no DOM markup sink, so that no graph data is ever parsed as
 // HTML (Q-5), and no eval, implied eval, or `new Function`, so that Comb runs under a policy

@@ -1,6 +1,6 @@
-//! The one check of node content (ADR-0010): a load's content columns and the content of a single
-//! node, checked by the rules of ADR-0013 in their order, the strings of all content counted
-//! against the budget, and the height each node lays out to.
+//! The one check of node content (API-bridge-takes-serde-and-columns): a load's content columns and
+//! the content of a single node, checked by the rules of REN-node-content-in-rows in their order,
+//! the strings of all content counted against the budget, and the height each node lays out to.
 
 use comb_engine::content::{self as layout, Fonts, Kind, Role};
 
@@ -14,13 +14,13 @@ use super::{
 /// computed to sum to 1 are not refused for their rounding.
 const PAST_ONE: f64 = 1e-9;
 
-/// The content of the nodes of one load as columns (ADR-0010), the nodes' elements in slot order,
-/// each node's rows in their order and each row's elements in theirs: the boundaries of each
-/// node's rows, one more than there are nodes; of each row's elements, one more than there are
-/// rows; per element its kind's code, its weight as the host application handed it, NaN for one
-/// of another type, a text's role's code and a trend's direction's code, each 0 for another kind,
-/// and a badge's or a trend's colour as the host application handed it, NaN for one of another
-/// type and for another kind; per element the
+/// The content of the nodes of one load as columns (API-bridge-takes-serde-and-columns), the nodes'
+/// elements in slot order, each node's rows in their order and each row's elements in theirs: the
+/// boundaries of each node's rows, one more than there are nodes; of each row's elements, one more
+/// than there are rows; per element its kind's code, its weight as the host application handed it,
+/// NaN for one of another type, a text's role's code and a trend's direction's code, each 0 for
+/// another kind, and a badge's or a trend's colour as the host application handed it, NaN for one
+/// of another type and for another kind; per element the
 /// boundaries of a progress bar's segments, one more than there are elements, and per segment its
 /// fraction and its colour as the host application handed them, NaN for one of another type; the
 /// texts, every string an element shows, a metric's caption, value, and trend's text in that
@@ -223,9 +223,10 @@ impl ContentColumns<'_> {
             .is_some_and(|element| self.kinds[element] == KindCode::Progress as u8)
     }
 
-    /// Checks the content of the node at `node`, named `id`, by the rules of ADR-0010 in their
-    /// order, the texts from `cursor` on and the budget counted on from it, and returns the
-    /// height its rows lay out to in `fonts`. Reads lengths off the boundaries and maps no text.
+    /// Checks the content of the node at `node`, named `id`, by the rules of
+    /// API-bridge-takes-serde-and-columns in their order, the texts from `cursor` on and the budget
+    /// counted on from it, and returns the height its rows lay out to in `fonts`. Reads lengths off
+    /// the boundaries and maps no text.
     pub(crate) fn check(
         &self,
         node: usize,
@@ -262,7 +263,8 @@ impl ContentColumns<'_> {
     }
 
     /// The height the node whose rows are `rows` lays out to in `fonts`, as the engine computes
-    /// it from its elements' kinds and roles (ADR-0013); of content the bridge checked.
+    /// it from its elements' kinds and roles (REN-node-content-in-rows); of content the bridge
+    /// checked.
     pub(super) fn height(&self, rows: std::ops::Range<usize>, fonts: &Fonts) -> f64 {
         layout::height(
             rows.map(|row| self.elements(row).map(|element| self.kind(element))),
@@ -524,8 +526,8 @@ impl Checked {
     }
 }
 
-// The malformed-data tests of graph data verify ADR-0010 (see `graph_data::tests`).
-// Verifies: ADR-0010
+// The malformed-data tests of graph data verify API-bridge-takes-serde-and-columns (see
+// `graph_data::tests`). Verifies: API-bridge-takes-serde-and-columns
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -537,7 +539,7 @@ mod tests {
 
     #[test]
     fn a_load_whose_strings_of_content_pass_the_budget_is_refused_at_the_node_that_passes_it() {
-        // Verifies: ADR-0010, Q-7
+        // Verifies: API-bridge-takes-serde-and-columns, Q-7
         // The budget lowered to 5 code units: node `a`'s two texts of 2 and 3 hold it, and `b`'s
         // text of 1 passes it.
         content::TEST_BUDGET.set(Some(5));
@@ -571,7 +573,7 @@ mod tests {
 
     #[test]
     fn an_action_whose_identifier_is_no_string_or_too_long_names_its_node() {
-        // Verifies: ADR-0013, ADR-0010, Q-7
+        // Verifies: REN-node-content-in-rows, API-bridge-takes-serde-and-columns, Q-7
         // A title and an action beside it, whose identifier is checked as a string of content is,
         // against the limit of a text, after the action's text; through a load and through
         // `addNode` alike.
@@ -623,7 +625,7 @@ mod tests {
 
     #[test]
     fn a_badge_whose_colour_is_no_rgb_or_whose_text_is_malformed_names_its_node() {
-        // Verifies: ADR-0013, ADR-0010, Q-7
+        // Verifies: REN-node-content-in-rows, API-bridge-takes-serde-and-columns, Q-7
         // A badge below a title, its text checked as a string of content is, then its colour, an
         // integer from 0 to 0xFFFFFF as an edge's; through a load and through `addNode` alike.
         let long = "d".repeat(MAX_TEXT + 1);
@@ -678,7 +680,7 @@ mod tests {
 
     #[test]
     fn a_progress_bar_whose_segments_are_refused_names_its_node_and_the_segment() {
-        // Verifies: ADR-0013, ADR-0010, Q-7
+        // Verifies: REN-node-content-in-rows, API-bridge-takes-serde-and-columns, Q-7
         // A progress bar below a title: its number of segments, then each segment's fraction and
         // colour in their order, then their sum; through a load and through `addNode` alike.
         let green = f64::from(0x22_c55e);
@@ -761,7 +763,7 @@ mod tests {
 
     #[test]
     fn a_progress_bar_fills_its_segments_alone_and_segments_that_do_not_fit_are_malformed() {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         let green = f64::from(0x22_c55e);
         let mut columns = OwnedColumns::of([Some(&added(0.0, 0.0, |node| {
             node.content = progressed(&[(0.3, green), (0.2, 0.0)]).into();
@@ -825,7 +827,7 @@ mod tests {
 
     #[test]
     fn a_metric_whose_direction_texts_or_colour_are_refused_names_its_node_and_the_field() {
-        // Verifies: ADR-0013, ADR-0010, Q-7
+        // Verifies: REN-node-content-in-rows, API-bridge-takes-serde-and-columns, Q-7
         // A metric below a title: its trend's direction, then its caption, its value, and its
         // trend's text, each a string of content, then its trend's colour, as a badge's; through
         // a load and through `addNode` alike.
@@ -865,7 +867,7 @@ mod tests {
 
     #[test]
     fn a_metric_of_each_direction_and_colours_and_texts_at_their_limits_is_accepted() {
-        // Verifies: ADR-0013, ADR-0010
+        // Verifies: REN-node-content-in-rows, API-bridge-takes-serde-and-columns
         let held = "d".repeat(MAX_TEXT);
         let fine = [Some("Revenue"), Some("42"), Some("+3%")];
         for direction in [DirectionCode::Up, DirectionCode::Down, DirectionCode::Flat] {
@@ -887,7 +889,7 @@ mod tests {
     #[test]
     fn a_metric_fills_its_direction_colour_and_three_texts_and_columns_that_do_not_fit_are_malformed()
      {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         let green = f64::from(0x22_c55e);
         let texts = [Some("Revenue"), Some("42"), Some("+3%")];
         let content = metricked(DirectionCode::Down as u8, green, texts);
@@ -928,7 +930,7 @@ mod tests {
 
     #[test]
     fn boundaries_of_segments_that_do_not_bound_them_or_bound_another_kind_s_are_malformed() {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         // A title, then a progress bar of two segments: their boundaries are [0, 0, 2].
         let mut columns = OwnedColumns::of([Some(&added(0.0, 0.0, |node| {
             node.content = progressed(&[(0.3, 0.0), (0.2, 0.0)]).into();
@@ -954,7 +956,7 @@ mod tests {
     #[test]
     fn a_badge_fills_one_text_and_its_colour_and_columns_of_colours_that_do_not_fit_are_malformed()
     {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         let mut columns = OwnedColumns::of([Some(&added(0.0, 0.0, |node| {
             node.content = badged(Some("Done"), f64::from(0x22_c55e)).into();
         }))]);
@@ -981,7 +983,7 @@ mod tests {
 
     #[test]
     fn an_actions_identifier_counts_against_the_budget_of_a_loads_strings_of_content() {
-        // Verifies: ADR-0010, Q-7
+        // Verifies: API-bridge-takes-serde-and-columns, Q-7
         // The budget lowered to 5 code units: `a`'s action of the text "ab" and the identifier
         // "cde" holds it, and `b`'s title of 1 passes it.
         content::TEST_BUDGET.set(Some(5));
@@ -1006,7 +1008,7 @@ mod tests {
 
     #[test]
     fn columns_of_names_that_do_not_follow_from_the_kinds_are_malformed() {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         // One action fills one text and one name: a name too many, or none, does not fit.
         let mut columns = OwnedColumns::of([Some(&added(0.0, 0.0, |node| {
             node.content = named_content(&[&[action("Details", "d")]]).into();
@@ -1023,7 +1025,7 @@ mod tests {
 
     #[test]
     fn an_icon_whose_name_is_no_string_or_too_long_names_its_node() {
-        // Verifies: ADR-0013, ADR-0010, Q-7
+        // Verifies: REN-node-content-in-rows, API-bridge-takes-serde-and-columns, Q-7
         // A title and an icon beside it, whose name is checked as a string of content is, against
         // the limit of a text, as the field `name`; through a load and through `addNode` alike.
         let long = "d".repeat(MAX_TEXT + 1);
@@ -1064,7 +1066,7 @@ mod tests {
 
     #[test]
     fn an_icons_name_counts_against_the_budget_of_a_loads_strings_of_content() {
-        // Verifies: ADR-0010, Q-7
+        // Verifies: API-bridge-takes-serde-and-columns, Q-7
         // The budget lowered to 5 code units: `a`'s icon named "abcde" holds it, and `b`'s title
         // of 1 passes it.
         content::TEST_BUDGET.set(Some(5));
@@ -1089,7 +1091,7 @@ mod tests {
 
     #[test]
     fn columns_of_an_icon_that_do_not_follow_from_its_kind_are_malformed() {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         // An icon fills one name and no text: a text, or no name, does not fit.
         let mut columns = OwnedColumns::of([Some(&added(0.0, 0.0, |node| {
             node.content = named_content(&[&[icon(Some("bet"))]]).into();
@@ -1111,7 +1113,7 @@ mod tests {
 
     #[test]
     fn a_title_that_is_no_text_or_too_long_crosses_as_columns_with_its_kind_and_names() {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         let b = || "b".to_owned();
         let cases: Vec<(OwnedColumns, GraphDataProblem)> = vec![
             // A title missing, of another type, or with a lone surrogate is no text.
@@ -1139,7 +1141,7 @@ mod tests {
 
     #[test]
     fn rows_and_columns_past_their_limits_are_refused_naming_the_node() {
-        // Verifies: ADR-0010, ADR-0013, Q-7
+        // Verifies: API-bridge-takes-serde-and-columns, REN-node-content-in-rows, Q-7
         let title_row: &[Cell] = &[TITLE];
         assert_eq!(refused(&[title_row; MAX_ROWS]), None);
         let too_many = || GraphDataProblem::TooManyRows {
@@ -1165,7 +1167,7 @@ mod tests {
 
     #[test]
     fn every_content_refusal_crosses_as_columns_with_its_kind_and_names() {
-        // Verifies: ADR-0010, ADR-0013, Q-7
+        // Verifies: API-bridge-takes-serde-and-columns, REN-node-content-in-rows, Q-7
         let title_row: &[Cell] = &[TITLE];
         // An element of no kind, at row 1 and column 1.
         let (node, row, column) = at_b(1, 1);
@@ -1222,7 +1224,7 @@ mod tests {
 
     #[test]
     fn an_elements_fields_are_checked_in_their_order() {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         // A kind before a weight, a weight before a role, a role before the text.
         let (node, row, column) = at_b(0, 0);
         assert_eq!(
@@ -1247,7 +1249,7 @@ mod tests {
 
     #[test]
     fn the_strings_of_a_loads_content_are_refused_past_their_budget_at_the_node_that_passes_it() {
-        // Verifies: ADR-0010, Q-7
+        // Verifies: API-bridge-takes-serde-and-columns, Q-7
         // A million nodes of one text of 1,000 code units hold the budget of 1,000,000,000
         // exactly; one code unit more is refused at the node whose text passes it. The rule reads
         // the lengths off the boundaries alone, so the texts need not be held.
@@ -1307,7 +1309,7 @@ mod tests {
 
     #[test]
     fn content_columns_that_do_not_fit_together_are_refused_as_malformed() {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         let fits = || b_of(&[&[TITLE], &[TITLE, TITLE]]);
         assert!(load_columns(&fits()).is_ok());
         let changes: [fn(&mut ContentData); 14] = [
@@ -1340,7 +1342,7 @@ mod tests {
 
     #[test]
     fn a_title_validity_byte_other_than_one_or_zero_is_refused_as_malformed() {
-        // Verifies: ADR-0010
+        // Verifies: API-bridge-takes-serde-and-columns
         for byte in [2, u8::MAX] {
             let mut columns = a_and(|_| {});
             columns.content.text_valid[1] = byte;

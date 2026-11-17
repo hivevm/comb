@@ -4,7 +4,7 @@ import { countContent, metricTree, NODE_HEIGHT } from "../examples/metric-tree/s
 
 describe("the content of the metric tree", () => {
   test("one copy holds 15 nodes, counted by type, and their elements by kind", () => {
-    // Verifies: G-9, ADR-0008
+    // Verifies: G-9, DEV-bun-vite-wasm-pack
     // Counted, not drawn: any height places the nodes.
     const { graph, fields } = metricTree(1, () => NODE_HEIGHT);
     expect(graph.nodes).toHaveLength(15);

@@ -2,7 +2,8 @@
 #
 # Plan modes check: an unattended ticket names no protected part.
 #
-# ADR-0007 keeps its protected parts with the maintainer, and .github/CODEOWNERS names them. This
+# DEV-implementer-and-fresh-reviewer keeps its protected parts with the maintainer, and
+# .github/CODEOWNERS names them. This
 # check is the project's own rule beside that ADR: it decides the paths a ticket names, not what
 # the work touches. It reads the protected patterns from .github/CODEOWNERS, the first field of
 # every line that is neither blank nor a comment, and fails, naming the file, when it reads none.
@@ -26,13 +27,20 @@
 # below it.
 #
 # Pure bash + coreutils/awk. Usage:
-#     scripts/check-plan-modes.sh [repository root]
+#     scripts/check-plan-modes.sh [--root <dir>]
 # The root defaults to this repository; scripts/test-check-plan-modes.sh passes fixtures.
 # Exit code 0 when the check passes, 1 otherwise.
 
 set -uo pipefail
 
-ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-plan-modes.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "$@"
 PLAN="docs/plan"
 OWNERS=".github/CODEOWNERS"
 
@@ -85,7 +93,7 @@ to_regex() {
 }
 
 if [[ ! -f "$ROOT/$OWNERS" ]]; then
-  echo "Plan modes check: $OWNERS not found — the protected parts of ADR-0007 are unreadable." >&2
+  echo "Plan modes check: $OWNERS not found — the protected parts of DEV-implementer-and-fresh-reviewer are unreadable." >&2
   exit 1
 fi
 patterns=() regexes=()
@@ -95,7 +103,7 @@ while read -r p _ || [[ -n "${p:-}" ]]; do
   regexes+=("$(to_regex "$p")")
 done < "$ROOT/$OWNERS"
 if ((${#patterns[@]} == 0)); then
-  echo "Plan modes check: $OWNERS names no pattern — the protected parts of ADR-0007 are unreadable." >&2
+  echo "Plan modes check: $OWNERS names no pattern — the protected parts of DEV-implementer-and-fresh-reviewer are unreadable." >&2
   exit 1
 fi
 
@@ -148,7 +156,7 @@ for t in ${tickets[@]+"${tickets[@]}"}; do
 done
 
 if ((${#errors[@]})); then
-  echo "Plan modes check: ${#errors[@]} finding(s) in the tickets (ADR-0007):" >&2
+  echo "Plan modes check: ${#errors[@]} finding(s) in the tickets (DEV-implementer-and-fresh-reviewer):" >&2
   printf '  - %s\n' "${errors[@]}" >&2
   exit 1
 fi

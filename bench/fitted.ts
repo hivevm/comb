@@ -1,7 +1,7 @@
 // The order of the gestures at the view the example opens with, the whole graph fitted, apart
-// from the page they run in (ADR-0008): the drag, the pan, the zoom, then the edits. The zoom can
-// run out of its action budget wherever its steps took the view, so the edits begin at the fitted
-// view again, its scale and position, and record the scale they ran at.
+// from the page they run in (DEV-bun-vite-wasm-pack): the drag, the pan, the zoom, then the
+// edits. The zoom can run out of its action budget wherever its steps took the view, so the edits
+// begin at the fitted view again, its scale and position, and record the scale they ran at.
 
 /** A viewport: its position and scale. */
 export interface View {

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Comment width: a comment line of a Rust or TypeScript source is at most 100 columns, the width
-# Prettier's `printWidth` (.prettierrc.json) holds the code to and check 15 of
+# Prettier's `printWidth` (.prettierrc.json) holds the code to and the rule docs/prose-width of
 # scripts/check-docs.sh holds Markdown prose to. Prettier and rustfmt on stable leave a comment as
 # written, so without this check only review sees one that runs past.
 #
@@ -20,8 +20,10 @@
 # string, whose line begins with `//` or `/*` is read as a comment: the check reads lines, not
 # the language.
 #
-# Columns are characters, not bytes, so an em dash is one column, as check 15 counts them. A line
-# that cannot break passes, as in check 15: one whose text after the comment marker (and before a
+# Columns are characters, not bytes, so an em dash is one column, as docs/prose-width counts them. A
+# line
+# that cannot break passes, as in docs/prose-width: one whose text after the comment marker (and
+# before a
 # closing `*/`) holds no space outside its Markdown links, such as a URL standing on a line of its
 # own.
 #
@@ -31,14 +33,20 @@
 # Pure bash, coreutils, sed, and git.
 #
 # Usage:
-#     scripts/check-comment-width.sh [repository root]
+#     scripts/check-comment-width.sh [--root <dir>]
 # The root defaults to this repository; scripts/test-check-comment-width.sh passes fixtures.
 # Exit code 0 when every comment line fits, 1 otherwise.
 
 set -uo pipefail
 
-ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" 2>/dev/null && pwd)" \
-  || { echo "Comment width check FAILED: '${1:-}' is not a directory." >&2; exit 1; }
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-comment-width.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "$@"
 LC_ALL=C.UTF-8
 export LC_ALL
 

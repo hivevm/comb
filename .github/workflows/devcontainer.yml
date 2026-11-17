@@ -1,7 +1,8 @@
 name: Dev Container
 
 # Builds the Dev Container as VS Code does, from .devcontainer/devcontainer.json, its Dockerfile,
-# and its Features resolved by devcontainer-lock.json, and asserts the toolchain ADR-0014 decides
+# and its Features resolved by devcontainer-lock.json, and asserts the toolchain
+# DEV-container-adds-bun-and-rust decides
 # inside it: the Bun of the Dockerfile's pinned 'oven/bun' tag, Cargo, the WebAssembly target, and
 # no Node.js on PATH. Starting the container runs its postCreateCommand too, the dependencies from
 # bun.lock and Chromium, so the smoke test covers the setup a new container gets.
@@ -14,8 +15,9 @@ name: Dev Container
 # Debian package of ShellCheck, Chromium), and on demand. It is no required check, since a
 # required check that a path filter skips never reports. The Dev Containers CLI runs on the
 # runner's own Node.js, outside the container, at a pinned version; '--frozen-lockfile' fails the
-# build where the lock does not match the Features. It needs no secret (ADR-0016); its action is
-# pinned by commit SHA (ADR-0017), and its checkout keeps no credentials.
+# build where the lock does not match the Features. It needs no secret
+# (SEC-no-secrets-in-repository); its action is
+# pinned by commit SHA (SEC-actions-pinned-by-sha), and its checkout keeps no credentials.
 
 on:
   pull_request:
@@ -48,7 +50,7 @@ jobs:
           persist-credentials: false
       - name: Build and start the Dev Container
         run: npx --yes @devcontainers/cli@0.89.0 up --workspace-folder . --frozen-lockfile
-      # Verifies: ADR-0014 — the container carries the pinned Bun, Cargo with the WebAssembly
+      # Verifies: DEV-container-adds-bun-and-rust — the container carries the pinned Bun, Cargo with the WebAssembly
       # target, and no Node.js.
       - name: Assert the toolchain inside the container
         run: |

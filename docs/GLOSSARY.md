@@ -2,12 +2,15 @@
 
 > The **vocabulary** of this project: the terms everyone, humans and agents alike, uses in code,
 > comments, documentation, and ADRs. It defines words and decides nothing. Whoever resolves a term
-> adds it here in the same change ([ADR-0001](adr/0001-agent-governance-model.md)).
+> adds it here in the same change ([NUC-documents-are-fixed §5](adr/NUC-documents-are-fixed.md)).
 
 One term per concept, only terms specific to this domain. Say what a term *is* in one or two
 sentences, and list under _Avoid:_ the synonyms it displaces, where there are any. A term the
 specification, an ADR, or the code uses without an entry here is a gap to close, not a convention
 to invent.
+
+List each synonym under _Avoid:_ as one to three words, without prose around them. A synonym
+inside a longer term of this glossary, such as "shape" in **Node shape**, is no synonym there.
 
 - **Arrowhead** — the triangle that marks where an edge ends, its tip at the target connector.
 - **Bridge** — the boundary across which TypeScript and the engine exchange data.
@@ -31,8 +34,9 @@ to invent.
 - **Coarsened** — said of an edge mesh in which some edges are drawn less exactly than the
   flattening asks, or not at all, because the mesh budget or memory ran short.
 - **Culling** — leaving out of the draw everything that lies entirely outside the viewport grown
-  by two culling margins.
-  _Avoid:_ frustum culling, outside the wording of the constraint that requires it.
+  by two culling margins. Frustum culling is said only in the wording of the constraint that
+  requires it.
+  _Avoid:_ frustum culling.
 - **Culling margin** — the band around the viewport, in screen pixels, within which display
   objects are bound already, so that a small pan finds them drawn; between two queries of the
   engine, what is bound may reach up to twice as far.
@@ -40,13 +44,13 @@ to invent.
   units; an edge without one is solid.
 - **Diagram element** — a node or an edge, the two things a diagram is made of, as OMG's Diagram
   Interchange names them together (`DiagramElement`); an edge label belongs to its edge. Not a
-  content element, which is a piece of a node's content.
-  _Avoid:_ figure, shape, and element alone.
+  content element, which is a piece of a node's content; "element" alone names a content element.
+  _Avoid:_ figure, shape.
 - **Dock** — what an end of an edge docks on: the connector of one of the node's four sides, or
   its outline. An edge records one for its source and one for its target.
-- **Edge** — a connection drawn from one node to another, each end docked at the connector of a
-  side or on the node's outline.
-  _Avoid:_ link, wire, connection.
+- **Edge** — a line drawn from one node to another, each end docked at the connector of a side or
+  on the node's outline. A connection is the gesture that makes one, not the edge.
+  _Avoid:_ link, wire.
 - **Edge mesh** — the triangles of all edges in the viewport and its culling margin, which the
   engine computes and the canvas draws in one call.
 - **Edge label** — text attached to an edge, placed by a path parameter and a label offset.
@@ -72,8 +76,8 @@ to invent.
   particles while the scene keeps its query: the edges at the dragged nodes and the added edges,
   and at the far level the dragged and the added nodes' particles.
 - **Node** — an item on the canvas, drawn in its node shape, that stands for one element of the
-  host application's graph.
-  _Avoid:_ vertex, block.
+  host application's graph. A vertex is a point of the edge mesh, never a node.
+  _Avoid:_ graph vertex, block.
 - **Node shape** — the form, from a closed set the engine knows, in which a node is drawn and hit:
   a rectangle, a rounded rectangle, an ellipse, a circle, a ringed circle, a diamond, or a bar.
   It is a property of a node, not a diagram element of its own.

@@ -27,7 +27,7 @@ statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), th
   extension, or any DevContainer-compatible IDE
 - Docker / Podman (rootless) available on the host
 - Outside the Dev Container: bash 4.4 or later for the checks, 3.2 for the git hooks
-  ([ADR-0002](docs/adr/0002-decisions-verified-by-tests.md)); macOS ships 3.2
+  ([NUC-checks-are-bash §1](docs/adr/NUC-checks-are-bash.md)); macOS ships 3.2
 
 ## Getting Started
 
@@ -41,21 +41,22 @@ statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), th
    the GitHub CLI with `gh auth login`. Both logins lie on the host, in `~/.claude` and
    `~/.config/gh`, which the container mounts, so they outlive a rebuild; the container sets `gh`
    up as git's credential helper on every start
-   ([ADR-draft-gh-login-outlives-a-rebuild](docs/adr/draft-gh-login-outlives-a-rebuild.md)).
+   ([DEV-gh-login-outlives-rebuild](docs/adr/DEV-gh-login-outlives-rebuild.md)).
 3. Start working with the agent. Drive the work from the specification and the ADRs.
 
 ## Build, Test & Run
 
 Inside the Dev Container, which provides Bun, Rust, wasm-pack, and Chromium
-([ADR-0008](docs/adr/0008-toolchain.md), [ADR-0014](docs/adr/0014-dev-container-toolchain.md)).
-[`scripts/check-code.sh`](scripts/check-code.sh) runs, in order, the first three below, build,
-lint, and test, the engine check before the tests, and then the bundle budget of Q-3
-(`bun run build:lib`, at most 300 kB gzipped without PixiJS). The checks that need no toolchain,
-the structural check of [ADR-0030](docs/adr/0030-one-workspace-per-example.md), the
-dependency check, the container check, the overview check of
-[ADR-0001](docs/adr/0001-agent-governance-model.md), and the check that no comment of a Rust or
-TypeScript source runs past 100 columns, run beside it in `scripts/check-all.sh`, each after its
-self-test, as do the self-tests of the engine and the bundle checks.
+([DEV-bun-vite-wasm-pack](docs/adr/DEV-bun-vite-wasm-pack.md),
+[DEV-container-adds-bun-and-rust](docs/adr/DEV-container-adds-bun-and-rust.md)).
+[`scripts/check-code.sh`](scripts/check-code.sh) runs, in order, the first three below, build, lint,
+and test, the engine check before the tests, and then the bundle budget of Q-3 (`bun run build:lib`,
+at most 300 kB gzipped without PixiJS). The checks that need no toolchain, the structural check of
+[ARCH-one-workspace-per-example](docs/adr/ARCH-one-workspace-per-example.md), the dependency check,
+the container check, the overview check of
+[NUC-documents-are-fixed](docs/adr/NUC-documents-are-fixed.md), and the check that no comment of a
+Rust or TypeScript source runs past 100 columns, run beside it in `scripts/check-all.sh`, each after
+its self-test, as do the self-tests of the engine and the bundle checks.
 
 - **Build:** `bun run build` — the engine with wasm-pack, the type check, and both examples
 - **Test:** `bun run test` — `cargo test`, `bun test`, and the Playwright browser tests; it
@@ -67,61 +68,61 @@ self-test, as do the self-tests of the engine and the bundle checks.
   which opens the example in the host's browser; `?copies=3334` opens it with 50,010 nodes;
   `bun run example:uml`, or the launch configuration **Example: UML**, opens the UML example the
   same way (G-12)
-- **Benchmark:** `bun run bench` — the example at 50,010 nodes and edges, each node with the
-  content of its type, in Chromium: time to the first frame and p95 frame times of drag, pan,
-  zoom, and edits against Q-1 and Q-2, at the fitted view the example opens with and at each level
-  of detail (`drag near` … `edit middle`), written with the content loaded, nodes by type and
-  elements by kind, to `bench-results/latest.json`. The edits at the fitted view begin at its scale
-  and position wherever the zoom before them stopped, and `edit.scale` records the scale they ran
-  at. At 50,010 nodes the fitted view draws the far level, so `drag`, `pan`, and `edit` are far's
-  and far adds only `zoom far`; `fitted` in the result names the level the fitted view draws, and
-  a smaller graph whose fitted view is nearer times all four gestures at far as well. A gesture
-  the kind's baseline lacks is reported as new and not judged. `BENCH_HEADED=1` opens a window
-  that uses the machine's GPU, which is how the numbers on the reference machine are taken;
-  `BENCH_COPIES` sets another size. `BENCH_GRAPH=shaped` measures the shaped graph instead of the
-  metric tree ([ADR-0033](docs/adr/0033-the-benchmark-measures-a-graph-by-name.md)): the same
+- **Benchmark:** `bun run bench` — the example at 50,010 nodes and edges, each node with the content
+  of its type, in Chromium: time to the first frame and p95 frame times of drag, pan, zoom, and
+  edits against Q-1 and Q-2, at the fitted view the example opens with and at each level of detail
+  (`drag near` … `edit middle`), written with the content loaded, nodes by type and elements by
+  kind, to `bench-results/latest.json`. The edits at the fitted view begin at its scale and position
+  wherever the zoom before them stopped, and `edit.scale` records the scale they ran at. At 50,010
+  nodes the fitted view draws the far level, so `drag`, `pan`, and `edit` are far's and far adds
+  only `zoom far`; `fitted` in the result names the level the fitted view draws, and a smaller graph
+  whose fitted view is nearer times all four gestures at far as well. A gesture the kind's baseline
+  lacks is reported as new and not judged. `BENCH_HEADED=1` opens a window that uses the machine's
+  GPU, which is how the numbers on the reference machine are taken; `BENCH_COPIES` sets another
+  size. `BENCH_GRAPH=shaped` measures the shaped graph instead of the metric tree
+  ([PERF-benchmark-measures-named-graph](docs/adr/PERF-benchmark-measures-named-graph.md)): the same
   nodes and edges in the same columns and order, the nodes in the node shapes in turn, a filled one
   without content and a circle 64 wide, each centred on its row and column, the rows spaced for the
-  tallest node so that no two overlap, every end docked on the outline, and a loop on one node in
-  a hundred, which the example loads with `?graph=shaped`. The record names `graph`, and a run is
-  compared only with baselines of its graph: the metric tree's under
-  `bench/baselines/<kind>.json`, the shaped graph's under `bench/baselines/<kind>.shaped.json`.
-  The Dev Container has no display and no GPU, so from it the run measures in a Chrome on the host
-  ([ADR-0028](docs/adr/0028-the-benchmark-drives-a-chrome-on-the-host.md)). On the host, for the
-  measurement only, start Chrome with a throwaway profile and bridge its debugging port to the
-  Docker bridge alone (`ip -4 addr show docker0` names its address, often `172.17.0.1`):
+  tallest node so that no two overlap, every end docked on the outline, and a loop on one node in a
+  hundred, which the example loads with `?graph=shaped`. The record names `graph`, and a run is
+  compared only with baselines of its graph: the metric tree's under `bench/baselines/<kind>.json`,
+  the shaped graph's under `bench/baselines/<kind>.shaped.json`. The Dev Container has no display
+  and no GPU, so from it the run measures in a Chrome on the host
+  ([PERF-benchmark-drives-host-chrome](docs/adr/PERF-benchmark-drives-host-chrome.md)). On the host,
+  for the measurement only, start Chrome with a throwaway profile and bridge its debugging port to
+  the Docker bridge alone (`ip -4 addr show docker0` names its address, often `172.17.0.1`):
   `google-chrome --remote-debugging-port=9222 --user-data-dir="$(mktemp -d)"` and
   `socat TCP-LISTEN:9223,bind=172.17.0.1,fork TCP:127.0.0.1:9222`. Then, in the container,
   `BENCH_CDP=http://host.docker.internal:9223 bun run bench` attaches to that Chrome, which loads
   the example from the port VS Code forwards, 4173; the record says `attached` and names the
   browser. `BENCH_CPU_THROTTLE=2` slows the measured page's CPU by that factor, where the machine's
   processor outruns the reference's
-  ([ADR-0029](docs/adr/0029-the-benchmark-can-slow-the-measured-pages-cpu.md)); the record names
+  ([PERF-benchmark-slows-page-cpu](docs/adr/PERF-benchmark-slows-page-cpu.md)); the record names
   `cpuThrottle`, and a run is compared only with baselines of the same factor and kind of browser.
-  Stop Chrome and socat after the measurement: the port gives whoever reaches it the browser.
-  After the load and the first frame, before the gestures, each run times a fixed reference workload
-  in the same page (`bench/reference.ts`: a JavaScript loop, a WebAssembly loop, and a WebGL2 draw
-  of a fixed mesh), recorded as `reference` with its parts. The **Benchmark** workflow runs each
-  graph three times on a GitHub runner, weekly and on demand (*Actions* → *Benchmark* → *Run
-  workflow*), and fails when the median of a number exceeds the baseline of its graph on the
-  runner's kind, the CPU model the run records, under `bench/baselines/` by more than 25 %, naming
-  it. The shaped graph gates the workflow only where its baseline exists on the runner's
-  kind; where none does (`bench/compare.ts` exits 3 for a kind without a baseline of the runs'
-  graph), the workflow reports its median, `median.shaped.json`, and the file its baseline would be
-  saved as, and fails on the metric tree alone. The reference is a gate within a kind: when a part
-  of it differs from the kind's baseline by more than 25 %, either way, the runner is not comparable
-  and the comparison is refused, naming the parts; every part's ratio to the baseline is in the log.
-  The runs and their median are uploaded as the artefact `bench-results` (`bun bench/compare.ts
-  bench/baselines <run>...` compares locally; a run in the Dev Container is refused, since its CPU
-  model has no baseline, unless a baseline recorded on the same CPU model is passed). The maintainer
-  records a kind's baseline: take `median.json`, or `median.shaped.json` for the shaped graph, from
-  the artefact of a workflow run on `main` on that kind, save it under the file name the refusal
-  prints, and open a pull request that says why. Against a baseline without a reference, the
-  comparison says that the runner gate is not checked and judges the numbers alone. A runner's
-  numbers are compared only with a runner's of its kind: runs on a kind without a baseline of their
-  graph or naming no CPU model, runs of another graph, size, mode, or GPU than the baseline's, runs
-  of different graphs together, runs that name no GPU, and runs without a reference against a
-  baseline with one are refused.
+  Stop Chrome and socat after the measurement: the port gives whoever reaches it the browser. After
+  the load and the first frame, before the gestures, each run times a fixed reference workload in
+  the same page (`bench/reference.ts`: a JavaScript loop, a WebAssembly loop, and a WebGL2 draw of a
+  fixed mesh), recorded as `reference` with its parts. The **Benchmark** workflow runs each graph
+  three times on a GitHub runner, weekly and on demand (*Actions* → *Benchmark* → *Run workflow*),
+  and fails when the median of a number exceeds the baseline of its graph on the runner's kind, the
+  CPU model the run records, under `bench/baselines/` by more than 25 %, naming it. The shaped graph
+  gates the workflow only where its baseline exists on the runner's kind; where none does
+  (`bench/compare.ts` exits 3 for a kind without a baseline of the runs' graph), the workflow
+  reports its median, `median.shaped.json`, and the file its baseline would be saved as, and fails
+  on the metric tree alone. The reference is a gate within a kind: when a part of it differs from
+  the kind's baseline by more than 25 %, either way, the runner is not comparable and the comparison
+  is refused, naming the parts; every part's ratio to the baseline is in the log. The runs and their
+  median are uploaded as the artefact `bench-results`
+  (`bun bench/compare.ts bench/baselines <run>...` compares locally; a run in the Dev Container is
+  refused, since its CPU model has no baseline, unless a baseline recorded on the same CPU model is
+  passed). The maintainer records a kind's baseline: take `median.json`, or `median.shaped.json` for
+  the shaped graph, from the artefact of a workflow run on `main` on that kind, save it under the
+  file name the refusal prints, and open a pull request that says why. Against a baseline without a
+  reference, the comparison says that the runner gate is not checked and judges the numbers alone. A
+  runner's numbers are compared only with a runner's of its kind: runs on a kind without a baseline
+  of their graph or naming no CPU model, runs of another graph, size, mode, or GPU than the
+  baseline's, runs of different graphs together, runs that name no GPU, and runs without a reference
+  against a baseline with one are refused.
 - **Mutation testing:** `cargo mutants -p comb-engine --no-shuffle --timeout 30` mutates
   `crates/engine` and runs its tests against each mutant, in about half an hour, writing
   `mutants.out/`; it needs cargo-mutants 27.1.0
@@ -272,24 +273,23 @@ instantiated once per page: a later `createComb` checks its `engine` but reuses 
 instance.
 
 Should the engine trap, as WebAssembly does when it runs out of memory, it is lost for the page, for
-every Comb on it (ADR-0021). From then on `load`, `updateNode`, `addNode`, `addEdge`, `updateEdge`,
-`removeNodes`,
-`removeEdges`, `fitView`, `setViewport`,
-and `createComb` throw an `EngineLostError`, which `comb` exports; `viewport`, `worldPointAt`,
-`onSelectionChange`, `onChange`, and `destroy` keep working, the canvas keeps its last frame, and
-input on it changes nothing. `comb.onEngineLost(listener)` calls `listener` once with the error, at
-once where the engine is lost already, and returns the function that removes it. The only recovery
-is loading the page anew, so a host application tells its user and offers a reload:
+every Comb on it (API-trapped-engine-is-lost). From then on `load`, `updateNode`, `addNode`,
+`addEdge`, `updateEdge`, `removeNodes`, `removeEdges`, `fitView`, `setViewport`, and `createComb`
+throw an `EngineLostError`, which `comb` exports; `viewport`, `worldPointAt`, `onSelectionChange`,
+`onChange`, and `destroy` keep working, the canvas keeps its last frame, and input on it changes
+nothing. `comb.onEngineLost(listener)` calls `listener` once with the error, at once where the
+engine is lost already, and returns the function that removes it. The only recovery is loading the
+page anew, so a host application tells its user and offers a reload:
 
 ```ts
 comb.onEngineLost(() => showBanner("The graph stopped responding. Reload the page."));
 ```
 
-Comb runs under a Content Security Policy that allows `wasm-unsafe-eval` but not `unsafe-eval`,
-such as `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'` (Q-6). For that it imports
-PixiJS's module `pixi.js/unsafe-eval`, which replaces PixiJS's code generation with code that uses
-no eval (ADR-0020). The module patches PixiJS's classes, so it reaches every PixiJS renderer on the
-host application's page, also one the host application creates itself.
+Comb runs under a Content Security Policy that allows `wasm-unsafe-eval` but not `unsafe-eval`, such
+as `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'` (Q-6). For that it imports PixiJS's
+module `pixi.js/unsafe-eval`, which replaces PixiJS's code generation with code that uses no eval
+(SEC-pixijs-without-eval). The module patches PixiJS's classes, so it reaches every PixiJS renderer
+on the host application's page, also one the host application creates itself.
 
 `createComb` throws a `RendererUnavailableError` where the browser offers no WebGL2. A host
 application that would rather draw slowly, with dash patterns solid, than draw nothing opts into
@@ -323,9 +323,9 @@ nearest path parameter and the distance along the normal there, and the release 
 
 ## Template
 
-- **Template release:** v0.7.0 — the release of [NUC](https://github.com/hivevm/nuc) this
+- **Template release:** v0.11.1 — the release of [NUC](https://github.com/hivevm/nuc) this
   repository carries; a project moves the line when it takes up a later one
-  ([ADR-0005](docs/adr/0005-template-releases.md)).
+  ([NUC-releases-are-semver-tags §5](docs/adr/NUC-releases-are-semver-tags.md)).
 
 ## Contributing
 
