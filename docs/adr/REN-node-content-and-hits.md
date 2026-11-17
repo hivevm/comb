@@ -1,0 +1,330 @@
+# REN-node-content-and-hits: Node content is a closed set of elements in rows, laid out by the engine, in a node as high as its content or the height its data gives, and one hit test finds handles, region lines, connectors, labels, nodes, and edges
+
+- **Status:** 🟡 proposed
+- **Date:** 2026-11-17
+- **Deciders:** Markus Brigl
+- **Applies to:** the node-content types of `crates/engine` and `crates/engine-wasm`, their generated TypeScript definitions in `packages/comb`, the layout functions of the engine, the drawing of node content in `packages/comb/src/render/`, the report of a click on a content element in `packages/comb/src/api/`, the hit test of `crates/engine/src/graph.rs` and its export in `crates/engine-wasm/`, the label extents the render layer of `packages/comb/src/render/` hands the engine, and the press and hover of `packages/comb/src/interaction/`
+- **Supersedes:** [REN-node-content-in-rows](REN-node-content-in-rows.md)
+
+## Context
+
+G-10 asks for the host application to describe what a node shows as content elements, for Comb
+to draw them, and for a click on an element to reach the host application. G-9 names the
+elements its example needs: a title, an icon with a kind, a hypothesis, a progress bar in
+segments, a status badge, values over three periods with a coloured trend, and a "Details" link.
+Q-1 asks for 60 fps with 50,000 nodes, Q-4 for geometry exact to 0.5 px, and Q-5 forbids
+interpreting graph data as HTML, script, or URL.
+
+A description Comb draws itself can be pooled and batched (REN-virtualized-nested-scene); a callback
+in which the host
+application draws with PixiJS cannot, and its cost is outside Comb's control. A closed set of
+elements is a public interface the host application relies on, so adding an element is a change
+of that interface.
+
+Laying out the elements is geometry: the height of each row, the position of each element, the
+truncation of text to its column. ARCH-one-workspace-per-example puts geometry into the
+engine, where Q-4 can be tested
+without a browser. Text widths depend on the font, which the shell knows from its `BitmapText`
+fonts (REN-virtualized-nested-scene).
+
+What the pointer hits decides what a press and a hover do. G-5 asks that the user selects a node
+or an edge, G-6 that the user drags an edge label, and G-3 starts a connection on a connector
+([API-edges-dock-nodes-or-edges](API-edges-dock-nodes-or-edges.md)); a click on a content element is
+G-10's. The canvas
+draws, from the bottom, the edges as one mesh in slot order, the nodes in the order of their ranks
+(ARCH-engine-edits-nested-graph), the edge labels in slot order, and the connectors
+(REN-virtualized-nested-scene, API-edges-dock-nodes-or-edges), and node views
+take no events (REN-virtualized-nested-scene). A user expects to grab what they see on top. An edge
+is a curve, drawn
+one pixel wide at the far level and a few pixels wide nearer, so it can only be hit within a
+tolerance. An edge label is a pill whose width follows its text, which the shell measures with its
+`BitmapText` font and the engine cannot; the query receives only the widest pill's reach, one
+number for all labels (API-bridge-takes-serde-and-columns). ARCH-one-workspace-per-example
+keeps geometry out of the shell, and the engine's
+spatial index already holds the nodes, the edges, and the label points.
+
+G-14 to G-19 give a node a height of its own where it holds nodes or the user resizes it
+([REN-node-shapes-cover-uml](REN-node-shapes-cover-uml.md)), add resize handles and lines between
+regions that a press drags ([API-edits-report-nested-changes](API-edits-report-nested-changes.md),
+[ARCH-regions-are-container-slots](ARCH-regions-are-container-slots.md)), give an edge several
+edge labels ([API-edges-dock-nodes-or-edges](API-edges-dock-nodes-or-edges.md)), and order nodes
+with containers below the others
+([ARCH-engine-edits-nested-graph](ARCH-engine-edits-nested-graph.md)). The ADR this one restates,
+[REN-node-content-in-rows](REN-node-content-in-rows.md), computes every node's height from its
+rows alone and hits the node of the highest rank. This ADR restates it with these changes; the
+citations of ADRs superseded beside it name their successors.
+
+## Decision
+
+We will describe node content as rows of weighted columns, each holding one element of the closed
+set `text`, `icon`, `progress`, `badge`, `metric`, and `action`, laid out by the engine from glyph
+advances the shell hands it once per font, with icons named from images the host application
+registers and colours given as numbers.
+
+- **Elements:** `text` with a role of title, body, or caption; `icon` by registered name; `progress`
+  as segments, each a fraction and a colour; `badge` as text on a colour; `metric` as a caption, a
+  value, and a trend with a text, a direction, and a colour; `action` as text with an identifier,
+  its fields `text` and `id`, laid out and drawn as a text in the font of role body, in the colour
+  of a hyperlink. A `badge`, its fields `text` and `color`, is laid out in the font of role body on
+  a pill as an edge label's: the pill lies at its column's left, as wide as its text is drawn and 8
+  world units either side, at most the column, and as high as the body's line and 3 above and below,
+  22 with a line of 16; its text is cut to the column less the 16 of padding, and the pill's corners
+  are rounded by half the smaller of its width and height, at most 11. The engine states the
+  padding, and the shell places the text on the pill by it. In a row that holds a badge, every other
+  element lies 3 lower, so that the texts of the row share one line, and the row is as high as its
+  deepest element so placed; a row without a badge is laid out as before. A badge's cell is its
+  pill, so that a press beside the pill in its column hits no element. Its text is drawn white or in
+  the near-black of the node's texts, `0x1F2430`, whichever has the higher contrast ratio with the
+  pill's colour by WCAG's relative luminance. A `progress`, its field `segments`, each a `fraction`
+  and a `color`, shows no text: its cell is its column and the body's line, 16 high with a line of
+  16, laid out and hit as a text's cell, so that a press anywhere on that line in its column, above
+  or below the bar too, hits it. Its bar is as wide as the column and 8 world units high, at most
+  the line, in the middle of the line; the engine cuts it into its segments in order from the
+  column's left, each as long as its fraction of the bar, and the track, the rest of the bar, so
+  that no segment reaches past the column's end. The shell draws the segments in their colours and
+  the track in `0xE5E7EB`, only the bar's two outer ends rounded by 4, at most half its height and
+  half its length, the segments and the track abutting square. A progress bar holds at most 8
+  segments; a fraction is finite and not negative, a segment's colour is a badge's, and the
+  fractions sum to at most 1 and 1e-9 beyond it, so that fractions that sum to 1 in exact arithmetic
+  are not refused for their rounding. A `metric`, its fields `caption`, `value`, and `trend`, the
+  trend its `text`, its `direction`, `up`, `down`, or `flat`, and its `color`, a badge's, is laid
+  out in two lines in its column, the caption's line in the font of role caption and below it, with
+  no space between, the value's line in the body's: 30 high with lines of 14 and 16, its cell, and
+  so what a press hits, the column and both lines. The caption fills its line, cut to the column as
+  a text is. On the value's line the value lies at the column's left, as wide as it is drawn; the
+  trend's arrow 8 after it, the gap between columns; and the trend's text 4 after the arrow, to the
+  column's end. The arrow fills a square of side 10, at most the value's line, in the middle of that
+  line, 3 below its top with a line of 16, and is one triangle turned by its direction, its base one
+  side of the square and its apex the middle of the opposite side: ▲ its base below, ▼ above, ▶ at
+  the left. Where the column is too narrow, the trend's text is cut first, to what the value, both
+  gaps, and the arrow leave; where they leave none, the trend's text is cut to nothing and the value
+  to the column less the gap before the arrow and the arrow, the gap shrinking where even that
+  leaves no room, so that the arrow ends at the column's end; a column narrower than the arrow, or a
+  value's line of no height, draws none. Once the value is cut, the trend's text shows nothing,
+  though a glyph of it would fit in the room the value's cut leaves. The engine places each part and
+  the arrow's three points, and the shell draws the caption in the caption's colour, `0x6B7280`, the
+  value in the near-black of the node's texts, `0x1F2430`, and the arrow and the trend's text in the
+  trend's colour. A metric lies at its row's top as every element does, and in a row that holds a
+  badge 3 lower, as every element but a badge does. An `icon`, its field `name`, shows no text: it
+  is a square as high as the body's line, 16 with a line of 16, at its column's left, at most as
+  wide as its column and then in the middle of the line, and lies at its row's top, or 3 lower
+  beside a badge, as every element but a badge does. Its cell is its square, so that a press beside
+  it in its column hits no element, as beside a badge's pill. The shell draws the image registered
+  under its name as a sprite fitted into the square with its aspect kept and centred in it; an icon
+  whose name none registers draws nothing and is no error, and its square is still its cell, hit and
+  reported as kind `icon`. Its name is checked as a text of content is, as the field `name`, and
+  counts toward the budget of a load's strings.
+- **Icons:** `Comb.registerIcon(name, image)` takes an `ImageBitmap`, an `HTMLImageElement` that
+  has loaded, or an `HTMLCanvasElement` the host application holds, copies it at registration, at
+  its natural size, into a canvas Comb owns, and makes that copy the texture of the icon `name`,
+  drawn by every icon that names it, without a load. A later change to the host application's
+  image, or closing an `ImageBitmap`, changes no icon; a change takes a new `registerIcon`.
+  Registering a name again draws the new image wherever the old one was drawn and destroys the
+  old texture once the views have taken the new one, which they do as it is registered, the
+  engine lost or not; nothing unregisters a name. It throws an `IconError`, and registers nothing,
+  where the name is no string, holds a lone surrogate, or is longer than a text of content may be,
+  or where the image is a string, a `URL`, or a `Request`, none of the three, or one that holds no
+  pixels, an image that has not loaded or failed to, a closed `ImageBitmap`, or a canvas of no
+  size, or one of another origin whose pixels the page may not read (`crossOrigin`), which a read
+  of one pixel of the copy finds, since the GPU cannot take it either; it never fetches. After
+  `destroy` it checks its arguments as before and keeps nothing.
+- **Content replaces the title:** a node is its identifier, its position, its width, its content,
+  and the height its data may give; its title is a `text` of role title, and the engine computes
+  the height its content needs.
+  `updateNode` replaces a node's content as a whole, checked as a load checks it.
+- **Clicks:** a click on any element, without a drag, is reported to the host application with
+  the node's identifier, the element's row and column, and its kind, and for an `action` its
+  identifier; it selects the node as a click on the node does. It reaches the host application
+  through `Comb.onContentClick(listener)`, which returns the function that removes the listener,
+  as `{ node, row, column, kind, action? }`. A press on a node waits for the slop of a press on an
+  edge (*Hit test*), 4 screen pixels from the press: released within it, the press is a click; once
+  the pointer has moved beyond it, the node is dragged from the press and no click is reported.
+  The engine's hit test names the element whose rectangle holds the point, of those drawn at the
+  level of detail: at *near* every element, at *middle* the texts of role title, at *far* none; a
+  press on the padding or between elements selects the node and reports no click. An element is
+  hit across the whole rectangle of its cell, not only where its glyphs are drawn. The element
+  reported is the one under the release, asked anew, since the host application may change the
+  node's content when it hears of the selection; a release off that node or off its elements, a
+  release outside the canvas, and a cancelled pointer report none.
+- **Layout:** the host application gives a node's width; the engine computes each row's height,
+  each element's rectangle, and where each text is truncated, and the node's height from its rows,
+  or the height its data gives where that is more.
+  A row is as high as its tallest element, and a row's columns share its width by their weights,
+  a weight left out counting as 1. A node is as high as its rows and the padding above and below
+  them, and at least the least height, 64 world units, so that a node of one row of a title keeps
+  the size of the nodes before content. The engine states the padding, the gap between columns,
+  and the least height; the shell states each role's line height.
+- **Levels of detail (REN-virtualized-nested-scene):** *near* draws every element; *middle* draws
+  the box and the texts of role title, at the place near gives them, and no action, badge, progress
+  bar, metric, or icon; *far* draws no element.
+- **Limits (Q-7):** the bridge refuses a node with more rows, a row with more columns, a progress
+  bar with more segments, a text longer, or a load whose texts hold more code units in all than
+  limits it states, each with a typed problem that names the node. The budget of the code units
+  of content holds for the graph across every edit: the engine keeps their count, set by a load
+  and moved by each `addNode`, `updateNode`, and `removeNodes`, and refuses an addition or a
+  patch whose strings would pass it as `contentBudgetExceeded` naming the node, before anything
+  changes.
+- **Fonts:** the shell passes each `BitmapText` font's glyph advances and line height to the
+  engine once, before the first layout that uses it.
+- **No URLs in graph data:** an icon is named, never located; an `action` carries an identifier,
+  never a hyperlink. The host application turns either into whatever it means. It registers an
+  icon's image as an object it has already loaded, never as a URL Comb would fetch (Q-6).
+- **Hit test:** the engine answers every hit test from its spatial index, in one call that takes a
+  world point, the size of a screen pixel, the level of detail, and whether to look for
+  connectors, and returns the target drawn on top there: a resize handle, else a line between
+  regions, else a connector, else an edge label, else a node, with the element of its content
+  under the point, else an edge, else none.
+  - **Resize handle:** within 6 screen pixels of one of the eight resize handles of the selected
+    node, where its `resizable` is `true`, at the near and the middle level.
+  - **Line between regions:** within 4 screen pixels of a line between two regions, at the near
+    and the middle level, the region before the line.
+  - **Connector:** within 8 screen pixels of its point, at the near and the middle level, the
+    node and side it belongs to (API-edges-dock-nodes-or-edges). The shell asks for connectors only
+    where a connection
+    can begin, where `CombOptions.canConnect` is set (API-edits-report-nested-changes);
+    otherwise the call hits none, and
+    a press there finds what lies beneath.
+    - Within the node's outline (REN-node-shapes-cover-uml) a connector reaches at most a
+      quarter of the node's
+      extent across its side: of its height for the top and the bottom connector, of its width
+      for the right and the left. So the middle half of a node is the node's, and a node too thin
+      on screen for both reaches, such as a bar, is still pressed and dragged as a node. Outside
+      the outline the reach is the 8 pixels, also within the node's bounding rectangle, where
+      the node itself is not hit; a node at least 32 screen pixels high and wide hits as before.
+  - **Edge label:** at the near level only, where labels are drawn, the label whose pill holds
+    the point. The shell hands the engine the half width and half height of each label's pill, in
+    world units, when it draws the label's text and whenever that text changes; a label the shell
+    has not measured is not hit.
+  - **Node:** inside its bounds, at every level, and of its content the element drawn there
+    (*Clicks*).
+  - **Edge:** within 4 screen pixels of its path as the stroke flattens it at the current zoom,
+    at every level.
+  - **On top:** within one kind, the item drawn last: the last node in the order of
+    ARCH-engine-edits-nested-graph, and the edge or label in the highest slot; the line of the
+    innermost regions.
+  - **One call:** the result crosses as one generated structured value
+    (API-bridge-takes-serde-and-columns) naming the kind
+    and the slot, for a connector its side, and for a node the element hit. Interaction calls it
+    on press, on hover, and on the release of a press on a node, and draws the cursor from it.
+  - **What a press does:** on a resize handle it begins a resize; on a line between regions it
+    begins the drag of that line; on a connector it begins a connection; on an edge label it selects
+    the label's edge and begins a drag of that label; on a node it selects the node, and once the
+    pointer has moved more than 4 screen pixels from the press, begins a drag of it, a release
+    before that being a click (*Clicks*); on an edge it selects the edge, and once the pointer has
+    moved more than 4 screen pixels from the press, begins a pan from it, so that a canvas dense
+    with edges still pans by dragging; on none it clears the selection and begins a pan.
+
+**Out of scope:** elements beyond the six, each a revision of this ADR; a callback in which the
+host application draws; styling beyond colours and roles, such as fonts per node; a selection of
+more than one item; hitting an edge's arrowhead apart from its path.
+
+## Alternatives considered
+
+- **A node's height from its content alone** — the choice of the ADR this one restates, but a
+  container, a frame, or a resized node needs room its content does not fill.
+- **Resize handles and region lines hit by the shell, before the engine's hit test** — no change to
+  the engine's call, but the shell would hold a second order of what lies on top.
+
+- **Render callbacks in which the host application draws with PixiJS** — the most flexible, but
+  pooling, batching, and levels of detail leave Comb's control, and so does Q-1.
+- **The six elements plus a `custom` callback element** — a way out for special cases, but one
+  callback element in a node puts that node's cost outside every guarantee, and nothing keeps it
+  rare.
+- **Layout in TypeScript** — text measurement is at hand there, but the geometry of Q-4 would
+  leave the functional core and need a browser to test.
+- **Icons by URL** — familiar from HTML, but graph data that names a URL is what Q-5 forbids Comb
+  to interpret.
+- **The shell hit-tests what it drew** — PixiJS's events on the bound views, or their bounds, know
+  every label's pill, but node views take no events (REN-virtualized-nested-scene) and particles
+  have none at all; the order between layers would be the shell's, and the distance to a curve
+  geometry the shell does not hold (ARCH-one-workspace-per-example).
+- **A label hit by the widest pill's reach** — no extents cross the bridge, but beside a long
+  label every short one would be hit far beyond its pill, grabbing a label where the user meant
+  the empty canvas.
+- **Separate calls per kind** — each simpler, but a press asks up to four times and the shell
+  decides the precedence, so a change of the drawing order has two places to follow.
+- **Edges hit by their bounds** — cheap, but the bounds of a curved edge cover much empty canvas,
+  and the pan the user meant would select an edge.
+- **A node before an edge label** — labels sit on edges between nodes and are drawn above them;
+  where a label overlaps a node, the user sees the label and expects to grab it.
+- **A hit test that names the node alone, and a press on a node that drags at once** — one result
+  per kind, but a click on a content element could not be told from the start of a drag, nor its
+  element found without a second call.
+
+## Sources / Prior art
+
+- [REN-node-content-in-rows](REN-node-content-in-rows.md), which this ADR restates with the
+  height, the handles, the region lines, and the order of nested nodes.
+- The reference picture the maintainer gave for G-9 (not in the repository).
+- PixiJS v8, `BitmapText` and bitmap fonts —
+  <https://pixijs.com/8.x/guides/components/scene-objects/text/bitmap>.
+- `Graph::hit_at` and the query in `crates/engine/src/graph/`, the labels layer in
+  `packages/comb/src/render/labels.ts`, and the press in `packages/comb/src/interaction/`, as they
+  stand (read on 2026-10-24).
+- The layer order and the hit testing of REN-virtualized-nested-scene (*Layers*, *Hit testing*).
+
+## Consequences
+
+- Positive: every element is drawn by Comb, so pooling, batching, and levels of detail cover all
+  of node content.
+- Positive: layout is a pure function of the content, the width, and the font metrics, tested
+  natively against Q-4.
+- Negative / trade-offs: a host application that needs an element outside the six waits for a
+  revision of this ADR.
+- Negative / trade-offs: glyph advances cross the bridge once per font, and a font change means a
+  new layout of every node that uses it.
+- Negative / trade-offs: a node's height is not the host application's to give; a host that
+  wants equal heights gives equal content.
+- Positive: what the user grabs is what they see on top, at every level, from one place that
+  follows the drawing order; edges are selectable, and the sidebar of G-9 can edit them.
+- Negative / trade-offs: a hover flattens the edges near the pointer, a few for most points and
+  every edge of the overflow list whose bounds hold the point; the benchmark's frames show whether
+  that matters (Q-1).
+- Negative / trade-offs: label extents cross the bridge once per label drawn and per change of its
+  text, and the engine keeps two numbers per edge slot for them.
+- Follow-ups: kerning and right-to-left text, which glyph advances alone do not cover; whether the
+  edge tolerance follows the edge's width once edges have widths.
+
+## Enforcement
+
+A Rust test in `crates/engine/src/content.rs` lays out node content of every element kind at
+several widths and asserts each rectangle against a reference within 0.5 px, that no element
+extends past the node's width, and that a node is as high as its rows and padding, at least the
+least height. A browser test clicks an element of each kind and asserts the report the host
+application receives, and that a drag that starts on an element reports none. A browser test in
+`examples/metric-tree/e2e/node-content.spec.ts` asserts what each level of detail draws of a
+node's content. A test in `packages/comb/src/content-types.test.ts` asserts that the generated
+TypeScript type of node content admits exactly the element kinds built, each kind's ticket adding
+its own until it admits the six. A browser test in `examples/metric-tree/e2e/icons.spec.ts`
+asserts that a registered icon is drawn as a sprite of its texture in its square within 0.5 px,
+an image that is not square fitted into it, that an icon not yet registered draws nothing until
+it is, that a name registered again draws the new image, and that `registerIcon` refuses a
+string, a URL, an image that has not loaded, and a name no icon can give, and requests nothing;
+`packages/comb/src/render/icons.test.ts` asserts that the replaced texture is destroyed. Each
+cites this ADR with `Verifies: REN-node-content-and-hits`, and the first also `Verifies: Q-4`.
+
+The tests of the hit test cite this ADR with `Verifies: REN-node-content-and-hits` too:
+
+- **Against a scan:** a test of `crates/engine/src/graph/hit.rs` hits random points of random graphs
+  with labels and connectors, at each level, and asserts the target a brute-force scan finds in
+  the order of the decision, the distance to an edge measured to its flattened path.
+- **Precedence:** browser tests in `examples/metric-tree/e2e/` press on a label above a node, on
+  a connector on a node, on a node above an edge, on an edge, and on the empty canvas, and assert
+  what is selected or dragged; they also `Verifies: G-5, G-6`.
+- **Thin nodes:** a test of `crates/engine/src/graph/hit.rs` asserts that a press in the middle
+  half of a node hits the node however thin it is on screen, that each connector is hit within
+  its reach outside the node, a small circle's within its rectangle but outside its outline, and
+  the scan above clips the reach as the decision does.
+- **Connectors asked for:** a browser test asserts that a press on a connector without
+  `canConnect` begins no connection, and one asks `hitKind` beside a connector with and without
+  connectors and asserts a connector only where they are asked for.
+- **Unmeasured labels:** a test asserts that a label without extents is not hit, and one with
+  them is hit inside its pill and not beyond it.
+- **The slop of a press:** `packages/comb/src/interaction/interaction.test.ts` asserts that a
+  press on an edge pans and a press on a node drags only beyond 4 screen pixels, and
+  `examples/metric-tree/e2e/content-click.spec.ts` that a release within them clicks.
+- **Handles, region lines, height:** the scan of `crates/engine/src/graph/hit.rs` adds resize
+  handles and lines between regions, in the order of the decision; a test of the layout asserts
+  that a node's height is the greater of its content's and its data's; and a browser test of the
+  UML example presses a resize handle on a node above another, and a line between two partitions,
+  and asserts the resize and the line's drag.
