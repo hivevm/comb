@@ -1,0 +1,43 @@
+# Comb's cases of the GitHub login in scripts/check-devcontainer.sh (DEV-gh-login-outlives-rebuild),
+# read by scripts/test-check-devcontainer.sh.
+#
+# The format is that of scripts/fixtures/check-devcontainer.txt, its steps included, with three
+# changes. The base tree adds to devcontainer.json, before the postStartCommand, the line
+#
+#   "mounts": [ "source=${localEnv:HOME}${localEnv:USERPROFILE}/.claude,target=/home/vscode/.claude,type=bind", "source=${localEnv:HOME}${localEnv:USERPROFILE}/.config/gh,target=/home/vscode/.config/gh,type=bind" ],
+#
+# and the line
+#
+#   "initializeCommand": "(mkdir \"${localEnv:HOME}${localEnv:USERPROFILE}/.config\" || cd .) && (mkdir \"${localEnv:HOME}${localEnv:USERPROFILE}/.config/gh\" || cd .) && exit 0",
+#
+# and its <post> adds, after the index entry, the entry
+#
+#   "credentials": "gh auth setup-git --hostname github.com --force"
+#
+# Two steps are added, each of which writes devcontainer.json again like extra, post, and feature:
+#
+#   mounts [json]               the json as the value of mounts, or no such line when no json is
+#                               given
+#   init [json]                 the json as the value of initializeCommand, or no such line when
+#                               no json is given
+#
+# A post step writes the json as it stands; it does not add the credentials entry.
+
+pass | devcontainer/check:passed | the mount of the host's .config/gh alone | mounts [ "source=${localEnv:HOME}${localEnv:USERPROFILE}/.config/gh,target=/home/vscode/.config/gh,type=bind" ]
+pass | devcontainer/check:passed | a mount of the host's .config/gh whose options come in another order, under other names | mounts [ "type=bind,dst=/home/vscode/.config/gh,src=${localEnv:HOME}${localEnv:USERPROFILE}/.config/gh" ]
+fail | devcontainer/gh-login:mount | no mount of the host's .config/gh | mounts [ "source=${localEnv:HOME}${localEnv:USERPROFILE}/.claude,target=/home/vscode/.claude,type=bind" ]
+fail | devcontainer/gh-login:mount | no mounts at all | mounts
+fail | devcontainer/gh-login:mount | the host's .config/gh mounted at another target | mounts [ "source=${localEnv:HOME}${localEnv:USERPROFILE}/.config/gh,target=/home/vscode/gh,type=bind" ]
+fail | devcontainer/gh-login:mount | another source mounted at the target | mounts [ "source=/tmp/gh,target=/home/vscode/.config/gh,type=bind" ]
+fail | devcontainer/gh-login:mount | a volume instead of a bind mount | mounts [ "source=${localEnv:HOME}${localEnv:USERPROFILE}/.config/gh,target=/home/vscode/.config/gh,type=volume" ]
+fail | devcontainer/gh-login:mount | a read-only mount, in which gh auth login cannot write | mounts [ "source=${localEnv:HOME}${localEnv:USERPROFILE}/.config/gh,target=/home/vscode/.config/gh,type=bind,readonly" ]
+fail | devcontainer/gh-login:mount | the source and the target in two different mounts | mounts [ "source=${localEnv:HOME}${localEnv:USERPROFILE}/.config/gh,target=/home/vscode/.claude,type=bind", "source=${localEnv:HOME}/.claude,target=/home/vscode/.config/gh,type=bind" ]
+pass | devcontainer/check:passed | an initializeCommand that creates the source unquoted | init "mkdir ${localEnv:HOME}${localEnv:USERPROFILE}/.config/gh || exit 0"
+fail | devcontainer/gh-login:init | no initializeCommand at all | init
+fail | devcontainer/gh-login:init | an initializeCommand that names the source but does not create it | init "ls ${localEnv:HOME}${localEnv:USERPROFILE}/.config/gh || exit 0"
+fail | devcontainer/gh-login:init | an initializeCommand that creates only the parent of the source | init "(mkdir \"${localEnv:HOME}${localEnv:USERPROFILE}/.config\" || cd .) && exit 0"
+fail | devcontainer/gh-login:init | an initializeCommand that creates a longer path than the source | init "(mkdir \"${localEnv:HOME}${localEnv:USERPROFILE}/.config\" || cd .) && (mkdir \"${localEnv:HOME}${localEnv:USERPROFILE}/.config/gh-old\" || cd .) && exit 0"
+fail | devcontainer/gh-login:init | the source created by another command than initializeCommand | init "echo initialized"; extra "postCreateCommand": "mkdir ${localEnv:HOME}${localEnv:USERPROFILE}/.config/gh",
+fail | devcontainer/gh-login:credentials | a postStartCommand without 'gh auth setup-git' | post { "hooks": "git config core.hooksPath .githooks", "merge": "git config merge.ff false && git config pull.ff only", "index": "git config merge.adr-index.driver '.githooks/merge-adr-index %O %A %B %S %X %Y'" }
+fail | devcontainer/gh-login:credentials | 'gh auth setup-git' without '--force', which fails while nobody is logged in | post { "hooks": "git config core.hooksPath .githooks", "merge": "git config merge.ff false && git config pull.ff only", "index": "git config merge.adr-index.driver '.githooks/merge-adr-index %O %A %B %S %X %Y'", "credentials": "gh auth setup-git --hostname github.com" }
+fail | devcontainer/gh-login:credentials | 'gh auth setup-git' in another command than postStartCommand | post { "hooks": "git config core.hooksPath .githooks", "merge": "git config merge.ff false && git config pull.ff only", "index": "git config merge.adr-index.driver '.githooks/merge-adr-index %O %A %B %S %X %Y'" }; extra "postCreateCommand": "gh auth setup-git --hostname github.com --force",

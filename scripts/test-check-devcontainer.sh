@@ -12,13 +12,14 @@
 # no Dev Container or no VS Code settings, and the cases that break one clause of
 # NUC-container-hides-host-daemon each, a socket mount also in a config longer than a pipe holds.
 # Comb's container also keeps its GitHub login (DEV-gh-login-outlives-rebuild): every fixture
-# carries
-# the mount, the initializeCommand, and 'gh auth setup-git --force' of the repository's own, a
-# postStartCommand a case writes gains the last, and the cases after the table break one part each.
-# The table is read twice, the second time against a copy of the check that rewords its messages,
+# carries the mount, the initializeCommand, and 'gh auth setup-git --force' of the repository's own,
+# a postStartCommand a case of the template's table writes gains the last, and the cases of
+# scripts/fixtures/check-devcontainer-gh-login.txt break one part each.
+# Each table is read twice, the second time against a copy of the check that rewords its messages,
 # and the reader of the table is checked on fields of its own.
 #
 # Inputs: scripts/check-devcontainer.sh scripts/lib/ scripts/fixtures/check-devcontainer.txt
+#   scripts/fixtures/check-devcontainer-gh-login.txt
 #
 # Usage:
 #     scripts/test-check-devcontainer.sh
@@ -117,6 +118,7 @@ repo() {
 # --- cases read from the fixture table ----------------------------------------------------
 
 TABLE="$ROOT/scripts/fixtures/check-devcontainer.txt"
+GH_TABLE="$ROOT/scripts/fixtures/check-devcontainer-gh-login.txt"
 
 # with_setup_git <json> — the postStartCommand a case writes, with 'gh auth setup-git --force' of
 # the repository's own added, so that the GitHub login holds where the case breaks something else:
@@ -130,9 +132,10 @@ with_setup_git() {
   esac
 }
 
-# table_cases <prefix> — run each case of the table against $CHECK. The Feature, the extra lines,
-# and the postStartCommand of a case are kept, so that a step that writes devcontainer.json again
-# keeps the changes of the steps before it.
+# table_cases <prefix> <table> <add> — run each case of the table against $CHECK. The Feature, the
+# extra lines, the mounts, the initializeCommand, and the postStartCommand of a case are kept, so
+# that a step that writes devcontainer.json again keeps the changes of the steps before it. A post
+# step gains 'gh auth setup-git --force' where <add> is 1.
 table_cases() {
   local n=0 line want needle name tree s op arg d feature path text pad='<pad ([0-9]+)>'
   local -a extras ids
@@ -142,6 +145,7 @@ table_cases() {
     IFS=$'\x1f' read -r want needle name tree <<< "${line// | /$'\x1f'}"
     d="$(repo "$1-$n")"
     feature="ghcr.io/devcontainers/features/github-cli:1" extras=() post_start="$POST_START"
+    mounts="$MOUNTS" init="$INIT"
     [[ "$tree" != - ]] || tree=""
     while IFS= read -r s; do
       [[ -n "$s" ]] || continue
@@ -152,7 +156,9 @@ table_cases() {
       case "$op" in
         rm) rm -r "${d:?}/$arg" ;;
         extra) extras+=("$arg") ;;
-        post) post_start="$(with_setup_git "$arg")" ;;
+        post) post_start="$arg"; (($3)) && post_start="$(with_setup_git "$arg")" ;;
+        mounts) mounts="$arg" ;;
+        init) init="$arg" ;;
         feature) feature="$arg" ;;
         lock) read -r -a ids <<< "$arg"; lock "$d" "${ids[@]}" ;;
         settings) settings "$d" "$arg" ;;
@@ -161,15 +167,16 @@ table_cases() {
           mkdir -p "$(dirname "$d/$path")" && printf '%s' "${text//\\n/$'\n'}" > "$d/$path" ;;
         *) echo "fixture table: unknown step '$op'" >&2; exit 1 ;;
       esac
-      case "$op" in extra | post | feature) config "$d" "$feature" "${extras[@]}" ;; esac
+      case "$op" in extra | post | feature | mounts | init) config "$d" "$feature" "${extras[@]}" ;; esac
     done <<< "${tree//; /$'\n'}"
-    post_start="$POST_START"
+    post_start="$POST_START" mounts="$MOUNTS" init="$INIT"
     out="$(bash "$CHECK" --root "$d" 2>&1)"
     table_case "$name" "$want" "$needle" "$?" "$out"
-  done < "$TABLE"
-  ((n > 0)) || { echo "FAIL: no case read from $TABLE" >&2; failed=$((failed + 1)); }
+  done < "$2"
+  ((n > 0)) || { echo "FAIL: no case read from $2" >&2; failed=$((failed + 1)); }
 }
-table_cases table
+table_cases table "$TABLE" 1
+table_cases gh-login "$GH_TABLE" 0
 
 # --- the key decides, not the wording ------------------------------------------------------
 
@@ -183,7 +190,8 @@ keyed="$(grep -c '\[devcontainer/' "$CHECK")"
 check "a copy of the check rewords each message with a key" \
   test "$keyed" -gt 0 -a "$keyed" -eq "$(grep -c ' reworded .*\[devcontainer/' "$copy/check-devcontainer.sh")"
 CHECK="$copy/check-devcontainer.sh"
-table_cases reworded
+table_cases reworded "$TABLE" 1
+table_cases reworded-gh-login "$GH_TABLE" 0
 
 # holds and lacks <output> <field>, and refused <field> — what the reader of a table says of a
 # field.
@@ -219,139 +227,6 @@ check "a wording after a key is refused" refused "area/rule-x:why @ does not pin
 check "a rule without a reason word is refused" refused "area/rule-x"
 (table_case "no key" fail - 1 "") 2>/dev/null
 check "a failing case that names no key is refused" test "$?" -eq 2
-
-# The GitHub login (DEV-gh-login-outlives-rebuild).
-
-# expect <pass|fail> <name> <dir> <text> — run the check on the fixture, and hold its exit code to
-# 0 for pass and 1 for fail, and its output to the text, which a case names in its wording.
-expect() {
-  local out rc want=0
-  [[ "$1" == pass ]] || want=1
-  out="$(bash "$ROOT/scripts/check-devcontainer.sh" --root "$3" 2>&1)"; rc=$?
-  [[ $rc -eq $want && "$out" == *"$4"* ]] && rc=0 || rc=1
-  check "$2" test "$rc" -eq 0
-}
-
-d="$(repo gh-mount-only)"
-mounts="[ \"$GH_MOUNT\" ]"
-config "$d" "ghcr.io/devcontainers/features/github-cli:1"
-mounts="$MOUNTS"
-expect pass "the mount of the host's .config/gh alone" "$d" "the GitHub login kept"
-
-d="$(repo gh-mount-reordered)"
-mounts="[ \"type=bind,dst=$GH_TARGET,src=$GH_SOURCE\" ]"
-config "$d" "ghcr.io/devcontainers/features/github-cli:1"
-mounts="$MOUNTS"
-expect pass "a mount of the host's .config/gh whose options come in another order, under other names" "$d" \
-  "the GitHub login kept"
-
-d="$(repo gh-mount-missing)"
-mounts="${MOUNTS/", \"$GH_MOUNT\""/}"
-config "$d" "ghcr.io/devcontainers/features/github-cli:1"
-mounts="$MOUNTS"
-expect fail "no mount of the host's .config/gh" "$d" "mounts does not bind-mount '$GH_SOURCE' at '$GH_TARGET'"
-
-d="$(repo gh-mounts-missing)"
-mounts=""
-config "$d" "ghcr.io/devcontainers/features/github-cli:1"
-mounts="$MOUNTS"
-expect fail "no mounts at all" "$d" "mounts does not bind-mount '$GH_SOURCE'"
-
-d="$(repo gh-mount-other-target)"
-mounts="${MOUNTS/"target=$GH_TARGET"/target=/home/vscode/gh}"
-config "$d" "ghcr.io/devcontainers/features/github-cli:1"
-mounts="$MOUNTS"
-expect fail "the host's .config/gh mounted at another target" "$d" "mounts does not bind-mount '$GH_SOURCE'"
-
-d="$(repo gh-mount-other-source)"
-mounts="${MOUNTS/"source=$GH_SOURCE"/source=/tmp/gh}"
-config "$d" "ghcr.io/devcontainers/features/github-cli:1"
-mounts="$MOUNTS"
-expect fail "another source mounted at the target" "$d" "mounts does not bind-mount '$GH_SOURCE'"
-
-d="$(repo gh-mount-volume)"
-mounts="${MOUNTS/"$GH_MOUNT"/source=$GH_SOURCE,target=$GH_TARGET,type=volume}"
-config "$d" "ghcr.io/devcontainers/features/github-cli:1"
-mounts="$MOUNTS"
-expect fail "a volume instead of a bind mount" "$d" "mounts does not bind-mount '$GH_SOURCE'"
-
-d="$(repo gh-mount-readonly)"
-mounts="${MOUNTS/"$GH_MOUNT"/"$GH_MOUNT,readonly"}"
-config "$d" "ghcr.io/devcontainers/features/github-cli:1"
-mounts="$MOUNTS"
-expect fail "a read-only mount, in which gh auth login cannot write" "$d" \
-  "mounts does not bind-mount '$GH_SOURCE'"
-
-d="$(repo gh-mount-split)"
-# shellcheck disable=SC2016  # the variables are devcontainer.json's, not the shell's
-mounts="[ \"source=$GH_SOURCE,target=/home/vscode/.claude,type=bind\", \"source=\${localEnv:HOME}/.claude,target=$GH_TARGET,type=bind\" ]"
-config "$d" "ghcr.io/devcontainers/features/github-cli:1"
-mounts="$MOUNTS"
-expect fail "the source and the target in two different mounts" "$d" \
-  "mounts does not bind-mount '$GH_SOURCE'"
-
-d="$(repo gh-init-unquoted)"
-init="\"mkdir $GH_SOURCE || exit 0\""
-config "$d" "ghcr.io/devcontainers/features/github-cli:1"
-init="$INIT"
-expect pass "an initializeCommand that creates the source unquoted" "$d" "the GitHub login kept"
-
-d="$(repo gh-init-missing)"
-init=""
-config "$d" "ghcr.io/devcontainers/features/github-cli:1"
-init="$INIT"
-expect fail "no initializeCommand at all" "$d" "initializeCommand does not create '$GH_SOURCE'"
-
-d="$(repo gh-init-no-mkdir)"
-init="\"ls $GH_SOURCE || exit 0\""
-config "$d" "ghcr.io/devcontainers/features/github-cli:1"
-init="$INIT"
-expect fail "an initializeCommand that names the source but does not create it" "$d" \
-  "initializeCommand does not create '$GH_SOURCE'"
-
-d="$(repo gh-init-parent-only)"
-# shellcheck disable=SC2016  # the variables are devcontainer.json's, not the shell's
-init='"(mkdir \"${localEnv:HOME}${localEnv:USERPROFILE}/.config\" || cd .) && exit 0"'
-config "$d" "ghcr.io/devcontainers/features/github-cli:1"
-init="$INIT"
-expect fail "an initializeCommand that creates only the parent of the source" "$d" \
-  "initializeCommand does not create '$GH_SOURCE'"
-
-d="$(repo gh-init-longer-path)"
-init="${INIT/"$GH_SOURCE"/"$GH_SOURCE-old"}"
-config "$d" "ghcr.io/devcontainers/features/github-cli:1"
-init="$INIT"
-expect fail "an initializeCommand that creates a longer path than the source" "$d" \
-  "initializeCommand does not create '$GH_SOURCE'"
-
-d="$(repo gh-init-elsewhere)"
-init='"echo initialized"'
-config "$d" "ghcr.io/devcontainers/features/github-cli:1" \
-  "\"postCreateCommand\": \"mkdir $GH_SOURCE\","
-init="$INIT"
-expect fail "the source created by another command than initializeCommand" "$d" \
-  "initializeCommand does not create '$GH_SOURCE'"
-
-d="$(repo gh-setup-git-missing)"
-post_start="${POST_START/", \"credentials\": \"$SETUP_GIT\""/}"
-config "$d" "ghcr.io/devcontainers/features/github-cli:1"
-post_start="$POST_START"
-expect fail "a postStartCommand without 'gh auth setup-git'" "$d" \
-  "postStartCommand does not run 'gh auth setup-git'"
-
-d="$(repo gh-setup-git-no-force)"
-post_start="${POST_START/"$SETUP_GIT"/"gh auth setup-git --hostname github.com"}"
-config "$d" "ghcr.io/devcontainers/features/github-cli:1"
-post_start="$POST_START"
-expect fail "'gh auth setup-git' without '--force', which fails while nobody is logged in" "$d" \
-  "postStartCommand does not run 'gh auth setup-git' with '--force'"
-
-d="$(repo gh-setup-git-elsewhere)"
-post_start="${POST_START/", \"credentials\": \"$SETUP_GIT\""/}"
-config "$d" "ghcr.io/devcontainers/features/github-cli:1" "\"postCreateCommand\": \"$SETUP_GIT\","
-post_start="$POST_START"
-expect fail "'gh auth setup-git' in another command than postStartCommand" "$d" \
-  "postStartCommand does not run 'gh auth setup-git'"
 
 # --- summary -------------------------------------------------------------------------------
 

@@ -215,7 +215,7 @@ else
     || add_error "$CONFIG: initializeCommand does not create '$GH_SOURCE' — the engine would create the mount's source owned by root (DEV-gh-login-outlives-rebuild) [devcontainer/gh-login:init]"
   # The entry's string is quoted, so the flag must stand between the command and its closing quote.
   [[ "$post" =~ gh\ auth\ setup-git[^\"]*--force ]] \
-    || add_error "$CONFIG: postStartCommand does not run 'gh auth setup-git' with '--force' — git would not take its GitHub credentials from gh, or the start fails while nobody is logged in (DEV-gh-login-outlives-rebuild) [devcontainer/gh-login:setup-git]"
+    || add_error "$CONFIG: postStartCommand does not run 'gh auth setup-git' with '--force' — git would not take its GitHub credentials from gh, or the start fails while nobody is logged in (DEV-gh-login-outlives-rebuild) [devcontainer/gh-login:credentials]"
 fi
 
 # §4 Host side, only in a tree that uses VS Code: the pair has to sit inside the
