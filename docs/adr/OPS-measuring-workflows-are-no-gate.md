@@ -1,6 +1,6 @@
 # OPS-measuring-workflows-are-no-gate: A workflow that measures what the local gate cannot is no gate, and a script a listed one runs counts where that one runs
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-17
 - **Deciders:** Markus Brigl
 - **Applies to:** the `# Not a gate:` and `# On instruction:` lines of `scripts/check-all.sh`, the rule `docs/check-lists` of `scripts/check-docs.sh` and its cases in `scripts/fixtures/check-docs-record.txt`, `.github/workflows/benchmark.yml`, `.github/workflows/mutation.yml`, `.github/workflows/devcontainer.yml`

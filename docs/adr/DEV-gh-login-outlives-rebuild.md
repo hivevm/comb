@@ -1,7 +1,7 @@
 # DEV-gh-login-outlives-rebuild: The Dev Container keeps its GitHub login in the host's `~/.config/gh`
 
-- **Status:** 🟡 proposed
-- **Date:** 2026-11-07
+- **Status:** 🟢 accepted
+- **Date:** 2026-11-17
 - **Deciders:** Markus Brigl
 - **Applies to:** the mounts, `initializeCommand`, and `postStartCommand` of `.devcontainer/devcontainer.json`, `scripts/check-devcontainer.sh`, and `scripts/test-check-devcontainer.sh`
 
