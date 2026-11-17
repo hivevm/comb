@@ -82,17 +82,19 @@ query drew what they move or remove, and query anew at the release, past those f
   level the dragged and the removed nodes' particles, which uploads every particle once each time
   that set grows. A query made anew during a drag hides the dragged nodes' edges and particles in
   what it draws as well, and the moving layer stays.
-- **The moving layer, each render while the query is kept:** the engine meshes every edge at the
-  dragged nodes and every added edge, each once, as the query meshes an edge, in its rectangle, at
-  its level, relative to its origin, within the mesh budget, its edges in slot order; the mesh is
-  made anew when the drag moves or the arrays change, and kept otherwise. At the far level the
-  moving layer draws the dragged nodes' particles and above them the added ones, which hold the
-  newest ranks, in slot order, their ranks' but where an edit reused a slot freed since the query.
-  At the near and the middle level a dragged node's view stays where the kept query bound it,
+- **The dragged nodes' edges:** every edge at a dragged node, and every edge that ends on one of
+  those ([API-edges-dock-nodes-or-edges](API-edges-dock-nodes-or-edges.md)); wherever this ADR
+  names the dragged nodes' edges, it means these.
+- **The moving layer, each render while the query is kept:** the engine meshes every one of the
+  dragged nodes' edges and every added edge, each once, as the query meshes an edge, in its
+  rectangle, at its level, relative to its origin, within the mesh budget, its edges in slot order;
+  the mesh is made anew when the drag moves or the arrays change, and kept otherwise. At the far
+  level the moving layer draws the dragged nodes' particles and above them the added ones, which
+  hold the newest ranks, in slot order, their ranks' but where an edit reused a slot freed since the
+  query. At the near and the middle level a dragged node's view stays where the kept query bound it,
   keeping its place in the order of
-  [ARCH-engine-edits-nested-graph](ARCH-engine-edits-nested-graph.md), and
-  moves to the
-  node's position, and the labels of the dragged nodes' edges move to their points (G-6).
+  [ARCH-engine-edits-nested-graph](ARCH-engine-edits-nested-graph.md), and moves to the node's
+  position, and the labels of the dragged nodes' edges move to their points (G-6).
 - **Layers:** the moving edges directly above `edges`, the moving particles of containers directly
   above the particles of `containers`, and the other moving particles directly above `particles`
   ([REN-virtualized-nested-scene](REN-virtualized-nested-scene.md)); a dragged particle
