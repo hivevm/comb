@@ -8,14 +8,16 @@
 //! the ends of the edges it found are computed only when inspection asks for them.
 //!
 //! The graph is split by concept: `slots` keeps the free slots of a kind, `nodes` and `edges` the
-//! edits of each, `index` the spatial index and the rule that builds it again, `hit` the hit test,
-//! `labels` the edge labels, and `query` what a rectangle meets.
+//! edits of each, `containers` which node each node lies in and the order of containers
+//! (ARCH-engine-edits-nested-graph), `index` the spatial index and the rule that builds it again,
+//! `hit` the hit test, `labels` the edge labels, and `query` what a rectangle meets.
 
 use crate::geometry::{EdgePath, Point, Rect, Sides};
 use crate::shape::NodeShape;
 use crate::spatial::Grid;
 use crate::stroke::EdgeStyle;
 
+mod containers;
 mod edges;
 mod hit;
 mod index;
@@ -29,6 +31,7 @@ mod budget;
 #[cfg(test)]
 mod tests;
 
+pub use containers::{CANVAS, NestError, Nesting};
 pub use hit::Target;
 pub use nodes::PositionError;
 /// The origin of a query, which the tests of `stroke` take theirs from.
@@ -66,6 +69,9 @@ pub enum GraphError {
     EdgeEndOutOfRange { edge: u32 },
     /// More nodes or edges than slots numbered in a `u32`.
     TooManySlots,
+    /// A node lies in no node, in a node that is no container, or in itself or a node it holds
+    /// (ARCH-engine-edits-nested-graph).
+    Nest(NestError),
 }
 
 /// More nodes or edges than slots numbered in a `u32`: the one refusal of a count, of an addition,
@@ -163,6 +169,15 @@ pub struct Graph {
     ranks: Vec<u32>,
     /// The rank the next node added takes, one above the highest given.
     next_rank: u64,
+    /// The slot of the container of each node slot, or `CANVAS`; a slot past its end lies on the
+    /// canvas, so that a graph that names no container keeps none (ARCH-engine-edits-nested-graph).
+    containers: Vec<u32>,
+    /// Whether each node slot is a container; a slot past its end is none.
+    is_container: Vec<bool>,
+    /// The slots each container holds directly, one list per node slot.
+    held: Vec<Vec<u32>>,
+    /// Where each container is drawn and hit among the containers, the higher above the lower.
+    container_order: Vec<u32>,
     /// The node slots in use when the index was last built.
     indexed_nodes: u32,
     /// The edge slots in use when the index was last built.
@@ -215,6 +230,25 @@ impl Graph {
         graph.link();
         graph.place_edges();
         graph.index();
+        Ok(graph)
+    }
+
+    /// `new`, its nodes nested by `nesting` (ARCH-engine-edits-nested-graph): `positions` are the
+    /// world positions, which `Nesting::world` sums along each chain of containers. A nesting
+    /// that `Nesting::check` refuses, or of another count of nodes, refuses the graph.
+    pub fn nested(
+        positions: Vec<f32>,
+        sizes: Vec<f32>,
+        edges: Vec<EdgeSpec>,
+        nesting: Nesting,
+    ) -> Result<Self, GraphError> {
+        let nodes = nesting.containers.len();
+        if nodes * 2 != positions.len() || nesting.is_container.len() != nodes {
+            return Err(GraphError::SlotCountMismatch);
+        }
+        nesting.check().map_err(GraphError::Nest)?;
+        let mut graph = Self::new(positions, sizes, edges)?;
+        graph.nest(nesting);
         Ok(graph)
     }
 

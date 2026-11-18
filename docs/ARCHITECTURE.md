@@ -145,7 +145,12 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   the one function that holds the rule that builds them again, called after every addition and move,
   a removal building nothing, and a rebuild building the grids from the edges as they are placed: a
   load places every edge once, and each edit places the edges it changes; `hit`, `labels`, and
-  `query`; each with its tests, `tests` with the graphs they build and the property tests of the
+  `query`; `containers`, which node each node lies in: a load's `Nesting` checked so that a node
+  lies only in a container and never in itself or a node it holds, the world positions as the sums
+  along each chain of containers, the lists of what each container holds, and the order of the
+  containers, each after its own container and siblings by rank
+  ([ARCH-engine-edits-nested-graph](adr/ARCH-engine-edits-nested-graph.md)); each with its tests,
+  `tests` with the graphs they build and the property tests of the
   whole graph against a scan, and `budget`, the property test of the mesh budget. `add_node` takes
   the free slot freed last, or a new one after the highest, and the next rank, and puts the node
   into the grid in place; a load ranks node `i` as `i`; `add_edge` takes the edge slot freed last,
@@ -154,11 +159,13 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   edges at them, `remove_edges` edge slots, and both take the items out of the grids and the lists
   at the nodes; a free slot holds nothing, no query or hit returns it, a rebuild covers only the
   slots in use, and a call that names one refuses it as it refuses a slot beyond the graph, as a
-  slot that holds nothing (`SlotError`). Its query returns the slots a rectangle meets, node slots
-  in ascending rank, and `hit_at` what a press at a point hits
-  ([REN-node-content-in-rows](adr/REN-node-content-in-rows.md)): the node drawn on top there, the
-  one of the highest rank, else the edge in the highest slot within 4 screen pixels of its path as
-  the stroke of the level flattens it, the parts of the path far from the point as chords; where the
+  slot that holds nothing (`SlotError`). Its query returns the slots a rectangle meets, each node
+  by its own box, the containers in their order and the other node slots in ascending rank, and
+  `hit_at` what a press at a point hits
+  ([REN-node-content-in-rows](adr/REN-node-content-in-rows.md)): the node that is no container
+  drawn on top there, the one of the highest rank, else the edge in the highest slot within 4
+  screen pixels of its path as the stroke of the level flattens it, the parts of the path far from
+  the point as chords, else the last container in their order; where the
   shell asks for connectors, at the near and middle level, a connector within 8 screen pixels, of
   the node of the highest rank, comes before them all. Inside its node's outline a connector reaches
   no further than a quarter of the node's height (top, bottom) or width (right, left), so that the
@@ -207,7 +214,12 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   conversion of a count to slots, which the bridge uses too. Only what the bridge uses is public;
   the rest is private to the crate, so that the `dead_code` lint finds what only tests reach.
 - **Bridge** — `crates/engine-wasm` holds every WebAssembly export: `loadGraph` checks graph data
-  and resolves edge ends to slots, keeps the content of the nodes, gives each node its node shape,
+  and resolves edge ends to slots, takes each node's container as the slot `api` resolved and its
+  mark as a container, refuses a node out of place (`invalidContainer`) once every node is checked
+  and before the edges, and loads the nodes at their world positions, a sum past the world's limit
+  refused as `beyondWorld`
+  ([API-bridge-columns-carry-nesting](adr/API-bridge-columns-carry-nesting.md)),
+  keeps the content of the nodes, gives each node its node shape,
   refusing content in a filled one, and makes each node as high as its node shape needs for its
   content laid out in its inner rectangle in the fonts `setFont` handed over
   ([REN-closed-set-of-node-shapes](adr/REN-closed-set-of-node-shapes.md)), which the sizes buffer
@@ -225,7 +237,8 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   nodes, each as far as keeps it within the world's limit, so that every point the engine derives
   stays within `f32`, `query` takes a rectangle, a level of detail, the size of a screen pixel, at
   most 2^114 world units for a stroke, and how far an edge label's pill reaches from its point, and
-  writes the found node slots, the edge-label slots and points (at the near level only), at the near
+  writes the found containers and the other node slots apart (`visibleContainers…`,
+  `visibleNodes…`), the edge-label slots and points (at the near level only), at the near
   and the middle level where the elements of each found node drawn at the level lie (`drawn_at`),
   and their kinds, roles, and colours (`contentBounds…`, `contentRects…`, `contentKinds…`,
   `contentRoles…`, `contentColors…`), the pieces of each progress bar's bar and their colours
@@ -339,7 +352,10 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   Where the viewport puts a screen point beyond any finite world point, `targetAt` answers nothing
   without asking the engine, and a label drag skips a move to such a point.
 - **Render** (`packages/comb/src/render`) — the PixiJS scene (`scene.ts`), which imports nothing
-  from interaction: a `world` render group with the layers `EdgesContainer` (`edges.ts`),
+  from interaction: a `world` render group with the layers `containers`, a container of the node
+  views and the particles of containers, below the edges
+  ([REN-virtualized-nested-scene](adr/REN-virtualized-nested-scene.md)), `EdgesContainer`
+  (`edges.ts`),
   `NodeParticles` (`particles.ts`), `NodesContainer` (`nodes.ts`), `LabelsContainer` (`labels.ts`),
   and `ConnectorsLayer` (`connectors.ts`), the moving layer of a drag and of edits at the far level,
   `MovingLayer` (`moving.ts`), whose second edges layer stands directly above the edges and whose
@@ -356,14 +372,16 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   draws node views and edge labels, middle (from 0.3) node views alone, and far nodes as particles
   of one `ParticleContainer` (`render/particles.ts`) and edges as lines one pixel wide. A render
   queries the engine for the viewport grown by the culling margin and binds pooled node views and
-  edge-label views to exactly the slots it found, node views and particles in the order of the
-  nodes' ranks, which the query returns, edge labels in slot order; while the viewport stays within
+  edge-label views to exactly the slots it found, node views and particles in the order the query
+  returns them, the containers into `containers` and the other nodes into the nodes and particles
+  layers, edge labels in slot order; while the viewport stays within
   what it last queried, that rectangle within the viewport grown by twice the culling margin, at
   about its scale and the same level of detail, and the graph and the selection are unchanged, a
   render moves the world alone; a drag keeps its query and draws its frames as **How it runs** says.
   The world stands at the screen point of the last query's origin, the edges, labels, and connectors
-  at (0, 0) in it, drawn less the origin, the nodes and particles at minus the origin, so that the
-  GPU sees no far coordinate of edges, labels, and node views. `EdgesContainer` (`render/edges.ts`)
+  at (0, 0) in it, drawn less the origin, the containers, nodes, and particles at minus the origin,
+  so that the GPU sees no far coordinate of edges, labels, and node views. `EdgesContainer`
+  (`render/edges.ts`)
   draws the edge mesh with a shader that leaves out the gaps of dash patterns; on the Canvas 2D
   renderer a host application opts into
   ([REN-webgl2-or-canvas-fallback](adr/REN-webgl2-or-canvas-fallback.md)), which runs no shader,
@@ -423,7 +441,8 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   is drawn, with one render per animation frame scheduled by `api/frames.ts`. `api/scenes.ts` is the
   one way from a `Comb` to its scene and to the hit test its presses ask, for the testing entry.
 - **Testing entry** (`comb/testing`, `packages/comb/src/testing.ts`) — `inspect` returns what the
-  scene draws, each node view's texts with where they lie and what of them is drawn, its icons'
+  scene draws, the world's layers in drawing order, each node with the layer it is drawn in, each
+  node view's texts with where they lie and what of them is drawn, its icons'
   sprites with their rectangles and the names their textures are registered under, its content and
   the text of its first title, which the engine builds when asked (`content`), its node shape
   (`shape`) and the primitives of its outline (`outline`), a rounded rectangle's with its corner

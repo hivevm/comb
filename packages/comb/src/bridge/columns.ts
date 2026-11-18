@@ -71,6 +71,12 @@ export interface NodeColumns {
   readonly y: Float64Array;
   readonly width: Float64Array;
   readonly shape: Uint8Array;
+  /** Per node whether it names a container, 1 or 0, the slot of the node it names, `NO_SLOT`
+   *  where no node has that identifier, and whether it is a container, 1 or 0
+   *  (API-bridge-columns-carry-nesting). */
+  readonly hasContainer: Uint8Array;
+  readonly container: Uint32Array;
+  readonly isContainer: Uint8Array;
   readonly content: ContentColumns;
   readonly refused:
     | {
@@ -88,9 +94,19 @@ export interface NodeColumns {
  *  element is a progress bar, whose segments follow it before its row ends. */
 export interface NodeColumnWriter {
   /** Starts the next node: an identifier that is a string is one, a number that is a number is
-   *  one, a node shape that is a string crosses as its code, and any other value is refused by
-   *  its type, the first of them named. */
-  node(id: unknown, x: unknown, y: unknown, width: unknown, shape: unknown): void;
+   *  one, a node shape that is a string crosses as its code, a container that is a string names
+   *  the node of that identifier, which crosses as its slot once every node is written, a mark as
+   *  a container that is a boolean is one, a container and a mark null or undefined are none, and
+   *  any other value is refused by its type, the first of them named. */
+  node(
+    id: unknown,
+    x: unknown,
+    y: unknown,
+    width: unknown,
+    shape: unknown,
+    container: unknown,
+    isContainer: unknown,
+  ): void;
   /** The node's content is no list: refused by its type, and the node holds no rows. */
   noContent(): void;
   /** The next element of the row: an element's kind and role cross as their codes, its weight as
@@ -259,6 +275,10 @@ function roleCode(role: unknown): RoleCode {
   }
 }
 
+/** The slot a container crosses as where it names no node: past every slot, which the engine
+ *  refuses as naming no node of the graph (API-bridge-columns-carry-nesting). */
+export const NO_SLOT = 0xffff_ffff;
+
 /** Whether `value` stands for a field left out: null or undefined. */
 const absent = (value: unknown) => value === undefined || value === null;
 
@@ -276,6 +296,13 @@ class NodeWriter implements NodeColumnWriter {
   private readonly y: Float64Array;
   private readonly width: Float64Array;
   private readonly shape: ReturnType<typeof codeColumn<NodeShapeCode>>;
+  private readonly hasContainer: Uint8Array;
+  private readonly container: Uint32Array;
+  private readonly isContainer: Uint8Array;
+  /** The identifier of each node as it was handed over, and the identifier each node's container
+   *  names, by the node's index, from which `columns` finds each container's slot. */
+  private readonly named: unknown[] = [];
+  private readonly containers = new Map<number, string>();
   /** The index of the node being written, and whether one is. */
   private at = 0;
   private open = false;
@@ -307,6 +334,9 @@ class NodeWriter implements NodeColumnWriter {
     this.y = new Float64Array(count);
     this.width = new Float64Array(count);
     this.shape = codeColumn(count, SHAPES, NodeShapeCode.Unnamed);
+    this.hasContainer = new Uint8Array(count);
+    this.container = new Uint32Array(count);
+    this.isContainer = new Uint8Array(count);
     this.rowBounds = new Uint32Array(count + 1);
     this.elementBounds = new Uint32Array(count + 1);
     this.kinds = new Uint8Array(count);
@@ -335,20 +365,36 @@ class NodeWriter implements NodeColumnWriter {
     else this.refuse(field);
   }
 
-  node(id: unknown, x: unknown, y: unknown, width: unknown, shape: unknown): void {
+  node(
+    id: unknown,
+    x: unknown,
+    y: unknown,
+    width: unknown,
+    shape: unknown,
+    container: unknown,
+    isContainer: unknown,
+  ): void {
     if (this.open) this.endNode();
     this.open = true;
     if (!this.ids.add(id)) this.refuse(NodeField.Id);
+    this.named.push(id);
     this.number(this.x, x, NodeField.X);
     this.number(this.y, y, NodeField.Y);
     this.number(this.width, width, NodeField.Width);
     if (this.shape.add(this.at, shape)) this.refuse(NodeField.Shape);
+    if (typeof container === "string") {
+      this.hasContainer[this.at] = 1;
+      this.containers.set(this.at, container);
+    } else if (!absent(container)) this.refuse(NodeField.Container);
+    if (isContainer === true) this.isContainer[this.at] = 1;
+    else if (isContainer !== false && !absent(isContainer)) this.refuse(NodeField.IsContainer);
   }
 
   noObject(): void {
     if (this.open) this.endNode();
     this.refuse(NodeField.Item);
     this.ids.add(undefined);
+    this.named.push(undefined);
     // No rows, without a refusal of its own: the node is named as no object already.
     this.endNode();
   }
@@ -496,9 +542,26 @@ class NodeWriter implements NodeColumnWriter {
       y: this.y.subarray(0, this.at),
       width: this.width.subarray(0, this.at),
       shape: this.shape.column(this.at),
+      hasContainer: this.hasContainer.subarray(0, this.at),
+      container: this.containerSlots(),
+      isContainer: this.isContainer.subarray(0, this.at),
       content: this.contentColumns(),
       refused: this.refused,
     };
+  }
+
+  /** The slot of each node's container, found by its identifier among the nodes written, the
+   *  first of an identifier shared, `NO_SLOT` for one no node has; a map of the identifiers only
+   *  where a node names a container, so that a load of none builds none. */
+  private containerSlots(): Uint32Array {
+    const slots = this.container.subarray(0, this.at);
+    if (this.containers.size === 0) return slots;
+    const byId = new Map<string, number>();
+    this.named.forEach((id, slot) => {
+      if (typeof id === "string" && !byId.has(id)) byId.set(id, slot);
+    });
+    for (const [at, id] of this.containers) slots[at] = byId.get(id) ?? NO_SLOT;
+    return slots;
   }
 
   private contentColumns(): ContentColumns {

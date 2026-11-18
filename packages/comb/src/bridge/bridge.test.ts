@@ -3,6 +3,7 @@ import {
   createBridgeSync,
   edgeColumns,
   nodeColumns,
+  NO_SLOT,
   PIECE_BOUND,
   type Bridge,
   type NodeColumnWriter,
@@ -109,8 +110,11 @@ const graph = (nodes: readonly PlainNode[], edges: readonly object[] = [], bound
   for (const n of nodes as readonly unknown[]) {
     if (typeof n !== "object" || n === null) columns.noObject();
     else {
-      const { id, x, y, width, shape, content } = n as Record<string, unknown>;
-      columns.node(id, x, y, width, shape ?? "rectangle");
+      const { id, x, y, width, shape, container, isContainer, content } = n as Record<
+        string,
+        unknown
+      >;
+      columns.node(id, x, y, width, shape ?? "rectangle", container, isContainer);
       writeContent(columns, content);
     }
   }
@@ -412,6 +416,65 @@ const limits = () => ({
 /** The snapshot `api/snapshot.ts` builds of `nodes` and `edges`, and the graph the store keeps. */
 const snapshotted = (nodes: unknown[], edges: unknown[] = []) =>
   snapshotOf(listsOf({ nodes, edges } as never), limits());
+
+describe("bridge columns of nesting", () => {
+  test("a container crosses as the slot its identifier names, before or after its node", () => {
+    // Verifies: API-bridge-columns-carry-nesting
+    // `a` in `c`, which comes after it, `b` in `a`, a container too, and `d` on the canvas.
+    const nodes = [
+      { ...node("a", 10, 20), container: "c", isContainer: true },
+      { ...node("b", 1, 2), container: "a" },
+      { ...node("c", 100, 200), isContainer: true },
+      { ...node("d", 0, 0), container: null, isContainer: false },
+    ];
+    const { snapshot } = snapshotted(nodes);
+    expect([...snapshot.nodes.hasContainer]).toEqual([1, 1, 0, 0]);
+    expect([...snapshot.nodes.container]).toEqual([2, 0, 0, 0]);
+    expect([...snapshot.nodes.isContainer]).toEqual([1, 0, 1, 0]);
+    expect(bridge.loadGraph(snapshot)).toBe(4);
+    expect([...bridge.positions()]).toEqual([110, 220, 111, 222, 100, 200, 0, 0]);
+    // An identifier no node has crosses past every slot, and is refused naming the node.
+    const nowhere = snapshotted([{ ...node("a", 0, 0), container: "x" }]).snapshot;
+    expect([...nowhere.nodes.container]).toEqual([NO_SLOT]);
+    expect(outcome(() => bridge.loadGraph(nowhere))).toStrictEqual({
+      kind: "invalidContainer",
+      node: "a",
+      field: "container",
+      expected: "the identifier of a node of the graph",
+    });
+    // The graph stays as it was.
+    expect([...bridge.positions()]).toEqual([110, 220, 111, 222, 100, 200, 0, 0]);
+  });
+
+  test("a container's identifier counts against no budget of identifiers", () => {
+    // Verifies: ARCH-one-workspace-per-example, API-bridge-columns-carry-nesting
+    // The identifiers of `c` and `a`, 1 and 4 code units; `a` names `c` as its container.
+    const nodes = [
+      { ...node("c", 0, 0), isContainer: true },
+      { ...node("aaaa", 0, 0), container: "c" },
+    ];
+    expect(snapshotted(nodes).idUnits).toBe(5);
+  });
+
+  test("a container that is no string or a mark that is no boolean is refused by its field", () => {
+    // Verifies: API-bridge-columns-carry-nesting
+    for (const [fields, field, expected] of [
+      [{ container: 5 }, "container", "the identifier of a container, or none"],
+      [{ isContainer: "yes" }, "isContainer", "true or false, or none"],
+      [{ isContainer: 1 }, "isContainer", "true or false, or none"],
+    ] as const) {
+      const { snapshot } = snapshotted([node("a", 0, 0), { ...node("b", 0, 0), ...fields }]);
+      expect(outcome(() => bridge.loadGraph(snapshot))).toStrictEqual({
+        kind: "invalidField",
+        list: "nodes",
+        index: 1,
+        id: "b",
+        field,
+        expected,
+      });
+    }
+  });
+});
 
 describe("bridge columns of a load", () => {
   test("identifiers cut inside a surrogate pair side by side are refused for their length", () => {
@@ -1207,7 +1270,8 @@ describe("bridge columns that do not fit", () => {
   test("a refused field of a code no field has is refused as malformed, and the engine keeps working", () => {
     // Verifies: API-bridge-takes-serde-and-columns
     const { nodes, edges } = graph(two());
-    for (const field of [8, 255, 2 ** 32 - 1]) {
+    // Past the last field, `segment`, and far past it.
+    for (const field of [NodeField.Segment + 1, 255, 2 ** 32 - 1]) {
       const refused = { index: 0, field: field as NodeField };
       expect(
         outcome(() => bridge.loadGraph({ nodes: { ...nodes, refused }, edges } as never)),

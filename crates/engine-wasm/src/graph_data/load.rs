@@ -2,7 +2,8 @@
 //! node checked as a load checks one and added to it.
 
 use comb_engine::content::Fonts;
-use comb_engine::graph::Graph;
+use comb_engine::geometry::WORLD_LIMIT;
+use comb_engine::graph::{CANVAS, Graph, NestError, Nesting};
 use comb_engine::shape::NodeShape;
 
 use super::checks::{
@@ -10,11 +11,12 @@ use super::checks::{
     within_by_height,
 };
 use super::item::{Batch, node_of};
+use super::problem::{A_MARKED_CONTAINER, A_NODE_OF_THE_GRAPH, NOT_IN_ITSELF};
 #[cfg(test)]
 use super::snapshot::{EdgeCells, GraphBatch, OwnedColumns, OwnedEdgeColumns};
 use super::{
-    Checked, ContentData, EdgeColumns, GraphDataProblem, NodeColumns, NodeInput, check_graph_size,
-    lengths, text_spans,
+    Checked, ContentData, EdgeColumns, GraphDataProblem, GraphList, NodeColumns, NodeInput,
+    check_graph_size, lengths, text_spans,
 };
 
 /// A load the bridge accepted: the engine's graph, where each text of its content lies in its
@@ -47,11 +49,13 @@ pub(crate) fn load_of(
         edges: edges.edges()?,
     };
     let content = &nodes.content;
-    let nodes = nodes_of(&batch, content, fonts)?;
+    let nesting = nodes.nesting(count);
+    let mut nodes = nodes_of(&batch, content, fonts)?;
+    nodes.positions = world_of(&batch, &nesting, &nodes.positions, &nodes.sizes)?;
     let spans = text_spans(content.texts, content.text_bounds)?;
     let name_spans = text_spans(content.names, content.name_bounds)?;
     let edges = edges_of(&batch, &nodes.slots)?;
-    let mut graph = Graph::new(nodes.positions, nodes.sizes, edges)?;
+    let mut graph = Graph::nested(nodes.positions, nodes.sizes, edges, nesting)?;
     for (slot, &shape) in (0..).zip(&nodes.shapes) {
         if shape != NodeShape::Rectangle {
             // A slot of a node just built, which no node shape refuses.
@@ -64,6 +68,67 @@ pub(crate) fn load_of(
         name_spans,
         units: nodes.units,
     })
+}
+
+/// The world positions of the nodes of `batch` at `relative`, `x, y` per node, each relative to its
+/// container by `nesting`, of `sizes`, `width, height` per node: the sums along each chain of
+/// containers (ARCH-engine-edits-nested-graph), checked once every node is, before the edges. A
+/// node that lies in no node of the batch, in a node that is no container, or in itself or a node
+/// it holds, is refused as `invalidContainer`, the first in slot order; a world position whose far
+/// side lies past the world's limit as `beyondWorld`, its field the one of a node's own position.
+fn world_of(
+    batch: &Batch,
+    nesting: &Nesting,
+    relative: &[f32],
+    sizes: &[f32],
+) -> Result<Vec<f32>, GraphDataProblem> {
+    if nesting.containers.iter().all(|&c| c == CANVAS) {
+        return Ok(relative.to_vec());
+    }
+    nesting.check().map_err(|error| {
+        let (node, expected) = match error {
+            NestError::NoNode { node } => (node, A_NODE_OF_THE_GRAPH),
+            NestError::NotAContainer { node } => (node, A_MARKED_CONTAINER),
+            NestError::InItself { node } => (node, NOT_IN_ITSELF),
+        };
+        GraphDataProblem::InvalidContainer {
+            node: batch.nodes[node as usize].id.to_owned(),
+            field: "container".to_owned(),
+            expected: expected.to_owned(),
+        }
+    })?;
+    let world = nesting.world(relative);
+    let mut positions = Vec::with_capacity(world.len());
+    for (index, node) in batch.nodes.iter().enumerate() {
+        // Narrowed first and checked as the engine keeps it: a sum past `f32` is infinite.
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "checked against the world's limit as f32 below, so that what f32 cannot \
+                      hold is refused"
+        )]
+        let [x, y] = [world[index * 2], world[index * 2 + 1]].map(|v| v as f32);
+        let [width, height] = [sizes[index * 2], sizes[index * 2 + 1]];
+        let beyond = [
+            ("x", x, 0.0),
+            ("y", y, 0.0),
+            ("width", x, width),
+            ("height", y, height),
+        ]
+        .into_iter()
+        .find(|&(_, at, size)| {
+            !at.is_finite() || (f64::from(at) + f64::from(size)).abs() > WORLD_LIMIT
+        });
+        if let Some((field, ..)) = beyond {
+            return Err(GraphDataProblem::BeyondWorld {
+                list: GraphList::Nodes,
+                id: node.id.to_owned(),
+                field: field.to_owned(),
+                limit: WORLD_LIMIT,
+            });
+        }
+        positions.extend([x, y]);
+    }
+    Ok(positions)
 }
 
 /// Checks the content of one node, as a load checks a node's, named `id`, of node shape `shape`
@@ -519,5 +584,173 @@ mod tests {
         // `addNode`, as serde reads a name of none.
         let node = added(0.0, 0.0, |n| n.shape = Field(None));
         assert_eq!(add(&mut Graph::default(), &node), Err(shape(0, "n")));
+    }
+}
+
+/// The tests of a load's nesting (API-bridge-columns-carry-nesting,
+/// ARCH-engine-edits-nested-graph).
+#[cfg(test)]
+mod nesting_tests {
+    use super::super::node_columns::Refused;
+    use super::super::problem::{A_FLAG, AN_ID_OR_NONE};
+    use super::super::tests::{batch, beyond, load_columns, load_into};
+    use super::super::{Field, NodeField, OwnedColumns, OwnedEdgeColumns};
+    use super::*;
+
+    /// Container `c` at (100, 200), and nodes `a` and `b` at (10, 20) and (300, 20), nested by
+    /// `containers` and `marks`, with an edge from `a` to `b`.
+    fn three(containers: &[Option<u32>], marks: &[bool]) -> (OwnedColumns, OwnedEdgeColumns) {
+        let data = batch(
+            &[("c", 100.0, 200.0), ("a", 10.0, 20.0), ("b", 300.0, 20.0)],
+            &[("e", "a", "b")],
+        );
+        let edges: Vec<_> = data.edges.iter().map(EdgeCells::from).collect();
+        let nodes = OwnedColumns::of(data.nodes.iter().map(Some)).nested(containers, marks);
+        (nodes, OwnedEdgeColumns::of(edges.iter().map(Some)))
+    }
+
+    fn invalid(node: &str, expected: &str) -> GraphDataProblem {
+        GraphDataProblem::InvalidContainer {
+            node: node.to_owned(),
+            field: "container".to_owned(),
+            expected: expected.to_owned(),
+        }
+    }
+
+    #[test]
+    fn a_container_s_nodes_load_at_the_sums_of_their_positions_and_its() {
+        // Verifies: API-bridge-columns-carry-nesting, ARCH-engine-edits-nested-graph
+        let (nodes, _) = three(&[None, Some(0), Some(0)], &[true, false, false]);
+        let graph = load_columns(&nodes).unwrap();
+        assert_eq!(
+            graph.positions(),
+            [100.0, 200.0, 110.0, 220.0, 400.0, 220.0]
+        );
+        assert!(graph.is_container(0) && !graph.is_container(1));
+    }
+
+    #[test]
+    fn a_container_that_names_no_node_no_container_the_node_or_one_it_holds_is_refused() {
+        // Verifies: API-bridge-columns-carry-nesting, ARCH-engine-edits-nested-graph
+        let cases = [
+            // Past the slots, as the snapshot writes an identifier that names no node.
+            (
+                [None, Some(u32::MAX), None],
+                [true, false, false],
+                invalid("a", A_NODE_OF_THE_GRAPH),
+            ),
+            (
+                [None, Some(3), None],
+                [true, false, false],
+                invalid("a", A_NODE_OF_THE_GRAPH),
+            ),
+            (
+                [None, Some(2), None],
+                [true, false, false],
+                invalid("a", A_MARKED_CONTAINER),
+            ),
+            (
+                [Some(0), None, None],
+                [true, false, false],
+                invalid("c", NOT_IN_ITSELF),
+            ),
+            (
+                [Some(1), Some(0), None],
+                [true, true, false],
+                invalid("c", NOT_IN_ITSELF),
+            ),
+        ];
+        for (containers, marks, problem) in cases {
+            let (nodes, edges) = three(&containers, &marks);
+            let mut engine = crate::Engine::new();
+            let (loaded, loaded_edges) = three(&[None, None, None], &[false; 3]);
+            load_into(&mut engine, &loaded, &loaded_edges).unwrap();
+            assert_eq!(
+                load_into(&mut engine, &nodes, &edges),
+                Err(problem),
+                "{containers:?}"
+            );
+            // The graph stays as it was.
+            assert_eq!(
+                engine.graph.positions(),
+                [100.0, 200.0, 10.0, 20.0, 300.0, 20.0]
+            );
+            assert!(!engine.graph.is_container(0));
+        }
+    }
+
+    #[test]
+    fn a_nesting_refused_comes_after_every_node_s_checks_and_before_the_edges() {
+        // Verifies: API-bridge-columns-carry-nesting
+        // A node after the nested one with a width that is negative, and an edge to no node.
+        let mut data = batch(
+            &[("c", 0.0, 0.0), ("a", 0.0, 0.0), ("b", 0.0, 0.0)],
+            &[("e", "a", "nowhere")],
+        );
+        let edges: Vec<_> = data.edges.iter().map(EdgeCells::from).collect();
+        let edges = OwnedEdgeColumns::of(edges.iter().map(Some));
+        let fonts = Fonts::default();
+        let nest = |data: &GraphBatch| {
+            OwnedColumns::of(data.nodes.iter().map(Some))
+                .nested(&[None, Some(2), None], &[true, false, false])
+        };
+        let nodes = nest(&data);
+        let refused = load_of(&nodes.view(), &edges.view(), &fonts).err();
+        assert_eq!(refused, Some(invalid("a", A_MARKED_CONTAINER)));
+        data.nodes[2].width = Field(Some(-1.0));
+        let nodes = nest(&data);
+        let refused = load_of(&nodes.view(), &edges.view(), &fonts).err();
+        assert_eq!(
+            refused,
+            Some(GraphDataProblem::InvalidSize { node: "b".into() })
+        );
+    }
+
+    #[test]
+    fn a_container_or_a_mark_of_another_type_is_refused_by_its_field_in_the_first_pass() {
+        // Verifies: API-bridge-columns-carry-nesting
+        for (field, name, expected) in [
+            (NodeField::Container, "container", AN_ID_OR_NONE),
+            (NodeField::IsContainer, "isContainer", A_FLAG),
+        ] {
+            let (mut nodes, _) = three(&[None; 3], &[false; 3]);
+            nodes.refused = Some(Refused {
+                index: 1,
+                field,
+                row: None,
+                column: None,
+            });
+            assert_eq!(
+                load_columns(&nodes).err(),
+                Some(GraphDataProblem::InvalidField {
+                    list: GraphList::Nodes,
+                    index: 1,
+                    id: Some("a".into()),
+                    field: name.into(),
+                    expected: expected.into(),
+                })
+            );
+        }
+        // A mark or a presence byte past 1 does not fit the columns.
+        let (mut nodes, _) = three(&[None; 3], &[false; 3]);
+        nodes.is_container[2] = 2;
+        assert!(matches!(
+            load_columns(&nodes),
+            Err(GraphDataProblem::Malformed { .. })
+        ));
+    }
+
+    #[test]
+    fn a_world_position_past_the_world_s_limit_is_refused_by_the_field_it_passes_by() {
+        // Verifies: API-bridge-columns-carry-nesting, Q-7
+        // Each position within the limit, their sum past it.
+        let far = WORLD_LIMIT * 0.75;
+        let data = batch(&[("c", far, 0.0), ("a", far, 0.0)], &[]);
+        let nodes =
+            OwnedColumns::of(data.nodes.iter().map(Some)).nested(&[None, Some(0)], &[true, false]);
+        assert_eq!(
+            load_columns(&nodes).err(),
+            Some(beyond(GraphList::Nodes, "a", "x"))
+        );
     }
 }

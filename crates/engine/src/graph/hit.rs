@@ -1,5 +1,6 @@
 //! The hit test (REN-node-content-in-rows): what a press at a point hits, a connector before an
-//! edge label, a node, and an edge.
+//! edge label, a node that is no container, an edge, and a container
+//! (ARCH-engine-edits-nested-graph).
 
 use super::{Graph, Level};
 use crate::geometry::{Point, Rect, Side, bounded_pixel, length};
@@ -33,10 +34,11 @@ impl Graph {
     /// `connectors` asks for them, at the near and middle level, a connector within
     /// `CONNECTOR_REACH` screen pixels, and inside its node's outline within a quarter of the
     /// node's extent as well (`connector_at`), of the node of the highest rank; else at the near
-    /// level a label whose measured pill holds it, of the highest edge slot; else a node whose
-    /// outline holds it, the one of the highest rank; else an edge within `EDGE_REACH` screen
-    /// pixels of its path as the stroke of `level` flattens it, the one in the highest slot; else
-    /// nothing (REN-node-content-in-rows).
+    /// level a label whose measured pill holds it, of the highest edge slot; else a node that is
+    /// no container whose outline holds it, the one of the highest rank; else an edge within
+    /// `EDGE_REACH` screen pixels of its path as the stroke of `level` flattens it, the one in the
+    /// highest slot; else a container whose outline holds it, the last in the order of containers;
+    /// else nothing (REN-node-content-in-rows, ARCH-engine-edits-nested-graph).
     /// A pixel beyond any zoom hits as the largest a query strokes for.
     pub fn hit_at(
         &mut self,
@@ -57,7 +59,10 @@ impl Graph {
         {
             return Some(Target::Label(slot));
         }
-        if let Some(slot) = self.node_at(point) {
+        // A node that is no container lies above the edges, a container below them
+        // (ARCH-engine-edits-nested-graph).
+        let node = self.node_at(point);
+        if let Some(slot) = node.filter(|&s| !self.is_container(s)) {
             return Some(Target::Node(slot));
         }
         let reach = EDGE_REACH * pixel;
@@ -72,7 +77,7 @@ impl Graph {
                 && near_path(&self.paths[i], tolerance, point, reach, &mut self.points)
         });
         self.scratch = candidates;
-        found.map(Target::Edge)
+        found.map(Target::Edge).or(node.map(Target::Node))
     }
 
     /// The label whose measured pill holds `point`, of the edge in the highest slot
@@ -134,9 +139,8 @@ impl Graph {
                 })
                 .min_by(|a, b| a.1.total_cmp(&b.1));
             if let Some((side, d)) = near {
-                let above = best.is_none_or(|(other, _, _)| {
-                    self.ranks[slot as usize] > self.ranks[other as usize]
-                });
+                let above =
+                    best.is_none_or(|(other, _, _)| self.draw_key(slot) > self.draw_key(other));
                 if above {
                     best = Some((slot, side, d));
                 }
@@ -145,9 +149,9 @@ impl Graph {
         best.map(|(slot, side, _)| (slot, side))
     }
 
-    /// The node at `point`: of the nodes whose outline holds it, the one drawn on top, which is
-    /// the one of the highest rank (ARCH-engine-edits-graph-in-place,
-    /// REN-closed-set-of-node-shapes).
+    /// The node at `point`: of the nodes whose outline holds it, the one drawn on top, a node
+    /// that is no container before every container, the others by rank and containers by their
+    /// order (ARCH-engine-edits-nested-graph, REN-closed-set-of-node-shapes).
     pub(super) fn node_at(&mut self, point: Point) -> Option<u32> {
         self.node_grid
             .candidates(&Rect::at(point), &mut self.scratch);
@@ -155,7 +159,7 @@ impl Graph {
             .iter()
             .copied()
             .filter(|&slot| self.within_outline(slot, point))
-            .max_by_key(|&slot| self.ranks[slot as usize])
+            .max_by_key(|&slot| self.draw_key(slot))
     }
 }
 

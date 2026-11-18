@@ -157,6 +157,15 @@ pub enum GraphDataProblem {
     /// graph holds already.
     #[serde(rename_all = "camelCase")]
     DuplicateNode { node: String },
+    /// The node `node` lies, by its field `field`, in no node of the graph, in a node that is no
+    /// container, or in itself or a node it holds (ARCH-engine-edits-nested-graph,
+    /// API-edits-report-nested-changes); `expected` says in words what the field holds.
+    #[serde(rename_all = "camelCase")]
+    InvalidContainer {
+        node: String,
+        field: String,
+        expected: String,
+    },
     /// Two edges share an identifier.
     #[serde(rename_all = "camelCase")]
     DuplicateEdge { edge: String },
@@ -236,6 +245,9 @@ impl From<GraphError> for GraphDataProblem {
             GraphError::SlotCountMismatch => "the positions and sizes do not match the nodes",
             GraphError::EdgeEndOutOfRange { .. } => "an edge ends at a node beyond the graph",
             GraphError::TooManySlots => "the graph holds more items than the engine can number",
+            GraphError::Nest(_) => {
+                "a node lies in a missing node, a non-container, or itself or its content"
+            }
         })
     }
 }
@@ -267,6 +279,16 @@ pub(super) const A_CONTENT: &str = "a list of rows";
 pub(super) const A_ROW: &str = "a list of elements";
 pub(super) const AN_ELEMENT: &str = "an object";
 pub(super) const A_SEGMENT_LIST: &str = "a list of segments";
+
+/// What a node's container and its mark as a container expect, as `invalidField` says it
+/// (API-bridge-columns-carry-nesting).
+pub(super) const AN_ID_OR_NONE: &str = "the identifier of a container, or none";
+pub(super) const A_FLAG: &str = "true or false, or none";
+/// What a node's container is refused for, as `invalidContainer` says it
+/// (ARCH-engine-edits-nested-graph).
+pub(super) const A_NODE_OF_THE_GRAPH: &str = "the identifier of a node of the graph";
+pub(super) const A_MARKED_CONTAINER: &str = "the identifier of a node marked isContainer";
+pub(super) const NOT_IN_ITSELF: &str = "a container that is neither the node nor one it holds";
 
 /// What an identifier, a source, or a target expects, by `MAX_ID`.
 pub(super) const AN_ID: &str = "a well-formed string of at most 256 code units";

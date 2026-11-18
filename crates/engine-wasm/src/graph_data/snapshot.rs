@@ -109,6 +109,9 @@ pub(crate) struct OwnedColumns {
     pub(super) y: Vec<f64>,
     pub(super) width: Vec<f64>,
     pub(super) shape: Vec<u8>,
+    pub(super) has_container: Vec<u8>,
+    pub(super) container: Vec<u32>,
+    pub(super) is_container: Vec<u8>,
     pub(crate) content: ContentData,
     pub(crate) refused: Option<Refused>,
 }
@@ -161,6 +164,7 @@ impl OwnedColumns {
                     numbers.push(f64::NAN);
                 }
                 columns.shape.push(NodeShapeCode::Rectangle as u8);
+                columns.on_canvas();
                 columns.content.end_node();
                 continue;
             };
@@ -194,6 +198,7 @@ impl OwnedColumns {
                     .map_or(NodeShapeCode::Unnamed as u8, |code| code as u8)
             });
             columns.shape.push(shape);
+            columns.on_canvas();
             columns.push_content(index, node.content.0.as_ref(), &mut texts, &mut names);
             columns.content.end_node();
         }
@@ -201,6 +206,23 @@ impl OwnedColumns {
         columns.content.texts = pieces_of(&texts, bound);
         columns.content.names = pieces_of(&names, bound);
         columns
+    }
+
+    /// Writes the nesting of the next node: on the canvas, no container.
+    fn on_canvas(&mut self) {
+        self.has_container.push(0);
+        self.container.push(0);
+        self.is_container.push(0);
+    }
+
+    /// The columns with the nesting `containers`, per node the slot it names or none, and `marks`,
+    /// per node whether it is a container, as the snapshot writes them
+    /// (API-bridge-columns-carry-nesting).
+    pub(crate) fn nested(mut self, containers: &[Option<u32>], marks: &[bool]) -> Self {
+        self.has_container = containers.iter().map(|c| u8::from(c.is_some())).collect();
+        self.container = containers.iter().map(|c| c.unwrap_or(0)).collect();
+        self.is_container = marks.iter().map(|&m| u8::from(m)).collect();
+        self
     }
 
     /// Writes the content of the node at `index`, none where it is no list, and names the first
@@ -246,6 +268,9 @@ impl OwnedColumns {
             y: &self.y,
             width: &self.width,
             shape: &self.shape,
+            has_container: &self.has_container,
+            container: &self.container,
+            is_container: &self.is_container,
             content: self.content.view(),
             refused: self.refused,
         }

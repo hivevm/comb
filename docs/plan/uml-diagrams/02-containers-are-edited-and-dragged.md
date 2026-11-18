@@ -9,6 +9,11 @@ layer moves everything it holds and the edges at them in each frame, and the con
 stays in `containers` below the edges at the far level. A move of a container moves the world
 positions of what it holds in the same call.
 
+Until then, as ticket 01 left it: `removeNodes` of a container removes the container alone and
+leaves what it held on the canvas at its world position, untested; `addNode` ignores `container`
+and `isContainer`; and a drag of a container moves its own box alone. This ticket replaces all
+three.
+
 ## Acceptance criteria
 
 - [ ] Given a container holding nodes and an edge, when the host calls `removeNodes` with the

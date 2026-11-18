@@ -67,6 +67,11 @@ interface Reader {
   number(value: unknown): unknown;
   text(value: unknown): unknown;
   id(value: unknown): unknown;
+  /** An identifier a node names its container by, cut as `id` cuts one but not counted against
+   *  the budget of identifiers, which counts a node's and an edge's own and their ends alone
+   *  (ARCH-one-workspace-per-example): one past the limit names no node the bridge accepts, and is
+   *  refused as naming no node of the graph. */
+  reference(value: unknown): unknown;
   content(value: unknown): unknown;
   /** The most code units of a text. */
   textLimit: number;
@@ -103,6 +108,8 @@ function readerOf(limits: Limits): Reader {
       if (id !== false) reader.idUnits += id.length;
       return id;
     },
+    reference: (value) =>
+      typeof value === "string" ? cut(value, limits.id) : absent(value) ? value : false,
     content: (value) => plainContentOf(reader, value, limits),
     textLimit: limits.text,
     idUnits: 0,
@@ -397,13 +404,15 @@ function nodeOf(read: Reader, node: Fields) {
  *  its columns, and returns what the store keeps of it: its identifier, its width, and its node
  *  shape, no copy of its content (REN-node-content-in-rows). */
 function written(read: Reader, node: Fields, columns: NodeColumnWriter, limits: Limits) {
-  const { id, x, y, width, shape, content } = node;
+  const { id, x, y, width, shape, container, isContainer, content } = node;
   const kept: { id: unknown; width: unknown; shape: unknown } = {
     id: read.id(id),
     width: read.number(width),
     shape: read.text(shape) ?? NODE_SHAPE,
   };
-  columns.node(kept.id, read.number(x), read.number(y), kept.width, kept.shape);
+  const [left, top, inside] = [read.number(x), read.number(y), read.reference(container)];
+  // The mark is handed over as given; the writer looks at it by equality with `true` and `false`.
+  columns.node(kept.id, left, top, kept.width, kept.shape, inside, isContainer);
   walkContent(read, content, columnSink(read, columns, limits, kept.id), limits);
   return kept;
 }

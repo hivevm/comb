@@ -715,7 +715,9 @@ export class NodesContainer extends Container {
 
   /** Binds a view to each of `slots`, the nodes a query found, at their places in `positions` and
    *  of their sizes in `sizes`, their content as the query placed it in `placed`, the elements
-   *  drawn at its level alone, their icons of `icons`. */
+   *  drawn at its level alone, their icons of `icons`; the content of the node at `i` of `slots`
+   *  lies at `first + i` of `placed`, which holds the containers' content before the other
+   *  nodes' (ARCH-engine-edits-nested-graph). */
   sync(
     state: GraphView,
     slots: Uint32Array,
@@ -723,6 +725,7 @@ export class NodesContainer extends Container {
     sizes: Float32Array,
     placed: Placed,
     icons: Icons,
+    first = 0,
   ): void {
     const selected = state.selection?.kind === "node" ? state.selection.id : null;
     this.views.begin();
@@ -730,7 +733,7 @@ export class NodesContainer extends Container {
       const node = state.nodes[slot];
       if (!node) return;
       const view = this.views.bind(slot);
-      const [start, end] = [placed.bounds[i]!, placed.bounds[i + 1]!];
+      const [start, end] = [placed.bounds[first + i]!, placed.bounds[first + i + 1]!];
       const height = sizes[slot * 2 + 1]!;
       view.bind(node, node.id === selected, height, placed, start, end, icons);
       view.position.set(positions[slot * 2], positions[slot * 2 + 1]);

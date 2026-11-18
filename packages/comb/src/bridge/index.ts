@@ -63,6 +63,7 @@ export type {
 export {
   edgeColumns,
   KIND_NAMES,
+  NO_SLOT,
   nodeColumns,
   PIECE_BOUND,
   ROLE_NAMES,
@@ -173,7 +174,8 @@ export interface Placed {
   badgePadding: { x: number; y: number };
 }
 
-/** What a viewport query found: node slots in ascending order, the edge slots it found in
+/** What a viewport query found: the containers in the order they are drawn and the other node
+ *  slots by rank (ARCH-engine-edits-nested-graph), the edge slots it found in
  *  ascending order and the first of each one's vertex indices in the mesh, the edge slot and point
  *  of each found edge label, the mesh of the found edges and its detail, where the found nodes'
  *  content lies, and the positions and sizes buffers, all read after the same call. The label
@@ -184,7 +186,9 @@ export interface Placed {
 export interface Visible {
   positions: Float32Array;
   sizes: Float32Array;
+  containers: Uint32Array;
   nodes: Uint32Array;
+  /** Where the content of each node found lies, the containers' first, then the other nodes'. */
   content: Placed;
   edges: Uint32Array;
   edgeStarts: Uint32Array;
@@ -539,7 +543,8 @@ function wrap(exports: InitOutput): Bridge {
 
 /** The columns of a load's nodes, as `loadGraph` takes them before the first value refused. */
 function nodeValues(nodes: NodeColumns) {
-  const { ids, idBounds, x, y, width, shape, content: c } = nodes;
+  const { ids, idBounds, x, y, width, shape, hasContainer, container, isContainer } = nodes;
+  const c = nodes.content;
   return [
     ids,
     idBounds,
@@ -547,6 +552,9 @@ function nodeValues(nodes: NodeColumns) {
     y,
     width,
     shape,
+    hasContainer,
+    container,
+    isContainer,
     c.rowBounds,
     c.elementBounds,
     c.kinds,
@@ -627,6 +635,7 @@ function queried(
   return {
     positions: f32(engine.positionsPtr(), engine.positionsLen()),
     sizes: f32(engine.sizesPtr(), engine.sizesLen()),
+    containers: u32(engine.visibleContainersPtr(), engine.visibleContainersLen()),
     nodes: u32(engine.visibleNodesPtr(), engine.visibleNodesLen()),
     content: {
       bounds: u32(engine.contentBoundsPtr(), engine.contentBoundsLen()),

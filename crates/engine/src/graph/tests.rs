@@ -577,3 +577,315 @@ fn a_slot_that_holds_nothing_refuses_a_removal_and_a_move_which_change_nothing()
     assert!(ends.iter().all(|v| v.is_nan()));
     assert!(removed.iter().all(|&e| !graph.holds_edge(e)));
 }
+
+/// A random tree of containers over `count` nodes: per node its container, or `CANVAS`, and
+/// whether it is a container, each node in a container made before it in a random order of making,
+/// so that a container may lie in a slot after what it holds; and the positions, each relative to
+/// its container, and the sizes, a container's larger.
+fn random_tree(rng: &mut Lcg, count: usize) -> (Nesting, Vec<f32>, Vec<f32>) {
+    let mut made: Vec<usize> = (0..count).collect();
+    for i in (1..count).rev() {
+        made.swap(i, rng.below(i + 1) as usize);
+    }
+    let mut nesting = Nesting::on_canvas(count);
+    let mut positions = vec![0.0; count * 2];
+    let mut sizes = vec![0.0; count * 2];
+    let mut containers_made = Vec::new();
+    for &node in &made {
+        let container = rng.next() < 0.35;
+        nesting.is_container[node] = container;
+        if !containers_made.is_empty() && rng.next() < 0.75 {
+            let c = containers_made[rng.below(containers_made.len()) as usize];
+            nesting.containers[node] = c as u32;
+            positions[node * 2] = rng.range(-150.0, 600.0) as f32;
+            positions[node * 2 + 1] = rng.range(-150.0, 400.0) as f32;
+        } else {
+            positions[node * 2] = rng.range(-2000.0, 2000.0) as f32;
+            positions[node * 2 + 1] = rng.range(-2000.0, 2000.0) as f32;
+        }
+        let scale = if container { 4.0 } else { 1.0 };
+        sizes[node * 2] = (rng.range(10.0, 200.0) * scale) as f32;
+        sizes[node * 2 + 1] = (rng.range(10.0, 100.0) * scale) as f32;
+        if container {
+            containers_made.push(node);
+        }
+    }
+    (nesting, positions, sizes)
+}
+
+/// The world positions of a nesting by walking up each node's chain to the canvas, from the
+/// inputs alone, and the depth of each node.
+fn summed(containers: &[u32], relative: &[f32]) -> (Vec<f32>, Vec<u32>) {
+    let count = containers.len();
+    let mut world = Vec::with_capacity(count * 2);
+    let mut depths = Vec::with_capacity(count);
+    for node in 0..count {
+        let (mut x, mut y, mut depth) = (0.0_f64, 0.0_f64, 0);
+        let mut at = node;
+        loop {
+            x += f64::from(relative[at * 2]);
+            y += f64::from(relative[at * 2 + 1]);
+            if containers[at] == CANVAS {
+                break;
+            }
+            at = containers[at] as usize;
+            depth += 1;
+        }
+        world.extend([x as f32, y as f32]);
+        depths.push(depth);
+    }
+    (world, depths)
+}
+
+/// The containers of a nesting in the order they are drawn, from the inputs alone: each after its
+/// own container, containers in one container or on the canvas by slot, which a load ranks by,
+/// each followed by what it contains (ARCH-engine-edits-nested-graph).
+fn drawn_containers(nesting: &Nesting) -> Vec<u32> {
+    fn visit(nesting: &Nesting, parent: u32, out: &mut Vec<u32>) {
+        for (slot, (&container, &mark)) in nesting
+            .containers
+            .iter()
+            .zip(&nesting.is_container)
+            .enumerate()
+        {
+            if mark && container == parent {
+                out.push(slot as u32);
+                visit(nesting, slot as u32, out);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    visit(nesting, CANVAS, &mut out);
+    out
+}
+
+#[test]
+fn in_random_trees_of_containers_world_positions_are_sums_and_queries_and_hits_match_a_scan() {
+    // Verifies: ARCH-engine-edits-nested-graph, REN-virtualized-nested-scene
+    // Per clause, the cases it settles: a hit on a node that is no container, a hit on a container
+    // where no other node lies, a query that finds containers in an order other than their slots',
+    // and a node at a depth of three or more.
+    let (mut node_hits, mut container_hits, mut reordered, mut deep) = (0, 0, 0, 0);
+    for seed in 1..=40 {
+        let mut rng = Lcg(seed);
+        let count = 80;
+        let (nesting, relative, sizes) = random_tree(&mut rng, count);
+        let (world, depths) = summed(&nesting.containers, &relative);
+        deep += depths.iter().filter(|&&d| d >= 3).count();
+        let world_of_engine: Vec<f32> =
+            nesting.world(&relative).iter().map(|&v| v as f32).collect();
+        assert_eq!(world_of_engine, world, "seed {seed}");
+        let mut graph =
+            Graph::nested(world_of_engine, sizes.clone(), Vec::new(), nesting.clone()).unwrap();
+        assert_eq!(graph.positions(), world.as_slice());
+        let order = drawn_containers(&nesting);
+        let bounds = |s: u32| {
+            let i = s as usize * 2;
+            Rect::of_node(
+                f64::from(world[i]),
+                f64::from(world[i + 1]),
+                f64::from(sizes[i]),
+                f64::from(sizes[i + 1]),
+            )
+        };
+        let mut out = Visible::default();
+        for _ in 0..40 {
+            let rect = random_rect(&mut rng);
+            graph.query(&rect, Level::Near, 4.0, 0.0, &mut out);
+            let containers: Vec<u32> = order
+                .iter()
+                .copied()
+                .filter(|&s| bounds(s).meets(&rect))
+                .collect();
+            let nodes: Vec<u32> = (0..count as u32)
+                .filter(|&s| !nesting.is_container[s as usize] && bounds(s).meets(&rect))
+                .collect();
+            assert_eq!(out.containers, containers, "seed {seed}, {rect:?}");
+            assert_eq!(out.nodes, nodes, "seed {seed}, {rect:?}");
+            if containers.windows(2).any(|w| w[0] > w[1]) {
+                reordered += 1;
+            }
+            // Half the presses inside a random node, the others anywhere.
+            let p = if rng.next() < 0.5 {
+                let b = bounds(rng.below(count));
+                Point::new(rng.range(b.min_x, b.max_x), rng.range(b.min_y, b.max_y))
+            } else {
+                Point::new(rng.range(-2500.0, 2500.0), rng.range(-2500.0, 3000.0))
+            };
+            let node = (0..count as u32)
+                .rev()
+                .find(|&s| !nesting.is_container[s as usize] && bounds(s).contains(p));
+            let container = order.iter().rev().find(|&&s| bounds(s).contains(p));
+            let expected = node.or(container.copied()).map(Target::Node);
+            assert_eq!(
+                graph.hit_at(p, 1.0, Level::Middle, false),
+                expected,
+                "seed {seed}, hit at {p:?}"
+            );
+            match (node, container) {
+                (Some(_), _) => node_hits += 1,
+                (None, Some(_)) => container_hits += 1,
+                _ => {}
+            }
+        }
+    }
+    for (clause, cases, floor) in [
+        ("node hits", node_hits, 200),
+        ("container hits", container_hits, 100),
+        ("queries out of slot order", reordered, 50),
+        ("nodes three deep", deep, 200),
+    ] {
+        assert!(cases >= floor, "{clause}: {cases}");
+    }
+}
+
+/// A container in slot 0 at (100, 200), 600 × 300, holding nodes 1 and 2 at (10, 20) and
+/// (300, 20) within it, 100 × 50, and edge 0 from node 1 to node 2.
+fn container_of_two() -> Graph {
+    let nesting = Nesting {
+        containers: vec![CANVAS, 0, 0],
+        is_container: vec![true, false, false],
+    };
+    let relative = [100.0, 200.0, 10.0, 20.0, 300.0, 20.0];
+    let world = nesting.world(&relative).iter().map(|&v| v as f32).collect();
+    let edge = EdgeSpec {
+        sides: Sides::default(),
+        source: 1,
+        target: 2,
+        label: None,
+        style: EdgeStyle::unstyled(),
+    };
+    let sizes = vec![600.0, 300.0, 100.0, 50.0, 100.0, 50.0];
+    Graph::nested(world, sizes, vec![edge], nesting).unwrap()
+}
+
+#[test]
+fn a_loaded_container_is_found_apart_from_the_nodes_it_holds_at_their_world_positions() {
+    // Verifies: ARCH-engine-edits-nested-graph
+    let mut graph = container_of_two();
+    assert_eq!(
+        graph.positions(),
+        [100.0, 200.0, 110.0, 220.0, 400.0, 220.0]
+    );
+    assert_eq!(graph.held(0), [1, 2]);
+    assert_eq!((graph.container(1), graph.container(0)), (0, CANVAS));
+    let mut out = Visible::default();
+    graph.query(
+        &Rect::new(0.0, 0.0, 1000.0, 1000.0),
+        Level::Near,
+        1.0,
+        0.0,
+        &mut out,
+    );
+    assert_eq!(
+        (out.containers, out.nodes, out.edges),
+        (vec![0], vec![1, 2], vec![0])
+    );
+}
+
+#[test]
+fn a_container_loaded_after_the_nodes_it_overlaps_is_hit_below_them_and_below_their_edge() {
+    // Verifies: ARCH-engine-edits-nested-graph, REN-virtualized-nested-scene
+    // Nodes 0 and 1 on the canvas with edge 0 between them, and container 2, in the last slot and
+    // so of the highest rank, over both and holding neither.
+    let nesting = Nesting {
+        containers: vec![CANVAS; 3],
+        is_container: vec![false, false, true],
+    };
+    let positions = vec![110.0, 220.0, 400.0, 220.0, 100.0, 200.0];
+    let sizes = vec![100.0, 50.0, 100.0, 50.0, 600.0, 300.0];
+    let edge = EdgeSpec {
+        sides: Sides::default(),
+        source: 0,
+        target: 1,
+        label: None,
+        style: EdgeStyle::unstyled(),
+    };
+    let mut graph = Graph::nested(positions, sizes, vec![edge], nesting).unwrap();
+    let hit = |graph: &mut Graph, x, y| graph.hit_at(Point::new(x, y), 1.0, Level::Near, false);
+    assert_eq!(hit(&mut graph, 150.0, 240.0), Some(Target::Node(0)));
+    // On the edge from (210, 245) to (400, 245), over the container.
+    assert_eq!(hit(&mut graph, 300.0, 245.0), Some(Target::Edge(0)));
+    assert_eq!(hit(&mut graph, 300.0, 400.0), Some(Target::Node(2)));
+    let mut out = Visible::default();
+    graph.query(
+        &Rect::new(0.0, 0.0, 1000.0, 1000.0),
+        Level::Near,
+        1.0,
+        0.0,
+        &mut out,
+    );
+    assert_eq!((out.containers, out.nodes), (vec![2], vec![0, 1]));
+}
+
+#[test]
+fn a_node_reaching_into_the_viewport_is_found_and_its_container_far_outside_is_not() {
+    // Verifies: ARCH-engine-edits-nested-graph, REN-virtualized-nested-scene
+    // Container 0 at (10000, 10000), 100 × 100; node 1 in it at (-10000, -10000), in the world at
+    // the origin, past its container's outline, which does not grow to hold it.
+    let nesting = Nesting {
+        containers: vec![CANVAS, 0],
+        is_container: vec![true, false],
+    };
+    let relative = [10_000.0, 10_000.0, -10_000.0, -10_000.0];
+    let world: Vec<f32> = nesting.world(&relative).iter().map(|&v| v as f32).collect();
+    let mut graph = Graph::nested(world, vec![100.0; 4], Vec::new(), nesting).unwrap();
+    let mut out = Visible::default();
+    graph.query(
+        &Rect::new(-50.0, -50.0, 50.0, 50.0),
+        Level::Near,
+        1.0,
+        0.0,
+        &mut out,
+    );
+    assert_eq!((out.containers, out.nodes), (vec![], vec![1]));
+    assert_eq!(
+        graph.node_bounds(0),
+        Rect::of_node(10_000.0, 10_000.0, 100.0, 100.0)
+    );
+}
+
+#[test]
+fn a_nesting_the_check_refuses_refuses_the_graph() {
+    // Verifies: ARCH-engine-edits-nested-graph
+    let nesting = Nesting {
+        containers: vec![CANVAS, 0],
+        is_container: vec![false, false],
+    };
+    let refused = Graph::nested(vec![0.0; 4], vec![1.0; 4], Vec::new(), nesting);
+    assert_eq!(
+        refused.unwrap_err(),
+        GraphError::Nest(NestError::NotAContainer { node: 1 })
+    );
+    let short = Graph::nested(
+        vec![0.0; 4],
+        vec![1.0; 4],
+        Vec::new(),
+        Nesting::on_canvas(1),
+    );
+    assert_eq!(short.unwrap_err(), GraphError::SlotCountMismatch);
+    let mut long = Nesting::on_canvas(2);
+    long.is_container.push(true);
+    let marks = Graph::nested(vec![0.0; 4], vec![1.0; 4], Vec::new(), long);
+    assert_eq!(marks.unwrap_err(), GraphError::SlotCountMismatch);
+}
+
+#[test]
+fn a_freed_container_s_slot_taken_again_is_no_container_and_holds_nothing() {
+    // Verifies: ARCH-engine-edits-nested-graph
+    // A free slot holds nothing: the node added into it lies on the canvas, no container.
+    let mut graph = container_of_two();
+    graph.remove_nodes(&[0]).unwrap();
+    assert_eq!(graph.add_node(0.0, 0.0, 10.0, 10.0), Ok(0));
+    assert!(!graph.is_container(0) && graph.held(0).is_empty());
+    assert_eq!(graph.container(0), CANVAS);
+    let mut out = Visible::default();
+    graph.query(
+        &Rect::new(-5.0, -5.0, 5.0, 5.0),
+        Level::Near,
+        1.0,
+        0.0,
+        &mut out,
+    );
+    assert_eq!((out.containers, out.nodes), (vec![], vec![0]));
+}

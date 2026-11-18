@@ -494,6 +494,9 @@ impl Engine {
         y: &[f64],
         width: &[f64],
         shape: &[u8],
+        has_container: &[u8],
+        container: &[u32],
+        is_container: &[u8],
         row_bounds: Vec<u32>,
         element_bounds: Vec<u32>,
         kinds: Vec<u8>,
@@ -591,6 +594,9 @@ impl Engine {
             y,
             width,
             shape,
+            has_container,
+            container,
+            is_container,
             content: content.view(),
             refused,
         };
@@ -1031,7 +1037,9 @@ impl Engine {
             let mut laid = Vec::new();
             let sizes = self.graph.sizes();
             let level = level.into();
-            for &slot in &self.visible.nodes {
+            // The containers first, then the other nodes, as the shell binds them.
+            let found = self.visible.containers.iter().chain(&self.visible.nodes);
+            for &slot in found {
                 let at = slot as usize * 2;
                 let frame = (self.graph.shape(slot), [sizes[at], sizes[at + 1]]);
                 let (content, node) = self.content.of(slot);
@@ -1274,7 +1282,21 @@ impl Engine {
         self.drawn.bounds.len()
     }
 
-    /// Where the buffer starts that `query` writes the node slots it found into.
+    /// Where the buffer starts that `query` writes the containers it found into, in the order they
+    /// are drawn (ARCH-engine-edits-nested-graph).
+    #[wasm_bindgen(js_name = visibleContainersPtr)]
+    pub fn visible_containers_ptr(&self) -> *const u32 {
+        self.visible.containers.as_ptr()
+    }
+
+    /// How many containers the last query found.
+    #[wasm_bindgen(js_name = visibleContainersLen)]
+    pub fn visible_containers_len(&self) -> usize {
+        self.visible.containers.len()
+    }
+
+    /// Where the buffer starts that `query` writes the node slots it found into, the containers
+    /// apart, by rank.
     #[wasm_bindgen(js_name = visibleNodesPtr)]
     pub fn visible_nodes_ptr(&self) -> *const u32 {
         self.visible.nodes.as_ptr()

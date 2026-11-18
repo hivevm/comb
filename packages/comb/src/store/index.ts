@@ -19,6 +19,12 @@ export interface NodeData {
   /** Its node shape, `rectangle` where left out; a circle, a ringed circle, and a bar hold no
    *  content. */
   shape?: NodeShape;
+  /** The identifier of the container it lies in, its `x` and `y` then relative to the container's
+   *  top left corner; on the canvas where left out (API-edits-report-nested-changes). */
+  container?: string;
+  /** `true` for a container, which may hold nodes even while empty, and is drawn below the edges
+   *  and the other nodes. */
+  isContainer?: boolean;
   content: NodeContent;
 }
 

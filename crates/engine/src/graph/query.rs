@@ -15,12 +15,13 @@ pub enum Level {
     Far,
 }
 
-/// What a query found: node slots in ascending rank, edge and label slots in ascending order, per
-/// found label its
-/// point, and the mesh of the found edges with its detail; the label points and the mesh's
-/// positions relative to `origin` (API-bridge-takes-serde-and-columns).
+/// What a query found: the containers in the order they are drawn, the other node slots in
+/// ascending rank (ARCH-engine-edits-nested-graph), edge and label slots in ascending order, per
+/// found label its point, and the mesh of the found edges with its detail; the label points and
+/// the mesh's positions relative to `origin` (API-bridge-takes-serde-and-columns).
 #[derive(Debug, Default)]
 pub struct Visible {
+    pub containers: Vec<u32>,
     pub nodes: Vec<u32>,
     pub edges: Vec<u32>,
     pub labels: Vec<u32>,
@@ -81,11 +82,19 @@ impl Graph {
         let label_rect = rect.grown(if labelled { label_reach.max(0.0) } else { 0.0 });
         self.node_grid.candidates(rect, &mut self.scratch);
         out.nodes.clear();
-        out.nodes.extend(
-            self.scratch
-                .iter()
-                .filter(|&&slot| self.node_bounds(slot).meets(rect)),
-        );
+        out.containers.clear();
+        // Each node by its own box, also where it reaches past its container's outline.
+        for &slot in &self.scratch {
+            if self.node_bounds(slot).meets(rect) {
+                if self.is_container(slot) {
+                    out.containers.push(slot);
+                } else {
+                    out.nodes.push(slot);
+                }
+            }
+        }
+        out.containers
+            .sort_unstable_by_key(|&slot| self.container_order[slot as usize]);
         out.nodes
             .sort_unstable_by_key(|&slot| self.ranks[slot as usize]);
         self.edge_grid

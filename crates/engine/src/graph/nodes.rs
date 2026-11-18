@@ -58,8 +58,10 @@ impl Graph {
         if let Some(shape) = self.shapes.get_mut(i) {
             *shape = NodeShape::default();
         }
-        // A node added has no edges yet.
+        // A node added has no edges yet, and lies on the canvas, no container; a freed slot taken
+        // again forgets the nesting of the node it held.
         put(&mut self.incident, i, Vec::new());
+        self.forget_nesting(slot);
         self.next_rank += 1;
         let bounds = self.node_bounds(slot);
         self.node_grid.set(slot, &bounds);
@@ -102,10 +104,16 @@ impl Graph {
     pub fn remove_nodes(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
         let edges = self.edges_at(slots)?;
         // The nodes go first, so that the edges leave only the lists of the nodes that stay.
+        let mut containers = false;
         for &slot in slots {
             if self.node_slots.free(slot) {
                 self.incident[slot as usize].clear();
+                containers |= self.is_container(slot);
+                self.forget_nesting(slot);
             }
+        }
+        if containers {
+            self.order_containers();
         }
         self.node_grid.take(slots);
         // A removal builds nothing: the index is built again after growth and moves

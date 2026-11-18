@@ -2,11 +2,12 @@
 //! shapes, whether they fit together, the first value refused by its type, and the nodes read off
 //! them.
 
+use comb_engine::graph::{CANVAS, Nesting};
 use comb_engine::shape::NodeShape;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use super::item::{Item, Node};
-use super::problem::{A_CONTENT, A_NUMBER, A_SHAPE, A_SIZE, AN_ID};
+use super::problem::{A_CONTENT, A_FLAG, A_NUMBER, A_SHAPE, A_SIZE, AN_ID, AN_ID_OR_NONE};
 use super::{
     ContentColumns, Field, GraphDataProblem, GraphList, Unflat, bounds_fit, malformed, numbered,
     refused_by, unshaped, value_at, values,
@@ -29,6 +30,8 @@ pub enum NodeField {
     Y,
     Width,
     Shape,
+    Container,
+    IsContainer,
     Content,
     Row,
     Element,
@@ -66,9 +69,12 @@ pub struct Refused {
 /// identifiers are the values concatenated and cut into pieces, each ending where a value ends,
 /// with their boundaries in UTF-16 code units across all pieces, one more than there are nodes, a
 /// refused value empty. The numbers are as the host application handed them; the node shapes as
-/// their codes; the content crosses as the columns of `ContentColumns`. `refused` is the first
-/// value the shell read that the first pass refuses, or none; a node shape that names none is no
-/// such value, and the first pass finds its code.
+/// their codes; a node's container as whether it names one, 1 or 0, and the slot of the node it
+/// names, which the snapshot found by its identifier, or one past the slots where it names none,
+/// and its mark as a container as 1 or 0 (API-bridge-columns-carry-nesting); the content crosses
+/// as the columns of `ContentColumns`. `refused` is the first value the shell read that the first
+/// pass refuses, or none; a node shape that names none is no such value, and the first pass finds
+/// its code.
 pub struct NodeColumns<'a> {
     pub ids: &'a [String],
     pub id_bounds: &'a [u32],
@@ -76,6 +82,9 @@ pub struct NodeColumns<'a> {
     pub y: &'a [f64],
     pub width: &'a [f64],
     pub shape: &'a [u8],
+    pub has_container: &'a [u8],
+    pub container: &'a [u32],
+    pub is_container: &'a [u8],
     pub content: ContentColumns<'a>,
     pub refused: Option<Refused>,
 }
@@ -86,13 +95,15 @@ pub(super) fn unfit() -> GraphDataProblem {
 }
 
 impl NodeField {
-    pub(super) const ALL: [Self; 11] = [
+    pub(super) const ALL: [Self; 13] = [
         Self::Item,
         Self::Id,
         Self::X,
         Self::Y,
         Self::Width,
         Self::Shape,
+        Self::Container,
+        Self::IsContainer,
         Self::Content,
         Self::Row,
         Self::Element,
@@ -158,8 +169,13 @@ impl NodeColumns<'_> {
     pub(super) fn count(&self) -> Result<usize, GraphDataProblem> {
         let count = self.x.len();
         let numbers = [self.y, self.width].map(<[f64]>::len);
+        let flags = [self.has_container, self.is_container];
         let fit = numbers.iter().all(|&len| len == count)
             && self.shape.len() == count
+            && self.container.len() == count
+            && flags
+                .iter()
+                .all(|flag| flag.len() == count && flag.iter().all(|&byte| byte <= 1))
             && self
                 .shape
                 .iter()
@@ -206,6 +222,8 @@ impl NodeColumns<'_> {
             NodeField::Y => ("y", A_NUMBER),
             NodeField::Width => ("width", A_SIZE),
             NodeField::Shape => ("shape", A_SHAPE),
+            NodeField::Container => ("container", AN_ID_OR_NONE),
+            NodeField::IsContainer => ("isContainer", A_FLAG),
             NodeField::Content => ("content", A_CONTENT),
             NodeField::Row | NodeField::Element | NodeField::Segments | NodeField::Segment => {
                 let unread = match refused.field {
@@ -228,6 +246,24 @@ impl NodeColumns<'_> {
             field: NodeField::Shape,
             row: None,
             column: None,
+        }
+    }
+
+    /// Which node each of the `count` nodes lies in and which are containers, as the engine takes
+    /// it (ARCH-engine-edits-nested-graph): a container that names no node, beyond the slots,
+    /// as the slot one past them, which `Nesting::check` refuses.
+    pub(super) fn nesting(&self, count: usize) -> Nesting {
+        let past = numbered(count);
+        let containers = (0..count)
+            .map(|i| match self.has_container[i] {
+                0 => CANVAS,
+                _ => self.container[i].min(past),
+            })
+            .collect();
+        let is_container = self.is_container.iter().map(|&mark| mark == 1).collect();
+        Nesting {
+            containers,
+            is_container,
         }
     }
 
@@ -462,8 +498,12 @@ mod tests {
     fn columns_that_do_not_fit_together_are_refused_as_malformed() {
         // Verifies: API-bridge-takes-serde-and-columns
         let fits = || a_and(|_| {});
-        let changes: [fn(&mut OwnedColumns); 9] = [
+        let changes: [fn(&mut OwnedColumns); 13] = [
             |c| _ = c.x.pop(),
+            |c| _ = c.has_container.pop(),
+            |c| _ = c.container.pop(),
+            |c| _ = c.is_container.pop(),
+            |c| c.has_container[0] = 2,
             |c| _ = c.shape.pop(),
             |c| c.shape[0] = NodeShapeCode::Unnamed as u8 + 1,
             |c| _ = c.content.text_valid.pop(),
@@ -502,7 +542,7 @@ mod tests {
                 Ok(Some((1, field)))
             );
         }
-        for code in [11, 255, u32::MAX] {
+        for code in [NodeField::ALL.len() as u32, 255, u32::MAX] {
             assert_eq!(refused_of(Some(0), Some(code), None, None), Err(unfit()));
         }
     }

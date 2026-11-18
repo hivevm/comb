@@ -66,6 +66,9 @@ export interface SceneSnapshot {
   viewport: { x: number; y: number; scale: number };
   /** The level of detail the scene draws at. */
   level: Level;
+  /** The layers of the world in drawing order, bottom first, by their labels
+   *  (REN-virtualized-nested-scene). */
+  layers: string[];
   /** Every node drawn, by a view or, at the far level, as a particle, at the height its content
    *  lays out to; `texts` are the texts a view draws, each placed relative to its node, with the
    *  width and the fill its text object draws at, `pills` the pills of badges its `Graphics`
@@ -78,6 +81,8 @@ export interface SceneSnapshot {
    *  colour, and a rounded rectangle's corner radius; a particle draws none of them. */
   nodes: {
     id: string;
+    /** The layer it is drawn in: `containers` for a container, below the edges, else `nodes`. */
+    layer: "containers" | "nodes";
     x: number;
     y: number;
     width: number;
@@ -92,7 +97,8 @@ export interface SceneSnapshot {
     arrows?: DrawnArrow[];
     icons?: DrawnSprite[];
   }[];
-  /** How many nodes are drawn as particles. */
+  /** How many nodes that are no container are drawn as particles; containers' particles are
+   *  reported among `nodes`, in the layer `containers`. */
   particles: number;
   /** How many text objects are bound. */
   texts: number;
@@ -124,6 +130,9 @@ export interface SceneSnapshot {
   connection: { from: { x: number; y: number }; to: { x: number; y: number } } | null;
 }
 
+/** A node drawn as a particle, as `NodeParticles.drawn` reports it. */
+type SceneParticle = ReturnType<NodeParticles["drawn"]>[number];
+
 function countDisplayObjects(container: Container): number {
   return container.children.reduce((sum, child) => sum + countDisplayObjects(child), 1);
 }
@@ -154,6 +163,11 @@ export class Scene {
   /** How many times the scene has rendered; cheap to read on every frame. */
   renders = 0;
   readonly world = new Container({ isRenderGroup: true });
+  /** The containers layer, below the edges: the node views of containers and, at the far level,
+   *  their particles (REN-virtualized-nested-scene). */
+  readonly containers = new Container({ label: "containers" });
+  readonly containerParticles = new NodeParticles();
+  readonly containerNodes = new NodesContainer();
   /** The edges layer: the mesh on WebGL2, the fill on Canvas 2D (REN-webgl2-or-canvas-fallback). */
   readonly edges: EdgeLayer;
   readonly particles = new NodeParticles();
@@ -184,7 +198,16 @@ export class Scene {
     this.edges = canvas ? new EdgeFill() : new EdgesContainer();
     const { edges, particles, nodes, labels } = this;
     this.moving = new MovingLayer(canvas, { edges, particles, nodes, labels });
+    this.containers.addChild(this.containerParticles, this.containerNodes);
+    this.edges.label = "edges";
+    this.moving.edges.label = "movingEdges";
+    this.particles.label = "particles";
+    this.moving.particles.label = "movingParticles";
+    this.nodes.label = "nodes";
+    this.labels.label = "labels";
+    this.connectors.label = "connectors";
     this.world.addChild(
+      this.containers,
       this.edges,
       this.moving.edges,
       this.particles,
@@ -264,11 +287,17 @@ export class Scene {
     const visible = bridge.query(rect, level, 1 / scale, this.labels.reach);
     const { origin } = visible;
     this.origin = origin;
+    this.containers.position.set(-origin.x, -origin.y);
     this.nodes.position.set(-origin.x, -origin.y);
     this.particles.position.set(-origin.x, -origin.y);
     this.moving.particles.position.set(-origin.x, -origin.y);
-    const { positions, sizes, content } = visible;
-    this.nodes.sync(state, far ? NONE : visible.nodes, positions, sizes, content, this.icons);
+    const { positions, sizes, content, containers } = visible;
+    const { icons } = this;
+    // The containers' content lies before the other nodes' (ARCH-engine-edits-nested-graph).
+    this.containerNodes.sync(state, far ? NONE : containers, positions, sizes, content, icons);
+    this.containerParticles.sync(state, far ? containers : NONE, positions, sizes);
+    const first = far ? 0 : containers.length;
+    this.nodes.sync(state, far ? NONE : visible.nodes, positions, sizes, content, icons, first);
     this.particles.sync(state, far ? visible.nodes : NONE, positions, sizes);
     this.edges.sync(visible);
     this.detail = visible.detail;
@@ -293,9 +322,10 @@ export class Scene {
   draws(what: { node: string } | { edge: string }): boolean {
     if ("node" in what) {
       const { node } = what;
-      const views = this.nodes.children as NodeGraphic[];
+      const views = [...this.containerNodes.children, ...this.nodes.children] as NodeGraphic[];
       return (
         views.some((view) => view.nodeId === node) ||
+        this.containerParticles.draws(node) ||
         this.particles.draws(node) ||
         this.moving.particles.draws(node)
       );
@@ -322,33 +352,49 @@ export class Scene {
     return { x: x - this.origin.x * scale, y: y - this.origin.y * scale, scale };
   }
 
+  /** The node views of `layer`, named `name`, as inspection reports them. */
+  private inspectedViews(layer: NodesContainer, name: "containers" | "nodes") {
+    return (layer.children as NodeGraphic[]).map((view) => ({
+      id: view.nodeId,
+      layer: name,
+      ...view.size,
+      x: view.x,
+      y: view.y,
+      ...this.contentOf(view.slot),
+      ...view.drawnShape(),
+      texts: view.inspected(),
+      pills: view.drawnPills(),
+      bars: view.drawnBars(),
+      arrows: view.drawnArrows(),
+      icons: view.drawnSprites(),
+    }));
+  }
+
   inspect(): SceneSnapshot {
+    const layered = (layer: "containers" | "nodes") => (node: SceneParticle) => ({
+      ...node,
+      layer,
+    });
     return {
       renderer: this.app.renderer.name,
       viewport: this.drawnViewport(),
       level: this.level,
+      layers: this.world.children.map((layer) => layer.label),
       nodes: [
-        ...this.nodes.children.map((view) => ({
-          id: (view as NodeGraphic).nodeId,
-          ...(view as NodeGraphic).size,
-          x: view.x,
-          y: view.y,
-          ...this.contentOf((view as NodeGraphic).slot),
-          ...(view as NodeGraphic).drawnShape(),
-          texts: (view as NodeGraphic).inspected(),
-          pills: (view as NodeGraphic).drawnPills(),
-          bars: (view as NodeGraphic).drawnBars(),
-          arrows: (view as NodeGraphic).drawnArrows(),
-          icons: (view as NodeGraphic).drawnSprites(),
-        })),
-        ...this.particles.drawn(),
-        ...this.moving.particles.drawn(),
+        ...this.containerParticles.drawn().map(layered("containers")),
+        ...this.inspectedViews(this.containerNodes, "containers"),
+        ...this.inspectedViews(this.nodes, "nodes"),
+        ...this.particles.drawn().map(layered("nodes")),
+        ...this.moving.particles.drawn().map(layered("nodes")),
       ],
       particles: this.particles.particleChildren.length,
       texts: countTexts(this.world),
       highlighted:
         this.particles.highlighted ??
-        (this.nodes.children as NodeGraphic[]).find((view) => view.selected)?.nodeId ??
+        this.containerParticles.highlighted ??
+        ([...this.containerNodes.children, ...this.nodes.children] as NodeGraphic[]).find(
+          (view) => view.selected,
+        )?.nodeId ??
         null,
       edges: this.drawnEdges(),
       edgeTriangles: this.edges.triangles(),

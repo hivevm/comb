@@ -43,6 +43,7 @@ const DESCRIBE: { [K in Kind]: (problem: Of<K>) => string } = {
   invalidFraction: (p) => `${p.node} ${p.row} ${p.column} ${p.segment}`,
   fractionsPastOne: (p) => `${p.node} ${p.row} ${p.column}`,
   unknownPatchField: (p) => `${p.node} ${p.field}`,
+  invalidContainer: (p) => `${p.node} ${p.field}: ${p.expected}`,
   duplicateNode: (p) => p.node,
   duplicateEdge: (p) => p.edge,
   missingNode: (p) => `${p.edge} ${p.node}`,

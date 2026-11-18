@@ -2163,3 +2163,180 @@ proptest! {
         TEST_BUDGET.set(None);
     }
 }
+
+/// The outcomes a load of a random nesting rests on, counted per clause: a field of another type
+/// named in the first pass, a container that names no node, one that is no container, a node in
+/// itself or a node it holds, and a nesting taken.
+#[derive(Default)]
+struct NestingCases {
+    first_pass: Cell<u32>,
+    no_node: Cell<u32>,
+    not_a_container: Cell<u32>,
+    in_itself: Cell<u32>,
+    taken: Cell<u32>,
+}
+
+/// A nesting as the test below generates it: per node the slot its container names, or none;
+/// whether it is a container; and the first field of another type, its node and whether it is the
+/// mark, or none.
+type NestingInput = (Vec<Option<u32>>, Vec<bool>, Option<(u32, bool)>);
+
+/// A random nesting of up to eight nodes, a container naming one past the nodes where it names
+/// none.
+fn random_nesting() -> impl Strategy<Value = NestingInput> {
+    (1_usize..=8).prop_flat_map(|count| {
+        let slot = prop_oneof![1 => Just(None), 3 => (0..=count as u32).prop_map(Some)];
+        (
+            proptest::collection::vec(slot, count),
+            proptest::collection::vec(prop_oneof![1 => Just(false), 2 => Just(true)], count),
+            proptest::option::weighted(0.1, (0..count as u32, any::<bool>())),
+        )
+    })
+}
+
+#[test]
+fn a_load_s_nesting_is_refused_exactly_where_an_oracle_finds_a_node_out_of_place() {
+    // Verifies: API-bridge-columns-carry-nesting, ARCH-engine-edits-nested-graph, Q-7
+    let cases = NestingCases::default();
+    let mut config = ProptestConfig::with_cases(CASES);
+    config.source_file = Some(file!());
+    let mut runner = TestRunner::new(proptest::test_runner::contextualize_config(config));
+    let result = runner.run(&random_nesting(), |(containers, marks, mistyped)| {
+        nesting_case(&containers, &marks, mistyped, &cases)
+    });
+    if let Err(error) = result {
+        panic!("{error}\n{runner}");
+    }
+    for (clause, count) in [
+        ("first pass", &cases.first_pass),
+        ("no node", &cases.no_node),
+        ("not a container", &cases.not_a_container),
+        ("in itself", &cases.in_itself),
+        ("taken", &cases.taken),
+    ] {
+        assert!(count.get() >= 200, "{clause}: {}", count.get());
+    }
+}
+
+/// The name of node `i` of the test above.
+fn nested_name(i: usize) -> String {
+    format!("n{i}")
+}
+
+/// One case of the test above: nodes `n0`, `n1`, … at (10 i, 5 i), each 100 wide, nested by
+/// `containers` and `marks`, a field of another type at `mistyped`, loaded and judged by an oracle
+/// that walks each chain of containers from the inputs alone.
+fn nesting_case(
+    containers: &[Option<u32>],
+    marks: &[bool],
+    mistyped: Option<(u32, bool)>,
+    cases: &NestingCases,
+) -> Result<(), TestCaseError> {
+    use super::{NodeField, node_columns::Refused};
+    let count = containers.len();
+    let names: Vec<String> = (0..count).map(nested_name).collect();
+    let nodes: Vec<(&str, f64, f64)> = (0..count)
+        .map(|i| (names[i].as_str(), 10.0 * i as f64, 5.0 * i as f64))
+        .collect();
+    let data = super::tests::batch(&nodes, &[]);
+    let mut columns = OwnedColumns::of(data.nodes.iter().map(Some)).nested(containers, marks);
+    columns.refused = mistyped.map(|(index, mark)| Refused {
+        index,
+        field: if mark {
+            NodeField::IsContainer
+        } else {
+            NodeField::Container
+        },
+        row: None,
+        column: None,
+    });
+    let loaded = super::tests::load_columns(&columns);
+    match (loaded, expected_nesting(containers, marks, mistyped, cases)) {
+        (Err(problem), Some(expected)) => prop_assert_eq!(problem, expected),
+        (Ok(graph), None) => {
+            cases.taken.set(cases.taken.get() + 1);
+            for (node, &mark) in marks.iter().enumerate() {
+                let (mut x, mut y, mut at) = (0.0, 0.0, node);
+                loop {
+                    x += 10.0 * at as f64;
+                    y += 5.0 * at as f64;
+                    match containers[at] {
+                        Some(up) => at = up as usize,
+                        None => break,
+                    }
+                }
+                let world = &graph.positions()[node * 2..node * 2 + 2];
+                prop_assert_eq!(world, &[x as f32, y as f32][..], "node {}", node);
+                prop_assert_eq!(graph.is_container(node as u32), mark);
+            }
+        }
+        (outcome, expected) => {
+            prop_assert!(false, "{outcome:?}, but expected {expected:?}");
+        }
+    }
+    Ok(())
+}
+
+/// What the oracle of the test above expects a load of a nesting to refuse, counted in `cases`
+/// by the clause that settles it: the field of another type, else the first node in slot order out
+/// of place, by its rules in order; or none.
+fn expected_nesting(
+    containers: &[Option<u32>],
+    marks: &[bool],
+    mistyped: Option<(u32, bool)>,
+    cases: &NestingCases,
+) -> Option<GraphDataProblem> {
+    use super::problem::{
+        A_FLAG, A_MARKED_CONTAINER, A_NODE_OF_THE_GRAPH, AN_ID_OR_NONE, NOT_IN_ITSELF,
+    };
+    let count = containers.len();
+    if let Some((index, mark)) = mistyped {
+        cases.first_pass.set(cases.first_pass.get() + 1);
+        let (field, expected) = if mark {
+            ("isContainer", A_FLAG)
+        } else {
+            ("container", AN_ID_OR_NONE)
+        };
+        return Some(GraphDataProblem::InvalidField {
+            list: GraphList::Nodes,
+            index,
+            id: Some(nested_name(index as usize)),
+            field: field.to_owned(),
+            expected: expected.to_owned(),
+        });
+    }
+    let within = |slot: u32| (slot as usize) < count;
+    // Whether the chain of containers up from `from` reaches `node` within as many steps as there
+    // are nodes.
+    let reaches = |from: u32, node: u32| {
+        let mut at = from;
+        for _ in 0..=count {
+            if at == node {
+                return true;
+            }
+            match containers[at as usize] {
+                Some(up) if within(up) && marks[up as usize] => at = up,
+                _ => return false,
+            }
+        }
+        false
+    };
+    (0..count).find_map(|node| {
+        let container = containers[node]?;
+        let (clause, expected) = if !within(container) {
+            (&cases.no_node, A_NODE_OF_THE_GRAPH)
+        } else if !marks[container as usize] {
+            (&cases.not_a_container, A_MARKED_CONTAINER)
+        } else if reaches(container, node as u32) {
+            (&cases.in_itself, NOT_IN_ITSELF)
+        } else {
+            return None;
+        };
+        clause.set(clause.get() + 1);
+        Some(GraphDataProblem::InvalidContainer {
+            node: nested_name(node),
+            field: "container".to_owned(),
+            expected: expected.to_owned(),
+        })
+    })
+}
