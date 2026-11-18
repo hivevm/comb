@@ -131,7 +131,8 @@ Only a normalization renumbers them
     host application ends an edge on another edge, at a path parameter of that edge, the system
     shall draw the end there and keep it there as the other edge moves. When the host
     application draws an edge as a lightning bolt, the system shall draw a zigzag in the middle
-    of its path.
+    of its path. When the host application gives an edge an open arrowhead or a hollow
+    triangle at its target, the system shall draw it that way.
 20. **G-20** — When the developer starts the launch configuration *Example: UML* in VS Code, its
     sidebar switches, beside the diagrams of G-12, to an activity diagram and a use case diagram of
     Comb itself, and its state diagram uses the full notation. Together they show these notation
