@@ -183,6 +183,10 @@ const MIRROR: {
   nodeAdded: (diagram, { node }) => void diagram.graph.nodes.push({ ...node }),
   nodeUpdated: (diagram, { id, patch }) => void Object.assign(diagram.node(id) ?? {}, patch),
   nodeMoved: (diagram, { id, x, y }) => void Object.assign(diagram.node(id) ?? {}, { x, y }),
+  nodeResized: (diagram, { id, x, y, width, height, moved }) => {
+    Object.assign(diagram.node(id) ?? {}, { x, y, width, height });
+    for (const at of moved) Object.assign(diagram.node(at.id) ?? {}, { x: at.x, y: at.y });
+  },
   nodesRemoved: (diagram, { nodes, edges }) => diagram.removed(nodes, edges),
   edgeAdded: (diagram, { edge }) => diagram.added(edge),
   edgeUpdated: (diagram, { id, patch }) => {

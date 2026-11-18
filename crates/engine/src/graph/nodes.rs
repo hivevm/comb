@@ -95,6 +95,11 @@ impl Graph {
         if let Some(shape) = self.shapes.get_mut(i) {
             *shape = NodeShape::default();
         }
+        // Nor does it keep that node's height or whether it was resizable.
+        if let Some(given) = self.given.get_mut(i) {
+            *given = None;
+            self.resizable[i] = false;
+        }
         // A node added has no edges yet; a freed slot taken again forgets the nesting of the node
         // it held before it takes the new node's.
         put(&mut self.incident, i, Vec::new());
@@ -281,6 +286,12 @@ impl Graph {
     pub fn resize_node(&mut self, slot: u32, height: f32) -> Result<(), SlotError> {
         self.nodes_held(&[slot])?;
         self.sizes[slot as usize * 2 + 1] = height;
+        self.reboxed(slot);
+        Ok(())
+    }
+
+    /// Takes the box the node in `slot` now has into the index, and places its edges again.
+    pub(super) fn reboxed(&mut self, slot: u32) {
         let bounds = self.node_bounds(slot);
         self.node_grid.set(slot, &bounds);
         let edges = std::mem::take(&mut self.incident[slot as usize]);
@@ -289,7 +300,6 @@ impl Graph {
         }
         self.incident[slot as usize] = edges;
         self.keep_index();
-        Ok(())
     }
 
     /// The node sizes, `width, height` per slot.

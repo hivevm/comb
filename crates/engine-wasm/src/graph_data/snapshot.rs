@@ -32,9 +32,11 @@ impl Refusable for NodeInput {
             self.x.0.is_none(),
             self.y.0.is_none(),
             self.width.0.is_none(),
+            self.height.0.is_none(),
             self.shape.0.is_none(),
             self.container.0.is_none(),
             self.is_container.0.is_none(),
+            self.resizable.0.is_none(),
             self.content.0.is_none(),
         ]
         .contains(&true)
@@ -110,10 +112,13 @@ pub(crate) struct OwnedColumns {
     pub(super) x: Vec<f64>,
     pub(super) y: Vec<f64>,
     pub(super) width: Vec<f64>,
+    pub(super) has_height: Vec<u8>,
+    pub(super) height: Vec<f64>,
     pub(super) shape: Vec<u8>,
     pub(super) has_container: Vec<u8>,
     pub(super) container: Vec<u32>,
     pub(super) is_container: Vec<u8>,
+    pub(super) resizable: Vec<u8>,
     pub(crate) content: ContentData,
     pub(crate) refused: Option<Refused>,
 }
@@ -165,8 +170,11 @@ impl OwnedColumns {
                 for numbers in [&mut columns.x, &mut columns.y, &mut columns.width] {
                     numbers.push(f64::NAN);
                 }
+                columns.has_height.push(0);
+                columns.height.push(0.0);
                 columns.shape.push(NodeShapeCode::Rectangle as u8);
                 columns.on_canvas();
+                columns.resizable.push(0);
                 columns.content.end_node();
                 continue;
             };
@@ -191,6 +199,7 @@ impl OwnedColumns {
                 }
                 column.push(value.0.unwrap_or(f64::NAN));
             }
+            columns.push_height(index, node);
             // A node shape of another type or naming none crosses as the code of none, which the
             // first pass refuses at its place.
             let shape = node.shape.0.map_or(NodeShapeCode::Unnamed as u8, |shape| {
@@ -201,6 +210,7 @@ impl OwnedColumns {
             });
             columns.shape.push(shape);
             columns.on_canvas();
+            columns.push_resizable(index, node);
             columns.push_content(index, node.content.0.as_ref(), &mut texts, &mut names);
             columns.content.end_node();
         }
@@ -208,6 +218,37 @@ impl OwnedColumns {
         columns.content.texts = pieces_of(&texts, bound);
         columns.content.names = pieces_of(&names, bound);
         columns
+    }
+
+    /// Writes the height of the node at `index`, `node`, as whether it has one and the number; one
+    /// of another type crosses as none, its refusal named.
+    fn push_height(&mut self, index: u32, node: &NodeInput) {
+        if node.height.0.is_none() {
+            self.refuse_at(index, NodeField::Height);
+        }
+        let height = node.height.0.flatten();
+        self.has_height.push(u8::from(height.is_some()));
+        self.height.push(height.unwrap_or(0.0));
+    }
+
+    /// Writes whether the node at `index`, `node`, is resizable; a value of another type crosses as
+    /// none, its refusal named.
+    fn push_resizable(&mut self, index: u32, node: &NodeInput) {
+        if node.resizable.0.is_none() {
+            self.refuse_at(index, NodeField::Resizable);
+        }
+        let resizable = node.resizable.0.flatten() == Some(true);
+        self.resizable.push(u8::from(resizable));
+    }
+
+    /// Names `field` of the node at `index` as refused, unless a value before it is.
+    fn refuse_at(&mut self, index: u32, field: NodeField) {
+        self.refused.get_or_insert(Refused {
+            index,
+            field,
+            row: None,
+            column: None,
+        });
     }
 
     /// Writes the nesting of the next node: on the canvas, no container.
@@ -269,10 +310,13 @@ impl OwnedColumns {
             x: &self.x,
             y: &self.y,
             width: &self.width,
+            has_height: &self.has_height,
+            height: &self.height,
             shape: &self.shape,
             has_container: &self.has_container,
             container: &self.container,
             is_container: &self.is_container,
+            resizable: &self.resizable,
             content: self.content.view(),
             refused: self.refused,
         }
@@ -659,9 +703,11 @@ mod tests {
             x: _,
             y: _,
             width: _,
+            height: _,
             shape: _,
             container: _,
             is_container: _,
+            resizable: _,
             content: _,
         } = NodeInput::default();
         let node = [
@@ -669,9 +715,11 @@ mod tests {
             ("x", Value::Number(0.0)),
             ("y", Value::Number(0.0)),
             ("width", Value::Number(100.0)),
+            ("height", Value::Number(80.0)),
             ("shape", Value::Text("diamond".to_owned())),
             ("container", Value::Text("c".to_owned())),
             ("isContainer", Value::Bool(true)),
+            ("resizable", Value::Bool(true)),
             ("content", titled("A")),
         ];
         // The container and the mark may be left out: none is no refused value.
@@ -680,6 +728,7 @@ mod tests {
             ("x", true),
             ("y", true),
             ("width", true),
+            ("height", false),
             ("shape", true),
             ("container", false),
             ("content", true),
@@ -693,6 +742,14 @@ mod tests {
             "isContainer of another type"
         );
         assert!(!read::<NodeInput>(&without(&node, "isContainer")).refused());
+        // So is `false` whether it is resizable.
+        let mut numbered = without(&node, "resizable");
+        numbered.push(("resizable", Value::Number(1.0)));
+        assert!(
+            read::<NodeInput>(&numbered).refused(),
+            "resizable of another type"
+        );
+        assert!(!read::<NodeInput>(&without(&node, "resizable")).refused());
     }
 
     #[test]

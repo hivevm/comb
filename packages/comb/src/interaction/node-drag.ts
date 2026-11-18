@@ -25,7 +25,10 @@ interface Dragged {
 
 /** The slots a drag of the node in `slot` moves: the node, and where it is a container,
  *  everything it holds at every depth, as the engine names it (REN-moving-layer-moves-content). */
-function draggedOf({ store, bridge }: Pick<Context, "store" | "bridge">, slot: number): number[] {
+export function draggedOf(
+  { store, bridge }: Pick<Context, "store" | "bridge">,
+  slot: number,
+): number[] {
   if (store.getState().nodes[slot]?.isContainer !== true) return [slot];
   // The nodes a removal of the container would take along are those it holds, at every depth: the
   // one export that names them, read once a drag, its edges unused.

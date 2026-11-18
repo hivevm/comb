@@ -68,7 +68,8 @@ edges a load may hold, and `api` has it check the code units of identifiers the 
 the new ones. The engine keeps the count of the code units of the strings of content its nodes hold,
 set by a load and moved by every addition, patch, and removal of a node, and refuses an addition or
 a patch whose strings would pass the budget a load is held to (`contentBudgetExceeded`), before
-anything changes. It refuses a patch of `updateNode` that holds a field other than `content`, a
+anything changes. It refuses a patch of `updateNode` that holds a field other than `content`,
+`height`, or `resizable`, a
 patch of `updateEdge` that holds a field other than a colour, dash, arrowhead, label, or side
 (`unknownEdgePatchField`), and a field it would refuse in a load. Label texts and label backgrounds
 are checked there but not kept by the engine; the content of a node it keeps, to lay it out. `api`
@@ -145,10 +146,17 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   the one function that holds the rule that builds them again, called after every addition and move,
   a removal building nothing, and a rebuild building the grids from the edges as they are placed: a
   load places every edge once, and each edit places the edges it changes; `hit`, `labels`, and
-  `query`; `containers`, which node each node lies in: a load's `Nesting` checked so that a node
-  lies only in a container and never in itself or a node it holds, the world positions as the sums
-  along each chain of containers, the lists of what each container holds, and the order of the
-  containers, each after its own container and siblings by rank, a node added into a container,
+  `query`; `resize`, the eight resize handles, whether each node is resizable and the height its
+  data gives, which `hit`'s `handle_at` reads to find a handle of the selected node within 6
+  screen pixels at the near and middle level, and the resize of a node from the box it had at the
+  press by a drag of a handle, never smaller than 8 a side, than the least height the caller hands
+  in, or than the boxes of the nodes that lie directly in it, a circle as high as wide, the nodes it
+  holds kept at their world positions and their positions relative to it kept anew
+  ([API-edits-report-nested-changes](adr/API-edits-report-nested-changes.md)); `containers`,
+  which node each node lies in: a load's `Nesting` checked so that a node lies only in a container
+  and never in itself or a node it holds, the world positions as the sums along each chain of
+  containers, the lists of what each container holds, and the order of the containers, each after
+  its own container and siblings by rank, a node added into a container,
   and what a removal takes along, a node with everything it holds at every depth, and a move of a
   container moving everything it holds
   ([ARCH-engine-edits-nested-graph](adr/ARCH-engine-edits-nested-graph.md)); each with its tests,
@@ -224,10 +232,15 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   keeps the content of the nodes, gives each node its node shape,
   refusing content in a filled one, and makes each node as high as its node shape needs for its
   content laid out in its inner rectangle in the fonts `setFont` handed over
-  ([REN-closed-set-of-node-shapes](adr/REN-closed-set-of-node-shapes.md)), which the sizes buffer
+  ([REN-closed-set-of-node-shapes](adr/REN-closed-set-of-node-shapes.md)), or as the height its
+  data gives where that is more, and a node without content as high as that height or as wide
+  (`NodeShape::sized` of `shape`, [REN-node-shapes-cover-uml](adr/REN-node-shapes-cover-uml.md)),
+  refusing a height that is not finite or not above 0 as `f32` holds it, and keeps whether each node
+  is resizable, which the sizes buffer
   holds beside the positions buffer, and a font handed over later lays every node out anew; a node
   whose far side, by that height, lies past the world's limit is refused; `updateNode` checks a
-  patch of a node's content as a load checks it and gives the node the new content and its height,
+  patch of a node's content, height, and whether it is resizable as a load checks them and gives
+  the node the new content and its height, never less than its content, old or new, needs,
   `addNode` checks one node as a load would and returns the slot the engine chose for it, `heightOf`
   checks a node named `""` at the origin as `addNode` does and returns the height its content lays
   out to, adding nothing (API-host-asks-content-height), `addEdge` checks one edge as a load would,
@@ -268,8 +281,10 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   buffer of either mesh, named by a `MeshOf`, the query's or the moving layer's, by a `MeshBuffer`,
   so that the shell reads both through one function; `drawnEdges` computes the ends of the found
   edges and of the moving mesh's when inspection asks, as they lie then, and `hit` names what a
-  press at a point hits, a connector where the shell asks for connectors, a label, a node, or an
-  edge by its slot, or nothing, as one generated value, and refuses a pixel as `query` does and a
+  press at a point hits, a resize handle of the selected node it is handed, a connector where the
+  shell asks for connectors, a label, a node, or an edge by its slot, or nothing, as one generated
+  value, `resizeNode` resizes a node by a handle from the box it had at the press, its content's
+  height the least, and refuses a pixel as `query` does and a
   point that is not finite; `setLabelSize` takes the measure of a label's pill, `labelPoint` names
   where a label lies, and `moveLabel` places a dragged label, one dragged beyond the world's limit
   stopping there, refuses a point that is not finite as `hit` does, and returns its path parameter
@@ -351,9 +366,15 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   gesture ends it at a load or a removal of its source. `label-drag.ts`: a press on a label, at the
   near level, selects its edge and drags the label, held where it was grabbed, which the engine
   places on every move; its release, or a later press, records `labelMoved` once, and a load, a
-  removal of its edge, or a label the host cleared ends the drag. A drag that moved its node records
-  `nodeMoved` once, when the pointer is released on the canvas or outside it; a load ends a drag.
-  Released on the canvas over a container other than its own, as the engine's `containerAt` finds
+  removal of its edge, or a label the host cleared ends the drag. `resize.ts`: a press on a resize
+  handle of the selected node, which `targetAt` asks the engine for by the selected slot, hands the
+  engine's `resizeNode` the box the node had at the press and the drag from it on every move, and
+  signals the node and what it holds as dragged, as a drag of a container does; its release
+  records `nodeResized` once, with the nodes that lie directly in it where its left or top side
+  moved, unless no box changed. The cursor over a handle shows its direction. A drag that moved
+  its node records `nodeMoved` once, when the pointer is released on the canvas or outside it; a
+  load ends a drag. Released on the canvas over a container other than its own, as the engine's
+  `containerAt` finds
   it, or outside every container while it lies in one, the drag hands the drop to the move into a
   container `api` hands it, through the `moveInto` of the gestures' `Context`, and where that moves
   nothing it is taken back by the engine's `place` to where the node lay at the press, relative to
@@ -382,7 +403,11 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   or was removed, and answers inspection for what it drew, with the connectors of the node under the
   pointer and, while the user connects, of the source and the node under the pointer, and an
   `overlay` with the line of the connection being dragged, to the pointer `api` hands each render
-  from interaction ([REN-virtualized-scene-graph](adr/REN-virtualized-scene-graph.md));
+  from interaction ([REN-virtualized-scene-graph](adr/REN-virtualized-scene-graph.md)), and the
+  resize handles of the selected node where it is resizable, at the near and middle level, white
+  squares of 8 screen pixels outlined in the selection's colour (`handles.ts`); while a resize
+  moves, the moving layer draws the resized node's shape anew at its size, its content where the
+  query placed it, until the release queries;
   `bindings.ts` is the pool of views the nodes and labels layers bind to slots, keeping the layer's
   children in the order a render binds them. The scale chooses the level of detail: near (from 0.6)
   draws node views and edge labels, middle (from 0.3) node views alone, and far nodes as particles
@@ -697,8 +722,8 @@ tells a change to `onChange` ends its gesture with nothing done and no error, wh
 ([API-edits-reported-as-typed-changes](adr/API-edits-reported-as-typed-changes.md)). Then they run
 through the same function, the deletion through `removeNodes` where its `Deletion` names nodes, else
 through `removeEdges`, recorded as `by: "user"`, which every store action whose change may be
-either's requires; a dragged node or label writes the engine alone while it moves and records
-`nodeMoved` or `labelMoved` once, at release.
+either's requires; a dragged node or label, and a resized node, writes the engine alone while it
+moves and records `nodeMoved`, `labelMoved`, or `nodeResized` once, at release.
 
 **Panning and zooming.** `interaction` sets the store's viewport. While the viewport stays inside
 the rectangle the scene last queried, and that rectangle within the viewport grown by twice the

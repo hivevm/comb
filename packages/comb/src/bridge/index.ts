@@ -39,6 +39,7 @@ import init, {
   type NodePatch,
   type NodeShape,
   type NumberError,
+  type ResizeHandle,
   type SlotError,
   type TextRole,
 } from "../../wasm/engine.js";
@@ -58,6 +59,7 @@ export type {
   NodePatch,
   NodeShape,
   NumberError,
+  ResizeHandle,
   SlotError,
   TextRole,
 };
@@ -384,15 +386,30 @@ export interface Bridge {
    *  inspection, not for drawing (REN-moving-layer-redraws-changes). Fresh views; do not keep them
    *  across calls. */
   drawnEdges(): DrawnEdges;
+  /** Resizes the node in `slot`, whose box was `from`, `x, y, width, height`, at the press, by a
+   *  drag of `handle` by `(dx, dy)` world units, never smaller than 8 a side, than its content, or
+   *  than the boxes of the nodes that lie directly in it; what it holds keeps its world position
+   *  (API-edits-report-nested-changes). Throws a `SlotError`, and a `NumberError`
+   *  `nonFinitePoint` for a box or a drag that is not finite, before anything changes. */
+  resizeNode(slot: number, handle: ResizeHandle, from: Float64Array, dx: number, dy: number): void;
   /** What a press at the world point `(x, y)` hits where a screen pixel is `pixel` world units,
-   *  at `level`: where `connectors` asks for them, at the near and middle level, a connector
+   *  at `level`: at the near and the middle level a resize handle of the node in `selected`, the
+   *  selected node, where it is resizable, within 6 screen pixels; else where `connectors` asks
+   *  for them, at the near and middle level, a connector
    *  within 8 screen pixels, of the node drawn on top; else the node drawn on top there, else the
    *  edge drawn on top within 4 screen pixels of its path as the stroke flattens it, else nothing
    *  (REN-node-content-in-rows). Throws a `NumberError`, `invalidPixel` for a pixel that is not a
    *  finite number
    *  above zero and `nonFinitePoint` for a point that is not finite
    *  (API-shell-mistake-refused-as-shells). */
-  hit(x: number, y: number, pixel: number, level: Level, connectors: boolean): Hit;
+  hit(
+    x: number,
+    y: number,
+    pixel: number,
+    level: Level,
+    connectors: boolean,
+    selected?: number,
+  ): Hit;
 }
 
 /** Whether the bridge runs in test mode: under `bun test`, and in Vite's `test` mode, which the
@@ -572,7 +589,8 @@ function wrap(exports: InitOutput): Bridge {
 
 /** The columns of a load's nodes, as `loadGraph` takes them before the first value refused. */
 function nodeValues(nodes: NodeColumns) {
-  const { ids, idBounds, x, y, width, shape, hasContainer, container, isContainer } = nodes;
+  const { ids, idBounds, x, y, width, hasHeight, height, shape } = nodes;
+  const { hasContainer, container, isContainer, resizable } = nodes;
   const c = nodes.content;
   return [
     ids,
@@ -580,10 +598,13 @@ function nodeValues(nodes: NodeColumns) {
     x,
     y,
     width,
+    hasHeight,
+    height,
     shape,
     hasContainer,
     container,
     isContainer,
+    resizable,
     c.rowBounds,
     c.elementBounds,
     c.kinds,
@@ -727,6 +748,14 @@ function removedOf(crossed: Uint32Array): Removal {
   return { nodes: crossed.subarray(1, 1 + count), edges: crossed.subarray(1 + count) };
 }
 
+/** Fresh views on the positions buffer and on the sizes buffer of `engine`, by `f32`. */
+function nodeBuffersOf(engine: Engine, f32: (ptr: number, len: number) => Float32Array) {
+  return {
+    positions: f32(engine.positionsPtr(), engine.positionsLen()),
+    sizes: f32(engine.sizesPtr(), engine.sizesLen()),
+  };
+}
+
 function engineBridge(memory: WebAssembly.Memory): Bridge {
   const engine = newEngine();
   const { u32, f32 } = viewsOn(memory);
@@ -768,11 +797,10 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
     containerAt: (x, y, dragged) => engine.containerAt(x, y, dragged),
     moveInto: (slot, container) => engine.moveInto(slot, container),
     positions: () => f32(engine.positionsPtr(), engine.positionsLen()),
-    nodeBuffers: () => ({
-      positions: f32(engine.positionsPtr(), engine.positionsLen()),
-      sizes: f32(engine.sizesPtr(), engine.sizesLen()),
-    }),
-    hit: (x, y, pixel, level, connectors) => engine.hit(x, y, pixel, LEVELS[level], connectors),
+    nodeBuffers: () => nodeBuffersOf(engine, f32),
+    resizeNode: (slot, handle, from, dx, dy) => engine.resizeNode(slot, handle, from, dx, dy),
+    hit: (x, y, pixel, level, connectors, selected) =>
+      engine.hit(x, y, pixel, LEVELS[level], connectors, selected),
     drawnEdges() {
       engine.drawnEdges();
       return {

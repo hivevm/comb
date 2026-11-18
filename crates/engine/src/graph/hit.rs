@@ -2,7 +2,7 @@
 //! edge label, a node that is no container, an edge, and a container
 //! (ARCH-engine-edits-nested-graph).
 
-use super::{Graph, Level};
+use super::{Graph, Handle, Level};
 use crate::geometry::{Point, Rect, Side, bounded_pixel, length};
 use crate::stroke::{Stroke, near_path};
 
@@ -12,6 +12,10 @@ const SIDES: [Side; 4] = [Side::Top, Side::Right, Side::Bottom, Side::Left];
 /// How near a press has to come to an edge's path to hit it, in screen pixels
 /// (REN-node-content-in-rows).
 const EDGE_REACH: f64 = 4.0;
+
+/// How near a press has to come to a resize handle's middle to hit it, on each axis, in screen
+/// pixels (REN-node-content-and-hits).
+const HANDLE_REACH: f64 = 6.0;
 
 /// How near a press has to come to a connector to hit it, in screen pixels
 /// (REN-node-content-in-rows).
@@ -78,6 +82,33 @@ impl Graph {
         });
         self.scratch = candidates;
         found.map(Target::Edge).or(node.map(Target::Node))
+    }
+
+    /// The resize handle of the selected node in `selected` within `HANDLE_REACH` screen pixels
+    /// of `point` on each axis, the nearest of them, where a screen pixel is `pixel` world units;
+    /// none at the far level, for a node that is not resizable, or for a slot that holds none
+    /// (REN-node-content-and-hits, *Resize handle*). A press there comes before every other hit.
+    pub fn handle_at(
+        &self,
+        point: Point,
+        pixel: f64,
+        level: Level,
+        selected: u32,
+    ) -> Option<Handle> {
+        if level == Level::Far || !self.holds_node(selected) || !self.is_resizable(selected) {
+            return None;
+        }
+        let reach = HANDLE_REACH * bounded_pixel(pixel);
+        let bounds = self.node_bounds(selected);
+        Handle::ALL
+            .into_iter()
+            .map(|handle| {
+                let [x, y] = handle.at(&bounds);
+                (handle, (x - point.x).abs().max((y - point.y).abs()))
+            })
+            .filter(|&(_, d)| d <= reach)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(handle, _)| handle)
     }
 
     /// The label whose measured pill holds `point`, of the edge in the highest slot
@@ -218,6 +249,62 @@ mod tests {
         ));
         assert_eq!(graph.hit_at(far, 1e308, Level::Middle, false), None);
         assert!(bounded_pixel(1e308) * CONNECTOR_REACH < f64::MAX);
+    }
+
+    #[test]
+    fn a_resize_handle_of_the_selected_resizable_node_is_hit_near_and_middle_and_no_other() {
+        // Verifies: REN-node-content-and-hits
+        // A node at the origin, 100 × 8, the thinnest a resize leaves, and one beside it.
+        let positions = vec![0.0, 0.0, 300.0, 0.0];
+        let sizes = vec![100.0, 8.0, 100.0, 60.0];
+        let mut graph = Graph::new(positions, sizes, Vec::new()).unwrap();
+        let at = |graph: &Graph, x: f64, y: f64, level: Level, selected: u32| {
+            graph.handle_at(Point::new(x, y), 2.0, level, selected)
+        };
+        // Not resizable: no handle, whatever is pressed.
+        assert_eq!(at(&graph, 0.0, 0.0, Level::Near, 0), None);
+        graph.set_sizing(0, None, true).unwrap();
+        // Each handle at its point and within 6 screen pixels, 12 world units at a pixel of 2.
+        let corners = [
+            (0.0, 0.0, Handle::TopLeft),
+            (50.0, 0.0, Handle::Top),
+            (100.0, 0.0, Handle::TopRight),
+            (100.0, 8.0, Handle::BottomRight),
+            (50.0, 8.0, Handle::Bottom),
+            (0.0, 8.0, Handle::BottomLeft),
+        ];
+        for level in [Level::Near, Level::Middle] {
+            for (x, y, handle) in corners {
+                assert_eq!(at(&graph, x, y, level, 0), Some(handle), "{handle:?}");
+            }
+            assert_eq!(at(&graph, -11.0, -11.0, level, 0), Some(Handle::TopLeft));
+            assert_eq!(at(&graph, -13.0, 0.0, level, 0), None);
+            // In the middle of a side of a node so thin, the nearest handle wins: the bottom's.
+            assert_eq!(at(&graph, 50.0, 5.0, level, 0), Some(Handle::Bottom));
+            assert_eq!(at(&graph, 101.0, 4.0, level, 0), Some(Handle::Right));
+        }
+        // None at the far level, of another node, or of a slot that holds none.
+        assert_eq!(at(&graph, 0.0, 0.0, Level::Far, 0), None);
+        assert_eq!(at(&graph, 300.0, 0.0, Level::Near, 1), None);
+        assert_eq!(at(&graph, 0.0, 0.0, Level::Near, 9), None);
+    }
+
+    #[test]
+    fn the_side_handles_of_a_taller_node_stand_at_its_sides_middles_and_a_slot_taken_again_has_none()
+     {
+        // Verifies: REN-node-content-and-hits
+        let positions = vec![0.0, 0.0, 300.0, 0.0];
+        let sizes = vec![100.0, 8.0, 100.0, 60.0];
+        let mut graph = Graph::new(positions, sizes, Vec::new()).unwrap();
+        let at =
+            |graph: &Graph, x: f64, y: f64| graph.handle_at(Point::new(x, y), 2.0, Level::Near, 1);
+        graph.set_sizing(1, None, true).unwrap();
+        assert_eq!(at(&graph, 300.0, 30.0), Some(Handle::Left));
+        assert_eq!(at(&graph, 400.0, 30.0), Some(Handle::Right));
+        // A slot freed and taken again is no longer resizable.
+        graph.remove_nodes(&[1]).unwrap();
+        assert_eq!(graph.add_node(300.0, 0.0, 100.0, 60.0), Ok(1));
+        assert!(!graph.is_resizable(1));
     }
 
     #[test]

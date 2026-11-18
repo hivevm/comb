@@ -137,6 +137,8 @@ mod tests {
             shape: crate::NodeShape::Rectangle.into(),
             container: None.into(),
             is_container: None.into(),
+            height: None.into(),
+            resizable: None.into(),
             content: content.into(),
         }
     }

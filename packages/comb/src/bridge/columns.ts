@@ -70,6 +70,10 @@ export interface NodeColumns {
   readonly x: Float64Array;
   readonly y: Float64Array;
   readonly width: Float64Array;
+  /** Per node whether its data gives a height, 1 or 0, and that height
+   *  (REN-node-shapes-cover-uml). */
+  readonly hasHeight: Uint8Array;
+  readonly height: Float64Array;
   readonly shape: Uint8Array;
   /** Per node whether it names a container, 1 or 0, the slot of the node it names, `NO_SLOT`
    *  where no node has that identifier, and whether it is a container, 1 or 0
@@ -77,6 +81,8 @@ export interface NodeColumns {
   readonly hasContainer: Uint8Array;
   readonly container: Uint32Array;
   readonly isContainer: Uint8Array;
+  /** Per node whether the user may resize it, 1 or 0 (API-edits-report-nested-changes). */
+  readonly resizable: Uint8Array;
   readonly content: ContentColumns;
   readonly refused:
     | {
@@ -96,8 +102,10 @@ export interface NodeColumnWriter {
   /** Starts the next node: an identifier that is a string is one, a number that is a number is
    *  one, a node shape that is a string crosses as its code, a container that is a string names
    *  the node of that identifier, which crosses as its slot once every node is written, a mark as
-   *  a container that is a boolean is one, a container and a mark null or undefined are none, and
-   *  any other value is refused by its type, the first of them named. */
+   *  a container that is a boolean is one, a height that is a number is one, whether it is
+   *  resizable that is a boolean is so, a container, a mark, a height, and whether it is resizable
+   *  null or undefined are none, and any other value is refused by its type, the first of them
+   *  named. */
   node(
     id: unknown,
     x: unknown,
@@ -106,6 +114,8 @@ export interface NodeColumnWriter {
     shape: unknown,
     container: unknown,
     isContainer: unknown,
+    height?: unknown,
+    resizable?: unknown,
   ): void;
   /** The node's content is no list: refused by its type, and the node holds no rows. */
   noContent(): void;
@@ -295,10 +305,13 @@ class NodeWriter implements NodeColumnWriter {
   private readonly x: Float64Array;
   private readonly y: Float64Array;
   private readonly width: Float64Array;
+  private readonly hasHeight: Uint8Array;
+  private readonly height: Float64Array;
   private readonly shape: ReturnType<typeof codeColumn<NodeShapeCode>>;
   private readonly hasContainer: Uint8Array;
   private readonly container: Uint32Array;
   private readonly isContainer: Uint8Array;
+  private readonly resizable: Uint8Array;
   /** The identifier of each node as it was handed over, and the identifier each node's container
    *  names, by the node's index, from which `columns` finds each container's slot. */
   private readonly named: unknown[] = [];
@@ -333,10 +346,13 @@ class NodeWriter implements NodeColumnWriter {
     this.x = new Float64Array(count);
     this.y = new Float64Array(count);
     this.width = new Float64Array(count);
+    this.hasHeight = new Uint8Array(count);
+    this.height = new Float64Array(count);
     this.shape = codeColumn(count, SHAPES, NodeShapeCode.Unnamed);
     this.hasContainer = new Uint8Array(count);
     this.container = new Uint32Array(count);
     this.isContainer = new Uint8Array(count);
+    this.resizable = new Uint8Array(count);
     this.rowBounds = new Uint32Array(count + 1);
     this.elementBounds = new Uint32Array(count + 1);
     this.kinds = new Uint8Array(count);
@@ -373,6 +389,8 @@ class NodeWriter implements NodeColumnWriter {
     shape: unknown,
     container: unknown,
     isContainer: unknown,
+    height?: unknown,
+    resizable?: unknown,
   ): void {
     if (this.open) this.endNode();
     this.open = true;
@@ -381,13 +399,24 @@ class NodeWriter implements NodeColumnWriter {
     this.number(this.x, x, NodeField.X);
     this.number(this.y, y, NodeField.Y);
     this.number(this.width, width, NodeField.Width);
+    if (typeof height === "number") {
+      this.hasHeight[this.at] = 1;
+      this.height[this.at] = height;
+    } else if (!absent(height)) this.refuse(NodeField.Height);
     if (this.shape.add(this.at, shape)) this.refuse(NodeField.Shape);
     if (typeof container === "string") {
       this.hasContainer[this.at] = 1;
       this.containers.set(this.at, container);
     } else if (!absent(container)) this.refuse(NodeField.Container);
-    if (isContainer === true) this.isContainer[this.at] = 1;
-    else if (isContainer !== false && !absent(isContainer)) this.refuse(NodeField.IsContainer);
+    this.flag(this.isContainer, isContainer, NodeField.IsContainer);
+    this.flag(this.resizable, resizable, NodeField.Resizable);
+  }
+
+  /** `value` into `column` as 1 where it is `true`, as 0 where it is `false` or none, else
+   *  refused as `field`. */
+  private flag(column: Uint8Array, value: unknown, field: NodeField): void {
+    if (value === true) column[this.at] = 1;
+    else if (value !== false && !absent(value)) this.refuse(field);
   }
 
   noObject(): void {
@@ -541,10 +570,13 @@ class NodeWriter implements NodeColumnWriter {
       x: this.x.subarray(0, this.at),
       y: this.y.subarray(0, this.at),
       width: this.width.subarray(0, this.at),
+      hasHeight: this.hasHeight.subarray(0, this.at),
+      height: this.height.subarray(0, this.at),
       shape: this.shape.column(this.at),
       hasContainer: this.hasContainer.subarray(0, this.at),
       container: this.containerSlots(),
       isContainer: this.isContainer.subarray(0, this.at),
+      resizable: this.resizable.subarray(0, this.at),
       content: this.contentColumns(),
       refused: this.refused,
     };

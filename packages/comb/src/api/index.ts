@@ -133,8 +133,9 @@ export interface Comb {
    *  `rectangle` where left out, lays out to in the fonts Comb draws with: the height `addNode`
    *  gives such a node, without one in the graph and changing nothing. Content whose rows hold
    *  elements of the same kinds, row by row and in the same order, has the same height in a
-   *  rectangle whatever its texts and width, so a layout asks once per shape of content; a
-   *  circle and a ringed circle are as high as wide, and a bar 8 high
+   *  rectangle whatever its texts and width, so a layout asks once per shape of content; content
+   *  of no rows is as high as wide, a circle and a ringed circle are as high as wide, and a bar 8
+   *  high
    *  (REN-closed-set-of-node-shapes). Throws a `GraphDataError` with the problem `addNode` gives
    *  the content, the width, or the node shape, its texts counted against the budget alone, as in
    *  an empty graph, naming the

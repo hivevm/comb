@@ -169,7 +169,7 @@ impl ContentData {
     }
 
     /// The height the content of the node at `node` lays out to in `fonts`, before its node shape
-    /// (`shaped_height`); that of no rows for a node without content, as only the tests build one.
+    /// (`node_height`); that of no rows for a node without content, as only the tests build one.
     pub(crate) fn height(&self, node: usize, fonts: &Fonts) -> f64 {
         let view = self.view();
         let rows = if node + 1 < self.row_bounds.len() {
@@ -178,5 +178,15 @@ impl ContentData {
             0..0
         };
         view.height(rows, fonts)
+    }
+
+    /// The height `height` gives of the node at `node`, and its number of rows.
+    pub(crate) fn laid(&self, node: usize, fonts: &Fonts) -> (f64, usize) {
+        let rows = if node + 1 < self.row_bounds.len() {
+            self.view().rows(node).len()
+        } else {
+            0
+        };
+        (self.height(node, fonts), rows)
     }
 }

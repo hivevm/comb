@@ -52,6 +52,20 @@ export type GraphChange =
       readonly y: number;
       readonly container: string | null;
     }
+  /** A resize left the node `id` at `x`, `y`, relative to its container, `width` × `height`; of
+   *  the nodes that lie directly in it, `moved` names each whose position relative to it changed,
+   *  with that position, since a resize at the left or the top keeps them where they lie in the
+   *  world (API-edits-report-nested-changes). */
+  | {
+      readonly kind: "nodeResized";
+      readonly by: "user";
+      readonly id: string;
+      readonly x: number;
+      readonly y: number;
+      readonly width: number;
+      readonly height: number;
+      readonly moved: readonly { readonly id: string; readonly x: number; readonly y: number }[];
+    }
   /** The nodes `nodes` were removed, and with them the edges `edges`. */
   | {
       readonly kind: "nodesRemoved";
@@ -125,30 +139,61 @@ function edgeDeliveryOf(
   };
 }
 
+/** The height the node in `slot` has, as the engine keeps it. */
+function heightAt(bridge: Bridge, slot: number): number {
+  return bridge.nodeBuffers().sizes[slot * 2 + 1]!;
+}
+
 /** The change `nodeUpdated` as `onChange` delivers it, with the content the engine keeps, built
- *  for this delivery, where the patch set it. */
+ *  for this delivery, where the patch set it, the height the node has where it set one, raised
+ *  where it was below its content's, and whether it is resizable where it set it. */
 function nodeUpdatedOf(
   change: Extract<StoreChange, { kind: "nodeUpdated" }>,
   state: GraphState,
   bridge: Bridge,
 ): GraphChange {
-  const patch = change.content ? { content: bridge.content(state.slots.get(change.id)!) } : {};
+  const slot = state.slots.get(change.id)!;
+  const patch: NodePatch = change.content ? { content: bridge.content(slot) } : {};
+  if (change.height) patch.height = heightAt(bridge, slot);
+  if (change.resizable !== undefined) patch.resizable = change.resizable;
   return { kind: change.kind, by: change.by, id: change.id, patch };
 }
 
+/** The change `nodeResized` as `onChange` delivers it: the node's box, its position relative to
+ *  its container, and the positions relative to it of the nodes the resize moved there. */
+function nodeResizedOf(
+  change: Extract<StoreChange, { kind: "nodeResized" }>,
+  state: GraphState,
+  bridge: Bridge,
+): GraphChange {
+  const slot = state.slots.get(change.id)!;
+  // Read before the next call into the engine, which may detach the view.
+  const { sizes } = bridge.nodeBuffers();
+  const [width, height] = [sizes[slot * 2]!, sizes[slot * 2 + 1]!];
+  const { x, y } = placeOf(state, bridge, slot);
+  const moved = change.moved.map((id) => {
+    const at = placeOf(state, bridge, state.slots.get(id)!);
+    return { id, x: at.x, y: at.y };
+  });
+  return { kind: change.kind, by: change.by, id: change.id, x, y, width, height, moved };
+}
+
 /** The change `nodeAdded` as `onChange` delivers it: the node as Comb took it, its position
- *  relative to its container, and its content built for this delivery. */
+ *  relative to its container, its height as raised, and its content built for this delivery. */
 function nodeAddedOf(
   change: Extract<StoreChange, { kind: "nodeAdded" }>,
   state: GraphState,
   bridge: Bridge,
 ): GraphChange {
   const slot = state.slots.get(change.id)!;
-  const { id, width, shape, isContainer } = state.nodes[slot]!;
+  const { id, width, shape, isContainer, height, resizable } = state.nodes[slot]!;
   const { x, y, container } = placeOf(state, bridge, slot);
   const node: NodeData = { id, x, y, width, shape, content: bridge.content(slot) };
   if (container !== null) node.container = container;
   if (isContainer !== undefined) node.isContainer = isContainer;
+  // The height as Comb took it: raised where it was below its content's.
+  if (height !== undefined) node.height = heightAt(bridge, slot);
+  if (resizable !== undefined) node.resizable = resizable;
   return { kind: change.kind, by: change.by, node };
 }
 
@@ -164,14 +209,38 @@ function placeOf(state: GraphState, bridge: Bridge, slot: number) {
   return { x: at.x - origin.x, y: at.y - origin.y, container };
 }
 
+/** A change of one node, which `nodeChangeOf` delivers. */
+type NodeChange = Extract<StoreChange, { kind: "nodeAdded" | "nodeUpdated" | "nodeResized" }>;
+
+/** The kinds of `NodeChange`. */
+const NODE_CHANGES: ReadonlySet<StoreChange["kind"]> = new Set([
+  "nodeAdded",
+  "nodeUpdated",
+  "nodeResized",
+]);
+
+/** Whether `change` is a change of one node. */
+const isNodeChange = (change: StoreChange): change is NodeChange => NODE_CHANGES.has(change.kind);
+
+/** The change of a node `change` names, as `onChange` delivers it. */
+function nodeChangeOf(change: NodeChange, state: GraphState, bridge: Bridge): GraphChange {
+  switch (change.kind) {
+    case "nodeAdded":
+      return nodeAddedOf(change, state, bridge);
+    case "nodeUpdated":
+      return nodeUpdatedOf(change, state, bridge);
+    case "nodeResized":
+      return nodeResizedOf(change, state, bridge);
+  }
+}
+
 /** The change of the graph `change` names, as `onChange` delivers it: what it carries read from
  *  `state` and, for a position, from the engine's buffer as it is now. */
 function deliveryOf(change: StoreChange, state: GraphState, bridge: Bridge): GraphChange {
+  if (isNodeChange(change)) return nodeChangeOf(change, state, bridge);
   switch (change.kind) {
     case "loaded":
       return { kind: change.kind, by: change.by };
-    case "nodeUpdated":
-      return nodeUpdatedOf(change, state, bridge);
     case "nodeMoved": {
       const { x, y, container } = placeOf(state, bridge, state.slots.get(change.id)!);
       return {
@@ -199,8 +268,6 @@ function deliveryOf(change: StoreChange, state: GraphState, bridge: Bridge): Gra
       const { t, offset } = edgeNamed(state, change.edge).edge.label!;
       return { kind: change.kind, by: change.by, edge: change.edge, t, offset };
     }
-    case "nodeAdded":
-      return nodeAddedOf(change, state, bridge);
   }
 }
 

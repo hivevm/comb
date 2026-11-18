@@ -14,6 +14,7 @@ import { untilLost } from "./guard";
 import { labelDrag } from "./label-drag";
 import { nodeDrag } from "./node-drag";
 import { pan } from "./pan";
+import { resize } from "./resize";
 import { levelAt, zoomAt } from "../store/viewport";
 
 export { attachDeletion, type Delete, type Deletion } from "./delete";
@@ -22,9 +23,9 @@ export type { ContainerMove, ContentClick, MoveInto } from "./gesture";
 
 const WHEEL_STEP = 1.0015;
 
-/** The cursor over what a press would hit: begin a connection, grab a node, select an edge, or
- *  nothing. */
-const CURSORS: Record<Hit["kind"], string> = {
+/** The cursor over what a press would hit: resize a node, begin a connection, grab a node, select
+ *  an edge, or nothing. */
+const CURSORS: Record<Exclude<Hit["kind"], "handle">, string> = {
   connector: "crosshair",
   label: "grab",
   node: "grab",
@@ -32,8 +33,26 @@ const CURSORS: Record<Hit["kind"], string> = {
   none: "",
 };
 
+/** The cursor over each resize handle, the direction it resizes in. */
+const HANDLE_CURSORS: Record<Extract<Hit, { kind: "handle" }>["handle"], string> = {
+  topLeft: "nwse-resize",
+  top: "ns-resize",
+  topRight: "nesw-resize",
+  right: "ew-resize",
+  bottomRight: "nwse-resize",
+  bottom: "ns-resize",
+  bottomLeft: "nesw-resize",
+  left: "ew-resize",
+};
+
+/** The cursor over what `hit` names. */
+function cursorOf(hit: Hit): string {
+  return hit.kind === "handle" ? HANDLE_CURSORS[hit.handle] : CURSORS[hit.kind];
+}
+
 /** Begins what a press at the screen point `(x, y)` does where the context's `hitAt` says it hits
- *  (REN-node-content-in-rows): on a connector, where the host lets the user connect, a connection;
+ *  (REN-node-content-in-rows): on a resize handle of the selected node, a resize of it; on a
+ *  connector, where the host lets the user connect, a connection;
  *  on an edge label, a drag of it, its edge selected; on a node, a drag of it that waits for the
  *  slop, or within it a click, the node selected; on an edge, a pan that waits for the slop, the
  *  edge
@@ -47,6 +66,7 @@ function begin(
 ): Gesture {
   const hit = context.hitAt(x, y);
   return (
+    resize(context, hit, x, y) ||
     (connect && connection(context, hit, x, y, connect, loops)) ||
     labelDrag(context, hit, x, y) ||
     nodeDrag(context, hit, x, y) ||
@@ -73,7 +93,7 @@ function attachWheel(app: Application, store: GraphStore): () => void {
 /** Shows what a press at the pointer would do: the cursor, and where the host lets the user
  *  connect, the connectors of the node under it. */
 function hoverAt(app: Application, store: GraphStore, hit: Hit, connecting: boolean): void {
-  app.canvas.style.cursor = CURSORS[hit.kind];
+  app.canvas.style.cursor = cursorOf(hit);
   // At the far level no connector is drawn, so none is shown, and hover writes nothing.
   const far = levelAt(store.getState().viewport.scale) === "far";
   const over = hit.kind === "connector" || hit.kind === "node";

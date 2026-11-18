@@ -7,7 +7,9 @@ use comb_engine::shape::NodeShape;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use super::item::{Item, Node};
-use super::problem::{A_CONTENT, A_FLAG, A_NUMBER, A_SHAPE, A_SIZE, AN_ID, AN_ID_OR_NONE};
+use super::problem::{
+    A_CONTENT, A_FLAG, A_HEIGHT, A_NUMBER, A_SHAPE, A_SIZE, AN_ID, AN_ID_OR_NONE,
+};
 use super::{
     ContentColumns, Field, GraphDataProblem, GraphList, Unflat, bounds_fit, malformed, numbered,
     refused_by, unshaped, value_at, values,
@@ -29,9 +31,11 @@ pub enum NodeField {
     X,
     Y,
     Width,
+    Height,
     Shape,
     Container,
     IsContainer,
+    Resizable,
     Content,
     Row,
     Element,
@@ -71,7 +75,9 @@ pub struct Refused {
 /// refused value empty. The numbers are as the host application handed them; the node shapes as
 /// their codes; a node's container as whether it names one, 1 or 0, and the slot of the node it
 /// names, which the snapshot found by its identifier, or one past the slots where it names none,
-/// and its mark as a container as 1 or 0 (API-bridge-columns-carry-nesting); the content crosses
+/// and its mark as a container as 1 or 0 (API-bridge-columns-carry-nesting); its height as whether
+/// its data gives one, 1 or 0, and the number given, and whether it is resizable as 1 or 0
+/// (API-edits-report-nested-changes); the content crosses
 /// as the columns of `ContentColumns`. `refused` is the first value the shell read that the first
 /// pass refuses, or none; a node shape that names none is no such value, and the first pass finds
 /// its code.
@@ -81,10 +87,13 @@ pub struct NodeColumns<'a> {
     pub x: &'a [f64],
     pub y: &'a [f64],
     pub width: &'a [f64],
+    pub has_height: &'a [u8],
+    pub height: &'a [f64],
     pub shape: &'a [u8],
     pub has_container: &'a [u8],
     pub container: &'a [u32],
     pub is_container: &'a [u8],
+    pub resizable: &'a [u8],
     pub content: ContentColumns<'a>,
     pub refused: Option<Refused>,
 }
@@ -95,15 +104,17 @@ pub(super) fn unfit() -> GraphDataProblem {
 }
 
 impl NodeField {
-    pub(super) const ALL: [Self; 13] = [
+    pub(super) const ALL: [Self; 15] = [
         Self::Item,
         Self::Id,
         Self::X,
         Self::Y,
         Self::Width,
+        Self::Height,
         Self::Shape,
         Self::Container,
         Self::IsContainer,
+        Self::Resizable,
         Self::Content,
         Self::Row,
         Self::Element,
@@ -168,8 +179,13 @@ impl NodeColumns<'_> {
     /// The number of nodes, or a refusal as malformed where the columns do not fit together.
     pub(super) fn count(&self) -> Result<usize, GraphDataProblem> {
         let count = self.x.len();
-        let numbers = [self.y, self.width].map(<[f64]>::len);
-        let flags = [self.has_container, self.is_container];
+        let numbers = [self.y, self.width, self.height].map(<[f64]>::len);
+        let flags = [
+            self.has_container,
+            self.is_container,
+            self.has_height,
+            self.resizable,
+        ];
         let fit = numbers.iter().all(|&len| len == count)
             && self.shape.len() == count
             && self.container.len() == count
@@ -221,9 +237,11 @@ impl NodeColumns<'_> {
             NodeField::X => ("x", A_NUMBER),
             NodeField::Y => ("y", A_NUMBER),
             NodeField::Width => ("width", A_SIZE),
+            NodeField::Height => ("height", A_HEIGHT),
             NodeField::Shape => ("shape", A_SHAPE),
             NodeField::Container => ("container", AN_ID_OR_NONE),
             NodeField::IsContainer => ("isContainer", A_FLAG),
+            NodeField::Resizable => ("resizable", A_FLAG),
             NodeField::Content => ("content", A_CONTENT),
             NodeField::Row | NodeField::Element | NodeField::Segments | NodeField::Segment => {
                 let unread = match refused.field {
@@ -280,6 +298,8 @@ impl NodeColumns<'_> {
                     x: self.x[i],
                     y: self.y[i],
                     width: self.width[i],
+                    height: (self.has_height[i] == 1).then(|| self.height[i]),
+                    resizable: self.resizable[i] == 1,
                     shape,
                     is_container: false,
                 })
@@ -499,8 +519,12 @@ mod tests {
     fn columns_that_do_not_fit_together_are_refused_as_malformed() {
         // Verifies: API-bridge-takes-serde-and-columns
         let fits = || a_and(|_| {});
-        let changes: [fn(&mut OwnedColumns); 13] = [
+        let changes: [fn(&mut OwnedColumns); 17] = [
             |c| _ = c.x.pop(),
+            |c| _ = c.height.pop(),
+            |c| _ = c.has_height.pop(),
+            |c| _ = c.resizable.pop(),
+            |c| c.resizable[0] = 2,
             |c| _ = c.has_container.pop(),
             |c| _ = c.container.pop(),
             |c| _ = c.is_container.pop(),

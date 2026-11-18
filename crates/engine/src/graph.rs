@@ -10,7 +10,8 @@
 //! The graph is split by concept: `slots` keeps the free slots of a kind, `nodes` and `edges` the
 //! edits of each, `containers` which node each node lies in and the order of containers
 //! (ARCH-engine-edits-nested-graph), `index` the spatial index and the rule that builds it again,
-//! `hit` the hit test, `labels` the edge labels, and `query` what a rectangle meets.
+//! `hit` the hit test, `labels` the edge labels, `query` what a rectangle meets, and `resize` the
+//! resize of a node by its resize handles.
 
 use crate::geometry::{EdgePath, Point, Rect, Sides};
 use crate::shape::NodeShape;
@@ -24,6 +25,7 @@ mod index;
 mod labels;
 mod nodes;
 mod query;
+mod resize;
 mod slots;
 
 #[cfg(test)]
@@ -38,6 +40,7 @@ pub use nodes::PositionError;
 #[cfg(test)]
 pub(crate) use query::origin_of;
 pub use query::{Level, MeshAt, Visible};
+pub use resize::{Handle, LEAST_SIDE, resized};
 use slots::Slots;
 
 /// An edge between two node slots, with the path parameter and label offset of its edge label
@@ -187,6 +190,12 @@ pub struct Graph {
     /// The node shape of each node slot (REN-closed-set-of-node-shapes); a slot past its end is a
     /// rectangle, so that a graph that names no node shape keeps none.
     shapes: Vec<NodeShape>,
+    /// The height each node slot's data gives, or a resize left, or none; a slot past its end
+    /// has none (API-edits-report-nested-changes).
+    given: Vec<Option<f32>>,
+    /// Whether the user may resize each node slot by its resize handles; a slot past its end may
+    /// not.
+    resizable: Vec<bool>,
     edges: Vec<EdgeSpec>,
     /// The node slots, free ones among them (ARCH-engine-edits-graph-in-place).
     node_slots: Slots,

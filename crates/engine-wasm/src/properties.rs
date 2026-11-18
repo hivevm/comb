@@ -302,9 +302,42 @@ fn node(loose: bool, i: usize) -> impl Strategy<Value = Value> {
         field("x", num(), loose),
         field("y", num(), loose),
         field("width", size(), loose),
+        sometimes("height", given_height(loose)),
         field("shape", node_shape(loose), loose),
+        sometimes("resizable", flag(loose)),
         field("content", content(loose), loose),
     ])
+}
+
+/// A field now and then left out, else holding what `good` makes.
+fn sometimes(
+    name: &'static str,
+    good: impl Strategy<Value = Value> + 'static,
+) -> BoxedStrategy<Field> {
+    prop_oneof![
+        3 => Just(None),
+        1 => good.prop_map(move |value| Some((name.to_owned(), value))),
+    ]
+    .boxed()
+}
+
+/// Mostly a height above 0, now and then null, which is none, or one the bridge refuses; loose,
+/// also a value of another type (API-bridge-columns-carry-nesting).
+fn given_height(loose: bool) -> BoxedStrategy<Value> {
+    let good = prop_oneof![10 => (1.0..500.0f64).prop_map(Value::Number), 1 => Just(Value::Null), 1 => num()];
+    if !loose {
+        return good.boxed();
+    }
+    prop_oneof![20 => good, 1 => Just(Value::Bool(false)), 1 => anything()].boxed()
+}
+
+/// Whether the node is resizable, or null; loose, now and then a value of another type.
+fn flag(loose: bool) -> BoxedStrategy<Value> {
+    let good = prop_oneof![any::<bool>().prop_map(Value::Bool), Just(Value::Null)];
+    if !loose {
+        return good.boxed();
+    }
+    prop_oneof![20 => good, 1 => Just(Value::Number(1.0))].boxed()
 }
 
 /// Mostly a rectangle, now and then another node shape, a filled one among them, which refuses
@@ -651,7 +684,8 @@ fn shape_ok(node: &Value) -> bool {
 /// Whether the far side of `node`, its content well formed, lies within the world's limit: its
 /// `y`, as `f32` holds it, and its height by its node shape: of a content node shape, the height
 /// of its rows, each as high as its tallest text, and its padding of 10 above and below, at least
-/// 64, grown to its inner rectangle; of a circle its width; and of a bar 8.
+/// 64, grown to its inner rectangle, or the height its data gives where that is more, and without
+/// rows the height given or as wide; of a circle its width; and of a bar 8 or the height given.
 fn far_side_ok(node: &Value, lines: [f64; 3]) -> bool {
     let Some(fields) = fields_of(node) else {
         return true;
@@ -690,12 +724,22 @@ fn far_side_ok(node: &Value, lines: [f64; 3]) -> bool {
         Some(Value::Number(width)) => f64::from(*width as f32),
         _ => 0.0,
     };
+    // The height its data gives, as f32 holds it, a value of another type named elsewhere.
+    let given = match get(fields, "height") {
+        Some(Value::Number(given)) => Some(f64::from(*given as f32)),
+        _ => None,
+    };
     let height = match shape_name(node) {
+        "circle" | "ringed-circle" => width,
+        "bar" => given.unwrap_or(8.0),
+        _ if rows.is_empty() => given.unwrap_or(width),
         "ellipse" => height / core::f64::consts::FRAC_1_SQRT_2,
         "diamond" => height / 0.5,
-        "circle" | "ringed-circle" => width,
-        "bar" => 8.0,
         _ => height,
+    };
+    let height = match shape_name(node) {
+        "circle" | "ringed-circle" | "bar" => height,
+        _ => given.map_or(height, |given| given.max(height)),
     };
     let height = f64::from(height as f32);
     // NaN beside a coordinate the oracle names elsewhere: within, as `<=` reads it here.
@@ -843,11 +887,14 @@ fn accepts(batch: &GraphBatch) -> Option<bool> {
     let node_ok = |n: &NodeInput| {
         let [x, y, width] = [n.x.0?, n.y.0?, n.width.0?];
         n.content.0.as_ref()?;
+        n.resizable.0?;
+        // A height its data gives is a finite number above 0 as f32 holds it.
+        let height_ok = n.height.0?.is_none_or(|h| finite32(h) && h as f32 > 0.0);
         let within = [x, y, x]
             .into_iter()
             .zip([0.0, 0.0, width])
             .all(|(at, size)| (as_f32(at) + as_f32(size)).abs() <= world);
-        Some([x, y, width].into_iter().all(finite32) && width as f32 >= 0.0 && within)
+        Some([x, y, width].into_iter().all(finite32) && width as f32 >= 0.0 && within && height_ok)
     };
     let edge_ok = |e: &EdgeInput| {
         let label_ok = match e.label.0? {
@@ -927,6 +974,35 @@ fn shaped(value: &Value) -> bool {
     true
 }
 
+/// Whether the node shape of the node `item` names one, and whether its height and whether it is
+/// resizable are of their types, or none.
+fn shape_and_sizing_typed(item: &Fields) -> [(&'static str, bool); 3] {
+    let shapes = [
+        "rectangle",
+        "rounded-rectangle",
+        "ellipse",
+        "circle",
+        "ringed-circle",
+        "diamond",
+        "bar",
+    ];
+    let shape = matches!(get(item, "shape"), Some(Value::Text(s)) if shapes.contains(&s.as_str()));
+    let absent = |value: Option<&Value>| matches!(value, None | Some(Value::Null));
+    let height = get(item, "height");
+    let resizable = get(item, "resizable");
+    [
+        ("shape", shape),
+        (
+            "height",
+            absent(height) || matches!(height, Some(Value::Number(_))),
+        ),
+        (
+            "resizable",
+            absent(resizable) || matches!(resizable, Some(Value::Bool(_))),
+        ),
+    ]
+}
+
 /// A field the bridge names: the list, the index, the identifier where the item has a string
 /// one, and the field.
 type Named = (GraphList, u32, Option<String>, String);
@@ -951,18 +1027,9 @@ fn mistyped(list: GraphList, item: &Fields) -> Vec<&'static str> {
             for name in ["x", "y", "width"] {
                 check(name, number(item, name));
             }
-            let shapes = [
-                "rectangle",
-                "rounded-rectangle",
-                "ellipse",
-                "circle",
-                "ringed-circle",
-                "diamond",
-                "bar",
-            ];
-            let shape =
-                matches!(get(item, "shape"), Some(Value::Text(s)) if shapes.contains(&s.as_str()));
-            check("shape", shape);
+            for (name, typed) in shape_and_sizing_typed(item) {
+                check(name, typed);
+            }
             check(
                 "content",
                 matches!(get(item, "content"), Some(Value::List(_))),
@@ -1947,8 +2014,8 @@ proptest! {
                     *key == "content" && content_ok(&node)
                 });
                 let sets = read.iter().any(|(key, _)| *key == "content");
-                match patch_of("n", crate::graph_data::RECTANGLE, &patch, &Fonts::default(), 0) {
-                    Ok(checked) => prop_assert!(fine && checked.is_some() == sets),
+                match patch_of("n", crate::graph_data::RECTANGLE.0, &patch, &Fonts::default(), 0) {
+                    Ok(checked) => prop_assert!(fine && checked.content.is_some() == sets),
                     Err(error) => {
                         prop_assert!(!fine);
                         prop_assert!(!messages(&error).into_iter().any(names_rust));
@@ -2049,6 +2116,8 @@ fn counted_node(id: String, rows: &[Vec<Counted>]) -> NodeInput {
         shape: crate::NodeShape::Rectangle.into(),
         container: None.into(),
         is_container: None.into(),
+        height: None.into(),
+        resizable: None.into(),
         content: content_input(rows).into(),
     }
 }

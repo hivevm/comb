@@ -12,9 +12,10 @@ use serde::de::{self, IgnoredAny, Visitor};
 use serde::{Deserialize, Deserializer};
 use tsify::Tsify;
 
-use super::checks::{color_of, dash_of, edge_ids_of, label_placement, spec_of};
+use super::checks::{color_of, dash_of, edge_ids_of, given_height, label_placement, spec_of};
 use super::item::{Item, content_of, edge_of, label_of};
 use super::load::checked_content;
+use super::problem::{A_FLAG, A_HEIGHT};
 use super::{
     Arrow, Checked, ContentInput, Dock, EdgeField, EdgeInput, Field, GraphDataProblem, GraphList,
     LabelInput, Pair, check_graph_size, utf16_length,
@@ -202,15 +203,38 @@ pub(crate) fn update_edge_in(
     Ok(graph.update_edge(slot, label, style, sides)?)
 }
 
-/// The attributes `updateNode` changes on a node, by name: only its content, which it replaces
-/// whole (REN-node-content-in-rows). Read from a plain object alone: `api` hands over a copy of a
-/// plain object's fields up to the first other than `content`, its content as plain data; a patch
+/// The attributes `updateNode` changes on a node, by name: its content, which it replaces whole
+/// (REN-node-content-in-rows), its height, and whether it is resizable
+/// (API-edits-report-nested-changes). Read from a plain object alone: `api` hands over a copy of a
+/// plain object's fields up to the first it does not know, its content as plain data; a patch
 /// that is no plain object, a `Map` or an array among them, or that has a key that is no string,
 /// `api` cannot read, and refuses as malformed before it reaches the bridge. No value of the host
 /// application, and none of its code, reaches the bridge.
 #[derive(Tsify)]
-#[tsify(type = "{ content?: NodeContent }")]
-pub struct NodePatch(pub Vec<(String, Field<ContentInput>)>);
+#[tsify(type = "{ content?: NodeContent; height?: number; resizable?: boolean }")]
+pub struct NodePatch(pub Vec<(String, PatchValue)>);
+
+/// A value of a field of `NodePatch`, read as the field its name says, or none for a name it
+/// does not know, which `patch_of` refuses.
+#[derive(Debug)]
+pub enum PatchValue {
+    Content(Box<Field<ContentInput>>),
+    Height(Field<f64>),
+    Resizable(Field<bool>),
+    Other,
+}
+
+impl From<Field<ContentInput>> for PatchValue {
+    fn from(content: Field<ContentInput>) -> Self {
+        Self::Content(Box::new(content))
+    }
+}
+
+impl From<ContentInput> for PatchValue {
+    fn from(content: ContentInput) -> Self {
+        Self::Content(Box::new(Field(Some(content))))
+    }
+}
 
 impl<'de> Deserialize<'de> for NodePatch {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -227,50 +251,82 @@ impl<'de> Visitor<'de> for PatchVisitor {
         formatter.write_str("an object")
     }
 
-    /// Keeps the fields up to the first other than `content`, which is refused, and passes over
-    /// the rest unread, so that a patch of many fields costs no copy of them.
+    /// Keeps the fields up to the first it does not know, which is refused, and passes over the
+    /// rest unread, so that a patch of many fields costs no copy of them.
     fn visit_map<A: de::MapAccess<'de>>(self, mut map: A) -> Result<NodePatch, A::Error> {
         let mut fields = Vec::new();
         while let Some(field) = map.next_key::<String>()? {
-            let other = field != "content";
-            if other {
-                map.next_value::<IgnoredAny>()?;
-                fields.push((field, Field(None)));
-                while map.next_entry::<IgnoredAny, IgnoredAny>()?.is_some() {}
-                break;
-            }
-            fields.push((field, map.next_value()?));
+            let value = match field.as_str() {
+                "content" => PatchValue::Content(Box::new(map.next_value()?)),
+                "height" => PatchValue::Height(map.next_value()?),
+                "resizable" => PatchValue::Resizable(map.next_value()?),
+                _ => {
+                    map.next_value::<IgnoredAny>()?;
+                    fields.push((field, PatchValue::Other));
+                    while map.next_entry::<IgnoredAny, IgnoredAny>()?.is_some() {}
+                    break;
+                }
+            };
+            fields.push((field, value));
         }
         Ok(NodePatch(fields))
     }
 }
 
-/// Checks a patch of the node `node`, of the node shape and width of `shaped`, and returns the
-/// content it sets, checked as a load checks a node's at index 0, its strings counted against the
-/// budget on from `held`, the code units of content the graph holds besides the node's, and the
-/// height the node lays out to in `fonts` with it, or none where it sets none; or names its first
-/// offending field.
+/// What a patch of `updateNode` sets, checked: the content, with the height it lays out to in a
+/// rectangle and its number of rows; the height the node is given, as the engine keeps it; and
+/// whether it is resizable; each none where the patch sets none.
+#[derive(Default)]
+pub(crate) struct Patched {
+    pub content: Option<(Checked, (f64, usize))>,
+    pub height: Option<f32>,
+    pub resizable: Option<bool>,
+}
+
+impl Patched {
+    /// Whether the patch set nothing.
+    pub(crate) const fn is_empty(&self) -> bool {
+        self.content.is_none() && self.height.is_none() && self.resizable.is_none()
+    }
+}
+
+/// Checks a patch of the node `node`, of the node shape `shape`, and returns what it sets: its
+/// content checked as a load checks a node's at index 0, its strings counted against the budget
+/// on from `held`, the code units of content the graph holds besides the node's, laid out in
+/// `fonts`; its height as a load checks a node's; and whether the node is resizable; or names
+/// its first offending field.
 pub(crate) fn patch_of(
     node: &str,
-    shaped: (NodeShape, f32),
+    shape: NodeShape,
     patch: &NodePatch,
     fonts: &Fonts,
     held: u64,
-) -> Result<Option<(Checked, f32)>, GraphDataProblem> {
-    let mut checked = None;
+) -> Result<Patched, GraphDataProblem> {
+    let mut patched = Patched::default();
+    let mut item = Item::new(GraphList::Nodes, 0);
+    item.id = Some(node);
     for (field, value) in &patch.0 {
-        if field != "content" {
-            return Err(GraphDataProblem::UnknownPatchField {
-                node: node.to_owned(),
-                field: field.clone(),
-            });
+        match value {
+            PatchValue::Content(value) => {
+                let content = content_of(&item, value.0.as_ref())?;
+                patched.content = Some(checked_content(node, shape, content, fonts, held)?);
+            }
+            PatchValue::Height(value) => {
+                let height = item.read("height", *value, A_HEIGHT)?;
+                patched.height = given_height(node, Some(height))?;
+            }
+            PatchValue::Resizable(value) => {
+                patched.resizable = Some(item.read("resizable", *value, A_FLAG)?);
+            }
+            PatchValue::Other => {
+                return Err(GraphDataProblem::UnknownPatchField {
+                    node: node.to_owned(),
+                    field: field.clone(),
+                });
+            }
         }
-        let mut item = Item::new(GraphList::Nodes, 0);
-        item.id = Some(node);
-        let content = content_of(&item, value.0.as_ref())?;
-        checked = Some(checked_content(node, shaped, content, fonts, held)?);
     }
-    Ok(checked)
+    Ok(patched)
 }
 
 // The malformed-data tests of graph data verify API-bridge-takes-serde-and-columns (see
@@ -284,24 +340,30 @@ mod tests {
 
     #[test]
     fn a_patch_with_another_field_or_a_title_not_text_names_its_node() {
-        let patch = |entries: Vec<(&str, Field<ContentInput>)>| {
+        let patch = |entries: Vec<(&str, PatchValue)>| {
             let fields = entries.into_iter().map(|(k, v)| (k.to_owned(), v));
             patch_of(
                 "a",
-                RECTANGLE,
+                RECTANGLE.0,
                 &NodePatch(fields.collect()),
                 &Fonts::default(),
                 0,
             )
-            .map(|checked| checked.map(|(content, height)| (content.text(0).to_owned(), height)))
+            .map(|patched| {
+                let content = patched.content;
+                content.map(|(content, laid)| (content.text(0).to_owned(), laid))
+            })
         };
         assert_eq!(patch(Vec::new()), Ok(None));
         assert_eq!(
-            patch(vec![("content", titled("A"))]),
-            Ok(Some(("A".to_owned(), 64.0)))
+            patch(vec![("content", titled("A").into())]),
+            Ok(Some(("A".to_owned(), (64.0, 1))))
         );
         assert_eq!(
-            patch(vec![("content", titled("A")), ("width", Field(None))]),
+            patch(vec![
+                ("content", titled("A").into()),
+                ("width", PatchValue::Other)
+            ]),
             Err(GraphDataProblem::UnknownPatchField {
                 node: "a".into(),
                 field: "width".into()
@@ -309,7 +371,7 @@ mod tests {
         );
         let long = "x".repeat(MAX_TEXT + 1);
         assert_eq!(
-            patch(vec![("content", titled(&long))]),
+            patch(vec![("content", titled(&long).into())]),
             Err(GraphDataProblem::ContentTextTooLong {
                 node: "a".into(),
                 row: 0,
@@ -320,7 +382,7 @@ mod tests {
         );
         let none = content(&[&[(KindCode::Text, 1.0, RoleCode::Title, None)]]);
         assert_eq!(
-            patch(vec![("content", none.into())]),
+            patch(vec![("content", Field::from(none).into())]),
             Err(invalid_text("a", 0, 0))
         );
     }

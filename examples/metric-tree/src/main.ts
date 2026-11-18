@@ -431,6 +431,11 @@ const MIRROR: { [K in GraphChange["kind"]]: (change: Extract<GraphChange, { kind
       if (container === null) delete node.container;
       else node.container = container;
     },
+    nodeResized: ({ id, x, y, width, height, moved }) => {
+      const node = nodeOf(id);
+      if (node) Object.assign(node, { x, y, width, height });
+      for (const at of moved) Object.assign(nodeOf(at.id) ?? {}, { x: at.x, y: at.y });
+    },
     nodesRemoved: ({ nodes, edges }) => removed(nodes, edges),
     edgeAdded: ({ edge }) => void graph.edges.push({ ...edge }),
     edgeUpdated: ({ id, patch }) => {

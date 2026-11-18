@@ -44,6 +44,7 @@ import {
   type DrawnConnectorPoint,
 } from "./connectors";
 import { NodeParticles } from "./particles";
+import { ResizeHandles, type DrawnHandle } from "./handles";
 import { MovingLayer, type KeptQuery } from "./moving";
 import { levelAt, toScreen, worldRect } from "../store/viewport";
 
@@ -90,6 +91,8 @@ export interface SceneSnapshot {
     title?: string;
     content?: NodeContent;
     shape?: NodeShape;
+    /** Whether the user may resize it, as Comb took it, where its data says. */
+    resizable?: boolean;
     outline?: DrawnOutline[];
     texts?: (Omit<DrawnText, "pill"> & { drawnWidth: number; fill: unknown })[];
     pills?: DrawnPill[];
@@ -126,6 +129,11 @@ export interface SceneSnapshot {
   connectorPoints: DrawnConnectorPoint[];
   /** How many times the connectors layer drew its connectors anew. */
   connectorRedraws: number;
+  /** The resize handles the overlay draws of the selected node, each its node, which one it is,
+   *  and its middle in world units (API-edits-report-nested-changes). */
+  handles: DrawnHandle[];
+  /** The squares of those handles as the overlay fills them, in screen pixels. */
+  handleSquares: { x: number; y: number; width: number; height: number }[];
   /** The connection being dragged, from its source's connector to the pointer, in world units. */
   connection: { from: { x: number; y: number }; to: { x: number; y: number } } | null;
 }
@@ -181,6 +189,8 @@ export class Scene {
   /** The icons the host application registered, which the node views draw. */
   readonly icons = new Icons();
   private readonly connection = new ConnectionLine();
+  /** The resize handles of the selected node, in the overlay. */
+  private readonly handles = new ResizeHandles();
   level: Level = "near";
   /** The detail of the edge mesh the last query drew, which inspection reports; the host
    *  application is not told. */
@@ -233,7 +243,7 @@ export class Scene {
     // stage alone. The world and its layers take no events, so that PixiJS's event system walks
     // none of them, and hit-tests no edge mesh, on a pointer move.
     this.world.eventMode = "none";
-    this.overlay.addChild(this.connection);
+    this.overlay.addChild(this.connection, this.handles);
     app.stage.addChild(this.world, this.overlay);
   }
 
@@ -252,6 +262,7 @@ export class Scene {
     const { positions, sizes } = bridge.nodeBuffers();
     this.connectors.sync(state, positions, sizes, this.origin, this.level === "far");
     this.connection.sync(state, positions, sizes, pointer);
+    this.handles.sync(state, positions, sizes);
     // In f64 here, so that the world's transform on the GPU holds no far coordinate.
     const at = toScreen(state.viewport, this.origin.x, this.origin.y);
     this.world.position.set(at.x, at.y);
@@ -376,6 +387,7 @@ export class Scene {
       y: view.y,
       ...this.contentOf(view.slot),
       ...view.drawnShape(),
+      ...(view.resizable === undefined ? {} : { resizable: view.resizable }),
       texts: view.inspected(),
       pills: view.drawnPills(),
       bars: view.drawnBars(),
@@ -430,6 +442,8 @@ export class Scene {
       connectorPoints: [...this.connectors.points],
       connectorRedraws: this.connectors.redraws,
       connection: this.connection.drawn,
+      handles: [...this.handles.drawn],
+      handleSquares: this.handles.squares(),
     };
   }
 }

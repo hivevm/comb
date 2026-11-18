@@ -33,7 +33,7 @@ import type { Icons } from "./icons";
 
 const NODE_FILL = 0xffffff;
 const NODE_STROKE = 0xd0d4dc;
-const SELECTED_STROKE = 0x3b82f6;
+export const SELECTED_STROKE = 0x3b82f6;
 const TEXT_COLOR = 0x1f2430;
 const CAPTION_COLOR = 0x6b7280;
 const LINK_COLOR = 0x2563eb;
@@ -458,6 +458,12 @@ export class NodeGraphic extends Container {
   /** The texts the view draws, for inspection. */
   texts: DrawnText[] = [];
 
+  /** Whether the node the view shows is resizable, as Comb took it; none where its data left it
+   *  out. */
+  get resizable(): boolean | undefined {
+    return this.drawn.node?.resizable;
+  }
+
   /** Whether the view draws its node as selected. */
   get selected(): boolean {
     return this.drawn.selected;
@@ -576,6 +582,18 @@ export class NodeGraphic extends Container {
     this.showBars(barsOf(placed, start, end));
     this.showArrows(arrowsOf(placed, start, end));
     this.showIcons(iconsOf(placed, start, end), icons);
+  }
+
+  /** Draws the view's node shape anew at `width` × `height`, its content left where the query
+   *  placed it, as a resize redraws it frame by frame until its release queries anew
+   *  (REN-moving-layer-moves-content); nothing where it is drawn at that size already. */
+  resized(width: number, height: number): void {
+    const { node, selected } = this.drawn;
+    if (!node || (this.size.width === width && this.size.height === height)) return;
+    this.size = { width, height };
+    // A binding after the release draws the whole view anew.
+    this.drawn = { ...this.drawn, width: -1, height: -1 };
+    drawShape(this.box, node.shape ?? "rectangle", width, height, selected);
   }
 
   /** Returns the view's texts and sprites to the layer's element pool, once the view is released;
@@ -706,11 +724,14 @@ export class NodesContainer extends Container {
   }
 
   /** Moves the views bound to `slots`, the nodes a drag moves, to their places in `positions`,
-   *  keeping their content, their size, and their place among the views
-   *  (REN-moving-layer-redraws-changes). */
-  place(slots: readonly number[], positions: Float32Array): void {
-    for (const slot of slots)
-      this.views.boundTo(slot)?.position.set(positions[slot * 2], positions[slot * 2 + 1]);
+   *  keeping their content and their place among the views, and draws the node shape of one a
+   *  resize changed anew at its size in `sizes` (REN-moving-layer-redraws-changes). */
+  place(slots: readonly number[], positions: Float32Array, sizes: Float32Array): void {
+    for (const slot of slots) {
+      const view = this.views.boundTo(slot);
+      view?.position.set(positions[slot * 2], positions[slot * 2 + 1]);
+      view?.resized(sizes[slot * 2]!, sizes[slot * 2 + 1]!);
+    }
   }
 
   /** Binds a view to each of `slots`, the nodes a query found, at their places in `positions` and

@@ -6,8 +6,8 @@ use comb_engine::shape::NodeShape;
 
 use super::content;
 use super::problem::{
-    A_CONTENT, A_FLAG, A_NUMBER, A_ROW, A_SEGMENT_LIST, A_SHAPE, A_SIZE, AN_ELEMENT, AN_ID,
-    AN_ID_OR_NONE,
+    A_CONTENT, A_FLAG, A_HEIGHT, A_NUMBER, A_ROW, A_SEGMENT_LIST, A_SHAPE, A_SIZE, AN_ELEMENT,
+    AN_ID, AN_ID_OR_NONE,
 };
 #[cfg(test)]
 use super::snapshot::GraphBatch;
@@ -23,6 +23,11 @@ pub(super) struct Node<'a> {
     pub(super) y: f64,
     pub(super) width: f64,
     pub(super) shape: NodeShape,
+    /// The height its data gives, or none (REN-node-shapes-cover-uml, *Height*), not yet checked
+    /// as the engine keeps it.
+    pub(super) height: Option<f64>,
+    /// Whether the user may resize it by its resize handles (API-edits-report-nested-changes).
+    pub(super) resizable: bool,
     /// Whether it is a container: read from the node of `addNode`; a load keeps its marks in its
     /// columns of nesting (API-bridge-columns-carry-nesting).
     pub(super) is_container: bool,
@@ -143,6 +148,7 @@ pub(super) fn node_of(
         x: item.read("x", node.x, A_NUMBER)?,
         y: item.read("y", node.y, A_NUMBER)?,
         width: item.read("width", node.width, A_SIZE)?,
+        height: item.read("height", node.height, A_HEIGHT)?,
         shape: item.read("shape", node.shape, A_SHAPE)?.into(),
         // Its container's identifier only has to be a string or none: `api` resolves it against the
         // map only it keeps (ARCH-one-workspace-per-example).
@@ -151,6 +157,9 @@ pub(super) fn node_of(
             item.read("isContainer", node.is_container, A_FLAG)?
                 .unwrap_or(false)
         },
+        resizable: item
+            .read("resizable", node.resizable, A_FLAG)?
+            .unwrap_or(false),
     };
     let content = content_of(&item, node.content.0.as_ref())?;
     Ok((read, content))

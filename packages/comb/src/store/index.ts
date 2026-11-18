@@ -25,6 +25,13 @@ export interface NodeData {
   /** `true` for a container, which may hold nodes even while empty, and is drawn below the edges
    *  and the other nodes. */
   isContainer?: boolean;
+  /** The height it is given, never less than its content needs, a height below that raised to
+   *  it; without content, as high as given however small; where left out, as high as its content
+   *  needs, or as wide without content (REN-node-shapes-cover-uml). */
+  height?: number;
+  /** `true` where the user may resize it by its resize handles once it is selected
+   *  (API-edits-report-nested-changes). */
+  resizable?: boolean;
   content: NodeContent;
 }
 
@@ -86,18 +93,26 @@ export interface EdgePatch {
   label?: EdgeLabelData | null;
 }
 
-/** A node as the store keeps it: its identifier, its width, its node shape, which `api` fills in,
- *  the identifier of its container and its mark as a container, each where the node has one
- *  (API-edits-report-nested-changes). Its position, its content, and its height are the engine's
- *  (ARCH-graph-in-zustand-store, REN-node-content-in-rows); a new object for every change of its
- *  content, so that a view tells the change by identity. */
-export type NodeView = Pick<NodeData, "id" | "width" | "shape" | "container" | "isContainer">;
+/** A node as the store keeps it: its identifier, its width, its node shape, which `api` fills
+ *  in, the identifier of its container, its mark as a container, the height its data gives or the
+ *  last resize left, and whether it is resizable, each where the node has one
+ *  (API-edits-report-nested-changes). Its position, its content, and the height it has are the
+ *  engine's (ARCH-graph-in-zustand-store, REN-node-content-in-rows); a new object for every change
+ *  of its content or its size, so that a view tells the change by identity. */
+export type NodeView = Pick<
+  NodeData,
+  "id" | "width" | "shape" | "container" | "isContainer" | "height" | "resizable"
+>;
 
-/** What the store keeps of `node`: no key for a container or a mark it has none of. */
-export function nodeViewOf({ id, width, shape, container, isContainer }: NodeView): NodeView {
+/** What the store keeps of `node`: no key for a container, a mark, a height, or whether it is
+ *  resizable it has none of. */
+export function nodeViewOf(node: NodeView): NodeView {
+  const { id, width, shape, container, isContainer, height, resizable } = node;
   const view: NodeView = { id, width, shape };
   if (container !== undefined) view.container = container;
   if (isContainer !== undefined) view.isContainer = isContainer;
+  if (height !== undefined) view.height = height;
+  if (resizable !== undefined) view.resizable = resizable;
   return view;
 }
 
@@ -108,10 +123,16 @@ export interface KeptGraph {
 }
 
 /** What `updateNode` may change of a node: its content, which it replaces whole
- *  (REN-node-content-in-rows). */
+ *  (REN-node-content-in-rows), its height, a height below its content's raised to it, and whether
+ *  the user may resize it (API-edits-report-nested-changes). */
 export interface NodePatch {
   content?: NodeContent;
+  height?: number;
+  resizable?: boolean;
 }
+
+/** What a patch of `updateNode` set besides content, as the store keeps it. */
+export type NodeSizing = Pick<NodePatch, "height" | "resizable">;
 
 /** Who made a change: the user on the canvas, or the host application through `Comb`. */
 export type By = "user" | "host";
@@ -125,6 +146,13 @@ export type StoreChange =
   | { readonly kind: "loaded"; readonly by: "host" }
   | { readonly kind: "nodeAdded"; readonly by: "host"; readonly id: string }
   | { readonly kind: "nodeMoved"; readonly by: "user"; readonly id: string }
+  | {
+      readonly kind: "nodeResized";
+      readonly by: "user";
+      readonly id: string;
+      /** The nodes that lie directly in it whose position relative to it the resize changed. */
+      readonly moved: readonly string[];
+    }
   | {
       readonly kind: "nodesRemoved";
       readonly by: By;
@@ -146,6 +174,10 @@ export type StoreChange =
       readonly id: string;
       /** Whether the patch set the node's content, which the engine keeps. */
       readonly content: boolean;
+      /** Set where the patch set the node's height, which the engine keeps as raised. */
+      readonly height?: true;
+      /** Whether the node is resizable, where the patch set it. */
+      readonly resizable?: boolean;
     };
 
 /** A connection the user drags from the connector `side` of the node in slot `source`
@@ -208,8 +240,12 @@ export interface GraphState extends GraphView {
   /** Keeps `node`, which the engine took into `slot`, without its position. */
   addNode(node: NodeData, slot: number): void;
   /** Records that the engine took a patch of the node `id`, which set its content where
-   *  `content`. */
-  updateNode(id: string, content: boolean): void;
+   *  `content`, and its height and whether it is resizable where `sizing` names them. */
+  updateNode(id: string, content: boolean, sizing?: NodeSizing): void;
+  /** Records that a resize, now released, left the node `id` `width` × `height`, the height then
+   *  its own, and changed the positions relative to it of the nodes `moved`
+   *  (API-edits-report-nested-changes). */
+  nodeResized(id: string, width: number, height: number, moved: readonly string[]): void;
   select(selection: Selection): void;
   setViewport(viewport: Viewport): void;
   positionsMoved(): void;
@@ -430,11 +466,47 @@ function patched(edge: EdgeView, patch: EdgePatch): EdgeView {
 
 /** What `updateNode` changes of `state`: the node `id` a new object where its content changed, so
  *  that a view tells the change by identity, and the change recorded. */
-function updatedFrom(state: GraphView, id: string, content: boolean): Partial<GraphView> {
-  const nodes = content
-    ? state.nodes.map((node) => (node?.id === id ? { ...node } : node))
-    : state.nodes;
-  return { nodes, change: { kind: "nodeUpdated", by: "host", id, content } };
+function updatedFrom(
+  state: GraphView,
+  id: string,
+  content: boolean,
+  sizing: NodeSizing = {},
+): Partial<GraphView> {
+  const { height, resizable } = sizing;
+  const sized = height !== undefined || resizable !== undefined;
+  const view = (node: NodeView) =>
+    nodeViewOf({
+      ...node,
+      ...(height === undefined ? {} : { height }),
+      ...(resizable === undefined ? {} : { resizable }),
+    });
+  const nodes =
+    content || sized
+      ? state.nodes.map((node) => (node?.id === id ? view(node) : node))
+      : state.nodes;
+  const change = {
+    kind: "nodeUpdated",
+    by: "host",
+    id,
+    content,
+    ...(height === undefined ? {} : { height: true as const }),
+    ...(resizable === undefined ? {} : { resizable }),
+  } as const;
+  return { nodes, change };
+}
+
+/** What `nodeResized` changes of `state`: a new view of the node `id`, `width` × `height`, the
+ *  height its own as the engine keeps it after a resize, and the change. */
+function resizedFrom(
+  state: GraphView,
+  id: string,
+  [width, height]: readonly [number, number],
+  moved: readonly string[],
+): Partial<GraphView> {
+  const slot = state.slots.get(id)!;
+  const nodes = state.nodes.slice();
+  nodes[slot] = nodeViewOf({ ...nodes[slot]!, width, height });
+  return { nodes, change: { kind: "nodeResized", by: "user", id, moved } };
 }
 
 /** What `addEdge` changes of `state`: `edge` kept in `slot`, and its identifiers counted. */
@@ -481,7 +553,9 @@ export function createGraphStore() {
           change: { kind: "nodeAdded", by: "host", id },
         };
       }),
-    updateNode: (id, content) => set((state) => updatedFrom(state, id, content)),
+    updateNode: (id, content, sizing) => set((state) => updatedFrom(state, id, content, sizing)),
+    nodeResized: (id, width, height, moved) =>
+      set((state) => resizedFrom(state, id, [width, height], moved)),
     select: (selection) => set({ selection }),
     setViewport: (viewport) => set({ viewport }),
     positionsMoved: () => set((state) => ({ positionsVersion: state.positionsVersion + 1 })),

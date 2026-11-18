@@ -28,7 +28,7 @@ mod snapshot;
 mod strings;
 
 use checks::rgb;
-pub(crate) use checks::{shaped_height, within_by_height};
+pub(crate) use checks::{node_height, within_by_height};
 use content::Cursor;
 #[cfg(test)]
 pub(crate) use content::TEST_BUDGET;
@@ -42,6 +42,8 @@ pub use content::{
 };
 pub(crate) use edge_columns::edge_refused_of;
 pub use edge_columns::{ArrowCode, EdgeColumns, EdgeField, SideCode};
+#[cfg(test)]
+pub(crate) use edit::PatchValue;
 pub use edit::{EdgePatch, EdgeRefusal, NodePatch};
 pub(crate) use edit::{add_edge_to, patch_of, update_edge_in};
 pub use field::Field;

@@ -84,6 +84,24 @@ impl NodeShape {
         }
     }
 
+    /// The height of a node of this shape and `width` whose content lays out to `content` high as
+    /// `height` takes it, none for a node without content, and whose data gives the height
+    /// `given`, or none (REN-node-shapes-cover-uml, *Height*; REN-node-content-and-hits,
+    /// *Layout*): a circle as high as wide; a bar `BAR_HEIGHT` high, or as its data gives; a node
+    /// with content as high as its content needs, or as its data gives where that is more; and
+    /// a node without content as high as its data gives, or as wide, however small.
+    pub fn sized(self, width: f64, content: Option<f64>, given: Option<f64>) -> f64 {
+        match (self, content) {
+            (Self::Circle | Self::RingedCircle, _) => width,
+            (Self::Bar, _) => given.unwrap_or(BAR_HEIGHT),
+            (_, Some(content)) => {
+                let needed = self.height(width, content);
+                given.map_or(needed, |given| given.max(needed))
+            }
+            (_, None) => given.unwrap_or(width),
+        }
+    }
+
     /// The width the content of a node of this shape and `width` is laid out to.
     pub fn content_width(self, width: f64) -> f64 {
         width * self.inner_share()
@@ -322,6 +340,31 @@ mod tests {
         assert_eq!(NodeShape::RingedCircle.height(30.0, 64.0), 30.0);
         assert_eq!(NodeShape::Bar.height(200.0, 64.0), BAR_HEIGHT);
         assert_eq!(NodeShape::Bar.content_width(200.0), 0.0);
+    }
+
+    #[test]
+    fn a_node_is_as_high_as_its_data_gives_never_less_than_its_content_and_without_content_as_wide()
+    {
+        // Verifies: REN-node-shapes-cover-uml, REN-node-content-and-hits
+        let content = Some(64.0);
+        for shape in [NodeShape::Rectangle, NodeShape::RoundedRectangle] {
+            // A height below the content's is raised to it, a greater one kept.
+            assert_eq!(shape.sized(220.0, content, Some(20.0)), 64.0);
+            assert_eq!(shape.sized(220.0, content, Some(300.0)), 300.0);
+            assert_eq!(shape.sized(220.0, content, None), 64.0);
+            // Without content, as its data gives however small, or as wide.
+            assert_eq!(shape.sized(220.0, None, Some(10.0)), 10.0);
+            assert_eq!(shape.sized(16.0, None, None), 16.0);
+        }
+        // An ellipse's content needs its inner rectangle, a height below that raised to it.
+        let needed = NodeShape::Ellipse.height(220.0, 64.0);
+        assert_eq!(NodeShape::Ellipse.sized(220.0, content, Some(70.0)), needed);
+        assert_eq!(NodeShape::Ellipse.sized(220.0, content, Some(200.0)), 200.0);
+        // A circle as high as wide whatever its data gives; a bar 8 high or as its data gives.
+        assert_eq!(NodeShape::Circle.sized(30.0, None, Some(10.0)), 30.0);
+        assert_eq!(NodeShape::RingedCircle.sized(30.0, None, None), 30.0);
+        assert_eq!(NodeShape::Bar.sized(220.0, None, None), BAR_HEIGHT);
+        assert_eq!(NodeShape::Bar.sized(8.0, None, Some(120.0)), 120.0);
     }
 
     #[test]

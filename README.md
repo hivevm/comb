@@ -193,7 +193,19 @@ comb.addNode({
 A node's `content` is rows of weighted columns, each a `text` of role `title`, `body`, or
 `caption` (its `weight`, 1 where left out, shares out the row's width); Comb lays the rows out
 inside the node's `width`, cuts a text too long for its column with an ellipsis, and makes the node
-as high as its rows, at least 64. `updateNode(id, { content })` replaces a node's content whole.
+as high as its rows, at least 64. A node's `height` makes it that high, never less than its
+content needs, and a node without content, `content: []`, as high as its `height` however small,
+or as high as it is wide; `heightOf` still answers the content's height alone.
+`updateNode(id, { content })` replaces a node's content whole, and `updateNode` may also set
+`height` and `resizable`.
+
+A selected node marked `resizable: true` shows eight resize handles, at its corners and the middles
+of its sides; a drag of one resizes the node from that side or corner, never smaller than 8 a side,
+than its content, or than the boxes of the nodes that lie directly in it, and a circle stays as
+high as wide. What the node holds keeps its place on the canvas, and the release is told once as
+`nodeResized` with the node's `x`, `y`, relative to its container, `width`, `height`, and `moved`,
+the new positions relative to it of the nodes it holds that a resize at its left or top moved
+within it; a resize that changed no box is not told.
 
 A node marked `isContainer: true` is a container, drawn below the edges and the other nodes; a
 node whose `container` names one lies in it, its `x` and `y` relative to the container's top left
@@ -215,8 +227,9 @@ edge leaves its source by `sourceSide` and enters its target by `targetSide`, ea
 edge from a node back to itself, which is drawn on that side of its node. `onChange` tells every
 change of the graph, a `GraphChange` that `comb` exports, typed by its `kind` and by `by`, `"user"`
 or `"host"`: `loaded` after `load`, `nodeAdded` with the node as Comb took it after `addNode`,
-`nodeUpdated` with the merged patch after `updateNode`, `nodesRemoved` with the nodes and the edges
-that went with them after `removeNodes`, `edgesRemoved` with the edges after `removeEdges`,
+its `height` raised to its content's, `nodeUpdated` with the merged patch after `updateNode`,
+`nodesRemoved` with the nodes and the edges that went with them after `removeNodes`, `edgesRemoved`
+with the edges after `removeEdges`,
 `edgeAdded` with the edge as Comb keeps it, its colour and arrowhead filled, after `addEdge`,
 `edgeUpdated` with the patch as merged after `updateEdge`, nothing for a removal that names none,
 and `nodeMoved` with where the node lies, `x` and `y` relative to `container`, the identifier of

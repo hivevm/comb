@@ -1056,10 +1056,10 @@ describe("bridge columns of a load's content", () => {
     expect(c.texts.length).toBeGreaterThan(1);
     expect(n.refused).toBeUndefined();
     // The engine reads them as they crossed: each node as high as its rows and padding, here below
-    // the least height of a node.
+    // the least height of a node, and the node of no rows as wide as it is, 100.
     expect(bridge.loadGraph(graph(nodes as never, [], 8))).toBe(3);
     const heights = (sizes: Float32Array) => [sizes[1], sizes[3], sizes[5]];
-    expect(heights(bridge.nodeBuffers().sizes)).toEqual([64, 64, 64]);
+    expect(heights(bridge.nodeBuffers().sizes)).toEqual([64, 100, 64]);
   });
 
   test("a kind, a role, a weight, or a text of another type crosses as its code or as none", () => {

@@ -175,8 +175,8 @@ export class MovingLayer {
       this.particles.sync(state, of(false), positions, sizes);
       this.containerParticles.sync(state, of(true), positions, sizes);
     } else {
-      this.query.nodes.place(dragged, positions);
-      this.query.containerNodes.place(dragged, positions);
+      this.query.nodes.place(dragged, positions, sizes);
+      this.query.containerNodes.place(dragged, positions, sizes);
     }
     if (drawn.level === "near") this.query.labels.follow(this.edgeSlots, bridge, origin);
   }

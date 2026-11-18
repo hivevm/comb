@@ -15,8 +15,9 @@ type Same<A, B> =
 // arrays its glue copies whole, or plain arrays of numbers, which the glue of wasm-bindgen 0.2.130
 // takes as well, and no `GraphBatch` and no `EdgeList` (API-bridge-takes-serde-and-columns): its
 // generated parameters, pinned, the column of node shapes, the columns of nesting
-// (API-bridge-columns-carry-nesting), and the content columns of `text`,
-// `action`, `badge`, `progress`, and `metric` among them and no title or height column. A refused
+// (API-bridge-columns-carry-nesting), the height a node's data gives with its byte of presence and
+// whether it is resizable, and the content columns of `text`, `action`, `badge`, `progress`, and
+// `metric` among them and no title column. A refused
 // field crosses as the code of its `NodeField` or `EdgeField`, a plain number, and a shape of
 // content with its row and column.
 const columns: Same<
@@ -27,10 +28,13 @@ const columns: Same<
     x: Float64Array | number[],
     y: Float64Array | number[],
     width: Float64Array | number[],
+    hasHeight: Uint8Array | number[],
+    height: Float64Array | number[],
     shape: Uint8Array | number[],
     hasContainer: Uint8Array | number[],
     container: Uint32Array | number[],
     isContainer: Uint8Array | number[],
+    resizable: Uint8Array | number[],
     rowBounds: Uint32Array | number[],
     elementBounds: Uint32Array | number[],
     kinds: Uint8Array | number[],
@@ -111,7 +115,7 @@ test("the bridge refuses graph data and patches that are no snapshot at compile 
 
 test("the engine takes a load's nodes and edges as columns, pinned at compile time", () => {
   // Verifies: API-bridge-takes-serde-and-columns
-  // The type of a title or height column among them would make `columns` false, which no `true`
-  // is assignable to.
+  // The type of a title column among them would make `columns` false, which no `true` is
+  // assignable to.
   expect(columns).toBe(true);
 });

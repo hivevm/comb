@@ -7,8 +7,8 @@ use comb_engine::graph::{AddNodeError, CANVAS, Graph, NestError, Nesting};
 use comb_engine::shape::NodeShape;
 
 use super::checks::{
-    checked_node, content_fits_shape, edges_of, id_length, ids_of, nodes_of, shaped_height,
-    within_by_height,
+    checked_node, content_fits_shape, edges_of, given_height, id_length, ids_of, node_height,
+    nodes_of, within_by_height,
 };
 use super::item::{Batch, node_of};
 use super::problem::{A_MARKED_CONTAINER, A_NODE_OF_THE_GRAPH, NOT_IN_ITSELF};
@@ -56,6 +56,12 @@ pub(crate) fn load_of(
     let name_spans = text_spans(content.names, content.name_bounds)?;
     let edges = edges_of(&batch, &nodes.slots)?;
     let mut graph = Graph::nested(nodes.positions, nodes.sizes, edges, nesting)?;
+    for (slot, (&given, &resizable)) in (0..).zip(nodes.given.iter().zip(&nodes.resizable)) {
+        if given.is_some() || resizable {
+            // A slot of a node just built, which no sizing refuses.
+            let _ = graph.set_sizing(slot, given, resizable);
+        }
+    }
     for (slot, &shape) in (0..).zip(&nodes.shapes) {
         if shape != NodeShape::Rectangle {
             // A slot of a node just built, which no node shape refuses.
@@ -141,29 +147,35 @@ fn within_world(id: &str, at: [f64; 2], size: [f32; 2]) -> Result<[f32; 2], Grap
 
 /// Checks the content of one node, as a load checks a node's, named `id`, of node shape `shape`
 /// and `width` wide, its strings counted against the budget on from `held`, the code units of
-/// content the graph holds besides it, and returns it with its texts mapped and the height the
-/// node lays out to in `fonts` (REN-closed-set-of-node-shapes).
+/// content the graph holds besides it, and returns it with its texts mapped, the height it lays
+/// out to in `fonts` in a rectangle, and its number of rows (REN-closed-set-of-node-shapes).
 pub(super) fn checked_content(
     id: &str,
-    (shape, width): (NodeShape, f32),
+    shape: NodeShape,
     content: &ContentData,
     fonts: &Fonts,
     held: u64,
-) -> Result<(Checked, f32), GraphDataProblem> {
-    content_fits_shape(id, shape, content.view().rows(0).len())?;
+) -> Result<(Checked, (f64, usize)), GraphDataProblem> {
+    let rows = content.view().rows(0).len();
+    content_fits_shape(id, shape, rows)?;
     let (checked, height) = Checked::of(id, content, fonts, held)?;
-    Ok((checked, shaped_height(shape, width, height)))
+    Ok((checked, (height, rows)))
 }
 
 /// A node one crossing hands over, checked: its place, its width, its node shape, its content
-/// with its texts mapped, and the height it lays out to.
+/// with its texts mapped, the height a node of its content, width, and node shape has without a
+/// height of its own, as `heightOf` answers it, the height the node has, never less, the height
+/// its data gives, and whether it is resizable.
 struct Single {
     x: f32,
     y: f32,
     width: f32,
     shape: NodeShape,
     content: Checked,
+    content_height: f32,
     height: f32,
+    given: Option<f32>,
+    resizable: bool,
     is_container: bool,
 }
 
@@ -176,8 +188,10 @@ fn single_of(node: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, Graph
     let (node, content) = node_of(0, node)?;
     id_length("nodes", 0, "id", node.id)?;
     let ([x, y], width) = checked_node(&node)?;
+    let given = given_height(node.id, node.height)?;
     let shape = node.shape;
-    let (content, height) = checked_content(node.id, (shape, width), content, fonts, held)?;
+    let (content, laid) = checked_content(node.id, shape, content, fonts, held)?;
+    let height = node_height(shape, width, laid, given);
     within_by_height(node.id, y, height)?;
     Ok(Single {
         x,
@@ -185,7 +199,10 @@ fn single_of(node: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, Graph
         width,
         shape,
         content,
+        content_height: node_height(shape, width, laid, None),
         height,
+        given,
+        resizable: node.resizable,
         is_container: node.is_container,
     })
 }
@@ -218,7 +235,10 @@ pub(crate) fn add_node_to(
         shape,
         content,
         height,
+        given,
+        resizable,
         is_container,
+        ..
     } = single_of(node, fonts, held)?;
     let id = node.id.0.as_deref().unwrap_or_default();
     let (container, [x, y]) = match container {
@@ -252,8 +272,9 @@ pub(crate) fn add_node_to(
             // container's position.
             AddNodeError::NoContainer { .. } => unreachable!("a container checked above"),
         })?;
-    // A slot just added, which no node shape refuses.
+    // A slot just added, which no node shape and no sizing refuses.
     let _ = graph.set_shape(slot, shape);
+    let _ = graph.set_sizing(slot, given, resizable);
     Ok((slot, content))
 }
 
@@ -261,7 +282,7 @@ pub(crate) fn add_node_to(
 /// checks a node, its strings counted against the budget alone, and added to nothing: the node
 /// `heightOf` hands over, named `""` and at the origin (API-host-asks-content-height).
 pub(crate) fn height_of(node: &NodeInput, fonts: &Fonts) -> Result<f32, GraphDataProblem> {
-    Ok(single_of(node, fonts, 0)?.height)
+    Ok(single_of(node, fonts, 0)?.content_height)
 }
 
 /// A load of `batch` as `loadGraph` checks one, its nodes and edges crossed as columns.
@@ -283,7 +304,7 @@ mod tests {
     use super::super::node_columns::Refused;
     use super::super::problem::A_SHAPE;
     use super::super::tests::{
-        a_and, add, added, badged, batch, content, invalid_text, labelled, load_columns,
+        a_and, add, added, badged, batch, beyond, content, invalid_text, labelled, load_columns,
         load_edges, metricked, titled,
     };
     use super::super::{ContentInput, NodeField, NodeShapeCode, OwnedColumns};
@@ -571,6 +592,70 @@ mod tests {
             assert_eq!(graph.shape(0), shape.into(), "{shape:?} added");
             assert_eq!(height_of(&node, &Fonts::default()), Ok(height), "{shape:?}");
         }
+    }
+
+    #[test]
+    fn a_height_below_the_content_s_is_raised_a_greater_one_kept_and_content_s_asked_alone() {
+        // Verifies: REN-node-shapes-cover-uml, REN-node-content-and-hits,
+        // Verifies: API-bridge-columns-carry-nesting, API-host-asks-content-height
+        let given = |height: f64| move |n: &mut NodeInput| n.height = Some(height).into();
+        // Of one title, 64 high: a height of 20 raised to it, one of 300 kept.
+        for (height, drawn) in [(20.0, 64.0), (300.0, 300.0)] {
+            let graph = load_columns(&a_and(given(height))).unwrap();
+            assert_eq!(graph.sizes()[3], drawn, "{height} loaded");
+            assert_eq!(graph.given_height(1), Some(height as f32));
+            let node = added(0.0, 0.0, given(height));
+            let mut graph = Graph::default();
+            assert_eq!(add(&mut graph, &node), Ok(0));
+            assert_eq!(graph.sizes()[1], drawn, "{height} added");
+            // `heightOf` still answers the content's height alone.
+            assert_eq!(height_of(&node, &Fonts::default()), Ok(64.0));
+        }
+        // Without content, as its data gives however small, or as wide.
+        let empty = |n: &mut NodeInput| n.content = ContentInput::new().into();
+        let graph = load_columns(&a_and(|n| {
+            empty(n);
+            n.height = Some(10.0).into();
+        }))
+        .unwrap();
+        assert_eq!(graph.sizes()[3], 10.0);
+        assert_eq!(load_columns(&a_and(empty)).unwrap().sizes()[3], 100.0);
+        // `heightOf` answers what Comb draws of a node without content and without a height.
+        let node = added(0.0, 0.0, empty);
+        assert_eq!(height_of(&node, &Fonts::default()), Ok(100.0));
+        // Resizable as its data says.
+        let graph = load_columns(&a_and(|n| n.resizable = Some(true).into())).unwrap();
+        assert!(graph.is_resizable(1) && !graph.is_resizable(0));
+    }
+
+    #[test]
+    fn a_height_not_finite_or_not_above_0_as_f32_holds_it_is_refused_naming_the_node() {
+        // Verifies: API-bridge-columns-carry-nesting, Q-7
+        let refused = || GraphDataProblem::InvalidSize { node: "b".into() };
+        for height in [0.0, -1.0, f64::NAN, f64::INFINITY, 1e300] {
+            let columns = a_and(|n| n.height = Some(height).into());
+            assert_eq!(load_columns(&columns).err(), Some(refused()), "{height}");
+            let node = added(0.0, 0.0, |n| {
+                n.id = "b".to_owned().into();
+                n.height = Some(height).into();
+            });
+            assert_eq!(add(&mut Graph::default(), &node), Err(refused()));
+        }
+        // Of another type, named as a field.
+        let columns = a_and(|n| n.height = Field(None));
+        assert!(matches!(
+            load_columns(&columns).err(),
+            Some(GraphDataProblem::InvalidField { field, .. }) if field == "height"
+        ));
+        // A height whose far side lies past the world's limit, by the height the node has.
+        let columns = a_and(|n| {
+            n.y = 1e36.into();
+            n.height = Some(1e36).into();
+        });
+        assert_eq!(
+            load_columns(&columns).err(),
+            Some(beyond(GraphList::Nodes, "b", "height"))
+        );
     }
 
     #[test]

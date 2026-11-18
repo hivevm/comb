@@ -23,6 +23,10 @@ pub(super) struct Nodes<'a> {
     pub(super) positions: Vec<f32>,
     pub(super) sizes: Vec<f32>,
     pub(super) shapes: Vec<NodeShape>,
+    /// The height each node's data gives, as the engine keeps it, or none, and whether the user
+    /// may resize it (API-edits-report-nested-changes).
+    pub(super) given: Vec<Option<f32>>,
+    pub(super) resizable: Vec<bool>,
     pub(super) slots: HashMap<&'a str, u32>,
     /// The code units of the strings of all their content, as the budget counted them.
     pub(super) units: u64,
@@ -60,6 +64,40 @@ pub(super) fn checked_node(node: &Node) -> Result<([f32; 2], f32), GraphDataProb
     Ok(([x, y], width))
 }
 
+/// The height the data of `node` gives, as the engine keeps it, or none; refused as
+/// `invalidSize` where, narrowed to `f32`, it is not finite or not above 0
+/// (API-bridge-columns-carry-nesting).
+pub(crate) fn given_height(id: &str, height: Option<f64>) -> Result<Option<f32>, GraphDataProblem> {
+    let Some(height) = height else {
+        return Ok(None);
+    };
+    // Checked as the engine keeps it: a number beyond `f32` is as infinite as infinity.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "checked as f32 below, so that what f32 cannot hold is refused"
+    )]
+    let height = height as f32;
+    if !height.is_finite() || height <= 0.0 {
+        return Err(GraphDataProblem::InvalidSize {
+            node: id.to_owned(),
+        });
+    }
+    Ok(Some(height))
+}
+
+/// The height of the node of node shape `shape`, `width` wide, whose content of `rows` rows lays
+/// out to `content` high in a rectangle, and whose data gives the height `given`, or none, as
+/// the engine keeps it: `NodeShape::sized` (REN-node-shapes-cover-uml, *Height*).
+pub(crate) fn node_height(
+    shape: NodeShape,
+    width: f32,
+    (content, rows): (f64, usize),
+    given: Option<f32>,
+) -> f32 {
+    let content = (rows > 0).then_some(content);
+    kept_height(shape.sized(f64::from(width), content, given.map(f64::from)))
+}
+
 /// Refuses the node `id` at `y` whose far side, `y + height`, its height the one its content lays
 /// out to, lies past the world's limit (ARCH-one-workspace-per-example), naming the field `height`,
 /// as the world's limit refuses a far side `x + width`.
@@ -90,12 +128,6 @@ pub(crate) const fn kept_height(height: f64) -> f32 {
     height as f32
 }
 
-/// The height of the node of node shape `shape`, `width` wide, whose content lays out to
-/// `content` high in its inner rectangle, as the engine keeps it (REN-closed-set-of-node-shapes).
-pub(crate) fn shaped_height(shape: NodeShape, width: f32, content: f64) -> f32 {
-    kept_height(shape.height(f64::from(width), content))
-}
-
 /// Refuses content of `rows` rows in the node `id` of the filled node shape `shape`, which holds
 /// none (REN-closed-set-of-node-shapes).
 pub(crate) fn content_fits_shape(
@@ -122,12 +154,15 @@ pub(super) fn nodes_of<'a>(
     let mut positions = Vec::with_capacity(batch.nodes.len() * 2);
     let mut sizes = Vec::with_capacity(batch.nodes.len() * 2);
     let mut shapes = Vec::with_capacity(batch.nodes.len());
+    let mut given = Vec::with_capacity(batch.nodes.len());
     let mut cursor = Cursor::default();
     for (index, node) in batch.nodes.iter().enumerate() {
         let (position, width) = checked_node(node)?;
-        content_fits_shape(node.id, node.shape, content.rows(index).len())?;
+        let height_given = given_height(node.id, node.height)?;
+        let rows = content.rows(index).len();
+        content_fits_shape(node.id, node.shape, rows)?;
         let height = content.check(index, node.id, &mut cursor, fonts)?;
-        let height = shaped_height(node.shape, width, height);
+        let height = node_height(node.shape, width, (height, rows), height_given);
         within_by_height(node.id, position[1], height)?;
         if slots.insert(node.id, slot(index)?).is_some() {
             return Err(GraphDataProblem::DuplicateNode {
@@ -137,11 +172,14 @@ pub(super) fn nodes_of<'a>(
         positions.extend(position);
         sizes.extend([width, height]);
         shapes.push(node.shape);
+        given.push(height_given);
     }
     Ok(Nodes {
         positions,
         sizes,
         shapes,
+        resizable: batch.nodes.iter().map(|node| node.resizable).collect(),
+        given,
         slots,
         units: cursor.units(),
     })
@@ -617,6 +655,8 @@ mod tests {
                     shape: crate::NodeShape::Rectangle.into(),
                     container: None.into(),
                     is_container: None.into(),
+                    height: None.into(),
+                    resizable: None.into(),
                     content: titled("x"),
                 })
                 .collect(),

@@ -28,6 +28,10 @@ pub struct NodeInput {
     #[tsify(type = "number")]
     pub width: Field<f64>,
     /// Its node shape; `api` fills in `rectangle` (REN-closed-set-of-node-shapes).
+    /// The height it is given, never less than its content needs; none where its content or
+    /// its node shape alone sets it (REN-node-shapes-cover-uml).
+    #[tsify(type = "number", optional)]
+    pub height: Field<Option<f64>>,
     #[tsify(type = "NodeShape")]
     pub shape: Field<NodeShape>,
     /// The identifier of the container it lies in, which `api` resolves to a slot; none on the
@@ -37,6 +41,10 @@ pub struct NodeInput {
     /// Whether it is a container; none where it is not.
     #[tsify(type = "boolean", optional)]
     pub is_container: Field<Option<bool>>,
+    /// Whether the user may resize it by its resize handles; none where not
+    /// (API-edits-report-nested-changes).
+    #[tsify(type = "boolean", optional)]
+    pub resizable: Field<Option<bool>>,
     #[tsify(type = "NodeContent")]
     pub content: Field<ContentInput>,
 }

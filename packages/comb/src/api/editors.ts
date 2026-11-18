@@ -200,7 +200,14 @@ function updateNode({ store, bridge, limits }: Editing, id: string, patch: unkno
       return { slot, plain };
     },
     engine: ({ slot, plain }) => bridge.updateNode(slot, id, plain),
-    record: (state, { plain }) => state.updateNode(id, "content" in plain),
+    record: (state, { plain }) => {
+      const { height, resizable } = plain;
+      const sizing = {
+        ...("height" in plain ? { height } : {}),
+        ...("resizable" in plain ? { resizable } : {}),
+      };
+      state.updateNode(id, "content" in plain, sizing);
+    },
   });
 }
 

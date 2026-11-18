@@ -284,6 +284,8 @@ pub(super) const A_SEGMENT_LIST: &str = "a list of segments";
 /// (API-bridge-columns-carry-nesting).
 pub(super) const AN_ID_OR_NONE: &str = "the identifier of a container, or none";
 pub(super) const A_FLAG: &str = "true or false, or none";
+/// What a node's height has to be: none, or a number, which its rule wants above 0.
+pub(super) const A_HEIGHT: &str = "a finite number above 0, or none";
 /// What a node's container is refused for, as `invalidContainer` says it
 /// (ARCH-engine-edits-nested-graph).
 pub(super) const A_NODE_OF_THE_GRAPH: &str = "the identifier of a node of the graph";

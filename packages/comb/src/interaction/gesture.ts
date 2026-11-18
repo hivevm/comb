@@ -62,17 +62,19 @@ export interface Gesture {
 }
 
 /** What a press at a screen point hits, from the engine's spatial index, at the level of detail
- *  of the viewport's scale, connectors where `connectors` asks for them (REN-node-content-in-rows);
- *  nothing where
- *  the viewport puts the point beyond any finite world point, which the engine would refuse. */
+ *  of the viewport's scale, connectors where `connectors` asks for them, and the resize handles of
+ *  the selected node (REN-node-content-in-rows); nothing where the viewport puts the point beyond
+ *  any finite world point, which the engine would refuse. */
 export function targetAt(
   { store, bridge }: Pick<Context, "store" | "bridge">,
   x: number,
   y: number,
   connectors: boolean,
 ): Hit {
-  const { viewport } = store.getState();
+  const { viewport, selection, slots } = store.getState();
   const world = toWorld(viewport, x, y);
   if (!Number.isFinite(world.x) || !Number.isFinite(world.y)) return { kind: "none" };
-  return bridge.hit(world.x, world.y, 1 / viewport.scale, levelAt(viewport.scale), connectors);
+  const selected = selection?.kind === "node" ? slots.get(selection.id) : undefined;
+  const level = levelAt(viewport.scale);
+  return bridge.hit(world.x, world.y, 1 / viewport.scale, level, connectors, selected);
 }

@@ -24,7 +24,7 @@ use comb_engine::content::{Cell, Font, Fonts, Placed, drawn_at};
 use comb_engine::geometry::Point;
 use comb_engine::geometry::Rect;
 use comb_engine::graph::{
-    CANVAS, Graph, Level, MeshAt, MoveError, MoveIntoError, PositionError,
+    CANVAS, Graph, Handle, Level, MeshAt, MoveError, MoveIntoError, PositionError,
     SlotError as GraphSlotError, Target, Visible,
 };
 use comb_engine::stroke::{Detail, Mesh};
@@ -379,6 +379,56 @@ pub enum Hit {
     Edge {
         slot: u32,
     },
+    /// A resize handle of the selected node in `slot` (REN-node-content-and-hits).
+    Handle {
+        slot: u32,
+        handle: ResizeHandle,
+    },
+}
+
+/// A resize handle of a selected node, at a corner or the middle of a side
+/// (API-edits-report-nested-changes, *Resizing*), as a hit names it and `resizeNode` takes it.
+#[derive(Tsify, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ResizeHandle {
+    TopLeft,
+    Top,
+    TopRight,
+    Right,
+    BottomRight,
+    Bottom,
+    BottomLeft,
+    Left,
+}
+
+impl From<Handle> for ResizeHandle {
+    fn from(handle: Handle) -> Self {
+        match handle {
+            Handle::TopLeft => Self::TopLeft,
+            Handle::Top => Self::Top,
+            Handle::TopRight => Self::TopRight,
+            Handle::Right => Self::Right,
+            Handle::BottomRight => Self::BottomRight,
+            Handle::Bottom => Self::Bottom,
+            Handle::BottomLeft => Self::BottomLeft,
+            Handle::Left => Self::Left,
+        }
+    }
+}
+
+impl From<ResizeHandle> for Handle {
+    fn from(handle: ResizeHandle) -> Self {
+        match handle {
+            ResizeHandle::TopLeft => Self::TopLeft,
+            ResizeHandle::Top => Self::Top,
+            ResizeHandle::TopRight => Self::TopRight,
+            ResizeHandle::Right => Self::Right,
+            ResizeHandle::BottomRight => Self::BottomRight,
+            ResizeHandle::Bottom => Self::Bottom,
+            ResizeHandle::BottomLeft => Self::BottomLeft,
+            ResizeHandle::Left => Self::Left,
+        }
+    }
 }
 
 /// A rectangle in world coordinates, as a query asks for it.
@@ -522,18 +572,19 @@ impl Engine {
     /// (API-bridge-takes-serde-and-columns), each in slot order, and serde-wasm-bindgen converts
     /// nothing of a load. Of the nodes: the identifiers as pieces of at most 2^28 UTF-16 code
     /// units, each ending where a value ends, with the boundaries across all pieces in UTF-16 code
-    /// units, the numbers as `Float64Array`, the node shapes as the codes of `NodeShapeCode`, the
-    /// content as the columns of `ContentColumns`, its texts in pieces as the identifiers are, with
-    /// per text whether it is a text, and the first value the shell refused by its type, the index
-    /// of its node, the code of its `NodeField`, and for a shape of content its row and column, or
-    /// none. Each node is as high as its content lays out to in the fonts `setFont` handed over
-    /// (REN-node-content-in-rows). Of the edges: the identifiers, sources, targets, and label texts
-    /// each as pieces with their boundaries, per label text whether it is a text; whether a label,
-    /// its background, and a dash are present, as bytes; the label's `t` and offset, the
-    /// background, the colour, and the dash and gap as `Float64Array`; the arrowhead and the sides
-    /// as the codes of `ArrowCode` and `SideCode`; and the first value the shell refused by its
-    /// type, the index of its edge and the code of its `EdgeField`, or none. A refused load leaves
-    /// the loaded graph as it was.
+    /// units, the numbers as `Float64Array`, a height its data gives with a byte that says whether
+    /// it does, whether it is resizable as a byte, the node shapes as the codes of `NodeShapeCode`,
+    /// the content as the columns of `ContentColumns`, its texts in pieces as the identifiers are,
+    /// with per text whether it is a text, and the first value the shell refused by its type, the
+    /// index of its node, the code of its `NodeField`, and for a shape of content its row and
+    /// column, or none. Each node is as high as its content lays out to in the fonts `setFont`
+    /// handed over (REN-node-content-in-rows). Of the edges: the identifiers, sources, targets, and
+    /// label texts each as pieces with their boundaries, per label text whether it is a text;
+    /// whether a label, its background, and a dash are present, as bytes; the label's `t` and
+    /// offset, the background, the colour, and the dash and gap as `Float64Array`; the arrowhead
+    /// and the sides as the codes of `ArrowCode` and `SideCode`; and the first value the shell
+    /// refused by its type, the index of its edge and the code of its `EdgeField`, or none. A
+    /// refused load leaves the loaded graph as it was.
     #[wasm_bindgen(js_name = loadGraph)]
     #[expect(
         clippy::too_many_arguments,
@@ -551,10 +602,13 @@ impl Engine {
         x: &[f64],
         y: &[f64],
         width: &[f64],
+        has_height: &[u8],
+        height: &[f64],
         shape: &[u8],
         has_container: &[u8],
         container: &[u32],
         is_container: &[u8],
+        resizable: &[u8],
         row_bounds: Vec<u32>,
         element_bounds: Vec<u32>,
         kinds: Vec<u8>,
@@ -651,10 +705,13 @@ impl Engine {
             x,
             y,
             width,
+            has_height,
+            height,
             shape,
             has_container,
             container,
             is_container,
+            resizable,
             content: content.view(),
             refused,
         };
@@ -892,6 +949,28 @@ impl Engine {
         })
     }
 
+    /// Resizes the node in `slot`, whose box was `from`, `x, y, width, height`, at the press, by a
+    /// drag of `handle` by `(dx, dy)` world units (API-edits-report-nested-changes, *Resizing*):
+    /// the sides the handle pulls move by the drag, never so far that the node is less than 8
+    /// world units a side, lower than its content needs, or leaves out a box of the nodes that lie
+    /// directly in it; a circle stays as high as wide. The nodes it holds keep their world
+    /// positions, and its height becomes the one its data gives; the buffers hold the box it now
+    /// has. A slot that holds no node throws a `SlotError`, and a box or a drag that is not finite
+    /// a `NumberError` `nonFinitePoint`; either way nothing changes.
+    #[wasm_bindgen(js_name = resizeNode)]
+    pub fn resize_node(
+        &mut self,
+        slot: u32,
+        handle: Ts<ResizeHandle>,
+        from: &[f64],
+        dx: f64,
+        dy: f64,
+    ) -> Result<(), CallRefusal> {
+        trap::spring();
+        let handle: ResizeHandle = handle.to_rust().map_err(unshaped)?;
+        self.resize(slot, handle.into(), from, [dx, dy])
+    }
+
     /// The slot of the container a drop of the node in `dragged` at the world point `(x, y)` lands
     /// in: of the containers whose outline holds the point, neither the node nor one it holds at
     /// any depth, the topmost; none for the canvas (API-edits-report-nested-changes, *Vetoes*). A
@@ -996,7 +1075,9 @@ impl Engine {
     }
 
     /// What a press at the world point `(x, y)` hits where a screen pixel is `pixel` world units,
-    /// at `level`: where `connectors` asks for them, at the near and middle level, a connector
+    /// at `level`: at the near and middle level, a resize handle of the node in `selected`, the
+    /// selected node, where it is resizable, within 6 screen pixels; else where `connectors` asks
+    /// for them, at the near and middle level, a connector
     /// within 8 screen pixels, of the node drawn on top; else, at the near level, the label whose
     /// measured pill holds the point; else the node drawn on top there, else the edge drawn on top
     /// within 4 screen pixels of its path, else nothing (REN-node-content-in-rows). Of a node, the
@@ -1011,11 +1092,62 @@ impl Engine {
         pixel: f64,
         level: DetailLevel,
         connectors: bool,
+        selected: Option<u32>,
     ) -> Result<Ts<Hit>, CallRefusal> {
         trap::spring();
         let point = checked_point(x, y)?;
         let pixel = checked_pixel(pixel)?;
-        let hit = match self.graph.hit_at(point, pixel, level.into(), connectors) {
+        let handle = selected.and_then(|slot| {
+            let handle = self.graph.handle_at(point, pixel, level.into(), slot)?;
+            Some(Hit::Handle {
+                slot,
+                handle: handle.into(),
+            })
+        });
+        let hit = match handle {
+            Some(hit) => hit,
+            None => self.hit_below(point, pixel, level, connectors),
+        };
+        Ts::from_rust(&hit).map_err(|_| malformed("the hit could not be handed back").into())
+    }
+}
+
+impl Engine {
+    /// `resizeNode` of the handle read.
+    fn resize(
+        &mut self,
+        slot: u32,
+        handle: Handle,
+        from: &[f64],
+        by: [f64; 2],
+    ) -> Result<(), CallRefusal> {
+        let &[x, y, width, height] = from else {
+            return Err(malformed("a box is x, y, width, and height").into());
+        };
+        if !self.graph.holds_node(slot) {
+            return Err(CallRefusal::Slot(SlotError::NoNode { slot }));
+        }
+        let shape = self.graph.shape(slot);
+        let (content, node) = self.content.of(slot);
+        let (laid, rows) = content.laid(node, &self.fonts);
+        let least = if rows > 0 && shape.holds_content() {
+            shape.height(width, laid)
+        } else {
+            0.0
+        };
+        let from = Rect::new(x, y, x + width, y + height);
+        self.graph
+            .resize(slot, handle, &from, by, least)
+            .map_err(|error| match error {
+                MoveError::Slot(error) => CallRefusal::from(error),
+                MoveError::Position(PositionError::NonFinite) => NumberError::NonFinitePoint.into(),
+            })?;
+        Ok(())
+    }
+
+    /// What a press at `point` hits below the resize handles, as `hit` names it.
+    fn hit_below(&mut self, point: Point, pixel: f64, level: DetailLevel, connectors: bool) -> Hit {
+        match self.graph.hit_at(point, pixel, level.into(), connectors) {
             Some(Target::Connector(slot, side)) => Hit::Connector {
                 slot,
                 side: side.into(),
@@ -1027,12 +1159,9 @@ impl Engine {
             },
             Some(Target::Edge(slot)) => Hit::Edge { slot },
             None => Hit::None,
-        };
-        Ts::from_rust(&hit).map_err(|_| malformed("the hit could not be handed back").into())
+        }
     }
-}
 
-impl Engine {
     /// The edge mesh `meshPtr` and `meshLen` read of `of`.
     fn mesh_of(&self, of: MeshOf) -> &Mesh {
         match of {
@@ -1054,23 +1183,38 @@ impl Engine {
     fn update(&mut self, slot: u32, id: &str, patch: &NodePatch) -> Result<(), CallRefusal> {
         let held = self.content.held_besides(slot);
         // A slot that holds no node is refused below as a slot, whatever node shape it held.
-        let shaped = if self.graph.holds_node(slot) {
-            (
-                self.graph.shape(slot),
-                self.graph.sizes()[slot as usize * 2],
-            )
+        let shape = if self.graph.holds_node(slot) {
+            self.graph.shape(slot)
         } else {
-            (comb_engine::shape::NodeShape::Rectangle, 0.0)
+            comb_engine::shape::NodeShape::Rectangle
         };
-        let Some((content, height)) = patch_of(id, shaped, patch, &self.fonts, held)? else {
+        let patched = patch_of(id, shape, patch, &self.fonts, held)?;
+        if patched.is_empty() {
             return Ok(());
-        };
+        }
         if !self.graph.holds_node(slot) {
             return Err(CallRefusal::Slot(SlotError::NoNode { slot }));
         }
+        // The height the node then has, never less than its content, old or new, needs.
+        let given = patched.height.or_else(|| self.graph.given_height(slot));
+        let laid = patched.content.as_ref().map_or_else(
+            || {
+                let (content, node) = self.content.of(slot);
+                content.laid(node, &self.fonts)
+            },
+            |&(_, laid)| laid,
+        );
+        let width = self.graph.sizes()[slot as usize * 2];
+        let height = graph_data::node_height(shape, width, laid, given);
         graph_data::within_by_height(id, self.graph.positions()[slot as usize * 2 + 1], height)?;
         self.graph.resize_node(slot, height)?;
-        self.content.set(slot, content);
+        let resizable = patched
+            .resizable
+            .unwrap_or_else(|| self.graph.is_resizable(slot));
+        self.graph.set_sizing(slot, given, resizable)?;
+        if let Some((content, _)) = patched.content {
+            self.content.set(slot, content);
+        }
         Ok(())
     }
 
@@ -1128,8 +1272,9 @@ impl Engine {
             }
             let (content, node) = self.content.of(slot);
             let width = self.graph.sizes()[slot as usize * 2];
-            let height = content.height(node, &self.fonts);
-            let height = graph_data::shaped_height(self.graph.shape(slot), width, height);
+            let laid = content.laid(node, &self.fonts);
+            let given = self.graph.given_height(slot);
+            let height = graph_data::node_height(self.graph.shape(slot), width, laid, given);
             if self.graph.sizes()[slot as usize * 2 + 1] != height {
                 // A slot that holds a node, as the check above found, which no resize refuses.
                 let _ = self.graph.resize_node(slot, height);
@@ -1699,7 +1844,7 @@ mod tests {
             n.content = graph_data::ContentInput::new().into();
         });
         assert_eq!(load_into(&mut engine, &nodes, &edges), Ok(2));
-        let patch = NodePatch(vec![("content".to_owned(), titled("t"))]);
+        let patch = NodePatch(vec![("content".to_owned(), titled("t").into())]);
         assert_eq!(
             engine.update(1, "b", &patch),
             Err(CallRefusal::Data(GraphDataProblem::ContentInFilledShape {
@@ -1845,11 +1990,7 @@ mod tests {
             "content".to_owned(),
             named_content(&[&[action("Next", "next")]]).into(),
         )]);
-        let (checked, height) = patch_of("b", graph_data::RECTANGLE, &patch, &engine.fonts, 0)
-            .unwrap()
-            .unwrap();
-        engine.graph.resize_node(1, height).unwrap();
-        engine.content.set(1, checked);
+        engine.update(1, "b", &patch).unwrap();
         assert_eq!(
             element(&engine, 1, 320.0, 15.0, DetailLevel::Near),
             hit(0, 0, ElementKind::Action, Some("next"))
@@ -2300,11 +2441,7 @@ mod tests {
         let rows = content(&[&[long], &[body], &[body], &[body], &[body]]);
         let patch = NodePatch(vec![("content".to_owned(), rows.into())]);
         let slot = 1;
-        let (checked, height) = patch_of("b", graph_data::RECTANGLE, &patch, &engine.fonts, 0)
-            .unwrap()
-            .unwrap();
-        engine.graph.resize_node(slot, height).unwrap();
-        engine.content.set(slot, checked);
+        engine.update(slot, "b", &patch).unwrap();
         assert_eq!(engine.graph.sizes()[2..], [100.0, 102.0]);
         near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
         // The long title is cut to 9 glyphs and an ellipsis within its column of 76.
@@ -2330,13 +2467,62 @@ mod tests {
             "content".to_owned(),
             content(&[&[(KindCode::Unnamed, 1.0, RoleCode::Title, None)]]).into(),
         )]);
-        assert!(patch_of("b", graph_data::RECTANGLE, &refused, &engine.fonts, 0).is_err());
+        assert!(patch_of("b", graph_data::RECTANGLE.0, &refused, &engine.fonts, 0).is_err());
         assert_eq!(engine.graph.sizes()[2..], [100.0, 102.0]);
         // A slot that holds no node is the shell's mistake.
         assert_eq!(
             engine.graph.resize_node(7, 64.0),
             Err(comb_engine::graph::SlotError::NoNode { slot: 7 })
         );
+    }
+
+    #[test]
+    fn a_patch_of_height_and_resizable_raises_the_height_and_a_resize_stops_at_the_content() {
+        // Verifies: API-edits-report-nested-changes, REN-node-shapes-cover-uml
+        use graph_data::PatchValue;
+        use graph_data::tests::{TITLE, b_of, content, load_into, text};
+        let mut engine = fonted();
+        let nodes = b_of(&[&[TITLE]]);
+        let none = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &none), Ok(2));
+        let content_height = engine.graph.sizes()[3];
+        // A height below the content's raised to it, and the node resizable.
+        let patch = NodePatch(vec![
+            ("height".to_owned(), PatchValue::Height(Field(Some(10.0)))),
+            (
+                "resizable".to_owned(),
+                PatchValue::Resizable(Field(Some(true))),
+            ),
+        ]);
+        engine.update(1, "b", &patch).unwrap();
+        assert_eq!(engine.graph.sizes()[3], content_height);
+        assert!(engine.graph.is_resizable(1));
+        // A greater one kept, through a patch of more content too.
+        let patch = NodePatch(vec![(
+            "height".to_owned(),
+            PatchValue::Height(Field(Some(300.0))),
+        )]);
+        engine.update(1, "b", &patch).unwrap();
+        assert_eq!(engine.graph.sizes()[3], 300.0);
+        let body = text(RoleCode::Body, "b");
+        let patch = NodePatch(vec![("content".to_owned(), content(&[&[body]]).into())]);
+        engine.update(1, "b", &patch).unwrap();
+        assert_eq!(engine.graph.sizes()[3], 300.0);
+        // A height not above 0 is refused, the node as it was.
+        let patch = NodePatch(vec![(
+            "height".to_owned(),
+            PatchValue::Height(Field(Some(0.0))),
+        )]);
+        assert!(engine.update(1, "b", &patch).is_err());
+        assert_eq!(engine.graph.sizes()[3], 300.0);
+        // A resize of the bottom far up stops at the height its content needs, and keeps it.
+        let [x, y] = [0, 1].map(|axis| f64::from(engine.graph.positions()[2 + axis]));
+        let from = [x, y, 100.0, 300.0];
+        engine
+            .resize(1, Handle::Bottom, &from, [0.0, -1000.0])
+            .unwrap();
+        assert_eq!(engine.graph.sizes()[3], content_height);
+        assert_eq!(engine.graph.given_height(1), Some(content_height));
     }
 
     #[test]
@@ -2356,16 +2542,12 @@ mod tests {
         near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
         assert_eq!(engine.drawn.texts, "");
         assert_eq!(engine.drawn.bounds, [0, 0, 0]);
-        // A node patched to no rows at all lays out to none, the least height high.
+        // A node patched to no rows at all lays out to none, and is as high as wide.
         let patch = NodePatch(vec![("content".to_owned(), content(&[]).into())]);
-        let (checked, height) = patch_of("b", graph_data::RECTANGLE, &patch, &engine.fonts, 0)
-            .unwrap()
-            .unwrap();
-        engine.graph.resize_node(1, height).unwrap();
-        engine.content.set(1, checked);
+        engine.update(1, "b", &patch).unwrap();
         near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
         assert_eq!(engine.content_bounds, [0, 1, 1]);
-        assert_eq!(engine.graph.sizes()[3], 64.0);
+        assert_eq!(engine.graph.sizes()[3], 100.0);
     }
 
     #[test]
@@ -2493,7 +2675,7 @@ mod tests {
         for pixel in [0.0, -0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             assert!(
                 engine
-                    .hit(200.0, 60.0, pixel, DetailLevel::Near, true)
+                    .hit(200.0, 60.0, pixel, DetailLevel::Near, true, None)
                     .is_err(),
                 "{pixel}"
             );
@@ -2509,7 +2691,7 @@ mod tests {
         let before = engine.graph.positions().to_vec();
         // Refused before anything is hit, so the native test needs no JavaScript value.
         for pixel in [0.0, -0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            let hit = engine.hit(200.0, 60.0, pixel, DetailLevel::Near, true);
+            let hit = engine.hit(200.0, 60.0, pixel, DetailLevel::Near, true, None);
             assert_eq!(
                 hit.err(),
                 Some(CallRefusal::Number(NumberError::InvalidPixel)),
@@ -2540,7 +2722,7 @@ mod tests {
                 assert_eq!(moved, Err(refusal()), "({x}, {y})");
                 assert_eq!(engine.label_point(0), before, "the label at ({x}, {y})");
                 // Refused before anything is hit, so the native test needs no JavaScript value.
-                let hit = engine.hit(x, y, 1.0, DetailLevel::Near, true);
+                let hit = engine.hit(x, y, 1.0, DetailLevel::Near, true, None);
                 assert_eq!(hit.err(), Some(refusal()), "hit at ({x}, {y})");
             }
         }

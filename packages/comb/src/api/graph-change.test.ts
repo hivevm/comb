@@ -14,6 +14,7 @@ interface Table {
   nodeAdded: "host";
   nodeUpdated: "host";
   nodeMoved: "user";
+  nodeResized: "user";
   nodesRemoved: "user" | "host";
   edgeAdded: "user" | "host";
   edgeUpdated: "host";

@@ -391,10 +391,12 @@ const NODE_SHAPE = "rectangle";
 /** Whether `value` stands for a field left out: null or undefined. */
 const absent = (value: unknown) => value === undefined || value === null;
 
-/** The node of `addNode` read once, its container's identifier cut as a reference and its mark as
- *  given, each with no key where it is left out, so that the node as Comb took it holds none. */
+/** The node of `addNode` read once, its container's identifier cut as a reference and its mark,
+ *  its height, and whether it is resizable as given, each with no key where it is left out, so
+ *  that the node as Comb took it holds none. */
 function nodeOf(read: Reader, node: Fields) {
   const { id, x, y, width, shape, container, isContainer, content } = node;
+  const { height, resizable } = node;
   const snapshot: {
     id: unknown;
     x: unknown;
@@ -403,6 +405,8 @@ function nodeOf(read: Reader, node: Fields) {
     shape: unknown;
     container?: unknown;
     isContainer?: unknown;
+    height?: unknown;
+    resizable?: unknown;
     content: unknown;
   } = {
     id: read.id(id),
@@ -414,13 +418,15 @@ function nodeOf(read: Reader, node: Fields) {
   };
   if (!absent(container)) snapshot.container = read.reference(container);
   if (!absent(isContainer)) snapshot.isContainer = isContainer;
+  if (!absent(height)) snapshot.height = read.number(height);
+  if (!absent(resizable)) snapshot.resizable = resizable;
   return snapshot;
 }
 
 /** Writes the node `node` into `columns`, read once by `read`, its content walked straight into
  *  its columns, and returns what the store keeps of it: its identifier, its width, its node shape,
- *  and its container and mark where it has them, no copy of its content
- *  (REN-node-content-in-rows, API-edits-report-nested-changes). */
+ *  and its container, its mark, its height, and whether it is resizable where it has them, no
+ *  copy of its content (REN-node-content-in-rows, API-edits-report-nested-changes). */
 function written(read: Reader, node: Fields, columns: NodeColumnWriter, limits: Limits) {
   const { id, x, y, width, shape, container, isContainer, content } = node;
   const kept: {
@@ -429,17 +435,22 @@ function written(read: Reader, node: Fields, columns: NodeColumnWriter, limits: 
     shape: unknown;
     container?: unknown;
     isContainer?: unknown;
+    height?: unknown;
+    resizable?: unknown;
   } = {
     id: read.id(id),
     width: read.number(width),
     shape: read.text(shape) ?? NODE_SHAPE,
   };
   const [left, top, inside] = [read.number(x), read.number(y), read.reference(container)];
+  const [height, resizable] = [read.number(node.height), node.resizable];
   // The mark is handed over as given; the writer looks at it by equality with `true` and `false`.
-  columns.node(kept.id, left, top, kept.width, kept.shape, inside, isContainer);
+  columns.node(kept.id, left, top, kept.width, kept.shape, inside, isContainer, height, resizable);
   // Set where present, as an edge's label is, so that a load of no containers spreads no keys.
   if (!absent(inside)) kept.container = inside;
   if (!absent(isContainer)) kept.isContainer = isContainer;
+  if (!absent(height)) kept.height = height;
+  if (!absent(resizable)) kept.resizable = resizable;
   walkContent(read, content, columnSink(read, columns, limits, kept.id), limits);
   return kept;
 }
@@ -645,7 +656,8 @@ export function edgePatchOf(patch: unknown, limits: Limits): PlainEdgePatch {
 }
 
 /** The patch of `updateNode` as plain data: the own fields of a plain object, enumerable or not,
- *  up to the first other than `content`, its content read as a load reads a node's, and the name
+ *  up to the first other than `content`, `height`, and `resizable`, its content read as a load
+ *  reads a node's, its height as a number, whether it is resizable as given, and the name
  *  of that other field no longer than one code unit beyond the limit for texts. A patch that is
  *  no plain object, a `Map` or an array among them, or that has a key that is no string, cannot
  *  be read. */
@@ -657,6 +669,15 @@ export function patchOf(patch: unknown, limits: Limits): PlainPatch {
   const plain: Record<string, unknown> = Object.create(null);
   for (const key of Reflect.ownKeys(fields)) {
     if (typeof key !== "string") throw new UnreadableError("the patch has a key that is no string");
+    if (key === "height") {
+      plain[key] = read.number(fields[key]);
+      continue;
+    }
+    if (key === "resizable") {
+      // As given; the bridge reads it as a boolean or refuses it by name.
+      plain[key] = fields[key];
+      continue;
+    }
     if (key !== "content") {
       // The first other field, which the bridge refuses by name: its name cut like a text but
       // otherwise as written, a lone surrogate too, which the bridge names as U+FFFD; its value
