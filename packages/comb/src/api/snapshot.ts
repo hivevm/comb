@@ -488,16 +488,31 @@ const NODE_SHAPE = "rectangle";
 /** Whether `value` stands for a field left out: null or undefined. */
 const absent = (value: unknown) => value === undefined || value === null;
 
+/** Where the node of `addNode` lies, read once: its position and its container, or as a border
+ *  node the node it rides, its side, and its offset, each with no key where it is left out, since
+ *  a border node has no position (ARCH-border-nodes-ride-sides). */
+function placeRead(read: Reader, fields: Fields) {
+  const { x, y, container, attachedTo, side, offset } = fields;
+  const place: Fields = {};
+  if (!absent(x)) place.x = read.number(x);
+  if (!absent(y)) place.y = read.number(y);
+  if (!absent(container)) place.container = read.reference(container);
+  if (!absent(attachedTo)) place.attachedTo = read.reference(attachedTo);
+  if (!absent(side)) place.side = read.text(side);
+  if (!absent(offset)) place.offset = read.number(offset);
+  return place;
+}
+
 /** The node of `addNode` read once, its container's identifier cut as a reference and its mark,
  *  its height, and whether it is resizable as given, each with no key where it is left out, so
  *  that the node as Comb took it holds none. */
 function nodeOf(read: Reader, node: Fields) {
   const { id, x, y, width, shape, container, isContainer, content } = node;
-  const { height, resizable, divide, regions } = node;
+  const { height, resizable, divide, regions, attachedTo, side, offset } = node;
   const snapshot: {
     id: unknown;
-    x: unknown;
-    y: unknown;
+    x?: unknown;
+    y?: unknown;
     width: unknown;
     shape: unknown;
     container?: unknown;
@@ -506,16 +521,17 @@ function nodeOf(read: Reader, node: Fields) {
     resizable?: unknown;
     divide?: unknown;
     regions?: unknown;
+    attachedTo?: unknown;
+    side?: unknown;
+    offset?: unknown;
     content: unknown;
   } = {
     id: read.id(id),
-    x: read.number(x),
-    y: read.number(y),
     width: read.number(width),
     shape: read.text(shape) ?? NODE_SHAPE,
     content: read.content(content),
   };
-  if (!absent(container)) snapshot.container = read.reference(container);
+  Object.assign(snapshot, placeRead(read, { x, y, container, attachedTo, side, offset }));
   if (!absent(isContainer)) snapshot.isContainer = isContainer;
   if (!absent(height)) snapshot.height = read.number(height);
   if (!absent(resizable)) snapshot.resizable = resizable;
@@ -547,6 +563,7 @@ function written(
     height?: unknown;
     resizable?: unknown;
     divide?: unknown;
+    attachedTo?: unknown;
   } = {
     id: read.id(id),
     width: read.number(width),
@@ -554,14 +571,20 @@ function written(
   };
   const [left, top, inside] = [read.number(x), read.number(y), read.reference(container)];
   const [height, resizable] = [read.number(node.height), node.resizable];
+  const on = read.reference(node.attachedTo);
   // The mark is handed over as given; the writer looks at it by equality with `true` and `false`.
-  columns.node(kept.id, left, top, kept.width, kept.shape, inside, isContainer, height, resizable);
+  const args = [inside, isContainer, height, resizable, on] as const;
+  columns.node(kept.id, left, top, kept.width, kept.shape, ...args);
   // Set where present, as an edge's label is, so that a load of no containers spreads no keys.
   if (!absent(inside)) kept.container = inside;
   if (!absent(isContainer)) kept.isContainer = isContainer;
   if (!absent(height)) kept.height = height;
   if (!absent(resizable)) kept.resizable = resizable;
   const divide = writtenRegions(read, node, columns, limits, kept.id);
+  // A border node's side and offset are the engine's, which `api` reads as it delivers them
+  // (ARCH-border-nodes-ride-sides).
+  columns.border(on, read.text(node.side), read.number(node.offset));
+  if (typeof on === "string") kept.attachedTo = on;
   if (divide) {
     kept.divide = divide.divide;
     regionViews.push(...regionViewsOf(kept.id as string, divide.divide, divide.regions));
@@ -801,10 +824,14 @@ const NODE_PATCH: Record<string, (read: Reader, value: unknown) => unknown> = {
     const regions = regionsRead(read, value);
     return regions === undefined ? [] : regions && regionInputs(regions);
   },
+  // A border node's place (ARCH-border-nodes-ride-sides).
+  side: (read, value) => read.text(value),
+  offset: (read, value) => read.number(value),
 };
 
 /** The patch of `updateNode` as plain data: the own fields of a plain object, enumerable or not,
- *  up to the first other than `content`, `height`, `resizable`, `divide`, and `regions`, its
+ *  up to the first other than `content`, `height`, `resizable`, `divide`, `regions`, `side`, and
+ *  `offset`, its
  *  content read as a load reads a node's, its height as a number, whether it is resizable and its
  *  division as given, its regions as a load reads a node's, `false` where it cannot read them and
  *  none for null, and the name

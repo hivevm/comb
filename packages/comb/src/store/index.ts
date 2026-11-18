@@ -7,28 +7,32 @@ import type { NodeContent, NodeShape, RegionRead } from "../bridge";
 
 export type { ContentElement, NodeContent, NodeShape, TextRole } from "../bridge";
 
-/** A node as the host application hands it over: `x` and `y` are its initial position, `shape`
- *  the node shape it is drawn and hit in, and `content` what it shows, rows of weighted columns,
- *  from which and its node shape Comb computes its height (REN-node-content-in-rows,
- *  REN-closed-set-of-node-shapes). */
-export interface NodeData {
+/** What every node the host application hands over has: `shape` the node shape it is drawn and
+ *  hit in, and `content` what it shows, rows of weighted columns, from which and its node shape
+ *  Comb computes its height (REN-node-content-in-rows, REN-closed-set-of-node-shapes). */
+interface NodeFields {
   id: string;
-  x: number;
-  y: number;
   width: number;
   /** Its node shape, `rectangle` where left out; a circle, a ringed circle, and a bar hold no
    *  content. */
   shape?: NodeShape;
+  /** The height it is given, never less than its content needs, a height below that raised to
+   *  it; without content, as high as given however small; where left out, as high as its content
+   *  needs, or as wide without content (REN-node-shapes-cover-uml). */
+  height?: number;
+  content: NodeContent;
+}
+
+/** A node that lies on the canvas or in a container: `x` and `y` are its initial position. */
+export interface PlacedNodeData extends NodeFields {
+  x: number;
+  y: number;
   /** The identifier of the container it lies in, its `x` and `y` then relative to the container's
    *  top left corner; on the canvas where left out (API-edits-report-nested-changes). */
   container?: string;
   /** `true` for a container, which may hold nodes even while empty, and is drawn below the edges
    *  and the other nodes. */
   isContainer?: boolean;
-  /** The height it is given, never less than its content needs, a height below that raised to
-   *  it; without content, as high as given however small; where left out, as high as its content
-   *  needs, or as wide without content (REN-node-shapes-cover-uml). */
-  height?: number;
   /** `true` where the user may resize it by its resize handles once it is selected
    *  (API-edits-report-nested-changes). */
   resizable?: boolean;
@@ -38,8 +42,30 @@ export interface NodeData {
   /** The regions it is divided into, below its content, each a container of its own that nodes
    *  lie in by its identifier; a node with regions holds no node beside them. */
   regions?: RegionData[];
-  content: NodeContent;
+  attachedTo?: never;
+  side?: never;
+  offset?: never;
 }
+
+/** A border node (ARCH-border-nodes-ride-sides): attached to the node `attachedTo`, which is no
+ *  border node, centred on its outline on `side` of its box, `offset` world units from that
+ *  side's start, its left end or its top end, held within the side's length; it moves with that
+ *  node and lies in its container. It is no container and not resizable. */
+export interface BorderNodeData extends NodeFields {
+  attachedTo: string;
+  side: Side;
+  offset: number;
+  x?: never;
+  y?: never;
+  container?: never;
+  isContainer?: never;
+  resizable?: never;
+  divide?: never;
+  regions?: never;
+}
+
+/** A node as the host application hands it over: a node with a position, or a border node. */
+export type NodeData = PlacedNodeData | BorderNodeData;
 
 /** The direction a node or a region is divided in: `across` for regions side by side, `down` for
  *  regions one above the other (ARCH-regions-are-container-slots). */
@@ -136,7 +162,15 @@ export interface EdgePatch {
  *  of its content or its size, so that a view tells the change by identity. */
 export type NodeView = Pick<
   NodeData,
-  "id" | "width" | "shape" | "container" | "isContainer" | "height" | "resizable" | "divide"
+  | "id"
+  | "width"
+  | "shape"
+  | "container"
+  | "isContainer"
+  | "height"
+  | "resizable"
+  | "divide"
+  | "attachedTo"
 > & {
   /** Set where the slot holds a region of a node, which is no node of the host application's:
    *  no edge ends on it, and no call names it as a node (ARCH-regions-are-container-slots). */
@@ -144,10 +178,11 @@ export type NodeView = Pick<
 };
 
 /** What the store keeps of `node`: no key for a container, a mark, a height, whether it is
- *  resizable, a division, or a region it has none of. */
+ *  resizable, a division, a region, or a node it rides it has none of. */
 export function nodeViewOf(node: NodeView): NodeView {
   const { id, width, shape, container, isContainer, height, resizable, divide, region } = node;
   const view: NodeView = { id, width, shape };
+  if (node.attachedTo !== undefined) view.attachedTo = node.attachedTo;
   if (container !== undefined) view.container = container;
   if (isContainer !== undefined) view.isContainer = isContainer;
   if (height !== undefined) view.height = height;
@@ -211,6 +246,10 @@ export interface NodePatch {
    *  with everything it holds, and one kept by its identifier keeps what it holds
    *  (ARCH-regions-are-container-slots, *Removing a region*). */
   regions?: RegionData[];
+  /** A border node's side and offset anew, the offset held within that side's length; a node
+   *  that is no border node has neither (ARCH-border-nodes-ride-sides). */
+  side?: Side;
+  offset?: number;
 }
 
 /** The regions of a node `addNode` adds, read into one list, and the slots the engine took them
@@ -231,8 +270,12 @@ export interface Divided {
   readonly old: readonly number[];
 }
 
-/** What a patch of `updateNode` set besides content, as the store keeps it. */
-export type NodeSizing = Pick<NodePatch, "height" | "resizable">;
+/** What a patch of `updateNode` set besides content, as the store keeps it, and whether it set a
+ *  border node's side or offset, which the engine keeps. */
+export type NodeSizing = Pick<NodePatch, "height" | "resizable"> & {
+  side?: true;
+  offset?: true;
+};
 
 /** Who made a change: the user on the canvas, or the host application through `Comb`. */
 export type By = "user" | "host";
@@ -293,6 +336,10 @@ export type StoreChange =
       readonly resizable?: boolean;
       /** Set where the patch divided the node into regions anew. */
       readonly regions?: true;
+      /** Set where the patch set a border node's side, and its offset, which the engine keeps
+       *  (ARCH-border-nodes-ride-sides). */
+      readonly side?: true;
+      readonly offset?: true;
     };
 
 /** A connection the user drags from the connector `side` of the node in slot `source`
@@ -634,7 +681,14 @@ function updatedFrom(
   if (divided) {
     ({ nodes, slots, idUnits } = withRegions(nodes, slots, idUnits, id, divided));
   }
-  const change = {
+  return { nodes, slots, idUnits, change: updateOf(id, content, sizing, divided !== undefined) };
+}
+
+/** The change `updateNode` records of the node `id`: whether it set content, what it set of the
+ *  node's size and place, and whether it divided the node anew. */
+function updateOf(id: string, content: boolean, sizing: NodeSizing, divided: boolean) {
+  const { height, resizable, side, offset } = sizing;
+  return {
     kind: "nodeUpdated",
     by: "host",
     id,
@@ -642,8 +696,9 @@ function updatedFrom(
     ...(height === undefined ? {} : { height: true as const }),
     ...(resizable === undefined ? {} : { resizable }),
     ...(divided ? { regions: true as const } : {}),
+    ...(side ? { side: true as const } : {}),
+    ...(offset ? { offset: true as const } : {}),
   } as const;
-  return { nodes, slots, idUnits, change };
 }
 
 /** `nodes`, `slots`, and `idUnits` without the regions in `divided.old` the store still keeps and

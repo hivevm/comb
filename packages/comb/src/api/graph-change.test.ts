@@ -30,8 +30,8 @@ const by: Equal<By, Table> = true;
 
 function narrows(change: GraphChange): void {
   if (change.kind === "nodeAdded") {
-    const { id, x, y }: { id: string; x: number; y: number } = change.node;
-    expect([id, x, y]).toBeDefined();
+    const { id, width }: { id: string; width: number } = change.node;
+    expect([id, width]).toBeDefined();
   }
   if (change.kind === "nodesRemoved") {
     // @ts-expect-error the identifiers a change lists are read-only

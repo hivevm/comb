@@ -31,6 +31,7 @@ import type {
   NodeShape,
   NodeData,
   NodePatch,
+  NodeSizing,
   NodeView,
   Divided,
   KeptGraph,
@@ -231,11 +232,7 @@ function updateNode({ store, bridge, limits }: Editing, id: string, patch: unkno
     },
     engine: ({ slot, plain, kept }) => bridge.updateNode(slot, id, plain, kept),
     record: (state, { slot, plain, old, moving }, removal) => {
-      const { height, resizable } = plain;
-      const sizing = {
-        ...("height" in plain ? { height } : {}),
-        ...("resizable" in plain ? { resizable } : {}),
-      };
+      const sizing = sizingOf(plain);
       const divided = old.length > 0 || "regions" in plain || "divide" in plain;
       // What went with a region the patch left out goes as the host's removal, before the change
       // of the node (ARCH-regions-are-container-slots, *Removing a region*).
@@ -247,10 +244,22 @@ function updateNode({ store, bridge, limits }: Editing, id: string, patch: unkno
       after.updateNode(id, "content" in plain, sizing, anew);
       // What a kept region divided anew held now lies in its first region, the host's move.
       for (const { node, into } of moving) store.getState().nodeMoved(node, into, "host");
-      // The regions moved, which a query the scene keeps does not survive.
-      if (divided) store.getState().positionsMoved();
+      // The regions moved, or a border node, which a query the scene keeps does not survive.
+      if (divided || sizing.side || sizing.offset) store.getState().positionsMoved();
     },
   });
+}
+
+/** What the patch `plain` set of a node's size, as the store keeps it, and whether it set a border
+ *  node's side or offset, which the engine keeps (ARCH-border-nodes-ride-sides). */
+function sizingOf(plain: PlainPatch): NodeSizing {
+  const { height, resizable } = plain;
+  return {
+    ...("height" in plain ? { height } : {}),
+    ...("resizable" in plain ? { resizable } : {}),
+    ...("side" in plain ? { side: true as const } : {}),
+    ...("offset" in plain ? { offset: true as const } : {}),
+  };
 }
 
 /** How the patch `plain` divided the node in `slot` anew, which held the regions in `old`: in
@@ -356,6 +365,19 @@ function containerOf(snapshot: unknown, state: GraphState): number | undefined {
   throw new GraphDataError({ kind: "invalidContainer", node, field: "container", expected });
 }
 
+/** The slot of the node the border node `snapshot` names by its `attachedTo` in the map of
+ *  `state`, or none where it names none; refuses one the graph does not hold, a region among
+ *  them, as `missingNode`, as an edge's end is (ARCH-border-nodes-ride-sides). An `attachedTo`
+ *  that is no string the bridge refuses by its field. */
+function attachedOf(snapshot: unknown, state: GraphState): number | undefined {
+  const { id, attachedTo } = snapshot as { id?: unknown; attachedTo?: unknown };
+  if (typeof attachedTo !== "string") return undefined;
+  const slot = nodeSlotOf(state, attachedTo);
+  if (slot !== undefined) return slot;
+  const borderNode = typeof id === "string" ? id : "";
+  throw new GraphDataError({ kind: "missingNode", borderNode, node: attachedTo });
+}
+
 /** `addNode`: an identifier the map holds already refused, and a container it does not hold as
  *  one; the engine chooses the slot the store keeps the node in, and places it relative to its
  *  container (ARCH-engine-edits-nested-graph). */
@@ -368,10 +390,11 @@ function addNode({ store, bridge, limits }: Editing, node: unknown): void {
       for (const named of [id, ...idsIn(regions)])
         if (typeof named === "string" && state.slots.has(named))
           throw new GraphDataError({ kind: "duplicateNode", node: named });
-      return { ...plain, container: containerOf(plain.snapshot, state) };
+      const attached = attachedOf(plain.snapshot, state);
+      return { ...plain, container: containerOf(plain.snapshot, state), attached };
     },
     idUnits: (plain, state) => state.idUnits + plain.idUnits,
-    engine: ({ snapshot, container }) => bridge.addNode(snapshot, container),
+    engine: ({ snapshot, container, attached }) => bridge.addNode(snapshot, container, attached),
     // The bridge took the node, so each field holds a value of its type.
     record: (state, { snapshot }, slot) => {
       const regions = [...bridge.regionsOf(slot)];

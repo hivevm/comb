@@ -157,6 +157,9 @@ mod tests {
             resizable: None.into(),
             divide: None.into(),
             regions: None.into(),
+            attached_to: None.into(),
+            side: None.into(),
+            offset: None.into(),
             content: content.into(),
         }
     }
@@ -179,9 +182,9 @@ mod tests {
         // Verifies: REN-node-content-in-rows, API-bridge-takes-serde-and-columns, Q-7
         let mut engine = at_the_budget();
         let one = node_of("c", content(&[&[text(RoleCode::Title, "x")]]));
-        let added = engine.add(&one, None);
+        let added = engine.add(&one, (None, None));
         // A node whose content holds no string adds no code unit and is taken.
-        let none = engine.add(&node_of("d", content(&[])), None);
+        let none = engine.add(&node_of("d", content(&[])), (None, None));
         TEST_BUDGET.set(None);
         assert_eq!(added, Err(past_budget("c")));
         assert_eq!(none, Ok(2));
@@ -248,17 +251,17 @@ mod tests {
         let units = engine.content.units();
         let three = engine.add(
             &node_of("c", content(&[&[text(RoleCode::Title, "xyz")]])),
-            None,
+            (None, None),
         );
         let one = engine.add(
             &node_of("d", content(&[&[text(RoleCode::Title, "x")]])),
-            None,
+            (None, None),
         );
         // An added node deleted frees its code units too.
         assert_eq!(engine.remove_nodes(&[0]), Ok(vec![1, 0]));
         let again = engine.add(
             &node_of("e", content(&[&[text(RoleCode::Title, "x")]])),
-            None,
+            (None, None),
         );
         TEST_BUDGET.set(None);
         assert_eq!(units, 3);

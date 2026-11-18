@@ -130,8 +130,11 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   bounds, the point and normal at a path parameter, and edge-label placement. `shape` holds the
   closed set of node shapes ([REN-closed-set-of-node-shapes](adr/REN-closed-set-of-node-shapes.md)):
   each one's height for content of a given height, the inner rectangle its content is laid out in,
-  its hit test, the point where a line from its centre crosses its outline, and how far inward from
-  a side its outline lies at an offset along it, all in the node's own coordinates. `graph` keeps
+  its hit test, the point where a line from its centre crosses its outline, how far inward from
+  a side its outline lies at an offset along it, and for border nodes the point of the outline on a
+  side at an offset along it (`on_side`), the point of the outline nearest a point (`nearest`, the
+  ellipse's by Eberly's bisection), and the side of the box nearest a point of it with its offset
+  (`side_of`), all in the node's own coordinates. `graph` keeps
   the loaded graph, node positions and sizes per slot, a node shape per node slot, a rectangle by
   default, by which `node_at` hits a node within its outline and its edges' ends on the outline lie,
   and edges per slot, a rank per node slot, a list of the edges at each node slot, a list each of
@@ -172,8 +175,18 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   level, the innermost, which `hit_at` names before a connector, a region hit is named as the node
   it divides, and `container_at` passes over a divided node or region to its regions; each walk
   over regions is a loop over `regions_of`, the deepest first where a region needs its own
-  ([ARCH-regions-are-container-slots](adr/ARCH-regions-are-container-slots.md)); each with its
-  tests,
+  ([ARCH-regions-are-container-slots](adr/ARCH-regions-are-container-slots.md)); `borders`, the
+  border nodes, each a node slot of its own attached to another node by a side of its box and an
+  offset along it, which `attach`, `set_place`, and `slide`, the drag, hold within the side's
+  length as they place one, and which a resize keeps as it is, holding it within the side's length
+  only where it places the border node; every change of a node's box, by `shift` for
+  a move of it or of a container that holds it and by `reboxed` for a resize, a new height, or a
+  layout of regions, and every change of its node shape, places its border nodes again in the same
+  call, their edges with them; a border node lies in no container's list and follows its node, so
+  that a move into a container takes it along, `shift` and `move_into` pass it over, `removal`
+  names the border nodes of every node it takes, and `draw_key` draws and hits it directly after
+  its node, at the node's rank, a container's border node among the other nodes
+  ([ARCH-border-nodes-ride-sides](adr/ARCH-border-nodes-ride-sides.md)); each with its tests,
   `tests` with the graphs they build and the property tests of the
   whole graph against a scan, and `budget`, the property test of the mesh budget. `add_node` takes
   the free slot freed last, or a new one after the highest, and the next rank, and puts the node
@@ -304,7 +317,11 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   `updateNode` take them as the node's `regions`, which `api` flattens into one list, each region
   after the one it lies in, so that no walk over regions recurses; `updateNode` divides the node
   anew and returns what went with a region left out, and a region's name counts against the
-  budget of content; it refuses a pixel as `query` does and a
+  budget of content; a load takes the border nodes as columns of their own, the slot each rides,
+  its side, its offset, and what stands beside its `attachedTo`, `addNode` takes the slot of the
+  node it rides beside its container, `updateNode` sets a border node's `side` and `offset`,
+  `borderOf` names where one sits, and `slide` drags one to the point of the outline nearest the
+  pointer; it refuses a pixel as `query` does and a
   point that is not finite; `setLabelSize` takes the measure of a label's pill, `labelPoint` names
   where a label lies, and `moveLabel` places a dragged label, one dragged beyond the world's limit
   stopping there, refuses a point that is not finite as `hit` does, and returns its path parameter
@@ -368,7 +385,10 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   `node-drag.ts` selects a node on press and drags it once the pointer has moved more than the
   slop of 4 screen pixels (`SLOP` of `gesture.ts`), and on a release on the canvas within it
   tells a click on the element of the node's content under the release, hit anew, through the
-  `click` of the gestures' `Context`; a cancelled pointer ends a gesture as no release;
+  `click` of the gestures' `Context`; a border node it slides along its node's outline by the
+  engine's `slide` instead, asks no veto, and records `nodeMoved` at the release only where its
+  side or offset changed; a drag signals as dragged the slots `removalOf` names, a node's content
+  and border nodes among them; a cancelled pointer ends a gesture as no release;
   `pan.ts` selects an edge on press and pans once the pointer has moved beyond the same slop, or
   clears the selection on the empty canvas and pans; `index.ts` zooms around the pointer and sets
   the cursor over what a press would hit;
@@ -755,7 +775,10 @@ write the engine alone while they move and record `nodeMoved`, `labelMoved`, `no
 region, with its name, its line, and the direction it lies in; `api` refuses a region named where a
 call names a node, an edge's end as `missingNode`, `removeNodes` and `updateNode` as `unknownNode`,
 and leaves regions out of `nodesRemoved` and `canDelete`
-([ARCH-regions-are-container-slots](adr/ARCH-regions-are-container-slots.md)).
+([ARCH-regions-are-container-slots](adr/ARCH-regions-are-container-slots.md)). The store keeps a
+border node's `attachedTo`, and the engine its side and offset, which `api` reads as it delivers
+`nodeAdded`, `nodeUpdated`, and `nodeMoved`; `api` refuses an `attachedTo` its map does not hold as
+a node as `missingNode` ([ARCH-border-nodes-ride-sides](adr/ARCH-border-nodes-ride-sides.md)).
 
 **Panning and zooming.** `interaction` sets the store's viewport. While the viewport stays inside
 the rectangle the scene last queried, and that rectangle within the viewport grown by twice the

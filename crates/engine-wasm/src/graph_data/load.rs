@@ -8,12 +8,13 @@ use std::collections::HashSet;
 use comb_engine::graph::{AddNodeError, Axis, CANVAS, Graph, NestError, Nesting};
 use comb_engine::shape::NodeShape;
 
+use super::borders::{Marks, attached, check_border, check_target, invalid, target_of};
 use super::checks::Nodes;
 use super::checks::{
     checked_node, content_fits_shape, content_top, edges_of, given_height, id_length, ids_of,
     node_height, nodes_of, within_by_height,
 };
-use super::item::{Batch, node_of};
+use super::item::{Batch, Border, node_of};
 use super::problem::{A_MARKED_CONTAINER, A_NODE_OF_THE_GRAPH, AN_UNDIVIDED, NOT_IN_ITSELF};
 #[cfg(test)]
 use super::snapshot::{EdgeCells, GraphBatch, OwnedColumns, OwnedEdgeColumns};
@@ -84,6 +85,7 @@ pub(crate) fn load_of(
         }
         names.extend(list.iter().map(Region::name_units));
     }
+    let borders = border_targets(&batch, columns, &trees)?;
     divided_nesting(&batch, &columns.regions, &trees, &mut nesting, &mut nodes)?;
     nodes.positions = world_of(&batch, &nesting, &nodes.positions, &nodes.sizes)?;
     let spans = text_spans(content.texts, content.text_bounds)?;
@@ -103,6 +105,10 @@ pub(crate) fn load_of(
             let _ = graph.set_shape(slot, shape);
         }
     }
+    // Last, once the boxes of the nodes they ride are what the load gives them.
+    for (slot, on, border) in borders {
+        attached(&mut graph, slot, on, &border)?;
+    }
     Ok(Loaded {
         graph,
         spans,
@@ -110,6 +116,40 @@ pub(crate) fn load_of(
         units: nodes.units,
         names: region_names(&trees, &columns.regions),
     })
+}
+
+/// The border nodes of a load, checked in slot order, each with the slot of the node it rides
+/// and its place (ARCH-border-nodes-ride-sides): by their own fields first, then by what they are
+/// attached to, one attached to no node named by the identifier the snapshot handed over.
+fn border_targets(
+    batch: &Batch,
+    columns: &NodeColumns,
+    trees: &[(Option<Axis>, Vec<Region>)],
+) -> Result<Vec<(u32, u32, Border)>, GraphDataProblem> {
+    let count = batch.nodes.len();
+    let mut borders = Vec::new();
+    for (index, node) in batch.nodes.iter().enumerate() {
+        if let Some(field) = columns.not_border(index) {
+            return Err(invalid(node.id, field));
+        }
+        let Some(border) = node.border else {
+            continue;
+        };
+        let marks = Marks {
+            is_container: columns.is_container[index] == 1,
+            divided: !trees[index].1.is_empty(),
+            resizable: node.resizable,
+        };
+        check_border(node.id, &border, &marks)?;
+        let slot = numbered(index);
+        let on = target_of(columns.attached[index], count)?;
+        let named = columns.attached_missing.unwrap_or_default();
+        let on = check_target(node.id, slot, on, named, |s| {
+            columns.has_attached[s as usize] == 1
+        })?;
+        borders.push((slot, on, border));
+    }
+    Ok(borders)
 }
 
 /// The code units of the name of each region of a load, in the order of their slots.
@@ -348,6 +388,8 @@ struct Single {
     regions: Vec<Region>,
     /// The height of its content, below which its regions lie; 0 without content.
     top: f32,
+    /// Its place where it is a border node (ARCH-border-nodes-ride-sides).
+    border: Option<Border>,
 }
 
 /// Checks the node of `addNode` or `heightOf` as a load checks a node, the only one of its batch at
@@ -387,6 +429,7 @@ fn single_of(input: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, Grap
         top: content_top(laid),
         divide: divide.filter(|_| !regions.is_empty()),
         regions,
+        border: node.border,
     })
 }
 
@@ -405,10 +448,15 @@ fn single_of(input: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, Grap
 pub(crate) fn add_node_to(
     graph: &mut Graph,
     node: &NodeInput,
-    container: Option<u32>,
+    (container, attached_to): (Option<u32>, Option<u32>),
     fonts: &Fonts,
     held: u64,
 ) -> Result<(u32, Checked), GraphDataProblem> {
+    let single = single_of(node, fonts, held)?;
+    // Each region takes a node slot, counted against the limit of a load.
+    let nodes = f64::from(graph.nodes_in_use()) + 1.0 + single.regions.len() as f64;
+    check_graph_size(nodes, 0.0)?;
+    let ride = ridden(graph, node, &single, attached_to)?;
     let Single {
         x,
         y,
@@ -422,11 +470,9 @@ pub(crate) fn add_node_to(
         divide,
         regions,
         top,
+        border,
         ..
-    } = single_of(node, fonts, held)?;
-    // Each region takes a node slot, counted against the limit of a load.
-    let nodes = f64::from(graph.nodes_in_use()) + 1.0 + regions.len() as f64;
-    check_graph_size(nodes, 0.0)?;
+    } = single;
     let id = node.id.0.as_deref().unwrap_or_default();
     let (container, [x, y]) = match container {
         None => (CANVAS, [x, y]),
@@ -473,6 +519,9 @@ pub(crate) fn add_node_to(
     // A slot just added, which no node shape and no sizing refuses.
     let _ = graph.set_shape(slot, shape);
     let _ = graph.set_sizing(slot, given, resizable);
+    if let (Some(on), Some(border)) = (ride, &border) {
+        attached(graph, slot, on, border)?;
+    }
     if let Some(axis) = divide {
         let _ = graph.divide(slot, Some(axis), top);
         add_regions(graph, slot, axis, &regions)?;
@@ -482,6 +531,41 @@ pub(crate) fn add_node_to(
         graph.arrange(slot);
     }
     Ok((slot, content))
+}
+
+/// The slot of the node the border node `node`, read as `single`, rides, `attached_to` as `api`
+/// resolved it, checked as a load checks a border node; none where it is no border node
+/// (ARCH-border-nodes-ride-sides).
+fn ridden(
+    graph: &Graph,
+    node: &NodeInput,
+    single: &Single,
+    attached_to: Option<u32>,
+) -> Result<Option<u32>, GraphDataProblem> {
+    let id = node.id.0.as_deref().unwrap_or_default();
+    let Some(border) = &single.border else {
+        // A side or an offset, given or of another type, belongs to a border node alone.
+        let field = if node.side.0.is_none_or(|side| side.is_some()) {
+            Some("side")
+        } else if node.offset.0.is_none_or(|offset| offset.is_some()) {
+            Some("offset")
+        } else {
+            None
+        };
+        return field.map_or(Ok(None), |field| Err(invalid(id, field)));
+    };
+    let marks = Marks {
+        is_container: single.is_container,
+        divided: !single.regions.is_empty(),
+        resizable: single.resizable,
+    };
+    check_border(id, border, &marks)?;
+    let named = node.attached_to.0.as_ref().and_then(Option::as_deref);
+    let on = attached_to.filter(|&on| graph.holds_node(on));
+    let on = check_target(id, CANVAS, on, named.unwrap_or_default(), |s| {
+        graph.is_border(s)
+    })?;
+    Ok(Some(on))
 }
 
 /// The height the content of `node` lays out to at its width in `fonts`, checked as `add_node_to`
@@ -970,7 +1054,7 @@ mod nesting_tests {
         node: &NodeInput,
         container: Option<u32>,
     ) -> Result<u32, GraphDataProblem> {
-        add_node_to(graph, node, container, &Fonts::default(), 0).map(|(slot, _)| slot)
+        add_node_to(graph, node, (container, None), &Fonts::default(), 0).map(|(slot, _)| slot)
     }
 
     #[test]

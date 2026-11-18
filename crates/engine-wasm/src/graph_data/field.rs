@@ -41,6 +41,13 @@ pub(super) fn optional_number<'de, D: Deserializer<'de>>(
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Field<T>(pub Option<T>);
 
+impl<T> Field<Option<T>> {
+    /// A field left out, as serde gives a field it does not find.
+    pub(super) const fn absent() -> Self {
+        Self(Some(None))
+    }
+}
+
 impl<T> Default for Field<T> {
     fn default() -> Self {
         Self(None)
@@ -115,5 +122,13 @@ impl<'de, T: Deserialize<'de> + Default + Refusable> Visitor<'de> for Items<T> {
 impl<T> From<T> for Field<T> {
     fn from(value: T) -> Self {
         Self(Some(value))
+    }
+}
+
+/// A number the tests give a field that may be left out, as present.
+#[cfg(test)]
+impl From<f64> for Field<Option<f64>> {
+    fn from(value: f64) -> Self {
+        Self(Some(Some(value)))
     }
 }

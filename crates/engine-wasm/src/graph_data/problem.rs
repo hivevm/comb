@@ -169,10 +169,25 @@ pub enum GraphDataProblem {
     /// Two edges share an identifier.
     #[serde(rename_all = "camelCase")]
     DuplicateEdge { edge: String },
-    /// An edge names a node that is not in the batch, or, for `addEdge`, one the graph does not
-    /// hold.
+    /// An edge, `edge`, or a border node by its `attachedTo`, `borderNode`, names a node `node`
+    /// that is not in the batch, or, for `addEdge` and `addNode`, one the graph does not hold
+    /// (ARCH-border-nodes-ride-sides).
     #[serde(rename_all = "camelCase")]
-    MissingNode { edge: String, node: String },
+    MissingNode {
+        #[tsify(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        edge: Option<String>,
+        #[tsify(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        border_node: Option<String>,
+        node: String,
+    },
+    /// The border node `node` cannot be one by its field `field`: `attachedTo` names itself or
+    /// another border node; `isContainer`, `regions`, or `resizable` makes it a container or
+    /// resizable; or `x`, `y`, or `container` stands beside `attachedTo`
+    /// (ARCH-border-nodes-ride-sides, *Attachment*).
+    #[serde(rename_all = "camelCase")]
+    InvalidAttachment { node: String, field: String },
     /// An edge label's path parameter or label offset is NaN or infinite.
     #[serde(rename_all = "camelCase")]
     NonFiniteLabel { edge: String },
@@ -275,6 +290,10 @@ pub(super) const AN_ARROW: &str = "\"end\" or \"none\"";
 pub(super) const A_SHAPE: &str = "\"rectangle\", \"rounded-rectangle\", \"ellipse\", \"circle\", \
                                    \"ringed-circle\", \"diamond\", or \"bar\"";
 pub(super) const A_SIDE: &str = "\"top\", \"right\", \"bottom\", \"left\", or \"outline\"";
+/// What a border node's side expects (ARCH-border-nodes-ride-sides).
+pub(super) const A_BORDER_SIDE: &str = "\"top\", \"right\", \"bottom\", or \"left\"";
+/// What a border node's `attachedTo` expects.
+pub(super) const A_NODE_ID_OR_NONE: &str = "the identifier of a node, or none";
 pub(super) const A_CONTENT: &str = "a list of rows";
 pub(super) const A_ROW: &str = "a list of elements";
 pub(super) const AN_ELEMENT: &str = "an object";

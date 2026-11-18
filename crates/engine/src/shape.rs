@@ -1,9 +1,12 @@
 //! The node shapes of the closed set the engine owns (REN-closed-set-of-node-shapes): each node
 //! shape's height for content of a given height, the inner rectangle its content is laid out in,
 //! its hit test, the point where a line from its centre crosses its outline, and how far inside a
-//! side the outline lies at a distance from the side's middle (`inset`). All of it is in the
+//! side the outline lies at a distance from the side's middle (`inset`), and where a border node
+//! sits on it by a side and an offset along it (ARCH-border-nodes-ride-sides). All of it is in the
 //! node's own coordinates, its top-left corner at the origin, so that it holds wherever the node
 //! lies in the world.
+
+use crate::geometry::Side;
 
 /// The radius of the corners of a rounded rectangle, which lies within the padding of content,
 /// so that a rounded rectangle lays its content out as a rectangle does.
@@ -201,6 +204,199 @@ impl NodeShape {
     }
 }
 
+/// The length of `side` of a box `width` × `height`: its width for the top and the bottom, its
+/// height for the right and the left.
+pub fn side_length(width: f64, height: f64, side: Side) -> f64 {
+    match side {
+        Side::Top | Side::Bottom => width,
+        Side::Right | Side::Left => height,
+    }
+}
+
+/// The side of a box `width` × `height` nearest the point `(x, y)` of its own coordinates, ties
+/// in the order top, right, bottom, left, and the point's offset along it, its distance from the
+/// side's start, its left end or its top end, held within the side's length
+/// (ARCH-border-nodes-ride-sides, *Drag*).
+pub fn side_of(width: f64, height: f64, x: f64, y: f64) -> (Side, f64) {
+    let sides = [
+        (Side::Top, y),
+        (Side::Right, width - x),
+        (Side::Bottom, height - y),
+        (Side::Left, x),
+    ];
+    let mut nearest = sides[0];
+    for candidate in &sides[1..] {
+        if candidate.1 < nearest.1 {
+            nearest = *candidate;
+        }
+    }
+    let side = nearest.0;
+    let along = match side {
+        Side::Top | Side::Bottom => x,
+        Side::Right | Side::Left => y,
+    };
+    (side, held(along, side_length(width, height, side)))
+}
+
+/// `offset` held within a side `length` long: from 0 to the length, 0 for a side of none.
+pub fn held(offset: f64, length: f64) -> f64 {
+    offset.min(length).max(0.0)
+}
+
+impl NodeShape {
+    /// The centre of a border node on `side` of a node of this shape and `width` × `height`, at
+    /// `offset` from the side's start, held within its length: where the line through that point
+    /// at right angles to the side meets the outline, at the meeting point nearer the side
+    /// (ARCH-border-nodes-ride-sides, *Place*).
+    pub fn on_side(self, width: f64, height: f64, side: Side, offset: f64) -> (f64, f64) {
+        let along = side_length(width, height, side);
+        let at = held(offset, along);
+        let across = width + height - along;
+        let inset = self.inset(along, across, at - along / 2.0);
+        match side {
+            Side::Top => (at, inset),
+            Side::Right => (width - inset, at),
+            Side::Bottom => (at, height - inset),
+            Side::Left => (inset, at),
+        }
+    }
+
+    /// The point of the outline of a node of this shape and `width` × `height` nearest the point
+    /// `(x, y)`, inside the node or outside it (ARCH-border-nodes-ride-sides, *Drag*).
+    pub fn nearest(self, width: f64, height: f64, x: f64, y: f64) -> (f64, f64) {
+        let (a, b) = (width / 2.0, height / 2.0);
+        if a <= 0.0 || b <= 0.0 {
+            return (x.clamp(0.0, width), y.clamp(0.0, height));
+        }
+        match self {
+            Self::Rectangle | Self::Bar => nearest_on_box(width, height, x, y, 0.0),
+            Self::RoundedRectangle => {
+                nearest_on_box(width, height, x, y, ROUNDED_RADIUS.min(a).min(b))
+            }
+            Self::Ellipse | Self::Circle | Self::RingedCircle => {
+                let (dx, dy) = nearest_on_ellipse(a, b, x - a, y - b);
+                (a + dx, b + dy)
+            }
+            Self::Diamond => {
+                let corners = [(a, 0.0), (width, b), (a, height), (0.0, b)];
+                let mut best = (f64::INFINITY, (a, 0.0));
+                for i in 0..4 {
+                    let p = nearest_on_segment(corners[i], corners[(i + 1) % 4], (x, y));
+                    let d = crate::geometry::length(p.0 - x, p.1 - y);
+                    if d < best.0 {
+                        best = (d, p);
+                    }
+                }
+                best.1
+            }
+        }
+    }
+}
+
+/// The point of the outline of a box `width` × `height` whose corners are rounded by `r` nearest
+/// `(x, y)`: the box less `r` at every side, grown by `r` around it. Outside that inner box the
+/// nearest point lies `r` from the inner box's point nearest `(x, y)`; inside it, on the nearest
+/// side, ties in the order top, right, bottom, left.
+fn nearest_on_box(width: f64, height: f64, x: f64, y: f64, r: f64) -> (f64, f64) {
+    let (qx, qy) = (x.clamp(r, width - r), y.clamp(r, height - r));
+    let (ex, ey) = (x - qx, y - qy);
+    let away = crate::geometry::length(ex, ey);
+    if away > 0.0 {
+        return (qx + ex / away * r, qy + ey / away * r);
+    }
+    match side_of(width, height, x, y).0 {
+        Side::Top => (x, 0.0),
+        Side::Right => (width, y),
+        Side::Bottom => (x, height),
+        Side::Left => (0.0, y),
+    }
+}
+
+/// The point of the segment from `from` to `to` nearest `p`.
+fn nearest_on_segment(from: (f64, f64), to: (f64, f64), p: (f64, f64)) -> (f64, f64) {
+    let (dx, dy) = (to.0 - from.0, to.1 - from.1);
+    let length = dx * dx + dy * dy;
+    let t = if length > 0.0 {
+        (((p.0 - from.0) * dx + (p.1 - from.1) * dy) / length).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    (from.0 + t * dx, from.1 + t * dy)
+}
+
+/// The point of the ellipse of half axes `a` and `b` about the origin nearest `(x, y)`, by the
+/// root of Eberly's function found by bisection, which converges wherever the point lies, on the
+/// axes and at the centre among them (D. Eberly, *Distance from a Point to an Ellipse, an
+/// Ellipsoid, or a Hyperellipsoid*). A point on an axis with two nearest points takes the one
+/// above, then the one to the right.
+fn nearest_on_ellipse(a: f64, b: f64, x: f64, y: f64) -> (f64, f64) {
+    // In the first quadrant, the longer half axis along the first coordinate.
+    let (sx, sy) = (
+        if x < 0.0 { -1.0 } else { 1.0 },
+        if y > 0.0 { 1.0 } else { -1.0 },
+    );
+    let (u, v) = (x.abs(), y.abs());
+    let (p, q) = if a >= b {
+        quadrant_nearest(a, b, u, v)
+    } else {
+        let (q, p) = quadrant_nearest(b, a, v, u);
+        (p, q)
+    };
+    (sx * p, sy * q)
+}
+
+/// `nearest_on_ellipse` in the first quadrant, `e0` ≥ `e1`, `y0` and `y1` not negative.
+fn quadrant_nearest(e0: f64, e1: f64, y0: f64, y1: f64) -> (f64, f64) {
+    if y1 > 0.0 {
+        if y0 > 0.0 {
+            let (z0, z1) = (y0 / e0, y1 / e1);
+            let g = z0 * z0 + z1 * z1 - 1.0;
+            if g == 0.0 {
+                return (y0, y1);
+            }
+            let r0 = (e0 / e1) * (e0 / e1);
+            let s = ellipse_root(r0, z0, z1, g);
+            return (r0 * y0 / (s + r0), y1 / (s + 1.0));
+        }
+        return (0.0, e1);
+    }
+    let squares = e0 * e0 - e1 * e1;
+    if squares > 0.0 && y0 < squares / e0 {
+        let x0 = e0 * e0 * y0 / squares;
+        return (x0, e1 * (1.0 - (x0 / e0) * (x0 / e0)).max(0.0).sqrt());
+    }
+    (e0, 0.0)
+}
+
+/// The root of Eberly's function for `r0`, `z0`, `z1`, whose value at 0 is `g`, by bisection to
+/// the precision of `f64`.
+fn ellipse_root(r0: f64, z0: f64, z1: f64, g: f64) -> f64 {
+    let n0 = r0 * z0;
+    let mut s0 = z1 - 1.0;
+    let mut s1 = if g < 0.0 {
+        0.0
+    } else {
+        crate::geometry::length(n0, z1) - 1.0
+    };
+    let mut s = 0.0;
+    for _ in 0..1100 {
+        s = (s0 + s1) / 2.0;
+        if s == s0 || s == s1 {
+            break;
+        }
+        let (ratio0, ratio1) = (n0 / (s + r0), z1 / (s + 1.0));
+        let value = ratio0 * ratio0 + ratio1 * ratio1 - 1.0;
+        if value > 0.0 {
+            s0 = s;
+        } else if value < 0.0 {
+            s1 = s;
+        } else {
+            break;
+        }
+    }
+    s
+}
+
 /// How far from the centre of a box of half-sides `a` × `b` the unit direction `(ux, uy)` meets
 /// its border.
 fn box_distance(a: f64, b: f64, ux: f64, uy: f64) -> f64 {
@@ -237,7 +433,7 @@ fn rounded_distance(a: f64, b: f64, ux: f64, uy: f64) -> f64 {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     // Verifies: REN-closed-set-of-node-shapes
     use super::*;
 
@@ -446,6 +642,188 @@ mod tests {
             assert_eq!(shape.inset(0.0, 40.0, 0.0), 0.0, "{shape:?}");
             assert_eq!(shape.inset(40.0, 0.0, 10.0), 0.0, "{shape:?}");
         }
+    }
+
+    /// How far `(x, y)` lies off the outline of a node of `shape` and `width` × `height`, by the
+    /// outline's own equation, written here apart from the code under test.
+    pub(crate) fn off_outline(shape: NodeShape, width: f64, height: f64, x: f64, y: f64) -> f64 {
+        let (a, b) = (width / 2.0, height / 2.0);
+        let (dx, dy) = ((x - a).abs(), (y - b).abs());
+        let off_box = (dx - a).abs().min((dy - b).abs()) + (dx - a).max(0.0) + (dy - b).max(0.0);
+        match shape {
+            NodeShape::Rectangle | NodeShape::Bar => off_box,
+            NodeShape::RoundedRectangle => {
+                let r = ROUNDED_RADIUS.min(a).min(b);
+                let (ex, ey) = (dx - (a - r), dy - (b - r));
+                if ex > 0.0 && ey > 0.0 {
+                    (ex.hypot(ey) - r).abs()
+                } else {
+                    off_box
+                }
+            }
+            NodeShape::Ellipse | NodeShape::Circle | NodeShape::RingedCircle => {
+                // The radial distance, which is within the distance's order near the outline.
+                let k = ((dx / a).powi(2) + (dy / b).powi(2)).sqrt();
+                (k - 1.0).abs() * a.min(b)
+            }
+            NodeShape::Diamond => (dx / a + dy / b - 1.0).abs() * a * b / a.hypot(b),
+        }
+    }
+
+    /// Points of the outline of a node of `shape` and `width` × `height`, `n` of them, by the
+    /// outline's own parametrization, written here apart from the code under test.
+    pub(crate) fn outline_points(
+        shape: NodeShape,
+        width: f64,
+        height: f64,
+        n: usize,
+    ) -> Vec<(f64, f64)> {
+        let (a, b) = (width / 2.0, height / 2.0);
+        let turn = |i: usize| i as f64 * core::f64::consts::TAU / n as f64;
+        match shape {
+            NodeShape::Ellipse | NodeShape::Circle | NodeShape::RingedCircle => (0..n)
+                .map(|i| (a + a * turn(i).cos(), b + b * turn(i).sin()))
+                .collect(),
+            NodeShape::Diamond => {
+                let corners = [(a, 0.0), (width, b), (a, height), (0.0, b), (a, 0.0)];
+                (0..n)
+                    .map(|i| {
+                        let t = i as f64 * 4.0 / n as f64;
+                        let (k, f) = (t.floor() as usize, t.fract());
+                        let (p, q) = (corners[k], corners[k + 1]);
+                        (p.0 + (q.0 - p.0) * f, p.1 + (q.1 - p.1) * f)
+                    })
+                    .collect()
+            }
+            NodeShape::Rectangle | NodeShape::Bar | NodeShape::RoundedRectangle => {
+                let r = if shape == NodeShape::RoundedRectangle {
+                    ROUNDED_RADIUS.min(a).min(b)
+                } else {
+                    0.0
+                };
+                // The four sides, then the four arcs, each by its share of the points.
+                let mut points = Vec::with_capacity(n);
+                let per = n / 8;
+                for i in 0..per {
+                    let f = i as f64 / per as f64;
+                    let (x, y) = (r + (width - 2.0 * r) * f, r + (height - 2.0 * r) * f);
+                    points.extend([(x, 0.0), (width, y), (x, height), (0.0, y)]);
+                }
+                for i in 0..per {
+                    let angle = i as f64 / per as f64 * core::f64::consts::FRAC_PI_2;
+                    let (c, s) = (r * angle.cos(), r * angle.sin());
+                    points.extend([
+                        (width - r + c, r - s),
+                        (width - r + c, height - r + s),
+                        (r - c, height - r + s),
+                        (r - c, r - s),
+                    ]);
+                }
+                points
+            }
+        }
+    }
+
+    /// Node sizes of border node tests: square, wide, tall, small, a bar, and large.
+    const BORDERED: [(f64, f64); 6] = [
+        (80.0, 80.0),
+        (220.0, 64.0),
+        (40.0, 120.0),
+        (12.0, 12.0),
+        (90.0, 8.0),
+        (4000.0, 900.0),
+    ];
+
+    const SIDES: [Side; 4] = [Side::Top, Side::Right, Side::Bottom, Side::Left];
+
+    #[test]
+    fn a_border_node_sits_on_the_outline_at_its_offset_on_the_half_of_its_side() {
+        // Verifies: ARCH-border-nodes-ride-sides
+        for shape in NodeShape::ALL {
+            for (width, height) in BORDERED {
+                for side in SIDES {
+                    let length = side_length(width, height, side);
+                    for offset in [-10.0, 0.0, length / 7.0, length / 2.0, length, length * 2.0] {
+                        let (x, y) = shape.on_side(width, height, side, offset);
+                        let scale = width.max(height);
+                        let off = off_outline(shape, width, height, x, y);
+                        assert!(off <= 1e-9 * scale, "{shape:?} {side:?} {offset}: {off}");
+                        // At the offset held within the side, on the half nearer the side.
+                        let held = offset.clamp(0.0, length);
+                        let (along, near) = match side {
+                            Side::Top => (x, y <= height / 2.0),
+                            Side::Right => (y, x >= width / 2.0),
+                            Side::Bottom => (x, y >= height / 2.0),
+                            Side::Left => (y, x <= width / 2.0),
+                        };
+                        assert!((along - held).abs() <= 1e-9 * scale, "{shape:?} {side:?}");
+                        assert!(near, "{shape:?} {side:?} {offset}: ({x}, {y})");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_nearest_point_of_the_outline_is_nearer_than_every_point_a_scan_of_it_finds() {
+        // Verifies: ARCH-border-nodes-ride-sides
+        let mut far = 0;
+        let mut inside = 0;
+        for shape in NodeShape::ALL {
+            for (width, height) in BORDERED {
+                let scan = outline_points(shape, width, height, 8_000);
+                let scale = width.max(height);
+                for i in 0..120 {
+                    // Points around and inside the node, the centre and the axes among them.
+                    let angle = i as f64 * core::f64::consts::TAU / 120.0;
+                    let reach = [0.0, 0.1, 0.45, 0.5, 0.9, 1.0, 1.5, 4.0][i % 8];
+                    let (x, y) = (
+                        width / 2.0 + angle.cos() * reach * width,
+                        height / 2.0 + angle.sin() * reach * height,
+                    );
+                    let (px, py) = shape.nearest(width, height, x, y);
+                    let off = off_outline(shape, width, height, px, py);
+                    assert!(off <= 1e-9 * scale, "{shape:?} ({x}, {y}): off by {off}");
+                    let found = (px - x).hypot(py - y);
+                    let scanned = scan
+                        .iter()
+                        .map(|&(sx, sy)| (sx - x).hypot(sy - y))
+                        .fold(f64::INFINITY, f64::min);
+                    assert!(
+                        found <= scanned + 1e-9 * scale,
+                        "{shape:?} {width}x{height} ({x}, {y}): {found} > {scanned}"
+                    );
+                    if shape.contains(width, height, x, y) {
+                        inside += 1;
+                    } else {
+                        far += 1;
+                    }
+                }
+            }
+        }
+        assert!(inside > 200 && far > 200, "{inside} inside, {far} outside");
+    }
+
+    #[test]
+    fn a_point_of_the_outline_leads_back_to_itself_by_its_nearest_side_and_its_offset() {
+        // Verifies: ARCH-border-nodes-ride-sides
+        for shape in NodeShape::ALL {
+            for (width, height) in BORDERED {
+                let scale = width.max(height);
+                for (x, y) in outline_points(shape, width, height, 2_000) {
+                    let (side, offset) = side_of(width, height, x, y);
+                    let (bx, by) = shape.on_side(width, height, side, offset);
+                    assert!(
+                        (bx - x).hypot(by - y) <= 1e-7 * scale,
+                        "{shape:?} {width}x{height} ({x}, {y}) by {side:?} {offset}: ({bx}, {by})"
+                    );
+                }
+            }
+        }
+        // Ties go to the top, then the right, then the bottom.
+        assert_eq!(side_of(80.0, 40.0, 80.0, 0.0), (Side::Top, 80.0));
+        assert_eq!(side_of(80.0, 40.0, 80.0, 40.0), (Side::Right, 40.0));
+        assert_eq!(side_of(80.0, 40.0, 0.0, 40.0), (Side::Bottom, 0.0));
     }
 
     #[test]

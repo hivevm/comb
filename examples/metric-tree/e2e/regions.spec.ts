@@ -5,7 +5,7 @@
 // a region left out goes with its content; and a region is no node to an edge or a call that names
 // a node (ARCH-regions-are-container-slots, API-edits-report-nested-changes).
 import { expect, test, type Page } from "@playwright/test";
-import type { GraphData } from "comb";
+import type { GraphData, PlacedNodeData } from "comb";
 import { clickWorld, dragWorld, loaded, node, open, pagePoint, selections, told } from "./shared";
 
 /** An activity at (0, 0), 300 wide, divided across into three named partitions of 100, 150, and
@@ -408,7 +408,7 @@ test("updateNode lays the partitions out from the activity's data width, as a lo
   await page.evaluate((r) => window.comb.updateNode("act", { regions: r }), regions);
   const updated = await drawnBoxes(page);
   await loaded(page, {
-    nodes: [{ ...ACTIVITY.nodes[0]!, regions }, ACTIVITY.nodes[1]!],
+    nodes: [{ ...(ACTIVITY.nodes[0] as PlacedNodeData), regions }, ACTIVITY.nodes[1]!],
     edges: [],
   });
   const reloaded = await drawnBoxes(page);

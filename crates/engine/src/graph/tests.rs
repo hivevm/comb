@@ -1596,3 +1596,304 @@ fn a_container_moved_to_the_world_s_limit_cuts_its_content_there_and_placed_back
     graph.place(0, 100.0, 200.0).unwrap();
     assert_eq!(graph.positions(), before.as_slice());
 }
+
+/// The box of the node in `slot`, `x, y, width, height`, as its buffers hold it.
+fn box_of(graph: &Graph, slot: u32) -> [f64; 4] {
+    let i = slot as usize * 2;
+    [
+        f64::from(graph.positions()[i]),
+        f64::from(graph.positions()[i + 1]),
+        f64::from(graph.sizes()[i]),
+        f64::from(graph.sizes()[i + 1]),
+    ]
+}
+
+/// The centre of the node in `slot`, relative to the top left corner of the node in `on`.
+fn centre_on(graph: &Graph, slot: u32, on: u32) -> (f64, f64) {
+    let [x, y, w, h] = box_of(graph, slot);
+    let [ox, oy, ..] = box_of(graph, on);
+    (x + w / 2.0 - ox, y + h / 2.0 - oy)
+}
+
+/// What the property test of border nodes gave each border node: the node it rides, its side,
+/// and its offset as the call that placed it returned it.
+struct Rider {
+    slot: u32,
+    on: u32,
+    side: Side,
+    offset: f64,
+}
+
+/// Asserts that each of `riders` is centred on its node's outline, on the half of the box nearer
+/// its side, at its offset held within the side's length now, within far less than Q-4's half a
+/// pixel at any zoom the graph is drawn at.
+fn assert_riding(graph: &Graph, riders: &[Rider]) {
+    for rider in riders {
+        let shape = graph.shape(rider.on);
+        let [ox, oy, w, h] = box_of(graph, rider.on);
+        let (x, y) = centre_on(graph, rider.slot, rider.on);
+        let tolerance = 1e-3 + 1e-6 * (ox.abs() + oy.abs() + w + h);
+        let off = crate::shape::tests::off_outline(shape, w, h, x, y);
+        assert!(
+            off <= tolerance,
+            "{shape:?} {w}x{h}: ({x}, {y}) off by {off}"
+        );
+        let length = match rider.side {
+            Side::Top | Side::Bottom => w,
+            Side::Right | Side::Left => h,
+        };
+        let (along, near) = match rider.side {
+            Side::Top => (x, y <= h / 2.0 + tolerance),
+            Side::Right => (y, x >= w / 2.0 - tolerance),
+            Side::Bottom => (x, y >= h / 2.0 - tolerance),
+            Side::Left => (y, x <= w / 2.0 + tolerance),
+        };
+        let held = rider.offset.clamp(0.0, length);
+        assert!(
+            (along - held).abs() <= tolerance && near,
+            "{shape:?} {w}x{h} {:?} at {}: ({x}, {y})",
+            rider.side,
+            rider.offset
+        );
+    }
+}
+
+/// The graph of the property test of border nodes: a container, one node of each node shape, every
+/// other one in the container, five border nodes on each, one on every side, and edges between
+/// border nodes.
+struct Bordered {
+    graph: Graph,
+    container: u32,
+    nodes: Vec<u32>,
+    riders: Vec<Rider>,
+    edges: Vec<(u32, EdgeSpec)>,
+}
+
+const SIDES: [Side; 4] = [Side::Top, Side::Right, Side::Bottom, Side::Left];
+
+/// Per node shape, the steps whose check rests on the riders of a node of that shape: a move of
+/// such a node or of the container it lies in, its resize, a drag of one of its border nodes, and
+/// an update of one's place; and the drags checked against a scan of the outline.
+#[derive(Default)]
+struct Counts {
+    moved: [u32; 7],
+    resized: [u32; 7],
+    slid: [u32; 7],
+    placed: [u32; 7],
+    nearest: u32,
+}
+
+/// The place of the node shape of the node in `slot` in `NodeShape::ALL`.
+fn shape_code(graph: &Graph, slot: u32) -> usize {
+    let shape = graph.shape(slot);
+    crate::shape::NodeShape::ALL
+        .iter()
+        .position(|&s| s == shape)
+        .unwrap()
+}
+
+impl Bordered {
+    fn new(rng: &mut Lcg) -> Self {
+        use crate::shape::NodeShape;
+        let mut graph = Graph::new(Vec::new(), Vec::new(), Vec::new()).unwrap();
+        let container = graph
+            .add_node_in(CANVAS, true, [-3000.0, -3000.0, 6000.0, 6000.0])
+            .unwrap();
+        let mut nodes = Vec::new();
+        let mut riders = Vec::new();
+        for (k, shape) in NodeShape::ALL.into_iter().enumerate() {
+            let within = if k % 2 == 0 { container } else { CANVAS };
+            let width = rng.range(20.0, 400.0) as f32;
+            let height = match shape {
+                NodeShape::Circle | NodeShape::RingedCircle => width,
+                NodeShape::Bar => 8.0,
+                _ => rng.range(20.0, 300.0) as f32,
+            };
+            let at = [
+                rng.range(-2000.0, 2000.0) as f32,
+                rng.range(-2000.0, 2000.0) as f32,
+            ];
+            let node = graph
+                .add_node_in(within, false, [at[0], at[1], width, height])
+                .unwrap();
+            graph.set_shape(node, shape).unwrap();
+            nodes.push(node);
+            for n in 0..5 {
+                let side = SIDES[if n < 4 { n } else { rng.below(4) as usize }];
+                riders.push(attached(&mut graph, rng, node, side, [width, height]));
+            }
+        }
+        let mut edges = Vec::new();
+        for _ in 0..10 {
+            let a = riders[rng.below(riders.len()) as usize].slot;
+            let b = riders[rng.below(riders.len()) as usize].slot;
+            if a != b {
+                let spec = EdgeSpec {
+                    sides: Sides::default(),
+                    source: a,
+                    target: b,
+                    label: None,
+                    style: EdgeStyle::unstyled(),
+                };
+                edges.push((graph.add_edge(spec).unwrap(), spec));
+            }
+        }
+        Self {
+            graph,
+            container,
+            nodes,
+            riders,
+            edges,
+        }
+    }
+
+    /// One random step: a move or a drop, a resize, a drag of a border node, or an update of its
+    /// place, each checked after it.
+    fn step(&mut self, rng: &mut Lcg, counts: &mut Counts) {
+        match rng.below(5) {
+            0 | 1 => {
+                let pick = rng.below(self.nodes.len() + 1) as usize;
+                let slot = self.nodes.get(pick).copied().unwrap_or(self.container);
+                let (dx, dy) = (rng.range(-500.0, 500.0), rng.range(-500.0, 500.0));
+                self.graph.translate(&[slot], dx as f32, dy as f32).unwrap();
+                if slot != self.container && rng.next() < 0.3 {
+                    let into = if rng.next() < 0.5 {
+                        self.container
+                    } else {
+                        CANVAS
+                    };
+                    self.graph.move_into(slot, into).unwrap();
+                }
+                assert_riding(&self.graph, &self.riders);
+                // The nodes the move moved: the one named, or what the container holds.
+                for &node in &self.nodes {
+                    if node == slot || (slot == self.container && self.graph.lies_in(node, slot)) {
+                        counts.moved[shape_code(&self.graph, node)] += 1;
+                    }
+                }
+            }
+            2 => {
+                let slot = self.nodes[rng.below(self.nodes.len()) as usize];
+                let [x, y, w, h] = box_of(&self.graph, slot);
+                let from = Rect::new(x, y, x + w, y + h);
+                let handle = Handle::ALL[rng.below(8) as usize];
+                let by = [rng.range(-300.0, 300.0), rng.range(-300.0, 300.0)];
+                self.graph.resize(slot, handle, &from, by, 8.0).unwrap();
+                assert_riding(&self.graph, &self.riders);
+                counts.resized[shape_code(&self.graph, slot)] += 1;
+            }
+            3 => self.slid(rng, counts),
+            _ => {
+                let k = rng.below(self.riders.len()) as usize;
+                let side = SIDES[rng.below(4) as usize];
+                let offset = rng.range(-100.0, 600.0);
+                let held = self.graph.set_place(self.riders[k].slot, side, offset);
+                (self.riders[k].side, self.riders[k].offset) = (side, held.unwrap());
+                assert_riding(&self.graph, &self.riders);
+                counts.placed[shape_code(&self.graph, self.riders[k].on)] += 1;
+            }
+        }
+        // The edges at border nodes lie where their ends now are.
+        for &(edge, spec) in &self.edges {
+            let ends = [spec.source, spec.target].map(|s| {
+                let [x, y, w, h] = box_of(&self.graph, s);
+                Rect::new(x, y, x + w, y + h)
+            });
+            let path = path_of(&spec, &ends[0], &ends[1]);
+            assert_eq!(self.graph.paths[edge as usize], path);
+        }
+    }
+
+    /// A drag of a border node to a point around its node, inside it or out: its centre is then
+    /// the outline's point nearest the pointer, by a scan of the outline.
+    fn slid(&mut self, rng: &mut Lcg, counts: &mut Counts) {
+        let k = rng.below(self.riders.len()) as usize;
+        let on = self.riders[k].on;
+        let [x, y, w, h] = box_of(&self.graph, on);
+        let point = Point::new(x + w * rng.range(-0.5, 1.5), y + h * rng.range(-0.5, 1.5));
+        let place = self.graph.slide(self.riders[k].slot, point).unwrap();
+        assert_eq!(place.on, on);
+        (self.riders[k].side, self.riders[k].offset) = (place.side, place.offset);
+        assert_riding(&self.graph, &self.riders);
+        counts.slid[shape_code(&self.graph, on)] += 1;
+        let shape = self.graph.shape(on);
+        let (cx, cy) = centre_on(&self.graph, self.riders[k].slot, on);
+        let (px, py) = (point.x - x, point.y - y);
+        let scanned = crate::shape::tests::outline_points(shape, w, h, 4_000)
+            .iter()
+            .map(|&(sx, sy)| (sx - px).hypot(sy - py))
+            .fold(f64::INFINITY, f64::min);
+        let tolerance = 1e-3 + 1e-6 * (x.abs() + y.abs() + w + h);
+        let found = (cx - px).hypot(cy - py);
+        assert!(
+            found <= scanned + tolerance,
+            "{shape:?}: {found} > {scanned}"
+        );
+        counts.nearest += 1;
+    }
+
+    /// Removes a node, and asserts that its border nodes and every edge at them went with it.
+    fn assert_removal(&mut self, rng: &mut Lcg) {
+        let node = self.nodes[rng.below(self.nodes.len()) as usize];
+        let ridden: Vec<u32> = self
+            .riders
+            .iter()
+            .filter(|r| r.on == node)
+            .map(|r| r.slot)
+            .collect();
+        let (removed, edges_removed) = self.graph.remove_nodes(&[node]).unwrap();
+        let mut expected = vec![node];
+        expected.extend(&ridden);
+        assert_eq!(removed, expected);
+        for (edge, spec) in &self.edges {
+            let at = ridden.contains(&spec.source) || ridden.contains(&spec.target);
+            assert_eq!(edges_removed.contains(edge), at);
+            assert_eq!(self.graph.edge(*edge).is_none(), at);
+        }
+        assert!(ridden.iter().all(|&s| !self.graph.holds_node(s)));
+    }
+}
+
+/// A border node of 6 to 16 square attached to `node`, `size` its width and height, on `side`
+/// at a random offset up to a fifth of the side's length beyond either end.
+fn attached(graph: &mut Graph, rng: &mut Lcg, node: u32, side: Side, size: [f32; 2]) -> Rider {
+    let edge = rng.range(6.0, 16.0) as f32;
+    let slot = graph.add_node(0.0, 0.0, edge, edge).unwrap();
+    let length = f64::from(match side {
+        Side::Top | Side::Bottom => size[0],
+        Side::Right | Side::Left => size[1],
+    });
+    let offset = rng.range(-0.2 * length, 1.2 * length);
+    let held = graph.attach(slot, node, side, offset).unwrap();
+    assert_eq!(held, offset.clamp(0.0, length));
+    Rider {
+        slot,
+        on: node,
+        side,
+        offset: held,
+    }
+}
+
+#[test]
+fn border_nodes_stay_on_their_node_s_outline_at_their_side_through_moves_resizes_and_drags() {
+    // Verifies: ARCH-border-nodes-ride-sides, G-17
+    let mut rng = Lcg(0x000B_0DE5);
+    let mut counts = Counts::default();
+    for _ in 0..12 {
+        let mut bordered = Bordered::new(&mut rng);
+        assert_riding(&bordered.graph, &bordered.riders);
+        for _ in 0..60 {
+            bordered.step(&mut rng, &mut counts);
+        }
+        bordered.assert_removal(&mut rng);
+    }
+    for (code, shape) in crate::shape::NodeShape::ALL.iter().enumerate() {
+        let (moved, resized) = (counts.moved[code], counts.resized[code]);
+        let (slid, placed) = (counts.slid[code], counts.placed[code]);
+        assert!(
+            moved >= 20 && resized >= 10 && slid >= 10 && placed >= 10,
+            "{shape:?}: {moved} moved, {resized} resized, {slid} slid, {placed} placed"
+        );
+    }
+    assert!(counts.nearest >= 100, "{} drags", counts.nearest);
+}

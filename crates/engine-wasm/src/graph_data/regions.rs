@@ -481,7 +481,8 @@ mod tests {
         assert_eq!(
             loaded.err(),
             Some(GraphDataProblem::MissingNode {
-                edge: "e".into(),
+                edge: Some("e".into()),
+                border_node: None,
                 node: "p1".into(),
             })
         );
@@ -542,7 +543,7 @@ mod tests {
 
     fn add_node_to_divided(graph: &mut Graph, container: u32) -> Result<u32, GraphDataProblem> {
         let node = added(10.0, 10.0, |n| n.id = "x".to_owned().into());
-        super::super::add_node_to(graph, &node, Some(container), &Fonts::default(), 0)
+        super::super::add_node_to(graph, &node, (Some(container), None), &Fonts::default(), 0)
             .map(|(slot, _)| slot)
     }
 
@@ -557,12 +558,12 @@ mod tests {
             n.divide = divide.into();
             n.regions = Some(regions).into();
         });
-        let slot = engine.add(&act, None).unwrap();
+        let slot = engine.add(&act, (None, None)).unwrap();
         let [p1, p3] = [1, 5];
         let x = added(10.0, 40.0, |n| n.id = "x".to_owned().into());
-        let x = engine.add(&x, Some(p1)).unwrap();
+        let x = engine.add(&x, (Some(p1), None)).unwrap();
         let y = added(10.0, 40.0, |n| n.id = "y".to_owned().into());
-        let y = engine.add(&y, Some(p3)).unwrap();
+        let y = engine.add(&y, (Some(p3), None)).unwrap();
         // Keeps the third partition first and leaves the others out.
         let regions = vec![
             region("p3", 120.0, Some("Three"), None, None),
@@ -645,7 +646,7 @@ mod tests {
             n.divide = divide.into();
             n.regions = Some(regions).into();
         });
-        let slot = engine.add(&act, None).unwrap();
+        let slot = engine.add(&act, (None, None)).unwrap();
         (engine, slot)
     }
 
@@ -668,10 +669,10 @@ mod tests {
         let (mut engine, _) = engine_with_activity();
         let x = added(0.0, 0.0, |n| n.id = "x".to_owned().into());
         assert!(matches!(
-            engine.add(&x, Some(2)),
+            engine.add(&x, (Some(2), None)),
             Err(GraphDataProblem::InvalidContainer { .. })
         ));
-        assert!(engine.add(&x, Some(3)).is_ok());
+        assert!(engine.add(&x, (Some(3), None)).is_ok());
     }
 
     #[test]
@@ -728,10 +729,10 @@ mod tests {
             n.divide = divide.into();
             n.regions = Some(regions).into();
         });
-        assert!(past(engine.add(&act, None).map(drop)));
+        assert!(past(engine.add(&act, (None, None)).map(drop)));
         TEST_BUDGET.set(Some(18));
         assert!(load_columns(&activity_columns()).is_ok());
-        let slot = engine.add(&act, None).unwrap();
+        let slot = engine.add(&act, (None, None)).unwrap();
         // A patch whose names hold 18 code units, beside the title's 1, where those it replaces
         // held 16.
         let named = vec![region("q", 10.0, Some("123456789012345678"), None, None)];

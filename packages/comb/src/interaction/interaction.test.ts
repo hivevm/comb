@@ -69,6 +69,8 @@ function fakeBridge(
     hit: (x: number) => (typeof hit === "function" ? hit(x) : hit),
     edgesAt: () => new Uint32Array(0),
     containerAt: () => undefined,
+    // What a drag drags: the node alone, which holds nothing and has no border nodes.
+    removalOf: (slots: Uint32Array) => ({ nodes: slots, edges: new Uint32Array(0) }),
     positions: () => new Float32Array(8),
     translate: (slots: Uint32Array, dx: number, dy: number) =>
       moves.push({ slots: [...slots], dx, dy }),

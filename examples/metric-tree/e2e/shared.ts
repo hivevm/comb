@@ -1,7 +1,7 @@
 // What more than one browser test uses: opening the example, loading a graph into it and recording
 // what Comb tells, and reading and moving its canvas.
 import type { Page } from "@playwright/test";
-import type { GraphData, NodeData } from "comb";
+import type { GraphData, PlacedNodeData } from "comb";
 import { NODE_HEIGHT, NODE_WIDTH, titled } from "../src/graph";
 
 export { NODE_HEIGHT, NODE_WIDTH, titled };
@@ -9,7 +9,7 @@ export { NODE_HEIGHT, NODE_WIDTH, titled };
 declare global {
   interface Window {
     /** `node` of these helpers in the page, for code that runs there; `open` installs it. */
-    node: (id: string, x?: number, y?: number) => NodeData;
+    node: (id: string, x?: number, y?: number) => PlacedNodeData;
   }
 }
 
@@ -113,7 +113,7 @@ export async function strokeOf(page: Page, color: number) {
 
 /** A node of the example's width at `x, y`, of one title, its identifier, which Comb lays out to
  *  the example's height; `window.node` makes the same in the page. */
-export const node = (id: string, x = 0, y = 0): NodeData => ({
+export const node = (id: string, x = 0, y = 0): PlacedNodeData => ({
   id,
   x,
   y,

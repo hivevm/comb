@@ -306,7 +306,8 @@ pub(super) fn edges_of(
             .get(node)
             .copied()
             .ok_or_else(|| GraphDataProblem::MissingNode {
-                edge: edge.id.to_owned(),
+                edge: Some(edge.id.to_owned()),
+                border_node: None,
                 node: node.to_owned(),
             })
     };
@@ -455,7 +456,8 @@ mod tests {
         assert_eq!(
             error,
             GraphDataProblem::MissingNode {
-                edge: "e".into(),
+                edge: Some("e".into()),
+                border_node: None,
                 node: "z".into()
             }
         );
@@ -672,6 +674,9 @@ mod tests {
                     resizable: None.into(),
                     divide: None.into(),
                     regions: None.into(),
+                    attached_to: None.into(),
+                    side: None.into(),
+                    offset: None.into(),
                     content: titled("x"),
                 })
                 .collect(),
@@ -702,7 +707,8 @@ mod tests {
             (
                 d_and(|e| e.target = text("z")),
                 GraphDataProblem::MissingNode {
-                    edge: e(),
+                    edge: Some(e()),
+                    border_node: None,
                     node: "z".into(),
                 },
             ),

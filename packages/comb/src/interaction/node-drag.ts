@@ -7,8 +7,10 @@
 // records once, where it moved it, where the release left it (API-edits-report-nested-changes).
 // A press released on the canvas within the slop is a click: where the release point lies on an
 // element of the content of the node pressed, it tells the host application which
-// (REN-node-content-in-rows).
-import { positionAt, type Hit } from "../bridge";
+// (REN-node-content-in-rows). A border node is dragged along its node's outline instead, to the
+// point of it nearest the pointer, asks no veto, and records its move only where its side or its
+// offset changed (ARCH-border-nodes-ride-sides, *Drag*).
+import { positionAt, type BorderPlace, type Hit } from "../bridge";
 import type { GraphState } from "../store";
 import { toWorld } from "../store/viewport";
 import { SLOP, type Context, type Gesture } from "./gesture";
@@ -23,15 +25,12 @@ interface Dragged {
   readonly y: number;
 }
 
-/** The slots a drag of the node in `slot` moves: the node, and where it is a container,
- *  everything it holds at every depth, as the engine names it (REN-moving-layer-moves-content). */
-export function draggedOf(
-  { store, bridge }: Pick<Context, "store" | "bridge">,
-  slot: number,
-): number[] {
-  if (store.getState().nodes[slot]?.isContainer !== true) return [slot];
-  // The nodes a removal of the container would take along are those it holds, at every depth: the
-  // one export that names them, read once a drag, its edges unused.
+/** The slots a drag of the node in `slot` moves: the node, where it is a container everything it
+ *  holds at every depth, and the border nodes of each, as the engine names them
+ *  (REN-moving-layer-moves-content). */
+export function draggedOf({ bridge }: Pick<Context, "store" | "bridge">, slot: number): number[] {
+  // The nodes a removal of the node would take along are those it holds, at every depth, and
+  // their border nodes: the one export that names them, read once a drag, its edges unused.
   return [...bridge.removalOf(Uint32Array.of(slot)).nodes];
 }
 
@@ -103,6 +102,73 @@ function dropped(
   }
 }
 
+/** A click on the element of the node `id` in `slot` under the release, asked anew since the host
+ *  may have changed the node's content when it heard of the selection; none off the node pressed
+ *  or off its elements. */
+function clickOn({ store, click, hitAt }: Context, slot: number, id: string) {
+  return (x: number, y: number) => {
+    const under = hitAt(x, y);
+    if (under.kind !== "node" || under.slot !== slot || !under.element) return;
+    if (store.getState().nodes[slot]?.id === id) click({ node: id, ...under.element });
+  };
+}
+
+/** A load, or a removal of the node `id` in `slot`, which a node that took its slot does not make
+ *  good. */
+function takenOf(slot: number, id: string) {
+  return (state: GraphState) => state.change?.kind === "loaded" || state.nodes[slot]?.id !== id;
+}
+
+/** Whether a border node sits at `one` and at `other` alike, side and offset. */
+function samePlace(one: BorderPlace | undefined, other: BorderPlace | undefined): boolean {
+  return one?.side === other?.side && one?.offset === other?.offset;
+}
+
+/** The drag of the border node `id` in `slot`, pressed at the screen point `(pressX, pressY)`: past
+ *  the slop, each move slides it to the point of its node's outline nearest the pointer, and the
+ *  release records its move once where its side or its offset is no longer what it was at the
+ *  press, without a veto (ARCH-border-nodes-ride-sides, *Drag*). */
+function borderDrag(
+  context: Context,
+  slot: number,
+  id: string,
+  pressX: number,
+  pressY: number,
+): Gesture {
+  const { store, bridge } = context;
+  const pressed = bridge.borderOf(slot);
+  let [waiting, dragging] = [true, false];
+  const clickAt = clickOn(context, slot, id);
+  const taken = takenOf(slot, id);
+  return {
+    grabs: true,
+    move(x, y) {
+      if (waiting) {
+        if (Math.hypot(x - pressX, y - pressY) <= SLOP) return;
+        waiting = false;
+      }
+      const world = toWorld(store.getState().viewport, x, y);
+      // A finite point (API-shell-mistake-refused-as-shells), as `targetOf` guards it.
+      if (!Number.isFinite(world.x) || !Number.isFinite(world.y)) return;
+      bridge.slide(slot, world.x, world.y);
+      if (!dragging) store.getState().dragStarted(draggedOf(context, slot));
+      else store.getState().dragMoved();
+      dragging = true;
+    },
+    end(released, at) {
+      if (dragging) {
+        store.getState().dragEnded();
+        const held = store.getState().nodes[slot]?.id === id;
+        if (held && !samePlace(pressed, bridge.borderOf(slot)))
+          store.getState().nodeMoved(id, null);
+      }
+      if (released && waiting && at) clickAt(at.x, at.y);
+    },
+    taken,
+    drop() {},
+  };
+}
+
 /** A drag of the node `hit` names, pressed at the screen point `(pressX, pressY)`, the node
  *  selected; none where `hit` names no node the graph holds. */
 export function nodeDrag(
@@ -111,24 +177,17 @@ export function nodeDrag(
   pressX: number,
   pressY: number,
 ): Gesture | undefined {
-  const { store, bridge, click, hitAt } = context;
+  const { store, bridge } = context;
   const node = hit.kind === "node" ? store.getState().nodes[hit.slot] : undefined;
   if (hit.kind !== "node" || !node) return undefined;
   const { slot } = hit;
   const { id } = node;
   store.getState().select({ kind: "node", id });
+  if (node.attachedTo !== undefined) return borderDrag(context, slot, id, pressX, pressY);
   let [lastX, lastY, waiting] = [pressX, pressY, true];
   let dragged: Dragged | undefined;
-  // A click on the element under the release, asked anew since the host may have changed the
-  // node's content when it heard of the selection; none off the node pressed or off its elements.
-  const clickAt = (x: number, y: number) => {
-    const under = hitAt(x, y);
-    if (under.kind !== "node" || under.slot !== slot || !under.element) return;
-    if (store.getState().nodes[slot]?.id === id) click({ node: id, ...under.element });
-  };
-  // A load, or a removal of the node, which a node that took its slot does not make good.
-  const taken = (state: GraphState) =>
-    state.change?.kind === "loaded" || state.nodes[slot]?.id !== id;
+  const clickAt = clickOn(context, slot, id);
+  const taken = takenOf(slot, id);
   return {
     grabs: true,
     move(x, y) {

@@ -885,7 +885,7 @@ fn accepts(batch: &GraphBatch) -> Option<bool> {
     let world = 2f64.powi(120);
     let as_f32 = |v: f64| f64::from(v as f32);
     let node_ok = |n: &NodeInput| {
-        let [x, y, width] = [n.x.0?, n.y.0?, n.width.0?];
+        let [x, y, width] = [n.x.0.flatten()?, n.y.0.flatten()?, n.width.0?];
         n.content.0.as_ref()?;
         n.resizable.0?;
         // A height its data gives is a finite number above 0 as f32 holds it.
@@ -1925,7 +1925,7 @@ proptest! {
         let mut graph = with_a();
         let added = NodeInput::deserialize(value)
             .map_err(unshaped)
-            .and_then(|node| add_node_to(&mut graph, &node, None, &Fonts::default(), 0));
+            .and_then(|node| add_node_to(&mut graph, &node, (None, None), &Fonts::default(), 0));
         match (added, as_load) {
             (Ok((slot, _)), Ok((positions, sizes))) => {
                 prop_assert_eq!(slot, 1);
@@ -2014,7 +2014,7 @@ proptest! {
                     *key == "content" && content_ok(&node)
                 });
                 let sets = read.iter().any(|(key, _)| *key == "content");
-                match patch_of("n", crate::graph_data::RECTANGLE.0, None, &patch, &Fonts::default(), 0) {
+                match patch_of("n", (crate::graph_data::RECTANGLE.0, false), None, &patch, &Fonts::default(), 0) {
                     Ok(checked) => prop_assert!(fine && checked.content.is_some() == sets),
                     Err(error) => {
                         prop_assert!(!fine);
@@ -2120,6 +2120,9 @@ fn counted_node(id: String, rows: &[Vec<Counted>]) -> NodeInput {
         resizable: None.into(),
         divide: None.into(),
         regions: None.into(),
+        attached_to: None.into(),
+        side: None.into(),
+        offset: None.into(),
         content: content_input(rows).into(),
     }
 }
@@ -2193,7 +2196,7 @@ proptest! {
                 }
                 Edit::Add(rows) => {
                     let id = format!("a{step}");
-                    let added = engine.add(&counted_node(id.clone(), &rows), None);
+                    let added = engine.add(&counted_node(id.clone(), &rows), (None, None));
                     let units = units_in(&rows);
                     if total + units <= budget {
                         let slot = added.expect("an addition within the budget is taken");

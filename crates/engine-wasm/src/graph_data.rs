@@ -13,6 +13,7 @@
 //! columns the shell builds. This root keeps what the columns of both lists share: the first value
 //! a load's first pass refuses.
 
+mod borders;
 mod checks;
 mod content;
 mod edge_columns;

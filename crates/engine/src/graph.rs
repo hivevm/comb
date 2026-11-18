@@ -11,14 +11,16 @@
 //! edits of each, `containers` which node each node lies in and the order of containers
 //! (ARCH-engine-edits-nested-graph), `index` the spatial index and the rule that builds it again,
 //! `hit` the hit test, `labels` the edge labels, `query` what a rectangle meets, `resize` the
-//! resize of a node by its resize handles, and `regions` the regions a node is divided into
-//! (ARCH-regions-are-container-slots).
+//! resize of a node by its resize handles, `regions` the regions a node is divided into
+//! (ARCH-regions-are-container-slots), and `borders` the border nodes that ride a node's outline
+//! (ARCH-border-nodes-ride-sides).
 
 use crate::geometry::{EdgePath, Point, Rect, Sides};
 use crate::shape::NodeShape;
 use crate::spatial::Grid;
 use crate::stroke::EdgeStyle;
 
+mod borders;
 mod containers;
 mod edges;
 mod hit;
@@ -35,6 +37,7 @@ mod budget;
 #[cfg(test)]
 mod tests;
 
+pub use borders::{AttachError, Place};
 pub use containers::{CANVAS, NestError, Nesting};
 pub use hit::Target;
 pub use nodes::PositionError;
@@ -238,6 +241,12 @@ pub struct Graph {
     /// What each node slot is of regions (ARCH-regions-are-container-slots); a slot past its end
     /// is neither a region nor divided.
     divisions: Vec<regions::Division>,
+    /// Where each border node sits, none for a node that is no border node; a slot past its end
+    /// is none (ARCH-border-nodes-ride-sides).
+    places: Vec<Option<Place>>,
+    /// The border nodes attached to each node slot, in the order they were attached; a slot past
+    /// its end has none.
+    borders: Vec<Vec<u32>>,
     /// The node slots in use when the index was last built.
     indexed_nodes: u32,
     /// The edge slots in use when the index was last built.

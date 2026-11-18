@@ -87,6 +87,17 @@ export interface NodeColumns {
    *  regions of the load (ARCH-regions-are-container-slots). */
   readonly divide: Uint8Array;
   readonly regions: RegionColumns;
+  /** Per node whether it is a border node, 1 or 0; the slot of the node its `attachedTo` names
+   *  among the nodes, `NO_SLOT` where none has that identifier; its side as its code; its offset;
+   *  and the first of its `x`, `y`, and `container` beside its `attachedTo`, 1 to 3, or of a node
+   *  that is no border node a `side` or an `offset`, 4 or 5, or 0; and the
+   *  identifier the first border node attached to no node names (ARCH-border-nodes-ride-sides). */
+  readonly hasAttached: Uint8Array;
+  readonly attached: Uint32Array;
+  readonly side: Uint8Array;
+  readonly offset: Float64Array;
+  readonly beside: Uint8Array;
+  readonly attachedMissing: string | undefined;
   readonly content: ContentColumns;
   readonly refused:
     | {
@@ -155,11 +166,18 @@ export interface NodeColumnWriter {
     isContainer: unknown,
     height?: unknown,
     resizable?: unknown,
+    attachedTo?: unknown,
   ): void;
   /** The node's division and its regions, as read, after `node`: a division that is `across` or
    *  `down` is one, null or undefined none, and any other value refused by its type; regions
    *  `false`, where a value of another type lies anywhere in them, refused by their field. */
   regions(divide: unknown, regions: readonly RegionRead[] | false | undefined): void;
+  /** The node's attachment, after `regions`, `attachedTo` as `node` was handed it: a string makes
+   *  it a border node, whose side crosses as its code and whose offset as given, each refused
+   *  where it is of another type or left out; an `attachedTo` of another type is refused, and
+   *  none leaves the node no border node, whose side or offset, where given, refuses it
+   *  (ARCH-border-nodes-ride-sides). */
+  border(attachedTo: unknown, side: unknown, offset: unknown): void;
   /** The node's content is no list: refused by its type, and the node holds no rows. */
   noContent(): void;
   /** The next element of the row: an element's kind and role cross as their codes, its weight as
@@ -356,6 +374,13 @@ class NodeWriter implements NodeColumnWriter {
   private readonly isContainer: Uint8Array;
   private readonly resizable: Uint8Array;
   private readonly divide: Uint8Array;
+  private readonly hasAttached: Uint8Array;
+  private readonly attached: Uint32Array;
+  private readonly side: ReturnType<typeof codeColumn<SideCode>>;
+  private readonly offset: Float64Array;
+  private readonly beside: Uint8Array;
+  /** The identifier each border node's `attachedTo` names, by the node's index. */
+  private readonly attachments = new Map<number, string>();
   /** The regions written, each by what it divides: a node by its index, a region by its own
    *  index past the nodes, which `columns` numbers once every node is written. */
   private readonly regionIds: ReturnType<typeof stringColumn>;
@@ -412,6 +437,11 @@ class NodeWriter implements NodeColumnWriter {
     this.isContainer = new Uint8Array(count);
     this.resizable = new Uint8Array(count);
     this.divide = new Uint8Array(count);
+    this.hasAttached = new Uint8Array(count);
+    this.attached = new Uint32Array(count);
+    this.side = codeColumn(count, SIDES, SideCode.Unnamed);
+    this.offset = new Float64Array(count);
+    this.beside = new Uint8Array(count);
     this.regionIds = stringColumn(16, bound);
     this.regionNames = stringColumn(16, bound);
     this.rowBounds = new Uint32Array(count + 1);
@@ -452,13 +482,13 @@ class NodeWriter implements NodeColumnWriter {
     isContainer: unknown,
     height?: unknown,
     resizable?: unknown,
+    attachedTo?: unknown,
   ): void {
     if (this.open) this.endNode();
     this.open = true;
     if (!this.ids.add(id)) this.refuse(NodeField.Id);
     this.named.push(id);
-    this.number(this.x, x, NodeField.X);
-    this.number(this.y, y, NodeField.Y);
+    this.position(x, y, container, attachedTo);
     this.number(this.width, width, NodeField.Width);
     if (typeof height === "number") {
       this.hasHeight[this.at] = 1;
@@ -471,6 +501,15 @@ class NodeWriter implements NodeColumnWriter {
     } else if (!absent(container)) this.refuse(NodeField.Container);
     this.flag(this.isContainer, isContainer, NodeField.IsContainer);
     this.flag(this.resizable, resizable, NodeField.Resizable);
+  }
+
+  /** The position of the node being written: a border node has none, one left out is none, and
+   *  one given stands beside its `attachedTo`, which refuses it (ARCH-border-nodes-ride-sides). */
+  private position(x: unknown, y: unknown, container: unknown, attachedTo: unknown): void {
+    const bordered = typeof attachedTo === "string";
+    if (bordered) this.beside[this.at] = [x, y, container].findIndex((v) => !absent(v)) + 1;
+    if (!bordered || !absent(x)) this.number(this.x, x, NodeField.X);
+    if (!bordered || !absent(y)) this.number(this.y, y, NodeField.Y);
   }
 
   regions(divide: unknown, regions: readonly RegionRead[] | false | undefined): void {
@@ -639,6 +678,19 @@ class NodeWriter implements NodeColumnWriter {
     if (endsRow) this.endRow();
   }
 
+  border(attachedTo: unknown, side: unknown, offset: unknown): void {
+    if (typeof attachedTo !== "string") {
+      if (!absent(attachedTo)) this.refuse(NodeField.AttachedTo);
+      // A side or an offset of a node that is no border node, which refuses it.
+      else this.beside[this.at] = !absent(side) ? 4 : !absent(offset) ? 5 : 0;
+      return;
+    }
+    this.hasAttached[this.at] = 1;
+    this.attachments.set(this.at, attachedTo);
+    if (this.side.add(this.at, side)) this.refuse(NodeField.Side);
+    this.number(this.offset, offset, NodeField.Offset);
+  }
+
   /** The strings an element of `code` fills: a text of a `text`, an `action`, and a `badge`, the
    *  three of a metric being `metric`'s to fill, and a name of an action and of an icon. */
   private strings(code: KindCode, text: unknown, id: unknown): void {
@@ -669,6 +721,7 @@ class NodeWriter implements NodeColumnWriter {
       resizable: this.resizable.subarray(0, this.at),
       divide: this.divide.subarray(0, this.at),
       regions: this.regionColumns(),
+      ...this.borderColumns(),
       content: this.contentColumns(),
       refused: this.refused,
     };
@@ -690,6 +743,33 @@ class NodeWriter implements NodeColumnWriter {
       named: Uint8Array.from(named),
       names: this.regionNames.pieces(),
       nameBounds: this.regionNames.bounds(),
+    };
+  }
+
+  /** The columns of the border nodes written, each `attachedTo` found by its identifier among the
+   *  nodes alone, the first of an identifier shared, `NO_SLOT` and the first identifier named for
+   *  one none has; a map of the identifiers only where a node is a border node. */
+  private borderColumns() {
+    const attached = this.attached.subarray(0, this.at);
+    let attachedMissing: string | undefined;
+    if (this.attachments.size > 0) {
+      const byId = new Map<string, number>();
+      this.named.forEach((id, slot) => {
+        if (typeof id === "string" && !byId.has(id)) byId.set(id, slot);
+      });
+      for (const [at, id] of this.attachments) {
+        const slot = byId.get(id);
+        attached[at] = slot ?? NO_SLOT;
+        if (slot === undefined) attachedMissing ??= id;
+      }
+    }
+    return {
+      hasAttached: this.hasAttached.subarray(0, this.at),
+      attached,
+      side: this.side.column(this.at),
+      offset: this.offset.subarray(0, this.at),
+      beside: this.beside.subarray(0, this.at),
+      attachedMissing,
     };
   }
 

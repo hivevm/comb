@@ -5,7 +5,7 @@
 // it holds is refused, and the graph stays as it was (ARCH-engine-edits-nested-graph,
 // REN-virtualized-nested-scene, API-bridge-columns-carry-nesting).
 import { expect, test, type Page } from "@playwright/test";
-import type { GraphData, NodeData } from "comb";
+import type { GraphData, PlacedNodeData } from "comb";
 import {
   canvasSize,
   clickWorld,
@@ -24,7 +24,12 @@ import {
 } from "./shared";
 
 /** A container of `id` at `x, y`, 700 × 300, of one title. */
-const container = (id: string, x: number, y: number, fields: Partial<NodeData> = {}): NodeData => ({
+const container = (
+  id: string,
+  x: number,
+  y: number,
+  fields: Partial<PlacedNodeData> = {},
+): PlacedNodeData => ({
   ...node(id, x, y),
   width: 700,
   isContainer: true,
@@ -529,7 +534,7 @@ async function containerDragUploads(page: Page, copies: number) {
   }
   const room = await page.evaluate(() => {
     const visible = window.visibleRect();
-    const left = Math.min(...window.exampleGraph().nodes.map(({ x }) => x));
+    const left = Math.min(...window.exampleGraph().nodes.map(({ x }) => x!));
     const gap = left - visible.minX;
     const size = Math.min(0.85 * gap, 0.8 * (visible.maxY - visible.minY));
     const middle = (visible.minY + visible.maxY) / 2;

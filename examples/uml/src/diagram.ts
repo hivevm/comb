@@ -196,7 +196,14 @@ const MIRROR: {
   loaded: () => {},
   nodeAdded: (diagram, { node }) => void diagram.graph.nodes.push({ ...node }),
   nodeUpdated: (diagram, { id, patch }) => void Object.assign(diagram.node(id) ?? {}, patch),
-  nodeMoved: (diagram, { id, x, y }) => void Object.assign(diagram.node(id) ?? {}, { x, y }),
+  nodeMoved: (diagram, change) => {
+    // A border node keeps its side and offset, any other node its position.
+    const at =
+      "side" in change
+        ? { side: change.side, offset: change.offset }
+        : { x: change.x, y: change.y };
+    Object.assign(diagram.node(change.id) ?? {}, at);
+  },
   nodeResized: (diagram, { id, x, y, width, height, moved, regions }) => {
     Object.assign(diagram.node(id) ?? {}, { x, y, width, height });
     for (const at of moved) Object.assign(diagram.node(at.id) ?? {}, { x: at.x, y: at.y });

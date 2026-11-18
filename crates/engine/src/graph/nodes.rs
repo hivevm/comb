@@ -105,6 +105,7 @@ impl Graph {
         put(&mut self.incident, i, Vec::new());
         self.forget_nesting(slot);
         self.forget_division(slot);
+        self.forget_borders(slot);
         self.next_rank += 1;
         self.nest_added(slot, container, is_container);
         let bounds = self.node_bounds(slot);
@@ -155,6 +156,7 @@ impl Graph {
                 self.incident[slot as usize].clear();
                 containers |= self.is_container(slot);
                 self.forget_nesting(slot);
+                self.forget_borders(slot);
             }
         }
         if containers {
@@ -185,7 +187,7 @@ impl Graph {
         slots
             .iter()
             .copied()
-            .filter(|&s| seen.insert(s))
+            .filter(|&s| seen.insert(s) && !self.is_border(s))
             .filter(|&s| {
                 let mut at = self.container(s);
                 while at != CANVAS {
@@ -211,7 +213,9 @@ impl Graph {
             return Err(PositionError::NonFinite.into());
         }
         let named;
-        let roots = if slots.len() > 1 {
+        // A border node follows its node and is moved by nothing else
+        // (ARCH-border-nodes-ride-sides, *Moves and resizes*).
+        let roots = if slots.len() > 1 || slots.iter().any(|&s| self.is_border(s)) {
             named = self.roots_of(slots);
             named.as_slice()
         } else {
@@ -255,9 +259,17 @@ impl Graph {
         } else {
             roots
         };
+        // The border nodes of every node moved ride along in the same call.
+        let mut riders = Vec::new();
+        for &slot in slots {
+            riders.extend_from_slice(self.borders(slot));
+        }
+        for &rider in &riders {
+            self.position_border(rider);
+        }
         let mut edges = std::mem::take(&mut self.scratch);
         edges.clear();
-        for &slot in slots {
+        for &slot in slots.iter().chain(&riders) {
             let bounds = self.node_bounds(slot);
             self.node_grid.set(slot, &bounds);
             edges.extend_from_slice(&self.incident[slot as usize]);
@@ -291,8 +303,11 @@ impl Graph {
         Ok(())
     }
 
-    /// Takes the box the node in `slot` now has into the index, and places its edges again.
+    /// Takes the box the node in `slot` now has into the index, and places its edges and its border
+    /// nodes again (ARCH-border-nodes-ride-sides).
     pub(super) fn reboxed(&mut self, slot: u32) {
+        // A border node of another size stays centred on its node's outline.
+        self.position_border(slot);
         let bounds = self.node_bounds(slot);
         self.node_grid.set(slot, &bounds);
         let edges = std::mem::take(&mut self.incident[slot as usize]);
@@ -300,6 +315,7 @@ impl Graph {
             self.place_edge(edge);
         }
         self.incident[slot as usize] = edges;
+        self.ride(slot);
         self.keep_index();
     }
 
@@ -330,6 +346,7 @@ impl Graph {
             self.place_edge(edge);
         }
         self.incident[i] = edges;
+        self.ride(slot);
         self.keep_index();
         Ok(())
     }

@@ -1,13 +1,13 @@
 //! The reading of an item of graph data: a node, an edge, and an edge's label with every field
 //! read, or the refusal that names the first field missing or of another type.
 
-use comb_engine::geometry::Sides;
+use comb_engine::geometry::{Side, Sides};
 use comb_engine::shape::NodeShape;
 
 use super::content;
 use super::problem::{
-    A_CONTENT, A_FLAG, A_HEIGHT, A_NUMBER, A_ROW, A_SEGMENT_LIST, A_SHAPE, A_SIZE, AN_ELEMENT,
-    AN_ID, AN_ID_OR_NONE,
+    A_BORDER_SIDE, A_CONTENT, A_FLAG, A_HEIGHT, A_NODE_ID_OR_NONE, A_NUMBER, A_ROW, A_SEGMENT_LIST,
+    A_SHAPE, A_SIZE, AN_ELEMENT, AN_ID, AN_ID_OR_NONE,
 };
 #[cfg(test)]
 use super::snapshot::GraphBatch;
@@ -31,6 +31,17 @@ pub(super) struct Node<'a> {
     /// Whether it is a container: read from the node of `addNode`; a load keeps its marks in its
     /// columns of nesting (API-bridge-columns-carry-nesting).
     pub(super) is_container: bool,
+    /// Its place where it is a border node (ARCH-border-nodes-ride-sides).
+    pub(super) border: Option<Border>,
+}
+
+/// The place of a border node as its data gives it, and the first of its fields `x`, `y`, and
+/// `container` that stands beside its `attachedTo`, which refuses it.
+#[derive(Clone, Copy)]
+pub(super) struct Border {
+    pub(super) side: Side,
+    pub(super) offset: f64,
+    pub(super) beside: Option<&'static str>,
 }
 
 /// An edge label with every field read.
@@ -143,10 +154,24 @@ pub(super) fn node_of(
     let mut item = Item::new(GraphList::Nodes, index);
     let id = item.id("id", &node.id)?;
     item.id = Some(id);
-    let read = Node {
+    // A border node has no position of its own; any other node has one.
+    let bordered = matches!(node.attached_to.0, Some(Some(_)));
+    let position = |field: &str, value: Field<Option<f64>>| {
+        let value = item.read(field, value, A_NUMBER)?;
+        match value {
+            None if !bordered => item.read(field, Field::<f64>(None), A_NUMBER),
+            _ => Ok(value.unwrap_or(0.0)),
+        }
+    };
+    let beside = [("x", node.x.0), ("y", node.y.0)]
+        .into_iter()
+        .find(|(_, value)| matches!(value, Some(Some(_))))
+        .map(|(field, _)| field)
+        .or_else(|| matches!(node.container.0, Some(Some(_))).then_some("container"));
+    let mut read = Node {
         id,
-        x: item.read("x", node.x, A_NUMBER)?,
-        y: item.read("y", node.y, A_NUMBER)?,
+        x: position("x", node.x)?,
+        y: position("y", node.y)?,
         width: item.read("width", node.width, A_SIZE)?,
         height: item.read("height", node.height, A_HEIGHT)?,
         shape: item.read("shape", node.shape, A_SHAPE)?.into(),
@@ -160,7 +185,22 @@ pub(super) fn node_of(
         resizable: item
             .read("resizable", node.resizable, A_FLAG)?
             .unwrap_or(false),
+        border: None,
     };
+    if item
+        .read("attachedTo", node.attached_to.clone(), A_NODE_ID_OR_NONE)?
+        .is_some()
+    {
+        let side = item.read("side", node.side, A_BORDER_SIDE)?;
+        let side = item.read("side", Field(side), A_BORDER_SIDE)?;
+        let offset = item.read("offset", node.offset, A_NUMBER)?;
+        let offset = item.read("offset", Field(offset), A_NUMBER)?;
+        read.border = Some(Border {
+            side: side.into(),
+            offset,
+            beside,
+        });
+    }
     let content = content_of(&item, node.content.0.as_ref())?;
     Ok((read, content))
 }

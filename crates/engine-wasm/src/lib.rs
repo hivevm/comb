@@ -24,8 +24,8 @@ use comb_engine::content::{Cell, Font, Fonts, Placed, drawn_at};
 use comb_engine::geometry::Point;
 use comb_engine::geometry::Rect;
 use comb_engine::graph::{
-    Axis, CANVAS, Graph, Handle, Level, LineError, MeshAt, MoveError, MoveIntoError, PositionError,
-    SlotError as GraphSlotError, Target, Visible,
+    AttachError, Axis, CANVAS, Graph, Handle, Level, LineError, MeshAt, MoveError, MoveIntoError,
+    PositionError, SlotError as GraphSlotError, Target, Visible,
 };
 use comb_engine::stroke::{Detail, Mesh};
 use serde::{Deserialize, Serialize};
@@ -288,6 +288,18 @@ fn checked_pixel(pixel: f64) -> Result<f64, NumberError> {
     } else {
         Err(NumberError::InvalidPixel)
     }
+}
+
+/// The code of `SideCode` of `side`, as `borderOf` and `slide` hand it back.
+fn side_code(side: comb_engine::geometry::Side) -> f64 {
+    use comb_engine::geometry::Side;
+    let code = match side {
+        Side::Top => SideCode::Top,
+        Side::Right => SideCode::Right,
+        Side::Bottom => SideCode::Bottom,
+        Side::Left => SideCode::Left,
+    };
+    f64::from(code as u8)
 }
 
 /// The world point `(x, y)` a hit test or a label's move takes, or its refusal as the shell's
@@ -620,7 +632,10 @@ impl Engine {
     /// units, each ending where a value ends, with the boundaries across all pieces in UTF-16 code
     /// units, the numbers as `Float64Array`, a height its data gives with a byte that says whether
     /// it does, whether it is resizable as a byte, the node shapes as the codes of `NodeShapeCode`,
-    /// the content as the columns of `ContentColumns`, its texts in pieces as the identifiers are,
+    /// per border node the slot it is attached to, its side, its offset, and what stands beside
+    /// its `attachedTo`, with the identifier the first one attached to no node names
+    /// (ARCH-border-nodes-ride-sides), the content as the columns of `ContentColumns`, its texts
+    /// in pieces as the identifiers are,
     /// with per text whether it is a text, and the first value the shell refused by its type, the
     /// index of its node, the code of its `NodeField`, and for a shape of content its row and
     /// column, or none. Each node is as high as its content lays out to in the fonts `setFont`
@@ -640,6 +655,10 @@ impl Engine {
     #[expect(
         clippy::needless_pass_by_value,
         reason = "wasm-bindgen hands a list of strings over as an owned `Vec<String>` only"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one parameter per column, each named once more where the columns are gathered"
     )]
     pub fn load_graph(
         &mut self,
@@ -667,6 +686,12 @@ impl Engine {
         region_named: &[u8],
         region_names: Vec<String>,
         region_name_bounds: &[u32],
+        has_attached: &[u8],
+        attached: &[u32],
+        side: &[u8],
+        offset: &[f64],
+        beside: &[u8],
+        attached_missing: Option<String>,
         row_bounds: Vec<u32>,
         element_bounds: Vec<u32>,
         kinds: Vec<u8>,
@@ -784,6 +809,12 @@ impl Engine {
                 names: &region_names,
                 name_bounds: region_name_bounds,
             },
+            has_attached,
+            attached,
+            side,
+            offset,
+            beside,
+            attached_missing: attached_missing.as_deref(),
             content: content.view(),
             refused,
         };
@@ -843,16 +874,19 @@ impl Engine {
     /// in the slot `container`, which the shell resolved, or onto the canvas for none, drawn and
     /// hit above every other node of its kind, and returns the slot the engine chose for it: the
     /// free slot freed last, or a new one after the highest (ARCH-engine-edits-nested-graph). A
-    /// refused node leaves the graph as it was.
+    /// border node rides the node in the slot `attached`, which the shell resolved from its
+    /// `attachedTo`, or names none (ARCH-border-nodes-ride-sides). A refused node leaves the graph
+    /// as it was.
     #[wasm_bindgen(js_name = addNode)]
     pub fn add_node(
         &mut self,
         node: Ts<NodeInput>,
         container: Option<u32>,
+        attached: Option<u32>,
     ) -> Result<u32, GraphDataProblem> {
         trap::spring();
         let node = node.to_rust().map_err(unshaped)?;
-        self.add(&node, container)
+        self.add(&node, (container, attached))
     }
 
     /// The height, in world units, the content of the node `heightOf` hands over lays out to at
@@ -1090,6 +1124,37 @@ impl Engine {
         drawn
     }
 
+    /// Where the border node in `slot` sits: the slot of the node it rides, its side as the code of
+    /// `SideCode`, and its offset along that side as the engine keeps it, held within the side's
+    /// length when it was given; nothing for a slot that holds no border node
+    /// (ARCH-border-nodes-ride-sides).
+    #[wasm_bindgen(js_name = borderOf)]
+    pub fn border_of(&self, slot: u32) -> Vec<f64> {
+        trap::spring();
+        if !self.graph.holds_node(slot) {
+            return Vec::new();
+        }
+        self.graph.place_of(slot).map_or_else(Vec::new, |place| {
+            vec![f64::from(place.on), side_code(place.side), place.offset]
+        })
+    }
+
+    /// Slides the border node in `slot` to the point of its node's outline nearest the world point
+    /// `(x, y)`, onto the side of the box nearest that point, and returns its side as the code of
+    /// `SideCode` and its offset (ARCH-border-nodes-ride-sides, *Drag*). A slot that holds no
+    /// border node throws a `SlotError`, and a point that is not finite a `NumberError`
+    /// `nonFinitePoint`; either way nothing moves.
+    pub fn slide(&mut self, slot: u32, x: f64, y: f64) -> Result<Vec<f64>, CallRefusal> {
+        trap::spring();
+        let point = checked_point(x, y)?;
+        match self.graph.slide(slot, point) {
+            Ok(place) => Ok(vec![side_code(place.side), place.offset]),
+            Err(AttachError::Slot(error)) => Err(error.into()),
+            Err(AttachError::NotBorder { slot }) => Err(GraphSlotError::NoNode { slot }.into()),
+            Err(AttachError::NonFinite) => Err(NumberError::NonFinitePoint.into()),
+        }
+    }
+
     /// The slot of the container a drop of the node in `dragged` at the world point `(x, y)` lands
     /// in: of the containers whose outline holds the point, neither the node nor one it holds at
     /// any depth, the topmost; none for the canvas (API-edits-report-nested-changes, *Vetoes*). A
@@ -1324,9 +1389,13 @@ impl Engine {
     }
 
     /// `addNode` of `node`, read: its strings of content counted on from those the graph holds.
-    fn add(&mut self, node: &NodeInput, container: Option<u32>) -> Result<u32, GraphDataProblem> {
+    fn add(
+        &mut self,
+        node: &NodeInput,
+        nest: (Option<u32>, Option<u32>),
+    ) -> Result<u32, GraphDataProblem> {
         let units = self.content.units();
-        let (slot, content) = add_node_to(&mut self.graph, node, container, &self.fonts, units)?;
+        let (slot, content) = add_node_to(&mut self.graph, node, nest, &self.fonts, units)?;
         self.content.set(slot, content);
         // Read again, as `add_node_to` took them, for the code units of their names.
         let id = node.id.0.as_deref().unwrap_or_default();
@@ -1376,7 +1445,15 @@ impl Engine {
             comb_engine::shape::NodeShape::Rectangle
         };
         let current = self.graph.divided(slot);
-        let patched = patch_of(id, shape, current, patch, &self.fonts, held)?;
+        let place = self.graph.place_of(slot);
+        let patched = patch_of(
+            id,
+            (shape, place.is_some()),
+            current,
+            patch,
+            &self.fonts,
+            held,
+        )?;
         if patched.is_empty() {
             return Ok(Vec::new());
         }
@@ -1425,7 +1502,30 @@ impl Engine {
             None => Vec::new(),
         };
         self.graph.arrange(slot);
+        if let Some(place) = place {
+            self.place_anew(slot, place, patched.side, patched.offset)?;
+        }
         Ok(removed)
+    }
+
+    /// Gives the border node in `slot`, at `place`, the side and the offset a patch set, each kept
+    /// where it set none (ARCH-border-nodes-ride-sides).
+    fn place_anew(
+        &mut self,
+        slot: u32,
+        place: comb_engine::graph::Place,
+        side: Option<comb_engine::geometry::Side>,
+        offset: Option<f64>,
+    ) -> Result<(), CallRefusal> {
+        if side.is_none() && offset.is_none() {
+            return Ok(());
+        }
+        let side = side.unwrap_or(place.side);
+        let offset = offset.unwrap_or(place.offset);
+        self.graph
+            .set_place(slot, side, offset)
+            .map_err(|_| malformed("a border node the patch checked refused its place"))?;
+        Ok(())
     }
 
     /// Divides the node in `slot` anew into `regions` in the direction `divide`, below its
@@ -2789,7 +2889,7 @@ mod tests {
         assert!(
             patch_of(
                 "b",
-                graph_data::RECTANGLE.0,
+                (graph_data::RECTANGLE.0, false),
                 None,
                 &refused,
                 &engine.fonts,

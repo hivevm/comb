@@ -16,7 +16,8 @@ type Same<A, B> =
 // takes as well, and no `GraphBatch` and no `EdgeList` (API-bridge-takes-serde-and-columns): its
 // generated parameters, pinned, the column of node shapes, the columns of nesting
 // (API-bridge-columns-carry-nesting), the height a node's data gives with its byte of presence,
-// whether it is resizable, the division of each node and the columns of the regions, and the
+// whether it is resizable, the division of each node and the columns of the regions, the columns of
+// border nodes (ARCH-border-nodes-ride-sides), and the
 // content columns of `text`, `action`, `badge`, `progress`, and `metric` among them and no title
 // column. A refused field crosses as the code of its `NodeField` or `EdgeField`, a plain number,
 // and a shape of content with its row and column.
@@ -47,6 +48,12 @@ const columns: Same<
     regionNamed: Uint8Array | number[],
     regionNames: string[],
     regionNameBounds: Uint32Array | number[],
+    hasAttached: Uint8Array | number[],
+    attached: Uint32Array | number[],
+    side: Uint8Array | number[],
+    offset: Float64Array | number[],
+    beside: Uint8Array | number[],
+    attachedMissing: string | null | undefined,
     rowBounds: Uint32Array | number[],
     elementBounds: Uint32Array | number[],
     kinds: Uint8Array | number[],

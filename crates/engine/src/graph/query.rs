@@ -95,8 +95,7 @@ impl Graph {
         }
         out.containers
             .sort_unstable_by_key(|&slot| self.container_order[slot as usize]);
-        out.nodes
-            .sort_unstable_by_key(|&slot| self.ranks[slot as usize]);
+        out.nodes.sort_unstable_by_key(|&slot| self.draw_key(slot));
         self.edge_grid
             .candidates(&rect.union(&label_rect), &mut self.scratch);
         self.scratch.sort_unstable();

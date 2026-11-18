@@ -5,7 +5,7 @@
 use std::fmt;
 
 use comb_engine::content::Fonts;
-use comb_engine::geometry::Sides;
+use comb_engine::geometry::{self as graph_side, Sides};
 use std::collections::HashSet;
 
 use comb_engine::graph::{AddEdgeError, Axis, Graph, SlotError};
@@ -17,11 +17,11 @@ use tsify::Tsify;
 use super::checks::{color_of, dash_of, edge_ids_of, given_height, label_placement, spec_of};
 use super::item::{Item, content_of, edge_of, label_of};
 use super::load::checked_content;
-use super::problem::{A_FLAG, A_HEIGHT};
+use super::problem::{A_BORDER_SIDE, A_FLAG, A_HEIGHT, A_NUMBER};
 use super::regions::{Divide, RegionInput};
 use super::{
     Arrow, Checked, ContentInput, Dock, EdgeField, EdgeInput, Field, GraphDataProblem, GraphList,
-    LabelInput, Pair, Region, check_graph_size, check_regions, regions_of, utf16_length,
+    LabelInput, Pair, Region, Side, check_graph_size, check_regions, regions_of, utf16_length,
 };
 
 /// Why an edit of an edge was refused: its data, which the host application handed over, or a
@@ -216,7 +216,7 @@ pub(crate) fn update_edge_in(
 #[derive(Tsify)]
 #[tsify(
     type = "{ content?: NodeContent; height?: number; resizable?: boolean; divide?: Divide; \
-                 regions?: RegionInput[] }"
+                 regions?: RegionInput[]; side?: Side; offset?: number }"
 )]
 pub struct NodePatch(pub Vec<(String, PatchValue)>);
 
@@ -229,6 +229,9 @@ pub enum PatchValue {
     Resizable(Field<bool>),
     Divide(Field<Option<Divide>>),
     Regions(Field<Option<Vec<RegionInput>>>),
+    /// A border node's side and offset (ARCH-border-nodes-ride-sides).
+    Side(Field<Side>),
+    Offset(Field<f64>),
     Other,
 }
 
@@ -270,6 +273,8 @@ impl<'de> Visitor<'de> for PatchVisitor {
                 "resizable" => PatchValue::Resizable(map.next_value()?),
                 "divide" => PatchValue::Divide(map.next_value()?),
                 "regions" => PatchValue::Regions(map.next_value()?),
+                "side" => PatchValue::Side(map.next_value()?),
+                "offset" => PatchValue::Offset(map.next_value()?),
                 _ => {
                     map.next_value::<IgnoredAny>()?;
                     fields.push((field, PatchValue::Other));
@@ -294,6 +299,10 @@ pub(crate) struct Patched {
     /// The regions the patch divides the node into, and their direction, in place of those it
     /// has (ARCH-regions-are-container-slots, *Removing a region*).
     pub regions: Option<(Option<Axis>, Vec<Region>)>,
+    /// A border node's new side and offset, each none where the patch keeps it
+    /// (ARCH-border-nodes-ride-sides).
+    pub side: Option<graph_side::Side>,
+    pub offset: Option<f64>,
 }
 
 impl Patched {
@@ -303,6 +312,8 @@ impl Patched {
             && self.height.is_none()
             && self.resizable.is_none()
             && self.regions.is_none()
+            && self.side.is_none()
+            && self.offset.is_none()
     }
 }
 
@@ -314,7 +325,7 @@ impl Patched {
 /// `current`; or names its first offending field.
 pub(crate) fn patch_of(
     node: &str,
-    shape: NodeShape,
+    (shape, bordered): (NodeShape, bool),
     current: Option<Axis>,
     patch: &NodePatch,
     fonts: &Fonts,
@@ -335,10 +346,29 @@ pub(crate) fn patch_of(
                 patched.height = given_height(node, Some(height))?;
             }
             PatchValue::Resizable(value) => {
-                patched.resizable = Some(item.read("resizable", *value, A_FLAG)?);
+                let resizable = item.read("resizable", *value, A_FLAG)?;
+                if resizable && bordered {
+                    return Err(attachment(node, "resizable"));
+                }
+                patched.resizable = Some(resizable);
+            }
+            // Only a border node has a side and an offset.
+            PatchValue::Side(value) if bordered => {
+                patched.side = Some(item.read("side", *value, A_BORDER_SIDE)?.into());
+            }
+            PatchValue::Offset(value) if bordered => {
+                let offset = item.read("offset", *value, A_NUMBER)?;
+                if !offset.is_finite() {
+                    return Err(GraphDataProblem::NonFiniteCoordinate {
+                        node: node.to_owned(),
+                    });
+                }
+                patched.offset = Some(offset);
             }
             PatchValue::Divide(value) => divide = Some(value),
             PatchValue::Regions(value) => regions = Some(value),
+            // A node that is no border node has neither (ARCH-border-nodes-ride-sides).
+            PatchValue::Side(_) | PatchValue::Offset(_) => return Err(attachment(node, field)),
             PatchValue::Other => {
                 return Err(GraphDataProblem::UnknownPatchField {
                     node: node.to_owned(),
@@ -349,6 +379,10 @@ pub(crate) fn patch_of(
     }
     // The regions of a patch replace the node's, divided as the patch says or as the node is; a
     // division without regions divides it into none.
+    // An empty list is no regions, as a load reads it.
+    if bordered && regions.is_some_and(|r| matches!(&r.0, Some(Some(list)) if !list.is_empty())) {
+        return Err(attachment(node, "regions"));
+    }
     if divide.is_some() || regions.is_some() {
         let none = Field(Some(None));
         let divide = divide.map_or(Field(Some(current.map(Divide::from))), |d| *d);
@@ -358,6 +392,14 @@ pub(crate) fn patch_of(
         patched.regions = Some((axis, list));
     }
     Ok(patched)
+}
+
+/// The refusal of the border node `node` by its field `field` (ARCH-border-nodes-ride-sides).
+fn attachment(node: &str, field: &str) -> GraphDataProblem {
+    GraphDataProblem::InvalidAttachment {
+        node: node.to_owned(),
+        field: field.to_owned(),
+    }
 }
 
 // The malformed-data tests of graph data verify API-bridge-takes-serde-and-columns (see
@@ -375,7 +417,7 @@ mod tests {
             let fields = entries.into_iter().map(|(k, v)| (k.to_owned(), v));
             patch_of(
                 "a",
-                RECTANGLE.0,
+                (RECTANGLE.0, false),
                 None,
                 &NodePatch(fields.collect()),
                 &Fonts::default(),

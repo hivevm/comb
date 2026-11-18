@@ -233,6 +233,23 @@ out from its own `width` as a load of it would be; `regions: []`, or a `divide` 
 leaves it undivided. A region's name counts against the budget of content. `load` and `addNode`
 refuse a `container` that names a divided node, or a region divided again, as `invalidContainer`.
 
+A node with `attachedTo`, `side`, and `offset`, and no `x`, `y`, or `container`, is a border node,
+such as a pin of an action: it sits centred on the outline of the node `attachedTo` names, on `side`
+of that node's box, `offset` world units from the side's start, its left end or its top end, where
+the line at right angles to the side there meets the outline, held within the side's length. It
+moves with that node, into a container too, keeps its side and offset through a resize, and is drawn
+and hit directly after that node; edges dock on it as on any node; removing that node removes its
+border nodes and the edges at them, which `nodesRemoved` and `canDelete` name. The user drags a
+border node along the outline, onto another side where that one is nearer, told once as `nodeMoved`
+with its `side` and `offset`, and not where it ends where it began; no `canMoveInto` is asked.
+`updateNode(id, { side, offset })` places it anew; `nodeUpdated` tells the offset Comb held within
+the side, also where the patch set the side alone. `load` and `addNode` refuse a border node
+attached to itself or to another border node, one with `isContainer`, `regions` that are not empty,
+or `resizable`, and one with `x`, `y`, or `container` beside `attachedTo`, as `invalidAttachment`
+naming the node and the field, as `load`, `addNode`, and `updateNode` refuse a `side` or an `offset`
+of a node that is no border node, an `attachedTo` that names no node as `missingNode` with the
+`borderNode`, and an offset that is not finite as `nonFiniteCoordinate`.
+
 `addNode` adds one node at its `x` and `y` without a load, drawn above every node it overlaps. For a
 node dropped from the host application's palette, `comb.worldPointAt(event.clientX, event.clientY)`
 returns the world point under the drop; Comb handles no drag and drop itself, and `worldPointAt`

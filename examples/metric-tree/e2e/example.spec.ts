@@ -1,11 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
+import type { PlacedNodeData } from "comb";
 import { clickWorld, NODE_HEIGHT, open, POLICY, screenCentre, setViewport } from "./shared";
 
 /** Node `id` as the canvas draws it at the near level, with the viewport moved so that its
  *  top-left corner lies at (100, 100) on the canvas at scale 1. */
 async function nearNode(page: Page, id: string) {
   const { x, y } = await page.evaluate(
-    (wanted) => window.exampleGraph().nodes.find((node) => node.id === wanted)!,
+    (wanted) => window.exampleGraph().nodes.find((node) => node.id === wanted) as PlacedNodeData,
     id,
   );
   await setViewport(page, { x: 100 - x, y: 100 - y, scale: 1 });

@@ -39,6 +39,9 @@ impl Refusable for NodeInput {
             self.resizable.0.is_none(),
             self.divide.0.is_none(),
             self.regions.0.is_none(),
+            self.attached_to.0.is_none(),
+            self.side.0.is_none(),
+            self.offset.0.is_none(),
             self.content.0.is_none(),
         ]
         .contains(&true)
@@ -123,6 +126,14 @@ pub(crate) struct OwnedColumns {
     pub(super) resizable: Vec<u8>,
     pub(super) divide: Vec<u8>,
     pub(super) regions: OwnedRegions,
+    pub(super) has_attached: Vec<u8>,
+    pub(super) attached: Vec<u32>,
+    pub(super) side: Vec<u8>,
+    pub(super) offset: Vec<f64>,
+    pub(super) beside: Vec<u8>,
+    pub(super) attached_missing: Option<String>,
+    /// The identifier each border node names, resolved once every node is written.
+    attached_ids: Vec<Option<String>>,
     pub(crate) content: ContentData,
     pub(crate) refused: Option<Refused>,
 }
@@ -265,6 +276,7 @@ impl OwnedColumns {
                 columns.on_canvas();
                 columns.resizable.push(0);
                 columns.divide.push(0);
+                columns.no_border();
                 columns.content.end_node();
                 continue;
             };
@@ -273,9 +285,16 @@ impl OwnedColumns {
             }
             let id = node.id.0.clone().unwrap_or_default();
             push_value(&mut columns.ids, &mut columns.id_bounds, id);
+            // A border node has no position; any other node's left out is refused.
+            let bordered = matches!(node.attached_to.0, Some(Some(_)));
+            let position = |value: Field<Option<f64>>| match value.0 {
+                Some(None) if bordered => Field(Some(f64::NAN)),
+                Some(value) => Field(value),
+                None => Field(None),
+            };
             let numbers = [
-                (NodeField::X, node.x, &mut columns.x),
-                (NodeField::Y, node.y, &mut columns.y),
+                (NodeField::X, position(node.x), &mut columns.x),
+                (NodeField::Y, position(node.y), &mut columns.y),
                 (NodeField::Width, node.width, &mut columns.width),
             ];
             for (field, value, column) in numbers {
@@ -302,9 +321,11 @@ impl OwnedColumns {
             columns.on_canvas();
             columns.push_resizable(index, node);
             columns.push_regions(index, node);
+            columns.push_border(index, node);
             columns.push_content(index, node.content.0.as_ref(), &mut texts, &mut names);
             columns.content.end_node();
         }
+        columns.resolve_borders();
         columns.ids = pieces_of(&columns.ids, bound);
         let count = columns.x.len() as u32;
         columns.regions.number(count);
@@ -357,6 +378,75 @@ impl OwnedColumns {
                 self.divide.push(0);
             }
             Err(_) => self.divide.push(0),
+        }
+    }
+
+    /// Writes the next node as no border node.
+    fn no_border(&mut self) {
+        self.has_attached.push(0);
+        self.attached.push(0);
+        self.side.push(0);
+        self.offset.push(0.0);
+        self.beside.push(0);
+        self.attached_ids.push(None);
+    }
+
+    /// Writes the attachment of the node at `index`, `node`, as the snapshot does
+    /// (ARCH-border-nodes-ride-sides): its `attachedTo`, resolved once every node is written; its
+    /// side as its code, `Unnamed` where missing or of another type; its offset, its refusal named
+    /// where missing or of another type; and the first of `x`, `y`, and `container` beside it.
+    fn push_border(&mut self, index: u32, node: &NodeInput) {
+        let Some(Some(on)) = node.attached_to.0.clone() else {
+            if node.attached_to.0.is_none() {
+                self.refuse_at(index, NodeField::AttachedTo);
+            }
+            self.no_border();
+            return;
+        };
+        self.has_attached.push(1);
+        self.attached.push(0);
+        self.attached_ids.push(Some(on));
+        let side = node
+            .side
+            .0
+            .flatten()
+            .map_or(SideCode::Unnamed as u8, |side| {
+                super::Side::ALL
+                    .iter()
+                    .position(|&s| s == side)
+                    .unwrap_or(5) as u8
+            });
+        self.side.push(side);
+        match node.offset.0 {
+            Some(Some(offset)) => self.offset.push(offset),
+            _ => {
+                self.refuse_at(index, NodeField::Offset);
+                self.offset.push(f64::NAN);
+            }
+        }
+        let beside = [node.x.0, node.y.0]
+            .iter()
+            .position(|value| matches!(value, Some(Some(_))))
+            .map(|at| at as u8 + 1)
+            .or_else(|| matches!(node.container.0, Some(Some(_))).then_some(3));
+        self.beside.push(beside.unwrap_or(0));
+    }
+
+    /// Resolves the `attachedTo` of each border node against the identifiers of the nodes, as the
+    /// snapshot finds a slot: `CANVAS` where it names none, the first such identifier kept.
+    fn resolve_borders(&mut self) {
+        let ids: Vec<String> = (0..self.x.len())
+            .map(|i| super::value_at(&self.ids, &self.id_bounds, i))
+            .collect();
+        for (i, on) in self.attached_ids.iter().enumerate() {
+            let Some(on) = on else { continue };
+            match ids.iter().position(|id| id == on) {
+                Some(slot) => self.attached[i] = slot as u32,
+                None => {
+                    self.attached[i] = comb_engine::graph::CANVAS;
+                    self.attached_missing.get_or_insert_with(|| on.clone());
+                }
+            }
         }
     }
 
@@ -438,6 +528,12 @@ impl OwnedColumns {
             resizable: &self.resizable,
             divide: &self.divide,
             regions: self.regions.view(),
+            has_attached: &self.has_attached,
+            attached: &self.attached,
+            side: &self.side,
+            offset: &self.offset,
+            beside: &self.beside,
+            attached_missing: self.attached_missing.as_deref(),
             content: self.content.view(),
             refused: self.refused,
         }
@@ -831,6 +927,9 @@ mod tests {
             resizable: _,
             divide: _,
             regions: _,
+            attached_to: _,
+            side: _,
+            offset: _,
             content: _,
         } = NodeInput::default();
         let node = [
@@ -843,17 +942,25 @@ mod tests {
             ("container", Value::Text("c".to_owned())),
             ("isContainer", Value::Bool(true)),
             ("resizable", Value::Bool(true)),
+            ("attachedTo", Value::Text("a".to_owned())),
+            ("side", Value::Text("top".to_owned())),
+            ("offset", Value::Number(3.0)),
             ("content", titled("A")),
         ];
-        // The container and the mark may be left out: none is no refused value.
+        // The container and the mark may be left out: none is no refused value. Nor is a position
+        // left out, which a border node has none of; reading a node refuses it then
+        // (ARCH-border-nodes-ride-sides).
         let required = [
             ("id", true),
-            ("x", true),
-            ("y", true),
+            ("x", false),
+            ("y", false),
             ("width", true),
             ("height", false),
             ("shape", true),
             ("container", false),
+            ("attachedTo", false),
+            ("side", false),
+            ("offset", false),
             ("content", true),
         ];
         assert_refusable::<NodeInput>(&node, &required);

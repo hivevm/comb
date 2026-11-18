@@ -127,6 +127,9 @@ pub(crate) fn batch(nodes: &[(&str, f64, f64)], edges: &[(&str, &str, &str)]) ->
                 resizable: None.into(),
                 divide: None.into(),
                 regions: None.into(),
+                attached_to: None.into(),
+                side: None.into(),
+                offset: None.into(),
                 content: titled("x"),
             })
             .collect(),
@@ -177,7 +180,7 @@ pub(super) fn added(x: f64, y: f64, change: impl FnOnce(&mut NodeInput)) -> Node
 /// Adds `node` to `graph` as `addNode` does, in the fonts of no font handed over, and returns
 /// its slot.
 pub(super) fn add(graph: &mut Graph, node: &NodeInput) -> Result<u32, GraphDataProblem> {
-    add_node_to(graph, node, None, &Fonts::default(), 0).map(|(slot, _)| slot)
+    add_node_to(graph, node, (None, None), &Fonts::default(), 0).map(|(slot, _)| slot)
 }
 
 /// The load of `columns` and no edges, as `loadGraph` checks it.
@@ -307,6 +310,12 @@ pub(crate) fn load_into(
         &n.regions.named,
         n.regions.names.clone(),
         &n.regions.name_bounds,
+        &n.has_attached,
+        &n.attached,
+        &n.side,
+        &n.offset,
+        &n.beside,
+        n.attached_missing.clone(),
         c.row_bounds.clone(),
         c.element_bounds.clone(),
         c.kinds.clone(),

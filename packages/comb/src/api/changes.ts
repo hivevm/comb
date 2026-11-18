@@ -17,6 +17,7 @@ import {
   type NodePatch,
   type RegionData,
   type Selection,
+  type Side,
   type StoreChange,
 } from "../store";
 
@@ -57,6 +58,15 @@ export type GraphChange =
       readonly x: number;
       readonly y: number;
       readonly container: string | null;
+    }
+  /** A drag left the border node `id` on `side` of the node it rides, at `offset` along it
+   *  (ARCH-border-nodes-ride-sides, API-edits-report-nested-changes). */
+  | {
+      readonly kind: "nodeMoved";
+      readonly by: "user";
+      readonly id: string;
+      readonly side: Side;
+      readonly offset: number;
     }
   /** A resize left the node `id` at `x`, `y`, relative to its container, `width` × `height`; of
    *  the nodes that lie directly in it, `moved` names each whose position relative to it changed,
@@ -180,7 +190,25 @@ function nodeUpdatedOf(
     if (divide !== undefined) patch.divide = divide;
     patch.regions = regionsAt(state, bridge, slot);
   }
+  Object.assign(patch, placePatched(change, bridge, slot));
   return { kind: change.kind, by: change.by, id: change.id, patch };
+}
+
+/** What the patch of `change` set of the place of the border node in `slot`: its side, and its
+ *  offset as the engine held it, told also where the patch set the side alone, since the engine
+ *  holds the offset within the new side, so that the host's copy follows what Comb took
+ *  (ARCH-border-nodes-ride-sides). */
+function placePatched(
+  change: Extract<StoreChange, { kind: "nodeUpdated" }>,
+  bridge: Bridge,
+  slot: number,
+): Pick<NodePatch, "side" | "offset"> {
+  const place = change.side || change.offset ? bridge.borderOf(slot) : undefined;
+  if (!place) return {};
+  return {
+    ...(change.side ? { side: place.side } : {}),
+    offset: place.offset,
+  };
 }
 
 /** The size of the region in `slot` as the engine keeps it: its extent along the direction of
@@ -254,6 +282,16 @@ function nodeAddedOf(
 ): GraphChange {
   const slot = state.slots.get(change.id)!;
   const { id, width, shape, isContainer, height, resizable, divide } = state.nodes[slot]!;
+  const place = bridge.borderOf(slot);
+  if (place) {
+    // A border node, at the offset the engine held within its side (ARCH-border-nodes-ride-sides).
+    const { attachedTo } = state.nodes[slot]!;
+    const content = bridge.content(slot);
+    const { side, offset } = place;
+    const border: NodeData = { id, width, shape, content, attachedTo: attachedTo!, side, offset };
+    if (height !== undefined) border.height = heightAt(bridge, slot);
+    return { kind: change.kind, by: change.by, node: border };
+  }
   const { x, y, container } = placeOf(state, bridge, slot);
   const node: NodeData = { id, x, y, width, shape, content: bridge.content(slot) };
   if (container !== null) node.container = container;
@@ -280,6 +318,23 @@ function placeOf(state: GraphState, bridge: Bridge, slot: number) {
   if (container === undefined) return { ...at, container: null };
   const origin = positionAt(positions, state.slots.get(container)!);
   return { x: at.x - origin.x, y: at.y - origin.y, container };
+}
+
+/** The change `nodeMoved` as `onChange` delivers it: where the node lies relative to its
+ *  container, or a border node's side and offset (ARCH-border-nodes-ride-sides). */
+function nodeMovedOf(
+  change: Extract<StoreChange, { kind: "nodeMoved" }>,
+  state: GraphState,
+  bridge: Bridge,
+): GraphChange {
+  const slot = state.slots.get(change.id)!;
+  const place = bridge.borderOf(slot);
+  if (place) {
+    const { side, offset } = place;
+    return { kind: change.kind, by: "user", id: change.id, side, offset };
+  }
+  const { x, y, container } = placeOf(state, bridge, slot);
+  return { kind: change.kind, by: change.by, id: change.id, x, y, container };
 }
 
 /** A change of one node, which `nodeChangeOf` delivers. */
@@ -314,17 +369,8 @@ function deliveryOf(change: StoreChange, state: GraphState, bridge: Bridge): Gra
   switch (change.kind) {
     case "loaded":
       return { kind: change.kind, by: change.by };
-    case "nodeMoved": {
-      const { x, y, container } = placeOf(state, bridge, state.slots.get(change.id)!);
-      return {
-        kind: change.kind,
-        by: change.by,
-        id: change.id,
-        x,
-        y,
-        container,
-      };
-    }
+    case "nodeMoved":
+      return nodeMovedOf(change, state, bridge);
     case "nodesRemoved":
       return {
         kind: change.kind,

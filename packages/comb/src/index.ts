@@ -31,6 +31,8 @@ export type {
   GraphData,
   NodeContent,
   NodeData,
+  PlacedNodeData,
+  BorderNodeData,
   NodePatch,
   NodeShape,
   RegionData,

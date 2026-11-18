@@ -228,11 +228,12 @@ impl Graph {
     }
 
     /// What a removal of the nodes in `slots` takes along, named before anything is removed: the
-    /// nodes, as `with_held` names them, and the edges at any of them, in ascending order
+    /// nodes, as `with_held` names them, then the border nodes of any of them
+    /// (ARCH-border-nodes-ride-sides, *Removal*), and the edges at any of those, in ascending order
     /// (ARCH-engine-edits-nested-graph, *Removing a container*). A slot that holds no node refuses
     /// the call.
     pub fn removal(&self, slots: &[u32]) -> Result<(Vec<u32>, Vec<u32>), SlotError> {
-        let nodes = self.with_held(slots)?;
+        let nodes = self.with_borders(self.with_held(slots)?);
         let edges = self.edges_at(&nodes)?;
         Ok((nodes, edges))
     }
@@ -334,7 +335,9 @@ impl Graph {
     /// within it keeps its rank (API-edits-report-nested-changes, *Vetoes*).
     pub fn move_into(&mut self, slot: u32, container: u32) -> Result<(), MoveIntoError> {
         self.nodes_held(&[slot])?;
-        if container == self.container(slot) {
+        // A border node lies where its node lies, and goes into a container only with it
+        // (ARCH-border-nodes-ride-sides, *Attachment*).
+        if container == self.container(slot) || self.is_border(slot) {
             return Ok(());
         }
         if container != CANVAS {
@@ -436,13 +439,22 @@ impl Graph {
     }
 
     /// Where the node in `slot` is drawn and hit among the nodes, the higher above the lower: every
-    /// node that is no container above every container, the others by their rank, and containers
-    /// by their order (ARCH-engine-edits-nested-graph).
-    pub(super) fn draw_key(&self, slot: u32) -> (bool, u32) {
-        if self.is_container(slot) {
-            (false, self.container_order[slot as usize])
+    /// node that is no container above every container, the others by their rank, each followed
+    /// directly by its border nodes by theirs, a border node of a container at the place of the
+    /// container's rank; and containers by their order (ARCH-engine-edits-nested-graph, *Draw
+    /// order of nodes*; ARCH-border-nodes-ride-sides, *Order*).
+    pub(super) fn draw_key(&self, slot: u32) -> (bool, u32, bool, u32) {
+        if let Some(place) = self.place_of(slot) {
+            (
+                true,
+                self.ranks[place.on as usize],
+                true,
+                self.ranks[slot as usize],
+            )
+        } else if self.is_container(slot) {
+            (false, self.container_order[slot as usize], false, 0)
         } else {
-            (true, self.ranks[slot as usize])
+            (true, self.ranks[slot as usize], false, 0)
         }
     }
 }

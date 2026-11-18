@@ -22,10 +22,14 @@ use super::{ContentInput, Field};
 pub struct NodeInput {
     #[tsify(type = "string")]
     pub id: Field<String>,
-    #[tsify(type = "number")]
-    pub x: Field<f64>,
-    #[tsify(type = "number")]
-    pub y: Field<f64>,
+    /// Its position, which a border node has none of: absent where left out or null, and none
+    /// where of another type (ARCH-border-nodes-ride-sides).
+    #[tsify(type = "number", optional)]
+    #[serde(default = "Field::absent")]
+    pub x: Field<Option<f64>>,
+    #[tsify(type = "number", optional)]
+    #[serde(default = "Field::absent")]
+    pub y: Field<Option<f64>>,
     #[tsify(type = "number")]
     pub width: Field<f64>,
     /// Its node shape; `api` fills in `rectangle` (REN-closed-set-of-node-shapes).
@@ -53,6 +57,19 @@ pub struct NodeInput {
     /// Its regions, each a container of its own below its content; none where it has none.
     #[tsify(type = "RegionInput[]", optional)]
     pub regions: Field<Option<Vec<RegionInput>>>,
+    /// The identifier of the node it is attached to as a border node, which `api` resolves to a
+    /// slot, in place of `x`, `y`, and `container`; none where it is no border node
+    /// (ARCH-border-nodes-ride-sides).
+    #[tsify(type = "string", optional)]
+    pub attached_to: Field<Option<String>>,
+    /// The side of that node's box a border node sits on.
+    #[tsify(type = "Side", optional)]
+    #[serde(default = "Field::absent")]
+    pub side: Field<Option<Side>>,
+    /// Its offset along that side from the side's start, in world units.
+    #[tsify(type = "number", optional)]
+    #[serde(default = "Field::absent")]
+    pub offset: Field<Option<f64>>,
     #[tsify(type = "NodeContent")]
     pub content: Field<ContentInput>,
 }
@@ -208,6 +225,11 @@ pub enum Side {
     Right,
     Bottom,
     Left,
+}
+
+impl Side {
+    /// Every side, in the order of the codes of `SideCode`.
+    pub const ALL: [Self; 4] = [Self::Top, Self::Right, Self::Bottom, Self::Left];
 }
 
 impl From<graph_side::Side> for Side {

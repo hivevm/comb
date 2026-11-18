@@ -41,6 +41,7 @@ import init, {
   type NodeShape,
   type NumberError,
   type ResizeHandle,
+  type Side,
   type SlotError,
   type TextRole,
 } from "../../wasm/engine.js";
@@ -245,6 +246,17 @@ export interface FontMetrics {
   lineHeight: number;
 }
 
+/** The sides of a box by the codes of `SideCode`, as `borderOf` and `slide` hand them back. */
+const BORDER_SIDES: readonly Side[] = ["top", "right", "bottom", "left"];
+
+/** Where a border node sits (ARCH-border-nodes-ride-sides): the slot of the node it rides, its
+ *  side, and its offset along that side. */
+export interface BorderPlace {
+  readonly on: number;
+  readonly side: Side;
+  readonly offset: number;
+}
+
 /** The node slots and the edge slots a removal takes along. */
 export interface Removal {
   readonly nodes: Uint32Array;
@@ -259,7 +271,17 @@ export interface Bridge {
    *  `container`, which `api` resolved, at its position relative to it, or onto the canvas for
    *  none, drawn and hit above every other node of its kind, and returns the slot the engine chose
    *  for it (ARCH-engine-edits-nested-graph). Throws a `GraphDataProblem`, the graph as it was. */
-  addNode(node: NodeSnapshot, container?: number): number;
+  addNode(node: NodeSnapshot, container?: number, attached?: number): number;
+  /** Where the border node in `slot` sits: the slot of the node it rides, its side, and its
+   *  offset as the engine keeps it; none for a slot that holds no border node
+   *  (ARCH-border-nodes-ride-sides). */
+  borderOf(slot: number): BorderPlace | undefined;
+  /** Slides the border node in `slot` to the point of its node's outline nearest the world point
+   *  `(x, y)`, onto the side of the box nearest it, and returns its side and offset
+   *  (ARCH-border-nodes-ride-sides, *Drag*). Throws a `SlotError` where `slot` holds no border
+   *  node, and a `NumberError` `nonFinitePoint` for a point that is not finite, before anything
+   *  moves. */
+  slide(slot: number, x: number, y: number): { side: Side; offset: number };
   /** The height, in world units, the content of `node` lays out to at its width, checked as
    *  `addNode` checks a node and added to nothing; `api` names it `""` and puts it at the origin
    *  (API-host-asks-content-height). Throws a `GraphDataProblem`. */
@@ -636,6 +658,12 @@ function nodeValues(nodes: NodeColumns) {
     r.named,
     r.names,
     r.nameBounds,
+    nodes.hasAttached,
+    nodes.attached,
+    nodes.side,
+    nodes.offset,
+    nodes.beside,
+    nodes.attachedMissing,
     c.rowBounds,
     c.elementBounds,
     c.kinds,
@@ -800,12 +828,28 @@ function regionCalls(engine: Engine) {
   };
 }
 
+/** The calls of border nodes (ARCH-border-nodes-ride-sides), each side by its name. */
+function borderCalls(engine: Engine): Pick<Bridge, "borderOf" | "slide"> {
+  return {
+    borderOf(slot) {
+      const [on, side, offset] = engine.borderOf(slot);
+      if (on === undefined) return undefined;
+      return { on, side: BORDER_SIDES[side!]!, offset: offset! };
+    },
+    slide(slot, x, y) {
+      const [side, offset] = engine.slide(slot, x, y);
+      return { side: BORDER_SIDES[side!]!, offset: offset! };
+    },
+  };
+}
+
 function engineBridge(memory: WebAssembly.Memory): Bridge {
   const engine = newEngine();
   const { u32, f32 } = viewsOn(memory);
   return {
     loadGraph: (snapshot) => load(engine, snapshot),
-    addNode: (node, container) => engine.addNode(node, container),
+    addNode: (node, container, attached) => engine.addNode(node, container, attached),
+    ...borderCalls(engine),
     heightOf: (node) => engine.heightOf(node),
     ...regionCalls(engine),
     content: (slot) => engine.content(slot),

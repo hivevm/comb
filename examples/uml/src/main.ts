@@ -8,6 +8,7 @@ import {
   type GraphData,
   type NodeContent,
   type NodeShape,
+  type PlacedNodeData,
   type Proposal,
 } from "comb";
 import engineUrl from "comb/engine.wasm?url";
@@ -50,8 +51,9 @@ export interface UmlLoadReport {
 export interface UmlHooks {
   comb: Comb;
   loadReport: Promise<UmlLoadReport>;
-  /** The example's copy of the diagram's graph. */
-  exampleGraph: () => GraphData;
+  /** The example's copy of the diagram's graph, whose diagrams place every node and attach none
+   *  as a border node. */
+  exampleGraph: () => { nodes: PlacedNodeData[]; edges: GraphData["edges"] };
   /** The kind of each relationship of the diagram, by its edge's identifier. */
   edgeKinds: () => Record<string, RelationshipKind>;
   /** The kind of each node the example keeps a classifier or a state of, by its identifier. */
@@ -236,7 +238,8 @@ comb.onSelectionChange((selection) => sidebar.show(selection));
 window.uml = {
   comb,
   loadReport: load(),
-  exampleGraph: () => structuredClone(diagram.graph),
+  exampleGraph: () =>
+    structuredClone(diagram.graph) as { nodes: PlacedNodeData[]; edges: GraphData["edges"] },
   edgeKinds: () => Object.fromEntries(diagram.kinds),
   nodeKinds: () =>
     Object.fromEntries(

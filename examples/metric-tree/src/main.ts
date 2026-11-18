@@ -438,9 +438,13 @@ const MIRROR: { [K in GraphChange["kind"]]: (change: Extract<GraphChange, { kind
       fields.delete(id);
       if (node && id === selected) showNode(node.content, undefined);
     },
-    nodeMoved: ({ id, x, y, container }) => {
-      const node = nodeOf(id);
+    nodeMoved: (change) => {
+      const node = nodeOf(change.id);
       if (!node) return;
+      // A border node keeps its side and offset (ARCH-border-nodes-ride-sides).
+      if ("side" in change)
+        return void Object.assign(node, { side: change.side, offset: change.offset });
+      const { x, y, container } = change;
       Object.assign(node, { x, y });
       if (container === null) delete node.container;
       else node.container = container;
