@@ -144,6 +144,7 @@ is the table a session reads.
 | [DEV-container-adds-bun-and-rust](DEV-container-adds-bun-and-rust.md) | The Dev Container builds from a Dockerfile that adds Bun, and takes Rust as a locked Feature | `.devcontainer/`, `.vscode/launch.json`, `.vscode/extensions.json`, the CI job that sets up the toolchain, `scripts/check-container.sh`, `scripts/test-check-container.sh`, and `.github/workflows/devcontainer.yml` | 🟢 accepted |
 | [DEV-gh-login-outlives-rebuild](DEV-gh-login-outlives-rebuild.md) | The Dev Container keeps its GitHub login in the host's `~/.config/gh` | the mounts, `initializeCommand`, and `postStartCommand` of `.devcontainer/devcontainer.json`, `scripts/check-devcontainer.sh`, and `scripts/test-check-devcontainer.sh` | 🟢 accepted |
 | [DEV-implementer-and-fresh-reviewer](DEV-implementer-and-fresh-reviewer.md) | One agent implements, a fresh session reviews, and the protected parts stay with the maintainer | every change and every agent session in this repository, `docs/adr/`, `docs/SPECIFICATION.md`, `.github/CODEOWNERS`, and the tickets under `docs/plan/` | 🟢 accepted |
+| [DEV-tickets-integrate-on-feat-branch](DEV-tickets-integrate-on-feat-branch.md) | The tickets of a spec the human assigns to a `feat/` branch are claimed and worked there, one after another, their blockers closed on that branch | the frontier and the claim of a ticket whose spec the human assigned to a `feat/` branch, its ticket branch, and its integration on that branch | 🟢 accepted |
 
 ### Superseded and rejected
 
