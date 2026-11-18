@@ -196,9 +196,22 @@ export class Scene {
   constructor(readonly app: Application) {
     const canvas = app.renderer.name === "canvas";
     this.edges = canvas ? new EdgeFill() : new EdgesContainer();
-    const { edges, particles, nodes, labels } = this;
-    this.moving = new MovingLayer(canvas, { edges, particles, nodes, labels });
-    this.containers.addChild(this.containerParticles, this.containerNodes);
+    const { edges, particles, nodes, labels, containerParticles, containerNodes } = this;
+    this.moving = new MovingLayer(canvas, {
+      edges,
+      particles,
+      nodes,
+      labels,
+      containerParticles,
+      containerNodes,
+    });
+    // The moving particles of containers directly above the query's
+    // (REN-moving-layer-moves-content).
+    this.containers.addChild(
+      this.containerParticles,
+      this.moving.containerParticles,
+      this.containerNodes,
+    );
     this.edges.label = "edges";
     this.moving.edges.label = "movingEdges";
     this.particles.label = "particles";
@@ -326,6 +339,7 @@ export class Scene {
       return (
         views.some((view) => view.nodeId === node) ||
         this.containerParticles.draws(node) ||
+        this.moving.containerParticles.draws(node) ||
         this.particles.draws(node) ||
         this.moving.particles.draws(node)
       );
@@ -382,6 +396,7 @@ export class Scene {
       layers: this.world.children.map((layer) => layer.label),
       nodes: [
         ...this.containerParticles.drawn().map(layered("containers")),
+        ...this.moving.containerParticles.drawn().map(layered("containers")),
         ...this.inspectedViews(this.containerNodes, "containers"),
         ...this.inspectedViews(this.nodes, "nodes"),
         ...this.particles.drawn().map(layered("nodes")),

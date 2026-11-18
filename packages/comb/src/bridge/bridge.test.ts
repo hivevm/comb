@@ -13,6 +13,7 @@ import {
   type NodeSnapshot,
   type PlainEdgePatch,
   type PlainPatch,
+  type Removal,
 } from ".";
 import { listsOf, nodeSnapshotOf, patchOf, snapshotOf } from "../api/snapshot";
 import {
@@ -1557,11 +1558,14 @@ describe("bridge additions", () => {
   });
 });
 
+/** The node slots and the edge slots of `removal`, as plain lists. */
+const slotsOf = ({ nodes, edges }: Removal) => [[...nodes], [...edges]];
+
 describe("bridge removals", () => {
   test("a removed node takes its edges along, and its slot is the next addition's", () => {
     // Verifies: ARCH-engine-edits-graph-in-place
     bridge.loadGraph(row(4));
-    expect([...bridge.removeNodes(new Uint32Array([1]))]).toEqual([0, 1]);
+    expect(slotsOf(bridge.removeNodes(Uint32Array.of(1)))).toEqual([[1], [0, 1]]);
     expect([...bridge.query(everywhere, "near", 1, 0).nodes]).toEqual([0, 2, 3]);
     expect([...bridge.drawnEdges().slots]).toEqual([2]);
     bridge.removeEdges(new Uint32Array([2]));

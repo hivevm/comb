@@ -86,11 +86,20 @@ export interface EdgePatch {
   label?: EdgeLabelData | null;
 }
 
-/** A node as the store keeps it: its identifier, its width, and its node shape, which `api`
- *  fills in. Its position, its content, and its height are the engine's
- *  (ARCH-graph-in-zustand-store, REN-node-content-in-rows); a
- *  new object for every change of its content, so that a view tells the change by identity. */
-export type NodeView = Pick<NodeData, "id" | "width" | "shape">;
+/** A node as the store keeps it: its identifier, its width, its node shape, which `api` fills in,
+ *  the identifier of its container and its mark as a container, each where the node has one
+ *  (API-edits-report-nested-changes). Its position, its content, and its height are the engine's
+ *  (ARCH-graph-in-zustand-store, REN-node-content-in-rows); a new object for every change of its
+ *  content, so that a view tells the change by identity. */
+export type NodeView = Pick<NodeData, "id" | "width" | "shape" | "container" | "isContainer">;
+
+/** What the store keeps of `node`: no key for a container or a mark it has none of. */
+export function nodeViewOf({ id, width, shape, container, isContainer }: NodeView): NodeView {
+  const view: NodeView = { id, width, shape };
+  if (container !== undefined) view.container = container;
+  if (isContainer !== undefined) view.isContainer = isContainer;
+  return view;
+}
 
 /** A graph as the store takes it once the bridge took it: of each node what the store keeps. */
 export interface KeptGraph {
@@ -296,7 +305,7 @@ function loadedFrom(state: GraphView, graph: KeptGraph, idUnits: number): Partia
   const edgeSlots = new Map<string, number>();
   for (let slot = 0; slot < graph.edges.length; slot++) edgeSlots.set(graph.edges[slot]!.id, slot);
   return {
-    nodes: graph.nodes.map(({ id, width, shape }) => ({ id, width, shape })),
+    nodes: graph.nodes.map(nodeViewOf),
     slots,
     edgeSlots,
     edges: graph.edges,
@@ -444,10 +453,11 @@ export function createGraphStore() {
     movesVersion: 0,
     pointerVersion: 0,
     load: (graph, idUnits) => set((state) => loadedFrom(state, graph, idUnits)),
-    addNode: ({ id, width, shape }, slot) =>
+    addNode: (node, slot) =>
       set((state) => {
+        const { id } = node;
         const nodes = state.nodes.slice();
-        nodes[slot] = { id, width, shape };
+        nodes[slot] = nodeViewOf(node);
         return {
           nodes,
           slots: new Map(state.slots).set(id, slot),

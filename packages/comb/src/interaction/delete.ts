@@ -1,7 +1,7 @@
-// The user deletes the selection (G-4, API-edits-reported-as-typed-changes): with the canvas
-// focused, Delete or Backspace hands what would go, a selected node with every edge at it or a
-// selected edge alone, to the deletion `api` gives, which asks the host application's `canDelete`
-// and records the removal as the user's (API-edits-reported-as-typed-changes).
+// The user deletes the selection (G-4, API-edits-report-nested-changes): with the canvas focused,
+// Delete or Backspace hands what would go, a selected node with everything it holds and every edge
+// at any of them, or a selected edge alone, to the deletion `api` gives, which asks the host
+// application's `canDelete` and records the removal as the user's.
 import { refuseIfLost, type Bridge } from "../bridge";
 import type { GraphStore } from "../store";
 import { untilLost } from "./guard";
@@ -20,17 +20,19 @@ export type Delete = (deletion: Deletion) => void;
 /** The keys that delete the selection. */
 const DELETE_KEYS = new Set(["Delete", "Backspace"]);
 
-/** What deleting the selection removes: a node with every edge at it, named by the engine
- *  before anything is removed (ARCH-engine-edits-graph-in-place), or an edge alone; none for no
- *  selection or one the
- *  graph no longer holds. */
+/** What deleting the selection removes: a node with everything it holds and every edge at any of
+ *  them, named by the engine before anything is removed (ARCH-engine-edits-nested-graph), or an
+ *  edge alone; none for no selection or one the graph no longer holds. */
 function doomed(store: GraphStore, bridge: Bridge): Deletion | undefined {
-  const { selection, slots, edgeSlots, edges } = store.getState();
+  const { selection, slots, edgeSlots, nodes, edges } = store.getState();
   if (selection?.kind === "node") {
     const slot = slots.get(selection.id);
     if (slot === undefined) return undefined;
-    const at = [...bridge.edgesAt(Uint32Array.of(slot))];
-    return { nodes: [selection.id], edges: at.map((edge) => edges[edge]!.id) };
+    const removal = bridge.removalOf(Uint32Array.of(slot));
+    return {
+      nodes: [...removal.nodes].map((node) => nodes[node]!.id),
+      edges: [...removal.edges].map((edge) => edges[edge]!.id),
+    };
   }
   if (selection?.kind === "edge" && edgeSlots.has(selection.id))
     return { nodes: [], edges: [selection.id] };

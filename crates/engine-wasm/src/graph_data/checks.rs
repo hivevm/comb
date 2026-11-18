@@ -615,6 +615,8 @@ mod tests {
                     y: 0.0.into(),
                     width: 1.0.into(),
                     shape: crate::NodeShape::Rectangle.into(),
+                    container: None.into(),
+                    is_container: None.into(),
                     content: titled("x"),
                 })
                 .collect(),

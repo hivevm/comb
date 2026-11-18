@@ -238,15 +238,21 @@ export interface FontMetrics {
   lineHeight: number;
 }
 
+/** The node slots and the edge slots a removal takes along. */
+export interface Removal {
+  readonly nodes: Uint32Array;
+  readonly edges: Uint32Array;
+}
+
 export interface Bridge {
   /** Replaces the graph; node slot `i` is the batch's node `i`, edge slot `i` its edge `i`.
    *  Throws a `GraphDataProblem`. */
   loadGraph(batch: GraphSnapshot): number;
-  /** Checks `node` as a load checks a node and adds it, drawn and hit above every other node, and
-   *  returns the slot the engine chose for it (ARCH-engine-edits-graph-in-place). Throws a
-   *  `GraphDataProblem`, the graph
-   *  as it was. */
-  addNode(node: NodeSnapshot): number;
+  /** Checks `node` as a load checks a node and adds it into the container in the slot
+   *  `container`, which `api` resolved, at its position relative to it, or onto the canvas for
+   *  none, drawn and hit above every other node of its kind, and returns the slot the engine chose
+   *  for it (ARCH-engine-edits-nested-graph). Throws a `GraphDataProblem`, the graph as it was. */
+  addNode(node: NodeSnapshot, container?: number): number;
   /** The height, in world units, the content of `node` lays out to at its width, checked as
    *  `addNode` checks a node and added to nothing; `api` names it `""` and puts it at the origin
    *  (API-host-asks-content-height). Throws a `GraphDataProblem`. */
@@ -295,11 +301,15 @@ export interface Bridge {
   /** Checks how many nodes and edges a graph holds, before any is copied. Throws a
    *  `GraphDataProblem`. */
   checkGraphSize(nodes: number, edges: number): void;
-  /** Removes the nodes in `slots` and every edge at them, and returns the slots of those edges in
-   *  ascending order (ARCH-engine-edits-graph-in-place). Throws a `SlotError`, a mistake of the
-   *  shell's, never one of
-   *  graph data, the graph as it was. */
-  removeNodes(slots: Uint32Array): Uint32Array;
+  /** Removes the nodes in `slots`, everything they hold at every depth, and every edge at any of
+   *  them, and returns the slots of what it removed as `removalOf` names them
+   *  (ARCH-engine-edits-nested-graph). Throws a `SlotError`, a mistake of the shell's, never one
+   *  of graph data, the graph as it was. */
+  removeNodes(slots: Uint32Array): Removal;
+  /** What a removal of the nodes in `slots` would take along, named before anything is removed:
+   *  the nodes, each followed by what it holds, depth first, each once, and the edges at any of
+   *  them in ascending order (ARCH-engine-edits-nested-graph). Throws a `SlotError`. */
+  removalOf(slots: Uint32Array): Removal;
   /** Records the half width and half height of the pill of the label of the edge in `slot`, in
    *  world units, as the labels layer draws it; a label not measured is not hit
    *  (REN-node-content-in-rows).
@@ -691,12 +701,19 @@ function meshOf(engine: Engine, views: ReturnType<typeof viewsOn>, of: MeshOf): 
   };
 }
 
+/** The node slots and the edge slots of a removal as the engine hands them over, the count of the
+ *  nodes first, split into the two lists. */
+function removedOf(crossed: Uint32Array): Removal {
+  const count = crossed[0]!;
+  return { nodes: crossed.subarray(1, 1 + count), edges: crossed.subarray(1 + count) };
+}
+
 function engineBridge(memory: WebAssembly.Memory): Bridge {
   const engine = newEngine();
   const { u32, f32 } = viewsOn(memory);
   return {
     loadGraph: (snapshot) => load(engine, snapshot),
-    addNode: (node) => engine.addNode(node),
+    addNode: (node, container) => engine.addNode(node, container),
     heightOf: (node) => engine.heightOf(node),
     updateNode: (slot, id, patch) => engine.updateNode(slot, id, patch),
     content: (slot) => engine.content(slot),
@@ -714,7 +731,8 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
     contentBudget,
     checkContentBudget,
     checkGraphSize,
-    removeNodes: (slots) => engine.removeNodes(slots),
+    removeNodes: (slots) => removedOf(engine.removeNodes(slots)),
+    removalOf: (slots) => removedOf(engine.removalOf(slots)),
     removeEdges: (slots) => engine.removeEdges(slots),
     edgesAt: (slots) => engine.edgesAt(slots),
     setLabelSize: (slot, halfWidth, halfHeight) => engine.setLabelSize(slot, halfWidth, halfHeight),

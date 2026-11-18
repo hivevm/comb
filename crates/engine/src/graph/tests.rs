@@ -502,7 +502,7 @@ fn queries_hits_and_lists_find_what_a_scan_finds_after_additions_removals_and_mo
                     .filter(|&e| graph.holds_edge(e))
                     .collect();
                 let named = graph.edges_at(&removed[..count]).unwrap();
-                let edges = graph.remove_nodes(&removed[..count]).unwrap();
+                let (_, edges) = graph.remove_nodes(&removed[..count]).unwrap();
                 assert_eq!(named, edges, "edges named before the removal");
                 let gone: Vec<u32> = before
                     .into_iter()
@@ -542,7 +542,7 @@ fn a_slot_that_holds_nothing_refuses_a_removal_and_a_move_which_change_nothing()
     // Verifies: ARCH-engine-edits-graph-in-place
     let mut rng = Lcg(3);
     let mut graph = random_graph(&mut rng, 4, 3);
-    let removed = graph.remove_nodes(&[3]).unwrap();
+    let (_, removed) = graph.remove_nodes(&[3]).unwrap();
     graph.remove_edges(&[2]).ok();
     let positions = graph.positions().to_vec();
     let (free_nodes, free_edges) = (
@@ -739,6 +739,294 @@ fn in_random_trees_of_containers_world_positions_are_sums_and_queries_and_hits_m
     }
 }
 
+/// A model of a nested graph the property test below edits beside the engine: per node slot, its
+/// container, its mark, its world position, its size, and its rank, `None` at a free slot; and
+/// the edges in use by their ends.
+struct NestedModel {
+    nodes: Vec<Option<ModelNode>>,
+    edges: Vec<Option<(u32, u32)>>,
+    next_rank: u32,
+}
+
+#[derive(Clone, Copy)]
+struct ModelNode {
+    container: u32,
+    is_container: bool,
+    at: [f32; 2],
+    size: [f32; 2],
+    rank: u32,
+}
+
+impl NestedModel {
+    /// The nodes in use, by slot.
+    fn in_use(&self) -> impl Iterator<Item = (u32, ModelNode)> + '_ {
+        (0..self.nodes.len() as u32).filter_map(|s| self.nodes[s as usize].map(|n| (s, n)))
+    }
+
+    /// `slot` and every node it holds, at every depth, each once.
+    fn subtree(&self, slot: u32) -> Vec<u32> {
+        let mut found = vec![slot];
+        let mut i = 0;
+        while i < found.len() {
+            let parent = found[i];
+            found.extend(
+                self.in_use()
+                    .filter(|(_, n)| n.container == parent)
+                    .map(|(s, _)| s),
+            );
+            i += 1;
+        }
+        found
+    }
+
+    fn bounds(node: &ModelNode) -> Rect {
+        let [x, y] = node.at.map(f64::from);
+        let [w, h] = node.size.map(f64::from);
+        Rect::of_node(x, y, w, h)
+    }
+
+    /// The containers in the order they are drawn: each after its own container, siblings by rank.
+    fn drawn_containers(&self) -> Vec<u32> {
+        fn visit(model: &NestedModel, parent: u32, out: &mut Vec<u32>) {
+            let mut children: Vec<(u32, ModelNode)> = model
+                .in_use()
+                .filter(|(_, n)| n.is_container && n.container == parent)
+                .collect();
+            children.sort_by_key(|(_, n)| n.rank);
+            for (slot, _) in children {
+                out.push(slot);
+                visit(model, slot, out);
+            }
+        }
+        let mut out = Vec::new();
+        visit(self, CANVAS, &mut out);
+        out
+    }
+
+    /// What a query of `rect` finds: the containers in their order, the other nodes by rank.
+    fn found(&self, rect: &Rect) -> (Vec<u32>, Vec<u32>) {
+        let meets = |s: &u32| Self::bounds(&self.nodes[*s as usize].unwrap()).meets(rect);
+        let containers = self.drawn_containers().into_iter().filter(meets).collect();
+        let mut nodes: Vec<(u32, ModelNode)> = self
+            .in_use()
+            .filter(|(s, n)| !n.is_container && meets(s))
+            .collect();
+        nodes.sort_by_key(|(_, n)| n.rank);
+        (containers, nodes.into_iter().map(|(s, _)| s).collect())
+    }
+}
+
+impl NestedModel {
+    /// A random tree of `count` nodes with 30 random edges among them, loaded, and its model.
+    fn loaded(rng: &mut Lcg, count: usize) -> (Self, Graph) {
+        let (nesting, relative, sizes) = random_tree(rng, count);
+        let world: Vec<f32> = nesting.world(&relative).iter().map(|&v| v as f32).collect();
+        let specs: Vec<EdgeSpec> = (0..30)
+            .map(|_| EdgeSpec {
+                sides: Sides::default(),
+                source: rng.below(count),
+                target: rng.below(count),
+                label: None,
+                style: EdgeStyle::unstyled(),
+            })
+            .collect();
+        let node = |i: usize| ModelNode {
+            container: nesting.containers[i],
+            is_container: nesting.is_container[i],
+            at: [world[i * 2], world[i * 2 + 1]],
+            size: [sizes[i * 2], sizes[i * 2 + 1]],
+            rank: i as u32,
+        };
+        let model = Self {
+            nodes: (0..count).map(|i| Some(node(i))).collect(),
+            edges: specs.iter().map(|e| Some((e.source, e.target))).collect(),
+            next_rank: count as u32,
+        };
+        let graph = Graph::nested(world, sizes, specs, nesting).unwrap();
+        (model, graph)
+    }
+
+    /// Moves the node in `slot` by a random delta in `graph` and here, with what it holds; whether
+    /// it held anything.
+    fn moved(&mut self, graph: &mut Graph, slot: u32, rng: &mut Lcg) -> bool {
+        let [dx, dy] = [
+            rng.range(-300.0, 300.0) as f32,
+            rng.range(-300.0, 300.0) as f32,
+        ];
+        graph.translate(&[slot], dx, dy).unwrap();
+        let moved = self.subtree(slot);
+        for &s in &moved {
+            let node = self.nodes[s as usize].as_mut().unwrap();
+            node.at = [node.at[0] + dx, node.at[1] + dy];
+        }
+        moved.len() > 1
+    }
+
+    /// The edges in use at any of `nodes`, in ascending order.
+    fn edges_at(&self, nodes: &[u32]) -> Vec<u32> {
+        let at = |&(a, b): &(u32, u32)| nodes.contains(&a) || nodes.contains(&b);
+        (0..self.edges.len() as u32)
+            .filter(|&e| self.edges[e as usize].as_ref().is_some_and(at))
+            .collect()
+    }
+
+    /// Removes the node in `slot` from `graph` and here, with what it holds and the edges at any of
+    /// it, asserting that the engine names exactly those; whether it held anything.
+    fn removed(&mut self, graph: &mut Graph, slot: u32) -> bool {
+        let gone = self.subtree(slot);
+        let edges = self.edges_at(&gone);
+        let (nodes, freed) = graph.remove_nodes(&[slot]).unwrap();
+        let mut sorted = nodes.clone();
+        sorted.sort_unstable();
+        let mut expected = gone.clone();
+        expected.sort_unstable();
+        assert_eq!((nodes[0], sorted), (slot, expected), "nodes removed");
+        assert_eq!(freed, edges, "edges removed");
+        for &s in &gone {
+            self.nodes[s as usize] = None;
+        }
+        for e in edges {
+            self.edges[e as usize] = None;
+        }
+        gone.len() > 1
+    }
+
+    /// Adds a random node to `graph` and here, into a container now and then, a container itself
+    /// now and then; whether it went into a container.
+    fn added(&mut self, graph: &mut Graph, rng: &mut Lcg) -> bool {
+        let containers: Vec<u32> = self
+            .in_use()
+            .filter(|(_, n)| n.is_container)
+            .map(|(s, _)| s)
+            .collect();
+        let container = if !containers.is_empty() && rng.next() < 0.6 {
+            containers[rng.below(containers.len()) as usize]
+        } else {
+            CANVAS
+        };
+        let is_container = rng.next() < 0.3;
+        let [x, y, w, h] = random_node(rng);
+        let size = [w * 2.0, h * 2.0];
+        let slot = graph
+            .add_node_in(container, is_container, [x, y, size[0], size[1]])
+            .unwrap();
+        if self.nodes.len() <= slot as usize {
+            self.nodes.resize(slot as usize + 1, None);
+        }
+        self.nodes[slot as usize] = Some(ModelNode {
+            container,
+            is_container,
+            at: [x, y],
+            size,
+            rank: self.next_rank,
+        });
+        self.next_rank += 1;
+        container != CANVAS
+    }
+
+    /// Asserts that every node in use lies where the model has it, in its container, with the
+    /// edges at it, and that queries and hits find what a scan of the model finds; returns how
+    /// many hits found a node.
+    fn assert_matches(&self, graph: &mut Graph, rng: &mut Lcg) -> usize {
+        let mut hits = 0;
+        for (slot, node) in self.in_use() {
+            let i = slot as usize * 2;
+            let at = [graph.positions()[i], graph.positions()[i + 1]];
+            assert_eq!(at, node.at, "node {slot}");
+            assert_eq!(graph.container(slot), node.container, "node {slot}");
+            assert_eq!(graph.edges_at(&[slot]).unwrap(), self.edges_at(&[slot]));
+        }
+        let mut out = Visible::default();
+        for _ in 0..5 {
+            let rect = random_rect(rng);
+            graph.query(&rect, Level::Near, 4.0, 0.0, &mut out);
+            let (containers, nodes) = self.found(&rect);
+            assert_eq!(
+                (&out.containers, &out.nodes),
+                (&containers, &nodes),
+                "{rect:?}"
+            );
+            assert_eq!(
+                out.edges,
+                self.edges_meeting(graph, &rect),
+                "edges in {rect:?}"
+            );
+            let p = Point::new(rng.range(-2500.0, 2500.0), rng.range(-2500.0, 2500.0));
+            let top = self.top_at(p);
+            assert_eq!(graph.node_at(p), top, "node at {p:?}");
+            hits += usize::from(top.is_some());
+            // A node that is no container is hit before any edge or container.
+            if let Some(slot) = top.filter(|&s| !self.nodes[s as usize].unwrap().is_container) {
+                let hit = graph.hit_at(p, 1.0, Level::Middle, false);
+                assert_eq!(hit, Some(Target::Node(slot)), "hit at {p:?}");
+            }
+        }
+        hits
+    }
+
+    /// The edges in use whose path, between their ends where the model has them, meets `rect`, in
+    /// slot order.
+    fn edges_meeting(&self, graph: &Graph, rect: &Rect) -> Vec<u32> {
+        let bounds = |s: u32| Self::bounds(&self.nodes[s as usize].unwrap());
+        (0..self.edges.len() as u32)
+            .filter(|&e| self.edges[e as usize].is_some())
+            .filter(|&e| {
+                let spec = graph.edges[e as usize];
+                let path = path_of(&spec, &bounds(spec.source), &bounds(spec.target));
+                path.bounds().meets(rect)
+            })
+            .collect()
+    }
+
+    /// The node drawn on top at `p`: of the nodes that hold it, the one that is no container of the
+    /// highest rank, else the last container in their order.
+    fn top_at(&self, p: Point) -> Option<u32> {
+        let holds = |s: &u32| Self::bounds(&self.nodes[*s as usize].unwrap()).contains(p);
+        let node = self
+            .in_use()
+            .filter(|(s, n)| !n.is_container && holds(s))
+            .max_by_key(|(_, n)| n.rank)
+            .map(|(s, _)| s);
+        node.or_else(|| self.drawn_containers().into_iter().rev().find(holds))
+    }
+}
+
+#[test]
+fn queries_and_lists_match_a_scan_after_containers_are_added_to_removed_and_moved() {
+    // Verifies: ARCH-engine-edits-nested-graph, G-14
+    // Per clause, the cases it settles: a container removed with what it holds, a container moved
+    // with what it holds, a node added into a container, and a hit on a node.
+    let mut cases = [0; 4];
+    for seed in 1..=30 {
+        let mut rng = Lcg(seed);
+        let (mut model, mut graph) = NestedModel::loaded(&mut rng, 40);
+        for _ in 0..60 {
+            let alive: Vec<u32> = model.in_use().map(|(s, _)| s).collect();
+            let roll = rng.next();
+            let (case, held) = if alive.is_empty() || roll >= 0.6 {
+                (2, model.added(&mut graph, &mut rng))
+            } else {
+                let slot = alive[rng.below(alive.len()) as usize];
+                if roll < 0.4 {
+                    (1, model.moved(&mut graph, slot, &mut rng))
+                } else {
+                    (0, model.removed(&mut graph, slot))
+                }
+            };
+            cases[case] += usize::from(held);
+            cases[3] += model.assert_matches(&mut graph, &mut rng);
+        }
+    }
+    for (clause, count, floor) in [
+        ("containers removed with what they hold", cases[0], 30),
+        ("containers moved with what they hold", cases[1], 60),
+        ("nodes added into a container", cases[2], 60),
+        ("hits on a node", cases[3], 300),
+    ] {
+        assert!(count >= floor, "{clause}: {count}");
+    }
+}
+
 /// A container in slot 0 at (100, 200), 600 × 300, holding nodes 1 and 2 at (10, 20) and
 /// (300, 20) within it, 100 × 50, and edge 0 from node 1 to node 2.
 fn container_of_two() -> Graph {
@@ -874,8 +1162,11 @@ fn a_nesting_the_check_refuses_refuses_the_graph() {
 fn a_freed_container_s_slot_taken_again_is_no_container_and_holds_nothing() {
     // Verifies: ARCH-engine-edits-nested-graph
     // A free slot holds nothing: the node added into it lies on the canvas, no container.
+    // The removal of the container frees what it holds after it, so slot 0 is taken last.
     let mut graph = container_of_two();
     graph.remove_nodes(&[0]).unwrap();
+    assert_eq!(graph.add_node(2000.0, 0.0, 10.0, 10.0), Ok(2));
+    assert_eq!(graph.add_node(2000.0, 0.0, 10.0, 10.0), Ok(1));
     assert_eq!(graph.add_node(0.0, 0.0, 10.0, 10.0), Ok(0));
     assert!(!graph.is_container(0) && graph.held(0).is_empty());
     assert_eq!(graph.container(0), CANVAS);
@@ -888,4 +1179,117 @@ fn a_freed_container_s_slot_taken_again_is_no_container_and_holds_nothing() {
         &mut out,
     );
     assert_eq!((out.containers, out.nodes), (vec![], vec![0]));
+}
+
+/// `container_of_two` with container 3 inside container 0 at (10, 100) within it, 200 × 100,
+/// holding node 4 at (5, 5) within it, 50 × 20; edge 1 from node 4 to node 1, and node 5 on the
+/// canvas at (0, 0) with edge 2 from node 5 to node 2.
+fn nested_three() -> Graph {
+    let mut graph = container_of_two();
+    let inner = graph
+        .add_node_in(0, true, [110.0, 300.0, 200.0, 100.0])
+        .unwrap();
+    let held = graph
+        .add_node_in(inner, false, [115.0, 305.0, 50.0, 20.0])
+        .unwrap();
+    let outside = graph.add_node(0.0, 0.0, 50.0, 20.0).unwrap();
+    assert_eq!((inner, held, outside), (3, 4, 5));
+    let edge = |source, target| EdgeSpec {
+        sides: Sides::default(),
+        source,
+        target,
+        label: None,
+        style: EdgeStyle::unstyled(),
+    };
+    assert_eq!(graph.add_edge(edge(4, 1)), Ok(1));
+    assert_eq!(graph.add_edge(edge(5, 2)), Ok(2));
+    graph
+}
+
+/// What a query of the whole world finds: containers, other nodes, and edges.
+fn found(graph: &mut Graph) -> (Vec<u32>, Vec<u32>, Vec<u32>) {
+    let mut out = Visible::default();
+    let all = Rect::new(-10_000.0, -10_000.0, 10_000.0, 10_000.0);
+    graph.query(&all, Level::Near, 1.0, 0.0, &mut out);
+    (out.containers, out.nodes, out.edges)
+}
+
+#[test]
+fn a_node_added_into_a_container_lies_in_it_and_a_node_that_is_no_container_refuses_it() {
+    // Verifies: ARCH-engine-edits-nested-graph
+    let mut graph = nested_three();
+    assert_eq!((graph.container(3), graph.container(4)), (0, 3));
+    assert_eq!(graph.held(0), [1, 2, 3]);
+    assert_eq!(graph.held(3), [4]);
+    assert!(graph.is_container(3) && !graph.is_container(4));
+    // A node that is no container, a free slot, and a slot beyond the graph refuse the node, and
+    // the graph stays as it was.
+    for slot in [1, 6, 99] {
+        assert_eq!(
+            graph.add_node_in(slot, false, [0.0, 0.0, 1.0, 1.0]),
+            Err(AddNodeError::NoContainer { slot })
+        );
+    }
+    assert_eq!(graph.nodes_in_use(), 6);
+    // The container added last comes after its sibling containers' content, the inner one after
+    // its own container.
+    let sibling = graph
+        .add_node_in(CANVAS, true, [-500.0, -500.0, 10.0, 10.0])
+        .unwrap();
+    assert_eq!(found(&mut graph).0, vec![0, 3, sibling]);
+}
+
+#[test]
+fn removing_a_container_removes_what_it_holds_at_every_depth_and_every_edge_at_any_of_it() {
+    // Verifies: ARCH-engine-edits-nested-graph
+    let mut graph = nested_three();
+    let named = graph.removal(&[0]).unwrap();
+    assert_eq!(named, (vec![0, 1, 2, 3, 4], vec![0, 1, 2]));
+    // Removing the inner container alone takes its node and that node's edge, nothing above.
+    assert_eq!(graph.removal(&[3]).unwrap(), (vec![3, 4], vec![1]));
+    // A node named with its container is named once, where the container lists it.
+    assert_eq!(graph.removal(&[4, 3]).unwrap(), (vec![4, 3], vec![1]));
+    assert_eq!(graph.remove_nodes(&[0]), Ok(named));
+    assert_eq!(found(&mut graph), (vec![], vec![5], vec![]));
+    assert_eq!(graph.nodes_in_use(), 1);
+    assert!(graph.incident[5].is_empty());
+    assert_eq!(graph.removal(&[0]), Err(SlotError::NoNode { slot: 0 }));
+}
+
+#[test]
+fn a_moved_container_moves_what_it_holds_at_every_depth_and_their_edges_in_the_same_call() {
+    // Verifies: ARCH-engine-edits-nested-graph, G-14
+    let mut graph = nested_three();
+    let before = graph.positions().to_vec();
+    let path = |graph: &Graph, edge: usize| graph.paths[edge];
+    let paths = [0, 1, 2].map(|e| path(&graph, e));
+    graph.translate(&[0], 30.0, -40.0).unwrap();
+    for slot in 0..6 {
+        let moved = slot != 5;
+        let delta = if moved { [30.0, -40.0] } else { [0.0, 0.0] };
+        for axis in 0..2 {
+            assert_eq!(
+                graph.positions()[slot * 2 + axis],
+                before[slot * 2 + axis] + delta[axis],
+                "node {slot}"
+            );
+        }
+    }
+    // The edges between held nodes followed; the edge to the node outside was placed anew.
+    assert_ne!(path(&graph, 0), paths[0]);
+    assert_ne!(path(&graph, 1), paths[1]);
+    assert_ne!(path(&graph, 2), paths[2]);
+    // A query finds the held nodes where they are now, and a container and a node it holds named
+    // together move once.
+    graph.translate(&[3, 4], 1.0, 1.0).unwrap();
+    assert_eq!(&graph.positions()[8..10], [146.0, 266.0]);
+    let mut out = Visible::default();
+    graph.query(
+        &Rect::new(145.0, 265.0, 147.0, 267.0),
+        Level::Near,
+        1.0,
+        0.0,
+        &mut out,
+    );
+    assert_eq!((out.containers, out.nodes), (vec![0, 3], vec![4]));
 }

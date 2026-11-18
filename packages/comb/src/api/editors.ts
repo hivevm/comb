@@ -203,8 +203,28 @@ function updateNode({ store, bridge, limits }: Editing, id: string, patch: unkno
   });
 }
 
-/** `addNode`: an identifier the map holds already refused; the engine chooses the slot the store
- *  keeps the node in (ARCH-engine-edits-graph-in-place). */
+/** What `invalidContainer` says a node's container has to be, as a load says it
+ *  (ARCH-engine-edits-nested-graph). */
+const A_NODE_OF_THE_GRAPH = "the identifier of a node of the graph";
+const A_MARKED_CONTAINER = "the identifier of a node marked isContainer";
+
+/** The slot of the container the node `snapshot` names in the map of `state`, or none on the
+ *  canvas; refuses a container the graph does not hold, or one that is no container, as a load
+ *  refuses it (API-edits-report-nested-changes). A container that is no string the bridge refuses
+ *  by its field. */
+function containerOf(snapshot: unknown, state: GraphState): number | undefined {
+  const { id, container } = snapshot as { id?: unknown; container?: unknown };
+  if (typeof container !== "string") return undefined;
+  const slot = state.slots.get(container);
+  if (slot !== undefined && state.nodes[slot]!.isContainer === true) return slot;
+  const expected = slot === undefined ? A_NODE_OF_THE_GRAPH : A_MARKED_CONTAINER;
+  const node = typeof id === "string" ? id : "";
+  throw new GraphDataError({ kind: "invalidContainer", node, field: "container", expected });
+}
+
+/** `addNode`: an identifier the map holds already refused, and a container it does not hold as
+ *  one; the engine chooses the slot the store keeps the node in, and places it relative to its
+ *  container (ARCH-engine-edits-nested-graph). */
 function addNode({ store, bridge, limits }: Editing, node: unknown): void {
   edit(store, bridge, {
     read: () => nodeSnapshotOf(node, limits),
@@ -212,10 +232,10 @@ function addNode({ store, bridge, limits }: Editing, node: unknown): void {
       const { id } = plain.snapshot as { id?: unknown };
       if (typeof id === "string" && state.slots.has(id))
         throw new GraphDataError({ kind: "duplicateNode", node: id });
-      return plain;
+      return { ...plain, container: containerOf(plain.snapshot, state) };
     },
     idUnits: (plain, state) => state.idUnits + plain.idUnits,
-    engine: ({ snapshot }) => bridge.addNode(snapshot),
+    engine: ({ snapshot, container }) => bridge.addNode(snapshot, container),
     // The bridge took the node, so each field holds a value of its type.
     record: (state, { snapshot }, slot) => state.addNode(snapshot as unknown as NodeData, slot),
   });
@@ -299,15 +319,15 @@ function slotsOf(
 }
 
 /** `removeNodes`, and the user's deletion of nodes, as `by` makes it: the nodes `ids` removed with
- *  every edge at them, which the engine names (ARCH-engine-edits-graph-in-place). An identifier the
- *  graph does not hold is
- *  refused, and a list that names none changes and tells nothing. */
+ *  everything they hold and every edge at any of them, which the engine names
+ *  (ARCH-engine-edits-nested-graph). An identifier the graph does not hold is refused, and a list
+ *  that names none changes and tells nothing. */
 function removeNodes({ store, bridge, limits }: Editing, ids: unknown, by: By): void {
   edit(store, bridge, {
     read: (sized) => idListRead(ids, "node identifiers", limits, (count) => sized(count, 0)),
     resolve: (read, state) => slotsOf(read, state.slots, (node) => ({ kind: "unknownNode", node })),
     engine: (slots) => bridge.removeNodes(slots),
-    record: (state, slots, edges) => state.removeNodes([...slots], [...edges], by),
+    record: (state, _, { nodes, edges }) => state.removeNodes([...nodes], [...edges], by),
   });
 }
 

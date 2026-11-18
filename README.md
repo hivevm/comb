@@ -195,11 +195,19 @@ A node's `content` is rows of weighted columns, each a `text` of role `title`, `
 inside the node's `width`, cuts a text too long for its column with an ellipsis, and makes the node
 as high as its rows, at least 64. `updateNode(id, { content })` replaces a node's content whole.
 
+A node marked `isContainer: true` is a container, drawn below the edges and the other nodes; a
+node whose `container` names one lies in it, its `x` and `y` relative to the container's top left
+corner, and moves with it. `load` and `addNode` refuse a `container` that names no node of the
+graph, or a node without `isContainer`, as `invalidContainer`. Removing a container, by
+`removeNodes` or by the user's deletion, removes everything it holds at every depth and every edge
+at any of it, and a drag of a container takes everything it holds along.
+
 `addNode` adds one node at its `x` and `y` without a load, drawn above every node it overlaps. For a
 node dropped from the host application's palette, `comb.worldPointAt(event.clientX, event.clientY)`
 returns the world point under the drop; Comb handles no drag and drop itself, and `worldPointAt`
-throws a `RangeError` on a coordinate that is not finite. `removeNodes(ids)` removes those nodes and
-every edge at them, and `removeEdges(ids)` those edges, without a load. `addEdge(edge)` adds an
+throws a `RangeError` on a coordinate that is not finite. `removeNodes(ids)` removes those nodes,
+everything they hold, and every edge at any of them, and `removeEdges(ids)` those edges, without
+a load. `addEdge(edge)` adds an
 edge between two nodes the graph holds, and `updateEdge(id, patch)` changes an edge's `color`,
 `dash`, `arrow`, `label`, `sourceSide`, or `targetSide`, `null` clearing a dash or a label. An
 edge leaves its source by `sourceSide` and enters its target by `targetSide`, each `top`, `right`,
@@ -210,9 +218,11 @@ or `"host"`: `loaded` after `load`, `nodeAdded` with the node as Comb took it af
 `nodeUpdated` with the merged patch after `updateNode`, `nodesRemoved` with the nodes and the edges
 that went with them after `removeNodes`, `edgesRemoved` with the edges after `removeEdges`,
 `edgeAdded` with the edge as Comb keeps it, its colour and arrowhead filled, after `addEdge`,
-`edgeUpdated` with the patch as merged after `updateEdge`, nothing
-for a removal that names none, and `nodeMoved` with where the node lies, once, when the user
-releases a node dragged, not per frame and not for a press that moved nothing. Each arrives before
+`edgeUpdated` with the patch as merged after `updateEdge`, nothing for a removal that names none,
+and `nodeMoved` with where the node lies, `x` and `y` relative to `container`, the identifier of
+the container it lies in or `null` on the canvas, once, when the user releases a node dragged, not
+per frame and not for a press that moved nothing; a host that compares a `nodeMoved` whole sees
+`container` on each, `null` for a node on the canvas. Each arrives before
 the call or input event that made it returns, and before `onSelectionChange` reports a selection the
 change cleared; `onChange` returns the function that removes the listener. A change a listener makes
 reaches every listener after the change being delivered, so that each hears the changes in the order
@@ -305,11 +315,11 @@ or an edge selects it, an edge within 4 screen pixels of its path, a drag from a
 pixels pans, and the sidebar edits a node's title text or an edge's colour, line, arrowhead, and
 label.
 With the canvas focused, which a press on it does, Delete or Backspace deletes the selection, a node
-with every edge at it, once `CombOptions.canDelete` returns `true` for the identifiers of everything
-that would go; without `canDelete` a deletion is allowed, and the host application's own
-`removeNodes` and `removeEdges` never ask it. The deletion is told as `nodesRemoved` or
-`edgesRemoved` with `by: "user"`. Where `CombOptions.canConnect` is set, hovering a
-node shows its four connectors, and a drag from one to a connector of another node the source does
+with everything it holds and every edge at any of them, once `CombOptions.canDelete` returns `true`
+for the identifiers of everything that would go; without `canDelete` a deletion is allowed, and the
+host application's own `removeNodes` and `removeEdges` never ask it. The deletion is told as
+`nodesRemoved` or `edgesRemoved` with `by: "user"`. Where `CombOptions.canConnect` is set, hovering
+a node shows its four connectors, and a drag from one to a connector of another node the source does
 not reach yet connects them: `canConnect({ source, sourceSide, target, targetSide })` names the
 new edge, checked as `addEdge` checks one, or refuses with `false`; the edge is told as
 `edgeAdded` with `by: "user"`. Where `CombOptions.allowLoops` allows loops, a drag back onto

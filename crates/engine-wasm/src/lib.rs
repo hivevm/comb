@@ -189,6 +189,20 @@ impl From<EdgeRefusal> for JsValue {
     }
 }
 
+/// The node slots and the edge slots of a removal as they cross: the count of the nodes, then the
+/// nodes, then the edges, which the bridge splits into two lists.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "a count of node slots, which a u32 numbers (ARCH-engine-edits-nested-graph)"
+)]
+fn removed(nodes: &[u32], edges: &[u32]) -> Vec<u32> {
+    let mut crossed = Vec::with_capacity(1 + nodes.len() + edges.len());
+    crossed.push(nodes.len() as u32);
+    crossed.extend_from_slice(nodes);
+    crossed.extend_from_slice(edges);
+    crossed
+}
+
 /// The size of a screen pixel, in world units, a query and a hit test take, or its refusal as the
 /// shell's mistake where it is no finite number above zero, before any edge is flattened
 /// (API-shell-mistake-refused-as-shells).
@@ -658,15 +672,20 @@ impl Engine {
     }
 
     /// Checks the node `addNode` hands over as a load checks a node, its strings of content
-    /// counted against the budget on from those the graph holds, and adds it, drawn and hit
-    /// above every other node, and returns the slot the engine chose for it: the free slot freed
-    /// last, or a new one after the highest (ARCH-engine-edits-graph-in-place). A refused node
-    /// leaves the graph as it was.
+    /// counted against the budget on from those the graph holds, and adds it into the container
+    /// in the slot `container`, which the shell resolved, or onto the canvas for none, drawn and
+    /// hit above every other node of its kind, and returns the slot the engine chose for it: the
+    /// free slot freed last, or a new one after the highest (ARCH-engine-edits-nested-graph). A
+    /// refused node leaves the graph as it was.
     #[wasm_bindgen(js_name = addNode)]
-    pub fn add_node(&mut self, node: Ts<NodeInput>) -> Result<u32, GraphDataProblem> {
+    pub fn add_node(
+        &mut self,
+        node: Ts<NodeInput>,
+        container: Option<u32>,
+    ) -> Result<u32, GraphDataProblem> {
         trap::spring();
         let node = node.to_rust().map_err(unshaped)?;
-        self.add(&node)
+        self.add(&node, container)
     }
 
     /// The height, in world units, the content of the node `heightOf` hands over lays out to at
@@ -775,15 +794,27 @@ impl Engine {
         Ok(self.graph.edges_at(slots)?)
     }
 
-    /// Removes the nodes in `slots` and every edge at them, and returns the slots of those edges
-    /// in ascending order; the slots go onto the free lists (ARCH-engine-edits-graph-in-place). A
-    /// slot that holds no node refuses the call, which then changes nothing.
+    /// The node slots and the edge slots a removal of the nodes in `slots` would take along, named
+    /// before anything is removed: the nodes, everything they hold at every depth, and every edge
+    /// at any of them (ARCH-engine-edits-nested-graph), as `removed` lays them out. A slot that
+    /// holds no node refuses the call.
+    #[wasm_bindgen(js_name = removalOf)]
+    pub fn removal_of(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
+        trap::spring();
+        let (nodes, edges) = self.graph.removal(slots)?;
+        Ok(removed(&nodes, &edges))
+    }
+
+    /// Removes the nodes in `slots`, everything they hold at every depth, and every edge at any of
+    /// them, and returns the slots of those nodes and edges as `removed` lays them out; the slots
+    /// go onto the free lists (ARCH-engine-edits-nested-graph). A slot that holds no node refuses
+    /// the call, which then changes nothing.
     #[wasm_bindgen(js_name = removeNodes)]
     pub fn remove_nodes(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
         trap::spring();
-        let edges = self.graph.remove_nodes(slots)?;
-        self.content.remove(slots);
-        Ok(edges)
+        let (nodes, edges) = self.graph.remove_nodes(slots)?;
+        self.content.remove(&nodes);
+        Ok(removed(&nodes, &edges))
     }
 
     /// Removes the edges in `slots`; the slots go onto the free list
@@ -926,9 +957,9 @@ impl Engine {
     }
 
     /// `addNode` of `node`, read: its strings of content counted on from those the graph holds.
-    fn add(&mut self, node: &NodeInput) -> Result<u32, GraphDataProblem> {
-        let (slot, content) =
-            add_node_to(&mut self.graph, node, &self.fonts, self.content.units())?;
+    fn add(&mut self, node: &NodeInput, container: Option<u32>) -> Result<u32, GraphDataProblem> {
+        let units = self.content.units();
+        let (slot, content) = add_node_to(&mut self.graph, node, container, &self.fonts, units)?;
         self.content.set(slot, content);
         Ok(slot)
     }
@@ -1444,9 +1475,13 @@ mod tests {
         );
         let mut engine = Engine::new();
         engine.graph = graph_of(&data).unwrap();
-        // Node c goes, and edge b-c, slot 1, with it.
-        assert_eq!(engine.remove_nodes(&[2]), Ok(vec![1]));
+        // Node c goes, and edge b-c, slot 1, with it: one node, slot 2, and edge 1.
+        assert_eq!(engine.remove_nodes(&[2]), Ok(vec![1, 2, 1]));
         for slot in [2, 9] {
+            assert_eq!(
+                engine.removal_of(&[0, slot]),
+                Err(SlotError::NoNode { slot })
+            );
             assert_eq!(
                 engine.remove_nodes(&[0, slot]),
                 Err(SlotError::NoNode { slot })

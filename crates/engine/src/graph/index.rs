@@ -202,7 +202,7 @@ mod tests {
         assert_eq!(graph.builds, 1);
         // Node 500 lies at (0, 200), between edges 499 and 500. A removal asks the rule nothing.
         let asked = graph.rule_asked;
-        assert_eq!(graph.remove_nodes(&[500]), Ok(vec![499, 500]));
+        assert_eq!(graph.remove_nodes(&[500]), Ok((vec![500], vec![499, 500])));
         graph.remove_edges(&[5]).unwrap();
         assert_eq!(graph.rule_asked, asked);
         assert_eq!(graph.add_node(20.0, 220.0, 50.0, 50.0), Ok(500));

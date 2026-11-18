@@ -7,15 +7,20 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphData, NodeData } from "comb";
 import {
+  canvasSize,
   clickWorld,
+  dragWorld,
   drawnGraph,
   loaded,
   node,
   NODE_HEIGHT,
   NODE_WIDTH,
   open,
+  pagePoint,
   sceneNumbers,
+  setViewport,
   selections,
+  told,
 } from "./shared";
 
 /** A container of `id` at `x, y`, 700 × 300, of one title. */
@@ -191,4 +196,398 @@ test("a node reaching into the viewport is bound, and its container far outside 
     expect(scene.level).toBe(level);
     expect(scene.nodes).toEqual([{ id: "a", layer: "nodes", x: 0, y: 0 }]);
   }
+});
+
+/** `HELD` and node `x` on the canvas below the container, with an edge from `x` to `a`. */
+const HELD_AND_OUTSIDE: GraphData = {
+  nodes: [...HELD.nodes, node("x", 100, 600)],
+  edges: [...HELD.edges, { id: "x-a", source: "x", target: "a" }],
+};
+
+/** Whether the canvas draws each of `ids`, nodes then edges, as `isDrawn` and `inspect()` both
+ *  report it, or `null` where they disagree. */
+async function shown(page: Page, nodes: string[], edges: string[]) {
+  return page.evaluate(
+    async ({ nodes: wantedNodes, edges: wantedEdges }) => {
+      await window.comb.whenRendered();
+      const snapshot = window.inspect();
+      const of = (what: { node: string } | { edge: string }) => {
+        const listed =
+          "node" in what
+            ? snapshot.nodes.some(({ id }) => id === what.node)
+            : snapshot.edges.some(({ id }) => id === what.edge);
+        return listed === window.isDrawn(what) ? listed : null;
+      };
+      return [
+        ...wantedNodes.map((id) => of({ node: id })),
+        ...wantedEdges.map((edge) => of({ edge })),
+      ];
+    },
+    { nodes, edges },
+  );
+}
+
+test("removeNodes of a container removes what it holds and the edges at any of it, told once and drawn at no level", async ({
+  page,
+}) => {
+  // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-nested-changes,
+  // Verifies: REN-moving-layer-moves-content, G-14
+  await open(page);
+  for (const [level, scale] of await levels(page)) {
+    await loaded(page, HELD_AND_OUTSIDE, { x: 100, y: 100, scale });
+    expect(await shown(page, ["c", "a", "b", "x"], ["e", "x-a"])).toEqual(Array(6).fill(true));
+    // Told to a listener of this level's alone: each load of the loop records anew.
+    const changes = await page.evaluate(() => {
+      const got: unknown[] = [];
+      const off = window.comb.onChange((change) => got.push(change));
+      window.comb.removeNodes(["c"]);
+      off();
+      return got;
+    });
+    expect(changes).toEqual([
+      { kind: "nodesRemoved", by: "host", nodes: ["c", "a", "b"], edges: ["e", "x-a"] },
+    ]);
+    const scene = await drawn(page);
+    expect([scene.level, scene.nodes.map(({ id }) => id), scene.edges]).toEqual([level, ["x"], []]);
+    expect(await shown(page, ["c", "a", "b", "x"], ["e", "x-a"])).toEqual([
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+    ]);
+  }
+});
+
+test("Delete of a selected container asks canDelete with what it holds and their edges, and deletes only on true", async ({
+  page,
+}) => {
+  // Verifies: API-edits-report-nested-changes, ARCH-engine-edits-nested-graph, G-4, G-14
+  await open(page);
+  await loaded(page, HELD_AND_OUTSIDE);
+  await page.evaluate(() => {
+    const w = window as unknown as { asked: unknown[]; allow: boolean };
+    [w.asked, w.allow] = [[], false];
+    window.canDelete = (deletion) => (w.asked.push(deletion), w.allow);
+  });
+  const asked = () => page.evaluate(() => (window as unknown as { asked: unknown[] }).asked);
+  // In the container, beside both nodes and the edge.
+  await clickWorld(page, 300, 105);
+  await page.keyboard.press("Delete");
+  const whole = { nodes: ["c", "a", "b"], edges: ["e", "x-a"] };
+  expect(await asked()).toEqual([whole]);
+  expect(await told(page)).toEqual([]);
+  expect((await drawn(page)).nodes.map(({ id }) => id)).toEqual(["c", "a", "b", "x"]);
+  // A node in the container is named with what it holds, none, and its edges; the container stays.
+  await clickWorld(page, 150, 160);
+  await page.keyboard.press("Delete");
+  expect((await asked())[1]).toEqual({ nodes: ["a"], edges: ["e", "x-a"] });
+  await page.evaluate(() => ((window as unknown as { allow: boolean }).allow = true));
+  await clickWorld(page, 300, 105);
+  await page.keyboard.press("Delete");
+  expect((await asked())[2]).toEqual(whole);
+  expect(await told(page)).toEqual([{ kind: "nodesRemoved", by: "user", ...whole }]);
+  const scene = await drawn(page);
+  expect([scene.nodes.map(({ id }) => id), scene.edges]).toEqual([["x"], []]);
+});
+
+/** What `nodeAdded` carries of each node the test below adds: each as Comb took it, its position
+ *  relative to its container, its node shape and its content's weights filled. */
+const ADDED = [
+  { id: "n", x: 200, y: 150, width: NODE_WIDTH, container: "c" },
+  { id: "d", x: 0, y: 500, width: 400, isContainer: true },
+  { id: "m", x: 30, y: 40, width: NODE_WIDTH, container: "d" },
+].map(({ id, ...fields }) => ({
+  id,
+  ...fields,
+  shape: "rectangle",
+  content: [[{ kind: "text", role: "title", text: id, weight: 1 }]],
+}));
+
+test("addNode with a container draws the node in it at its relative position, and nodeAdded carries it as Comb took it", async ({
+  page,
+}) => {
+  // Verifies: API-edits-report-nested-changes, ARCH-engine-edits-nested-graph, G-14
+  await open(page);
+  for (const [level, scale] of await levels(page)) {
+    await loaded(page, HELD, { x: 100, y: 100, scale });
+    // Told to a listener of this level's alone: each load of the loop records anew.
+    const changes = await page.evaluate(() => {
+      const got: unknown[] = [];
+      const off = window.comb.onChange((change) => got.push(change));
+      window.comb.addNode({ ...window.node("n", 200, 150), container: "c" });
+      window.comb.addNode({ ...window.node("d", 0, 500), width: 400, isContainer: true });
+      window.comb.addNode({ ...window.node("m", 30, 40), container: "d" });
+      off();
+      return got;
+    });
+    const scene = await drawn(page);
+    expect(scene.level).toBe(level);
+    const at = (id: string) => scene.nodes.find((drawnNode) => drawnNode.id === id);
+    expect(at("n")).toEqual({ id: "n", layer: "nodes", x: 300, y: 250 });
+    expect(at("d")).toEqual({ id: "d", layer: "containers", x: 0, y: 500 });
+    expect(at("m")).toEqual({ id: "m", layer: "nodes", x: 30, y: 540 });
+    expect(changes).toEqual(ADDED.map((added) => ({ kind: "nodeAdded", by: "host", node: added })));
+  }
+});
+
+/** Each container `addNode` refuses, with the words the refusal says it has to be. */
+const ADD_REFUSED = [
+  {
+    name: "no node of the graph",
+    container: "z",
+    expected: "the identifier of a node of the graph",
+  },
+  {
+    name: "a node without isContainer",
+    container: "a",
+    expected: "the identifier of a node marked isContainer",
+  },
+];
+
+for (const { name, container: refused, expected } of ADD_REFUSED) {
+  test(`addNode whose container names ${name} is refused as invalidContainer, and the graph stays`, async ({
+    page,
+  }) => {
+    // Verifies: API-edits-report-nested-changes, ARCH-engine-edits-nested-graph, Q-7
+    await open(page);
+    await loaded(page, HELD);
+    const before = await drawnGraph(page);
+    const thrown = await page.evaluate((inside) => {
+      try {
+        window.comb.addNode({ ...window.node("n"), container: inside });
+        return null;
+      } catch (error) {
+        const { name: kind, problem } = error as Error & { problem: unknown };
+        return { kind, problem };
+      }
+    }, refused);
+    expect(thrown).toStrictEqual({
+      kind: "GraphDataError",
+      problem: { kind: "invalidContainer", node: "n", field: "container", expected },
+    });
+    expect(await drawnGraph(page)).toEqual(before);
+    expect(await told(page)).toEqual([]);
+  });
+}
+
+test("a drag of a node in a container tells nodeMoved relative to it, and of the container relative to the canvas", async ({
+  page,
+}) => {
+  // Verifies: API-edits-report-nested-changes, G-14
+  await open(page);
+  await loaded(page, HELD);
+  // Node a's centre, then the container beside both nodes, each dragged by (30, 50).
+  await dragWorld(page, [220, 172], [250, 222]);
+  await dragWorld(page, [300, 105], [330, 155]);
+  const moved = (await told<{ x: number; y: number }>(page)).map((change) => ({
+    ...change,
+    x: Math.round(change.x),
+    y: Math.round(change.y),
+  }));
+  expect(moved).toEqual([
+    { kind: "nodeMoved", by: "user", id: "a", x: 40, y: 90, container: "c" },
+    { kind: "nodeMoved", by: "user", id: "c", x: 130, y: 150, container: null },
+  ]);
+  // The container took a with it, which kept its place within it.
+  const scene = await drawn(page);
+  expect(scene.nodes.find(({ id }) => id === "a")).toMatchObject({ x: 170, y: 240 });
+});
+
+/** Adds, by `addNode` and `addEdge`, container `c` at `(x, y)`, of `width` and of node shape
+ *  `shape`, holding `a` and `b` at `held` and `held + (gap, 0)` within it and edge `e` from `a`
+ *  to `b`. */
+async function addHeld(
+  page: Page,
+  at: { x: number; y: number; width: number; shape: "rectangle" | "circle" },
+  held: { x: number; y: number },
+  gap: number,
+) {
+  await page.evaluate(
+    ({ at: { x, y, width, shape }, held: inside, gap: apart }) => {
+      const content = shape === "circle" ? [] : window.node("c").content;
+      window.comb.addNode({ id: "c", x, y, width, shape, content, isContainer: true });
+      window.comb.addNode({ ...window.node("a", inside.x, inside.y), container: "c" });
+      window.comb.addNode({ ...window.node("b", inside.x + apart, inside.y), container: "c" });
+      window.comb.addEdge({ id: "e", source: "a", target: "b" });
+    },
+    { at, held, gap },
+  );
+}
+
+/** Once the pending render is drawn: where `c`, `a`, and `b` are drawn and in which layer, how
+ *  often each is, the ends of edge `e`, and how many queries the scene has made. */
+async function heldFrame(page: Page) {
+  return page.evaluate(async () => {
+    await window.comb.whenRendered();
+    const { nodes, edges, queries, level } = window.inspect();
+    const of = (id: string) => nodes.filter((drawnNode) => drawnNode.id === id);
+    const [[c], [a], [b]] = [of("c"), of("a"), of("b")];
+    const counts = ["c", "a", "b"].map((id) => of(id).length);
+    const e = edges.find(({ id }) => id === "e");
+    return { c: c!, a: a!, b: b!, counts, e, queries, level };
+  });
+}
+
+test("a dragged container takes the nodes and the edge it holds along in each frame at each level, and queries only at the release", async ({
+  page,
+}) => {
+  // Verifies: REN-moving-layer-moves-content, ARCH-engine-edits-nested-graph, G-2, G-14
+  await open(page);
+  // Far from the example's 15 nodes, so that nothing else lies under the pointer.
+  await addHeld(
+    page,
+    { x: -5000, y: -5000, width: 700, shape: "rectangle" },
+    { x: 10, y: 40 },
+    390,
+  );
+  const { width, height } = await canvasSize(page);
+  // Where the container is, which each level's drag moves on.
+  let at = { x: -5000, y: -5000 };
+  for (const [level, scale] of await levels(page)) {
+    // The container in the middle of the canvas, pressed between its nodes above their edge.
+    const centre = { x: at.x + 350, y: at.y + 32 };
+    await setViewport(page, {
+      x: width / 2 - centre.x * scale,
+      y: height / 2 - centre.y * scale,
+      scale,
+    });
+    const press = await pagePoint(page, at.x + 315, at.y + 16);
+    await page.mouse.move(press.x, press.y);
+    await page.mouse.down();
+    await page.mouse.move(press.x, press.y + 6);
+    const first = await heldFrame(page);
+    expect(first.level).toBe(level);
+    for (let i = 1; i <= 5; i++) {
+      await page.mouse.move(press.x + 3 * i, press.y + 6 + 2 * i);
+      const frame = await heldFrame(page);
+      expect(frame.queries).toBe(first.queries);
+      expect(frame.counts).toEqual([1, 1, 1]);
+      // The container's particle or view stays in the containers layer, below the edges.
+      expect([frame.c.layer, frame.a.layer, frame.b.layer]).toEqual([
+        "containers",
+        "nodes",
+        "nodes",
+      ]);
+      expect(frame.c.x - first.c.x).toBeCloseTo((3 * i) / scale, 2);
+      expect(frame.c.y - first.c.y).toBeCloseTo((2 * i) / scale, 2);
+      for (const [held, dx] of [
+        [frame.a, 10],
+        [frame.b, 400],
+      ] as const) {
+        expect(held.x - frame.c.x).toBeCloseTo(dx, 2);
+        expect(held.y - frame.c.y).toBeCloseTo(40, 2);
+      }
+      // The edge from a's right connector to b's left one.
+      const e = frame.e!;
+      expect(e.source.x).toBeCloseTo(frame.a.x + NODE_WIDTH, 2);
+      expect(e.source.y).toBeCloseTo(frame.a.y + NODE_HEIGHT / 2, 2);
+      expect(e.target.x).toBeCloseTo(frame.b.x, 2);
+      expect(e.target.y).toBeCloseTo(frame.b.y + NODE_HEIGHT / 2, 2);
+    }
+    await page.mouse.up();
+    const released = await heldFrame(page);
+    expect(released.queries).toBe(first.queries + 1);
+    at = { x: released.c.x, y: released.c.y };
+  }
+});
+
+/** What `frame` drew out of place, by name, for container `c` of `size` holding `a` and `b` as
+ *  `containerDragUploads` adds them: a held node off its place in the container, edge `e` off
+ *  its nodes' connectors, a node drawn other than once, or a query since `queries`. */
+function misplaced(frame: Awaited<ReturnType<typeof heldFrame>>, size: number, queries: number) {
+  // Within a thousandth of the container's size: far above `f32`'s step at the container's place,
+  // far below a screen pixel at the far level, where the size spans a hundred pixels or more.
+  const near = (value: number, wanted: number) => Math.abs(value - wanted) < size / 1000;
+  const { a, b, c, e } = frame;
+  const checks = {
+    a: near(a.x - c.x, size * 0.25) && near(a.y - c.y, size * 0.3),
+    b: near(b.x - c.x, size * 0.55) && near(b.y - c.y, size * 0.3),
+    e:
+      e !== undefined &&
+      near(e.source.x, a.x + NODE_WIDTH) &&
+      near(e.source.y, a.y + NODE_HEIGHT / 2) &&
+      near(e.target.x, b.x) &&
+      near(e.target.y, b.y + NODE_HEIGHT / 2),
+    once: frame.counts.every((count) => count === 1),
+    kept: frame.queries === queries,
+  };
+  return Object.entries(checks).flatMap(([name, held]) => (held ? [] : [name]));
+}
+
+/** The bytes uploaded a frame while container `c`, holding `a` and `b` and edge `e` between them,
+ *  is dragged down at the far level of the example at `copies`, at its fitted view for 50,010
+ *  nodes; and the bytes the query's edge mesh holds there. The container, a circle as wide as most
+ *  of the room left of the graph, is added by `addNode` there. */
+async function containerDragUploads(page: Page, copies: number) {
+  await open(page, `?copies=${copies}`);
+  if (copies < 1000) {
+    const { width, height } = await canvasSize(page);
+    await setViewport(page, { x: width / 2, y: height / 2, scale: 0.2 });
+  }
+  const room = await page.evaluate(() => {
+    const visible = window.visibleRect();
+    const left = Math.min(...window.exampleGraph().nodes.map(({ x }) => x));
+    const gap = left - visible.minX;
+    const size = Math.min(0.85 * gap, 0.8 * (visible.maxY - visible.minY));
+    const middle = (visible.minY + visible.maxY) / 2;
+    return { x: visible.minX + 0.05 * gap, y: middle - size / 2, size };
+  });
+  const { x, y, size } = room;
+  await addHeld(
+    page,
+    { x, y, width: size, shape: "circle" },
+    { x: size * 0.25, y: size * 0.3 },
+    size * 0.3,
+  );
+  const press = await pagePoint(page, x + size / 2, y + size * 0.75);
+  await page.mouse.move(press.x, press.y);
+  await page.mouse.down();
+  await page.evaluate(() => window.comb.whenRendered());
+  // Past the slop: the first move hides what the container holds in the kept query.
+  await page.mouse.move(press.x, press.y + 5);
+  const before = await heldFrame(page);
+  const { edgeMesh } = await page.evaluate(() => window.inspect());
+  const warm = await page.evaluate(() => window.work());
+  const frames = 20;
+  const missed: string[] = [];
+  let after = before;
+  for (let i = 1; i <= frames; i++) {
+    await page.mouse.move(press.x, press.y + 5 + i);
+    // Inspection uploads nothing, so reading each frame leaves the bytes counted as they are.
+    after = await heldFrame(page);
+    missed.push(...misplaced(after, size, before.queries).map((name) => `${i}: ${name}`));
+  }
+  const done = await page.evaluate(() => window.work());
+  await page.mouse.up();
+  const { vertices, indices } = edgeMesh;
+  return {
+    level: before.level,
+    missed,
+    moved: after.c.y > before.c.y,
+    queried: after.queries - before.queries,
+    perFrame: (done.bytesUploaded - warm.bytesUploaded) / frames,
+    meshBytes: vertices * 6 * 4 + indices * 4,
+  };
+}
+
+test("a container drag frame at the far level uploads what the container holds, not what the graph does", async ({
+  page,
+}) => {
+  // Verifies: REN-moving-layer-moves-content, ARCH-engine-edits-nested-graph
+  test.setTimeout(180_000);
+  const small = await containerDragUploads(page, 1);
+  const large = await containerDragUploads(page, 3334);
+  expect([small.level, large.level]).toEqual(["far", "far"]);
+  // Each drag moved the container; in each frame both nodes and their edge followed it, each
+  // drawn once, and no frame queried.
+  expect([small.moved, large.moved]).toEqual([true, true]);
+  expect([small.missed, large.missed]).toEqual([[], []]);
+  expect([small.queried, large.queried]).toEqual([0, 0]);
+  // At 50,010 nodes the query's mesh holds far more than a frame uploads, and a frame uploads no
+  // more than at 15 nodes.
+  expect(large.meshBytes).toBeGreaterThan(1_000_000);
+  expect(large.perFrame).toBeLessThan(large.meshBytes / 100);
+  expect(large.perFrame).toBeLessThanOrEqual(small.perFrame * 2);
 });

@@ -121,6 +121,8 @@ pub(crate) fn batch(nodes: &[(&str, f64, f64)], edges: &[(&str, &str, &str)]) ->
                 y: y.into(),
                 width: 100.0.into(),
                 shape: crate::NodeShape::Rectangle.into(),
+                container: None.into(),
+                is_container: None.into(),
                 content: titled("x"),
             })
             .collect(),
@@ -171,7 +173,7 @@ pub(super) fn added(x: f64, y: f64, change: impl FnOnce(&mut NodeInput)) -> Node
 /// Adds `node` to `graph` as `addNode` does, in the fonts of no font handed over, and returns
 /// its slot.
 pub(super) fn add(graph: &mut Graph, node: &NodeInput) -> Result<u32, GraphDataProblem> {
-    add_node_to(graph, node, &Fonts::default(), 0).map(|(slot, _)| slot)
+    add_node_to(graph, node, None, &Fonts::default(), 0).map(|(slot, _)| slot)
 }
 
 /// The load of `columns` and no edges, as `loadGraph` checks it.

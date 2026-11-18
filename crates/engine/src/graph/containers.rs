@@ -3,7 +3,9 @@
 //! each node, the sum of the positions along its chain of containers; and the order in which
 //! containers are drawn and hit, each after its own container.
 
-use super::Graph;
+use std::collections::HashSet;
+
+use super::{Graph, SlotError};
 
 /// The container of a node that lies on the canvas.
 pub const CANVAS: u32 = u32::MAX;
@@ -160,6 +162,14 @@ impl Nesting {
     }
 }
 
+/// Grows `list` with `fill` until it holds index `i`, so that a list kept only once a graph nests
+/// takes a slot past its end.
+fn grow_to<T: Clone>(list: &mut Vec<T>, i: usize, fill: T) {
+    if list.len() <= i {
+        list.resize(i + 1, fill);
+    }
+}
+
 /// The slot of a node of a nesting, whose nodes are numbered in a `u32` as every slot is.
 #[expect(
     clippy::cast_possible_truncation,
@@ -186,6 +196,60 @@ impl Graph {
     /// The slots the container in `slot` holds directly, in the order they joined it.
     pub(super) fn held(&self, slot: u32) -> &[u32] {
         self.held.get(slot as usize).map_or(&[], Vec::as_slice)
+    }
+
+    /// The nodes in `slots` and everything each holds, at every depth, each once: each named node
+    /// followed by what it holds, depth first, in the order each joined its container; a node
+    /// named after a container that holds it comes where that container's content lists it. A
+    /// slot that holds no node refuses the call (ARCH-engine-edits-nested-graph).
+    pub fn with_held(&self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
+        self.nodes_held(slots)?;
+        let mut found = Vec::with_capacity(slots.len());
+        let mut seen = HashSet::new();
+        let mut stack = Vec::new();
+        for &slot in slots {
+            stack.push(slot);
+            while let Some(node) = stack.pop() {
+                if !seen.insert(node) {
+                    continue;
+                }
+                found.push(node);
+                stack.extend(self.held(node).iter().rev());
+            }
+        }
+        Ok(found)
+    }
+
+    /// What a removal of the nodes in `slots` takes along, named before anything is removed: the
+    /// nodes, as `with_held` names them, and the edges at any of them, in ascending order
+    /// (ARCH-engine-edits-nested-graph, *Removing a container*). A slot that holds no node refuses
+    /// the call.
+    pub fn removal(&self, slots: &[u32]) -> Result<(Vec<u32>, Vec<u32>), SlotError> {
+        let nodes = self.with_held(slots)?;
+        let edges = self.edges_at(&nodes)?;
+        Ok((nodes, edges))
+    }
+
+    /// Puts the node just added in `slot` into `container`, or onto the canvas for `CANVAS`, and
+    /// marks it a container where `is_container`; a container added takes its place among the
+    /// containers by its rank, above its siblings. The container holds a container, which the
+    /// caller checked.
+    pub(super) fn nest_added(&mut self, slot: u32, container: u32, is_container: bool) {
+        if container == CANVAS && !is_container {
+            return;
+        }
+        let i = slot as usize;
+        grow_to(&mut self.containers, i, CANVAS);
+        grow_to(&mut self.is_container, i, false);
+        grow_to(&mut self.held, i, Vec::new());
+        self.containers[i] = container;
+        self.is_container[i] = is_container;
+        if container != CANVAS {
+            self.held[container as usize].push(slot);
+        }
+        if is_container {
+            self.order_containers();
+        }
     }
 
     /// Takes `nesting`, which `check` passed, as the containers of the loaded nodes: the lists of

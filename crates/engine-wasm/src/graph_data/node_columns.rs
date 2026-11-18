@@ -281,6 +281,7 @@ impl NodeColumns<'_> {
                     y: self.y[i],
                     width: self.width[i],
                     shape,
+                    is_container: false,
                 })
             })
             .collect()

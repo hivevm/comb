@@ -3,7 +3,7 @@
 
 use comb_engine::content::Fonts;
 use comb_engine::geometry::WORLD_LIMIT;
-use comb_engine::graph::{CANVAS, Graph, NestError, Nesting};
+use comb_engine::graph::{AddNodeError, CANVAS, Graph, NestError, Nesting};
 use comb_engine::shape::NodeShape;
 
 use super::checks::{
@@ -100,35 +100,43 @@ fn world_of(
     let world = nesting.world(relative);
     let mut positions = Vec::with_capacity(world.len());
     for (index, node) in batch.nodes.iter().enumerate() {
-        // Narrowed first and checked as the engine keeps it: a sum past `f32` is infinite.
-        #[expect(
-            clippy::cast_possible_truncation,
-            reason = "checked against the world's limit as f32 below, so that what f32 cannot \
-                      hold is refused"
-        )]
-        let [x, y] = [world[index * 2], world[index * 2 + 1]].map(|v| v as f32);
-        let [width, height] = [sizes[index * 2], sizes[index * 2 + 1]];
-        let beyond = [
-            ("x", x, 0.0),
-            ("y", y, 0.0),
-            ("width", x, width),
-            ("height", y, height),
-        ]
-        .into_iter()
-        .find(|&(_, at, size)| {
-            !at.is_finite() || (f64::from(at) + f64::from(size)).abs() > WORLD_LIMIT
-        });
-        if let Some((field, ..)) = beyond {
-            return Err(GraphDataProblem::BeyondWorld {
-                list: GraphList::Nodes,
-                id: node.id.to_owned(),
-                field: field.to_owned(),
-                limit: WORLD_LIMIT,
-            });
-        }
-        positions.extend([x, y]);
+        let at = [world[index * 2], world[index * 2 + 1]];
+        let size = [sizes[index * 2], sizes[index * 2 + 1]];
+        positions.extend(within_world(node.id, at, size)?);
     }
     Ok(positions)
+}
+
+/// The world position `at` of the node `id` of `size`, `width, height`, narrowed to `f32`, or its
+/// refusal as `beyondWorld` where it or its far side lies past the world's limit, its field the
+/// one of a node's own position: a sum past `f32` is infinite.
+fn within_world(id: &str, at: [f64; 2], size: [f32; 2]) -> Result<[f32; 2], GraphDataProblem> {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "checked against the world's limit as f32 below, so that what f32 cannot hold is \
+                  refused"
+    )]
+    let [x, y] = at.map(|v| v as f32);
+    let [width, height] = size;
+    let beyond = [
+        ("x", x, 0.0),
+        ("y", y, 0.0),
+        ("width", x, width),
+        ("height", y, height),
+    ]
+    .into_iter()
+    .find(|&(_, at, size)| {
+        !at.is_finite() || (f64::from(at) + f64::from(size)).abs() > WORLD_LIMIT
+    });
+    if let Some((field, ..)) = beyond {
+        return Err(GraphDataProblem::BeyondWorld {
+            list: GraphList::Nodes,
+            id: id.to_owned(),
+            field: field.to_owned(),
+            limit: WORLD_LIMIT,
+        });
+    }
+    Ok([x, y])
 }
 
 /// Checks the content of one node, as a load checks a node's, named `id`, of node shape `shape`
@@ -156,6 +164,7 @@ struct Single {
     shape: NodeShape,
     content: Checked,
     height: f32,
+    is_container: bool,
 }
 
 /// Checks the node of `addNode` or `heightOf` as a load checks a node, the only one of its batch at
@@ -177,19 +186,26 @@ fn single_of(node: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, Graph
         shape,
         content,
         height,
+        is_container: node.is_container,
     })
 }
 
 /// Checks the node `addNode` hands over as a load checks a node, the only one of its batch at
 /// index 0, and adds it to `graph`, whose nodes in use stay within `MAX_ITEMS`, as high as its
 /// content lays out to in `fonts`, its strings of content counted against the budget on from
-/// `held`, the code units of content the graph holds; returns the slot the engine chose and the
-/// content it keeps, with its count. A refused node leaves the graph as it was. That the graph
-/// holds no node of its identifier is `api`'s to check, against the map only it keeps
-/// (ARCH-one-workspace-per-example).
+/// `held`, the code units of content the graph holds, into the node in `container`, which `api`
+/// resolved, or onto the canvas for none, at its position relative to that container; returns the
+/// slot the engine chose and the content it keeps, with its count. A container that holds no node,
+/// or a node that is no container, is refused as `invalidContainer`, and a world position past the
+/// world's limit as `beyondWorld`, after every other check (ARCH-engine-edits-nested-graph). A
+/// refused node leaves the graph as it was. That the graph holds no node of its identifier is
+/// `api`'s to check, against the map only it keeps (ARCH-one-workspace-per-example); `api` refuses
+/// a container its map does not hold as one first, and the check here keeps a slot the shell named
+/// wrongly out of the engine's tree.
 pub(crate) fn add_node_to(
     graph: &mut Graph,
     node: &NodeInput,
+    container: Option<u32>,
     fonts: &Fonts,
     held: u64,
 ) -> Result<(u32, Checked), GraphDataProblem> {
@@ -202,8 +218,40 @@ pub(crate) fn add_node_to(
         shape,
         content,
         height,
+        is_container,
     } = single_of(node, fonts, held)?;
-    let slot = graph.add_node(x, y, width, height)?;
+    let id = node.id.0.as_deref().unwrap_or_default();
+    let (container, [x, y]) = match container {
+        None => (CANVAS, [x, y]),
+        Some(slot) => {
+            if !(graph.holds_node(slot) && graph.is_container(slot)) {
+                let expected = if graph.holds_node(slot) {
+                    A_MARKED_CONTAINER
+                } else {
+                    A_NODE_OF_THE_GRAPH
+                };
+                return Err(GraphDataProblem::InvalidContainer {
+                    node: id.to_owned(),
+                    field: "container".to_owned(),
+                    expected: expected.to_owned(),
+                });
+            }
+            let at = &graph.positions()[slot as usize * 2..];
+            let world = [
+                f64::from(at[0]) + f64::from(x),
+                f64::from(at[1]) + f64::from(y),
+            ];
+            (slot, within_world(id, world, [width, height])?)
+        }
+    };
+    let slot = graph
+        .add_node_in(container, is_container, [x, y, width, height])
+        .map_err(|error| match error {
+            AddNodeError::TooManySlots(error) => GraphDataProblem::from(error),
+            // The match above refused every slot that holds no container, before it read the
+            // container's position.
+            AddNodeError::NoContainer { .. } => unreachable!("a container checked above"),
+        })?;
     // A slot just added, which no node shape refuses.
     let _ = graph.set_shape(slot, shape);
     Ok((slot, content))
@@ -615,6 +663,93 @@ mod nesting_tests {
             field: "container".to_owned(),
             expected: expected.to_owned(),
         }
+    }
+
+    /// The graph of `three` loaded, `c` a container holding `a` and `b`.
+    fn loaded_three() -> Graph {
+        let (nodes, edges) = three(&[None, Some(0), Some(0)], &[true, false, false]);
+        load_of(&nodes.view(), &edges.view(), &Fonts::default())
+            .map(|loaded| loaded.graph)
+            .unwrap()
+    }
+
+    /// Adds `node` to `graph` into the container in `container`, as `addNode` does.
+    fn add_into(
+        graph: &mut Graph,
+        node: &NodeInput,
+        container: Option<u32>,
+    ) -> Result<u32, GraphDataProblem> {
+        add_node_to(graph, node, container, &Fonts::default(), 0).map(|(slot, _)| slot)
+    }
+
+    #[test]
+    fn a_node_added_into_a_container_lies_at_the_sum_of_its_position_and_the_container_s() {
+        // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-nested-changes
+        let mut graph = loaded_three();
+        let node = batch(&[("n", 5.0, 7.0)], &[]).nodes.remove(0);
+        let slot = add_into(&mut graph, &node, Some(0)).unwrap();
+        assert_eq!(slot, 3);
+        assert_eq!(&graph.positions()[6..8], [105.0, 207.0]);
+        assert!(!graph.is_container(slot));
+        // A container added into nothing, on the canvas, holds a node added into it.
+        let mut marked = batch(&[("m", 1000.0, 0.0)], &[]).nodes.remove(0);
+        marked.is_container = Some(true).into();
+        let inner = add_into(&mut graph, &marked, None).unwrap();
+        assert!(graph.is_container(inner));
+        let held = add_into(&mut graph, &node, Some(inner)).unwrap();
+        assert_eq!(&graph.positions()[held as usize * 2..][..2], [1005.0, 7.0]);
+    }
+
+    #[test]
+    fn a_node_added_into_no_container_or_past_the_world_is_refused_and_the_graph_stays() {
+        // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-nested-changes, Q-7
+        let mut graph = loaded_three();
+        let node = batch(&[("n", 5.0, 7.0)], &[]).nodes.remove(0);
+        // A node that is no container, a slot that holds no node.
+        assert_eq!(
+            add_into(&mut graph, &node, Some(1)),
+            Err(invalid("n", A_MARKED_CONTAINER))
+        );
+        assert_eq!(
+            add_into(&mut graph, &node, Some(9)),
+            Err(invalid("n", A_NODE_OF_THE_GRAPH))
+        );
+        // Its world position past the world's limit, by the sum along the container: each within
+        // it, together past it.
+        let mut away = batch(&[("m", WORLD_LIMIT * 0.6, 0.0)], &[]).nodes.remove(0);
+        away.is_container = Some(true).into();
+        let container = add_into(&mut graph, &away, None).unwrap();
+        let far = batch(&[("n", WORLD_LIMIT * 0.6, 0.0)], &[]).nodes.remove(0);
+        assert_eq!(
+            add_into(&mut graph, &far, Some(container)),
+            Err(beyond(GraphList::Nodes, "n", "x"))
+        );
+        // A container or a mark of another type.
+        let mut named = batch(&[("n", 5.0, 7.0)], &[]).nodes.remove(0);
+        named.container = Field(None);
+        assert_eq!(
+            add_into(&mut graph, &named, None),
+            Err(GraphDataProblem::InvalidField {
+                list: GraphList::Nodes,
+                index: 0,
+                id: Some("n".to_owned()),
+                field: "container".to_owned(),
+                expected: AN_ID_OR_NONE.to_owned(),
+            })
+        );
+        let mut marked = batch(&[("n", 5.0, 7.0)], &[]).nodes.remove(0);
+        marked.is_container = Field(None);
+        assert_eq!(
+            add_into(&mut graph, &marked, None),
+            Err(GraphDataProblem::InvalidField {
+                list: GraphList::Nodes,
+                index: 0,
+                id: Some("n".to_owned()),
+                field: "isContainer".to_owned(),
+                expected: A_FLAG.to_owned(),
+            })
+        );
+        assert_eq!(graph.nodes_in_use(), 4);
     }
 
     #[test]

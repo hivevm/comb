@@ -160,12 +160,13 @@ test("picking the largest copies option shows at least 50,000 nodes and edges", 
     edges: report.edges,
     texts: 0,
   });
-  // Verifies: REN-virtualized-scene-graph, REN-virtualized-nested-scene
+  // Verifies: REN-virtualized-scene-graph, REN-virtualized-nested-scene,
+  // Verifies: REN-moving-layer-moves-content
   // The world, the edges layer and its mesh, the particle container, the moving layer's edges and
-  // their mesh and its particle container (REN-moving-layer-redraws-changes), the empty layers
-  // of node views, labels, and connectors, and the containers layer with its empty particle
-  // container and layer of node views.
-  expect(await page.evaluate(() => window.inspect().displayObjects)).toBe(13);
+  // their mesh and its particle container, the empty layers of node views, labels, and
+  // connectors, and the containers layer with its empty particle container, the moving layer's
+  // particle container of containers, and its layer of node views.
+  expect(await page.evaluate(() => window.inspect().displayObjects)).toBe(14);
 });
 
 test("each type of node shows the elements of its type, as inspection reports them", async ({

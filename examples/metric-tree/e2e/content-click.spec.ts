@@ -225,7 +225,9 @@ test("a press on an element that moves past 4 pixels drags the node and reports 
   await page.mouse.move(from.x + 40, from.y + 30, { steps: 8 });
   await page.mouse.up();
   expect(await clicks(page)).toHaveLength(1);
-  expect(await told(page)).toEqual([{ kind: "nodeMoved", by: "user", id: "b", x: 40, y: 30 }]);
+  expect(await told(page)).toEqual([
+    { kind: "nodeMoved", by: "user", id: "b", x: 40, y: 30, container: null },
+  ]);
   expect(await selection(page)).toEqual({ kind: "node", id: "b" });
 });
 

@@ -3,7 +3,7 @@
 //! the nodes along; and a move, which takes them along too (ARCH-engine-edits-graph-in-place).
 
 use super::slots::put;
-use super::{Graph, MoveError, SlotError, TooManySlots};
+use super::{AddNodeError, CANVAS, Graph, MoveError, SlotError, TooManySlots};
 use crate::geometry::{Rect, WORLD_LIMIT};
 use crate::shape::NodeShape;
 
@@ -34,16 +34,43 @@ impl Graph {
         }
     }
 
-    /// Adds the node at `(x, y)` of size `(width, height)` and returns its slot: the free slot
-    /// freed last, or a new one after the highest. It takes the next rank, so that it is drawn and
-    /// hit above every other node, and goes into the index in place, which the rule of
-    /// ARCH-engine-edits-graph-in-place then builds again where it asks for it.
+    /// Adds the node at `(x, y)` of size `(width, height)` on the canvas and returns its slot, as
+    /// `add_node_in` adds one.
     pub fn add_node(
         &mut self,
         x: f32,
         y: f32,
         width: f32,
         height: f32,
+    ) -> Result<u32, TooManySlots> {
+        self.add_nested(CANVAS, false, [x, y, width, height])
+    }
+
+    /// Adds the node at the world position `(x, y)` of size `(width, height)` into the container
+    /// in `container`, or onto the canvas for `CANVAS`, a container itself where `is_container`,
+    /// and returns its slot: the free slot freed last, or a new one after the highest. It takes
+    /// the next rank, so that it is drawn and hit above every other node of its kind, and goes into
+    /// the index in place, which the rule of ARCH-engine-edits-graph-in-place then builds again
+    /// where it asks for it. A container that holds no container refuses the node, and the graph
+    /// stays as it was (ARCH-engine-edits-nested-graph).
+    pub fn add_node_in(
+        &mut self,
+        container: u32,
+        is_container: bool,
+        [x, y, width, height]: [f32; 4],
+    ) -> Result<u32, AddNodeError> {
+        if container != CANVAS && !(self.holds_node(container) && self.is_container(container)) {
+            return Err(AddNodeError::NoContainer { slot: container });
+        }
+        Ok(self.add_nested(container, is_container, [x, y, width, height])?)
+    }
+
+    /// `add_node_in` past its check of `container`, which is `CANVAS` or holds a container.
+    fn add_nested(
+        &mut self,
+        container: u32,
+        is_container: bool,
+        [x, y, width, height]: [f32; 4],
     ) -> Result<u32, TooManySlots> {
         let rank = self.take_rank();
         let slot = self.node_slots.take()?;
@@ -58,11 +85,12 @@ impl Graph {
         if let Some(shape) = self.shapes.get_mut(i) {
             *shape = NodeShape::default();
         }
-        // A node added has no edges yet, and lies on the canvas, no container; a freed slot taken
-        // again forgets the nesting of the node it held.
+        // A node added has no edges yet; a freed slot taken again forgets the nesting of the node
+        // it held before it takes the new node's.
         put(&mut self.incident, i, Vec::new());
         self.forget_nesting(slot);
         self.next_rank += 1;
+        self.nest_added(slot, container, is_container);
         let bounds = self.node_bounds(slot);
         self.node_grid.set(slot, &bounds);
         self.keep_index();
@@ -97,15 +125,16 @@ impl Graph {
         )
     }
 
-    /// Removes the nodes in `slots` and every edge at them, and returns the slots of those edges
-    /// in ascending order. Their slots go onto the free lists, the one named last freed last, and
-    /// they leave the index; nothing else moves (ARCH-engine-edits-graph-in-place). A slot that
-    /// holds no node refuses the call, which then changes nothing.
-    pub fn remove_nodes(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
-        let edges = self.edges_at(slots)?;
+    /// Removes the nodes in `slots`, everything they hold at every depth, and every edge at any of
+    /// them, and returns the slots of those nodes, as `with_held` names them, and of those edges,
+    /// in ascending order. Their slots go onto the free lists, the node named last freed last, and
+    /// they leave the index; nothing else moves (ARCH-engine-edits-nested-graph). A slot that holds
+    /// no node refuses the call, which then changes nothing.
+    pub fn remove_nodes(&mut self, slots: &[u32]) -> Result<(Vec<u32>, Vec<u32>), SlotError> {
+        let (nodes, edges) = self.removal(slots)?;
         // The nodes go first, so that the edges leave only the lists of the nodes that stay.
         let mut containers = false;
-        for &slot in slots {
+        for &slot in &nodes {
             if self.node_slots.free(slot) {
                 self.incident[slot as usize].clear();
                 containers |= self.is_container(slot);
@@ -115,18 +144,27 @@ impl Graph {
         if containers {
             self.order_containers();
         }
-        self.node_grid.take(slots);
+        self.node_grid.take(&nodes);
         // A removal builds nothing: the index is built again after growth and moves
         // (ARCH-engine-edits-graph-in-place).
         self.free_edges_at(&edges);
-        Ok(edges)
+        Ok((nodes, edges))
     }
 
-    /// Moves the nodes in `slots` by `(dx, dy)` and their edges with them. A refused move changes
-    /// nothing. Once more than an eighth of the nodes or edges, and at least 16, reach beyond the
-    /// extent the index was built for, the index is built again over the current extent.
+    /// Moves the nodes in `slots` by `(dx, dy)`, everything they hold with them, at every depth,
+    /// and their edges, in time linear in what they hold (ARCH-engine-edits-nested-graph,
+    /// *Positions*). A refused move changes nothing. Once more than an eighth of the nodes or
+    /// edges, and at least 16, reach beyond the extent the index was built for, the index is built
+    /// again over the current extent.
     pub fn translate(&mut self, slots: &[u32], dx: f32, dy: f32) -> Result<(), MoveError> {
         self.nodes_held(slots)?;
+        let held;
+        let slots = if slots.iter().any(|&s| !self.held(s).is_empty()) {
+            held = self.with_held(slots)?;
+            held.as_slice()
+        } else {
+            slots
+        };
         // Each node stops where it meets the world's limit, so that nothing derived from it turns
         // infinite.
         translate_positions(
@@ -542,7 +580,7 @@ mod tests {
             .collect();
         let mut graph = Graph::new(positions, vec![1.0; count as usize * 2], edges).unwrap();
         let start = std::time::Instant::now();
-        assert_eq!(graph.remove_nodes(&[0]).unwrap().len(), 200_000);
+        assert_eq!(graph.remove_nodes(&[0]).unwrap().1.len(), 200_000);
         let hub = start.elapsed();
         let mut graph2 = paired(1_000);
         let all: Vec<u32> = (0..1_000).collect();

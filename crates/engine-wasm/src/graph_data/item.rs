@@ -6,7 +6,8 @@ use comb_engine::shape::NodeShape;
 
 use super::content;
 use super::problem::{
-    A_CONTENT, A_NUMBER, A_ROW, A_SEGMENT_LIST, A_SHAPE, A_SIZE, AN_ELEMENT, AN_ID,
+    A_CONTENT, A_FLAG, A_NUMBER, A_ROW, A_SEGMENT_LIST, A_SHAPE, A_SIZE, AN_ELEMENT, AN_ID,
+    AN_ID_OR_NONE,
 };
 #[cfg(test)]
 use super::snapshot::GraphBatch;
@@ -22,6 +23,9 @@ pub(super) struct Node<'a> {
     pub(super) y: f64,
     pub(super) width: f64,
     pub(super) shape: NodeShape,
+    /// Whether it is a container: read from the node of `addNode`; a load keeps its marks in its
+    /// columns of nesting (API-bridge-columns-carry-nesting).
+    pub(super) is_container: bool,
 }
 
 /// An edge label with every field read.
@@ -140,6 +144,13 @@ pub(super) fn node_of(
         y: item.read("y", node.y, A_NUMBER)?,
         width: item.read("width", node.width, A_SIZE)?,
         shape: item.read("shape", node.shape, A_SHAPE)?.into(),
+        // Its container's identifier only has to be a string or none: `api` resolves it against the
+        // map only it keeps (ARCH-one-workspace-per-example).
+        is_container: {
+            item.read("container", node.container.clone(), AN_ID_OR_NONE)?;
+            item.read("isContainer", node.is_container, A_FLAG)?
+                .unwrap_or(false)
+        },
     };
     let content = content_of(&item, node.content.0.as_ref())?;
     Ok((read, content))

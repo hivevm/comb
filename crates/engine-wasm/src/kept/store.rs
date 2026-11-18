@@ -135,6 +135,8 @@ mod tests {
             y: 200.0.into(),
             width: 100.0.into(),
             shape: crate::NodeShape::Rectangle.into(),
+            container: None.into(),
+            is_container: None.into(),
             content: content.into(),
         }
     }
@@ -157,9 +159,9 @@ mod tests {
         // Verifies: REN-node-content-in-rows, API-bridge-takes-serde-and-columns, Q-7
         let mut engine = at_the_budget();
         let one = node_of("c", content(&[&[text(RoleCode::Title, "x")]]));
-        let added = engine.add(&one);
+        let added = engine.add(&one, None);
         // A node whose content holds no string adds no code unit and is taken.
-        let none = engine.add(&node_of("d", content(&[])));
+        let none = engine.add(&node_of("d", content(&[])), None);
         TEST_BUDGET.set(None);
         assert_eq!(added, Err(past_budget("c")));
         assert_eq!(none, Ok(2));
@@ -221,14 +223,23 @@ mod tests {
         let no_node = Err(crate::SlotError::NoNode { slot: 99 });
         assert_eq!(engine.remove_nodes(&[0, 99]), no_node);
         assert_eq!(engine.content.units(), 6);
-        // `a` named twice leaves the count once.
-        assert_eq!(engine.remove_nodes(&[0, 0]), Ok(Vec::new()));
+        // `a` named twice leaves the count once; the removal names one node, slot 0, and no edge.
+        assert_eq!(engine.remove_nodes(&[0, 0]), Ok(vec![1, 0]));
         let units = engine.content.units();
-        let three = engine.add(&node_of("c", content(&[&[text(RoleCode::Title, "xyz")]])));
-        let one = engine.add(&node_of("d", content(&[&[text(RoleCode::Title, "x")]])));
+        let three = engine.add(
+            &node_of("c", content(&[&[text(RoleCode::Title, "xyz")]])),
+            None,
+        );
+        let one = engine.add(
+            &node_of("d", content(&[&[text(RoleCode::Title, "x")]])),
+            None,
+        );
         // An added node deleted frees its code units too.
-        assert_eq!(engine.remove_nodes(&[0]), Ok(Vec::new()));
-        let again = engine.add(&node_of("e", content(&[&[text(RoleCode::Title, "x")]])));
+        assert_eq!(engine.remove_nodes(&[0]), Ok(vec![1, 0]));
+        let again = engine.add(
+            &node_of("e", content(&[&[text(RoleCode::Title, "x")]])),
+            None,
+        );
         TEST_BUDGET.set(None);
         assert_eq!(units, 3);
         assert_eq!(three, Ok(0));

@@ -42,13 +42,15 @@ export type GraphChange =
       readonly id: string;
       readonly patch: Readonly<NodePatch>;
     }
-  /** A drag left the node `id` at `x`, `y`. */
+  /** A drag left the node `id` at `x`, `y`, relative to `container`, the identifier of the
+   *  container it lies in, or on the canvas for `null` (API-edits-report-nested-changes). */
   | {
       readonly kind: "nodeMoved";
       readonly by: "user";
       readonly id: string;
       readonly x: number;
       readonly y: number;
+      readonly container: string | null;
     }
   /** The nodes `nodes` were removed, and with them the edges `edges`. */
   | {
@@ -134,6 +136,34 @@ function nodeUpdatedOf(
   return { kind: change.kind, by: change.by, id: change.id, patch };
 }
 
+/** The change `nodeAdded` as `onChange` delivers it: the node as Comb took it, its position
+ *  relative to its container, and its content built for this delivery. */
+function nodeAddedOf(
+  change: Extract<StoreChange, { kind: "nodeAdded" }>,
+  state: GraphState,
+  bridge: Bridge,
+): GraphChange {
+  const slot = state.slots.get(change.id)!;
+  const { id, width, shape, isContainer } = state.nodes[slot]!;
+  const { x, y, container } = placeOf(state, bridge, slot);
+  const node: NodeData = { id, x, y, width, shape, content: bridge.content(slot) };
+  if (container !== null) node.container = container;
+  if (isContainer !== undefined) node.isContainer = isContainer;
+  return { kind: change.kind, by: change.by, node };
+}
+
+/** Where the node in `slot` lies: its position relative to its container, the difference of the
+ *  world positions the engine keeps, or its world position on the canvas, and the identifier of
+ *  its container, or `null` on the canvas (API-edits-report-nested-changes). */
+function placeOf(state: GraphState, bridge: Bridge, slot: number) {
+  const positions = bridge.positions();
+  const { container } = state.nodes[slot]!;
+  const at = positionAt(positions, slot);
+  if (container === undefined) return { ...at, container: null };
+  const origin = positionAt(positions, state.slots.get(container)!);
+  return { x: at.x - origin.x, y: at.y - origin.y, container };
+}
+
 /** The change of the graph `change` names, as `onChange` delivers it: what it carries read from
  *  `state` and, for a position, from the engine's buffer as it is now. */
 function deliveryOf(change: StoreChange, state: GraphState, bridge: Bridge): GraphChange {
@@ -143,8 +173,15 @@ function deliveryOf(change: StoreChange, state: GraphState, bridge: Bridge): Gra
     case "nodeUpdated":
       return nodeUpdatedOf(change, state, bridge);
     case "nodeMoved": {
-      const { x, y } = positionAt(bridge.positions(), state.slots.get(change.id)!);
-      return { kind: change.kind, by: change.by, id: change.id, x, y };
+      const { x, y, container } = placeOf(state, bridge, state.slots.get(change.id)!);
+      return {
+        kind: change.kind,
+        by: change.by,
+        id: change.id,
+        x,
+        y,
+        container,
+      };
     }
     case "nodesRemoved":
       return {
@@ -162,13 +199,8 @@ function deliveryOf(change: StoreChange, state: GraphState, bridge: Bridge): Gra
       const { t, offset } = edgeNamed(state, change.edge).edge.label!;
       return { kind: change.kind, by: change.by, edge: change.edge, t, offset };
     }
-    case "nodeAdded": {
-      const slot = state.slots.get(change.id)!;
-      const { id, width, shape } = state.nodes[slot]!;
-      const { x, y } = positionAt(bridge.positions(), slot);
-      const node = { id, x, y, width, shape, content: bridge.content(slot) };
-      return { kind: change.kind, by: change.by, node };
-    }
+    case "nodeAdded":
+      return nodeAddedOf(change, state, bridge);
   }
 }
 

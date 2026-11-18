@@ -30,6 +30,13 @@ pub struct NodeInput {
     /// Its node shape; `api` fills in `rectangle` (REN-closed-set-of-node-shapes).
     #[tsify(type = "NodeShape")]
     pub shape: Field<NodeShape>,
+    /// The identifier of the container it lies in, which `api` resolves to a slot; none on the
+    /// canvas (ARCH-engine-edits-nested-graph).
+    #[tsify(type = "string", optional)]
+    pub container: Field<Option<String>>,
+    /// Whether it is a container; none where it is not.
+    #[tsify(type = "boolean", optional)]
+    pub is_container: Field<Option<bool>>,
     #[tsify(type = "NodeContent")]
     pub content: Field<ContentInput>,
 }

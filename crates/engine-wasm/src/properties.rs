@@ -1858,7 +1858,7 @@ proptest! {
         let mut graph = with_a();
         let added = NodeInput::deserialize(value)
             .map_err(unshaped)
-            .and_then(|node| add_node_to(&mut graph, &node, &Fonts::default(), 0));
+            .and_then(|node| add_node_to(&mut graph, &node, None, &Fonts::default(), 0));
         match (added, as_load) {
             (Ok((slot, _)), Ok((positions, sizes))) => {
                 prop_assert_eq!(slot, 1);
@@ -2047,6 +2047,8 @@ fn counted_node(id: String, rows: &[Vec<Counted>]) -> NodeInput {
         y: 0.0.into(),
         width: 100.0.into(),
         shape: crate::NodeShape::Rectangle.into(),
+        container: None.into(),
+        is_container: None.into(),
         content: content_input(rows).into(),
     }
 }
@@ -2120,7 +2122,7 @@ proptest! {
                 }
                 Edit::Add(rows) => {
                     let id = format!("a{step}");
-                    let added = engine.add(&counted_node(id.clone(), &rows));
+                    let added = engine.add(&counted_node(id.clone(), &rows), None);
                     let units = units_in(&rows);
                     if total + units <= budget {
                         let slot = added.expect("an addition within the budget is taken");

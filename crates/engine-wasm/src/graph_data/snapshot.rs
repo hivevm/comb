@@ -33,6 +33,8 @@ impl Refusable for NodeInput {
             self.y.0.is_none(),
             self.width.0.is_none(),
             self.shape.0.is_none(),
+            self.container.0.is_none(),
+            self.is_container.0.is_none(),
             self.content.0.is_none(),
         ]
         .contains(&true)
@@ -658,6 +660,8 @@ mod tests {
             y: _,
             width: _,
             shape: _,
+            container: _,
+            is_container: _,
             content: _,
         } = NodeInput::default();
         let node = [
@@ -666,10 +670,29 @@ mod tests {
             ("y", Value::Number(0.0)),
             ("width", Value::Number(100.0)),
             ("shape", Value::Text("diamond".to_owned())),
+            ("container", Value::Text("c".to_owned())),
+            ("isContainer", Value::Bool(true)),
             ("content", titled("A")),
         ];
-        let required = ["id", "x", "y", "width", "shape", "content"].map(|name| (name, true));
+        // The container and the mark may be left out: none is no refused value.
+        let required = [
+            ("id", true),
+            ("x", true),
+            ("y", true),
+            ("width", true),
+            ("shape", true),
+            ("container", false),
+            ("content", true),
+        ];
         assert_refusable::<NodeInput>(&node, &required);
+        // `false` is a mark, so the mark of another type is a number.
+        let mut numbered = without(&node, "isContainer");
+        numbered.push(("isContainer", Value::Number(1.0)));
+        assert!(
+            read::<NodeInput>(&numbered).refused(),
+            "isContainer of another type"
+        );
+        assert!(!read::<NodeInput>(&without(&node, "isContainer")).refused());
     }
 
     #[test]

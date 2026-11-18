@@ -181,7 +181,9 @@ test("a node dragged across frames and released tells one nodeMoved, where inspe
   await page.mouse.up();
   await page.evaluate(() => window.comb.whenRendered());
   const node = (await drawnNode(page, id))!;
-  expect(await told(page)).toEqual([{ kind: "nodeMoved", by: "user", id, x: node.x, y: node.y }]);
+  expect(await told(page)).toEqual([
+    { kind: "nodeMoved", by: "user", id, x: node.x, y: node.y, container: null },
+  ]);
 });
 
 test("a press and release on a node without a move tells no change", async ({ page }) => {
@@ -207,7 +209,9 @@ test("a drag released outside the canvas tells nodeMoved as on it", async ({ pag
   await page.mouse.up();
   await page.evaluate(() => window.comb.whenRendered());
   const node = (await drawnNode(page, id))!;
-  expect(await told(page)).toEqual([{ kind: "nodeMoved", by: "user", id, x: node.x, y: node.y }]);
+  expect(await told(page)).toEqual([
+    { kind: "nodeMoved", by: "user", id, x: node.x, y: node.y, container: null },
+  ]);
 });
 
 test("a drag whose engine is lost before the release tells no change, and throws nothing", async ({

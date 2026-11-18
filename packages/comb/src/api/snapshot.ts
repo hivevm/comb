@@ -388,9 +388,23 @@ function copied<T>(
 /** The node shape of a node, `rectangle` where it is left out (REN-closed-set-of-node-shapes). */
 const NODE_SHAPE = "rectangle";
 
+/** Whether `value` stands for a field left out: null or undefined. */
+const absent = (value: unknown) => value === undefined || value === null;
+
+/** The node of `addNode` read once, its container's identifier cut as a reference and its mark as
+ *  given, each with no key where it is left out, so that the node as Comb took it holds none. */
 function nodeOf(read: Reader, node: Fields) {
-  const { id, x, y, width, shape, content } = node;
-  return {
+  const { id, x, y, width, shape, container, isContainer, content } = node;
+  const snapshot: {
+    id: unknown;
+    x: unknown;
+    y: unknown;
+    width: unknown;
+    shape: unknown;
+    container?: unknown;
+    isContainer?: unknown;
+    content: unknown;
+  } = {
     id: read.id(id),
     x: read.number(x),
     y: read.number(y),
@@ -398,14 +412,24 @@ function nodeOf(read: Reader, node: Fields) {
     shape: read.text(shape) ?? NODE_SHAPE,
     content: read.content(content),
   };
+  if (!absent(container)) snapshot.container = read.reference(container);
+  if (!absent(isContainer)) snapshot.isContainer = isContainer;
+  return snapshot;
 }
 
 /** Writes the node `node` into `columns`, read once by `read`, its content walked straight into
- *  its columns, and returns what the store keeps of it: its identifier, its width, and its node
- *  shape, no copy of its content (REN-node-content-in-rows). */
+ *  its columns, and returns what the store keeps of it: its identifier, its width, its node shape,
+ *  and its container and mark where it has them, no copy of its content
+ *  (REN-node-content-in-rows, API-edits-report-nested-changes). */
 function written(read: Reader, node: Fields, columns: NodeColumnWriter, limits: Limits) {
   const { id, x, y, width, shape, container, isContainer, content } = node;
-  const kept: { id: unknown; width: unknown; shape: unknown } = {
+  const kept: {
+    id: unknown;
+    width: unknown;
+    shape: unknown;
+    container?: unknown;
+    isContainer?: unknown;
+  } = {
     id: read.id(id),
     width: read.number(width),
     shape: read.text(shape) ?? NODE_SHAPE,
@@ -413,6 +437,9 @@ function written(read: Reader, node: Fields, columns: NodeColumnWriter, limits: 
   const [left, top, inside] = [read.number(x), read.number(y), read.reference(container)];
   // The mark is handed over as given; the writer looks at it by equality with `true` and `false`.
   columns.node(kept.id, left, top, kept.width, kept.shape, inside, isContainer);
+  // Set where present, as an edge's label is, so that a load of no containers spreads no keys.
+  if (!absent(inside)) kept.container = inside;
+  if (!absent(isContainer)) kept.isContainer = isContainer;
   walkContent(read, content, columnSink(read, columns, limits, kept.id), limits);
   return kept;
 }

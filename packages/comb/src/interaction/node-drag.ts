@@ -1,11 +1,21 @@
 // The drag of a node (G-2): it waits until the pointer has moved beyond the slop from the press,
-// then moves the node in the engine by the pointer's moves, each a move a kept query survives,
-// from the first naming the node's slot as dragged (REN-moving-layer-redraws-changes), and records
+// then moves the node in the engine by the pointer's moves, a container with everything it holds,
+// each a move a kept query survives, from the first naming the slots it moves as dragged
+// (REN-moving-layer-moves-content, ARCH-engine-edits-nested-graph), and records
 // once, where it moved it, where the release left it (API-edits-reported-as-typed-changes). A press
 // released on the canvas within the slop is a click: where the release point lies on an element of
 // the content of the node pressed, it tells the host application which (REN-node-content-in-rows).
 import type { Hit } from "../bridge";
 import { SLOP, type Context, type Gesture } from "./gesture";
+
+/** The slots a drag of the node in `slot` moves: the node, and where it is a container,
+ *  everything it holds at every depth, as the engine names it (REN-moving-layer-moves-content). */
+function draggedOf({ store, bridge }: Pick<Context, "store" | "bridge">, slot: number): number[] {
+  if (store.getState().nodes[slot]?.isContainer !== true) return [slot];
+  // The nodes a removal of the container would take along are those it holds, at every depth: the
+  // one export that names them, read once a drag, its edges unused.
+  return [...bridge.removalOf(Uint32Array.of(slot)).nodes];
+}
 
 /** A drag of the node `hit` names, pressed at the screen point `(pressX, pressY)`, the node
  *  selected; none where `hit` names no node the graph holds. */
@@ -43,7 +53,7 @@ export function nodeDrag(
       // through `clampScale`.
       bridge.translate(new Uint32Array([slot]), dx / scale, dy / scale);
       if (moved) store.getState().dragMoved();
-      else store.getState().dragStarted([slot]);
+      else store.getState().dragStarted(draggedOf({ store, bridge }, slot));
       moved = true;
     },
     end(released, at) {

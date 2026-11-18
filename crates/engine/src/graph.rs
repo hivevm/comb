@@ -103,6 +103,23 @@ pub enum AddEdgeError {
     TooManySlots(TooManySlots),
 }
 
+/// Why a node was not added: a container that holds no container, or a slot past those a `u32`
+/// numbers (ARCH-engine-edits-nested-graph).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AddNodeError {
+    /// The slot named as its container holds no node, or a node that is no container.
+    NoContainer {
+        slot: u32,
+    },
+    TooManySlots(TooManySlots),
+}
+
+impl From<TooManySlots> for AddNodeError {
+    fn from(error: TooManySlots) -> Self {
+        Self::TooManySlots(error)
+    }
+}
+
 /// Why a move of nodes was refused: a slot that holds no node, or a delta that is not finite.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MoveError {

@@ -148,7 +148,9 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   `query`; `containers`, which node each node lies in: a load's `Nesting` checked so that a node
   lies only in a container and never in itself or a node it holds, the world positions as the sums
   along each chain of containers, the lists of what each container holds, and the order of the
-  containers, each after its own container and siblings by rank
+  containers, each after its own container and siblings by rank, a node added into a container,
+  and what a removal takes along, a node with everything it holds at every depth, and a move of a
+  container moving everything it holds
   ([ARCH-engine-edits-nested-graph](adr/ARCH-engine-edits-nested-graph.md)); each with its tests,
   `tests` with the graphs they build and the property tests of the
   whole graph against a scan, and `budget`, the property test of the mesh budget. `add_node` takes
@@ -232,9 +234,11 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   refuses one from a node to itself unless it is handed that loops are allowed, and adds it between
   the node slots `api` resolved, `updateEdge` checks a patch of an edge's colour, dash, arrowhead,
   label, and sides as a load checks those fields and restyles and re-places the edge, `edgesAt`
-  names the edges at given nodes without removing anything, `removeNodes` removes nodes and the
-  edges at them and returns those edges' slots, `removeEdges` removes edges, `translate` moves
-  nodes, each as far as keeps it within the world's limit, so that every point the engine derives
+  names the edges at given nodes without removing anything, `removalOf` names the nodes and the
+  edges a removal of given nodes takes along, `removeNodes` removes nodes, everything they hold,
+  and the edges at any of them and returns those nodes' and edges' slots, `removeEdges` removes
+  edges, `translate` moves nodes, a container with what it holds, each as far as keeps it within
+  the world's limit, so that every point the engine derives
   stays within `f32`, `query` takes a rectangle, a level of detail, the size of a screen pixel, at
   most 2^114 world units for a stroke, and how far an edge label's pill reaches from its point, and
   writes the found containers and the other node slots apart (`visibleContainers…`,
@@ -358,9 +362,10 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   (`edges.ts`),
   `NodeParticles` (`particles.ts`), `NodesContainer` (`nodes.ts`), `LabelsContainer` (`labels.ts`),
   and `ConnectorsLayer` (`connectors.ts`), the moving layer of a drag and of edits at the far level,
-  `MovingLayer` (`moving.ts`), whose second edges layer stands directly above the edges and whose
-  second `NodeParticles` directly above the particles
-  ([REN-moving-layer-redraws-changes](adr/REN-moving-layer-redraws-changes.md)), which holds the
+  `MovingLayer` (`moving.ts`), whose second edges layer stands directly above the edges, whose
+  second `NodeParticles` directly above the particles, and whose `NodeParticles` of containers
+  directly above the particles of containers
+  ([REN-moving-layer-moves-content](adr/REN-moving-layer-moves-content.md)), which holds the
   state of that drawing, reads the edits through `edits.ts` from the store's arrays against the kept
   query's, tells the scene whether its query survives them, hides in the query's layers what moved
   or was removed, and answers inspection for what it drew, with the connectors of the node under the
