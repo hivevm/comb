@@ -13,6 +13,8 @@ List each synonym under _Avoid:_ as one to three words, without prose around the
 inside a longer term of this glossary, such as "shape" in **Node shape**, is no synonym there.
 
 - **Arrowhead** — the triangle that marks where an edge ends, its tip at the target connector.
+- **Border node** — a node attached to the outline of another node, which moves with it and
+  stays on its outline, such as a pin or an entry point in UML.
 - **Bridge** — the boundary across which TypeScript and the engine exchange data.
 - **Canvas** — the WebGL2 surface on which Comb draws, and on which the user manipulates nodes,
   edges, and edge labels.
@@ -24,8 +26,8 @@ inside a longer term of this glossary, such as "shape" in **Node shape**, is no 
   end where a value ends, with the boundaries of its values in UTF-16 code units across all
   pieces.
 - **Connector** — a point on a node where an edge starts or ends: the middle of one of its four
-  sides.
-  _Avoid:_ port, handle, socket, pin.
+  sides. A pin of UML is a border node, not a connector.
+  _Avoid:_ port, handle, socket.
 - **Connection** — the gesture of dragging from a connector of one node to a connector of another,
   or of the same node where the host application allows loops, which creates an edge where it is
   released over a compatible one.
@@ -33,6 +35,8 @@ inside a longer term of this glossary, such as "shape" in **Node shape**, is no 
   kind and saying whether the user or the host application made it.
 - **Coarsened** — said of an edge mesh in which some edges are drawn less exactly than the
   flattening asks, or not at all, because the mesh budget or memory ran short.
+- **Container** — a node, or a region of one, that other nodes are placed in; they are drawn above
+  it and move with it.
 - **Culling** — leaving out of the draw everything that lies entirely outside the viewport grown
   by two culling margins. Frustum culling is said only in the wording of the constraint that
   requires it.
@@ -104,6 +108,10 @@ inside a longer term of this glossary, such as "shape" in **Node shape**, is no 
   its source connector to its target connector.
 - **Query origin** — the world point near a query's rectangle relative to which the query hands
   over its vertex positions and label points, and at whose screen point the shell draws the world.
+- **Region** — one of the parts a node is divided into, side by side or one above the other, each a
+  container of its own, such as an activity partition or an orthogonal region in UML.
+- **Resize handle** — a mark on a side or corner of a selected node that the user drags to resize
+  the node.
 - **Runner kind** — the CPU model a benchmark run records of the machine it ran on; runs are
   compared only with the baseline of their own kind and their graph.
 - **Relationship kind** — what a relationship of a UML diagram means, one of association,
