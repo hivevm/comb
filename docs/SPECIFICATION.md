@@ -155,8 +155,8 @@ Only a normalization renumbers them
     of the state machine. Each diagram shows comments, attached to the diagram element they
     annotate. A palette adds each of these notation elements; a connection adds each relationship,
     flow, or transition, which the example refuses between notation elements that UML 2.5.1 does not
-    let it connect, by a table of the allowed pairs that the example states and its tests hold; and
-    the sidebar edits every property the notation shows, such as a name, a guard, a trigger, an
+    let it connect, by a table of the pairs it refuses that the example states and its tests hold;
+    and the sidebar edits every property the notation shows, such as a name, a guard, a trigger, an
     effect, a multiplicity, a stereotype, or a condition.
 
 
