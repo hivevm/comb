@@ -40,18 +40,21 @@ of the regions.
    holds both. A region is no node of the host application's graph data: it stands in the regions
    of the node it divides, never alone.
 3. **Division.** A node or a region is divided side by side or one above the other, never both.
-   Each region has a size along that direction in world units; the sizes and the name bands add up
-   to the extent of what they divide, and the engine derives each region's box from them. The
-   regions of a node divide the part of its box below its content: a composite state's name and
-   compartments, or a frame's tab, stand above its regions, never in them. A region
-   may be divided again, to any depth.
+   Each region has a size along that direction in world units. The engine derives each region's
+   box from the sizes and the extent of what they divide. Where the sizes add up to more than that
+   extent, what they divide grows to their sum. A region that grows so grows what it lies in in
+   the same way, up to the divided node. Where the sizes add up to less, the last region takes the
+   rest. The regions of a node divide the part of its box below its content: a composite state's
+   name and compartments, or a frame's tab, stand above its regions, never in them. A region may be
+   divided again, to any depth.
 4. **Name band.** A region with a name has a band at its start, at the top of a region side by
    side with others, at the left of one above or below others, its name turned there by a quarter
    turn. A region without a name has none.
 5. **Lines.** The scene draws the line between two neighbouring regions, solid or with the dash
-   pattern the host application gives. A press on a line drags it: it changes the sizes of the two
-   regions beside it and nothing else, never so far that a region grows smaller than the boxes of
-   the nodes it holds or its own regions need.
+   pattern the host application gives. A press on a line drags it. The drag changes the sizes of
+   the two regions beside it. It also changes the regions inside them at the line, to any depth,
+   as a resize does. The other regions keep their sizes. A region never grows smaller than 8 world
+   units, than the boxes of the nodes that lie directly in it, or than its own regions need.
 6. **Resizing what is divided.** A resize of the divided node (G-15) changes the region at the
    side the user drags, and the regions inside it at that side, to any depth; the others keep
    their sizes.
@@ -60,8 +63,8 @@ of the regions.
    press on a region that hits no node inside it selects and drags the node it divides, as a press
    on that node would. A drop into a region places the node in the region (G-14).
 8. **Removing a region.** Removing a region removes everything it holds, as removing a container
-   does ([ARCH-engine-edits-nested-graph](ARCH-engine-edits-nested-graph.md)), and its neighbours
-   share its size in the order the host application gives.
+   does ([ARCH-engine-edits-nested-graph](ARCH-engine-edits-nested-graph.md)). The regions that
+   stay take the sizes the host application gives them. The last of them takes any rest.
 
 **Out of scope:** how the host application describes regions in its graph data and how a line's
 drag is reported, which the public interface decides; a selection of a region of its own.
@@ -107,10 +110,10 @@ Each test below cites this ADR with `Verifies: ARCH-regions-are-container-slots`
   moves lines, resizes the divided nodes, and asserts after each step that the regions' boxes tile
   what they divide with their name bands, that no line moved past the boxes of what a region holds,
   and that a query and a hit test find the regions and their content where a scan finds them.
-- A browser test of the UML example divides an activity into partitions, one of them divided
-  again, drags a line between two, and asserts through inspection that the regions' boxes and the
-  nodes in them are drawn where the engine reports them, and that a node dropped into a partition
-  lies in it; it presses a partition where no node lies and asserts that the activity is selected
-  and dragged, and removes a partition through the host application and asserts that its content
-  goes and its neighbours share its size. A test of the engine asserts that a composite state's
-  regions lie below its content.
+- A browser test of `examples/metric-tree/` divides a node into partitions, one of them divided
+  again. It drags a line between two and asserts through inspection that the regions' boxes and
+  the nodes in them are drawn where the engine reports them. It asserts that a node dropped into a
+  partition lies in it. It presses a partition where no node lies and asserts that the divided node
+  is selected and dragged. It removes a partition through the host application and asserts that
+  its content goes and the partitions that stay take the sizes the host gave, the last one the
+  rest. A test of the engine asserts that a composite state's regions lie below its content.

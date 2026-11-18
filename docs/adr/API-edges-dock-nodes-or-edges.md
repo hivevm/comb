@@ -59,7 +59,8 @@ side of the node.
 
 - **Ends:** an end names a node by `source` or `target`, any node at any depth, a container or a
   border node among them, or an edge by `sourceEdge` or `targetEdge` with a path parameter
-  `sourceT` or `targetT` from 0 to 1. Each end names one or the other; the bridge crate refuses an
+  `sourceT` or `targetT` from 0 to 1. The TypeScript type of each end is a union of the two. Each
+  end names one or the other; the bridge crate refuses an
   end that names both, neither, or a path parameter outside the range, and an edge that ends on
   an edge one of whose ends lies on an edge, on itself, or on an edge of its own ends. Removing an
   edge removes every edge that ends on it, in the same call, and a removal reports them all.
@@ -92,7 +93,7 @@ side of the node.
 - **Edge labels:** `EdgeData.label` gives way to `labels`, a list of edge labels, each with an
   identifier unique within its edge, its text, its path parameter, its label offset, and its
   background colour, each placed and kept as G-6 says. `updateEdge` sets the whole list, or clears
-  it with `null`. A label drag moves the one label it pressed.
+  it with `null`. An edge carries at most 8 labels. A label drag moves the one label it pressed.
 - **Lightning bolt:** `EdgeData` gains an optional `lightning`, off by default. Where it is on, the
   engine draws the path's middle, the part between the path parameters 0.45 and 0.55, as a zigzag
   of two turns across the path, 12 world units wide, and the rest of the path as before.

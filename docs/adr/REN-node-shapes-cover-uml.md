@@ -122,9 +122,11 @@ node shape from the engine's numbers.
   outline, a decision of its own, uses it.
 - **Outline:** `NodeData` gains an optional `outline`: `"solid"`, which `api` fills in where the
   host leaves it out, `"none"`, or a dash pattern in the form an edge takes
-  ([REN-virtualized-nested-scene](REN-virtualized-nested-scene.md)). A dashed outline is drawn in
-  dashes that the engine lays along the outline from its top left, in world units; an outline of
-  `"none"` draws the fill alone. A filled node shape keeps its fill whatever its outline.
+  ([REN-virtualized-nested-scene](REN-virtualized-nested-scene.md)). The engine lays a dashed
+  outline's dashes along the outline in world units. They run clockwise from the point of the
+  outline nearest the top left corner of the node's box. An unselected node with an outline of
+  `"none"` draws its fill alone. A filled node shape keeps its fill whatever its outline. A
+  selected node's outline is drawn solid in the selection colour, whatever its outline.
 - **Drawing:**
   - The content node shapes are drawn as a node is today: the white fill and the border, its
     width and colour following the selection, in the node shape's outline.
