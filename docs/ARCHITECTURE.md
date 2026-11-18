@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([NUC-documents-are-fixed](adr/NUC-documents-are-fixed.md)).
 >
-> **Last design revision:** 2026-11-07, due after 20 changes. The revision that took the count
+> **Last design revision:** 2026-11-18, due after 20 changes. The revision that took the count
 > moves the date; the number is this project's to set; a sensor counts the changes outside
 > `docs/` since the commit that set the date and says when the next is due
 > ([NUC-design-is-revised §4](adr/NUC-design-is-revised.md)).
@@ -534,45 +534,48 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
 - **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, each node with the
   content of its type, measuring the time to the first frame and p95 frame times over the frames
   Comb rendered of drag, pan, zoom, and edits one a frame, a node and an edge added and removed
-  again, each gesture checked for its effect (Q-1, Q-2): first at the view the example opens with,
-  the whole graph fitted, in the order `bench/fitted.ts` holds, the edits beginning at the fitted
-  view's scale and position again and recording that scale; then at each level of detail, centred in
-  the graph, the pans first, near and middle at the scale where each begins; where the fitted view
-  draws far, as at 50,010 nodes, its gestures are far's and far adds only its zoom. A run records
-  the level the fitted view draws (`fitted`) and the content loaded, nodes by type and elements by
-  kind (`load.content`). It is served from the example's production build by `vite preview` on port
-  4173, in a Chromium started by `bench/chromium.ts`, or attached through its debugging port to a
-  Chrome on the host where `BENCH_CDP` names one (PERF-benchmark-drives-host-chrome);
-  `BENCH_CPU_THROTTLE` slows the measured page's CPU (PERF-benchmark-slows-page-cpu); `BENCH_GRAPH`
-  names the graph, `metric-tree` or `shaped`, which the example loads with `?graph=shaped`: the
-  metric tree's nodes and edges in the same columns and order, the nodes in the node shapes in turn,
-  a node in a filled node shape without content, a circle and a ringed circle 64 wide, each node
-  centred on its row and column, the rows spaced for the tallest node by the gap the metric tree
-  leaves under its own, so that no two nodes overlap, the ends docked on the outline, and a loop on
-  one node in a hundred (`shaped` in `src/graph.ts`, PERF-benchmark-measures-named-graph).
-  `bench/options.ts` reads all three and refuses a value it cannot take; a run records `graph`, and
-  checks that the example loaded it, and the type checker holds the graphs `bench/options.ts` names
-  to the example's `GraphName`, which ARCH-one-workspace-per-example keeps from importing `bench`.
-  After the first frame and before the gestures it times the reference workload of
-  `bench/reference.ts` in the same page, which uses the browser's JavaScript, WebAssembly, and
-  WebGL2 and none of Comb's code. `bench/compare.ts` compares the median of several runs with the
-  baseline of the runner's kind, the CPU model the run records, and of the run's graph, in
-  `bench/baselines/` (`<kind>.json` for the metric tree, `<kind>.shaped.json` for the shaped graph),
-  with a margin of 25 %, reports a gesture the baseline lacks as `no baseline` without judging it,
-  refuses a run on a kind without a baseline of its graph, a run of another graph, a run whose
-  reference differs from its kind's baseline by more than 25 % in a part, a run of another size,
-  mode, or GPU or of none named, a run of an attached browser against a launched baseline or the
-  reverse, a run of another CPU slowdown factor, and a median of runs that differ in these; a kind's
-  baseline is the median of three runs on a GitHub runner of that kind on `main`; the **Benchmark**
-  workflow (`.github/workflows/benchmark.yml`) runs the benchmark three times on each graph and
-  compares each graph's median with its own baseline on a GitHub runner, weekly and on demand,
-  within 90 minutes; the shaped graph's comparison fails the job only where its kind has a baseline,
-  and otherwise reports its median (`bench/compare.ts` exits 3 for a kind without a baseline of the
-  runs' graph, 2 for the other refusals).
+  again, the drag and the edits on the drawn node nearest the canvas centre, each gesture checked
+  for its effect (Q-1, Q-2): first at the view the example opens with, the whole graph fitted, in
+  the order `bench/fitted.ts` holds, the edits beginning at the fitted view's scale and position
+  again and recording that scale; then at each level of detail, centred in the graph, the pans
+  first, near and middle at the scale where each begins; where the fitted view draws far, as at
+  50,010 nodes, its gestures are far's and far adds only its zoom. A run records the level the
+  fitted view draws (`fitted`) and the content loaded, nodes by type and elements by kind
+  (`load.content`). It is served from the example's production build by `vite preview` on port 4173,
+  in a Chromium started by `bench/chromium.ts`, or attached through its debugging port to a Chrome
+  on the host where `BENCH_CDP` names one (PERF-benchmark-drives-host-chrome); `BENCH_CPU_THROTTLE`
+  slows the measured page's CPU (PERF-benchmark-slows-page-cpu); `BENCH_GRAPH` names the graph,
+  `metric-tree` or `shaped`, which the example loads with `?graph=shaped`: the metric tree's nodes
+  and edges in the same columns and order, the nodes in the node shapes in turn, a node in a filled
+  node shape without content, a circle and a ringed circle 64 wide, each node centred on its row and
+  column, the rows spaced for the tallest node by the gap the metric tree leaves under its own, so
+  that no two nodes overlap, the ends docked on the outline, and a loop on one node in a hundred
+  (`shaped` in `src/graph.ts`, PERF-benchmark-measures-named-graph). `bench/options.ts` reads all
+  three and refuses a value it cannot take; a run records `graph`, and checks that the example
+  loaded it, and the type checker holds the graphs `bench/options.ts` names to the example's
+  `GraphName`, which ARCH-one-workspace-per-example keeps from importing `bench`. After the first
+  frame and before the gestures it times the reference workload of `bench/reference.ts` in the same
+  page, which uses the browser's JavaScript, WebAssembly, and WebGL2 and none of Comb's code.
+  `bench/compare.ts` compares the median of several runs with the baseline of the runner's kind, the
+  CPU model the run records, and of the run's graph, in `bench/baselines/` (`<kind>.json` for the
+  metric tree, `<kind>.shaped.json` for the shaped graph), with a margin of 25 %, reports a gesture
+  the baseline lacks as `no baseline` without judging it, refuses a run on a kind without a baseline
+  of its graph, a run of another graph, a run whose reference differs from its kind's baseline by
+  more than 25 % in a part, a run of another size, mode, or GPU or of none named, a run of an
+  attached browser against a launched baseline or the reverse, a run of another CPU slowdown factor,
+  and a median of runs that differ in these; a kind's baseline is the median of three runs on a
+  GitHub runner of that kind on `main`; the **Benchmark** workflow
+  (`.github/workflows/benchmark.yml`) runs the benchmark three times on each graph and compares each
+  graph's median with its own baseline on a GitHub runner, weekly and on demand, within 90 minutes;
+  the shaped graph's comparison fails the job only where its kind has a baseline, and otherwise
+  reports its median (`bench/compare.ts` exits 3 for a kind without a baseline of the runs' graph, 2
+  for the other refusals).
 - **Mutation testing** (`.github/workflows/mutation.yml`) — cargo-mutants mutates `crates/engine`
   on a GitHub runner, weekly and on demand; `scripts/check-mutants.sh` compares the surviving
   mutants with `crates/engine/mutants-missed.txt` by file, function, and replacement, and fails
-  on a survivor the list does not name, and on a run that caught none (DEV-bun-vite-wasm-pack).
+  on a survivor the list does not name, and on a run that caught none (DEV-bun-vite-wasm-pack); like
+  the Benchmark and the Dev Container workflows it measures and is no gate
+  (OPS-measuring-workflows-are-no-gate).
 
 **Test pattern:** Rust unit tests beside the code they test (`#[cfg(test)]`); a property test of the
 bridge crate's validation (`crates/engine-wasm/src/properties.rs`, proptest) that feeds it 10,000
@@ -583,7 +586,8 @@ computes bounds, connectors and their reach clipped by the outline, paths, and l
 the inputs the test gave the graph and reads nothing of it; Bun tests beside their module as
 `*.test.ts`, the bridge's against the built WebAssembly module, the lint's rules for Comb's library
 sources in `packages/comb/src/lint.test.ts`, and those of `bench/compare.ts`, `bench/chromium.ts`,
-`bench/options.ts`, and `bench/fitted.ts` beside them, with
+`bench/options.ts`, and `bench/fitted.ts` beside them, the UML example's beside its modules
+(`examples/uml/src/*.test.ts`), `modules.test.ts` holding that no diagram imports another, with
 `bench/content.test.ts` of the content the benchmark names as loaded and `bench/workflow.test.ts`
 of the Benchmark workflow's gate, its comparison steps run with a stand-in for `bun`; browser
 tests under `examples/*/e2e`, a file for the golden path and one for each concern they verify,
@@ -692,14 +696,25 @@ the engine lost for the page and calls the listeners of `onEngineLost` once; fro
 waiters, and input handlers do nothing, so no trap escapes as a page error.
 
 **Holding the shape.** `scripts/check-all.sh` and the **Checks** workflow
-(`.github/workflows/checks.yml`), on every pull request, run the template's checks (the
-documentation, plan modes, traceability, and Dev Container checks, the sensors, the shell lint, and
-the self-tests of the check runner and the hooks), the structural, the dependency, the container,
-the overview, and the comment width checks below, each after its self-test, the self-tests of the
-engine, the bundle, and the mutants checks, and `scripts/check-code.sh`, which runs the build, the
-lint, the tests, and then the bundle check; the `pre-commit` and `pre-push` hooks run
+(`.github/workflows/checks.yml`) run the template's checks (the documentation, plan modes,
+traceability, and Dev Container checks, the sensors, two of them as failing checks with `--require`,
+the plain rules and the actions pinned by SHA (SEC-actions-pinned-by-sha), the shell lint, the
+self-tests of the check runner and the hooks, and those of the scripts run on instruction), the
+structural, the dependency, the container, the overview, and the comment width checks below, the
+self-tests of the engine, the bundle, and the mutants checks, and `scripts/check-code.sh`, which
+runs the build, the lint, the tests, and then the bundle check. `scripts/check-all.sh` runs them
+side by side and, with `--changed`, skips a self-test whose inputs did not change; the workflow runs
+each check after its self-test, on every pull request, on a push to `main`, on demand, and weekly.
+The review-binding sensor runs in a workflow of its own, `.github/workflows/review-binding.yml`, on
+a pull request's hand-off. The `pre-commit` hook runs the documentation check, and all of
+`scripts/check-all.sh --changed` where it concludes a conflicted merge; the `pre-merge-commit` hook
+runs the documentation check on the merged tree; the `pre-push` hook runs
 `scripts/check-all.sh --changed`, as the Git hooks of CONTRIBUTING.md say.
-`scripts/check-engine.sh`, which `bun run test`, `bun run dev`, and the bundle check run first,
+`scripts/check-commits.sh`, on a human's instruction before a branch integrates, runs the checks
+but the browser tests and the examples' builds on each commit of the branch, each in a worktree of
+its own (DEV-commit-checks-on-instruction).
+`scripts/check-engine.sh`, which `bun run test`, `bun run dev`, `bun run dev:uml`, and the bundle
+check run first,
 fails when `engine_bg.wasm` of `packages/comb/wasm/` or of `packages/comb/wasm/test-mode/` is
 missing or older than a file under `crates/` other than those no build reads (the list of surviving
 mutants, proptest's regressions, a run of cargo-mutants, editors' swap files), `Cargo.toml`, or

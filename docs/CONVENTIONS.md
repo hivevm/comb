@@ -32,7 +32,8 @@ skimmed. The design revision drops what prevented nothing
 - **A random test counts the cases each clause rests on.** A property test over random inputs
   counts, per clause it decides, the cases where that clause and no earlier one settles the result,
   and asserts a floor on each count. A seed, a size, or a spread that leaves no case then fails,
-  instead of leaving the clause unchecked silently.
+  instead of leaving the clause unchecked silently. It asserts the floors once, after the run, not
+  inside a case, where shrinking may never reach them.
 - **An oracle owes nothing to the code it judges.** A test computes its expected value from the
   inputs, by brute force or by hand, never from a cache, buffer, or helper of the module under
   test; an oracle that reads the engine's own state agrees with the engine's mistakes. Nor does
@@ -155,7 +156,9 @@ skimmed. The design revision drops what prevented nothing
 - **A host application's copy follows what Comb took.** The UML example, like any host
   application that keeps its own copy of the graph, writes into that copy only after Comb took the
   change, from what `onChange` tells or after the call returned, never before the call: Comb may
-  refuse it, as a text past its limits, and the copy then holds what the canvas does not show.
+  refuse it, as a text past its limits, and the copy then holds what the canvas does not show. It
+  stores a node's kind and never works it out again from a text the user edits, such as a
+  stereotype, which once turned a class into a package.
 - **A stacked pull request is retargeted before its base branch goes.** A pull request based on
   another's branch, rather than on `main`, waits for that one to merge; the base merges without
   deleting its branch, the dependent one is moved to `main` and updated, and only then is the base's
