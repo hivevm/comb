@@ -9,6 +9,36 @@ and `nodeMoved` delivers its position relative to the new container and the cont
 else the whole drag is taken back and no change is delivered. A container and what it holds are
 never its own target.
 
+Settled with the human on 2026-11-18:
+
+- Only containers are targets here; a region becomes a target with ticket 05, which places a drop
+  into a region.
+- One engine export, asked once at the release with the pointer's world point and the dragged
+  node's slot, names the topmost container under the point that is neither the dragged node nor
+  anything it holds at any depth, or none. Nothing is queried during the drag, so no target is
+  highlighted while dragging; that highlight goes to the backlog.
+- One engine export puts a node into a container or onto the canvas, keeping its world position,
+  and gives it the next rank, onto the canvas too. It refuses, as the shell's mistake with a typed
+  refusal, a target that is no container and a target that is the node or anything it holds. The
+  store then sets the node's `container`. A refused drop and a drop within the node's own container
+  keep its rank.
+- Comb keeps the node's relative position at the press. A take-back puts it there exactly, by an
+  engine export `place` that moves what the node holds along as `translate` does, not by
+  translating back the sum of the drag's f32 deltas.
+- Where Comb told a change during the veto's call, the node is taken back while its slot still
+  holds its identifier; a veto that removed it, its container, or loaded leaves nothing to take
+  back. `NodePatch` carries no position, so the take-back never meets a move of the host's.
+- A drag that ends without a release point on the canvas (a release outside it, a cancel, a later
+  press) has no target: nothing is asked, and it is a move within its own container, `nodeMoved`
+  carrying the same container.
+- The target is found at the pointer, not at the node's box, as API-edits-report-nested-changes
+  says: a node reaching past its container's outline, grabbed there and released outside the
+  container, asks `canMoveInto` with `null`. A test pins it.
+- The tests of this ticket are browser tests in `examples/metric-tree/e2e/containers.spec.ts`,
+  with `canMoveInto` returning `true`, `false`, and throwing, as API-edits-report-nested-changes
+  (*Enforcement*, *Nesting*) now says; the UML example's test of its own `canMoveInto` goes to
+  ticket 12.
+
 ## Acceptance criteria
 
 - [ ] Given a node on the canvas and a container, when the user drops the node inside the container

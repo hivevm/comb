@@ -9,6 +9,27 @@ and ticket 12's together assert that every element G-20 lists for the activity d
 one of the two diagrams. Where an element cannot be drawn with the building blocks, the session
 stops and hands off for an ADR.
 
+Settled with the human on 2026-11-18:
+
+- The building blocks, stated as a table in the example's diagram module, as tickets 12 and 13
+  do:
+  - a structured activity node a dashed rounded rectangle with «structured», a container;
+  - a conditional node and a loop node the same with «conditional» and «loop», divided `"down"`
+    into named regions, the clauses or setup, test, and body, their names in the turned band at
+    the left;
+  - an initial node a `circle`, an activity final a `ringed-circle`, a flow final a
+    `crossed-circle`, a merge a `diamond`;
+  - nested partitions regions within regions;
+  - a value pin's value and `{stream}` border nodes with an outline of `"none"` beside the pin, as
+    the spec says.
+- A parameter set is a dashed border node around its pins, as the spec says. Its white fill hides
+  the action's outline where it lies; that is accepted, the set is added before its pins so that
+  they are drawn above it, and a node without a fill goes to the backlog.
+- G-20's list for the activity diagram is a constant in the example's test, one entry per element;
+  the test asserts that each appears at least once in ticket 12's or this diagram, told by the kind
+  the example gives each node and edge.
+- The mode stays unattended; with the parameter set settled, its stop no longer applies to it.
+
 ## Acceptance criteria
 
 - [ ] Given *Example: UML* switched to the notation diagram, when it loads, then inspection reports

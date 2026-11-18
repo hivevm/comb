@@ -9,6 +9,23 @@ its place in the list. `arrow` takes `"open"` and `"hollow"` beside `"end"` and 
 `lightning` draws a zigzag in the path's middle. Both examples move to `labels`, and so does the UML
 example's convention on relationships.
 
+Settled with the human on 2026-11-18:
+
+- `label` leaves `EdgeData`. A load and `addEdge` refuse an edge that still carries it as
+  `invalidField`, naming `labels` in its stead; `updateEdge` refuses it as `unknownEdgePatchField`,
+  as it refuses any field it does not know.
+- Two labels of one edge with the same identifier are refused with a new generated kind,
+  `duplicateLabel`, naming the edge and the label. An empty list is no labels.
+- An edge carries at most 8 labels; more are refused with a new generated kind, `tooManyLabels`,
+  in the manner of `tooManyRows`. Their texts count against the text budget as today.
+- A label left without a path parameter, a label offset, or a background takes the values of
+  today's one label: 0.5, 0, and today's background. `edgeAdded` and `edgeUpdated` report the
+  labels with them filled in.
+- `updateEdge` replaces the whole list, defaults filled in, never merged by identifier; its
+  documentation says that a label without a path parameter goes back to 0.5.
+- The lightning bolt stays as API-edges-dock-nodes-or-edges says; a stroke test pins a very short
+  edge, so that its mesh does not degenerate.
+
 ## Acceptance criteria
 
 - [ ] Given an association with a multiplicity at each end and a name in the middle, when it loads,
@@ -22,6 +39,10 @@ example's convention on relationships.
 - [ ] Given the metric tree and the UML example's class and package diagrams with their labels as
       lists of one, when their tests run, then they pass, the reference image of the edges among
       them.
+- [ ] Given an edge with `label`, one with two labels of the same identifier, and one with 9
+      labels, when each loads, then it is refused as `invalidField`, `duplicateLabel`, or
+      `tooManyLabels`; a label without a path parameter, offset, or background arrives in
+      `edgeAdded` with 0.5, 0, and today's background.
 
 ## Read first
 

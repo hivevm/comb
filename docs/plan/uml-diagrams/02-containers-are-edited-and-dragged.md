@@ -11,8 +11,28 @@ positions of what it holds in the same call.
 
 Until then, as ticket 01 left it: `removeNodes` of a container removes the container alone and
 leaves what it held on the canvas at its world position, untested; `addNode` ignores `container`
-and `isContainer`; and a drag of a container moves its own box alone. This ticket replaces all
-three.
+and `isContainer`; and a drag of a container moves its own box alone. At the far level the
+moving layer does not reach the `containers` layer: a container removed keeps its particle drawn
+until the next query, and a container dragged is drawn twice, its old particle in `containers` and
+a new one in the moving layer. This ticket replaces all of these.
+
+Settled with the human on 2026-11-18:
+
+- `nodeMoved` of a node in a container carries `x` and `y` relative to its container and
+  `container`, the identifier of the container it lies in, or `null` on the canvas, as
+  API-edits-report-nested-changes says; the move into another container stays ticket 03's.
+- `addNode` whose `container` names no node of the graph, or a node without `isContainer`, is
+  refused as `invalidContainer`, as a load refuses it; `api` checks it against its map.
+- A container added by `addNode` takes the next rank, as every node added does, above its sibling
+  containers.
+- The store keeps `container` and `isContainer` per node, for `nodeMoved`, `nodeAdded`, and the
+  host's `applyChange`; positions stay the engine's.
+- One engine export names every node and edge a removal takes along, before anything is removed,
+  for `canDelete`; `removeNodes` returns the removed node slots beside the edge slots.
+- The test of criterion 3 at 50,010 loads the benchmark graph, adds a container with a few nodes
+  and an edge between them by `addNode`, and counts queries and bytes per frame as
+  `examples/metric-tree/e2e/work-per-frame.spec.ts` does; the benchmark's baselines stay.
+- Deleting a node in a container names it and what it holds to `canDelete`; its container stays.
 
 ## Acceptance criteria
 

@@ -9,6 +9,30 @@ corner, never smaller than its content and the boxes of the nodes it holds. The 
 world position, and `nodeResized` reports the new box and the moved content. The resize redraws
 through the moving layer and queries only at the release.
 
+Settled with the human on 2026-11-18:
+
+- `updateNode` sets `height` and `resizable` here, a height below the content's raised as a load
+  raises it; its `outline` stays ticket 07's, and a border node's `side` and `offset` ticket 06's.
+- The least size of a container is set by the boxes of the nodes that lie directly in it, not by
+  what those hold, since a node may reach past its container's outline.
+- A resize keeps each side at least 8 world units, the height of a bar; above that, the content's
+  height and the boxes the container holds bound it.
+- A resize of a circle or a ringed circle sets width and height together, by the greater of the
+  two pulls, so it stays as high as wide; a resize of a bar sets both freely. A corner handle
+  keeps the opposite corner; a side handle keeps the opposite side and grows the other extent
+  about the node's centre line. The node shapes of tickets 07 and 08 take this rule up.
+- `hit` takes the slot of the selected node, or none, so that the engine finds the resize handles;
+  the handles are drawn and hit at the near and the middle level alone.
+- A resize handle is a white square of 8 by 8 screen pixels, outlined in the selection colour, the
+  same size at every scale, drawn in the overlay; the cursor shows the matching resize direction.
+- `nodeAdded` and inspection report `height` and `resizable` as Comb took them, the height raised;
+  `heightOf` still answers the content's height alone.
+- The test of criterion 6 loads the benchmark graph, adds a resizable container with a few nodes by
+  `addNode`, and counts queries and bytes per frame as
+  `examples/metric-tree/e2e/work-per-frame.spec.ts` does; the benchmark's baselines stay.
+- A resize that changes no box, released where pressed or held at its least size, delivers no
+  `nodeResized`; a test pins it.
+
 ## Acceptance criteria
 
 - [ ] Given a node with content and a `height` below the content's, when it loads, then it is as
@@ -24,6 +48,8 @@ through the moving layer and queries only at the release.
       there hits what lies below.
 - [ ] Given a resize at the fitted view of 50,010 nodes, when it runs, then it queries in no frame
       before the release.
+- [ ] Given `updateNode` with a `height` below the content's and with `resizable`, when it is
+      called, then the node is as high as its content and shows its handles when selected.
 
 ## Read first
 

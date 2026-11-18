@@ -9,13 +9,33 @@ are dashed with open arrowheads and their keywords, and an extend's condition is
 on it. Generalizations between actors and between use cases end in hollow triangles. The palette,
 the rules of connection, and the sidebar cover each element.
 
+Settled with the human on 2026-11-18:
+
+- Actors stand outside the subject, as UML 2.5.1 draws them. A use case dropped over the subject
+  lands in it; an actor lands on the canvas, over the subject too. The example's `canMoveInto`
+  refuses an actor moved into the subject, and a test pins it.
+- The refusals: an association other than between an actor and a use case; an include or an
+  extend other than between two use cases, or a loop; a generalization other than from an actor to
+  an actor or from a use case to a use case. The table states each.
+- The building blocks, stated as a table in the example's diagram module, as ticket 12 does:
+  - an actor an `actor`, its name the content below its drawing;
+  - a use case an `ellipse`, its extension points below a separator;
+  - the subject a rectangular container titled Comb;
+  - include and extend dashed, `arrow` `"open"`, labelled «include» and «extend»;
+  - a generalization solid, `arrow` `"hollow"`;
+  - multiplicities two labels at the path parameters 0.1 and 0.9;
+  - an extend's condition a `note` whose dashed anchor ends on the extend by `targetEdge` at 0.5.
+- The mode stays unattended.
+
 ## Acceptance criteria
 
 - [ ] Given *Example: UML* switched to the use case diagram, when it loads, then inspection reports
       each element of the description, the use cases in the subject, the condition anchored on its
       extend, and the hollow triangles of the generalizations.
-- [ ] Given the palette, when the user adds an actor and a use case into the subject, then they
-      appear there, the actor's name below its drawing.
+- [ ] Given the palette, when the user drops a use case and an actor over the subject, then the use
+      case lies in the subject and the actor on the canvas, its name below its drawing.
+- [ ] Given an actor dragged into the subject, when it is released, then the example's
+      `canMoveInto` refuses it, and the actor stands where it stood.
 - [ ] Given each pair of the use case diagram's refusals, when the user connects it, then the
       example refuses it; every other pair connects.
 - [ ] Given a use case at an end of an extend moved, when it is released, then the condition stays

@@ -11,6 +11,31 @@ reports it; a resize changes the region at the dragged side and reports it in `n
 on an empty region selects and drags the divided node, and a drop into a region places the node
 there. `updateNode` replaces the regions, and a region left out goes with its content.
 
+Settled with the human on 2026-11-18:
+
+- Where the regions' sizes add up to more than what they divide, the node grows to their sum, as a
+  height below the content's is raised; where they add up to less, the last region takes the rest.
+  No new refusal.
+- The engine states the name band's thickness, 24 world units. The name is set in the role `title`
+  and truncated to the band's length. A band of a region above or below others stands at its left,
+  its name turned anticlockwise to read from bottom to top.
+- A line's drag between regions divided again in the same direction changes, as a resize does
+  (ARCH-regions-are-container-slots §6), the inner region at the line, to any depth;
+  `regionsMoved` names those too.
+- A region is at least 8 world units along its direction, and at least what the boxes of the nodes
+  directly in it and its own regions need. A line is hit at the near and the middle level, and the
+  cursor shows `col-resize` or `row-resize`.
+- The target lookup of ticket 03 skips a divided node and names what lies below it. A load and
+  `addNode` refuse a `container` that names a divided node as `invalidContainer`.
+- An edge whose end names a region is refused as `missingNode`; `removeNodes` and `updateNode`
+  naming a region are refused as `unknownNode`. `nodesRemoved` and `canDelete` never name a
+  region, only the nodes and edges that go with it.
+- `updateNode` with a list of regions takes the patch's sizes as given, the last region taking any
+  rest; a region the patch keeps by its identifier keeps its content.
+- Regions count against a load's limit of nodes, and their nesting against its depth.
+- Regions become drop targets here, as ticket 03 left them; a test drops a node from one partition
+  into another and asserts `nodeMoved` with the new region's identifier.
+
 ## Acceptance criteria
 
 - [ ] Given an activity divided across into three partitions, the middle one divided down into two,
@@ -22,9 +47,12 @@ there. `updateNode` replaces the regions, and a region left out goes with its co
 - [ ] Given a press on a partition where no node lies, when the user drags, then the activity moves
       with its regions and everything in them.
 - [ ] Given `updateNode` with a list of regions that leaves one out, when it is called, then that
-      region's content is removed and reported, and its neighbours share its size.
+      region's content is removed and reported, and the other regions take the patch's sizes, the
+      last one the rest.
 - [ ] Given the property test over random trees of regions, when it runs, then the boxes tile what
       they divide and a query and a hit test find the regions where a scan does.
+- [ ] Given an edge whose end names a region, and `removeNodes` and `updateNode` naming one, when
+      each is called, then it is refused as `missingNode` or `unknownNode`, the graph as it was.
 
 ## Read first
 
