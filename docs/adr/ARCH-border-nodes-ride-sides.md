@@ -88,8 +88,9 @@ Each test below cites this ADR with `Verifies: ARCH-border-nodes-ride-sides`.
   offsets to nodes of every node shape, moves and resizes those nodes, drags the border nodes, and
   asserts after each step that each border node's centre lies on its node's outline within the
   accuracy of Q-4, on its side, and that removing a node removes its border nodes and their edges.
-- A browser test of the UML example drags a pin of an action around the action's corner and
-  asserts through inspection that it stays on the action's outline, then moves the action and
-  asserts that the pin and the edge docked on it follow. A test of the order is
-  [ARCH-engine-edits-nested-graph](ARCH-engine-edits-nested-graph.md)'s; this ADR's browser test
-  also asserts that a pin is drawn above an action added after its own action.
+- A browser test of `examples/metric-tree/` drags a pin of an action around the action's corner
+  and asserts through inspection that it stays on the action's outline. It then moves the action
+  and asserts that the pin and the edge docked on it follow. A test of the order is
+  [ARCH-engine-edits-nested-graph](ARCH-engine-edits-nested-graph.md)'s. This ADR's browser test
+  also asserts that a pin is drawn directly after its own action, and below a node added after
+  that action.
