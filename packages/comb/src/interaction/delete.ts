@@ -29,8 +29,10 @@ function doomed(store: GraphStore, bridge: Bridge): Deletion | undefined {
     const slot = slots.get(selection.id);
     if (slot === undefined) return undefined;
     const removal = bridge.removalOf(Uint32Array.of(slot));
+    // A region goes with the node it divides, and is never named
+    // (ARCH-regions-are-container-slots).
     return {
-      nodes: [...removal.nodes].map((node) => nodes[node]!.id),
+      nodes: [...removal.nodes].flatMap((node) => (nodes[node]!.region ? [] : [nodes[node]!.id])),
       edges: [...removal.edges].map((edge) => edges[edge]!.id),
     };
   }

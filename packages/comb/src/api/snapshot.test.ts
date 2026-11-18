@@ -220,3 +220,19 @@ test("the snapshot reads the length of content, a row, and a progress bar's segm
   expect(read("load")).toEqual(once);
   expect(read("single")).toEqual(once);
 });
+
+test("the snapshot of a load counts the names of regions against the budget of content", () => {
+  // Verifies: ARCH-regions-are-container-slots, API-bridge-columns-carry-nesting
+  const regions = [
+    { id: "p", name: "abc", size: 10, line: "solid", divide: "down", regions: [] as unknown[] },
+  ];
+  regions[0]!.regions = [{ id: "q", name: "de", size: 10, line: "solid" }];
+  const node = { id: "n", x: 0, y: 0, width: 1, content: [], divide: "across", regions };
+  const { content } = snapshotOf(listsOf({ nodes: [node], edges: [] } as never), limits);
+  expect(content.units).toBe(5);
+  const past = snapshotOf(listsOf({ nodes: [node], edges: [] } as never), {
+    ...limits,
+    contentBudget: 4,
+  });
+  expect(past.content.past).toBe("n");
+});

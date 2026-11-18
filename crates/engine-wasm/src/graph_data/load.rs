@@ -3,20 +3,27 @@
 
 use comb_engine::content::Fonts;
 use comb_engine::geometry::WORLD_LIMIT;
-use comb_engine::graph::{AddNodeError, CANVAS, Graph, NestError, Nesting};
+use std::collections::HashSet;
+
+use comb_engine::graph::{AddNodeError, Axis, CANVAS, Graph, NestError, Nesting};
 use comb_engine::shape::NodeShape;
 
+use super::checks::Nodes;
 use super::checks::{
-    checked_node, content_fits_shape, edges_of, given_height, id_length, ids_of, node_height,
-    nodes_of, within_by_height,
+    checked_node, content_fits_shape, content_top, edges_of, given_height, id_length, ids_of,
+    node_height, nodes_of, within_by_height,
 };
 use super::item::{Batch, node_of};
-use super::problem::{A_MARKED_CONTAINER, A_NODE_OF_THE_GRAPH, NOT_IN_ITSELF};
+use super::problem::{A_MARKED_CONTAINER, A_NODE_OF_THE_GRAPH, AN_UNDIVIDED, NOT_IN_ITSELF};
 #[cfg(test)]
 use super::snapshot::{EdgeCells, GraphBatch, OwnedColumns, OwnedEdgeColumns};
 use super::{
     Checked, ContentData, EdgeColumns, GraphDataProblem, GraphList, NodeColumns, NodeInput,
     check_graph_size, lengths, text_spans,
+};
+use super::{
+    Region, RegionColumns, add_regions, check_regions, divide_of, malformed, numbered, regions_of,
+    within_budget,
 };
 
 /// A load the bridge accepted: the engine's graph, where each text of its content lies in its
@@ -26,6 +33,9 @@ pub(crate) struct Loaded {
     pub spans: Vec<(u32, u32, u32)>,
     pub name_spans: Vec<(u32, u32, u32)>,
     pub units: u64,
+    /// The code units of each region's name, in the order of their slots after the nodes, which
+    /// count against the budget of content beside `units`.
+    pub names: Vec<u64>,
 }
 
 /// Checks a load and builds the engine's graph from it, its nodes and its edges as columns, each
@@ -40,22 +50,47 @@ pub(crate) fn load_of(
 ) -> Result<Loaded, GraphDataProblem> {
     let count = nodes.count()?;
     let edge_count = edges.count()?;
-    check_graph_size(count as f64, edge_count as f64)?;
+    // Each region takes a node slot, counted against the limit of a load
+    // (ARCH-regions-are-container-slots).
+    let regions = nodes.regions.of.len();
+    check_graph_size((count + regions) as f64, edge_count as f64)?;
     nodes.first_refused()?;
     edges.first_refused(edge_count)?;
-    ids_of(lengths(nodes.id_bounds), edges.id_lengths())?;
+    let trees = nodes
+        .regions
+        .trees(nodes.divide)
+        .ok_or_else(|| malformed("the columns of the regions do not fit together"))?;
+    let region_ids = lengths(nodes.regions.id_bounds);
+    ids_of(
+        lengths(nodes.id_bounds).chain(region_ids),
+        edges.id_lengths(),
+    )?;
     let batch = Batch {
         nodes: nodes.nodes()?,
         edges: edges.edges()?,
     };
-    let content = &nodes.content;
-    let nesting = nodes.nesting(count);
+    let columns = nodes;
+    let content = &columns.content;
+    let mut nesting = columns.nesting(count, count + regions);
     let mut nodes = nodes_of(&batch, content, fonts)?;
+    let mut taken: HashSet<String> = nodes.slots.keys().map(|&id| id.to_owned()).collect();
+    let mut names = Vec::with_capacity(regions);
+    for (index, (node, (divide, list))) in batch.nodes.iter().zip(&trees).enumerate() {
+        check_regions(node.id, index, *divide, list, &mut taken)?;
+        // A region's name counts against the budget of content as a text does.
+        let units: u64 = list.iter().map(Region::name_units).sum();
+        if units > 0 {
+            within_budget(node.id, nodes.units + names.iter().sum::<u64>() + units)?;
+        }
+        names.extend(list.iter().map(Region::name_units));
+    }
+    divided_nesting(&batch, &columns.regions, &trees, &mut nesting, &mut nodes)?;
     nodes.positions = world_of(&batch, &nesting, &nodes.positions, &nodes.sizes)?;
     let spans = text_spans(content.texts, content.text_bounds)?;
     let name_spans = text_spans(content.names, content.name_bounds)?;
     let edges = edges_of(&batch, &nodes.slots)?;
     let mut graph = Graph::nested(nodes.positions, nodes.sizes, edges, nesting)?;
+    divide_loaded(&mut graph, columns, &trees, &nodes.tops);
     for (slot, (&given, &resizable)) in (0..).zip(nodes.given.iter().zip(&nodes.resizable)) {
         if given.is_some() || resizable {
             // A slot of a node just built, which no sizing refuses.
@@ -73,7 +108,130 @@ pub(crate) fn load_of(
         spans,
         name_spans,
         units: nodes.units,
+        names: region_names(&trees, &columns.regions),
     })
+}
+
+/// The code units of the name of each region of a load, in the order of their slots.
+fn region_names(trees: &[(Option<Axis>, Vec<Region>)], columns: &RegionColumns) -> Vec<u64> {
+    // The regions of each node lie in the slots in the order the columns list them, which the
+    // trees keep per node; read back in slot order through the node each divides.
+    let nodes = trees.len();
+    let mut next = vec![0; nodes];
+    let mut roots: Vec<usize> = Vec::with_capacity(columns.of.len());
+    columns
+        .of
+        .iter()
+        .map(|&of| {
+            let of = of as usize;
+            let root = if of < nodes { of } else { roots[of - nodes] };
+            roots.push(root);
+            let region = &trees[root].1[next[root]];
+            next[root] += 1;
+            region.name_units()
+        })
+        .collect()
+}
+
+/// Whether each slot of a load, its nodes' and then its regions', is divided into regions: a node
+/// with a division and regions, a region that holds regions.
+fn divisions(trees: &[(Option<Axis>, Vec<Region>)], columns: &RegionColumns) -> Vec<bool> {
+    let count = trees.len();
+    let mut divided: Vec<bool> = trees
+        .iter()
+        .map(|(divide, list)| divide.is_some() && !list.is_empty())
+        .collect();
+    divided.resize(count + columns.of.len(), false);
+    for &of in columns.of {
+        if of as usize >= count {
+            divided[of as usize] = true;
+        }
+    }
+    divided
+}
+
+/// Takes the regions of a load into `nesting` and `nodes` as node slots after the nodes, each in
+/// what it divides at its top left corner, a container, its size its extent along the direction
+/// of that division; a divided node a container too (ARCH-regions-are-container-slots). A node
+/// that lies directly in a divided node or a divided region is refused as `invalidContainer`.
+fn divided_nesting(
+    batch: &Batch,
+    regions: &RegionColumns,
+    trees: &[(Option<Axis>, Vec<Region>)],
+    nesting: &mut Nesting,
+    nodes: &mut Nodes,
+) -> Result<(), GraphDataProblem> {
+    let count = batch.nodes.len();
+    let divided = divisions(trees, regions);
+    for (node, &container) in batch.nodes.iter().zip(&nesting.containers) {
+        if divided.get(container as usize) == Some(&true) {
+            return Err(GraphDataProblem::InvalidContainer {
+                node: node.id.to_owned(),
+                field: "container".to_owned(),
+                expected: AN_UNDIVIDED.to_owned(),
+            });
+        }
+    }
+    for (slot, &divided) in divided.iter().take(count).enumerate() {
+        if divided {
+            nesting.is_container[slot] = true;
+        }
+    }
+    for (&of, &size) in regions.of.iter().zip(regions.size) {
+        let parent = of as usize;
+        let axis = if parent < count {
+            trees[parent].0
+        } else {
+            divide_of(regions.divide[parent - count])
+        };
+        let mut extent = [0.0; 2];
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a size `check_regions` held to f32"
+        )]
+        let size = size as f32;
+        extent[axis.map_or(0, Axis::index)] = size;
+        nesting.containers.push(of);
+        nesting.is_container.push(true);
+        nodes.positions.extend([0.0, 0.0]);
+        nodes.sizes.extend(extent);
+    }
+    Ok(())
+}
+
+/// Divides the nodes of a load `trees` names and marks its regions, `columns` naming each
+/// region's band and division, the regions below each node's content, `tops` high, a node its
+/// data does not mark a container one by its division alone; then lays out the regions of each
+/// divided node (ARCH-regions-are-container-slots).
+fn divide_loaded(
+    graph: &mut Graph,
+    columns: &NodeColumns,
+    trees: &[(Option<Axis>, Vec<Region>)],
+    tops: &[f32],
+) {
+    let count = trees.len();
+    let regions = &columns.regions;
+    let divided = divisions(trees, regions);
+    let nodes: Vec<u32> = (0..count)
+        .filter(|&slot| divided[slot])
+        .map(numbered)
+        .collect();
+    for &slot in &nodes {
+        let i = slot as usize;
+        // Slots of nodes just built, which no division refuses.
+        let _ = graph.divide(slot, trees[i].0, tops[i]);
+        if columns.is_container[i] != 1 {
+            graph.made_by_division(slot);
+        }
+    }
+    for k in 0..regions.of.len() {
+        let slot = numbered(count + k);
+        let divide = divide_of(regions.divide[k]).filter(|_| divided[count + k]);
+        let _ = graph.mark_region(slot, regions.named[k] == 1, divide);
+    }
+    for slot in nodes {
+        graph.arrange(slot);
+    }
 }
 
 /// The world positions of the nodes of `batch` at `relative`, `x, y` per node, each relative to its
@@ -110,6 +268,13 @@ fn world_of(
         let size = [sizes[index * 2], sizes[index * 2 + 1]];
         positions.extend(within_world(node.id, at, size)?);
     }
+    // A region at the top left corner of the node it divides, within the world as that node is;
+    // `arrange` places it.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "the world position of a node checked within the world above"
+    )]
+    positions.extend(world[positions.len()..].iter().map(|&v| v as f32));
     Ok(positions)
 }
 
@@ -177,6 +342,12 @@ struct Single {
     given: Option<f32>,
     resizable: bool,
     is_container: bool,
+    /// The direction its regions divide it in and its regions, read
+    /// (ARCH-regions-are-container-slots).
+    divide: Option<Axis>,
+    regions: Vec<Region>,
+    /// The height of its content, below which its regions lie; 0 without content.
+    top: f32,
 }
 
 /// Checks the node of `addNode` or `heightOf` as a load checks a node, the only one of its batch at
@@ -184,8 +355,8 @@ struct Single {
 /// strings counted against the budget on from `held`, laid out in `fonts`, and its far side by that
 /// height; the one sequence both crossings refuse by, so that their problems and their order stay
 /// one (API-host-asks-content-height).
-fn single_of(node: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, GraphDataProblem> {
-    let (node, content) = node_of(0, node)?;
+fn single_of(input: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, GraphDataProblem> {
+    let (node, content) = node_of(0, input)?;
     id_length("nodes", 0, "id", node.id)?;
     let ([x, y], width) = checked_node(&node)?;
     let given = given_height(node.id, node.height)?;
@@ -193,17 +364,29 @@ fn single_of(node: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, Graph
     let (content, laid) = checked_content(node.id, shape, content, fonts, held)?;
     let height = node_height(shape, width, laid, given);
     within_by_height(node.id, y, height)?;
+    let (divide, regions) = regions_of(node.id, 0, &input.divide, &input.regions)?;
+    let mut taken = HashSet::from([node.id.to_owned()]);
+    check_regions(node.id, 0, divide, &regions, &mut taken)?;
+    // Its regions' names count against the budget of content beside its content.
+    let names: u64 = regions.iter().map(Region::name_units).sum();
+    if names > 0 {
+        within_budget(node.id, held + content.units + names)?;
+    }
+    let content_height = node_height(shape, width, laid, None);
     Ok(Single {
         x,
         y,
         width,
         shape,
         content,
-        content_height: node_height(shape, width, laid, None),
+        content_height,
         height,
         given,
         resizable: node.resizable,
         is_container: node.is_container,
+        top: content_top(laid),
+        divide: divide.filter(|_| !regions.is_empty()),
+        regions,
     })
 }
 
@@ -226,8 +409,6 @@ pub(crate) fn add_node_to(
     fonts: &Fonts,
     held: u64,
 ) -> Result<(u32, Checked), GraphDataProblem> {
-    let nodes = f64::from(graph.nodes_in_use()) + 1.0;
-    check_graph_size(nodes, 0.0)?;
     let Single {
         x,
         y,
@@ -238,12 +419,25 @@ pub(crate) fn add_node_to(
         given,
         resizable,
         is_container,
+        divide,
+        regions,
+        top,
         ..
     } = single_of(node, fonts, held)?;
+    // Each region takes a node slot, counted against the limit of a load.
+    let nodes = f64::from(graph.nodes_in_use()) + 1.0 + regions.len() as f64;
+    check_graph_size(nodes, 0.0)?;
     let id = node.id.0.as_deref().unwrap_or_default();
     let (container, [x, y]) = match container {
         None => (CANVAS, [x, y]),
         Some(slot) => {
+            if graph.holds_node(slot) && graph.holds_regions(slot) {
+                return Err(GraphDataProblem::InvalidContainer {
+                    node: id.to_owned(),
+                    field: "container".to_owned(),
+                    expected: AN_UNDIVIDED.to_owned(),
+                });
+            }
             if !(graph.holds_node(slot) && graph.is_container(slot)) {
                 let expected = if graph.holds_node(slot) {
                     A_MARKED_CONTAINER
@@ -265,7 +459,11 @@ pub(crate) fn add_node_to(
         }
     };
     let slot = graph
-        .add_node_in(container, is_container, [x, y, width, height])
+        .add_node_in(
+            container,
+            is_container || divide.is_some(),
+            [x, y, width, height],
+        )
         .map_err(|error| match error {
             AddNodeError::TooManySlots(error) => GraphDataProblem::from(error),
             // The match above refused every slot that holds no container, before it read the
@@ -275,6 +473,14 @@ pub(crate) fn add_node_to(
     // A slot just added, which no node shape and no sizing refuses.
     let _ = graph.set_shape(slot, shape);
     let _ = graph.set_sizing(slot, given, resizable);
+    if let Some(axis) = divide {
+        let _ = graph.divide(slot, Some(axis), top);
+        add_regions(graph, slot, axis, &regions)?;
+        if !is_container {
+            graph.made_by_division(slot);
+        }
+        graph.arrange(slot);
+    }
     Ok((slot, content))
 }
 

@@ -284,6 +284,11 @@ pub(super) const A_SEGMENT_LIST: &str = "a list of segments";
 /// (API-bridge-columns-carry-nesting).
 pub(super) const AN_ID_OR_NONE: &str = "the identifier of a container, or none";
 pub(super) const A_FLAG: &str = "true or false, or none";
+pub(super) const A_DIVIDE: &str = "\"across\" or \"down\", or none where the node has no regions";
+pub(super) const A_REGION_LIST: &str = "a list of regions, each with a string id, a size, a line, \
+                                          and a name of at most 1,000 code units or none, or none";
+pub(super) const AN_UNDIVIDED: &str = "the identifier of a container or a region, not of a node \
+                                        divided into regions";
 /// What a node's height has to be: none, or a number, which its rule wants above 0.
 pub(super) const A_HEIGHT: &str = "a finite number above 0, or none";
 /// What a node's container is refused for, as `invalidContainer` says it

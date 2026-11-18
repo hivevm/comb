@@ -8,8 +8,8 @@ use super::field::{Refusable, items};
 use super::node_columns::Refused;
 use super::{
     Arrow, ArrowCode, ContentData, ContentInput, Dock, EdgeColumns, EdgeField, EdgeInput, Field,
-    LabelInput, NodeColumns, NodeField, NodeInput, NodeShapeCode, Pair, SideCode, Unflat, numbered,
-    utf16_length,
+    GraphDataProblem, LabelInput, NodeColumns, NodeField, NodeInput, NodeShapeCode, Pair, SideCode,
+    Unflat, numbered, utf16_length,
 };
 
 /// The nodes and edges of one load as the tests write them, each in slot order: the nodes as the
@@ -37,6 +37,8 @@ impl Refusable for NodeInput {
             self.container.0.is_none(),
             self.is_container.0.is_none(),
             self.resizable.0.is_none(),
+            self.divide.0.is_none(),
+            self.regions.0.is_none(),
             self.content.0.is_none(),
         ]
         .contains(&true)
@@ -119,8 +121,86 @@ pub(crate) struct OwnedColumns {
     pub(super) container: Vec<u32>,
     pub(super) is_container: Vec<u8>,
     pub(super) resizable: Vec<u8>,
+    pub(super) divide: Vec<u8>,
+    pub(super) regions: OwnedRegions,
     pub(crate) content: ContentData,
     pub(crate) refused: Option<Refused>,
+}
+
+/// The columns of a load's regions, owned, as the snapshot of `api` writes them
+/// (API-bridge-columns-carry-nesting): each region after the nodes, depth first, `of` naming what
+/// it divides, a node by its index and a region by its own index past the nodes.
+#[cfg(test)]
+#[derive(Default)]
+pub(crate) struct OwnedRegions {
+    pub(super) ids: Vec<String>,
+    pub(super) id_bounds: Vec<u32>,
+    pub(super) of: Vec<u32>,
+    pub(super) size: Vec<f64>,
+    pub(super) divide: Vec<u8>,
+    pub(super) has_dash: Vec<u8>,
+    pub(super) dash: Vec<f64>,
+    pub(super) gap: Vec<f64>,
+    pub(super) named: Vec<u8>,
+    pub(super) names: Vec<String>,
+    pub(super) name_bounds: Vec<u32>,
+    /// Per region whether it divides a node, by its index, or a region, by its own.
+    parents: Vec<(bool, u32)>,
+}
+
+#[cfg(test)]
+impl OwnedRegions {
+    /// Writes `regions`, read, of the node at `node`, each after what it lies in.
+    fn push(&mut self, node: u32, regions: &[super::Region]) {
+        let base = self.of.len() as u32;
+        for region in regions {
+            self.parents.push(match region.parent {
+                None => (true, node),
+                Some(parent) => (false, base + parent as u32),
+            });
+            self.of.push(0);
+            push_value(&mut self.ids, &mut self.id_bounds, region.id.clone());
+            self.size.push(region.size);
+            self.divide.push(match region.divide {
+                None => 0,
+                Some(comb_engine::graph::Axis::Across) => 1,
+                Some(comb_engine::graph::Axis::Down) => 2,
+            });
+            self.has_dash.push(u8::from(region.dash.is_some()));
+            let [dash, gap] = region.dash.unwrap_or_default();
+            self.dash.push(dash);
+            self.gap.push(gap);
+            self.named.push(u8::from(region.name.is_some()));
+            if let Some(name) = &region.name {
+                push_value(&mut self.names, &mut self.name_bounds, name.clone());
+            }
+        }
+    }
+
+    /// Names what each region divides by its slot, once the `count` nodes are written.
+    fn number(&mut self, count: u32) {
+        for (of, &(node, index)) in self.of.iter_mut().zip(&self.parents) {
+            *of = if node { index } else { count + index };
+        }
+        self.ids = pieces_of(&self.ids, SNAPSHOT_PIECE);
+        self.names = pieces_of(&self.names, SNAPSHOT_PIECE);
+    }
+
+    fn view(&self) -> super::RegionColumns<'_> {
+        super::RegionColumns {
+            ids: &self.ids,
+            id_bounds: &self.id_bounds,
+            of: &self.of,
+            size: &self.size,
+            divide: &self.divide,
+            has_dash: &self.has_dash,
+            dash: &self.dash,
+            gap: &self.gap,
+            named: &self.named,
+            names: &self.names,
+            name_bounds: &self.name_bounds,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -136,12 +216,21 @@ impl OwnedColumns {
 
     /// The columns of `nodes` as `of` builds them, each string column cut into pieces by
     /// `pieces_of` with a bound of `bound` code units.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one column per field of a node, written in the order the snapshot writes them"
+    )]
     pub(crate) fn in_pieces<'n>(
         bound: usize,
         nodes: impl IntoIterator<Item = Option<&'n NodeInput>>,
     ) -> Self {
         let mut columns = Self {
             id_bounds: vec![0],
+            regions: OwnedRegions {
+                id_bounds: vec![0],
+                name_bounds: vec![0],
+                ..OwnedRegions::default()
+            },
             content: ContentData {
                 row_bounds: vec![0],
                 element_bounds: vec![0],
@@ -175,6 +264,7 @@ impl OwnedColumns {
                 columns.shape.push(NodeShapeCode::Rectangle as u8);
                 columns.on_canvas();
                 columns.resizable.push(0);
+                columns.divide.push(0);
                 columns.content.end_node();
                 continue;
             };
@@ -211,10 +301,13 @@ impl OwnedColumns {
             columns.shape.push(shape);
             columns.on_canvas();
             columns.push_resizable(index, node);
+            columns.push_regions(index, node);
             columns.push_content(index, node.content.0.as_ref(), &mut texts, &mut names);
             columns.content.end_node();
         }
         columns.ids = pieces_of(&columns.ids, bound);
+        let count = columns.x.len() as u32;
+        columns.regions.number(count);
         columns.content.texts = pieces_of(&texts, bound);
         columns.content.names = pieces_of(&names, bound);
         columns
@@ -239,6 +332,32 @@ impl OwnedColumns {
         }
         let resizable = node.resizable.0.flatten() == Some(true);
         self.resizable.push(u8::from(resizable));
+    }
+
+    /// Writes the division and the regions of the node at `index`, `node`; a value of another type
+    /// anywhere in them crosses as none, its refusal named by its field.
+    fn push_regions(&mut self, index: u32, node: &NodeInput) {
+        let id = node.id.0.as_deref().unwrap_or_default();
+        match super::regions_of(id, index as usize, &node.divide, &node.regions) {
+            Ok((divide, regions)) => {
+                self.divide.push(match divide {
+                    None => 0,
+                    Some(comb_engine::graph::Axis::Across) => 1,
+                    Some(comb_engine::graph::Axis::Down) => 2,
+                });
+                self.regions.push(index, &regions);
+            }
+            Err(GraphDataProblem::InvalidField { field, .. }) => {
+                let field = if field == "divide" {
+                    NodeField::Divide
+                } else {
+                    NodeField::Regions
+                };
+                self.refuse_at(index, field);
+                self.divide.push(0);
+            }
+            Err(_) => self.divide.push(0),
+        }
     }
 
     /// Names `field` of the node at `index` as refused, unless a value before it is.
@@ -317,6 +436,8 @@ impl OwnedColumns {
             container: &self.container,
             is_container: &self.is_container,
             resizable: &self.resizable,
+            divide: &self.divide,
+            regions: self.regions.view(),
             content: self.content.view(),
             refused: self.refused,
         }
@@ -708,6 +829,8 @@ mod tests {
             container: _,
             is_container: _,
             resizable: _,
+            divide: _,
+            regions: _,
             content: _,
         } = NodeInput::default();
         let node = [

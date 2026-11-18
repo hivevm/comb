@@ -10,6 +10,7 @@ import {
   type EngineSource,
   type GraphChange,
   type GraphData,
+  type RegionData,
   type Selection,
 } from "comb";
 import engineUrl from "comb/engine.wasm?url";
@@ -405,6 +406,19 @@ function removed(nodes: readonly string[], edges: readonly string[]): void {
   graph.edges = graph.edges.filter(({ id }) => !goneEdges.has(id));
 }
 
+/** Gives `regions`, at every depth, the sizes `sizes` names by identifier, as Comb told them. */
+function sized(
+  regions: RegionData[] | undefined,
+  sizes: readonly { readonly id: string; readonly size: number }[],
+): void {
+  // A walk that does not recurse, so that a tree of any depth takes its sizes.
+  const pending = [...(regions ?? [])];
+  for (let region = pending.pop(); region; region = pending.pop()) {
+    region.size = sizes.find(({ id }) => id === region!.id)?.size ?? region.size;
+    for (const inner of region.regions ?? []) pending.push(inner);
+  }
+}
+
 /** How the example's copy of the graph takes each kind of change, as a host application that
  *  persists keeps its own from `onChange` alone (API-edits-reported-as-typed-changes); the type
  *  checker fails it where a
@@ -431,9 +445,14 @@ const MIRROR: { [K in GraphChange["kind"]]: (change: Extract<GraphChange, { kind
       if (container === null) delete node.container;
       else node.container = container;
     },
-    nodeResized: ({ id, x, y, width, height, moved }) => {
+    nodeResized: ({ id, x, y, width, height, moved, regions }) => {
       const node = nodeOf(id);
       if (node) Object.assign(node, { x, y, width, height });
+      for (const at of moved) Object.assign(nodeOf(at.id) ?? {}, { x: at.x, y: at.y });
+      sized(node?.regions, regions);
+    },
+    regionsMoved: ({ node, regions, moved }) => {
+      sized(nodeOf(node)?.regions, regions);
       for (const at of moved) Object.assign(nodeOf(at.id) ?? {}, { x: at.x, y: at.y });
     },
     nodesRemoved: ({ nodes, edges }) => removed(nodes, edges),

@@ -131,6 +131,7 @@ test("a container dragged at its left handle grows to the left, keeps what it ho
       width: 760,
       height: 300,
       moved: [{ id: "a", x: 70, y: 40 }],
+      regions: [],
     },
   ]);
   // A move of the container takes `a` along from where it now lies within it.
@@ -163,6 +164,7 @@ test("a container's right handle dragged inwards past the node it holds stops at
       width: 10 + NODE_WIDTH,
       height: 300,
       moved: [],
+      regions: [],
     },
   ]);
 });

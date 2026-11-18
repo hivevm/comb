@@ -79,6 +79,22 @@ impl ContentStore {
         }
     }
 
+    /// Gives each region of `regions`, a slot just added and the code units of its name, no
+    /// content and those code units, which count against the budget as content's do
+    /// (ARCH-regions-are-container-slots).
+    pub(crate) fn set_regions(&mut self, regions: impl IntoIterator<Item = (u32, u64)>) {
+        for (slot, units) in regions {
+            self.units = self.units - self.units_at(slot) + units;
+            let named = Box::new((ContentData::default(), units));
+            self.edited.insert(slot, Some(named));
+        }
+    }
+
+    /// The code units of the strings of content of the node in `slot`, or of the name of a region.
+    pub(crate) fn units_of(&self, slot: u32) -> u64 {
+        self.units_at(slot)
+    }
+
     /// The code units of the strings of content of the node in `slot`.
     fn units_at(&self, slot: u32) -> u64 {
         match self.edited.get(&slot) {
@@ -139,6 +155,8 @@ mod tests {
             is_container: None.into(),
             height: None.into(),
             resizable: None.into(),
+            divide: None.into(),
+            regions: None.into(),
             content: content.into(),
         }
     }

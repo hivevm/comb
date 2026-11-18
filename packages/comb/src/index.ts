@@ -19,9 +19,11 @@ export type {
   GraphChange,
   GraphDataProblem,
   IconProblem,
+  RegionSize,
 } from "./api";
 export type {
   ContentElement,
+  Divide,
   Dock,
   EdgeData,
   EdgeLabelData,
@@ -31,6 +33,7 @@ export type {
   NodeData,
   NodePatch,
   NodeShape,
+  RegionData,
   Selection,
   Side,
   TextRole,

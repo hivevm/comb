@@ -2,6 +2,7 @@
 //! edge label, a node that is no container, an edge, and a container
 //! (ARCH-engine-edits-nested-graph).
 
+use super::regions::LINE_REACH;
 use super::{Graph, Handle, Level};
 use crate::geometry::{Point, Rect, Side, bounded_pixel, length};
 use crate::stroke::{Stroke, near_path};
@@ -27,6 +28,9 @@ const CONNECTOR_REACH: f64 = 8.0;
 pub enum Target {
     /// The connector of a side of the node in a slot (API-edges-dock-side-or-outline).
     Connector(u32, Side),
+    /// The line after the region in a slot, between it and the next region
+    /// (REN-node-content-and-hits, *Line between regions*).
+    Line(u32),
     /// The label of the edge in a slot (REN-node-content-in-rows).
     Label(u32),
     Node(u32),
@@ -34,7 +38,9 @@ pub enum Target {
 }
 
 impl Graph {
-    /// What a press at `point` hits where a screen pixel is `pixel` world units, at `level`: where
+    /// What a press at `point` hits where a screen pixel is `pixel` world units, at `level`: at the
+    /// near and middle level a line between two regions within `LINE_REACH` screen pixels, the
+    /// innermost; else where
     /// `connectors` asks for them, at the near and middle level, a connector within
     /// `CONNECTOR_REACH` screen pixels, and inside its node's outline within a quarter of the
     /// node's extent as well (`connector_at`), of the node of the highest rank; else at the near
@@ -42,7 +48,8 @@ impl Graph {
     /// no container whose outline holds it, the one of the highest rank; else an edge within
     /// `EDGE_REACH` screen pixels of its path as the stroke of `level` flattens it, the one in the
     /// highest slot; else a container whose outline holds it, the last in the order of containers;
-    /// else nothing (REN-node-content-in-rows, ARCH-engine-edits-nested-graph).
+    /// else nothing (REN-node-content-in-rows, ARCH-engine-edits-nested-graph). A region hit is
+    /// named as the node it divides.
     /// A pixel beyond any zoom hits as the largest a query strokes for.
     pub fn hit_at(
         &mut self,
@@ -52,6 +59,11 @@ impl Graph {
         connectors: bool,
     ) -> Option<Target> {
         let pixel = bounded_pixel(pixel);
+        if level != Level::Far
+            && let Some(slot) = self.line_at(point, LINE_REACH * pixel)
+        {
+            return Some(Target::Line(slot));
+        }
         if connectors
             && level != Level::Far
             && let Some((slot, side)) = self.connector_at(point, CONNECTOR_REACH * pixel)
@@ -81,7 +93,11 @@ impl Graph {
                 && near_path(&self.paths[i], tolerance, point, reach, &mut self.points)
         });
         self.scratch = candidates;
-        found.map(Target::Edge).or(node.map(Target::Node))
+        // A press on a region is one on the node it divides (ARCH-regions-are-container-slots,
+        // *Drawing and hitting*).
+        found
+            .map(Target::Edge)
+            .or(node.map(|slot| Target::Node(self.divided_node(slot))))
     }
 
     /// The resize handle of the selected node in `selected` within `HANDLE_REACH` screen pixels
@@ -146,6 +162,10 @@ impl Graph {
             .candidates(&Rect::at(point).grown(reach), &mut self.scratch);
         let mut best: Option<(u32, Side, f64)> = None;
         for &slot in &self.scratch {
+            // A region has no connectors: no edge ends on it.
+            if self.is_region(slot) {
+                continue;
+            }
             let bounds = self.node_bounds(slot);
             if !bounds.grown(reach).contains(point) {
                 continue;
@@ -453,7 +473,12 @@ mod tests {
                         assert!(sure.is_none_or(|s| e >= s), "edge {e} below {sure:?}");
                     }
                     None => assert_eq!(sure, None, "missed at {p:?}"),
-                    Some(Target::Node(_) | Target::Connector(..) | Target::Label(_)) => {
+                    Some(
+                        Target::Node(_)
+                        | Target::Connector(..)
+                        | Target::Label(_)
+                        | Target::Line(_),
+                    ) => {
                         panic!("{hit:?} where a scan finds none")
                     }
                 }
@@ -864,7 +889,7 @@ mod tests {
         at: &str,
     ) -> Option<usize> {
         let kind = |target: Target| match target {
-            Target::Connector(..) => 0,
+            Target::Connector(..) | Target::Line(_) => 0,
             Target::Label(_) => 1,
             Target::Node(_) => 2,
             Target::Edge(_) => 3,

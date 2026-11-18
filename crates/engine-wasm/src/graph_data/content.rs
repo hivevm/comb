@@ -15,7 +15,7 @@ mod node_content;
 pub use check::ContentColumns;
 #[cfg(test)]
 pub(crate) use check::TEST_BUDGET;
-pub(crate) use check::{Checked, Cursor, check_content_budget};
+pub(crate) use check::{Checked, Cursor, check_content_budget, within_budget};
 pub(crate) use codes::{COLUMN_LIMIT, ROW_LIMIT, SEGMENT_LIMIT, direction_of, role_of};
 pub use codes::{
     DirectionCode, KindCode, MAX_COLUMNS, MAX_CONTENT_UNITS, MAX_ROWS, MAX_SEGMENTS, RoleCode,

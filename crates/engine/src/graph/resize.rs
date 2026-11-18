@@ -207,11 +207,21 @@ impl Graph {
         if !numbers.iter().all(|n| n.is_finite()) {
             return Err(PositionError::NonFinite.into());
         }
-        let held = self
-            .held(slot)
-            .iter()
-            .map(|&s| self.node_bounds(s))
-            .reduce(|a, b| a.union(&b));
+        let held = if self.divided(slot).is_some() {
+            // What its regions need at each side, which a resize moves
+            // (ARCH-regions-are-container-slots, *Resizing what is divided*).
+            Some(Rect::new(
+                self.reach(slot, 0, -1),
+                self.reach(slot, 1, -1),
+                self.reach(slot, 0, 1),
+                self.reach(slot, 1, 1),
+            ))
+        } else {
+            self.held(slot)
+                .iter()
+                .map(|&s| self.node_bounds(s))
+                .reduce(|a, b| a.union(&b))
+        };
         let shape = self.shape(slot);
         let to = resized(shape, handle, from, by, least_height, held.as_ref());
         let i = slot as usize * 2;
@@ -228,6 +238,9 @@ impl Graph {
             self.keep_relative(child);
         }
         self.reboxed(slot);
+        // Its width now the one a later layout of its regions grows from.
+        self.set_divided_width(slot, self.sizes[i]);
+        self.refit(slot);
         Ok(self.node_bounds(slot))
     }
 }

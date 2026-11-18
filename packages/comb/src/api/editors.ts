@@ -10,7 +10,15 @@
 // asked here for each, the connection, the deletion, and the move into a container, and a veto
 // during whose call the store records a change, which Comb tells to `onChange`, ends its gesture
 // with nothing done (API-edits-reported-as-typed-changes, API-edits-report-nested-changes).
-import { refuseIfLost, type Bridge, type GraphDataProblem, type SlotError } from "../bridge";
+import {
+  NO_SLOT,
+  refuseIfLost,
+  type Bridge,
+  type GraphDataProblem,
+  type PlainPatch,
+  type RegionRead,
+  type SlotError,
+} from "../bridge";
 import type { Connect, ContainerMove, Delete, Deletion, MoveInto, Proposal } from "../interaction";
 import type {
   By,
@@ -23,6 +31,9 @@ import type {
   NodeShape,
   NodeData,
   NodePatch,
+  NodeView,
+  Divided,
+  KeptGraph,
 } from "../store";
 import {
   edgePatchOf,
@@ -169,8 +180,19 @@ function load({ store, bridge, limits }: Editing, graph: GraphData): void {
       }
       return bridge.loadGraph(snapshot);
     },
-    record: (state, { kept, idUnits }) => state.load(kept, idUnits),
+    record: (state, { kept, idUnits }) => state.load(widened(kept, bridge), idUnits),
   });
+}
+
+/** `kept` with each node divided into regions as wide as the engine made it to hold them
+ *  (ARCH-regions-are-container-slots). */
+function widened(kept: KeptGraph, bridge: Bridge): KeptGraph {
+  if (!kept.nodes.some((node) => node.divide !== undefined)) return kept;
+  const { sizes } = bridge.nodeBuffers();
+  const nodes = kept.nodes.map((node, slot) =>
+    node.divide === undefined ? node : { ...node, width: sizes[slot * 2]! },
+  );
+  return { ...kept, nodes };
 }
 
 /** `heightOf`: the content, width, and node shape read once as the node `addNode` reads, named
@@ -195,19 +217,112 @@ function updateNode({ store, bridge, limits }: Editing, id: string, patch: unkno
   edit(store, bridge, {
     read: () => patchOf(patch, limits),
     resolve(plain, state) {
-      const slot = state.slots.get(id);
+      const slot = nodeSlotOf(state, id);
       if (slot === undefined) throw new GraphDataError({ kind: "unknownNode", node: id });
-      return { slot, plain };
+      const divides = "regions" in plain || "divide" in plain;
+      const old = divides ? [...bridge.regionsOf(slot)] : [];
+      const kept = divides ? keptOf(plain.regions, old, state) : new Uint32Array();
+      return { slot, plain, old, kept, moving: movingOf(plain.regions, kept, state) };
     },
-    engine: ({ slot, plain }) => bridge.updateNode(slot, id, plain),
-    record: (state, { plain }) => {
+    idUnits(plain, state) {
+      const old = [...bridge.regionsOf(state.slots.get(id)!)];
+      const before = old.reduce((units, slot) => units + state.nodes[slot]!.id.length, 0);
+      return state.idUnits - before + idsIn(plain.regions).reduce((n, i) => n + i.length, 0);
+    },
+    engine: ({ slot, plain, kept }) => bridge.updateNode(slot, id, plain, kept),
+    record: (state, { slot, plain, old, moving }, removal) => {
       const { height, resizable } = plain;
       const sizing = {
         ...("height" in plain ? { height } : {}),
         ...("resizable" in plain ? { resizable } : {}),
       };
-      state.updateNode(id, "content" in plain, sizing);
+      const divided = old.length > 0 || "regions" in plain || "divide" in plain;
+      // What went with a region the patch left out goes as the host's removal, before the change
+      // of the node (ARCH-regions-are-container-slots, *Removing a region*).
+      const content = [...removal.nodes].some((s) => !state.nodes[s]?.region);
+      if (content || removal.edges.length > 0)
+        state.removeNodes([...removal.nodes], [...removal.edges], "host");
+      const after = store.getState();
+      const anew = divided ? dividedAnew(plain, after, bridge, slot, old) : undefined;
+      after.updateNode(id, "content" in plain, sizing, anew);
+      // What a kept region divided anew held now lies in its first region, the host's move.
+      for (const { node, into } of moving) store.getState().nodeMoved(node, into, "host");
+      // The regions moved, which a query the scene keeps does not survive.
+      if (divided) store.getState().positionsMoved();
     },
+  });
+}
+
+/** How the patch `plain` divided the node in `slot` anew, which held the regions in `old`: in
+ *  the direction it names or the node has, into its regions, which the engine took into the
+ *  slots it names (ARCH-regions-are-container-slots). */
+function dividedAnew(
+  plain: PlainPatch,
+  state: GraphState,
+  bridge: Bridge,
+  slot: number,
+  old: readonly number[],
+): Divided {
+  return {
+    width: bridge.nodeBuffers().sizes[slot * 2]!,
+    divide: plain.divide ?? state.nodes[slot]!.divide,
+    regions: (plain.regions || []) as RegionRead[],
+    slots: [...bridge.regionsOf(slot)],
+    old,
+  };
+}
+
+/** The slot of the node `id` in the map of `state`, none where it holds none or `id` names a
+ *  region, which is no node of the host application's (ARCH-regions-are-container-slots). */
+function nodeSlotOf(state: GraphState, id: string): number | undefined {
+  const slot = state.slots.get(id);
+  return slot === undefined || state.nodes[slot]!.region ? undefined : slot;
+}
+
+/** The identifiers of `regions`, read into one list; none where they are no list. */
+function idsIn(regions: unknown): string[] {
+  if (!Array.isArray(regions)) return [];
+  return (regions as RegionRead[]).map(({ id }) => id);
+}
+
+/** The nodes a kept region holds that the patch `regions` divides into regions of its own, each
+ *  with the region it moves into: its first region, to any depth, by the human's decision of
+ *  2026-11-18 (ARCH-regions-are-container-slots); `kept` names the region the node has per region
+ *  of the patch. */
+function movingOf(
+  regions: unknown,
+  kept: Uint32Array,
+  state: GraphState,
+): { node: string; into: string }[] {
+  if (!Array.isArray(regions)) return [];
+  const read = regions as RegionRead[];
+  const first = new Map<number, number>();
+  read.forEach(({ of }, i) => {
+    if (of !== undefined && !first.has(of)) first.set(of, i);
+  });
+  const moving: { node: string; into: string }[] = [];
+  kept.forEach((slot, i) => {
+    if (slot === NO_SLOT || !first.has(i)) return;
+    let leaf = i;
+    while (first.has(leaf)) leaf = first.get(leaf)!;
+    const from = state.nodes[slot]!.id;
+    for (const node of state.nodes)
+      if (node && !node.region && node.container === from)
+        moving.push({ node: node.id, into: read[leaf]!.id });
+  });
+  return moving;
+}
+
+/** Per region of the patch `regions`, depth first, the slot of the region of its identifier in
+ *  `old`, the regions the node has, or `NO_SLOT`; refuses, as a load refuses it, an identifier the
+ *  graph holds for anything else (ARCH-regions-are-container-slots, *Identifiers*). */
+function keptOf(regions: unknown, old: readonly number[], state: GraphState): Uint32Array {
+  const own = new Set(old);
+  return Uint32Array.from(idsIn(regions), (region) => {
+    const slot = state.slots.get(region);
+    if (slot === undefined) return NO_SLOT;
+    if (!own.has(slot)) throw new GraphDataError({ kind: "duplicateNode", node: region });
+    return slot;
   });
 }
 
@@ -215,6 +330,17 @@ function updateNode({ store, bridge, limits }: Editing, id: string, patch: unkno
  *  (ARCH-engine-edits-nested-graph). */
 const A_NODE_OF_THE_GRAPH = "the identifier of a node of the graph";
 const A_MARKED_CONTAINER = "the identifier of a node marked isContainer";
+const AN_UNDIVIDED =
+  "the identifier of a container or a region, not of a node divided into regions";
+
+/** What `invalidContainer` says a container has to be where `view` is none, or none where it may
+ *  hold a node: a node or a region divided into regions holds its regions alone
+ *  (ARCH-regions-are-container-slots, *Regions in a slot*). */
+function refusedAs(view: NodeView | undefined): string | undefined {
+  if (view === undefined) return A_NODE_OF_THE_GRAPH;
+  if ((view.divide ?? view.region?.divide) !== undefined) return AN_UNDIVIDED;
+  return view.isContainer === true ? undefined : A_MARKED_CONTAINER;
+}
 
 /** The slot of the container the node `snapshot` names in the map of `state`, or none on the
  *  canvas; refuses a container the graph does not hold, or one that is no container, as a load
@@ -224,8 +350,8 @@ function containerOf(snapshot: unknown, state: GraphState): number | undefined {
   const { id, container } = snapshot as { id?: unknown; container?: unknown };
   if (typeof container !== "string") return undefined;
   const slot = state.slots.get(container);
-  if (slot !== undefined && state.nodes[slot]!.isContainer === true) return slot;
-  const expected = slot === undefined ? A_NODE_OF_THE_GRAPH : A_MARKED_CONTAINER;
+  const expected = refusedAs(slot === undefined ? undefined : state.nodes[slot]!);
+  if (expected === undefined) return slot;
   const node = typeof id === "string" ? id : "";
   throw new GraphDataError({ kind: "invalidContainer", node, field: "container", expected });
 }
@@ -237,15 +363,27 @@ function addNode({ store, bridge, limits }: Editing, node: unknown): void {
   edit(store, bridge, {
     read: () => nodeSnapshotOf(node, limits),
     resolve(plain, state) {
-      const { id } = plain.snapshot as { id?: unknown };
-      if (typeof id === "string" && state.slots.has(id))
-        throw new GraphDataError({ kind: "duplicateNode", node: id });
+      const { id, regions } = plain.snapshot as { id?: unknown; regions?: unknown };
+      // Its regions' identifiers share the space of the nodes' (ARCH-regions-are-container-slots).
+      for (const named of [id, ...idsIn(regions)])
+        if (typeof named === "string" && state.slots.has(named))
+          throw new GraphDataError({ kind: "duplicateNode", node: named });
       return { ...plain, container: containerOf(plain.snapshot, state) };
     },
     idUnits: (plain, state) => state.idUnits + plain.idUnits,
     engine: ({ snapshot, container }) => bridge.addNode(snapshot, container),
     // The bridge took the node, so each field holds a value of its type.
-    record: (state, { snapshot }, slot) => state.addNode(snapshot as unknown as NodeData, slot),
+    record: (state, { snapshot }, slot) => {
+      const regions = [...bridge.regionsOf(slot)];
+      // The bridge took the regions, each of its fields of its type, in one list.
+      const read = ((snapshot as { regions?: unknown }).regions ?? []) as RegionRead[];
+      const { sizes } = bridge.nodeBuffers();
+      // As wide as the engine made it to hold its regions.
+      const taken = { ...(snapshot as unknown as NodeData), width: sizes[slot * 2]! };
+      state.addNode(taken, slot, { read, slots: regions });
+      // Regions laid out in the engine, which a query the scene keeps does not survive.
+      if (regions.length > 0) store.getState().positionsMoved();
+    },
   });
 }
 
@@ -260,7 +398,7 @@ function endsOf(snapshot: unknown, state: GraphState, limits: Limits): [number, 
   if (!(named(id) && named(source) && named(target))) return [0, 0];
   if (state.edgeSlots.has(id)) throw new GraphDataError({ kind: "duplicateEdge", edge: id });
   const end = (node: string) => {
-    const slot = state.slots.get(node);
+    const slot = nodeSlotOf(state, node);
     if (slot === undefined) throw new GraphDataError({ kind: "missingNode", edge: id, node });
     return slot;
   };
@@ -314,12 +452,12 @@ function idListRead(
  *  `unknown` makes of it. */
 function slotsOf(
   ids: readonly string[],
-  map: ReadonlyMap<string, number>,
+  map: ReadonlyMap<string, number> | ((id: string) => number | undefined),
   unknown: (id: string) => GraphDataProblem,
 ): Uint32Array | undefined {
   const slots = new Set<number>();
   for (const id of ids) {
-    const slot = map.get(id);
+    const slot = typeof map === "function" ? map(id) : map.get(id);
     if (slot === undefined) throw new GraphDataError(unknown(id));
     slots.add(slot);
   }
@@ -333,7 +471,12 @@ function slotsOf(
 function removeNodes({ store, bridge, limits }: Editing, ids: unknown, by: By): void {
   edit(store, bridge, {
     read: (sized) => idListRead(ids, "node identifiers", limits, (count) => sized(count, 0)),
-    resolve: (read, state) => slotsOf(read, state.slots, (node) => ({ kind: "unknownNode", node })),
+    resolve: (read, state) =>
+      slotsOf(
+        read,
+        (node) => nodeSlotOf(state, node),
+        (node) => ({ kind: "unknownNode", node }),
+      ),
     engine: (slots) => bridge.removeNodes(slots),
     record: (state, _, { nodes, edges }) => state.removeNodes([...nodes], [...edges], by),
   });

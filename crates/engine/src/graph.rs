@@ -10,8 +10,9 @@
 //! The graph is split by concept: `slots` keeps the free slots of a kind, `nodes` and `edges` the
 //! edits of each, `containers` which node each node lies in and the order of containers
 //! (ARCH-engine-edits-nested-graph), `index` the spatial index and the rule that builds it again,
-//! `hit` the hit test, `labels` the edge labels, `query` what a rectangle meets, and `resize` the
-//! resize of a node by its resize handles.
+//! `hit` the hit test, `labels` the edge labels, `query` what a rectangle meets, `resize` the
+//! resize of a node by its resize handles, and `regions` the regions a node is divided into
+//! (ARCH-regions-are-container-slots).
 
 use crate::geometry::{EdgePath, Point, Rect, Sides};
 use crate::shape::NodeShape;
@@ -25,6 +26,7 @@ mod index;
 mod labels;
 mod nodes;
 mod query;
+mod regions;
 mod resize;
 mod slots;
 
@@ -40,6 +42,7 @@ pub use nodes::PositionError;
 #[cfg(test)]
 pub(crate) use query::origin_of;
 pub use query::{Level, MeshAt, Visible};
+pub use regions::{Axis, BAND, LEAST_REGION, LineError};
 pub use resize::{Handle, LEAST_SIDE, resized};
 use slots::Slots;
 
@@ -232,6 +235,9 @@ pub struct Graph {
     relative: Vec<[f64; 2]>,
     /// Where each container is drawn and hit among the containers, the higher above the lower.
     container_order: Vec<u32>,
+    /// What each node slot is of regions (ARCH-regions-are-container-slots); a slot past its end
+    /// is neither a region nor divided.
+    divisions: Vec<regions::Division>,
     /// The node slots in use when the index was last built.
     indexed_nodes: u32,
     /// The edge slots in use when the index was last built.

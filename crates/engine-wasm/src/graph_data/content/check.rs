@@ -111,6 +111,19 @@ fn budget() -> u64 {
     u64::from(MAX_CONTENT_UNITS)
 }
 
+/// Refuses `units`, the code units of the strings of content the graph would hold after a load
+/// or an edit of the node `node`, the names of its regions among them, where they pass the budget
+/// (ARCH-regions-are-container-slots), as the budget's own refusal.
+pub(crate) fn within_budget(node: &str, units: u64) -> Result<(), GraphDataProblem> {
+    if units > budget() {
+        return Err(GraphDataProblem::ContentBudgetExceeded {
+            node: node.to_owned(),
+            limit: MAX_CONTENT_UNITS,
+        });
+    }
+    Ok(())
+}
+
 /// The element at `column` of `row` of the node `node`, for a refusal that names it.
 struct At<'n> {
     node: &'n str,

@@ -159,7 +159,21 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   its own container and siblings by rank, a node added into a container,
   and what a removal takes along, a node with everything it holds at every depth, and a move of a
   container moving everything it holds
-  ([ARCH-engine-edits-nested-graph](adr/ARCH-engine-edits-nested-graph.md)); each with its tests,
+  ([ARCH-engine-edits-nested-graph](adr/ARCH-engine-edits-nested-graph.md)); `regions`, the
+  regions a node is divided into, each a container in a node slot of its own marked as a region,
+  in the node or region it divides: `arrange` lays them out from their sizes below the divided
+  node's content, a named region's band of 24 at its start, the node grown to what they need and
+  the last region taking the rest, what each holds moved along; `move_line` moves the line after a
+  region toward the pointer as far as `reach` lets the regions beside it shrink, never below 8,
+  their bands, or the boxes of the nodes they hold, and never back past where it stands where a
+  node overhangs its region, and `refit` fits the regions inside them, the one at the moved side
+  of each division or all across it, keeping what they hold where it lies in the world, as a resize
+  of the divided node does; `line_at` finds the line within 4 screen pixels at the near and middle
+  level, the innermost, which `hit_at` names before a connector, a region hit is named as the node
+  it divides, and `container_at` passes over a divided node or region to its regions; each walk
+  over regions is a loop over `regions_of`, the deepest first where a region needs its own
+  ([ARCH-regions-are-container-slots](adr/ARCH-regions-are-container-slots.md)); each with its
+  tests,
   `tests` with the graphs they build and the property tests of the
   whole graph against a scan, and `budget`, the property test of the mesh budget. `add_node` takes
   the free slot freed last, or a new one after the highest, and the next rank, and puts the node
@@ -284,7 +298,13 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   press at a point hits, a resize handle of the selected node it is handed, a connector where the
   shell asks for connectors, a label, a node, or an edge by its slot, or nothing, as one generated
   value, `resizeNode` resizes a node by a handle from the box it had at the press, its content's
-  height the least, and refuses a pixel as `query` does and a
+  height the least, `regionsOf` names the regions of a divided node depth first, `moveLine` moves
+  the line after a region, `bandName` cuts a region's name to its band in the font of `title`, a
+  load takes the regions as columns of their own in the slots after the nodes, and `addNode` and
+  `updateNode` take them as the node's `regions`, which `api` flattens into one list, each region
+  after the one it lies in, so that no walk over regions recurses; `updateNode` divides the node
+  anew and returns what went with a region left out, and a region's name counts against the
+  budget of content; it refuses a pixel as `query` does and a
   point that is not finite; `setLabelSize` takes the measure of a label's pill, `labelPoint` names
   where a label lies, and `moveLabel` places a dragged label, one dragged beyond the world's limit
   stopping there, refuses a point that is not finite as `hit` does, and returns its path parameter
@@ -371,7 +391,12 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   engine's `resizeNode` the box the node had at the press and the drag from it on every move, and
   signals the node and what it holds as dragged, as a drag of a container does; its release
   records `nodeResized` once, with the nodes that lie directly in it where its left or top side
-  moved, unless no box changed. The cursor over a handle shows its direction. A drag that moved
+  moved, unless no box changed, and of a divided node with the regions whose size changed and the
+  nodes in a region whose top left corner moved. `region-line.ts`: a press on the line between two
+  regions hands the engine's `moveLine` the line's place at the press moved by the drag on every
+  move, signals the divided node dragged, and records `regionsMoved` once at the release where a
+  region's size changed; the cursor over a line shows `col-resize` or `row-resize`. The cursor over
+  a handle shows its direction. A drag that moved
   its node records `nodeMoved` once, when the pointer is released on the canvas or outside it; a
   load ends a drag. Released on the canvas over a container other than its own, as the engine's
   `containerAt` finds
@@ -407,7 +432,9 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   resize handles of the selected node where it is resizable, at the near and middle level, white
   squares of 8 screen pixels outlined in the selection's colour (`handles.ts`); while a resize
   moves, the moving layer draws the resized node's shape anew at its size, its content where the
-  query placed it, until the release queries;
+  query placed it, until the release queries; a region's view draws, in place of a node shape, the
+  line after it, solid or dashed, and the band of its name, the name turned at the left of regions
+  one above the other and cut by the engine once the frame has read the engine's buffers;
   `bindings.ts` is the pool of views the nodes and labels layers bind to slots, keeping the layer's
   children in the order a render binds them. The scale chooses the level of detail: near (from 0.6)
   draws node views and edge labels, middle (from 0.3) node views alone, and far nodes as particles
@@ -722,8 +749,13 @@ tells a change to `onChange` ends its gesture with nothing done and no error, wh
 ([API-edits-reported-as-typed-changes](adr/API-edits-reported-as-typed-changes.md)). Then they run
 through the same function, the deletion through `removeNodes` where its `Deletion` names nodes, else
 through `removeEdges`, recorded as `by: "user"`, which every store action whose change may be
-either's requires; a dragged node or label, and a resized node, writes the engine alone while it
-moves and records `nodeMoved`, `labelMoved`, or `nodeResized` once, at release.
+either's requires; a dragged node or label, a resized node, and a dragged line between regions
+write the engine alone while they move and record `nodeMoved`, `labelMoved`, `nodeResized`, or
+`regionsMoved` once, at release. The store keeps each region in its slot as a view marked as a
+region, with its name, its line, and the direction it lies in; `api` refuses a region named where a
+call names a node, an edge's end as `missingNode`, `removeNodes` and `updateNode` as `unknownNode`,
+and leaves regions out of `nodesRemoved` and `canDelete`
+([ARCH-regions-are-container-slots](adr/ARCH-regions-are-container-slots.md)).
 
 **Panning and zooming.** `interaction` sets the store's viewport. While the viewport stays inside
 the rectangle the scene last queried, and that rectangle within the viewport grown by twice the

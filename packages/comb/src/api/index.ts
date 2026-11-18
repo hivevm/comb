@@ -53,7 +53,7 @@ export { GraphDataError } from "./editors";
 export { EngineSourceError } from "./engine";
 export { IconError } from "./icons";
 export type { IconProblem } from "./icons";
-export type { GraphChange } from "./changes";
+export type { GraphChange, RegionSize } from "./changes";
 export type { EngineSource, EngineSourceProblem } from "./engine";
 export type { GraphDataProblem } from "../bridge";
 export type { ContainerMove, ContentClick, Deletion, Proposal } from "../interaction";

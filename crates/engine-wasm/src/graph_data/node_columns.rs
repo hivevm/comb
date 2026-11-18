@@ -8,11 +8,12 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 use super::item::{Item, Node};
 use super::problem::{
-    A_CONTENT, A_FLAG, A_HEIGHT, A_NUMBER, A_SHAPE, A_SIZE, AN_ID, AN_ID_OR_NONE,
+    A_CONTENT, A_DIVIDE, A_FLAG, A_HEIGHT, A_NUMBER, A_REGION_LIST, A_SHAPE, A_SIZE, AN_ID,
+    AN_ID_OR_NONE,
 };
 use super::{
-    ContentColumns, Field, GraphDataProblem, GraphList, Unflat, bounds_fit, malformed, numbered,
-    refused_by, unshaped, value_at, values,
+    ContentColumns, Field, GraphDataProblem, GraphList, RegionColumns, Unflat, bounds_fit,
+    malformed, numbered, refused_by, unshaped, value_at, values,
 };
 
 /// A field of a node that a load's first pass refuses by its type
@@ -36,6 +37,8 @@ pub enum NodeField {
     Container,
     IsContainer,
     Resizable,
+    Divide,
+    Regions,
     Content,
     Row,
     Element,
@@ -94,6 +97,10 @@ pub struct NodeColumns<'a> {
     pub container: &'a [u32],
     pub is_container: &'a [u8],
     pub resizable: &'a [u8],
+    /// The direction each node is divided in, as the code `divide_code` gives it, and the
+    /// regions of the load (ARCH-regions-are-container-slots).
+    pub divide: &'a [u8],
+    pub regions: RegionColumns<'a>,
     pub content: ContentColumns<'a>,
     pub refused: Option<Refused>,
 }
@@ -104,7 +111,7 @@ pub(super) fn unfit() -> GraphDataProblem {
 }
 
 impl NodeField {
-    pub(super) const ALL: [Self; 15] = [
+    pub(super) const ALL: [Self; 17] = [
         Self::Item,
         Self::Id,
         Self::X,
@@ -115,6 +122,8 @@ impl NodeField {
         Self::Container,
         Self::IsContainer,
         Self::Resizable,
+        Self::Divide,
+        Self::Regions,
         Self::Content,
         Self::Row,
         Self::Element,
@@ -189,6 +198,8 @@ impl NodeColumns<'_> {
         let fit = numbers.iter().all(|&len| len == count)
             && self.shape.len() == count
             && self.container.len() == count
+            && self.divide.len() == count
+            && self.divide.iter().all(|&code| code <= 2)
             && flags
                 .iter()
                 .all(|flag| flag.len() == count && flag.iter().all(|&byte| byte <= 1))
@@ -242,6 +253,8 @@ impl NodeColumns<'_> {
             NodeField::Container => ("container", AN_ID_OR_NONE),
             NodeField::IsContainer => ("isContainer", A_FLAG),
             NodeField::Resizable => ("resizable", A_FLAG),
+            NodeField::Divide => ("divide", A_DIVIDE),
+            NodeField::Regions => ("regions", A_REGION_LIST),
             NodeField::Content => ("content", A_CONTENT),
             NodeField::Row | NodeField::Element | NodeField::Segments | NodeField::Segment => {
                 let unread = match refused.field {
@@ -268,10 +281,11 @@ impl NodeColumns<'_> {
     }
 
     /// Which node each of the `count` nodes lies in and which are containers, as the engine takes
-    /// it (ARCH-engine-edits-nested-graph): a container that names no node, beyond the slots,
-    /// as the slot one past them, which `Nesting::check` refuses.
-    pub(super) fn nesting(&self, count: usize) -> Nesting {
-        let past = numbered(count);
+    /// it (ARCH-engine-edits-nested-graph): a container that names no node, beyond the `slots`
+    /// of the nodes and the regions after them, as the slot one past them, which
+    /// `Nesting::check` refuses.
+    pub(super) fn nesting(&self, count: usize, slots: usize) -> Nesting {
+        let past = numbered(slots);
         let containers = (0..count)
             .map(|i| match self.has_container[i] {
                 0 => CANVAS,

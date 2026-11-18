@@ -104,6 +104,7 @@ impl Graph {
         // it held before it takes the new node's.
         put(&mut self.incident, i, Vec::new());
         self.forget_nesting(slot);
+        self.forget_division(slot);
         self.next_rank += 1;
         self.nest_added(slot, container, is_container);
         let bounds = self.node_bounds(slot);

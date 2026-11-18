@@ -33,6 +33,7 @@ import {
   type DrawnArrow,
   type DrawnOutline,
   type DrawnPill,
+  type DrawnRegion,
   type DrawnSprite,
   type DrawnText,
 } from "./nodes";
@@ -93,6 +94,9 @@ export interface SceneSnapshot {
     shape?: NodeShape;
     /** Whether the user may resize it, as Comb took it, where its data says. */
     resizable?: boolean;
+    /** Where it is a region, the band of its name and the line after it as its view draws them
+     *  (ARCH-regions-are-container-slots). */
+    region?: DrawnRegion;
     outline?: DrawnOutline[];
     texts?: (Omit<DrawnText, "pill"> & { drawnWidth: number; fill: unknown })[];
     pills?: DrawnPill[];
@@ -263,6 +267,9 @@ export class Scene {
     this.connectors.sync(state, positions, sizes, this.origin, this.level === "far");
     this.connection.sync(state, positions, sizes, pointer);
     this.handles.sync(state, positions, sizes);
+    // Last, once no view of the engine's buffers is read any more: the names of the regions
+    // drawn, as the engine cuts them to their bands (ARCH-regions-are-container-slots).
+    this.containerNodes.nameBands();
     // In f64 here, so that the world's transform on the GPU holds no far coordinate.
     const at = toScreen(state.viewport, this.origin.x, this.origin.y);
     this.world.position.set(at.x, at.y);
@@ -308,6 +315,12 @@ export class Scene {
     const far = level === "far";
     // A pixel `query` takes (API-shell-mistake-refused-as-shells): every writer of `viewport.scale`
     // goes through `clampScale`.
+    // A region, a container, draws its name as the engine cuts it
+    // (ARCH-regions-are-container-slots); asked before the query, whose views a call detaches.
+    this.containerNodes.bands ??= {
+      name: (name, length) => bridge.bandName(name, length),
+      thickness: bridge.bandThickness(),
+    };
     const visible = bridge.query(rect, level, 1 / scale, this.labels.reach);
     const { origin } = visible;
     this.origin = origin;
@@ -388,6 +401,7 @@ export class Scene {
       ...this.contentOf(view.slot),
       ...view.drawnShape(),
       ...(view.resizable === undefined ? {} : { resizable: view.resizable }),
+      ...(view.region ? { region: view.region } : {}),
       texts: view.inspected(),
       pills: view.drawnPills(),
       bars: view.drawnBars(),

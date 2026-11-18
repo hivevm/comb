@@ -15,11 +15,11 @@ type Same<A, B> =
 // arrays its glue copies whole, or plain arrays of numbers, which the glue of wasm-bindgen 0.2.130
 // takes as well, and no `GraphBatch` and no `EdgeList` (API-bridge-takes-serde-and-columns): its
 // generated parameters, pinned, the column of node shapes, the columns of nesting
-// (API-bridge-columns-carry-nesting), the height a node's data gives with its byte of presence and
-// whether it is resizable, and the content columns of `text`, `action`, `badge`, `progress`, and
-// `metric` among them and no title column. A refused
-// field crosses as the code of its `NodeField` or `EdgeField`, a plain number, and a shape of
-// content with its row and column.
+// (API-bridge-columns-carry-nesting), the height a node's data gives with its byte of presence,
+// whether it is resizable, the division of each node and the columns of the regions, and the
+// content columns of `text`, `action`, `badge`, `progress`, and `metric` among them and no title
+// column. A refused field crosses as the code of its `NodeField` or `EdgeField`, a plain number,
+// and a shape of content with its row and column.
 const columns: Same<
   Parameters<Engine["loadGraph"]>,
   [
@@ -35,6 +35,18 @@ const columns: Same<
     container: Uint32Array | number[],
     isContainer: Uint8Array | number[],
     resizable: Uint8Array | number[],
+    divide: Uint8Array | number[],
+    regionIds: string[],
+    regionIdBounds: Uint32Array | number[],
+    regionOf: Uint32Array | number[],
+    regionSize: Float64Array | number[],
+    regionDivide: Uint8Array | number[],
+    regionHasDash: Uint8Array | number[],
+    regionDash: Float64Array | number[],
+    regionGap: Float64Array | number[],
+    regionNamed: Uint8Array | number[],
+    regionNames: string[],
+    regionNameBounds: Uint32Array | number[],
     rowBounds: Uint32Array | number[],
     elementBounds: Uint32Array | number[],
     kinds: Uint8Array | number[],

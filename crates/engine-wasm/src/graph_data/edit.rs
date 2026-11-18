@@ -6,7 +6,9 @@ use std::fmt;
 
 use comb_engine::content::Fonts;
 use comb_engine::geometry::Sides;
-use comb_engine::graph::{AddEdgeError, Graph, SlotError};
+use std::collections::HashSet;
+
+use comb_engine::graph::{AddEdgeError, Axis, Graph, SlotError};
 use comb_engine::shape::NodeShape;
 use serde::de::{self, IgnoredAny, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -16,9 +18,10 @@ use super::checks::{color_of, dash_of, edge_ids_of, given_height, label_placemen
 use super::item::{Item, content_of, edge_of, label_of};
 use super::load::checked_content;
 use super::problem::{A_FLAG, A_HEIGHT};
+use super::regions::{Divide, RegionInput};
 use super::{
     Arrow, Checked, ContentInput, Dock, EdgeField, EdgeInput, Field, GraphDataProblem, GraphList,
-    LabelInput, Pair, check_graph_size, utf16_length,
+    LabelInput, Pair, Region, check_graph_size, check_regions, regions_of, utf16_length,
 };
 
 /// Why an edit of an edge was refused: its data, which the host application handed over, or a
@@ -211,7 +214,10 @@ pub(crate) fn update_edge_in(
 /// `api` cannot read, and refuses as malformed before it reaches the bridge. No value of the host
 /// application, and none of its code, reaches the bridge.
 #[derive(Tsify)]
-#[tsify(type = "{ content?: NodeContent; height?: number; resizable?: boolean }")]
+#[tsify(
+    type = "{ content?: NodeContent; height?: number; resizable?: boolean; divide?: Divide; \
+                 regions?: RegionInput[] }"
+)]
 pub struct NodePatch(pub Vec<(String, PatchValue)>);
 
 /// A value of a field of `NodePatch`, read as the field its name says, or none for a name it
@@ -221,6 +227,8 @@ pub enum PatchValue {
     Content(Box<Field<ContentInput>>),
     Height(Field<f64>),
     Resizable(Field<bool>),
+    Divide(Field<Option<Divide>>),
+    Regions(Field<Option<Vec<RegionInput>>>),
     Other,
 }
 
@@ -260,6 +268,8 @@ impl<'de> Visitor<'de> for PatchVisitor {
                 "content" => PatchValue::Content(Box::new(map.next_value()?)),
                 "height" => PatchValue::Height(map.next_value()?),
                 "resizable" => PatchValue::Resizable(map.next_value()?),
+                "divide" => PatchValue::Divide(map.next_value()?),
+                "regions" => PatchValue::Regions(map.next_value()?),
                 _ => {
                     map.next_value::<IgnoredAny>()?;
                     fields.push((field, PatchValue::Other));
@@ -281,23 +291,31 @@ pub(crate) struct Patched {
     pub content: Option<(Checked, (f64, usize))>,
     pub height: Option<f32>,
     pub resizable: Option<bool>,
+    /// The regions the patch divides the node into, and their direction, in place of those it
+    /// has (ARCH-regions-are-container-slots, *Removing a region*).
+    pub regions: Option<(Option<Axis>, Vec<Region>)>,
 }
 
 impl Patched {
     /// Whether the patch set nothing.
     pub(crate) const fn is_empty(&self) -> bool {
-        self.content.is_none() && self.height.is_none() && self.resizable.is_none()
+        self.content.is_none()
+            && self.height.is_none()
+            && self.resizable.is_none()
+            && self.regions.is_none()
     }
 }
 
 /// Checks a patch of the node `node`, of the node shape `shape`, and returns what it sets: its
 /// content checked as a load checks a node's at index 0, its strings counted against the budget
 /// on from `held`, the code units of content the graph holds besides the node's, laid out in
-/// `fonts`; its height as a load checks a node's; and whether the node is resizable; or names
-/// its first offending field.
+/// `fonts`; its height as a load checks a node's; whether the node is resizable; and its regions
+/// as a load checks a node's, divided as the patch says or, where it says nothing of that, as
+/// `current`; or names its first offending field.
 pub(crate) fn patch_of(
     node: &str,
     shape: NodeShape,
+    current: Option<Axis>,
     patch: &NodePatch,
     fonts: &Fonts,
     held: u64,
@@ -305,6 +323,7 @@ pub(crate) fn patch_of(
     let mut patched = Patched::default();
     let mut item = Item::new(GraphList::Nodes, 0);
     item.id = Some(node);
+    let (mut divide, mut regions) = (None, None);
     for (field, value) in &patch.0 {
         match value {
             PatchValue::Content(value) => {
@@ -318,6 +337,8 @@ pub(crate) fn patch_of(
             PatchValue::Resizable(value) => {
                 patched.resizable = Some(item.read("resizable", *value, A_FLAG)?);
             }
+            PatchValue::Divide(value) => divide = Some(value),
+            PatchValue::Regions(value) => regions = Some(value),
             PatchValue::Other => {
                 return Err(GraphDataProblem::UnknownPatchField {
                     node: node.to_owned(),
@@ -325,6 +346,16 @@ pub(crate) fn patch_of(
                 });
             }
         }
+    }
+    // The regions of a patch replace the node's, divided as the patch says or as the node is; a
+    // division without regions divides it into none.
+    if divide.is_some() || regions.is_some() {
+        let none = Field(Some(None));
+        let divide = divide.map_or(Field(Some(current.map(Divide::from))), |d| *d);
+        let (axis, list) = regions_of(node, 0, &divide, regions.unwrap_or(&none))?;
+        let mut taken = HashSet::from([node.to_owned()]);
+        check_regions(node, 0, axis, &list, &mut taken)?;
+        patched.regions = Some((axis, list));
     }
     Ok(patched)
 }
@@ -345,6 +376,7 @@ mod tests {
             patch_of(
                 "a",
                 RECTANGLE.0,
+                None,
                 &NodePatch(fields.collect()),
                 &Fonts::default(),
                 0,

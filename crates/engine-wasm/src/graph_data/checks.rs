@@ -27,6 +27,9 @@ pub(super) struct Nodes<'a> {
     /// may resize it (API-edits-report-nested-changes).
     pub(super) given: Vec<Option<f32>>,
     pub(super) resizable: Vec<bool>,
+    /// The height of each node's content, below which its regions lie; 0 without content
+    /// (ARCH-regions-are-container-slots).
+    pub(super) tops: Vec<f32>,
     pub(super) slots: HashMap<&'a str, u32>,
     /// The code units of the strings of all their content, as the budget counted them.
     pub(super) units: u64,
@@ -128,6 +131,13 @@ pub(crate) const fn kept_height(height: f64) -> f32 {
     height as f32
 }
 
+/// The height of a node's content, `(content, rows)` as its layout gives it, below which its
+/// regions lie: the rows and their padding, without the least height of a node; 0 without rows
+/// (ARCH-regions-are-container-slots, *Division*).
+pub(crate) const fn content_top((content, rows): (f64, usize)) -> f32 {
+    if rows > 0 { kept_height(content) } else { 0.0 }
+}
+
 /// Refuses content of `rows` rows in the node `id` of the filled node shape `shape`, which holds
 /// none (REN-closed-set-of-node-shapes).
 pub(crate) fn content_fits_shape(
@@ -155,14 +165,16 @@ pub(super) fn nodes_of<'a>(
     let mut sizes = Vec::with_capacity(batch.nodes.len() * 2);
     let mut shapes = Vec::with_capacity(batch.nodes.len());
     let mut given = Vec::with_capacity(batch.nodes.len());
+    let mut tops = Vec::with_capacity(batch.nodes.len());
     let mut cursor = Cursor::default();
     for (index, node) in batch.nodes.iter().enumerate() {
         let (position, width) = checked_node(node)?;
         let height_given = given_height(node.id, node.height)?;
         let rows = content.rows(index).len();
         content_fits_shape(node.id, node.shape, rows)?;
-        let height = content.check(index, node.id, &mut cursor, fonts)?;
-        let height = node_height(node.shape, width, (height, rows), height_given);
+        let laid = content.check(index, node.id, &mut cursor, fonts)?;
+        let height = node_height(node.shape, width, (laid, rows), height_given);
+        tops.push(content_top((laid, rows)));
         within_by_height(node.id, position[1], height)?;
         if slots.insert(node.id, slot(index)?).is_some() {
             return Err(GraphDataProblem::DuplicateNode {
@@ -180,6 +192,7 @@ pub(super) fn nodes_of<'a>(
         shapes,
         resizable: batch.nodes.iter().map(|node| node.resizable).collect(),
         given,
+        tops,
         slots,
         units: cursor.units(),
     })
@@ -657,6 +670,8 @@ mod tests {
                     is_container: None.into(),
                     height: None.into(),
                     resizable: None.into(),
+                    divide: None.into(),
+                    regions: None.into(),
                     content: titled("x"),
                 })
                 .collect(),

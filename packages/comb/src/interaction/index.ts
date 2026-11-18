@@ -15,6 +15,7 @@ import { labelDrag } from "./label-drag";
 import { nodeDrag } from "./node-drag";
 import { pan } from "./pan";
 import { resize } from "./resize";
+import { lineDrag } from "./region-line";
 import { levelAt, zoomAt } from "../store/viewport";
 
 export { attachDeletion, type Delete, type Deletion } from "./delete";
@@ -25,7 +26,7 @@ const WHEEL_STEP = 1.0015;
 
 /** The cursor over what a press would hit: resize a node, begin a connection, grab a node, select
  *  an edge, or nothing. */
-const CURSORS: Record<Exclude<Hit["kind"], "handle">, string> = {
+const CURSORS: Record<Exclude<Hit["kind"], "handle" | "line">, string> = {
   connector: "crosshair",
   label: "grab",
   node: "grab",
@@ -47,11 +48,16 @@ const HANDLE_CURSORS: Record<Extract<Hit, { kind: "handle" }>["handle"], string>
 
 /** The cursor over what `hit` names. */
 function cursorOf(hit: Hit): string {
-  return hit.kind === "handle" ? HANDLE_CURSORS[hit.handle] : CURSORS[hit.kind];
+  if (hit.kind === "handle") return HANDLE_CURSORS[hit.handle];
+  // A line between regions side by side moves across, one between regions one above the other
+  // up and down (ARCH-regions-are-container-slots).
+  if (hit.kind === "line") return hit.divide === "across" ? "col-resize" : "row-resize";
+  return CURSORS[hit.kind];
 }
 
 /** Begins what a press at the screen point `(x, y)` does where the context's `hitAt` says it hits
- *  (REN-node-content-in-rows): on a resize handle of the selected node, a resize of it; on a
+ *  (REN-node-content-in-rows): on a resize handle of the selected node, a resize of it; on a line
+ *  between regions, a drag of it (ARCH-regions-are-container-slots); on a
  *  connector, where the host lets the user connect, a connection;
  *  on an edge label, a drag of it, its edge selected; on a node, a drag of it that waits for the
  *  slop, or within it a click, the node selected; on an edge, a pan that waits for the slop, the
@@ -67,6 +73,7 @@ function begin(
   const hit = context.hitAt(x, y);
   return (
     resize(context, hit, x, y) ||
+    lineDrag(context, hit, x, y) ||
     (connect && connection(context, hit, x, y, connect, loops)) ||
     labelDrag(context, hit, x, y) ||
     nodeDrag(context, hit, x, y) ||

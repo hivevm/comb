@@ -15,6 +15,7 @@ import {
   type GraphStore,
   type NodeData,
   type NodePatch,
+  type RegionData,
   type Selection,
   type StoreChange,
 } from "../store";
@@ -27,6 +28,9 @@ type EdgeChangePatch = {
     ? Readonly<EdgeLabelData> | null
     : EdgePatch[K];
 };
+
+/** A region and its size along the direction of its division, as Comb keeps it now. */
+export type RegionSize = { readonly id: string; readonly size: number };
 
 /** One change of the graph, by its `kind` and by who made it, `"user"` or `"host"`, as
  *  `onChange` delivers it (API-edits-reported-as-typed-changes). */
@@ -43,10 +47,12 @@ export type GraphChange =
       readonly patch: Readonly<NodePatch>;
     }
   /** A drag left the node `id` at `x`, `y`, relative to `container`, the identifier of the
-   *  container it lies in, or on the canvas for `null` (API-edits-report-nested-changes). */
+   *  container it lies in, or on the canvas for `null` (API-edits-report-nested-changes); or, by
+   *  the host, `updateNode` moved it into the first region of a region it divided anew
+   *  (ARCH-regions-are-container-slots). */
   | {
       readonly kind: "nodeMoved";
-      readonly by: "user";
+      readonly by: By;
       readonly id: string;
       readonly x: number;
       readonly y: number;
@@ -64,6 +70,19 @@ export type GraphChange =
       readonly y: number;
       readonly width: number;
       readonly height: number;
+      readonly moved: readonly { readonly id: string; readonly x: number; readonly y: number }[];
+      /** Its regions whose size the resize changed, each with its size now
+       *  (ARCH-regions-are-container-slots). */
+      readonly regions: readonly RegionSize[];
+    }
+  /** A drag of a line of the divided node `node` changed the sizes of its regions `regions`, and
+   *  the positions relative to their region of the nodes `moved`, each with that position
+   *  (ARCH-regions-are-container-slots, *Lines*). */
+  | {
+      readonly kind: "regionsMoved";
+      readonly by: "user";
+      readonly node: string;
+      readonly regions: readonly RegionSize[];
       readonly moved: readonly { readonly id: string; readonly x: number; readonly y: number }[];
     }
   /** The nodes `nodes` were removed, and with them the edges `edges`. */
@@ -156,7 +175,49 @@ function nodeUpdatedOf(
   const patch: NodePatch = change.content ? { content: bridge.content(slot) } : {};
   if (change.height) patch.height = heightAt(bridge, slot);
   if (change.resizable !== undefined) patch.resizable = change.resizable;
+  if (change.regions) {
+    const { divide } = state.nodes[slot]!;
+    if (divide !== undefined) patch.divide = divide;
+    patch.regions = regionsAt(state, bridge, slot);
+  }
   return { kind: change.kind, by: change.by, id: change.id, patch };
+}
+
+/** The size of the region in `slot` as the engine keeps it: its extent along the direction of
+ *  its division. */
+function sizeAt(state: GraphState, sizes: Float32Array, slot: number): number {
+  const across = state.nodes[slot]!.region!.axis === "across";
+  return sizes[slot * 2 + (across ? 0 : 1)]!;
+}
+
+/** The regions of the node in `slot` as the host application's type has them, each with its
+ *  size as the engine keeps it, at every depth (ARCH-regions-are-container-slots). */
+function regionsAt(state: GraphState, bridge: Bridge, slot: number): RegionData[] {
+  const order = [...bridge.regionsOf(slot)];
+  const { sizes } = bridge.nodeBuffers();
+  const byId = new Map<string, RegionData[]>();
+  const top: RegionData[] = [];
+  const own = state.nodes[slot]!.id;
+  for (const at of order) {
+    const view = state.nodes[at]!;
+    const { name, line, divide } = view.region!;
+    const region: RegionData = { id: view.id, size: sizeAt(state, sizes, at), line };
+    if (typeof line !== "string") region.line = [line[0], line[1]];
+    if (name !== undefined) region.name = name;
+    if (divide !== undefined) region.divide = divide;
+    const into = view.container === own ? top : byId.get(view.container!)!;
+    into.push(region);
+    const inner: RegionData[] = [];
+    byId.set(view.id, inner);
+    if (divide !== undefined) region.regions = inner;
+  }
+  return top;
+}
+
+/** Each of `regions`, by identifier, with its size as the engine keeps it now. */
+function regionSizes(state: GraphState, bridge: Bridge, regions: readonly string[]) {
+  const { sizes } = bridge.nodeBuffers();
+  return regions.map((id) => ({ id, size: sizeAt(state, sizes, state.slots.get(id)!) }));
 }
 
 /** The change `nodeResized` as `onChange` delivers it: the node's box, its position relative to
@@ -171,11 +232,17 @@ function nodeResizedOf(
   const { sizes } = bridge.nodeBuffers();
   const [width, height] = [sizes[slot * 2]!, sizes[slot * 2 + 1]!];
   const { x, y } = placeOf(state, bridge, slot);
-  const moved = change.moved.map((id) => {
+  const moved = movedOf(state, bridge, change.moved);
+  const regions = regionSizes(state, bridge, change.regions);
+  return { kind: change.kind, by: change.by, id: change.id, x, y, width, height, moved, regions };
+}
+
+/** Each node of `moved` with its position relative to its container now. */
+function movedOf(state: GraphState, bridge: Bridge, moved: readonly string[]) {
+  return moved.map((id) => {
     const at = placeOf(state, bridge, state.slots.get(id)!);
     return { id, x: at.x, y: at.y };
   });
-  return { kind: change.kind, by: change.by, id: change.id, x, y, width, height, moved };
 }
 
 /** The change `nodeAdded` as `onChange` delivers it: the node as Comb took it, its position
@@ -186,7 +253,7 @@ function nodeAddedOf(
   bridge: Bridge,
 ): GraphChange {
   const slot = state.slots.get(change.id)!;
-  const { id, width, shape, isContainer, height, resizable } = state.nodes[slot]!;
+  const { id, width, shape, isContainer, height, resizable, divide } = state.nodes[slot]!;
   const { x, y, container } = placeOf(state, bridge, slot);
   const node: NodeData = { id, x, y, width, shape, content: bridge.content(slot) };
   if (container !== null) node.container = container;
@@ -194,6 +261,12 @@ function nodeAddedOf(
   // The height as Comb took it: raised where it was below its content's.
   if (height !== undefined) node.height = heightAt(bridge, slot);
   if (resizable !== undefined) node.resizable = resizable;
+  if (divide !== undefined) {
+    node.divide = divide;
+    node.regions = regionsAt(state, bridge, slot);
+    // As wide as its regions made it.
+    node.width = bridge.nodeBuffers().sizes[slot * 2]!;
+  }
   return { kind: change.kind, by: change.by, node };
 }
 
@@ -264,6 +337,14 @@ function deliveryOf(change: StoreChange, state: GraphState, bridge: Bridge): Gra
     case "edgeAdded":
     case "edgeUpdated":
       return edgeDeliveryOf(change, state);
+    case "regionsMoved":
+      return {
+        kind: change.kind,
+        by: change.by,
+        node: change.node,
+        regions: regionSizes(state, bridge, change.regions),
+        moved: movedOf(state, bridge, change.moved),
+      };
     case "labelMoved": {
       const { t, offset } = edgeNamed(state, change.edge).edge.label!;
       return { kind: change.kind, by: change.by, edge: change.edge, t, offset };

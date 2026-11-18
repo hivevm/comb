@@ -9,6 +9,7 @@ import init, {
   checkContentBudget,
   badgePaddingX,
   badgePaddingY,
+  bandThickness,
   checkIdBudget,
   columnLimit,
   contentBudget,
@@ -76,6 +77,8 @@ export {
   type EdgeColumnWriter,
   type NodeColumns,
   type NodeColumnWriter,
+  type RegionColumns,
+  type RegionRead,
 } from "./columns";
 
 /** The refusal of `translate`'s delta, under the name it had before `NumberError` held it. */
@@ -273,10 +276,26 @@ export interface Bridge {
    *  `slot` holds no edge, the graph as it was. */
   updateEdge(slot: number, id: string, patch: PlainEdgePatch): void;
   /** Checks the patch of the node `id` in `slot` as a load checks a node's content and gives the
-   *  node its new content and the height it lays out to (REN-node-content-in-rows). Throws a
-   *  `GraphDataProblem`,
-   *  and a `SlotError` where `slot` holds no node, the graph as it was. */
-  updateNode(slot: number, id: string, patch: PlainPatch): void;
+   *  node its new content and the height it lays out to (REN-node-content-in-rows); a patch of
+   *  regions divides it anew, `kept` naming per region of the patch, depth first, the slot of the
+   *  region of its identifier the node has, or `NO_SLOT`, and returns what went with the regions
+   *  it had, those regions among it (ARCH-regions-are-container-slots). Throws a
+   *  `GraphDataProblem`, and a `SlotError` where `slot` holds no node, the graph as it was. */
+  updateNode(slot: number, id: string, patch: PlainPatch, kept: Uint32Array): Removal;
+  /** The regions of the node or region in `slot`, at every depth, each followed by its own, in
+   *  the order of each division (ARCH-regions-are-container-slots). */
+  regionsOf(slot: number): Uint32Array;
+  /** Moves the line after the region in `slot` to the world coordinate `to` along its division,
+   *  as far as the regions beside it allow, and returns where it now stands
+   *  (ARCH-regions-are-container-slots, *Lines*): only toward `to`, never back past where it
+   *  stands. Throws a `LineRefusal` where `slot` holds no node or no region with a region after
+   *  it, the shell's mistakes. */
+  moveLine(slot: number, to: number): number;
+  /** `name` as the band of a region `length` world units long draws it: whole, or cut and
+   *  followed by an ellipsis (ARCH-regions-are-container-slots, *Name band*). */
+  bandName(name: string, length: number): string;
+  /** The thickness of the band of a named region, the engine's. */
+  bandThickness(): number;
   /** Hands over the metrics of the font the texts of `role` are drawn with, for every layout
    *  from then on (REN-node-content-in-rows). Throws a `NumberError` `invalidFont` for metrics the
    *  engine cannot
@@ -590,7 +609,7 @@ function wrap(exports: InitOutput): Bridge {
 /** The columns of a load's nodes, as `loadGraph` takes them before the first value refused. */
 function nodeValues(nodes: NodeColumns) {
   const { ids, idBounds, x, y, width, hasHeight, height, shape } = nodes;
-  const { hasContainer, container, isContainer, resizable } = nodes;
+  const { hasContainer, container, isContainer, resizable, divide, regions: r } = nodes;
   const c = nodes.content;
   return [
     ids,
@@ -605,6 +624,18 @@ function nodeValues(nodes: NodeColumns) {
     container,
     isContainer,
     resizable,
+    divide,
+    r.ids,
+    r.idBounds,
+    r.of,
+    r.size,
+    r.divide,
+    r.hasDash,
+    r.dash,
+    r.gap,
+    r.named,
+    r.names,
+    r.nameBounds,
     c.rowBounds,
     c.elementBounds,
     c.kinds,
@@ -756,6 +787,19 @@ function nodeBuffersOf(engine: Engine, f32: (ptr: number, len: number) => Float3
   };
 }
 
+/** The calls of the bridge that divide nodes into regions and drag their lines
+ *  (ARCH-regions-are-container-slots). */
+function regionCalls(engine: Engine) {
+  return {
+    updateNode: (slot: number, id: string, patch: PlainPatch, regions: Uint32Array) =>
+      removedOf(engine.updateNode(slot, id, patch, regions)),
+    regionsOf: (slot: number) => engine.regionsOf(slot),
+    moveLine: (slot: number, to: number) => engine.moveLine(slot, to),
+    bandName: (name: string, length: number) => engine.bandName(name, length),
+    bandThickness,
+  };
+}
+
 function engineBridge(memory: WebAssembly.Memory): Bridge {
   const engine = newEngine();
   const { u32, f32 } = viewsOn(memory);
@@ -763,7 +807,7 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
     loadGraph: (snapshot) => load(engine, snapshot),
     addNode: (node, container) => engine.addNode(node, container),
     heightOf: (node) => engine.heightOf(node),
-    updateNode: (slot, id, patch) => engine.updateNode(slot, id, patch),
+    ...regionCalls(engine),
     content: (slot) => engine.content(slot),
     setFont: (role, { codes, advances, fallback, lineHeight }) =>
       engine.setFont(ROLES[role], codes, advances, fallback, lineHeight),

@@ -2014,7 +2014,7 @@ proptest! {
                     *key == "content" && content_ok(&node)
                 });
                 let sets = read.iter().any(|(key, _)| *key == "content");
-                match patch_of("n", crate::graph_data::RECTANGLE.0, &patch, &Fonts::default(), 0) {
+                match patch_of("n", crate::graph_data::RECTANGLE.0, None, &patch, &Fonts::default(), 0) {
                     Ok(checked) => prop_assert!(fine && checked.content.is_some() == sets),
                     Err(error) => {
                         prop_assert!(!fine);
@@ -2118,6 +2118,8 @@ fn counted_node(id: String, rows: &[Vec<Counted>]) -> NodeInput {
         is_container: None.into(),
         height: None.into(),
         resizable: None.into(),
+        divide: None.into(),
+        regions: None.into(),
         content: content_input(rows).into(),
     }
 }
@@ -2410,4 +2412,173 @@ fn expected_nesting(
             expected: expected.to_owned(),
         })
     })
+}
+
+/// A region of the test below: the index of the region it lies in, picked among those before it,
+/// or none; its size; whether it has a name and a dashed line; its division, which a region that
+/// holds regions takes in any case.
+type RegionCase = (Option<usize>, f64, bool, bool, bool);
+
+/// Regions of the test below, one to twelve, and now and then a field of another type in one of
+/// them, by the index of the region and of the field.
+fn random_regions() -> impl Strategy<Value = (Vec<RegionCase>, Option<(usize, usize)>)> {
+    (1_usize..=12).prop_flat_map(|count| {
+        let region = (
+            proptest::option::weighted(0.5, 0_usize..64),
+            1.0..200.0f64,
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+        );
+        (
+            proptest::collection::vec(region, count),
+            proptest::option::weighted(0.2, (0..count, 0_usize..6)),
+        )
+    })
+}
+
+/// The region `k` of `cases` as the host application's data, flat as `api` hands it over, its
+/// `of` the region it lies in, of the division `axis` where it divides, and `mistyped` naming one
+/// of its fields of another type.
+fn region_value(k: usize, case: &RegionCase, holds: bool, mistyped: Option<usize>) -> Value {
+    let (of, size, named, dashed, across) = *case;
+    let text = |s: &str| Value::Text(s.to_owned());
+    let mut fields = vec![
+        ("id".to_owned(), text(&format!("r{k}"))),
+        ("size".to_owned(), Value::Number(size)),
+        (
+            "line".to_owned(),
+            if dashed {
+                Value::List(vec![Value::Number(6.0), Value::Number(4.0)])
+            } else {
+                text("solid")
+            },
+        ),
+    ];
+    if named {
+        fields.push(("name".to_owned(), text("name")));
+    }
+    if holds || across {
+        fields.push((
+            "divide".to_owned(),
+            text(if across { "across" } else { "down" }),
+        ));
+    }
+    if let Some(of) = of {
+        fields.push(("of".to_owned(), Value::Number(of as f64)));
+    }
+    let Some(field) = mistyped else {
+        return Value::Object(fields);
+    };
+    let wrong = match field {
+        0 => ("id", Value::Number(1.0)),
+        1 => ("size", text("1")),
+        2 => ("line", Value::Number(1.0)),
+        3 => ("name", Value::Number(1.0)),
+        4 => ("divide", text("sideways")),
+        _ => return Value::Bool(false),
+    };
+    fields.retain(|(name, _)| name != wrong.0);
+    fields.push((wrong.0.to_owned(), wrong.1));
+    Value::Object(fields)
+}
+
+#[test]
+fn a_load_of_random_regions_crosses_them_unchanged_and_refuses_a_value_of_another_type_by_its_field()
+ {
+    // Verifies: API-bridge-columns-carry-nesting, ARCH-regions-are-container-slots
+    let (crossed, refused) = (Cell::new(0), Cell::new(0));
+    let mut config = ProptestConfig::with_cases(2_000);
+    config.source_file = Some(file!());
+    let mut runner = TestRunner::new(proptest::test_runner::contextualize_config(config));
+    let result = runner.run(&random_regions(), |(mut cases, mistyped)| {
+        // Each region lies in one before it, or in the node.
+        for (k, case) in cases.iter_mut().enumerate() {
+            case.0 = case.0.filter(|_| k > 0).map(|pick| pick % k);
+        }
+        let mut holds = vec![false; cases.len()];
+        for parent in cases.iter().filter_map(|case| case.0) {
+            holds[parent] = true;
+        }
+        let regions: Vec<Value> = cases
+            .iter()
+            .enumerate()
+            .map(|(k, case)| {
+                let wrong = mistyped.filter(|&(at, _)| at == k).map(|(_, field)| field);
+                region_value(k, case, holds[k], wrong)
+            })
+            .collect();
+        let mut node = match titled_node("act") {
+            Value::Object(fields) => fields,
+            _ => unreachable!("a node is an object"),
+        };
+        node.push(("divide".to_owned(), Value::Text("across".to_owned())));
+        node.push(("regions".to_owned(), Value::List(regions)));
+        let data = Value::Object(vec![
+            ("nodes".to_owned(), Value::List(vec![Value::Object(node)])),
+            ("edges".to_owned(), Value::List(Vec::new())),
+        ]);
+        let batch = GraphBatch::deserialize(data).expect("graph data of the right shape");
+        let loaded = graph_of(&batch);
+        if mistyped.is_some() {
+            prop_assert!(
+                matches!(&loaded, Err(GraphDataProblem::InvalidField { field, .. })
+                    if field == "regions" || field == "divide"),
+                "{loaded:?}"
+            );
+            refused.set(refused.get() + 1);
+            return Ok(());
+        }
+        let graph = loaded.expect("a valid load");
+        // Names, lines, sizes, and what each lies in cross the columns unchanged.
+        let node = &batch.nodes[0];
+        let (_, read) = super::regions_of("act", 0, &node.divide, &node.regions)
+            .expect("regions of their types");
+        for (region, case) in read.iter().zip(&cases) {
+            prop_assert_eq!(region.parent, case.0);
+            prop_assert_eq!(region.size, case.1);
+            prop_assert_eq!(region.name.as_deref(), case.2.then_some("name"));
+            prop_assert_eq!(region.dash, case.3.then_some([6.0, 4.0]));
+        }
+        let columns = OwnedColumns::of(batch.nodes.iter().map(Some));
+        let view = columns.view();
+        let trees = view.regions.trees(view.divide).expect("columns that fit");
+        prop_assert_eq!(&trees[0].1, &read);
+        // Each region in its slot after the node, in what it lies in, divided where it holds
+        // regions, and at least its size along the division it lies in.
+        let slot = |k: usize| k as u32 + 1;
+        prop_assert_eq!(graph.regions_of(0).len(), cases.len());
+        for (k, case) in cases.iter().enumerate() {
+            let container = case.0.map_or(0, slot);
+            prop_assert_eq!(graph.container(slot(k)), container);
+            prop_assert!(graph.is_region(slot(k)));
+            prop_assert_eq!(graph.holds_regions(slot(k)), holds[k]);
+            let axis = graph
+                .divided(container)
+                .expect("what a region lies in is divided");
+            let extent = graph.sizes()[slot(k) as usize * 2 + axis.index()];
+            prop_assert!(f64::from(extent) >= case.1 as f32 as f64 - 1e-3);
+        }
+        crossed.set(crossed.get() + 1);
+        Ok(())
+    });
+    if let Err(error) = result {
+        panic!("{error}\n{runner}");
+    }
+    assert!(
+        crossed.get() >= 500 && refused.get() >= 100,
+        "{crossed:?} {refused:?}"
+    );
+}
+
+/// A node of the example's shape: `id` at the origin, 100 wide, of one title.
+fn titled_node(id: &str) -> Value {
+    Value::Object(vec![
+        ("id".to_owned(), Value::Text(id.to_owned())),
+        ("x".to_owned(), Value::Number(0.0)),
+        ("y".to_owned(), Value::Number(0.0)),
+        ("width".to_owned(), Value::Number(100.0)),
+        ("shape".to_owned(), Value::Text("rectangle".to_owned())),
+        ("content".to_owned(), titled("t")),
+    ])
 }

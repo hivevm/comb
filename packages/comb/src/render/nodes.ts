@@ -27,7 +27,7 @@ import {
   type Placed,
   type TextRole,
 } from "../bridge";
-import type { GraphView, NodeView } from "../store";
+import type { GraphView, NodeView, RegionView } from "../store";
 import { Bindings } from "./bindings";
 import type { Icons } from "./icons";
 
@@ -419,6 +419,48 @@ export interface DrawnOutline {
   radius?: number;
 }
 
+/** What a region's view draws in place of a node shape (ARCH-regions-are-container-slots): the
+ *  band of its name, its rectangle in the region and the name as drawn, cut to the band's length;
+ *  and the line after it, its ends in the region and its dash pattern, none for a solid one. */
+export interface DrawnRegion {
+  /** The band, and its name's rotation in radians: 0, or a quarter turn anticlockwise, read
+   *  from bottom to top, at the left of regions one above the other. */
+  band?: { x: number; y: number; width: number; height: number; name: string; rotation: number };
+  line?: { x1: number; y1: number; x2: number; y2: number; dash?: readonly [number, number] };
+}
+
+/** What the views of regions take from the engine: a name as the band of a region of a length
+ *  draws it, and the thickness of a band. */
+export interface Bands {
+  readonly name: (name: string, length: number) => string;
+  readonly thickness: number;
+}
+
+/** The colour of the line between two regions and of the edge of a name band. */
+const REGION_LINE = 0x9ca3af;
+
+/** Strokes the line from `(x1, y1)` to `(x2, y2)` into `lines`, solid, or as dashes of `dash[0]`
+ *  with gaps of `dash[1]` world units from its start. */
+function strokeLine(
+  lines: Graphics,
+  { x1, y1, x2, y2 }: { x1: number; y1: number; x2: number; y2: number },
+  dash: readonly [number, number] | undefined,
+): void {
+  const length = Math.hypot(x2 - x1, y2 - y1);
+  const style = { color: REGION_LINE, width: 1 };
+  if (!dash || length === 0) {
+    lines.moveTo(x1, y1).lineTo(x2, y2).stroke(style);
+    return;
+  }
+  const [on, off] = dash;
+  const [ux, uy] = [(x2 - x1) / length, (y2 - y1) / length];
+  for (let at = 0; at < length; at += on + off) {
+    const end = Math.min(at + on, length);
+    lines.moveTo(x1 + ux * at, y1 + uy * at).lineTo(x1 + ux * end, y1 + uy * end);
+  }
+  lines.stroke(style);
+}
+
 /** One node: its node shape, its badges' pills, its progress bars, its metrics' arrows, its texts,
  *  and its icons. A pooled view, bound to one node slot at a time; its texts and sprites come from
  *  the layer's element pool. */
@@ -457,6 +499,12 @@ export class NodeGraphic extends Container {
   } = { node: null, width: -1, height: -1, selected: false, elements: -1, icons: -1 };
   /** The texts the view draws, for inspection. */
   texts: DrawnText[] = [];
+  /** The line and the band of a region the view draws, none for a node. */
+  private readonly lines = new Graphics();
+  private bandText: BitmapText | null = null;
+  region: DrawnRegion | null = null;
+  /** How the view draws a region's name, which the layer hands it. */
+  bands: Bands | null = null;
 
   /** Whether the node the view shows is resizable, as Comb took it; none where its data left it
    *  out. */
@@ -473,7 +521,7 @@ export class NodeGraphic extends Container {
 
   constructor(private readonly shared: ElementPool) {
     super();
-    this.addChild(this.box, this.pills, this.bars, this.arrows);
+    this.addChild(this.box, this.lines, this.pills, this.bars, this.arrows);
     // The engine answers which node lies under the pointer; the view takes no events.
     this.eventMode = "none";
   }
@@ -557,7 +605,7 @@ export class NodeGraphic extends Container {
   bind(
     node: Readonly<NodeView>,
     selected: boolean,
-    height: number,
+    [width, height]: readonly [number, number],
     placed: Placed,
     start: number,
     end: number,
@@ -565,7 +613,6 @@ export class NodeGraphic extends Container {
   ): void {
     this.nodeId = node.id;
     const { drawn } = this;
-    const { width } = node;
     if (
       drawn.node === node &&
       drawn.width === width &&
@@ -577,7 +624,7 @@ export class NodeGraphic extends Container {
       return;
     this.drawn = { node, width, height, selected, elements: end - start, icons: icons.version };
     this.size = { width, height };
-    drawShape(this.box, node.shape ?? "rectangle", width, height, selected);
+    this.drawBox(node, width, height, selected);
     this.showTexts(textsOf(placed, start, end));
     this.showBars(barsOf(placed, start, end));
     this.showArrows(arrowsOf(placed, start, end));
@@ -593,13 +640,99 @@ export class NodeGraphic extends Container {
     this.size = { width, height };
     // A binding after the release draws the whole view anew.
     this.drawn = { ...this.drawn, width: -1, height: -1 };
-    drawShape(this.box, node.shape ?? "rectangle", width, height, selected);
+    this.drawBox(node, width, height, selected);
+  }
+
+  /** Draws the node shape of `node`, `width` × `height`, or where it is a region its line and
+   *  its band in place of one. */
+  private drawBox(node: Readonly<NodeView>, width: number, height: number, selected: boolean) {
+    this.lines.clear();
+    if (!node.region) {
+      this.region = null;
+      if (this.bandText) this.bandText.visible = false;
+      drawShape(this.box, node.shape ?? "rectangle", width, height, selected);
+      return;
+    }
+    this.box.clear();
+    this.region = this.drawRegion(node.region, width, height);
+  }
+
+  /** Draws the region `region`, `width` × `height`: the line after it where it is not the last
+   *  of its division, at its right side or its bottom, and its name in a band at its start, at
+   *  its top where it lies beside others, turned at its left where it lies above or below others
+   *  (ARCH-regions-are-container-slots, *Name band*, *Lines*). */
+  private drawRegion(region: RegionView, width: number, height: number): DrawnRegion {
+    const drawn: DrawnRegion = {};
+    if (!region.last) drawn.line = this.drawLine(region, width, height);
+    const { bands } = this;
+    if (region.name === undefined || !bands) {
+      if (this.bandText) this.bandText.visible = false;
+      return drawn;
+    }
+    drawn.band = this.drawBand(region.name, region.axis === "across", bands.thickness, [
+      width,
+      height,
+    ]);
+    return drawn;
+  }
+
+  /** Draws the band of the name `name` of a region `width` × `height`, `t` thick, at its top
+   *  where it lies `across` beside others, else at its left, the name turned, and returns it. */
+  private drawBand(
+    name: string,
+    across: boolean,
+    t: number,
+    [width, height]: readonly [number, number],
+  ): NonNullable<DrawnRegion["band"]> {
+    const edge = across ? { x1: 0, y1: t, x2: width, y2: t } : { x1: t, y1: 0, x2: t, y2: height };
+    strokeLine(this.lines, edge, undefined);
+    this.bandText ??= this.addChild(
+      new BitmapText({ text: "", style: TEXT_STYLES.title, anchor: 0.5 }),
+    );
+    const text = this.bandText;
+    text.visible = true;
+    text.rotation = across ? 0 : -Math.PI / 2;
+    text.position.set(across ? width / 2 : t / 2, across ? t / 2 : height / 2);
+    // Cut by the engine once the layer has read the views of its buffers, which a call into the
+    // engine may detach (API-bridge-takes-serde-and-columns).
+    this.unnamed = { name, length: across ? width : height };
+    const band = across ? { x: 0, y: 0, width, height: t } : { x: 0, y: 0, width: t, height };
+    return { ...band, name: "", rotation: text.rotation };
+  }
+
+  /** Draws the line after the region `region`, `width` × `height`, at its right side or its
+   *  bottom, and returns it as drawn. */
+  private drawLine(region: RegionView, width: number, height: number): DrawnRegion["line"] {
+    const line =
+      region.axis === "across"
+        ? { x1: width, y1: 0, x2: width, y2: height }
+        : { x1: 0, y1: height, x2: width, y2: height };
+    const dash = region.line === "solid" ? undefined : region.line;
+    strokeLine(this.lines, line, dash);
+    return dash ? { ...line, dash: [dash[0], dash[1]] } : line;
+  }
+
+  /** The name of a region the view draws that the engine has not cut yet. */
+  private unnamed: { name: string; length: number } | null = null;
+
+  /** Draws the name of the region the view draws as the engine cuts it to its band, where it
+   *  has not yet; the layer calls it once it no longer reads the views of the engine's buffers. */
+  nameBand(): void {
+    const { unnamed, bands, bandText, region } = this;
+    if (!unnamed || !bands || !bandText || !region?.band) return;
+    this.unnamed = null;
+    const name = bands.name(unnamed.name, unnamed.length);
+    bandText.text = name;
+    region.band.name = name;
   }
 
   /** Returns the view's texts and sprites to the layer's element pool, once the view is released;
    *  its next binding draws whatever node it shows anew. */
   release(): void {
     this.showTexts([]);
+    this.lines.clear();
+    this.region = null;
+    if (this.bandText) this.bandText.visible = false;
     if (this.icons) this.showIcons([], this.icons);
     this.drawn = { ...this.drawn, node: null };
   }
@@ -706,6 +839,8 @@ function filled(graphics: Graphics): DrawnPill[] {
 
 /** The nodes layer: a pooled view for every node slot the query found, and none for the rest. */
 export class NodesContainer extends Container {
+  /** How its views draw a region's name, which the scene hands it from the engine. */
+  bands: Bands | null = null;
   private readonly elements = new ElementPool();
   private readonly views = new Bindings(
     this,
@@ -755,10 +890,20 @@ export class NodesContainer extends Container {
       if (!node) return;
       const view = this.views.bind(slot);
       const [start, end] = [placed.bounds[first + i]!, placed.bounds[first + i + 1]!];
+      // A region and a divided node are as wide as the engine laid them out
+      // (ARCH-regions-are-container-slots); every other node as wide as its data gives.
+      const width = node.region || node.divide ? sizes[slot * 2]! : node.width;
       const height = sizes[slot * 2 + 1]!;
-      view.bind(node, node.id === selected, height, placed, start, end, icons);
+      view.bands = this.bands;
+      view.bind(node, node.id === selected, [width, height], placed, start, end, icons);
       view.position.set(positions[slot * 2], positions[slot * 2 + 1]);
     });
     this.views.end();
+  }
+
+  /** Has each view cut the name of the region it draws; called once no view of the engine's
+   *  buffers is read any more in the frame, since the call into the engine may detach them. */
+  nameBands(): void {
+    for (const view of this.children as NodeGraphic[]) view.nameBand();
   }
 }

@@ -187,7 +187,7 @@ impl Graph {
     }
 
     /// The container of the node in `slot`, or `CANVAS`.
-    pub(super) fn container(&self, slot: u32) -> u32 {
+    pub fn container(&self, slot: u32) -> u32 {
         self.containers
             .get(slot as usize)
             .copied()
@@ -197,6 +197,12 @@ impl Graph {
     /// The slots the container in `slot` holds directly, in the order they joined it.
     pub(super) fn held(&self, slot: u32) -> &[u32] {
         self.held.get(slot as usize).map_or(&[], Vec::as_slice)
+    }
+
+    /// The slots the container in `slot` holds directly, in the order they joined it, as a list
+    /// of its own.
+    pub fn held_by(&self, slot: u32) -> Vec<u32> {
+        self.held(slot).to_vec()
     }
 
     /// The nodes in `slots` and everything each holds, at every depth, each once: each named node
@@ -360,9 +366,10 @@ impl Graph {
     }
 
     /// The container a drop of the node in `dragged` at `point` lands in: of the containers whose
-    /// outline holds `point`, neither `dragged` nor a node it holds at any depth, the last in the
-    /// order of containers; none for the canvas (API-edits-report-nested-changes, *Vetoes*). A
-    /// slot that holds no node refuses the call.
+    /// outline holds `point`, neither `dragged` nor a node it holds at any depth, nor a node or a
+    /// region divided into regions, whose regions take a drop in its place, the last in the order
+    /// of containers; none for the canvas (API-edits-report-nested-changes, *Vetoes*). A slot that
+    /// holds no node refuses the call.
     pub fn container_at(&mut self, point: Point, dragged: u32) -> Result<Option<u32>, SlotError> {
         self.nodes_held(&[dragged])?;
         self.node_grid
@@ -372,7 +379,10 @@ impl Graph {
             .iter()
             .copied()
             .filter(|&s| {
-                self.is_container(s) && !self.lies_in(s, dragged) && self.within_outline(s, point)
+                self.is_container(s)
+                    && !self.holds_regions(s)
+                    && !self.lies_in(s, dragged)
+                    && self.within_outline(s, point)
             })
             .max_by_key(|&s| self.container_order[s as usize]))
     }

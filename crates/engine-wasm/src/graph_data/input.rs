@@ -10,6 +10,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use tsify::Tsify;
 
 use super::field::{optional_number, text_length};
+use super::regions::{Divide, RegionInput};
 use super::{ContentInput, Field};
 
 /// A node as the host application hands it over: its identifier, the position of its top-left
@@ -45,6 +46,13 @@ pub struct NodeInput {
     /// (API-edits-report-nested-changes).
     #[tsify(type = "boolean", optional)]
     pub resizable: Field<Option<bool>>,
+    /// The direction its regions divide it in; none where it has none
+    /// (ARCH-regions-are-container-slots).
+    #[tsify(type = "Divide", optional)]
+    pub divide: Field<Option<Divide>>,
+    /// Its regions, each a container of its own below its content; none where it has none.
+    #[tsify(type = "RegionInput[]", optional)]
+    pub regions: Field<Option<Vec<RegionInput>>>,
     #[tsify(type = "NodeContent")]
     pub content: Field<ContentInput>,
 }

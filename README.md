@@ -214,6 +214,25 @@ graph, or a node without `isContainer`, as `invalidContainer`. Removing a contai
 `removeNodes` or by the user's deletion, removes everything it holds at every depth and every edge
 at any of it, and a drag of a container takes everything it holds along.
 
+A node with `divide`, `"across"` or `"down"`, and `regions` is divided below its content into
+regions side by side or one above the other, each `{ id, name?, size, line, divide?, regions? }`:
+its identifier, shared with no node, its size along the division, `line` `"solid"` or a dash and a
+gap for the line after it, and optionally regions of its own. Each region is a container that nodes
+lie in by its identifier, which no edge, `removeNodes`, or `updateNode` names as a node; the node
+grows to what its regions add up to, and the last region takes any rest. A region's name stands in a
+band 24 high at its top, or 24 wide at its left, turned, for regions one above the other, cut to the
+band's length. A drag of the line between two regions changes their sizes, never past the nodes they
+hold, and is told once as `regionsMoved` with the divided `node`, the `regions` whose `size`
+changed, and the nodes `moved` within them; a resize of the node changes the region at the side it
+pulls and tells it in `nodeResized`'s `regions`. A press on an empty region drags the node it
+divides; a drop into a region places the node there. `updateNode(id, { regions })` replaces the
+regions: one kept by its identifier keeps what it holds, or, divided now into regions of its own,
+moves it at its place on the canvas into its first region, told after `nodeUpdated` as a `nodeMoved`
+by the host, and one left out goes with what it holds, told first as `nodesRemoved`, the node laid
+out from its own `width` as a load of it would be; `regions: []`, or a `divide` without regions,
+leaves it undivided. A region's name counts against the budget of content. `load` and `addNode`
+refuse a `container` that names a divided node, or a region divided again, as `invalidContainer`.
+
 `addNode` adds one node at its `x` and `y` without a load, drawn above every node it overlaps. For a
 node dropped from the host application's palette, `comb.worldPointAt(event.clientX, event.clientY)`
 returns the world point under the drop; Comb handles no drag and drop itself, and `worldPointAt`

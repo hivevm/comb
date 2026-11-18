@@ -11,6 +11,7 @@ import type {
   GraphChange,
   GraphData,
   NodeContent,
+  RegionData,
 } from "comb";
 import { patchOf, styleOf, type RelationshipKind } from "./relationships";
 import { allows } from "./rules";
@@ -173,6 +174,19 @@ function patched(edge: EdgeData, patch: EdgePatch): void {
   if (label !== undefined) edge.label = label ?? undefined;
 }
 
+/** Gives `regions`, at every depth, the sizes `sizes` names by identifier, as Comb told them. */
+function sized(
+  regions: RegionData[] | undefined,
+  sizes: readonly { readonly id: string; readonly size: number }[],
+): void {
+  // A walk that does not recurse, so that a tree of any depth takes its sizes.
+  const pending = [...(regions ?? [])];
+  for (let region = pending.pop(); region; region = pending.pop()) {
+    region.size = sizes.find(({ id }) => id === region!.id)?.size ?? region.size;
+    for (const inner of region.regions ?? []) pending.push(inner);
+  }
+}
+
 /** How the diagram takes each kind of change; the type checker fails it where a kind is left
  *  out. */
 const MIRROR: {
@@ -183,8 +197,13 @@ const MIRROR: {
   nodeAdded: (diagram, { node }) => void diagram.graph.nodes.push({ ...node }),
   nodeUpdated: (diagram, { id, patch }) => void Object.assign(diagram.node(id) ?? {}, patch),
   nodeMoved: (diagram, { id, x, y }) => void Object.assign(diagram.node(id) ?? {}, { x, y }),
-  nodeResized: (diagram, { id, x, y, width, height, moved }) => {
+  nodeResized: (diagram, { id, x, y, width, height, moved, regions }) => {
     Object.assign(diagram.node(id) ?? {}, { x, y, width, height });
+    for (const at of moved) Object.assign(diagram.node(at.id) ?? {}, { x: at.x, y: at.y });
+    sized(diagram.node(id)?.regions, regions);
+  },
+  regionsMoved: (diagram, { node, regions, moved }) => {
+    sized(diagram.node(node)?.regions, regions);
     for (const at of moved) Object.assign(diagram.node(at.id) ?? {}, { x: at.x, y: at.y });
   },
   nodesRemoved: (diagram, { nodes, edges }) => diagram.removed(nodes, edges),

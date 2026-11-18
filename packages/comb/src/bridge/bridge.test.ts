@@ -25,6 +25,11 @@ import {
   SideCode,
 } from "../../wasm/engine.js";
 
+/** The regions a patch of no regions keeps: none, and what it removes: nothing
+ *  (ARCH-regions-are-container-slots). */
+const NONE_KEPT = new Uint32Array();
+const NONE_REMOVED = { nodes: new Uint32Array(), edges: new Uint32Array() };
+
 let bridge: Bridge;
 
 beforeAll(async () => {
@@ -169,7 +174,7 @@ describe("bridge views", () => {
     bridge.loadGraph(graph([node("a", 1, 2), node("b", 3, 4)]));
     const calls: [string, () => unknown][] = [
       ["loadGraph", () => bridge.loadGraph(row(3))],
-      ["updateNode", () => bridge.updateNode(0, "n0", plain({ content: titled("A") }))],
+      ["updateNode", () => bridge.updateNode(0, "n0", plain({ content: titled("A") }), NONE_KEPT)],
       ["addNode", () => bridge.addNode(added(node("c", 5, 6)))],
       ["nodeBuffers", () => bridge.nodeBuffers()],
       ["content", () => bridge.content(0)],
@@ -375,7 +380,7 @@ describe("bridge refusals of a single field", () => {
       () => bridge.loadGraph(unfit()),
       () => bridge.loadGraph(graph([5 as never])),
       () => bridge.loadGraph(graph([], "e" as never)),
-      () => bridge.updateNode(0, "a", 5 as never),
+      () => bridge.updateNode(0, "a", 5 as never, NONE_KEPT),
       () => bridge.checkGraphSize(Number.NaN, 0),
       () => bridge.checkIdBudget(-1),
     ];
@@ -665,7 +670,7 @@ describe("bridge badges refused", () => {
       const single = nodeSnapshotOf(withBadge(text, shade), limits()).snapshot;
       expect(outcome(() => bridge.addNode(single))).toEqual(problem);
       const content = patchOf({ content: withBadge(text, shade).content }, limits());
-      expect(outcome(() => bridge.updateNode(0, "b", content))).toEqual(problem);
+      expect(outcome(() => bridge.updateNode(0, "b", content, NONE_KEPT))).toEqual(problem);
     }
     // Both ends of the colours are taken.
     for (const shade of [0, 0xffffff]) {
@@ -774,7 +779,7 @@ describe("bridge progress bars refused", () => {
       const alone = nodeSnapshotOf(withProgress(segments), limits()).snapshot;
       expect(outcome(() => bridge.addNode(alone))).toEqual(single);
       const content = patchOf({ content: withProgress(segments).content }, limits());
-      expect(outcome(() => bridge.updateNode(0, "b", content))).toEqual(single);
+      expect(outcome(() => bridge.updateNode(0, "b", content, NONE_KEPT))).toEqual(single);
     }
     // At the limit, summing a little past 1 within what the bridge admits, and of no segments,
     // the bar is taken.
@@ -919,7 +924,7 @@ describe("bridge metrics refused", () => {
       const alone = nodeSnapshotOf(withMetric(shown, caption, value), limits()).snapshot;
       expect(outcome(() => bridge.addNode(alone))).toEqual(problem);
       const content = patchOf({ content: withMetric(shown, caption, value).content }, limits());
-      expect(outcome(() => bridge.updateNode(0, "b", content))).toEqual(problem);
+      expect(outcome(() => bridge.updateNode(0, "b", content, NONE_KEPT))).toEqual(problem);
     }
     // Each direction, and both ends of the colours, are taken.
     for (const [shown, shade] of [
@@ -1193,7 +1198,7 @@ describe("bridge layout of content", () => {
     expect([...bridge.query(everywhere, "far", 1, 0).content.bounds]).toEqual([]);
     // Five rows: 10 + 18 + 4 * 16 + 10 = 102.
     const rows = [titled("t")[0]!, ...Array(4).fill([textOf("body", "b")])];
-    bridge.updateNode(1, "b", plain({ content: rows as never }));
+    bridge.updateNode(1, "b", plain({ content: rows as never }), NONE_KEPT);
     expect(bridge.nodeBuffers().sizes[3]).toBe(102);
     expect(nodeAt(350, 100)).toBe(1);
     expect(nodeAt(50, 100)).toBeUndefined();
@@ -1201,7 +1206,9 @@ describe("bridge layout of content", () => {
     expect([...patched.content.bounds]).toEqual([0, 1, 6]);
     expect([...patched.content.rects.subarray(8, 12)]).toEqual([12, 28, 76, 16]);
     expect(patched.content.texts).toBe("atbbbb");
-    expect(outcome(() => bridge.updateNode(7, "c", plain({ content: titled("x") })))).toEqual({
+    expect(
+      outcome(() => bridge.updateNode(7, "c", plain({ content: titled("x") }), NONE_KEPT)),
+    ).toEqual({
       kind: "noNode",
       slot: 7,
     });
@@ -1364,11 +1371,13 @@ describe("bridge fields the engine does not keep", () => {
   test("a patch of a node comes back as a typed error unless it holds only content", () => {
     // Verifies: ARCH-one-workspace-per-example, API-bridge-takes-serde-and-columns
     bridge.loadGraph(graph([node("a", 0, 0)]));
-    expect(bridge.updateNode(0, "a", plain({ content: titled("A") }))).toBeUndefined();
-    expect(bridge.updateNode(0, "a", plain({}))).toBeUndefined();
+    expect(bridge.updateNode(0, "a", plain({ content: titled("A") }), NONE_KEPT)).toEqual(
+      NONE_REMOVED,
+    );
+    expect(bridge.updateNode(0, "a", plain({}), NONE_KEPT)).toEqual(NONE_REMOVED);
     const errors = [{ id: "b" }, { content: titled(5 as never) }, { content: 5 }].map((patch) => {
       try {
-        bridge.updateNode(0, "a", patch as never);
+        bridge.updateNode(0, "a", patch as never, NONE_KEPT);
       } catch (error) {
         return error;
       }

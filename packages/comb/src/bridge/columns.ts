@@ -83,6 +83,10 @@ export interface NodeColumns {
   readonly isContainer: Uint8Array;
   /** Per node whether the user may resize it, 1 or 0 (API-edits-report-nested-changes). */
   readonly resizable: Uint8Array;
+  /** Per node the direction its regions divide it in, 0 for none, 1 across, 2 down, and the
+   *  regions of the load (ARCH-regions-are-container-slots). */
+  readonly divide: Uint8Array;
+  readonly regions: RegionColumns;
   readonly content: ContentColumns;
   readonly refused:
     | {
@@ -93,6 +97,41 @@ export interface NodeColumns {
       }
     | undefined;
 }
+
+/** The regions of a load as the engine's `loadGraph` takes them
+ *  (API-bridge-columns-carry-nesting): region `k` in the node slot after the nodes and the regions
+ *  before it, each after what it divides, depth first: its identifier as the nodes' are, the slot
+ *  of the node or region it divides, its size, its own division as a code, whether the line after
+ *  it is dashed, 1 or 0, with its dash and gap, and whether it has a name, 1 or 0, the names as the
+ *  identifiers are. */
+export interface RegionColumns {
+  readonly ids: string[];
+  readonly idBounds: Uint32Array;
+  readonly of: Uint32Array;
+  readonly size: Float64Array;
+  readonly divide: Uint8Array;
+  readonly hasDash: Uint8Array;
+  readonly dash: Float64Array;
+  readonly gap: Float64Array;
+  readonly named: Uint8Array;
+  readonly names: string[];
+  readonly nameBounds: Uint32Array;
+}
+
+/** A region as `api/snapshot.ts` read it, each field of the type it expects, in one list of the
+ *  regions of its node, each after the region it lies in, which `of` names by its index, none for
+ *  one of the node itself (ARCH-regions-are-container-slots). */
+export interface RegionRead {
+  readonly id: string;
+  readonly name: string | undefined;
+  readonly size: number;
+  readonly line: "solid" | readonly [number, number];
+  readonly divide: "across" | "down" | undefined;
+  readonly of: number | undefined;
+}
+
+/** The code a division crosses as: 0 for none, 1 across, 2 down. */
+const DIVIDES: Readonly<Record<string, number>> = { across: 1, down: 2 };
 
 /** What writes the columns of a load's nodes, one node after another in slot order, from the
  *  primitives `api/snapshot.ts` reads of each: `node`, then its content row by row, each row's
@@ -117,6 +156,10 @@ export interface NodeColumnWriter {
     height?: unknown,
     resizable?: unknown,
   ): void;
+  /** The node's division and its regions, as read, after `node`: a division that is `across` or
+   *  `down` is one, null or undefined none, and any other value refused by its type; regions
+   *  `false`, where a value of another type lies anywhere in them, refused by their field. */
+  regions(divide: unknown, regions: readonly RegionRead[] | false | undefined): void;
   /** The node's content is no list: refused by its type, and the node holds no rows. */
   noContent(): void;
   /** The next element of the row: an element's kind and role cross as their codes, its weight as
@@ -312,6 +355,21 @@ class NodeWriter implements NodeColumnWriter {
   private readonly container: Uint32Array;
   private readonly isContainer: Uint8Array;
   private readonly resizable: Uint8Array;
+  private readonly divide: Uint8Array;
+  /** The regions written, each by what it divides: a node by its index, a region by its own
+   *  index past the nodes, which `columns` numbers once every node is written. */
+  private readonly regionIds: ReturnType<typeof stringColumn>;
+  private readonly regionNames: ReturnType<typeof stringColumn>;
+  private readonly regionOf: { node: boolean; index: number }[] = [];
+  private readonly regionIdList: string[] = [];
+  private readonly regionNumbers: {
+    size: number[];
+    divide: number[];
+    hasDash: number[];
+    dash: number[];
+    gap: number[];
+    named: number[];
+  } = { size: [], divide: [], hasDash: [], dash: [], gap: [], named: [] };
   /** The identifier of each node as it was handed over, and the identifier each node's container
    *  names, by the node's index, from which `columns` finds each container's slot. */
   private readonly named: unknown[] = [];
@@ -353,6 +411,9 @@ class NodeWriter implements NodeColumnWriter {
     this.container = new Uint32Array(count);
     this.isContainer = new Uint8Array(count);
     this.resizable = new Uint8Array(count);
+    this.divide = new Uint8Array(count);
+    this.regionIds = stringColumn(16, bound);
+    this.regionNames = stringColumn(16, bound);
     this.rowBounds = new Uint32Array(count + 1);
     this.elementBounds = new Uint32Array(count + 1);
     this.kinds = new Uint8Array(count);
@@ -410,6 +471,35 @@ class NodeWriter implements NodeColumnWriter {
     } else if (!absent(container)) this.refuse(NodeField.Container);
     this.flag(this.isContainer, isContainer, NodeField.IsContainer);
     this.flag(this.resizable, resizable, NodeField.Resizable);
+  }
+
+  regions(divide: unknown, regions: readonly RegionRead[] | false | undefined): void {
+    if (typeof divide === "string" && DIVIDES[divide] !== undefined)
+      this.divide[this.at] = DIVIDES[divide];
+    else if (!absent(divide)) this.refuse(NodeField.Divide);
+    if (regions === false) this.refuse(NodeField.Regions);
+    else if (regions) this.writeRegions(regions);
+  }
+
+  /** Writes `regions` of the node being written, in their order, each into what it lies in. */
+  private writeRegions(regions: readonly RegionRead[]) {
+    const numbers = this.regionNumbers;
+    const base = this.regionOf.length;
+    for (const { id, name, size, line, divide, of } of regions) {
+      this.regionOf.push(
+        of === undefined ? { node: true, index: this.at } : { node: false, index: base + of },
+      );
+      this.regionIds.add(id);
+      this.regionIdList.push(id);
+      numbers.size.push(size);
+      numbers.divide.push(divide === undefined ? 0 : DIVIDES[divide]!);
+      const dashed = line !== "solid";
+      numbers.hasDash.push(dashed ? 1 : 0);
+      numbers.dash.push(dashed ? line[0] : 0);
+      numbers.gap.push(dashed ? line[1] : 0);
+      numbers.named.push(name === undefined ? 0 : 1);
+      if (name !== undefined) this.regionNames.add(name);
+    }
   }
 
   /** `value` into `column` as 1 where it is `true`, as 0 where it is `false` or none, else
@@ -577,20 +667,44 @@ class NodeWriter implements NodeColumnWriter {
       container: this.containerSlots(),
       isContainer: this.isContainer.subarray(0, this.at),
       resizable: this.resizable.subarray(0, this.at),
+      divide: this.divide.subarray(0, this.at),
+      regions: this.regionColumns(),
       content: this.contentColumns(),
       refused: this.refused,
     };
   }
 
-  /** The slot of each node's container, found by its identifier among the nodes written, the
-   *  first of an identifier shared, `NO_SLOT` for one no node has; a map of the identifiers only
-   *  where a node names a container, so that a load of none builds none. */
+  /** The columns of the regions written, each numbered by the slot of what it divides. */
+  private regionColumns(): RegionColumns {
+    const { size, divide, hasDash, dash, gap, named } = this.regionNumbers;
+    const of = this.regionOf.map(({ node, index }) => (node ? index : this.at + index));
+    return {
+      ids: this.regionIds.pieces(),
+      idBounds: this.regionIds.bounds(),
+      of: Uint32Array.from(of),
+      size: Float64Array.from(size),
+      divide: Uint8Array.from(divide),
+      hasDash: Uint8Array.from(hasDash),
+      dash: Float64Array.from(dash),
+      gap: Float64Array.from(gap),
+      named: Uint8Array.from(named),
+      names: this.regionNames.pieces(),
+      nameBounds: this.regionNames.bounds(),
+    };
+  }
+
+  /** The slot of each node's container, found by its identifier among the nodes and the regions
+   *  written, the first of an identifier shared, `NO_SLOT` for one none has; a map of the
+   *  identifiers only where a node names a container, so that a load of none builds none. */
   private containerSlots(): Uint32Array {
     const slots = this.container.subarray(0, this.at);
     if (this.containers.size === 0) return slots;
     const byId = new Map<string, number>();
     this.named.forEach((id, slot) => {
       if (typeof id === "string" && !byId.has(id)) byId.set(id, slot);
+    });
+    this.regionIdList.forEach((id, k) => {
+      if (!byId.has(id)) byId.set(id, this.at + k);
     });
     for (const [at, id] of this.containers) slots[at] = byId.get(id) ?? NO_SLOT;
     return slots;
