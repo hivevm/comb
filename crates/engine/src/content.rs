@@ -18,7 +18,9 @@
 //! lines, its cell: the caption's line in the font of role caption, and below it the value's in the
 //! body's, which holds the value at the column's left, its trend's arrow after it, and the trend's
 //! text after that (`metric_parts`); the trend's direction picks the arrow, and its colour is the
-//! bridge's to keep.
+//! bridge's to keep. A row may instead be a separator, a line across the node 1 world unit
+//! thick with the padding above and below it (REN-node-content-and-hits, *Separator*), which the
+//! layout reads as a row of one element of its own that shows nothing and is never hit.
 
 use crate::graph::Level;
 
@@ -56,6 +58,9 @@ pub const VALUE_GAP: f64 = COLUMN_GAP;
 /// The space between a metric's trend arrow and its trend's text, in world units: half the gap
 /// before the arrow, so that arrow and text read as one.
 pub const ARROW_GAP: f64 = 4.0;
+
+/// The thickness of a separator's line, in world units.
+pub const SEPARATOR_LINE: f64 = 1.0;
 
 /// The least height of a node, whatever its rows: a node of one row of a title is as tall as the
 /// nodes of the host applications that gave a height before content replaced it.
@@ -241,6 +246,9 @@ pub enum Element<'a> {
         value: &'a str,
         trend: &'a str,
     },
+    /// A separator, a row of its own: a line across the node, which shows no text and is never
+    /// hit.
+    Separator,
 }
 
 impl Element<'_> {
@@ -252,7 +260,8 @@ impl Element<'_> {
             | Self::Action { .. }
             | Self::Badge { .. }
             | Self::Progress
-            | Self::Metric { .. } => Role::Body,
+            | Self::Metric { .. }
+            | Self::Separator => Role::Body,
         }
     }
 
@@ -260,7 +269,7 @@ impl Element<'_> {
     pub const fn text(&self) -> &str {
         match *self {
             Self::Text { text, .. } | Self::Action { text } | Self::Badge { text } => text,
-            Self::Icon | Self::Progress | Self::Metric { .. } => "",
+            Self::Icon | Self::Progress | Self::Metric { .. } | Self::Separator => "",
         }
     }
 
@@ -273,6 +282,7 @@ impl Element<'_> {
             Self::Badge { .. } => Kind::Badge,
             Self::Progress => Kind::Progress,
             Self::Metric { .. } => Kind::Metric,
+            Self::Separator => Kind::Separator,
         }
     }
 }
@@ -307,17 +317,19 @@ pub enum Kind {
     Badge,
     Progress,
     Metric,
+    Separator,
 }
 
 /// The height of an element of `kind` in `fonts`: its line's, an icon's the body's line, a
 /// badge's pill's, its line and the padding above and below, and a metric's two lines, the
-/// caption's and the body's below it.
+/// caption's and the body's below it; a separator's its line and the padding above and below it.
 fn element_height(kind: Kind, fonts: &Fonts) -> f64 {
     match kind {
         Kind::Text(role) => fonts.of(role).line_height(),
         Kind::Badge => fonts.of(Role::Body).line_height() + 2.0 * BADGE_PADDING_Y,
         Kind::Metric => fonts.of(Role::Caption).line_height() + fonts.of(Role::Body).line_height(),
         Kind::Icon | Kind::Action | Kind::Progress => fonts.of(Role::Body).line_height(),
+        Kind::Separator => PADDING_TOP + SEPARATOR_LINE + PADDING_BOTTOM,
     }
 }
 
@@ -366,6 +378,59 @@ where
             .map(|row| row_height(row.into_iter(), fonts))
             .sum(),
     )
+}
+
+/// The width of `element` drawn uncut in `fonts`: a text's, an action's, and a badge's text's
+/// advance, a badge's with its pill's padding, an icon's square, a metric's wider line, and none
+/// for a progress bar and a separator, which take what their column gives.
+fn natural_width(element: &Element, fonts: &Fonts) -> f64 {
+    let advance = |text: &str, role: Role| -> f64 {
+        let font = fonts.of(role);
+        text.chars().map(|character| font.advance(character)).sum()
+    };
+    let body = fonts.of(Role::Body).line_height();
+    match *element {
+        Element::Text { role, text } => advance(text, role),
+        Element::Action { text } => advance(text, Role::Body),
+        Element::Badge { text } => advance(text, Role::Body) + 2.0 * BADGE_PADDING_X,
+        Element::Icon => body,
+        Element::Metric {
+            caption,
+            value,
+            trend,
+        } => {
+            let line = advance(value, Role::Body)
+                + VALUE_GAP
+                + ARROW_SIZE.min(body)
+                + ARROW_GAP
+                + advance(trend, Role::Body);
+            advance(caption, Role::Caption).max(line)
+        }
+        Element::Progress | Element::Separator => 0.0,
+    }
+}
+
+/// The natural size of content of rows `rows` long, their cells in `cells` one row after another,
+/// in `fonts`: as wide as its widest row with its elements drawn uncut and the gaps between them,
+/// and the padding at either side; and as high as its rows and the padding above and below them,
+/// without the least height of a node. A frame's tab is as large (REN-node-shapes-cover-uml).
+pub fn natural(cells: &[Cell], rows: &[u32], fonts: &Fonts) -> [f64; 2] {
+    let (mut widest, mut high, mut start) = (0.0_f64, 0.0, 0);
+    for &length in rows {
+        let row = &cells[start..start + length as usize];
+        start += length as usize;
+        let gaps = COLUMN_GAP * (row.len().saturating_sub(1) as f64);
+        let width: f64 = row
+            .iter()
+            .map(|cell| natural_width(&cell.element, fonts))
+            .sum();
+        widest = widest.max(width + gaps);
+        high += row_height(row.iter().map(|cell| cell.element.kind()), fonts);
+    }
+    [
+        widest + 2.0 * PADDING_X,
+        PADDING_TOP + high + PADDING_BOTTOM,
+    ]
 }
 
 /// The largest `f32` of at most `value` whose sum with `x` stays within `end`, both sums taken
@@ -447,7 +512,8 @@ fn drawn_width(text: &str, (kept, ellipsis): (u32, bool), font: &Font) -> f64 {
 /// the node's height. Each row's columns share the width inside the padding, less the gaps
 /// between them, by their weights; the padding and the gaps shrink where the width leaves no room
 /// for them, so that no element reaches past the node. In a row that holds a badge, every other
-/// element lies the badge's padding lower, its text on the line of the badge's (`row_offset`).
+/// element lies the badge's padding lower, its text on the line of the badge's (`row_offset`). A
+/// separator, alone in its row, lies across the whole width, the padding above it.
 pub fn lay_out(
     cells: &[Cell],
     rows: &[u32],
@@ -502,6 +568,16 @@ pub fn lay_out(
             let y = top + offset;
             out.push(if matches!(element, Element::Icon) {
                 icon_square(x, y, column, height)
+            } else if matches!(element, Element::Separator) {
+                // Across the whole inner rectangle, its padding at the sides included.
+                Placed {
+                    x: 0.0,
+                    y: place(y + PADDING_TOP),
+                    width: place(full),
+                    height: place(SEPARATOR_LINE),
+                    kept: 0,
+                    ellipsis: false,
+                }
             } else {
                 Placed {
                     x,
@@ -688,7 +764,8 @@ pub fn metric_parts(
 }
 
 /// Whether `element` is drawn at `level` (REN-node-content-in-rows): at the near level every
-/// element, at the middle level the texts of role title, and at the far level none; a level keeps a
+/// element, at the middle level the texts of role title and the separators, and at the far level
+/// none; a level keeps a
 /// subset of the near level's. Which elements are kept, not where: the query lays a node out alike
 /// at every level, and hands over and the hit test names only the elements kept.
 pub const fn drawn_at(element: &Element, level: Level) -> bool {
@@ -699,7 +776,7 @@ pub const fn drawn_at(element: &Element, level: Level) -> bool {
             Element::Text {
                 role: Role::Title,
                 ..
-            }
+            } | Element::Separator
         ),
         Level::Far => false,
     }
@@ -708,8 +785,8 @@ pub const fn drawn_at(element: &Element, level: Level) -> bool {
 /// The index of the element of `cells`, which `lay_out` placed at `placed`, drawn at `level`
 /// (`drawn_at`) whose rectangle holds the point `(x, y)` relative to its node's top-left corner,
 /// each rectangle taken with its left and top sides and without its right and bottom ones, so
-/// that two elements that touch never both hold a point; none on the padding, in a gap, or below a
-/// shorter element of its row.
+/// that two elements that touch never both hold a point; none on the padding, in a gap, below a
+/// shorter element of its row, or on a separator.
 pub fn element_at(
     cells: &[Cell],
     placed: &[Placed],
@@ -720,7 +797,7 @@ pub fn element_at(
     cells.iter().zip(placed).position(|(cell, at)| {
         let [left, top, width, height] = [at.x, at.y, at.width, at.height].map(f64::from);
         let inside = left <= x && x < left + width && top <= y && y < top + height;
-        inside && drawn_at(&cell.element, level)
+        inside && drawn_at(&cell.element, level) && !matches!(cell.element, Element::Separator)
     })
 }
 
@@ -926,6 +1003,66 @@ mod tests {
         let (narrow, _) = laid_out(&cells, &[1, 2], 100.0);
         assert_eq!(narrow[2].width, 51.0);
         assert_eq!((narrow[2].kept, narrow[2].ellipsis), (7, true));
+    }
+
+    #[test]
+    fn a_separator_row_draws_a_line_across_the_inner_rectangle_between_the_rows_and_is_never_hit() {
+        // Verifies: REN-node-content-and-hits
+        let separator = Cell {
+            weight: 1.0,
+            element: Element::Separator,
+        };
+        let cells = [
+            text(Role::Title, "Idle", 1.0),
+            separator,
+            text(Role::Body, "entry / wait", 1.0),
+        ];
+        let (placed, laid) = laid_out(&cells, &[1, 1, 1], 220.0);
+        // The line across the whole width, its padding of 10 above and below it, between the
+        // title's line of 18 and the body's below.
+        assert_eq!(
+            [placed[1].x, placed[1].y, placed[1].width, placed[1].height],
+            [0.0, 38.0, 220.0, 1.0]
+        );
+        assert_eq!(placed[2].y, 49.0);
+        assert_eq!(laid, 10.0 + 18.0 + 21.0 + 16.0 + 10.0);
+        let rows = [kinds(&cells[..1]), kinds(&cells[1..2]), kinds(&cells[2..])];
+        assert_eq!(height(rows, &fonts()), 75.0);
+        // Drawn at the near and the middle level, and hit at neither.
+        assert!(drawn_at(&Element::Separator, Level::Near));
+        assert!(drawn_at(&Element::Separator, Level::Middle));
+        assert!(!drawn_at(&Element::Separator, Level::Far));
+        for level in [Level::Near, Level::Middle] {
+            assert_eq!(element_at(&cells, &placed, 100.0, 38.5, level), None);
+        }
+        assert_eq!(
+            element_at(&cells, &placed, 100.0, 55.0, Level::Near),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn the_natural_size_of_content_is_its_widest_row_uncut_and_its_rows_with_the_padding() {
+        // Verifies: REN-node-shapes-cover-uml
+        let separator = Cell {
+            weight: 1.0,
+            element: Element::Separator,
+        };
+        // A title of 5 glyphs of 7; a row of a body of 4 glyphs of 6 beside a badge of 2, its pill
+        // padded by 8 either side, a gap of 8 between them.
+        let cells = [
+            text(Role::Title, "Frame", 1.0),
+            separator,
+            text(Role::Body, "load", 1.0),
+            badge("ok", 1.0),
+        ];
+        let [width, height] = natural(&cells, &[1, 1, 2], &fonts());
+        assert_eq!(width, 12.0 + (24.0 + 8.0 + 12.0 + 16.0) + 12.0);
+        assert_eq!(height, 10.0 + 18.0 + 21.0 + 22.0 + 10.0);
+        // Without the least height of a node.
+        let [_, one] = natural(&cells[..1], &[1], &fonts());
+        assert_eq!(one, 38.0);
+        assert_eq!(natural(&[], &[], &fonts()), [24.0, 20.0]);
     }
 
     fn badge(text: &str, weight: f64) -> Cell<'_> {

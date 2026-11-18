@@ -253,10 +253,11 @@ function updateNode({ store, bridge, limits }: Editing, id: string, patch: unkno
 /** What the patch `plain` set of a node's size, as the store keeps it, and whether it set a border
  *  node's side or offset, which the engine keeps (ARCH-border-nodes-ride-sides). */
 function sizingOf(plain: PlainPatch): NodeSizing {
-  const { height, resizable } = plain;
+  const { height, resizable, outline } = plain;
   return {
     ...("height" in plain ? { height } : {}),
     ...("resizable" in plain ? { resizable } : {}),
+    ...("outline" in plain ? { outline } : {}),
     ...("side" in plain ? { side: true as const } : {}),
     ...("offset" in plain ? { offset: true as const } : {}),
   };

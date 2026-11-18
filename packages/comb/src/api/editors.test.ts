@@ -339,7 +339,9 @@ describe("a node's node shape", () => {
       index: 0,
       id,
       field: "shape",
-      expected: `"rectangle", "rounded-rectangle", "ellipse", "circle", "ringed-circle", "diamond", or "bar"`,
+      expected:
+        '"rectangle", "rounded-rectangle", "ellipse", "circle", "ringed-circle", "diamond", ' +
+        '"bar", "pentagon", "notched-rectangle", "note", or "frame"',
     });
     for (const shape of ["hexagon", 5]) {
       const shaped = { ...node("c"), shape } as unknown as NodeData;

@@ -197,7 +197,16 @@ as high as its rows, at least 64. A node's `height` makes it that high, never le
 content needs, and a node without content, `content: []`, as high as its `height` however small,
 or as high as it is wide; `heightOf` still answers the content's height alone.
 `updateNode(id, { content })` replaces a node's content whole, and `updateNode` may also set
-`height` and `resizable`.
+`height`, `resizable`, and `outline`. A row may instead be the string `"separator"`, a line across
+the node between the rows above and below it, with the padding of 10 on each side.
+
+A node's `shape` is one of a closed set, `rectangle` where left out. Besides the shapes of a state
+diagram, a `pentagon` points to the right and a `notched-rectangle` is notched at its left, each
+by half its height and at most a quarter of its width, and a `note` folds its top right corner. A
+`frame` lays its content out in a tab at its top left, as wide as the content needs, and holds
+what lies below. A pentagon or a notch is hit within its outline, and a note or a frame within its
+rectangle. Its `outline` is `"solid"` where left out, `"none"`, or a dash and a gap, which Comb
+lays along the outline clockwise from its top left; a selected node's outline is drawn solid.
 
 A selected node marked `resizable: true` shows eight resize handles, at its corners and the middles
 of its sides; a drag of one resizes the node from that side or corner, never smaller than 8 a side,

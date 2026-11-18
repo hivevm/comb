@@ -26,6 +26,7 @@ import init, {
   MeshDetail,
   MeshOf,
   NodeField,
+  KindCode,
   type ContainerError,
   type ContentElement,
   type InitOutput,
@@ -40,6 +41,7 @@ import init, {
   type NodePatch,
   type NodeShape,
   type NumberError,
+  type Outline,
   type ResizeHandle,
   type Side,
   type SlotError,
@@ -61,10 +63,15 @@ export type {
   NodePatch,
   NodeShape,
   NumberError,
+  Outline,
   ResizeHandle,
   SlotError,
   TextRole,
 };
+
+/** The code of a separator's line among the elements a query placed
+ *  (REN-node-content-and-hits, *Separator*). */
+export const SEPARATOR_KIND: number = KindCode.Separator;
 
 export {
   edgeColumns,
@@ -178,6 +185,12 @@ export interface Placed {
   partEnds: Uint32Array;
   arrowBounds: Uint32Array;
   arrows: Float32Array;
+  /** Per found node, in their order, the boundaries of its dash segments, one more than there are
+   *  found nodes, none for a node whose outline is not dashed; and each segment's two ends
+   *  `x0, y0, x1, y1` relative to its node, laid by the engine along its outline within the
+   *  query's rectangle (REN-node-shapes-cover-uml, *Outline*). */
+  dashBounds: Uint32Array;
+  dashes: Float32Array;
   /** The space between a badge's text and its pill's left side and its top, the engine's. */
   badgePadding: { x: number; y: number };
 }
@@ -401,6 +414,10 @@ export interface Bridge {
    *  (REN-node-content-in-rows).
    *  Throws a `SlotError` where `slot` holds no node. */
   content(slot: number): NodeContent;
+  /** The inner rectangle of the node in `slot` that its content is laid out in, relative to its
+   *  top-left corner, a frame's tab (REN-node-shapes-cover-uml): for a frame's drawing and for
+   *  inspection. Throws a `SlotError` where `slot` holds no node. */
+  innerOf(slot: number): { x: number; y: number; width: number; height: number };
   /** Fresh views on the positions buffer and on the sizes buffer, `width, height` per slot, the
    *  height each node's content lays out to (REN-node-content-in-rows), both read after the same
    *  call. Do not
@@ -630,7 +647,7 @@ function wrap(exports: InitOutput): Bridge {
 
 /** The columns of a load's nodes, as `loadGraph` takes them before the first value refused. */
 function nodeValues(nodes: NodeColumns) {
-  const { ids, idBounds, x, y, width, hasHeight, height, shape } = nodes;
+  const { ids, idBounds, x, y, width, hasHeight, height, shape, outline } = nodes;
   const { hasContainer, container, isContainer, resizable, divide, regions: r } = nodes;
   const c = nodes.content;
   return [
@@ -642,6 +659,9 @@ function nodeValues(nodes: NodeColumns) {
     hasHeight,
     height,
     shape,
+    outline,
+    nodes.outlineDash,
+    nodes.outlineGap,
     hasContainer,
     container,
     isContainer,
@@ -666,6 +686,7 @@ function nodeValues(nodes: NodeColumns) {
     nodes.attachedMissing,
     c.rowBounds,
     c.elementBounds,
+    c.separators,
     c.kinds,
     c.weights,
     c.roles,
@@ -762,6 +783,8 @@ function queried(
       partEnds: u32(engine.contentPartEndsPtr(), engine.contentPartEndsLen()),
       arrowBounds: u32(engine.contentArrowBoundsPtr(), engine.contentArrowBoundsLen()),
       arrows: f32(engine.contentArrowsPtr(), engine.contentArrowsLen()),
+      dashBounds: u32(engine.dashBoundsPtr(), engine.dashBoundsLen()),
+      dashes: f32(engine.dashesPtr(), engine.dashesLen()),
       badgePadding,
     },
     edges: u32(engine.visibleEdgesPtr(), engine.visibleEdgesLen()),
@@ -843,6 +866,18 @@ function borderCalls(engine: Engine): Pick<Bridge, "borderOf" | "slide"> {
   };
 }
 
+/** The calls that build a node's content and its inner rectangle when asked
+ *  (REN-node-content-in-rows, REN-node-shapes-cover-uml). */
+function contentCalls(engine: Engine): Pick<Bridge, "content" | "innerOf"> {
+  return {
+    content: (slot) => engine.content(slot),
+    innerOf(slot) {
+      const [x, y, width, height] = engine.innerOf(slot);
+      return { x: x!, y: y!, width: width!, height: height! };
+    },
+  };
+}
+
 function engineBridge(memory: WebAssembly.Memory): Bridge {
   const engine = newEngine();
   const { u32, f32 } = viewsOn(memory);
@@ -852,7 +887,7 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
     ...borderCalls(engine),
     heightOf: (node) => engine.heightOf(node),
     ...regionCalls(engine),
-    content: (slot) => engine.content(slot),
+    ...contentCalls(engine),
     setFont: (role, { codes, advances, fallback, lineHeight }) =>
       engine.setFont(ROLES[role], codes, advances, fallback, lineHeight),
     addEdge: (edge, source, target, loops) => engine.addEdge(edge, source, target, loops),

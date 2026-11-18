@@ -8,10 +8,11 @@ use std::collections::{HashMap, HashSet};
 use comb_engine::content::Fonts;
 use comb_engine::geometry::WORLD_LIMIT;
 use comb_engine::graph::{EdgeSpec, LabelPlacement};
-use comb_engine::shape::NodeShape;
+use comb_engine::shape::{NodeShape, Outline};
 use comb_engine::stroke::EdgeStyle;
 
 use super::item::{Batch, Edge, Label, Node};
+use super::problem::AN_OUTLINE;
 use super::{
     Arrow, ContentColumns, Cursor, GraphDataProblem, GraphList, ID_LIMIT, MAX_ID, MAX_TEXT,
     TEXT_LIMIT, check_id_budget, slot, utf16_length,
@@ -23,6 +24,8 @@ pub(super) struct Nodes<'a> {
     pub(super) positions: Vec<f32>,
     pub(super) sizes: Vec<f32>,
     pub(super) shapes: Vec<NodeShape>,
+    /// How each node's outline is drawn, as the engine keeps it (REN-node-shapes-cover-uml).
+    pub(super) outlines: Vec<Outline>,
     /// The height each node's data gives, as the engine keeps it, or none, and whether the user
     /// may resize it (API-edits-report-nested-changes).
     pub(super) given: Vec<Option<f32>>,
@@ -138,6 +141,32 @@ pub(crate) const fn content_top((content, rows): (f64, usize)) -> f32 {
     if rows > 0 { kept_height(content) } else { 0.0 }
 }
 
+/// The outline `outline` of the node `id` at `index` as the engine keeps it, or its refusal as
+/// `invalidField` naming the node and `outline`: a dash pattern is checked as an edge's is, as
+/// `f32`, its dash positive and its gap not negative (REN-node-shapes-cover-uml, *Outline*). It
+/// is read with the field, in the first pass, so that a dash pattern it refuses is named as a
+/// value of another type is.
+pub(crate) fn outline_of(
+    id: &str,
+    index: usize,
+    outline: super::Outline,
+) -> Result<Outline, GraphDataProblem> {
+    Ok(match outline {
+        super::Outline::Solid => Outline::Solid,
+        super::Outline::None => Outline::None,
+        super::Outline::Dashed(super::Pair(dash)) => {
+            let (dash, gap) = dash_of(id, dash).map_err(|_| GraphDataProblem::InvalidField {
+                list: GraphList::Nodes,
+                index: slot(index).unwrap_or(u32::MAX),
+                id: Some(id.to_owned()),
+                field: "outline".to_owned(),
+                expected: AN_OUTLINE.to_owned(),
+            })?;
+            Outline::Dashed([dash, gap])
+        }
+    })
+}
+
 /// Refuses content of `rows` rows in the node `id` of the filled node shape `shape`, which holds
 /// none (REN-closed-set-of-node-shapes).
 pub(crate) fn content_fits_shape(
@@ -164,12 +193,14 @@ pub(super) fn nodes_of<'a>(
     let mut positions = Vec::with_capacity(batch.nodes.len() * 2);
     let mut sizes = Vec::with_capacity(batch.nodes.len() * 2);
     let mut shapes = Vec::with_capacity(batch.nodes.len());
+    let mut outlines = Vec::with_capacity(batch.nodes.len());
     let mut given = Vec::with_capacity(batch.nodes.len());
     let mut tops = Vec::with_capacity(batch.nodes.len());
     let mut cursor = Cursor::default();
     for (index, node) in batch.nodes.iter().enumerate() {
         let (position, width) = checked_node(node)?;
         let height_given = given_height(node.id, node.height)?;
+        outlines.push(node.outline);
         let rows = content.rows(index).len();
         content_fits_shape(node.id, node.shape, rows)?;
         let laid = content.check(index, node.id, &mut cursor, fonts)?;
@@ -190,6 +221,7 @@ pub(super) fn nodes_of<'a>(
         positions,
         sizes,
         shapes,
+        outlines,
         resizable: batch.nodes.iter().map(|node| node.resizable).collect(),
         given,
         tops,
@@ -672,6 +704,7 @@ mod tests {
                     is_container: None.into(),
                     height: None.into(),
                     resizable: None.into(),
+                    outline: None.into(),
                     divide: None.into(),
                     regions: None.into(),
                     attached_to: None.into(),

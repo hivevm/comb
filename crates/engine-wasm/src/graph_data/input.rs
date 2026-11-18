@@ -39,6 +39,10 @@ pub struct NodeInput {
     pub height: Field<Option<f64>>,
     #[tsify(type = "NodeShape")]
     pub shape: Field<NodeShape>,
+    /// How its outline is drawn; none where it is solid (REN-node-shapes-cover-uml, *Outline*).
+    #[tsify(type = "Outline", optional)]
+    #[serde(default = "Field::absent")]
+    pub outline: Field<Option<Outline>>,
     /// The identifier of the container it lies in, which `api` resolves to a slot; none on the
     /// canvas (ARCH-engine-edits-nested-graph).
     #[tsify(type = "string", optional)]
@@ -86,6 +90,10 @@ pub enum NodeShape {
     RingedCircle,
     Diamond,
     Bar,
+    Pentagon,
+    NotchedRectangle,
+    Note,
+    Frame,
 }
 
 impl From<NodeShape> for shape::NodeShape {
@@ -98,7 +106,49 @@ impl From<NodeShape> for shape::NodeShape {
             NodeShape::RingedCircle => Self::RingedCircle,
             NodeShape::Diamond => Self::Diamond,
             NodeShape::Bar => Self::Bar,
+            NodeShape::Pentagon => Self::Pentagon,
+            NodeShape::NotchedRectangle => Self::NotchedRectangle,
+            NodeShape::Note => Self::Note,
+            NodeShape::Frame => Self::Frame,
         }
+    }
+}
+
+/// How a node's outline is drawn (REN-node-shapes-cover-uml, *Outline*): `"solid"`, `"none"`, or
+/// a dash pattern in the form an edge takes, a dash and a gap in world units.
+#[derive(Tsify, Clone, Copy, Debug, PartialEq)]
+#[tsify(type = "\"solid\" | \"none\" | [number, number]")]
+pub enum Outline {
+    Solid,
+    None,
+    Dashed(Pair),
+}
+
+impl<'de> Deserialize<'de> for Outline {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(OutlineVisitor)
+    }
+}
+
+struct OutlineVisitor;
+
+impl<'de> Visitor<'de> for OutlineVisitor {
+    type Value = Outline;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("\"solid\", \"none\", or a list of two numbers")
+    }
+
+    fn visit_str<E: de::Error>(self, value: &str) -> Result<Outline, E> {
+        match value {
+            "solid" => Ok(Outline::Solid),
+            "none" => Ok(Outline::None),
+            _ => Err(E::invalid_value(de::Unexpected::Str(value), &self)),
+        }
+    }
+
+    fn visit_seq<A: de::SeqAccess<'de>>(self, seq: A) -> Result<Outline, A::Error> {
+        Pair::deserialize(de::value::SeqAccessDeserializer::new(seq)).map(Outline::Dashed)
     }
 }
 
@@ -187,10 +237,27 @@ pub enum ContentElement {
     },
 }
 
-/// What a node shows: rows of weighted columns, each holding one element
-/// (REN-node-content-in-rows).
-#[derive(Tsify, Serialize, Debug, PartialEq)]
-pub struct NodeContent(pub Vec<Vec<ContentElement>>);
+/// What a node shows: rows of weighted columns, each holding one element, and per row whether it
+/// is a separator instead, which holds none and the host application writes as the string
+/// `"separator"` in place of the row's elements (REN-node-content-and-hits, *Separator*).
+#[derive(Tsify, Debug, PartialEq)]
+#[tsify(type = "(ContentElement[] | \"separator\")[]")]
+pub struct NodeContent(pub Vec<Vec<ContentElement>>, pub Vec<bool>);
+
+impl Serialize for NodeContent {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut rows = serializer.serialize_seq(Some(self.0.len()))?;
+        for (i, row) in self.0.iter().enumerate() {
+            if self.1.get(i).copied().unwrap_or(false) {
+                rows.serialize_element("separator")?;
+            } else {
+                rows.serialize_element(row)?;
+            }
+        }
+        rows.end()
+    }
+}
 
 /// An edge label: its text, where it sits by path parameter `t` and label offset in pixels
 /// (G-6), and the colour of its background as `0xRRGGBB`, the edge's own without one.

@@ -288,7 +288,10 @@ pub(super) const A_LABEL: &str = "an object, or none";
 pub(super) const A_DASH: &str = "a list of two finite numbers, or none";
 pub(super) const AN_ARROW: &str = "\"end\" or \"none\"";
 pub(super) const A_SHAPE: &str = "\"rectangle\", \"rounded-rectangle\", \"ellipse\", \"circle\", \
-                                   \"ringed-circle\", \"diamond\", or \"bar\"";
+                                   \"ringed-circle\", \"diamond\", \"bar\", \"pentagon\", \
+                                   \"notched-rectangle\", \"note\", or \"frame\"";
+/// What a node's outline expects (REN-node-shapes-cover-uml, *Outline*).
+pub(super) const AN_OUTLINE: &str = "\"solid\", \"none\", or a dash pattern, or none";
 pub(super) const A_SIDE: &str = "\"top\", \"right\", \"bottom\", \"left\", or \"outline\"";
 /// What a border node's side expects (ARCH-border-nodes-ride-sides).
 pub(super) const A_BORDER_SIDE: &str = "\"top\", \"right\", \"bottom\", or \"left\"";

@@ -22,7 +22,7 @@
 // however far from the world's origin the viewport lies; the particles, whose shader takes their
 // container's whole transform, keep the rounding they had.
 import { Application, BitmapText, Container } from "pixi.js";
-import type { Bridge, Detail, Level, NodeContent, NodeShape, Rect } from "../bridge";
+import type { Bridge, Detail, Level, NodeContent, NodeShape, Outline, Rect } from "../bridge";
 import type { GraphView } from "../store";
 import { EdgesContainer, type EdgeLayer, type MeshSize } from "./edges";
 import { EdgeFill } from "./edges-canvas";
@@ -80,7 +80,10 @@ export interface SceneSnapshot {
    *  rectangle, `content` the node's content as the engine keeps it, built
    *  when asked, `title` the text of its first title, `shape` its node shape, and `outline` the
    *  parts of it the view draws, each its primitive, its bounds, its fill's or its stroke's
-   *  colour, and a rounded rectangle's corner radius; a particle draws none of them. */
+   *  colour, and a rounded rectangle's corner radius, `outlined` how its outline is drawn,
+   *  `dashes` the dash segments the engine laid of a dashed one, `rules` the lines of its
+   *  separators, and `inner` the inner rectangle its content is laid out in, as the engine gives
+   *  it; a particle draws none of them. */
   nodes: {
     id: string;
     /** The layer it is drawn in: `containers` for a container, below the edges, else `nodes`. */
@@ -98,6 +101,11 @@ export interface SceneSnapshot {
      *  (ARCH-regions-are-container-slots). */
     region?: DrawnRegion;
     outline?: DrawnOutline[];
+    outlined?: Outline;
+    /** Each `[x0, y0, x1, y1]` relative to the node (REN-node-shapes-cover-uml). */
+    dashes?: number[][];
+    rules?: DrawnPill[];
+    inner?: { x: number; y: number; width: number; height: number };
     texts?: (Omit<DrawnText, "pill"> & { drawnWidth: number; fill: unknown })[];
     pills?: DrawnPill[];
     bars?: DrawnPill[];
@@ -270,6 +278,10 @@ export class Scene {
     // Last, once no view of the engine's buffers is read any more: the names of the regions
     // drawn, as the engine cuts them to their bands (ARCH-regions-are-container-slots).
     this.containerNodes.nameBands();
+    // And the tabs of the frames drawn, as the engine lays them out (REN-node-shapes-cover-uml).
+    const innerOf = (slot: number) => bridge.innerOf(slot);
+    this.containerNodes.drawTabs(innerOf);
+    this.nodes.drawTabs(innerOf);
     // In f64 here, so that the world's transform on the GPU holds no far coordinate.
     const at = toScreen(state.viewport, this.origin.x, this.origin.y);
     this.world.position.set(at.x, at.y);
@@ -377,10 +389,17 @@ export class Scene {
     if (!this.source) return {};
     const content = this.source.bridge.content(slot);
     const first = content
-      .flat()
+      .flatMap((row) => (row === "separator" ? [] : row))
       .find((element) => element.kind === "text" && element.role === "title");
     const title = first?.kind === "text" ? first.text : undefined;
     return { content, ...(title === undefined ? {} : { title }) };
+  }
+
+  /** The inner rectangle of the node in `slot`, which the engine gives when asked. */
+  private innerOf(slot: number): {
+    inner?: { x: number; y: number; width: number; height: number };
+  } {
+    return this.source ? { inner: this.source.bridge.innerOf(slot) } : {};
   }
 
   /** The viewport the world is drawn through: its transform less the origin's screen point. */
@@ -400,6 +419,9 @@ export class Scene {
       y: view.y,
       ...this.contentOf(view.slot),
       ...view.drawnShape(),
+      ...this.innerOf(view.slot),
+      dashes: view.drawnDashes(),
+      rules: view.drawnRules(),
       ...(view.resizable === undefined ? {} : { resizable: view.resizable }),
       ...(view.region ? { region: view.region } : {}),
       texts: view.inspected(),

@@ -142,6 +142,9 @@ interface ContentSink {
   noContent(value: unknown): void;
   /** The row is no list. */
   noRow(): void;
+  /** The row is the string `"separator"`, a separator, which holds no element
+   *  (REN-node-content-and-hits, *Separator*). */
+  separator(): void;
   /** Ends a row of no elements, or one whose last element was handed over without ending it. */
   endRow(): void;
   /** The next element is no object, a list among them. */
@@ -187,7 +190,8 @@ function walkContent(read: Reader, content: unknown, sink: ContentSink, limits: 
   const rows = Math.min(content.length, limits.rows + 1);
   for (let r = 0; r < rows; r++) {
     const row: unknown = content[r];
-    if (!Array.isArray(row)) sink.noRow();
+    if (row === "separator") sink.separator();
+    else if (!Array.isArray(row)) sink.noRow();
     else walkRow(read, row, sink, limits);
   }
 }
@@ -275,10 +279,11 @@ function nameOf(value: unknown, read: Reader): unknown {
 }
 
 /** A node's content as plain data for serde, walked once by `read`: its rows, each a list of its
- *  elements or `false` where it is no list, each element an object of its kind and the fields of
- *  its kind, a name of a kind, a role, or a direction as `nameOf` hands it over, a weight only
- *  where one is given, or `false` where it is no object; or the content as given where it is null
- *  or undefined, and `false` where it is any other value but a list. */
+ *  elements, `"separator"` for a separator, or `false` where it is no list, each element an object
+ *  of its kind and the fields of its kind, a name of a kind, a role, or a direction as `nameOf`
+ *  hands it over, a weight only where one is given, or `false` where it is no object; or the
+ *  content as given where it is null or undefined, and `false` where it is any other value but a
+ *  list. */
 function plainContentOf(read: Reader, content: unknown, limits: Limits): unknown {
   const rows: unknown[] = [];
   let row: unknown[] | undefined;
@@ -304,6 +309,7 @@ function plainContentOf(read: Reader, content: unknown, limits: Limits): unknown
     {
       noContent: (value) => (result = falseOr(value)),
       noRow: () => rows.push(false),
+      separator: () => rows.push("separator"),
       endRow: () => end(true),
       noElement: (last) => add(false, last),
       element(kind, role, weight, color, text, id, last) {
@@ -485,6 +491,10 @@ function regionInputs(regions: readonly RegionRead[]) {
 /** The node shape of a node, `rectangle` where it is left out (REN-closed-set-of-node-shapes). */
 const NODE_SHAPE = "rectangle";
 
+/** The outline `api` fills in where the host application leaves it out
+ *  (REN-node-shapes-cover-uml, *Outline*). */
+const NODE_OUTLINE = "solid";
+
 /** Whether `value` stands for a field left out: null or undefined. */
 const absent = (value: unknown) => value === undefined || value === null;
 
@@ -507,7 +517,7 @@ function placeRead(read: Reader, fields: Fields) {
  *  its height, and whether it is resizable as given, each with no key where it is left out, so
  *  that the node as Comb took it holds none. */
 function nodeOf(read: Reader, node: Fields) {
-  const { id, x, y, width, shape, container, isContainer, content } = node;
+  const { id, x, y, width, shape, outline, container, isContainer, content } = node;
   const { height, resizable, divide, regions, attachedTo, side, offset } = node;
   const snapshot: {
     id: unknown;
@@ -515,6 +525,7 @@ function nodeOf(read: Reader, node: Fields) {
     y?: unknown;
     width: unknown;
     shape: unknown;
+    outline?: unknown;
     container?: unknown;
     isContainer?: unknown;
     height?: unknown;
@@ -532,6 +543,7 @@ function nodeOf(read: Reader, node: Fields) {
     content: read.content(content),
   };
   Object.assign(snapshot, placeRead(read, { x, y, container, attachedTo, side, offset }));
+  snapshot.outline = absent(outline) ? NODE_OUTLINE : outlineOf(read, outline);
   if (!absent(isContainer)) snapshot.isContainer = isContainer;
   if (!absent(height)) snapshot.height = read.number(height);
   if (!absent(resizable)) snapshot.resizable = resizable;
@@ -558,6 +570,7 @@ function written(
     id: unknown;
     width: unknown;
     shape: unknown;
+    outline?: unknown;
     container?: unknown;
     isContainer?: unknown;
     height?: unknown;
@@ -572,9 +585,11 @@ function written(
   const [left, top, inside] = [read.number(x), read.number(y), read.reference(container)];
   const [height, resizable] = [read.number(node.height), node.resizable];
   const on = read.reference(node.attachedTo);
+  const outline = absent(node.outline) ? undefined : outlineOf(read, node.outline);
   // The mark is handed over as given; the writer looks at it by equality with `true` and `false`.
-  const args = [inside, isContainer, height, resizable, on] as const;
+  const args = [inside, isContainer, height, resizable, on, outline] as const;
   columns.node(kept.id, left, top, kept.width, kept.shape, ...args);
+  kept.outline = outline ?? NODE_OUTLINE;
   // Set where present, as an edge's label is, so that a load of no containers spreads no keys.
   if (!absent(inside)) kept.container = inside;
   if (!absent(isContainer)) kept.isContainer = isContainer;
@@ -636,6 +651,7 @@ function columnSink(
   return {
     noContent: () => columns.noContent(),
     noRow: () => columns.noRow(),
+    separator: () => columns.separatorRow(),
     endRow: () => columns.endRow(),
     noElement: (last) => columns.noElement(last),
     element(kind, role, weight, color, text, id, last) {
@@ -668,6 +684,14 @@ function labelOf(read: Reader, label: unknown) {
   // No key for a background left out, so that the edge as Comb keeps it holds none.
   if (placed.background === undefined) delete (placed as { background?: unknown }).background;
   return placed;
+}
+
+/** An outline read once (REN-node-shapes-cover-uml, *Outline*): a string as `Reader.text` reads
+ *  it, which the bridge names or refuses, a dash pattern as `dashOf` reads one, and any other value
+ *  `false`. */
+function outlineOf(read: Reader, outline: unknown) {
+  if (typeof outline === "string") return read.text(outline);
+  return Array.isArray(outline) ? dashOf(read, outline) : false;
 }
 
 /** A dash pattern: absent where null or undefined, `false` where no list of two. */
@@ -827,11 +851,13 @@ const NODE_PATCH: Record<string, (read: Reader, value: unknown) => unknown> = {
   // A border node's place (ARCH-border-nodes-ride-sides).
   side: (read, value) => read.text(value),
   offset: (read, value) => read.number(value),
+  // How its outline is drawn (REN-node-shapes-cover-uml).
+  outline: (read, value) => outlineOf(read, value),
 };
 
 /** The patch of `updateNode` as plain data: the own fields of a plain object, enumerable or not,
- *  up to the first other than `content`, `height`, `resizable`, `divide`, `regions`, `side`, and
- *  `offset`, its
+ *  up to the first other than `content`, `height`, `resizable`, `divide`, `regions`, `side`,
+ *  `offset`, and `outline`, its
  *  content read as a load reads a node's, its height as a number, whether it is resizable and its
  *  division as given, its regions as a load reads a node's, `false` where it cannot read them and
  *  none for null, and the name

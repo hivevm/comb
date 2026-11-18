@@ -104,6 +104,7 @@ impl ContentInput {
             data: ContentData {
                 row_bounds: vec![0, 0],
                 element_bounds: vec![0],
+                separators: Vec::new(),
                 segment_bounds: vec![0],
                 text_bounds: vec![0],
                 name_bounds: vec![0],
@@ -133,10 +134,12 @@ impl ContentInput {
         }
     }
 
-    /// Ends a row, of the elements pushed since the row before.
-    pub(crate) fn end_row(&mut self) {
+    /// Ends a row, of the elements pushed since the row before, or a separator where
+    /// `separator`, which holds none (REN-node-content-and-hits, *Separator*).
+    pub(crate) fn end_row(&mut self, separator: bool) {
         let data = &mut self.data;
         data.element_bounds.push(numbered(data.kinds.len()));
+        data.separators.push(u8::from(separator));
         data.row_bounds[1] += 1;
     }
 
@@ -271,35 +274,85 @@ impl<'de> Visitor<'de> for RowsVisitor {
         // Every row is read, past the limit too, so that their count is refused; the snapshot
         // hands over at most one row beyond it.
         while let Some(read) = seq.next_element_seed(RowSeed(&mut content, row))? {
-            if !read {
+            if read == RowRead::Unread {
                 content.unread(row, None, Unflat::Row);
             }
-            content.end_row();
+            content.end_row(read == RowRead::Separator);
             row += 1;
         }
         Ok(content)
     }
 }
 
-/// Reads one row into the content, or reports that it is no list.
+/// What a row of content was: a list of elements, the string `"separator"`, or neither
+/// (REN-node-content-and-hits, *Separator*).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RowRead {
+    Elements,
+    Separator,
+    Unread,
+}
+
+/// Reads one row into the content, or reports that it is a separator or no list.
 struct RowSeed<'c>(&'c mut ContentInput, u32);
 
 impl<'de> de::DeserializeSeed<'de> for RowSeed<'_> {
-    type Value = bool;
+    type Value = RowRead;
 
-    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<bool, D::Error> {
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<RowRead, D::Error> {
         deserializer.deserialize_any(self)
     }
 }
 
 impl<'de> Visitor<'de> for RowSeed<'_> {
-    type Value = bool;
+    type Value = RowRead;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a list of elements")
+        formatter.write_str("a list of elements or \"separator\"")
     }
 
-    fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<bool, A::Error> {
+    fn visit_str<E>(self, value: &str) -> Result<RowRead, E> {
+        Ok(if value == "separator" {
+            RowRead::Separator
+        } else {
+            RowRead::Unread
+        })
+    }
+
+    fn visit_bool<E>(self, _: bool) -> Result<RowRead, E> {
+        Ok(RowRead::Unread)
+    }
+
+    fn visit_i64<E>(self, _: i64) -> Result<RowRead, E> {
+        Ok(RowRead::Unread)
+    }
+
+    fn visit_u64<E>(self, _: u64) -> Result<RowRead, E> {
+        Ok(RowRead::Unread)
+    }
+
+    fn visit_f64<E>(self, _: f64) -> Result<RowRead, E> {
+        Ok(RowRead::Unread)
+    }
+
+    fn visit_unit<E>(self) -> Result<RowRead, E> {
+        Ok(RowRead::Unread)
+    }
+
+    fn visit_none<E>(self) -> Result<RowRead, E> {
+        Ok(RowRead::Unread)
+    }
+
+    fn visit_some<D: Deserializer<'de>>(self, deserializer: D) -> Result<RowRead, D::Error> {
+        deserializer.deserialize_any(self)
+    }
+
+    fn visit_map<A: de::MapAccess<'de>>(self, mut map: A) -> Result<RowRead, A::Error> {
+        while map.next_entry::<IgnoredAny, IgnoredAny>()?.is_some() {}
+        Ok(RowRead::Unread)
+    }
+
+    fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<RowRead, A::Error> {
         let Self(content, row) = self;
         let mut column = 0;
         while let Some(element) = seq.next_element::<ElementCells>()? {
@@ -364,11 +417,8 @@ impl<'de> Visitor<'de> for RowSeed<'_> {
             }
             column += 1;
         }
-        Ok(true)
+        Ok(RowRead::Elements)
     }
-
-    // Any other value is no list: a row of no elements.
-    other_shapes!('de, bool, false, map);
 }
 
 /// A trend's text, direction, and colour, as `Fields` holds them.

@@ -10,6 +10,7 @@ import {
   KindCode,
   NodeField,
   NodeShapeCode,
+  OutlineCode,
   RoleCode,
   SideCode,
   type Arrow,
@@ -26,20 +27,22 @@ import {
 export const PIECE_BOUND = 2 ** 28;
 
 /** The content of a load's nodes as the engine's `loadGraph` takes it
- *  (API-bridge-takes-serde-and-columns), the nodes'
- *  elements in slot order, each node's rows in their order and each row's elements in theirs: the
- *  boundaries of each node's rows, one more than there are nodes; of each row's elements, one more
- *  than there are rows; per element its kind's code, its weight, NaN for one of another type, a
- *  text's role's code and a trend's direction's code, each 0 for another kind, and a badge's or a
- *  trend's colour, NaN for one of another type and for another kind; per element the boundaries of
- *  a progress bar's segments, one more than there are elements, and per segment its fraction and
- *  its colour, NaN for one of another type; the texts, every string an element shows, a metric's
- *  caption, value, and trend's text in that order, as a string column with per text whether it is a
- *  text, 1 or 0; and the names, every string an element names and does not show, an action's
- *  identifier and an icon's registered name, as the texts. */
+ *  (API-bridge-takes-serde-and-columns), the nodes' elements in slot order, each node's rows in
+ *  their order and each row's elements in theirs: the boundaries of each node's rows, one more than
+ *  there are nodes; of each row's elements, one more than there are rows; per row whether it is a
+ *  separator, 1 or 0, which holds no element (REN-node-content-and-hits, *Separator*); per element
+ *  its kind's code, its weight, NaN for one of another type, a text's role's code and a trend's
+ *  direction's code, each 0 for another kind, and a badge's or a trend's colour, NaN for one of
+ *  another type and for another kind; per element the boundaries of a progress bar's segments, one
+ *  more than there are elements, and per segment its fraction and its colour, NaN for one of
+ *  another type; the texts, every string an element shows, a metric's caption, value, and trend's
+ *  text in that order, as a string column with per text whether it is a text, 1 or 0; and the
+ *  names, every string an element names and does not show, an action's identifier and an icon's
+ *  registered name, as the texts. */
 export interface ContentColumns {
   readonly rowBounds: Uint32Array;
   readonly elementBounds: Uint32Array;
+  readonly separators: Uint8Array;
   readonly kinds: Uint8Array;
   readonly weights: Float64Array;
   readonly roles: Uint8Array;
@@ -75,6 +78,11 @@ export interface NodeColumns {
   readonly hasHeight: Uint8Array;
   readonly height: Float64Array;
   readonly shape: Uint8Array;
+  /** Per node how its outline is drawn, as the code of `OutlineCode`, one for a string that names
+   *  none, and the dash and the gap of a dashed one (REN-node-shapes-cover-uml, *Outline*). */
+  readonly outline: Uint8Array;
+  readonly outlineDash: Float64Array;
+  readonly outlineGap: Float64Array;
   /** Per node whether it names a container, 1 or 0, the slot of the node it names, `NO_SLOT`
    *  where no node has that identifier, and whether it is a container, 1 or 0
    *  (API-bridge-columns-carry-nesting). */
@@ -155,7 +163,9 @@ export interface NodeColumnWriter {
    *  a container that is a boolean is one, a height that is a number is one, whether it is
    *  resizable that is a boolean is so, a container, a mark, a height, and whether it is resizable
    *  null or undefined are none, and any other value is refused by its type, the first of them
-   *  named. */
+   *  named; an outline that is `"solid"`, `"none"`, or left out crosses as its code, another
+   *  string as the code of none, and a list of two numbers as a dash and a gap, any other value
+   *  refused by its type, between the node shape and the container. */
   node(
     id: unknown,
     x: unknown,
@@ -167,6 +177,7 @@ export interface NodeColumnWriter {
     height?: unknown,
     resizable?: unknown,
     attachedTo?: unknown,
+    outline?: unknown,
   ): void;
   /** The node's division and its regions, as read, after `node`: a division that is `across` or
    *  `down` is one, null or undefined none, and any other value refused by its type; regions
@@ -219,6 +230,9 @@ export interface NodeColumnWriter {
   noSegment(): void;
   /** The row is no list: it crosses as a row of no elements, its place named, and ends. */
   noRow(): void;
+  /** The row is a separator: it crosses as a row of no elements marked as one, and ends
+   *  (REN-node-content-and-hits, *Separator*). */
+  separatorRow(): void;
   /** Ends a row of no elements, or one whose last element was written without ending it. */
   endRow(): void;
   /** The next node, which is no object, refused as malformed unless a value before it was. */
@@ -369,6 +383,9 @@ class NodeWriter implements NodeColumnWriter {
   private readonly hasHeight: Uint8Array;
   private readonly height: Float64Array;
   private readonly shape: ReturnType<typeof codeColumn<NodeShapeCode>>;
+  private readonly outline: Uint8Array;
+  private readonly outlineDash: Float64Array;
+  private readonly outlineGap: Float64Array;
   private readonly hasContainer: Uint8Array;
   private readonly container: Uint32Array;
   private readonly isContainer: Uint8Array;
@@ -405,6 +422,7 @@ class NodeWriter implements NodeColumnWriter {
   private refused: NodeColumns["refused"];
   private rowBounds: Uint32Array;
   private elementBounds: Uint32Array;
+  private separators: Uint8Array;
   private kinds: Uint8Array;
   private weights: Float64Array;
   private roles: Uint8Array;
@@ -432,6 +450,9 @@ class NodeWriter implements NodeColumnWriter {
     this.hasHeight = new Uint8Array(count);
     this.height = new Float64Array(count);
     this.shape = codeColumn(count, SHAPES, NodeShapeCode.Unnamed);
+    this.outline = new Uint8Array(count);
+    this.outlineDash = new Float64Array(count);
+    this.outlineGap = new Float64Array(count);
     this.hasContainer = new Uint8Array(count);
     this.container = new Uint32Array(count);
     this.isContainer = new Uint8Array(count);
@@ -446,6 +467,7 @@ class NodeWriter implements NodeColumnWriter {
     this.regionNames = stringColumn(16, bound);
     this.rowBounds = new Uint32Array(count + 1);
     this.elementBounds = new Uint32Array(count + 1);
+    this.separators = new Uint8Array(count);
     this.kinds = new Uint8Array(count);
     this.weights = new Float64Array(count);
     this.roles = new Uint8Array(count);
@@ -483,6 +505,7 @@ class NodeWriter implements NodeColumnWriter {
     height?: unknown,
     resizable?: unknown,
     attachedTo?: unknown,
+    outline?: unknown,
   ): void {
     if (this.open) this.endNode();
     this.open = true;
@@ -495,12 +518,34 @@ class NodeWriter implements NodeColumnWriter {
       this.height[this.at] = height;
     } else if (!absent(height)) this.refuse(NodeField.Height);
     if (this.shape.add(this.at, shape)) this.refuse(NodeField.Shape);
+    this.writeOutline(outline);
     if (typeof container === "string") {
       this.hasContainer[this.at] = 1;
       this.containers.set(this.at, container);
     } else if (!absent(container)) this.refuse(NodeField.Container);
     this.flag(this.isContainer, isContainer, NodeField.IsContainer);
     this.flag(this.resizable, resizable, NodeField.Resizable);
+  }
+
+  /** The outline of the node being written (REN-node-shapes-cover-uml, *Outline*): solid where
+   *  it is `"solid"` or left out, none where `"none"`, the code of none for another string, which
+   *  the engine refuses at its place, a dash and a gap for a list of two numbers, which the engine
+   *  checks as an edge's, and any other value refused by its type. */
+  private writeOutline(outline: unknown): void {
+    const at = this.at;
+    if (absent(outline) || outline === "solid") this.outline[at] = OutlineCode.Solid;
+    else if (outline === "none") this.outline[at] = OutlineCode.None;
+    else if (typeof outline === "string") this.outline[at] = OutlineCode.Unnamed;
+    else {
+      const [dash, gap] = Array.isArray(outline) && outline.length === 2 ? outline : [];
+      if (typeof dash !== "number" || typeof gap !== "number")
+        return this.refuse(NodeField.Outline);
+      [this.outline[at], this.outlineDash[at], this.outlineGap[at]] = [
+        OutlineCode.Dashed,
+        dash,
+        gap,
+      ];
+    }
   }
 
   /** The position of the node being written: a border node has none, one left out is none, and
@@ -568,9 +613,17 @@ class NodeWriter implements NodeColumnWriter {
     this.endRow();
   }
 
+  /** The row is a separator, which holds no element. */
+  separatorRow(): void {
+    this.endRow();
+    this.separators[this.rows - 1] = 1;
+  }
+
   /** Ends the row. */
   endRow(): void {
     if (this.rows + 1 === this.elementBounds.length) this.elementBounds = grown(this.elementBounds);
+    if (this.rows === this.separators.length) this.separators = grown(this.separators);
+    this.separators[this.rows] = 0;
     this.elementBounds[++this.rows] = this.elements;
     this.row++;
     this.column = 0;
@@ -715,6 +768,9 @@ class NodeWriter implements NodeColumnWriter {
       hasHeight: this.hasHeight.subarray(0, this.at),
       height: this.height.subarray(0, this.at),
       shape: this.shape.column(this.at),
+      outline: this.outline.subarray(0, this.at),
+      outlineDash: this.outlineDash.subarray(0, this.at),
+      outlineGap: this.outlineGap.subarray(0, this.at),
       hasContainer: this.hasContainer.subarray(0, this.at),
       container: this.containerSlots(),
       isContainer: this.isContainer.subarray(0, this.at),
@@ -794,6 +850,7 @@ class NodeWriter implements NodeColumnWriter {
     return {
       rowBounds: this.rowBounds.subarray(0, this.nodes + 1),
       elementBounds: this.elementBounds.subarray(0, this.rows + 1),
+      separators: this.separators.subarray(0, this.rows),
       kinds: this.kinds.subarray(0, this.elements),
       weights: this.weights.subarray(0, this.elements),
       roles: this.roles.subarray(0, this.elements),
@@ -904,6 +961,10 @@ const SHAPES: Readonly<Record<NodeShape, NodeShapeCode>> = {
   "ringed-circle": NodeShapeCode.RingedCircle,
   diamond: NodeShapeCode.Diamond,
   bar: NodeShapeCode.Bar,
+  pentagon: NodeShapeCode.Pentagon,
+  "notched-rectangle": NodeShapeCode.NotchedRectangle,
+  note: NodeShapeCode.Note,
+  frame: NodeShapeCode.Frame,
 };
 const SIDES: Readonly<Record<Dock, SideCode>> = {
   top: SideCode.Top,

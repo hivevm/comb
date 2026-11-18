@@ -47,7 +47,9 @@ test("each class or interface is a node of its stereotype, name, and members, pl
   for (const classifier of CLASSIFIERS) {
     const node = graph.nodes.find(({ id }) => id === classifier.id)!;
     const rows = node.content.map((row) =>
-      row.map((each) => (each.kind === "text" ? `${each.role} ${each.text}` : each.kind)),
+      row === "separator"
+        ? row
+        : row.map((each) => (each.kind === "text" ? `${each.role} ${each.text}` : each.kind)),
     );
     const head = classifier.stereotype ? [`caption ${classifier.stereotype}`] : [];
     const members = [...classifier.attributes, ...classifier.operations];

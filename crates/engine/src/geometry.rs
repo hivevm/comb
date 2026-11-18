@@ -340,13 +340,12 @@ impl EdgePath {
         };
         let (mut middle, n) = (side.connector(node), side.outward());
         let (width, height) = (node.max_x - node.min_x, node.max_y - node.min_y);
-        let (length, across) = match side {
-            Side::Top | Side::Bottom => (width, height),
-            Side::Right | Side::Left => (height, width),
-        };
+        let length = crate::shape::side_length(width, height, side);
         let (quarter, pull) = (length / 4.0, length.max(MIN_PULL));
         // Left alone where it is nil, so that a loop whose ends do not move is today's to the bit.
-        let inset = shape.inset(length, across, quarter);
+        // It is the same at both ends on every node shape: a pentagon's point, a notch, and a
+        // note's fold reach no further along a side than a quarter of it (`depth`, `fold`).
+        let inset = shape.inset(side, width, height, length / 2.0 - quarter);
         if inset > 0.0 {
             middle = Point::new(middle.x - n.x * inset, middle.y - n.y * inset);
         }
@@ -617,7 +616,14 @@ pub(crate) mod tests {
             )
         };
         assert!(hair(-tolerance), "outside the outline, {context}");
-        assert!(!hair(tolerance), "inside the outline, {context}");
+        // A note is hit as its bounding rectangle, beyond its outline at its fold.
+        let (x, y) = (end.x - node.min_x, end.y - node.min_y);
+        if shape == NodeShape::Note && x > width - crate::shape::fold(width, height) {
+            let off = crate::shape::tests::off_outline(shape, width, height, x, y);
+            assert!(off <= tolerance, "off the outline, {context}");
+        } else {
+            assert!(!hair(tolerance), "inside the outline, {context}");
+        }
     }
 
     #[test]

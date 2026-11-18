@@ -35,6 +35,7 @@ export type {
   BorderNodeData,
   NodePatch,
   NodeShape,
+  Outline,
   RegionData,
   Selection,
   Side,

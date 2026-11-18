@@ -1676,10 +1676,10 @@ const SIDES: [Side; 4] = [Side::Top, Side::Right, Side::Bottom, Side::Left];
 /// an update of one's place; and the drags checked against a scan of the outline.
 #[derive(Default)]
 struct Counts {
-    moved: [u32; 7],
-    resized: [u32; 7],
-    slid: [u32; 7],
-    placed: [u32; 7],
+    moved: [u32; NodeShape::ALL.len()],
+    resized: [u32; NodeShape::ALL.len()],
+    slid: [u32; NodeShape::ALL.len()],
+    placed: [u32; NodeShape::ALL.len()],
     nearest: u32,
 }
 
@@ -1879,7 +1879,7 @@ fn border_nodes_stay_on_their_node_s_outline_at_their_side_through_moves_resizes
     // Verifies: ARCH-border-nodes-ride-sides, G-17
     let mut rng = Lcg(0x000B_0DE5);
     let mut counts = Counts::default();
-    for _ in 0..12 {
+    for _ in 0..20 {
         let mut bordered = Bordered::new(&mut rng);
         assert_riding(&bordered.graph, &bordered.riders);
         for _ in 0..60 {

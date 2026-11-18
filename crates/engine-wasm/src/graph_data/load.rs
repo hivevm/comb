@@ -6,7 +6,7 @@ use comb_engine::geometry::WORLD_LIMIT;
 use std::collections::HashSet;
 
 use comb_engine::graph::{AddNodeError, Axis, CANVAS, Graph, NestError, Nesting};
-use comb_engine::shape::NodeShape;
+use comb_engine::shape::{NodeShape, Outline};
 
 use super::borders::{Marks, attached, check_border, check_target, invalid, target_of};
 use super::checks::Nodes;
@@ -103,6 +103,12 @@ pub(crate) fn load_of(
         if shape != NodeShape::Rectangle {
             // A slot of a node just built, which no node shape refuses.
             let _ = graph.set_shape(slot, shape);
+        }
+    }
+    for (slot, &outline) in (0..).zip(&nodes.outlines) {
+        if outline != Outline::Solid {
+            // A slot of a node just built, which no outline refuses.
+            let _ = graph.set_outline(slot, outline);
         }
     }
     // Last, once the boxes of the nodes they ride are what the load gives them.
@@ -376,6 +382,7 @@ struct Single {
     y: f32,
     width: f32,
     shape: NodeShape,
+    outline: Outline,
     content: Checked,
     content_height: f32,
     height: f32,
@@ -402,6 +409,7 @@ fn single_of(input: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, Grap
     id_length("nodes", 0, "id", node.id)?;
     let ([x, y], width) = checked_node(&node)?;
     let given = given_height(node.id, node.height)?;
+    let outline = node.outline;
     let shape = node.shape;
     let (content, laid) = checked_content(node.id, shape, content, fonts, held)?;
     let height = node_height(shape, width, laid, given);
@@ -420,6 +428,7 @@ fn single_of(input: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, Grap
         y,
         width,
         shape,
+        outline,
         content,
         content_height,
         height,
@@ -462,6 +471,7 @@ pub(crate) fn add_node_to(
         y,
         width,
         shape,
+        outline,
         content,
         height,
         given,
@@ -516,8 +526,9 @@ pub(crate) fn add_node_to(
             // container's position.
             AddNodeError::NoContainer { .. } => unreachable!("a container checked above"),
         })?;
-    // A slot just added, which no node shape and no sizing refuses.
+    // A slot just added, which no node shape, no outline, and no sizing refuses.
     let _ = graph.set_shape(slot, shape);
+    let _ = graph.set_outline(slot, outline);
     let _ = graph.set_sizing(slot, given, resizable);
     if let (Some(on), Some(border)) = (ride, &border) {
         attached(graph, slot, on, border)?;
@@ -882,6 +893,125 @@ mod tests {
             assert_eq!(graph.shape(0), shape.into(), "{shape:?} added");
             assert_eq!(height_of(&node, &Fonts::default()), Ok(height), "{shape:?}");
         }
+    }
+
+    #[test]
+    fn a_pentagon_a_notch_a_note_and_a_frame_are_as_high_as_their_content_loaded_added_and_asked() {
+        // Verifies: REN-node-shapes-cover-uml
+        use crate::NodeShape as S;
+        for shape in [S::Pentagon, S::NotchedRectangle, S::Note, S::Frame] {
+            let graph = shaped_b(shape, |_| ()).unwrap();
+            assert_eq!(graph.sizes()[3], 64.0, "{shape:?} loaded");
+            assert_eq!(graph.shape(1), shape.into(), "{shape:?} loaded");
+            let node = added(0.0, 0.0, |n| n.shape = shape.into());
+            let mut graph = Graph::default();
+            assert_eq!(add(&mut graph, &node), Ok(0));
+            assert_eq!(graph.sizes()[1], 64.0, "{shape:?} added");
+            assert_eq!(height_of(&node, &Fonts::default()), Ok(64.0), "{shape:?}");
+        }
+    }
+
+    #[test]
+    fn an_outline_loads_as_given_and_one_naming_none_or_dashed_as_no_edge_is_is_refused_by_its_field()
+     {
+        // Verifies: REN-node-shapes-cover-uml, API-bridge-columns-carry-nesting, Q-7
+        use super::super::Outline as O;
+        use super::super::problem::AN_OUTLINE;
+        let dashed = |dash, gap| Some(O::Dashed(super::super::Pair([dash, gap])));
+        let outlined =
+            |outline: Option<Option<O>>| load_columns(&a_and(|n| n.outline = Field(outline)));
+        // Left out, solid; `"none"` and a dash pattern as given.
+        let kept = |outline| outlined(Some(outline)).map(|graph| graph.outline(1));
+        assert_eq!(kept(None), Ok(comb_engine::shape::Outline::Solid));
+        assert_eq!(kept(Some(O::None)), Ok(comb_engine::shape::Outline::None));
+        assert_eq!(
+            kept(dashed(6.0, 4.0)),
+            Ok(comb_engine::shape::Outline::Dashed([6.0, 4.0]))
+        );
+        assert_eq!(
+            kept(dashed(6.0, 0.0)),
+            Ok(comb_engine::shape::Outline::Dashed([6.0, 0.0]))
+        );
+        // A value of another type, or a name of none, and a dash an edge's rule refuses.
+        let refused = Err(GraphDataProblem::InvalidField {
+            list: GraphList::Nodes,
+            index: 1,
+            id: Some("b".to_owned()),
+            field: "outline".to_owned(),
+            expected: AN_OUTLINE.to_owned(),
+        });
+        for outline in [
+            None,
+            Some(dashed(0.0, 4.0)),
+            Some(dashed(6.0, -1.0)),
+            Some(dashed(1e300, 4.0)),
+            Some(dashed(f64::NAN, 4.0)),
+        ] {
+            assert_eq!(outlined(outline).map(|_| ()), refused, "{outline:?}");
+        }
+        // Read with its field, before a rule of any node: refused before node `a`'s width.
+        let mut columns = a_and(|n| n.outline = Field(Some(dashed(0.0, 4.0))));
+        columns.width[0] = f64::INFINITY;
+        assert_eq!(load_columns(&columns).map(|_| ()), refused);
+    }
+
+    #[test]
+    fn an_outline_of_add_node_is_refused_as_a_load_s_and_columns_of_no_outline_are_malformed() {
+        // Verifies: REN-node-shapes-cover-uml, API-bridge-columns-carry-nesting, Q-7
+        use super::super::Outline as O;
+        use super::super::problem::AN_OUTLINE;
+        let dashed = |dash, gap| Some(O::Dashed(super::super::Pair([dash, gap])));
+        // The node of `addNode` alike, at index 0.
+        let node = added(0.0, 0.0, |n| n.outline = Field(Some(dashed(0.0, 4.0))));
+        let refused_added = Err(GraphDataProblem::InvalidField {
+            list: GraphList::Nodes,
+            index: 0,
+            id: Some("n".to_owned()),
+            field: "outline".to_owned(),
+            expected: AN_OUTLINE.to_owned(),
+        });
+        let mut graph = Graph::default();
+        assert_eq!(add(&mut graph, &node), refused_added);
+        assert_eq!(graph.nodes_in_use(), 0);
+        let node = added(0.0, 0.0, |n| n.outline = Field(Some(Some(O::None))));
+        assert_eq!(add(&mut graph, &node), Ok(0));
+        assert_eq!(graph.outline(0), comb_engine::shape::Outline::None);
+        // Columns whose outline is no code, or does not fit the nodes, are malformed.
+        let mut columns = a_and(|_| ());
+        columns.outline[1] = super::super::OutlineCode::Unnamed as u8 + 1;
+        assert!(matches!(
+            load_columns(&columns),
+            Err(GraphDataProblem::Malformed { .. })
+        ));
+        let mut columns = a_and(|_| ());
+        columns.outline_gap.pop();
+        assert!(matches!(
+            load_columns(&columns),
+            Err(GraphDataProblem::Malformed { .. })
+        ));
+    }
+
+    #[test]
+    fn a_separator_row_that_holds_elements_or_a_byte_past_one_is_malformed() {
+        // Verifies: API-bridge-columns-carry-nesting
+        let mut columns = a_and(|_| ());
+        // Node `b`'s one row, its title, marked a separator.
+        columns.content.separators[1] = 1;
+        assert!(matches!(
+            load_columns(&columns),
+            Err(GraphDataProblem::Malformed { .. })
+        ));
+        columns.content.separators[1] = 2;
+        assert!(matches!(
+            load_columns(&columns),
+            Err(GraphDataProblem::Malformed { .. })
+        ));
+        let mut columns = a_and(|_| ());
+        columns.content.separators.pop();
+        assert!(matches!(
+            load_columns(&columns),
+            Err(GraphDataProblem::Malformed { .. })
+        ));
     }
 
     #[test]

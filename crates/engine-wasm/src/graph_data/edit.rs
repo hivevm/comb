@@ -9,19 +9,22 @@ use comb_engine::geometry::{self as graph_side, Sides};
 use std::collections::HashSet;
 
 use comb_engine::graph::{AddEdgeError, Axis, Graph, SlotError};
-use comb_engine::shape::NodeShape;
+use comb_engine::shape::{self, NodeShape};
 use serde::de::{self, IgnoredAny, Visitor};
 use serde::{Deserialize, Deserializer};
 use tsify::Tsify;
 
-use super::checks::{color_of, dash_of, edge_ids_of, given_height, label_placement, spec_of};
+use super::checks::{
+    color_of, dash_of, edge_ids_of, given_height, label_placement, outline_of, spec_of,
+};
 use super::item::{Item, content_of, edge_of, label_of};
 use super::load::checked_content;
-use super::problem::{A_BORDER_SIDE, A_FLAG, A_HEIGHT, A_NUMBER};
+use super::problem::{A_BORDER_SIDE, A_FLAG, A_HEIGHT, A_NUMBER, AN_OUTLINE};
 use super::regions::{Divide, RegionInput};
 use super::{
     Arrow, Checked, ContentInput, Dock, EdgeField, EdgeInput, Field, GraphDataProblem, GraphList,
-    LabelInput, Pair, Region, Side, check_graph_size, check_regions, regions_of, utf16_length,
+    LabelInput, Outline, Pair, Region, Side, check_graph_size, check_regions, regions_of,
+    utf16_length,
 };
 
 /// Why an edit of an edge was refused: its data, which the host application handed over, or a
@@ -207,16 +210,17 @@ pub(crate) fn update_edge_in(
 }
 
 /// The attributes `updateNode` changes on a node, by name: its content, which it replaces whole
-/// (REN-node-content-in-rows), its height, and whether it is resizable
-/// (API-edits-report-nested-changes). Read from a plain object alone: `api` hands over a copy of a
-/// plain object's fields up to the first it does not know, its content as plain data; a patch
-/// that is no plain object, a `Map` or an array among them, or that has a key that is no string,
-/// `api` cannot read, and refuses as malformed before it reaches the bridge. No value of the host
-/// application, and none of its code, reaches the bridge.
+/// (REN-node-content-in-rows), its height, whether it is resizable
+/// (API-edits-report-nested-changes), and how its outline is drawn (REN-node-shapes-cover-uml).
+/// Read from a plain object alone: `api` hands over a copy of a plain object's fields up to the
+/// first it does not know, its content as plain data; a patch that is no plain object, a `Map` or
+/// an array among them, or that has a key that is no string, `api` cannot read, and refuses as
+/// malformed before it reaches the bridge. No value of the host application, and none of its code,
+/// reaches the bridge.
 #[derive(Tsify)]
 #[tsify(
     type = "{ content?: NodeContent; height?: number; resizable?: boolean; divide?: Divide; \
-                 regions?: RegionInput[]; side?: Side; offset?: number }"
+                 regions?: RegionInput[]; side?: Side; offset?: number; outline?: Outline }"
 )]
 pub struct NodePatch(pub Vec<(String, PatchValue)>);
 
@@ -232,6 +236,8 @@ pub enum PatchValue {
     /// A border node's side and offset (ARCH-border-nodes-ride-sides).
     Side(Field<Side>),
     Offset(Field<f64>),
+    /// How the node's outline is drawn (REN-node-shapes-cover-uml, *Outline*).
+    Outline(Field<Outline>),
     Other,
 }
 
@@ -275,6 +281,7 @@ impl<'de> Visitor<'de> for PatchVisitor {
                 "regions" => PatchValue::Regions(map.next_value()?),
                 "side" => PatchValue::Side(map.next_value()?),
                 "offset" => PatchValue::Offset(map.next_value()?),
+                "outline" => PatchValue::Outline(map.next_value()?),
                 _ => {
                     map.next_value::<IgnoredAny>()?;
                     fields.push((field, PatchValue::Other));
@@ -303,6 +310,8 @@ pub(crate) struct Patched {
     /// (ARCH-border-nodes-ride-sides).
     pub side: Option<graph_side::Side>,
     pub offset: Option<f64>,
+    /// How the node's outline is to be drawn, none where the patch keeps it.
+    pub outline: Option<shape::Outline>,
 }
 
 impl Patched {
@@ -314,6 +323,7 @@ impl Patched {
             && self.regions.is_none()
             && self.side.is_none()
             && self.offset.is_none()
+            && self.outline.is_none()
     }
 }
 
@@ -364,6 +374,10 @@ pub(crate) fn patch_of(
                     });
                 }
                 patched.offset = Some(offset);
+            }
+            PatchValue::Outline(value) => {
+                let outline = item.read("outline", *value, AN_OUTLINE)?;
+                patched.outline = Some(outline_of(node, 0, outline)?);
             }
             PatchValue::Divide(value) => divide = Some(value),
             PatchValue::Regions(value) => regions = Some(value),

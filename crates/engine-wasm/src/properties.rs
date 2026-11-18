@@ -304,6 +304,7 @@ fn node(loose: bool, i: usize) -> impl Strategy<Value = Value> {
         field("width", size(), loose),
         sometimes("height", given_height(loose)),
         field("shape", node_shape(loose), loose),
+        sometimes("outline", outline(loose)),
         sometimes("resizable", flag(loose)),
         field("content", content(loose), loose),
     ])
@@ -340,9 +341,32 @@ fn flag(loose: bool) -> BoxedStrategy<Value> {
     prop_oneof![20 => good, 1 => Just(Value::Number(1.0))].boxed()
 }
 
+/// An outline: `"solid"`, `"none"`, null, which is none, or a dash pattern, now and then one an
+/// edge's rule refuses; loose, also a name of none, a list of three numbers, or a value of another
+/// type (REN-node-shapes-cover-uml, *Outline*).
+fn outline(loose: bool) -> BoxedStrategy<Value> {
+    let text = |name: &str| Value::Text(name.to_owned());
+    let pattern =
+        |[dash, gap]: [f64; 2]| Value::List(vec![Value::Number(dash), Value::Number(gap)]);
+    let good = prop_oneof![
+        4 => prop::sample::select(vec![text("solid"), text("none"), Value::Null]),
+        4 => (0.5..20.0f64, 0.0..20.0f64).prop_map(move |(dash, gap)| pattern([dash, gap])),
+        1 => prop::sample::select(vec![pattern([0.0, 4.0]), pattern([6.0, -1.0]), pattern([1e300, 4.0])]),
+    ];
+    if !loose {
+        return good.boxed();
+    }
+    let three = Value::List(vec![Value::Number(1.0); 3]);
+    prop_oneof![
+        20 => good,
+        1 => prop::sample::select(vec![text("dotted"), three, Value::Number(1.0)]),
+    ]
+    .boxed()
+}
+
 /// Mostly a rectangle, now and then another node shape, a filled one among them, which refuses
 /// content; loose, now and then a name of none or a value of another type
-/// (REN-closed-set-of-node-shapes).
+/// (REN-node-shapes-cover-uml).
 fn node_shape(loose: bool) -> BoxedStrategy<Value> {
     let text = |name: &str| Value::Text(name.to_owned());
     let mut good = vec![text("rectangle"); 6];
@@ -354,6 +378,10 @@ fn node_shape(loose: bool) -> BoxedStrategy<Value> {
             "ringed-circle",
             "diamond",
             "bar",
+            "pentagon",
+            "notched-rectangle",
+            "note",
+            "frame",
         ]
         .map(text),
     );
@@ -521,8 +549,11 @@ fn content(loose: bool) -> BoxedStrategy<Value> {
             Value::Bool(false),
             Value::Null,
             Value::Object(Vec::new()),
+            Value::Text("line".to_owned()),
         ]);
-        prop_oneof![30 => elements, 1 => odd]
+        // A separator, a row of its own (REN-node-content-and-hits, *Separator*).
+        let separator = Just(Value::Text("separator".to_owned()));
+        prop_oneof![30 => elements, 3 => separator, 1 => odd]
     };
     let rows = prop_oneof![20 => 1..=2_usize, 1 => 0..=9_usize];
     let any = rows
@@ -717,6 +748,8 @@ fn far_side_ok(node: &Value, lines: [f64; 3]) -> bool {
             let reach = |e: &Value| line(e) + if badge(e) { 0.0 } else { shift };
             elements.iter().map(reach).fold(0.0, f64::max)
         }
+        // A separator's line of 1 and the padding of 10 above and below it.
+        Value::Text(name) if name == "separator" => 21.0,
         _ => 0.0,
     };
     let height = (20.0 + rows.iter().map(row).sum::<f64>()).max(64.0);
@@ -764,7 +797,8 @@ fn nodes_of_data(data: &Value) -> &[Value] {
 /// 0 or more and a colour as a badge's, their fractions summing to at most 1 and 1e-9, or of the
 /// kind `metric`, a positive finite weight, a caption and a value as texts are, and a trend, an
 /// object of a text as theirs, a direction of the three, and a colour as a badge's, or of the kind
-/// `icon`, a positive finite weight and a name as a text is.
+/// `icon`, a positive finite weight and a name as a text is; or a row that is the string
+/// `"separator"`.
 fn content_ok(node: &Value) -> bool {
     let Some(Value::List(rows)) = fields_of(node).and_then(|fields| get(fields, "content")) else {
         return false;
@@ -826,6 +860,7 @@ fn content_ok(node: &Value) -> bool {
     rows.len() <= 8
         && rows.iter().all(|row| match row {
             Value::List(elements) => elements.len() <= 6 && elements.iter().all(element_ok),
+            Value::Text(name) => name == "separator",
             _ => false,
         })
 }
@@ -838,6 +873,9 @@ fn first_shape(fields: &Fields) -> Option<(u32, Option<u32>)> {
         return None;
     };
     for (r, row) in rows.iter().enumerate() {
+        if matches!(row, Value::Text(name) if name == "separator") {
+            continue;
+        }
         let Value::List(elements) = row else {
             return Some((r as u32, None));
         };
@@ -888,6 +926,7 @@ fn accepts(batch: &GraphBatch) -> Option<bool> {
         let [x, y, width] = [n.x.0.flatten()?, n.y.0.flatten()?, n.width.0?];
         n.content.0.as_ref()?;
         n.resizable.0?;
+        n.outline.0?;
         // A height its data gives is a finite number above 0 as f32 holds it.
         let height_ok = n.height.0?.is_none_or(|h| finite32(h) && h as f32 > 0.0);
         let within = [x, y, x]
@@ -974,6 +1013,23 @@ fn shaped(value: &Value) -> bool {
     true
 }
 
+/// Whether the outline of the node `item` is none, `"solid"`, `"none"`, or a dash pattern of a
+/// dash above 0 and a gap not below 0 as `f32` holds them, which the bridge reads with the field.
+fn outline_typed(item: &Fields) -> bool {
+    let finite = |n: f64| (n as f32).is_finite();
+    match get(item, "outline") {
+        None | Some(Value::Null) => true,
+        Some(Value::Text(name)) => name == "solid" || name == "none",
+        Some(Value::List(pair)) => match pair.as_slice() {
+            [Value::Number(dash), Value::Number(gap)] => {
+                finite(*dash) && finite(*gap) && *dash as f32 > 0.0 && *gap as f32 >= 0.0
+            }
+            _ => false,
+        },
+        Some(_) => false,
+    }
+}
+
 /// Whether the node shape of the node `item` names one, and whether its height and whether it is
 /// resizable are of their types, or none.
 fn shape_and_sizing_typed(item: &Fields) -> [(&'static str, bool); 3] {
@@ -985,6 +1041,10 @@ fn shape_and_sizing_typed(item: &Fields) -> [(&'static str, bool); 3] {
         "ringed-circle",
         "diamond",
         "bar",
+        "pentagon",
+        "notched-rectangle",
+        "note",
+        "frame",
     ];
     let shape = matches!(get(item, "shape"), Some(Value::Text(s)) if shapes.contains(&s.as_str()));
     let absent = |value: Option<&Value>| matches!(value, None | Some(Value::Null));
@@ -1030,6 +1090,7 @@ fn mistyped(list: GraphList, item: &Fields) -> Vec<&'static str> {
             for (name, typed) in shape_and_sizing_typed(item) {
                 check(name, typed);
             }
+            check("outline", outline_typed(item));
             check(
                 "content",
                 matches!(get(item, "content"), Some(Value::List(_))),
@@ -1510,18 +1571,7 @@ fn loaded_in(
         content.lay_out(node, frame, fonts, &mut cells, &mut rows, &mut placed);
         let laid = &placed[start..];
         drawn.draw(&content, node, &cells, laid, Level::Near, fonts);
-        for (_, _, element, at) in content.elements_of(node) {
-            let kind = content.kinds[element];
-            texts.push(if kind == KindCode::Progress as u8 {
-                vec![""]
-            } else if kind == KindCode::Icon as u8 {
-                vec![content.name(at.name)]
-            } else if kind == KindCode::Metric as u8 {
-                (0..3).map(|i| content.text(at.text + i)).collect()
-            } else {
-                vec![content.text(at.text)]
-            });
-        }
+        push_shown(&content, node, &cells, &mut texts);
         for at in &placed[start..] {
             let [x, y, w, h] = [at.x, at.y, at.width, at.height].map(f64::from);
             assert!(
@@ -1547,6 +1597,37 @@ fn loaded_in(
         assert_eq!(content.text(index), text);
     }
     Ok(loaded.graph)
+}
+
+/// Pushes onto `texts` what each of `cells`, the content of the node at `node` of `content` as the
+/// layout read it, shows: none of a progress bar and of a separator, which holds no element of the
+/// columns, three of a metric, and the name of an icon, which the shell draws as its image.
+fn push_shown<'c>(
+    content: &'c super::ContentData,
+    node: usize,
+    cells: &[comb_engine::content::Cell],
+    texts: &mut Vec<Vec<&'c str>>,
+) {
+    let mut elements = content.elements_of(node);
+    for cell in cells {
+        if matches!(cell.element, comb_engine::content::Element::Separator) {
+            texts.push(vec![""]);
+            continue;
+        }
+        let Some((_, _, element, at)) = elements.next() else {
+            break;
+        };
+        let kind = content.kinds[element];
+        texts.push(if kind == KindCode::Progress as u8 {
+            vec![""]
+        } else if kind == KindCode::Icon as u8 {
+            vec![content.name(at.name)]
+        } else if kind == KindCode::Metric as u8 {
+            (0..3).map(|i| content.text(at.text + i)).collect()
+        } else {
+            vec![content.text(at.text)]
+        });
+    }
 }
 
 /// Asserts that the pieces of each bar `drawn` holds lie within the element `placed` holds of it,
@@ -2101,7 +2182,7 @@ fn content_input(rows: &[Vec<Counted>]) -> ContentInput {
                 }
             }
         }
-        content.end_row();
+        content.end_row(false);
     }
     content
 }
@@ -2118,6 +2199,7 @@ fn counted_node(id: String, rows: &[Vec<Counted>]) -> NodeInput {
         is_container: None.into(),
         height: None.into(),
         resizable: None.into(),
+        outline: None.into(),
         divide: None.into(),
         regions: None.into(),
         attached_to: None.into(),

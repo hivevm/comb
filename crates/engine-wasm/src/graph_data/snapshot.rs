@@ -8,8 +8,8 @@ use super::field::{Refusable, items};
 use super::node_columns::Refused;
 use super::{
     Arrow, ArrowCode, ContentData, ContentInput, Dock, EdgeColumns, EdgeField, EdgeInput, Field,
-    GraphDataProblem, LabelInput, NodeColumns, NodeField, NodeInput, NodeShapeCode, Pair, SideCode,
-    Unflat, numbered, utf16_length,
+    GraphDataProblem, LabelInput, NodeColumns, NodeField, NodeInput, NodeShapeCode, OutlineCode,
+    Pair, SideCode, Unflat, numbered, utf16_length,
 };
 
 /// The nodes and edges of one load as the tests write them, each in slot order: the nodes as the
@@ -34,6 +34,7 @@ impl Refusable for NodeInput {
             self.width.0.is_none(),
             self.height.0.is_none(),
             self.shape.0.is_none(),
+            self.outline.0.is_none(),
             self.container.0.is_none(),
             self.is_container.0.is_none(),
             self.resizable.0.is_none(),
@@ -120,6 +121,9 @@ pub(crate) struct OwnedColumns {
     pub(super) has_height: Vec<u8>,
     pub(super) height: Vec<f64>,
     pub(super) shape: Vec<u8>,
+    pub(super) outline: Vec<u8>,
+    pub(super) outline_dash: Vec<f64>,
+    pub(super) outline_gap: Vec<f64>,
     pub(super) has_container: Vec<u8>,
     pub(super) container: Vec<u32>,
     pub(super) is_container: Vec<u8>,
@@ -273,6 +277,7 @@ impl OwnedColumns {
                 columns.has_height.push(0);
                 columns.height.push(0.0);
                 columns.shape.push(NodeShapeCode::Rectangle as u8);
+                columns.push_outline(Some(None));
                 columns.on_canvas();
                 columns.resizable.push(0);
                 columns.divide.push(0);
@@ -318,6 +323,7 @@ impl OwnedColumns {
                     .map_or(NodeShapeCode::Unnamed as u8, |code| code as u8)
             });
             columns.shape.push(shape);
+            columns.push_outline(node.outline.0);
             columns.on_canvas();
             columns.push_resizable(index, node);
             columns.push_regions(index, node);
@@ -332,6 +338,21 @@ impl OwnedColumns {
         columns.content.texts = pieces_of(&texts, bound);
         columns.content.names = pieces_of(&names, bound);
         columns
+    }
+
+    /// Writes the outline `outline` of the next node as the snapshot does: its code, with the dash
+    /// and the gap of a dashed one, solid where it is left out, and the code of none where it is of
+    /// another type or names none, which the first pass refuses at its place.
+    fn push_outline(&mut self, outline: Option<Option<super::Outline>>) {
+        let (code, [dash, gap]) = match outline {
+            Some(None | Some(super::Outline::Solid)) => (OutlineCode::Solid, [0.0; 2]),
+            Some(Some(super::Outline::None)) => (OutlineCode::None, [0.0; 2]),
+            Some(Some(super::Outline::Dashed(Pair(dash)))) => (OutlineCode::Dashed, dash),
+            None => (OutlineCode::Unnamed, [0.0; 2]),
+        };
+        self.outline.push(code as u8);
+        self.outline_dash.push(dash);
+        self.outline_gap.push(gap);
     }
 
     /// Writes the height of the node at `index`, `node`, as whether it has one and the number; one
@@ -522,6 +543,9 @@ impl OwnedColumns {
             has_height: &self.has_height,
             height: &self.height,
             shape: &self.shape,
+            outline: &self.outline,
+            outline_dash: &self.outline_dash,
+            outline_gap: &self.outline_gap,
             has_container: &self.has_container,
             container: &self.container,
             is_container: &self.is_container,
@@ -796,6 +820,7 @@ impl ContentData {
         let base = numbered(self.kinds.len());
         let ends = node.element_bounds.windows(2).map(|pair| base + pair[1]);
         self.element_bounds.extend(ends);
+        self.separators.extend(&node.separators);
         self.kinds.extend(&node.kinds);
         self.weights.extend(&node.weights);
         self.roles.extend(&node.roles);
@@ -922,6 +947,7 @@ mod tests {
             width: _,
             height: _,
             shape: _,
+            outline: _,
             container: _,
             is_container: _,
             resizable: _,
@@ -939,6 +965,7 @@ mod tests {
             ("width", Value::Number(100.0)),
             ("height", Value::Number(80.0)),
             ("shape", Value::Text("diamond".to_owned())),
+            ("outline", Value::Text("none".to_owned())),
             ("container", Value::Text("c".to_owned())),
             ("isContainer", Value::Bool(true)),
             ("resizable", Value::Bool(true)),
@@ -957,6 +984,7 @@ mod tests {
             ("width", true),
             ("height", false),
             ("shape", true),
+            ("outline", false),
             ("container", false),
             ("attachedTo", false),
             ("side", false),

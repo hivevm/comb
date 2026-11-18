@@ -7,7 +7,7 @@
 
 use super::{CANVAS, Graph, SlotError};
 use crate::geometry::{Point, Side, WORLD_LIMIT};
-use crate::shape::{held, side_length, side_of};
+use crate::shape::{held, side_length};
 
 /// Why a border node was not attached, placed, or slid: a slot that holds no node, or a node the
 /// call cannot take as a border node (ARCH-border-nodes-ride-sides, *Attachment*). Each is the
@@ -125,9 +125,9 @@ impl Graph {
     }
 
     /// Slides the border node in `slot` to the point of its node's outline nearest the world point
-    /// `point`, on the side of the box nearest that point, and returns its place
-    /// (ARCH-border-nodes-ride-sides, *Drag*). A slot that holds no border node, or a point that
-    /// is not finite, refuses the call, which then changes nothing.
+    /// `point`, by the side its node shape places it there from (`NodeShape::side_of`), and
+    /// returns its place (ARCH-border-nodes-ride-sides, *Drag*). A slot that holds no border
+    /// node, or a point that is not finite, refuses the call, which then changes nothing.
     pub fn slide(&mut self, slot: u32, point: Point) -> Result<Place, AttachError> {
         self.nodes_held(&[slot])?;
         let Some(place) = self.place_of(slot) else {
@@ -138,10 +138,9 @@ impl Graph {
         }
         let box_ = self.node_bounds(place.on);
         let (width, height) = (box_.max_x - box_.min_x, box_.max_y - box_.min_y);
-        let (x, y) =
-            self.shape(place.on)
-                .nearest(width, height, point.x - box_.min_x, point.y - box_.min_y);
-        let (side, offset) = side_of(width, height, x, y);
+        let shape = self.shape(place.on);
+        let (x, y) = shape.nearest(width, height, point.x - box_.min_x, point.y - box_.min_y);
+        let (side, offset) = shape.side_of(width, height, x, y);
         let place = Place {
             side,
             offset,

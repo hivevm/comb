@@ -185,6 +185,7 @@ function nodeUpdatedOf(
   const patch: NodePatch = change.content ? { content: bridge.content(slot) } : {};
   if (change.height) patch.height = heightAt(bridge, slot);
   if (change.resizable !== undefined) patch.resizable = change.resizable;
+  if (change.outline !== undefined) patch.outline = change.outline;
   if (change.regions) {
     const { divide } = state.nodes[slot]!;
     if (divide !== undefined) patch.divide = divide;
@@ -281,7 +282,7 @@ function nodeAddedOf(
   bridge: Bridge,
 ): GraphChange {
   const slot = state.slots.get(change.id)!;
-  const { id, width, shape, isContainer, height, resizable, divide } = state.nodes[slot]!;
+  const { id, width, shape, outline, isContainer, height, resizable, divide } = state.nodes[slot]!;
   const place = bridge.borderOf(slot);
   if (place) {
     // A border node, at the offset the engine held within its side (ARCH-border-nodes-ride-sides).
@@ -289,12 +290,14 @@ function nodeAddedOf(
     const content = bridge.content(slot);
     const { side, offset } = place;
     const border: NodeData = { id, width, shape, content, attachedTo: attachedTo!, side, offset };
+    if (outline !== undefined) border.outline = outline;
     if (height !== undefined) border.height = heightAt(bridge, slot);
     return { kind: change.kind, by: change.by, node: border };
   }
   const { x, y, container } = placeOf(state, bridge, slot);
   const node: NodeData = { id, x, y, width, shape, content: bridge.content(slot) };
   if (container !== null) node.container = container;
+  if (outline !== undefined) node.outline = outline;
   if (isContainer !== undefined) node.isContainer = isContainer;
   // The height as Comb took it: raised where it was below its content's.
   if (height !== undefined) node.height = heightAt(bridge, slot);

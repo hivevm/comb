@@ -6,17 +6,17 @@ use comb_engine::graph::{CANVAS, Nesting};
 use comb_engine::shape::NodeShape;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-use super::Side;
 use super::edge_columns::SideCode;
 use super::item::{Border, Item, Node};
 use super::problem::{
     A_BORDER_SIDE, A_CONTENT, A_DIVIDE, A_FLAG, A_HEIGHT, A_NODE_ID_OR_NONE, A_NUMBER,
-    A_REGION_LIST, A_SHAPE, A_SIZE, AN_ID, AN_ID_OR_NONE,
+    A_REGION_LIST, A_SHAPE, A_SIZE, AN_ID, AN_ID_OR_NONE, AN_OUTLINE,
 };
 use super::{
     ContentColumns, Field, GraphDataProblem, GraphList, RegionColumns, Unflat, bounds_fit,
     malformed, numbered, refused_by, unshaped, value_at, values,
 };
+use super::{Outline, Pair, Side};
 
 /// A field of a node that a load's first pass refuses by its type
 /// (API-bridge-takes-serde-and-columns), in the order a node's fields are read, as the shell names
@@ -36,6 +36,7 @@ pub enum NodeField {
     Width,
     Height,
     Shape,
+    Outline,
     Container,
     IsContainer,
     Resizable,
@@ -64,6 +65,22 @@ pub enum NodeShapeCode {
     RingedCircle,
     Diamond,
     Bar,
+    Pentagon,
+    NotchedRectangle,
+    Note,
+    Frame,
+    Unnamed,
+}
+
+/// The code of how a node's outline is drawn in its column (API-bridge-columns-carry-nesting):
+/// solid, which a node that leaves it out is, none, dashed by the dash and the gap of its columns,
+/// and `Unnamed` for a string that names none, which the first pass refuses at its place.
+#[wasm_bindgen]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OutlineCode {
+    Solid,
+    None,
+    Dashed,
     Unnamed,
 }
 
@@ -98,6 +115,11 @@ pub struct NodeColumns<'a> {
     pub has_height: &'a [u8],
     pub height: &'a [f64],
     pub shape: &'a [u8],
+    /// How each node's outline is drawn, as the code of `OutlineCode`, and the dash and the gap
+    /// of a dashed one as handed over, 0 for another (REN-node-shapes-cover-uml).
+    pub outline: &'a [u8],
+    pub outline_dash: &'a [f64],
+    pub outline_gap: &'a [f64],
     pub has_container: &'a [u8],
     pub container: &'a [u32],
     pub is_container: &'a [u8],
@@ -140,7 +162,7 @@ pub(super) fn unfit() -> GraphDataProblem {
 }
 
 impl NodeField {
-    pub(super) const ALL: [Self; 20] = [
+    pub(super) const ALL: [Self; 21] = [
         Self::Item,
         Self::Id,
         Self::X,
@@ -148,6 +170,7 @@ impl NodeField {
         Self::Width,
         Self::Height,
         Self::Shape,
+        Self::Outline,
         Self::Container,
         Self::IsContainer,
         Self::Resizable,
@@ -220,7 +243,14 @@ impl NodeColumns<'_> {
     /// The number of nodes, or a refusal as malformed where the columns do not fit together.
     pub(super) fn count(&self) -> Result<usize, GraphDataProblem> {
         let count = self.x.len();
-        let numbers = [self.y, self.width, self.height].map(<[f64]>::len);
+        let numbers = [
+            self.y,
+            self.width,
+            self.height,
+            self.outline_dash,
+            self.outline_gap,
+        ]
+        .map(<[f64]>::len);
         let flags = [
             self.has_container,
             self.is_container,
@@ -247,6 +277,11 @@ impl NodeColumns<'_> {
         let fit = bordered
             && numbers.iter().all(|&len| len == count)
             && self.shape.len() == count
+            && self.outline.len() == count
+            && self
+                .outline
+                .iter()
+                .all(|&code| code <= OutlineCode::Unnamed as u8)
             && self.container.len() == count
             && self.divide.len() == count
             && self.divide.iter().all(|&code| code <= 2)
@@ -273,10 +308,13 @@ impl NodeColumns<'_> {
         let last = self
             .refused
             .map_or(self.shape.len(), |refused| refused.index as usize + 1);
-        // A node shape that names none, or a border node's side that names no side of a box.
+        // A node shape or an outline that names none, or a border node's side that names no side
+        // of a box.
         let unnamed = (0..last).find_map(|index| {
             if self.shape[index] == NodeShapeCode::Unnamed as u8 {
                 Some(self.code_at(index, NodeField::Shape))
+            } else if self.outline_at(index).is_err() {
+                Some(self.code_at(index, NodeField::Outline))
             } else if self.has_attached[index] == 1 && self.side[index] > SideCode::Left as u8 {
                 Some(self.code_at(index, NodeField::Side))
             } else {
@@ -310,6 +348,7 @@ impl NodeColumns<'_> {
             NodeField::Width => ("width", A_SIZE),
             NodeField::Height => ("height", A_HEIGHT),
             NodeField::Shape => ("shape", A_SHAPE),
+            NodeField::Outline => ("outline", AN_OUTLINE),
             NodeField::Container => ("container", AN_ID_OR_NONE),
             NodeField::IsContainer => ("isContainer", A_FLAG),
             NodeField::Resizable => ("resizable", A_FLAG),
@@ -331,6 +370,23 @@ impl NodeColumns<'_> {
             }
         };
         item.read(name, Field::<()>(None), expected)
+    }
+
+    /// How the outline of the node at `index` is drawn, as the engine keeps it, or its refusal: a
+    /// code that names none, or a dash pattern an edge's rule refuses, either of which the first
+    /// pass names at its place (REN-node-shapes-cover-uml, *Outline*).
+    fn outline_at(&self, index: usize) -> Result<comb_engine::shape::Outline, GraphDataProblem> {
+        let code = self.outline[index];
+        let outline = if code == OutlineCode::Solid as u8 {
+            Outline::Solid
+        } else if code == OutlineCode::None as u8 {
+            Outline::None
+        } else if code == OutlineCode::Dashed as u8 {
+            Outline::Dashed(Pair([self.outline_dash[index], self.outline_gap[index]]))
+        } else {
+            return Err(unfit());
+        };
+        super::checks::outline_of("", index, outline)
     }
 
     /// The refusal of the field `field` of the node at `index`, whose code names none.
@@ -401,6 +457,8 @@ impl NodeColumns<'_> {
                     height: (self.has_height[i] == 1).then(|| self.height[i]),
                     resizable: self.resizable[i] == 1,
                     shape,
+                    // The first pass refused every outline that names none or is refused.
+                    outline: self.outline_at(i).map_err(|_| unfit())?,
                     is_container: false,
                 })
             })
@@ -437,10 +495,10 @@ mod tests {
             let mut b = ContentInput::new();
             let title = (KindCode::Text, 1.0, RoleCode::Title as u8, f64::NAN);
             b.push(title.0, title.1, title.2, title.3, Some("t"), None);
-            b.end_row();
+            b.end_row(false);
             b.push(title.0, title.1, title.2, title.3, Some("t"), None);
             b.push(KindCode::Progress, 1.0, 0, f64::NAN, None, None);
-            b.end_row();
+            b.end_row(false);
             let mut columns = a_and(|n| n.content = b.into());
             columns.refused = Some(Refused {
                 index: 1,
@@ -477,7 +535,7 @@ mod tests {
         content.unread(0, Some(0), Unflat::Segment);
         content.push_segment(f64::NAN, f64::NAN);
         content.unread(0, Some(0), Unflat::Segments);
-        content.end_row();
+        content.end_row(false);
         assert_eq!(
             (content.shape, content.unread),
             (Some((0, Some(0))), Unflat::Segment)

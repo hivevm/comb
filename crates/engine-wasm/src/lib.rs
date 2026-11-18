@@ -27,6 +27,7 @@ use comb_engine::graph::{
     AttachError, Axis, CANVAS, Graph, Handle, Level, LineError, MeshAt, MoveError, MoveIntoError,
     PositionError, SlotError as GraphSlotError, Target, Visible,
 };
+use comb_engine::shape::Outline;
 use comb_engine::stroke::{Detail, Mesh};
 use serde::{Deserialize, Serialize};
 use tsify::{Ts, Tsify};
@@ -36,8 +37,8 @@ pub use graph_data::{
     Arrow, ArrowCode, ContentElement, DirectionCode, Divide, EdgeField, EdgeInput, EdgePatch,
     ElementHit, ElementKind, Field, GraphDataProblem, GraphList, KindCode, LabelInput, Line,
     MAX_COLUMNS, MAX_CONTENT_UNITS, MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_ROWS, MAX_SEGMENTS,
-    MAX_TEXT, NodeContent, NodeField, NodeInput, NodePatch, NodeShape, NodeShapeCode, Pair,
-    RegionInput, RoleCode, Segment, Side, SideCode, TextRole, Trend, TrendDirection,
+    MAX_TEXT, NodeContent, NodeField, NodeInput, NodePatch, NodeShape, NodeShapeCode, OutlineCode,
+    Pair, RegionInput, RoleCode, Segment, Side, SideCode, TextRole, Trend, TrendDirection,
 };
 
 use kept::{ContentStore, Drawn};
@@ -610,6 +611,11 @@ pub struct Engine {
     content_rects: Vec<f32>,
     /// The role and the drawn text of each element of `placed`.
     drawn: Drawn,
+    /// Of the nodes the last query found at the near or middle level, in its order, the
+    /// boundaries of each one's dash segments in `dashes`, and each segment's two ends `x0, y0,
+    /// x1, y1` relative to its node (REN-node-shapes-cover-uml, *Outline*).
+    dash_bounds: Vec<u32>,
+    dashes: Vec<f32>,
     /// The edges at the nodes a drag moves and those an edit at the far level added, and their
     /// mesh, which `meshAt` writes (REN-moving-layer-redraws-changes).
     moving_edges: Vec<u32>,
@@ -632,9 +638,11 @@ impl Engine {
     /// units, each ending where a value ends, with the boundaries across all pieces in UTF-16 code
     /// units, the numbers as `Float64Array`, a height its data gives with a byte that says whether
     /// it does, whether it is resizable as a byte, the node shapes as the codes of `NodeShapeCode`,
+    /// the outlines as the codes of `OutlineCode` with the dash and the gap of a dashed one,
     /// per border node the slot it is attached to, its side, its offset, and what stands beside
     /// its `attachedTo`, with the identifier the first one attached to no node names
-    /// (ARCH-border-nodes-ride-sides), the content as the columns of `ContentColumns`, its texts
+    /// (ARCH-border-nodes-ride-sides), the content as the columns of `ContentColumns`, a byte per
+    /// row saying whether it is a separator among them, its texts
     /// in pieces as the identifiers are,
     /// with per text whether it is a text, and the first value the shell refused by its type, the
     /// index of its node, the code of its `NodeField`, and for a shape of content its row and
@@ -670,6 +678,9 @@ impl Engine {
         has_height: &[u8],
         height: &[f64],
         shape: &[u8],
+        outline: &[u8],
+        outline_dash: &[f64],
+        outline_gap: &[f64],
         has_container: &[u8],
         container: &[u32],
         is_container: &[u8],
@@ -694,6 +705,7 @@ impl Engine {
         attached_missing: Option<String>,
         row_bounds: Vec<u32>,
         element_bounds: Vec<u32>,
+        separators: Vec<u8>,
         kinds: Vec<u8>,
         weights: Vec<f64>,
         roles: Vec<u8>,
@@ -766,6 +778,7 @@ impl Engine {
         let content = ContentData {
             row_bounds,
             element_bounds,
+            separators,
             kinds,
             weights,
             roles,
@@ -791,6 +804,9 @@ impl Engine {
             has_height,
             height,
             shape,
+            outline,
+            outline_dash,
+            outline_gap,
             has_container,
             container,
             is_container,
@@ -843,6 +859,24 @@ impl Engine {
         }
         Ts::from_rust(&self.content.content_of(slot))
             .map_err(|_| malformed("the content could not be handed back").into())
+    }
+
+    /// The inner rectangle of the node in `slot`, `[x, y, width, height]` relative to its top-left
+    /// corner, that its content is laid out in, a frame's tab: for inspection, which reports it
+    /// (REN-node-shapes-cover-uml). A slot that holds no node throws a `SlotError`.
+    #[wasm_bindgen(js_name = innerOf)]
+    pub fn inner_of(&mut self, slot: u32) -> Result<Vec<f64>, CallRefusal> {
+        trap::spring();
+        if !self.graph.holds_node(slot) {
+            return Err(CallRefusal::Slot(SlotError::NoNode { slot }));
+        }
+        let at = slot as usize * 2;
+        let size = [self.graph.sizes()[at], self.graph.sizes()[at + 1]];
+        let (content, node) = self.content.of(slot);
+        let (mut cells, mut rows) = (Vec::new(), Vec::new());
+        let frame = (self.graph.shape(slot), size);
+        let inner = content.inner(node, frame, &self.fonts, &mut cells, &mut rows);
+        Ok(vec![inner.x, inner.y, inner.width, inner.height])
     }
 
     /// Hands over the metrics of the font the shell draws the texts of the role `role`, a
@@ -1495,6 +1529,8 @@ impl Engine {
         if let Some((content, _)) = patched.content {
             self.content.set(slot, content);
         }
+        self.graph
+            .set_outline(slot, patched.outline.unwrap_or(self.graph.outline(slot)))?;
         let top = graph_data::content_top(laid);
         self.graph.set_top(slot, top);
         let removed = match patched.regions {
@@ -1650,6 +1686,7 @@ impl Engine {
         self.moving_edges.clear();
         self.moving.clear();
         self.lay_out_found(level);
+        self.lay_dashes(level, &rect);
         Ok(self.visible.mesh.detail.into())
     }
 
@@ -1720,6 +1757,47 @@ impl Engine {
     }
 }
 
+impl Engine {
+    /// Lays the dashes of the dashed outlines of the nodes the last query found, at the near and
+    /// the middle level, within `rect`, the query's rectangle, into the buffers of dashes, each
+    /// node's in the order the shell binds them; at the far level, which draws no outline, the
+    /// buffers hold no node (REN-node-shapes-cover-uml, *Outline*).
+    fn lay_dashes(&mut self, level: DetailLevel, rect: &Rect) {
+        self.dash_bounds.clear();
+        self.dashes.clear();
+        if level == DetailLevel::Far {
+            return;
+        }
+        self.dash_bounds.push(0);
+        let (mut points, mut segments) = (Vec::new(), Vec::new());
+        let found = self.visible.containers.iter().chain(&self.visible.nodes);
+        for &slot in found {
+            if let Outline::Dashed(pattern) = self.graph.outline(slot) {
+                let at = slot as usize * 2;
+                let [x, y] = [0, 1].map(|axis| f64::from(self.graph.positions()[at + axis]));
+                let size = [0, 1].map(|axis| f64::from(self.graph.sizes()[at + axis]));
+                let clip = [
+                    rect.min_x - x,
+                    rect.min_y - y,
+                    rect.max_x - x,
+                    rect.max_y - y,
+                ];
+                segments.clear();
+                self.graph.shape(slot).dashes(
+                    (size[0], size[1]),
+                    pattern.map(f64::from),
+                    clip,
+                    &mut points,
+                    &mut segments,
+                );
+                self.dashes.extend(segments.iter().flatten());
+            }
+            self.dash_bounds
+                .push(graph_data::numbered(self.dashes.len() / 4));
+        }
+    }
+}
+
 /// Where a node a kept region held lies once the regions are divided anew: at its position
 /// relative to the region of the same identifier, or at its world position in another.
 #[derive(Clone, Copy)]
@@ -1784,6 +1862,35 @@ impl Engine {
     #[wasm_bindgen(js_name = contentBoundsLen)]
     pub fn content_bounds_len(&self) -> usize {
         self.content_bounds.len()
+    }
+
+    /// Where the buffer starts that `query` writes, at the near and the middle level, the
+    /// boundaries of the dash segments of each node it found into, one more than it found, in the
+    /// order of the found node slots, none for a node whose outline is not dashed; at the far
+    /// level it holds none (REN-node-shapes-cover-uml, *Outline*).
+    #[wasm_bindgen(js_name = dashBoundsPtr)]
+    pub fn dash_bounds_ptr(&self) -> *const u32 {
+        self.dash_bounds.as_ptr()
+    }
+
+    /// How many boundaries the buffer of dash segments' boundaries holds.
+    #[wasm_bindgen(js_name = dashBoundsLen)]
+    pub fn dash_bounds_len(&self) -> usize {
+        self.dash_bounds.len()
+    }
+
+    /// Where the buffer starts that `query` writes each dash segment's two ends into, `x0, y0, x1,
+    /// y1` relative to its node's top-left corner, laid along its node's outline clockwise from the
+    /// point nearest the top left corner of its box, within the query's rectangle.
+    #[wasm_bindgen(js_name = dashesPtr)]
+    pub fn dashes_ptr(&self) -> *const f32 {
+        self.dashes.as_ptr()
+    }
+
+    /// How many values the buffer of dash segments holds: four per segment.
+    #[wasm_bindgen(js_name = dashesLen)]
+    pub fn dashes_len(&self) -> usize {
+        self.dashes.len()
     }
 
     /// Where the buffer starts that `query` writes each placed element's rectangle into, `x, y,
@@ -2237,6 +2344,206 @@ mod tests {
         engine
             .query_rect(&rect, DetailLevel::Near, 1.0, 0.0)
             .unwrap();
+    }
+
+    /// The query of `level` over `rect` on `engine`, where a pixel is a world unit.
+    fn query_at(engine: &mut Engine, rect: [f64; 4], level: DetailLevel) {
+        let [min_x, min_y, max_x, max_y] = rect;
+        let rect = RectInput {
+            min_x,
+            min_y,
+            max_x,
+            max_y,
+        };
+        engine.query_rect(&rect, level, 1.0, 0.0).unwrap();
+    }
+
+    #[test]
+    fn a_pentagon_a_notch_a_note_and_a_frame_lay_their_content_out_in_their_inner_rectangle() {
+        // Verifies: REN-node-shapes-cover-uml
+        use graph_data::tests::{a_and, content, load_into, text};
+        // Node `b` at (300, 0), 220 wide, of one title "Send" of 4 glyphs of 7: 64 high, its
+        // title at the padding of 12 and 10 inside its inner rectangle. A frame 300 wide and 200
+        // high lays it out in its tab, 4 × 7 and the padding wide and one line and the padding
+        // high.
+        let edges = graph_data::OwnedEdgeColumns::of([]);
+        let cases = [
+            (NodeShape::Pentagon, [0.0, 0.0, 188.0, 64.0]),
+            (NodeShape::NotchedRectangle, [32.0, 0.0, 188.0, 64.0]),
+            (NodeShape::Note, [0.0, 0.0, 220.0, 64.0]),
+            (NodeShape::Frame, [0.0, 0.0, 52.0, 38.0]),
+        ];
+        for (shape, inner) in cases {
+            let mut engine = fonted();
+            let frame = shape == NodeShape::Frame;
+            let nodes = a_and(|n| {
+                n.shape = shape.into();
+                n.width = if frame { 300.0 } else { 220.0 }.into();
+                n.height = Some(if frame { 200.0 } else { 20.0 }).into();
+                n.content = content(&[&[text(RoleCode::Title, "Send")]]).into();
+            });
+            assert_eq!(load_into(&mut engine, &nodes, &edges), Ok(2), "{shape:?}");
+            let height = if frame { 200.0 } else { 64.0 };
+            assert_eq!(engine.graph.sizes()[3], height, "{shape:?}");
+            assert_eq!(engine.inner_of(1), Ok(inner.to_vec()), "{shape:?}");
+            near(&mut engine, [-10.0, -10.0, 700.0, 300.0]);
+            let [x, y, width, _] = inner.map(|v| v as f32);
+            assert_eq!(
+                engine.content_rects[4..],
+                [x + 12.0, y + 10.0, width - 24.0, 18.0],
+                "{shape:?}"
+            );
+        }
+        let mut engine = fonted();
+        assert_eq!(
+            engine.inner_of(0),
+            Err(CallRefusal::Slot(SlotError::NoNode { slot: 0 }))
+        );
+    }
+
+    #[test]
+    fn a_frame_resized_lower_than_its_tab_stays_as_high_as_its_content() {
+        // Verifies: REN-node-shapes-cover-uml
+        use graph_data::tests::{a_and, content, load_into, text};
+        // Node `b`, a frame 300 wide and 200 high of one title, resizable, dragged by its bottom
+        // up past its top: never lower than its content, which its tab of one line lies within.
+        let mut engine = fonted();
+        let nodes = a_and(|n| {
+            n.shape = NodeShape::Frame.into();
+            n.width = 300.0.into();
+            n.height = Some(200.0).into();
+            n.resizable = Some(true).into();
+            n.content = content(&[&[text(RoleCode::Title, "Load")]]).into();
+        });
+        let edges = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &edges), Ok(2));
+        let from = [300.0, 0.0, 300.0, 200.0];
+        assert_eq!(
+            engine.resize(1, Handle::Bottom, &from, [0.0, -500.0]),
+            Ok(())
+        );
+        assert_eq!(engine.graph.sizes()[2..], [300.0, 64.0]);
+        let tab = engine.inner_of(1).unwrap();
+        assert!(tab[3] <= 64.0, "{tab:?}");
+        // A drag of its right side sets its width alone.
+        let from = [300.0, 0.0, 300.0, 64.0];
+        assert_eq!(
+            engine.resize(1, Handle::Right, &from, [-100.0, 0.0]),
+            Ok(())
+        );
+        assert_eq!(engine.graph.sizes()[2..], [200.0, 64.0]);
+    }
+
+    #[test]
+    fn a_separator_row_lays_out_as_a_line_across_the_inner_rectangle_between_its_rows() {
+        // Verifies: REN-node-content-and-hits, API-bridge-columns-carry-nesting
+        use graph_data::tests::{a_and, load_into};
+        // Node `b` at (300, 0), 100 wide: a title "Idle", a separator, and a body "entry".
+        let mut rows = graph_data::ContentInput::new();
+        rows.push(
+            KindCode::Text,
+            1.0,
+            RoleCode::Title as u8,
+            f64::NAN,
+            Some("Idle"),
+            None,
+        );
+        rows.end_row(false);
+        rows.end_row(true);
+        rows.push(
+            KindCode::Text,
+            1.0,
+            RoleCode::Body as u8,
+            f64::NAN,
+            Some("entry"),
+            None,
+        );
+        rows.end_row(false);
+        let mut engine = fonted();
+        let nodes = a_and(|n| n.content = rows.into());
+        let edges = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &edges), Ok(2));
+        // Its rows of 18, 21, and 16 and the padding of 10 above and below.
+        assert_eq!(engine.graph.sizes()[3], 75.0);
+        near(&mut engine, [-10.0, -10.0, 500.0, 200.0]);
+        assert_eq!(engine.content_bounds, [0, 1, 4]);
+        let kinds = [KindCode::Text, KindCode::Separator, KindCode::Text].map(|k| k as u8);
+        assert_eq!(engine.drawn.kinds[1..], kinds);
+        // The line, 1 high, across the whole inner rectangle 10 below the title's line, as the
+        // one piece of its element.
+        assert_eq!(engine.content_rects[8..12], [0.0, 38.0, 100.0, 1.0]);
+        assert_eq!(engine.drawn.bar_bounds[2..4], [0, 1]);
+        assert_eq!(engine.drawn.bars, [0.0, 38.0, 100.0, 1.0]);
+        // Its rows as the host application's type describes them, the separator marked.
+        assert_eq!(engine.content.content_of(1).1, [false, true, false]);
+        // Drawn at the middle level too, beside the title, and hit at neither level.
+        query_at(
+            &mut engine,
+            [-10.0, -10.0, 500.0, 200.0],
+            DetailLevel::Middle,
+        );
+        let middle = [KindCode::Text, KindCode::Separator].map(|k| k as u8);
+        assert_eq!(engine.drawn.kinds[1..], middle);
+        assert_eq!(element(&engine, 1, 350.0, 38.5, DetailLevel::Near), None);
+        let body = hit(2, 0, ElementKind::Text, None);
+        assert_eq!(element(&engine, 1, 350.0, 55.0, DetailLevel::Near), body);
+    }
+
+    #[test]
+    fn a_dashed_outline_is_laid_as_dash_segments_on_its_node_which_update_node_sets() {
+        // Verifies: REN-node-shapes-cover-uml, API-bridge-columns-carry-nesting
+        use graph_data::tests::{a_and, load_into};
+        let mut engine = fonted();
+        let nodes = a_and(|n| {
+            n.shape = NodeShape::RoundedRectangle.into();
+            n.outline = Some(graph_data::Outline::Dashed(Pair([6.0, 4.0]))).into();
+        });
+        let edges = graph_data::OwnedEdgeColumns::of([]);
+        assert_eq!(load_into(&mut engine, &nodes, &edges), Ok(2));
+        let rect = [-10.0, -10.0, 500.0, 200.0];
+        near(&mut engine, rect);
+        // None for the solid node `a`; for `b`, 100 × 64, a dash for every 10 of its outline.
+        let perimeter = 2.0 * (100.0 + 64.0) - 80.0 + core::f64::consts::TAU * 10.0;
+        assert_eq!(engine.dash_bounds[..2], [0, 0]);
+        let dashes = engine.dash_bounds[2] as usize;
+        assert!(dashes as f64 >= (perimeter / 10.0).floor(), "{dashes}");
+        assert_eq!(engine.dashes.len(), 4 * dashes);
+        for value in &engine.dashes {
+            assert!((-0.01..=100.01).contains(value), "{value}");
+        }
+        // At the far level, which draws no outline, none.
+        query_at(&mut engine, rect, DetailLevel::Far);
+        assert!(engine.dash_bounds.is_empty() && engine.dashes.is_empty());
+        // `updateNode` draws it without an outline, then dashed again; a dash an edge's rule
+        // refuses is refused by its field and changes nothing.
+        let outline = |outline| {
+            NodePatch(vec![(
+                "outline".to_owned(),
+                graph_data::PatchValue::Outline(Field(Some(outline))),
+            )])
+        };
+        assert_eq!(
+            engine.update(1, "b", &outline(graph_data::Outline::None)),
+            Ok(())
+        );
+        assert_eq!(engine.graph.outline(1), Outline::None);
+        near(&mut engine, rect);
+        assert_eq!(engine.dash_bounds, [0, 0, 0]);
+        let dashed = graph_data::Outline::Dashed(Pair([6.0, 4.0]));
+        assert_eq!(engine.update(1, "b", &outline(dashed)), Ok(()));
+        assert_eq!(engine.graph.outline(1), Outline::Dashed([6.0, 4.0]));
+        let refused = graph_data::Outline::Dashed(Pair([0.0, 4.0]));
+        assert_eq!(
+            engine.update(1, "b", &outline(refused)),
+            Err(CallRefusal::Data(GraphDataProblem::InvalidField {
+                list: GraphList::Nodes,
+                index: 0,
+                id: Some("b".to_owned()),
+                field: "outline".to_owned(),
+                expected: "\"solid\", \"none\", or a dash pattern, or none".to_owned(),
+            }))
+        );
+        assert_eq!(engine.graph.outline(1), Outline::Dashed([6.0, 4.0]));
     }
 
     #[test]
@@ -2708,20 +3015,20 @@ mod tests {
         let mut content = graph_data::ContentInput::new();
         content.push(KindCode::Text, 1.0, title, f64::NAN, Some("Bet"), None);
         content.push(KindCode::Badge, 1.0, 0, 34_816.0, Some("Done"), None);
-        content.end_row();
+        content.end_row(false);
         content.push(KindCode::Text, 1.0, body, f64::NAN, Some("b"), None);
         content.push(KindCode::Action, 1.0, 0, f64::NAN, Some("Go"), Some("go"));
         content.push(KindCode::Icon, 1.0, 0, f64::NAN, None, Some("bet"));
-        content.end_row();
+        content.end_row(false);
         content.push(KindCode::Progress, 1.0, 0, f64::NAN, None, None);
         content.push_segment(0.5, 34_816.0);
-        content.end_row();
+        content.end_row(false);
         let down = DirectionCode::Down as u8;
         let texts = [Some("Revenue"), Some("42"), Some("+3%")];
         content.push_metric(1.0, down, f64::from(RED), texts);
-        content.end_row();
+        content.end_row(false);
         content.push(KindCode::Text, 1.0, title, f64::NAN, Some("Two"), None);
-        content.end_row();
+        content.end_row(false);
         data.nodes[1].content = content.into();
         data.nodes[1].width = 200.0.into();
         let nodes = graph_data::OwnedColumns::of(data.nodes.iter().map(Some));
@@ -2826,7 +3133,7 @@ mod tests {
         content.push(KindCode::Progress, 1.0, 0, f64::NAN, None, None);
         content.push_segment(0.5, 0.0);
         content.push(KindCode::Action, 1.0, 0, f64::NAN, Some("Go"), Some("go"));
-        content.end_row();
+        content.end_row(false);
         let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[]);
         data.nodes[0].content = content.into();
         let nodes = graph_data::OwnedColumns::of(data.nodes.iter().map(Some));

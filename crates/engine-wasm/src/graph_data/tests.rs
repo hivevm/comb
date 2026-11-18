@@ -42,7 +42,7 @@ pub(crate) fn named_content(rows: &[&[Named]]) -> ContentInput {
         for &((kind, weight, role, text), id) in *row {
             content.push(kind, weight, role as u8, f64::NAN, text, id);
         }
-        content.end_row();
+        content.end_row(false);
     }
     content
 }
@@ -66,9 +66,9 @@ pub(crate) fn badged(text: Option<&str>, color: f64) -> ContentInput {
     let mut content = ContentInput::new();
     let title = (RoleCode::Title as u8, Some("Bet"));
     content.push(KindCode::Text, 1.0, title.0, f64::NAN, title.1, None);
-    content.end_row();
+    content.end_row(false);
     content.push(KindCode::Badge, 1.0, 0, color, text, None);
-    content.end_row();
+    content.end_row(false);
     content
 }
 
@@ -84,12 +84,12 @@ pub(crate) fn progressed(segments: &[(f64, f64)]) -> ContentInput {
         Some("Bet"),
         None,
     );
-    content.end_row();
+    content.end_row(false);
     content.push(KindCode::Progress, 1.0, 0, f64::NAN, None, None);
     for &(fraction, color) in segments {
         content.push_segment(fraction, color);
     }
-    content.end_row();
+    content.end_row(false);
     content
 }
 
@@ -100,9 +100,9 @@ pub(crate) fn metricked(direction: u8, color: f64, texts: [Option<&str>; 3]) -> 
     let mut content = ContentInput::new();
     let title = (RoleCode::Title as u8, Some("Bet"));
     content.push(KindCode::Text, 1.0, title.0, f64::NAN, title.1, None);
-    content.end_row();
+    content.end_row(false);
     content.push_metric(1.0, direction, color, texts);
-    content.end_row();
+    content.end_row(false);
     content
 }
 
@@ -125,6 +125,7 @@ pub(crate) fn batch(nodes: &[(&str, f64, f64)], edges: &[(&str, &str, &str)]) ->
                 is_container: None.into(),
                 height: None.into(),
                 resizable: None.into(),
+                outline: None.into(),
                 divide: None.into(),
                 regions: None.into(),
                 attached_to: None.into(),
@@ -278,6 +279,10 @@ pub(super) fn label_in(edge: &mut EdgeCells) -> &mut LabelInput {
 
 /// A load of `nodes` and `edges` through the engine's `loadGraph`, as the shell hands it
 /// over.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one argument per column of `loadGraph`, in its order"
+)]
 pub(crate) fn load_into(
     engine: &mut crate::Engine,
     nodes: &OwnedColumns,
@@ -294,6 +299,9 @@ pub(crate) fn load_into(
         &n.has_height,
         &n.height,
         &n.shape,
+        &n.outline,
+        &n.outline_dash,
+        &n.outline_gap,
         &n.has_container,
         &n.container,
         &n.is_container,
@@ -318,6 +326,7 @@ pub(crate) fn load_into(
         n.attached_missing.clone(),
         c.row_bounds.clone(),
         c.element_bounds.clone(),
+        c.separators.clone(),
         c.kinds.clone(),
         c.weights.clone(),
         c.roles.clone(),

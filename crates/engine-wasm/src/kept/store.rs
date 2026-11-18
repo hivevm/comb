@@ -155,6 +155,7 @@ mod tests {
             is_container: None.into(),
             height: None.into(),
             resizable: None.into(),
+            outline: None.into(),
             divide: None.into(),
             regions: None.into(),
             attached_to: None.into(),

@@ -363,6 +363,32 @@ mod tests {
     }
 
     #[test]
+    fn a_pentagon_a_notch_a_note_and_a_frame_are_resized_freely_as_a_rectangle_is() {
+        // Verifies: REN-node-shapes-cover-uml
+        // Each takes the width and the height its corner is dragged to, each on its own, as a
+        // rectangle does, never below the least height its caller gives.
+        let from = Rect::of_node(0.0, 0.0, 220.0, 64.0);
+        for shape in [
+            NodeShape::Pentagon,
+            NodeShape::NotchedRectangle,
+            NodeShape::Note,
+            NodeShape::Frame,
+        ] {
+            let to = resized(
+                shape,
+                Handle::BottomRight,
+                &from,
+                [-100.0, 80.0],
+                64.0,
+                None,
+            );
+            assert_eq!(to, Rect::new(0.0, 0.0, 120.0, 144.0), "{shape:?}");
+            let to = resized(shape, Handle::BottomRight, &from, [30.0, -40.0], 64.0, None);
+            assert_eq!(to, Rect::new(0.0, 0.0, 250.0, 64.0), "{shape:?}");
+        }
+    }
+
+    #[test]
     fn a_resize_that_is_not_finite_or_of_a_free_slot_changes_nothing() {
         // Verifies: API-edits-report-nested-changes
         let mut graph = held();

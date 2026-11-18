@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use super::slots::put;
 use super::{AddNodeError, CANVAS, Graph, MoveError, SlotError, TooManySlots};
 use crate::geometry::{Rect, WORLD_LIMIT};
-use crate::shape::NodeShape;
+use crate::shape::{NodeShape, Outline};
 
 /// Where `shift` moves the nodes named to it: by a delta, as `translate` moves them, or to a
 /// world position, as `place` puts one.
@@ -94,6 +94,9 @@ impl Graph {
         // again forgets the node shape of the node it held.
         if let Some(shape) = self.shapes.get_mut(i) {
             *shape = NodeShape::default();
+        }
+        if let Some(outline) = self.outlines.get_mut(i) {
+            *outline = Outline::default();
         }
         // Nor does it keep that node's height or whether it was resizable.
         if let Some(given) = self.given.get_mut(i) {
@@ -328,6 +331,27 @@ impl Graph {
     /// (REN-closed-set-of-node-shapes).
     pub fn shape(&self, slot: u32) -> NodeShape {
         self.shapes.get(slot as usize).copied().unwrap_or_default()
+    }
+
+    /// How the outline of the node in `slot` is drawn, solid where none was given
+    /// (REN-node-shapes-cover-uml, *Outline*).
+    pub fn outline(&self, slot: u32) -> Outline {
+        self.outlines
+            .get(slot as usize)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    /// Draws the outline of the node in `slot` as `outline` says. A slot that holds no node
+    /// refuses the call, which then changes nothing.
+    pub fn set_outline(&mut self, slot: u32, outline: Outline) -> Result<(), SlotError> {
+        self.nodes_held(&[slot])?;
+        let i = slot as usize;
+        if self.outlines.len() <= i {
+            self.outlines.resize(i + 1, Outline::default());
+        }
+        self.outlines[i] = outline;
+        Ok(())
     }
 
     /// Gives the node in `slot` the node shape `shape`, and places its edges again, whose ends

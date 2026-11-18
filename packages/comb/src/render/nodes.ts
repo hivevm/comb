@@ -21,9 +21,11 @@ import {
 import {
   KIND_NAMES,
   ROLE_NAMES,
+  SEPARATOR_KIND,
   type ContentElement,
   type FontMetrics,
   type NodeShape,
+  type Outline,
   type Placed,
   type TextRole,
 } from "../bridge";
@@ -45,6 +47,11 @@ const RECTANGLE_RADIUS = 6;
 const ROUNDED_RADIUS = 10;
 /** The width of a ringed circle's ring. */
 const RING_WIDTH = 2;
+/** How far a note's corner is folded down, the engine's `NOTE_FOLD`, at most a quarter of its
+ *  width and of its height, as the engine's `fold` holds it. */
+const NOTE_FOLD = 12;
+/** How far the lower right corner of a frame's tab is cut, the engine's `FRAME_CUT`. */
+const FRAME_CUT = 8;
 /** The colour of a node shape the engine fills, the near-black of a node's texts. */
 const FILLED_COLOR = TEXT_COLOR;
 /** The colour of the rest of a progress bar, past its segments. */
@@ -196,7 +203,7 @@ function barsOf(placed: Placed, start: number, end: number): DrawnBar[] {
   const bars: DrawnBar[] = [];
   for (let i = start; i < end; i++) {
     const [first, last] = [placed.barBounds[i]!, placed.barBounds[i + 1]!];
-    if (first === last) continue;
+    if (first === last || placed.kinds[i] === SEPARATOR_KIND) continue;
     const bar: DrawnBar = [];
     for (let p = first; p < last; p++) {
       const [x, y, width, height] = placed.bars.subarray(p * 4, p * 4 + 4);
@@ -238,6 +245,8 @@ export function pieceOutline(piece: DrawnPill, left: number, right: number, radi
 function textsOf(placed: Placed, start: number, end: number): DrawnText[] {
   const texts: DrawnText[] = [];
   for (let i = start; i < end; i++) {
+    // A separator shows no text: its line is drawn as a rule (`rulesOf`).
+    if (placed.kinds[i] === SEPARATOR_KIND) continue;
     const kind = KIND_NAMES[placed.kinds[i]!]!;
     const role = ROLE_NAMES[placed.roles[i]!]!;
     // A progress bar shows no text: its bar is drawn of its pieces; an icon's text is its name.
@@ -283,6 +292,38 @@ function metricTexts(placed: Placed, i: number): DrawnText[] {
     start = end;
   }
   return texts;
+}
+
+/** The lines of the separators among the elements `start` to `end` of `placed`, each the one piece
+ *  the engine placed of it, 1 high across the inner rectangle (REN-node-content-and-hits,
+ *  *Separator*). */
+function rulesOf(placed: Placed, start: number, end: number): DrawnPill[] {
+  const rules: DrawnPill[] = [];
+  for (let i = start; i < end; i++) {
+    if (placed.kinds[i] !== SEPARATOR_KIND) continue;
+    const p = placed.barBounds[i]!;
+    const [x, y, width, height] = placed.bars.subarray(p * 4, p * 4 + 4);
+    rules.push({ x: x!, y: y!, width: width!, height: height!, color: 0 });
+  }
+  return rules;
+}
+
+/** The dash segments of the found node at `found` of `placed`, each `[x0, y0, x1, y1]` relative to
+ *  its node, as the engine laid them along its outline; none where its outline is not dashed or
+ *  the level draws no node (REN-node-shapes-cover-uml, *Outline*). */
+function dashesOf(placed: Placed, found: number): number[][] {
+  const { dashBounds, dashes } = placed;
+  if (found + 1 >= dashBounds.length) return [];
+  const segments: number[][] = [];
+  for (let d = dashBounds[found]!; d < dashBounds[found + 1]!; d++)
+    segments.push([...dashes.subarray(d * 4, d * 4 + 4)]);
+  return segments;
+}
+
+/** Whether the dash segments `a` and `b` are the same, segment by segment: a query cuts a node's
+ *  dashes to its rectangle, so that another query may lay as many of other ones. */
+function sameDashes(a: readonly (readonly number[])[], b: readonly (readonly number[])[]) {
+  return a.length === b.length && a.every((s, i) => s.every((value, k) => value === b[i]![k]));
 }
 
 /** The arrows of the metrics among the elements `start` to `end` of `placed`. */
@@ -358,27 +399,64 @@ class ElementPool {
   readonly sprites: Sprite[] = [];
 }
 
+/** How a view draws a node's outline: `outline` as the node has it, `"solid"` where left out, the
+ *  dash segments the engine laid of a dashed one, and a frame's tab, its inner rectangle, once the
+ *  engine handed it over (REN-node-shapes-cover-uml). */
+interface OutlineDrawing {
+  outline: Outline;
+  dashes: readonly (readonly number[])[];
+  tab: { width: number; height: number } | null;
+}
+
 /** Draws the node shape `shape` of a node `width` × `height` into `box`, its outline in the node's
- *  rectangle at its origin (REN-closed-set-of-node-shapes): a content node shape white with the
- *  border of a node, blue and wider while it is selected; a filled one in the near-black of a
- *  node's texts, the ringed circle as a filled circle of half the radius inside an unfilled ring,
- *  and
+ *  rectangle at its origin (REN-node-shapes-cover-uml): a content node shape white with the
+ *  border of a node, blue and wider while it is selected, whatever its outline; unselected, its
+ *  outline left out where `"none"` and drawn in the engine's dashes where dashed; a note's fold and
+ *  a frame's tab inside it where its outline is drawn; a filled one in the near-black of a node's
+ *  texts, the ringed circle as a filled circle of half the radius inside an unfilled ring, and
  *  outlined in blue while it is selected. */
 function drawShape(
   box: Graphics,
   shape: NodeShape,
-  width: number,
-  height: number,
+  size: readonly [number, number],
   selected: boolean,
+  drawing: OutlineDrawing,
 ): void {
   box.clear();
-  const [cx, cy] = [width / 2, height / 2];
-  const border = { color: selected ? SELECTED_STROKE : NODE_STROKE, width: selected ? 2 : 1 };
   const outlined = OUTLINES[shape];
-  if (outlined) {
-    outlined(box, width, height).fill({ color: NODE_FILL }).stroke(border);
-    return;
+  if (outlined) drawOutlined(box, shape, outlined, size, selected, drawing);
+  else drawFilled(box, shape, size, selected);
+}
+
+/** Draws the content node shape `shape`, of `outlined`, `width` × `height`, into `box`, as
+ *  `drawShape` says. */
+function drawOutlined(
+  box: Graphics,
+  shape: NodeShape,
+  outlined: (box: Graphics, width: number, height: number) => Graphics,
+  [width, height]: readonly [number, number],
+  selected: boolean,
+  drawing: OutlineDrawing,
+): void {
+  const border = { color: selected ? SELECTED_STROKE : NODE_STROKE, width: selected ? 2 : 1 };
+  const { outline, dashes } = drawing;
+  outlined(box, width, height).fill({ color: NODE_FILL });
+  if (selected || outline === "solid") outlined(box, width, height).stroke(border);
+  else if (outline !== "none" && dashes.length > 0) {
+    for (const [x0, y0, x1, y1] of dashes) box.moveTo(x0!, y0!).lineTo(x1!, y1!);
+    box.stroke(border);
   }
+  if (outline !== "none" || selected) drawInside(box, shape, [width, height], drawing, border);
+}
+
+/** Draws the filled node shape `shape`, `width` × `height`, into `box`, as `drawShape` says. */
+function drawFilled(
+  box: Graphics,
+  shape: NodeShape,
+  [width, height]: readonly [number, number],
+  selected: boolean,
+): void {
+  const [cx, cy] = [width / 2, height / 2];
   if (shape === "bar") {
     box.rect(0, 0, width, height).fill({ color: FILLED_COLOR });
     if (selected)
@@ -393,6 +471,44 @@ function drawShape(
   if (selected) box.circle(cx, cy, cx + 2).stroke({ color: SELECTED_STROKE, width: 2 });
 }
 
+/** Draws what a note and a frame draw inside their outline into `box`, in `border`: a note's
+ *  folded corner as a triangle, and a frame's tab's lower edge and its cut corner, once the engine
+ *  handed the tab over, at most as wide as the frame. */
+function drawInside(
+  box: Graphics,
+  shape: NodeShape,
+  [width, height]: readonly [number, number],
+  { tab }: OutlineDrawing,
+  border: { color: number; width: number },
+): void {
+  if (shape === "note") {
+    const c = foldOf(width, height);
+    if (c > 0)
+      box
+        .moveTo(width - c, 0)
+        .lineTo(width - c, c)
+        .lineTo(width, c)
+        .stroke(border);
+  } else if (shape === "frame" && tab) {
+    const [w, h] = [Math.min(tab.width, width), Math.min(tab.height, height)];
+    const cut = Math.min(FRAME_CUT, w, h);
+    box
+      .moveTo(0, h)
+      .lineTo(w - cut, h)
+      .lineTo(w, h - cut)
+      .lineTo(w, 0)
+      .stroke(border);
+  }
+}
+
+/** How deep a pentagon's point and a notch reach into a node `width` × `height`: half its height,
+ *  at most a quarter of its width, as the engine's `depth` holds it. */
+const depthOf = (width: number, height: number) => Math.max(Math.min(height / 2, width / 4), 0);
+
+/** How far a note `width` × `height` is folded, as the engine's `fold` holds it. */
+const foldOf = (width: number, height: number) =>
+  Math.max(Math.min(NOTE_FOLD, width / 4, height / 4), 0);
+
 /** The outline of each content node shape in a node `width` × `height`, which `drawShape` fills
  *  and borders as a node. */
 const OUTLINES: Partial<
@@ -403,6 +519,17 @@ const OUTLINES: Partial<
   ellipse: (box, width, height) => box.ellipse(width / 2, height / 2, width / 2, height / 2),
   diamond: (box, width, height) =>
     box.poly([width / 2, 0, width, height / 2, width / 2, height, 0, height / 2]),
+  pentagon: (box, width, height) => {
+    const d = depthOf(width, height);
+    return box.poly([0, 0, width - d, 0, width, height / 2, width - d, height, 0, height]);
+  },
+  "notched-rectangle": (box, width, height) =>
+    box.poly([0, 0, width, 0, width, height, 0, height, depthOf(width, height), height / 2]),
+  note: (box, width, height) => {
+    const c = foldOf(width, height);
+    return box.poly([0, 0, width - c, 0, width, c, width, height, 0, height]);
+  },
+  frame: (box, width, height) => box.rect(0, 0, width, height),
 };
 
 /** A part of a node shape a view drew, as its `Graphics` holds it: the kind of the primitive,
@@ -467,6 +594,15 @@ function strokeLine(
 export class NodeGraphic extends Container {
   /** The node's node shape. */
   private readonly box = new Graphics();
+  /** The lines of the node's separators, drawn together (REN-node-content-and-hits). */
+  private readonly rules = new Graphics();
+  /** The dash segments of the node's dashed outline as the engine laid them, each
+   *  `[x0, y0, x1, y1]` relative to its node, which inspection reports. */
+  private dashes: number[][] = [];
+  /** A frame's tab as the engine handed it over, none until it has, and whether the view waits
+   *  for it (REN-node-shapes-cover-uml). */
+  private tab: { width: number; height: number } | null = null;
+  private needsTab = false;
   /** The pills of the node's badges, drawn together. */
   private readonly pills = new Graphics();
   /** The pieces of the node's progress bars, drawn together. */
@@ -521,7 +657,7 @@ export class NodeGraphic extends Container {
 
   constructor(private readonly shared: ElementPool) {
     super();
-    this.addChild(this.box, this.lines, this.pills, this.bars, this.arrows);
+    this.addChild(this.box, this.rules, this.lines, this.pills, this.bars, this.arrows);
     // The engine answers which node lies under the pointer; the view takes no events.
     this.eventMode = "none";
   }
@@ -543,6 +679,16 @@ export class NodeGraphic extends Container {
         fill: view.style.fill,
       };
     });
+  }
+
+  /** The dash segments of the view's dashed outline, as the engine laid them. */
+  drawnDashes(): number[][] {
+    return this.dashes.map((segment) => [...segment]);
+  }
+
+  /** The lines of separators the view's `Graphics` draws, read from its fill instructions. */
+  drawnRules(): DrawnPill[] {
+    return filled(this.rules);
   }
 
   /** The pills the view's `Graphics` draws, read from its fill instructions. */
@@ -580,7 +726,7 @@ export class NodeGraphic extends Container {
   }
 
   /** The node shape the view draws, the parts of it its `Graphics` holds. */
-  drawnShape(): { shape: NodeShape; outline: DrawnOutline[] } {
+  drawnShape(): { shape: NodeShape; outline: DrawnOutline[]; outlined: Outline } {
     const outline = this.box.context.instructions.flatMap((instruction) => {
       const { action } = instruction;
       if (action !== "fill" && action !== "stroke") return [];
@@ -593,38 +739,46 @@ export class NodeGraphic extends Container {
           : drawn;
       });
     });
-    return { shape: this.drawn.node?.shape ?? "rectangle", outline };
+    const { node } = this.drawn;
+    return { shape: node?.shape ?? "rectangle", outline, outlined: node?.outline ?? "solid" };
   }
 
   /** The size the node was last drawn at. */
   size = { width: 0, height: 0 };
 
   /** Shows `node`, `width` × `height`, its content placed by the elements `start` to `end` of
-   *  `placed`, its icons of `icons`, drawing again only when what it shows changed, a
-   *  registration among it. */
+   *  `placed` and its dashes by the found node `found` of it, its icons of `icons`, drawing again
+   *  only when what it shows changed, a registration among it. */
   bind(
     node: Readonly<NodeView>,
     selected: boolean,
     [width, height]: readonly [number, number],
     placed: Placed,
-    start: number,
-    end: number,
+    [start, end, found]: readonly [number, number, number],
     icons: Icons,
   ): void {
     this.nodeId = node.id;
     const { drawn } = this;
+    const dashes = dashesOf(placed, found);
     if (
       drawn.node === node &&
       drawn.width === width &&
       drawn.height === height &&
       drawn.selected === selected &&
       drawn.elements === end - start &&
-      drawn.icons === icons.version
+      drawn.icons === icons.version &&
+      sameDashes(this.dashes, dashes)
     )
       return;
-    this.drawn = { node, width, height, selected, elements: end - start, icons: icons.version };
+    const elements = end - start;
+    // A frame asks for its tab anew whenever it is drawn anew, so that no tab outlives the content
+    // or the fonts it was laid out in.
+    this.tab = null;
+    this.drawn = { node, width, height, selected, elements, icons: icons.version };
+    this.dashes = dashes;
     this.size = { width, height };
     this.drawBox(node, width, height, selected);
+    this.showRules(rulesOf(placed, start, end), selected);
     this.showTexts(textsOf(placed, start, end));
     this.showBars(barsOf(placed, start, end));
     this.showArrows(arrowsOf(placed, start, end));
@@ -643,14 +797,18 @@ export class NodeGraphic extends Container {
     this.drawBox(node, width, height, selected);
   }
 
-  /** Draws the node shape of `node`, `width` × `height`, or where it is a region its line and
-   *  its band in place of one. */
+  /** Draws the node shape of `node`, `width` × `height`, or where it is a region its line and its
+   *  band in place of one; a frame waits for its tab where the engine has not handed it over. */
   private drawBox(node: Readonly<NodeView>, width: number, height: number, selected: boolean) {
     this.lines.clear();
     if (!node.region) {
       this.region = null;
       if (this.bandText) this.bandText.visible = false;
-      drawShape(this.box, node.shape ?? "rectangle", width, height, selected);
+      const shape = node.shape ?? "rectangle";
+      this.needsTab = shape === "frame" && this.tab === null;
+      const { dashes, tab } = this;
+      const drawing = { outline: node.outline ?? "solid", dashes, tab };
+      drawShape(this.box, shape, [width, height], selected, drawing);
       return;
     }
     this.box.clear();
@@ -726,10 +884,33 @@ export class NodeGraphic extends Container {
     region.band.name = name;
   }
 
+  /** Draws the tab of the frame the view draws, as `innerOf` hands it over, where the view waits
+   *  for it; the layer calls it once it no longer reads the views of the engine's buffers. */
+  drawTab(innerOf: (slot: number) => { width: number; height: number }): void {
+    const { node, selected } = this.drawn;
+    if (!this.needsTab || !node) return;
+    const { width, height } = innerOf(this.slot);
+    this.tab = { width, height };
+    this.drawBox(node, this.size.width, this.size.height, selected);
+  }
+
+  /** Draws `rules`, each separator's line filled in the colour of the node's border, the
+   *  selection's while it is selected. */
+  private showRules(rules: DrawnPill[], selected: boolean): void {
+    this.rules.clear();
+    const color = selected ? SELECTED_STROKE : NODE_STROKE;
+    for (const { x, y, width, height } of rules)
+      this.rules.rect(x, y, width, height).fill({ color });
+  }
+
   /** Returns the view's texts and sprites to the layer's element pool, once the view is released;
    *  its next binding draws whatever node it shows anew. */
   release(): void {
     this.showTexts([]);
+    this.rules.clear();
+    this.dashes = [];
+    this.tab = null;
+    this.needsTab = false;
     this.lines.clear();
     this.region = null;
     if (this.bandText) this.bandText.visible = false;
@@ -895,7 +1076,8 @@ export class NodesContainer extends Container {
       const width = node.region || node.divide ? sizes[slot * 2]! : node.width;
       const height = sizes[slot * 2 + 1]!;
       view.bands = this.bands;
-      view.bind(node, node.id === selected, [width, height], placed, start, end, icons);
+      const at = [start, end, first + i] as const;
+      view.bind(node, node.id === selected, [width, height], placed, at, icons);
       view.position.set(positions[slot * 2], positions[slot * 2 + 1]);
     });
     this.views.end();
@@ -905,5 +1087,12 @@ export class NodesContainer extends Container {
    *  buffers is read any more in the frame, since the call into the engine may detach them. */
   nameBands(): void {
     for (const view of this.children as NodeGraphic[]) view.nameBand();
+  }
+
+  /** Has each view of a frame draw its tab as `innerOf` hands it over, where it waits for it;
+   *  called once no view of the engine's buffers is read any more in the frame
+   *  (REN-node-shapes-cover-uml). */
+  drawTabs(innerOf: (slot: number) => { width: number; height: number }): void {
+    for (const view of this.children as NodeGraphic[]) view.drawTab(innerOf);
   }
 }

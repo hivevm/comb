@@ -313,6 +313,7 @@ test("updateNode puts a pin on another side, at that side's end past its length"
       width: 24,
       height: 24,
       shape: "rectangle",
+      outline: "solid",
       content: [],
       attachedTo: "act",
       side: "left",

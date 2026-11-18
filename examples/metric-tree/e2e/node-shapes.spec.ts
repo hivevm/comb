@@ -61,6 +61,39 @@ const OUTLINES: Record<NodeShape, { kind: string; action: string; color: number 
     { kind: "circle", action: "fill", color: 0x1f2430 },
   ],
   bar: [{ kind: "rectangle", action: "fill", color: 0x1f2430 }],
+  // The node shapes of UML that hold content (REN-node-shapes-cover-uml): a note's fold and a
+  // frame's tab stroked inside their outline.
+  pentagon: [
+    { kind: "polygon", action: "fill", color: 0xffffff },
+    { kind: "polygon", action: "stroke", color: 0xd0d4dc },
+  ],
+  "notched-rectangle": [
+    { kind: "polygon", action: "fill", color: 0xffffff },
+    { kind: "polygon", action: "stroke", color: 0xd0d4dc },
+  ],
+  note: [
+    { kind: "polygon", action: "fill", color: 0xffffff },
+    { kind: "polygon", action: "stroke", color: 0xd0d4dc },
+    { kind: "polygon", action: "stroke", color: 0xd0d4dc },
+  ],
+  frame: [
+    { kind: "rectangle", action: "fill", color: 0xffffff },
+    { kind: "rectangle", action: "stroke", color: 0xd0d4dc },
+    { kind: "polygon", action: "stroke", color: 0xd0d4dc },
+  ],
+};
+
+/** The node shapes of UML that hold content, a node of each 220 wide of one title, side by side. */
+const UML: GraphData = {
+  nodes: (["pentagon", "notched-rectangle", "note", "frame"] as const).map((shape, i) => ({
+    id: shape,
+    x: i * 300,
+    y: 0,
+    width: 220,
+    shape,
+    content: titled(shape),
+  })),
+  edges: [],
 };
 
 /** What the canvas draws of each node, once drawn: its node shape and outline, the corner radius
@@ -151,6 +184,49 @@ test("each node shape is drawn at the middle level in its outline, with its titl
     expect({ id, shape, outline }).toEqual({ id, shape: id, outline: OUTLINES[id as NodeShape] });
     const filled = SHAPES.find((s) => s.shape === id)!.filled;
     expect({ id, texts: texts.length }).toEqual({ id, texts: filled ? 0 : 1 });
+  }
+});
+
+test("a pentagon, a notched rectangle, a note, and a frame are drawn in their outline at the near and the middle level, a note's fold and a frame's tab inside", async ({
+  page,
+}) => {
+  // Verifies: REN-node-shapes-cover-uml
+  await open(page);
+  for (const scale of [1, 0.4]) {
+    await loaded(page, UML, { x: 20, y: 20, scale });
+    const drawn = await page.evaluate(async () => {
+      await window.comb.whenRendered();
+      const { level, nodes } = window.inspect();
+      return { level, nodes: nodes.filter((node) => node.outline !== undefined) };
+    });
+    expect(drawn.level).toBe(scale === 1 ? "near" : "middle");
+    expect(drawn.nodes.map(({ id }) => id)).toEqual(UML.nodes.map(({ id }) => id));
+    for (const { id, width, height, outline, inner } of drawn.nodes) {
+      const parts = outline!.map(({ kind, action, color }) => ({ kind, action, color }));
+      expect({ id, parts }).toEqual({ id, parts: OUTLINES[id as NodeShape] });
+      // Each outline's fill spans the node's rectangle: the point, the notch, and the fold reach
+      // into it, a pentagon's point to its right side.
+      const fill = outline!.find(({ action }) => action === "fill")!;
+      expect({ id, fill: [fill.x, fill.y, fill.width, fill.height] }).toEqual({
+        id,
+        fill: [0, 0, width, height],
+      });
+      const [, , inside] = outline!;
+      if (id === "note") {
+        // The fold, 12 down from the top right corner and 12 in from it.
+        expect([inside!.x, inside!.y, inside!.width, inside!.height]).toEqual([
+          width - 12,
+          0,
+          12,
+          12,
+        ]);
+      }
+      if (id === "frame") {
+        // The tab's lower edge and its cut corner, at the inner rectangle the engine gives.
+        const tab = [inside!.x, inside!.y, inside!.width, inside!.height];
+        expect(tab).toEqual([0, 0, inner!.width, inner!.height]);
+      }
+    }
   }
 });
 
@@ -278,7 +354,9 @@ test("a node whose node shape names none is refused naming the node and the fiel
     index: 0,
     id: "a",
     field: "shape",
-    expected: `"rectangle", "rounded-rectangle", "ellipse", "circle", "ringed-circle", "diamond", or "bar"`,
+    expected:
+      '"rectangle", "rounded-rectangle", "ellipse", "circle", "ringed-circle", "diamond", ' +
+      '"bar", "pentagon", "notched-rectangle", "note", or "frame"',
   });
   // The example's own graph names no node shape: every node is a rectangle.
   const shapes = await page.evaluate(async () => {

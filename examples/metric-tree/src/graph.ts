@@ -158,18 +158,20 @@ export function titled(title: string): NodeContent {
 export function retitled(content: NodeContent, title: string): NodeContent {
   let done = false;
   return content.map((row) =>
-    row.map((element) => {
-      if (done || element.kind !== "text" || element.role !== "title") return element;
-      done = true;
-      return { ...element, text: title };
-    }),
+    row === "separator"
+      ? row
+      : row.map((element) => {
+          if (done || element.kind !== "text" || element.role !== "title") return element;
+          done = true;
+          return { ...element, text: title };
+        }),
   );
 }
 
 /** The title a node of the example shows: the text of its first title, or none. */
 export function titleOf(node: Pick<NodeData, "content">): string {
   for (const row of node.content)
-    for (const element of row)
+    for (const element of row === "separator" ? [] : row)
       if (element.kind === "text" && element.role === "title") return element.text;
   return "";
 }
@@ -405,7 +407,7 @@ export function countContent(graph: GraphData, fields: Map<string, Fields>): Con
   for (const node of graph.nodes) {
     const type = fields.get(node.id)?.type ?? "untyped";
     nodes[type] = (nodes[type] ?? 0) + 1;
-    for (const element of node.content.flat()) {
+    for (const element of node.content.flatMap((row) => (row === "separator" ? [] : row))) {
       elements[element.kind] = (elements[element.kind] ?? 0) + 1;
     }
   }

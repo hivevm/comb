@@ -298,7 +298,7 @@ test("Delete of a selected container asks canDelete with what it holds and their
 });
 
 /** What `nodeAdded` carries of each node the test below adds: each as Comb took it, its position
- *  relative to its container, its node shape and its content's weights filled. */
+ *  relative to its container, its node shape, its outline, and its content's weights filled. */
 const ADDED = [
   { id: "n", x: 200, y: 150, width: NODE_WIDTH, container: "c" },
   { id: "d", x: 0, y: 500, width: 400, isContainer: true },
@@ -307,6 +307,7 @@ const ADDED = [
   id,
   ...fields,
   shape: "rectangle",
+  outline: "solid",
   content: [[{ kind: "text", role: "title", text: id, weight: 1 }]],
 }));
 

@@ -16,7 +16,7 @@
 //! (ARCH-border-nodes-ride-sides).
 
 use crate::geometry::{EdgePath, Point, Rect, Sides};
-use crate::shape::NodeShape;
+use crate::shape::{NodeShape, Outline};
 use crate::spatial::Grid;
 use crate::stroke::EdgeStyle;
 
@@ -196,6 +196,9 @@ pub struct Graph {
     /// The node shape of each node slot (REN-closed-set-of-node-shapes); a slot past its end is a
     /// rectangle, so that a graph that names no node shape keeps none.
     shapes: Vec<NodeShape>,
+    /// How the outline of each node slot is drawn (REN-node-shapes-cover-uml, *Outline*); a slot
+    /// past its end is solid.
+    outlines: Vec<Outline>,
     /// The height each node slot's data gives, or a resize left, or none; a slot past its end
     /// has none (API-edits-report-nested-changes).
     given: Vec<Option<f32>>,

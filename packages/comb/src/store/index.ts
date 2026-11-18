@@ -3,9 +3,9 @@
 // moved, `movesVersion` that a drag moved its nodes (REN-moving-layer-redraws-changes); the point a
 // connection is dragged to lives in interaction, and `pointerVersion` tells them that it moved.
 import { createStore } from "zustand/vanilla";
-import type { NodeContent, NodeShape, RegionRead } from "../bridge";
+import type { NodeContent, NodeShape, Outline, RegionRead } from "../bridge";
 
-export type { ContentElement, NodeContent, NodeShape, TextRole } from "../bridge";
+export type { ContentElement, NodeContent, NodeShape, Outline, TextRole } from "../bridge";
 
 /** What every node the host application hands over has: `shape` the node shape it is drawn and
  *  hit in, and `content` what it shows, rows of weighted columns, from which and its node shape
@@ -16,6 +16,10 @@ interface NodeFields {
   /** Its node shape, `rectangle` where left out; a circle, a ringed circle, and a bar hold no
    *  content. */
   shape?: NodeShape;
+  /** How its outline is drawn: `"solid"`, which `api` fills in where left out, `"none"`, or a dash
+   *  and a gap in world units laid along it clockwise from its top left; a selected node's outline
+   *  is drawn solid whatever it is (REN-node-shapes-cover-uml, *Outline*). */
+  outline?: Outline;
   /** The height it is given, never less than its content needs, a height below that raised to
    *  it; without content, as high as given however small; where left out, as high as its content
    *  needs, or as wide without content (REN-node-shapes-cover-uml). */
@@ -165,6 +169,7 @@ export type NodeView = Pick<
   | "id"
   | "width"
   | "shape"
+  | "outline"
   | "container"
   | "isContainer"
   | "height"
@@ -182,6 +187,7 @@ export type NodeView = Pick<
 export function nodeViewOf(node: NodeView): NodeView {
   const { id, width, shape, container, isContainer, height, resizable, divide, region } = node;
   const view: NodeView = { id, width, shape };
+  if (node.outline !== undefined) view.outline = node.outline;
   if (node.attachedTo !== undefined) view.attachedTo = node.attachedTo;
   if (container !== undefined) view.container = container;
   if (isContainer !== undefined) view.isContainer = isContainer;
@@ -250,6 +256,8 @@ export interface NodePatch {
    *  that is no border node has neither (ARCH-border-nodes-ride-sides). */
   side?: Side;
   offset?: number;
+  /** How its outline is drawn anew (REN-node-shapes-cover-uml, *Outline*). */
+  outline?: Outline;
 }
 
 /** The regions of a node `addNode` adds, read into one list, and the slots the engine took them
@@ -272,7 +280,7 @@ export interface Divided {
 
 /** What a patch of `updateNode` set besides content, as the store keeps it, and whether it set a
  *  border node's side or offset, which the engine keeps. */
-export type NodeSizing = Pick<NodePatch, "height" | "resizable"> & {
+export type NodeSizing = Pick<NodePatch, "height" | "resizable" | "outline"> & {
   side?: true;
   offset?: true;
 };
@@ -334,6 +342,8 @@ export type StoreChange =
       readonly height?: true;
       /** Whether the node is resizable, where the patch set it. */
       readonly resizable?: boolean;
+      /** How its outline is drawn, where the patch set it (REN-node-shapes-cover-uml). */
+      readonly outline?: Outline;
       /** Set where the patch divided the node into regions anew. */
       readonly regions?: true;
       /** Set where the patch set a border node's side, and its offset, which the engine keeps
@@ -657,13 +667,14 @@ function updatedFrom(
   sizing: NodeSizing = {},
   divided?: Divided,
 ): Partial<GraphView> {
-  const { height, resizable } = sizing;
-  const sized = height !== undefined || resizable !== undefined;
+  const { height, resizable, outline } = sizing;
+  const sized = height !== undefined || resizable !== undefined || outline !== undefined;
   const view = (node: NodeView) => {
     const updated = nodeViewOf({
       ...node,
       ...(height === undefined ? {} : { height }),
       ...(resizable === undefined ? {} : { resizable }),
+      ...(outline === undefined ? {} : { outline }),
     });
     if (divided) {
       delete updated.divide;
@@ -687,7 +698,7 @@ function updatedFrom(
 /** The change `updateNode` records of the node `id`: whether it set content, what it set of the
  *  node's size and place, and whether it divided the node anew. */
 function updateOf(id: string, content: boolean, sizing: NodeSizing, divided: boolean) {
-  const { height, resizable, side, offset } = sizing;
+  const { height, resizable, side, offset, outline } = sizing;
   return {
     kind: "nodeUpdated",
     by: "host",
@@ -695,6 +706,7 @@ function updateOf(id: string, content: boolean, sizing: NodeSizing, divided: boo
     content,
     ...(height === undefined ? {} : { height: true as const }),
     ...(resizable === undefined ? {} : { resizable }),
+    ...(outline === undefined ? {} : { outline }),
     ...(divided ? { regions: true as const } : {}),
     ...(side ? { side: true as const } : {}),
     ...(offset ? { offset: true as const } : {}),

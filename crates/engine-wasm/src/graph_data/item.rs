@@ -7,13 +7,13 @@ use comb_engine::shape::NodeShape;
 use super::content;
 use super::problem::{
     A_BORDER_SIDE, A_CONTENT, A_FLAG, A_HEIGHT, A_NODE_ID_OR_NONE, A_NUMBER, A_ROW, A_SEGMENT_LIST,
-    A_SHAPE, A_SIZE, AN_ELEMENT, AN_ID, AN_ID_OR_NONE,
+    A_SHAPE, A_SIZE, AN_ELEMENT, AN_ID, AN_ID_OR_NONE, AN_OUTLINE,
 };
 #[cfg(test)]
 use super::snapshot::GraphBatch;
 use super::{
     Arrow, ContentData, ContentInput, EdgeField, EdgeInput, Field, GraphDataProblem, GraphList,
-    LabelInput, NodeInput, Pair, Unflat,
+    LabelInput, NodeInput, Outline, Pair, Unflat,
 };
 
 /// A node with every field but its content read.
@@ -23,6 +23,9 @@ pub(super) struct Node<'a> {
     pub(super) y: f64,
     pub(super) width: f64,
     pub(super) shape: NodeShape,
+    /// How its outline is drawn, its dash pattern checked as it is read
+    /// (REN-node-shapes-cover-uml, *Outline*).
+    pub(super) outline: comb_engine::shape::Outline,
     /// The height its data gives, or none (REN-node-shapes-cover-uml, *Height*), not yet checked
     /// as the engine keeps it.
     pub(super) height: Option<f64>,
@@ -175,6 +178,12 @@ pub(super) fn node_of(
         width: item.read("width", node.width, A_SIZE)?,
         height: item.read("height", node.height, A_HEIGHT)?,
         shape: item.read("shape", node.shape, A_SHAPE)?.into(),
+        outline: super::checks::outline_of(
+            id,
+            index,
+            item.read("outline", node.outline, AN_OUTLINE)?
+                .unwrap_or(Outline::Solid),
+        )?,
         // Its container's identifier only has to be a string or none: `api` resolves it against the
         // map only it keeps (ARCH-one-workspace-per-example).
         is_container: {

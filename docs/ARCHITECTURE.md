@@ -54,7 +54,9 @@ together, each naming the node and, where it has them, the row and column, a lab
 is not an integer from `0` to `0xFFFFFF`, more than 1,000,000 nodes or edges, an identifier, source,
 or target longer than 256 UTF-16 code units, and identifiers of one load that hold more than
 64,000,000 code units together, a node shape other than `rectangle`, `rounded-rectangle`, `ellipse`,
-`circle`, `ringed-circle`, `diamond`, and `bar` (`invalidField`), content in a filled node shape, a
+`circle`, `ringed-circle`, `diamond`, `bar`, `pentagon`, `notched-rectangle`, `note`, and `frame`,
+and an outline other than `"solid"`, `"none"`, and a dash pattern an edge's rule allows
+(`invalidField`), content in a filled node shape, a
 circle, a ringed circle, or a bar (`contentInFilledShape`), and an edge side other than `top`,
 `right`, `bottom`, `left`, and `outline`. `api` refuses, against the store's map from identifiers to
 slots (ARCH-one-workspace-per-example), an identifier `updateNode` or `removeNodes` names that the
@@ -128,15 +130,20 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   inward as a whole along the side's normal until their ends meet the outline of the node's node
   shape ([API-edges-dock-side-or-outline](adr/API-edges-dock-side-or-outline.md)), their exact
   bounds, the point and normal at a path parameter, and edge-label placement. `shape` holds the
-  closed set of node shapes ([REN-closed-set-of-node-shapes](adr/REN-closed-set-of-node-shapes.md)):
+  closed set of node shapes ([REN-node-shapes-cover-uml](adr/REN-node-shapes-cover-uml.md)):
   each one's height for content of a given height, the inner rectangle its content is laid out in,
+  a frame's its tab, as large as its content uncut (`natural` of `content`),
   its hit test, the point where a line from its centre crosses its outline, how far inward from
   a side its outline lies at an offset along it, and for border nodes the point of the outline on a
   side at an offset along it (`on_side`), the point of the outline nearest a point (`nearest`, the
-  ellipse's by Eberly's bisection), and the side of the box nearest a point of it with its offset
-  (`side_of`), all in the node's own coordinates. `graph` keeps
-  the loaded graph, node positions and sizes per slot, a node shape per node slot, a rectangle by
-  default, by which `node_at` hits a node within its outline and its edges' ends on the outline lie,
+  ellipse's by Eberly's bisection), the side a border node rides to a point of the outline, which a
+  notch's points take from the left (`NodeShape::side_of`), and the dashes of a dashed outline,
+  laid along the outline as drawn, flattened within a sixteenth of a world unit, clockwise from
+  its point nearest the box's top left corner, and cut to a query's rectangle (`dashes`), all in
+  the node's own coordinates. `graph` keeps
+  the loaded graph, node positions and sizes per slot, a node shape and an outline per node slot,
+  a solid rectangle by default, by which `node_at` hits a node within its outline and its edges'
+  ends on the outline lie,
   and edges per slot, a rank per node slot, a list of the edges at each node slot, a list each of
   free node and edge slots, and a spatial index (`spatial`, a uniform grid each for nodes and edges,
   with an overflow list for items that cover many cells) that loads, additions, and moves keep
@@ -294,7 +301,9 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   `contentRoles…`, `contentColors…`), the pieces of each progress bar's bar and their colours
   (`contentBarBounds…`, `contentBars…`, `contentBarColors…`), the parts of each metric and the end
   of each part's text (`contentPartBounds…`, `contentParts…`, `contentPartEnds…`) and its arrow
-  (`contentArrowBounds…`, `contentArrows…`), what of each text is drawn, and each icon's registered
+  (`contentArrowBounds…`, `contentArrows…`), each separator's line as a piece of its own kind,
+  `KindCode::Separator`, the dash segments of each found node's dashed outline (`dashBounds…`,
+  `dashes…`), what of each text is drawn, and each icon's registered
   name whole, as one string `contentTexts` returns, cut by `contentTextBounds…`, the found edge
   slots, and the edge mesh into buffers the engine owns, the label points and the mesh's positions
   relative to the query's origin, which `originX` and `originY` read
@@ -321,7 +330,9 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   its side, its offset, and what stands beside its `attachedTo`, `addNode` takes the slot of the
   node it rides beside its container, `updateNode` sets a border node's `side` and `offset`,
   `borderOf` names where one sits, and `slide` drags one to the point of the outline nearest the
-  pointer; it refuses a pixel as `query` does and a
+  pointer; a load, `addNode`, and `updateNode` take a node's `outline` and a content row's
+  separator byte, and `innerOf` names the inner rectangle a node's content lies in, a frame's tab;
+  it refuses a pixel as `query` does and a
   point that is not finite; `setLabelSize` takes the measure of a label's pill, `labelPoint` names
   where a label lies, and `moveLabel` places a dragged label, one dragged beyond the world's limit
   stopping there, refuses a point that is not finite as `hit` does, and returns its path parameter
@@ -479,8 +490,11 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   how much of its index buffer the syncs marked for upload until PixiJS next draws it, a hidden
   mesh, which it does not draw, included, so that a later sync and a hide in between keep that mark,
   since WebGL uploads by the range marked last. A node view draws its node shape (`drawShape`, in
-  the pooled `Graphics` that drew a node's box, the content node shapes white and bordered, the
-  filled ones near-black, inspection reading its primitives back) and its content
+  the pooled `Graphics` that drew a node's box, the content node shapes white and bordered, their
+  outline left out or stroked in the dash segments the query laid where it is not solid and the
+  node unselected, a note's fold and a frame's tab inside, the tab as `innerOf` hands it over once
+  the frame's views no longer read the engine's buffers, the filled ones near-black, inspection
+  reading its primitives back), the lines of its separators in another `Graphics` and its content
   ([REN-node-content-in-rows](adr/REN-node-content-in-rows.md)): each text a pooled `BitmapText` of
   its role's style where the query placed it, cut where the engine cut it and followed by an
   ellipsis, a badge's on its pill, which one `Graphics` per view draws of the colour the query hands
@@ -535,24 +549,25 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   sprites with their rectangles and the names their textures are registered under, its content and
   the text of its first title, which the engine builds when asked (`content`), its node shape
   (`shape`) and the primitives of its outline (`outline`), a rounded rectangle's with its corner
-  radius, its pills, bars, and arrows, and the labels drawn included, the connectors drawn with
-  where each is centred and how often the layer drew them anew, and the size and detail of the edge
-  mesh, which the host application is not told; `viewport` and `renderCount`, cheap enough for every
-  frame, return its transform and how often it rendered; `screenPoint` and `visibleRect` apply the
-  scene's transform between world and screen; `hitKind` names what a press at a screen point hits,
-  asking interaction's hit test from the viewport a press reads, which is the drawn one once
-  `whenRendered` resolves, connectors only where the Comb lets the user connect; `isDrawn` finds
-  whether one node or edge is drawn without building every drawn view, as `inspect` does, an edge
-  from the slots the scene holds, the query's and the moving layer's, without asking the engine;
-  `showLayers` hides layers for a reference image; `sceneNumbers` gives the numbers the scene draws
-  by (where the levels of detail begin, the culling margin, the label reach, the rescale); `work`
-  counts what the canvas did: GPU buffers created and allocated, bytes uploaded, those of the edge
-  mesh among them, and texture uploads, counted at the WebGL context from its first call, resizes of
-  the edge mesh's buffers, and views the pools made, and refuses with an `UncountedRendererError`
-  where the canvas draws without WebGL; `edgeVertices` gives the screen point of every vertex of the
-  edge mesh as its shader computes it in `f32`, and `gpuEdgeIndices` the indices its GPU buffer
-  holds, read back; for tests, the benchmark, and tooling. Its shape follows the scene and is
-  outside the stable interface of `comb`.
+  radius, how its outline is drawn (`outlined`), the dash segments the engine laid (`dashes`), the
+  lines of its separators (`rules`), its inner rectangle (`inner`), its pills, bars, and arrows,
+  and the labels drawn included, the connectors drawn with where each is centred and how often the
+  layer drew them anew, and the size and detail of the edge mesh, which the host application is not
+  told; `viewport` and `renderCount`, cheap enough for every frame, return its transform and how
+  often it rendered; `screenPoint` and `visibleRect` apply the scene's transform between world and
+  screen; `hitKind` names what a press at a screen point hits, asking interaction's hit test from
+  the viewport a press reads, which is the drawn one once `whenRendered` resolves, connectors only
+  where the Comb lets the user connect; `isDrawn` finds whether one node or edge is drawn without
+  building every drawn view, as `inspect` does, an edge from the slots the scene holds, the query's
+  and the moving layer's, without asking the engine; `showLayers` hides layers for a reference
+  image; `sceneNumbers` gives the numbers the scene draws by (where the levels of detail begin, the
+  culling margin, the label reach, the rescale); `work` counts what the canvas did: GPU buffers
+  created and allocated, bytes uploaded, those of the edge mesh among them, and texture uploads,
+  counted at the WebGL context from its first call, resizes of the edge mesh's buffers, and views
+  the pools made, and refuses with an `UncountedRendererError` where the canvas draws without WebGL;
+  `edgeVertices` gives the screen point of every vertex of the edge mesh as its shader computes it
+  in `f32`, and `gpuEdgeIndices` the indices its GPU buffer holds, read back; for tests, the
+  benchmark, and tooling. Its shape follows the scene and is outside the stable interface of `comb`.
 - **Example** (`examples/metric-tree`) — a host application with a metric tree and an HTML sidebar
   (G-9), each type of node told only by the content the example describes from its fields (G-10):
   a bet its hypothesis and status badge, an epic its progress bar and status badge, an input

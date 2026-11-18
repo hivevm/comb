@@ -51,8 +51,8 @@ pub use edit::{EdgePatch, EdgeRefusal, NodePatch};
 pub(crate) use edit::{add_edge_to, patch_of, update_edge_in};
 pub use field::Field;
 pub use input::{
-    Arrow, ContentElement, Dock, EdgeInput, LabelInput, NodeContent, NodeInput, NodeShape, Pair,
-    Segment, Side, TextRole, Trend, TrendDirection,
+    Arrow, ContentElement, Dock, EdgeInput, LabelInput, NodeContent, NodeInput, NodeShape, Outline,
+    Pair, Segment, Side, TextRole, Trend, TrendDirection,
 };
 pub(crate) use limits::{ID_LIMIT, TEXT_LIMIT, check_graph_size, check_id_budget};
 pub use limits::{MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_TEXT};
@@ -60,7 +60,7 @@ pub use limits::{MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_TEXT};
 pub(crate) use load::graph_of;
 pub(crate) use load::{Loaded, add_node_to, height_of, load_of};
 pub(crate) use node_columns::refused_of;
-pub use node_columns::{NodeColumns, NodeField, NodeShapeCode};
+pub use node_columns::{NodeColumns, NodeField, NodeShapeCode, OutlineCode};
 pub use problem::{GraphDataProblem, GraphList};
 pub(crate) use problem::{malformed, slot, unshaped};
 pub use regions::{Divide, Line, RegionColumns, RegionInput};

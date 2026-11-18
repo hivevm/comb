@@ -83,7 +83,8 @@ inside a longer term of this glossary, such as "shape" in **Node shape**, is no 
   host application's graph. A vertex is a point of the edge mesh, never a node.
   _Avoid:_ graph vertex, block.
 - **Node shape** — the form, from a closed set the engine knows, in which a node is drawn and hit:
-  a rectangle, a rounded rectangle, an ellipse, a circle, a ringed circle, a diamond, or a bar.
+  a rectangle, a rounded rectangle, an ellipse, a circle, a ringed circle, a diamond, a bar, a
+  pentagon, a notched rectangle, a note, or a frame.
   It is a property of a node, not a diagram element of its own.
   _Avoid:_ shape alone, figure, symbol.
 - **Node kind** — what a node of the UML example is, a class, an interface, an abstract class, a
@@ -99,9 +100,9 @@ inside a longer term of this glossary, such as "shape" in **Node shape**, is no 
   A progress bar is divided into *segments*, each a fraction of the bar in a colour, from its
   left; the rest of the bar is its *track*. A *metric* is a caption above a value and its
   *trend*, a text with a direction, up, down, or flat, drawn as an arrow, and a colour.
-- **Outline** — the border of a node's shape, inside which the node is hit; an edge's end that
-  *docks on the outline* lies where the line towards the edge's other end crosses it, instead of
-  at a connector.
+- **Outline** — the border of a node's shape, inside which the node is hit, drawn solid, dashed,
+  or not at all; an edge's end that *docks on the outline* lies where the line towards the edge's
+  other end crosses it, instead of at a connector.
 - **Palette** — the host application's HTML list of node types, from which the user drags new nodes
   onto the canvas.
 - **Path parameter** — a number `t` from 0.0 to 1.0 that marks a point along an edge's path, from

@@ -17,8 +17,9 @@ type Same<A, B> =
 // generated parameters, pinned, the column of node shapes, the columns of nesting
 // (API-bridge-columns-carry-nesting), the height a node's data gives with its byte of presence,
 // whether it is resizable, the division of each node and the columns of the regions, the columns of
-// border nodes (ARCH-border-nodes-ride-sides), and the
-// content columns of `text`, `action`, `badge`, `progress`, and `metric` among them and no title
+// border nodes (ARCH-border-nodes-ride-sides), the outlines (REN-node-shapes-cover-uml), and the
+// content columns of `text`, `action`, `badge`, `progress`, and `metric` and the separators of rows
+// among them and no title
 // column. A refused field crosses as the code of its `NodeField` or `EdgeField`, a plain number,
 // and a shape of content with its row and column.
 const columns: Same<
@@ -32,6 +33,9 @@ const columns: Same<
     hasHeight: Uint8Array | number[],
     height: Float64Array | number[],
     shape: Uint8Array | number[],
+    outline: Uint8Array | number[],
+    outlineDash: Float64Array | number[],
+    outlineGap: Float64Array | number[],
     hasContainer: Uint8Array | number[],
     container: Uint32Array | number[],
     isContainer: Uint8Array | number[],
@@ -56,6 +60,7 @@ const columns: Same<
     attachedMissing: string | null | undefined,
     rowBounds: Uint32Array | number[],
     elementBounds: Uint32Array | number[],
+    separators: Uint8Array | number[],
     kinds: Uint8Array | number[],
     weights: Float64Array | number[],
     roles: Uint8Array | number[],

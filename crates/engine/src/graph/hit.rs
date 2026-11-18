@@ -365,6 +365,37 @@ mod tests {
     }
 
     #[test]
+    fn a_pentagon_without_an_outline_is_hit_within_its_outline_and_beyond_its_point_finds_what_lies_below()
+     {
+        // Verifies: REN-node-shapes-cover-uml
+        // A rectangle below and a pentagon above it, both 220 × 64 and far from the origin, the
+        // pentagon's outline left out; at the near and the middle level, without connectors.
+        use crate::shape::{NodeShape, Outline};
+        let positions = vec![5e6, 5e6, 5e6, 5e6];
+        let sizes = vec![220.0, 64.0, 220.0, 64.0];
+        let mut graph = Graph::new(positions, sizes, Vec::new()).unwrap();
+        graph.set_shape(1, NodeShape::Pentagon).unwrap();
+        graph.set_outline(1, Outline::None).unwrap();
+        assert_eq!(graph.outline(1), Outline::None);
+        for level in [Level::Near, Level::Middle] {
+            let mut at =
+                |x: f64, y: f64| graph.hit_at(Point::new(5e6 + x, 5e6 + y), 1.0, level, false);
+            // Within the outline it leaves out: the pentagon, which lies above.
+            assert_eq!(at(100.0, 32.0), Some(Target::Node(1)));
+            assert_eq!(at(215.0, 32.0), Some(Target::Node(1)));
+            // Beyond its point, inside its bounding rectangle: the rectangle below.
+            assert_eq!(at(215.0, 4.0), Some(Target::Node(0)));
+            assert_eq!(at(215.0, 60.0), Some(Target::Node(0)));
+        }
+        // An outline set on a slot that holds no node is refused, and a slot taken again forgets
+        // the outline of the node it held.
+        assert!(graph.set_outline(7, Outline::Dashed([6.0, 4.0])).is_err());
+        graph.remove_nodes(&[1]).unwrap();
+        assert_eq!(graph.add_node(0.0, 0.0, 100.0, 60.0), Ok(1));
+        assert_eq!(graph.outline(1), Outline::Solid);
+    }
+
+    #[test]
     fn a_hit_finds_the_topmost_node_a_scan_finds_before_and_after_moves() {
         let mut rng = Lcg(7);
         let (mut model, mut graph) = Model::random(&mut rng, 300, 0);

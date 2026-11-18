@@ -6,6 +6,7 @@ import {
   NO_SLOT,
   PIECE_BOUND,
   type Bridge,
+  type ContentElement,
   type NodeColumnWriter,
   type GraphSnapshot,
   type NodePatch,
@@ -524,7 +525,7 @@ describe("bridge columns of a load", () => {
     expect(bridge.loadGraph(snapshot)).toBe(4);
     // The engine keeps the titles, and hands each back as it was given.
     const title = (slot: number) => {
-      const element = bridge.content(slot)[0]![0]!;
+      const element = (bridge.content(slot)[0] as ContentElement[])[0]!;
       return element.kind === "text" ? element.text : undefined;
     };
     expect([0, 1, 2, 3].map(title)).toEqual(titles);
