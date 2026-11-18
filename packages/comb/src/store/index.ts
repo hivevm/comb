@@ -221,8 +221,9 @@ export interface GraphState extends GraphView {
   dragEnded(): void;
   /** Records that the point a connection is dragged to moved, where interaction keeps it. */
   pointerMoved(): void;
-  /** Records that a drag, now released, left the node `id` where the engine keeps it. */
-  nodeMoved(id: string): void;
+  /** Records that a drag, now released, left the node `id` where the engine keeps it, in the
+   *  container `container`, or on the canvas for `null` (API-edits-report-nested-changes). */
+  nodeMoved(id: string, container: string | null): void;
   /** Forgets the nodes in `nodeSlots` and the edges in `edgeSlots`, which the engine removed,
    *  leaving their slots free, and clears a selection of one of them. */
   removeNodes(nodeSlots: readonly number[], edgeSlots: readonly number[], by: By): void;
@@ -322,6 +323,18 @@ function loadedFrom(state: GraphView, graph: KeptGraph, idUnits: number): Partia
  *  of the nodes the drag moves (REN-moving-layer-redraws-changes). */
 function draggedWithout(state: GraphView, nodes: GraphView["nodes"]): Partial<GraphView> {
   return state.dragged?.some((slot) => !nodes[slot]) ? { dragged: null } : {};
+}
+
+/** What `nodeMoved` changes of `state`: the change, and where the node `id` lies in another
+ *  container than before, a new view of it that names `container`, or none for the canvas. */
+function movedFrom(state: GraphView, id: string, container: string | null): Partial<GraphView> {
+  const change = { kind: "nodeMoved", by: "user", id } as const;
+  const slot = state.slots.get(id)!;
+  const view = state.nodes[slot]!;
+  if ((view.container ?? null) === container) return { change };
+  const nodes = state.nodes.slice();
+  nodes[slot] = nodeViewOf({ ...view, container: container ?? undefined });
+  return { nodes, change };
 }
 
 /** The actions of a drag of nodes (REN-moving-layer-redraws-changes), by the store's `set`. */
@@ -474,7 +487,7 @@ export function createGraphStore() {
     positionsMoved: () => set((state) => ({ positionsVersion: state.positionsVersion + 1 })),
     ...dragsOf(set),
     pointerMoved: () => set((state) => ({ pointerVersion: state.pointerVersion + 1 })),
-    nodeMoved: (id) => set({ change: { kind: "nodeMoved", by: "user", id } }),
+    nodeMoved: (id, container) => set((state) => movedFrom(state, id, container)),
     removeNodes: (nodeSlots, edgeSlots, by) =>
       set((state) => withoutNodes(state, nodeSlots, edgeSlots, by)),
     removeEdges: (edgeSlots, by) => set((state) => withoutEdgesOf(state, edgeSlots, by)),

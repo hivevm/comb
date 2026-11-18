@@ -5,7 +5,8 @@
 
 use std::collections::HashSet;
 
-use super::{Graph, SlotError};
+use super::{Graph, MoveIntoError, SlotError};
+use crate::geometry::{Point, Rect};
 
 /// The container of a node that lies on the canvas.
 pub const CANVAS: u32 = u32::MAX;
@@ -246,10 +247,33 @@ impl Graph {
         self.is_container[i] = is_container;
         if container != CANVAS {
             self.held[container as usize].push(slot);
+            self.keep_relative(slot);
         }
         if is_container {
             self.order_containers();
         }
+    }
+
+    /// Keeps the position of the node in `slot`, which lies in a container, relative to its
+    /// container, from the world positions both hold now (`relative`).
+    pub(super) fn keep_relative(&mut self, slot: u32) {
+        let [i, c] = [slot as usize * 2, self.container(slot) as usize * 2];
+        let at = |axis: usize| f64::from(self.positions[i + axis]);
+        let origin = |axis: usize| f64::from(self.positions[c + axis]);
+        let relative = [at(0) - origin(0), at(1) - origin(1)];
+        grow_to(&mut self.relative, slot as usize, [0.0; 2]);
+        self.relative[slot as usize] = relative;
+    }
+
+    /// The world position of the node in `slot`, which lies in a container, as the sum of its
+    /// container's world position and its own relative to it (`relative`).
+    pub(super) fn summed(&self, slot: u32) -> [f64; 2] {
+        let c = self.container(slot) as usize * 2;
+        let [x, y] = self.relative[slot as usize];
+        [
+            f64::from(self.positions[c]) + x,
+            f64::from(self.positions[c + 1]) + y,
+        ]
     }
 
     /// Takes `nesting`, which `check` passed, as the containers of the loaded nodes: the lists of
@@ -265,6 +289,13 @@ impl Graph {
         self.containers = nesting.containers;
         self.is_container = nesting.is_container;
         self.held = held;
+        self.relative = Vec::new();
+        for node in 0..count {
+            let slot = slot32(node);
+            if self.container(slot) != CANVAS {
+                self.keep_relative(slot);
+            }
+        }
         self.order_containers();
     }
 
@@ -285,6 +316,78 @@ impl Graph {
         if let Some(mark) = self.is_container.get_mut(i) {
             *mark = false;
         }
+    }
+
+    /// Puts the node in `slot` into the container in `container`, or onto the canvas for
+    /// `CANVAS`, at the world position it has, so that its position relative to its container
+    /// changes, and gives it the next rank, as an added node takes it; a container takes its place
+    /// among the containers by it (ARCH-engine-edits-nested-graph, *Moving into a container*). A
+    /// slot that holds no node, a container that holds no container, and a container that is the
+    /// node or a node it holds refuse the move, the shell's own mistakes, and the graph stays as
+    /// it was. A move into the node's own container changes nothing, its rank kept, as a drop
+    /// within it keeps its rank (API-edits-report-nested-changes, *Vetoes*).
+    pub fn move_into(&mut self, slot: u32, container: u32) -> Result<(), MoveIntoError> {
+        self.nodes_held(&[slot])?;
+        if container == self.container(slot) {
+            return Ok(());
+        }
+        if container != CANVAS {
+            if !(self.holds_node(container) && self.is_container(container)) {
+                return Err(MoveIntoError::NoContainer { slot: container });
+            }
+            if self.lies_in(container, slot) {
+                return Err(MoveIntoError::InItself { slot: container });
+            }
+        }
+        let rank = self.take_rank();
+        self.next_rank += 1;
+        let i = slot as usize;
+        self.ranks[i] = rank;
+        let own = self.container(slot);
+        if own != CANVAS {
+            self.held[own as usize].retain(|&s| s != slot);
+        }
+        grow_to(&mut self.containers, i, CANVAS);
+        self.containers[i] = container;
+        if container != CANVAS {
+            self.held[container as usize].push(slot);
+            self.keep_relative(slot);
+        }
+        if self.is_container(slot) {
+            self.order_containers();
+        }
+        Ok(())
+    }
+
+    /// The container a drop of the node in `dragged` at `point` lands in: of the containers whose
+    /// outline holds `point`, neither `dragged` nor a node it holds at any depth, the last in the
+    /// order of containers; none for the canvas (API-edits-report-nested-changes, *Vetoes*). A
+    /// slot that holds no node refuses the call.
+    pub fn container_at(&mut self, point: Point, dragged: u32) -> Result<Option<u32>, SlotError> {
+        self.nodes_held(&[dragged])?;
+        self.node_grid
+            .candidates(&Rect::at(point), &mut self.scratch);
+        Ok(self
+            .scratch
+            .iter()
+            .copied()
+            .filter(|&s| {
+                self.is_container(s) && !self.lies_in(s, dragged) && self.within_outline(s, point)
+            })
+            .max_by_key(|&s| self.container_order[s as usize]))
+    }
+
+    /// Whether the node in `node` is the node in `slot` or lies in it, at any depth: one walk up
+    /// its chain of containers, which `Nesting::check` and `move_into` keep free of cycles.
+    pub(super) fn lies_in(&self, node: u32, slot: u32) -> bool {
+        let mut at = node;
+        while at != CANVAS {
+            if at == slot {
+                return true;
+            }
+            at = self.container(at);
+        }
+        false
     }
 
     /// Numbers the containers in the order they are drawn and hit

@@ -378,8 +378,9 @@ test("a drag of a node in a container tells nodeMoved relative to it, and of the
   // Verifies: API-edits-report-nested-changes, G-14
   await open(page);
   await loaded(page, HELD);
-  // Node a's centre, then the container beside both nodes, each dragged by (30, 50).
-  await dragWorld(page, [220, 172], [250, 222]);
+  // Node a where it lies in the container, dragged by (30, 10) and released in it, then the
+  // container beside both nodes, dragged by (30, 50).
+  await dragWorld(page, [220, 150], [250, 160]);
   await dragWorld(page, [300, 105], [330, 155]);
   const moved = (await told<{ x: number; y: number }>(page)).map((change) => ({
     ...change,
@@ -387,12 +388,12 @@ test("a drag of a node in a container tells nodeMoved relative to it, and of the
     y: Math.round(change.y),
   }));
   expect(moved).toEqual([
-    { kind: "nodeMoved", by: "user", id: "a", x: 40, y: 90, container: "c" },
+    { kind: "nodeMoved", by: "user", id: "a", x: 40, y: 50, container: "c" },
     { kind: "nodeMoved", by: "user", id: "c", x: 130, y: 150, container: null },
   ]);
   // The container took a with it, which kept its place within it.
   const scene = await drawn(page);
-  expect(scene.nodes.find(({ id }) => id === "a")).toMatchObject({ x: 170, y: 240 });
+  expect(scene.nodes.find(({ id }) => id === "a")).toMatchObject({ x: 170, y: 200 });
 });
 
 /** Adds, by `addNode` and `addEdge`, container `c` at `(x, y)`, of `width` and of node shape
@@ -590,4 +591,257 @@ test("a container drag frame at the far level uploads what the container holds, 
   expect(large.meshBytes).toBeGreaterThan(1_000_000);
   expect(large.perFrame).toBeLessThan(large.meshBytes / 100);
   expect(large.perFrame).toBeLessThanOrEqual(small.perFrame * 2);
+});
+
+/** Container `c` at (100, 100), 700 × 64, and node `a` at (100, 400) on the canvas, 220 × 64. */
+const BESIDE: GraphData = { nodes: [container("c", 100, 100), node("a", 100, 400)], edges: [] };
+
+/** Records each move `canMoveInto` is asked about in `asked` and answers what `answer` names:
+ *  `true`, `false`, a throw, or a removal of container `c` and `true`. */
+async function vetoMoves(page: Page, answer: "true" | "false" | "throw" | "remove") {
+  await page.evaluate((how) => {
+    const w = window as unknown as { asked: unknown[] };
+    w.asked = [];
+    window.canMoveInto = (move) => {
+      w.asked.push(move);
+      if (how === "throw") throw new Error("host veto");
+      if (how === "remove") window.comb.removeNodes(["c"]);
+      return how !== "false";
+    };
+  }, answer);
+}
+
+/** The moves `canMoveInto` was asked about since `vetoMoves`. */
+const askedMoves = (page: Page) =>
+  page.evaluate(() => (window as unknown as { asked: unknown[] }).asked);
+
+/** Each change `told` holds, its position rounded to the world unit. */
+async function toldRounded(page: Page) {
+  return (await told<{ x?: number; y?: number }>(page)).map((change) =>
+    change.x === undefined || change.y === undefined
+      ? change
+      : { ...change, x: Math.round(change.x), y: Math.round(change.y) },
+  );
+}
+
+test("a node dropped into a container on canMoveInto true is told once with the container, drawn above it, and held by it", async ({
+  page,
+}) => {
+  // Verifies: API-edits-report-nested-changes, ARCH-engine-edits-nested-graph, G-14
+  await open(page);
+  await loaded(page, BESIDE);
+  await vetoMoves(page, "true");
+  // a's centre, released in the container: a lies at (290, 98), 2 above the container's top.
+  await dragWorld(page, [210, 432], [400, 130]);
+  expect(await askedMoves(page)).toEqual([{ node: "a", container: "c" }]);
+  expect(await toldRounded(page)).toEqual([
+    { kind: "nodeMoved", by: "user", id: "a", x: 190, y: -2, container: "c" },
+  ]);
+  let scene = await drawn(page);
+  expect(scene.nodes.map(({ id, layer }) => [id, layer])).toEqual([
+    ["c", "containers"],
+    ["a", "nodes"],
+  ]);
+  expect(await page.evaluate(() => window.exampleGraph().nodes[1])).toMatchObject({
+    id: "a",
+    container: "c",
+  });
+  // The container dragged by (0, 100) beside a takes a along, which it now holds.
+  await dragWorld(page, [700, 105], [700, 205]);
+  scene = await drawn(page);
+  expect(scene.nodes.find(({ id }) => id === "a")).toMatchObject({ x: 290, y: 198 });
+});
+
+for (const answer of ["false", "throw", "remove"] as const) {
+  test(`a node dropped into a container with canMoveInto ${answer === "remove" ? "removing the container and returning true" : answer === "throw" ? "throwing" : "returning false"} stands where it stood, and no change of the user's is told`, async ({
+    page,
+  }) => {
+    // Verifies: API-edits-report-nested-changes
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await open(page);
+    await loaded(page, BESIDE);
+    await vetoMoves(page, answer);
+    await dragWorld(page, [210, 432], [400, 130]);
+    expect(await askedMoves(page)).toEqual([{ node: "a", container: "c" }]);
+    expect(await told(page)).toEqual(
+      answer === "remove" ? [{ kind: "nodesRemoved", by: "host", nodes: ["c"], edges: [] }] : [],
+    );
+    // Exactly where it stood, though the drag moved it there and back in f32 steps.
+    expect((await drawnGraph(page)).nodes.find(({ id }) => id === "a")).toMatchObject({
+      x: 100,
+      y: 400,
+    });
+    // The gesture ended before the error was thrown: a move after it drags nothing.
+    const elsewhere = await pagePoint(page, 500, 300);
+    await page.mouse.move(elsewhere.x, elsewhere.y, { steps: 3 });
+    expect((await drawnGraph(page)).nodes.find(({ id }) => id === "a")).toMatchObject({
+      x: 100,
+      y: 400,
+    });
+    expect(errors).toEqual(answer === "throw" ? ["host veto"] : []);
+  });
+}
+
+test("a node reaching past its container, grabbed there and dropped outside every container, asks canMoveInto with null and lies on the canvas", async ({
+  page,
+}) => {
+  // Verifies: API-edits-report-nested-changes, G-14
+  await open(page);
+  await loaded(page, HELD);
+  await vetoMoves(page, "true");
+  // a lies at (110, 140) in c, which ends at 164: grabbed below it, at (220, 190), dropped at
+  // (220, 440), outside every container.
+  await dragWorld(page, [220, 190], [220, 440]);
+  expect(await askedMoves(page)).toEqual([{ node: "a", container: null }]);
+  expect(await toldRounded(page)).toEqual([
+    { kind: "nodeMoved", by: "user", id: "a", x: 110, y: 390, container: null },
+  ]);
+  // On the canvas, a stays where it is when the container is dragged.
+  await dragWorld(page, [300, 105], [300, 125]);
+  const scene = await drawn(page);
+  expect(scene.nodes.find(({ id }) => id === "a")).toMatchObject({ x: 110, y: 390 });
+});
+
+/** Container `c` at (100, 100), 700 × 64, holding container `d` at (10, 0) within it, 300 × 64. */
+const NESTED: GraphData = {
+  nodes: [container("c", 100, 100), { ...container("d", 10, 0), width: 300, container: "c" }],
+  edges: [],
+};
+
+test("a container released with the pointer over a container it holds asks nothing, and moved within its own container", async ({
+  page,
+}) => {
+  // Verifies: API-edits-report-nested-changes, G-14
+  await open(page);
+  await loaded(page, NESTED);
+  await vetoMoves(page, "true");
+  // c grabbed beside d and dragged by (50, 0); the host then pans the view by 500 world units,
+  // so that the release lies at (250, 130), over d, which c holds and took along.
+  await dragWorld(page, [700, 130], [750, 130], () =>
+    page.evaluate(() => {
+      const view = window.comb.viewport();
+      window.comb.setViewport({ ...view, x: view.x + 500 });
+    }),
+  );
+  expect(await askedMoves(page)).toEqual([]);
+  expect(await toldRounded(page)).toEqual([
+    { kind: "nodeMoved", by: "user", id: "c", x: 150, y: 100, container: null },
+  ]);
+});
+
+test("a node dropped within its own container asks nothing, and nodeMoved carries the same container", async ({
+  page,
+}) => {
+  // Verifies: API-edits-report-nested-changes, G-14
+  await open(page);
+  await loaded(page, HELD);
+  await vetoMoves(page, "true");
+  await dragWorld(page, [220, 150], [520, 150]);
+  expect(await askedMoves(page)).toEqual([]);
+  expect(await toldRounded(page)).toEqual([
+    { kind: "nodeMoved", by: "user", id: "a", x: 310, y: 40, container: "c" },
+  ]);
+});
+
+/** Node `a` at (100, 400) on the canvas, listed first, so of the lowest rank; container `c` at
+ *  (100, 100), 700 × 64, holding `b` at (300, 0) within it. */
+const BELOW: GraphData = {
+  nodes: [node("a", 100, 400), container("c", 100, 100), { ...node("b", 300, 0), container: "c" }],
+  edges: [],
+};
+
+test("a node moved into a container takes the next rank: it is drawn and hit above a node there it overlaps", async ({
+  page,
+}) => {
+  // Verifies: ARCH-engine-edits-nested-graph, API-edits-report-nested-changes
+  await open(page);
+  await loaded(page, BELOW);
+  // a's centre, released in c: a lies at (390, 98), over b at (400, 100).
+  await dragWorld(page, [210, 432], [500, 130]);
+  expect(await toldRounded(page)).toEqual([
+    { kind: "nodeMoved", by: "user", id: "a", x: 290, y: -2, container: "c" },
+  ]);
+  const scene = await drawn(page);
+  expect(scene.nodes.map(({ id }) => id)).toEqual(["c", "b", "a"]);
+  // Beside a, b; where both lie, a.
+  await clickWorld(page, 615, 150);
+  await clickWorld(page, 450, 130);
+  expect(await selections(page)).toEqual([
+    { kind: "node", id: "a" },
+    { kind: "node", id: "b" },
+    { kind: "node", id: "a" },
+  ]);
+});
+
+/** Container `d` at (100, 600), 700 × 64, listed first, holding `n` at (400, 0) within it, and
+ *  container `c` at (100, 100), 700 × 64, on the canvas. */
+const TWO_CONTAINERS: GraphData = {
+  nodes: [
+    container("d", 100, 600),
+    { ...node("n", 400, 0), container: "d" },
+    container("c", 100, 100),
+  ],
+  edges: [],
+};
+
+test("at the far level, a container moved into another is drawn after it, and what it holds follows it", async ({
+  page,
+}) => {
+  // Verifies: ARCH-engine-edits-nested-graph, REN-virtualized-nested-scene, G-14
+  await open(page);
+  const [, , [level, scale]] = await levels(page);
+  await loaded(page, TWO_CONTAINERS, { x: 100, y: 100, scale });
+  let scene = await drawn(page);
+  expect(scene.level).toBe(level);
+  expect(scene.nodes.map(({ id, layer }) => [id, layer])).toEqual([
+    ["d", "containers"],
+    ["c", "containers"],
+    ["n", "nodes"],
+  ]);
+  // d grabbed beside n and released in c.
+  await dragWorld(page, [200, 630], [300, 130]);
+  expect(
+    (await told<{ id: string; container: string | null }>(page)).map(
+      ({ id, container: inside }) => [id, inside],
+    ),
+  ).toEqual([["d", "c"]]);
+  scene = await drawn(page);
+  expect(scene.level).toBe(level);
+  expect(scene.nodes.map(({ id, layer }) => [id, layer])).toEqual([
+    ["c", "containers"],
+    ["d", "containers"],
+    ["n", "nodes"],
+  ]);
+  const [d, n] = ["d", "n"].map((id) => scene.nodes.find((drawnNode) => drawnNode.id === id)!);
+  expect([n!.x - d!.x, n!.y - d!.y]).toEqual([400, 0]);
+  expect(d!.y).toBeLessThan(300);
+});
+
+/** Containers `c` and `t`, 400 × 64, at (1,048,300, 0) and (1,048,300, 200), where `f32` steps by
+ *  1/16, and `a` held by `c` at (300, 0) within it, past 2^20, where `f32` steps by 1/8. */
+const FAR_RIGHT: GraphData = {
+  nodes: [
+    container("c", 1_048_300, 0, { width: 400 }),
+    { ...node("a", 300, 0), container: "c" },
+    container("t", 1_048_300, 200, { width: 400 }),
+  ],
+  edges: [],
+};
+
+test("a container dropped into another and refused stands where it stood, and what it holds exactly where it lay in it", async ({
+  page,
+}) => {
+  // Verifies: API-edits-report-nested-changes, ARCH-engine-edits-nested-graph
+  await open(page);
+  await loaded(page, FAR_RIGHT, { x: -1_048_300 * 1.5 + 50, y: 50, scale: 1.5 });
+  await vetoMoves(page, "false");
+  const at = async () => (await drawnGraph(page)).nodes.map(({ id, x, y }) => ({ id, x, y }));
+  const before = await at();
+  // c grabbed beside a and dragged in steps no f32 adds alike at both its and a's place.
+  await dragWorld(page, [1_048_400, 10], [1_048_407.7, 231.3]);
+  expect(await askedMoves(page)).toEqual([{ node: "c", container: "t" }]);
+  expect(await told(page)).toEqual([]);
+  // Exactly where each was, so that a's position relative to c is as a nodeMoved told it before.
+  expect(await at()).toEqual(before);
 });

@@ -10,6 +10,7 @@ export {
 export type {
   Comb,
   CombOptions,
+  ContainerMove,
   ContentClick,
   Deletion,
   Proposal,

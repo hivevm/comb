@@ -9,7 +9,7 @@ import type { Application, FederatedPointerEvent } from "pixi.js";
 import type { Bridge, Hit } from "../bridge";
 import type { GraphStore } from "../store";
 import { connection, type Connect } from "./connect";
-import { targetAt, type ContentClick, type Context, type Gesture } from "./gesture";
+import { targetAt, type ContentClick, type Context, type Gesture, type MoveInto } from "./gesture";
 import { untilLost } from "./guard";
 import { labelDrag } from "./label-drag";
 import { nodeDrag } from "./node-drag";
@@ -18,7 +18,7 @@ import { levelAt, zoomAt } from "../store/viewport";
 
 export { attachDeletion, type Delete, type Deletion } from "./delete";
 export type { Connect, Proposal } from "./connect";
-export type { ContentClick } from "./gesture";
+export type { ContainerMove, ContentClick, MoveInto } from "./gesture";
 
 const WHEEL_STEP = 1.0015;
 
@@ -129,20 +129,29 @@ function attachRelease(
   app.stage.on("pointercancel", () => release(false));
 }
 
+/** What input hands to `api`: a connection, none where the host does not let the user connect,
+ *  a click on an element of a node's content, and a node dropped into another container; and
+ *  whether the host allows loops (API-edges-dock-side-or-outline). */
+export interface Handlers {
+  readonly connect: Connect | undefined;
+  readonly click: (click: ContentClick) => void;
+  readonly moveInto: MoveInto;
+  readonly loops: boolean;
+}
+
 /** Wires pointer and wheel input on the canvas; a click on an element of a node's content is told
- *  to `click`, and a connection proposed to `connect`, where the host lets the user connect, one
- *  back to its source where `loops` allows loops (API-edges-dock-side-or-outline). */
+ *  to `click`, a connection proposed to `connect`, where the host lets the user connect, one
+ *  back to its source where `loops` allows loops (API-edges-dock-side-or-outline), and a node
+ *  dropped into another container handed to `moveInto` (API-edits-report-nested-changes). */
 export function attachInteraction(
   app: Application,
   store: GraphStore,
   bridge: Bridge,
-  connect: Connect | undefined,
-  click: (click: ContentClick) => void,
-  loops: boolean,
+  { connect, click, moveInto, loops }: Handlers,
 ): Interaction {
   const connecting = connect !== undefined;
   const hitAt = (x: number, y: number) => targetAt({ store, bridge }, x, y, connecting);
-  const context: Context = { store, bridge, pointer: { x: 0, y: 0 }, hitAt, click };
+  const context: Context = { store, bridge, pointer: { x: 0, y: 0 }, hitAt, click, moveInto };
   let gesture: Gesture | null = null;
   Object.assign(app.stage, { eventMode: "static", hitArea: app.screen });
   // The cursor shows what a press would do, and the connectors of the node under the pointer show

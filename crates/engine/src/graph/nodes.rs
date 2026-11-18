@@ -2,10 +2,20 @@
 //! rank, so that it is drawn and hit above every other node; a removal, which takes the edges at
 //! the nodes along; and a move, which takes them along too (ARCH-engine-edits-graph-in-place).
 
+use std::collections::HashSet;
+
 use super::slots::put;
 use super::{AddNodeError, CANVAS, Graph, MoveError, SlotError, TooManySlots};
 use crate::geometry::{Rect, WORLD_LIMIT};
 use crate::shape::NodeShape;
+
+/// Where `shift` moves the nodes named to it: by a delta, as `translate` moves them, or to a
+/// world position, as `place` puts one.
+#[derive(Clone, Copy)]
+enum Shift {
+    By([f64; 2]),
+    To([f64; 2]),
+}
 
 /// Why the positions refused a move: a delta that is NaN or infinite.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -99,7 +109,7 @@ impl Graph {
 
     /// The rank the next node added takes, after the ranks in use are numbered again from 0 in
     /// their order where it would pass `u32::MAX`.
-    fn take_rank(&mut self) -> u32 {
+    pub(super) fn take_rank(&mut self) -> u32 {
         if let Ok(rank) = u32::try_from(self.next_rank) {
             return rank;
         }
@@ -157,23 +167,88 @@ impl Graph {
     /// edges, and at least 16, reach beyond the extent the index was built for, the index is built
     /// again over the current extent.
     pub fn translate(&mut self, slots: &[u32], dx: f32, dy: f32) -> Result<(), MoveError> {
+        self.shift(slots, Shift::By([f64::from(dx), f64::from(dy)]))
+    }
+
+    /// The nodes in `slots` that lie in no other of them, each once, in the order named: what a
+    /// move of them moves by its own delta, each taking what it holds along. Linear in the slots
+    /// named and the depth they lie at.
+    fn roots_of(&self, slots: &[u32]) -> Vec<u32> {
+        let named: HashSet<u32> = slots.iter().copied().collect();
+        let mut seen = HashSet::with_capacity(named.len());
+        slots
+            .iter()
+            .copied()
+            .filter(|&s| seen.insert(s))
+            .filter(|&s| {
+                let mut at = self.container(s);
+                while at != CANVAS {
+                    if named.contains(&at) {
+                        return false;
+                    }
+                    at = self.container(at);
+                }
+                true
+            })
+            .collect()
+    }
+
+    /// Moves the nodes in `slots` as `how` says, by a delta for `translate` or to a world position
+    /// for `place`: the nodes named that lie in no other named node, each once, and what they
+    /// hold, at every depth, to the sum of its container's new world position and its own
+    /// relative to it, which the move keeps, so that no rounding of a delta builds up within a
+    /// container, each node cut where it meets the world's limit.
+    fn shift(&mut self, slots: &[u32], how: Shift) -> Result<(), MoveError> {
         self.nodes_held(slots)?;
-        let held;
-        let slots = if slots.iter().any(|&s| !self.held(s).is_empty()) {
-            held = self.with_held(slots)?;
-            held.as_slice()
+        let (Shift::By(numbers) | Shift::To(numbers)) = how;
+        if !numbers.iter().all(|n| n.is_finite()) {
+            return Err(PositionError::NonFinite.into());
+        }
+        let named;
+        let roots = if slots.len() > 1 {
+            named = self.roots_of(slots);
+            named.as_slice()
         } else {
             slots
         };
         // Each node stops where it meets the world's limit, so that nothing derived from it turns
         // infinite.
-        translate_positions(
-            &mut self.positions,
-            &self.sizes,
-            slots,
-            [dx, dy],
-            WORLD_LIMIT,
-        )?;
+        match how {
+            Shift::By(delta) => {
+                translate_positions(&mut self.positions, &self.sizes, roots, delta, WORLD_LIMIT)?;
+            }
+            Shift::To(at) => {
+                for &root in roots {
+                    let i = root as usize * 2;
+                    for axis in 0..2 {
+                        let size = f64::from(self.sizes[i + axis]);
+                        self.positions[i + axis] = within_world(at[axis], size, WORLD_LIMIT);
+                    }
+                }
+            }
+        }
+        for &root in roots {
+            if self.container(root) != CANVAS {
+                self.keep_relative(root);
+            }
+        }
+        let held;
+        let slots = if roots.iter().any(|&s| !self.held(s).is_empty()) {
+            // Each container before what it holds, so that each is summed from where it now is.
+            held = self.with_held(roots)?;
+            let root_set: HashSet<u32> = roots.iter().copied().collect();
+            for &slot in held.iter().filter(|s| !root_set.contains(s)) {
+                let summed = self.summed(slot);
+                let i = slot as usize * 2;
+                for axis in 0..2 {
+                    let size = f64::from(self.sizes[i + axis]);
+                    self.positions[i + axis] = within_world(summed[axis], size, WORLD_LIMIT);
+                }
+            }
+            held.as_slice()
+        } else {
+            roots
+        };
         let mut edges = std::mem::take(&mut self.scratch);
         edges.clear();
         for &slot in slots {
@@ -189,6 +264,15 @@ impl Graph {
         self.scratch = edges;
         self.keep_index();
         Ok(())
+    }
+
+    /// Puts the node in `slot` at the world position `(x, y)`, and what it holds, at every depth,
+    /// at the sum along its chain, as `translate` moves them, so that a drag taken back puts the
+    /// node and its content where they were and not where a sum of the drag's `f32` deltas would
+    /// (API-edits-report-nested-changes, *Vetoes*). A slot that holds no node, or a point that is
+    /// not finite, refuses the call, which then changes nothing.
+    pub fn place(&mut self, slot: u32, x: f64, y: f64) -> Result<(), MoveError> {
+        self.shift(&[slot], Shift::To([x, y]))
     }
 
     /// Gives the node in `slot` the height `height`, which its content lays out to
@@ -248,7 +332,7 @@ fn translate_positions(
     positions: &mut [f32],
     sizes: &[f32],
     slots: &[u32],
-    [dx, dy]: [f32; 2],
+    [dx, dy]: [f64; 2],
     limit: f64,
 ) -> Result<(), PositionError> {
     if !dx.is_finite() || !dy.is_finite() {
@@ -258,17 +342,22 @@ fn translate_positions(
         let i = slot as usize * 2;
         for (axis, delta) in [(i, dx), (i + 1, dy)] {
             // In `f64`, so that a move past `f32` is cut rather than turned infinite.
-            let moved = f64::from(positions[axis]) + f64::from(delta);
-            let size = f64::from(sizes[axis]);
-            #[expect(
-                clippy::cast_possible_truncation,
-                reason = "cut to within `limit`, far within f32, before it is rounded"
-            )]
-            let cut = moved.clamp(-limit, (limit - size).max(-limit)) as f32;
-            positions[axis] = cut;
+            let moved = f64::from(positions[axis]) + delta;
+            positions[axis] = within_world(moved, f64::from(sizes[axis]), limit);
         }
     }
     Ok(())
+}
+
+/// `at`, on one axis, of a node of `size` there, cut to keep the node within `limit` of the origin,
+/// as `f32` rounds it.
+fn within_world(at: f64, size: f64, limit: f64) -> f32 {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "cut to within `limit`, far within f32, before it is rounded"
+    )]
+    let cut = at.clamp(-limit, (limit - size).max(-limit)) as f32;
+    cut
 }
 
 #[cfg(test)]
@@ -689,11 +778,11 @@ mod tests {
     fn a_non_finite_delta_is_refused() {
         let mut positions = [0.0, 0.0];
         assert_eq!(
-            translate_positions(&mut positions, &[0.0; 2], &[0], [f32::NAN, 0.0], 1e9),
+            translate_positions(&mut positions, &[0.0; 2], &[0], [f64::NAN, 0.0], 1e9),
             Err(PositionError::NonFinite)
         );
         assert_eq!(
-            translate_positions(&mut positions, &[0.0; 2], &[0], [0.0, f32::INFINITY], 1e9),
+            translate_positions(&mut positions, &[0.0; 2], &[0], [0.0, f64::INFINITY], 1e9),
             Err(PositionError::NonFinite)
         );
         assert_eq!(positions, [0.0, 0.0]);
@@ -709,7 +798,7 @@ mod tests {
             &mut positions,
             &[20.0, 10.0],
             &[0],
-            [f32::MAX, f32::MAX],
+            [f64::from(f32::MAX), f64::from(f32::MAX)],
             100.0,
         )
         .unwrap();

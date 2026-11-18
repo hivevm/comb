@@ -120,6 +120,28 @@ impl From<TooManySlots> for AddNodeError {
     }
 }
 
+/// Why a move of a node into a container or onto the canvas was refused: a slot that holds no
+/// node, a container that is none, or a container that is the node or a node it holds
+/// (ARCH-engine-edits-nested-graph, *Moving into a container*). Each is the shell's own mistake.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MoveIntoError {
+    Slot(SlotError),
+    /// The slot named as the container holds no node, or a node that is no container.
+    NoContainer {
+        slot: u32,
+    },
+    /// The container named is the node itself or a node it holds, at any depth.
+    InItself {
+        slot: u32,
+    },
+}
+
+impl From<SlotError> for MoveIntoError {
+    fn from(error: SlotError) -> Self {
+        Self::Slot(error)
+    }
+}
+
 /// Why a move of nodes was refused: a slot that holds no node, or a delta that is not finite.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MoveError {
@@ -193,6 +215,12 @@ pub struct Graph {
     is_container: Vec<bool>,
     /// The slots each container holds directly, one list per node slot.
     held: Vec<Vec<u32>>,
+    /// The position of each node that lies in a container relative to its container's world
+    /// position, the difference of the two `f32` world positions, exact in `f64`: what a move of
+    /// the container keeps, so that what it holds lies at the sum along its chain however often it
+    /// moves (ARCH-engine-edits-nested-graph, *Positions*). A slot on the canvas keeps none that
+    /// is read; a slot past its end is on the canvas.
+    relative: Vec<[f64; 2]>,
     /// Where each container is drawn and hit among the containers, the higher above the lower.
     container_order: Vec<u32>,
     /// The node slots in use when the index was last built.

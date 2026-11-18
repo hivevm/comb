@@ -18,6 +18,7 @@ import {
   attachInteraction,
   canvasPointAt,
   type ContentClick,
+  type ContainerMove,
   type Deletion,
   type Proposal,
 } from "../interaction";
@@ -55,7 +56,7 @@ export type { IconProblem } from "./icons";
 export type { GraphChange } from "./changes";
 export type { EngineSource, EngineSourceProblem } from "./engine";
 export type { GraphDataProblem } from "../bridge";
-export type { ContentClick, Deletion, Proposal } from "../interaction";
+export type { ContainerMove, ContentClick, Deletion, Proposal } from "../interaction";
 
 export interface CombOptions {
   /** The engine's WebAssembly, the file `comb/engine.wasm`, as the host application loads it:
@@ -90,6 +91,17 @@ export interface CombOptions {
    *  returns, and its identifier is neither checked nor thrown
    *  (API-edits-reported-as-typed-changes). */
   canConnect?: (proposal: Proposal) => string | false;
+  /** The veto of a move of the user's into a container (G-14): called when the user releases a
+   *  dragged node over a container other than its own, with the identifiers of the node and of
+   *  the topmost container under the pointer, never the node or one it holds, or with `null` where
+   *  the node lies in a container and is released outside every container. Comb moves the node
+   *  there, keeping where it lies on the canvas, only where it returns `true`; otherwise the whole
+   *  drag is taken back and no change is told, and an error it throws is thrown on from the
+   *  release's event. A drag released in the node's own container asks nothing. Never called for
+   *  the host application's own calls. Without it, a move into a container is allowed. One during
+   *  whose call Comb tells a change to `onChange` moves nothing, whatever it returns
+   *  (API-edits-report-nested-changes). */
+  canMoveInto?: (move: ContainerMove) => boolean;
   /** Whether the host application allows loops, edges from a node back to itself: `addEdge`
    *  then accepts one, and the user's connection counts the source's own connectors compatible,
    *  but for the one it starts from, while the source has no loop. Without it, both refuse a loop,
@@ -327,7 +339,8 @@ export async function createComb(host: HTMLElement, options: CombOptions): Promi
   // frame, so that a gesture a change takes, a connection among them, is over before anything
   // reads the store after that change.
   const clicks = contentClicksOf();
-  const interaction = attachInteraction(app, store, bridge, user.connect, clicks.tell, loops);
+  const handlers = { connect: user.connect, moveInto: user.moveInto, click: clicks.tell, loops };
+  const interaction = attachInteraction(app, store, bridge, handlers);
   const frames = createFrames(() => scene.render(store.getState(), bridge, interaction.pointer));
   const unsubscribe = store.subscribe(frames.schedule);
   // A larger canvas shows more of the world, so what is culled changes with its size.

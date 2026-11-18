@@ -238,7 +238,13 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   edges a removal of given nodes takes along, `removeNodes` removes nodes, everything they hold,
   and the edges at any of them and returns those nodes' and edges' slots, `removeEdges` removes
   edges, `translate` moves nodes, a container with what it holds, each as far as keeps it within
-  the world's limit, so that every point the engine derives
+  the world's limit, what it holds at the sum of its world position and their positions relative
+  to it, which the engine keeps, `place` puts a node at a world position and what it holds at
+  those sums, as a drag taken back puts them exactly where they lay at the press, `containerAt`
+  names the topmost container under a world point that is neither a dragged node nor one it
+  holds, `moveInto` puts a node into a container or onto the canvas at the world position it has
+  and gives it the next rank, refusing a container that cannot take it with a `ContainerError`,
+  so that every point the engine derives
   stays within `f32`, `query` takes a rectangle, a level of detail, the size of a screen pixel, at
   most 2^114 world units for a stroke, and how far an edge label's pill reaches from its point, and
   writes the found containers and the other node slots apart (`visibleContainers…`,
@@ -347,6 +353,11 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   places on every move; its release, or a later press, records `labelMoved` once, and a load, a
   removal of its edge, or a label the host cleared ends the drag. A drag that moved its node records
   `nodeMoved` once, when the pointer is released on the canvas or outside it; a load ends a drag.
+  Released on the canvas over a container other than its own, as the engine's `containerAt` finds
+  it, or outside every container while it lies in one, the drag hands the drop to the move into a
+  container `api` hands it, through the `moveInto` of the gestures' `Context`, and where that moves
+  nothing it is taken back by the engine's `place` to where the node lay at the press, relative to
+  its container, unless a change told during the veto's call took the node.
   The engine's `hit` says what the pointer is on, at the level of detail of the scale; the world's
   layers take no events.
   `targetAt` of `gesture.ts` is the one hit test: `attachInteraction` asks it from the store's
@@ -429,10 +440,11 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   in `background`; and the `Comb` it returns: the graph data (`load`, `updateNode`, `addNode`,
   `addEdge`, `updateEdge`, `removeNodes`, `removeEdges`), read once into a snapshot
   (`api/snapshot.ts`) and handed to the engine by `api/editors.ts`, which also gives interaction the
-  user's connection and deletion, each after its veto, `CombOptions.canConnect` or
-  `CombOptions.canDelete`, `heightOf`, the height a node's content lays out to in a node shape, the
-  rectangle where none is named, read and checked there as `addNode` reads and checks a node,
-  changing nothing ([API-host-asks-content-height](adr/API-host-asks-content-height.md)), the
+  user's connection, deletion, and move into a container, each after its veto,
+  `CombOptions.canConnect`, `CombOptions.canDelete`, or `CombOptions.canMoveInto`, `heightOf`, the
+  height a node's content lays out to in a node shape, the rectangle where none is named, read and
+  checked there as `addNode` reads and checks a node, changing nothing
+  ([API-host-asks-content-height](adr/API-host-asks-content-height.md)), the
   viewport (`fitView`, `setViewport`, `viewport`, and `worldPointAt`, the world point under a point
   of the page, which needs no engine), the events to the host application (`onChange`,
   `onSelectionChange`, `onContentClick`, which interaction tells of each click on an element,
@@ -483,7 +495,8 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   (G-1); it keeps its own copy of the graph from every kind of change `onChange` tells, in one table
   by kind, the sidebar's edits following from the changes Comb tells, and `window.exampleGraph`
   hands a browser test that copy; it names each edge the user connects after its ends, and hands its
-  vetoes to `window.canConnect` and `window.canDelete` where a browser test sets them;
+  vetoes to `window.canConnect`, `window.canDelete`, and `window.canMoveInto` where a browser test
+  sets them;
   `?connect=none` gives Comb no `canConnect`; `?copies=` sets its size, the copies lie in a grid
   about as wide as tall, and it reports its load time as `window.loadReport`; `?fallback=canvas`
   allows the Canvas 2D fallback; `?loops=allow` sets `allowLoops`, and `?graph=shaped` loads the
@@ -677,10 +690,10 @@ it and has the engine add, change, or remove the items in place; the store then 
 records the change, and `api`, subscribed to the store, delivers it to `onChange` as a `GraphChange`
 before the call returns, and the next frame draws it. What the bridge refuses of the data becomes a
 `GraphDataError`; a `SlotError`, the shell's own mistake, an `Error` naming the slot. A user's
-connection and deletion, which `interaction` hands to `api/editors.ts`, are asked of their veto
-there, in one place: only an identifier `canConnect` returns connects and only `true` from
-`canDelete` deletes, and a veto during whose call Comb tells a change to `onChange` ends its gesture
-with nothing done and no error, whatever it returned
+connection, deletion, and move into a container, which `interaction` hands to `api/editors.ts`,
+are asked of their veto there, in one place: only an identifier `canConnect` returns connects, only
+`true` from `canDelete` deletes and from `canMoveInto` moves, and a veto during whose call Comb
+tells a change to `onChange` ends its gesture with nothing done and no error, whatever it returned
 ([API-edits-reported-as-typed-changes](adr/API-edits-reported-as-typed-changes.md)). Then they run
 through the same function, the deletion through `removeNodes` where its `Deletion` names nodes, else
 through `removeEdges`, recorded as `by: "user"`, which every store action whose change may be

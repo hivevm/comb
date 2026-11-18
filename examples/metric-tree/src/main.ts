@@ -2,6 +2,7 @@
 import {
   createComb,
   type Comb,
+  type ContainerMove,
   type Deletion,
   type Proposal,
   type EdgeData,
@@ -83,6 +84,9 @@ declare global {
     /** The veto of the user's connections a browser test sets; without one, the example names
      *  each new edge after its ends. Its result is handed to Comb as it is. */
     canConnect?: (proposal: Proposal) => unknown;
+    /** The veto of the user's moves into a container a browser test sets; without one, every
+     *  move is allowed. Its result is handed to Comb as it is. */
+    canMoveInto?: (move: ContainerMove) => unknown;
     /** Loads `graph` as the example's own, which its sidebar edits, for a browser test. */
     useGraph: (graph: GraphData) => void;
     /** The example's copy of the graph, kept from what `onChange` tells. */
@@ -146,6 +150,7 @@ const comb = await createComb(element("canvas"), {
   // as the shaped graph does, whose nodes have loops (PERF-benchmark-measures-named-graph).
   allowLoops: query.get("loops") === "allow" || graphName === "shaped",
   canDelete: (deletion) => (window.canDelete ? window.canDelete(deletion) : true) as boolean,
+  canMoveInto: (move) => (window.canMoveInto ? window.canMoveInto(move) : true) as boolean,
   // `?connect=none` gives Comb no veto of connections, so that the user connects nothing.
   ...(query.get("connect") === "none"
     ? {}
@@ -419,9 +424,12 @@ const MIRROR: { [K in GraphChange["kind"]]: (change: Extract<GraphChange, { kind
       fields.delete(id);
       if (node && id === selected) showNode(node.content, undefined);
     },
-    nodeMoved: ({ id, x, y }) => {
+    nodeMoved: ({ id, x, y, container }) => {
       const node = nodeOf(id);
-      if (node) Object.assign(node, { x, y });
+      if (!node) return;
+      Object.assign(node, { x, y });
+      if (container === null) delete node.container;
+      else node.container = container;
     },
     nodesRemoved: ({ nodes, edges }) => removed(nodes, edges),
     edgeAdded: ({ edge }) => void graph.edges.push({ ...edge }),

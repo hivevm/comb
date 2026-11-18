@@ -329,7 +329,12 @@ Comb tells a change to `onChange` ends its gesture with nothing done, whatever i
 example names each edge after its ends. At the near level a press inside an edge label's pill
 selects its edge and drags the label, which stays where it is dropped: the engine places it at the
 nearest path parameter and the distance along the normal there, and the release is told as
-`labelMoved` with that `t` and `offset`.
+`labelMoved` with that `t` and `offset`. A node dropped over a container other than its own, or
+outside every container while it lies in one, asks `CombOptions.canMoveInto({ node, container })`,
+`container` the topmost container under the pointer or `null` for the canvas; on `true` the node
+moves there, keeping its place on the canvas, and is told as `nodeMoved` with that container, and
+otherwise the whole drag is taken back and nothing is told. Without `canMoveInto` the move is
+allowed, and a drop within the node's own container asks nothing.
 
 ## Template
 

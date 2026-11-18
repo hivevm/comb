@@ -166,7 +166,7 @@ impl Graph {
 impl Graph {
     /// Whether `point` lies within the outline of the node in `slot`: within its rectangle, and
     /// within its node shape there.
-    fn within_outline(&self, slot: u32, point: Point) -> bool {
+    pub(super) fn within_outline(&self, slot: u32, point: Point) -> bool {
         let bounds = self.node_bounds(slot);
         bounds.contains(point)
             && self.shape(slot).contains(

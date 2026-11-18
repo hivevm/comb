@@ -25,6 +25,7 @@ import init, {
   MeshDetail,
   MeshOf,
   NodeField,
+  type ContainerError,
   type ContentElement,
   type InitOutput,
   type EdgeInput,
@@ -44,6 +45,7 @@ import init, {
 import { ROLES, type EdgeColumns, type NodeColumns } from "./columns";
 
 export type {
+  ContainerError,
   ContentElement,
   EdgeField,
   ElementHit,
@@ -333,6 +335,23 @@ export interface Bridge {
    *  holds no node and a `NumberError` `nonFiniteDelta` for a delta that is not finite, mistakes
    *  of the shell's, never of graph data (API-shell-mistake-refused-as-shells). */
   translate(slots: Uint32Array, dx: number, dy: number): void;
+  /** Puts the node in `slot` at the world position `(x, y)`, everything it holds with it, as
+   *  `translate` moves them: a drag taken back puts the node exactly where it lay at the press
+   *  (API-edits-report-nested-changes). Throws a `SlotError`, and a `NumberError`
+   *  `nonFinitePoint` for a point that is not finite, before anything moves
+   *  (API-shell-mistake-refused-as-shells). */
+  place(slot: number, x: number, y: number): void;
+  /** The slot of the container a drop of the node in `dragged` at the world point `(x, y)` lands
+   *  in: of the containers whose outline holds the point, neither the node nor one it holds at
+   *  any depth, the topmost; none for the canvas (API-edits-report-nested-changes). Throws a
+   *  `SlotError`, and a `NumberError` `nonFinitePoint` for a point that is not finite. */
+  containerAt(x: number, y: number, dragged: number): number | undefined;
+  /** Puts the node in `slot` into the container in the slot `container`, or onto the canvas for
+   *  none, at the world position it has, and gives it the next rank, so that it is drawn and hit
+   *  above every other node of its kind (ARCH-engine-edits-nested-graph). Throws a `SlotError`,
+   *  and a `ContainerError` for a container that holds no container or that is the node or one it
+   *  holds, mistakes of the shell's, the graph as it was. */
+  moveInto(slot: number, container?: number): void;
   /** A fresh view on the positions buffer, `x, y` per slot. Do not keep it across calls. */
   positions(): Float32Array;
   /** The content of the node in `slot`, built when asked, since the shell keeps none
@@ -745,6 +764,9 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
       return { t: t!, offset: offset! };
     },
     translate: (slots, dx, dy) => engine.translate(slots, dx, dy),
+    place: (slot, x, y) => engine.place(slot, x, y),
+    containerAt: (x, y, dragged) => engine.containerAt(x, y, dragged),
+    moveInto: (slot, container) => engine.moveInto(slot, container),
     positions: () => f32(engine.positionsPtr(), engine.positionsLen()),
     nodeBuffers: () => ({
       positions: f32(engine.positionsPtr(), engine.positionsLen()),

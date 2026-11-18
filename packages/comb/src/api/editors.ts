@@ -7,10 +7,11 @@
 // changed the graph through `Comb`; check the code units of identifiers the graph would hold; have
 // the bridge check the plain data and the engine apply it; and have the store take the result and
 // record the change, by whom it names. The user's edits come after the host application's veto,
-// asked here for both, and a veto during whose call the store records a change, which Comb tells to
-// `onChange`, ends its gesture with nothing done (API-edits-reported-as-typed-changes).
+// asked here for each, the connection, the deletion, and the move into a container, and a veto
+// during whose call the store records a change, which Comb tells to `onChange`, ends its gesture
+// with nothing done (API-edits-reported-as-typed-changes, API-edits-report-nested-changes).
 import { refuseIfLost, type Bridge, type GraphDataProblem, type SlotError } from "../bridge";
-import type { Connect, Delete, Deletion, Proposal } from "../interaction";
+import type { Connect, ContainerMove, Delete, Deletion, MoveInto, Proposal } from "../interaction";
 import type {
   By,
   EdgeData,
@@ -343,11 +344,12 @@ function removeEdges({ store, bridge, limits }: Editing, ids: unknown, by: By): 
   });
 }
 
-/** The host application's vetoes of the user's connection and deletion
- *  (API-edits-reported-as-typed-changes). */
+/** The host application's vetoes of the user's connection, deletion, and move into a container
+ *  (API-edits-reported-as-typed-changes, API-edits-report-nested-changes). */
 export interface Vetoes {
   readonly canConnect?: ((proposal: Proposal) => unknown) | undefined;
   readonly canDelete?: ((deletion: Deletion) => unknown) | undefined;
+  readonly canMoveInto?: ((move: ContainerMove) => unknown) | undefined;
 }
 
 /** What the veto `ask` answers, or `undefined` where the store recorded a change of the graph
@@ -361,8 +363,26 @@ function answerOf(store: GraphStore, ask: () => unknown): unknown {
   return store.getState().change === before ? answer : undefined;
 }
 
+/** The user's move of a node into a container, or onto the canvas, after the host application's
+ *  `canMoveInto`, without which it is allowed: the engine puts the node there at the world
+ *  position it has, and the store records `nodeMoved` with its container
+ *  (API-edits-report-nested-changes). */
+function moveIntoOf({ store, bridge }: Editing, canMoveInto: Vetoes["canMoveInto"]): MoveInto {
+  return ({ node, container }) => {
+    if (canMoveInto && answerOf(store, () => canMoveInto({ node, container })) !== true)
+      return false;
+    // No change was told during the veto's call, so the slots looked up now are the node's and
+    // the container's.
+    const { slots, nodeMoved } = store.getState();
+    bridge.moveInto(slots.get(node)!, container === null ? undefined : slots.get(container));
+    nodeMoved(node, container);
+    return true;
+  };
+}
+
 /** The edits of one Comb on `store` through `bridge`: `host`, the methods of `Comb` that change
- *  the graph, and `user`, the user's connection and deletion after the host's `vetoes`, which
+ *  the graph, and `user`, the user's connection, deletion, and move into a container after the
+ *  host's `vetoes`, which
  *  interaction is handed; `connect` none without `canConnect`, since Comb has no name to give the
  *  edge. Each adds a loop only where `loops` allows loops (API-edges-dock-side-or-outline). */
 export function editorsOf(
@@ -403,5 +423,6 @@ export function editorsOf(
     if (nodes.length > 0) removeNodes(editing, nodes, "user");
     else removeEdges(editing, edges, "user");
   };
-  return { host, user: { connect, delete: deletion } };
+  const moveInto = moveIntoOf(editing, vetoes.canMoveInto);
+  return { host, user: { connect, delete: deletion, moveInto } };
 }

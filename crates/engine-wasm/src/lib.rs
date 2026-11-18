@@ -24,7 +24,8 @@ use comb_engine::content::{Cell, Font, Fonts, Placed, drawn_at};
 use comb_engine::geometry::Point;
 use comb_engine::geometry::Rect;
 use comb_engine::graph::{
-    Graph, Level, MeshAt, MoveError, PositionError, SlotError as GraphSlotError, Target, Visible,
+    CANVAS, Graph, Level, MeshAt, MoveError, MoveIntoError, PositionError,
+    SlotError as GraphSlotError, Target, Visible,
 };
 use comb_engine::stroke::{Detail, Mesh};
 use serde::{Deserialize, Serialize};
@@ -123,6 +124,49 @@ impl From<GraphSlotError> for SlotError {
         match error {
             GraphSlotError::NoNode { slot } => Self::NoNode { slot },
             GraphSlotError::NoEdge { slot } => Self::NoEdge { slot },
+        }
+    }
+}
+
+/// A container the shell named for a move of a node that cannot take it: the shell's own mistake,
+/// never one of graph data, since `api` asks the engine for the container a drop lands in
+/// (ARCH-engine-edits-nested-graph, *Moving into a container*).
+#[derive(Tsify, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ContainerError {
+    /// A slot that holds no node, or a node that is no container.
+    #[serde(rename_all = "camelCase")]
+    NoContainer { slot: u32 },
+    /// The node itself, or a node it holds at any depth.
+    #[serde(rename_all = "camelCase")]
+    InItself { slot: u32 },
+}
+
+/// Why `moveInto` was refused, as the shell receives it: a slot that holds no node, crossing as
+/// `SlotError`, or a container that cannot take the node, crossing as `ContainerError`.
+#[derive(Debug, PartialEq)]
+pub enum MoveIntoRefusal {
+    Slot(SlotError),
+    Container(ContainerError),
+}
+
+impl From<MoveIntoError> for MoveIntoRefusal {
+    fn from(error: MoveIntoError) -> Self {
+        match error {
+            MoveIntoError::Slot(error) => Self::Slot(error.into()),
+            MoveIntoError::NoContainer { slot } => {
+                Self::Container(ContainerError::NoContainer { slot })
+            }
+            MoveIntoError::InItself { slot } => Self::Container(ContainerError::InItself { slot }),
+        }
+    }
+}
+
+impl From<MoveIntoRefusal> for JsValue {
+    fn from(refusal: MoveIntoRefusal) -> Self {
+        match refusal {
+            MoveIntoRefusal::Slot(error) => thrown(error),
+            MoveIntoRefusal::Container(error) => thrown(error),
         }
     }
 }
@@ -836,6 +880,47 @@ impl Engine {
             .map_err(TranslateRefusal::from)
     }
 
+    /// Puts the node in `slot` at the world position `(x, y)`, everything it holds with it: a drag
+    /// taken back puts the node exactly where it lay at the press (API-edits-report-nested-changes,
+    /// *Vetoes*). A slot that holds no node throws a `SlotError`, and a point that is not finite a
+    /// `NumberError` `nonFinitePoint`; either way nothing moves.
+    pub fn place(&mut self, slot: u32, x: f64, y: f64) -> Result<(), CallRefusal> {
+        trap::spring();
+        self.graph.place(slot, x, y).map_err(|error| match error {
+            MoveError::Slot(error) => error.into(),
+            MoveError::Position(PositionError::NonFinite) => NumberError::NonFinitePoint.into(),
+        })
+    }
+
+    /// The slot of the container a drop of the node in `dragged` at the world point `(x, y)` lands
+    /// in: of the containers whose outline holds the point, neither the node nor one it holds at
+    /// any depth, the topmost; none for the canvas (API-edits-report-nested-changes, *Vetoes*). A
+    /// slot that holds no node throws a `SlotError`, and a point that is not finite a
+    /// `NumberError` `nonFinitePoint`.
+    #[wasm_bindgen(js_name = containerAt)]
+    pub fn container_at(
+        &mut self,
+        x: f64,
+        y: f64,
+        dragged: u32,
+    ) -> Result<Option<u32>, CallRefusal> {
+        trap::spring();
+        let point = checked_point(x, y)?;
+        Ok(self.graph.container_at(point, dragged)?)
+    }
+
+    /// Puts the node in `slot` into the container in the slot `container`, or onto the canvas for
+    /// none, at the world position it has, and gives it the next rank, so that it is drawn and hit
+    /// above every other node of its kind (ARCH-engine-edits-nested-graph, *Moving into a
+    /// container*). A slot that holds no node throws a `SlotError`, and a container that holds no
+    /// container, or that is the node or one it holds, a `ContainerError`; either way the graph
+    /// stays as it was.
+    #[wasm_bindgen(js_name = moveInto)]
+    pub fn move_into(&mut self, slot: u32, container: Option<u32>) -> Result<(), MoveIntoRefusal> {
+        trap::spring();
+        Ok(self.graph.move_into(slot, container.unwrap_or(CANVAS))?)
+    }
+
     /// Finds the nodes and edges that meet the rectangle and builds the mesh of the edges for
     /// `level`, where a screen pixel is `pixel` world units, within the mesh budget; at the near
     /// level also the edge labels within `label_reach` of it. Returns the detail of the mesh; the
@@ -1490,6 +1575,13 @@ mod tests {
                 engine.translate(&[0, slot], 1.0, 1.0),
                 Err(TranslateRefusal::Slot(SlotError::NoNode { slot }))
             );
+            let no_node = || CallRefusal::Slot(SlotError::NoNode { slot });
+            assert_eq!(engine.place(slot, 1.0, 1.0), Err(no_node()));
+            assert_eq!(engine.container_at(1.0, 1.0, slot), Err(no_node()));
+            assert_eq!(
+                engine.move_into(slot, None),
+                Err(MoveIntoRefusal::Slot(SlotError::NoNode { slot }))
+            );
         }
         for slot in [1, 9] {
             assert_eq!(
@@ -1499,6 +1591,39 @@ mod tests {
         }
         assert_eq!(engine.graph.positions()[..4], [0.0, 0.0, 300.0, 0.0]);
         assert_eq!(engine.remove_edges(&[0]), Ok(()));
+    }
+
+    #[test]
+    fn a_drop_finds_its_container_and_a_move_into_one_refuses_what_cannot_take_the_node() {
+        // Verifies: ARCH-engine-edits-nested-graph, API-shell-mistake-refused-as-shells
+        // Nodes a and b on the canvas, and container c over a, added last, in slot 2.
+        let mut engine = Engine::new();
+        engine.graph = graph_of(&batch(&[("a", 0.0, 0.0), ("b", 900.0, 0.0)], &[])).unwrap();
+        let shape = [-100.0, -100.0, 600.0, 400.0];
+        assert_eq!(engine.graph.add_node_in(CANVAS, true, shape), Ok(2));
+        assert_eq!(engine.container_at(10.0, 10.0, 0), Ok(Some(2)));
+        // The container is never its own target, and beside it lies the canvas.
+        assert_eq!(engine.container_at(10.0, 10.0, 2), Ok(None));
+        assert_eq!(engine.container_at(800.0, 10.0, 0), Ok(None));
+        let refused = |error| Err(MoveIntoRefusal::Container(error));
+        let no_container = ContainerError::NoContainer { slot: 1 };
+        assert_eq!(engine.move_into(0, Some(1)), refused(no_container));
+        let in_itself = ContainerError::InItself { slot: 2 };
+        assert_eq!(engine.move_into(2, Some(2)), refused(in_itself));
+        assert_eq!(engine.move_into(0, Some(2)), Ok(()));
+        // A node in it now, so the container takes it along to where it is placed.
+        assert_eq!(
+            engine.move_into(2, Some(0)),
+            refused(ContainerError::NoContainer { slot: 0 })
+        );
+        assert_eq!(engine.place(2, 0.0, 0.0), Ok(()));
+        assert_eq!(engine.graph.positions()[..2], [100.0, 100.0]);
+        let refusal = || CallRefusal::Number(NumberError::NonFinitePoint);
+        for bad in [f64::NAN, f64::INFINITY] {
+            assert_eq!(engine.place(2, bad, 0.0), Err(refusal()));
+            assert_eq!(engine.container_at(0.0, bad, 0), Err(refusal()));
+        }
+        assert_eq!(engine.graph.positions()[4..6], [0.0, 0.0]);
     }
 
     #[test]
