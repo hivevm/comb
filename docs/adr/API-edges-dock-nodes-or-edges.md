@@ -37,12 +37,14 @@ The forces:
   end docked on the outline joins no connector; the maintainer amends the assumption with G-13.
 
 G-19 gives an edge several edge labels, each at its own path parameter and label offset, lets the
-host application end an edge on another edge at a path parameter of that edge, and draws an edge
-as a lightning bolt. G-14 and G-17 add nodes in containers and border nodes, and an edge between a
-node and its own container. UML 2.5.1 needs them for the multiplicities and role names at both
-ends of an association, the anchor of a comment on a relationship, the condition of an extend,
-and the interrupting edge of an interruptible region (G-20). The human decided on 2026-11-17 that
-a list of edge labels replaces the one label of an edge.
+host application end an edge on another edge at a path parameter of that edge, draws an edge as a
+lightning bolt, and ends an edge in an open arrowhead or a hollow triangle, as UML 2.5.1 ends flows,
+transitions, includes, extends, and generalizations. G-14 and G-17 add nodes in containers and
+border nodes, and an edge between a node and its own container. UML 2.5.1 needs them for the
+multiplicities and role names at both ends of an association, the anchor of a comment on a
+relationship, the condition of an extend, and the interrupting edge of an interruptible region
+(G-20). The human decided on 2026-11-17 that a list of edge labels replaces the one label of an
+edge.
 
 [API-edges-dock-side-or-outline](API-edges-dock-side-or-outline.md) docks an end on a side or on
 the outline of a node, and an edge carries at most one label. This ADR restates it with these
@@ -94,6 +96,11 @@ side of the node.
 - **Lightning bolt:** `EdgeData` gains an optional `lightning`, off by default. Where it is on, the
   engine draws the path's middle, the part between the path parameters 0.45 and 0.55, as a zigzag
   of two turns across the path, 12 world units wide, and the rest of the path as before.
+- **Arrowheads:** `EdgeData.arrow` takes `"end"`, the filled triangle at the target as before and
+  the default, `"open"`, two strokes of the edge's width meeting at the target, `"hollow"`, a
+  triangle at the target drawn as its outline in the edge's colour around a white fill, or
+  `"none"`. The engine meshes each as it meshes the filled one, its tip at the target's end, and
+  the bridge crate refuses another value as `invalidField`, naming the field and the four values.
 - **Loops:**
   - `CombOptions` gains `allowLoops`, off by default. Where it is off, the user's connection and
     `addEdge` refuse an edge from a node to itself, as API-one-connector-per-side decided. The
@@ -189,7 +196,8 @@ placements of the control points. Added here:
 ## Sources / Prior art
 
 - [API-edges-dock-side-or-outline](API-edges-dock-side-or-outline.md), which this ADR restates with
-  ends on edges and containers, the list of edge labels, and the lightning bolt.
+  ends on edges and containers, the list of edge labels, the lightning bolt, and the kinds of
+  arrowhead.
 - API-one-connector-per-side and its sources, and `EdgePath::between` in
   `crates/engine/src/geometry.rs` (read on
   2026-11-06).
@@ -250,10 +258,11 @@ Each test below cites this decision with `Verifies:` and its identifier.
 - **Ends on edges, labels, lightning:** tests in `crates/engine/src/geometry.rs` assert that an end
   on an edge lies on that edge's path at its path parameter within the precision of Q-4 and follows
   it as its nodes move, that an end on a container toward a node it holds lies on the container's
-  outline beyond that node, and that a lightning bolt's turns lie between the path parameters 0.45
-  and 0.55. The property test of the bridge crate generates ends on edges, chains and cycles among
-  them, and lists of labels. A browser test of the UML example asserts that an extend's condition
-  stays anchored on the extend as its use cases move, and that an association draws a
-  multiplicity at each end; that removing an edge removes the edges that end on it and reports
-  them; and that dragging one of an edge's two labels moves that label alone and delivers
-  `labelMoved` naming it.
+  outline beyond that node, that an open and a hollow arrowhead have their tips at the target's end
+  within the precision of Q-4, and that a lightning bolt's turns lie between the path parameters
+  0.45 and 0.55. The property test of the bridge crate generates ends on edges, chains and cycles
+  among them, and lists of labels. A browser test of the UML example asserts that an extend's
+  condition stays anchored on the extend as its use cases move, and that an association draws a
+  multiplicity at each end; that removing an edge removes the edges that end on it and reports them;
+  and that dragging one of an edge's two labels moves that label alone and delivers `labelMoved`
+  naming it.
