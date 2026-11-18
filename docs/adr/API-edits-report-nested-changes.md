@@ -101,7 +101,7 @@ Comb told no change of the graph during the veto's call.
   | `loaded`       | host           | none: `load` replaced the graph                          |
   | `nodeAdded`    | host           | `node`, the `NodeData` as Comb took it                   |
   | `nodeUpdated`  | host           | `id`, `patch` as Comb merged it                          |
-  | `nodeMoved`    | user           | `id`, `x`, `y`, `container`: where a drag left the node  |
+  | `nodeMoved`    | user or host   | `id`, `x`, `y`, `container`: where a drag left the node  |
   | `nodeResized`  | user           | `id`, `x`, `y`, `width`, `height`, `moved`               |
   | `regionsMoved` | user           | `node`, `regions`, `moved`                               |
   | `nodesRemoved` | user or host   | `nodes`, and `edges`, every edge removed with them, ids  |
@@ -112,7 +112,10 @@ Comb told no change of the graph during the veto's call.
 
   - `nodeMoved`: `x` and `y` relative to `container`, the identifier of the container or the
     region the node lies in after the drag, or `null` on the canvas. For a border node, `side` and
-    `offset` instead of `x`, `y`, and `container`.
+    `offset` instead of `x`, `y`, and `container`. Where `updateNode` divides a region the patch
+    keeps into regions of its own, each node that region held moves, at its world position, into
+    the first of its new inner regions. Comb delivers a `nodeMoved` by the host for each, after the
+    `nodeUpdated`.
   - `nodeResized`: the node's new position, relative to its container, and size; `moved` lists
     `{ id, x, y }` for each node the node holds whose position relative to it changed, since a
     resize at the left or the top keeps the content's world position; `regions` lists

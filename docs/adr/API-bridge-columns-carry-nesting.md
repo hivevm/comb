@@ -721,7 +721,8 @@ Each test below cites this ADR with `Verifies: API-bridge-columns-carry-nesting`
   a load that grows slow again is found at its next run, not in the pull request.
 - **The columns of nesting:** the property test of the bridge crate generates the fields G-14 to
   G-19 add, values of another type, a container that names no container, a cycle, a border node
-  attached to a border node, regions that do not add up, and an end on an edge with a path
-  parameter outside 0 to 1 among them, and asserts each refusal and that a valid load crosses
-  them unchanged; a test asserts that a height below the content's is raised to it, and a browser
+  attached to a border node, and an end on an edge with a path parameter outside 0 to 1 among
+  them, and asserts each refusal and that a valid load crosses them unchanged; it generates
+  regions that do not add up and asserts that the divided node grows or its last region takes the
+  rest; a test asserts that a height below the content's is raised to it, and a browser
   test that a query returns containers and the other nodes as two lists.
