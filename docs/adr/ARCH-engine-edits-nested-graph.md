@@ -211,7 +211,9 @@ container's content with it; undo, which the host application owns
 - Negative / trade-offs: a node that reaches past its container's outline is not clipped, so a
   diagram can show a node outside the container it belongs to.
 - Negative / trade-offs: a query sorts the node slots it found by rank, `k log k` for `k` found,
-  the same cost as a sort by slot; the engine keeps four bytes per node for the rank.
+  the same cost as a sort by slot; the engine keeps four bytes per node for the rank, and 16 bytes
+  per slot, up to the highest slot that lies in a container, for each contained node's position
+  relative to its container, so that a container moved or placed back puts its content exactly.
 - Negative / trade-offs: node order and slot order part after the first addition, so a test or a
   reader that takes the highest slot for the top node is wrong from then on.
 - Negative / trade-offs: the frame in which a rebuild for growth or moves falls costs what the

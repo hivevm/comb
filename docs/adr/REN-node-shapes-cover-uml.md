@@ -100,14 +100,14 @@ node shape from the engine's numbers.
 - **Height:**
   - A content node shape is as high as its inner rectangle needs to hold its content laid out to
     the inner rectangle's width. For a rectangle that is today's height.
-  - A circle and a ringed circle are as high as wide.
+  - A circle and a ringed circle are as high as wide, whatever height their data gives.
   - A bar is 8 world units high where its data gives no height; with a height it is that high, so
     that a bar 8 wide and given a height stands upright, as a vertical fork or join.
   - A crossed circle and a cross are as high as wide.
   - A captioned node shape is as high as its drawing and its content.
-  - A node whose data gives a height is that high, never less than its content needs; a height
-    below that is raised to it. A frame is at least as high as its tab. Without a height a node
-    is as high as above.
+  - Any other node whose data gives a height is that high, never less than its content needs; a
+    height below that is raised to it. A frame is at least as high as its tab. Without a height a
+    node is as high as above.
   - `heightOf` takes the node shape as an optional third argument, `rectangle` where it is left
     out, so that every existing call answers as before.
 - **Hit test:** a node is hit within its outline, exactly: the ellipse by its equation, the

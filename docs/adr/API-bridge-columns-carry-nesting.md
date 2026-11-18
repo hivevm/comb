@@ -663,7 +663,7 @@ Each test below cites this ADR with `Verifies: API-bridge-columns-carry-nesting`
   Plane among them, and that two identifiers cut inside a surrogate pair side by side are refused
   for their length. A type test in `packages/comb/src/bridge/snapshot-only.test.ts` pins the
   generated parameter types of the engine's `loadGraph`, pieces of strings and typed arrays, no
-  `GraphBatch`, and no title or height column, so that a load cannot be handed over as a
+  `GraphBatch`, and no title column, so that a load cannot be handed over as a
   serde type. A test in `packages/comb/src/bridge/bridge.test.ts` cuts columns with a small bound
   on a piece and asserts that every piece ends where a value ends and that the values are read
   back exactly; tests in `crates/engine-wasm/src/graph_data.rs` assert that a piece ending inside
