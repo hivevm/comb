@@ -79,10 +79,12 @@ node shape from the engine's numbers.
       padding.
     - `diamond`: the rectangle half its width and half its height, centred, less the padding.
     - `pentagon`: a rectangle whose right side is a point, the point as deep as half the node's
-      height; the rectangle left of the point, less the padding.
+      height and at most a quarter of its width; the rectangle left of the point, less the padding.
     - `notched-rectangle`: a rectangle whose left side is notched inwards by a point as deep as
-      half the node's height; the rectangle right of the notch's depth, less the padding.
-    - `note`: a rectangle whose top right corner is folded down by 12; the node less the padding.
+      half the node's height and at most a quarter of its width; the rectangle right of the
+      notch's depth, less the padding.
+    - `note`: a rectangle whose top right corner is folded down by 12, at most a quarter of the
+      node's width and of its height; the node less the padding.
     - `frame`: a rectangle with a tab at its top left, as wide as its content and as high as its
       content, less the padding, its lower right corner cut by 8; the content is laid out in the
       tab, and what the frame holds lies below and beside it.

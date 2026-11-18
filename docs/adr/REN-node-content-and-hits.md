@@ -62,11 +62,12 @@ advances the shell hands it once per font, with icons named from images the host
 registers and colours given as numbers. A row may instead be a separator, a line across the
 node.
 
-- **Separator:** a row that is a separator holds no column. It is a line across the node's inner
-  rectangle, 1 world unit thick, in the colour of the node's border, with the padding of a row
-  above and below it, drawn at the near and the middle level. It divides a node's name from its
-  compartments, as UML 2.5.1 draws a state's internal behaviours and a use case's extension points
-  (G-20).
+- **Separator:** a row that is a separator holds no column. The host application writes it as the
+  string `"separator"` in place of a row's list of elements. It is a line across the whole width of
+  the node's content, from edge to edge as UML 2.5.1 draws a compartment, 1 world unit thick, in the
+  colour of the node's border, with the padding of a row above and below it, drawn at the near and
+  the middle level. It divides a node's name from its compartments, as UML 2.5.1 draws a state's
+  internal behaviours and a use case's extension points (G-20).
 - **Elements:** `text` with a role of title, body, or caption; `icon` by registered name; `progress`
   as segments, each a fraction and a colour; `badge` as text on a colour; `metric` as a caption, a
   value, and a trend with a text, a direction, and a colour; `action` as text with an identifier,
