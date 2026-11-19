@@ -585,6 +585,7 @@ export function activityDiagram(heightOf: Comb["heightOf"]): DiagramData {
     classifiers: new Map(),
     states: new Map(),
     activities: new Map(SEEDS.map(({ node }) => [node.id, structuredClone(node)])),
+    useCases: new Map(),
     kinds: new Map([
       ...flows.map(({ edge, kind }) => [edge.id, kind] as const),
       ...OTHERS.map(([edge, kind]) => [edge.id, kind] as const),

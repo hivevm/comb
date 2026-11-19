@@ -3,19 +3,28 @@
 // internal transitions, and deferred triggers; a submachine state's name and state machine; a
 // comment's lines; or the name alone of a package, a state list, a point, a signal, the state
 // machine, an action, an object node, a pin, a parameter, a connector, or the activity; an
-// expansion region's mode; the selected relationship's kind and label, the selected dependency's
-// «import» or «use», the selected transition's trigger, guard, and effect, or the selected flow's
-// guard and weight. A pseudostate, a control node, an anchor, and an exception handler have
-// nothing to edit. Which form a node or an edge shows, and what its heading calls it, the
-// descriptor of the diagram shown says. Each edit shows on the canvas at once. An edit Comb
-// refuses leaves its text in the field, which is marked invalid and says why under it, and the
-// node or the edge keeps what Comb kept; the next edit of the form Comb takes clears every mark of
-// the form, since an edit sends every field of it. Where the rules refuse a connection, the
-// sidebar says why.
+// expansion region's mode; a use case's name and extension points; the selected relationship's
+// kind and label, or its kind alone among those the rules allow between its ends, the selected
+// dependency's «import» or «use», the selected transition's trigger, guard, and effect, the
+// selected flow's guard and weight, or the selected association's multiplicities. A pseudostate,
+// a control node, an anchor, and an exception handler have nothing to edit. Which form a node or an
+// edge shows, and what its heading calls it, the descriptor of the diagram shown says. Each edit
+// shows on the canvas at once. An edit Comb refuses leaves its text in the field, which is marked
+// invalid and says why under it, and the node or the edge keeps what Comb kept; the next edit of
+// the form Comb takes clears every mark of the form, since an edit sends every field of it. Where
+// the rules refuse a connection, the sidebar says why.
 import { EngineLostError, GraphDataError, type Selection } from "comb";
 import type { Diagram, Refusal } from "./diagram";
 import { element } from "./element";
-import { KINDS, labelIn, labelOf, RELATIONSHIPS, type RelationshipKind } from "./relationships";
+import {
+  KINDS,
+  labelIn,
+  labelOf,
+  multiplicitiesIn,
+  RELATIONSHIPS,
+  type Multiplicities,
+  type RelationshipKind,
+} from "./relationships";
 import type {
   ActivityNode,
   Classifier,
@@ -24,13 +33,15 @@ import type {
   NodeForm,
   State,
   Transition,
+  UseCaseNode,
 } from "./shared";
 
 /** A field of the sidebar's forms whose edit Comb may refuse. */
 type Field = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
 
-/** A state or an activity node, which the node form edits by the same parts. */
-type PartedNode = State | ActivityNode;
+/** A state, an activity node, or a node of the use case diagram, which the node form edits by the
+ *  same parts. */
+type PartedNode = State | ActivityNode | UseCaseNode;
 
 /** `limit` as the sidebar writes a number, with a comma between thousands. */
 const count = (limit: number) => limit.toLocaleString("en");
@@ -72,6 +83,7 @@ const NODE_PARTS = [
   ["machine", "machine", "text"],
   ["lines", "body", "list"],
   ["mode", "mode", "text"],
+  ["points", "points", "list"],
 ] as const;
 
 /** The fields each node form shows, by their identifiers. */
@@ -82,6 +94,7 @@ const SHOWN: Record<Exclude<NodeForm, "none">, readonly string[]> = {
   "name-and-machine": ["name", "machine"],
   lines: ["lines"],
   mode: ["mode"],
+  "name-and-points": ["name", "points"],
 };
 
 /** The fields of a transition, each by the part of it it edits. */
@@ -89,6 +102,9 @@ const TRANSITION_PARTS = ["trigger", "guard", "effect"] as const;
 
 /** The fields of a flow, each by the part of it it edits. */
 const FLOW_PARTS = ["guard", "weight"] as const;
+
+/** The ends of an association, each the end of the multiplicity its field edits. */
+const ENDS = ["source", "target"] as const;
 
 /** The text `field` holds, trimmed, none where it is empty. */
 const textIn = (field: Field) => field.value.trim() || undefined;
@@ -123,6 +139,12 @@ export class Sidebar {
   }));
   private readonly weight = element<HTMLInputElement>("weight");
   private readonly weightField = element("weight-field");
+  /** The field of the multiplicity at each end of an association, by its end. */
+  private readonly multiplicities = ENDS.map((end) => ({
+    field: element<HTMLInputElement>(`${end}-multiplicity`),
+    end,
+  }));
+  private readonly multiplicityFields = ENDS.map((end) => element(`${end}-multiplicity-field`));
   private readonly connection = element("connection-refusal");
   private readonly nodeHeading = element("node-heading");
   private readonly edgeHeading = element("edge-heading");
@@ -131,7 +153,8 @@ export class Sidebar {
     ...["name", "stereotype", "attributes", "operations"],
     ...NODE_PARTS.map(([id]) => id),
   ].map((id) => [id, element(`${id}-field`)] as const);
-  private readonly relationshipFields = ["kind-field", "label-field"].map((id) => element(id));
+  private readonly kindField = element("kind-field");
+  private readonly labelField = element("label-field");
   private readonly dependencyField = element("dependency-field");
   private readonly transitionFields = TRANSITION_PARTS.map((key) => element(`${key}-field`));
   /** The fields of each form, whose marks a refill or an edit Comb took clears. */
@@ -147,6 +170,7 @@ export class Sidebar {
     this.dependency,
     ...this.transitionInputs.map(({ field }) => field),
     this.weight,
+    ...this.multiplicities.map(({ field }) => field),
   ];
   private node: string | null = null;
   private edge: string | null = null;
@@ -165,6 +189,10 @@ export class Sidebar {
       );
     for (const field of [...this.transitionInputs.map((each) => each.field), this.weight])
       field.addEventListener("input", () => this.answer(field, this.edgeFields, this.editParts()));
+    for (const { field } of this.multiplicities)
+      field.addEventListener("input", () =>
+        this.answer(field, this.edgeFields, this.editMultiplicities()),
+      );
   }
 
   /** Shows the form of what `selection` names, or the hint where it names nothing to edit. */
@@ -211,7 +239,9 @@ export class Sidebar {
   private fillNode(form: Exclude<NodeForm, "none">): void {
     const classifier = this.diagram.classifiers.get(this.node!);
     const parted: PartedNode | undefined =
-      this.diagram.states.get(this.node!) ?? this.diagram.activities.get(this.node!);
+      this.diagram.states.get(this.node!) ??
+      this.diagram.activities.get(this.node!) ??
+      this.diagram.useCases.get(this.node!);
     for (const [id, wrapper] of this.nodeWrappers) wrapper.hidden = !SHOWN[form].includes(id);
     this.nodeHeading.textContent = `Selected ${this.diagram.descriptor.selected.node}`;
     this.name.value = classifier?.name ?? parted?.name ?? "";
@@ -239,20 +269,37 @@ export class Sidebar {
   }
 
   private fillEdge(kind: RelationshipKind, form: Exclude<EdgeForm, "none">): void {
-    for (const field of this.relationshipFields) field.hidden = form !== "relationship";
+    this.kindField.hidden = form !== "relationship" && form !== "kind";
+    this.labelField.hidden = form !== "relationship";
+    for (const field of this.multiplicityFields) field.hidden = form !== "multiplicities";
     this.dependencyField.hidden = form !== "import-or-use";
     for (const field of this.transitionFields) field.hidden = form !== "trigger-guard-effect";
     this.weightField.hidden = form !== "guard-and-weight";
     this.edgeHeading.textContent = `Selected ${this.diagram.descriptor.selected.edge}`;
     const text = labelIn(this.diagram.edge(this.edge!))?.text;
-    // The kind select offers the kinds a relationship's form changes between, and is set only
-    // where that form shows.
-    if (form === "relationship") this.kind.value = kind;
+    // The kind select offers the kinds a relationship's form changes between, and is filled and
+    // set only where that form shows.
+    if (!this.kindField.hidden) this.fillKinds(kind);
     this.label.value = text ?? "";
     this.dependency.value = text ?? "«use»";
     if (form === "guard-and-weight") this.fillFlow();
     else this.fillTransition();
+    this.fillMultiplicities();
     this.clear(this.edgeFields);
+  }
+
+  /** Offers the kinds the selected edge may change between, by the rules between its ends, and
+   *  sets the select on its kind, `kind`. */
+  private fillKinds(kind: RelationshipKind): void {
+    const offered = this.diagram.offeredKinds(this.edge!);
+    this.kind.replaceChildren(...offered.map((each) => new Option(RELATIONSHIPS[each].name, each)));
+    this.kind.value = kind;
+  }
+
+  /** Fills the multiplicity at each end of the selected edge, empty where it has none. */
+  private fillMultiplicities(): void {
+    const multiplicities = multiplicitiesIn(this.diagram.edge(this.edge!) ?? {});
+    for (const { field, end } of this.multiplicities) field.value = multiplicities[end] ?? "";
   }
 
   /** Fills the selected transition's trigger, guard, and effect, hiding a part UML 2.5.1 does not
@@ -328,9 +375,9 @@ export class Sidebar {
     ) as unknown as T;
   }
 
-  /** Replaces the selected classifier, state, or activity node with what the form holds; the
-   *  classifier keeps its kind whatever its stereotype reads; Comb's refusal where it refused the
-   *  content. */
+  /** Replaces the selected classifier, state, activity node, or use case diagram's node with
+   *  what the form holds; the classifier keeps its kind whatever its stereotype reads; Comb's
+   *  refusal where it refused the content. */
   private editNode(): Refusal | undefined {
     const form = this.formOfNode();
     if (form === "none") return undefined;
@@ -338,6 +385,8 @@ export class Sidebar {
     if (state) return this.diagram.editState(state.id, this.editedOf(state, form));
     const activity = this.diagram.activities.get(this.node!);
     if (activity) return this.diagram.editActivity(activity.id, this.editedOf(activity, form));
+    const useCase = this.diagram.useCases.get(this.node!);
+    if (useCase) return this.diagram.editUseCase(useCase.id, this.editedOf(useCase, form));
     const current = this.node === null ? undefined : this.diagram.classifiers.get(this.node);
     if (!current) return undefined;
     const stereotype = this.stereotype.value.trim();
@@ -384,6 +433,18 @@ export class Sidebar {
       if (value !== undefined) next[key] = value;
     }
     return this.diagram.editTransition(this.edge, next);
+  }
+
+  /** Gives the selected association the multiplicities its fields hold, each left out where its
+   *  field is empty; Comb's refusal where it refused the labels that show them. */
+  private editMultiplicities(): Refusal | undefined {
+    if (this.edge === null) return undefined;
+    const next: Multiplicities = {};
+    for (const { field, end } of this.multiplicities) {
+      const value = textIn(field);
+      if (value !== undefined) next[end] = value;
+    }
+    return this.diagram.editMultiplicities(this.edge, next);
   }
 
   /** Gives the selected edge a label of its kind that reads `text`, where its label stands, or none

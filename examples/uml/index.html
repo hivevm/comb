@@ -82,6 +82,11 @@
           </select>
         </label>
         <p id="mode-refusal" class="refusal" role="alert"></p>
+        <label id="points-field">
+          Extension points, one per line
+          <textarea id="points" aria-describedby="points-refusal" rows="3"></textarea>
+        </label>
+        <p id="points-refusal" class="refusal" role="alert"></p>
         <label id="stereotype-field">
           Stereotype
           <input
@@ -157,6 +162,26 @@
           <input id="effect" aria-describedby="effect-refusal" type="text" />
         </label>
         <p id="effect-refusal" class="refusal" role="alert"></p>
+        <label id="source-multiplicity-field">
+          Multiplicity at the source
+          <input
+            id="source-multiplicity"
+            aria-describedby="source-multiplicity-refusal"
+            type="text"
+            placeholder="1"
+          />
+        </label>
+        <p id="source-multiplicity-refusal" class="refusal" role="alert"></p>
+        <label id="target-multiplicity-field">
+          Multiplicity at the target
+          <input
+            id="target-multiplicity"
+            aria-describedby="target-multiplicity-refusal"
+            type="text"
+            placeholder="0..*"
+          />
+        </label>
+        <p id="target-multiplicity-refusal" class="refusal" role="alert"></p>
       </section>
       <p id="connection-refusal" class="refusal" role="alert" hidden></p>
       <p id="empty">Select a node or an edge to edit it here; Delete removes it.</p>

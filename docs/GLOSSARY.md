@@ -121,12 +121,12 @@ inside a longer term of this glossary, such as "shape" in **Node shape**, is no 
   the node.
 - **Runner kind** — the CPU model a benchmark run records of the machine it ran on; runs are
   compared only with the baseline of their own kind and their graph.
-- **Relationship kind** — what a relationship of a UML diagram means, one of association,
-  directed association, generalization, realization, dependency, aggregation, and composition of
-  a class or a package diagram, the transition and a comment's anchor of a state diagram, and the
-  control flow, object flow, interrupting edge, exception handler, and anchor of an activity
-  diagram; the
-  UML example tells each by the colour, dash pattern, arrowhead, and edge label of its edge.
+- **Relationship kind** — what a relationship of a UML diagram means, one of association, directed
+  association, generalization, realization, dependency, aggregation, and composition of a class or a
+  package diagram, the transition and a comment's anchor of a state diagram, and the control flow,
+  object flow, interrupting edge, exception handler, and anchor of an activity diagram, and the
+  association, include, extend, generalization, and anchor of a use case diagram; the UML example
+  tells each by the colour, dash pattern, arrowhead, and edge label of its edge.
 - **Rank** — the place of a node in the order nodes are drawn and hit, kept by the engine; a load
   ranks nodes by slot, and a node added takes the highest rank.
 - **Stereotype** — the guillemet-quoted word above the name of a UML element, such as «interface» or

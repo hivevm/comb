@@ -8,7 +8,10 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const SRC = import.meta.dir;
-const DIAGRAMS = ["class-diagram", "package-diagram", "state-diagram", "activity-diagram"];
+const DIAGRAMS = [
+  ...["class-diagram", "package-diagram", "state-diagram", "activity-diagram"],
+  "use-case-diagram",
+];
 
 /** The modules `file` imports by a relative specifier, each without its "./" and extension. */
 function importsOf(file: string): string[] {
@@ -41,6 +44,7 @@ const RELATIONSHIP_KINDS = [
   ...["association", "directed-association", "generalization", "realization", "dependency"],
   ...["aggregation", "composition", "transition", "anchor"],
   ...["control-flow", "object-flow", "interrupting-edge", "exception-handler"],
+  ...["include", "extend", "use-case-generalization"],
 ];
 const KINDS = [
   ...["class", "interface", "abstract-class", "package"],
@@ -53,6 +57,7 @@ const KINDS = [
   ...["central-buffer", "decision-node", "fork-node", "join-node", "interruptible-region"],
   ...["expansion-region", "expansion-node", "connector", "activity-comment", "activity-frame"],
   ...["input-parameter", "output-parameter"],
+  ...["actor", "use-case", "subject", "use-case-comment"],
   ...RELATIONSHIP_KINDS,
 ];
 

@@ -83,6 +83,7 @@ export function packageDiagram(heightOf: Comb["heightOf"]): DiagramData {
     classifiers,
     states: new Map(),
     activities: new Map(),
+    useCases: new Map(),
     transitions: new Map(),
     flows: new Map(),
     kinds: new Map(edges.map(({ id }) => [id, "dependency"])),

@@ -55,6 +55,7 @@ test("the package diagram shows only Comb's modules and crates, each a «package
     "Package diagram",
     "State diagram",
     "Activity diagram",
+    "Use case diagram",
   ]);
   await choose(page, "package");
   const graph = await page.evaluate(() => window.uml.exampleGraph());

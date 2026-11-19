@@ -1,11 +1,11 @@
-// The diagram the example edits (G-12, G-20): its copy of the graph, the classifier, the state, or
-// the activity node of each node, the kind of each relationship, the trigger, guard, and effect of
-// each transition, and the guard and weight of each flow, kept from every change Comb tells
-// (API-edits-reported-as-typed-changes), as a host application that persists keeps its own. An
-// edge the user connected arrives without a kind; it becomes the kind a connection adds in the
-// diagram shown, drawn as one, and docked as the diagram's descriptor says. The diagram also
-// answers where a node lies in the world, from its copy, so that a drop lands in the container
-// under it or on the border of the node under it.
+// The diagram the example edits (G-12, G-20): its copy of the graph, the classifier, the state, the
+// activity node, or the use case diagram's node of each node, the kind of each relationship, the
+// trigger, guard, and effect of each transition, and the guard and weight of each flow, kept from
+// every change Comb tells (API-edits-reported-as-typed-changes), as a host application that
+// persists keeps its own. An edge the user connected arrives without a kind; it becomes the kind a
+// connection adds in the diagram shown, drawn as one, and docked as the diagram's descriptor says.
+// The diagram also answers where a node lies in the world, from its copy, so that a drop lands in
+// the container under it or on the border of the node under it.
 import type {
   BorderNodeData,
   Comb,
@@ -18,7 +18,16 @@ import type {
   NodeData,
   RegionData,
 } from "comb";
-import { labelIn, labelOf, patchOf, styleOf, type RelationshipKind } from "./relationships";
+import {
+  KINDS,
+  labelIn,
+  labelOf,
+  multiplicityLabelsOf,
+  patchOf,
+  styleOf,
+  type Multiplicities,
+  type RelationshipKind,
+} from "./relationships";
 import { refusal as ruleRefusal, transitionParts, type TransitionPart } from "./rules";
 import {
   contentOf as activityContentOf,
@@ -40,8 +49,10 @@ import {
   type NodeKind,
   type State,
   type Transition,
+  type UseCaseNode,
 } from "./shared";
 import { labelTextOf, nameOf, contentOf as stateContentOf } from "./state-diagram";
+import { contentOf as useCaseContentOf } from "./use-case-diagram";
 
 /** An edit Comb refused, and what it threw: a `GraphDataError` for data past its limits, such as
  *  a text longer than one may be, or an `EngineLostError` once its engine is lost. */
@@ -67,6 +78,7 @@ export class Diagram {
   classifiers = new Map<string, Classifier>();
   states = new Map<string, State>();
   activities = new Map<string, ActivityNode>();
+  useCases = new Map<string, UseCaseNode>();
   kinds = new Map<string, RelationshipKind>();
   transitions = new Map<string, Transition>();
   flows = new Map<string, Flow>();
@@ -78,20 +90,29 @@ export class Diagram {
     public descriptor: DiagramDescriptor,
   ) {}
 
-  /** Takes `data`, its graph, its classifiers, its states, its activity nodes, its kinds, its
-   *  transitions, and its flows, as the diagram's own, described by `descriptor`, and hands Comb
-   *  the graph. */
+  /** Takes `data`, its graph, its classifiers, its states, its activity nodes, its use case
+   *  diagram's nodes, its kinds, its transitions, and its flows, as the diagram's own, described by
+   *  `descriptor`, and hands Comb the graph. */
   load(data: DiagramData, descriptor: DiagramDescriptor): void {
-    const { graph, classifiers, states, activities, kinds, transitions, flows } = data;
-    Object.assign(this, { graph, classifiers, states, activities, kinds, transitions, flows });
+    const { graph, classifiers, states, activities, useCases, kinds, transitions, flows } = data;
+    Object.assign(this, {
+      graph,
+      classifiers,
+      states,
+      activities,
+      useCases,
+      kinds,
+      transitions,
+      flows,
+    });
     this.descriptor = descriptor;
     this.comb.load(graph);
   }
 
   /** The diagram's own data, as `load` takes it. */
   data(): DiagramData {
-    const { graph, classifiers, states, activities, kinds, transitions, flows } = this;
-    return { graph, classifiers, states, activities, kinds, transitions, flows };
+    const { graph, classifiers, states, activities, useCases, kinds, transitions, flows } = this;
+    return { graph, classifiers, states, activities, useCases, kinds, transitions, flows };
   }
 
   node(id: string) {
@@ -102,11 +123,14 @@ export class Diagram {
     return this.graph.edges.find((each) => each.id === id);
   }
 
-  /** The kind of node `id`: its classifier's, its state's, or its activity node's, none for a
-   *  node of none. */
+  /** The kind of node `id`: its classifier's, its state's, its activity node's, or its use case
+   *  diagram's node's, none for a node of none. */
   kindOf(id: string): NodeKind | undefined {
     return (
-      this.classifiers.get(id)?.kind ?? this.states.get(id)?.kind ?? this.activities.get(id)?.kind
+      this.classifiers.get(id)?.kind ??
+      this.states.get(id)?.kind ??
+      this.activities.get(id)?.kind ??
+      this.useCases.get(id)?.kind
     );
   }
 
@@ -220,6 +244,28 @@ export class Diagram {
     return refusal;
   }
 
+  /** Replaces the content of the use case diagram's node `id` with what `next` shows, and its node
+   *  with `next` once Comb took the content, as `edit` does a classifier. */
+  editUseCase(id: string, next: UseCaseNode): Refusal | undefined {
+    const refusal = this.updateContent(id, useCaseContentOf(next));
+    if (!refusal) this.useCases.set(id, next);
+    return refusal;
+  }
+
+  /** Gives association `id` the multiplicities `next`, a label at each end that has one, each
+   *  where its label stands; Comb's refusal where it refused the labels. */
+  editMultiplicities(id: string, next: Multiplicities): Refusal | undefined {
+    const labels = multiplicityLabelsOf(next, this.edge(id)?.labels);
+    try {
+      this.comb.updateEdge(id, { labels: labels.length === 0 ? null : labels });
+    } catch (error) {
+      // A label past Comb's limits: the edge keeps its labels.
+      console.warn("uml: the multiplicities were not taken", error);
+      return { error };
+    }
+    return undefined;
+  }
+
   /** Gives the node of the name of point `point`, `name`, its content, as wide as `width`: Comb
    *  changes no node's width, so a name of another width replaces its node by one beside the point
    *  again, as `nameOffsetOf` places it, and the old node comes back where Comb refuses the new
@@ -295,9 +341,20 @@ export class Diagram {
     return undefined;
   }
 
+  /** The kinds the sidebar's kind select offers edge `id`: the descriptor's, or those the legend
+   *  lists, each where the rules allow it between the edge's ends. */
+  offeredKinds(id: string): RelationshipKind[] {
+    const edge = this.edge(id);
+    const kinds = this.descriptor.kinds ?? KINDS;
+    // The kind select shows on an edge between two nodes alone.
+    return kinds.filter((kind) => this.refusal(edge!.source!, edge!.target!, kind) === undefined);
+  }
+
   /** Changes edge `id` to `kind`, drawn as the kind is, its label as `patchOf` says, and its kind
-   *  once Comb took the change. Every kind is allowed between two classifiers (`rules.ts`), so
-   *  the sidebar asks no rule. */
+   *  once Comb took the change; an edge that leaves the descriptor's conditioned kind loses its
+   *  condition, the comments anchored on it, which Comb removes with their anchors. The sidebar
+   *  offers only the kinds the rules allow between the edge's ends (`offeredKinds`), so this asks
+   *  no rule. */
   rekind(id: string, kind: RelationshipKind): void {
     // The sidebar shows the form of an edge only where the edge has a kind.
     const from = this.kinds.get(id)!;
@@ -309,6 +366,24 @@ export class Diagram {
       return;
     }
     this.kinds.set(id, kind);
+    const { conditioned } = this.descriptor;
+    if (from === conditioned && kind !== conditioned) this.removeAnchoredOn(id);
+  }
+
+  /** Asks Comb to remove the comments anchored on edge `id`, and with them their anchors; the
+   *  copy follows the change Comb tells. */
+  private removeAnchoredOn(id: string): void {
+    // Only an anchor ends on an edge in the example's diagrams.
+    const comments = this.graph.edges.flatMap((edge) =>
+      edge.targetEdge === id && edge.source !== undefined ? [edge.source] : [],
+    );
+    if (comments.length === 0) return;
+    try {
+      this.comb.removeNodes(comments);
+    } catch (error) {
+      // A lost engine: the condition stays with the canvas that keeps its last frame.
+      console.warn("uml: the condition was not removed", error);
+    }
   }
 
   /** Gives edge `id` the label `label`, a list of one, or none for `null`; Comb's refusal where it
@@ -351,6 +426,7 @@ export class Diagram {
       this.classifiers.delete(id);
       this.states.delete(id);
       this.activities.delete(id);
+      this.useCases.delete(id);
     }
     for (const id of edges) {
       this.kinds.delete(id);

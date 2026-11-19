@@ -120,7 +120,11 @@ skimmed. The design revision drops what prevented nothing
   anchor grey, dashed, and without one; neither is listed in the legend. The activity diagram draws
   a control flow and an object flow as a transition is drawn, an interrupting edge and the edge of
   an exception handler the same with `lightning`, and a comment's anchor as the state diagram's;
-  none of them is listed in the legend.
+  none of them is listed in the legend. The use case diagram draws an association as the class
+  diagram does, with a multiplicity at each end, two labels at the path parameters 0.1 and 0.9 on
+  a pill of the edge's colour; an include and an extend grey and dashed with an open arrowhead,
+  labelled «include» and «extend»; and a generalization blue and solid with a hollow triangle
+  (`"hollow"`); none of the last three is listed in the legend.
 - **The UML example draws a state diagram in UML's node shapes.** Each kind of state takes the node
   shape UML gives it, so that a reader who knows UML reads the kind from the shape and no label
   names it. A pseudostate has no content and is as small as its node shape allows, so that it reads
@@ -160,6 +164,21 @@ skimmed. The design revision drops what prevented nothing
   the activity is divided across into its partitions, regions named in their bands. A flow's label
   shows its guard in brackets and its weight as `{weight=…}`. The example's `canMoveInto` allows a
   move into a partition or a region and refuses one onto the canvas, out of the frame.
+- **The UML example draws a use case diagram in the building blocks settled for it.** Each kind
+  takes the building block `USE_CASE_SHAPES` in `examples/uml/src/use-case-diagram.ts` names, as
+  ticket 13 of uml-diagrams settled them with the human. An actor is an `actor`, its name the
+  content below its drawing. A use case is an `ellipse` of its name, its extension points below a
+  separator under the caption "extension points". The subject is a rectangular container titled
+  with its name, and a comment a `note`. An extend's condition is a comment whose dashed anchor
+  ends on the extend by `targetEdge` at `targetT` 0.5. Actors stand outside the subject, as UML
+  2.5.1 draws them: a use case or a comment dropped over the subject lands in it, an actor on the
+  canvas, over the subject too, and the example's `canMoveInto` refuses an actor moved into the
+  subject. A connection adds an association between an actor and a use case, a generalization
+  between two actors, an include between two use cases, and from a comment its anchor; the
+  sidebar changes a relationship between two use cases among include, extend, and generalization,
+  offering only the kinds the table allows between its ends, and edits an association's
+  multiplicities. An extend changed to another kind loses its condition: the example asks Comb to
+  remove the comments anchored on it, and their anchors go with them.
 - **The UML example's rules of connection are a table of what they refuse.** `allows` and
   `refusal` in `examples/uml/src/rules.ts` answer from the kinds of the two ends and of the
   relationship, against a table of refused combinations, each with why, and its test writes that
@@ -208,6 +227,22 @@ skimmed. The design revision drops what prevented nothing
   that starts at no comment, and one that ends on anything but a state or a pseudostate: a signal
   symbol, a comment, or the frame. The user anchors no comment on an edge; only the diagram's data
   does.
+
+  Between the use case diagram's kinds the table refuses, the first that holds saying why:
+  - a relationship but an anchor from or to a comment, which its anchor attaches, or the subject,
+    which the example's relationships leave alone;
+  - an association between two actors, since UML 2.5.1 lets an actor have associations only to
+    use cases, components, and classes (`associations`), or between two use cases, since it lets
+    none join two use cases of the same subject (`no_association_to_use_case`), and the example's
+    use cases are all Comb's;
+  - an include or an extend but between two use cases, the ends UML 2.5.1 types both as;
+  - a generalization between an actor and a use case, since UML 2.5.1 lets a classifier specialize
+    only one of its own type or a more general one (`specialize_type`);
+  - an anchor that starts at no comment, or ends on a comment.
+
+  A loop is refused on every kind of the use case diagram: an include of a use case with itself by
+  `cannot_include_self`, a generalization of an actor or a use case with itself by
+  `no_cycles_in_generalization`, every other loop by the table above or the example's rule below.
 
   A state, a composite state, a submachine state, a state list, and a final state count as states;
   a signal symbol stands on a transition and counts as neither. A loop, an edge of a node with

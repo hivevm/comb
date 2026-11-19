@@ -454,6 +454,7 @@ export function stateDiagram(heightOf: Comb["heightOf"]): DiagramData {
     classifiers: new Map(),
     states: new Map(SEEDS.map(({ state }) => [state.id, structuredClone(state)])),
     activities: new Map(),
+    useCases: new Map(),
     kinds: new Map([
       ...transitions.map(({ id }) => [id, "transition"] as const),
       ...ANCHORS.map(({ id }) => [id, "anchor"] as const),

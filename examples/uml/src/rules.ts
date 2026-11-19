@@ -7,9 +7,11 @@ import type { RelationshipKind } from "./relationships";
 import {
   ACTIVITY_KINDS,
   STATE_KINDS,
+  USE_CASE_KINDS,
   type ActivityKind,
   type NodeKind,
   type StateKind,
+  type UseCaseKind,
 } from "./shared";
 
 /** A relationship of `kind` from a node of kind `source` to one of kind `target`, a loop where
@@ -196,6 +198,68 @@ const ACTIVITY_ANCHOR_RULES: typeof FLOW_RULES = [
   ],
 ];
 
+/** A rule of the use case diagram: whether it refuses a relationship from `source` to `target`,
+ *  and why. */
+type UseCaseRule = [(source: UseCaseKind, target: UseCaseKind) => boolean, string];
+
+/** Whether the ends `source` and `target` are, in some order, of the kinds `a` and `b`. */
+const joins = (source: UseCaseKind, target: UseCaseKind, a: UseCaseKind, b: UseCaseKind) =>
+  (source === a && target === b) || (source === b && target === a);
+
+/** What the use case diagram refuses of every relationship but an anchor: one at a comment, and
+ *  one at the subject, which the example's relationships leave alone. */
+const USE_CASE_ENDS: readonly UseCaseRule[] = [
+  [
+    (source, target) => source === "use-case-comment" || target === "use-case-comment",
+    "A comment is attached by its anchor; no relationship of the use case diagram starts or ends on it.",
+  ],
+  [
+    (source, target) => source === "subject" || target === "subject",
+    "The subject is the system its use cases belong to; the example draws no relationship to or from it.",
+  ],
+];
+
+/** The associations the use case diagram refuses: every one but between an actor and a use case,
+ *  in either direction, as settled with the human for ticket 13 of uml-diagrams on 2026-11-18. */
+const ASSOCIATION_RULES: readonly UseCaseRule[] = [
+  ...USE_CASE_ENDS,
+  [
+    (source, target) => source === "actor" && target === "actor",
+    "UML 2.5.1 lets an actor have associations only to use cases, components, and classes (associations).",
+  ],
+  [
+    (source, target) => !joins(source, target, "actor", "use-case"),
+    "UML 2.5.1 lets no association join two use cases of the same subject, and the example's use cases are all Comb's (no_association_to_use_case).",
+  ],
+];
+
+/** The includes or the extends the use case diagram refuses: every one but between two use cases,
+ *  which UML 2.5.1 types both ends of each as, saying so in `why`. */
+const betweenUseCases = (why: string): readonly UseCaseRule[] => [
+  ...USE_CASE_ENDS,
+  [(source, target) => source !== "use-case" || target !== "use-case", why],
+];
+
+/** The generalizations the use case diagram refuses: every one but from an actor to an actor or
+ *  from a use case to a use case. */
+const GENERALIZATION_RULES: readonly UseCaseRule[] = [
+  ...USE_CASE_ENDS,
+  [
+    (source, target) => source !== target,
+    "UML 2.5.1 lets a classifier specialize only one of its own type or a more general one, so an actor an actor and a use case a use case (specialize_type).",
+  ],
+];
+
+/** The anchors the use case diagram refuses, as the activity diagram's: an anchor attaches a
+ *  comment to any element but another comment. */
+const USE_CASE_ANCHOR_RULES: readonly UseCaseRule[] = [
+  [(source) => source !== "use-case-comment", "An anchor starts at a comment."],
+  [
+    (_, target) => target === "use-case-comment",
+    "A comment is anchored on an element of the diagram, not on another comment.",
+  ],
+];
+
 /** The refusals of `rules` between every two of `kinds` for relationships of `kind`, each as
  *  "source target kind" with why. */
 function refusalsOf<K extends NodeKind>(
@@ -212,14 +276,32 @@ function refusalsOf<K extends NodeKind>(
 }
 
 /** The relationships the rules refuse, each as "source target kind" with why, from the tables of
- *  the state and the activity diagram. A class, a package, a state, and an activity node never
- *  share a diagram, so no case mixes them, and between classifiers nothing is refused. */
+ *  the state, the activity, and the use case diagram. A class, a package, a state, an activity
+ *  node, and a node of the use case diagram never share a diagram, so no case mixes them, and
+ *  between classifiers nothing is refused. */
 const REFUSED: ReadonlyMap<string, string> = new Map([
   ...refusalsOf(STATE_KINDS, "transition", TRANSITION_RULES),
   ...refusalsOf(STATE_KINDS, "anchor", ANCHOR_RULES),
   ...refusalsOf(ACTIVITY_KINDS, "control-flow", CONTROL_FLOW_RULES),
   ...refusalsOf(ACTIVITY_KINDS, "object-flow", OBJECT_FLOW_RULES),
   ...refusalsOf(ACTIVITY_KINDS, "anchor", ACTIVITY_ANCHOR_RULES),
+  ...refusalsOf(USE_CASE_KINDS, "association", ASSOCIATION_RULES),
+  ...refusalsOf(
+    USE_CASE_KINDS,
+    "include",
+    betweenUseCases(
+      "UML 2.5.1 has an include join two use cases, the including one and its addition, and nothing else.",
+    ),
+  ),
+  ...refusalsOf(
+    USE_CASE_KINDS,
+    "extend",
+    betweenUseCases(
+      "UML 2.5.1 has an extend join two use cases, the extending and the extended one, and nothing else.",
+    ),
+  ),
+  ...refusalsOf(USE_CASE_KINDS, "use-case-generalization", GENERALIZATION_RULES),
+  ...refusalsOf(USE_CASE_KINDS, "anchor", USE_CASE_ANCHOR_RULES),
 ]);
 
 /** The kind of flow a connection adds between nodes of kinds `source` and `target`: an object
@@ -238,11 +320,20 @@ const LOOPS: ReadonlySet<string> = new Set([
   "submachine transition",
 ]);
 
+/** Why a loop of a kind is refused where UML 2.5.1 states it: a use case that includes itself, and
+ *  a classifier, an actor or a use case, that specializes itself. */
+const LOOP_REFUSALS: Partial<Record<RelationshipKind, string>> = {
+  include: "UML 2.5.1 lets no use case include itself (cannot_include_self).",
+  "use-case-generalization":
+    "UML 2.5.1 lets no classifier specialize itself (no_cycles_in_generalization).",
+};
+
 /** Why the rules refuse the relationship `proposed`, none where they allow it. */
 export function refusal({ source, target, kind, loop = false }: Proposed): string | undefined {
   const refused = REFUSED.get(`${source} ${target} ${kind}`);
   if (refused !== undefined) return refused;
-  return loop && !LOOPS.has(`${source} ${kind}`) ? NO_LOOP : undefined;
+  if (!loop || LOOPS.has(`${source} ${kind}`)) return undefined;
+  return LOOP_REFUSALS[kind] ?? NO_LOOP;
 }
 
 /** Whether the rules allow the relationship `proposed`. */

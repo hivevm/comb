@@ -33,6 +33,7 @@ import {
   newClassifier,
   NODE_WIDTH,
   STATE_KINDS,
+  USE_CASE_KINDS,
   type ActivityNode,
   type Classifier,
   type DiagramData,
@@ -40,8 +41,15 @@ import {
   type NodeKind,
   type Place,
   type State,
+  type UseCaseNode,
 } from "./shared";
 import { Sidebar } from "./sidebar";
+import {
+  newUseCaseNode,
+  nodeOf as useCaseNodeOf,
+  USE_CASE_DIAGRAM,
+  USE_CASE_SHAPES,
+} from "./use-case-diagram";
 
 /** How the last load went: what the browser tests read. */
 export interface UmlLoadReport {
@@ -83,7 +91,13 @@ let connected = 0;
 
 /** The diagrams the sidebar chooses between, in the order it offers them, the class diagram
  *  first: each described in one place, its file. */
-const DIAGRAMS = [CLASS_DIAGRAM, PACKAGE_DIAGRAM, STATE_DIAGRAM, ACTIVITY_DIAGRAM] as const;
+const DIAGRAMS = [
+  CLASS_DIAGRAM,
+  PACKAGE_DIAGRAM,
+  STATE_DIAGRAM,
+  ACTIVITY_DIAGRAM,
+  USE_CASE_DIAGRAM,
+] as const;
 
 /** Names the user's connection where the rules allow the kind a connection adds between its
  *  ends; refuses it otherwise, and the sidebar says why. */
@@ -103,7 +117,7 @@ const comb = await createComb(element("canvas"), {
   allowLoops: true,
   canConnect,
   canDelete: ({ nodes }) => diagram.deletable(nodes),
-  canMoveInto: (move) => diagram.descriptor.canMoveInto?.(move) ?? true,
+  canMoveInto: (move) => diagram.descriptor.canMoveInto?.(move, diagram.kindOf(move.node)) ?? true,
 });
 const diagram = new Diagram(comb, DIAGRAMS[0]);
 comb.registerIcon(RAKE, rake());
@@ -192,17 +206,25 @@ choice.addEventListener("change", () => {
 });
 
 /** What the palette drops of `kind` as node `id` with its centre at the world point (`x`, `y`):
- *  the nodes Comb adds, and the classifier or the state the diagram keeps of the first of them;
- *  none for a kind the palette lacks, or for a point dropped on no node whose border it rides. A
- *  node of the state diagram lands in the deepest container or region under the point, a point on
- *  the side of the node under it nearest the point, at the point's offset along that side. */
+ *  the nodes Comb adds, and the classifier, the state, the activity node, or the use case
+ *  diagram's node the diagram keeps of the first of them; none for a kind the palette lacks, or
+ *  for a point dropped on no node whose border it rides. A node of the state, the activity, or the
+ *  use case diagram lands in the deepest container or region under the point, an actor on the
+ *  canvas, a point on the side of the node under it nearest the point, at the point's offset along
+ *  that side. */
 function droppedOf(
   kind: string,
   id: string,
   x: number,
   y: number,
 ):
-  | { nodes: NodeData[]; classifier?: Classifier; state?: State; activity?: ActivityNode }
+  | {
+      nodes: NodeData[];
+      classifier?: Classifier;
+      state?: State;
+      activity?: ActivityNode;
+      useCase?: UseCaseNode;
+    }
   | undefined {
   const classifierKind = CLASSIFIER_KINDS.find((each) => each === kind);
   const heightOf: Comb["heightOf"] = (content, width, shape) =>
@@ -225,6 +247,12 @@ function droppedOf(
     const place = placeOf(ACTIVITY_BORDERS[activityKind], x, y);
     return place && { nodes: activityNodesOf(activity, place, heightOf), activity };
   }
+  const useCaseKind = USE_CASE_KINDS.find((each) => each === kind);
+  if (useCaseKind) {
+    const useCase = newUseCaseNode(id, useCaseKind);
+    const place = USE_CASE_SHAPES[useCaseKind].outside ? { x, y } : centreOf(x, y);
+    return { nodes: [useCaseNodeOf(useCase, place, heightOf)], useCase };
+  }
   const stateKind = STATE_KINDS.find((each) => each === kind);
   if (!stateKind) return undefined;
   const state = newState(id, stateKind);
@@ -232,10 +260,10 @@ function droppedOf(
   return place && { nodes: nodesOf(state, place, heightOf), state };
 }
 
-/** Where a node of the state or the activity diagram dropped at the world point (`x`, `y`) lies:
- *  one that rides a node of `owners` on the nearest side of the node of those under it, none
- *  where there is none; any other in the deepest container or region under it, by its centre
- *  there. */
+/** Where a node of the state, the activity, or the use case diagram dropped at the world point
+ *  (`x`, `y`) lies: one that rides a node of `owners` on the nearest side of the node of those
+ *  under it, none where there is none; any other in the deepest container or region under it, by
+ *  its centre there. */
 function placeOf(owners: readonly NodeKind[] | undefined, x: number, y: number): Place | undefined {
   if (owners) {
     const owner = diagram.deepestAt(x, y, (each) => {
@@ -256,6 +284,12 @@ function placeOf(owners: readonly NodeKind[] | undefined, x: number, y: number):
     const length = side === "top" || side === "bottom" ? box.width : box.height;
     return { attachedTo: owner, side, offset, length };
   }
+  return centreOf(x, y);
+}
+
+/** Where a node dropped at the world point (`x`, `y`) lies that rides no border: in the deepest
+ *  container or region under it, by its centre there, or on the canvas. */
+function centreOf(x: number, y: number): Extract<Place, { x: number }> {
   const holder = diagram.deepestAt(x, y, (each) => {
     const node = diagram.node(each);
     return node === undefined || (node.isContainer === true && node.regions === undefined);
@@ -290,6 +324,7 @@ function drop(kind: string, clientX: number, clientY: number): void {
   if (added.classifier) diagram.classifiers.set(id, added.classifier);
   if (added.state) diagram.states.set(id, added.state);
   if (added.activity) diagram.activities.set(id, added.activity);
+  if (added.useCase) diagram.useCases.set(id, added.useCase);
 }
 
 for (const item of paletteItems) {
@@ -317,9 +352,12 @@ window.uml = {
   edgeKinds: () => Object.fromEntries(diagram.kinds),
   nodeKinds: () =>
     Object.fromEntries(
-      [...diagram.classifiers.keys(), ...diagram.states.keys(), ...diagram.activities.keys()].map(
-        (id) => [id, diagram.kindOf(id)],
-      ),
+      [
+        ...diagram.classifiers.keys(),
+        ...diagram.states.keys(),
+        ...diagram.activities.keys(),
+        ...diagram.useCases.keys(),
+      ].map((id) => [id, diagram.kindOf(id)]),
     ),
   inspect: () => inspect(comb),
   screenPoint: (x, y) => screenPoint(comb, x, y),

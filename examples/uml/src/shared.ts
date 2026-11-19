@@ -3,11 +3,11 @@
 // kinds of node, which the rules of connection import, the classifier a node of the class or the
 // package diagram shows, the state a node of the state diagram shows and the transition an edge of
 // it carries, the activity node a node of the activity diagram shows and the flow an edge of it
-// carries, the classifier's content, the layout by rows of the class and the package diagram, and
-// the place of a node with the node of a name beside a border node, which the state and the
-// activity diagram share. A classifier keeps its kind, set
-// when it is created, from the diagram's data or the palette; its stereotype is text it shows and
-// tells nothing of its kind.
+// carries, the use case diagram's node, the classifier's content, the layout by rows of the class
+// and the package diagram, and the place of a node with the node of a name beside a border node,
+// which the state and the activity diagram share. A classifier keeps its kind, set when it is
+// created, from the diagram's data or the palette; its stereotype is text it shows and tells
+// nothing of its kind.
 import type {
   BorderNodeData,
   Comb,
@@ -52,8 +52,19 @@ export const ACTIVITY_KINDS = [
 ] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 
-/** The kinds of node: the kinds of classifier, of state, and of activity node. */
-export const NODE_KINDS = [...CLASSIFIER_KINDS, ...STATE_KINDS, ...ACTIVITY_KINDS] as const;
+/** The kinds of node of the use case diagram (G-20): an actor, a use case, the subject that holds
+ *  use cases, and a comment. */
+export const USE_CASE_KINDS = ["actor", "use-case", "subject", "use-case-comment"] as const;
+export type UseCaseKind = (typeof USE_CASE_KINDS)[number];
+
+/** The kinds of node: the kinds of classifier, of state, of activity node, and of the use case
+ *  diagram's node. */
+export const NODE_KINDS = [
+  ...CLASSIFIER_KINDS,
+  ...STATE_KINDS,
+  ...ACTIVITY_KINDS,
+  ...USE_CASE_KINDS,
+] as const;
 export type NodeKind = (typeof NODE_KINDS)[number];
 
 /** A class, an interface, an abstract class, or a package of a diagram, as its node shows it, and
@@ -99,6 +110,16 @@ export interface ActivityNode {
   body?: string[];
 }
 
+/** A node of the use case diagram, as its node shows it: its kind; the name of an actor, a use
+ *  case, or the subject; a use case's extension points; and the lines of a comment. */
+export interface UseCaseNode {
+  id: string;
+  kind: UseCaseKind;
+  name?: string;
+  points?: string[];
+  body?: string[];
+}
+
 /** What a flow shows in its label: its guard and its weight. */
 export interface Flow {
   guard?: string;
@@ -112,7 +133,8 @@ export interface Transition {
   effect?: string;
 }
 
-/** A diagram as graph data, with the classifier, the state, or the activity node of each node,
+/** A diagram as graph data, with the classifier, the state, the activity node, or the use case
+ *  diagram's node of each node,
  *  the kind of each edge, the trigger, guard, and effect of each transition, and the guard and
  *  weight of each flow, by their identifiers. */
 export interface DiagramData {
@@ -120,6 +142,7 @@ export interface DiagramData {
   classifiers: Map<string, Classifier>;
   states: Map<string, State>;
   activities: Map<string, ActivityNode>;
+  useCases: Map<string, UseCaseNode>;
   kinds: Map<string, RelationshipKind>;
   transitions: Map<string, Transition>;
   flows: Map<string, Flow>;
@@ -131,15 +154,28 @@ export type AddedEdge = Extract<GraphChange, { kind: "edgeAdded" }>["edge"];
 /** What the sidebar edits of a selected node: a classifier's name, stereotype, and members; a
  *  name alone; a state's name and its behaviours, internal transitions, and deferred triggers; a
  *  submachine state's name and the state machine it refers to; the lines of a comment; an
- *  expansion region's mode; or nothing. */
+ *  expansion region's mode; a use case's name and extension points; or nothing. */
 export type NodeForm =
-  "classifier" | "name" | "behaviours" | "name-and-machine" | "lines" | "mode" | "none";
+  | "classifier"
+  | "name"
+  | "behaviours"
+  | "name-and-machine"
+  | "lines"
+  | "mode"
+  | "name-and-points"
+  | "none";
 
-/** What the sidebar edits of a selected edge: a relationship's kind and label, a dependency's
- *  «import» or «use», a transition's trigger, guard, and effect, a flow's guard and weight, or
- *  nothing. */
+/** What the sidebar edits of a selected edge: a relationship's kind and label, its kind alone, a
+ *  dependency's «import» or «use», a transition's trigger, guard, and effect, a flow's guard and
+ *  weight, an association's multiplicities, or nothing. */
 export type EdgeForm =
-  "relationship" | "import-or-use" | "trigger-guard-effect" | "guard-and-weight" | "none";
+  | "relationship"
+  | "kind"
+  | "import-or-use"
+  | "trigger-guard-effect"
+  | "guard-and-weight"
+  | "multiplicities"
+  | "none";
 
 /** What makes a diagram of the example what it is, in one place: its identifier and its name in
  *  the choice of diagram, how it is built, what its count names, the kinds of node the palette
@@ -164,12 +200,18 @@ export interface DiagramDescriptor {
   edgeForm: EdgeForm;
   /** The form of an edge of a kind the diagram edits otherwise than by `edgeForm`. */
   edgeForms?: Partial<Record<RelationshipKind, EdgeForm>>;
+  /** The kind of an edge whose comments anchored on it are its condition, which goes with it when
+   *  the edge becomes another kind; none where no kind has one. */
+  conditioned?: RelationshipKind;
+  /** The kinds the sidebar's kind select changes an edge between, each offered where the rules
+   *  allow it between the edge's ends; those the legend lists where left out. */
+  kinds?: readonly RelationshipKind[];
   selected: { node: string; edge: string };
   legend: boolean;
   labels?: Partial<Record<RelationshipKind, readonly string[]>>;
-  /** The veto of the user's move of a node into a container or onto the canvas, none where every
-   *  move is allowed (API-edits-report-nested-changes). */
-  canMoveInto?: (move: ContainerMove) => boolean;
+  /** The veto of the user's move of a node, of the kind `kind`, into a container or onto the
+   *  canvas, none where every move is allowed (API-edits-report-nested-changes). */
+  canMoveInto?: (move: ContainerMove, kind: NodeKind | undefined) => boolean;
 }
 
 export const NODE_WIDTH = 260;

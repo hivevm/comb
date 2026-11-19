@@ -6,7 +6,10 @@
 // The state diagram's transition is a kind of its own, drawn grey with an open arrowhead, as UML
 // 2.5.1 draws one, and so is the anchor of a comment, grey, dashed, and without one. The activity
 // diagram's control and object flows are drawn as a transition is; its interrupting edge and the
-// edge of an exception handler add a lightning bolt, as UML 2.5.1 draws both. The label of
+// edge of an exception handler add a lightning bolt, as UML 2.5.1 draws both. The use case
+// diagram's include and extend are drawn as a dependency is, with an open arrowhead and their
+// keyword, its generalization in a generalization's blue with a hollow triangle, and its
+// association as the class diagram's, with a multiplicity at each end. The label of
 // an edge of any kind is built here, by `labelOf`, and so is the label a change of kind leaves, by
 // `patchOf`.
 import type { Arrowhead, EdgeData, EdgeLabelData, EdgePatch } from "comb";
@@ -30,7 +33,7 @@ export interface RelationshipStyle {
   name: string;
   color: number;
   dash?: readonly [number, number];
-  arrow: Extract<Arrowhead, "end" | "open" | "none">;
+  arrow: Arrowhead;
   lightning?: true;
   label?: string;
   place?: { t: number; offset: number };
@@ -105,6 +108,33 @@ const STYLES = {
     lightning: true,
     listed: false,
   },
+  // The use case diagram's kinds, which neither the legend nor the class diagram's kind select
+  // lists: an include and an extend, dashed with an open arrowhead and their keyword, and a
+  // generalization between two actors or two use cases, ending in a hollow triangle.
+  include: {
+    name: "Include",
+    color: GREY,
+    dash: DASH,
+    arrow: "open",
+    label: "«include»",
+    place: { t: 0.5, offset: 14 },
+    listed: false,
+  },
+  extend: {
+    name: "Extend",
+    color: GREY,
+    dash: DASH,
+    arrow: "open",
+    label: "«extend»",
+    place: { t: 0.5, offset: 14 },
+    listed: false,
+  },
+  "use-case-generalization": {
+    name: "Generalization",
+    color: BLUE,
+    arrow: "hollow",
+    listed: false,
+  },
 } satisfies Record<string, RelationshipStyle>;
 
 export type RelationshipKind = keyof typeof STYLES;
@@ -163,4 +193,44 @@ export function patchOf(
   const { color, arrow, dash = null, labels = null } = styleOf(to);
   const typed = current !== undefined && current.text !== RELATIONSHIPS[kind].label;
   return { color, arrow, dash, labels: typed ? [labelOf(to, current.text, current)] : labels };
+}
+
+/** The identifiers of the labels of an association's multiplicities, at its source and its target
+ *  end. */
+const MULTIPLICITY_LABELS = {
+  source: "source-multiplicity",
+  target: "target-multiplicity",
+} as const;
+
+/** The path parameter of the label of a multiplicity at each end of an association. */
+const MULTIPLICITY_T = { source: 0.1, target: 0.9 } as const;
+
+/** The multiplicities of an association, at its source and its target end, each where it has
+ *  one. */
+export type Multiplicities = { source?: string; target?: string };
+
+/** The labels of the multiplicities `multiplicities` of an association, one at each end that has
+ *  one, at the path parameters 0.1 and 0.9 on the edge, or where the label of that end among
+ *  `current` stands; on a pill of the edge's colour. */
+export function multiplicityLabelsOf(
+  multiplicities: Multiplicities,
+  current: readonly EdgeLabelData[] = [],
+): EdgeLabelData[] {
+  return (["source", "target"] as const).flatMap((end) => {
+    const text = multiplicities[end];
+    if (text === undefined) return [];
+    const id = MULTIPLICITY_LABELS[end];
+    const kept = current.find((label) => label.id === id);
+    return [{ id, text, t: kept?.t ?? MULTIPLICITY_T[end], offset: kept?.offset ?? 0 }];
+  });
+}
+
+/** The multiplicities the labels of `edge` show, each where it has one. */
+export function multiplicitiesIn(edge: Pick<EdgeData, "labels">): Multiplicities {
+  const textOf = (id: string) => edge.labels?.find((label) => label.id === id)?.text;
+  const [source, target] = [textOf(MULTIPLICITY_LABELS.source), textOf(MULTIPLICITY_LABELS.target)];
+  return {
+    ...(source === undefined ? {} : { source }),
+    ...(target === undefined ? {} : { target }),
+  };
 }
