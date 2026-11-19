@@ -147,23 +147,32 @@ skimmed. The design revision drops what prevented nothing
   docks at both ends on the side the connection left by, since a loop on the outline is drawn above
   its node (API-edges-dock-side-or-outline) and not where the user dragged it.
 - **The UML example draws an activity diagram in the building blocks settled for it.** Each kind
-  takes the building block `ACTIVITY_SHAPES` in `examples/uml/src/activity-diagram.ts` names, as
-  ticket 12 of uml-diagrams settled them with the human. An action and a call behavior action are
-  rounded rectangles of their name, the call behavior action's beside a rake icon the example
-  registers. A send signal action is a `pentagon`, an accept event action a `notched-rectangle`, an
-  accept time event action an `hourglass` above its time. An object node is a rectangle, and a data
-  store and a central buffer are rectangles with «datastore» and «centralBuffer». A decision is a
-  `diamond`, and a fork and a join are `bar`s given a height, upright. An interruptible region and
-  an expansion region are dashed rounded rectangles that hold nodes, the expansion region's mode its
-  keyword. A pin is a small rectangle riding its action, its name a further border node beside it
-  without an outline, as a state diagram's point. An expansion node is three small rectangles
-  without content side by side on its region's border, since one node with separators would be at
-  least 64 high; the middle one is the node, and the outer ones go with it. An activity parameter
-  node is a rectangle of its name riding the frame. A connector is an ellipse holding its letter,
-  as wide as its content makes it high, 90.51, so that it is round, as history is. The frame of
-  the activity is divided across into its partitions, regions named in their bands. A flow's label
-  shows its guard in brackets and its weight as `{weight=…}`. The example's `canMoveInto` allows a
-  move into a partition or a region and refuses one onto the canvas, out of the frame.
+  takes the building block `ACTIVITY_SHAPES` in `examples/uml/src/activity.ts` names, which the
+  activity diagram of a load and the notation diagram share, as tickets 12 and 14 of uml-diagrams
+  settled them with the human. An action and a call behavior action are rounded rectangles of their
+  name, the call behavior action's beside a rake icon the example registers. A send signal action is
+  a `pentagon`, an accept event action a `notched-rectangle`, an accept time event action an
+  `hourglass` above its time. An object node is a rectangle, and a data store and a central buffer
+  are rectangles with «datastore» and «centralBuffer». A decision is a `diamond`, and a fork and a
+  join are `bar`s given a height, upright. An interruptible region and an expansion region are
+  dashed rounded rectangles that hold nodes, the expansion region's mode its keyword. A pin is a
+  small rectangle riding its action, its name a further border node beside it without an outline, as
+  a state diagram's point. An expansion node is three small rectangles without content side by side
+  on its region's border, since one node with separators would be at least 64 high; the middle one
+  is the node, and the outer ones go with it. An activity parameter node is a rectangle of its name
+  riding the frame. A connector is an ellipse holding its letter, as wide as its content makes it
+  high, 90.51, so that it is round, as history is. The frame of the activity is divided across into
+  its partitions, regions named in their bands, and a partition may be divided across again into
+  nested ones. An initial node is a `circle`, an activity final a `ringed-circle`, a flow final a
+  `crossed-circle`, and a merge a `diamond`. A structured activity node is a dashed rounded
+  rectangle below «structured» that holds nodes; a conditional node and a loop node are the same
+  below «conditional» and «loop», divided down into regions named in their turned bands, the
+  clauses, or the setup, test, and body. A value pin's value and `{stream}` beside a streaming pin
+  are further border nodes without an outline, as a pin's name. A parameter set is a dashed border
+  node around its pins, added before them so that they are drawn above it; its white fill hides the
+  action's outline where it lies, and the names of its pins hide its own. A flow's label shows its
+  guard in brackets and its weight as `{weight=…}`. The example's `canMoveInto` allows a move into a
+  partition or a region and refuses one onto the canvas, out of the frame.
 - **The UML example draws a use case diagram in the building blocks settled for it.** Each kind
   takes the building block `USE_CASE_SHAPES` in `examples/uml/src/use-case-diagram.ts` names, as
   ticket 13 of uml-diagrams settled them with the human. An actor is an `actor`, its name the
@@ -208,20 +217,26 @@ skimmed. The design revision drops what prevented nothing
   holds saying why, as the OCL of UML 2.5.1's metamodel states the constraints:
   - a flow from or to a comment, which its anchor attaches;
   - a flow from or to the frame of the activity, or an interruptible region, which groups nodes;
-  - a flow into an output pin (`incoming_edges_structured_only`), or out of an input pin
-    (`outgoing_edges_structured_only`), of an action;
+  - a flow from or to a parameter set, which groups the parameters of its pins;
+  - a flow into an initial node (`no_incoming_edges`), or out of an activity final or a flow final
+    node (`no_outgoing_edges`);
+  - a flow into a value pin (`no_incoming_edges`);
+  - a flow into an output pin (`incoming_edges_structured_only`), or out of an input pin or a
+    value pin (`outgoing_edges_structured_only`), of an action;
   - a flow into an input activity parameter node, or out of an output one (`no_edges`,
     `no_outgoing_edges`, `no_incoming_edges`);
   - a control flow from or to an object node, none of the example's being of a control type
     (`object_nodes`);
   - an object flow from or to an action, whose objects pass through its pins, or an expansion
     region, whose objects pass through its expansion nodes (`no_executable_nodes`);
+  - an object flow out of an initial node (`control_edges`);
   - an anchor that starts at no comment, or ends on a comment.
 
-  An object node, a pin, a data store, a central buffer, an expansion node, and an activity
-  parameter node count as object nodes; the actions and the expansion region as actions. The
-  constraints that count edges, such as a fork's one incoming edge, are no matter of two kinds,
-  and the table holds none of them.
+  An object node, a pin, a value pin, a data store, a central buffer, an expansion node, and an
+  activity parameter node count as object nodes; the actions, the expansion region, and the
+  structured, conditional, and loop nodes as actions. The constraints that count edges, such as a
+  fork's one incoming edge or a merge's one outgoing edge, are no matter of two kinds, and the table
+  holds none of them.
 
   A connection from a comment adds its anchor instead of a transition. The table refuses an anchor
   that starts at no comment, and one that ends on anything but a state or a pseudostate: a signal

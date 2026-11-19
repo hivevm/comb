@@ -116,18 +116,19 @@ const ANCHOR_RULES: readonly [(source: StateKind, target: StateKind) => boolean,
   ],
 ];
 
-/** The object nodes of the activity diagram: an object node, a pin, a data store, a central
- *  buffer, an expansion node, and an activity parameter node. */
+/** The object nodes of the activity diagram: an object node, a pin, a value pin, a data store, a
+ *  central buffer, an expansion node, and an activity parameter node. */
 const OBJECT_NODES: readonly ActivityKind[] = [
-  ...["object-node", "input-pin", "output-pin", "data-store", "central-buffer"],
+  ...["object-node", "input-pin", "output-pin", "value-pin", "data-store", "central-buffer"],
   ...["expansion-node", "input-parameter", "output-parameter"],
 ] as ActivityKind[];
 
-/** The actions of the activity diagram, an expansion region among them, which UML 2.5.1 counts
- *  as executable nodes. */
+/** The actions of the activity diagram, an expansion region and the structured, conditional, and
+ *  loop nodes among them, which UML 2.5.1 counts as executable nodes. */
 const ACTIONS: readonly ActivityKind[] = [
   ...["action", "call-behavior-action", "send-signal-action", "accept-event-action"],
   ...["accept-time-event-action", "expansion-region"],
+  ...["structured-node", "conditional-node", "loop-node"],
 ] as ActivityKind[];
 
 /** Whether a flow from `source` to `target` has an end that is one of `kinds`. */
@@ -150,11 +151,28 @@ const FLOW_RULES: readonly [(source: ActivityKind, target: ActivityKind) => bool
     "An interruptible region groups nodes and is none; no flow starts or ends on it.",
   ],
   [
+    (source, target) => touches(["parameter-set"], source, target),
+    "A parameter set groups the parameters of its pins and is no node; no flow starts or ends on it.",
+  ],
+  [
+    (_, target) => target === "initial-node",
+    "UML 2.5.1 lets no flow enter an initial node (no_incoming_edges).",
+  ],
+  [
+    (source) => source === "activity-final" || source === "flow-final",
+    "UML 2.5.1 lets no flow leave an activity final or a flow final node (no_outgoing_edges).",
+  ],
+  [
+    (_, target) => target === "value-pin",
+    "UML 2.5.1 lets no flow enter a value pin (no_incoming_edges).",
+  ],
+  [
     (_, target) => target === "output-pin",
     "UML 2.5.1 lets no flow enter an output pin of an action (incoming_edges_structured_only).",
   ],
   [
-    (source) => source === "input-pin",
+    // A value pin is an input pin.
+    (source) => source === "input-pin" || source === "value-pin",
     "UML 2.5.1 lets no flow leave an input pin of an action (outgoing_edges_structured_only).",
   ],
   [
@@ -179,12 +197,16 @@ const CONTROL_FLOW_RULES: typeof FLOW_RULES = [
 
 /** The object flows the activity diagram refuses besides `FLOW_RULES`: none at an action, whose
  *  objects pass through its pins, nor at an expansion region, whose pass through its expansion
- *  nodes. */
+ *  nodes, and none out of an initial node. */
 const OBJECT_FLOW_RULES: typeof FLOW_RULES = [
   ...FLOW_RULES,
   [
     (source, target) => touches(ACTIONS, source, target),
     "UML 2.5.1 lets no object flow touch an action or an expansion region; objects pass through their pins or expansion nodes (no_executable_nodes).",
+  ],
+  [
+    (source) => source === "initial-node",
+    "UML 2.5.1 lets only control flows leave an initial node (control_edges).",
   ],
 ];
 

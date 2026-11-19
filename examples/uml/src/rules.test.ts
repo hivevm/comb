@@ -78,52 +78,58 @@ const REFUSED: ReadonlySet<string> = new Set([
   ),
 ]);
 
-/** The activity diagram's executable nodes, the actions and the expansion region; its object
- *  nodes; its control nodes and the connector; and what is no node of it: the interruptible
- *  region, a group, a comment, and the frame. */
+/** The activity diagram's executable nodes, the actions, the expansion region, and the
+ *  structured, conditional, and loop nodes; its object nodes; its control nodes and the connector;
+ *  and what is no node of it: the interruptible region, a group, a parameter set, a comment, and
+ *  the frame. */
 const ACTIONS = [
   ...["action", "call-behavior-action", "send-signal-action", "accept-event-action"],
   ...["accept-time-event-action", "expansion-region"],
+  ...["structured-node", "conditional-node", "loop-node"],
 ] as const;
 const OBJECT_NODES = [
   ...["object-node", "input-pin", "output-pin", "data-store", "central-buffer"],
-  ...["expansion-node", "input-parameter", "output-parameter"],
+  ...["expansion-node", "input-parameter", "output-parameter", "value-pin"],
 ] as const;
-const CONTROL_NODES = ["decision-node", "fork-node", "join-node", "connector"] as const;
-const ACTIVITY_KINDS = [
-  ...ACTIONS,
-  ...OBJECT_NODES,
-  ...CONTROL_NODES,
-  ...["interruptible-region", "activity-comment", "activity-frame"],
+const CONTROL_NODES = [
+  ...["decision-node", "fork-node", "join-node", "connector"],
+  ...["initial-node", "activity-final", "flow-final", "merge-node"],
 ] as const;
+const NO_NODES = [
+  ...["interruptible-region", "parameter-set", "activity-comment", "activity-frame"],
+] as const;
+const ACTIVITY_KINDS = [...ACTIONS, ...OBJECT_NODES, ...CONTROL_NODES, ...NO_NODES] as const;
 
 /** The conventions' table of the activity diagram, each refused pair as "kind source target": a
- *  control or an object flow at a comment, the frame, or an interruptible region, into an output
- *  pin or an input parameter node, out of an input pin or an output parameter node; a control flow
+ *  control or an object flow at a comment, the frame, an interruptible region, or a parameter set,
+ *  into an output pin, an input parameter node, an initial node, or a value pin, out of an input
+ *  pin, a value pin, an output parameter node, an activity final, or a flow final; a control flow
  *  at an object node (UML 2.5.1, ControlFlow: object_nodes), an object flow at an action or an
- *  expansion region (ObjectFlow: no_executable_nodes); an anchor from anything but a comment, or
- *  onto a comment. */
+ *  expansion region (ObjectFlow: no_executable_nodes) or out of an initial node (InitialNode:
+ *  control_edges); an anchor from anything but a comment, or onto a comment. */
 const REFUSED_ACTIVITY: ReadonlySet<string> = new Set(
   ["control-flow", "object-flow"]
     .flatMap((kind) =>
       ACTIVITY_KINDS.flatMap((other) => [
-        ...["activity-comment", "activity-frame", "interruptible-region"].flatMap((no) => [
-          `${kind} ${no} ${other}`,
-          `${kind} ${other} ${no}`,
-        ]),
-        `${kind} ${other} output-pin`,
-        `${kind} ${other} input-parameter`,
-        `${kind} input-pin ${other}`,
-        `${kind} output-parameter ${other}`,
+        ...NO_NODES.flatMap((no) => [`${kind} ${no} ${other}`, `${kind} ${other} ${no}`]),
+        ...["output-pin", "input-parameter", "initial-node", "value-pin"].map(
+          (into) => `${kind} ${other} ${into}`,
+        ),
+        ...["input-pin", "value-pin", "output-parameter", "activity-final", "flow-final"].map(
+          (out) => `${kind} ${out} ${other}`,
+        ),
         ...(kind === "control-flow"
           ? OBJECT_NODES.flatMap((object) => [
               `${kind} ${object} ${other}`,
               `${kind} ${other} ${object}`,
             ])
-          : ACTIONS.flatMap((action) => [
-              `${kind} ${action} ${other}`,
-              `${kind} ${other} ${action}`,
-            ])),
+          : [
+              ...ACTIONS.flatMap((action) => [
+                `${kind} ${action} ${other}`,
+                `${kind} ${other} ${action}`,
+              ]),
+              `${kind} initial-node ${other}`,
+            ]),
       ]),
     )
     .concat(
@@ -310,10 +316,11 @@ test("each refusal of the activity diagram says why in a sentence of its own, a 
     const [kind, source, target] = key.split(" ") as ["anchor", never, never];
     reasons.add(refusal({ source, target, kind })!);
   }
-  // A comment, the frame, an interruptible region, an output pin, an input pin, an input and an
-  // output parameter node, a control flow at an object node, an object flow at an action, an
+  // A comment, the frame, an interruptible region, a parameter set, an output pin, an input pin, an
+  // input and an output parameter node, into an initial node or a value pin, out of a final node,
+  // a control flow at an object node, an object flow at an action or out of an initial node, an
   // anchor from no comment, and one onto a comment.
-  expect(reasons.size).toBe(11);
+  expect(reasons.size).toBe(16);
   for (const reason of reasons) expect(reason).toMatch(/^[A-Z].*\.$/);
   for (const reason of reasons)
     if (reason.includes("UML 2.5.1")) expect(reason).toMatch(/\((\w+_\w+)(, \w+_\w+)*\)\.$/);

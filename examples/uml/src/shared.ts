@@ -39,16 +39,20 @@ export const STATE_KINDS = [
 export type StateKind = (typeof STATE_KINDS)[number];
 
 /** The kinds of node of the activity diagram (G-20): its actions, among them the call behavior,
- *  send signal, accept event, and accept time event actions and the expansion region; its object
- *  nodes, among them the pins, the data store, the central buffer, the expansion node, and the
- *  activity parameter nodes; its control nodes; the interruptible region; a connector; a comment;
- *  and the frame of the activity, divided into its partitions. */
+ *  send signal, accept event, and accept time event actions, the expansion region, and the
+ *  structured, conditional, and loop nodes; its object nodes, among them the pins, the value pin,
+ *  the data store, the central buffer, the expansion node, and the activity parameter nodes; its
+ *  control nodes, the initial, the final, the decision, the merge, the fork, and the join nodes;
+ *  the interruptible region; a parameter set; a connector; a comment; and the frame of the
+ *  activity, divided into its partitions. */
 export const ACTIVITY_KINDS = [
   ...["action", "call-behavior-action", "send-signal-action", "accept-event-action"],
   ...["accept-time-event-action", "object-node", "input-pin", "output-pin", "data-store"],
   ...["central-buffer", "decision-node", "fork-node", "join-node", "interruptible-region"],
   ...["expansion-region", "expansion-node", "connector", "activity-comment", "activity-frame"],
   ...["input-parameter", "output-parameter"],
+  ...["structured-node", "conditional-node", "loop-node", "value-pin", "parameter-set"],
+  ...["initial-node", "activity-final", "flow-final", "merge-node"],
 ] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 
@@ -100,12 +104,14 @@ export const EXPANSION_MODES = ["iterative", "parallel", "stream"] as const;
 export type ExpansionMode = (typeof EXPANSION_MODES)[number];
 
 /** A node of the activity diagram, as its node shows it: its kind; the name of an action, an
- *  object node, a pin, a parameter, a connector, or the activity; an expansion region's mode; and
- *  the lines of a comment. */
+ *  object node, a pin, a parameter, a connector, or the activity; a value pin's value; whether a
+ *  pin streams; an expansion region's mode; and the lines of a comment. */
 export interface ActivityNode {
   id: string;
   kind: ActivityKind;
   name?: string;
+  value?: string;
+  stream?: true;
   mode?: ExpansionMode;
   body?: string[];
 }
@@ -311,19 +317,21 @@ export const nameWidth = (name: string) => Math.max(48, 24 + 8 * name.length);
 export const nameContentOf = (name: string | undefined): NodeContent =>
   name ? [[{ kind: "text", role: "body", text: name }]] : [];
 
-/** The node `own` on the side of the node it rides, `place`, and the node of its name `name`
- *  beside it on the same side, as `nameOffsetOf` places it, without an outline. */
+/** The node `own` on the side of the node it rides, `place`, and the node `id` of its name `name`
+ *  beside it on the same side, as `nameOffsetOf` places it, without an outline; a value pin's
+ *  value stands beside it so, as a node of another identifier. */
 export function namedBorderNodes(
   own: Omit<BorderNodeData, "attachedTo" | "side" | "offset">,
   place: Extract<Place, { attachedTo: string }>,
   name: string | undefined,
   heightOf: Comb["heightOf"],
+  id = nameNodeId(own.id),
 ): BorderNodeData[] {
   const content = nameContentOf(name);
   const named = nameWidth(name ?? "");
   const at = { attachedTo: place.attachedTo, side: place.side, offset: place.offset };
   const label: BorderNodeData = {
-    id: nameNodeId(own.id),
+    id,
     width: named,
     content,
     outline: "none" satisfies Outline,

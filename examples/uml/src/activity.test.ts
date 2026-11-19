@@ -1,26 +1,33 @@
 // The activity diagram's building blocks, the veto of a move into a container, the kind a
-// connection adds, and a flow's label, against what ticket 12 of uml-diagrams settled with the
-// human on 2026-11-18 and the connector's roundness decided for history on 2026-11-19, written
+// connection adds, and a flow's label, against what tickets 12 and 14 of uml-diagrams settled with
+// the human on 2026-11-18 and the connector's roundness decided for history on 2026-11-19, written
 // here from those decisions and docs/CONVENTIONS.md, not read from the example.
 // Verifies: G-20
 import { expect, test } from "bun:test";
-import type { NodeShape } from "comb";
+import type { Comb, Divide, NodeShape } from "comb";
 import {
   ACTIVITY_BORDERS,
   ACTIVITY_SHAPES,
   canMoveInto,
   connectedOf,
   flowLabelOf,
-} from "./activity-diagram";
+  nodesOf,
+} from "./activity";
 import { styleOf } from "./relationships";
 
-/** Each kind's node shape, its outline where dashed, whether it holds nodes, and a height where
- *  it is given one: a send signal action a pentagon, an accept event action a notched rectangle,
- *  an accept time event action an hourglass; a decision a diamond, a fork and a join bars given a
- *  height; a data store and a central buffer rectangles; the interruptible and the expansion
- *  region dashed rounded rectangles holding nodes; an expansion node and a pin small rectangles; a
- *  connector an ellipse; an activity parameter node a rectangle. */
-const BLOCKS: Record<string, { shape: NodeShape; dashed?: true; holds?: true; height?: true }> = {
+/** Each kind's node shape, its outline where dashed, whether it holds nodes, a height where it
+ *  is given one, and the direction it is divided in: a send signal action a pentagon, an accept
+ *  event action a notched rectangle, an accept time event action an hourglass; a decision and a
+ *  merge diamonds, a fork and a join bars given a height, an initial node a circle, an activity
+ *  final a ringed circle, a flow final a crossed circle; a data store and a central buffer
+ *  rectangles; the interruptible and the expansion region and a structured node dashed rounded
+ *  rectangles holding nodes, a conditional and a loop node the same divided one above the other;
+ *  an expansion node, a pin, and a value pin small rectangles, a parameter set a dashed one; a
+ *  connector an ellipse; an activity parameter node a rectangle; the frame divided across. */
+const BLOCKS: Record<
+  string,
+  { shape: NodeShape; dashed?: true; holds?: true; height?: true; divide?: Divide }
+> = {
   action: { shape: "rounded-rectangle" },
   "call-behavior-action": { shape: "rounded-rectangle" },
   "send-signal-action": { shape: "pentagon" },
@@ -32,14 +39,23 @@ const BLOCKS: Record<string, { shape: NodeShape; dashed?: true; holds?: true; he
   "data-store": { shape: "rectangle" },
   "central-buffer": { shape: "rectangle" },
   "decision-node": { shape: "diamond" },
+  "merge-node": { shape: "diamond" },
+  "initial-node": { shape: "circle" },
+  "activity-final": { shape: "ringed-circle" },
+  "flow-final": { shape: "crossed-circle" },
   "fork-node": { shape: "bar", height: true },
   "join-node": { shape: "bar", height: true },
   "interruptible-region": { shape: "rounded-rectangle", dashed: true, holds: true },
   "expansion-region": { shape: "rounded-rectangle", dashed: true, holds: true },
   "expansion-node": { shape: "rectangle" },
+  "structured-node": { shape: "rounded-rectangle", dashed: true, holds: true },
+  "conditional-node": { shape: "rounded-rectangle", dashed: true, divide: "down" },
+  "loop-node": { shape: "rounded-rectangle", dashed: true, divide: "down" },
+  "value-pin": { shape: "rectangle" },
+  "parameter-set": { shape: "rectangle", dashed: true },
   connector: { shape: "ellipse" },
   "activity-comment": { shape: "note" },
-  "activity-frame": { shape: "frame" },
+  "activity-frame": { shape: "frame", divide: "across" },
   "input-parameter": { shape: "rectangle" },
   "output-parameter": { shape: "rectangle" },
 };
@@ -47,14 +63,15 @@ const BLOCKS: Record<string, { shape: NodeShape; dashed?: true; holds?: true; he
 test("each kind of the activity diagram takes the building block settled for it", () => {
   expect(Object.keys(ACTIVITY_SHAPES).sort()).toEqual(Object.keys(BLOCKS).sort());
   for (const [kind, block] of Object.entries(BLOCKS)) {
-    const { shape, outline, holds, height, width } =
+    const { shape, outline, holds, height, width, divide } =
       ACTIVITY_SHAPES[kind as keyof typeof ACTIVITY_SHAPES];
     const dashed = Array.isArray(outline) ? true : undefined;
-    expect({ kind, shape, dashed, holds }).toEqual({
+    expect({ kind, shape, dashed, holds, divide }).toEqual({
       kind,
       shape: block.shape,
       dashed: block.dashed,
       holds: block.holds,
+      divide: block.divide,
     });
     // A bar given a height stands upright, taller than wide.
     if (block.height)
@@ -62,10 +79,12 @@ test("each kind of the activity diagram takes the building block settled for it"
   }
 });
 
-test("a pin rides an action, an expansion node an expansion region, a parameter node the frame", () => {
+test("a pin, a value pin, and a parameter set ride an action, an expansion node an expansion region, a parameter node the frame", () => {
   expect(ACTIVITY_BORDERS).toEqual({
     "input-pin": ["action", "call-behavior-action"],
     "output-pin": ["action", "call-behavior-action"],
+    "value-pin": ["action", "call-behavior-action"],
+    "parameter-set": ["action", "call-behavior-action"],
     "expansion-node": ["expansion-region"],
     "input-parameter": ["activity-frame"],
     "output-parameter": ["activity-frame"],
@@ -100,4 +119,28 @@ test("flows have an open arrowhead, and the interrupting edge and the exception 
     expect(styleOf(kind)).toEqual({ color: 0x6b7280, arrow: "open" });
   for (const kind of ["interrupting-edge", "exception-handler"] as const)
     expect(styleOf(kind)).toEqual({ color: 0x6b7280, arrow: "open", lightning: true });
+});
+
+/** A height for any content, as Comb's least height of a node. */
+const heightOf: Comb["heightOf"] = () => 64;
+
+test("a frame dropped without partitions takes two of half its width; a loop or a conditional node takes only the regions given", () => {
+  const [frame] = nodesOf({ id: "f", kind: "activity-frame" }, { x: 0, y: 0 }, heightOf);
+  expect(frame).toMatchObject({
+    divide: "across",
+    regions: [
+      { id: "f-partition-1", name: "Partition 1", size: 600 },
+      { id: "f-partition-2", name: "Partition 2", size: 600 },
+    ],
+  });
+  for (const kind of ["loop-node", "conditional-node"] as const) {
+    const [node] = nodesOf({ id: "n", kind }, { x: 0, y: 0 }, heightOf);
+    expect({ kind, regions: node?.regions }).toEqual({ kind, regions: undefined });
+    const size = { width: 360, height: 240, regions: [{ id: "body", name: "body", size: 200 }] };
+    const [given] = nodesOf({ id: "n", kind }, { x: 0, y: 0 }, heightOf, size);
+    expect({ kind, given }).toMatchObject({
+      kind,
+      given: { divide: "down", regions: [{ id: "body", name: "body", size: 200 }] },
+    });
+  }
 });

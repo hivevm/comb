@@ -12,13 +12,9 @@ import {
 } from "comb";
 import engineUrl from "comb/engine.wasm?url";
 import { inspect, screenPoint, type SceneSnapshot } from "comb/testing";
-import {
-  ACTIVITY_BORDERS,
-  ACTIVITY_DIAGRAM,
-  newActivityNode,
-  nodesOf as activityNodesOf,
-  RAKE,
-} from "./activity-diagram";
+import { ACTIVITY_BORDERS, newActivityNode, nodesOf as activityNodesOf, RAKE } from "./activity";
+import { ACTIVITY_DIAGRAM } from "./activity-diagram";
+import { NOTATION_DIAGRAM } from "./notation-diagram";
 import { CLASS_DIAGRAM } from "./class-diagram";
 import { PACKAGE_DIAGRAM } from "./package-diagram";
 import { BORDER_KINDS, newState, nodesOf, STATE_DIAGRAM } from "./state-diagram";
@@ -97,6 +93,7 @@ const DIAGRAMS = [
   STATE_DIAGRAM,
   ACTIVITY_DIAGRAM,
   USE_CASE_DIAGRAM,
+  NOTATION_DIAGRAM,
 ] as const;
 
 /** Names the user's connection where the rules allow the kind a connection adds between its

@@ -618,7 +618,7 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   of `comb/testing` stand on `window`, bound to its Comb.
 - **UML example** (`examples/uml`) — a second host application, of its own workspace, which imports
   Comb by its entries alone and nothing of the metric tree (G-12, ARCH-one-workspace-per-example); a
-  sidebar chooses between its five diagrams, the class diagram first, and lists the legend of the
+  sidebar chooses between its six diagrams, the class diagram first, and lists the legend of the
   kinds of relationship, each a line drawn in its colour, dash pattern, and arrowhead beside its
   name and label, one legend for the class and the package diagram. Chosen, the state diagram
   (`src/state-diagram.ts`) shows a Comb's life in the notation of UML 2.5.1 (G-20), inside a frame
@@ -644,88 +644,96 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   left by, and from a comment its anchor; and Delete removes a point's name with its point and
   refuses it alone. Chosen, the activity diagram (`src/activity-diagram.ts`) shows a load of Comb
   from `createComb` to the first frame in the notation of UML 2.5.1 (G-20), inside the frame of its
-  activity, which is divided across into the partitions of the host application, the shell, and
-  the engine, named in their bands: actions and call behavior actions, a rake icon the example
-  registers beside a call behavior action's name; send signal, accept event, and accept time event
-  actions as a pentagon, a notched rectangle, and an hourglass; pins as small border nodes of their
-  action with their names beside them, as a state diagram's points; an object node, a data store,
-  and a central buffer; the veto as a decision with guards; a fork and a join as upright bars; an
-  interruptible region and an expansion region as dashed containers, an expansion node three small
-  border nodes side by side; a pair of connectors, round ellipses of their letter; comments; and
-  activity parameter nodes on the frame. Its flows are grey edges with an open arrowhead labelled by
-  guard and weight, its interrupting edge and its exception handler lightning bolts. Its building
-  blocks stand in one table (`ACTIVITY_SHAPES`); a connection adds an object flow where an end is
-  an object node, a control flow otherwise, and from a comment its anchor; the sidebar edits a name,
-  a comment's lines, an expansion region's mode, and a flow's guard and weight; Delete removes a
-  pin's name and an expansion node's outer rectangles with their node; and its descriptor's veto of
-  a move (`canMoveInto`), which the host application hands Comb, refuses a move out of the frame
-  onto the canvas. Chosen, the use case diagram (`src/use-case-diagram.ts`) shows the developer,
-  the user, and the host application as actors outside the subject Comb, a container that holds
-  the use cases of G-1 to G-17 as ellipses, a use case's extension points below a separator; its
-  associations carry a multiplicity at each end, its include and extend are dashed with an open
-  arrowhead and their keyword, the extend's condition a comment anchored at its middle, and its
-  generalizations, between actors and between use cases, end in a hollow triangle. Its building
-  blocks stand in one table (`USE_CASE_SHAPES`); a connection adds an association between an actor
-  and a use case, a generalization between two actors, an include between two use cases, and from a
-  comment its anchor; the sidebar edits a name, a use case's extension points, a comment's lines,
-  and an association's multiplicities, and changes a relationship among the kinds the rules allow
-  between its ends; a palette's actor lands on the canvas, and its descriptor's veto of a move
-  refuses an actor moved into the subject. Chosen, the package diagram (`src/package-diagram.ts`)
-  shows Comb's modules and crates as nodes of «package» and their name and their dependencies as
-  dashed edges with an arrowhead and the label «import» or «use»; each diagram is kept as it was
-  left, its edits among it, while another is shown, for as long as the page lives.
-  `src/class-diagram.ts` describes Comb's public interface, and the render layer's edges layer for
-  its one realization, as classifiers whose content is a caption for the stereotype, a title for the
-  name, and a body text per member, at most the eight rows Comb lays out and "…" for those left out,
-  placed in rows laid out by hand by the heights `heightOf` gives; both diagrams are held to Comb's
-  source by a Bun test (`src/comb-source.test.ts`), which reads the library's files by path, never
-  by import, and fails where a package, a dependency between the modules of `packages/comb/src` or
-  the crates, or a member of the `Comb` interface is missing from the diagram or drawn there and not
-  in the source, and on a source it reads nothing from; `src/relationships.ts` maps each kind of
-  relationship, the state diagram's transition among them, to the colour, dash pattern, arrowhead,
-  and label `docs/CONVENTIONS.md` records, in one table from which the kinds and the legend's list
-  follow, and builds every edge's label, for the diagrams' data and the sidebar's edits alike, from
-  its kind, its text, and the place it already has. The diagram is edited as the metric tree is, and
-  so is the package diagram: the palette drops a class, an interface, or an abstract class, or on
-  the package diagram a package, centred on the drop; the sidebar (`src/sidebar.ts`) edits the
-  selected classifier's name, stereotype, and members, one per line of two text areas, or a
-  package's name, through `updateNode`, and the selected relationship's kind and label, or a
-  dependency's «import» or «use», through `updateEdge`, an edit Comb refuses staying in its field,
-  which is marked invalid and says why under it until the next edit of the form Comb takes clears
-  every mark of the form, since a classifier's edit sends every field of it, and a change of kind
-  keeping a label the user typed and replacing only the old kind's own label, or none, by the new
-  kind's, or none; a connection becomes an association, on the package diagram a dependency «use»,
-  and on the state diagram a transition, or from a comment an anchor, where the rules of
-  `src/rules.ts`, a pure function of the kinds of the ends, of the relationship, and of whether it
-  is a loop, allow it: from a table of refusals, each with why, which the sidebar says where it
-  refuses, they refuse a transition at a comment or the frame, into an initial pseudostate, out of a
-  final state or a terminate, from a fork to a pseudostate, and from a pseudostate to a join, a
-  trigger where UML 2.5.1 gives the transition none, an anchor but one from a comment to a state or
-  a pseudostate, on the activity diagram the flows UML 2.5.1's constraints forbid by the kinds of
-  their ends, on the use case diagram the relationships but between the kinds the human settled, and
-  every loop but a state's, which Comb offers in every diagram since it allows loops; and Delete
-  removes the selection. Each node keeps its node kind, set when it is created from the diagram's
-  data or the palette: a class, an interface, an abstract class, or a package, kept in its record
-  `Classifier` (which carries a package too, though UML counts no package as a classifier), and
-  changed by no edit of its stereotype; and a state diagram's node's, a state or any other notation
-  element of G-20's state diagram, with its state, beside the trigger, guard, and effect of each
-  transition; and an activity diagram's node's, with its activity node, beside the guard and weight
-  of each flow; and a use case diagram's node's, with its node. What the diagrams share stands in
-  `src/shared.ts`, which imports no diagram's file and no diagram's file imports another's: the
-  diagram as data (`DiagramData`), the kinds of node, which the rules import, the classifier, the
-  state, the activity node, and the use case diagram's node, the classifier's content
-  (`contentOf`), the layout by rows (`laidOut`) of the class and the package diagram, and the place
-  of a border node with the node of its name beside it, which the state and the activity diagram
-  share; the lookup of an element of the page stands in `src/element.ts`. Each diagram is described
-  in one place, the descriptor (`DiagramDescriptor`) its file exports: its identifier and name in
-  the choice of diagram, how it is built, its kinds of node with their names in the palette and the
-  form the sidebar edits each in, the kind a connection adds and how it docks, the veto of a move
-  into a container, the form the sidebar edits an edge in, the headings of a selection, and whether
-  the legend shows. The host application fills the choice of
-  diagram and the palette from the descriptors, and `src/diagram.ts` and `src/sidebar.ts` read the
-  one of the diagram shown instead of branching on a kind. `src/diagram.ts` keeps the example's copy
-  of the graph, the classifier or the state of each node, and the kind of each edge, each from a
-  change `onChange` tells or after Comb took the call that changes it, and `src/legend.ts` draws the
+  activity, which is divided across into the partitions of the host application, the shell, and the
+  engine, named in their bands: actions and call behavior actions, a rake icon the example registers
+  beside a call behavior action's name; send signal, accept event, and accept time event actions as
+  a pentagon, a notched rectangle, and an hourglass; pins as small border nodes of their action with
+  their names beside them, as a state diagram's points; an object node, a data store, and a central
+  buffer; the veto as a decision with guards; a fork and a join as upright bars; an interruptible
+  region and an expansion region as dashed containers, an expansion node three small border nodes
+  side by side; a pair of connectors, round ellipses of their letter; comments; and activity
+  parameter nodes on the frame. Its flows are grey edges with an open arrowhead labelled by guard
+  and weight, its interrupting edge and its exception handler lightning bolts. Its building blocks
+  stand in one table (`ACTIVITY_SHAPES`) of `src/activity.ts`, the notation of an activity that it
+  shares with the notation diagram; a connection adds an object flow where an end is an object node,
+  a control flow otherwise, and from a comment its anchor; the sidebar edits a name, a comment's
+  lines, an expansion region's mode, and a flow's guard and weight; Delete removes a pin's name and
+  an expansion node's outer rectangles with their node; and its descriptor's veto of a move
+  (`canMoveInto`), which the host application hands Comb, refuses a move out of the frame onto the
+  canvas. Chosen, the notation diagram (`src/notation-diagram.ts`) shows, in the same notation, the
+  elements of the activity diagram the load does not hold, as Comb drags a node into a container:
+  partitions nested in a partition; an initial node, an activity final, a flow final, and a merge; a
+  loop node and a conditional node divided down into regions, their setup, test, and body, or their
+  clauses; a structured activity node; a value pin and a streaming pin with their value and
+  `{stream}` beside them; and a parameter set, a dashed border node around two pins. It has no
+  palette, so the sidebar edits its flows alone. Chosen, the use case diagram
+  (`src/use-case-diagram.ts`) shows the developer, the user, and the host application as actors
+  outside the subject Comb, a container that holds the use cases of G-1 to G-17 as ellipses, a use
+  case's extension points below a separator; its associations carry a multiplicity at each end, its
+  include and extend are dashed with an open arrowhead and their keyword, the extend's condition a
+  comment anchored at its middle, and its generalizations, between actors and between use cases, end
+  in a hollow triangle. Its building blocks stand in one table (`USE_CASE_SHAPES`); a connection
+  adds an association between an actor and a use case, a generalization between two actors, an
+  include between two use cases, and from a comment its anchor; the sidebar edits a name, a use
+  case's extension points, a comment's lines, and an association's multiplicities, and changes a
+  relationship among the kinds the rules allow between its ends; a palette's actor lands on the
+  canvas, and its descriptor's veto of a move refuses an actor moved into the subject. Chosen, the
+  package diagram (`src/package-diagram.ts`) shows Comb's modules and crates as nodes of «package»
+  and their name and their dependencies as dashed edges with an arrowhead and the label «import» or
+  «use»; each diagram is kept as it was left, its edits among it, while another is shown, for as
+  long as the page lives. `src/class-diagram.ts` describes Comb's public interface, and the render
+  layer's edges layer for its one realization, as classifiers whose content is a caption for the
+  stereotype, a title for the name, and a body text per member, at most the eight rows Comb lays out
+  and "…" for those left out, placed in rows laid out by hand by the heights `heightOf` gives; both
+  diagrams are held to Comb's source by a Bun test (`src/comb-source.test.ts`), which reads the
+  library's files by path, never by import, and fails where a package, a dependency between the
+  modules of `packages/comb/src` or the crates, or a member of the `Comb` interface is missing from
+  the diagram or drawn there and not in the source, and on a source it reads nothing from;
+  `src/relationships.ts` maps each kind of relationship, the state diagram's transition among them,
+  to the colour, dash pattern, arrowhead, and label `docs/CONVENTIONS.md` records, in one table from
+  which the kinds and the legend's list follow, and builds every edge's label, for the diagrams'
+  data and the sidebar's edits alike, from its kind, its text, and the place it already has. The
+  diagram is edited as the metric tree is, and so is the package diagram: the palette drops a class,
+  an interface, or an abstract class, or on the package diagram a package, centred on the drop; the
+  sidebar (`src/sidebar.ts`) edits the selected classifier's name, stereotype, and members, one per
+  line of two text areas, or a package's name, through `updateNode`, and the selected relationship's
+  kind and label, or a dependency's «import» or «use», through `updateEdge`, an edit Comb refuses
+  staying in its field, which is marked invalid and says why under it until the next edit of the
+  form Comb takes clears every mark of the form, since a classifier's edit sends every field of it,
+  and a change of kind keeping a label the user typed and replacing only the old kind's own label,
+  or none, by the new kind's, or none; a connection becomes an association, on the package diagram a
+  dependency «use», and on the state diagram a transition, or from a comment an anchor, where the
+  rules of `src/rules.ts`, a pure function of the kinds of the ends, of the relationship, and of
+  whether it is a loop, allow it: from a table of refusals, each with why, which the sidebar says
+  where it refuses, they refuse a transition at a comment or the frame, into an initial pseudostate,
+  out of a final state or a terminate, from a fork to a pseudostate, and from a pseudostate to a
+  join, a trigger where UML 2.5.1 gives the transition none, an anchor but one from a comment to a
+  state or a pseudostate, on the activity diagram the flows UML 2.5.1's constraints forbid by the
+  kinds of their ends, on the use case diagram the relationships but between the kinds the human
+  settled, and every loop but a state's, which Comb offers in every diagram since it allows loops;
+  and Delete removes the selection. Each node keeps its node kind, set when it is created from the
+  diagram's data or the palette: a class, an interface, an abstract class, or a package, kept in its
+  record `Classifier` (which carries a package too, though UML counts no package as a classifier),
+  and changed by no edit of its stereotype; and a state diagram's node's, a state or any other
+  notation element of G-20's state diagram, with its state, beside the trigger, guard, and effect of
+  each transition; and an activity diagram's node's, with its activity node, beside the guard and
+  weight of each flow; and a use case diagram's node's, with its node. What the diagrams share
+  stands in `src/shared.ts`, which imports no diagram's file and no diagram's file imports
+  another's: the diagram as data (`DiagramData`), the kinds of node, which the rules import, the
+  classifier, the state, the activity node, and the use case diagram's node, the classifier's
+  content (`contentOf`), the layout by rows (`laidOut`) of the class and the package diagram, and
+  the place of a border node with the node of its name beside it, which the state and the activity
+  diagram share; what the two activity diagrams share stands in `src/activity.ts`, which imports no
+  diagram's file either; the lookup of an element of the page stands in `src/element.ts`. Each
+  diagram is described in one place, the descriptor (`DiagramDescriptor`) its file exports: its
+  identifier and name in the choice of diagram, how it is built, its kinds of node with their names
+  in the palette and the form the sidebar edits each in, the kind a connection adds and how it
+  docks, the veto of a move into a container, the form the sidebar edits an edge in, the headings of
+  a selection, and whether the legend shows. The host application fills the choice of diagram and
+  the palette from the descriptors, and `src/diagram.ts` and `src/sidebar.ts` read the one of the
+  diagram shown instead of branching on a kind. `src/diagram.ts` keeps the example's copy of the
+  graph, the classifier or the state of each node, and the kind of each edge, each from a change
+  `onChange` tells or after Comb took the call that changes it, and `src/legend.ts` draws the
   legend. Its hooks stand under `window.uml`, so that it declares nothing on `window` the metric
   tree declares; Vite serves it on port 5176, the launch configuration **Example: UML** opens it,
   and its browser tests run in the Playwright project `uml` against it in test mode on a port of

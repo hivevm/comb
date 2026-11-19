@@ -34,7 +34,7 @@ import {
   companionsOf,
   flowLabelOf,
   nameOf as activityNameOf,
-} from "./activity-diagram";
+} from "./activity";
 import {
   contentOf,
   nameNodeId,
@@ -153,7 +153,9 @@ export class Diagram {
   /** The world box of node or region `id` as the copy places it: a node by its position in its
    *  container, as high as its data or its last resize says or else as `heightOf` gives its
    *  content; a region by the sizes of the regions before it, below its node's content. None for
-   *  a border node, an unknown identifier, or a region of a node the copy no longer holds. */
+   *  a border node, an unknown identifier, a region of a node the copy no longer holds, or a
+   *  region within a region and what lies in it, as the notation diagram's nested partitions and
+   *  what they hold. */
   box(id: string): Box | undefined {
     const node = this.node(id);
     if (node) {
@@ -167,7 +169,8 @@ export class Diagram {
     const box = divided && this.box(divided.id);
     if (!divided || !box) return undefined;
     const top = this.comb.heightOf(divided.content, divided.width, divided.shape);
-    // The example divides every node it divides by `divide`, and no region again.
+    // The example divides every node it divides by `divide`; a region within a region is no
+    // region of `divided`, and has no box.
     return regionBox(
       { x: box.x, y: box.y + top, width: box.width, height: box.height - top },
       divided.divide!,

@@ -5,7 +5,7 @@
 // Verifies: G-20, ARCH-border-nodes-ride-sides
 import { expect, test } from "bun:test";
 import type { Comb } from "comb";
-import { nodesOf as activityNodesOf } from "./activity-diagram";
+import { nodesOf as activityNodesOf } from "./activity";
 import { nodesOf as stateNodesOf } from "./state-diagram";
 
 /** A height for any content, as Comb's least height of a node. */

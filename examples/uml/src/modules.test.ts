@@ -10,7 +10,7 @@ import { join } from "node:path";
 const SRC = import.meta.dir;
 const DIAGRAMS = [
   ...["class-diagram", "package-diagram", "state-diagram", "activity-diagram"],
-  "use-case-diagram",
+  ...["use-case-diagram", "notation-diagram"],
 ];
 
 /** The modules `file` imports by a relative specifier, each without its "./" and extension. */
@@ -27,9 +27,10 @@ for (const diagram of DIAGRAMS)
     expect(importsOf(`${diagram}.ts`).filter((name) => others.includes(name))).toEqual([]);
   });
 
-test("shared.ts, what the diagrams share, imports no diagram's file", () => {
-  expect(importsOf("shared.ts").filter((name) => DIAGRAMS.includes(name))).toEqual([]);
-});
+for (const shared of ["shared", "activity"])
+  test(`${shared}.ts, what diagrams share, imports no diagram's file`, () => {
+    expect(importsOf(`${shared}.ts`).filter((name) => DIAGRAMS.includes(name))).toEqual([]);
+  });
 
 test("the lookup of an element of the page is written once", () => {
   const defining = readdirSync(SRC)
@@ -57,6 +58,8 @@ const KINDS = [
   ...["central-buffer", "decision-node", "fork-node", "join-node", "interruptible-region"],
   ...["expansion-region", "expansion-node", "connector", "activity-comment", "activity-frame"],
   ...["input-parameter", "output-parameter"],
+  ...["structured-node", "conditional-node", "loop-node", "value-pin", "parameter-set"],
+  ...["initial-node", "activity-final", "flow-final", "merge-node"],
   ...["actor", "use-case", "subject", "use-case-comment"],
   ...RELATIONSHIP_KINDS,
 ];
