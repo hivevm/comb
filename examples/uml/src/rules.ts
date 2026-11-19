@@ -1,9 +1,16 @@
 // The rules of connection of the example's diagrams (G-12, G-20), a pure function of the kinds of
 // the two nodes, the kind of the relationship, and whether it leads a node back to itself, read
 // from a table of what they refuse, each with why, that docs/CONVENTIONS.md records. The veto of a
-// connection asks it, and the sidebar says why where it refuses.
+// connection asks it, and the sidebar says why where it refuses. The constraints of UML 2.5.1 a
+// reason names were read in the OCL of its metamodel, UML.xmi of 2016-11-01.
 import type { RelationshipKind } from "./relationships";
-import { STATE_KINDS, type NodeKind, type StateKind } from "./shared";
+import {
+  ACTIVITY_KINDS,
+  STATE_KINDS,
+  type ActivityKind,
+  type NodeKind,
+  type StateKind,
+} from "./shared";
 
 /** A relationship of `kind` from a node of kind `source` to one of kind `target`, a loop where
  *  `loop` says that the two are one node. */
@@ -107,28 +114,124 @@ const ANCHOR_RULES: readonly [(source: StateKind, target: StateKind) => boolean,
   ],
 ];
 
-/** The relationships the rules refuse, each as "source target kind" with why, from
- *  `TRANSITION_RULES` and `ANCHOR_RULES`. A class, a package, and the state diagram's kinds never
+/** The object nodes of the activity diagram: an object node, a pin, a data store, a central
+ *  buffer, an expansion node, and an activity parameter node. */
+const OBJECT_NODES: readonly ActivityKind[] = [
+  ...["object-node", "input-pin", "output-pin", "data-store", "central-buffer"],
+  ...["expansion-node", "input-parameter", "output-parameter"],
+] as ActivityKind[];
+
+/** The actions of the activity diagram, an expansion region among them, which UML 2.5.1 counts
+ *  as executable nodes. */
+const ACTIONS: readonly ActivityKind[] = [
+  ...["action", "call-behavior-action", "send-signal-action", "accept-event-action"],
+  ...["accept-time-event-action", "expansion-region"],
+] as ActivityKind[];
+
+/** Whether a flow from `source` to `target` has an end that is one of `kinds`. */
+const touches = (kinds: readonly ActivityKind[], source: ActivityKind, target: ActivityKind) =>
+  kinds.includes(source) || kinds.includes(target);
+
+/** The flows the activity diagram refuses, control and object flows alike, as `TRANSITION_RULES`
+ *  the transitions; the first that holds says why. */
+const FLOW_RULES: readonly [(source: ActivityKind, target: ActivityKind) => boolean, string][] = [
+  [
+    (source, target) => touches(["activity-comment"], source, target),
+    "A comment is attached by its anchor; no flow starts or ends on it.",
+  ],
+  [
+    (source, target) => touches(["activity-frame"], source, target),
+    "The frame of the activity is no node; no flow starts or ends on it.",
+  ],
+  [
+    (source, target) => touches(["interruptible-region"], source, target),
+    "An interruptible region groups nodes and is none; no flow starts or ends on it.",
+  ],
+  [
+    (_, target) => target === "output-pin",
+    "UML 2.5.1 lets no flow enter an output pin of an action (incoming_edges_structured_only).",
+  ],
+  [
+    (source) => source === "input-pin",
+    "UML 2.5.1 lets no flow leave an input pin of an action (outgoing_edges_structured_only).",
+  ],
+  [
+    (_, target) => target === "input-parameter",
+    "UML 2.5.1 lets no flow enter an input activity parameter node (no_edges, no_outgoing_edges).",
+  ],
+  [
+    (source) => source === "output-parameter",
+    "UML 2.5.1 lets no flow leave an output activity parameter node (no_edges, no_incoming_edges).",
+  ],
+];
+
+/** The control flows the activity diagram refuses besides `FLOW_RULES`: none at an object node,
+ *  since none of the example's is of a control type. */
+const CONTROL_FLOW_RULES: typeof FLOW_RULES = [
+  ...FLOW_RULES,
+  [
+    (source, target) => touches(OBJECT_NODES, source, target),
+    "UML 2.5.1 lets a control flow touch an object node only of a control type (object_nodes).",
+  ],
+];
+
+/** The object flows the activity diagram refuses besides `FLOW_RULES`: none at an action, whose
+ *  objects pass through its pins, nor at an expansion region, whose pass through its expansion
+ *  nodes. */
+const OBJECT_FLOW_RULES: typeof FLOW_RULES = [
+  ...FLOW_RULES,
+  [
+    (source, target) => touches(ACTIONS, source, target),
+    "UML 2.5.1 lets no object flow touch an action or an expansion region; objects pass through their pins or expansion nodes (no_executable_nodes).",
+  ],
+];
+
+/** The anchors the activity diagram refuses: an anchor attaches a comment to any element of the
+ *  activity but another comment. */
+const ACTIVITY_ANCHOR_RULES: typeof FLOW_RULES = [
+  [(source) => source !== "activity-comment", "An anchor starts at a comment."],
+  [
+    (_, target) => target === "activity-comment",
+    "A comment is anchored on an element of the activity, not on another comment.",
+  ],
+];
+
+/** The refusals of `rules` between every two of `kinds` for relationships of `kind`, each as
+ *  "source target kind" with why. */
+function refusalsOf<K extends NodeKind>(
+  kinds: readonly K[],
+  kind: string,
+  rules: readonly [(source: K, target: K) => boolean, string][],
+): (readonly [string, string])[] {
+  return kinds.flatMap((source) =>
+    kinds.flatMap((target) => {
+      const rule = rules.find(([holds]) => holds(source, target));
+      return rule ? [[`${source} ${target} ${kind}`, rule[1]] as const] : [];
+    }),
+  );
+}
+
+/** The relationships the rules refuse, each as "source target kind" with why, from the tables of
+ *  the state and the activity diagram. A class, a package, a state, and an activity node never
  *  share a diagram, so no case mixes them, and between classifiers nothing is refused. */
-const REFUSED: ReadonlyMap<string, string> = new Map(
-  (
-    [
-      ["transition", TRANSITION_RULES],
-      ["anchor", ANCHOR_RULES],
-    ] as const
-  ).flatMap(([kind, rules]) =>
-    STATE_KINDS.flatMap((source) =>
-      STATE_KINDS.flatMap((target) => {
-        const rule = rules.find(([holds]) => holds(source, target));
-        return rule ? [[`${source} ${target} ${kind}`, rule[1]] as const] : [];
-      }),
-    ),
-  ),
-);
+const REFUSED: ReadonlyMap<string, string> = new Map([
+  ...refusalsOf(STATE_KINDS, "transition", TRANSITION_RULES),
+  ...refusalsOf(STATE_KINDS, "anchor", ANCHOR_RULES),
+  ...refusalsOf(ACTIVITY_KINDS, "control-flow", CONTROL_FLOW_RULES),
+  ...refusalsOf(ACTIVITY_KINDS, "object-flow", OBJECT_FLOW_RULES),
+  ...refusalsOf(ACTIVITY_KINDS, "anchor", ACTIVITY_ANCHOR_RULES),
+]);
+
+/** The kind of flow a connection adds between nodes of kinds `source` and `target`: an object
+ *  flow where either is an object node, a control flow otherwise. */
+export function flowBetween(source: NodeKind, target: NodeKind): "control-flow" | "object-flow" {
+  const object = [source, target].some((kind) => OBJECT_NODES.includes(kind as ActivityKind));
+  return object ? "object-flow" : "control-flow";
+}
 
 /** The loops the rules allow, each as "node kind": a transition of a state, a composite state, or
- *  a submachine state back to itself; no pseudostate leads back to itself, nor a classifier or a
- *  package. */
+ *  a submachine state back to itself; no pseudostate leads back to itself, nor a classifier, a
+ *  package, or an activity node. */
 const LOOPS: ReadonlySet<string> = new Set([
   "state transition",
   "composite transition",

@@ -82,7 +82,9 @@ export function packageDiagram(heightOf: Comb["heightOf"]): DiagramData {
     graph: { nodes: PACKAGES.map((name) => byId.get(name)!), edges },
     classifiers,
     states: new Map(),
+    activities: new Map(),
     transitions: new Map(),
+    flows: new Map(),
     kinds: new Map(edges.map(({ id }) => [id, "dependency"])),
   };
 }

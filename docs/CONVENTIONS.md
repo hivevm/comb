@@ -117,7 +117,10 @@ skimmed. The design revision drops what prevented nothing
   crate's use of the core; its legend names the dependency by both labels, since one naming «use»
   alone leaves the diagram's most common edge, «import», unexplained. The state diagram draws a
   transition grey, solid, with an open arrowhead (`"open"`), as UML 2.5.1 draws one, and a comment's
-  anchor grey, dashed, and without one; neither is listed in the legend.
+  anchor grey, dashed, and without one; neither is listed in the legend. The activity diagram draws
+  a control flow and an object flow as a transition is drawn, an interrupting edge and the edge of
+  an exception handler the same with `lightning`, and a comment's anchor as the state diagram's;
+  none of them is listed in the legend.
 - **The UML example draws a state diagram in UML's node shapes.** Each kind of state takes the node
   shape UML gives it, so that a reader who knows UML reads the kind from the shape and no label
   names it. A pseudostate has no content and is as small as its node shape allows, so that it reads
@@ -139,6 +142,24 @@ skimmed. The design revision drops what prevented nothing
   directions instead of meeting in the middle of one side (API-edges-dock-side-or-outline); a loop
   docks at both ends on the side the connection left by, since a loop on the outline is drawn above
   its node (API-edges-dock-side-or-outline) and not where the user dragged it.
+- **The UML example draws an activity diagram in the building blocks settled for it.** Each kind
+  takes the building block `ACTIVITY_SHAPES` in `examples/uml/src/activity-diagram.ts` names, as
+  ticket 12 of uml-diagrams settled them with the human. An action and a call behavior action are
+  rounded rectangles of their name, the call behavior action's beside a rake icon the example
+  registers. A send signal action is a `pentagon`, an accept event action a `notched-rectangle`, an
+  accept time event action an `hourglass` above its time. An object node is a rectangle, and a data
+  store and a central buffer are rectangles with «datastore» and «centralBuffer». A decision is a
+  `diamond`, and a fork and a join are `bar`s given a height, upright. An interruptible region and
+  an expansion region are dashed rounded rectangles that hold nodes, the expansion region's mode its
+  keyword. A pin is a small rectangle riding its action, its name a further border node beside it
+  without an outline, as a state diagram's point. An expansion node is three small rectangles
+  without content side by side on its region's border, since one node with separators would be at
+  least 64 high; the middle one is the node, and the outer ones go with it. An activity parameter
+  node is a rectangle of its name riding the frame. A connector is an ellipse holding its letter,
+  as wide as its content makes it high, 90.51, so that it is round, as history is. The frame of
+  the activity is divided across into its partitions, regions named in their bands. A flow's label
+  shows its guard in brackets and its weight as `{weight=…}`. The example's `canMoveInto` allows a
+  move into a partition or a region and refuses one onto the canvas, out of the frame.
 - **The UML example's rules of connection are a table of what they refuse.** `allows` and
   `refusal` in `examples/uml/src/rules.ts` answer from the kinds of the two ends and of the
   relationship, against a table of refused combinations, each with why, and its test writes that
@@ -162,6 +183,26 @@ skimmed. The design revision drops what prevented nothing
 
   The sidebar offers no trigger on a transition out of a pseudostate, nor on one into a join, and no
   guard on one out of an initial pseudostate or a fork, or into a join, by the same constraints.
+
+  A connection between the activity diagram's kinds adds an object flow where an end is an object
+  node, a control flow otherwise, and from a comment its anchor. The table refuses, the first that
+  holds saying why, as the OCL of UML 2.5.1's metamodel states the constraints:
+  - a flow from or to a comment, which its anchor attaches;
+  - a flow from or to the frame of the activity, or an interruptible region, which groups nodes;
+  - a flow into an output pin (`incoming_edges_structured_only`), or out of an input pin
+    (`outgoing_edges_structured_only`), of an action;
+  - a flow into an input activity parameter node, or out of an output one (`no_edges`,
+    `no_outgoing_edges`, `no_incoming_edges`);
+  - a control flow from or to an object node, none of the example's being of a control type
+    (`object_nodes`);
+  - an object flow from or to an action, whose objects pass through its pins, or an expansion
+    region, whose objects pass through its expansion nodes (`no_executable_nodes`);
+  - an anchor that starts at no comment, or ends on a comment.
+
+  An object node, a pin, a data store, a central buffer, an expansion node, and an activity
+  parameter node count as object nodes; the actions and the expansion region as actions. The
+  constraints that count edges, such as a fork's one incoming edge, are no matter of two kinds,
+  and the table holds none of them.
 
   A connection from a comment adds its anchor instead of a transition. The table refuses an anchor
   that starts at no comment, and one that ends on anything but a state or a pseudostate: a signal

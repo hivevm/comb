@@ -73,6 +73,15 @@
           <textarea id="lines" aria-describedby="lines-refusal" rows="4"></textarea>
         </label>
         <p id="lines-refusal" class="refusal" role="alert"></p>
+        <label id="mode-field">
+          Mode
+          <select id="mode" aria-describedby="mode-refusal">
+            <option>iterative</option>
+            <option>parallel</option>
+            <option>stream</option>
+          </select>
+        </label>
+        <p id="mode-refusal" class="refusal" role="alert"></p>
         <label id="stereotype-field">
           Stereotype
           <input
@@ -138,6 +147,11 @@
           <input id="guard" aria-describedby="guard-refusal" type="text" />
         </label>
         <p id="guard-refusal" class="refusal" role="alert"></p>
+        <label id="weight-field">
+          Weight
+          <input id="weight" aria-describedby="weight-refusal" type="text" placeholder="*" />
+        </label>
+        <p id="weight-refusal" class="refusal" role="alert"></p>
         <label id="effect-field">
           Effect
           <input id="effect" aria-describedby="effect-refusal" type="text" />

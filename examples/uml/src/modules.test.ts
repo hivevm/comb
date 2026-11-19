@@ -8,7 +8,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const SRC = import.meta.dir;
-const DIAGRAMS = ["class-diagram", "package-diagram", "state-diagram"];
+const DIAGRAMS = ["class-diagram", "package-diagram", "state-diagram", "activity-diagram"];
 
 /** The modules `file` imports by a relative specifier, each without its "./" and extension. */
 function importsOf(file: string): string[] {
@@ -40,6 +40,7 @@ test("the lookup of an element of the page is written once", () => {
 const RELATIONSHIP_KINDS = [
   ...["association", "directed-association", "generalization", "realization", "dependency"],
   ...["aggregation", "composition", "transition", "anchor"],
+  ...["control-flow", "object-flow", "interrupting-edge", "exception-handler"],
 ];
 const KINDS = [
   ...["class", "interface", "abstract-class", "package"],
@@ -47,6 +48,11 @@ const KINDS = [
   ...["initial", "terminate", "choice", "junction", "fork", "join"],
   ...["shallow-history", "deep-history", "entry-point", "exit-point"],
   ...["entry-reference", "exit-reference", "send-signal", "receive-signal", "comment", "frame"],
+  ...["action", "call-behavior-action", "send-signal-action", "accept-event-action"],
+  ...["accept-time-event-action", "object-node", "input-pin", "output-pin", "data-store"],
+  ...["central-buffer", "decision-node", "fork-node", "join-node", "interruptible-region"],
+  ...["expansion-region", "expansion-node", "connector", "activity-comment", "activity-frame"],
+  ...["input-parameter", "output-parameter"],
   ...RELATIONSHIP_KINDS,
 ];
 

@@ -15,7 +15,6 @@
 // A comment is a note, anchored by a dashed edge on a state or, at the middle, on a transition
 // (API-edges-dock-nodes-or-edges). Every transition docks on the outline, a loop on its side.
 import type {
-  BorderNodeData,
   Comb,
   Divide,
   EdgeData,
@@ -23,18 +22,21 @@ import type {
   NodeContent,
   NodeData,
   NodeShape,
-  Outline,
   PlacedNodeData,
   RegionData,
-  Side,
 } from "comb";
 import { labelOf, styleOf } from "./relationships";
 import {
   ELLIPSIS,
+  nameContentOf,
+  namedBorderNodes,
+  nameNodeId,
   ROW_LIMIT,
+  sided,
   type AddedEdge,
   type DiagramData,
   type DiagramDescriptor,
+  type Place,
   type State,
   type StateKind,
   type Transition,
@@ -133,27 +135,14 @@ const CONTENT: Partial<Record<StateKind, (state: State) => NodeContent>> = {
  *  stands beside it, show none. */
 export const contentOf = (state: State): NodeContent => CONTENT[state.kind]?.(state) ?? [];
 
-/** The identifier of the node that shows the name of the point `id`. */
-export const nameNodeId = (id: string) => `${id}-name`;
-
 /** Whether `kind` rides a border and shows its name in a node beside it. */
 const isPoint = (kind: StateKind) => BORDER_KINDS[kind] !== undefined;
 
 /** The node that shows the name of `state`, a point, and its content, none for any other kind. */
 export function nameOf(state: State): { id: string; content: NodeContent } | undefined {
   if (!isPoint(state.kind)) return undefined;
-  return { id: nameNodeId(state.id), content: state.name ? [body(state.name)] : [] };
+  return { id: nameNodeId(state.id), content: nameContentOf(state.name) };
 }
-
-/** The width of the node of the name `name`, as wide as its text is drawn in the body's font. */
-export const nameWidth = (name: string) => Math.max(48, 24 + 8 * name.length);
-
-/** Where a node of the state diagram lies: at a centre in a container or on the canvas, or on a
- *  side of the node it rides, at an offset along it and with the length of that side, unbounded
- *  where left out. */
-export type Place =
-  | { x: number; y: number; container?: string }
-  | { attachedTo: string; side: Side; offset: number; length?: number };
 
 /** The regions a composite state is divided into: two, one above the other, `sizes` high, parted by
  *  a dashed line. */
@@ -174,45 +163,6 @@ export interface Size {
 /** The kinds drawn round, as wide as their content makes them high: history, whose ellipse holds
  *  its letter. */
 const ROUND: readonly StateKind[] = ["shallow-history", "deep-history"];
-
-/** The node of point `state` on the side of the node it rides, `place`, as wide as `width`, and the
- *  node of its name beside it on the same side, 4 past its end where the side leaves room for the
- *  name there, else 4 before its start, without an outline. */
-function pointNodesOf(
-  state: State,
-  own: Omit<BorderNodeData, "attachedTo" | "side" | "offset">,
-  place: Extract<Place, { attachedTo: string }>,
-  heightOf: Comb["heightOf"],
-): BorderNodeData[] {
-  const name = nameOf(state)!;
-  const named = nameWidth(state.name ?? "");
-  const at = { attachedTo: place.attachedTo, side: place.side, offset: place.offset };
-  const label: BorderNodeData = {
-    id: name.id,
-    width: named,
-    content: name.content,
-    outline: "none" satisfies Outline,
-    attachedTo: place.attachedTo,
-    side: place.side,
-    offset: nameOffsetOf({ ...place, width: own.width }, named, heightOf(name.content, named)),
-  };
-  return [{ ...own, ...at }, label];
-}
-
-/** The offset of the node of a point's name, `width` × `height`, beside the point `point` on its
- *  side, whose length it has where bounded: 4 past the point's end where the side leaves room for
- *  the name there, else 4 before its start. */
-export function nameOffsetOf(
-  point: { side: Side; offset: number; width: number; length?: number },
-  width: number,
-  height: number,
-): number {
-  const across = point.side === "top" || point.side === "bottom";
-  const half = across ? width / 2 : height / 2;
-  const reach = point.width / 2 + 4 + half;
-  const room = point.offset + reach + half <= (point.length ?? Infinity);
-  return room ? point.offset + reach : point.offset - reach;
-}
 
 /** What a composite state or the frame adds to its node: its height, at least `size.height` and
  *  what its content and its regions one above the other need, a composite state's division and
@@ -243,7 +193,7 @@ export function nodesOf(
   const content = contentOf(state);
   const width = ROUND.includes(state.kind) ? heightOf(content, size.width, shape) : size.width;
   const own = { id: state.id, width, shape, content };
-  if ("attachedTo" in place) return pointNodesOf(state, own, place, heightOf);
+  if ("attachedTo" in place) return namedBorderNodes(own, place, state.name, heightOf);
   const holder = HOLDERS.includes(state.kind)
     ? holderOf(state, size, heightOf(content, width, shape))
     : {};
@@ -490,15 +440,6 @@ const ANCHORS: EdgeData[] = [
   },
 ];
 
-/** `place`, for a point with the length of its side of the node it rides among `nodes`. */
-function sided(place: Place, nodes: readonly NodeData[], heightOf: Comb["heightOf"]): Place {
-  if (!("attachedTo" in place)) return place;
-  const owner = nodes.find(({ id }) => id === place.attachedTo)!;
-  const across = place.side === "top" || place.side === "bottom";
-  const height = owner.height ?? heightOf(owner.content, owner.width, owner.shape);
-  return { ...place, length: across ? owner.width : height };
-}
-
 /** The state diagram as graph data, each node placed by the height `heightOf` gives it, with the
  *  state of each node, the kind of each edge, a transition or an anchor, and the trigger, guard,
  *  and effect of each transition, by their identifiers. */
@@ -512,6 +453,7 @@ export function stateDiagram(heightOf: Comb["heightOf"]): DiagramData {
     graph: { nodes, edges },
     classifiers: new Map(),
     states: new Map(SEEDS.map(({ state }) => [state.id, structuredClone(state)])),
+    activities: new Map(),
     kinds: new Map([
       ...transitions.map(({ id }) => [id, "transition"] as const),
       ...ANCHORS.map(({ id }) => [id, "anchor"] as const),
@@ -519,6 +461,7 @@ export function stateDiagram(heightOf: Comb["heightOf"]): DiagramData {
     transitions: new Map(
       TRANSITIONS.map(([source, target, each = {}]) => [`${source}-${target}`, { ...each }]),
     ),
+    flows: new Map(),
   };
 }
 
@@ -556,7 +499,7 @@ export const STATE_DIAGRAM: DiagramDescriptor = {
     { kind: "frame", name: "State machine frame", form: "name" },
   ],
   connected: "transition",
-  connectedFrom: { comment: "anchor" },
+  connectedOf: (source) => (source === "comment" ? "anchor" : undefined),
   docking: dockingOf,
   edgeForm: "trigger-guard-effect",
   edgeForms: { anchor: "none" },

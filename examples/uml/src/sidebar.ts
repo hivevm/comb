@@ -1,9 +1,11 @@
 // The sidebar's forms (G-12, G-20, G-5): the selected classifier's name, stereotype, attributes,
 // and operations, one member per line; the selected state's name, entry, do, and exit behaviours,
 // internal transitions, and deferred triggers; a submachine state's name and state machine; a
-// comment's lines; or the name alone of a package, a state list, a point, a signal, or the state
-// machine; the selected relationship's kind and label, the selected dependency's «import» or
-// «use», or the selected transition's trigger, guard, and effect. A pseudostate and an anchor have
+// comment's lines; or the name alone of a package, a state list, a point, a signal, the state
+// machine, an action, an object node, a pin, a parameter, a connector, or the activity; an
+// expansion region's mode; the selected relationship's kind and label, the selected dependency's
+// «import» or «use», the selected transition's trigger, guard, and effect, or the selected flow's
+// guard and weight. A pseudostate, a control node, an anchor, and an exception handler have
 // nothing to edit. Which form a node or an edge shows, and what its heading calls it, the
 // descriptor of the diagram shown says. Each edit shows on the canvas at once. An edit Comb
 // refuses leaves its text in the field, which is marked invalid and says why under it, and the
@@ -14,10 +16,21 @@ import { EngineLostError, GraphDataError, type Selection } from "comb";
 import type { Diagram, Refusal } from "./diagram";
 import { element } from "./element";
 import { KINDS, labelIn, labelOf, RELATIONSHIPS, type RelationshipKind } from "./relationships";
-import type { Classifier, EdgeForm, NodeForm, State, Transition } from "./shared";
+import type {
+  ActivityNode,
+  Classifier,
+  EdgeForm,
+  Flow,
+  NodeForm,
+  State,
+  Transition,
+} from "./shared";
 
 /** A field of the sidebar's forms whose edit Comb may refuse. */
 type Field = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+
+/** A state or an activity node, which the node form edits by the same parts. */
+type PartedNode = State | ActivityNode;
 
 /** `limit` as the sidebar writes a number, with a comma between thousands. */
 const count = (limit: number) => limit.toLocaleString("en");
@@ -48,9 +61,9 @@ const linesOf = (text: string) =>
     .map((line) => line.trim())
     .filter((line) => line !== "");
 
-/** The parts of a state the node form edits beside its name, each by the identifier of its field:
- *  a line of text, or a list of one item per line. */
-const STATE_PARTS = [
+/** The parts of a state or an activity node the node form edits beside its name, each by the
+ *  identifier of its field: a line of text, or a list of one item per line. */
+const NODE_PARTS = [
   ["entry", "entry", "text"],
   ["do-activity", "doActivity", "text"],
   ["exit", "exit", "text"],
@@ -58,6 +71,7 @@ const STATE_PARTS = [
   ["deferred", "deferred", "list"],
   ["machine", "machine", "text"],
   ["lines", "body", "list"],
+  ["mode", "mode", "text"],
 ] as const;
 
 /** The fields each node form shows, by their identifiers. */
@@ -67,16 +81,20 @@ const SHOWN: Record<Exclude<NodeForm, "none">, readonly string[]> = {
   behaviours: ["name", "entry", "do-activity", "exit", "internal", "deferred"],
   "name-and-machine": ["name", "machine"],
   lines: ["lines"],
+  mode: ["mode"],
 };
 
 /** The fields of a transition, each by the part of it it edits. */
 const TRANSITION_PARTS = ["trigger", "guard", "effect"] as const;
 
+/** The fields of a flow, each by the part of it it edits. */
+const FLOW_PARTS = ["guard", "weight"] as const;
+
 /** The text `field` holds, trimmed, none where it is empty. */
-const textIn = (field: HTMLInputElement | HTMLTextAreaElement) => field.value.trim() || undefined;
+const textIn = (field: Field) => field.value.trim() || undefined;
 
 /** A part as its field holds it: its text or its lines, none where the field is empty. */
-function partOf(field: HTMLInputElement | HTMLTextAreaElement, type: "text" | "list") {
+function partOf(field: Field, type: "text" | "list") {
   if (type === "text") return textIn(field);
   const lines = linesOf(field.value);
   return lines.length > 0 ? lines : undefined;
@@ -93,9 +111,9 @@ export class Sidebar {
   private readonly kind = element<HTMLSelectElement>("kind");
   private readonly label = element<HTMLInputElement>("label");
   private readonly dependency = element<HTMLSelectElement>("dependency");
-  /** The field of each part of a state, with the part it edits and how. */
-  private readonly stateParts = STATE_PARTS.map(([id, key, type]) => ({
-    field: element<HTMLInputElement | HTMLTextAreaElement>(id),
+  /** The field of each part of a state or an activity node, with the part it edits and how. */
+  private readonly nodeParts = NODE_PARTS.map(([id, key, type]) => ({
+    field: element<Field>(id),
     key,
     type,
   }));
@@ -103,13 +121,15 @@ export class Sidebar {
     field: element<HTMLInputElement>(key),
     key,
   }));
+  private readonly weight = element<HTMLInputElement>("weight");
+  private readonly weightField = element("weight-field");
   private readonly connection = element("connection-refusal");
   private readonly nodeHeading = element("node-heading");
   private readonly edgeHeading = element("edge-heading");
   /** The wrapper of each field of the node form, by the field's identifier. */
   private readonly nodeWrappers = [
     ...["name", "stereotype", "attributes", "operations"],
-    ...STATE_PARTS.map(([id]) => id),
+    ...NODE_PARTS.map(([id]) => id),
   ].map((id) => [id, element(`${id}-field`)] as const);
   private readonly relationshipFields = ["kind-field", "label-field"].map((id) => element(id));
   private readonly dependencyField = element("dependency-field");
@@ -120,12 +140,13 @@ export class Sidebar {
     this.stereotype,
     this.attributes,
     this.operations,
-    ...this.stateParts.map(({ field }) => field),
+    ...this.nodeParts.map(({ field }) => field),
   ];
   private readonly edgeFields: readonly Field[] = [
     this.label,
     this.dependency,
     ...this.transitionInputs.map(({ field }) => field),
+    this.weight,
   ];
   private node: string | null = null;
   private edge: string | null = null;
@@ -142,10 +163,8 @@ export class Sidebar {
       field.addEventListener(event, () =>
         this.answer(field, this.edgeFields, this.relabel(field.value)),
       );
-    for (const { field } of this.transitionInputs)
-      field.addEventListener("input", () =>
-        this.answer(field, this.edgeFields, this.editTransition()),
-      );
+    for (const field of [...this.transitionInputs.map((each) => each.field), this.weight])
+      field.addEventListener("input", () => this.answer(field, this.edgeFields, this.editParts()));
   }
 
   /** Shows the form of what `selection` names, or the hint where it names nothing to edit. */
@@ -187,20 +206,28 @@ export class Sidebar {
     return this.diagram.descriptor.nodes.find((each) => each.kind === kind)?.form ?? "none";
   }
 
-  /** Fills the node form of `form` from the selected node's classifier, or from its state, which
-   *  has no stereotype or members, showing the fields `form` shows. */
+  /** Fills the node form of `form` from the selected node's classifier, or from its state or its
+   *  activity node, which have no stereotype or members, showing the fields `form` shows. */
   private fillNode(form: Exclude<NodeForm, "none">): void {
     const classifier = this.diagram.classifiers.get(this.node!);
-    const state = this.diagram.states.get(this.node!);
+    const parted: PartedNode | undefined =
+      this.diagram.states.get(this.node!) ?? this.diagram.activities.get(this.node!);
     for (const [id, wrapper] of this.nodeWrappers) wrapper.hidden = !SHOWN[form].includes(id);
     this.nodeHeading.textContent = `Selected ${this.diagram.descriptor.selected.node}`;
-    this.name.value = classifier?.name ?? state?.name ?? "";
+    this.name.value = classifier?.name ?? parted?.name ?? "";
     this.fillMembers(classifier);
-    for (const { field, key } of this.stateParts) {
-      const value = state?.[key] ?? "";
+    this.fillParts(parted);
+    this.clear(this.nodeFields);
+  }
+
+  /** Fills the field of each part of `node`, a state or an activity node, empty for a part it has
+   *  not, or for none. */
+  private fillParts(node: PartedNode | undefined): void {
+    const parts = (node ?? {}) as Partial<Record<string, string | string[]>>;
+    for (const { field, key } of this.nodeParts) {
+      const value = parts[key] ?? "";
       field.value = Array.isArray(value) ? value.join("\n") : value;
     }
-    this.clear(this.nodeFields);
   }
 
   /** Fills the stereotype and the members of `classifier`, empty for none. */
@@ -215,6 +242,7 @@ export class Sidebar {
     for (const field of this.relationshipFields) field.hidden = form !== "relationship";
     this.dependencyField.hidden = form !== "import-or-use";
     for (const field of this.transitionFields) field.hidden = form !== "trigger-guard-effect";
+    this.weightField.hidden = form !== "guard-and-weight";
     this.edgeHeading.textContent = `Selected ${this.diagram.descriptor.selected.edge}`;
     const text = labelIn(this.diagram.edge(this.edge!))?.text;
     // The kind select offers the kinds a relationship's form changes between, and is set only
@@ -222,14 +250,33 @@ export class Sidebar {
     if (form === "relationship") this.kind.value = kind;
     this.label.value = text ?? "";
     this.dependency.value = text ?? "«use»";
+    if (form === "guard-and-weight") this.fillFlow();
+    else this.fillTransition();
+    this.clear(this.edgeFields);
+  }
+
+  /** Fills the selected transition's trigger, guard, and effect, hiding a part UML 2.5.1 does not
+   *  let it have (`transitionParts`). */
+  private fillTransition(): void {
     const transition = this.diagram.transitions.get(this.edge!) ?? {};
     const parts = this.diagram.partsOf(this.edge!);
     for (const { field, key } of this.transitionInputs) field.value = transition[key] ?? "";
-    // A part UML 2.5.1 does not let the transition have is not offered (`transitionParts`).
     TRANSITION_PARTS.forEach((key, i) => {
       if (!parts.includes(key)) this.transitionFields[i]!.hidden = true;
     });
-    this.clear(this.edgeFields);
+  }
+
+  /** Fills the selected flow's guard and weight, the guard in the transition's field of it. */
+  private fillFlow(): void {
+    const { guard = "", weight = "" } = this.diagram.flows.get(this.edge!) ?? {};
+    this.transitionFields[TRANSITION_PARTS.indexOf("guard")]!.hidden = false;
+    this.fieldOf("guard").value = guard;
+    this.weight.value = weight;
+  }
+
+  /** The field of the transition's part `key`. */
+  private fieldOf(key: (typeof TRANSITION_PARTS)[number]): HTMLInputElement {
+    return this.transitionInputs.find((each) => each.key === key)!.field;
   }
 
   /** Marks `field` invalid where Comb refused its edit, with why under it; else clears the marks
@@ -263,31 +310,34 @@ export class Sidebar {
     return element(field.getAttribute("aria-describedby")!);
   }
 
-  /** The selected state as the form of `form` holds it: its name, and its behaviours, internal
-   *  transitions, and deferred triggers, its state machine, or its lines, where the form shows
-   *  them; a field left empty leaves its part out. */
-  private stateOf(state: State, form: Exclude<NodeForm, "none">): State {
+  /** The selected state or activity node, `node`, as the form of `form` holds it: its name, and a
+   *  state's behaviours, internal transitions, and deferred triggers, its state machine, its lines,
+   *  or an expansion region's mode, where the form shows them; a field left empty leaves its part
+   *  out. */
+  private editedOf<T extends PartedNode>(node: T, form: Exclude<NodeForm, "none">): T {
     const shown = SHOWN[form];
-    const parts = this.stateParts
+    const parts = this.nodeParts
       .filter(({ field }) => shown.includes(field.id))
       .map(({ field, key, type }) => [key, partOf(field, type)] as const);
     const name = shown.includes("name") ? { name: this.name.value } : {};
-    // A part the form leaves empty is left out of the state, not kept as undefined.
+    // A part the form leaves empty is left out of the node, not kept as undefined.
     return Object.fromEntries(
-      Object.entries({ ...state, ...name, ...Object.fromEntries(parts) }).filter(
+      Object.entries({ ...node, ...name, ...Object.fromEntries(parts) }).filter(
         ([, value]) => value !== undefined,
       ),
-    ) as unknown as State;
+    ) as unknown as T;
   }
 
-  /** Replaces the selected classifier, or the selected state, with what the form holds; the
+  /** Replaces the selected classifier, state, or activity node with what the form holds; the
    *  classifier keeps its kind whatever its stereotype reads; Comb's refusal where it refused the
    *  content. */
   private editNode(): Refusal | undefined {
     const form = this.formOfNode();
     if (form === "none") return undefined;
     const state = this.diagram.states.get(this.node!);
-    if (state) return this.diagram.editState(state.id, this.stateOf(state, form));
+    if (state) return this.diagram.editState(state.id, this.editedOf(state, form));
+    const activity = this.diagram.activities.get(this.node!);
+    if (activity) return this.diagram.editActivity(activity.id, this.editedOf(activity, form));
     const current = this.node === null ? undefined : this.diagram.classifiers.get(this.node);
     if (!current) return undefined;
     const stereotype = this.stereotype.value.trim();
@@ -308,6 +358,19 @@ export class Sidebar {
     this.diagram.rekind(this.edge, this.kind.value as RelationshipKind);
     this.label.value = labelIn(this.diagram.edge(this.edge))?.text ?? "";
     this.clear([this.label]);
+  }
+
+  /** Gives the selected flow, or the selected transition, the parts the form holds; Comb's refusal
+   *  where it refused the label that shows them. */
+  private editParts(): Refusal | undefined {
+    if (this.edge === null) return undefined;
+    if (this.formOfEdge(this.kindOf()) !== "guard-and-weight") return this.editTransition();
+    const next: Flow = {};
+    for (const key of FLOW_PARTS) {
+      const value = textIn(key === "guard" ? this.fieldOf(key) : this.weight);
+      if (value !== undefined) next[key] = value;
+    }
+    return this.diagram.editFlow(this.edge, next);
   }
 
   /** Gives the selected transition the trigger, guard, and effect the form holds, each left out

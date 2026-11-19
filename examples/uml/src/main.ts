@@ -12,25 +12,34 @@ import {
 } from "comb";
 import engineUrl from "comb/engine.wasm?url";
 import { inspect, screenPoint, type SceneSnapshot } from "comb/testing";
+import {
+  ACTIVITY_BORDERS,
+  ACTIVITY_DIAGRAM,
+  newActivityNode,
+  nodesOf as activityNodesOf,
+  RAKE,
+} from "./activity-diagram";
 import { CLASS_DIAGRAM } from "./class-diagram";
 import { PACKAGE_DIAGRAM } from "./package-diagram";
-import { BORDER_KINDS, newState, nodesOf, STATE_DIAGRAM, type Place } from "./state-diagram";
+import { BORDER_KINDS, newState, nodesOf, STATE_DIAGRAM } from "./state-diagram";
 import { Diagram } from "./diagram";
 import { element } from "./element";
 import { fillLegend } from "./legend";
 import type { RelationshipKind } from "./relationships";
 import {
+  ACTIVITY_KINDS,
   CLASSIFIER_KINDS,
   contentOf,
   newClassifier,
   NODE_WIDTH,
   STATE_KINDS,
+  type ActivityNode,
   type Classifier,
   type DiagramData,
   type DiagramDescriptor,
   type NodeKind,
+  type Place,
   type State,
-  type StateKind,
 } from "./shared";
 import { Sidebar } from "./sidebar";
 
@@ -74,12 +83,12 @@ let connected = 0;
 
 /** The diagrams the sidebar chooses between, in the order it offers them, the class diagram
  *  first: each described in one place, its file. */
-const DIAGRAMS = [CLASS_DIAGRAM, PACKAGE_DIAGRAM, STATE_DIAGRAM] as const;
+const DIAGRAMS = [CLASS_DIAGRAM, PACKAGE_DIAGRAM, STATE_DIAGRAM, ACTIVITY_DIAGRAM] as const;
 
 /** Names the user's connection where the rules allow the kind a connection adds between its
  *  ends; refuses it otherwise, and the sidebar says why. */
 function canConnect({ source, target }: Proposal): string | false {
-  const kind = diagram.connectedKind(source);
+  const kind = diagram.connectedKind(source, target);
   const why = diagram.refusal(source, target, kind);
   sidebar.refused(why ?? null);
   if (why !== undefined) return false;
@@ -94,8 +103,31 @@ const comb = await createComb(element("canvas"), {
   allowLoops: true,
   canConnect,
   canDelete: ({ nodes }) => diagram.deletable(nodes),
+  canMoveInto: (move) => diagram.descriptor.canMoveInto?.(move) ?? true,
 });
 const diagram = new Diagram(comb, DIAGRAMS[0]);
+comb.registerIcon(RAKE, rake());
+
+/** The rake a call behavior action shows beside its name: three tines down from a bar, and a stem
+ *  up from its middle, drawn in the colour of a node's text. */
+function rake(): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  Object.assign(canvas, { width: 32, height: 32 });
+  const pen = canvas.getContext("2d")!;
+  pen.strokeStyle = "#1f2937";
+  pen.lineWidth = 3;
+  pen.beginPath();
+  for (const x of [6, 16, 26]) {
+    pen.moveTo(x, 14);
+    pen.lineTo(x, 28);
+  }
+  pen.moveTo(6, 14);
+  pen.lineTo(26, 14);
+  pen.moveTo(16, 4);
+  pen.lineTo(16, 14);
+  pen.stroke();
+  return canvas;
+}
 const sidebar = new Sidebar(diagram);
 const choice = element<HTMLSelectElement>("diagram");
 const count = element("count");
@@ -169,7 +201,9 @@ function droppedOf(
   id: string,
   x: number,
   y: number,
-): { nodes: NodeData[]; classifier?: Classifier; state?: State } | undefined {
+):
+  | { nodes: NodeData[]; classifier?: Classifier; state?: State; activity?: ActivityNode }
+  | undefined {
   const classifierKind = CLASSIFIER_KINDS.find((each) => each === kind);
   const heightOf: Comb["heightOf"] = (content, width, shape) =>
     comb.heightOf(content, width, shape);
@@ -185,22 +219,29 @@ function droppedOf(
     };
     return { nodes: [node], classifier };
   }
+  const activityKind = ACTIVITY_KINDS.find((each) => each === kind);
+  if (activityKind) {
+    const activity = newActivityNode(id, activityKind);
+    const place = placeOf(ACTIVITY_BORDERS[activityKind], x, y);
+    return place && { nodes: activityNodesOf(activity, place, heightOf), activity };
+  }
   const stateKind = STATE_KINDS.find((each) => each === kind);
   if (!stateKind) return undefined;
   const state = newState(id, stateKind);
-  const place = placeOf(stateKind, x, y);
+  const place = placeOf(BORDER_KINDS[stateKind], x, y);
   return place && { nodes: nodesOf(state, place, heightOf), state };
 }
 
-/** Where a node of the state diagram of `kind` dropped at the world point (`x`, `y`) lies: a
- *  point on the nearest side of the node under it that it may ride, none where there is none;
- *  any other in the deepest container or region under it, by its centre there. */
-function placeOf(kind: StateKind, x: number, y: number): Place | undefined {
-  const owners = BORDER_KINDS[kind];
+/** Where a node of the state or the activity diagram dropped at the world point (`x`, `y`) lies:
+ *  one that rides a node of `owners` on the nearest side of the node of those under it, none
+ *  where there is none; any other in the deepest container or region under it, by its centre
+ *  there. */
+function placeOf(owners: readonly NodeKind[] | undefined, x: number, y: number): Place | undefined {
   if (owners) {
-    const owner = diagram.deepestAt(x, y, (each) =>
-      owners.includes(diagram.kindOf(each) as StateKind),
-    );
+    const owner = diagram.deepestAt(x, y, (each) => {
+      const kind = diagram.kindOf(each);
+      return kind !== undefined && owners.includes(kind);
+    });
     if (owner === undefined) return undefined;
     const box = diagram.box(owner)!;
     const sides: [Side, number, number][] = [
@@ -248,6 +289,7 @@ function drop(kind: string, clientX: number, clientY: number): void {
   }
   if (added.classifier) diagram.classifiers.set(id, added.classifier);
   if (added.state) diagram.states.set(id, added.state);
+  if (added.activity) diagram.activities.set(id, added.activity);
 }
 
 for (const item of paletteItems) {
@@ -275,10 +317,9 @@ window.uml = {
   edgeKinds: () => Object.fromEntries(diagram.kinds),
   nodeKinds: () =>
     Object.fromEntries(
-      [...diagram.classifiers.keys(), ...diagram.states.keys()].map((id) => [
-        id,
-        diagram.kindOf(id),
-      ]),
+      [...diagram.classifiers.keys(), ...diagram.states.keys(), ...diagram.activities.keys()].map(
+        (id) => [id, diagram.kindOf(id)],
+      ),
     ),
   inspect: () => inspect(comb),
   screenPoint: (x, y) => screenPoint(comb, x, y),

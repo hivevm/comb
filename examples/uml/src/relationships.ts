@@ -4,7 +4,9 @@
 // kind is told by a family of colour, its dash pattern, and its arrowhead, and by its label where
 // those cannot tell it; docs/CONVENTIONS.md records the mapping, and the sidebar's legend lists it.
 // The state diagram's transition is a kind of its own, drawn grey with an open arrowhead, as UML
-// 2.5.1 draws one, and so is the anchor of a comment, grey, dashed, and without one. The label of
+// 2.5.1 draws one, and so is the anchor of a comment, grey, dashed, and without one. The activity
+// diagram's control and object flows are drawn as a transition is; its interrupting edge and the
+// edge of an exception handler add a lightning bolt, as UML 2.5.1 draws both. The label of
 // an edge of any kind is built here, by `labelOf`, and so is the label a change of kind leaves, by
 // `patchOf`.
 import type { Arrowhead, EdgeData, EdgeLabelData, EdgePatch } from "comb";
@@ -19,16 +21,17 @@ const GREEN = 0x15803d;
 const DASH = [6, 4] as const;
 
 /** How a kind is drawn: its name, its colour, its dash pattern (solid without), its arrowhead,
- *  the text of the label each of its edges starts with (none without), and where its label stands,
- *  at `t` along the edge and `offset` to the left of its direction of travel (in the middle and on
- *  the edge without), and whether the legend lists it and the sidebar offers it. A whole is the
- *  source of an aggregation or a composition, so their label lies near the source, where UML draws
- *  the diamond. */
+ *  whether it is drawn as a lightning bolt, the text of the label each of its edges starts with
+ *  (none without), and where its label stands, at `t` along the edge and `offset` to the left of
+ *  its direction of travel (in the middle and on the edge without), and whether the legend lists
+ *  it and the sidebar offers it. A whole is the source of an aggregation or a composition, so
+ *  their label lies near the source, where UML draws the diamond. */
 export interface RelationshipStyle {
   name: string;
   color: number;
   dash?: readonly [number, number];
   arrow: Extract<Arrowhead, "end" | "open" | "none">;
+  lightning?: true;
   label?: string;
   place?: { t: number; offset: number };
   listed?: false;
@@ -69,6 +72,39 @@ const STYLES = {
     listed: false,
   },
   anchor: { name: "Anchor", color: GREY, dash: DASH, arrow: "none", listed: false },
+  // The activity diagram's kinds, which neither the legend nor the kind select lists either: a
+  // control flow and an object flow, labelled by their guard and weight where a transition is
+  // labelled; an interrupting edge, a control flow drawn as a lightning bolt; and the edge of an
+  // exception handler, a lightning bolt without a label.
+  "control-flow": {
+    name: "Control flow",
+    color: GREY,
+    arrow: "open",
+    place: { t: 0.5, offset: 14 },
+    listed: false,
+  },
+  "object-flow": {
+    name: "Object flow",
+    color: GREY,
+    arrow: "open",
+    place: { t: 0.5, offset: 14 },
+    listed: false,
+  },
+  "interrupting-edge": {
+    name: "Interrupting edge",
+    color: GREY,
+    arrow: "open",
+    lightning: true,
+    place: { t: 0.5, offset: 14 },
+    listed: false,
+  },
+  "exception-handler": {
+    name: "Exception handler",
+    color: GREY,
+    arrow: "open",
+    lightning: true,
+    listed: false,
+  },
 } satisfies Record<string, RelationshipStyle>;
 
 export type RelationshipKind = keyof typeof STYLES;
@@ -104,12 +140,13 @@ export const labelIn = (edge: Pick<EdgeData, "labels"> | undefined): EdgeLabelDa
  *  label. */
 export function styleOf(
   kind: RelationshipKind,
-): Pick<EdgeData, "color" | "dash" | "arrow" | "labels"> {
-  const { color, dash, arrow, label } = RELATIONSHIPS[kind];
+): Pick<EdgeData, "color" | "dash" | "arrow" | "lightning" | "labels"> {
+  const { color, dash, arrow, lightning, label } = RELATIONSHIPS[kind];
   return {
     color,
     arrow,
     ...(dash ? { dash } : {}),
+    ...(lightning ? { lightning } : {}),
     ...(label ? { labels: [labelOf(kind, label)] } : {}),
   };
 }

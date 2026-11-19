@@ -1,10 +1,11 @@
-// The diagram the example edits (G-12, G-20): its copy of the graph, the classifier or the state
-// of each node, the kind of each relationship, and the trigger, guard, and effect of each
-// transition, kept from every change Comb tells (API-edits-reported-as-typed-changes), as a host
-// application that persists keeps its own. An edge the user connected arrives without a kind; it
-// becomes the kind a connection adds in the diagram shown, drawn as one, and docked as the
-// diagram's descriptor says. The diagram also answers where a node lies in the world, from its
-// copy, so that a drop lands in the container under it or on the border of the node under it.
+// The diagram the example edits (G-12, G-20): its copy of the graph, the classifier, the state, or
+// the activity node of each node, the kind of each relationship, the trigger, guard, and effect of
+// each transition, and the guard and weight of each flow, kept from every change Comb tells
+// (API-edits-reported-as-typed-changes), as a host application that persists keeps its own. An
+// edge the user connected arrives without a kind; it becomes the kind a connection adds in the
+// diagram shown, drawn as one, and docked as the diagram's descriptor says. The diagram also
+// answers where a node lies in the world, from its copy, so that a drop lands in the container
+// under it or on the border of the node under it.
 import type {
   BorderNodeData,
   Comb,
@@ -20,23 +21,27 @@ import type {
 import { labelIn, labelOf, patchOf, styleOf, type RelationshipKind } from "./relationships";
 import { refusal as ruleRefusal, transitionParts, type TransitionPart } from "./rules";
 import {
+  contentOf as activityContentOf,
+  companionsOf,
+  flowLabelOf,
+  nameOf as activityNameOf,
+} from "./activity-diagram";
+import {
   contentOf,
+  nameNodeId,
+  nameOffsetOf,
+  nameWidth,
+  type ActivityNode,
   type AddedEdge,
   type Classifier,
   type DiagramData,
   type DiagramDescriptor,
+  type Flow,
   type NodeKind,
   type State,
   type Transition,
 } from "./shared";
-import {
-  labelTextOf,
-  nameOf,
-  nameNodeId,
-  nameOffsetOf,
-  nameWidth,
-  contentOf as stateContentOf,
-} from "./state-diagram";
+import { labelTextOf, nameOf, contentOf as stateContentOf } from "./state-diagram";
 
 /** An edit Comb refused, and what it threw: a `GraphDataError` for data past its limits, such as
  *  a text longer than one may be, or an `EngineLostError` once its engine is lost. */
@@ -54,14 +59,17 @@ export interface Box {
 
 /** Why a connection between two nodes is refused where one of them has no kind, as the node of a
  *  point's name. */
-const NO_KIND = "Only the example's elements connect; the name of a point takes no transition.";
+const NO_KIND =
+  "Only the example's elements connect; the name beside a point or a pin, and the outer rectangle of an expansion node, take no edge.";
 
 export class Diagram {
   graph: GraphData = { nodes: [], edges: [] };
   classifiers = new Map<string, Classifier>();
   states = new Map<string, State>();
+  activities = new Map<string, ActivityNode>();
   kinds = new Map<string, RelationshipKind>();
   transitions = new Map<string, Transition>();
+  flows = new Map<string, Flow>();
 
   /** `descriptor` describes the diagram shown: the kind a connection of the user adds and how it
    *  docks, among the rest. */
@@ -70,20 +78,20 @@ export class Diagram {
     public descriptor: DiagramDescriptor,
   ) {}
 
-  /** Takes `data`, its graph, its classifiers, its states, its kinds, and its transitions, as the
-   *  diagram's own, described by `descriptor`, and hands Comb the graph. */
-  load(
-    { graph, classifiers, states, kinds, transitions }: DiagramData,
-    descriptor: DiagramDescriptor,
-  ): void {
-    Object.assign(this, { graph, classifiers, states, kinds, transitions, descriptor });
+  /** Takes `data`, its graph, its classifiers, its states, its activity nodes, its kinds, its
+   *  transitions, and its flows, as the diagram's own, described by `descriptor`, and hands Comb
+   *  the graph. */
+  load(data: DiagramData, descriptor: DiagramDescriptor): void {
+    const { graph, classifiers, states, activities, kinds, transitions, flows } = data;
+    Object.assign(this, { graph, classifiers, states, activities, kinds, transitions, flows });
+    this.descriptor = descriptor;
     this.comb.load(graph);
   }
 
   /** The diagram's own data, as `load` takes it. */
   data(): DiagramData {
-    const { graph, classifiers, states, kinds, transitions } = this;
-    return { graph, classifiers, states, kinds, transitions };
+    const { graph, classifiers, states, activities, kinds, transitions, flows } = this;
+    return { graph, classifiers, states, activities, kinds, transitions, flows };
   }
 
   node(id: string) {
@@ -94,17 +102,20 @@ export class Diagram {
     return this.graph.edges.find((each) => each.id === id);
   }
 
-  /** The kind of node `id`: its classifier's or its state's, none for a node of neither. */
+  /** The kind of node `id`: its classifier's, its state's, or its activity node's, none for a
+   *  node of none. */
   kindOf(id: string): NodeKind | undefined {
-    return this.classifiers.get(id)?.kind ?? this.states.get(id)?.kind;
+    return (
+      this.classifiers.get(id)?.kind ?? this.states.get(id)?.kind ?? this.activities.get(id)?.kind
+    );
   }
 
-  /** The kind a connection of the user's from node `source` adds: the descriptor's for the kind of
-   *  that node, or else the diagram's. */
-  connectedKind(source: string): RelationshipKind {
-    const { connected, connectedFrom } = this.descriptor;
-    const kind = this.kindOf(source);
-    return (kind && connectedFrom?.[kind]) ?? connected;
+  /** The kind a connection of the user's from node `source` to node `target` adds: the
+   *  descriptor's for the kinds of those nodes, or else the diagram's. */
+  connectedKind(source: string, target: string): RelationshipKind {
+    const { connected, connectedOf } = this.descriptor;
+    const [from, to] = [this.kindOf(source), this.kindOf(target)];
+    return (from && to && connectedOf?.(from, to)) || connected;
   }
 
   /** Why the rules refuse a relationship of `kind` from `source` to `target`, a loop where the two
@@ -197,6 +208,18 @@ export class Diagram {
     return refusal;
   }
 
+  /** Replaces the content of activity node `id` with what `next` shows, and its activity node with
+   *  `next` once Comb took the content, as `editState` does a state; a pin's name is the content
+   *  of the node beside it. */
+  editActivity(id: string, next: ActivityNode): Refusal | undefined {
+    const name = activityNameOf(next);
+    const refusal = name
+      ? this.rename(id, name, nameWidth(next.name ?? ""))
+      : this.updateContent(id, activityContentOf(next));
+    if (!refusal) this.activities.set(id, next);
+    return refusal;
+  }
+
   /** Gives the node of the name of point `point`, `name`, its content, as wide as `width`: Comb
    *  changes no node's width, so a name of another width replaces its node by one beside the point
    *  again, as `nameOffsetOf` places it, and the old node comes back where Comb refuses the new
@@ -238,12 +261,25 @@ export class Diagram {
   /** Gives transition `id` the trigger, guard, and effect of `next`, its label showing them, and
    *  keeps `next` once Comb took the label; Comb's refusal where it refused it. */
   editTransition(id: string, next: Transition): Refusal | undefined {
-    const text = labelTextOf(next);
-    const current = labelIn(this.edge(id));
-    const kind = this.kinds.get(id)!;
-    const refusal = this.updateLabel(id, text === null ? null : labelOf(kind, text, current));
+    const refusal = this.relabel(id, labelTextOf(next));
     if (!refusal) this.transitions.set(id, next);
     return refusal;
+  }
+
+  /** Gives flow `id` the guard and weight of `next`, its label showing them, and keeps `next` once
+   *  Comb took the label, as `editTransition` does a transition. */
+  editFlow(id: string, next: Flow): Refusal | undefined {
+    const refusal = this.relabel(id, flowLabelOf(next));
+    if (!refusal) this.flows.set(id, next);
+    return refusal;
+  }
+
+  /** Gives edge `id` a label of its kind that reads `text`, where its label stands, or none for
+   *  `null`; Comb's refusal where it refused it. */
+  private relabel(id: string, text: string | null): Refusal | undefined {
+    const current = labelIn(this.edge(id));
+    const kind = this.kinds.get(id)!;
+    return this.updateLabel(id, text === null ? null : labelOf(kind, text, current));
   }
 
   /** Gives node `id` the content `content`; Comb's refusal where it refused it. */
@@ -293,23 +329,33 @@ export class Diagram {
     (MIRROR[change.kind] as (diagram: Diagram, change: GraphChange) => void)(this, change);
   }
 
-  /** Drops the nodes, their classifiers or states, and the edges a removal names; and asks Comb,
-   *  once the change is told, to remove the name of each point removed that is left. */
+  /** The nodes that go with node `id` and with no other: a point's or a pin's name, an expansion
+   *  node's outer rectangles. */
+  private companionsOf(id: string): string[] {
+    const [state, activity] = [this.states.get(id), this.activities.get(id)];
+    if (state) return nameOf(state) ? [nameNodeId(id)] : [];
+    return activity ? companionsOf(activity) : [];
+  }
+
+  /** Drops the nodes, their classifiers, states, or activity nodes, and the edges a removal
+   *  names; and asks Comb, once the change is told, to remove what went with each node removed and
+   *  is left, a point's or a pin's name and an expansion node's outer rectangles. */
   removed(nodes: readonly string[], edges: readonly string[]): void {
     const [goneNodes, goneEdges] = [new Set(nodes), new Set(edges)];
     const names = nodes
-      .map((id) => this.states.get(id))
-      .flatMap((state) => (state && nameOf(state) ? [nameNodeId(state.id)] : []))
+      .flatMap((id) => this.companionsOf(id))
       .filter((name) => !goneNodes.has(name) && this.node(name));
     this.graph.nodes = this.graph.nodes.filter(({ id }) => !goneNodes.has(id));
     this.graph.edges = this.graph.edges.filter(({ id }) => !goneEdges.has(id));
     for (const id of nodes) {
       this.classifiers.delete(id);
       this.states.delete(id);
+      this.activities.delete(id);
     }
     for (const id of edges) {
       this.kinds.delete(id);
       this.transitions.delete(id);
+      this.flows.delete(id);
     }
     if (names.length > 0)
       // After the change that removed the point is told: Comb takes no edit from inside a listener.
@@ -318,7 +364,7 @@ export class Diagram {
           this.comb.removeNodes(names);
         } catch (error) {
           // A lost engine: the name stays with the canvas that keeps its last frame.
-          console.warn("uml: the name of a removed point was not removed", error);
+          console.warn("uml: what went with a removed node was not removed", error);
         }
       });
   }
@@ -332,25 +378,27 @@ export class Diagram {
     return nameOffsetOf({ ...point, length }, width, this.comb.heightOf(content, width));
   }
 
-  /** Whether the user may delete `nodes`: the name of a point goes only with its point. */
+  /** Whether the user may delete `nodes`: what goes with a node, a point's or a pin's name and an
+   *  expansion node's outer rectangles, goes only with it. */
   deletable(nodes: readonly string[]): boolean {
     const gone = new Set(nodes);
+    const owners = [...this.states.keys(), ...this.activities.keys()];
     return nodes.every((id) => {
-      const point = [...this.states.values()].find((state) => nameOf(state)?.id === id);
-      return point === undefined || gone.has(point.id);
+      const owner = owners.find((each) => this.companionsOf(each).includes(id));
+      return owner === undefined || gone.has(owner);
     });
   }
 
-  /** Adds `edge`; one without a kind, as the user connects it, becomes the kind a connection from
-   *  its source adds, docked as the descriptor says, a transition with no parts yet. */
+  /** Adds `edge`; one without a kind, as the user connects it, becomes the kind a connection
+   *  between its ends adds, docked as the descriptor says. A transition or a flow has no record of
+   *  its parts until the sidebar first edits them. */
   added(edge: AddedEdge): void {
     this.graph.edges.push({ ...edge });
     if (this.kinds.has(edge.id)) return;
     const { docking } = this.descriptor;
-    // The user connects nodes alone (API-edges-dock-nodes-or-edges), so the source is a node.
-    const connected = this.connectedKind(edge.source!);
+    // The user connects nodes alone (API-edges-dock-nodes-or-edges), so both ends are nodes.
+    const connected = this.connectedKind(edge.source!, edge.target!);
     this.kinds.set(edge.id, connected);
-    if (connected === this.descriptor.connected) this.transitions.set(edge.id, {});
     // The kind's style, adding what it draws and clearing nothing the edge brought.
     this.comb.updateEdge(edge.id, { ...styleOf(connected), ...docking?.(edge) });
   }

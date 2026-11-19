@@ -123,7 +123,9 @@ inside a longer term of this glossary, such as "shape" in **Node shape**, is no 
   compared only with the baseline of their own kind and their graph.
 - **Relationship kind** — what a relationship of a UML diagram means, one of association,
   directed association, generalization, realization, dependency, aggregation, and composition of
-  a class or a package diagram, and the transition and a comment's anchor of a state diagram; the
+  a class or a package diagram, the transition and a comment's anchor of a state diagram, and the
+  control flow, object flow, interrupting edge, exception handler, and anchor of an activity
+  diagram; the
   UML example tells each by the colour, dash pattern, arrowhead, and edge label of its edge.
 - **Rank** — the place of a node in the order nodes are drawn and hit, kept by the engine; a load
   ranks nodes by slot, and a node added takes the highest rank.
