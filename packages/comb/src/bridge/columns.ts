@@ -965,6 +965,10 @@ const SHAPES: Readonly<Record<NodeShape, NodeShapeCode>> = {
   "notched-rectangle": NodeShapeCode.NotchedRectangle,
   note: NodeShapeCode.Note,
   frame: NodeShapeCode.Frame,
+  "crossed-circle": NodeShapeCode.CrossedCircle,
+  cross: NodeShapeCode.Cross,
+  actor: NodeShapeCode.Actor,
+  hourglass: NodeShapeCode.Hourglass,
 };
 const SIDES: Readonly<Record<Dock, SideCode>> = {
   top: SideCode.Top,

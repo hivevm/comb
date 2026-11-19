@@ -373,11 +373,23 @@ where
     R: IntoIterator<Item = Kind>,
     R::IntoIter: Clone,
 {
-    node_height(
-        rows.into_iter()
+    padded(rows, fonts).max(MIN_HEIGHT)
+}
+
+/// The height of the rows of the kinds of `rows` in `fonts` and the padding above and below them,
+/// without the least height of a node: `height` before it is raised to `MIN_HEIGHT`, which a node
+/// shape that adds to its content raises the whole node to (REN-node-shapes-cover-uml, *Height*).
+pub fn padded<R>(rows: impl IntoIterator<Item = R>, fonts: &Fonts) -> f64
+where
+    R: IntoIterator<Item = Kind>,
+    R::IntoIter: Clone,
+{
+    PADDING_TOP
+        + rows
+            .into_iter()
             .map(|row| row_height(row.into_iter(), fonts))
-            .sum(),
-    )
+            .sum::<f64>()
+        + PADDING_BOTTOM
 }
 
 /// The width of `element` drawn uncut in `fonts`: a text's, an action's, and a badge's text's

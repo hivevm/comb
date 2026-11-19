@@ -134,12 +134,12 @@ export interface Comb {
    *  gives such a node, without one in the graph and changing nothing. Content whose rows hold
    *  elements of the same kinds, row by row and in the same order, has the same height in a
    *  rectangle whatever its texts and width, so a layout asks once per shape of content; content
-   *  of no rows is as high as wide, a circle and a ringed circle are as high as wide, and a bar 8
-   *  high
-   *  (REN-closed-set-of-node-shapes). Throws a `GraphDataError` with the problem `addNode` gives
-   *  the content, the width, or the node shape, its texts counted against the budget alone, as in
-   *  an empty graph, naming the
-   *  node `""` (Q-7), and an `EngineLostError` once the engine is lost
+   *  of no rows is as high as wide, in an actor or an hourglass as high as its drawing; an actor
+   *  and an hourglass add their drawing above their content, at least 64 together; a circle, a
+   *  ringed circle, a crossed circle, and a cross are as high as wide, and a bar 8 high
+   *  (REN-node-shapes-cover-uml). Throws a `GraphDataError` with the problem `addNode` gives the
+   *  content, the width, or the node shape, its texts counted against the budget alone, as in an
+   *  empty graph, naming the node `""` (Q-7), and an `EngineLostError` once the engine is lost
    *  (API-host-asks-content-height). */
   heightOf(content: NodeContent, width: number, shape?: NodeShape): number;
   /** Adds `edge` between two nodes the graph holds, without a load, drawn with its colour, dash

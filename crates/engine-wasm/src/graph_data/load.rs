@@ -435,7 +435,7 @@ fn single_of(input: &NodeInput, fonts: &Fonts, held: u64) -> Result<Single, Grap
         given,
         resizable: node.resizable,
         is_container: node.is_container,
-        top: content_top(laid),
+        top: content_top(shape, width, laid),
         divide: divide.filter(|_| !regions.is_empty()),
         regions,
         border: node.border,
@@ -1098,6 +1098,94 @@ mod tests {
             });
             assert_eq!(height_of(&node, &Fonts::default()), Err(refused()));
         }
+    }
+
+    #[test]
+    fn content_in_a_crossed_circle_or_a_cross_is_refused_as_content_in_a_filled_node_shape() {
+        // Verifies: REN-node-shapes-cover-uml, Q-7
+        use crate::NodeShape as S;
+        let refused = || GraphDataProblem::ContentInFilledShape { node: "b".into() };
+        for shape in [S::CrossedCircle, S::Cross] {
+            assert_eq!(shaped_b(shape, |_| {}).err(), Some(refused()), "{shape:?}");
+            let node = added(0.0, 0.0, |n| {
+                n.id = "b".to_owned().into();
+                n.shape = shape.into();
+            });
+            assert_eq!(
+                add(&mut Graph::default(), &node),
+                Err(refused()),
+                "{shape:?}"
+            );
+            assert_eq!(
+                height_of(&node, &Fonts::default()),
+                Err(refused()),
+                "{shape:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_crossed_circle_a_cross_an_actor_and_an_hourglass_are_as_high_as_their_node_shape_loaded_added_and_asked()
+     {
+        // Verifies: REN-node-shapes-cover-uml, REN-node-content-and-hits
+        use crate::NodeShape as S;
+        let empty = || ContentInput::new().into();
+        // A node 100 wide: a crossed circle and a cross without content as high as wide, an actor
+        // and an hourglass of one title their drawing, 48 high, above the title and its padding,
+        // 38: at least the least height of 64 as a whole node
+        // (REN-node-shapes-cover-uml, *Height*).
+        let cases: [(S, f32, bool); 4] = [
+            (S::CrossedCircle, 100.0, false),
+            (S::Cross, 100.0, false),
+            (S::Actor, 86.0, true),
+            (S::Hourglass, 86.0, true),
+        ];
+        for (shape, height, holds) in cases {
+            let change = |n: &mut NodeInput| {
+                if !holds {
+                    n.content = empty();
+                }
+            };
+            let graph = shaped_b(shape, change).unwrap();
+            assert_eq!(graph.sizes()[3], height, "{shape:?} loaded");
+            let node = added(0.0, 0.0, |n| {
+                n.shape = shape.into();
+                change(n);
+            });
+            let mut graph = Graph::default();
+            assert_eq!(add(&mut graph, &node), Ok(0));
+            assert_eq!(graph.sizes()[1], height, "{shape:?} added");
+            assert_eq!(height_of(&node, &Fonts::default()), Ok(height), "{shape:?}");
+        }
+        // Small and without content: a crossed circle and a cross of width 12 and no height 12 by
+        // 12, and a circle of width 12, a junction, too.
+        for shape in [S::CrossedCircle, S::Cross, S::Circle] {
+            let graph = shaped_b(shape, |n| {
+                n.width = 12.0.into();
+                n.content = empty();
+            })
+            .unwrap();
+            assert_eq!(graph.sizes()[2..4], [12.0, 12.0], "{shape:?}");
+        }
+        // An actor without content and a height below its drawing's is as high as its drawing: 24
+        // for 12 wide, 48 for 100 wide; a height above it is kept.
+        for (width, given, height) in [(12.0, 10.0, 24.0), (100.0, 20.0, 48.0), (100.0, 90.0, 90.0)]
+        {
+            let graph = shaped_b(S::Actor, |n| {
+                n.width = width.into();
+                n.height = Some(given).into();
+                n.content = empty();
+            })
+            .unwrap();
+            assert_eq!(graph.sizes()[3], height, "{width} {given}");
+        }
+        // An hourglass without content or height is as high as its drawing, 1.5 times its width.
+        let graph = shaped_b(S::Hourglass, |n| {
+            n.width = 12.0.into();
+            n.content = empty();
+        })
+        .unwrap();
+        assert_eq!(graph.sizes()[3], 18.0);
     }
 
     #[test]

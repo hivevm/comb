@@ -1,8 +1,9 @@
 //! The resize of a node by its resize handles (API-edits-report-nested-changes, *Resizing*): the
 //! eight handles, the box a drag of one leaves, never smaller than 8 world units a side, than the
-//! node's content, or than the boxes of the nodes that lie directly in it, a circle kept as high
-//! as wide, and the node given that box while what it holds keeps its world position. Also what
-//! a node's data says of its size: the height it gives and whether the user may resize it.
+//! node's content, an actor's and an hourglass's drawing among it, or than the boxes of the nodes
+//! that lie directly in it, a circle, a crossed circle, and a cross kept as high as wide, and the
+//! node given that box while what it holds keeps its world position. Also what a node's data says
+//! of its size: the height it gives and whether the user may resize it.
 
 use super::{CANVAS, Graph, MoveError, PositionError, SlotError};
 use crate::geometry::{Rect, WORLD_LIMIT};
@@ -68,18 +69,20 @@ impl Handle {
 }
 
 /// The box a drag of `handle` by `by` leaves of a node of node shape `shape` whose box was `from`
-/// at the press: each side it pulls moved by the drag, never so far that the node is less than
-/// `LEAST_SIDE` wide or `least_height` high, nor that it leaves out any of `held`, the boxes of
-/// the nodes that lie directly in it together, or none. A circle and a ringed circle stay as high
-/// as wide, by the greater of the two pulls; a corner keeps the opposite corner where it stands,
-/// a side the opposite side, and the other extent grows about the node's centre line. Every side
-/// stays within the world's limit.
+/// at the press and whose rows and padding are `content` high as in a rectangle, nil for none:
+/// each side it pulls moved by the drag, never so far that the node is less than `LEAST_SIDE` wide
+/// or less high than its node shape needs for that content at its new width (`NodeShape::needed`),
+/// an actor and an hourglass their drawing too, nor that it leaves out any of `held`, the boxes of
+/// the nodes that lie directly in it together, or none. A circle, a ringed circle, a crossed
+/// circle, and a cross stay as high as wide, by the greater of the two pulls; a corner keeps the
+/// opposite corner where it stands, a side the opposite side, and the other extent grows about
+/// the node's centre line. Every side stays within the world's limit.
 pub fn resized(
     shape: NodeShape,
     handle: Handle,
     from: &Rect,
     by: [f64; 2],
-    least_height: f64,
+    content: f64,
     held: Option<&Rect>,
 ) -> Rect {
     let pulls = handle.pulls();
@@ -88,9 +91,12 @@ pub fn resized(
     let held_lo = held.map(|h| [h.min_x, h.min_y]);
     let held_hi = held.map(|h| [h.max_x, h.max_y]);
     let (mut new_lo, mut new_hi) = (lo, hi);
-    if matches!(shape, NodeShape::Circle | NodeShape::RingedCircle) {
+    if matches!(
+        shape,
+        NodeShape::Circle | NodeShape::RingedCircle | NodeShape::CrossedCircle | NodeShape::Cross
+    ) {
         let centre = [0, 1].map(|axis| f64::midpoint(lo[axis], hi[axis]));
-        let mut side = LEAST_SIDE.max(least_height);
+        let mut side = LEAST_SIDE;
         let mut pulled = f64::NEG_INFINITY;
         for axis in 0..2 {
             let extent = hi[axis] - lo[axis];
@@ -118,8 +124,13 @@ pub fn resized(
             }
         }
     } else {
-        let least = [LEAST_SIDE, LEAST_SIDE.max(least_height)];
+        let mut least = [LEAST_SIDE; 2];
         for axis in 0..2 {
+            if axis == 1 {
+                // The height its content needs at the width the drag left.
+                let width = new_hi[0] - new_lo[0];
+                least[1] = LEAST_SIDE.max(shape.needed(width, content));
+            }
             match pulls[axis] {
                 -1 => {
                     let mut at = (lo[axis] + by[axis]).min(hi[axis] - least[axis]);
@@ -189,18 +200,19 @@ impl Graph {
     }
 
     /// Resizes the node in `slot`, whose box was `from` at the press, by a drag of `handle` by
-    /// `by`, never lower than `least_height`, the height its content needs, as `resized` says,
-    /// and returns the box it now has. The nodes it holds keep their world positions, so that
-    /// their positions relative to it change with its left and top side; its height becomes the
-    /// one its data gives; its edges and its place in the index move along. A slot that holds no
-    /// node, or a box or a drag that is not finite, refuses the call, which then changes nothing.
+    /// `by`, never lower than its node shape needs for its rows and their padding, `content` high
+    /// before the least height of a node, as `resized` says, and returns the box it now has. The
+    /// nodes it holds keep their world positions, so that their positions relative to it change
+    /// with its left and top side; its height becomes the one its data gives; its edges and its
+    /// place in the index move along. A slot that holds no node, or a box or a drag that is not
+    /// finite, refuses the call, which then changes nothing.
     pub fn resize(
         &mut self,
         slot: u32,
         handle: Handle,
         from: &Rect,
         by: [f64; 2],
-        least_height: f64,
+        content: f64,
     ) -> Result<Rect, MoveError> {
         self.nodes_held(&[slot])?;
         let numbers = [from.min_x, from.min_y, from.max_x, from.max_y, by[0], by[1]];
@@ -223,7 +235,7 @@ impl Graph {
                 .reduce(|a, b| a.union(&b))
         };
         let shape = self.shape(slot);
-        let to = resized(shape, handle, from, by, least_height, held.as_ref());
+        let to = resized(shape, handle, from, by, content, held.as_ref());
         let i = slot as usize * 2;
         self.positions[i] = kept(to.min_x);
         self.positions[i + 1] = kept(to.min_y);
@@ -322,12 +334,17 @@ mod tests {
             .resize(0, Handle::Top, &from, [0.0, 500.0], 64.0)
             .unwrap();
         assert_eq!(box_of(&graph, 0), [100.0, 140.0, 400.0, 160.0]);
-        // A node that holds none stops at 8 wide and at its content's height.
+        // A node that holds none stops at 8 wide and at its content's height: rows and padding of
+        // 30 raised to the least height of 64, or of 80 kept.
         let lone = Rect::of_node(900.0, 100.0, 100.0, 64.0);
         graph
             .resize(2, Handle::BottomLeft, &lone, [500.0, -500.0], 30.0)
             .unwrap();
-        assert_eq!(box_of(&graph, 2), [992.0, 100.0, 8.0, 30.0]);
+        assert_eq!(box_of(&graph, 2), [992.0, 100.0, 8.0, 64.0]);
+        graph
+            .resize(2, Handle::BottomLeft, &lone, [500.0, -500.0], 80.0)
+            .unwrap();
+        assert_eq!(box_of(&graph, 2), [992.0, 100.0, 8.0, 80.0]);
         graph
             .resize(2, Handle::BottomLeft, &lone, [500.0, -500.0], 0.0)
             .unwrap();
@@ -366,7 +383,7 @@ mod tests {
     fn a_pentagon_a_notch_a_note_and_a_frame_are_resized_freely_as_a_rectangle_is() {
         // Verifies: REN-node-shapes-cover-uml
         // Each takes the width and the height its corner is dragged to, each on its own, as a
-        // rectangle does, never below the least height its caller gives.
+        // rectangle does, never below the content its caller gives.
         let from = Rect::of_node(0.0, 0.0, 220.0, 64.0);
         for shape in [
             NodeShape::Pentagon,
@@ -386,6 +403,56 @@ mod tests {
             let to = resized(shape, Handle::BottomRight, &from, [30.0, -40.0], 64.0, None);
             assert_eq!(to, Rect::new(0.0, 0.0, 250.0, 64.0), "{shape:?}");
         }
+    }
+
+    #[test]
+    fn a_crossed_circle_and_a_cross_set_width_and_height_together_as_a_circle_does() {
+        // Verifies: REN-node-shapes-cover-uml
+        let from = Rect::of_node(0.0, 0.0, 40.0, 40.0);
+        for shape in [NodeShape::CrossedCircle, NodeShape::Cross] {
+            let to = resized(shape, Handle::BottomRight, &from, [10.0, 30.0], 0.0, None);
+            assert_eq!(to, Rect::new(0.0, 0.0, 70.0, 70.0), "{shape:?}");
+            let to = resized(shape, Handle::Right, &from, [20.0, 99.0], 0.0, None);
+            assert_eq!(to, Rect::new(0.0, -10.0, 60.0, 50.0), "{shape:?}");
+        }
+    }
+
+    #[test]
+    fn an_actor_and_an_hourglass_are_resized_freely_never_lower_than_their_drawing_and_content() {
+        // Verifies: REN-node-shapes-cover-uml
+        // An actor 100 wide holds content 38 high below its drawing of 48: 86 high. Its width and
+        // height each follow the drag, the height never below the drawing at the new width and
+        // the content.
+        let from = Rect::of_node(0.0, 0.0, 100.0, 86.0);
+        let actor = NodeShape::Actor;
+        let to = resized(actor, Handle::BottomRight, &from, [20.0, 40.0], 38.0, None);
+        assert_eq!(to, Rect::new(0.0, 0.0, 120.0, 126.0));
+        let to = resized(actor, Handle::Bottom, &from, [0.0, -500.0], 38.0, None);
+        assert_eq!(to, Rect::new(0.0, 0.0, 100.0, 86.0));
+        // Narrowed to 20, its drawing is 40 high, so it may be 78 high.
+        let to = resized(
+            actor,
+            Handle::BottomRight,
+            &from,
+            [-80.0, -500.0],
+            38.0,
+            None,
+        );
+        assert_eq!(to, Rect::new(0.0, 0.0, 20.0, 78.0));
+        // Without content, as high as its drawing at least: an hourglass 20 wide, 30.
+        let from = Rect::of_node(0.0, 0.0, 100.0, 48.0);
+        let hourglass = NodeShape::Hourglass;
+        let to = resized(
+            hourglass,
+            Handle::BottomRight,
+            &from,
+            [-80.0, -500.0],
+            0.0,
+            None,
+        );
+        assert_eq!(to, Rect::new(0.0, 0.0, 20.0, 30.0));
+        let to = resized(hourglass, Handle::TopLeft, &from, [10.0, -20.0], 0.0, None);
+        assert_eq!(to, Rect::new(10.0, -20.0, 100.0, 48.0));
     }
 
     #[test]

@@ -54,6 +54,9 @@ const NOTE_FOLD = 12;
 const FRAME_CUT = 8;
 /** The colour of a node shape the engine fills, the near-black of a node's texts. */
 const FILLED_COLOR = TEXT_COLOR;
+/** How many times as high as wide the drawing of an actor and of an hourglass is, which the shell
+ *  draws it in; the engine gives its height as the top of the inner rectangle below it. */
+const PROPORTIONS: Partial<Record<NodeShape, number>> = { actor: 2, hourglass: 1.5 };
 /** The colour of the rest of a progress bar, past its segments. */
 const TRACK_COLOR = 0xe5e7eb;
 /** The radius of a progress bar's ends, at most half its height and half its length. */
@@ -399,13 +402,22 @@ class ElementPool {
   readonly sprites: Sprite[] = [];
 }
 
+/** A rectangle relative to a node. */
+interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 /** How a view draws a node's outline: `outline` as the node has it, `"solid"` where left out, the
- *  dash segments the engine laid of a dashed one, and a frame's tab, its inner rectangle, once the
- *  engine handed it over (REN-node-shapes-cover-uml). */
+ *  dash segments the engine laid of a dashed one, and the inner rectangle once the engine handed
+ *  it over, a frame's tab and the content below an actor's or an hourglass's drawing
+ *  (REN-node-shapes-cover-uml). */
 interface OutlineDrawing {
   outline: Outline;
   dashes: readonly (readonly number[])[];
-  tab: { width: number; height: number } | null;
+  inner: Box | null;
 }
 
 /** Draws the node shape `shape` of a node `width` × `height` into `box`, its outline in the node's
@@ -413,8 +425,11 @@ interface OutlineDrawing {
  *  border of a node, blue and wider while it is selected, whatever its outline; unselected, its
  *  outline left out where `"none"` and drawn in the engine's dashes where dashed; a note's fold and
  *  a frame's tab inside it where its outline is drawn; a filled one in the near-black of a node's
- *  texts, the ringed circle as a filled circle of half the radius inside an unfilled ring, and
- *  outlined in blue while it is selected. */
+ *  texts, the ringed circle as a filled circle of half the radius inside an unfilled ring, the
+ *  crossed circle as an unfilled ring crossed by an X and the cross as an X alone, and outlined in
+ *  blue while it is selected; and an actor's and an hourglass's drawing at the top of the node in
+ *  that near-black, unfilled, their content below without a fill or a border, their bounding
+ *  rectangle outlined in blue while it is selected. */
 function drawShape(
   box: Graphics,
   shape: NodeShape,
@@ -425,7 +440,61 @@ function drawShape(
   box.clear();
   const outlined = OUTLINES[shape];
   if (outlined) drawOutlined(box, shape, outlined, size, selected, drawing);
+  else if (PROPORTIONS[shape] !== undefined) drawCaptioned(box, shape, size, selected, drawing);
   else drawFilled(box, shape, size, selected);
+}
+
+/** Draws the captioned node shape `shape`, `width` × `height`, into `box`, as `drawShape` says: an
+ *  actor's head, body, two arms, and two legs, and an hourglass's two triangles meeting at their
+ *  points, each stroked with the border's width within the drawing's box, as high as the top of the
+ *  inner rectangle the engine handed over and of the node shape's proportion, centred; nothing of
+ *  it until the engine has handed the inner rectangle over, or where the drawing has no height. */
+function drawCaptioned(
+  box: Graphics,
+  shape: NodeShape,
+  [width, height]: readonly [number, number],
+  selected: boolean,
+  { inner }: OutlineDrawing,
+): void {
+  const proportion = PROPORTIONS[shape]!;
+  // Held to the node's width, which a resize changes before the engine hands the next one over.
+  const h = Math.min(inner?.y ?? 0, Math.max(width, 0) * proportion);
+  if (h > 0) drawFigure(box, shape, width, [h / proportion, h]);
+  if (selected) box.rect(0, 0, width, height).stroke({ color: SELECTED_STROKE, width: 2 });
+}
+
+/** Draws the figure of the captioned node shape `shape` into `box`, `w` × `h`, centred at the top
+ *  of a node `width` wide, as `drawCaptioned` says. */
+function drawFigure(
+  box: Graphics,
+  shape: NodeShape,
+  width: number,
+  [w, h]: readonly [number, number],
+): void {
+  const x = (width - w) / 2;
+  const middle = x + w / 2;
+  const ink = { color: FILLED_COLOR, width: 1 };
+  if (shape === "actor") {
+    // A head a quarter of the drawing high, the body to 0.65 of it, the arms across at 0.35.
+    const head = h / 8;
+    box.circle(middle, head, head).stroke(ink);
+    box
+      .moveTo(middle, 2 * head)
+      .lineTo(middle, 0.65 * h)
+      .stroke(ink);
+    box
+      .moveTo(x, 0.35 * h)
+      .lineTo(x + w, 0.35 * h)
+      .stroke(ink);
+    box
+      .moveTo(x, h)
+      .lineTo(middle, 0.65 * h)
+      .lineTo(x + w, h)
+      .stroke(ink);
+  } else {
+    box.poly([x, 0, x + w, 0, middle, h / 2], true).stroke(ink);
+    box.poly([x, h, x + w, h, middle, h / 2], true).stroke(ink);
+  }
 }
 
 /** Draws the content node shape `shape`, of `outlined`, `width` × `height`, into `box`, as
@@ -463,6 +532,30 @@ function drawFilled(
       box.rect(-2, -2, width + 4, height + 4).stroke({ color: SELECTED_STROKE, width: 2 });
     return;
   }
+  const ink = { color: FILLED_COLOR, width: 1 };
+  if (shape === "cross") {
+    box.moveTo(0, 0).lineTo(width, height).stroke(ink);
+    box.moveTo(width, 0).lineTo(0, height).stroke(ink);
+    if (selected)
+      box.rect(-2, -2, width + 4, height + 4).stroke({ color: SELECTED_STROKE, width: 2 });
+    return;
+  }
+  if (shape === "crossed-circle") {
+    // The ring within the node, and the X between its diagonal points.
+    const ring = Math.max(cx - ink.width / 2, 0);
+    const d = ring * Math.SQRT1_2;
+    box.circle(cx, cy, ring).stroke(ink);
+    box
+      .moveTo(cx - d, cy - d)
+      .lineTo(cx + d, cy + d)
+      .stroke(ink);
+    box
+      .moveTo(cx + d, cy - d)
+      .lineTo(cx - d, cy + d)
+      .stroke(ink);
+    if (selected) box.circle(cx, cy, cx + 2).stroke({ color: SELECTED_STROKE, width: 2 });
+    return;
+  }
   if (shape === "ringed-circle") {
     const ring = Math.max(cx - RING_WIDTH / 2, 0);
     box.circle(cx, cy, ring).stroke({ color: FILLED_COLOR, width: RING_WIDTH });
@@ -478,7 +571,7 @@ function drawInside(
   box: Graphics,
   shape: NodeShape,
   [width, height]: readonly [number, number],
-  { tab }: OutlineDrawing,
+  { inner: tab }: OutlineDrawing,
   border: { color: number; width: number },
 ): void {
   if (shape === "note") {
@@ -518,16 +611,16 @@ const OUTLINES: Partial<
   "rounded-rectangle": (box, width, height) => box.roundRect(0, 0, width, height, ROUNDED_RADIUS),
   ellipse: (box, width, height) => box.ellipse(width / 2, height / 2, width / 2, height / 2),
   diamond: (box, width, height) =>
-    box.poly([width / 2, 0, width, height / 2, width / 2, height, 0, height / 2]),
+    box.poly([width / 2, 0, width, height / 2, width / 2, height, 0, height / 2], true),
   pentagon: (box, width, height) => {
     const d = depthOf(width, height);
-    return box.poly([0, 0, width - d, 0, width, height / 2, width - d, height, 0, height]);
+    return box.poly([0, 0, width - d, 0, width, height / 2, width - d, height, 0, height], true);
   },
   "notched-rectangle": (box, width, height) =>
-    box.poly([0, 0, width, 0, width, height, 0, height, depthOf(width, height), height / 2]),
+    box.poly([0, 0, width, 0, width, height, 0, height, depthOf(width, height), height / 2], true),
   note: (box, width, height) => {
     const c = foldOf(width, height);
-    return box.poly([0, 0, width - c, 0, width, c, width, height, 0, height]);
+    return box.poly([0, 0, width - c, 0, width, c, width, height, 0, height], true);
   },
   frame: (box, width, height) => box.rect(0, 0, width, height),
 };
@@ -599,10 +692,10 @@ export class NodeGraphic extends Container {
   /** The dash segments of the node's dashed outline as the engine laid them, each
    *  `[x0, y0, x1, y1]` relative to its node, which inspection reports. */
   private dashes: number[][] = [];
-  /** A frame's tab as the engine handed it over, none until it has, and whether the view waits
-   *  for it (REN-node-shapes-cover-uml). */
-  private tab: { width: number; height: number } | null = null;
-  private needsTab = false;
+  /** The inner rectangle of a frame, an actor, or an hourglass as the engine handed it over, none
+   *  until it has, and whether the view waits for it (REN-node-shapes-cover-uml). */
+  private inner: Box | null = null;
+  private needsInner = false;
   /** The pills of the node's badges, drawn together. */
   private readonly pills = new Graphics();
   /** The pieces of the node's progress bars, drawn together. */
@@ -725,8 +818,14 @@ export class NodeGraphic extends Container {
     });
   }
 
-  /** The node shape the view draws, the parts of it its `Graphics` holds. */
-  drawnShape(): { shape: NodeShape; outline: DrawnOutline[]; outlined: Outline } {
+  /** The node shape the view draws, the parts of it its `Graphics` holds, and of an actor and an
+   *  hourglass the box its drawing's parts span. */
+  drawnShape(): {
+    shape: NodeShape;
+    outline: DrawnOutline[];
+    outlined: Outline;
+    drawing?: { x: number; y: number; width: number; height: number };
+  } {
     const outline = this.box.context.instructions.flatMap((instruction) => {
       const { action } = instruction;
       if (action !== "fill" && action !== "stroke") return [];
@@ -740,7 +839,16 @@ export class NodeGraphic extends Container {
       });
     });
     const { node } = this.drawn;
-    return { shape: node?.shape ?? "rectangle", outline, outlined: node?.outline ?? "solid" };
+    const shape = node?.shape ?? "rectangle";
+    const drawn = { shape, outline, outlined: node?.outline ?? "solid" };
+    if (PROPORTIONS[shape] === undefined) return drawn;
+    const parts = outline.filter(({ color }) => color === FILLED_COLOR);
+    // A drawing of no height, or one still waiting for the inner rectangle, has no box.
+    if (parts.length === 0) return drawn;
+    const [left, top] = [Math.min(...parts.map((p) => p.x)), Math.min(...parts.map((p) => p.y))];
+    const right = Math.max(...parts.map((p) => p.x + p.width));
+    const bottom = Math.max(...parts.map((p) => p.y + p.height));
+    return { ...drawn, drawing: { x: left, y: top, width: right - left, height: bottom - top } };
   }
 
   /** The size the node was last drawn at. */
@@ -771,9 +879,9 @@ export class NodeGraphic extends Container {
     )
       return;
     const elements = end - start;
-    // A frame asks for its tab anew whenever it is drawn anew, so that no tab outlives the content
-    // or the fonts it was laid out in.
-    this.tab = null;
+    // A frame, an actor, and an hourglass ask for their inner rectangle anew whenever they are
+    // drawn anew, so that none outlives the content or the fonts it was laid out in.
+    this.inner = null;
     this.drawn = { node, width, height, selected, elements, icons: icons.version };
     this.dashes = dashes;
     this.size = { width, height };
@@ -798,16 +906,18 @@ export class NodeGraphic extends Container {
   }
 
   /** Draws the node shape of `node`, `width` × `height`, or where it is a region its line and its
-   *  band in place of one; a frame waits for its tab where the engine has not handed it over. */
+   *  band in place of one; a frame, an actor, and an hourglass wait for their inner rectangle where
+   *  the engine has not handed it over. */
   private drawBox(node: Readonly<NodeView>, width: number, height: number, selected: boolean) {
     this.lines.clear();
     if (!node.region) {
       this.region = null;
       if (this.bandText) this.bandText.visible = false;
       const shape = node.shape ?? "rectangle";
-      this.needsTab = shape === "frame" && this.tab === null;
-      const { dashes, tab } = this;
-      const drawing = { outline: node.outline ?? "solid", dashes, tab };
+      const asks = shape === "frame" || PROPORTIONS[shape] !== undefined;
+      this.needsInner = asks && this.inner === null;
+      const { dashes, inner } = this;
+      const drawing = { outline: node.outline ?? "solid", dashes, inner };
       drawShape(this.box, shape, [width, height], selected, drawing);
       return;
     }
@@ -884,13 +994,14 @@ export class NodeGraphic extends Container {
     region.band.name = name;
   }
 
-  /** Draws the tab of the frame the view draws, as `innerOf` hands it over, where the view waits
-   *  for it; the layer calls it once it no longer reads the views of the engine's buffers. */
-  drawTab(innerOf: (slot: number) => { width: number; height: number }): void {
+  /** Draws the node shape of the frame, the actor, or the hourglass the view draws with its inner
+   *  rectangle as `innerOf` hands it over, where the view waits for it; the layer calls it once it
+   *  no longer reads the views of the engine's buffers. */
+  drawInner(innerOf: (slot: number) => Box): void {
     const { node, selected } = this.drawn;
-    if (!this.needsTab || !node) return;
-    const { width, height } = innerOf(this.slot);
-    this.tab = { width, height };
+    if (!this.needsInner || !node) return;
+    const { x, y, width, height } = innerOf(this.slot);
+    this.inner = { x, y, width, height };
     this.drawBox(node, this.size.width, this.size.height, selected);
   }
 
@@ -909,8 +1020,8 @@ export class NodeGraphic extends Container {
     this.showTexts([]);
     this.rules.clear();
     this.dashes = [];
-    this.tab = null;
-    this.needsTab = false;
+    this.inner = null;
+    this.needsInner = false;
     this.lines.clear();
     this.region = null;
     if (this.bandText) this.bandText.visible = false;
@@ -1089,10 +1200,10 @@ export class NodesContainer extends Container {
     for (const view of this.children as NodeGraphic[]) view.nameBand();
   }
 
-  /** Has each view of a frame draw its tab as `innerOf` hands it over, where it waits for it;
-   *  called once no view of the engine's buffers is read any more in the frame
-   *  (REN-node-shapes-cover-uml). */
-  drawTabs(innerOf: (slot: number) => { width: number; height: number }): void {
-    for (const view of this.children as NodeGraphic[]) view.drawTab(innerOf);
+  /** Has each view of a frame, an actor, or an hourglass draw its node shape with its inner
+   *  rectangle as `innerOf` hands it over, where it waits for it; called once no view of the
+   *  engine's buffers is read any more in the frame (REN-node-shapes-cover-uml). */
+  drawInners(innerOf: (slot: number) => Box): void {
+    for (const view of this.children as NodeGraphic[]) view.drawInner(innerOf);
   }
 }

@@ -445,7 +445,8 @@ mod tests {
         assert_eq!(patch(Vec::new()), Ok(None));
         assert_eq!(
             patch(vec![("content", titled("A").into())]),
-            Ok(Some(("A".to_owned(), (64.0, 1))))
+            // Its rows and padding, 38, before the least height its node shape applies.
+            Ok(Some(("A".to_owned(), (38.0, 1))))
         );
         assert_eq!(
             patch(vec![

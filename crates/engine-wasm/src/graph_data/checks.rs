@@ -91,9 +91,10 @@ pub(crate) fn given_height(id: &str, height: Option<f64>) -> Result<Option<f32>,
     Ok(Some(height))
 }
 
-/// The height of the node of node shape `shape`, `width` wide, whose content of `rows` rows lays
-/// out to `content` high in a rectangle, and whose data gives the height `given`, or none, as
-/// the engine keeps it: `NodeShape::sized` (REN-node-shapes-cover-uml, *Height*).
+/// The height of the node of node shape `shape`, `width` wide, whose content of `rows` rows is
+/// `content` high with its padding, before the least height of a node, and whose data gives the
+/// height `given`, or none, as the engine keeps it: `NodeShape::sized`
+/// (REN-node-shapes-cover-uml, *Height*).
 pub(crate) fn node_height(
     shape: NodeShape,
     width: f32,
@@ -134,11 +135,20 @@ pub(crate) const fn kept_height(height: f64) -> f32 {
     height as f32
 }
 
-/// The height of a node's content, `(content, rows)` as its layout gives it, below which its
-/// regions lie: the rows and their padding, without the least height of a node; 0 without rows
-/// (ARCH-regions-are-container-slots, *Division*).
-pub(crate) const fn content_top((content, rows): (f64, usize)) -> f32 {
-    if rows > 0 { kept_height(content) } else { 0.0 }
+/// How far below the top of a node of node shape `shape`, `width` wide, its regions lie, its
+/// content `(content, rows)` as its layout gives it, its rows and their padding
+/// (ARCH-regions-are-container-slots, *Division*): below an actor's or an hourglass's drawing and
+/// its content, as high as `NodeShape::needed` makes them; below any other node's content, at
+/// least the least height of a node; at 0 for another node without rows.
+pub(crate) fn content_top(shape: NodeShape, width: f32, (content, rows): (f64, usize)) -> f32 {
+    let content = if rows > 0 { content } else { 0.0 };
+    if shape.drawing(f64::from(width)).is_some() {
+        kept_height(shape.needed(f64::from(width), content))
+    } else if rows > 0 {
+        kept_height(content.max(comb_engine::content::MIN_HEIGHT))
+    } else {
+        0.0
+    }
 }
 
 /// The outline `outline` of the node `id` at `index` as the engine keeps it, or its refusal as
@@ -205,7 +215,7 @@ pub(super) fn nodes_of<'a>(
         content_fits_shape(node.id, node.shape, rows)?;
         let laid = content.check(index, node.id, &mut cursor, fonts)?;
         let height = node_height(node.shape, width, (laid, rows), height_given);
-        tops.push(content_top((laid, rows)));
+        tops.push(content_top(node.shape, width, (laid, rows)));
         within_by_height(node.id, position[1], height)?;
         if slots.insert(node.id, slot(index)?).is_some() {
             return Err(GraphDataProblem::DuplicateNode {

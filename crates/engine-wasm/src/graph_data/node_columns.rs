@@ -69,6 +69,10 @@ pub enum NodeShapeCode {
     NotchedRectangle,
     Note,
     Frame,
+    CrossedCircle,
+    Cross,
+    Actor,
+    Hourglass,
     Unnamed,
 }
 

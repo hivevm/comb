@@ -84,7 +84,8 @@ inside a longer term of this glossary, such as "shape" in **Node shape**, is no 
   _Avoid:_ graph vertex, block.
 - **Node shape** — the form, from a closed set the engine knows, in which a node is drawn and hit:
   a rectangle, a rounded rectangle, an ellipse, a circle, a ringed circle, a diamond, a bar, a
-  pentagon, a notched rectangle, a note, or a frame.
+  pentagon, a notched rectangle, a note, a frame, a crossed circle, a cross, an actor, or an
+  hourglass.
   It is a property of a node, not a diagram element of its own.
   _Avoid:_ shape alone, figure, symbol.
 - **Node kind** — what a node of the UML example is, a class, an interface, an abstract class, a

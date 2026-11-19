@@ -205,16 +205,19 @@ diagram, a `pentagon` points to the right and a `notched-rectangle` is notched a
 by half its height and at most a quarter of its width, and a `note` folds its top right corner. A
 `frame` lays its content out in a tab at its top left, as wide as the content needs, and holds
 what lies below. A pentagon or a notch is hit within its outline, and a note or a frame within its
-rectangle. Its `outline` is `"solid"` where left out, `"none"`, or a dash and a gap, which Comb
-lays along the outline clockwise from its top left; a selected node's outline is drawn solid.
+rectangle. A `crossed-circle` and a `cross` hold no content and are as high as wide; an `actor`
+and an `hourglass` draw a stick figure or two triangles at their top, at most 48 high, and lay
+their content out directly below it, never lower than both and, with content, at least 64 as a
+whole. Its `outline` is `"solid"` where left out, `"none"`, or a dash and a gap, which Comb lays
+along the outline clockwise from its top left; a selected node's outline is drawn solid.
 
 A selected node marked `resizable: true` shows eight resize handles, at its corners and the middles
 of its sides; a drag of one resizes the node from that side or corner, never smaller than 8 a side,
-than its content, or than the boxes of the nodes that lie directly in it, and a circle stays as
-high as wide. What the node holds keeps its place on the canvas, and the release is told once as
-`nodeResized` with the node's `x`, `y`, relative to its container, `width`, `height`, and `moved`,
-the new positions relative to it of the nodes it holds that a resize at its left or top moved
-within it; a resize that changed no box is not told.
+than its content, or than the boxes of the nodes that lie directly in it, and a circle, a crossed
+circle, and a cross stay as high as wide. What the node holds keeps its place on the canvas, and
+the release is told once as `nodeResized` with the node's `x`, `y`, relative to its container,
+`width`, `height`, and `moved`, the new positions relative to it of the nodes it holds that a
+resize at its left or top moved within it; a resize that changed no box is not told.
 
 A node marked `isContainer: true` is a container, drawn below the edges and the other nodes; a
 node whose `container` names one lies in it, its `x` and `y` relative to the container's top left

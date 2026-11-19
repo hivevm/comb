@@ -1879,7 +1879,7 @@ fn border_nodes_stay_on_their_node_s_outline_at_their_side_through_moves_resizes
     // Verifies: ARCH-border-nodes-ride-sides, G-17
     let mut rng = Lcg(0x000B_0DE5);
     let mut counts = Counts::default();
-    for _ in 0..20 {
+    for _ in 0..28 {
         let mut bordered = Bordered::new(&mut rng);
         assert_riding(&bordered.graph, &bordered.riders);
         for _ in 0..60 {

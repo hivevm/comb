@@ -316,16 +316,17 @@ mod tests {
         graph.translate(&[container], 10.0, 20.0).unwrap();
         assert_eq!(&graph.positions()[2..4], [205.0, 55.0]);
         assert_eq!(found(&mut graph).1, vec![2, 0, 1]);
-        // A shrink holds its offset within the side, a growth gives it back.
+        // A shrink holds its offset within the side, a growth gives it back. The action holds no
+        // content, so it may be as low as 8.
         let from = Rect::new(10.0, 20.0, 210.0, 120.0);
         let to = graph
-            .resize(0, crate::graph::Handle::Bottom, &from, [0.0, -80.0], 8.0)
+            .resize(0, crate::graph::Handle::Bottom, &from, [0.0, -80.0], 0.0)
             .unwrap();
         assert_eq!(to.max_y, 40.0);
         assert_eq!(&graph.positions()[2..4], [205.0, 35.0]);
         let from = to;
         graph
-            .resize(0, crate::graph::Handle::Bottom, &from, [0.0, 80.0], 8.0)
+            .resize(0, crate::graph::Handle::Bottom, &from, [0.0, 80.0], 0.0)
             .unwrap();
         assert_eq!(&graph.positions()[2..4], [205.0, 55.0]);
         assert_eq!(graph.place_of(1).unwrap().offset, 40.0);

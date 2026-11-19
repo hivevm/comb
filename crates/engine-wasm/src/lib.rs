@@ -1091,11 +1091,13 @@ impl Engine {
     /// Resizes the node in `slot`, whose box was `from`, `x, y, width, height`, at the press, by a
     /// drag of `handle` by `(dx, dy)` world units (API-edits-report-nested-changes, *Resizing*):
     /// the sides the handle pulls move by the drag, never so far that the node is less than 8
-    /// world units a side, lower than its content needs, or leaves out a box of the nodes that lie
-    /// directly in it; a circle stays as high as wide. The nodes it holds keep their world
-    /// positions, and its height becomes the one its data gives; the buffers hold the box it now
-    /// has. A slot that holds no node throws a `SlotError`, and a box or a drag that is not finite
-    /// a `NumberError` `nonFinitePoint`; either way nothing changes.
+    /// world units a side, lower than its content needs, an actor and an hourglass their drawing
+    /// and their content at the new width, or leaves out a box of the nodes that lie directly in
+    /// it; a circle, a ringed circle, a crossed circle, and a cross stay as high as wide. The
+    /// nodes it holds keep their world positions, and its height becomes the one its data gives;
+    /// the buffers hold the box it now has. A slot that holds no node throws a `SlotError`, and a
+    /// box or a drag that is not finite a `NumberError` `nonFinitePoint`; either way nothing
+    /// changes.
     #[wasm_bindgen(js_name = resizeNode)]
     pub fn resize_node(
         &mut self,
@@ -1371,14 +1373,16 @@ impl Engine {
         let shape = self.graph.shape(slot);
         let (content, node) = self.content.of(slot);
         let (laid, rows) = content.laid(node, &self.fonts);
-        let least = if rows > 0 && shape.holds_content() {
-            shape.height(width, laid)
+        // The height of its rows and their padding, before the least height of a node, which the
+        // node shape raises and grows at the width the drag leaves (`NodeShape::needed`).
+        let content = if rows > 0 && shape.holds_content() {
+            laid
         } else {
             0.0
         };
         let from = Rect::new(x, y, x + width, y + height);
         self.graph
-            .resize(slot, handle, &from, by, least)
+            .resize(slot, handle, &from, by, content)
             .map_err(|error| match error {
                 MoveError::Slot(error) => CallRefusal::from(error),
                 MoveError::Position(PositionError::NonFinite) => NumberError::NonFinitePoint.into(),
@@ -1531,7 +1535,7 @@ impl Engine {
         }
         self.graph
             .set_outline(slot, patched.outline.unwrap_or(self.graph.outline(slot)))?;
-        let top = graph_data::content_top(laid);
+        let top = graph_data::content_top(shape, width, laid);
         self.graph.set_top(slot, top);
         let removed = match patched.regions {
             Some((divide, regions)) => self.divide_anew(slot, divide, &regions, kept, top)?,
@@ -1710,7 +1714,8 @@ impl Engine {
                 let _ = self.graph.resize_node(slot, height);
             }
             if self.graph.divided(slot).is_some() {
-                self.graph.set_top(slot, graph_data::content_top(laid));
+                self.graph
+                    .set_top(slot, graph_data::content_top(shape, width, laid));
                 self.graph.arrange(slot);
             }
         }
@@ -2432,6 +2437,70 @@ mod tests {
             Ok(())
         );
         assert_eq!(engine.graph.sizes()[2..], [200.0, 64.0]);
+    }
+
+    #[test]
+    fn an_actor_and_an_hourglass_lay_their_content_out_below_their_drawing_and_resize_above_both() {
+        // Verifies: REN-node-shapes-cover-uml, REN-node-content-and-hits
+        use graph_data::tests::{a_and, content, load_into, text};
+        // Node `b` at (300, 0), 220 wide, of one title "Send": its drawing 48 high at its top,
+        // its content below it to its width, the title and its padding, 38 high, the node 86, at
+        // least the least height of 64 as a whole (REN-node-shapes-cover-uml, *Height*).
+        let edges = graph_data::OwnedEdgeColumns::of([]);
+        for shape in [NodeShape::Actor, NodeShape::Hourglass] {
+            let mut engine = fonted();
+            let nodes = a_and(|n| {
+                n.shape = shape.into();
+                n.width = 220.0.into();
+                n.height = Some(20.0).into();
+                n.resizable = Some(true).into();
+                n.content = content(&[&[text(RoleCode::Title, "Send")]]).into();
+            });
+            assert_eq!(load_into(&mut engine, &nodes, &edges), Ok(2), "{shape:?}");
+            assert_eq!(engine.graph.sizes()[2..], [220.0, 86.0], "{shape:?}");
+            assert_eq!(
+                engine.inner_of(1),
+                Ok(vec![0.0, 48.0, 220.0, 38.0]),
+                "{shape:?}"
+            );
+            near(&mut engine, [-10.0, -10.0, 700.0, 300.0]);
+            assert_eq!(
+                engine.content_rects[4..],
+                [12.0, 58.0, 196.0, 18.0],
+                "{shape:?}"
+            );
+            // Dragged by its bottom up past its top: as high as its drawing and its content.
+            let from = [300.0, 0.0, 220.0, 86.0];
+            assert_eq!(
+                engine.resize(1, Handle::Bottom, &from, [0.0, -500.0]),
+                Ok(()),
+                "{shape:?}"
+            );
+            assert_eq!(engine.graph.sizes()[2..], [220.0, 86.0], "{shape:?}");
+            // Dragged by its corner, its width and its height each follow.
+            assert_eq!(
+                engine.resize(1, Handle::BottomRight, &from, [-20.0, 30.0]),
+                Ok(()),
+                "{shape:?}"
+            );
+            assert_eq!(engine.graph.sizes()[2..], [200.0, 116.0], "{shape:?}");
+        }
+        // Without content, an actor narrowed to 16 is as high as its drawing of 32 at least.
+        let mut engine = fonted();
+        let nodes = a_and(|n| {
+            n.shape = NodeShape::Actor.into();
+            n.width = 100.0.into();
+            n.resizable = Some(true).into();
+            n.content = crate::graph_data::ContentInput::new().into();
+        });
+        assert_eq!(load_into(&mut engine, &nodes, &edges), Ok(2));
+        assert_eq!(engine.graph.sizes()[2..], [100.0, 48.0]);
+        let from = [300.0, 0.0, 100.0, 48.0];
+        assert_eq!(
+            engine.resize(1, Handle::BottomRight, &from, [-84.0, -500.0]),
+            Ok(())
+        );
+        assert_eq!(engine.graph.sizes()[2..], [16.0, 32.0]);
     }
 
     #[test]

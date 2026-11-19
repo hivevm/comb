@@ -82,8 +82,9 @@ export interface SceneSnapshot {
    *  parts of it the view draws, each its primitive, its bounds, its fill's or its stroke's
    *  colour, and a rounded rectangle's corner radius, `outlined` how its outline is drawn,
    *  `dashes` the dash segments the engine laid of a dashed one, `rules` the lines of its
-   *  separators, and `inner` the inner rectangle its content is laid out in, as the engine gives
-   *  it; a particle draws none of them. */
+   *  separators, `inner` the inner rectangle its content is laid out in, as the engine gives
+   *  it, and of an actor and an hourglass `drawing` the box the parts of its drawing span; a
+   *  particle draws none of them. */
   nodes: {
     id: string;
     /** The layer it is drawn in: `containers` for a container, below the edges, else `nodes`. */
@@ -106,6 +107,7 @@ export interface SceneSnapshot {
     dashes?: number[][];
     rules?: DrawnPill[];
     inner?: { x: number; y: number; width: number; height: number };
+    drawing?: { x: number; y: number; width: number; height: number };
     texts?: (Omit<DrawnText, "pill"> & { drawnWidth: number; fill: unknown })[];
     pills?: DrawnPill[];
     bars?: DrawnPill[];
@@ -278,10 +280,11 @@ export class Scene {
     // Last, once no view of the engine's buffers is read any more: the names of the regions
     // drawn, as the engine cuts them to their bands (ARCH-regions-are-container-slots).
     this.containerNodes.nameBands();
-    // And the tabs of the frames drawn, as the engine lays them out (REN-node-shapes-cover-uml).
+    // And the tabs of the frames drawn and the drawings of the actors and the hourglasses, as the
+    // engine lays them out (REN-node-shapes-cover-uml).
     const innerOf = (slot: number) => bridge.innerOf(slot);
-    this.containerNodes.drawTabs(innerOf);
-    this.nodes.drawTabs(innerOf);
+    this.containerNodes.drawInners(innerOf);
+    this.nodes.drawInners(innerOf);
     // In f64 here, so that the world's transform on the GPU holds no far coordinate.
     const at = toScreen(state.viewport, this.origin.x, this.origin.y);
     this.world.position.set(at.x, at.y);

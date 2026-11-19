@@ -661,6 +661,7 @@ mod tests {
     #[test]
     fn a_small_shaped_node_pressed_beside_its_outline_within_its_rectangle_hits_its_connector() {
         // Verifies: REN-node-content-in-rows, REN-closed-set-of-node-shapes
+        // Verifies: REN-node-shapes-cover-uml
         // Nodes under 32 screen pixels whose outline leaves corners of their rectangle, alone, so
         // that a press beside the outline finds nothing below: there a connector reaches its 8
         // pixels, unclipped by the rectangle, and beyond them nothing is hit.
@@ -669,6 +670,8 @@ mod tests {
             (NodeShape::Circle, 20.0, 20.0),
             (NodeShape::Circle, 31.0, 31.0),
             (NodeShape::RingedCircle, 24.0, 24.0),
+            (NodeShape::CrossedCircle, 12.0, 12.0),
+            (NodeShape::CrossedCircle, 24.0, 24.0),
             (NodeShape::Ellipse, 28.0, 16.0),
             (NodeShape::Ellipse, 12.0, 30.0),
             (NodeShape::Diamond, 24.0, 24.0),

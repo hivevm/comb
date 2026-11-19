@@ -73,8 +73,8 @@ pub enum GraphDataProblem {
         column: Option<u32>,
         expected: String,
     },
-    /// A node of a filled node shape, a circle, a ringed circle, or a bar, holds content
-    /// (REN-closed-set-of-node-shapes).
+    /// A node of a filled node shape, a circle, a ringed circle, a bar, a crossed circle, or a
+    /// cross, holds content (REN-node-shapes-cover-uml).
     #[serde(rename_all = "camelCase")]
     ContentInFilledShape { node: String },
     /// A node's content holds more than `limit` rows.
@@ -289,7 +289,8 @@ pub(super) const A_DASH: &str = "a list of two finite numbers, or none";
 pub(super) const AN_ARROW: &str = "\"end\" or \"none\"";
 pub(super) const A_SHAPE: &str = "\"rectangle\", \"rounded-rectangle\", \"ellipse\", \"circle\", \
                                    \"ringed-circle\", \"diamond\", \"bar\", \"pentagon\", \
-                                   \"notched-rectangle\", \"note\", or \"frame\"";
+                                   \"notched-rectangle\", \"note\", \"frame\", \
+                                   \"crossed-circle\", \"cross\", \"actor\", or \"hourglass\"";
 /// What a node's outline expects (REN-node-shapes-cover-uml, *Outline*).
 pub(super) const AN_OUTLINE: &str = "\"solid\", \"none\", or a dash pattern, or none";
 pub(super) const A_SIDE: &str = "\"top\", \"right\", \"bottom\", \"left\", or \"outline\"";

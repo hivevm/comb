@@ -288,11 +288,11 @@ impl ContentColumns<'_> {
         Ok(self.height(rows, fonts))
     }
 
-    /// The height the node whose rows are `rows` lays out to in `fonts`, as the engine computes
-    /// it from its elements' kinds and roles (REN-node-content-in-rows); of content the bridge
-    /// checked.
+    /// The height of the rows `rows` and their padding in `fonts`, before the least height of a
+    /// node, which its node shape applies (`NodeShape::needed`), as the engine computes it from its
+    /// elements' kinds and roles (REN-node-content-in-rows); of content the bridge checked.
     pub(super) fn height(&self, rows: std::ops::Range<usize>, fonts: &Fonts) -> f64 {
-        layout::height(
+        layout::padded(
             rows.map(|row| {
                 let separator = self.separator(row).then_some(Kind::Separator);
                 self.elements(row)

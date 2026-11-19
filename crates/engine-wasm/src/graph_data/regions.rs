@@ -460,6 +460,35 @@ mod tests {
     }
 
     #[test]
+    fn the_regions_of_an_actor_or_an_hourglass_lie_below_its_drawing_and_its_content() {
+        // Verifies: ARCH-regions-are-container-slots, REN-node-shapes-cover-uml
+        // The activity 300 wide as an actor or an hourglass: its drawing 48 high, its title of 38
+        // with its padding below it, so its regions begin at 86; without content, at 48.
+        use crate::NodeShape as S;
+        for shape in [S::Actor, S::Hourglass] {
+            for (content, top) in [(true, 86.0), (false, 48.0)] {
+                let (divide, regions) = partitions();
+                let act = added(0.0, 0.0, |n| {
+                    n.id = "act".to_owned().into();
+                    n.width = 300.0.into();
+                    n.shape = shape.into();
+                    if !content {
+                        n.content = crate::graph_data::ContentInput::new().into();
+                    }
+                    n.divide = divide.into();
+                    n.regions = Some(regions).into();
+                });
+                let x = added(10.0, 40.0, |n| n.id = "x".to_owned().into());
+                let columns = OwnedColumns::of([Some(&act), Some(&x)])
+                    .nested(&[None, Some(2)], &[false, false]);
+                let graph = load_columns(&columns).unwrap();
+                assert_eq!(graph.top(0), top, "{shape:?} {content}");
+                assert_eq!(rect(&graph, 2)[1], top, "{shape:?} {content}");
+            }
+        }
+    }
+
+    #[test]
     fn a_node_in_a_divided_node_an_edge_to_a_region_and_regions_out_of_rule_are_refused() {
         // Verifies: ARCH-regions-are-container-slots, API-edits-report-nested-changes
         let in_divided = activity_columns().nested(&[None, Some(0)], &[false, false]);

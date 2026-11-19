@@ -54,10 +54,12 @@ together, each naming the node and, where it has them, the row and column, a lab
 is not an integer from `0` to `0xFFFFFF`, more than 1,000,000 nodes or edges, an identifier, source,
 or target longer than 256 UTF-16 code units, and identifiers of one load that hold more than
 64,000,000 code units together, a node shape other than `rectangle`, `rounded-rectangle`, `ellipse`,
-`circle`, `ringed-circle`, `diamond`, `bar`, `pentagon`, `notched-rectangle`, `note`, and `frame`,
+`circle`, `ringed-circle`, `diamond`, `bar`, `pentagon`, `notched-rectangle`, `note`, `frame`,
+`crossed-circle`, `cross`, `actor`, and `hourglass`,
 and an outline other than `"solid"`, `"none"`, and a dash pattern an edge's rule allows
 (`invalidField`), content in a filled node shape, a
-circle, a ringed circle, or a bar (`contentInFilledShape`), and an edge side other than `top`,
+circle, a ringed circle, a bar, a crossed circle, or a cross (`contentInFilledShape`), and an
+edge side other than `top`,
 `right`, `bottom`, `left`, and `outline`. `api` refuses, against the store's map from identifiers to
 slots (ARCH-one-workspace-per-example), an identifier `updateNode` or `removeNodes` names that the
 graph does not hold (`unknownNode`), one `updateEdge` or `removeEdges` names (`unknownEdge`), one
@@ -132,7 +134,10 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   bounds, the point and normal at a path parameter, and edge-label placement. `shape` holds the
   closed set of node shapes ([REN-node-shapes-cover-uml](adr/REN-node-shapes-cover-uml.md)):
   each one's height for content of a given height, the inner rectangle its content is laid out in,
-  a frame's its tab, as large as its content uncut (`natural` of `content`),
+  a frame's its tab, as large as its content uncut (`natural` of `content`), an actor's and an
+  hourglass's below their drawing (`drawing`), as wide as the node and at most 48 high, the height
+  a node needs for its rows and padding (`needed`, the least height of 64 applied to the content,
+  or to an actor's or an hourglass's whole node, its drawing counted in),
   its hit test, the point where a line from its centre crosses its outline, how far inward from
   a side its outline lies at an offset along it, and for border nodes the point of the outline on a
   side at an offset along it (`on_side`), the point of the outline nearest a point (`nearest`, the
@@ -159,8 +164,10 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   `query`; `resize`, the eight resize handles, whether each node is resizable and the height its
   data gives, which `hit`'s `handle_at` reads to find a handle of the selected node within 6
   screen pixels at the near and middle level, and the resize of a node from the box it had at the
-  press by a drag of a handle, never smaller than 8 a side, than the least height the caller hands
-  in, or than the boxes of the nodes that lie directly in it, a circle as high as wide, the nodes it
+  press by a drag of a handle, never smaller than 8 a side, than the height the node shape needs at
+  the new width for the content's height the caller hands in, an actor's and an hourglass's drawing
+  among it, or than the boxes of the nodes that lie directly in it, a circle, a crossed circle, and
+  a cross as high as wide, the nodes it
   holds kept at their world positions and their positions relative to it kept anew
   ([API-edits-report-nested-changes](adr/API-edits-report-nested-changes.md)); `containers`,
   which node each node lies in: a load's `Nesting` checked so that a node lies only in a container
@@ -493,7 +500,11 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   the pooled `Graphics` that drew a node's box, the content node shapes white and bordered, their
   outline left out or stroked in the dash segments the query laid where it is not solid and the
   node unselected, a note's fold and a frame's tab inside, the tab as `innerOf` hands it over once
-  the frame's views no longer read the engine's buffers, the filled ones near-black, inspection
+  the frame's views no longer read the engine's buffers, the filled ones near-black, a crossed
+  circle and a cross as lines, an actor's and an hourglass's drawing stroked near-black above their
+  unbordered content, as high as the top of the inner rectangle `innerOf` hands over as it hands a
+  tab over, every polygon's stroke closed, as the Canvas 2D fallback leaves one open that is not
+  told to close, inspection
   reading its primitives back), the lines of its separators in another `Graphics` and its content
   ([REN-node-content-in-rows](adr/REN-node-content-in-rows.md)): each text a pooled `BitmapText` of
   its role's style where the query placed it, cut where the engine cut it and followed by an

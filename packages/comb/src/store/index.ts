@@ -13,8 +13,8 @@ export type { ContentElement, NodeContent, NodeShape, Outline, TextRole } from "
 interface NodeFields {
   id: string;
   width: number;
-  /** Its node shape, `rectangle` where left out; a circle, a ringed circle, and a bar hold no
-   *  content. */
+  /** Its node shape, `rectangle` where left out; a circle, a ringed circle, a bar, a crossed
+   *  circle, and a cross hold no content. */
   shape?: NodeShape;
   /** How its outline is drawn: `"solid"`, which `api` fills in where left out, `"none"`, or a dash
    *  and a gap in world units laid along it clockwise from its top left; a selected node's outline

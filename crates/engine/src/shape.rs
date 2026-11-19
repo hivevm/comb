@@ -1,8 +1,9 @@
 //! The node shapes of the closed set the engine owns (REN-node-shapes-cover-uml): each node
 //! shape's height for content of a given height, the inner rectangle its content is laid out in,
-//! its hit test, the point where a line from its centre crosses its outline, how far inside a
-//! side the outline lies at a point of the side (`inset`), where a border node sits on it by a
-//! side and an offset along it (ARCH-border-nodes-ride-sides), and the dashes of a dashed outline.
+//! the box of an actor's and an hourglass's drawing above it (`drawing`), its hit test, the point
+//! where a line from its centre crosses its outline, how far inside a side the outline lies at a
+//! point of the side (`inset`), where a border node sits on it by a side and an offset along it
+//! (ARCH-border-nodes-ride-sides), and the dashes of a dashed outline.
 //! All of it is in the node's own coordinates, its top-left corner at the origin, so that it holds
 //! wherever the node lies in the world.
 
@@ -20,6 +21,8 @@ pub const BAR_HEIGHT: f64 = 8.0;
 pub const NOTE_FOLD: f64 = 12.0;
 /// How far the lower right corner of a frame's tab is cut, which the shell draws.
 pub const FRAME_CUT: f64 = 8.0;
+/// The most a captioned node shape's drawing is high, in world units (`NodeShape::drawing`).
+pub const DRAWING_LIMIT: f64 = 48.0;
 /// How far a dashed outline's flattened curves may lie from the curves, in world units: a
 /// quarter of a screen pixel at the largest scale of 4 a viewport takes, within Q-4.
 pub const OUTLINE_TOLERANCE: f64 = 1.0 / 16.0;
@@ -66,6 +69,16 @@ pub enum NodeShape {
     /// A rectangle with a tab at its top left that holds its content, hit as its bounding
     /// rectangle.
     Frame,
+    /// An unfilled ring crossed by an X between its diagonal points, as high as wide.
+    CrossedCircle,
+    /// An X between the corners of its box, as high as wide, hit as its bounding rectangle.
+    Cross,
+    /// A stick figure at the top of the node (`drawing`), its content below it, hit as its
+    /// bounding rectangle.
+    Actor,
+    /// Two triangles meeting at their points at the top of the node (`drawing`), its content
+    /// below it, hit as its bounding rectangle.
+    Hourglass,
 }
 
 /// How a node's outline is drawn (REN-node-shapes-cover-uml, *Outline*): solid, not at all, or in
@@ -105,7 +118,7 @@ pub fn fold(width: f64, height: f64) -> f64 {
 
 impl NodeShape {
     /// Every node shape, in the order of their codes.
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 15] = [
         Self::Rectangle,
         Self::RoundedRectangle,
         Self::Ellipse,
@@ -117,7 +130,49 @@ impl NodeShape {
         Self::NotchedRectangle,
         Self::Note,
         Self::Frame,
+        Self::CrossedCircle,
+        Self::Cross,
+        Self::Actor,
+        Self::Hourglass,
     ];
+
+    /// How many times as high as wide a captioned node shape's drawing is: 2 for an actor and 1.5
+    /// for an hourglass; none for another node shape.
+    const fn proportion(self) -> Option<f64> {
+        match self {
+            Self::Actor => Some(2.0),
+            Self::Hourglass => Some(1.5),
+            _ => None,
+        }
+    }
+
+    /// The box of the drawing of a captioned node shape `width` wide, relative to the node
+    /// (REN-node-shapes-cover-uml, *Content and node shape*): at its top, of the drawing's
+    /// proportion, as wide as the node until it is `DRAWING_LIMIT` high, and above that
+    /// `DRAWING_LIMIT` high and centred; none for another node shape.
+    pub fn drawing(self, width: f64) -> Option<Inner> {
+        let proportion = self.proportion()?;
+        let height = (width.max(0.0) * proportion).min(DRAWING_LIMIT);
+        let drawn = height / proportion;
+        Some(Inner {
+            x: (width.max(0.0) - drawn) / 2.0,
+            y: 0.0,
+            width: drawn,
+            height,
+        })
+    }
+
+    /// How high the drawing of a captioned node shape `width` wide is, nil for another node shape.
+    fn drawing_height(self, width: f64) -> f64 {
+        self.drawing(width).map_or(0.0, |drawing| drawing.height)
+    }
+
+    /// Whether the node shape has an outline to draw, solid or in dashes: a content node shape
+    /// has one, a filled one keeps its fill whatever its outline, and a captioned one draws its
+    /// drawing and its content without a border.
+    const fn outlined(self) -> bool {
+        self.holds_content() && self.proportion().is_none()
+    }
 
     /// The node shape of `code`, none for a code outside the set.
     pub fn of_code(code: u8) -> Option<Self> {
@@ -126,7 +181,10 @@ impl NodeShape {
 
     /// Whether the node shape holds content; the filled ones hold none.
     pub const fn holds_content(self) -> bool {
-        !matches!(self, Self::Circle | Self::RingedCircle | Self::Bar)
+        !matches!(
+            self,
+            Self::Circle | Self::RingedCircle | Self::Bar | Self::CrossedCircle | Self::Cross
+        )
     }
 
     /// The share of the node's width and height a centred inner rectangle takes, on each axis,
@@ -135,37 +193,66 @@ impl NodeShape {
         match self {
             Self::Ellipse => core::f64::consts::FRAC_1_SQRT_2,
             Self::Diamond => 0.5,
-            Self::Circle | Self::RingedCircle | Self::Bar => 0.0,
+            Self::Circle | Self::RingedCircle | Self::Bar | Self::CrossedCircle | Self::Cross => {
+                0.0
+            }
             _ => 1.0,
         }
     }
 
     /// The height of a node of this shape and `width` whose content, laid out as in a rectangle,
     /// is `content` high: as high as its inner rectangle needs for that content, as high as wide
-    /// for a circle, and `BAR_HEIGHT` for a bar. The inner rectangle of a pentagon, a notched
-    /// rectangle, a note, and a frame is as high as the node, a frame's tab as high as its
+    /// for a circle, a crossed circle, and a cross, `BAR_HEIGHT` for a bar, and as high as its
+    /// drawing and its content for an actor and an hourglass. The inner rectangle of a pentagon, a
+    /// notched rectangle, a note, and a frame is as high as the node, a frame's tab as high as its
     /// content.
     pub fn height(self, width: f64, content: f64) -> f64 {
         match self {
-            Self::Circle | Self::RingedCircle => width,
+            Self::Circle | Self::RingedCircle | Self::CrossedCircle | Self::Cross => width,
             Self::Bar => BAR_HEIGHT,
+            Self::Actor | Self::Hourglass => self.drawing_height(width) + content,
             _ => content / self.inner_share(),
         }
     }
 
-    /// The height of a node of this shape and `width` whose content lays out to `content` high as
-    /// `height` takes it, none for a node without content, and whose data gives the height
+    /// The height a node of this shape and `width` needs for its content, whose rows and padding
+    /// are `content` high as in a rectangle, before the least height of a node (`content::padded`),
+    /// and nil for none (REN-node-shapes-cover-uml, *Height*; REN-node-content-and-hits,
+    /// *Layout*): with content, an actor and an hourglass their drawing and their content, at least
+    /// `MIN_HEIGHT` as a whole node, its drawing counted in, and every other node shape
+    /// its content raised to `MIN_HEIGHT` and grown as `height` grows it; without content, an actor
+    /// and an hourglass their drawing, a bar `BAR_HEIGHT`, a circle, a crossed circle, and a cross
+    /// their width, and every other node shape nil.
+    pub fn needed(self, width: f64, content: f64) -> f64 {
+        let least = crate::content::MIN_HEIGHT;
+        match self {
+            Self::Circle | Self::RingedCircle | Self::CrossedCircle | Self::Cross | Self::Bar => {
+                self.height(width, content)
+            }
+            _ if content <= 0.0 => self.drawing_height(width),
+            Self::Actor | Self::Hourglass => self.height(width, content).max(least),
+            _ => self.height(width, content.max(least)),
+        }
+    }
+
+    /// The height of a node of this shape and `width` whose rows and padding are `content` high as
+    /// `needed` takes it, none for a node without content, and whose data gives the height
     /// `given`, or none (REN-node-shapes-cover-uml, *Height*; REN-node-content-and-hits,
-    /// *Layout*): a circle as high as wide; a bar `BAR_HEIGHT` high, or as its data gives; a node
-    /// with content as high as its content needs, a frame as its tab, or as its data gives where
-    /// that is more; and a node without content as high as its data gives, or as wide, however
-    /// small.
+    /// *Layout*): a circle, a crossed circle, and a cross as high as wide; a bar `BAR_HEIGHT` high,
+    /// or as its data gives; a node with content as high as `needed` says, or as its data gives
+    /// where that is more; an actor and an hourglass without content as high as their drawing, or
+    /// as their data gives where that is more; and another node without content as high as its
+    /// data gives, or as wide, however small.
     pub fn sized(self, width: f64, content: Option<f64>, given: Option<f64>) -> f64 {
         match (self, content) {
-            (Self::Circle | Self::RingedCircle, _) => width,
+            (Self::Circle | Self::RingedCircle | Self::CrossedCircle | Self::Cross, _) => width,
             (Self::Bar, _) => given.unwrap_or(BAR_HEIGHT),
+            (Self::Actor | Self::Hourglass, None) => {
+                let drawing = self.drawing_height(width);
+                given.map_or(drawing, |given| given.max(drawing))
+            }
             (_, Some(content)) => {
-                let needed = self.height(width, content);
+                let needed = self.needed(width, content);
                 given.map_or(needed, |given| given.max(needed))
             }
             (_, None) => given.unwrap_or(width),
@@ -177,9 +264,19 @@ impl NodeShape {
     /// centred for a rectangle, a rounded rectangle, a note, an ellipse, and a diamond; left of a
     /// pentagon's point; right of a notch's depth; a frame's tab at its top left, `tab` the
     /// natural width of its content with the padding and the height of its content, cut to the
-    /// node; and empty for a filled node shape.
+    /// node; below an actor's and an hourglass's drawing, as wide as the node; and empty for a
+    /// filled node shape.
     pub fn inner(self, width: f64, height: f64, tab: [f64; 2]) -> Inner {
         match self {
+            Self::Actor | Self::Hourglass => {
+                let below = self.drawing_height(width).min(height.max(0.0));
+                Inner {
+                    x: 0.0,
+                    y: below,
+                    width,
+                    height: height - below,
+                }
+            }
             Self::Pentagon => Inner {
                 x: 0.0,
                 y: 0.0,
@@ -264,13 +361,19 @@ impl NodeShape {
             return true;
         }
         match self {
-            Self::Rectangle | Self::Bar | Self::Note | Self::Frame => true,
+            Self::Rectangle
+            | Self::Bar
+            | Self::Note
+            | Self::Frame
+            | Self::Cross
+            | Self::Actor
+            | Self::Hourglass => true,
             Self::RoundedRectangle => {
                 let r = ROUNDED_RADIUS.min(a).min(b);
                 let (ex, ey) = (dx - (a - r), dy - (b - r));
                 ex <= 0.0 || ey <= 0.0 || ex * ex + ey * ey <= r * r
             }
-            Self::Ellipse | Self::Circle | Self::RingedCircle => {
+            Self::Ellipse | Self::Circle | Self::RingedCircle | Self::CrossedCircle => {
                 (dx / a).powi(2) + (dy / b).powi(2) <= 1.0
             }
             Self::Diamond => dx / a + dy / b <= 1.0,
@@ -293,9 +396,14 @@ impl NodeShape {
         }
         let (ux, uy) = (dx / length, dy / length);
         let t = match self {
-            Self::Rectangle | Self::Bar | Self::Frame => box_distance(a, b, ux, uy),
+            Self::Rectangle
+            | Self::Bar
+            | Self::Frame
+            | Self::Cross
+            | Self::Actor
+            | Self::Hourglass => box_distance(a, b, ux, uy),
             Self::RoundedRectangle => rounded_distance(a, b, ux, uy),
-            Self::Ellipse | Self::Circle | Self::RingedCircle => {
+            Self::Ellipse | Self::Circle | Self::RingedCircle | Self::CrossedCircle => {
                 1.0 / ((ux / a).powi(2) + (uy / b).powi(2)).sqrt()
             }
             Self::Diamond => 1.0 / (ux.abs() / a + uy.abs() / b),
@@ -320,7 +428,12 @@ impl NodeShape {
         let u = (at - a).abs();
         let half = height / 2.0;
         match self {
-            Self::Rectangle | Self::Bar | Self::Frame => 0.0,
+            Self::Rectangle
+            | Self::Bar
+            | Self::Frame
+            | Self::Cross
+            | Self::Actor
+            | Self::Hourglass => 0.0,
             Self::RoundedRectangle => {
                 let r = ROUNDED_RADIUS.min(a).min(b);
                 let e = u - (a - r);
@@ -331,7 +444,7 @@ impl NodeShape {
                 }
             }
             // b (1 − √(1 − s²)), in the form that keeps its digits where s is small.
-            Self::Ellipse | Self::Circle | Self::RingedCircle => {
+            Self::Ellipse | Self::Circle | Self::RingedCircle | Self::CrossedCircle => {
                 let s = (u / a).min(1.0);
                 b * s * s / (1.0 + (1.0 - s * s).sqrt())
             }
@@ -457,11 +570,16 @@ impl NodeShape {
             return (x.clamp(0.0, width), y.clamp(0.0, height));
         }
         match self {
-            Self::Rectangle | Self::Bar | Self::Frame => nearest_on_box(width, height, x, y, 0.0),
+            Self::Rectangle
+            | Self::Bar
+            | Self::Frame
+            | Self::Cross
+            | Self::Actor
+            | Self::Hourglass => nearest_on_box(width, height, x, y, 0.0),
             Self::RoundedRectangle => {
                 nearest_on_box(width, height, x, y, ROUNDED_RADIUS.min(a).min(b))
             }
-            Self::Ellipse | Self::Circle | Self::RingedCircle => {
+            Self::Ellipse | Self::Circle | Self::RingedCircle | Self::CrossedCircle => {
                 let (dx, dy) = nearest_on_ellipse(a, b, x - a, y - b);
                 (a + dx, b + dy)
             }
@@ -480,11 +598,11 @@ impl NodeShape {
     /// from the point of the outline nearest the top left corner of the node's box: a rectangle's
     /// corners rounded by `RECTANGLE_RADIUS`, a rounded rectangle's by `ROUNDED_RADIUS`, and an
     /// ellipse's curve, each flattened within `OUTLINE_TOLERANCE` and at most `MAX_CURVE_STEPS`
-    /// chords. A filled node shape has none, nor has an empty node.
+    /// chords. A node shape that is not `outlined` has none, nor has an empty node.
     pub fn outline(self, width: f64, height: f64, out: &mut Vec<(f64, f64)>) {
         out.clear();
         let (a, b) = (width / 2.0, height / 2.0);
-        if !self.holds_content() || a <= 0.0 || b <= 0.0 {
+        if !self.outlined() || a <= 0.0 || b <= 0.0 {
             return;
         }
         match self {
@@ -890,7 +1008,7 @@ pub(crate) mod tests {
         for (code, shape) in NodeShape::ALL.iter().enumerate() {
             assert_eq!(NodeShape::of_code(code as u8), Some(*shape));
         }
-        assert_eq!(NodeShape::of_code(11), None);
+        assert_eq!(NodeShape::of_code(15), None);
         assert_eq!(NodeShape::of_code(255), None);
         assert_eq!(NodeShape::default(), NodeShape::Rectangle);
     }
@@ -962,7 +1080,11 @@ pub(crate) mod tests {
                 shape.holds_content(),
                 !matches!(
                     shape,
-                    NodeShape::Circle | NodeShape::RingedCircle | NodeShape::Bar
+                    NodeShape::Circle
+                        | NodeShape::RingedCircle
+                        | NodeShape::Bar
+                        | NodeShape::CrossedCircle
+                        | NodeShape::Cross
                 )
             );
         }
@@ -1018,6 +1140,9 @@ pub(crate) mod tests {
                         | NodeShape::NotchedRectangle
                         | NodeShape::Note
                         | NodeShape::Frame
+                        | NodeShape::Cross
+                        | NodeShape::Actor
+                        | NodeShape::Hourglass
                 );
                 assert_eq!(corner, boxed, "{shape:?} {width}x{height}");
                 assert!(!shape.contains(width, height, -0.5, height / 2.0));
@@ -1105,7 +1230,11 @@ pub(crate) mod tests {
         let (dx, dy) = ((x - a).abs(), (y - b).abs());
         let off_box = (dx - a).abs().min((dy - b).abs()) + (dx - a).max(0.0) + (dy - b).max(0.0);
         match shape {
-            NodeShape::Rectangle | NodeShape::Bar => off_box,
+            NodeShape::Rectangle
+            | NodeShape::Bar
+            | NodeShape::Cross
+            | NodeShape::Actor
+            | NodeShape::Hourglass => off_box,
             NodeShape::RoundedRectangle => {
                 let r = ROUNDED_RADIUS.min(a).min(b);
                 let (ex, ey) = (dx - (a - r), dy - (b - r));
@@ -1115,7 +1244,10 @@ pub(crate) mod tests {
                     off_box
                 }
             }
-            NodeShape::Ellipse | NodeShape::Circle | NodeShape::RingedCircle => {
+            NodeShape::Ellipse
+            | NodeShape::Circle
+            | NodeShape::RingedCircle
+            | NodeShape::CrossedCircle => {
                 // The radial distance, which is within the distance's order near the outline.
                 let k = ((dx / a).powi(2) + (dy / b).powi(2)).sqrt();
                 (k - 1.0).abs() * a.min(b)
@@ -1184,7 +1316,10 @@ pub(crate) mod tests {
         let (a, b) = (width / 2.0, height / 2.0);
         let turn = |i: usize| i as f64 * core::f64::consts::TAU / n as f64;
         match shape {
-            NodeShape::Ellipse | NodeShape::Circle | NodeShape::RingedCircle => (0..n)
+            NodeShape::Ellipse
+            | NodeShape::Circle
+            | NodeShape::RingedCircle
+            | NodeShape::CrossedCircle => (0..n)
                 .map(|i| (a + a * turn(i).cos(), b + b * turn(i).sin()))
                 .collect(),
             NodeShape::Diamond => {
@@ -1228,7 +1363,10 @@ pub(crate) mod tests {
             NodeShape::Rectangle
             | NodeShape::Bar
             | NodeShape::RoundedRectangle
-            | NodeShape::Frame => {
+            | NodeShape::Frame
+            | NodeShape::Cross
+            | NodeShape::Actor
+            | NodeShape::Hourglass => {
                 let r = if shape == NodeShape::RoundedRectangle {
                     ROUNDED_RADIUS.min(a).min(b)
                 } else {
@@ -1583,11 +1721,13 @@ pub(crate) mod tests {
                 let mut out = Vec::new();
                 let size = (width, height);
                 shape.dashes(size, [6.0, 4.0], EVERYWHERE, &mut points, &mut out);
-                if shape.holds_content() {
+                let captioned = matches!(shape, NodeShape::Actor | NodeShape::Hourglass);
+                if shape.holds_content() && !captioned {
                     assert_dashed(shape, width, height, &out);
                     checked += 1;
                 } else {
-                    // A filled node shape keeps its fill and lays no dashes.
+                    // A filled node shape keeps its fill and lays no dashes, nor does a captioned
+                    // one, whose drawing is no outline and whose content has no border.
                     assert!(out.is_empty(), "{shape:?}");
                 }
             }
@@ -1682,6 +1822,124 @@ pub(crate) mod tests {
             &mut large,
         );
         assert!(!large.is_empty() && large.len() <= MAX_DASH_SEGMENTS + 2 * MAX_CURVE_STEPS);
+    }
+
+    #[test]
+    fn a_crossed_circle_and_a_cross_hold_no_content_and_are_as_high_as_wide_however_small() {
+        // Verifies: REN-node-shapes-cover-uml
+        for shape in [NodeShape::CrossedCircle, NodeShape::Cross] {
+            assert!(!shape.holds_content(), "{shape:?}");
+            // 12 wide without a height: 12 by 12; a height its data gives does not count.
+            assert_eq!(shape.sized(12.0, None, None), 12.0, "{shape:?}");
+            assert_eq!(shape.sized(12.0, None, Some(40.0)), 12.0, "{shape:?}");
+            assert_eq!(shape.sized(30.0, None, Some(4.0)), 30.0, "{shape:?}");
+            assert_eq!(shape.height(30.0, 64.0), 30.0, "{shape:?}");
+            assert_eq!(shape.inner(30.0, 30.0, [0.0; 2]).width, 0.0, "{shape:?}");
+            assert_eq!(shape.drawing(30.0), None, "{shape:?}");
+        }
+        // A crossed circle is hit as its circle, a cross as its box: at a corner of the box, only
+        // the cross; beside the circle on its diagonal, just outside, nothing.
+        assert!(!NodeShape::CrossedCircle.contains(12.0, 12.0, 0.5, 0.5));
+        assert!(NodeShape::Cross.contains(12.0, 12.0, 0.5, 0.5));
+        let on = 6.0 - 6.0 * core::f64::consts::FRAC_1_SQRT_2;
+        assert!(NodeShape::CrossedCircle.contains(12.0, 12.0, on + 0.01, on + 0.01));
+        assert!(!NodeShape::CrossedCircle.contains(12.0, 12.0, on - 0.01, on - 0.01));
+    }
+
+    #[test]
+    fn an_actor_s_and_an_hourglass_s_drawing_is_of_its_proportion_at_the_top_at_most_48_high() {
+        // Verifies: REN-node-shapes-cover-uml
+        let boxed = |x: f64, y: f64, width: f64, height: f64| Inner {
+            x,
+            y,
+            width,
+            height,
+        };
+        // The drawing at the top, 2 or 1.5 times as high as wide, as wide as the node until it
+        // is 48 high, then centred and 48 high.
+        assert_eq!(
+            NodeShape::Actor.drawing(12.0),
+            Some(boxed(0.0, 0.0, 12.0, 24.0))
+        );
+        assert_eq!(
+            NodeShape::Actor.drawing(100.0),
+            Some(boxed(38.0, 0.0, 24.0, 48.0))
+        );
+        assert_eq!(
+            NodeShape::Hourglass.drawing(12.0),
+            Some(boxed(0.0, 0.0, 12.0, 18.0))
+        );
+        assert_eq!(
+            NodeShape::Hourglass.drawing(100.0),
+            Some(boxed(34.0, 0.0, 32.0, 48.0))
+        );
+        assert_eq!(NodeShape::Rectangle.drawing(100.0), None);
+    }
+
+    #[test]
+    fn an_actor_and_an_hourglass_lay_their_content_out_below_their_drawing_as_high_as_both() {
+        // Verifies: REN-node-shapes-cover-uml, REN-node-content-and-hits
+        let boxed = |x: f64, y: f64, width: f64, height: f64| Inner {
+            x,
+            y,
+            width,
+            height,
+        };
+        for shape in [NodeShape::Actor, NodeShape::Hourglass] {
+            assert!(shape.holds_content(), "{shape:?}");
+            // The content below the drawing, to the node's width.
+            assert_eq!(
+                shape.inner(100.0, 86.0, [0.0; 2]),
+                boxed(0.0, 48.0, 100.0, 38.0),
+                "{shape:?}"
+            );
+            // As high as its drawing and its content, a height below that raised to it.
+            assert_eq!(shape.height(100.0, 38.0), 86.0, "{shape:?}");
+            assert_eq!(
+                shape.sized(100.0, Some(38.0), Some(20.0)),
+                86.0,
+                "{shape:?}"
+            );
+            assert_eq!(
+                shape.sized(100.0, Some(38.0), Some(200.0)),
+                200.0,
+                "{shape:?}"
+            );
+            // Without content as high as its drawing, a height below it raised to it.
+            assert_eq!(shape.sized(100.0, None, None), 48.0, "{shape:?}");
+            assert_eq!(shape.sized(100.0, None, Some(20.0)), 48.0, "{shape:?}");
+            assert_eq!(shape.sized(100.0, None, Some(90.0)), 90.0, "{shape:?}");
+        }
+        assert_eq!(NodeShape::Actor.sized(12.0, None, Some(10.0)), 24.0);
+        assert_eq!(NodeShape::Hourglass.sized(12.0, None, None), 18.0);
+        // Hit as its bounding rectangle, beside the drawing too.
+        assert!(NodeShape::Actor.contains(100.0, 86.0, 1.0, 1.0));
+        assert!(!NodeShape::Actor.contains(100.0, 86.0, -0.5, 1.0));
+    }
+
+    #[test]
+    fn a_node_with_content_is_at_least_the_least_height_whole_an_actor_s_drawing_counted_in() {
+        // Verifies: REN-node-shapes-cover-uml, REN-node-content-and-hits
+        // Content of one title, 10 + 18 + 10 = 38 with its padding, as a rectangle lays it out
+        // before the least height of 64. REN-node-shapes-cover-uml (*Height*): a captioned node
+        // shape with content is at least the least height as a whole, its drawing counted in.
+        let one_title = Some(38.0);
+        assert_eq!(NodeShape::Actor.sized(100.0, one_title, None), 86.0);
+        assert_eq!(NodeShape::Hourglass.sized(100.0, one_title, None), 86.0);
+        assert_eq!(NodeShape::Actor.sized(100.0, one_title, Some(20.0)), 86.0);
+        // A small actor's drawing and its title below 64 together are raised to it.
+        assert_eq!(NodeShape::Actor.sized(12.0, one_title, None), 64.0);
+        // Every other node shape raises its content to 64 first, as before.
+        assert_eq!(NodeShape::Rectangle.sized(220.0, one_title, None), 64.0);
+        assert_eq!(NodeShape::Frame.sized(220.0, one_title, None), 64.0);
+        assert_eq!(
+            NodeShape::Ellipse.sized(220.0, one_title, None),
+            64.0 / core::f64::consts::FRAC_1_SQRT_2
+        );
+        assert_eq!(NodeShape::Diamond.sized(220.0, one_title, None), 128.0);
+        // More content grows with its rows.
+        assert_eq!(NodeShape::Actor.sized(100.0, Some(74.0), None), 122.0);
+        assert_eq!(NodeShape::Rectangle.sized(220.0, Some(74.0), None), 74.0);
     }
 
     #[test]

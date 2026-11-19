@@ -382,6 +382,10 @@ fn node_shape(loose: bool) -> BoxedStrategy<Value> {
             "notched-rectangle",
             "note",
             "frame",
+            "crossed-circle",
+            "cross",
+            "actor",
+            "hourglass",
         ]
         .map(text),
     );
@@ -707,7 +711,8 @@ fn shape_name(node: &Value) -> &str {
 /// Whether `node` holds no content in a filled node shape, which holds none
 /// (REN-closed-set-of-node-shapes).
 fn shape_ok(node: &Value) -> bool {
-    let filled = ["circle", "ringed-circle", "bar"].contains(&shape_name(node));
+    let filled =
+        ["circle", "ringed-circle", "bar", "crossed-circle", "cross"].contains(&shape_name(node));
     let rows = fields_of(node).and_then(|fields| get(fields, "content"));
     !(filled && matches!(rows, Some(Value::List(rows)) if !rows.is_empty()))
 }
@@ -716,7 +721,10 @@ fn shape_ok(node: &Value) -> bool {
 /// `y`, as `f32` holds it, and its height by its node shape: of a content node shape, the height
 /// of its rows, each as high as its tallest text, and its padding of 10 above and below, at least
 /// 64, grown to its inner rectangle, or the height its data gives where that is more, and without
-/// rows the height given or as wide; of a circle its width; and of a bar 8 or the height given.
+/// rows the height given or as wide; of a circle, a crossed circle, and a cross its width; of a bar
+/// 8 or the height given; and of an actor and an hourglass their drawing, 2 and 1.5 times their
+/// width and at most 48, above their rows and padding, at least 64 together, or the height given
+/// where that is more.
 fn far_side_ok(node: &Value, lines: [f64; 3]) -> bool {
     let Some(fields) = fields_of(node) else {
         return true;
@@ -752,7 +760,8 @@ fn far_side_ok(node: &Value, lines: [f64; 3]) -> bool {
         Value::Text(name) if name == "separator" => 21.0,
         _ => 0.0,
     };
-    let height = (20.0 + rows.iter().map(row).sum::<f64>()).max(64.0);
+    let padded = 20.0 + rows.iter().map(row).sum::<f64>();
+    let height = padded.max(64.0);
     let width = match get(fields, "width") {
         Some(Value::Number(width)) => f64::from(*width as f32),
         _ => 0.0,
@@ -762,16 +771,21 @@ fn far_side_ok(node: &Value, lines: [f64; 3]) -> bool {
         Some(Value::Number(given)) => Some(f64::from(*given as f32)),
         _ => None,
     };
+    let drawing = |proportion: f64| (width.max(0.0) * proportion).min(48.0);
     let height = match shape_name(node) {
-        "circle" | "ringed-circle" => width,
+        "circle" | "ringed-circle" | "crossed-circle" | "cross" => width,
         "bar" => given.unwrap_or(8.0),
+        "actor" if rows.is_empty() => drawing(2.0),
+        "hourglass" if rows.is_empty() => drawing(1.5),
+        "actor" => (drawing(2.0) + padded).max(64.0),
+        "hourglass" => (drawing(1.5) + padded).max(64.0),
         _ if rows.is_empty() => given.unwrap_or(width),
         "ellipse" => height / core::f64::consts::FRAC_1_SQRT_2,
         "diamond" => height / 0.5,
         _ => height,
     };
     let height = match shape_name(node) {
-        "circle" | "ringed-circle" | "bar" => height,
+        "circle" | "ringed-circle" | "bar" | "crossed-circle" | "cross" => height,
         _ => given.map_or(height, |given| given.max(height)),
     };
     let height = f64::from(height as f32);
@@ -1045,6 +1059,10 @@ fn shape_and_sizing_typed(item: &Fields) -> [(&'static str, bool); 3] {
         "notched-rectangle",
         "note",
         "frame",
+        "crossed-circle",
+        "cross",
+        "actor",
+        "hourglass",
     ];
     let shape = matches!(get(item, "shape"), Some(Value::Text(s)) if shapes.contains(&s.as_str()));
     let absent = |value: Option<&Value>| matches!(value, None | Some(Value::Null));

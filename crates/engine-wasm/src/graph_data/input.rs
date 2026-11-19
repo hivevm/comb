@@ -94,6 +94,10 @@ pub enum NodeShape {
     NotchedRectangle,
     Note,
     Frame,
+    CrossedCircle,
+    Cross,
+    Actor,
+    Hourglass,
 }
 
 impl From<NodeShape> for shape::NodeShape {
@@ -110,6 +114,10 @@ impl From<NodeShape> for shape::NodeShape {
             NodeShape::NotchedRectangle => Self::NotchedRectangle,
             NodeShape::Note => Self::Note,
             NodeShape::Frame => Self::Frame,
+            NodeShape::CrossedCircle => Self::CrossedCircle,
+            NodeShape::Cross => Self::Cross,
+            NodeShape::Actor => Self::Actor,
+            NodeShape::Hourglass => Self::Hourglass,
         }
     }
 }
