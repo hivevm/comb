@@ -362,21 +362,38 @@ impl From<Dock> for graph_side::Dock {
     }
 }
 
-/// An edge between two nodes, named by their identifiers, with its edge labels and the style it is
-/// drawn with: its colour as `0xRRGGBB`, its dash pattern as dash and gap lengths in world units
-/// (none for a solid line), the arrowhead that marks its end (G-11), and whether its middle is a
-/// lightning bolt (API-edges-dock-nodes-or-edges). `label`, the one label an edge carried before
-/// `labels`, is read only to be refused.
+/// An edge between two ends, each a node named by its identifier, `source` or `target`, or an edge
+/// named by its identifier, `sourceEdge` or `targetEdge`, at a path parameter of its path,
+/// `sourceT` or `targetT` (API-edges-dock-nodes-or-edges, *Ends*), with its edge labels and the
+/// style it is drawn with: its colour as `0xRRGGBB`, its dash pattern as dash and gap lengths in
+/// world units (none for a solid line), the arrowhead that marks its end (G-11), and whether its
+/// middle is a lightning bolt. `label`, the one label an edge carried before `labels`, is read only
+/// to be refused. A field left out reads as absent, and one of another type as refused, so that an
+/// end that names both a node and an edge, or neither, is told apart from one of another type.
 // The tests read each `Field` of it through `Refusable` in `snapshot`, which names them all.
 #[derive(Tsify, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct EdgeInput {
     #[tsify(type = "string")]
     pub id: Field<String>,
-    #[tsify(type = "string")]
-    pub source: Field<String>,
-    #[tsify(type = "string")]
-    pub target: Field<String>,
+    #[tsify(type = "string", optional)]
+    #[serde(default = "Field::absent")]
+    pub source: Field<Option<String>>,
+    #[tsify(type = "string", optional)]
+    #[serde(default = "Field::absent")]
+    pub source_edge: Field<Option<String>>,
+    #[tsify(type = "number", optional)]
+    #[serde(default = "Field::absent")]
+    pub source_t: Field<Option<f64>>,
+    #[tsify(type = "string", optional)]
+    #[serde(default = "Field::absent")]
+    pub target: Field<Option<String>>,
+    #[tsify(type = "string", optional)]
+    #[serde(default = "Field::absent")]
+    pub target_edge: Field<Option<String>>,
+    #[tsify(type = "number", optional)]
+    #[serde(default = "Field::absent")]
+    pub target_t: Field<Option<f64>>,
     /// Whether the edge still carries `label`, which `labels` replaced: never typed, and refused.
     #[tsify(type = "never", optional)]
     #[serde(default, deserialize_with = "present")]
@@ -393,13 +410,15 @@ pub struct EdgeInput {
     #[tsify(type = "boolean", optional)]
     #[serde(default = "Field::absent")]
     pub lightning: Field<Option<bool>>,
-    /// The side of its source it leaves by, or its outline; `api` fills in `right`
-    /// (API-edges-dock-side-or-outline).
-    #[tsify(type = "Dock")]
-    pub source_side: Field<Dock>,
-    /// The side of its target it enters by, or its outline; `api` fills in `left`.
-    #[tsify(type = "Dock")]
-    pub target_side: Field<Dock>,
+    /// The side of its source node it leaves by, or its outline; `api` fills in `right`
+    /// (API-edges-dock-nodes-or-edges), and none for an end on an edge, which takes none.
+    #[tsify(type = "Dock", optional)]
+    #[serde(default = "Field::absent")]
+    pub source_side: Field<Option<Dock>>,
+    /// The side of its target node it enters by, or its outline; `api` fills in `left`.
+    #[tsify(type = "Dock", optional)]
+    #[serde(default = "Field::absent")]
+    pub target_side: Field<Option<Dock>>,
 }
 
 /// A dash pattern: a list of exactly two numbers, the dash and the gap.

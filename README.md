@@ -266,9 +266,9 @@ of a node that is no border node, an `attachedTo` that names no node as `missing
 node dropped from the host application's palette, `comb.worldPointAt(event.clientX, event.clientY)`
 returns the world point under the drop; Comb handles no drag and drop itself, and `worldPointAt`
 throws a `RangeError` on a coordinate that is not finite. `removeNodes(ids)` removes those nodes,
-everything they hold, and every edge at any of them, and `removeEdges(ids)` those edges, without
-a load. `addEdge(edge)` adds an
-edge between two nodes the graph holds, and `updateEdge(id, patch)` changes an edge's `color`,
+everything they hold, and every edge at any of them, and `removeEdges(ids)` those edges, each
+removal with every edge that ends on an edge it removes, without a load. `addEdge(edge)` adds an
+edge between two ends the graph holds, and `updateEdge(id, patch)` changes an edge's `color`,
 `dash`, `arrow`, `lightning`, `labels`, `sourceSide`, or `targetSide`, `null` clearing a dash or
 the labels. `arrow` is `"end"`, a filled triangle and the default, `"open"`, two strokes meeting at
 the target, `"hollow"`, a triangle's outline around a white fill, or `"none"`; `lightning: true`
@@ -281,9 +281,15 @@ middle. An edge that still carries `label`, the one label of before, is refused,
 `addEdge` as `invalidField` and by `updateEdge` as `unknownEdgePatchField`. An edge leaves its
 source by `sourceSide` and enters its target by `targetSide`, each `top`, `right`, `bottom`, `left`,
 or `outline`, by default `right` and `left`, and `top` for both of a loop, an edge from a node back
-to itself, which is drawn on that side of its node. `onChange` tells every change of the graph, a
-`GraphChange` that `comb` exports, typed by its `kind` and by `by`, `"user"` or `"host"`: `loaded`
-after `load`, `nodeAdded` with the node as Comb took it after `addNode`, its `height` raised to its
+to itself, which is drawn on that side of its node. Where the host names `sourceEdge` with
+`sourceT` instead of `source`, or `targetEdge` with `targetT` instead of `target`, that end lies on
+another edge, at the path parameter from 0 to 1 of that edge's path, follows it, and takes no side;
+the edge it lies on must itself end on nodes, so that an edge on an edge on an edge, on itself, or
+in a cycle is refused as `invalidEdgeEnd`, and an end on an edge the graph does not hold as
+`missingEdge`. Only the host makes such an edge; the user connects nodes. `onChange` tells every
+change of the graph, a `GraphChange` that `comb` exports, typed by its `kind` and by `by`, `"user"`
+or `"host"`: `loaded` after `load`, `nodeAdded` with the node as Comb took it after `addNode`, its
+`height` raised to its
 content's, `nodeUpdated` with the merged patch after `updateNode`, `nodesRemoved` with the nodes and
 the edges that went with them after `removeNodes`, `edgesRemoved` with the edges after
 `removeEdges`, `edgeAdded` with the edge as Comb keeps it, its colour, arrowhead, and its labels'
@@ -384,7 +390,8 @@ or an edge selects it, an edge within 4 screen pixels of its path, a drag from a
 pixels pans, and the sidebar edits a node's title text or an edge's colour, line, arrowhead, and
 label.
 With the canvas focused, which a press on it does, Delete or Backspace deletes the selection, a node
-with everything it holds and every edge at any of them, once `CombOptions.canDelete` returns `true`
+with everything it holds and every edge at any of them, or an edge, each with every edge that ends
+on an edge that goes, once `CombOptions.canDelete` returns `true`
 for the identifiers of everything that would go; without `canDelete` a deletion is allowed, and the
 host application's own `removeNodes` and `removeEdges` never ask it. The deletion is told as
 `nodesRemoved` or `edgesRemoved` with `by: "user"`. Where `CombOptions.canConnect` is set, hovering

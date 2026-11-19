@@ -208,10 +208,13 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   whole graph against a scan, and `budget`, the property test of the mesh budget. `add_node` takes
   the free slot freed last, or a new one after the highest, and the next rank, and puts the node
   into the grid in place; a load ranks node `i` as `i`; `add_edge` takes the edge slot freed last,
-  or a new one, and puts the edge into the lists of its ends and the grid in place, and
-  `update_edge` restyles and re-places one; `remove_nodes` frees the node slots and those of the
-  edges at them, `remove_edges` edge slots, and both take the items out of the grids and the lists
-  at the nodes; a free slot holds nothing, no query or hit returns it, a rebuild covers only the
+  or a new one, and puts the edge into the lists of its ends, of a node or of the edge an end lies
+  on, and the grid in place, and `update_edge` restyles and re-places one; placing an edge
+  re-places the edges that end on it, one level deep
+  ([API-edges-dock-nodes-or-edges](adr/API-edges-dock-nodes-or-edges.md)); `remove_nodes` frees
+  the node slots and those of the edges at them, `remove_edges` edge slots, each with the edges
+  that end on those edges, and both take the items out of the grids and the lists at the nodes and
+  edges; a free slot holds nothing, no query or hit returns it, a rebuild covers only the
   slots in use, and a call that names one refuses it as it refuses a slot beyond the graph, as a
   slot that holds nothing (`SlotError`). Its query returns the slots a rectangle meets, each node
   by its own box, the containers in their order and the other node slots in ascending rank, and
@@ -294,12 +297,14 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   lightning bolt, labels, which replace the whole list, and sides as a load checks those fields
   and restyles and re-places the edge, `edgesAt`
   names the edges at given nodes without removing anything, `removalOf` names the nodes and the
-  edges a removal of given nodes takes along, `removeNodes` removes nodes, everything they hold,
-  and the edges at any of them and returns those nodes' and edges' slots, `removeEdges` removes
-  edges, `translate` moves nodes, a container with what it holds, each as far as keeps it within
-  the world's limit, what it holds at the sum of its world position and their positions relative
-  to it, which the engine keeps, `place` puts a node at a world position and what it holds at
-  those sums, as a drag taken back puts them exactly where they lay at the press, `containerAt`
+  edges a removal of given nodes takes along, `edgeRemovalOf` the edges a removal of given edges
+  takes along, the edges that end on them among them, `removeNodes` removes nodes, everything they
+  hold, and the edges at any of them and returns those nodes' and edges' slots, `removeEdges`
+  removes edges and returns their slots, `translate` moves nodes, a container with what it holds,
+  each as far as keeps it within the world's limit, what it holds at the sum of its world position
+  and their positions relative to it, which the engine keeps, `place` puts a node at a world
+  position and what it holds at those sums, as a drag taken back puts them exactly where they lay
+  at the press, `containerAt`
   names the topmost container under a world point that is neither a dragged node nor one it
   holds, `moveInto` puts a node into a container or onto the canvas at the world position it has
   and gives it the next rank, refusing a container that cannot take it with a `ContainerError`,
@@ -422,8 +427,9 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   yet, the source's own where `CombOptions.allowLoops` allows loops but for the one it starts from,
   and proposes the edge on a release over one, through the connection `api` hands it;
   `delete.ts` makes the canvas focusable and, on Delete or Backspace, names what deleting the
-  selection would remove, a node with the edges the engine names at it (`edgesAt`) before anything
-  is removed, and hands it to the deletion `api` hands it; neither asks a veto itself;
+  selection would remove, a node with the edges the engine names at it (`removalOf`), or an edge
+  with the edges that end on it (`edgeRemovalOf`), before anything is removed, and hands it to the
+  deletion `api` hands it; neither asks a veto itself;
   a key held down or pressed with Control, Alt, or Meta deletes nothing beyond its first press. A
   connection's source and what it is over are the store's, written only where they change; the
   world point it is dragged to is interaction's `pointer`, which `attachInteraction` returns, and a

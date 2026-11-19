@@ -894,22 +894,28 @@ export function nodeColumns(count: number, bound: number): NodeColumnWriter {
  *  (API-bridge-columns-carry-nesting), each column in slot order: the identifiers, sources, and
  *  targets each as the values concatenated and cut into pieces, each ending where a value ends,
  *  with their boundaries in UTF-16 code units across all pieces, one more than there are edges, a
- *  refused value empty; the boundaries of each edge's labels among all labels, one more than there
- *  are edges, and the labels' columns, edge by edge and each edge's in the order of its list: their
- *  identifiers and texts as string columns, per text whether it is a text, 1 or 0, their path
- *  parameters and offsets, and whether a background is present, 1 or 0; whether a dash and a
- *  lightning bolt are present, 1 or 0; the numbers as the host application handed them, a
- *  background of another type NaN; the arrowhead and the sides as codes, one for a string that
- *  names none; and the first value the engine's first pass refuses by its type, the index of its
- *  edge, its field, `item` for an edge that is no object, and a label's place for a field of a
- *  label (API-edges-dock-nodes-or-edges). */
+ *  refused value empty, a source or a target the identifier of the edge it lies on where
+ *  `sourceOnEdge` or `targetOnEdge` holds 1, at the path parameter `sourceT` or `targetT`, NaN for
+ *  one of another type (API-edges-dock-nodes-or-edges, *Ends*); the boundaries of each edge's
+ *  labels among all labels, one more than there are edges, and the labels' columns, edge by edge
+ *  and each edge's in the order of its list: their identifiers and texts as string columns, per
+ *  text whether it is a text, 1 or 0, their path parameters and offsets, and whether a background
+ *  is present, 1 or 0; whether a dash and a lightning bolt are present, 1 or 0; the numbers as the
+ *  host application handed them, a background of another type NaN; the arrowhead and the sides as
+ *  codes, one for a string that names none; and the first value the engine's first pass refuses by
+ *  its type, the index of its edge, its field, `item` for an edge that is no object, and a label's
+ *  place for a field of a label (API-edges-dock-nodes-or-edges). */
 export interface EdgeColumns {
   readonly ids: string[];
   readonly idBounds: Uint32Array;
   readonly sources: string[];
   readonly sourceBounds: Uint32Array;
+  readonly sourceOnEdge: Uint8Array;
+  readonly sourceT: Float64Array;
   readonly targets: string[];
   readonly targetBounds: Uint32Array;
+  readonly targetOnEdge: Uint8Array;
+  readonly targetT: Float64Array;
   readonly labelBounds: Uint32Array;
   readonly labelIds: string[];
   readonly labelIdBounds: Uint32Array;
@@ -932,27 +938,36 @@ export interface EdgeColumns {
     { readonly index: number; readonly field: EdgeField; readonly label?: number } | undefined;
 }
 
+/** One end of an edge as `api/snapshot.ts` read it: the node it names, the edge it names, the path
+ *  parameter on that edge, and its side (API-edges-dock-nodes-or-edges, *Ends*). */
+export interface EndValues {
+  readonly node: unknown;
+  readonly edge: unknown;
+  readonly t: unknown;
+  readonly side: unknown;
+}
+
 /** What writes the columns of a load's edges, one edge after another in slot order. */
 export interface EdgeColumnWriter {
   /** The next edge, from the plain data `api/snapshot.ts` read of it: an identifier, a source, or
    *  a target that is a string is one, a number that is a number is one, labels that are a list
    *  of objects and a dash that is a list of two are read for their fields, null or undefined is
-   *  absent labels, a dash, a lightning bolt, or a background, and an arrowhead or a side that is a
-   *  string crosses as its code; `label`, which `labels` replaced, is refused where it is given,
-   *  and any other value is refused by its type, the first of them named, a label text and a
-   *  background at their rule. */
+   *  absent labels, a dash, a lightning bolt, a background, or a side, and an arrowhead or a side
+   *  that is a string crosses as its code; an end that names an edge, `edge` of `source` or
+   *  `target` given, beside a node given is refused by its edge, and its path parameter crosses as
+   *  given, which the bridge checks (API-edges-dock-nodes-or-edges, *Ends*); `label`, which
+   *  `labels` replaced, is refused where it is given, and any other value is refused by its type,
+   *  the first of them named, a label text and a background at their rule. */
   edge(
     id: unknown,
-    source: unknown,
-    target: unknown,
+    source: EndValues,
+    target: EndValues,
     label: unknown,
     labels: unknown,
     color: unknown,
     dash: unknown,
     arrow: unknown,
     lightning: unknown,
-    sourceSide: unknown,
-    targetSide: unknown,
   ): void;
   /** The next edge, which is no object, refused as malformed unless a value before it was. */
   noObject(): void;
@@ -1121,21 +1136,57 @@ function writeFlag(column: Uint8Array, at: number, value: unknown): boolean {
   return typeof value !== "boolean" && !absent(value);
 }
 
+/** The columns of at most `count` ends of edges, the sources or the targets
+ *  (API-edges-dock-nodes-or-edges, *Ends*): the identifier each names, whether it lies on an edge,
+ *  its path parameter there, and its side. */
+function endColumns(count: number, bound: number, fields: readonly [EdgeField, EdgeField]) {
+  const ids = stringColumn(count, bound);
+  const onEdge = new Uint8Array(count);
+  const parameter = new Float64Array(count);
+  const sides = new Uint8Array(count);
+  return {
+    ids,
+    /** Writes the end `end` of the edge at `at`, its side apart, and returns the field refused by
+     *  its type: the edge where one is given beside a node given or is no identifier, else the
+     *  node where it is no identifier. */
+    add(at: number, { node, edge, t }: EndValues): EdgeField | undefined {
+      if (absent(edge)) return ids.add(node) ? undefined : fields[0];
+      onEdge[at] = 1;
+      parameter[at] = typeof t === "number" ? t : Number.NaN;
+      if (!absent(node)) {
+        ids.add(undefined);
+        return fields[1];
+      }
+      return ids.add(edge) ? undefined : fields[1];
+    },
+    /** Writes the side of the end of the edge at `at`, `absent` where it is left out, which the
+     *  bridge refuses beside an end on a node, and returns whether it is refused by its type. */
+    side(at: number, { side }: EndValues): boolean {
+      const code = absent(side) ? SideCode.Absent : codeOf(SIDES, side, SideCode.Unnamed);
+      if (code !== undefined) sides[at] = code;
+      return code === undefined;
+    },
+    columns: (written: number) => ({
+      onEdge: onEdge.subarray(0, written),
+      parameter: parameter.subarray(0, written),
+      sides: sides.subarray(0, written),
+    }),
+  };
+}
+
 /** A writer of the columns of at most `count` edges, its strings in pieces of at most `bound` code
  *  units. It looks at a value by `typeof` and at a string's length, and reads the labels and their
  *  fields and the items of a dash, which are the snapshot's own plain data, so that no value of
  *  the host application it is handed runs code. */
 export function edgeColumns(count: number, bound: number): EdgeColumnWriter {
   const ids = stringColumn(count, bound);
-  const sources = stringColumn(count, bound);
-  const targets = stringColumn(count, bound);
+  const sources = endColumns(count, bound, [EdgeField.Source, EdgeField.SourceEdge]);
+  const targets = endColumns(count, bound, [EdgeField.Target, EdgeField.TargetEdge]);
   const labels = labelColumns(count, bound);
   const color = new Float64Array(count);
   const dashes = dashColumns(count);
   const arrows = codeColumn(count, ARROWS, ArrowCode.Unnamed);
   const lightning = new Uint8Array(count);
-  const sourceSides = codeColumn(count, SIDES, SideCode.Unnamed);
-  const targetSides = codeColumn(count, SIDES, SideCode.Unnamed);
   let at = 0;
   let refused: EdgeColumns["refused"];
   const refuse = (field: EdgeField | undefined, label?: number) => {
@@ -1143,9 +1194,10 @@ export function edgeColumns(count: number, bound: number): EdgeColumnWriter {
       refused ??= { index: at, field, ...(label === undefined ? {} : { label }) };
   };
   return {
-    edge(id, source, target, label, list, colorOf, dash, arrow, bolt, sourceSide, targetSide) {
-      const named = [ids.add(id), sources.add(source), targets.add(target)];
-      refuse([EdgeField.Id, EdgeField.Source, EdgeField.Target][named.indexOf(false)]);
+    edge(id, source, target, label, list, colorOf, dash, arrow, bolt) {
+      if (!ids.add(id)) refuse(EdgeField.Id);
+      refuse(sources.add(at, source));
+      refuse(targets.add(at, target));
       if (!absent(label)) refuse(EdgeField.Label);
       const labelled = labels.add(at, list);
       refuse(labelled.field, labelled.label);
@@ -1154,30 +1206,34 @@ export function edgeColumns(count: number, bound: number): EdgeColumnWriter {
       if (dashes.add(at, dash)) refuse(EdgeField.Dash);
       if (arrows.add(at, arrow)) refuse(EdgeField.Arrow);
       if (writeFlag(lightning, at, bolt)) refuse(EdgeField.Lightning);
-      if (sourceSides.add(at, sourceSide)) refuse(EdgeField.SourceSide);
-      if (targetSides.add(at, targetSide)) refuse(EdgeField.TargetSide);
+      if (sources.side(at, source)) refuse(EdgeField.SourceSide);
+      if (targets.side(at, target)) refuse(EdgeField.TargetSide);
       at++;
     },
     noObject() {
       refuse(EdgeField.Item);
-      for (const column of [ids, sources, targets]) column.add(undefined);
+      for (const column of [ids, sources.ids, targets.ids]) column.add(undefined);
       labels.add(at, undefined);
       at++;
     },
     columns: () => ({
       ids: ids.pieces(),
       idBounds: ids.bounds(),
-      sources: sources.pieces(),
-      sourceBounds: sources.bounds(),
-      targets: targets.pieces(),
-      targetBounds: targets.bounds(),
+      sources: sources.ids.pieces(),
+      sourceBounds: sources.ids.bounds(),
+      sourceOnEdge: sources.columns(at).onEdge,
+      sourceT: sources.columns(at).parameter,
+      targets: targets.ids.pieces(),
+      targetBounds: targets.ids.bounds(),
+      targetOnEdge: targets.columns(at).onEdge,
+      targetT: targets.columns(at).parameter,
       ...labels.columns(at),
       color: color.subarray(0, at),
       ...dashes.columns(at),
       arrow: arrows.column(at),
       lightning: lightning.subarray(0, at),
-      sourceSide: sourceSides.column(at),
-      targetSide: targetSides.column(at),
+      sourceSide: sources.columns(at).sides,
+      targetSide: targets.columns(at).sides,
       refused,
     }),
   };

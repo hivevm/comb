@@ -419,6 +419,7 @@ mod tests {
     use super::*;
     use crate::geometry::tests::on_the_outline_towards;
     use crate::geometry::{Dock, Point, Sides};
+    use crate::graph::End;
     use crate::stroke::EdgeStyle;
 
     /// The centre of the node in `slot`.
@@ -451,8 +452,8 @@ mod tests {
             let (source, target) = if i % 2 == 0 { (0, i + 1) } else { (i + 1, 0) };
             specs.push(EdgeSpec {
                 sides: OUTLINE,
-                source,
-                target,
+                source: End::Node(source),
+                target: End::Node(target),
                 labels: Vec::new(),
                 style: EdgeStyle::unstyled(),
             });
@@ -523,8 +524,8 @@ mod tests {
             vec![100.0, 60.0, 100.0, 60.0],
             vec![EdgeSpec {
                 sides: OUTLINE,
-                source: 0,
-                target: 1,
+                source: End::Node(0),
+                target: End::Node(1),
                 labels: Vec::new(),
                 style: EdgeStyle::unstyled(),
             }],
@@ -578,8 +579,8 @@ mod tests {
                 .filter(|(a, b)| a != b)
                 .map(|(source, target)| EdgeSpec {
                     sides: OUTLINE,
-                    source,
-                    target,
+                    source: End::Node(source),
+                    target: End::Node(target),
                     labels: Vec::new(),
                     style: EdgeStyle::unstyled(),
                 })
@@ -594,15 +595,16 @@ mod tests {
             for edge in 0..graph.edges_in_use() {
                 let spec = &graph.edges[edge as usize];
                 let (a, b) = (
-                    centre_of(&graph, spec.source),
-                    centre_of(&graph, spec.target),
+                    centre_of(&graph, spec.nodes().0),
+                    centre_of(&graph, spec.nodes().1),
                 );
                 assert_ne!(a, b, "case {case}: two nodes on one centre");
                 let path = graph.paths[edge as usize];
                 let tolerance = 1e-9 * 500.0 + 8.0 * f64::EPSILON * far;
-                for (end, slot, other) in
-                    [(path.source, spec.source, b), (path.target, spec.target, a)]
-                {
+                for (end, slot, other) in [
+                    (path.source, spec.nodes().0, b),
+                    (path.target, spec.nodes().1, a),
+                ] {
                     on_the_outline_towards(
                         end,
                         &graph.node_bounds(slot),
@@ -632,15 +634,15 @@ mod tests {
             vec![
                 EdgeSpec {
                     sides: Sides::default(),
-                    source: 0,
-                    target: 1,
+                    source: End::Node(0),
+                    target: End::Node(1),
                     labels: Vec::new(),
                     style: EdgeStyle::unstyled(),
                 },
                 EdgeSpec {
                     sides: Sides::default(),
-                    source: 1,
-                    target: 2,
+                    source: End::Node(1),
+                    target: End::Node(2),
                     labels: Vec::new(),
                     style: EdgeStyle::unstyled(),
                 },
@@ -673,8 +675,8 @@ mod tests {
             vec![100.0, 50.0, 100.0, 50.0],
             vec![EdgeSpec {
                 sides: Sides::default(),
-                source: 0,
-                target: 1,
+                source: End::Node(0),
+                target: End::Node(1),
                 labels: Vec::new(),
                 style: EdgeStyle::unstyled(),
             }],
@@ -713,8 +715,8 @@ mod tests {
             .flat_map(|i| [(0, i), (i, 0)])
             .map(|(source, target)| EdgeSpec {
                 sides: Sides::default(),
-                source,
-                target,
+                source: End::Node(source),
+                target: End::Node(target),
                 labels: Vec::new(),
                 style: EdgeStyle::unstyled(),
             })

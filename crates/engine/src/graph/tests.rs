@@ -66,8 +66,8 @@ pub(super) fn random_inputs(
     let specs = (0..edges)
         .map(|_| EdgeSpec {
             sides: random_sides(rng),
-            source: rng.below(nodes),
-            target: rng.below(nodes),
+            source: End::Node(rng.below(nodes)),
+            target: End::Node(rng.below(nodes)),
             labels: random_labels(rng),
             style: random_style(rng),
         })
@@ -157,7 +157,11 @@ impl Model {
 
     pub(super) fn path(&self, edge: u32) -> EdgePath {
         let spec = &self.specs[edge as usize];
-        path_of(spec, &self.bounds(spec.source), &self.bounds(spec.target))
+        path_of(
+            spec,
+            &self.bounds(spec.nodes().0),
+            &self.bounds(spec.nodes().1),
+        )
     }
 
     /// The connector a press at `p` hits where a connector reaches `reach` world units, written
@@ -243,7 +247,7 @@ impl Model {
             self.free_nodes[slot as usize] = true;
         }
         for (e, spec) in self.specs.iter().enumerate() {
-            if slots.contains(&spec.source) || slots.contains(&spec.target) {
+            if slots.contains(&spec.nodes().0) || slots.contains(&spec.nodes().1) {
                 self.free_edges[e] = true;
                 self.pills[e].fill(None);
             }
@@ -271,8 +275,8 @@ fn brute_force(graph: &Graph, rect: &Rect, reach: f64) -> (Vec<u32>, Vec<u32>, V
             let spec = &graph.edges[e as usize];
             let path = path_of(
                 spec,
-                &graph.node_bounds(spec.source),
-                &graph.node_bounds(spec.target),
+                &graph.node_bounds(spec.nodes().0),
+                &graph.node_bounds(spec.nodes().1),
             );
             drawn_bounds(spec, &path).meets(rect)
         })
@@ -283,8 +287,8 @@ fn brute_force(graph: &Graph, rect: &Rect, reach: f64) -> (Vec<u32>, Vec<u32>, V
             let spec = &graph.edges[e as usize];
             let path = path_of(
                 spec,
-                &graph.node_bounds(spec.source),
-                &graph.node_bounds(spec.target),
+                &graph.node_bounds(spec.nodes().0),
+                &graph.node_bounds(spec.nodes().1),
             );
             (0_u32..)
                 .zip(&spec.labels)
@@ -336,8 +340,8 @@ pub(super) fn paired(edges: u32) -> Graph {
     let specs = (0..edges)
         .map(|i| EdgeSpec {
             sides: Sides::default(),
-            source: 2 * i,
-            target: 2 * i + 1,
+            source: End::Node(2 * i),
+            target: End::Node(2 * i + 1),
             labels: Vec::new(),
             style: EdgeStyle::unstyled(),
         })
@@ -370,8 +374,8 @@ fn a_count_beyond_u32_is_refused_and_one_within_kept() {
 fn an_edge_to_a_missing_slot_is_refused() {
     let edges = vec![EdgeSpec {
         sides: Sides::default(),
-        source: 0,
-        target: 1,
+        source: End::Node(0),
+        target: End::Node(1),
         labels: Vec::new(),
         style: EdgeStyle::unstyled(),
     }];
@@ -514,8 +518,8 @@ fn random_edge(rng: &mut Lcg, drawn: &Drawn) -> EdgeSpec {
     let source = pick(rng);
     EdgeSpec {
         sides: random_sides(rng),
-        source,
-        target: if rng.next() < 0.1 { source } else { pick(rng) },
+        source: End::Node(source),
+        target: End::Node(if rng.next() < 0.1 { source } else { pick(rng) }),
         labels: random_labels(rng),
         style: random_style(rng),
     }
@@ -873,8 +877,8 @@ impl NestedModel {
         let specs: Vec<EdgeSpec> = (0..30)
             .map(|_| EdgeSpec {
                 sides: Sides::default(),
-                source: rng.below(count),
-                target: rng.below(count),
+                source: End::Node(rng.below(count)),
+                target: End::Node(rng.below(count)),
                 labels: Vec::new(),
                 style: EdgeStyle::unstyled(),
             })
@@ -889,7 +893,7 @@ impl NestedModel {
         };
         let mut model = Self {
             nodes: (0..count).map(|i| Some(node(i))).collect(),
-            edges: specs.iter().map(|e| Some((e.source, e.target))).collect(),
+            edges: specs.iter().map(|e| Some(e.nodes())).collect(),
             next_rank: count as u32,
         };
         for slot in 0..count as u32 {
@@ -1047,7 +1051,7 @@ impl NestedModel {
             .filter(|&e| self.edges[e as usize].is_some())
             .filter(|&e| {
                 let spec = &graph.edges[e as usize];
-                let path = path_of(spec, &bounds(spec.source), &bounds(spec.target));
+                let path = path_of(spec, &bounds(spec.nodes().0), &bounds(spec.nodes().1));
                 drawn_bounds(spec, &path).meets(rect)
             })
             .collect()
@@ -1113,8 +1117,8 @@ fn container_of_two() -> Graph {
     let world = nesting.world(&relative).iter().map(|&v| v as f32).collect();
     let edge = EdgeSpec {
         sides: Sides::default(),
-        source: 1,
-        target: 2,
+        source: End::Node(1),
+        target: End::Node(2),
         labels: Vec::new(),
         style: EdgeStyle::unstyled(),
     };
@@ -1159,8 +1163,8 @@ fn a_container_loaded_after_the_nodes_it_overlaps_is_hit_below_them_and_below_th
     let sizes = vec![100.0, 50.0, 100.0, 50.0, 600.0, 300.0];
     let edge = EdgeSpec {
         sides: Sides::default(),
-        source: 0,
-        target: 1,
+        source: End::Node(0),
+        target: End::Node(1),
         labels: Vec::new(),
         style: EdgeStyle::unstyled(),
     };
@@ -1271,8 +1275,8 @@ fn nested_three() -> Graph {
     assert_eq!((inner, held, outside), (3, 4, 5));
     let edge = |source, target| EdgeSpec {
         sides: Sides::default(),
-        source,
-        target,
+        source: End::Node(source),
+        target: End::Node(target),
         labels: Vec::new(),
         style: EdgeStyle::unstyled(),
     };
@@ -1776,8 +1780,8 @@ impl Bordered {
             if a != b {
                 let spec = EdgeSpec {
                     sides: Sides::default(),
-                    source: a,
-                    target: b,
+                    source: End::Node(a),
+                    target: End::Node(b),
                     labels: Vec::new(),
                     style: EdgeStyle::unstyled(),
                 };
@@ -1842,7 +1846,7 @@ impl Bordered {
         // The edges at border nodes lie where their ends now are.
         for (edge, spec) in &self.edges {
             let edge = *edge;
-            let ends = [spec.source, spec.target].map(|s| {
+            let ends = [spec.nodes().0, spec.nodes().1].map(|s| {
                 let [x, y, w, h] = box_of(&self.graph, s);
                 Rect::new(x, y, x + w, y + h)
             });
@@ -1893,7 +1897,7 @@ impl Bordered {
         expected.extend(&ridden);
         assert_eq!(removed, expected);
         for (edge, spec) in &self.edges {
-            let at = ridden.contains(&spec.source) || ridden.contains(&spec.target);
+            let at = ridden.contains(&spec.nodes().0) || ridden.contains(&spec.nodes().1);
             assert_eq!(edges_removed.contains(edge), at);
             assert_eq!(self.graph.edge(*edge).is_none(), at);
         }

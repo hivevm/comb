@@ -51,10 +51,11 @@ inside a longer term of this glossary, such as "shape" in **Node shape**, is no 
   Interchange names them together (`DiagramElement`); an edge label belongs to its edge. Not a
   content element, which is a piece of a node's content; "element" alone names a content element.
   _Avoid:_ figure, shape.
-- **Dock** — what an end of an edge docks on: the connector of one of the node's four sides, or
-  its outline. An edge records one for its source and one for its target.
-- **Edge** — a line drawn from one node to another, each end docked at the connector of a side or
-  on the node's outline. A connection is the gesture that makes one, not the edge.
+- **Dock** — what an end of an edge on a node docks on: the connector of one of the node's four
+  sides, or its outline. An edge records one for each end on a node.
+- **Edge** — a line drawn between two ends, each a node, docked at the connector of a side or on
+  the node's outline, or a point of another edge at a path parameter. A connection is the gesture
+  that makes one, not the edge.
   _Avoid:_ link, wire.
 - **Edge mesh** — the triangles of all edges in the viewport and its culling margin, which the
   engine computes and the canvas draws in one call.
@@ -111,7 +112,7 @@ inside a longer term of this glossary, such as "shape" in **Node shape**, is no 
 - **Palette** — the host application's HTML list of node types, from which the user drags new nodes
   onto the canvas.
 - **Path parameter** — a number `t` from 0.0 to 1.0 that marks a point along an edge's path, from
-  its source connector to its target connector.
+  its source end to its target end.
 - **Query origin** — the world point near a query's rectangle relative to which the query hands
   over its vertex positions and label points, and at whose screen point the shell draws the world.
 - **Region** — one of the parts a node is divided into, side by side or one above the other, each a

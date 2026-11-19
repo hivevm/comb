@@ -737,8 +737,12 @@ impl Engine {
         edge_id_bounds: &[u32],
         sources: Vec<String>,
         source_bounds: &[u32],
+        source_on_edge: &[u8],
+        source_t: &[f64],
         targets: Vec<String>,
         target_bounds: &[u32],
+        target_on_edge: &[u8],
+        target_t: &[f64],
         label_bounds: &[u32],
         label_ids: Vec<String>,
         label_id_bounds: &[u32],
@@ -768,8 +772,12 @@ impl Engine {
             id_bounds: edge_id_bounds,
             sources: &sources,
             source_bounds,
+            source_on_edge,
+            source_t,
             targets: &targets,
             target_bounds,
+            target_on_edge,
+            target_t,
             label_bounds,
             label_ids: &label_ids,
             label_id_bounds,
@@ -1084,11 +1092,22 @@ impl Engine {
         Ok(removed(&nodes, &edges))
     }
 
-    /// Removes the edges in `slots`; the slots go onto the free list
-    /// (ARCH-engine-edits-graph-in-place). A slot that holds no edge refuses the call, which then
-    /// changes nothing.
+    /// The slots of the edges in `slots`, in the order first named, and of every other edge that
+    /// ends on one of them, in ascending order, as a removal of them would take along, named before
+    /// anything is removed (API-edges-dock-nodes-or-edges, *Ends*). A slot that holds no edge
+    /// refuses the call.
+    #[wasm_bindgen(js_name = edgeRemovalOf)]
+    pub fn edge_removal_of(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
+        trap::spring();
+        Ok(self.graph.edge_removal(slots)?)
+    }
+
+    /// Removes the edges in `slots` and every edge that ends on one of them, and returns the slots
+    /// of all of them as `edgeRemovalOf` names them; the slots go onto the free list
+    /// (ARCH-engine-edits-graph-in-place, API-edges-dock-nodes-or-edges). A slot that holds no edge
+    /// refuses the call, which then changes nothing.
     #[wasm_bindgen(js_name = removeEdges)]
-    pub fn remove_edges(&mut self, slots: &[u32]) -> Result<(), SlotError> {
+    pub fn remove_edges(&mut self, slots: &[u32]) -> Result<Vec<u32>, SlotError> {
         trap::spring();
         Ok(self.graph.remove_edges(slots)?)
     }
@@ -2293,7 +2312,7 @@ mod tests {
             );
         }
         assert_eq!(engine.graph.positions()[..4], [0.0, 0.0, 300.0, 0.0]);
-        assert_eq!(engine.remove_edges(&[0]), Ok(()));
+        assert_eq!(engine.remove_edges(&[0]), Ok(vec![0]));
     }
 
     #[test]

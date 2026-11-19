@@ -244,6 +244,7 @@ mod tests {
     use super::super::tests::{Lcg, Model, random_inputs};
     use super::*;
     use crate::geometry::{EdgePath, PIXEL_LIMIT};
+    use crate::graph::End;
 
     #[test]
     fn a_pixel_beyond_any_zoom_hits_as_the_largest_a_query_strokes_for() {
@@ -252,8 +253,8 @@ mod tests {
         // that far away: an unbounded pixel would reach everything from anywhere.
         let edges = vec![super::super::EdgeSpec {
             sides: crate::geometry::Sides::default(),
-            source: 0,
-            target: 1,
+            source: End::Node(0),
+            target: End::Node(1),
             labels: Vec::new(),
             style: crate::stroke::EdgeStyle::unstyled(),
         }];

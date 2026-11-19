@@ -17,6 +17,7 @@ import {
   PIECE_BOUND,
   type NodeColumnWriter,
   type EdgeSnapshot,
+  type EndValues,
   type GraphSnapshot,
   type NodeSnapshot,
   type PlainEdgePatch,
@@ -731,38 +732,77 @@ function dashOf(read: Reader, dash: unknown) {
   return [read.number(dash[0]), read.number(dash[1])];
 }
 
-/** An edge read once, its defaults filled: the right side to the left, and the top for both of a
- *  loop the host names no side of, so that it is drawn above its node
- *  (API-edges-dock-side-or-outline); and its labels' (API-edges-dock-nodes-or-edges). `label`,
- *  which `labels` replaced, is kept as `false` where it is given, which the bridge refuses. */
+/** One end of an edge as the host application handed it: the node it names, the edge, the path
+ *  parameter on that edge, and the side (API-edges-dock-nodes-or-edges, *Ends*), each read once. */
+interface GivenEnd {
+  node: unknown;
+  edge: unknown;
+  t: unknown;
+  side: unknown;
+}
+
+/** The end `given` read into `snapshot` under the names `names`, as given
+ *  (API-edges-dock-nodes-or-edges, *Ends*): an end that names an edge, given at all, its edge and
+ *  path parameter, its side only where it gives one and its node only where it gives one, which
+ *  the bridge refuses; any other end its node and its side, `fallback` where it names none. */
+function endOf(
+  read: Reader,
+  given: GivenEnd,
+  names: readonly [string, string, string, string],
+  fallback: string,
+  snapshot: Record<string, unknown>,
+): EndValues {
+  const [node, onEdge, t, side] = names;
+  const present = (value: unknown) => value !== undefined && value !== null;
+  if (!present(given.edge)) {
+    snapshot[node] = read.id(given.node);
+    snapshot[side] = read.text(given.side) ?? fallback;
+    return { node: snapshot[node], edge: undefined, t: undefined, side: snapshot[side] };
+  }
+  if (present(given.node)) snapshot[node] = read.id(given.node);
+  snapshot[onEdge] = read.id(given.edge);
+  snapshot[t] = read.number(given.t);
+  if (present(given.side)) snapshot[side] = read.text(given.side);
+  const at = { node: snapshot[node], edge: snapshot[onEdge], t: snapshot[t] };
+  return { ...at, side: snapshot[side] };
+}
+
+/** An edge read once, each field once, its defaults filled: the right side to the left, and the
+ *  top for both of a loop the host names no side of, so that it is drawn above its node, no side
+ *  at an end on an edge (API-edges-dock-nodes-or-edges); and its labels'. `label`, which
+ *  `labels` replaced, is kept as `false` where it is given, which the bridge refuses. With the
+ *  edge, what its ends cross as. */
 function edgeOf(read: Reader, edge: Fields) {
   const { id, source, target, label, labels, color, dash, arrow, lightning } = edge;
-  const { sourceSide, targetSide } = edge;
-  const [readId, from, to] = [read.id(id), read.id(source), read.id(target)];
-  const loop = typeof from === "string" && from === to;
+  const { sourceSide, targetSide, sourceEdge, sourceT, targetEdge, targetT } = edge;
+  const onNodes = absent(sourceEdge) && absent(targetEdge);
+  const looped = onNodes && typeof source === "string" && source === target;
   const snapshot: {
     id: unknown;
-    source: unknown;
-    target: unknown;
     color: number;
     arrow: unknown;
-    sourceSide: unknown;
-    targetSide: unknown;
     label?: false;
     labels?: ReturnType<typeof labelsOf>;
     dash?: ReturnType<typeof dashOf>;
     lightning?: unknown;
-  } = {
-    id: readId,
-    source: from,
-    target: to,
+  } & Record<string, unknown> = {
+    id: read.id(id),
     color: edgeColor({ color: read.number(color) as number | undefined }),
     arrow: read.text(arrow) ?? EDGE_ARROW,
-    sourceSide: read.text(sourceSide) ?? (loop ? "top" : "right"),
-    targetSide: read.text(targetSide) ?? (loop ? "top" : "left"),
   };
-  return withOptional(read, snapshot, { label, labels, dash, lightning });
+  const from = { node: source, edge: sourceEdge, t: sourceT, side: sourceSide };
+  const to = { node: target, edge: targetEdge, t: targetT, side: targetSide };
+  const ends = {
+    source: endOf(read, from, SOURCE, looped ? "top" : "right", snapshot),
+    target: endOf(read, to, TARGET, looped ? "top" : "left", snapshot),
+  };
+  return { edge: withOptional(read, snapshot, { label, labels, dash, lightning }), ends };
 }
+
+/** The names of the fields of the source of an edge, and of its target: the node, the edge, the
+ *  path parameter on that edge, and the side. */
+const SOURCE = ["source", "sourceEdge", "sourceT", "sourceSide"] as const;
+const TARGET = ["target", "targetEdge", "targetT", "targetSide"] as const;
 
 /** `snapshot` with the fields an edge may leave out read, each set where present, since spreading
  *  an object of one key per edge costs a large load milliseconds: `label`, which `labels`
@@ -819,16 +859,15 @@ export function snapshotOf(lists: Lists, limits: Limits) {
         edgeWriter.noObject();
         return false;
       }
-      const e = edgeOf(read, item);
-      const { id, source, target, label, labels, color, dash, arrow, lightning } = e;
-      const sides = [e.sourceSide, e.targetSide] as const;
-      edgeWriter.edge(id, source, target, label, labels, color, dash, arrow, lightning, ...sides);
+      const { edge: e, ends } = edgeOf(read, item);
+      const { id, label, labels, color, dash, arrow, lightning } = e;
+      edgeWriter.edge(id, ends.source, ends.target, label, labels, color, dash, arrow, lightning);
       return e;
     },
     done,
   );
   // The regions take the slots after the nodes, in the order the columns write them.
-  const kept = { nodes: [...nodes, ...regionViews], edges } as KeptGraph;
+  const kept = { nodes: [...nodes, ...regionViews], edges } as unknown as KeptGraph;
   const snapshot = { nodes: columns.columns(), edges: edgeWriter.columns() } as GraphSnapshot;
   const content = { units: read.contentUnits, past: read.contentPast };
   return { kept, snapshot, idUnits: read.idUnits, content };
@@ -849,7 +888,7 @@ export function nodeSnapshotOf(node: unknown, limits: Limits) {
 export function edgeSnapshotOf(edge: unknown, limits: Limits) {
   const read = readerOf(limits);
   const fields = objectOf(edge);
-  const snapshot = (fields ? edgeOf(read, fields) : false) as EdgeSnapshot;
+  const snapshot = (fields ? edgeOf(read, fields).edge : false) as unknown as EdgeSnapshot;
   return { snapshot, idUnits: read.idUnits };
 }
 

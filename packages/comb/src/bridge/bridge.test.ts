@@ -130,9 +130,16 @@ const graph = (nodes: readonly PlainNode[], edges: readonly object[] = [], bound
     if (typeof e !== "object" || e === null) written.noObject();
     else {
       const fields = e as Record<string, unknown>;
-      const { id, source, target, label, labels, color, dash, arrow, lightning } = fields;
-      const sides = [fields.sourceSide, fields.targetSide] as const;
-      written.edge(id, source, target, label, labels, color, dash, arrow, lightning, ...sides);
+      const { id, label, labels, color, dash, arrow, lightning } = fields;
+      const end = (onNode: unknown, onEdge: unknown, t: unknown, side: unknown) => ({
+        node: onNode,
+        edge: onEdge,
+        t,
+        side,
+      });
+      const source = end(fields.source, fields.sourceEdge, fields.sourceT, fields.sourceSide);
+      const target = end(fields.target, fields.targetEdge, fields.targetT, fields.targetSide);
+      written.edge(id, source, target, label, labels, color, dash, arrow, lightning);
     }
   }
   return { nodes: columns.columns(), edges: written.columns() } as GraphSnapshot;
@@ -1300,6 +1307,27 @@ describe("bridge columns of a load's edges", () => {
   });
 });
 
+/** What a side expects (API-edges-dock-nodes-or-edges, *Ends*). */
+const SIDE_EXPECTED =
+  '"top", "right", "bottom", "left", or "outline" where the end lies on a node, none where it lies on an edge';
+
+describe("bridge columns of ends on edges that do not fit", () => {
+  test("an end's flag of lying on an edge past 1, or path parameters of another count, are refused as malformed", () => {
+    // Verifies: API-bridge-columns-carry-nesting, API-edges-dock-nodes-or-edges
+    const { nodes, edges } = graph(two(), [edge("e", "a", "b")]);
+    const misfits = [
+      { ...edges, sourceOnEdge: new Uint8Array([2]) },
+      { ...edges, targetT: new Float64Array(0) },
+    ];
+    for (const columns of misfits) {
+      expect(outcome(() => bridge.loadGraph({ nodes, edges: columns } as never))).toStrictEqual({
+        kind: "malformed",
+        message: "the columns of the edges do not fit together",
+      });
+    }
+  });
+});
+
 describe("bridge columns that do not fit", () => {
   test("a refused field of a code no field has is refused as malformed, and the engine keeps working", () => {
     // Verifies: API-bridge-takes-serde-and-columns
@@ -1322,10 +1350,10 @@ describe("bridge columns that do not fit", () => {
     // Verifies: API-bridge-takes-serde-and-columns
     const { nodes, edges } = graph(two(), [edge("e", "a", "b")]);
     const misfits = [
-      { ...edges, refused: { index: 0, field: 16 } },
+      { ...edges, refused: { index: 0, field: 20 } },
       { ...edges, refused: { index: 1, field: 1 } },
       { ...edges, arrow: new Uint8Array([5]) },
-      { ...edges, targetSide: new Uint8Array([SideCode.Unnamed + 1]) },
+      { ...edges, targetSide: new Uint8Array([SideCode.Absent + 1]) },
       { ...edges, gap: new Float64Array(0) },
     ];
     for (const columns of misfits) {
@@ -1362,7 +1390,7 @@ describe("bridge columns that do not fit", () => {
       index: 0,
       id: "e",
       field: "targetSide",
-      expected: '"top", "right", "bottom", "left", or "outline"',
+      expected: SIDE_EXPECTED,
     });
   });
 });

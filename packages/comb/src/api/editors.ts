@@ -413,22 +413,41 @@ function addNode({ store, bridge, limits }: Editing, node: unknown): void {
   });
 }
 
-/** The slots of the ends of the edge `snapshot` names in the map of `state`, refusing an
- *  identifier the map holds already and an end it does not hold. An identifier, source, or target
- *  that is no string, or longer than the limit, the bridge refuses before the map is asked, as a
- *  load refuses it before any end is resolved. */
+/** The slots of the ends of the edge `snapshot` names in the maps of `state`, each of a node or,
+ *  where it names an edge, of an edge, refusing an identifier the map holds already, an end it does
+ *  not hold, and an end on the edge itself (API-edges-dock-nodes-or-edges, *Ends*). An identifier,
+ *  source, or target that is no string, or longer than the limit, and an end that names both a
+ *  node and an edge, the bridge refuses before the maps are asked, as a load refuses them before
+ *  any end is resolved. */
 function endsOf(snapshot: unknown, state: GraphState, limits: Limits): [number, number] {
-  const { id, source, target } = snapshot as { id?: unknown; source?: unknown; target?: unknown };
+  const edge = snapshot as Record<string, unknown>;
   const named = (value: unknown): value is string =>
     typeof value === "string" && value.length <= limits.id;
-  if (!(named(id) && named(source) && named(target))) return [0, 0];
+  const given = (value: unknown) => value !== undefined && value !== null;
+  const ends = (["source", "target"] as const).map((end) => {
+    const onEdge = given(edge[`${end}Edge`]);
+    const other = onEdge ? edge[end] : edge[`${end}Edge`];
+    return { end, onEdge, named: edge[onEdge ? `${end}Edge` : end], alone: !given(other) };
+  });
+  const { id } = edge;
+  if (!(named(id) && ends.every((e) => named(e.named) && e.alone))) return [0, 0];
   if (state.edgeSlots.has(id)) throw new GraphDataError({ kind: "duplicateEdge", edge: id });
-  const end = (node: string) => {
-    const slot = nodeSlotOf(state, node);
-    if (slot === undefined) throw new GraphDataError({ kind: "missingNode", edge: id, node });
+  const [source, target] = ends.map(({ end, onEdge, named: on }) => {
+    const other = on as string;
+    if (!onEdge) {
+      const slot = nodeSlotOf(state, other);
+      if (slot === undefined)
+        throw new GraphDataError({ kind: "missingNode", edge: id, node: other });
+      return slot;
+    }
+    if (other === id)
+      throw new GraphDataError({ kind: "invalidEdgeEnd", edge: id, end: `${end}Edge` });
+    const slot = state.edgeSlots.get(other);
+    if (slot === undefined)
+      throw new GraphDataError({ kind: "missingEdge", edge: id, missing: other });
     return slot;
-  };
-  return [end(source), end(target)];
+  });
+  return [source!, target!];
 }
 
 /** `addEdge`, and the user's connection, as `by` makes it: the edge added between the slots of
@@ -525,7 +544,8 @@ function removeEdges({ store, bridge, limits }: Editing, ids: unknown, by: By): 
     resolve: (read, state) =>
       slotsOf(read, state.edgeSlots, (edge) => ({ kind: "unknownEdge", edge })),
     engine: (slots) => bridge.removeEdges(slots),
-    record: (state, slots) => state.removeEdges([...slots], by),
+    // The engine removed every edge that ends on one named too (API-edges-dock-nodes-or-edges).
+    record: (state, _, removed) => state.removeEdges([...removed], by),
   });
 }
 

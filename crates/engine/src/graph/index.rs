@@ -105,6 +105,7 @@ mod tests {
     use super::super::{EdgeSpec, Level, Visible};
     use super::*;
     use crate::geometry::{Point, Sides};
+    use crate::graph::End;
     use crate::stroke::EdgeStyle;
 
     #[test]
@@ -192,8 +193,8 @@ mod tests {
         let edges = (0..1_000)
             .map(|i| EdgeSpec {
                 sides: Sides::default(),
-                source: i,
-                target: i + 1,
+                source: End::Node(i),
+                target: End::Node(i + 1),
                 labels: Vec::new(),
                 style: EdgeStyle::unstyled(),
             })
@@ -210,8 +211,8 @@ mod tests {
         assert_eq!(graph.add_node(20.0, 220.0, 50.0, 50.0), Ok(500));
         let edge = EdgeSpec {
             sides: Sides::default(),
-            source: 499,
-            target: 500,
+            source: End::Node(499),
+            target: End::Node(500),
             labels: Vec::new(),
             style: EdgeStyle::unstyled(),
         };
@@ -230,8 +231,8 @@ mod tests {
             graph
                 .add_edge(EdgeSpec {
                     sides: Sides::default(),
-                    source: 2 * i + 1,
-                    target: 2 * i + 2,
+                    source: End::Node(2 * i + 1),
+                    target: End::Node(2 * i + 2),
                     labels: Vec::new(),
                     style: EdgeStyle::unstyled(),
                 })
@@ -241,8 +242,8 @@ mod tests {
         graph
             .add_edge(EdgeSpec {
                 sides: Sides::default(),
-                source: 0,
-                target: 3,
+                source: End::Node(0),
+                target: End::Node(3),
                 labels: Vec::new(),
                 style: EdgeStyle::unstyled(),
             })

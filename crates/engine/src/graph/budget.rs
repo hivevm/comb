@@ -9,6 +9,7 @@
 use super::tests::{Lcg, random_sides, random_style};
 use super::{EdgeSpec, Graph, Level, Visible};
 use crate::geometry::{Dock, EdgePath, Point, Rect, Sides};
+use crate::graph::End;
 use crate::stroke::{
     Arrowhead, Detail, EdgeStyle, Mesh, Stroke, crossing, distance_to_segment, flattened,
 };
@@ -34,8 +35,8 @@ fn random_graph(rng: &mut Lcg, nodes: usize, edges: usize, spread: f64) -> Graph
     let specs = (0..edges)
         .map(|i| EdgeSpec {
             sides: random_sides(rng),
-            source: rng.below(nodes),
-            target: rng.below(nodes),
+            source: End::Node(rng.below(nodes)),
+            target: End::Node(rng.below(nodes)),
             labels: Vec::new(),
             style: EdgeStyle {
                 color: i as u32 + 1,
@@ -55,8 +56,8 @@ fn farthest(rng: &mut Lcg) -> Graph {
     let specs = (0..edges)
         .map(|i| EdgeSpec {
             sides: random_sides(rng),
-            source: rng.below(3),
-            target: rng.below(3),
+            source: End::Node(rng.below(3)),
+            target: End::Node(rng.below(3)),
             labels: Vec::new(),
             style: EdgeStyle {
                 color: i + 1,
@@ -82,8 +83,8 @@ fn coincident(rng: &mut Lcg) -> Graph {
     let specs = (0..edges)
         .map(|i| EdgeSpec {
             sides: outline,
-            source: rng.below(nodes),
-            target: rng.below(nodes),
+            source: End::Node(rng.below(nodes)),
+            target: End::Node(rng.below(nodes)),
             labels: Vec::new(),
             style: EdgeStyle {
                 color: i + 1,
@@ -379,8 +380,8 @@ fn far_apart(edges: u32, arrow: Arrowhead) -> Graph {
     let specs = (0..edges)
         .map(|i| EdgeSpec {
             sides: Sides::default(),
-            source: 0,
-            target: 1,
+            source: End::Node(0),
+            target: End::Node(1),
             labels: Vec::new(),
             style: EdgeStyle {
                 color: i + 1,

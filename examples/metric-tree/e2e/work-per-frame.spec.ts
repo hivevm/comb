@@ -482,7 +482,8 @@ async function editFrames(page: Page, copies: number) {
     const level = window.inspect().level;
     const graph = window.exampleGraph();
     const kept = graph.edges.find((edge) => window.isDrawn({ edge: edge.id }))!;
-    const source = kept.source;
+    // The example's edges end on nodes.
+    const source = kept.source!;
     const before = { work: window.work(), queries: window.inspect().queries };
     const shown: boolean[] = [];
     // Shown as `isDrawn` and `inspect()` both report it.
@@ -578,7 +579,8 @@ test("isDrawn of an edge in an edit frame at the far level asks the engine for n
       width: 160,
       content: [[{ kind: "text", role: "title", text: "p" }]],
     });
-    comb.addEdge({ id: "probe-edge", source: kept.source, target: "probe-node" });
+    // The example's edges end on nodes.
+    comb.addEdge({ id: "probe-edge", source: kept.source!, target: "probe-node" });
     await comb.whenRendered();
     probe("probe-edge");
     probe(kept.id);

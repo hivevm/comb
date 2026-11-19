@@ -128,21 +128,31 @@ export type KeptLabel = Required<Omit<EdgeLabelData, "background">> &
  *  around a white fill, or none (API-edges-dock-nodes-or-edges, *Arrowheads*). */
 export type Arrowhead = "end" | "open" | "hollow" | "none";
 
-/** An edge from one node to another, each end at a side's connector or on the outline, drawn in
- *  `color` (`0xRRGGBB`), dashed by `dash` (dash and gap lengths in world units; solid without),
- *  with the arrowhead `arrow` at its target, a filled triangle where it gives none (G-11), its
- *  middle a zigzag where `lightning` is `true`, and carrying at most 8 `labels`
- *  (API-edges-dock-nodes-or-edges). */
-export interface EdgeData {
+/** The source of an edge (API-edges-dock-nodes-or-edges, *Ends*): a node, any node at any depth,
+ *  by `source`, docked by `sourceSide`, a side or the outline, `right` where left out and `top` for
+ *  a loop; or another edge by `sourceEdge`, which itself ends on nodes, at the path parameter
+ *  `sourceT` of its path, from 0 to 1, with no side. */
+export type EdgeSource =
+  | { source: string; sourceSide?: Dock; sourceEdge?: never; sourceT?: never }
+  | { sourceEdge: string; sourceT: number; source?: never; sourceSide?: never };
+
+/** The target of an edge, as `EdgeSource` names its source: a node by `target`, docked by
+ *  `targetSide`, `left` where left out and `top` for a loop; or another edge by `targetEdge` at
+ *  `targetT`. */
+export type EdgeTarget =
+  | { target: string; targetSide?: Dock; targetEdge?: never; targetT?: never }
+  | { targetEdge: string; targetT: number; target?: never; targetSide?: never };
+
+/** An edge from its source to its target, each a node, docked at a side's connector or on the
+ *  outline, or another edge, drawn in `color` (`0xRRGGBB`), dashed by `dash` (dash and gap lengths
+ *  in world units; solid without), with the arrowhead `arrow` at its target, a filled triangle
+ *  where it gives none (G-11), its middle a zigzag where `lightning` is `true`, and carrying at
+ *  most 8 `labels` (API-edges-dock-nodes-or-edges). */
+export type EdgeData = EdgeFields & EdgeSource & EdgeTarget;
+
+/** What an edge holds besides its ends. */
+export interface EdgeFields {
   id: string;
-  source: string;
-  target: string;
-  /** What it leaves its source by, a side or the outline, `right` where left out, and `top` for a
-   *  loop (API-edges-dock-side-or-outline). */
-  sourceSide?: Dock;
-  /** What it enters its target by, a side or the outline, `left` where left out, and `top` for a
-   *  loop. */
-  targetSide?: Dock;
   color?: number;
   dash?: readonly [number, number];
   arrow?: Arrowhead;
@@ -261,7 +271,10 @@ export interface KeptGraph {
 
 /** An edge as Comb keeps it once the bridge took it, the places of its labels filled in
  *  (API-edges-dock-nodes-or-edges). */
-export type KeptEdge = Omit<EdgeData, "labels"> & { readonly labels?: readonly KeptLabel[] };
+export type KeptEdge = Omit<EdgeFields, "labels"> & {
+  readonly labels?: readonly KeptLabel[];
+} & EdgeSource &
+  EdgeTarget;
 
 /** What `updateNode` may change of a node: its content, which it replaces whole
  *  (REN-node-content-in-rows), its height, a height below its content's raised to it, and whether
@@ -501,10 +514,11 @@ function nodeUnits(node: Pick<NodeView, "id">): number {
   return node.id.length;
 }
 
-/** The UTF-16 code units of the identifiers of `edge`: its own, its source's, its target's, and
- *  its labels'. */
-function edgeUnits(edge: Pick<EdgeView, "id" | "source" | "target" | "labels">): number {
-  return edge.id.length + edge.source.length + edge.target.length + labelUnits(edge.labels);
+/** The UTF-16 code units of the identifiers of `edge`: its own, its source's, its target's, each
+ *  a node's or an edge's (API-edges-dock-nodes-or-edges), and its labels'. */
+function edgeUnits(edge: EdgeView): number {
+  const ends = (edge.source ?? edge.sourceEdge).length + (edge.target ?? edge.targetEdge).length;
+  return edge.id.length + ends + labelUnits(edge.labels);
 }
 
 /** The UTF-16 code units of the identifiers of `labels` (API-edges-dock-nodes-or-edges). */
@@ -686,11 +700,12 @@ export function edgeNamed(
  *  `null` clears a dash or the labels. */
 function patched(edge: EdgeView, patch: EdgePatch): EdgeView {
   const { dash, labels, ...rest } = { ...edge, ...patch };
+  // The bridge refused a side beside an end on an edge (API-edges-dock-nodes-or-edges).
   return {
     ...rest,
     ...(dash ? { dash } : {}),
     ...(labels ? { labels: labels as readonly KeptLabel[] } : {}),
-  };
+  } as EdgeView;
 }
 
 /** What `updateNode` changes of `state`: the node `id` a new object where its content changed, so

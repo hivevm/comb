@@ -234,9 +234,10 @@ function memberDrift(read: Member[], operations: string[], attributes: string[])
 /** The dependencies the package diagram draws, read from its graph data. */
 function drawnDependencies(): Dependency[] {
   const { graph } = packageDiagram(() => 40);
+  // The package diagram's dependencies end on packages, which are nodes.
   return graph.edges.map(({ source, target, labels }) => ({
-    source,
-    target,
+    source: source!,
+    target: target!,
     label: labels?.[0]?.text ?? "",
   }));
 }

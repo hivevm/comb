@@ -49,10 +49,12 @@ impl Refusable for NodeInput {
     }
 }
 
-/// An edge of which a field, or a field of its label, is missing or of another type.
+/// An edge of which a field, or a field of its label, is missing or of another type, or an end
+/// that names a node and an edge, neither, a path parameter outside 0 to 1, or a side against
+/// where it lies: what reading it as `addEdge` does refuses (API-edges-dock-nodes-or-edges).
 impl Refusable for EdgeInput {
     fn refused(&self) -> bool {
-        EdgeCells::from(self).refused().is_some() || self.arrow.0.is_none()
+        super::item::edge_of(0, self).is_err()
     }
 }
 
@@ -559,8 +561,18 @@ impl OwnedColumns {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct EdgeCells {
     pub id: Field<String>,
-    pub source: Field<String>,
-    pub target: Field<String>,
+    #[serde(default = "Field::absent")]
+    pub source: Field<Option<String>>,
+    #[serde(default = "Field::absent")]
+    pub source_edge: Field<Option<String>>,
+    #[serde(default = "Field::absent")]
+    pub source_t: Field<Option<f64>>,
+    #[serde(default = "Field::absent")]
+    pub target: Field<Option<String>>,
+    #[serde(default = "Field::absent")]
+    pub target_edge: Field<Option<String>>,
+    #[serde(default = "Field::absent")]
+    pub target_t: Field<Option<f64>>,
     /// Whether the edge still carries `label`, which `labels` replaced.
     #[serde(default, deserialize_with = "super::field::present")]
     pub label: bool,
@@ -571,12 +583,56 @@ pub(crate) struct EdgeCells {
     pub arrow: Field<String>,
     #[serde(default = "Field::absent")]
     pub lightning: Field<Option<bool>>,
-    pub source_side: Field<String>,
-    pub target_side: Field<String>,
+    #[serde(default = "Field::absent")]
+    pub source_side: Field<Option<String>>,
+    #[serde(default = "Field::absent")]
+    pub target_side: Field<Option<String>>,
+}
+
+/// Whether a field the tests read was given at all: of any value but none.
+#[cfg(test)]
+fn given<T>(field: &Field<Option<T>>) -> bool {
+    !matches!(field.0, Some(None))
+}
+
+/// The field the snapshot names first of an end of an edge (API-edges-dock-nodes-or-edges,
+/// *Ends*): an edge, given at all, beside a node given at all, or of another type, names `edge`;
+/// an end that names no edge and no node by a string names `node`. Its path parameter the
+/// bridge refuses itself.
+#[cfg(test)]
+fn end_refused(
+    node: &Field<Option<String>>,
+    edge: &Field<Option<String>>,
+    names: (EdgeField, EdgeField),
+) -> Option<EdgeField> {
+    if given(edge) {
+        (given(node) || edge.0.is_none()).then_some(names.1)
+    } else {
+        node.0
+            .as_ref()
+            .and_then(Option::as_ref)
+            .is_none()
+            .then_some(names.0)
+    }
 }
 
 #[cfg(test)]
 impl EdgeCells {
+    /// The identifier the snapshot writes of an end: of the edge where it names one, else of the
+    /// node, and nothing where it is refused.
+    fn end_id(node: &Field<Option<String>>, edge: &Field<Option<String>>) -> String {
+        let named = if given(edge) && !given(node) {
+            edge
+        } else {
+            node
+        };
+        named.0.clone().flatten().unwrap_or_default()
+    }
+
+    /// Whether the end of `edge` names an edge, given at all.
+    fn on_edge(edge: &Field<Option<String>>) -> u8 {
+        u8::from(given(edge))
+    }
     /// The labels the snapshot reads of the edge, at most one beyond `MAX_LABELS`, each `None`
     /// where it is no object; none where the edge's labels are absent or no list.
     fn labels(&self) -> impl Iterator<Item = Option<&LabelInput>> {
@@ -592,10 +648,20 @@ impl EdgeCells {
     /// the snapshot names it, a label's field with the label's place; a string that names no
     /// arrowhead or side is none.
     fn refused(&self) -> Option<(EdgeField, Option<u32>)> {
+        let source = end_refused(
+            &self.source,
+            &self.source_edge,
+            (EdgeField::Source, EdgeField::SourceEdge),
+        );
+        let target = end_refused(
+            &self.target,
+            &self.target_edge,
+            (EdgeField::Target, EdgeField::TargetEdge),
+        );
         let first = [
             (EdgeField::Id, self.id.0.is_none()),
-            (EdgeField::Source, self.source.0.is_none()),
-            (EdgeField::Target, self.target.0.is_none()),
+            (source.unwrap_or(EdgeField::Source), source.is_some()),
+            (target.unwrap_or(EdgeField::Target), target.is_some()),
             (EdgeField::Label, self.label),
             (EdgeField::Labels, self.labels.0.is_none()),
         ]
@@ -639,19 +705,28 @@ impl EdgeCells {
 impl From<&EdgeInput> for EdgeCells {
     fn from(edge: &EdgeInput) -> Self {
         let named = |value: Option<&str>| Field(value.map(str::to_owned));
-        let side = |side: Field<Dock>| {
-            named(side.0.map(|side| match side {
-                Dock::Top => "top",
-                Dock::Right => "right",
-                Dock::Bottom => "bottom",
-                Dock::Left => "left",
-                Dock::Outline => "outline",
+        let side = |side: Field<Option<Dock>>| {
+            Field(side.0.map(|side| {
+                side.map(|side| {
+                    match side {
+                        Dock::Top => "top",
+                        Dock::Right => "right",
+                        Dock::Bottom => "bottom",
+                        Dock::Left => "left",
+                        Dock::Outline => "outline",
+                    }
+                    .to_owned()
+                })
             }))
         };
         Self {
             id: edge.id.clone(),
             source: edge.source.clone(),
+            source_edge: edge.source_edge.clone(),
+            source_t: edge.source_t,
             target: edge.target.clone(),
+            target_edge: edge.target_edge.clone(),
+            target_t: edge.target_t,
             label: edge.label,
             labels: edge.labels.clone(),
             color: edge.color,
@@ -677,8 +752,12 @@ pub(crate) struct OwnedEdgeColumns {
     pub(super) id_bounds: Vec<u32>,
     pub(super) sources: Vec<String>,
     pub(super) source_bounds: Vec<u32>,
+    pub(super) source_on_edge: Vec<u8>,
+    pub(super) source_t: Vec<f64>,
     pub(super) targets: Vec<String>,
     pub(super) target_bounds: Vec<u32>,
+    pub(super) target_on_edge: Vec<u8>,
+    pub(super) target_t: Vec<f64>,
     pub(super) label_bounds: Vec<u32>,
     pub(super) label_ids: Vec<String>,
     pub(super) label_id_bounds: Vec<u32>,
@@ -754,16 +833,23 @@ impl OwnedEdgeColumns {
             (
                 &mut self.sources,
                 &mut self.source_bounds,
-                text(&edge.source),
+                EdgeCells::end_id(&edge.source, &edge.source_edge),
             ),
             (
                 &mut self.targets,
                 &mut self.target_bounds,
-                text(&edge.target),
+                EdgeCells::end_id(&edge.target, &edge.target_edge),
             ),
         ] {
             push_value(column, bounds, value);
         }
+        let t = |t: Field<Option<f64>>| t.0.flatten().unwrap_or(f64::NAN);
+        self.source_on_edge
+            .push(EdgeCells::on_edge(&edge.source_edge));
+        self.source_t.push(t(edge.source_t));
+        self.target_on_edge
+            .push(EdgeCells::on_edge(&edge.target_edge));
+        self.target_t.push(t(edge.target_t));
         for label in edge.labels() {
             let id = label.map(|label| text(&label.id)).unwrap_or_default();
             push_value(&mut self.label_ids, &mut self.label_id_bounds, id);
@@ -802,14 +888,18 @@ impl OwnedEdgeColumns {
         self.arrow.push(arrow as u8);
         self.lightning
             .push(u8::from(edge.lightning.0.flatten().unwrap_or(false)));
-        let side = |side: &Field<String>, absent: SideCode| {
-            side.0.as_deref().map_or(absent, |side| match side {
-                "top" => SideCode::Top,
-                "right" => SideCode::Right,
-                "bottom" => SideCode::Bottom,
-                "left" => SideCode::Left,
-                "outline" => SideCode::Outline,
-                _ => SideCode::Unnamed,
+        // A side left out crosses as absent, which the bridge refuses beside an end on a node; one
+        // of another type the snapshot names, and its column holds the code it would default to.
+        let side = |side: &Field<Option<String>>, refused: SideCode| {
+            side.0.as_ref().map_or(refused, |side| {
+                side.as_deref().map_or(SideCode::Absent, |side| match side {
+                    "top" => SideCode::Top,
+                    "right" => SideCode::Right,
+                    "bottom" => SideCode::Bottom,
+                    "left" => SideCode::Left,
+                    "outline" => SideCode::Outline,
+                    _ => SideCode::Unnamed,
+                })
             }) as u8
         };
         self.source_side
@@ -824,8 +914,12 @@ impl OwnedEdgeColumns {
             id_bounds: &self.id_bounds,
             sources: &self.sources,
             source_bounds: &self.source_bounds,
+            source_on_edge: &self.source_on_edge,
+            source_t: &self.source_t,
             targets: &self.targets,
             target_bounds: &self.target_bounds,
+            target_on_edge: &self.target_on_edge,
+            target_t: &self.target_t,
             label_bounds: &self.label_bounds,
             label_ids: &self.label_ids,
             label_id_bounds: &self.label_id_bounds,
@@ -1065,7 +1159,11 @@ mod tests {
         let EdgeInput {
             id: _,
             source: _,
+            source_edge: _,
+            source_t: _,
             target: _,
+            target_edge: _,
+            target_t: _,
             label: _,
             labels: _,
             color: _,

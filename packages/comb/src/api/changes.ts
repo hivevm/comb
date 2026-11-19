@@ -8,7 +8,9 @@ import type { ContentClick } from "../interaction";
 import {
   edgeNamed,
   type By,
-  type EdgeData,
+  type EdgeFields,
+  type EdgeSource,
+  type EdgeTarget,
   type EdgeLabelData,
   type KeptLabel,
   type EdgePatch,
@@ -21,6 +23,26 @@ import {
   type Side,
   type StoreChange,
 } from "../store";
+
+/** An end of an edge as `edgeAdded` tells it: one on a node with its side `S` filled in, one on
+ *  an edge as given (API-edges-dock-nodes-or-edges, *Ends*). */
+type SidedEnd<E, S extends string> = E extends unknown
+  ? S extends keyof E
+    ? E[S] extends undefined
+      ? E
+      : E & Required<Pick<E, S>>
+    : E
+  : never;
+
+/** An edge as `edgeAdded` tells it, as Comb keeps it: its defaults filled, its labels' places
+ *  among them, and the side of each end on a node. */
+type AddedEdge = Readonly<
+  Omit<EdgeFields, "labels"> &
+    Required<Pick<EdgeFields, "color" | "arrow">> & {
+      readonly labels?: readonly Readonly<KeptLabel>[];
+    } & SidedEnd<EdgeSource, "sourceSide"> &
+    SidedEnd<EdgeTarget, "targetSide">
+>;
 
 /** The attributes `updateEdge` changes on an edge, as `edgeUpdated` reports them merged: its
  *  colour, arrowhead, lightning bolt, dash pattern or none, and labels, their places filled in,
@@ -108,12 +130,7 @@ export type GraphChange =
   | {
       readonly kind: "edgeAdded";
       readonly by: By;
-      readonly edge: Readonly<
-        Omit<EdgeData, "labels"> &
-          Required<Pick<EdgeData, "color" | "arrow" | "sourceSide" | "targetSide">> & {
-            readonly labels?: readonly Readonly<KeptLabel>[];
-          }
-      >;
+      readonly edge: AddedEdge;
     }
   /** `updateEdge` changed the edge `id` by `patch`, as Comb merged it. */
   | {
@@ -163,15 +180,14 @@ function edgeDeliveryOf(
   return {
     kind: change.kind,
     by: change.by,
+    // The snapshot filled in the side of each end on a node, and no other.
     edge: {
       ...edge,
       color: edge.color!,
       arrow: edge.arrow!,
-      sourceSide: edge.sourceSide!,
-      targetSide: edge.targetSide!,
       ...(dash ? { dash: [dash[0], dash[1]] as const } : {}),
       ...(labels ? { labels: copiedLabels(labels) } : {}),
-    },
+    } as AddedEdge,
   };
 }
 

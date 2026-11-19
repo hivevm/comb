@@ -594,7 +594,8 @@ for (const [name, value] of [
       index,
       id: "x",
       field,
-      expected: '"top", "right", "bottom", "left", or "outline"',
+      expected:
+        '"top", "right", "bottom", "left", or "outline" where the end lies on a node, none where it lies on an edge',
     });
     expect(problems).toEqual([
       expected(0, "targetSide"),

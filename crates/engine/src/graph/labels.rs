@@ -71,6 +71,7 @@ mod tests {
     use super::super::{EdgeSpec, Level, Target, Visible};
     use super::*;
     use crate::geometry::{Rect, Sides};
+    use crate::graph::End;
     use crate::stroke::EdgeStyle;
 
     #[test]
@@ -82,8 +83,8 @@ mod tests {
         let labels = vec![placed(0.1, 12.0), placed(0.5, 0.0), placed(0.9, 12.0)];
         let edges = vec![EdgeSpec {
             sides: Sides::default(),
-            source: 0,
-            target: 1,
+            source: End::Node(0),
+            target: End::Node(1),
             labels: labels.clone(),
             style: EdgeStyle::unstyled(),
         }];
@@ -155,8 +156,8 @@ mod tests {
         };
         let edges = vec![EdgeSpec {
             sides: Sides::default(),
-            source: 0,
-            target: 1,
+            source: End::Node(0),
+            target: End::Node(1),
             labels: vec![label],
             style: EdgeStyle::unstyled(),
         }];
@@ -239,8 +240,8 @@ mod tests {
         };
         let edges = vec![EdgeSpec {
             sides: Sides::default(),
-            source: 0,
-            target: 1,
+            source: End::Node(0),
+            target: End::Node(1),
             labels: vec![label],
             style: EdgeStyle::unstyled(),
         }];
@@ -291,7 +292,7 @@ mod tests {
         let edge = (0..10)
             .find(|&e| {
                 let spec = &model.specs[e as usize];
-                model.label_point(e, 0).is_some() && spec.source != spec.target
+                model.label_point(e, 0).is_some() && spec.nodes().0 != spec.nodes().1
             })
             .unwrap();
         let at = model.label_point(edge, 0).unwrap();
@@ -299,7 +300,7 @@ mod tests {
             .move_label(edge, 0, Point::new(at.x + 15.0, at.y - 25.0))
             .unwrap();
         assert_eq!(graph.edges[edge as usize].labels[0], placement);
-        let source = model.specs[edge as usize].source;
+        let source = model.specs[edge as usize].nodes().0;
         graph.translate(&[source], 120.0, 40.0).unwrap();
         model.translate(&[source], 120.0, 40.0);
         let moved = graph.label_point(edge, 0).unwrap();

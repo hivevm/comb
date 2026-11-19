@@ -57,8 +57,9 @@ export interface QueryLayers {
  *  directly above the query's particles of containers, and its other particles directly above the
  *  query's particles (REN-moving-layer-moves-content). */
 export class MovingLayer {
-  /** The edges at the nodes a drag moves and the added edges: a mesh on WebGL2, a fill on
-   *  Canvas 2D (REN-webgl2-or-canvas-fallback). */
+  /** The edges at the nodes a drag moves, with the edges that end on those, which the engine
+   *  names with them (API-edges-dock-nodes-or-edges), and the added edges: a mesh on WebGL2, a fill
+   *  on Canvas 2D (REN-webgl2-or-canvas-fallback). */
   readonly edges: EdgeLayer;
   /** The particles of the nodes a drag moves and of the added nodes, at the far level, but for
    *  containers. */

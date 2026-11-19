@@ -2,14 +2,14 @@
 // what the canvas draws of each, read off a screenshot with the nodes and labels hidden, on WebGL2
 // and on the Canvas 2D fallback, and the triangles the edges layer draws at each level of detail.
 import { expect, test, type Page } from "@playwright/test";
-import type { Arrowhead, EdgeData, GraphData } from "comb";
+import type { Arrowhead, EdgeFields, GraphData } from "comb";
 import { loaded, node, open } from "./shared";
 
 const [RED, BLUE, BACKGROUND, WHITE] = [0xdc2626, 0x1d4ed8, 0xf7f8fa, 0xffffff];
 
 /** Edge `e` from `a` at (0, 0) to `b` at (600, 0), straight along y = 32 from (220, 32) to its
  *  target's end at (600, 32), in red, with `fields`. */
-const straight = (fields: Partial<EdgeData>): GraphData => ({
+const straight = (fields: Partial<EdgeFields>): GraphData => ({
   nodes: [node("a"), node("b", 600)],
   edges: [{ id: "e", source: "a", target: "b", color: RED, ...fields }],
 });

@@ -229,12 +229,13 @@ impl Graph {
 
     /// What a removal of the nodes in `slots` takes along, named before anything is removed: the
     /// nodes, as `with_held` names them, then the border nodes of any of them
-    /// (ARCH-border-nodes-ride-sides, *Removal*), and the edges at any of those, in ascending order
-    /// (ARCH-engine-edits-nested-graph, *Removing a container*). A slot that holds no node refuses
-    /// the call.
+    /// (ARCH-border-nodes-ride-sides, *Removal*), and the edges at any of those and the edges that
+    /// end on one of them, in ascending order (ARCH-engine-edits-nested-graph, *Removing a
+    /// container*; API-edges-dock-nodes-or-edges, *Ends*). A slot that holds no node refuses the
+    /// call.
     pub fn removal(&self, slots: &[u32]) -> Result<(Vec<u32>, Vec<u32>), SlotError> {
         let nodes = self.with_borders(self.with_held(slots)?);
-        let edges = self.edges_at(&nodes)?;
+        let edges = self.with_anchored(self.edges_at(&nodes)?);
         Ok((nodes, edges))
     }
 
@@ -365,6 +366,10 @@ impl Graph {
         if self.is_container(slot) {
             self.order_containers();
         }
+        // An edge between a container and a node it holds runs inside the container, and one
+        // between two nodes no longer nested does not (API-edges-dock-nodes-or-edges).
+        let moved = self.with_held(&[slot])?;
+        self.place_nested_at(&moved);
         Ok(())
     }
 

@@ -1,7 +1,7 @@
 //! The reading of an item of graph data: a node, an edge, and an edge's label with every field
 //! read, or the refusal that names the first field missing or of another type.
 
-use comb_engine::geometry::{Side, Sides};
+use comb_engine::geometry::{Dock, Side, Sides};
 use comb_engine::shape::NodeShape;
 
 use super::content;
@@ -57,17 +57,54 @@ pub(super) struct Label<'a> {
     pub(super) background: Option<f64>,
 }
 
+/// Where an end of an edge lies, as its data names it: on a node, by its identifier and what the
+/// end docks on, or on an edge, by its identifier and a path parameter from 0 to 1
+/// (API-edges-dock-nodes-or-edges, *Ends*).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum EndRead<'a> {
+    Node { id: &'a str, dock: Dock },
+    Edge { id: &'a str, t: f64 },
+}
+
+impl<'a> EndRead<'a> {
+    /// The identifier the end names, of a node or of an edge.
+    pub(super) const fn id(self) -> &'a str {
+        match self {
+            Self::Node { id, .. } | Self::Edge { id, .. } => id,
+        }
+    }
+
+    /// What the end docks on: its side or the outline on a node, and on an edge the default
+    /// `default`, which the engine does not read there.
+    pub(super) const fn dock(self, default: Dock) -> Dock {
+        match self {
+            Self::Node { dock, .. } => dock,
+            Self::Edge { .. } => default,
+        }
+    }
+}
+
 /// An edge with every field read.
 pub(super) struct Edge<'a> {
     pub(super) id: &'a str,
-    pub(super) source: &'a str,
-    pub(super) target: &'a str,
+    pub(super) source: EndRead<'a>,
+    pub(super) target: EndRead<'a>,
     pub(super) labels: Vec<Label<'a>>,
     pub(super) color: f64,
     pub(super) dash: Option<[f64; 2]>,
     pub(super) arrow: Arrow,
     pub(super) lightning: bool,
-    pub(super) sides: Sides,
+}
+
+impl Edge<'_> {
+    /// Where it leaves its source and enters its target, the default sides at an end on an edge.
+    pub(super) fn sides(&self) -> Sides {
+        let default = Sides::default();
+        Sides {
+            source: self.source.dock(default.source),
+            target: self.target.dock(default.target),
+        }
+    }
 }
 
 /// A batch with every field of every node and edge read.
@@ -242,35 +279,129 @@ pub(super) fn content_of<'c>(
     }
 }
 
+/// The fields that name one end of an edge: the node's identifier, the edge's identifier, the path
+/// parameter on that edge, and the side, each as the host application handed it over.
+struct EndFields<'a> {
+    node: &'a Field<Option<String>>,
+    edge: &'a Field<Option<String>>,
+    t: Field<Option<f64>>,
+}
+
+/// The fields of an end and of its side, refused by their fields: `node`, `edge`, `t`, then
+/// `side`.
+#[derive(Clone, Copy)]
+struct EndNames {
+    node: EdgeField,
+    edge: EdgeField,
+    t: EdgeField,
+    side: EdgeField,
+}
+
+const SOURCE: EndNames = EndNames {
+    node: EdgeField::Source,
+    edge: EdgeField::SourceEdge,
+    t: EdgeField::SourceT,
+    side: EdgeField::SourceSide,
+};
+const TARGET: EndNames = EndNames {
+    node: EdgeField::Target,
+    edge: EdgeField::TargetEdge,
+    t: EdgeField::TargetT,
+    side: EdgeField::TargetSide,
+};
+
+/// Whether `t` is a path parameter an end on an edge lies at: a number from 0 to 1.
+pub(super) fn on_the_path(t: f64) -> bool {
+    (0.0..=1.0).contains(&t)
+}
+
+/// One end of the edge `item` read off `fields`, its side still to read, or the refusal of its
+/// first field (API-edges-dock-nodes-or-edges, *Ends*): an end that names an edge by `edge`, given
+/// at all, beside a node given at all refuses `edge`, as does an identifier of an edge of another
+/// type, and its path parameter missing, of another type, or outside 0 to 1 refuses `t`; an end
+/// that names no edge refuses `node` where it names no node by a string. An end on a node docks on
+/// `Dock::Outline` until its side is read.
+fn end_of<'a>(
+    item: &Item,
+    names: EndNames,
+    fields: EndFields<'a>,
+) -> Result<EndRead<'a>, GraphDataProblem> {
+    let given = |field: &Field<Option<String>>| !matches!(field.0, Some(None));
+    if !given(fields.edge) {
+        let id = item.edge(names.node, fields.node.as_ref())?.as_deref();
+        let id = item.edge(names.node, Field(id))?;
+        return Ok(EndRead::Node {
+            id,
+            dock: Dock::Outline,
+        });
+    }
+    let edge = fields.edge.0.as_ref().and_then(Option::as_deref);
+    let id = item.edge(names.edge, Field(edge.filter(|_| !given(fields.node))))?;
+    let t = fields.t.0.flatten().filter(|&t| on_the_path(t));
+    Ok(EndRead::Edge {
+        id,
+        t: item.edge(names.t, Field(t))?,
+    })
+}
+
+/// The end `end` with the side `side` read: what it docks on where it lies on a node, which names
+/// a side or the outline, and none where it lies on an edge (API-edges-dock-nodes-or-edges).
+fn sided<'a>(
+    item: &Item,
+    names: EndNames,
+    end: EndRead<'a>,
+    side: Field<Option<super::Dock>>,
+) -> Result<EndRead<'a>, GraphDataProblem> {
+    let side = item.edge(names.side, side)?;
+    match (end, side) {
+        (EndRead::Node { id, .. }, Some(dock)) => Ok(EndRead::Node {
+            id,
+            dock: dock.into(),
+        }),
+        (EndRead::Edge { .. }, None) => Ok(end),
+        _ => item.edge(names.side, Field(None)),
+    }
+}
+
 /// The edge at `index` with every field read, or the refusal that names its first missing or
 /// mistyped field.
 pub(super) fn edge_of(index: usize, edge: &EdgeInput) -> Result<Edge<'_>, GraphDataProblem> {
     let mut item = Item::new(GraphList::Edges, index);
     let id = item.id("id", &edge.id)?;
     item.id = Some(id);
-    let source = item.id("source", &edge.source)?;
-    let target = item.id("target", &edge.target)?;
+    let source = EndFields {
+        node: &edge.source,
+        edge: &edge.source_edge,
+        t: edge.source_t,
+    };
+    let source = end_of(&item, SOURCE, source)?;
+    let target = EndFields {
+        node: &edge.target,
+        edge: &edge.target_edge,
+        t: edge.target_t,
+    };
+    let target = end_of(&item, TARGET, target)?;
     if edge.label {
         item.edge(EdgeField::Label, Field::<()>(None))?;
     }
     let labels = labels_of(&item, &edge.labels)?;
+    let color = item.edge(EdgeField::Color, edge.color)?;
+    let dash = item
+        .edge(EdgeField::Dash, edge.dash)?
+        .map(|Pair(pair)| pair);
+    let arrow = item.edge(EdgeField::Arrow, edge.arrow)?;
+    let lightning = item
+        .edge(EdgeField::Lightning, edge.lightning)?
+        .unwrap_or(false);
     Ok(Edge {
         id,
-        source,
-        target,
+        source: sided(&item, SOURCE, source, edge.source_side)?,
+        target: sided(&item, TARGET, target, edge.target_side)?,
         labels,
-        color: item.edge(EdgeField::Color, edge.color)?,
-        dash: item
-            .edge(EdgeField::Dash, edge.dash)?
-            .map(|Pair(pair)| pair),
-        arrow: item.edge(EdgeField::Arrow, edge.arrow)?,
-        lightning: item
-            .edge(EdgeField::Lightning, edge.lightning)?
-            .unwrap_or(false),
-        sides: Sides {
-            source: item.edge(EdgeField::SourceSide, edge.source_side)?.into(),
-            target: item.edge(EdgeField::TargetSide, edge.target_side)?.into(),
-        },
+        color,
+        dash,
+        arrow,
+        lightning,
     })
 }
 

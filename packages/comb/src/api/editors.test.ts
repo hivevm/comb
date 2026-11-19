@@ -265,7 +265,8 @@ describe("the user's deletion", () => {
       userCalls.length = 0;
       deleteSelection(byUser.store, byUser.bridge, byUser.user.delete);
       // The deletion names what would go before the veto; from there it is the host's removal.
-      expect(userCalls.filter((name) => name !== "removalOf")).toEqual(hostCalls);
+      const naming = ["removalOf", "edgeRemovalOf"];
+      expect(userCalls.filter((name) => !naming.includes(name))).toEqual(hostCalls);
       const told = byHost.store.getState().change;
       expect(byUser.store.getState().change as unknown).toEqual({ ...told, by: "user" });
       expect(told?.by).toBe("host");

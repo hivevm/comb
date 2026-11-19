@@ -139,7 +139,8 @@ const LABELS = "a list of edge labels, or none";
 const NUMBER_OR_NONE = "a finite number, or none";
 const NO_LABEL = "nothing: an edge carries labels, a list of edge labels, in its stead";
 const FLAG = "true or false, or none";
-const SIDE = '"top", "right", "bottom", "left", or "outline"';
+const SIDE =
+  '"top", "right", "bottom", "left", or "outline" where the end lies on a node, none where it lies on an edge';
 const ROWS = "a list of rows";
 /** A text element of node `b`'s content where it lies, as a problem of its text names it. */
 const TEXT_AT = { node: "b", row: 0, column: 0, field: "text" };
@@ -1396,6 +1397,8 @@ function installKinds() {
     duplicateNode: load({ nodes: [nodeAt("a"), nodeAt("a")], edges: [] }),
     duplicateEdge: load({ nodes: two, edges: [anEdge, anEdge] }),
     missingNode: edges({ target: "z" }),
+    missingEdge: edges({ target: undefined, targetEdge: "z", targetT: 0.5 }),
+    invalidEdgeEnd: edges({ target: undefined, targetEdge: "e", targetT: 0.5 }),
     nonFiniteLabel: edges({ labels: [{ ...label, t: Number.NaN }] }),
     invalidLabelText: edges({ labels: [{ ...label, text: 5 }] }),
     labelTextTooLong: edges({ labels: [{ ...label, text: "x".repeat(1001) }] }),
@@ -1451,5 +1454,5 @@ test("load and the methods that edit the graph throw every kind of GraphDataProb
   const thrown = await page.evaluate(everyKind);
   expect(errors).toEqual([]);
   expect(thrown).toEqual(Object.fromEntries(Object.keys(thrown).map((kind) => [kind, kind])));
-  expect(Object.keys(thrown).length).toBe(40);
+  expect(Object.keys(thrown).length).toBe(42);
 });

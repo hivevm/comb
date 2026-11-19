@@ -139,8 +139,9 @@ impl Graph {
         self.mesh_edges(&out.edges, &at, budget, &mut out.mesh);
     }
 
-    /// Writes into `edges` the slots of every edge at the node slots `slots` and of the edge slots
-    /// `also`, found by a query or not, each once, in ascending order, and into `out` their mesh,
+    /// Writes into `edges` the slots of every edge at the node slots `slots`, of every edge that
+    /// ends on one of those (REN-moving-layer-moves-content), and of the edge slots `also`, found
+    /// by a query or not, each once, in ascending order, and into `out` their mesh,
     /// stroked as `query` strokes the edges it found in `rect` at `level` where a screen pixel is
     /// `pixel` world units, relative to `origin`, within the mesh budget: what a drag redraws of
     /// the nodes it moves and an edit of what it added (REN-moving-layer-redraws-changes). A slot
@@ -155,7 +156,7 @@ impl Graph {
         out: &mut Mesh,
     ) -> Result<(), SlotError> {
         self.edges_held(also)?;
-        let mut found = self.edges_at(slots)?;
+        let mut found = self.with_anchored(self.edges_at(slots)?);
         found.extend_from_slice(also);
         found.sort_unstable();
         found.dedup();
@@ -203,6 +204,7 @@ mod tests {
     use super::super::{EdgeSpec, LabelPlacement};
     use super::*;
     use crate::geometry::{Dock, EdgePath, Side, Sides, WORLD_LIMIT};
+    use crate::graph::End;
     use crate::shape::NodeShape;
     use crate::stroke::{Detail, EdgeStyle};
 
@@ -212,8 +214,8 @@ mod tests {
         // The edge from (100, 20) to (400, 20), straight; its second turn lies 6 below the path.
         let edges = vec![EdgeSpec {
             sides: Sides::default(),
-            source: 0,
-            target: 1,
+            source: End::Node(0),
+            target: End::Node(1),
             labels: Vec::new(),
             style: EdgeStyle {
                 lightning: true,
@@ -268,8 +270,8 @@ mod tests {
         let sizes = vec![220.0, 64.0, 220.0, 64.0, 220.0, 64.0];
         let edge = |source, target| EdgeSpec {
             sides: Sides::default(),
-            source,
-            target,
+            source: End::Node(source),
+            target: End::Node(target),
             labels: Vec::new(),
             style: EdgeStyle::unstyled(),
         };
@@ -319,8 +321,8 @@ mod tests {
         let sizes = vec![220.0, 64.0, 220.0, 64.0, 220.0, 64.0];
         let edge = |source, target| EdgeSpec {
             sides: Sides::default(),
-            source,
-            target,
+            source: End::Node(source),
+            target: End::Node(target),
             labels: Vec::new(),
             style: EdgeStyle::unstyled(),
         };
@@ -366,8 +368,8 @@ mod tests {
         };
         let edges = vec![EdgeSpec {
             sides: Sides::default(),
-            source: 0,
-            target: 1,
+            source: End::Node(0),
+            target: End::Node(1),
             labels: vec![label],
             style: EdgeStyle::unstyled(),
         }];
@@ -448,8 +450,8 @@ mod tests {
         };
         let edges = vec![EdgeSpec {
             sides: Sides::default(),
-            source: 0,
-            target: 1,
+            source: End::Node(0),
+            target: End::Node(1),
             labels: vec![label],
             style: EdgeStyle::unstyled(),
         }];
@@ -509,8 +511,8 @@ mod tests {
         };
         let edges = vec![EdgeSpec {
             sides: Sides::default(),
-            source: 0,
-            target: 1,
+            source: End::Node(0),
+            target: End::Node(1),
             labels: vec![label],
             style: EdgeStyle {
                 dash: Some((6.0, 4.0)),
@@ -573,8 +575,8 @@ mod tests {
         };
         let edge = |source, sides| EdgeSpec {
             sides,
-            source,
-            target: 0,
+            source: End::Node(source),
+            target: End::Node(0),
             labels: vec![label],
             style: EdgeStyle::unstyled(),
         };
@@ -661,8 +663,8 @@ mod tests {
                     source: dock,
                     target: Dock::Outline,
                 },
-                source: node,
-                target: node,
+                source: End::Node(node),
+                target: End::Node(node),
                 labels: vec![LabelPlacement {
                     t: 0.5,
                     offset: 40.0,
@@ -692,10 +694,10 @@ mod tests {
     /// control point lies past twice the world's limit.
     fn assert_loop_held(graph: &mut Graph, slot: usize, spec: &EdgeSpec) -> bool {
         let path = graph.paths[slot];
-        let node = graph.node_bounds(spec.source);
+        let node = graph.node_bounds(spec.nodes().0);
         assert_eq!(
             path,
-            EdgePath::looped(&node, graph.shape(spec.source), spec.sides.source),
+            EdgePath::looped(&node, graph.shape(spec.nodes().0), spec.sides.source),
             "{slot}"
         );
         let points = (0..=64).map(|t| path.point_at(f64::from(t) / 64.0));
@@ -754,7 +756,11 @@ mod tests {
         let inside = |p: Point| {
             p.x > large.min_x && p.x < large.max_x && p.y > large.min_y && p.y < large.max_y
         };
-        for (slot, _) in specs.iter().enumerate().filter(|(_, s)| s.source == 1) {
+        for (slot, _) in specs
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.source == End::Node(1))
+        {
             let path = graph.paths[slot];
             assert!(
                 inside(path.source) && inside(path.target),

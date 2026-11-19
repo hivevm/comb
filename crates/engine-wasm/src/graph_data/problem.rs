@@ -184,6 +184,16 @@ pub enum GraphDataProblem {
         border_node: Option<String>,
         node: String,
     },
+    /// The edge `edge` ends, by `sourceEdge` or `targetEdge`, on an edge `missing` that is not in
+    /// the batch, or, for `addEdge`, one the graph does not hold (API-edges-dock-nodes-or-edges,
+    /// *Ends*).
+    #[serde(rename_all = "camelCase")]
+    MissingEdge { edge: String, missing: String },
+    /// The end `end`, `sourceEdge` or `targetEdge`, of the edge `edge` lies on the edge itself,
+    /// or on an edge that itself ends on an edge: an end on an edge lies one level deep
+    /// (API-edges-dock-nodes-or-edges, *Ends*).
+    #[serde(rename_all = "camelCase")]
+    InvalidEdgeEnd { edge: String, end: String },
     /// The border node `node` cannot be one by its field `field`: `attachedTo` names itself or
     /// another border node; `isContainer`, `regions`, or `resizable` makes it a container or
     /// resizable; or `x`, `y`, or `container` stands beside `attachedTo`
@@ -274,7 +284,12 @@ impl From<GraphError> for GraphDataProblem {
     fn from(error: GraphError) -> Self {
         malformed(match error {
             GraphError::SlotCountMismatch => "the positions and sizes do not match the nodes",
-            GraphError::EdgeEndOutOfRange { .. } => "an edge ends at a node beyond the graph",
+            GraphError::EdgeEndOutOfRange { .. } => {
+                "an edge ends at a node or an edge beyond the graph"
+            }
+            GraphError::EdgeEndOnEdgeEnd { .. } => {
+                "an edge ends on itself or on an edge that ends on an edge"
+            }
             GraphError::TooManySlots => "the graph holds more items than the engine can number",
             GraphError::Nest(_) => {
                 "a node lies in a missing node, a non-container, or itself or its content"
@@ -316,7 +331,15 @@ pub(super) const A_SHAPE: &str = "\"rectangle\", \"rounded-rectangle\", \"ellips
                                    \"crossed-circle\", \"cross\", \"actor\", or \"hourglass\"";
 /// What a node's outline expects (REN-node-shapes-cover-uml, *Outline*).
 pub(super) const AN_OUTLINE: &str = "\"solid\", \"none\", or a dash pattern, or none";
-pub(super) const A_SIDE: &str = "\"top\", \"right\", \"bottom\", \"left\", or \"outline\"";
+/// What a side expects: one of the five on an end on a node, and none on an end on an edge
+/// (API-edges-dock-nodes-or-edges, *Ends*).
+pub(super) const A_SIDE: &str = "\"top\", \"right\", \"bottom\", \"left\", or \"outline\" \
+                                  where the end lies on a node, none where it lies on an edge";
+/// What the identifier of an edge an end lies on expects: an identifier, beside no node.
+pub(super) const AN_EDGE_ID: &str = "a well-formed string of at most 256 code units, where the \
+                                      end names no node";
+/// What the path parameter of an end on an edge expects.
+pub(super) const A_PARAMETER: &str = "a number from 0 to 1";
 /// What a border node's side expects (ARCH-border-nodes-ride-sides).
 pub(super) const A_BORDER_SIDE: &str = "\"top\", \"right\", \"bottom\", or \"left\"";
 /// What a border node's `attachedTo` expects.

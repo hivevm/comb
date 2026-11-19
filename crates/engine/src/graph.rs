@@ -49,19 +49,63 @@ pub use regions::{Axis, BAND, LEAST_REGION, LineError};
 pub use resize::{Handle, LEAST_SIDE, resized};
 use slots::Slots;
 
-/// An edge between two node slots, with the path parameter and label offset of each of its edge
-/// labels, in the order of its list, and the style it is drawn with.
+/// Where an end of an edge lies: on the node in a node slot, or on the edge in an edge slot at the
+/// path parameter `t` of that edge's path, from 0 to 1, one level deep
+/// (API-edges-dock-nodes-or-edges, *Ends*).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum End {
+    Node(u32),
+    Edge { slot: u32, t: f64 },
+}
+
+impl End {
+    /// The node slot of an end on a node, or none.
+    pub const fn node(self) -> Option<u32> {
+        match self {
+            Self::Node(slot) => Some(slot),
+            Self::Edge { .. } => None,
+        }
+    }
+
+    /// The edge slot of an end on an edge, or none.
+    pub const fn edge(self) -> Option<u32> {
+        match self {
+            Self::Node(_) => None,
+            Self::Edge { slot, .. } => Some(slot),
+        }
+    }
+}
+
+/// One of the two ends of an edge, as a refusal names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Which {
+    Source,
+    Target,
+}
+
+/// An edge between two ends, each on a node or on another edge, with the path parameter and label
+/// offset of each of its edge labels, in the order of its list, and the style it is drawn with.
 #[derive(Clone, Debug, PartialEq)]
 pub struct EdgeSpec {
-    pub source: u32,
-    pub target: u32,
+    pub source: End,
+    pub target: End,
     /// Where it leaves its source and enters its target: at a side's connector or on the outline
-    /// (API-edges-dock-side-or-outline).
+    /// (API-edges-dock-nodes-or-edges); an end on an edge reads none of it.
     pub sides: Sides,
     /// Where each of its edge labels sits, in the order of its list of labels
     /// (API-edges-dock-nodes-or-edges, *Edge labels*).
     pub labels: Vec<LabelPlacement>,
     pub style: EdgeStyle,
+}
+
+#[cfg(test)]
+impl EdgeSpec {
+    /// The node slots of the source and the target of an edge both of whose ends lie on nodes, as
+    /// the tests that end no edge on an edge read them.
+    pub(crate) fn nodes(&self) -> (u32, u32) {
+        let node = |end: End| end.node().expect("an end on a node");
+        (node(self.source), node(self.target))
+    }
 }
 
 /// Where an edge label sits on its edge: path parameter `t` and label offset (G-6).
@@ -76,8 +120,11 @@ pub struct LabelPlacement {
 pub enum GraphError {
     /// The positions and sizes buffers do not hold the same number of slots.
     SlotCountMismatch,
-    /// An edge names a node slot that does not exist.
+    /// An edge names a node slot or an edge slot that does not exist.
     EdgeEndOutOfRange { edge: u32 },
+    /// An edge ends on itself, or on an edge that itself ends on an edge
+    /// (API-edges-dock-nodes-or-edges, *Ends*).
+    EdgeEndOnEdgeEnd { edge: u32 },
     /// More nodes or edges than slots numbered in a `u32`.
     TooManySlots,
     /// A node lies in no node, in a node that is no container, or in itself or a node it holds
@@ -106,11 +153,13 @@ pub enum SlotError {
     NoEdge { slot: u32 },
 }
 
-/// Why an edge was not added: an end that holds no node, or a slot past those a `u32` numbers,
-/// refused as a node past them is.
+/// Why an edge was not added: an end on a slot that holds no node or no edge, an end on an edge
+/// that itself ends on an edge (API-edges-dock-nodes-or-edges, *Ends*), or a slot past those a
+/// `u32` numbers, refused as a node past them is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AddEdgeError {
     Slot(SlotError),
+    OnEdgeEnd(Which),
     TooManySlots(TooManySlots),
 }
 
@@ -225,6 +274,9 @@ pub struct Graph {
     widest_pill: f64,
     /// The edge slots at each node slot, one list per node slot (ARCH-engine-edits-graph-in-place).
     incident: Vec<Vec<u32>>,
+    /// The edge slots of the edges that end on each edge slot, one list per edge slot, each edge
+    /// once (API-edges-dock-nodes-or-edges, *An end on an edge*).
+    anchored: Vec<Vec<u32>>,
     /// The rank of each node slot: the node of the higher rank is drawn and hit above the other
     /// (ARCH-engine-edits-graph-in-place).
     ranks: Vec<u32>,
@@ -286,11 +338,29 @@ impl Graph {
         }
         let node_slots = slot(positions.len() / 2)?;
         let edge_slots = slot(edges.len())?;
+        let held = |end: End| match end {
+            End::Node(node) => node < node_slots,
+            End::Edge { slot, .. } => slot < edge_slots,
+        };
         if let Some(edge) = (0..edge_slots).find(|&e| {
             let spec = &edges[e as usize];
-            spec.source >= node_slots || spec.target >= node_slots
+            !(held(spec.source) && held(spec.target))
         }) {
             return Err(GraphError::EdgeEndOutOfRange { edge });
+        }
+        // An end on an edge lies one level deep: on another edge, whose own ends lie on nodes.
+        let on_nodes = |e: u32| {
+            let spec = &edges[e as usize];
+            spec.source.edge().is_none() && spec.target.edge().is_none()
+        };
+        if let Some(edge) = (0..edge_slots).find(|&e| {
+            let spec = &edges[e as usize];
+            [spec.source, spec.target]
+                .iter()
+                .filter_map(|end| end.edge())
+                .any(|on| on == e || !on_nodes(on))
+        }) {
+            return Err(GraphError::EdgeEndOnEdgeEnd { edge });
         }
         let pills = edges.iter().map(|e| vec![None; e.labels.len()]).collect();
         let mut graph = Self {
@@ -326,6 +396,12 @@ impl Graph {
         nesting.check().map_err(GraphError::Nest)?;
         let mut graph = Self::new(positions, sizes, edges)?;
         graph.nest(nesting);
+        // An edge between a container and a node it holds is placed by the nesting, which `new`
+        // did not know yet; such an edge is at a node that lies in a container.
+        let held: Vec<u32> = (0..graph.node_slots.count())
+            .filter(|&node| graph.container(node) != CANVAS)
+            .collect();
+        graph.place_nested_at(&held);
         Ok(graph)
     }
 

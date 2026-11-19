@@ -262,6 +262,7 @@ mod tests {
     use super::super::{EdgeSpec, Nesting};
     use super::*;
     use crate::geometry::{Dock, Sides};
+    use crate::graph::End;
     use crate::stroke::EdgeStyle;
 
     /// Container 0 at (100, 100), 400 × 200, holding node 1 at (150, 140), 100 × 64, and node 2
@@ -271,8 +272,8 @@ mod tests {
             vec![100.0, 100.0, 150.0, 140.0, 900.0, 100.0],
             vec![400.0, 200.0, 100.0, 64.0, 100.0, 64.0],
             vec![EdgeSpec {
-                source: 0,
-                target: 2,
+                source: End::Node(0),
+                target: End::Node(2),
                 sides: Sides {
                     source: Dock::Outline,
                     target: Dock::Outline,

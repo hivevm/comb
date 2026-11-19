@@ -84,6 +84,7 @@ export {
   type ContentColumns,
   type EdgeColumns,
   type EdgeColumnWriter,
+  type EndValues,
   type NodeColumns,
   type NodeColumnWriter,
   type RegionColumns,
@@ -369,7 +370,8 @@ export interface Bridge {
   removeNodes(slots: Uint32Array): Removal;
   /** What a removal of the nodes in `slots` would take along, named before anything is removed:
    *  the nodes, each followed by what it holds, depth first, each once, and the edges at any of
-   *  them in ascending order (ARCH-engine-edits-nested-graph). Throws a `SlotError`. */
+   *  them and every edge that ends on one of those in ascending order
+   *  (ARCH-engine-edits-nested-graph, API-edges-dock-nodes-or-edges). Throws a `SlotError`. */
   removalOf(slots: Uint32Array): Removal;
   /** Records the half width and half height of the pill of the label at `label` of the list of
    *  labels of the edge in `slot`, in world units, as the labels layer draws it; a label not
@@ -387,8 +389,14 @@ export interface Bridge {
    *  would take along, named before anything is removed (ARCH-engine-edits-graph-in-place). Throws
    *  a `SlotError`. */
   edgesAt(slots: Uint32Array): Uint32Array;
-  /** Removes the edges in `slots`. Throws a `SlotError`, the graph as it was. */
-  removeEdges(slots: Uint32Array): void;
+  /** The slots of the edges in `slots`, in the order first named, and of every other edge that
+   *  ends on one of them, in ascending order, as a removal of them would take along, named
+   *  before anything is removed (API-edges-dock-nodes-or-edges, *Ends*). Throws a `SlotError`. */
+  edgeRemovalOf(slots: Uint32Array): Uint32Array;
+  /** Removes the edges in `slots` and every edge that ends on one of them, and returns the slots
+   *  of all of them as `edgeRemovalOf` names them. Throws a `SlotError`, the
+   *  graph as it was. */
+  removeEdges(slots: Uint32Array): Uint32Array;
   /** Moves the nodes in `slots`, their edges with them. Throws a `SlotError` for a slot that
    *  holds no node and a `NumberError` `nonFiniteDelta` for a delta that is not finite, mistakes
    *  of the shell's, never of graph data (API-shell-mistake-refused-as-shells). */
@@ -716,8 +724,12 @@ function load(engine: Engine, { nodes, edges }: GraphSnapshot): number {
     e.idBounds,
     e.sources,
     e.sourceBounds,
+    e.sourceOnEdge,
+    e.sourceT,
     e.targets,
     e.targetBounds,
+    e.targetOnEdge,
+    e.targetT,
     e.labelBounds,
     e.labelIds,
     e.labelIdBounds,
@@ -857,6 +869,19 @@ function regionCalls(engine: Engine) {
   };
 }
 
+/** The removals, and what each would take along, named before anything is removed
+ *  (ARCH-engine-edits-nested-graph, API-edges-dock-nodes-or-edges). */
+function removalCalls(
+  engine: Engine,
+): Pick<Bridge, "removeNodes" | "removalOf" | "edgeRemovalOf" | "removeEdges"> {
+  return {
+    removeNodes: (slots) => removedOf(engine.removeNodes(slots)),
+    removalOf: (slots) => removedOf(engine.removalOf(slots)),
+    edgeRemovalOf: (slots) => engine.edgeRemovalOf(slots),
+    removeEdges: (slots) => engine.removeEdges(slots),
+  };
+}
+
 /** The calls of border nodes (ARCH-border-nodes-ride-sides), each side by its name. */
 function borderCalls(engine: Engine): Pick<Bridge, "borderOf" | "slide"> {
   return {
@@ -909,9 +934,7 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
     contentBudget,
     checkContentBudget,
     checkGraphSize,
-    removeNodes: (slots) => removedOf(engine.removeNodes(slots)),
-    removalOf: (slots) => removedOf(engine.removalOf(slots)),
-    removeEdges: (slots) => engine.removeEdges(slots),
+    ...removalCalls(engine),
     edgesAt: (slots) => engine.edgesAt(slots),
     setLabelSize: (slot, label, x, y) => engine.setLabelSize(slot, label, x, y),
     labelPoint(slot, label) {

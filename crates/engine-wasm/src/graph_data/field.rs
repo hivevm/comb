@@ -139,10 +139,10 @@ impl<T> From<T> for Field<T> {
     }
 }
 
-/// A number the tests give a field that may be left out, as present.
+/// A value the tests give a field that may be left out, as present.
 #[cfg(test)]
-impl From<f64> for Field<Option<f64>> {
-    fn from(value: f64) -> Self {
+impl<T> From<T> for Field<Option<T>> {
+    fn from(value: T) -> Self {
         Self(Some(Some(value)))
     }
 }

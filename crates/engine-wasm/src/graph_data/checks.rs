@@ -3,15 +3,16 @@
 //! identifiers, each rule through one function that a load, `addNode`, `addEdge`, and `updateEdge`
 //! reach alike.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use comb_engine::content::Fonts;
 use comb_engine::geometry::WORLD_LIMIT;
-use comb_engine::graph::{EdgeSpec, LabelPlacement};
+use comb_engine::graph::{EdgeSpec, End, LabelPlacement, Which};
 use comb_engine::shape::{NodeShape, Outline};
 use comb_engine::stroke::{Arrowhead, EdgeStyle};
 
-use super::item::{Batch, Edge, Label, Node};
+use super::edge_columns::IdLengths;
+use super::item::{Batch, Edge, EndRead, Label, Node};
 use super::problem::AN_OUTLINE;
 use super::{
     Arrow, ContentColumns, Cursor, GraphDataProblem, GraphList, ID_LIMIT, LABEL_LIMIT, MAX_ID,
@@ -375,12 +376,12 @@ fn placement_of(edge: &Edge) -> Result<(Vec<LabelPlacement>, EdgeStyle), GraphDa
     Ok((labels, style))
 }
 
-/// The edge as the engine keeps it between the node slots `source` and `target`, as a load and
-/// `addEdge` build it, or why its label or style was refused.
-pub(super) fn spec_of(edge: &Edge, source: u32, target: u32) -> Result<EdgeSpec, GraphDataProblem> {
+/// The edge as the engine keeps it between the ends `source` and `target`, as a load and `addEdge`
+/// build it, or why its label or style was refused.
+pub(super) fn spec_of(edge: &Edge, source: End, target: End) -> Result<EdgeSpec, GraphDataProblem> {
     let (labels, style) = placement_of(edge)?;
     Ok(EdgeSpec {
-        sides: edge.sides,
+        sides: edge.sides(),
         source,
         target,
         labels,
@@ -388,35 +389,88 @@ pub(super) fn spec_of(edge: &Edge, source: u32, target: u32) -> Result<EdgeSpec,
     })
 }
 
-/// Resolves every edge's ends to node slots, or names the first offending edge: the second of
-/// two that share an identifier, or one whose ends, label, or style were refused.
+/// The field that names the end `which` of an edge where it lies on an edge, as `invalidEdgeEnd`
+/// names it (API-edges-dock-nodes-or-edges).
+pub(super) const fn edge_end_field(which: Which) -> &'static str {
+    match which {
+        Which::Source => "sourceEdge",
+        Which::Target => "targetEdge",
+    }
+}
+
+/// Resolves every edge's ends to slots, or names the first offending edge: in the order of the
+/// edges, the second of two that share an identifier, or one whose end names a node the batch
+/// does not hold, or whose label or style were refused; then, once every edge is read, so that an
+/// edge may end on one later in the list, one whose end names an edge the batch does not hold, the
+/// edge itself, or one that ends on an edge (API-edges-dock-nodes-or-edges, *Ends*).
 pub(super) fn edges_of(
     batch: &Batch,
     slots: &HashMap<&str, u32>,
 ) -> Result<Vec<EdgeSpec>, GraphDataProblem> {
-    let mut seen = HashSet::with_capacity(batch.edges.len());
-    let end = |edge: &Edge, node: &str| {
-        slots
-            .get(node)
-            .copied()
-            .ok_or_else(|| GraphDataProblem::MissingNode {
-                edge: Some(edge.id.to_owned()),
-                border_node: None,
-                node: node.to_owned(),
-            })
+    let mut seen = HashMap::with_capacity(batch.edges.len());
+    let end = |edge: &Edge, end: EndRead| match end {
+        EndRead::Node { id, .. } => {
+            slots
+                .get(id)
+                .copied()
+                .map(End::Node)
+                .ok_or_else(|| GraphDataProblem::MissingNode {
+                    edge: Some(edge.id.to_owned()),
+                    border_node: None,
+                    node: id.to_owned(),
+                })
+        }
+        // Resolved below, once every edge is read.
+        EndRead::Edge { t, .. } => Ok(End::Edge { slot: u32::MAX, t }),
     };
-    batch
-        .edges
-        .iter()
-        .map(|edge| {
-            if !seen.insert(edge.id) {
-                return Err(GraphDataProblem::DuplicateEdge {
+    let mut specs = Vec::with_capacity(batch.edges.len());
+    for (index, edge) in batch.edges.iter().enumerate() {
+        if seen.insert(edge.id, slot(index)?).is_some() {
+            return Err(GraphDataProblem::DuplicateEdge {
+                edge: edge.id.to_owned(),
+            });
+        }
+        specs.push(spec_of(
+            edge,
+            end(edge, edge.source)?,
+            end(edge, edge.target)?,
+        )?);
+    }
+    let on = |edge: &Edge, end: EndRead| match end {
+        EndRead::Node { .. } => Ok(None),
+        EndRead::Edge { id, .. } => {
+            seen.get(id)
+                .copied()
+                .map(Some)
+                .ok_or_else(|| GraphDataProblem::MissingEdge {
                     edge: edge.id.to_owned(),
+                    missing: id.to_owned(),
+                })
+        }
+    };
+    for (index, edge) in batch.edges.iter().enumerate() {
+        let ends = [(Which::Source, edge.source), (Which::Target, edge.target)];
+        for (which, read) in ends {
+            let Some(on) = on(edge, read)? else { continue };
+            let spec = &specs[on as usize];
+            let ends_on_edge = spec.source.edge().is_some() || spec.target.edge().is_some();
+            if on as usize == index || ends_on_edge {
+                return Err(GraphDataProblem::InvalidEdgeEnd {
+                    edge: edge.id.to_owned(),
+                    end: edge_end_field(which).to_owned(),
                 });
             }
-            spec_of(edge, end(edge, edge.source)?, end(edge, edge.target)?)
-        })
-        .collect()
+            let resolved = &mut specs[index];
+            let at = match which {
+                Which::Source => &mut resolved.source,
+                Which::Target => &mut resolved.target,
+            };
+            if let End::Edge { slot, .. } = at {
+                *slot = on;
+            }
+        }
+    }
+    Ok(specs)
 }
 
 /// The length of the identifier `field` of the item at `index` of `list`, or its refusal where it
@@ -454,7 +508,7 @@ fn checked_id_length(
 /// each edge's with its labels', and of all of them together.
 pub(super) fn ids_of<L: IntoIterator<Item = usize>>(
     node_ids: impl IntoIterator<Item = usize>,
-    edge_ids: impl IntoIterator<Item = ([usize; 3], L)>,
+    edge_ids: impl IntoIterator<Item = (IdLengths, L)>,
 ) -> Result<(), GraphDataProblem> {
     let mut units = 0;
     for (index, length) in node_ids.into_iter().enumerate() {
@@ -468,15 +522,24 @@ pub(super) fn ids_of<L: IntoIterator<Item = usize>>(
 
 /// The UTF-16 code units of the identifier, the source, and the target of the edge at `index`,
 /// given as their `lengths`, and of the identifiers of its labels, given as `labels`, as a load
-/// and `addEdge` check them, or the refusal of the first longer than `MAX_ID`, a label's named
-/// as `labels`.
+/// and `addEdge` check them, or the refusal of the first longer than `MAX_ID`, an end named by
+/// the field that names it, `sourceEdge` or `targetEdge` for an end on an edge, and a label's
+/// named as `labels`.
 pub(super) fn edge_ids_of(
     index: usize,
-    lengths: [usize; 3],
+    named: IdLengths,
     labels: impl IntoIterator<Item = usize>,
 ) -> Result<usize, GraphDataProblem> {
+    let ends = [Which::Source, Which::Target]
+        .into_iter()
+        .zip(named.on_edge)
+        .map(|(which, on_edge)| match (which, on_edge) {
+            (_, true) => edge_end_field(which),
+            (Which::Source, false) => "source",
+            (Which::Target, false) => "target",
+        });
     let mut units = 0;
-    for (field, length) in ["id", "source", "target"].into_iter().zip(lengths) {
+    for (field, length) in std::iter::once("id").chain(ends).zip(named.lengths) {
         units += checked_id_length("edges", index, field, length)?;
     }
     Ok(units + label_ids_of(index, labels)?)
@@ -822,7 +885,11 @@ mod tests {
             let edges = batch.edges.iter();
             let edges = edges.map(|e| {
                 let labels = e.labels.iter().map(|label| utf16_length(label.id));
-                ([e.id, e.source, e.target].map(utf16_length), labels)
+                let named = IdLengths {
+                    lengths: [e.id, e.source.id(), e.target.id()].map(utf16_length),
+                    on_edge: [false; 2],
+                };
+                (named, labels)
             });
             ids_of(batch.nodes.iter().map(|n| utf16_length(n.id)), edges)
         };
@@ -841,7 +908,7 @@ mod tests {
         // The rules, after every field's type.
         let cases: Vec<(OwnedEdgeColumns, GraphDataProblem)> = vec![
             (
-                d_and(|e| e.target = text("z")),
+                d_and(|e| e.target = Field(Some(Some("z".to_owned())))),
                 GraphDataProblem::MissingNode {
                     edge: Some(e()),
                     border_node: None,

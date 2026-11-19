@@ -8,17 +8,18 @@ use comb_engine::content::Fonts;
 use comb_engine::geometry::{self as graph_side, Sides};
 use std::collections::HashSet;
 
-use comb_engine::graph::{AddEdgeError, Axis, Graph, SlotError};
+use comb_engine::graph::{AddEdgeError, Axis, End, Graph, SlotError};
 use comb_engine::shape::{self, NodeShape};
 use serde::de::{self, IgnoredAny, Visitor};
 use serde::{Deserialize, Deserializer};
 use tsify::Tsify;
 
 use super::checks::{
-    arrowhead_of, color_of, dash_of, edge_ids_of, given_height, label_ids_of, label_placements,
-    outline_of, spec_of,
+    arrowhead_of, color_of, dash_of, edge_end_field, edge_ids_of, given_height, label_ids_of,
+    label_placements, outline_of, spec_of,
 };
-use super::item::{Item, content_of, edge_of, labels_of};
+use super::edge_columns::IdLengths;
+use super::item::{EndRead, Item, content_of, edge_of, labels_of};
 use super::load::checked_content;
 use super::problem::{A_BORDER_SIDE, A_FLAG, A_HEIGHT, A_NUMBER, AN_OUTLINE};
 use super::regions::{Divide, RegionInput};
@@ -49,24 +50,30 @@ impl From<SlotError> for EdgeRefusal {
     }
 }
 
-/// An edge the engine did not add: an end that holds no node is the shell's mistake, and a slot
-/// past those the engine numbers a refusal of the graph's size, as for a node.
-impl From<AddEdgeError> for EdgeRefusal {
-    fn from(error: AddEdgeError) -> Self {
-        match error {
-            AddEdgeError::Slot(error) => Self::Slot(error),
-            AddEdgeError::TooManySlots(error) => Self::Data(error.into()),
-        }
+/// Why the engine did not add the edge `edge`: an end that holds no node or no edge is the shell's
+/// mistake, an end on an edge that itself ends on an edge is refused as `invalidEdgeEnd` naming the
+/// edge and the end (API-edges-dock-nodes-or-edges, *Ends*), and a slot past those the engine
+/// numbers is a refusal of the graph's size, as for a node.
+fn not_added(edge: &str, error: AddEdgeError) -> EdgeRefusal {
+    match error {
+        AddEdgeError::Slot(error) => EdgeRefusal::Slot(error),
+        AddEdgeError::OnEdgeEnd(which) => EdgeRefusal::Data(GraphDataProblem::InvalidEdgeEnd {
+            edge: edge.to_owned(),
+            end: edge_end_field(which).to_owned(),
+        }),
+        AddEdgeError::TooManySlots(error) => EdgeRefusal::Data(error.into()),
     }
 }
 
 /// Checks the edge `addEdge` hands over as a load checks an edge, the only one of its batch at
 /// index 0, and refuses one from a node to itself unless `loops` allows loops
 /// (API-edges-dock-side-or-outline) and one past `MAX_ITEMS` edges in use; adds it to `graph`
-/// between the node slots `source` and `target`, which `api` resolved against the map only it
-/// keeps, and returns the slot the engine chose. That the graph holds no edge of its identifier and
+/// between the slots `source` and `target`, each of a node or, where its end names an edge, of an
+/// edge, which `api` resolved against the maps only it keeps, and returns the slot the engine
+/// chose. An end on an edge that itself ends on an edge is refused as `invalidEdgeEnd`
+/// (API-edges-dock-nodes-or-edges, *Ends*). That the graph holds no edge of its identifier and
 /// holds its ends is `api`'s to check (ARCH-one-workspace-per-example); a slot of an end that holds
-/// no node is the shell's mistake. A refused edge leaves the graph as it was.
+/// no node, or no edge, is the shell's mistake. A refused edge leaves the graph as it was.
 pub(crate) fn add_edge_to(
     graph: &mut Graph,
     edge: &EdgeInput,
@@ -76,20 +83,30 @@ pub(crate) fn add_edge_to(
 ) -> Result<u32, EdgeRefusal> {
     check_graph_size(0.0, f64::from(graph.edges_in_use()) + 1.0)?;
     let edge = edge_of(0, edge)?;
-    let lengths = [edge.id, edge.source, edge.target].map(utf16_length);
+    let named = IdLengths {
+        lengths: [edge.id, edge.source.id(), edge.target.id()].map(utf16_length),
+        on_edge: [edge.source, edge.target].map(|end| matches!(end, EndRead::Edge { .. })),
+    };
     edge_ids_of(
         0,
-        lengths,
+        named,
         edge.labels.iter().map(|label| utf16_length(label.id)),
     )?;
-    if edge.source == edge.target && !loops {
+    let end = |read: EndRead, slot: u32| match read {
+        EndRead::Node { .. } => End::Node(slot),
+        EndRead::Edge { t, .. } => End::Edge { slot, t },
+    };
+    let (source, target) = (end(edge.source, source), end(edge.target, target));
+    if matches!((source, target), (End::Node(s), End::Node(t)) if s == t) && !loops {
         return Err(GraphDataProblem::SelfEdge {
             edge: edge.id.to_owned(),
         }
         .into());
     }
     let spec = spec_of(&edge, source, target)?;
-    Ok(graph.add_edge(spec)?)
+    graph
+        .add_edge(spec)
+        .map_err(|error| not_added(edge.id, error))
 }
 
 /// The fields a patch of `updateEdge` may hold, each as the host application handed it over:
@@ -170,6 +187,9 @@ pub(crate) fn update_edge_in(
         .into());
     }
     let current = graph.edge(slot).ok_or(SlotError::NoEdge { slot })?;
+    // A side beside an end on an edge is refused as a side of another type is
+    // (API-edges-dock-nodes-or-edges, *Ends*).
+    let on_edge = [current.source, current.target].map(|end| end.edge().is_some());
     // Every field's type first, then their values, in the order a load reads and checks them.
     let mut item = Item::new(GraphList::Edges, 0);
     item.id = Some(id);
@@ -194,13 +214,16 @@ pub(crate) fn update_edge_in(
         .lightning
         .map(|lightning| item.edge(EdgeField::Lightning, lightning))
         .transpose()?;
+    let side = |field, side: Field<Dock>, on_edge: bool| {
+        item.edge(field, Field(side.0.filter(|_| !on_edge)))
+    };
     let source_side = patch
         .source_side
-        .map(|side| item.edge(EdgeField::SourceSide, side))
+        .map(|s| side(EdgeField::SourceSide, s, on_edge[0]))
         .transpose()?;
     let target_side = patch
         .target_side
-        .map(|side| item.edge(EdgeField::TargetSide, side))
+        .map(|s| side(EdgeField::TargetSide, s, on_edge[1]))
         .transpose()?;
     let labels = match labels {
         None => current.labels.clone(),
@@ -501,6 +524,227 @@ mod tests {
         }
     }
 
+    /// Nodes `a` and `b`, edge `d` from `a` to `b`, and edge `e` from `a` to `b` made by `change`.
+    fn d_and_e(change: &dyn Fn(&mut EdgeInput)) -> super::super::GraphBatch {
+        use super::super::tests::batch;
+        let mut data = batch(
+            &[("a", 0.0, 0.0), ("b", 300.0, 0.0)],
+            &[("d", "a", "b"), ("e", "a", "b")],
+        );
+        change(&mut data.edges[1]);
+        data
+    }
+
+    /// `edge`'s target moved onto the middle of edge `d`, without a side.
+    fn onto_d(edge: &mut EdgeInput) {
+        edge.target = Field::absent();
+        edge.target_edge = "d".to_owned().into();
+        edge.target_t = 0.5.into();
+        edge.target_side = Field::absent();
+    }
+
+    #[test]
+    fn an_end_naming_a_node_and_an_edge_neither_a_parameter_off_0_to_1_or_a_side_against_it_is_refused()
+     {
+        // Verifies: API-edges-dock-nodes-or-edges, API-bridge-columns-carry-nesting, Q-7
+        // Each refused by its field, in a load through the columns the snapshot builds and through
+        // the batch, and by `addEdge`, which leaves the graph as it was.
+        use super::super::graph_of;
+        use super::super::problem::{A_PARAMETER, A_SIDE, AN_EDGE_ID, AN_ID};
+        use super::super::tests::load_edges;
+        use super::super::{EdgeCells, OwnedEdgeColumns};
+        let field = |index: u32, field: &str, expected: &str| GraphDataProblem::InvalidField {
+            list: GraphList::Edges,
+            index,
+            id: Some("e".into()),
+            field: field.into(),
+            expected: expected.into(),
+        };
+        type Change<'a> = &'a dyn Fn(&mut EdgeInput);
+        let cases: [(Change, &str, &str); 9] = [
+            (
+                &|e| (onto_d(e), e.target = "b".to_owned().into()).1,
+                "targetEdge",
+                AN_EDGE_ID,
+            ),
+            (&|e| e.target = Field::absent(), "target", AN_ID),
+            (
+                &|e| (onto_d(e), e.target_edge = Field(None)).1,
+                "targetEdge",
+                AN_EDGE_ID,
+            ),
+            (
+                &|e| (onto_d(e), e.target_t = Field::absent()).1,
+                "targetT",
+                A_PARAMETER,
+            ),
+            (
+                &|e| (onto_d(e), e.target_t = 1.5.into()).1,
+                "targetT",
+                A_PARAMETER,
+            ),
+            (
+                &|e| (onto_d(e), e.target_t = f64::NAN.into()).1,
+                "targetT",
+                A_PARAMETER,
+            ),
+            (
+                &|e| (onto_d(e), e.target_side = Dock::Left.into()).1,
+                "targetSide",
+                A_SIDE,
+            ),
+            (&|e| e.source_side = Field::absent(), "sourceSide", A_SIDE),
+            // The source's fields before the target's.
+            (
+                &|e| {
+                    onto_d(e);
+                    e.target_t = (-0.25).into();
+                    e.source_edge = "d".to_owned().into();
+                },
+                "sourceEdge",
+                AN_EDGE_ID,
+            ),
+        ];
+        for (change, name, expected) in cases {
+            let data = d_and_e(change);
+            let cells: Vec<EdgeCells> = data.edges.iter().map(EdgeCells::from).collect();
+            let columns = OwnedEdgeColumns::of(cells.iter().map(Some));
+            assert_eq!(load_edges(&columns).err(), Some(field(1, name, expected)));
+            assert_eq!(graph_of(&data).err(), Some(field(1, name, expected)));
+            let mut graph = graph_of(&d_and_e(&|_| {})).unwrap();
+            let added = add_edge_to(&mut graph, &data.edges[1], 0, 0, false);
+            let problem = field(0, name, expected);
+            assert_eq!(added, Err(EdgeRefusal::Data(problem)), "{name}");
+            assert_eq!(graph.edges_in_use(), 2);
+        }
+        // Onto the middle of `d`, it loads and is added, its target on edge `d`.
+        let data = d_and_e(&onto_d);
+        let on_d = End::Edge { slot: 0, t: 0.5 };
+        assert_eq!(graph_of(&data).unwrap().edge(1).unwrap().target, on_d);
+        let mut graph = graph_of(&d_and_e(&|_| {})).unwrap();
+        let added = add_edge_to(&mut graph, &data.edges[1], 0, 0, false).unwrap();
+        assert_eq!(graph.edge(added).unwrap().target, on_d);
+    }
+
+    #[test]
+    fn an_end_on_a_later_edge_loads_and_one_on_a_missing_edge_itself_or_an_edge_on_an_edge_is_refused()
+     {
+        // Verifies: API-edges-dock-nodes-or-edges, Q-7
+        use super::super::graph_of;
+        use super::super::tests::batch;
+        let three = |ends: [(&str, Option<&str>); 3]| {
+            let mut data = batch(
+                &[("a", 0.0, 0.0), ("b", 300.0, 0.0)],
+                &[("d", "a", "b"), ("e", "a", "b"), ("f", "a", "b")],
+            );
+            for (edge, (node, on)) in data.edges.iter_mut().zip(ends) {
+                if let Some(on) = on {
+                    edge.source = Field::absent();
+                    edge.source_edge = on.to_owned().into();
+                    edge.source_t = 0.25.into();
+                    edge.source_side = Field::absent();
+                } else {
+                    edge.source = node.to_owned().into();
+                }
+            }
+            data
+        };
+        let invalid = |edge: &str| GraphDataProblem::InvalidEdgeEnd {
+            edge: edge.into(),
+            end: "sourceEdge".into(),
+        };
+        let (a, z) = (("a", None), ("z", None));
+        // `d` ends on `f`, later in the list.
+        let graph = graph_of(&three([("", Some("f")), a, a])).unwrap();
+        assert_eq!(
+            graph.edge(0).unwrap().source,
+            End::Edge { slot: 2, t: 0.25 }
+        );
+        // An edge whose two ends both lie on one other edge is no cycle, and loads (the human's
+        // reading of "on one of its own ends", 2026-11-19).
+        let mut both = three([a, ("", Some("d")), a]);
+        let edge = &mut both.edges[1];
+        edge.target = Field::absent();
+        edge.target_edge = "d".to_owned().into();
+        edge.target_t = 0.75.into();
+        edge.target_side = Field::absent();
+        let graph = graph_of(&both).unwrap();
+        let spec = graph.edge(1).unwrap();
+        assert_eq!(
+            (spec.source, spec.target),
+            (
+                End::Edge { slot: 0, t: 0.25 },
+                End::Edge { slot: 0, t: 0.75 }
+            )
+        );
+        let cases = [
+            (
+                [a, ("", Some("y")), a],
+                GraphDataProblem::MissingEdge {
+                    edge: "e".into(),
+                    missing: "y".into(),
+                },
+            ),
+            // A missing node is named in the order of the edges, before any end on an edge.
+            (
+                [("", Some("y")), a, z],
+                GraphDataProblem::MissingNode {
+                    edge: Some("f".into()),
+                    border_node: None,
+                    node: "z".into(),
+                },
+            ),
+            ([a, ("", Some("e")), a], invalid("e")),
+            ([a, ("", Some("d")), ("", Some("e"))], invalid("f")),
+            ([("", Some("e")), ("", Some("d")), a], invalid("d")),
+        ];
+        for (ends, problem) in cases {
+            assert_eq!(graph_of(&three(ends)).err(), Some(problem));
+        }
+        // `addEdge` of an edge onto `e`, which ends on `d`.
+        let mut graph = graph_of(&three([a, ("", Some("d")), a])).unwrap();
+        let data = d_and_e(&onto_d);
+        let added = add_edge_to(&mut graph, &data.edges[1], 0, 1, false);
+        let problem = GraphDataProblem::InvalidEdgeEnd {
+            edge: "e".into(),
+            end: "targetEdge".into(),
+        };
+        assert_eq!(added, Err(EdgeRefusal::Data(problem)));
+        assert_eq!(graph.edges_in_use(), 3);
+        // Onto a slot that holds no edge: the shell's mistake.
+        let added = add_edge_to(&mut graph, &data.edges[1], 0, 7, false);
+        assert_eq!(added, Err(EdgeRefusal::Slot(SlotError::NoEdge { slot: 7 })));
+    }
+
+    #[test]
+    fn a_patch_that_gives_a_side_to_an_end_on_an_edge_is_refused_by_its_field() {
+        // Verifies: API-edges-dock-nodes-or-edges
+        use super::super::graph_of;
+        use super::super::problem::A_SIDE;
+        let mut graph = graph_of(&d_and_e(&onto_d)).unwrap();
+        let patch = |field: &str| EdgePatch {
+            source_side: (field == "sourceSide").then_some(Field(Some(Dock::Top))),
+            target_side: (field == "targetSide").then_some(Field(Some(Dock::Top))),
+            ..EdgePatch::default()
+        };
+        assert_eq!(
+            update_edge_in(&mut graph, 1, "e", patch("targetSide")),
+            Err(EdgeRefusal::Data(GraphDataProblem::InvalidField {
+                list: GraphList::Edges,
+                index: 0,
+                id: Some("e".into()),
+                field: "targetSide".into(),
+                expected: A_SIDE.into(),
+            }))
+        );
+        assert_eq!(
+            update_edge_in(&mut graph, 1, "e", patch("sourceSide")),
+            Ok(())
+        );
+        let sides = graph.edge(1).unwrap().sides;
+        assert_eq!(sides.source, graph_side::Side::Top.into());
+    }
+
     #[test]
     fn eight_labels_are_taken_none_is_no_labels_and_a_label_without_a_place_sits_at_the_middle() {
         // Verifies: API-edges-dock-nodes-or-edges
@@ -619,12 +863,12 @@ mod tests {
         // Verifies: ARCH-engine-edits-graph-in-place
         let node = GraphDataProblem::from(TooManySlots);
         assert_eq!(
-            EdgeRefusal::from(AddEdgeError::TooManySlots(TooManySlots)),
+            not_added("e", AddEdgeError::TooManySlots(TooManySlots)),
             EdgeRefusal::Data(node)
         );
         let slot = SlotError::NoNode { slot: 3 };
         assert_eq!(
-            EdgeRefusal::from(AddEdgeError::Slot(slot)),
+            not_added("e", AddEdgeError::Slot(slot)),
             EdgeRefusal::Slot(slot)
         );
     }

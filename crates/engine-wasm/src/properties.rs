@@ -627,7 +627,111 @@ fn labels(loose: bool) -> BoxedStrategy<Value> {
         .boxed()
 }
 
-fn edge(loose: bool, j: usize, nodes: usize) -> impl Strategy<Value = Value> {
+/// One end of an edge among `nodes` nodes and `edges` edges, its fields named by `names`, the node,
+/// the edge, the path parameter, and the side (API-edges-dock-nodes-or-edges, *Ends*): mostly a
+/// node and the side it docks on; where there are edges, now and then an edge, mostly one of the
+/// batch, chains and cycles among them, at a path parameter mostly from 0 to 1, and no side;
+/// loose, now and then a node and an edge both, a path parameter outside 0 to 1 or left out, and a
+/// side beside an end on an edge.
+fn end_fields(
+    names: [&'static str; 4],
+    nodes: usize,
+    edges: usize,
+    (loose, focus): (bool, Focus),
+) -> BoxedStrategy<Vec<Field>> {
+    let shapes = loose || focus == Focus::Shapes;
+    let text = |name: &str| Value::Text(name.to_owned());
+    let sides = ["top", "right", "bottom", "left", "outline"]
+        .map(text)
+        .to_vec();
+    let side = one_of(sides, vec![text("middle"), Value::Number(1.0)], loose);
+    // Focused, an end names a node of the batch, so that no other refusal settles the case.
+    let node_named = if focus == Focus::None {
+        end(nodes).boxed()
+    } else {
+        (0..nodes.max(1))
+            .prop_map(|k| Value::Text(format!("n{k}")))
+            .boxed()
+    };
+    let node = (
+        field(names[0], node_named.clone(), loose),
+        field(names[3], side.clone(), loose),
+    )
+        .prop_map(|(node, side)| vec![node, side]);
+    if edges == 0 && !loose {
+        return node.boxed();
+    }
+    let beyond = if focus == Focus::Rules { 4 } else { 1 };
+    let named = prop_oneof![20 => 0..edges.max(1), beyond => Just(edges)]
+        .prop_map(|k| Value::Text(format!("e{k}")));
+    let t = if shapes {
+        prop_oneof![
+            10 => (0.0..=1.0f64).prop_map(Value::Number),
+            1 => prop::sample::select(vec![-0.5, 1.5, f64::NAN]).prop_map(Value::Number),
+            1 => Just(Value::Null),
+        ]
+        .boxed()
+    } else {
+        (0.0..=1.0f64).prop_map(Value::Number).boxed()
+    };
+    let beside = if focus == Focus::Shapes { 4 } else { 1 };
+    let lone_side = if shapes {
+        prop_oneof![
+            10 => Just(None),
+            beside => side.prop_map(move |s| Some((names[3].to_owned(), s))),
+        ]
+        .boxed()
+    } else {
+        Just(None).boxed()
+    };
+    let on_edge = (
+        field(names[1], named.clone(), loose),
+        field(names[2], t, loose),
+        lone_side,
+    )
+        .prop_map(|(edge, t, side)| vec![edge, t, side]);
+    let both = (node_named, named).prop_map(move |(node, edge)| {
+        vec![
+            Some((names[0].to_owned(), node)),
+            Some((names[1].to_owned(), edge)),
+        ]
+    });
+    if edges == 0 {
+        return prop_oneof![20 => node, 1 => both].boxed();
+    }
+    if focus == Focus::Shapes {
+        prop_oneof![3 => node, 8 => on_edge, 1 => both].boxed()
+    } else if focus == Focus::Rules {
+        prop_oneof![5 => node, 3 => on_edge].boxed()
+    } else if loose {
+        prop_oneof![12 => node, 8 => on_edge, 1 => both].boxed()
+    } else {
+        prop_oneof![12 => node, 8 => on_edge].boxed()
+    }
+}
+
+/// The fields that name the source of an edge, and its target.
+const SOURCE: [&str; 4] = ["source", "sourceEdge", "sourceT", "sourceSide"];
+const TARGET: [&str; 4] = ["target", "targetEdge", "targetT", "targetSide"];
+
+/// What a batch's ends on edges are made to settle (`EndClauses`): nothing in particular; the rules
+/// of where an end may lie, its fields all of their type and shape; or the shapes an end is
+/// refused for, a node and an edge both, a parameter off the path, and a side beside, its fields of
+/// no other type.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Focus {
+    None,
+    Rules,
+    Shapes,
+}
+
+/// The edge at `j` of a batch of `nodes` nodes and `edges` edges; `focus` as `end_fields` takes it.
+fn edge(
+    (loose, focus): (bool, Focus),
+    j: usize,
+    nodes: usize,
+    edges: usize,
+) -> impl Strategy<Value = Value> {
     let length = || prop_oneof![10 => 0.5..20.0f64, 1 => number()];
     let pair = (length(), length())
         .prop_map(|(d, g)| Value::List(vec![d, g].into_iter().map(Value::Number).collect()));
@@ -652,29 +756,38 @@ fn edge(loose: bool, j: usize, nodes: usize) -> impl Strategy<Value = Value> {
     } else {
         Just(None).boxed()
     };
-    let sides = ["top", "right", "bottom", "left", "outline"]
-        .map(text)
-        .to_vec();
-    let side = || {
-        one_of(
-            sides.clone(),
-            vec![text("middle"), Value::Number(1.0)],
-            loose,
-        )
+    // Focused, an edge holds nothing but its identifier, its colour, its arrowhead, and its ends,
+    // so that no other refusal settles the case.
+    let fields = if focus == Focus::None {
+        object(vec![
+            field("id", nth("e", j), loose),
+            stale,
+            field("labels", labels(loose), loose),
+            field("color", color(loose), loose),
+            field("dash", dash, loose),
+            field("arrow", arrow, loose),
+            field("lightning", lightning, loose),
+        ])
+        .boxed()
+    } else {
+        Just(Value::Object(vec![
+            ("id".to_owned(), Value::Text(format!("e{j}"))),
+            ("color".to_owned(), Value::Number(0.0)),
+            ("arrow".to_owned(), text("end")),
+        ]))
+        .boxed()
     };
-    object(vec![
-        field("id", nth("e", j), loose),
-        field("source", end(nodes), loose),
-        field("target", end(nodes), loose),
-        stale,
-        field("labels", labels(loose), loose),
-        field("color", color(loose), loose),
-        field("dash", dash, loose),
-        field("arrow", arrow, loose),
-        field("lightning", lightning, loose),
-        field("sourceSide", side(), loose),
-        field("targetSide", side(), loose),
-    ])
+    let ends = (
+        end_fields(SOURCE, nodes, edges, (loose, focus)),
+        end_fields(TARGET, nodes, edges, (loose, focus)),
+    );
+    (fields, ends).prop_map(|(fields, (source, target))| {
+        let Value::Object(mut fields) = fields else {
+            unreachable!("an object")
+        };
+        fields.extend(source.into_iter().chain(target).flatten());
+        Value::Object(fields)
+    })
 }
 
 /// A node or an edge that `good` makes; loose, now and then the snapshot's `false` in its place,
@@ -697,7 +810,7 @@ fn graph_data() -> impl Strategy<Value = Value> {
                 .map(|i| item(node(loose, i), loose))
                 .collect::<Vec<_>>();
             let edges_of = (0..edges)
-                .map(|j| item(edge(loose, j, nodes), loose))
+                .map(|j| item(edge((loose, Focus::None), j, nodes, edges), loose))
                 .collect::<Vec<_>>();
             object(vec![
                 field("nodes", nodes_of.prop_map(Value::List), loose),
@@ -705,10 +818,41 @@ fn graph_data() -> impl Strategy<Value = Value> {
             ])
         })
     };
+    // Ends on edges, among a few nodes and edges of no other value refused, so that each clause
+    // of an end of an edge settles hundreds of cases a run (`EndClauses`).
+    let ends = |focus| {
+        (1..4_usize, 2..6_usize).prop_flat_map(move |(nodes, edges)| {
+            // Rectangles side by side, each of one title, which no rule refuses.
+            let nodes_of: Vec<Value> = (0..nodes)
+                .map(|i| {
+                    let id = format!("n{i}");
+                    Value::Object(vec![
+                        ("id".to_owned(), Value::Text(id.clone())),
+                        ("x".to_owned(), Value::Number(300.0 * i as f64)),
+                        ("y".to_owned(), Value::Number(0.0)),
+                        ("width".to_owned(), Value::Number(100.0)),
+                        ("shape".to_owned(), Value::Text("rectangle".to_owned())),
+                        ("content".to_owned(), titled(&id)),
+                    ])
+                })
+                .collect();
+            let edges_of = (0..edges)
+                .map(|j| edge((false, focus), j, nodes, edges))
+                .collect::<Vec<_>>();
+            edges_of.prop_map(move |edges_of| {
+                Value::Object(vec![
+                    ("nodes".to_owned(), Value::List(nodes_of.clone())),
+                    ("edges".to_owned(), Value::List(edges_of)),
+                ])
+            })
+        })
+    };
     prop_oneof![
         6 => batch(false),
         3 => batch(true),
         1 => anything(),
+        3 => ends(Focus::Rules),
+        1 => ends(Focus::Shapes),
     ]
 }
 
@@ -954,6 +1098,65 @@ fn first_shape(fields: &Fields) -> Option<(u32, Option<u32>)> {
     None
 }
 
+/// Where an end of an edge lies by the oracle (API-edges-dock-nodes-or-edges, *Ends*): on the node
+/// or the edge it names, at the path parameter it gives.
+enum End {
+    Node(String),
+    Edge(String, f64),
+}
+
+impl End {
+    /// The identifier it names, of a node or of an edge.
+    fn id(&self) -> &str {
+        match self {
+            Self::Node(id) | Self::Edge(id, _) => id,
+        }
+    }
+}
+
+/// The source of `e`, or its target, or none where a field of it is missing or of another type:
+/// a node by a string beside no edge with a side, or an edge by a string beside no node, with a
+/// path parameter that is a number, and no side.
+fn end_of(e: &EdgeInput, source: bool) -> Option<End> {
+    let (node, edge, t, side) = if source {
+        (&e.source, &e.source_edge, e.source_t, e.source_side)
+    } else {
+        (&e.target, &e.target_edge, e.target_t, e.target_side)
+    };
+    let given = |field: &super::Field<Option<String>>| !matches!(field.0, Some(None));
+    if !given(edge) {
+        side.0.flatten()?;
+        return node.0.clone().flatten().map(End::Node);
+    }
+    if given(node) || side.0?.is_some() {
+        return None;
+    }
+    Some(End::Edge(edge.0.clone().flatten()?, t.0.flatten()?))
+}
+
+/// Whether the ends of `e` lie where they may, or none where a field of one is missing or of
+/// another type: on a node of `nodes`, or on an edge of `edges`, not `e`, whose own ends lie on
+/// nodes, at a path parameter from 0 to 1 (API-edges-dock-nodes-or-edges, *Ends*).
+fn ends_ok(e: &EdgeInput, batch: &GraphBatch, nodes: &[String], edges: &[String]) -> Option<bool> {
+    let mut ok = true;
+    for end in [end_of(e, true)?, end_of(e, false)?] {
+        ok &= match end {
+            End::Node(node) => nodes.contains(&node),
+            End::Edge(on, t) => {
+                let at = edges.iter().position(|id| *id == on);
+                let on_nodes = at.is_some_and(|at| {
+                    let other = &batch.edges[at];
+                    [true, false]
+                        .into_iter()
+                        .all(|source| matches!(end_of(other, source), Some(End::Node(_))))
+                });
+                on_nodes && e.id.0.as_deref() != Some(on.as_str()) && (0.0..=1.0).contains(&t)
+            }
+        };
+    }
+    Some(ok)
+}
+
 /// Whether nothing in `batch` is to be refused, or none where a field is missing or of another
 /// type.
 fn accepts(batch: &GraphBatch) -> Option<bool> {
@@ -974,7 +1177,9 @@ fn accepts(batch: &GraphBatch) -> Option<bool> {
         .collect::<Option<_>>()?;
     let mut ends = Vec::new();
     for e in &batch.edges {
-        ends.extend([id(&e.source)?, id(&e.target)?]);
+        for end in [end_of(e, true)?, end_of(e, false)?] {
+            ends.push(end.id().to_owned());
+        }
     }
     // The world's limit, 2^120: a node within it, its far side included, as f32 holds them, and
     // a label offset within it.
@@ -1018,8 +1223,8 @@ fn accepts(batch: &GraphBatch) -> Option<bool> {
             finite32(d) && finite32(g) && d as f32 > 0.0 && g as f32 >= 0.0
         });
         e.arrow.0?;
-        let named = |end: &Option<String>| end.as_ref().is_some_and(|end| nodes.contains(end));
-        Some(named(&e.source.0) && named(&e.target.0) && label_ok && rgb(e.color.0?) && dash_ok)
+        let ends_ok = ends_ok(e, batch, &nodes, &edges)?;
+        Some(ends_ok && label_ok && rgb(e.color.0?) && dash_ok)
     };
     let mut all_nodes = true;
     for n in &batch.nodes {
@@ -1169,8 +1374,9 @@ fn mistyped(list: GraphList, item: &Fields) -> Vec<String> {
             check("content.shape", first_shape(item).is_none());
         }
         GraphList::Edges => {
-            for name in ["id", "source", "target"] {
-                check(name, text(name));
+            check("id", text("id"));
+            for name in mistyped_ends(item) {
+                check(name, false);
             }
             check("label", absent(get(item, "label")));
             for name in mistyped_labels(item) {
@@ -1190,15 +1396,38 @@ fn mistyped(list: GraphList, item: &Fields) -> Vec<String> {
                 "lightning",
                 absent(lightning) || matches!(lightning, Some(Value::Bool(_))),
             );
-            for name in ["sourceSide", "targetSide"] {
-                let sides = ["top", "right", "bottom", "left", "outline"];
-                let side =
-                    matches!(get(item, name), Some(Value::Text(s)) if sides.contains(&s.as_str()));
-                check(name, side);
-            }
         }
     }
     wrong
+}
+
+/// The fields of the ends of the edge `item` that are missing or hold a value of another type, by
+/// name (API-edges-dock-nodes-or-edges, *Ends*): of an end that names an edge, the edge given
+/// beside a node or no string, a path parameter that is no number from 0 to 1, and a side given;
+/// of any other end, a node that is no string and a side that names none of the five.
+fn mistyped_ends(item: &Fields) -> Vec<&'static str> {
+    let absent = |value: Option<&Value>| matches!(value, None | Some(Value::Null));
+    let text = |name| matches!(get(item, name), Some(Value::Text(_)));
+    let sides = ["top", "right", "bottom", "left", "outline"];
+    let mut wrong = Vec::new();
+    for names in [SOURCE, TARGET] {
+        let side = get(item, names[3]);
+        if absent(get(item, names[1])) {
+            let named = matches!(side, Some(Value::Text(s)) if sides.contains(&s.as_str()));
+            wrong.extend([(names[0], text(names[0])), (names[3], named)]);
+        } else {
+            let t = get(item, names[2]);
+            let on_path = matches!(t, Some(Value::Number(t)) if (0.0..=1.0).contains(t));
+            let alone = absent(get(item, names[0])) && text(names[1]);
+            wrong.extend([
+                (names[1], alone),
+                (names[2], on_path),
+                (names[3], absent(side)),
+            ]);
+        }
+    }
+    wrong.retain(|&(_, ok)| !ok);
+    wrong.into_iter().map(|(name, _)| name).collect()
 }
 
 /// The fields of the labels of the edge `item` that are missing or hold a value of another type,
@@ -1910,7 +2139,7 @@ fn edge_patch() -> impl Strategy<Value = Vec<(String, Value)>> {
     // `label`, which `labels` replaced, among the other names (API-edges-dock-nodes-or-edges).
     let other = prop::sample::select(vec!["id", "source", "width", "", "colour", "label"]);
     (
-        edge(true, 0, 2),
+        edge((true, Focus::None), 0, 2, 0),
         0..128_u32,
         prop::option::of((0..5_usize, other)),
     )
@@ -1932,6 +2161,226 @@ fn edge_patch() -> impl Strategy<Value = Vec<(String, Value)>> {
         })
 }
 
+/// The clauses of an end of an edge a load of random graph data rests on
+/// (API-edges-dock-nodes-or-edges, *Ends*), each counted where it settles the case: a graph with
+/// an end on an edge; an end on itself, on an edge that ends on another, and in a cycle, refused as
+/// `invalidEdgeEnd`; an end on an edge the batch does not hold, as `missingEdge`; and, as
+/// `invalidField`, an end that names a node and an edge both, a path parameter off 0 to 1, and a
+/// side beside an end on an edge.
+#[derive(Default)]
+struct EndClauses {
+    on_edge: Cell<u32>,
+    itself: Cell<u32>,
+    chain: Cell<u32>,
+    cycle: Cell<u32>,
+    missing: Cell<u32>,
+    both: Cell<u32>,
+    off_path: Cell<u32>,
+    side_beside: Cell<u32>,
+}
+
+/// The edge of `value` whose identifier is `id`, and its fields.
+fn edge_named<'v>(value: &'v Value, id: &str) -> Option<&'v Fields> {
+    let edges = match fields_of(value).and_then(|fields| get(fields, "edges")) {
+        Some(Value::List(edges)) => edges,
+        _ => return None,
+    };
+    edges
+        .iter()
+        .filter_map(fields_of)
+        .find(|fields| matches!(get(fields, "id"), Some(Value::Text(named)) if named == id))
+}
+
+/// The edge an end of `fields` names by `name`, `sourceEdge` or `targetEdge`, where it is a string.
+fn named_edge<'v>(fields: &'v Fields, name: &str) -> Option<&'v str> {
+    match get(fields, name) {
+        Some(Value::Text(on)) => Some(on),
+        _ => None,
+    }
+}
+
+/// Counts in `clauses` the clause of an end of an edge that settled the load of `value`, by its
+/// outcome `loaded`, where one did.
+fn count_end_clause(
+    value: &Value,
+    loaded: &Result<comb_engine::graph::Graph, GraphDataProblem>,
+    clauses: &EndClauses,
+) {
+    let bump = |count: &Cell<u32>| count.set(count.get() + 1);
+    let absent = |value: Option<&Value>| matches!(value, None | Some(Value::Null));
+    let index = |list: &GraphList, index: u32| match (list, value) {
+        (GraphList::Edges, Value::Object(_)) => match get(fields_of(value).unwrap(), "edges") {
+            Some(Value::List(edges)) => edges.get(index as usize).and_then(fields_of),
+            _ => None,
+        },
+        _ => None,
+    };
+    match loaded {
+        Ok(graph) => {
+            let ends_on_edge = (0..graph.edges_in_use()).any(|e| {
+                graph.edge(e).is_some_and(|spec| {
+                    spec.source.edge().is_some() || spec.target.edge().is_some()
+                })
+            });
+            if ends_on_edge {
+                bump(&clauses.on_edge);
+            }
+        }
+        Err(GraphDataProblem::InvalidEdgeEnd { edge, end }) => {
+            let Some(fields) = edge_named(value, edge) else {
+                return;
+            };
+            let Some(on) = named_edge(fields, end) else {
+                return;
+            };
+            if on == edge {
+                bump(&clauses.itself);
+                return;
+            }
+            let back = edge_named(value, on).is_some_and(|other| {
+                [SOURCE[1], TARGET[1]]
+                    .into_iter()
+                    .any(|name| named_edge(other, name) == Some(edge.as_str()))
+            });
+            bump(if back { &clauses.cycle } else { &clauses.chain });
+        }
+        Err(GraphDataProblem::MissingEdge { .. }) => bump(&clauses.missing),
+        Err(GraphDataProblem::InvalidField {
+            list,
+            index: at,
+            field,
+            ..
+        }) => {
+            let Some(item) = index(list, *at) else { return };
+            for names in [SOURCE, TARGET] {
+                let on_edge = !absent(get(item, names[1]));
+                if field == names[1] && on_edge && !absent(get(item, names[0])) {
+                    bump(&clauses.both);
+                } else if field == names[2] && on_edge {
+                    bump(&clauses.off_path);
+                } else if field == names[3] && on_edge {
+                    bump(&clauses.side_beside);
+                }
+            }
+        }
+        Err(_) => {}
+    }
+}
+
+/// One case of the test below: `value` loaded as columns, its strings in pieces of `bound`, in
+/// `fonts` of the line heights `lines`, held to the oracles of the value it was built of, the
+/// clause of an end of an edge that settled it counted in `clauses`.
+fn graph_data_case(
+    value: Value,
+    bound: usize,
+    (fonts, lines): (Fonts, [f64; 3]),
+    clauses: &EndClauses,
+) -> Result<(), TestCaseError> {
+    let loaded = loaded_in(bound, value.clone(), &fonts);
+    count_end_clause(&value, &loaded, clauses);
+    let named = named_fields(&value);
+    let batch = || GraphBatch::deserialize(value.clone()).ok();
+    match loaded {
+        // A value without the shape of graph data is refused before any check of the
+        // bridge's own, as malformed.
+        Err(error @ GraphDataProblem::Malformed { .. }) => {
+            prop_assert!(!shaped(&value), "refused {:?}", error);
+            prop_assert!(!messages(&error).into_iter().any(names_rust), "{:?}", error);
+        }
+        Ok(graph) => {
+            prop_assert!(shaped(&value));
+            let batch = batch().expect("graph data of its shape reads as a batch");
+            prop_assert!(named.is_empty() && acceptable_in(&batch, &value, lines));
+            prop_assert_eq!(graph.positions().len(), 2 * batch.nodes.len());
+        }
+        Err(error) => {
+            prop_assert!(shaped(&value), "refused {:?}", error);
+            prop_assert!(!messages(&error).into_iter().any(names_rust), "{:?}", error);
+            match &error {
+                // A field missing or of another type is named before any other check.
+                GraphDataProblem::InvalidField {
+                    list,
+                    index,
+                    id,
+                    field,
+                    ..
+                } => {
+                    let at = (*list, *index, id.clone(), field.clone());
+                    prop_assert!(named.contains(&at), "refused {:?}", error);
+                }
+                // So is a shape of content the snapshot cannot flatten, at its position.
+                GraphDataProblem::InvalidContentShape {
+                    index,
+                    id,
+                    row,
+                    column,
+                    ..
+                } => {
+                    let at = (
+                        GraphList::Nodes,
+                        *index,
+                        id.clone(),
+                        "content.shape".to_owned(),
+                    );
+                    prop_assert!(named.contains(&at), "refused {:?}", error);
+                    let node = &nodes_of_data(&value)[*index as usize];
+                    let shape = fields_of(node).and_then(first_shape);
+                    prop_assert_eq!(shape, Some((*row, *column)));
+                }
+                _ => {
+                    let batch = batch().expect("graph data of its shape reads as a batch");
+                    prop_assert!(named.is_empty(), "refused {:?}, not {:?}", error, named);
+                    prop_assert!(!acceptable_in(&batch, &value, lines), "refused {:?}", error);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Runs the cases of any graph data through a runner of its own, so that the floors of the clauses
+/// of an end of an edge are asserted once, after its last case, from counts this test alone holds.
+#[test]
+fn any_graph_data_ends_in_a_typed_error_or_a_graph() {
+    // Verifies: API-bridge-takes-serde-and-columns, API-edges-dock-nodes-or-edges
+    // A panic anywhere below fails the case; the runner catches it and shrinks the input. The load
+    // crosses as columns, its strings in pieces of the bound generated with it, and is held to the
+    // oracles of the value it was built of.
+    let clauses = EndClauses::default();
+    let mut config = ProptestConfig::with_cases(CASES);
+    config.source_file = Some(file!());
+    // As `proptest!` does: the environment's `PROPTEST_*` variables override the cases.
+    let mut runner = TestRunner::new(proptest::test_runner::contextualize_config(config));
+    let cases = (graph_data(), piece_bound(), fonts());
+    let result = runner.run(&cases, |(value, bound, fonts)| {
+        graph_data_case(value, bound, fonts, &clauses)
+    });
+    if let Err(error) = result {
+        panic!("{error}\n{runner}");
+    }
+    let counts = [
+        ("an end on an edge", clauses.on_edge.get()),
+        ("on itself", clauses.itself.get()),
+        ("on an edge on an edge", clauses.chain.get()),
+        ("in a cycle", clauses.cycle.get()),
+        ("on a missing edge", clauses.missing.get()),
+        ("a node and an edge both", clauses.both.get()),
+        ("a parameter off the path", clauses.off_path.get()),
+        ("a side beside an end on an edge", clauses.side_beside.get()),
+    ];
+    for (clause, count) in counts {
+        assert!(count >= END_FLOOR, "{clause}: {count} cases");
+    }
+}
+
+/// The floor of cases each clause of an end of an edge rests on, in a run of `CASES`, well below
+/// the fewest six runs met: from 179 to 199 cases in a cycle, the rarest clause, and 198 to 229 of
+/// a node and an edge both, 273 to 337 of a parameter off the path, 250 to 289 of a side beside an
+/// end on an edge, 282 to 330 loaded with an end on an edge, 375 to 444 on a missing edge, 488 to
+/// 563 on an edge on an edge, and 669 to 723 on itself; so that a generator that stops making a
+/// clause fails, and no run of the seeds proptest draws at random does.
+const END_FLOOR: u32 = 100;
+
 /// Runs the cases of an added edge through a runner of its own, so that the floor of loops is
 /// asserted once, after its last case, from counts this test alone holds: a case proptest replays
 /// before the new ones, from a persisted regression, cannot move when the floor is checked.
@@ -1945,7 +2394,7 @@ fn an_added_edge_is_refused_exactly_as_a_load_of_it_alone_and_a_loop_besides_unl
     // override the cases, as they do for every other test of this file.
     let mut runner = TestRunner::new(proptest::test_runner::contextualize_config(config));
     let cases = (
-        prop_oneof![9 => edge(true, 0, 2), 1 => anything()],
+        prop_oneof![9 => edge((true, Focus::None), 0, 2, 0), 1 => anything()],
         piece_bound(),
         any::<bool>(),
     );
@@ -2126,58 +2575,6 @@ proptest! {
                 prop_assert_eq!(graph.nodes_in_use(), 1);
             }
             (added, as_load) => prop_assert!(false, "added {:?}, loaded {:?}", added, as_load),
-        }
-    }
-
-    #[test]
-    fn any_graph_data_ends_in_a_typed_error_or_a_graph(
-        value in graph_data(),
-        bound in piece_bound(),
-        (fonts, lines) in fonts(),
-    ) {
-        // Verifies: API-bridge-takes-serde-and-columns
-        // A panic anywhere below fails the case; the runner catches it and shrinks the input.
-        // The load crosses as columns, its strings in pieces of the bound generated with it, and
-        // is held to the oracles of the value it was built of.
-        let named = named_fields(&value);
-        let batch = || GraphBatch::deserialize(value.clone()).ok();
-        match loaded_in(bound, value.clone(), &fonts) {
-            // A value without the shape of graph data is refused before any check of the
-            // bridge's own, as malformed.
-            Err(error @ GraphDataProblem::Malformed { .. }) => {
-                prop_assert!(!shaped(&value), "refused {:?}", error);
-                prop_assert!(!messages(&error).into_iter().any(names_rust), "{:?}", error);
-            }
-            Ok(graph) => {
-                prop_assert!(shaped(&value));
-                let batch = batch().expect("graph data of its shape reads as a batch");
-                prop_assert!(named.is_empty() && acceptable_in(&batch, &value, lines));
-                prop_assert_eq!(graph.positions().len(), 2 * batch.nodes.len());
-            }
-            Err(error) => {
-                prop_assert!(shaped(&value), "refused {:?}", error);
-                prop_assert!(!messages(&error).into_iter().any(names_rust), "{:?}", error);
-                match &error {
-                    // A field missing or of another type is named before any other check.
-                    GraphDataProblem::InvalidField { list, index, id, field, .. } => {
-                        let at = (*list, *index, id.clone(), field.clone());
-                        prop_assert!(named.contains(&at), "refused {:?}", error);
-                    }
-                    // So is a shape of content the snapshot cannot flatten, at its position.
-                    GraphDataProblem::InvalidContentShape { index, id, row, column, .. } => {
-                        let at = (GraphList::Nodes, *index, id.clone(), "content.shape".to_owned());
-                        prop_assert!(named.contains(&at), "refused {:?}", error);
-                        let node = &nodes_of_data(&value)[*index as usize];
-                        let shape = fields_of(node).and_then(first_shape);
-                        prop_assert_eq!(shape, Some((*row, *column)));
-                    }
-                    _ => {
-                        let batch = batch().expect("graph data of its shape reads as a batch");
-                        prop_assert!(named.is_empty(), "refused {:?}, not {:?}", error, named);
-                        prop_assert!(!acceptable_in(&batch, &value, lines), "refused {:?}", error);
-                    }
-                }
-            }
         }
     }
 

@@ -394,11 +394,10 @@ export function shaped(
   const loops = graph.nodes
     .filter((_, i) => i % LOOP_EVERY === 0)
     .map(({ id }) => ({ id: `${id}-loop`, source: id, target: id }));
-  const edges = [...graph.edges, ...loops].map((edge) => ({
-    ...edge,
-    sourceSide: "outline" as const,
-    targetSide: "outline" as const,
-  }));
+  // Every edge of the metric tree ends on nodes, which take a side.
+  const edges = [...graph.edges, ...loops].map(
+    (edge) => ({ ...edge, sourceSide: "outline", targetSide: "outline" }) as EdgeData,
+  );
   return { graph: { nodes: graph.nodes, edges }, fields };
 }
 

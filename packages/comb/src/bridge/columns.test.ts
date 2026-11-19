@@ -14,16 +14,14 @@ test("a value longer than the bound on a piece fits in none, and the writer refu
   expect(() =>
     edgeColumns(1, 16).edge(
       "e",
-      "a",
-      "b",
+      { node: "a", edge: undefined, t: undefined, side: "right" },
+      { node: "b", edge: undefined, t: undefined, side: "left" },
       undefined,
       [{ id: "m", text: "x".repeat(17) }],
       0,
       null,
       "end",
       undefined,
-      "right",
-      "left",
     ),
   ).toThrow(RangeError);
 });

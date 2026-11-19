@@ -635,7 +635,13 @@ mod tests {
         let fonts = Fonts::default();
         let nodes = nodes_of(&data, &columns.view().content, &fonts).unwrap();
         let edges = edges_of(&data, &nodes.slots).unwrap();
-        assert_eq!((edges[0].source, edges[0].target), (2, 0));
+        assert_eq!(
+            (edges[0].source, edges[0].target),
+            (
+                comb_engine::graph::End::Node(2),
+                comb_engine::graph::End::Node(0)
+            )
+        );
     }
 
     #[test]

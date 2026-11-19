@@ -47,6 +47,8 @@ const DESCRIBE: { [K in Kind]: (problem: Of<K>) => string } = {
   duplicateNode: (p) => p.node,
   duplicateEdge: (p) => p.edge,
   missingNode: (p) => `${p.edge ?? p.borderNode} ${p.node}`,
+  missingEdge: (p) => `${p.edge} ${p.missing}`,
+  invalidEdgeEnd: (p) => `${p.edge} ${p.end}`,
   invalidAttachment: (p) => `${p.node} ${p.field}`,
   nonFiniteLabel: (p) => `${p.edge} ${p.label}`,
   invalidLabelText: (p) => `${p.edge} ${p.label}`,
