@@ -6,10 +6,13 @@
 // divided into named regions one above the other, and a structured activity node, each a dashed
 // rounded rectangle below its keyword; a value pin with its value beside it, a streaming pin with
 // `{stream}` beside it, and a parameter set, a dashed border node around two pins, which follow
-// their action as it moves (ARCH-border-nodes-ride-sides).
+// their action as it moves (ARCH-border-nodes-ride-sides). Its palette drops each element in the
+// nested partition under the pointer or on an action's side, a parameter set there around two new
+// pins and refused elsewhere; its sidebar edits a value, `{stream}`, and the names of an action and
+// a clause.
 import { expect, test, type Page } from "@playwright/test";
 import type { NodeData } from "comb";
-import { open, pagePoint } from "./shared";
+import { clickWorld, open, pagePoint, setViewport } from "./shared";
 
 /** Each element of the notation diagram, by the identifier of its node or region: its node shape,
  *  the partition, region, or container it lies in or the node whose border it rides, and the
@@ -211,7 +214,6 @@ test("the notation diagram shows each element the load does not hold, in its nod
   await open(page);
   await chooseNotation(page);
   await expect(page.locator("#count")).toHaveText("30 elements, 15 edges");
-  await expect(page.locator("#palette")).toBeHidden();
   const drawn = await drawnNear(page);
   const { nodes, edges } = await page.evaluate(() => window.uml.exampleGraph());
   const kinds = await page.evaluate(() => window.uml.edgeKinds());
@@ -322,4 +324,378 @@ test("a parameter set and its pins follow their action as it moves", async ({ pa
     ["move-x", "move", "left", 40],
     ["move-y", "move", "left", 140],
   ]);
+});
+
+/** The world boxes of nodes and regions `ids` as the canvas draws them, the whole diagram in view,
+ *  read at once. */
+async function boxesOf(page: Page, ids: readonly string[]): Promise<Record<string, Box>> {
+  return page.evaluate(async (wanted) => {
+    window.uml.comb.setViewport({ x: 20, y: 20, scale: 0.4 });
+    await window.uml.comb.whenRendered();
+    const nodes = window.uml.inspect().nodes.filter((node) => wanted.includes(node.id));
+    return Object.fromEntries(
+      nodes.map(({ id, x, y, width, height }) => [id, { x, y, width, height }]),
+    );
+  }, ids);
+}
+
+/** Drops the palette's `kind` with the pointer over the world point (`x`, `y`), shown at (400, 400)
+ *  of the canvas at scale 1. */
+async function dropAtWorld(page: Page, kind: string, x: number, y: number): Promise<void> {
+  await setViewport(page, { x: 400 - x, y: 400 - y, scale: 1 });
+  await page
+    .locator(`#palette [data-kind="${kind}"]:visible`)
+    .dragTo(page.locator("#canvas canvas"), { targetPosition: { x: 400, y: 400 } });
+}
+
+/** Node `id` as the canvas draws it, the view as it stands. */
+async function drawnAt(page: Page, id: string): Promise<Drawn | undefined> {
+  return page.evaluate(async (wanted) => {
+    await window.uml.comb.whenRendered();
+    return window.uml.inspect().nodes.find((node) => node.id === wanted);
+  }, id);
+}
+
+/** Node `id` of the example's copy, as `NodeData`, which a border node is. */
+async function dataOf(page: Page, id: string): Promise<NodeData | undefined> {
+  return page.evaluate(
+    (wanted) => window.uml.exampleGraph().nodes.find((node) => node.id === wanted),
+    id,
+  );
+}
+
+/** What the palette offers in the notation diagram, by its name and kind, and what a drop adds:
+ *  its node shape, the texts of its content, whether its outline is dashed, the names of its
+ *  regions one above the other, and the text beside a border node; written here from the ticket
+ *  and its settled points rather than read from the example. */
+const PALETTE: [
+  string,
+  string,
+  { shape: string; content: string[][]; dashed?: true; regions?: string[]; beside?: string },
+][] = [
+  ["Action", "action", { shape: "rounded-rectangle", content: [["NewAction"]] }],
+  ["Input pin", "input-pin", { shape: "rectangle", content: [], beside: "in" }],
+  ["Output pin", "output-pin", { shape: "rectangle", content: [], beside: "out" }],
+  ["Value pin", "value-pin", { shape: "rectangle", content: [], beside: "0" }],
+  ["Parameter set", "parameter-set", { shape: "rectangle", content: [], dashed: true }],
+  [
+    "Structured node",
+    "structured-node",
+    { shape: "rounded-rectangle", content: [["«structured»"]], dashed: true },
+  ],
+  [
+    "Conditional node",
+    "conditional-node",
+    {
+      shape: "rounded-rectangle",
+      content: [["«conditional»"]],
+      dashed: true,
+      regions: ["Clause 1", "Clause 2"],
+    },
+  ],
+  [
+    "Loop node",
+    "loop-node",
+    {
+      shape: "rounded-rectangle",
+      content: [["«loop»"]],
+      dashed: true,
+      regions: ["setup", "test", "body"],
+    },
+  ],
+  ["Initial node", "initial-node", { shape: "circle", content: [] }],
+  ["Activity final", "activity-final", { shape: "ringed-circle", content: [] }],
+  ["Flow final", "flow-final", { shape: "crossed-circle", content: [] }],
+  ["Merge", "merge-node", { shape: "diamond", content: [] }],
+];
+
+/** The texts of the content of `node`, a drawn node. */
+const textsOf = (node: Drawn | undefined) =>
+  (node?.content ?? []).map((row) =>
+    row === "separator" ? [row] : row.map((each) => ("text" in each ? each.text : each.kind)),
+  );
+
+test("the palette offers each element of the notation diagram", async ({ page }) => {
+  // Verifies: G-20
+  await page.goto("/");
+  await open(page);
+  await chooseNotation(page);
+  await expect(page.locator("#palette li:visible")).toHaveText(PALETTE.map(([name]) => name));
+});
+
+for (const [name, kind, added] of PALETTE.filter(([, , each]) => each.beside !== undefined))
+  test(`the palette adds ${name.toLowerCase()} on the side of the action nearest the drop, with the text beside it`, async ({
+    page,
+  }) => {
+    // Verifies: G-20, G-1, ARCH-border-nodes-ride-sides
+    await page.goto("/");
+    await open(page);
+    await chooseNotation(page);
+    const id = `${kind}-1`;
+    // On the right side of Move the node, a third of the way down, where nothing rides.
+    const { move } = await boxesOf(page, ["move"]);
+    const [x, y] = [move!.x + move!.width - 2, move!.y + move!.height / 3];
+    await dropAtWorld(page, kind, x, y);
+    const data = (await dataOf(page, id))!;
+    expect(data).toMatchObject({ attachedTo: "move", side: "right" });
+    expect(data.offset).toBeCloseTo(move!.height / 3, 3);
+    const node = (await drawnAt(page, id))!;
+    expect({ shape: node.shape, texts: textsOf(node) }).toEqual({ shape: added.shape, texts: [] });
+    // Its name or its value beside it, without an outline.
+    const companion = kind === "value-pin" ? `${id}-value` : `${id}-name`;
+    const text = await drawnAt(page, companion);
+    expect({ texts: textsOf(text), outlined: text?.outlined }).toEqual({
+      texts: [[added.beside]],
+      outlined: "none",
+    });
+    expect((await dataOf(page, companion))?.attachedTo).toBe("move");
+  });
+
+const RIDES_NOTHING = PALETTE.filter(
+  ([, kind, each]) => each.beside === undefined && kind !== "parameter-set",
+);
+for (const [name, kind, added] of RIDES_NOTHING)
+  test(`the palette adds ${name.toLowerCase()} where it was dropped, in the nested partition under the pointer`, async ({
+    page,
+  }) => {
+    // Verifies: G-20, G-1, ARCH-regions-are-container-slots
+    await page.goto("/");
+    await open(page);
+    await chooseNotation(page);
+    const id = `${kind}-1`;
+    // Into the shell's partition, nested in Comb's, between Put the node back and the merge, where
+    // nothing lies.
+    const shell = (await boxesOf(page, ["shell"])).shell!;
+    const [x, y] = [shell.x + 270, shell.y + 1100];
+    await dropAtWorld(page, kind, x, y);
+    const node = (await drawnAt(page, id))!;
+    expect({ shape: node.shape, texts: textsOf(node) }).toEqual({
+      shape: added.shape,
+      texts: added.content,
+    });
+    expect(Array.isArray(node.outlined)).toBe(added.dashed === true);
+    expect(node.x).toBeGreaterThanOrEqual(shell.x);
+    expect(node.x + node.width).toBeLessThanOrEqual(shell.x + shell.width);
+    expect(Math.hypot(node.x + node.width / 2 - x, node.y + node.height / 2 - y)).toBeLessThan(
+      0.01,
+    );
+    const data = (await dataOf(page, id))!;
+    expect(data.container).toBe("shell");
+    expect((await page.evaluate(() => window.uml.nodeKinds()))[id]).toBe(kind);
+    if (!added.regions) return;
+    // Divided one above the other into its regions, each named in its band and holding nothing.
+    expect(data.divide).toBe("down");
+    const regions = (data.regions ?? []).map((region) => region.id);
+    expect(data.regions?.map((region) => region.name)).toEqual(added.regions);
+    const held = (await page.evaluate(() => window.uml.exampleGraph())).nodes.filter(
+      (each) => each.container !== undefined && regions.includes(each.container),
+    );
+    expect(held).toEqual([]);
+    const bands = await page.evaluate(async (ids) => {
+      await window.uml.comb.whenRendered();
+      const nodes = window.uml.inspect().nodes;
+      return ids.map((each) => nodes.find((drawn) => drawn.id === each)?.region?.band?.name);
+    }, regions);
+    expect(bands).toEqual(added.regions);
+  });
+
+/** Why the example refuses a parameter set dropped on no action, written here from
+ *  docs/CONVENTIONS.md. */
+const NO_ACTION = "A parameter set groups pins of an action; drop it on an action's side.";
+
+test("a parameter set dropped on the canvas is refused and the sidebar says why; dropped on an action's side, it lies there around two new input pins drawn above it", async ({
+  page,
+}) => {
+  // Verifies: G-20, ARCH-border-nodes-ride-sides
+  await page.goto("/");
+  await open(page);
+  await chooseNotation(page);
+  const { move, drag } = await boxesOf(page, ["move", "drag"]);
+  // On the canvas, right of the frame: nothing added, and the sidebar says why.
+  const before = await page.evaluate(() => window.uml.exampleGraph());
+  await dropAtWorld(page, "parameter-set", drag!.x + drag!.width + 300, drag!.y + 300);
+  expect(await page.evaluate(() => window.uml.exampleGraph())).toEqual(before);
+  await expect(page.locator("#connection-refusal")).toHaveText(NO_ACTION);
+  // On the right side of Move the node, halfway down; the sidebar's reason goes.
+  await dropAtWorld(page, "parameter-set", move!.x + move!.width - 2, move!.y + move!.height / 2);
+  await expect(page.locator("#connection-refusal")).toBeHidden();
+  const { nodes } = await page.evaluate(() => window.uml.exampleGraph());
+  const added = nodes.filter((node) => node.id.startsWith("parameter-set-1"));
+  const kinds = await page.evaluate(() => window.uml.nodeKinds());
+  // The set, then its two pins, each with its name.
+  const [set, ...pins] = added.filter((node) => kinds[node.id] !== undefined);
+  expect([set, ...pins].map((node) => kinds[node!.id])).toEqual([
+    "parameter-set",
+    "input-pin",
+    "input-pin",
+  ]);
+  for (const node of [set!, ...pins])
+    expect({ id: node.id, attachedTo: node.attachedTo, side: node.side }).toEqual({
+      id: node.id,
+      attachedTo: "move",
+      side: "right",
+    });
+  const scene = await page.evaluate(async () => {
+    await window.uml.comb.whenRendered();
+    return window.uml.inspect().nodes;
+  });
+  const drawn = (id: string) => scene.find((node) => node.id === id)!;
+  for (const { id } of pins)
+    expect({ id, inSet: within(drawn(id), drawn(set!.id)) }).toEqual({ id, inSet: true });
+  const order = scene.map((node) => node.id);
+  for (const { id } of pins) expect(order.indexOf(set!.id)).toBeLessThan(order.indexOf(id));
+  expect(Array.isArray(drawn(set!.id).outlined)).toBe(true);
+});
+
+/** Selects node `id` by a click `inset` inside its top left corner at `scale`, clear of what it
+ *  holds and of the connectors at the middles of its sides, and expects it selected. */
+async function select(page: Page, id: string, inset: number, scale = 1): Promise<void> {
+  const node = (await boxesOf(page, [id]))[id]!;
+  await setViewport(page, { x: 400 - node.x * scale, y: 300 - node.y * scale, scale });
+  await clickWorld(page, node.x + inset, node.y + inset);
+  const highlighted = await page.evaluate(async () => {
+    await window.uml.comb.whenRendered();
+    return window.uml.inspect().highlighted;
+  });
+  expect(highlighted).toBe(id);
+}
+
+test("the sidebar edits a value pin's value, the text beside it showing the new value, and its {stream}", async ({
+  page,
+}) => {
+  // Verifies: G-20, G-5
+  await page.goto("/");
+  await open(page);
+  await chooseNotation(page);
+  // Near its corner: a press at the middle of so small a node starts a connection.
+  await select(page, "take-canvas-container", 3, 2);
+  await expect(page.locator("#value")).toHaveValue("null");
+  await expect(page.locator("#name")).toBeHidden();
+  const before = (await drawnAt(page, "take-canvas-container-value"))!;
+  await page.locator("#value").fill("the canvas");
+  const after = (await drawnAt(page, "take-canvas-container-value"))!;
+  expect(textsOf(after)).toEqual([["the canvas"]]);
+  // A longer text than "null", so a node as wide as it grows.
+  expect(after.width).toBeGreaterThan(before.width);
+  // A value pin streams as a pin does, `{stream}` beside it while it is checked.
+  const stream = page.locator("#stream");
+  await expect(stream).not.toBeChecked();
+  await stream.check();
+  const text = await drawnAt(page, "take-canvas-container-stream");
+  expect({ texts: textsOf(text), outlined: text?.outlined }).toEqual({
+    texts: [["{stream}"]],
+    outlined: "none",
+  });
+  expect((await dataOf(page, "take-canvas-container-stream"))?.attachedTo).toBe("take-canvas");
+  await stream.uncheck();
+  await expect.poll(() => dataOf(page, "take-canvas-container-stream")).toBeUndefined();
+});
+
+test("the sidebar's {stream} of a pin removes the text beside it, and adds it again", async ({
+  page,
+}) => {
+  // Verifies: G-20, G-5
+  await page.goto("/");
+  await open(page);
+  await chooseNotation(page);
+  await select(page, "follow-point", 3, 2);
+  const stream = page.locator("#stream");
+  await expect(stream).toBeChecked();
+  await stream.uncheck();
+  await expect.poll(() => dataOf(page, "follow-point-stream")).toBeUndefined();
+  expect(await drawnAt(page, "follow-point-stream")).toBeUndefined();
+  await stream.check();
+  const [text, point, name] = await Promise.all(
+    ["follow-point-stream", "follow-point", "follow-point-name"].map((id) => drawnAt(page, id)),
+  );
+  expect({ texts: textsOf(text), outlined: text?.outlined }).toEqual({
+    texts: [["{stream}"]],
+    outlined: "none",
+  });
+  // On the other side of the pin from its name.
+  expect(text!.y + text!.height).toBeLessThanOrEqual(point!.y);
+  expect(name!.y).toBeGreaterThanOrEqual(point!.y + point!.height);
+});
+
+test("the sidebar renames an action, and a conditional node's clause, which its band shows", async ({
+  page,
+}) => {
+  // Verifies: G-20, G-5, ARCH-regions-are-container-slots
+  await page.goto("/");
+  await open(page);
+  await chooseNotation(page);
+  await select(page, "press", 10);
+  await expect(page.locator("#name")).toHaveValue("Press on a node");
+  await page.locator("#name").fill("Press on the node");
+  expect(textsOf(await drawnAt(page, "press"))).toEqual([["Press on the node"]]);
+  await select(page, "hit", 10);
+  await expect(page.locator("#clauses")).toHaveValue("over a container\nelse");
+  await page.locator("#clauses").fill("over a node\nelse");
+  const bands = await page.evaluate(async () => {
+    await window.uml.comb.whenRendered();
+    const nodes = window.uml.inspect().nodes;
+    return ["over-container", "otherwise"].map(
+      (id) => nodes.find((node) => node.id === id)?.region?.band?.name,
+    );
+  });
+  expect(bands).toEqual(["over a node", "else"]);
+});
+
+/** Why the sidebar refuses the clauses of the conditional node "hit" when they are not one name
+ *  per clause, written here from the human's decision of 2026-11-19. */
+const CLAUSES_REFUSED =
+  "Not taken: name each of the 2 clauses, one per line; the diagram keeps what it had.";
+
+test("the sidebar refuses a conditional node's clauses of another count, or one left empty, and says why", async ({
+  page,
+}) => {
+  // Verifies: G-20, G-5
+  await page.goto("/");
+  await open(page);
+  await chooseNotation(page);
+  await select(page, "hit", 10);
+  const clauses = page.locator("#clauses");
+  /** The names of the clauses of "hit", as the example's copy and the canvas's bands hold them. */
+  const names = () =>
+    page.evaluate(async () => {
+      await window.uml.comb.whenRendered();
+      const nodes = window.uml.inspect().nodes;
+      const copy = window.uml.exampleGraph().nodes.find((node) => node.id === "hit")!;
+      return {
+        copy: copy.regions?.map((region) => region.name),
+        bands: copy.regions?.map(
+          ({ id }) => nodes.find((node) => node.id === id)?.region?.band?.name,
+        ),
+      };
+    });
+  const kept = await names();
+  for (const text of ["over a node", "over a node\n", "over a node\nelse\nnever"]) {
+    await clauses.fill(text);
+    await expect(clauses).toHaveAttribute("aria-invalid", "true");
+    await expect(page.locator("#clauses-refusal")).toHaveText(CLAUSES_REFUSED);
+    expect({ text, names: await names() }).toEqual({ text, names: kept });
+  }
+  await clauses.fill("over a node\nelse");
+  await expect(clauses).not.toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#clauses-refusal")).toHaveText("");
+});
+
+/** Why the example refuses a drop on the band of Comb's partition, written here from the human's
+ *  decision of 2026-11-20. */
+const HOLDS_ALONE = "Comb holds Shell and Engine alone; drop into Shell or Engine.";
+
+test("an element dropped on the band of Comb's partition, which holds partitions, is refused and the sidebar says why", async ({
+  page,
+}) => {
+  // Verifies: G-20, ARCH-regions-are-container-slots
+  await page.goto("/");
+  await open(page);
+  await chooseNotation(page);
+  const { comb } = await boxesOf(page, ["comb"]);
+  const before = await page.evaluate(() => window.uml.exampleGraph());
+  // On Comb's band, above the shell's and the engine's: a partition divided again holds its
+  // partitions alone, and the example's veto keeps every node in the frame.
+  await dropAtWorld(page, "initial-node", comb!.x + comb!.width / 2, comb!.y + 12);
+  expect(await page.evaluate(() => window.uml.exampleGraph())).toEqual(before);
+  await expect(page.locator("#connection-refusal")).toHaveText(HOLDS_ALONE);
 });

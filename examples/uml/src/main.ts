@@ -8,11 +8,19 @@ import {
   type GraphData,
   type NodeData,
   type Proposal,
+  type RegionData,
   type Side,
 } from "comb";
 import engineUrl from "comb/engine.wasm?url";
 import { inspect, screenPoint, type SceneSnapshot } from "comb/testing";
-import { ACTIVITY_BORDERS, newActivityNode, nodesOf as activityNodesOf, RAKE } from "./activity";
+import {
+  ACTIVITY_BORDERS,
+  droppedParameterSet,
+  newActivityNode,
+  NO_ACTION,
+  nodesOf as activityNodesOf,
+  RAKE,
+} from "./activity";
 import { ACTIVITY_DIAGRAM } from "./activity-diagram";
 import { NOTATION_DIAGRAM } from "./notation-diagram";
 import { CLASS_DIAGRAM } from "./class-diagram";
@@ -30,6 +38,7 @@ import {
   NODE_WIDTH,
   STATE_KINDS,
   USE_CASE_KINDS,
+  type ActivityKind,
   type ActivityNode,
   type Classifier,
   type DiagramData,
@@ -202,27 +211,31 @@ choice.addEventListener("change", () => {
   window.uml.loadReport = load();
 });
 
-/** What the palette drops of `kind` as node `id` with its centre at the world point (`x`, `y`):
- *  the nodes Comb adds, and the classifier, the state, the activity node, or the use case
- *  diagram's node the diagram keeps of the first of them; none for a kind the palette lacks, or
- *  for a point dropped on no node whose border it rides. A node of the state, the activity, or the
- *  use case diagram lands in the deepest container or region under the point, an actor on the
- *  canvas, a point on the side of the node under it nearest the point, at the point's offset along
- *  that side. */
-function droppedOf(
-  kind: string,
-  id: string,
-  x: number,
-  y: number,
-):
+/** What a drop of the palette adds: the nodes Comb adds, and the classifier, the state, the
+ *  activity nodes, or the use case diagram's node the diagram keeps of them; or why the example
+ *  refuses it. */
+type Dropped =
   | {
       nodes: NodeData[];
       classifier?: Classifier;
       state?: State;
-      activity?: ActivityNode;
+      activities?: ActivityNode[];
       useCase?: UseCaseNode;
     }
-  | undefined {
+  | Refused;
+
+/** Why the example refuses a drop. */
+type Refused = { refusal: string };
+
+/** What the palette drops of `kind` as node `id` with its centre at the world point (`x`, `y`):
+ *  the nodes Comb adds, and the classifier, the state, the activity nodes, or the use case
+ *  diagram's node the diagram keeps of them; none for a kind the palette lacks, or for a point
+ *  dropped on no node whose border it rides, and why for a parameter set dropped on no action. A
+ *  node of the state, the activity, or the use case diagram lands in the deepest container or
+ *  region under the point, an actor on the canvas, a point on the side of the node under it
+ *  nearest the point, at the point's offset along that side, a parameter set there around two
+ *  new pins. */
+function droppedOf(kind: string, id: string, x: number, y: number): Dropped | undefined {
   const classifierKind = CLASSIFIER_KINDS.find((each) => each === kind);
   const heightOf: Comb["heightOf"] = (content, width, shape) =>
     comb.heightOf(content, width, shape);
@@ -239,29 +252,50 @@ function droppedOf(
     return { nodes: [node], classifier };
   }
   const activityKind = ACTIVITY_KINDS.find((each) => each === kind);
-  if (activityKind) {
-    const activity = newActivityNode(id, activityKind);
-    const place = placeOf(ACTIVITY_BORDERS[activityKind], x, y);
-    return place && { nodes: activityNodesOf(activity, place, heightOf), activity };
-  }
+  if (activityKind) return droppedActivityOf(activityKind, id, x, y, heightOf);
   const useCaseKind = USE_CASE_KINDS.find((each) => each === kind);
   if (useCaseKind) {
     const useCase = newUseCaseNode(id, useCaseKind);
     const place = USE_CASE_SHAPES[useCaseKind].outside ? { x, y } : centreOf(x, y);
+    if ("refusal" in place) return place;
     return { nodes: [useCaseNodeOf(useCase, place, heightOf)], useCase };
   }
   const stateKind = STATE_KINDS.find((each) => each === kind);
   if (!stateKind) return undefined;
   const state = newState(id, stateKind);
   const place = placeOf(BORDER_KINDS[stateKind], x, y);
+  if (place && "refusal" in place) return place;
   return place && { nodes: nodesOf(state, place, heightOf), state };
+}
+
+/** What the palette drops of the activity diagram's `kind` as node `id` at the world point (`x`,
+ *  `y`), placed by the heights `heightOf` gives, as `droppedOf` says. */
+function droppedActivityOf(
+  kind: ActivityKind,
+  id: string,
+  x: number,
+  y: number,
+  heightOf: Comb["heightOf"],
+): Dropped | undefined {
+  const place = placeOf(ACTIVITY_BORDERS[kind], x, y);
+  if (place && "refusal" in place) return place;
+  if (kind === "parameter-set")
+    return place && "attachedTo" in place
+      ? droppedParameterSet(id, place, heightOf)
+      : { refusal: NO_ACTION };
+  const activity = newActivityNode(id, kind);
+  return place && { nodes: activityNodesOf(activity, place, heightOf), activities: [activity] };
 }
 
 /** Where a node of the state, the activity, or the use case diagram dropped at the world point
  *  (`x`, `y`) lies: one that rides a node of `owners` on the nearest side of the node of those
  *  under it, none where there is none; any other in the deepest container or region under it, by
- *  its centre there. */
-function placeOf(owners: readonly NodeKind[] | undefined, x: number, y: number): Place | undefined {
+ *  its centre there, or refused as `centreOf` says. */
+function placeOf(
+  owners: readonly NodeKind[] | undefined,
+  x: number,
+  y: number,
+): Place | Refused | undefined {
   if (owners) {
     const owner = diagram.deepestAt(x, y, (each) => {
       const kind = diagram.kindOf(each);
@@ -285,28 +319,41 @@ function placeOf(owners: readonly NodeKind[] | undefined, x: number, y: number):
 }
 
 /** Where a node dropped at the world point (`x`, `y`) lies that rides no border: in the deepest
- *  container or region under it, by its centre there, or on the canvas. */
-function centreOf(x: number, y: number): Extract<Place, { x: number }> {
+ *  container or region under it, by its centre there, or on the canvas; refused, and why, where
+ *  that is a region divided into regions, which holds its regions alone
+ *  (ARCH-regions-are-container-slots), as the band of the notation diagram's partition Comb is,
+ *  since no node lands in it, and the activity's veto keeps every node in the frame
+ *  (`canMoveInto`). */
+function centreOf(x: number, y: number): Extract<Place, { x: number }> | Refused {
   const holder = diagram.deepestAt(x, y, (each) => {
     const node = diagram.node(each);
     return node === undefined || (node.isContainer === true && node.regions === undefined);
   });
   if (holder === undefined) return { x, y };
+  const divided = diagram.dividedRegion(holder);
+  if (divided) return { refusal: holdsAlone(divided) };
   const box = diagram.box(holder)!;
   return { x: x - box.x, y: y - box.y, container: holder };
+}
+
+/** Why the example refuses a drop into `region`, which holds its regions alone. */
+function holdsAlone({ name, regions = [] }: RegionData): string {
+  const names = regions.map((each) => each.name ?? each.id);
+  return `${name} holds ${names.join(" and ")} alone; drop into ${names.join(" or ")}.`;
 }
 
 /** Adds the nodes the palette drops of `kind`, a classifier or a state, centred by the height
  *  Comb gives its content and node shape on the world point under the drop at (`clientX`,
  *  `clientY`) of the page, or a point on the border nearest it (G-1, API-host-asks-content-height).
  *  The classifier or the state is the diagram's once Comb took its nodes, and never where Comb
- *  refuses them. */
+ *  refuses them. Where the example refuses the drop, the sidebar says why. */
 function drop(kind: string, clientX: number, clientY: number): void {
   const number = (dropped.get(kind) ?? 0) + 1;
   const id = `${kind}-${number}`;
   const { x, y } = comb.worldPointAt(clientX, clientY);
   const added = droppedOf(kind, id, x, y);
-  if (!added) return;
+  sidebar.refused(added && "refusal" in added ? added.refusal : null);
+  if (!added || "refusal" in added) return;
   dropped.set(kind, number);
   try {
     for (const node of added.nodes) comb.addNode(node);
@@ -318,9 +365,15 @@ function drop(kind: string, clientX: number, clientY: number): void {
     if (taken.length > 0) comb.removeNodes(taken);
     return;
   }
+  keep(id, added);
+}
+
+/** Keeps what the palette dropped as node `id`, `added`, once Comb took its nodes: its
+ *  classifier, its state, its activity nodes, or its use case diagram's node. */
+function keep(id: string, added: Exclude<Dropped, Refused>): void {
   if (added.classifier) diagram.classifiers.set(id, added.classifier);
   if (added.state) diagram.states.set(id, added.state);
-  if (added.activity) diagram.activities.set(id, added.activity);
+  for (const activity of added.activities ?? []) diagram.activities.set(activity.id, activity);
   if (added.useCase) diagram.useCases.set(id, added.useCase);
 }
 

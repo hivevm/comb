@@ -665,8 +665,11 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   partitions nested in a partition; an initial node, an activity final, a flow final, and a merge; a
   loop node and a conditional node divided down into regions, their setup, test, and body, or their
   clauses; a structured activity node; a value pin and a streaming pin with their value and
-  `{stream}` beside them; and a parameter set, a dashed border node around two pins. It has no
-  palette, so the sidebar edits its flows alone. Chosen, the use case diagram
+  `{stream}` beside them; and a parameter set, a dashed border node around two pins. Its palette
+  drops each of these elements and an action and pins, in the deepest container or region under the
+  pointer, a nested partition among them, a parameter set on an action's side around two new pins;
+  its sidebar edits an action's name, a pin's name, a value pin's value, a pin's `{stream}`, and a
+  conditional node's clauses. Chosen, the use case diagram
   (`src/use-case-diagram.ts`) shows the developer, the user, and the host application as actors
   outside the subject Comb, a container that holds the use cases of G-1 to G-17 as ellipses, a use
   case's extension points below a separator; its associations carry a multiplicity at each end, its

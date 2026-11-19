@@ -16,6 +16,7 @@ import type {
   GraphData,
   NodeContent,
   NodeData,
+  NodePatch,
   RegionData,
 } from "comb";
 import {
@@ -34,6 +35,8 @@ import {
   companionsOf,
   flowLabelOf,
   nameOf as activityNameOf,
+  streamNodeId,
+  streamNodeOf,
 } from "./activity";
 import {
   contentOf,
@@ -67,6 +70,12 @@ export interface Box {
   width: number;
   height: number;
 }
+
+/** How thick the band a region's name stands in is, as Comb draws it
+ *  (ARCH-regions-are-container-slots): copied from `BAND` in `crates/engine/src/graph/regions.rs`,
+ *  since Comb's interface tells a host application neither the band nor a region's box (backlog
+ *  `region-box-is-not-told`; accepted by the human on 2026-11-19). */
+const BAND = 24;
 
 /** Why a connection between two nodes is refused where one of them has no kind, as the node of a
  *  point's name. */
@@ -152,10 +161,10 @@ export class Diagram {
 
   /** The world box of node or region `id` as the copy places it: a node by its position in its
    *  container, as high as its data or its last resize says or else as `heightOf` gives its
-   *  content; a region by the sizes of the regions before it, below its node's content. None for
-   *  a border node, an unknown identifier, a region of a node the copy no longer holds, or a
-   *  region within a region and what lies in it, as the notation diagram's nested partitions and
-   *  what they hold. */
+   *  content; a region by the sizes of the regions before it, below its node's content or its
+   *  region's band (ARCH-regions-are-container-slots), a region within a region as the notation
+   *  diagram's nested partitions. None for a border node, an unknown identifier, or a region of a
+   *  node the copy no longer holds. */
   box(id: string): Box | undefined {
     const node = this.node(id);
     if (node) {
@@ -166,22 +175,36 @@ export class Diagram {
       return { x: origin.x + node.x, y: origin.y + node.y, width: node.width, height };
     }
     const divided = this.dividing(id);
-    const box = divided && this.box(divided.id);
+    const box = divided && this.box(divided.node.id);
     if (!divided || !box) return undefined;
-    const top = this.comb.heightOf(divided.content, divided.width, divided.shape);
-    // The example divides every node it divides by `divide`; a region within a region is no
-    // region of `divided`, and has no box.
-    return regionBox(
-      { x: box.x, y: box.y + top, width: box.width, height: box.height - top },
-      divided.divide!,
-      divided.regions!,
-      id,
-    );
+    const { content, width, shape } = divided.node;
+    const top = this.comb.heightOf(content, width, shape);
+    return pathBox({ ...box, y: box.y + top, height: box.height - top }, divided);
   }
 
-  /** The node region `id` divides, none where no node has such a region. */
-  private dividing(id: string) {
-    return this.graph.nodes.find((node) => node.regions?.some((region) => region.id === id));
+  /** Region `id` where it is divided into regions of its own, as the notation diagram's partition
+   *  Comb is; none for any other identifier. */
+  dividedRegion(id: string): RegionData | undefined {
+    const region = this.dividing(id)?.path.at(-1);
+    return region?.regions?.length ? region : undefined;
+  }
+
+  /** The node region `id` divides at any depth, and the regions from that node's down to `id`;
+   *  none where no node has such a region. */
+  private dividing(id: string): { node: NodeData; path: RegionData[] } | undefined {
+    const pathTo = (regions: readonly RegionData[]): RegionData[] | undefined => {
+      for (const region of regions) {
+        if (region.id === id) return [region];
+        const below = pathTo(region.regions ?? []);
+        if (below) return [region, ...below];
+      }
+      return undefined;
+    };
+    for (const node of this.graph.nodes) {
+      const path = pathTo(node.regions ?? []);
+      if (path) return { node, path };
+    }
+    return undefined;
   }
 
   /** The deepest node or region the world point (`x`, `y`) lies in, of those `holds` accepts by
@@ -193,9 +216,11 @@ export class Diagram {
       x <= box.x + box.width &&
       y >= box.y &&
       y <= box.y + box.height;
+    const regionsIn = (regions: readonly RegionData[]): string[] =>
+      regions.flatMap((region) => [region.id, ...regionsIn(region.regions ?? [])]);
     const candidates = this.graph.nodes.flatMap((node) => [
       node.id,
-      ...(node.regions ?? []).map((region) => region.id),
+      ...regionsIn(node.regions ?? []),
     ]);
     let deepest: { id: string; depth: number } | undefined;
     for (const id of candidates) {
@@ -211,14 +236,14 @@ export class Diagram {
     const node = this.node(id);
     if (node) return node.container === undefined ? 0 : 1 + this.depthOf(node.container);
     const divided = this.dividing(id);
-    return divided ? 1 + this.depthOf(divided.id) : 0;
+    return divided ? divided.path.length + this.depthOf(divided.node.id) : 0;
   }
 
   /** Replaces the content of node `id` with what `next` shows, and its classifier with `next`
    *  once Comb took the content; Comb lays it out anew, its height following. Returns Comb's
    *  refusal where it refused the content. */
   edit(id: string, next: Classifier): Refusal | undefined {
-    const refusal = this.updateContent(id, contentOf(next));
+    const refusal = this.patchNode(id, { content: contentOf(next) });
     if (!refusal) this.classifiers.set(id, next);
     return refusal;
   }
@@ -230,27 +255,75 @@ export class Diagram {
     const name = nameOf(next);
     const refusal = name
       ? this.rename(id, name, nameWidth(next.name ?? ""))
-      : this.updateContent(id, stateContentOf(next));
+      : this.patchNode(id, { content: stateContentOf(next) });
     if (!refusal) this.states.set(id, next);
     return refusal;
   }
 
   /** Replaces the content of activity node `id` with what `next` shows, and its activity node with
-   *  `next` once Comb took the content, as `editState` does a state; a pin's name is the content
-   *  of the node beside it. */
+   *  `next` once Comb took the content, as `editState` does a state; a pin's name and a value
+   *  pin's value are the content of the node beside it, and `{stream}` stands beside either where
+   *  `next` streams. Once Comb took the name or the value, the activity node holds it, and streams
+   *  only where the node of `{stream}` stands, whatever Comb refused of it. */
   editActivity(id: string, next: ActivityNode): Refusal | undefined {
     const name = activityNameOf(next);
-    const refusal = name
-      ? this.rename(id, name, nameWidth(next.name ?? ""))
-      : this.updateContent(id, activityContentOf(next));
-    if (!refusal) this.activities.set(id, next);
+    if (!name) {
+      const refusal = this.patchNode(id, { content: activityContentOf(next) });
+      if (!refusal) this.activities.set(id, next);
+      return refusal;
+    }
+    const renamed = this.rename(id, name, nameWidth(name.text));
+    if (renamed) return renamed;
+    const refusal = this.restream(next, name.id);
+    const held = { ...next };
+    if (this.node(streamNodeId(id))) held.stream = true;
+    else delete held.stream;
+    this.activities.set(id, held);
     return refusal;
+  }
+
+  /** Gives the pin or the value pin `pin` the node of `{stream}` beside it, on the other side from
+   *  the node `beside` of its name or value, where it streams, and none where it does not: Comb
+   *  adds the node, or removes it, or replaces it where it stands on the wrong side. Comb's
+   *  refusal where it refused it. */
+  private restream(pin: ActivityNode, beside: string): Refusal | undefined {
+    const id = streamNodeId(pin.id);
+    const [current, own, name] = [this.node(id), this.node(pin.id), this.node(beside)];
+    // A pin and the node beside it ride the action, so both are border nodes.
+    const heightOf: Comb["heightOf"] = (content, width) => this.comb.heightOf(content, width);
+    const wanted = pin.stream
+      ? streamNodeOf(own as BorderNodeData, name as BorderNodeData, heightOf)
+      : undefined;
+    if (current?.offset === wanted?.offset) return undefined;
+    try {
+      if (current) this.comb.removeNodes([id]);
+      if (wanted) this.comb.addNode(wanted);
+    } catch (error) {
+      // A lost engine, or a node Comb refused: what Comb took of the change stands, and the copy
+      // holds it, as Comb told it; `editActivity` reads from the copy whether `{stream}` stands.
+      console.warn("uml: {stream} was not changed", error);
+      return { error };
+    }
+    return undefined;
+  }
+
+  /** Names the clauses of the conditional node `id`, its regions, one by one as `names` says, each
+   *  keeping its size and what it holds; refused, and why, where `names` names another count of
+   *  clauses or leaves one empty, as the human decided on 2026-11-19; Comb's refusal where it
+   *  refused the names. */
+  nameClauses(id: string, names: readonly string[]): Refusal | undefined {
+    const clauses = this.node(id)?.regions ?? [];
+    if (names.length !== clauses.length || names.includes(""))
+      return { error: new Error(`name each of the ${clauses.length} clauses, one per line`) };
+    return this.patchNode(id, {
+      regions: clauses.map((clause, i) => ({ ...clause, name: names[i]! })),
+    });
   }
 
   /** Replaces the content of the use case diagram's node `id` with what `next` shows, and its node
    *  with `next` once Comb took the content, as `edit` does a classifier. */
   editUseCase(id: string, next: UseCaseNode): Refusal | undefined {
-    const refusal = this.updateContent(id, useCaseContentOf(next));
+    const refusal = this.patchNode(id, { content: useCaseContentOf(next) });
     if (!refusal) this.useCases.set(id, next);
     return refusal;
   }
@@ -284,7 +357,7 @@ export class Diagram {
       at?.attachedTo === undefined ||
       current.width === width
     )
-      return this.updateContent(name.id, name.content);
+      return this.patchNode(name.id, { content: name.content });
     const kept = structuredClone(current);
     const offset = this.nameOffsetBeside(at, width, name.content);
     try {
@@ -331,13 +404,14 @@ export class Diagram {
     return this.updateLabel(id, text === null ? null : labelOf(kind, text, current));
   }
 
-  /** Gives node `id` the content `content`; Comb's refusal where it refused it. */
-  private updateContent(id: string, content: NodeContent): Refusal | undefined {
+  /** Gives node `id` what `patch` sets, its content or the names of its regions; Comb's refusal
+   *  where it refused it. */
+  private patchNode(id: string, patch: NodePatch): Refusal | undefined {
     try {
-      this.comb.updateNode(id, { content });
+      this.comb.updateNode(id, patch);
     } catch (error) {
-      // Content past Comb's limits, such as a text longer than one may be: the node keeps its
-      // content, and its classifier or its state what it held.
+      // Content or a name past Comb's limits, such as a text longer than one may be: the node
+      // keeps its content and its regions, and its classifier or its state what it held.
       console.warn("uml: the edit was not taken", error);
       return { error };
     }
@@ -503,6 +577,31 @@ function sized(
     region.size = sizes.find(({ id }) => id === region!.id)?.size ?? region.size;
     for (const inner of region.regions ?? []) pending.push(inner);
   }
+}
+
+/** The box of the last region of `path`, the regions from those `node` is divided into down to
+ *  it, each in the box of the one before, `inner` the part of `node`'s box below its content. The
+ *  example divides every node it divides by `divide`, and a region within a region the same
+ *  way. */
+function pathBox(inner: Box, { node, path }: { node: NodeData; path: RegionData[] }): Box {
+  let [box, divide, regions] = [inner, node.divide!, node.regions!];
+  for (const region of path) {
+    const own = regionBox(box, divide, regions, region.id);
+    if (region === path.at(-1)) return own;
+    box = bandless(own, divide, region.name);
+    [divide, regions] = [region.divide!, region.regions!];
+  }
+  return box;
+}
+
+/** `box`, the box of a region named `name` among regions divided `divide`, without its band: at
+ *  its top where the regions lie side by side, at its left where they lie one above the other;
+ *  whole where it has no name (ARCH-regions-are-container-slots). */
+function bandless(box: Box, divide: string, name: string | undefined): Box {
+  if (name === undefined) return box;
+  return divide === "across"
+    ? { ...box, y: box.y + BAND, height: box.height - BAND }
+    : { ...box, x: box.x + BAND, width: box.width - BAND };
 }
 
 /** The box of region `id` among `regions`, divided by `divide` in `box`: each region as long as

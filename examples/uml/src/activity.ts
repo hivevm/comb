@@ -60,9 +60,10 @@ import {
 const DASHED: Outline = [6, 4];
 
 /** The building blocks of each kind: its node shape, its width, a height where it is given one,
- *  its outline where it is not solid, whether it holds nodes, and the direction its regions divide
- *  it in where it has regions. Settled with the human on 2026-11-18 for tickets 12 and 14 of
- *  uml-diagrams, and the connector's roundness on 2026-11-19. */
+ *  its outline where it is not solid, whether it holds nodes, the direction its regions divide it
+ *  in where it has regions, and the names of the regions one the palette drops takes. Settled with
+ *  the human on 2026-11-18 for tickets 12 and 14 of uml-diagrams, and the connector's roundness
+ *  and the regions of a dropped conditional and loop node on 2026-11-19 for tickets 14 and 15. */
 export const ACTIVITY_SHAPES: Record<
   ActivityKind,
   {
@@ -72,6 +73,7 @@ export const ACTIVITY_SHAPES: Record<
     outline?: Outline;
     holds?: true;
     divide?: Divide;
+    regions?: readonly string[];
   }
 > = {
   action: { shape: "rounded-rectangle", width: 240, height: 120 },
@@ -119,6 +121,7 @@ export const ACTIVITY_SHAPES: Record<
     height: 240,
     outline: DASHED,
     divide: "down",
+    regions: ["Clause 1", "Clause 2"],
   },
   "loop-node": {
     shape: "rounded-rectangle",
@@ -126,12 +129,19 @@ export const ACTIVITY_SHAPES: Record<
     height: 240,
     outline: DASHED,
     divide: "down",
+    regions: ["setup", "test", "body"],
   },
   "value-pin": { shape: "rectangle", width: 16 },
   "parameter-set": { shape: "rectangle", width: 28, outline: DASHED },
   connector: { shape: "ellipse", width: 64 },
   "activity-comment": { shape: "note", width: 240 },
-  "activity-frame": { shape: "frame", width: 1200, height: 600, divide: "across" },
+  "activity-frame": {
+    shape: "frame",
+    width: 1200,
+    height: 600,
+    divide: "across",
+    regions: ["Partition 1", "Partition 2"],
+  },
   "input-parameter": { shape: "rectangle", width: 200 },
   "output-parameter": { shape: "rectangle", width: 200 },
 };
@@ -204,22 +214,28 @@ export const valueNodeId = (id: string) => `${id}-value`;
 /** What a streaming pin shows beside it besides its name. */
 const STREAM = "{stream}";
 
-/** The node that shows the name of `node`, a pin, and its content, none for any other kind. */
-export function nameOf(node: ActivityNode): { id: string; content: NodeContent } | undefined {
-  if (!NAMED_BESIDE.includes(node.kind)) return undefined;
-  return { id: nameNodeId(node.id), content: nameContentOf(node.name) };
+/** The node that shows the text beside `node`, a pin's name or a value pin's value, with that
+ *  text and the content showing it; none for any other kind. */
+export function nameOf(
+  node: ActivityNode,
+): { id: string; text: string; content: NodeContent } | undefined {
+  const [id, text] = NAMED_BESIDE.includes(node.kind)
+    ? [nameNodeId(node.id), node.name]
+    : node.kind === "value-pin"
+      ? [valueNodeId(node.id), node.value]
+      : [];
+  return id === undefined ? undefined : { id, text: text ?? "", content: nameContentOf(text) };
 }
 
 /** The identifiers of the two outer rectangles of the expansion node `id`, which is the middle one,
  *  before and after it along its side. */
 export const outerBoxesOf = (id: string) => [`${id}-before`, `${id}-after`];
 
-/** The nodes that go with `node` and with no other: a pin's name, and `{stream}` beside a
- *  streaming one; a value pin's value; an expansion node's outer rectangles. */
+/** The nodes that go with `node` and with no other: a pin's name or a value pin's value, and
+ *  `{stream}` beside either where it streams; an expansion node's outer rectangles. */
 export function companionsOf(node: ActivityNode): string[] {
-  if (NAMED_BESIDE.includes(node.kind))
-    return [nameNodeId(node.id), ...(node.stream ? [streamNodeId(node.id)] : [])];
-  if (node.kind === "value-pin") return [valueNodeId(node.id)];
+  const beside = nameOf(node);
+  if (beside) return [beside.id, ...(node.stream ? [streamNodeId(node.id)] : [])];
   return node.kind === "expansion-node" ? outerBoxesOf(node.id) : [];
 }
 
@@ -264,7 +280,9 @@ export function nodesOf(
     ...own,
     ...(given === undefined ? {} : { height }),
     ...(block.holds ? { isContainer: true, resizable: true } : {}),
-    ...(block.divide ? dividedOf(node, block.divide, size) : {}),
+    ...(block.divide
+      ? dividedOf(node, block.divide, size, () => height - heightOf(content, width, block.shape))
+      : {}),
     x: place.x - width / 2,
     y: place.y - height / 2,
     ...(place.container === undefined ? {} : { container: place.container }),
@@ -302,24 +320,27 @@ function heightGiven(
 }
 
 /** What `node`, divided `divide`, adds to its node: its regions of `size`, each named in its band
- *  and parted by a solid line, a region divided again the same way; resizable. A frame the palette
- *  drops takes two partitions of half its width; any other node without regions given takes
- *  none. */
+ *  and parted by a solid line, a region divided again the same way; resizable. A node the palette
+ *  drops, without regions given, takes those its building block names, each an equal share of its
+ *  width across, or of the height below its content, `below`, down, its identifier the node's and
+ *  the region's name; a node whose building block names none takes none. */
 function dividedOf(
   { id, kind }: ActivityNode,
   divide: Divide,
   size: Size | undefined,
+  below: () => number,
 ): Partial<PlacedNodeData> {
-  const half = (size?.width ?? ACTIVITY_SHAPES["activity-frame"].width) / 2;
+  const names = ACTIVITY_SHAPES[kind].regions ?? [];
+  const share =
+    (divide === "across" ? (size?.width ?? ACTIVITY_SHAPES[kind].width) : below()) / names.length;
   const regions =
     size?.regions ??
-    (kind === "activity-frame"
-      ? [
-          { id: `${id}-partition-1`, name: "Partition 1", size: half },
-          { id: `${id}-partition-2`, name: "Partition 2", size: half },
-        ]
-      : undefined);
-  return regions ? { resizable: true, divide, regions: regionsOf(regions, divide) } : {};
+    names.map((name) => ({
+      id: `${id}-${name.toLowerCase().replaceAll(" ", "-")}`,
+      name,
+      size: share,
+    }));
+  return regions.length > 0 ? { resizable: true, divide, regions: regionsOf(regions, divide) } : {};
 }
 
 /** `regions` as Comb takes them, each parted from the next by a solid line, and divided `divide`
@@ -335,8 +356,8 @@ function regionsOf(regions: readonly Region[], divide: Divide): RegionData[] {
 }
 
 /** The border nodes of `node` on the side `place` names: a pin and the node of its name beside
- *  it, with `{stream}` on its other side where it streams; a value pin and the node of its value
- *  beside it; an expansion node, the middle of three rectangles side by side, each as wide as it;
+ *  it, or a value pin and the node of its value, with `{stream}` on its other side where it
+ *  streams; an expansion node, the middle of three rectangles side by side, each as wide as it;
  *  a parameter set as high as `size` gives it, and an activity parameter node, alone. */
 function borderNodesOf(
   node: ActivityNode,
@@ -346,12 +367,11 @@ function borderNodesOf(
   size: Size | undefined,
 ): BorderNodeData[] {
   const at = { attachedTo: place.attachedTo, side: place.side, offset: place.offset };
-  if (NAMED_BESIDE.includes(node.kind)) {
-    const [pin, name] = namedBorderNodes(own, place, node.name, heightOf);
+  const beside = nameOf(node);
+  if (beside) {
+    const [pin, name] = namedBorderNodes(own, place, beside.text, heightOf, beside.id);
     return node.stream ? [pin!, name!, streamNodeOf(pin!, name!, heightOf)] : [pin!, name!];
   }
-  if (node.kind === "value-pin")
-    return namedBorderNodes(own, place, node.value, heightOf, valueNodeId(node.id));
   if (node.kind === "parameter-set")
     return [{ ...own, ...at, ...(size === undefined ? {} : { height: size.height }) }];
   if (node.kind !== "expansion-node") return [{ ...own, ...at }];
@@ -365,7 +385,7 @@ function borderNodesOf(
 
 /** The node of `{stream}` beside the pin `pin`, without an outline, 4 before it on its side where
  *  its name `name` stands after it, else 4 after it. */
-function streamNodeOf(
+export function streamNodeOf(
   pin: BorderNodeData,
   name: BorderNodeData,
   heightOf: Comb["heightOf"],
@@ -385,9 +405,10 @@ function streamNodeOf(
   };
 }
 
-/** The activity node of `kind` the palette drops, with a name of its kind, an expansion region
- *  iterative, a comment of one line, a control node, an expansion node, and an interruptible
- *  region unnamed. */
+/** The activity node of `kind` the palette drops, with a name of its kind, a value pin's value 0,
+ *  an expansion region iterative, a comment of one line, a control node, an expansion node, an
+ *  interruptible region, a structured, a conditional, and a loop node, and a parameter set
+ *  unnamed. */
 export function newActivityNode(id: string, kind: ActivityKind): ActivityNode {
   const named: Partial<Record<ActivityKind, Partial<ActivityNode>>> = {
     action: { name: "NewAction" },
@@ -398,6 +419,7 @@ export function newActivityNode(id: string, kind: ActivityKind): ActivityNode {
     "object-node": { name: "object" },
     "input-pin": { name: "in" },
     "output-pin": { name: "out" },
+    "value-pin": { value: "0" },
     "data-store": { name: "store" },
     "central-buffer": { name: "buffer" },
     "expansion-region": { mode: "iterative" },
@@ -408,6 +430,44 @@ export function newActivityNode(id: string, kind: ActivityKind): ActivityNode {
     "output-parameter": { name: "out" },
   };
   return { id, kind, ...named[kind] };
+}
+
+/** Why the example refuses a parameter set dropped on no action. */
+export const NO_ACTION = "A parameter set groups pins of an action; drop it on an action's side.";
+
+/** How long a parameter set the palette drops is along its side, and how far each of its two pins
+ *  stands from its middle. */
+const SET_LENGTH = 92;
+const SET_PIN = 30;
+
+/** What the palette drops of the parameter set `id` on the side `place` names: the dashed set,
+ *  centred at the offset of `place` but no nearer an end of the side than half its length, and
+ *  two new input pins `a` and `b` inside it, each with its name beside it, and their activity
+ *  nodes; the set added before its pins, so that they are drawn above it, as the notation
+ *  diagram's seed is. */
+export function droppedParameterSet(
+  id: string,
+  place: Extract<Place, { attachedTo: string }>,
+  heightOf: Comb["heightOf"],
+): { nodes: NodeData[]; activities: ActivityNode[] } {
+  const half = SET_LENGTH / 2;
+  const offset = Math.min(Math.max(place.offset, half), (place.length ?? Infinity) - half);
+  const thick = ACTIVITY_SHAPES["parameter-set"].width;
+  const across = place.side === "top" || place.side === "bottom";
+  const size = across ? { width: SET_LENGTH, height: thick } : { width: thick, height: SET_LENGTH };
+  const set: ActivityNode = { id, kind: "parameter-set" };
+  const pins = (["a", "b"] as const).map((name): ActivityNode => ({
+    id: `${id}-${name}`,
+    kind: "input-pin",
+    name,
+  }));
+  const nodes = [
+    ...nodesOf(set, { ...place, offset }, heightOf, size),
+    ...pins.flatMap((pin, i) =>
+      nodesOf(pin, { ...place, offset: offset + (i === 0 ? -SET_PIN : SET_PIN) }, heightOf),
+    ),
+  ];
+  return { nodes, activities: [set, ...pins] };
 }
 
 /** The label a flow shows: its guard in brackets and its weight in braces, each where it has one;

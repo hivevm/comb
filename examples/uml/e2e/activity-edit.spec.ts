@@ -47,7 +47,7 @@ async function boxOf(page: Page, id: string) {
 async function dropAtWorld(page: Page, kind: string, x: number, y: number): Promise<void> {
   await setViewport(page, { x: 400 - x, y: 400 - y, scale: 1 });
   await page
-    .locator(`#palette [data-kind="${kind}"]`)
+    .locator(`#palette [data-kind="${kind}"]:visible`)
     .dragTo(page.locator("#canvas canvas"), { targetPosition: { x: 400, y: 400 } });
 }
 
@@ -242,27 +242,38 @@ async function connectWorld(page: Page, from: [number, number], to: [number, num
   const [mx, my] = [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2];
   await setViewport(page, { x: 640 - mx * scale, y: 360 - my * scale, scale });
   const [start, end] = [await pagePoint(page, ...from), await pagePoint(page, ...to)];
-  await page.mouse.move(start.x - 20, start.y);
-  await page.mouse.move(start.x, start.y, { steps: 4 });
+  // Few pointer moves: each one waits for a frame, which a loaded machine draws slowly.
+  await page.mouse.move(start.x, start.y);
   await page.mouse.down();
-  await page.mouse.move(end.x, end.y, { steps: 8 });
+  await page.mouse.move(end.x, end.y, { steps: 3 });
   await page.mouse.up();
 }
 
-/** The connector at the middle of `side` of node `id`, in world units. */
-async function connectorOf(
-  page: Page,
-  id: string,
-  side: "left" | "right",
-): Promise<[number, number]> {
-  const node = await boxOf(page, id);
-  return [side === "left" ? node.x : node.x + node.width, node.y + node.height / 2];
+type Box = { x: number; y: number; width: number; height: number };
+
+/** The connector at the middle of `side` of `box`, a node's box, in world units. */
+function connectorOf(box: Box, side: "left" | "right"): [number, number] {
+  return [side === "left" ? box.x : box.x + box.width, box.y + box.height / 2];
+}
+
+/** Every node's box as the canvas draws it, the whole diagram in view, read at once. */
+async function boxesOf(page: Page): Promise<Record<string, Box>> {
+  await overview(page);
+  return page.evaluate(async () => {
+    await window.uml.comb.whenRendered();
+    return Object.fromEntries(
+      window.uml
+        .inspect()
+        .nodes.map(({ id, x, y, width, height }) => [id, { x, y, width, height }]),
+    );
+  });
 }
 
 /** Pairs the user connects, each its source and its target, the sides of their connectors, and
  *  why the sidebar says the table of refusals refuses it, written here from docs/CONVENTIONS.md;
  *  or the kind it adds where the table allows it. */
-const CONNECTIONS: [string, "left" | "right", string, "left" | "right", string][] = [
+type Connection = [string, "left" | "right", string, "left" | "right", string];
+const CONNECTIONS: Connection[] = [
   [
     "bind",
     "right",
@@ -295,38 +306,57 @@ const CONNECTIONS: [string, "left" | "right", string, "left" | "right", string][
   ["graph", "right", "copy", "right", "object-flow"],
 ];
 
-test("a connection the activity diagram's table of refusals holds is refused and the sidebar says why; other pairs add a control or an object flow", async ({
-  page,
-}) => {
-  // Verifies: G-20, G-3
+/** The example's copy of the graph and the kind of each edge, as `state` reads them. */
+type State = Awaited<ReturnType<typeof state>>;
+
+/** Opens the activity diagram and drags each connection of `connections`, handing `check` the copy
+ *  before and after it; no connection moves a node, so the boxes are read once. */
+async function connectEach(
+  page: Page,
+  connections: Connection[],
+  check: (each: Connection, before: State, after: State) => Promise<void>,
+): Promise<void> {
   await page.goto("/");
   await open(page);
   await chooseActivity(page);
-  for (const [source, from, target, to, outcome] of CONNECTIONS) {
+  const boxes = await boxesOf(page);
+  for (const each of connections) {
+    const [source, from, target, to] = each;
     const before = await state(page);
-    await connectWorld(
-      page,
-      await connectorOf(page, source, from),
-      await connectorOf(page, target, to),
-    );
-    const after = await state(page);
-    if (outcome.endsWith("-flow")) {
-      const added = after.graph.edges.filter(
-        (edge) => "source" in edge && edge.source === source && edge.target === target,
-      );
-      expect({ source, target, added: added.length }).toEqual({ source, target, added: 1 });
-      expect({ source, kind: after.kinds[added[0]!.id] }).toEqual({ source, kind: outcome });
-      expect(added[0]).toMatchObject({
-        arrow: "open",
-        sourceSide: "outline",
-        targetSide: "outline",
-      });
-      await expect(page.locator("#connection-refusal")).toBeHidden();
-    } else {
-      expect({ source, target, after }).toEqual({ source, target, after: before });
-      await expect(page.locator("#connection-refusal")).toHaveText(outcome);
-    }
+    await connectWorld(page, connectorOf(boxes[source]!, from), connectorOf(boxes[target]!, to));
+    await check(each, before, await state(page));
   }
+}
+
+test("a connection the activity diagram's table of refusals holds is refused and the sidebar says why", async ({
+  page,
+}) => {
+  // Verifies: G-20, G-3
+  const refused = CONNECTIONS.filter(([, , , , outcome]) => !outcome.endsWith("-flow"));
+  await connectEach(page, refused, async ([source, , target, , why], before, after) => {
+    expect({ source, target, after }).toEqual({ source, target, after: before });
+    await expect(page.locator("#connection-refusal")).toHaveText(why);
+  });
+});
+
+test("a connection the activity diagram's table allows adds a control or an object flow", async ({
+  page,
+}) => {
+  // Verifies: G-20, G-3
+  const allowed = CONNECTIONS.filter(([, , , , outcome]) => outcome.endsWith("-flow"));
+  await connectEach(page, allowed, async ([source, , target, , kind], _before, after) => {
+    const added = after.graph.edges.filter(
+      (edge) => "source" in edge && edge.source === source && edge.target === target,
+    );
+    expect({ source, target, added: added.length }).toEqual({ source, target, added: 1 });
+    expect({ source, kind: after.kinds[added[0]!.id] }).toEqual({ source, kind });
+    expect(added[0]).toMatchObject({
+      arrow: "open",
+      sourceSide: "outline",
+      targetSide: "outline",
+    });
+    await expect(page.locator("#connection-refusal")).toBeHidden();
+  });
 });
 
 test("a pin dragged around the corner of its action rides its new side, and the example's copy holds its side and offset", async ({

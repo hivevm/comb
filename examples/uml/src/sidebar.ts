@@ -3,7 +3,9 @@
 // internal transitions, and deferred triggers; a submachine state's name and state machine; a
 // comment's lines; or the name alone of a package, a state list, a point, a signal, the state
 // machine, an action, an object node, a pin, a parameter, a connector, or the activity; an
-// expansion region's mode; a use case's name and extension points; the selected relationship's
+// expansion region's mode; a use case's name and extension points; a pin's name, or a value pin's
+// value, and whether it streams; the names of a conditional node's clauses, one per line, since
+// Comb selects no region on its own (ARCH-regions-are-container-slots); the selected relationship's
 // kind and label, or its kind alone among those the rules allow between its ends, the selected
 // dependency's «import» or «use», the selected transition's trigger, guard, and effect, the
 // selected flow's guard and weight, or the selected association's multiplicities. A pseudostate,
@@ -73,7 +75,7 @@ const linesOf = (text: string) =>
     .filter((line) => line !== "");
 
 /** The parts of a state or an activity node the node form edits beside its name, each by the
- *  identifier of its field: a line of text, or a list of one item per line. */
+ *  identifier of its field: a line of text, a list of one item per line, or a checkbox. */
 const NODE_PARTS = [
   ["entry", "entry", "text"],
   ["do-activity", "doActivity", "text"],
@@ -84,6 +86,8 @@ const NODE_PARTS = [
   ["lines", "body", "list"],
   ["mode", "mode", "text"],
   ["points", "points", "list"],
+  ["value", "value", "text"],
+  ["stream", "stream", "flag"],
 ] as const;
 
 /** The fields each node form shows, by their identifiers. */
@@ -95,6 +99,9 @@ const SHOWN: Record<Exclude<NodeForm, "none">, readonly string[]> = {
   lines: ["lines"],
   mode: ["mode"],
   "name-and-points": ["name", "points"],
+  "name-and-stream": ["name", "stream"],
+  "value-and-stream": ["value", "stream"],
+  clauses: ["clauses"],
 };
 
 /** The fields of a transition, each by the part of it it edits. */
@@ -109,8 +116,10 @@ const ENDS = ["source", "target"] as const;
 /** The text `field` holds, trimmed, none where it is empty. */
 const textIn = (field: Field) => field.value.trim() || undefined;
 
-/** A part as its field holds it: its text or its lines, none where the field is empty. */
-function partOf(field: Field, type: "text" | "list") {
+/** A part as its field holds it: its text or its lines, none where the field is empty, or `true`
+ *  where its checkbox is checked, none where it is not. */
+function partOf(field: Field, type: "text" | "list" | "flag") {
+  if (type === "flag") return (field as HTMLInputElement).checked || undefined;
   if (type === "text") return textIn(field);
   const lines = linesOf(field.value);
   return lines.length > 0 ? lines : undefined;
@@ -127,6 +136,7 @@ export class Sidebar {
   private readonly kind = element<HTMLSelectElement>("kind");
   private readonly label = element<HTMLInputElement>("label");
   private readonly dependency = element<HTMLSelectElement>("dependency");
+  private readonly clauses = element<HTMLTextAreaElement>("clauses");
   /** The field of each part of a state or an activity node, with the part it edits and how. */
   private readonly nodeParts = NODE_PARTS.map(([id, key, type]) => ({
     field: element<Field>(id),
@@ -150,7 +160,7 @@ export class Sidebar {
   private readonly edgeHeading = element("edge-heading");
   /** The wrapper of each field of the node form, by the field's identifier. */
   private readonly nodeWrappers = [
-    ...["name", "stereotype", "attributes", "operations"],
+    ...["name", "stereotype", "attributes", "operations", "clauses"],
     ...NODE_PARTS.map(([id]) => id),
   ].map((id) => [id, element(`${id}-field`)] as const);
   private readonly kindField = element("kind-field");
@@ -163,6 +173,7 @@ export class Sidebar {
     this.stereotype,
     this.attributes,
     this.operations,
+    this.clauses,
     ...this.nodeParts.map(({ field }) => field),
   ];
   private readonly edgeFields: readonly Field[] = [
@@ -208,7 +219,8 @@ export class Sidebar {
     if (edgeForm !== "none") this.fillEdge(kind!, edgeForm);
   }
 
-  /** Says why the rules refused the user's last connection, or clears what it said for `null`. */
+  /** Says why the example refused the user's last connection or drop, or clears what it said for
+   *  `null`. */
   refused(reason: string | null): void {
     this.connection.textContent = reason ?? "";
     this.connection.hidden = reason === null;
@@ -247,16 +259,19 @@ export class Sidebar {
     this.name.value = classifier?.name ?? parted?.name ?? "";
     this.fillMembers(classifier);
     this.fillParts(parted);
+    const regions = this.diagram.node(this.node!)?.regions ?? [];
+    this.clauses.value = regions.map((region) => region.name ?? "").join("\n");
     this.clear(this.nodeFields);
   }
 
-  /** Fills the field of each part of `node`, a state or an activity node, empty for a part it has
-   *  not, or for none. */
+  /** Fills the field of each part of `node`, a state or an activity node, empty or unchecked for
+   *  a part it has not, or for none. */
   private fillParts(node: PartedNode | undefined): void {
-    const parts = (node ?? {}) as Partial<Record<string, string | string[]>>;
-    for (const { field, key } of this.nodeParts) {
+    const parts = (node ?? {}) as Partial<Record<string, string | string[] | true>>;
+    for (const { field, key, type } of this.nodeParts) {
       const value = parts[key] ?? "";
-      field.value = Array.isArray(value) ? value.join("\n") : value;
+      if (type === "flag") (field as HTMLInputElement).checked = value === true;
+      else field.value = Array.isArray(value) ? value.join("\n") : String(value);
     }
   }
 
@@ -359,8 +374,8 @@ export class Sidebar {
 
   /** The selected state or activity node, `node`, as the form of `form` holds it: its name, and a
    *  state's behaviours, internal transitions, and deferred triggers, its state machine, its lines,
-   *  or an expansion region's mode, where the form shows them; a field left empty leaves its part
-   *  out. */
+   *  an expansion region's mode, or a value pin's value and whether a pin streams, where the form
+   *  shows them; a field left empty or unchecked leaves its part out. */
   private editedOf<T extends PartedNode>(node: T, form: Exclude<NodeForm, "none">): T {
     const shown = SHOWN[form];
     const parts = this.nodeParts
@@ -381,6 +396,12 @@ export class Sidebar {
   private editNode(): Refusal | undefined {
     const form = this.formOfNode();
     if (form === "none") return undefined;
+    // A clause's name is no part of the node: it names a region, line by line.
+    if (form === "clauses")
+      return this.diagram.nameClauses(
+        this.node!,
+        this.clauses.value.split("\n").map((line) => line.trim()),
+      );
     const state = this.diagram.states.get(this.node!);
     if (state) return this.diagram.editState(state.id, this.editedOf(state, form));
     const activity = this.diagram.activities.get(this.node!);

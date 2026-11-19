@@ -172,7 +172,16 @@ skimmed. The design revision drops what prevented nothing
   node around its pins, added before them so that they are drawn above it; its white fill hides the
   action's outline where it lies, and the names of its pins hide its own. A flow's label shows its
   guard in brackets and its weight as `{weight=…}`. The example's `canMoveInto` allows a move into a
-  partition or a region and refuses one onto the canvas, out of the frame.
+  partition or a region and refuses one onto the canvas, out of the frame. A frame, a conditional
+  node, and a loop node the palette drops take the regions their building block names, an equal
+  share each: two partitions, two empty clauses, or the setup, test, and body. A parameter set the
+  palette drops lands on the nearest side of the action under the pointer, added before two new
+  input pins inside it; dropped on no action, it is refused, and the sidebar says "A parameter set
+  groups pins of an action; drop it on an action's side." The sidebar edits a value pin's value in
+  a field and a pin's `{stream}` by a checkbox, and a conditional node's clauses one name per line,
+  since Comb selects no region on its own (ARCH-regions-are-container-slots); it refuses another
+  count of lines, or an empty one, and says why. A drop on the band of a partition divided again
+  is refused, and the sidebar names the partitions to drop into.
 - **The UML example draws a use case diagram in the building blocks settled for it.** Each kind
   takes the building block `USE_CASE_SHAPES` in `examples/uml/src/use-case-diagram.ts` names, as
   ticket 13 of uml-diagrams settled them with the human. An actor is an `actor`, its name the

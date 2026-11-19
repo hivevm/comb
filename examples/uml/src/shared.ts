@@ -160,7 +160,8 @@ export type AddedEdge = Extract<GraphChange, { kind: "edgeAdded" }>["edge"];
 /** What the sidebar edits of a selected node: a classifier's name, stereotype, and members; a
  *  name alone; a state's name and its behaviours, internal transitions, and deferred triggers; a
  *  submachine state's name and the state machine it refers to; the lines of a comment; an
- *  expansion region's mode; a use case's name and extension points; or nothing. */
+ *  expansion region's mode; a use case's name and extension points; a pin's name, or a value
+ *  pin's value, and whether it streams; the names of a conditional node's clauses; or nothing. */
 export type NodeForm =
   | "classifier"
   | "name"
@@ -169,6 +170,9 @@ export type NodeForm =
   | "lines"
   | "mode"
   | "name-and-points"
+  | "name-and-stream"
+  | "value-and-stream"
+  | "clauses"
   | "none";
 
 /** What the sidebar edits of a selected edge: a relationship's kind and label, its kind alone, a

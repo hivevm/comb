@@ -27,6 +27,21 @@
           <input id="name" aria-describedby="name-refusal" type="text" />
         </label>
         <p id="name-refusal" class="refusal" role="alert"></p>
+        <label id="value-field">
+          Value
+          <input id="value" aria-describedby="value-refusal" type="text" />
+        </label>
+        <p id="value-refusal" class="refusal" role="alert"></p>
+        <label id="stream-field">
+          <input id="stream" aria-describedby="stream-refusal" type="checkbox" />
+          {stream}
+        </label>
+        <p id="stream-refusal" class="refusal" role="alert"></p>
+        <label id="clauses-field">
+          Clauses, one name per line
+          <textarea id="clauses" aria-describedby="clauses-refusal" rows="3"></textarea>
+        </label>
+        <p id="clauses-refusal" class="refusal" role="alert"></p>
         <label id="machine-field">
           State machine
           <input id="machine" aria-describedby="machine-refusal" type="text" />

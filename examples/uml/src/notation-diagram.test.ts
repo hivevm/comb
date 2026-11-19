@@ -104,11 +104,15 @@ test("the notation diagram holds the elements of G-20 the load does not", () => 
     expect({ element, shown: shows(DIAGRAMS.notation) }).toEqual({ element, shown: true });
 });
 
-test("a streaming pin's name and {stream}, and a value pin's value, go with their pin", () => {
+test("a streaming pin's name and {stream}, and a value pin's value and its {stream}, go with their pin", () => {
   expect(companionsOf({ id: "p", kind: "output-pin", name: "point", stream: true })).toEqual([
     "p-name",
     "p-stream",
   ]);
   expect(companionsOf({ id: "p", kind: "input-pin", name: "x" })).toEqual(["p-name"]);
   expect(companionsOf({ id: "v", kind: "value-pin", value: "null" })).toEqual(["v-value"]);
+  expect(companionsOf({ id: "v", kind: "value-pin", value: "0", stream: true })).toEqual([
+    "v-value",
+    "v-stream",
+  ]);
 });

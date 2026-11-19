@@ -4,12 +4,13 @@
 // here from those decisions and docs/CONVENTIONS.md, not read from the example.
 // Verifies: G-20
 import { expect, test } from "bun:test";
-import type { Comb, Divide, NodeShape } from "comb";
+import type { BorderNodeData, Comb, Divide, NodeShape } from "comb";
 import {
   ACTIVITY_BORDERS,
   ACTIVITY_SHAPES,
   canMoveInto,
   connectedOf,
+  droppedParameterSet,
   flowLabelOf,
   nodesOf,
 } from "./activity";
@@ -124,7 +125,8 @@ test("flows have an open arrowhead, and the interrupting edge and the exception 
 /** A height for any content, as Comb's least height of a node. */
 const heightOf: Comb["heightOf"] = () => 64;
 
-test("a frame dropped without partitions takes two of half its width; a loop or a conditional node takes only the regions given", () => {
+test("a frame dropped without partitions takes two of half its width, a conditional node two clauses, and a loop node its setup, test, and body, one above the other below its keyword", () => {
+  // Settled with the human on 2026-11-19 for ticket 15 of uml-diagrams.
   const [frame] = nodesOf({ id: "f", kind: "activity-frame" }, { x: 0, y: 0 }, heightOf);
   expect(frame).toMatchObject({
     divide: "across",
@@ -133,14 +135,72 @@ test("a frame dropped without partitions takes two of half its width; a loop or 
       { id: "f-partition-2", name: "Partition 2", size: 600 },
     ],
   });
-  for (const kind of ["loop-node", "conditional-node"] as const) {
-    const [node] = nodesOf({ id: "n", kind }, { x: 0, y: 0 }, heightOf);
-    expect({ kind, regions: node?.regions }).toEqual({ kind, regions: undefined });
+  // 240 high, its keyword 64 of it: each region an equal share of the 176 below.
+  const dropped = {
+    "conditional-node": ["Clause 1", "Clause 2"],
+    "loop-node": ["setup", "test", "body"],
+  } as const;
+  for (const [kind, names] of Object.entries(dropped)) {
+    const [node] = nodesOf(
+      { id: "n", kind: kind as keyof typeof dropped },
+      { x: 0, y: 0 },
+      heightOf,
+    );
+    expect({ kind, divide: node?.divide, height: node?.height }).toEqual({
+      kind,
+      divide: "down",
+      height: 240,
+    });
+    expect({ kind, regions: node?.regions?.map(({ name, size }) => [name, size]) }).toEqual({
+      kind,
+      regions: names.map((name) => [name, 176 / names.length]),
+    });
     const size = { width: 360, height: 240, regions: [{ id: "body", name: "body", size: 200 }] };
-    const [given] = nodesOf({ id: "n", kind }, { x: 0, y: 0 }, heightOf, size);
+    const [given] = nodesOf(
+      { id: "n", kind: kind as keyof typeof dropped },
+      { x: 0, y: 0 },
+      heightOf,
+      size,
+    );
     expect({ kind, given }).toMatchObject({
       kind,
       given: { divide: "down", regions: [{ id: "body", name: "body", size: 200 }] },
     });
   }
+  const [structured] = nodesOf({ id: "s", kind: "structured-node" }, { x: 0, y: 0 }, heightOf);
+  expect(structured?.regions).toBeUndefined();
+});
+
+test("a parameter set dropped on an action's side is a dashed border node there, added before two new input pins inside it, each with its name", () => {
+  // Settled with the human on 2026-11-19 for ticket 15 of uml-diagrams.
+  for (const side of ["right", "top"] as const) {
+    const place = { attachedTo: "a", side, offset: 100, length: 240 };
+    const { nodes, activities } = droppedParameterSet("p", place, heightOf);
+    expect(activities.map(({ kind }) => kind)).toEqual(["parameter-set", "input-pin", "input-pin"]);
+    const [set, ...rest] = nodes as BorderNodeData[];
+    expect({ side, id: set!.id, outline: set!.outline }).toEqual({
+      side,
+      id: "p",
+      outline: [6, 4],
+    });
+    const along = side === "top" ? set!.width : set!.height!;
+    for (const node of rest) {
+      expect({ id: node.id, attachedTo: node.attachedTo, side: node.side }).toEqual({
+        id: node.id,
+        attachedTo: "a",
+        side,
+      });
+    }
+    // Each pin lies within the set along the side.
+    for (const pin of rest.filter(({ id }) => activities.some((each) => each.id === id)))
+      expect(Math.abs(pin.offset - set!.offset) + pin.width / 2).toBeLessThanOrEqual(along / 2);
+  }
+  // Dropped near the end of a side, it keeps clear of it.
+  const near = droppedParameterSet(
+    "p",
+    { attachedTo: "a", side: "left", offset: 5, length: 240 },
+    heightOf,
+  );
+  const set = near.nodes[0] as BorderNodeData;
+  expect(set.offset - set.height! / 2).toBeGreaterThanOrEqual(0);
 });
