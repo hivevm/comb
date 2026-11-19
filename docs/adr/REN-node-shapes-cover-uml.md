@@ -98,7 +98,8 @@ node shape from the engine's numbers.
   - The *captioned node shapes* are `actor` and `hourglass`: a drawing of fixed proportions at
     the top of the node, as wide as the node, of height 2 for `actor` and 1.5 for `hourglass`
     times the drawing's width, capped at 48 world units; the content is laid out below the
-    drawing, to the node's width.
+    drawing, to the node's width. A drawing capped at 48 keeps its proportions and stands centred
+    across the node. An outline the data gives changes nothing on a captioned node shape.
 - **Height:**
   - A content node shape is as high as its inner rectangle needs to hold its content laid out to
     the inner rectangle's width. For a rectangle that is today's height.
@@ -106,7 +107,9 @@ node shape from the engine's numbers.
   - A bar is 8 world units high where its data gives no height; with a height it is that high, so
     that a bar 8 wide and given a height stands upright, as a vertical fork or join.
   - A crossed circle and a cross are as high as wide.
-  - A captioned node shape is as high as its drawing and its content.
+  - A captioned node shape is as high as its drawing and its content, and with content at least
+    the least height of [REN-node-content-and-hits](REN-node-content-and-hits.md) as a whole, its
+    drawing counted in.
   - Any other node whose data gives a height is that high, never less than its content needs; a
     height below that is raised to it. A frame is at least as high as its tab. Without a height a
     node is as high as above.
@@ -121,7 +124,8 @@ node shape from the engine's numbers.
   the empty canvas does.
 - **Crossing:** the engine gives, for a node and a point outside it, the point where the line
   from the node's centre towards that point crosses the outline. Docking an edge's end on the
-  outline, a decision of its own, uses it.
+  outline, a decision of its own, uses it. A captioned node shape is crossed as its bounding
+  rectangle, as it is hit, and its border nodes ride that rectangle.
 - **Outline:** `NodeData` gains an optional `outline`: `"solid"`, which `api` fills in where the
   host leaves it out, `"none"`, or a dash pattern in the form an edge takes
   ([REN-virtualized-nested-scene](REN-virtualized-nested-scene.md)). The engine lays a dashed
