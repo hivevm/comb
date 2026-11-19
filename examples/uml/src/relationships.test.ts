@@ -62,5 +62,6 @@ test("a kind's style carries its label where the kind has one, and none where it
       background: GREEN,
     },
   ]);
-  expect(styleOf("transition")).toEqual({ color: GREY, arrow: "end" });
+  expect(styleOf("transition")).toEqual({ color: GREY, arrow: "open" });
+  expect(styleOf("anchor")).toEqual({ color: GREY, dash: [6, 4], arrow: "none" });
 });

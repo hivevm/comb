@@ -115,25 +115,65 @@ skimmed. The design revision drops what prevented nothing
   one. The package diagram draws each dependency as a dependency, its label «import» for a module's
   import of another and «use» for the bridge's load of the WebAssembly package and the bridge
   crate's use of the core; its legend names the dependency by both labels, since one naming «use»
-  alone leaves the diagram's most common edge, «import», unexplained.
+  alone leaves the diagram's most common edge, «import», unexplained. The state diagram draws a
+  transition grey, solid, with an open arrowhead (`"open"`), as UML 2.5.1 draws one, and a comment's
+  anchor grey, dashed, and without one; neither is listed in the legend.
 - **The UML example draws a state diagram in UML's node shapes.** Each kind of state takes the node
   shape UML gives it, so that a reader who knows UML reads the kind from the shape and no label
   names it. A pseudostate has no content and is as small as its node shape allows, so that it reads
-  as a mark on the path and never as a state. A transition the user connects docks on the outline at
-  both ends, as the seeded ones do, so that several transitions leave one state from different
+  as a mark on the path and never as a state. A state, a composite state, a submachine state, and a
+  state list are rounded rectangles; an initial pseudostate and a junction filled circles, a final
+  state a ringed circle, a terminate a cross, a choice a diamond, a fork and a join bars, an entry
+  point and an entry connection point reference hollow circles (an ellipse without content), and an
+  exit point and an exit connection point reference crossed circles. Shallow and deep history are
+  ellipses holding `H` and `H*`, as wide as their content makes them high, so that they are round.
+  A state's entry, do, and exit behaviours, internal transitions, and deferred triggers stand below
+  a separator, as UML 2.5.1 draws its compartment. A composite state is divided one above the other
+  into orthogonal regions, parted by dashed lines. A point rides the border of its composite state,
+  submachine state, or frame, and its name is a further border node beside it on the same side
+  without an outline, since no border node rides another. A transition that sends or receives a
+  signal runs as two edges through a pentagon or a notched rectangle naming the signal, its trigger
+  and guard on the first. A comment is a `note`, anchored by a dashed edge on a state, or by
+  `targetEdge` at `targetT` 0.5 on a transition. A transition the user connects docks on the outline
+  at both ends, as the seeded ones do, so that several transitions leave one state from different
   directions instead of meeting in the middle of one side (API-edges-dock-side-or-outline); a loop
   docks at both ends on the side the connection left by, since a loop on the outline is drawn above
   its node (API-edges-dock-side-or-outline) and not where the user dragged it.
-- **The UML example's rules of connection are a table of what they refuse.** `allows` in
-  `examples/uml/src/rules.ts` answers from the kinds of the two ends and of the relationship,
-  against a set of refused combinations, and its test writes that table out. Between a class, an
-  interface, an abstract class, and a package it refuses none, in either direction. Between a
-  state, an initial state, a final state, and a choice it refuses a transition into an initial
-  state and one out of a final state. A loop, an edge of a node with itself, is allowed only as a
-  transition of a state; the example's Comb allows loops for it, so its gesture offers them in
-  every diagram, and the table refuses every other. No case is needed of a class, a package, and
-  a state together, which never share a diagram. A diagram that adds kinds of node adds its
-  refusals here and to the table.
+- **The UML example's rules of connection are a table of what they refuse.** `allows` and
+  `refusal` in `examples/uml/src/rules.ts` answer from the kinds of the two ends and of the
+  relationship, against a table of refused combinations, each with why, and its test writes that
+  table out. The sidebar says why where the table refuses a user's connection. Between a class, an
+  interface, an abstract class, and a package it refuses none, in either direction. Between the
+  state diagram's kinds it refuses, the first that holds saying why:
+  - a transition from or to a comment, which its anchor attaches;
+  - a transition from or to the frame of the state machine, which is no vertex;
+  - a transition into an initial pseudostate;
+  - a transition out of a final state or a terminate pseudostate;
+  - a transition from a fork to a pseudostate, since a fork's transitions enter states only
+    (UML 2.5.1 `fork_segment_state`);
+  - a transition from a pseudostate to a join, since only transitions from states enter one
+    (`join_segment_state`);
+  - a transition from a fork into a receive signal symbol, or from one into a join, since a receive
+    signal is its transition's trigger and a fork's or a join's segment has none
+    (`fork_segment_guards`, `join_segment_guards`);
+  - a transition from a pseudostate into a receive signal symbol, since a transition out of a
+    pseudostate has no trigger (`outgoing_pseudostates`), nor one out of an initial pseudostate
+    (`outgoing_from_initial`).
+
+  The sidebar offers no trigger on a transition out of a pseudostate, nor on one into a join, and no
+  guard on one out of an initial pseudostate or a fork, or into a join, by the same constraints.
+
+  A connection from a comment adds its anchor instead of a transition. The table refuses an anchor
+  that starts at no comment, and one that ends on anything but a state or a pseudostate: a signal
+  symbol, a comment, or the frame. The user anchors no comment on an edge; only the diagram's data
+  does.
+
+  A state, a composite state, a submachine state, a state list, and a final state count as states;
+  a signal symbol stands on a transition and counts as neither. A loop, an edge of a node with
+  itself, is allowed only as a transition of a state, a composite state, or a submachine state; the
+  example's Comb allows loops for it, so its gesture offers them in every diagram, and the table
+  refuses every other. No case is needed of a class, a package, and a state together, which never
+  share a diagram. A diagram that adds kinds of node adds its refusals here and to the table.
 - **What stays is pinned by assertions, not by unchanged files.** A spec's *Existing behaviour*
   or a ticket's criterion that existing tests run unchanged names the assertions that must hold,
   and expects a test that only follows a new field, argument, or signature to change with it;

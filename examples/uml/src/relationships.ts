@@ -3,10 +3,11 @@
 // with a list of one label, `kind`; Comb has no diamond and no arrowhead at the source. So each
 // kind is told by a family of colour, its dash pattern, and its arrowhead, and by its label where
 // those cannot tell it; docs/CONVENTIONS.md records the mapping, and the sidebar's legend lists it.
-// The state diagram's transition is a kind of its own, drawn grey with an arrowhead. The label of
+// The state diagram's transition is a kind of its own, drawn grey with an open arrowhead, as UML
+// 2.5.1 draws one, and so is the anchor of a comment, grey, dashed, and without one. The label of
 // an edge of any kind is built here, by `labelOf`, and so is the label a change of kind leaves, by
 // `patchOf`.
-import type { EdgeData, EdgeLabelData, EdgePatch } from "comb";
+import type { Arrowhead, EdgeData, EdgeLabelData, EdgePatch } from "comb";
 
 /** The colour families, each dark enough that the white text Comb draws on a label in it has a
  *  contrast ratio of at least 4.5: grey for plain links, blue for inheritance, green for a whole
@@ -27,7 +28,7 @@ export interface RelationshipStyle {
   name: string;
   color: number;
   dash?: readonly [number, number];
-  arrow: "end" | "none";
+  arrow: Extract<Arrowhead, "end" | "open" | "none">;
   label?: string;
   place?: { t: number; offset: number };
   listed?: false;
@@ -55,17 +56,19 @@ const STYLES = {
     label: "«composition»",
     place: { t: 0.4, offset: 0 },
   },
-  // The state diagram's one kind, which its sidebar labels by its event, and which neither the
-  // legend nor the class and the package diagram's kind select lists. Its label stands 14 to the
-  // left of its direction of travel, so that the labels of two transitions that run along one line
-  // in opposite directions stand either side of it.
+  // The state diagram's kinds, which neither the legend nor the class and the package diagram's
+  // kind select lists: a transition, which its sidebar labels by its trigger, guard, and effect,
+  // its label 14 to the left of its direction of travel, so that the labels of two transitions
+  // that run along one line in opposite directions stand either side of it; and the anchor of a
+  // comment, which carries no label.
   transition: {
     name: "Transition",
     color: GREY,
-    arrow: "end",
+    arrow: "open",
     place: { t: 0.5, offset: 14 },
     listed: false,
   },
+  anchor: { name: "Anchor", color: GREY, dash: DASH, arrow: "none", listed: false },
 } satisfies Record<string, RelationshipStyle>;
 
 export type RelationshipKind = keyof typeof STYLES;

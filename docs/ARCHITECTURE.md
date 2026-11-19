@@ -621,22 +621,35 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   sidebar chooses between its three diagrams, the class diagram first, and lists the legend of the
   kinds of relationship, each a line drawn in its colour, dash pattern, and arrowhead beside its
   name and label, one legend for the class and the package diagram. Chosen, the state diagram
-  (`src/state-diagram.ts`) shows a Comb's life, its states rounded rectangles of their name, its
-  initial state a circle, its final states ringed circles, and the choice of whether its engine
-  loaded a diamond, placed by the heights `heightOf` gives their node shapes, and its transitions
-  grey edges docked on the outline labelled by their event or guard, and a loop on ready's left side
-  labelled edit, for which the example's Comb allows loops; its legend hidden, it is edited as the
-  others are: the palette drops a state, an initial state, a final state, or a choice, each in its
-  node shape and centred on the drop; the sidebar renames a selected state and names a selected
-  transition's event, its label; a connection adds a transition docked on the outline at both ends,
-  or a loop on the side it left by. Chosen, the package diagram (`src/package-diagram.ts`) shows
-  Comb's modules and crates as nodes of «package» and their name and their dependencies as dashed
-  edges with an arrowhead and the label «import» or «use»; each diagram is kept as it was left, its
-  edits among it, while another is shown, for as long as the page lives. `src/class-diagram.ts`
-  describes Comb's public interface, and the render layer's edges layer for its one realization, as
-  classifiers whose content is a caption for the stereotype, a title for the name, and a body text
-  per member, at most the eight rows Comb lays out and "…" for those left out, placed in rows laid
-  out by hand by the heights `heightOf` gives; both diagrams are held to Comb's source by a Bun test
+  (`src/state-diagram.ts`) shows a Comb's life in the notation of UML 2.5.1 (G-20), inside a frame
+  of its state machine that holds every node: states as rounded rectangles of their name and, below
+  a separator, their entry, do, and exit behaviours, internal transitions, and deferred triggers;
+  composite states divided into orthogonal regions by dashed lines, each region a container its
+  states lie in; a submachine state with its connection point references on its border; a state
+  list; the pseudostates and final states in Comb's node shapes, history an ellipse round about `H`
+  or `H*`; entry and exit points as border nodes of a composite state, each with its name in a
+  further border node beside it without an outline; the send and receive signal symbols as a
+  pentagon and a notched rectangle on a transition, which runs as two edges through the symbol; and
+  comments as notes, anchored by a dashed edge on a state or at the middle of a transition. Its
+  nodes are placed by hand by the heights `heightOf` gives their node shapes, and its transitions
+  are grey edges with an open arrowhead, docked on the outline, labelled by their trigger, guard,
+  and effect, and a loop on Ready's left side, for which the example's Comb allows loops. Its legend
+  hidden, it is edited as the others are: the palette drops each notation element, centred on the
+  drop in the deepest container or region under it, which the diagram works out from its copy
+  (`Diagram.box`, `Diagram.deepestAt`), or a point on the nearest side of the node under it it may
+  ride, with its name; the sidebar edits each property the notation shows, a state's name and
+  behaviours, a submachine state's state machine, a comment's lines, the name of a point, a signal,
+  a state list, or the state machine, and a transition's trigger, guard, and effect, which its label
+  shows; a connection adds a transition docked on the outline at both ends, or a loop on the side it
+  left by, and from a comment its anchor; and Delete removes a point's name with its point and
+  refuses it alone. Chosen, the package diagram (`src/package-diagram.ts`) shows Comb's modules and
+  crates as nodes of «package» and their name and their dependencies as dashed edges with an
+  arrowhead and the label «import» or «use»; each diagram is kept as it was left, its edits among
+  it, while another is shown, for as long as the page lives. `src/class-diagram.ts` describes Comb's
+  public interface, and the render layer's edges layer for its one realization, as classifiers whose
+  content is a caption for the stereotype, a title for the name, and a body text per member, at most
+  the eight rows Comb lays out and "…" for those left out, placed in rows laid out by hand by the
+  heights `heightOf` gives; both diagrams are held to Comb's source by a Bun test
   (`src/comb-source.test.ts`), which reads the library's files by path, never by import, and fails
   where a package, a dependency between the modules of `packages/comb/src` or the crates, or a
   member of the `Comb` interface is missing from the diagram or drawn there and not in the source,
@@ -654,30 +667,35 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   since a classifier's edit sends every field of it, and a change of kind keeping a label the user
   typed and replacing only the old kind's own label, or none, by the new kind's, or none; a
   connection becomes an association, on the package diagram a dependency «use», and on the state
-  diagram a transition, where the rules of `src/rules.ts`, a pure function of the kinds of the ends,
-  of the relationship, and of whether it is a loop, allow it: they refuse a transition into an
-  initial state or out of a final state, and every loop but a state's, which Comb offers in every
-  diagram since it allows loops; and Delete removes the selection. Each node keeps its node kind,
-  set when it is created from the diagram's data or the palette: a class, an interface, an abstract
-  class, or a package, kept in its record `Classifier` (which carries a package too, though UML
-  counts no package as a classifier), and changed by no edit of its stereotype; and a state's,
-  state, initial, final, or choice, with its state. What the diagrams share stands in
-  `src/shared.ts`, which imports no diagram's file and no diagram's file imports another's: the
-  diagram as data (`DiagramData`), the kinds of node, which the rules import, the classifier and the
-  state, the classifier's content (`contentOf`), and the layout by rows (`laidOut`) of the class and
-  the package diagram; the lookup of an element of the page stands in `src/element.ts`. Each diagram
-  is described in one place, the descriptor (`DiagramDescriptor`) its file exports: its identifier
-  and name in the choice of diagram, how it is built, its kinds of node with their names in the
-  palette and the form the sidebar edits each in, the kind a connection adds and how it docks, the
-  form the sidebar edits an edge in, the headings of a selection, and whether the legend shows. The
-  host application fills the choice of diagram and the palette from the descriptors, and
-  `src/diagram.ts` and `src/sidebar.ts` read the one of the diagram shown instead of branching on a
-  kind. `src/diagram.ts` keeps the example's copy of the graph, the classifier or the state of each
-  node, and the kind of each edge, each from a change `onChange` tells or after Comb took the call
-  that changes it, and `src/legend.ts` draws the legend. Its hooks stand under `window.uml`, so that
-  it declares nothing on `window` the metric tree declares; Vite serves it on port 5176, the launch
-  configuration **Example: UML** opens it, and its browser tests run in the Playwright project `uml`
-  against it in test mode on a port of their own.
+  diagram a transition, or from a comment an anchor, where the rules of `src/rules.ts`, a pure
+  function of the kinds of the ends, of the relationship, and of whether it is a loop, allow it:
+  from a table of refusals, each with why, which the sidebar says where it refuses, they refuse a
+  transition at a comment or the frame, into an initial pseudostate, out of a final state or a
+  terminate, from a fork to a pseudostate, and from a pseudostate to a join, a trigger where UML
+  2.5.1 gives the transition none, an anchor but one from a comment to a state or a pseudostate, and
+  every loop but a state's, which Comb offers in every diagram since it allows loops; and Delete
+  removes the selection. Each node keeps its node kind, set when it is created from the diagram's
+  data or the palette: a class, an interface, an abstract class, or a package, kept in its record
+  `Classifier` (which carries a package too, though UML counts no package as a classifier), and
+  changed by no edit of its stereotype; and a state diagram's node's, a state or any other notation
+  element of G-20's state diagram, with its state, beside the trigger, guard, and effect of each
+  transition. What the diagrams share stands in `src/shared.ts`, which imports no diagram's file and
+  no diagram's file imports another's: the diagram as data (`DiagramData`), the kinds of node, which
+  the rules import, the classifier and the state, the classifier's content (`contentOf`), and the
+  layout by rows (`laidOut`) of the class and the package diagram; the lookup of an element of the
+  page stands in `src/element.ts`. Each diagram is described in one place, the descriptor
+  (`DiagramDescriptor`) its file exports: its identifier and name in the choice of diagram, how it
+  is built, its kinds of node with their names in the palette and the form the sidebar edits each
+  in, the kind a connection adds and how it docks, the form the sidebar edits an edge in, the
+  headings of a selection, and whether the legend shows. The host application fills the choice of
+  diagram and the palette from the descriptors, and `src/diagram.ts` and `src/sidebar.ts` read the
+  one of the diagram shown instead of branching on a kind. `src/diagram.ts` keeps the example's copy
+  of the graph, the classifier or the state of each node, and the kind of each edge, each from a
+  change `onChange` tells or after Comb took the call that changes it, and `src/legend.ts` draws the
+  legend. Its hooks stand under `window.uml`, so that it declares nothing on `window` the metric
+  tree declares; Vite serves it on port 5176, the launch configuration **Example: UML** opens it,
+  and its browser tests run in the Playwright project `uml` against it in test mode on a port of
+  their own.
 - **Benchmark** (`bench/run.ts`) — the example at 50,010 nodes in Chromium, each node with the
   content of its type, measuring the time to the first frame and p95 frame times over the frames
   Comb rendered of drag, pan, zoom, and edits one a frame, a node and an edge added and removed

@@ -3,7 +3,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { CLASSIFIERS, RELATIONSHIPS as EDGES } from "../src/class-diagram";
 import { ELLIPSIS, NODE_WIDTH, ROW_LIMIT, shownMembers } from "../src/shared";
-import { CONVENTIONS, DRAWN, open, POLICY } from "./shared";
+import { CONVENTIONS, DRAWN, open, placedNodes, POLICY } from "./shared";
 
 const hex = (color: number) => `#${color.toString(16).padStart(6, "0")}`;
 
@@ -66,12 +66,13 @@ test("each class or interface is a node of its stereotype, name, and members, pl
   expect(shownMembers(CLASSIFIERS.find(({ id }) => id === "Comb")!).at(-1)).toBe(ELLIPSIS);
   expect(shownMembers(CLASSIFIERS.find(({ id }) => id === "EdgeData")!).at(-1)).toBe(ELLIPSIS);
   // Each node is drawn as high as heightOf gives its content, and where it was placed.
-  graph.nodes.forEach((node, i) => {
+  const placed = placedNodes(graph.nodes);
+  placed.forEach((node, i) => {
     expect(drawn[node.id]).toEqual({ x: node.x, y: node.y, height: heights[i] });
   });
   // Placed by those heights, no node overlaps another.
-  for (const [i, a] of graph.nodes.entries())
-    for (const [j, b] of graph.nodes.entries()) {
+  for (const [i, a] of placed.entries())
+    for (const [j, b] of placed.entries()) {
       if (j <= i) continue;
       const apart =
         a.x + NODE_WIDTH <= b.x ||
@@ -86,6 +87,7 @@ test("each class or interface is a node of its stereotype, name, and members, pl
 async function nearTexts(page: Page, id: string): Promise<string[]> {
   return page.evaluate(async (wanted) => {
     const node = window.uml.exampleGraph().nodes.find((each) => each.id === wanted)!;
+    if (node.x === undefined || node.y === undefined) throw new Error(`${wanted} rides a border`);
     window.uml.comb.setViewport({ x: 100 - node.x, y: 100 - node.y, scale: 1 });
     await window.uml.comb.whenRendered();
     const drawn = window.uml.inspect().nodes.find((each) => each.id === wanted)!;
@@ -155,9 +157,11 @@ test("the labels of dependencies, aggregations, and compositions are drawn on th
     const drawn: [string, string][] = [];
     // Each labelled edge in turn, its label in the middle of the canvas at scale 1.
     for (const edge of graph.edges.filter((each) => each.labels?.length)) {
-      const [source, target] = [edge.source, edge.target].map((id) =>
-        graph.nodes.find((node) => node.id === id)!,
-      );
+      const [source, target] = [edge.source, edge.target].map((id) => {
+        const node = graph.nodes.find((each) => each.id === id)!;
+        if (node.x === undefined || node.y === undefined) throw new Error(`${id} rides a border`);
+        return { x: node.x, y: node.y };
+      });
       const x = (source!.x + target!.x) / 2;
       const y = (source!.y + target!.y) / 2;
       window.uml.comb.setViewport({ x: 400 - x, y: 300 - y, scale: 1 });

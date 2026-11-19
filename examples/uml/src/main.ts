@@ -6,21 +6,15 @@ import {
   createComb,
   type Comb,
   type GraphData,
-  type NodeContent,
-  type NodeShape,
-  type PlacedNodeData,
+  type NodeData,
   type Proposal,
+  type Side,
 } from "comb";
 import engineUrl from "comb/engine.wasm?url";
 import { inspect, screenPoint, type SceneSnapshot } from "comb/testing";
 import { CLASS_DIAGRAM } from "./class-diagram";
 import { PACKAGE_DIAGRAM } from "./package-diagram";
-import {
-  contentOf as stateContentOf,
-  newState,
-  STATE_DIAGRAM,
-  STATE_SHAPES,
-} from "./state-diagram";
+import { BORDER_KINDS, newState, nodesOf, STATE_DIAGRAM, type Place } from "./state-diagram";
 import { Diagram } from "./diagram";
 import { element } from "./element";
 import { fillLegend } from "./legend";
@@ -36,6 +30,7 @@ import {
   type DiagramDescriptor,
   type NodeKind,
   type State,
+  type StateKind,
 } from "./shared";
 import { Sidebar } from "./sidebar";
 
@@ -51,9 +46,8 @@ export interface UmlLoadReport {
 export interface UmlHooks {
   comb: Comb;
   loadReport: Promise<UmlLoadReport>;
-  /** The example's copy of the diagram's graph, whose diagrams place every node and attach none
-   *  as a border node. */
-  exampleGraph: () => { nodes: PlacedNodeData[]; edges: GraphData["edges"] };
+  /** The example's copy of the diagram's graph, a border node among its nodes as Comb took it. */
+  exampleGraph: () => GraphData;
   /** The kind of each relationship of the diagram, by its edge's identifier. */
   edgeKinds: () => Record<string, RelationshipKind>;
   /** The kind of each node the example keeps a classifier or a state of, by its identifier. */
@@ -83,10 +77,12 @@ let connected = 0;
 const DIAGRAMS = [CLASS_DIAGRAM, PACKAGE_DIAGRAM, STATE_DIAGRAM] as const;
 
 /** Names the user's connection where the rules allow the kind a connection adds between its
- *  ends; refuses it otherwise. */
+ *  ends; refuses it otherwise, and the sidebar says why. */
 function canConnect({ source, target }: Proposal): string | false {
-  const kind = diagram.descriptor.connected;
-  if (!diagram.allows(source, target, kind)) return false;
+  const kind = diagram.connectedKind(source);
+  const why = diagram.refusal(source, target, kind);
+  sidebar.refused(why ?? null);
+  if (why !== undefined) return false;
   connected += 1;
   return `${source}-${kind}-${target}-${connected}`;
 }
@@ -97,7 +93,7 @@ const comb = await createComb(element("canvas"), {
   engine: fetch(engineUrl),
   allowLoops: true,
   canConnect,
-  canDelete: () => true,
+  canDelete: ({ nodes }) => diagram.deletable(nodes),
 });
 const diagram = new Diagram(comb, DIAGRAMS[0]);
 const sidebar = new Sidebar(diagram);
@@ -151,6 +147,7 @@ async function load(): Promise<UmlLoadReport> {
   for (const item of paletteItems) item.hidden = item.dataset.diagram !== shown;
   palette.hidden = paletteItems.every((item) => item.hidden);
   legend.hidden = !descriptor.legend;
+  sidebar.refused(null);
   fillLegend(legendKinds, descriptor.labels);
   counted();
   comb.fitView();
@@ -162,55 +159,91 @@ choice.addEventListener("change", () => {
   window.uml.loadReport = load();
 });
 
-/** The content, width, and node shape of a node the palette drops. */
-interface DroppedNode {
-  content: NodeContent;
-  width: number;
-  shape?: NodeShape;
-}
-
-/** What the palette drops of `kind` as node `id`: the node's content, width, and node shape, and
- *  its classifier or its state; none for a kind the palette lacks. */
+/** What the palette drops of `kind` as node `id` with its centre at the world point (`x`, `y`):
+ *  the nodes Comb adds, and the classifier or the state the diagram keeps of the first of them;
+ *  none for a kind the palette lacks, or for a point dropped on no node whose border it rides. A
+ *  node of the state diagram lands in the deepest container or region under the point, a point on
+ *  the side of the node under it nearest the point, at the point's offset along that side. */
 function droppedOf(
   kind: string,
   id: string,
-): { node: DroppedNode; classifier?: Classifier; state?: State } | undefined {
+  x: number,
+  y: number,
+): { nodes: NodeData[]; classifier?: Classifier; state?: State } | undefined {
   const classifierKind = CLASSIFIER_KINDS.find((each) => each === kind);
+  const heightOf: Comb["heightOf"] = (content, width, shape) =>
+    comb.heightOf(content, width, shape);
   if (classifierKind) {
     const classifier = newClassifier(id, classifierKind);
-    return { node: { content: contentOf(classifier), width: NODE_WIDTH }, classifier };
+    const content = contentOf(classifier);
+    const node = {
+      id,
+      x: x - NODE_WIDTH / 2,
+      y: y - heightOf(content, NODE_WIDTH) / 2,
+      width: NODE_WIDTH,
+      content,
+    };
+    return { nodes: [node], classifier };
   }
   const stateKind = STATE_KINDS.find((each) => each === kind);
   if (!stateKind) return undefined;
   const state = newState(id, stateKind);
-  return { node: { content: stateContentOf(state), ...STATE_SHAPES[stateKind] }, state };
+  const place = placeOf(stateKind, x, y);
+  return place && { nodes: nodesOf(state, place, heightOf), state };
 }
 
-/** Adds a node of the palette's `kind`, a classifier or a state, centred by the height Comb gives
- *  its content and node shape on the world point under the drop at (`clientX`, `clientY`) of the
- *  page (G-1, API-host-asks-content-height). The classifier or the state is the diagram's once Comb
- *  took the node, and
- *  never where Comb refuses it. */
+/** Where a node of the state diagram of `kind` dropped at the world point (`x`, `y`) lies: a
+ *  point on the nearest side of the node under it that it may ride, none where there is none;
+ *  any other in the deepest container or region under it, by its centre there. */
+function placeOf(kind: StateKind, x: number, y: number): Place | undefined {
+  const owners = BORDER_KINDS[kind];
+  if (owners) {
+    const owner = diagram.deepestAt(x, y, (each) =>
+      owners.includes(diagram.kindOf(each) as StateKind),
+    );
+    if (owner === undefined) return undefined;
+    const box = diagram.box(owner)!;
+    const sides: [Side, number, number][] = [
+      ["top", y - box.y, x - box.x],
+      ["bottom", box.y + box.height - y, x - box.x],
+      ["left", x - box.x, y - box.y],
+      ["right", box.x + box.width - x, y - box.y],
+    ];
+    const [side, , offset] = sides.reduce((nearest, each) =>
+      each[1] < nearest[1] ? each : nearest,
+    );
+    const length = side === "top" || side === "bottom" ? box.width : box.height;
+    return { attachedTo: owner, side, offset, length };
+  }
+  const holder = diagram.deepestAt(x, y, (each) => {
+    const node = diagram.node(each);
+    return node === undefined || (node.isContainer === true && node.regions === undefined);
+  });
+  if (holder === undefined) return { x, y };
+  const box = diagram.box(holder)!;
+  return { x: x - box.x, y: y - box.y, container: holder };
+}
+
+/** Adds the nodes the palette drops of `kind`, a classifier or a state, centred by the height
+ *  Comb gives its content and node shape on the world point under the drop at (`clientX`,
+ *  `clientY`) of the page, or a point on the border nearest it (G-1, API-host-asks-content-height).
+ *  The classifier or the state is the diagram's once Comb took its nodes, and never where Comb
+ *  refuses them. */
 function drop(kind: string, clientX: number, clientY: number): void {
   const number = (dropped.get(kind) ?? 0) + 1;
   const id = `${kind}-${number}`;
-  const added = droppedOf(kind, id);
+  const { x, y } = comb.worldPointAt(clientX, clientY);
+  const added = droppedOf(kind, id, x, y);
   if (!added) return;
   dropped.set(kind, number);
-  const { x, y } = comb.worldPointAt(clientX, clientY);
-  const { content, width, shape } = added.node;
   try {
-    comb.addNode({
-      id,
-      x: x - width / 2,
-      y: y - comb.heightOf(content, width, shape) / 2,
-      width,
-      content,
-      ...(shape ? { shape } : {}),
-    });
+    for (const node of added.nodes) comb.addNode(node);
   } catch (error) {
-    // A lost engine, or a node past the limits of a load: the drop adds nothing.
+    // A lost engine, or a node past the limits of a load: the drop adds nothing, and what of it
+    // Comb took goes again.
     console.warn("uml: the dropped node was not added", error);
+    const taken = added.nodes.filter((node) => diagram.node(node.id)).map((node) => node.id);
+    if (taken.length > 0) comb.removeNodes(taken);
     return;
   }
   if (added.classifier) diagram.classifiers.set(id, added.classifier);
@@ -238,8 +271,7 @@ comb.onSelectionChange((selection) => sidebar.show(selection));
 window.uml = {
   comb,
   loadReport: load(),
-  exampleGraph: () =>
-    structuredClone(diagram.graph) as { nodes: PlacedNodeData[]; edges: GraphData["edges"] },
+  exampleGraph: () => structuredClone(diagram.graph),
   edgeKinds: () => Object.fromEntries(diagram.kinds),
   nodeKinds: () =>
     Object.fromEntries(

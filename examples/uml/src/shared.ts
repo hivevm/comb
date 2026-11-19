@@ -1,7 +1,8 @@
 // What more than one diagram of the UML example (G-12) uses, so that no diagram's file imports
 // another's, nor this module any diagram's: a diagram as data, the descriptor of a diagram, the
 // kinds of node, which the rules of connection import, the classifier a node of the class or the
-// package diagram shows, the state a node of the state diagram shows, the classifier's content,
+// package diagram shows, the state a node of the state diagram shows and the transition an edge of
+// it carries, the classifier's content,
 // and the layout by rows of the class and the package diagram. A classifier keeps its kind, set
 // when it is created, from the diagram's data or the palette; its stereotype is text it shows and
 // tells nothing of its kind.
@@ -12,9 +13,16 @@ import type { RelationshipKind } from "./relationships";
 export const CLASSIFIER_KINDS = ["class", "interface", "abstract-class", "package"] as const;
 export type ClassifierKind = (typeof CLASSIFIER_KINDS)[number];
 
-/** The kinds of state of the state diagram: a state, and the pseudostates where its machine
- *  starts, where it ends, and where it chooses. */
-export const STATE_KINDS = ["state", "initial", "final", "choice"] as const;
+/** The kinds of node of the state diagram (G-20): its states, a state list, which stands for
+ *  states, its final state and its pseudostates, the connection point references of a submachine
+ *  state, the send and receive signal symbols of a transition, a comment, and the frame of the
+ *  state machine. */
+export const STATE_KINDS = [
+  ...["state", "composite", "submachine", "state-list", "final"],
+  ...["initial", "terminate", "choice", "junction", "fork", "join"],
+  ...["shallow-history", "deep-history", "entry-point", "exit-point"],
+  ...["entry-reference", "exit-reference", "send-signal", "receive-signal", "comment", "frame"],
+] as const;
 export type StateKind = (typeof STATE_KINDS)[number];
 
 /** The kinds of node: the kinds of classifier and the kinds of state. */
@@ -32,33 +40,52 @@ export interface Classifier {
   operations: string[];
 }
 
-/** A state or a pseudostate, as its node shows it: its kind, and a state's name, none for a
- *  pseudostate. */
+/** A node of the state diagram, as its node shows it: its kind; the name of a state, a point, a
+ *  signal, or the state machine, the states of a state list; a state's entry, do, and exit
+ *  behaviours, its internal transitions, and its deferred triggers; the state machine a
+ *  submachine state refers to; and the lines of a comment. */
 export interface State {
   id: string;
   kind: StateKind;
   name?: string;
+  entry?: string;
+  doActivity?: string;
+  exit?: string;
+  internal?: string[];
+  deferred?: string[];
+  machine?: string;
+  body?: string[];
 }
 
-/** A diagram as graph data, with the classifier or the state of each node and the kind of each
- *  edge by their identifiers. */
+/** What a transition shows in its label: its trigger, its guard, and its effect. */
+export interface Transition {
+  trigger?: string;
+  guard?: string;
+  effect?: string;
+}
+
+/** A diagram as graph data, with the classifier or the state of each node, the kind of each
+ *  edge, and the trigger, guard, and effect of each transition, by their identifiers. */
 export interface DiagramData {
   graph: GraphData;
   classifiers: Map<string, Classifier>;
   states: Map<string, State>;
   kinds: Map<string, RelationshipKind>;
+  transitions: Map<string, Transition>;
 }
 
 /** An edge as Comb tells its addition, its colour, arrowhead, and sides filled in. */
 export type AddedEdge = Extract<GraphChange, { kind: "edgeAdded" }>["edge"];
 
-/** What the sidebar edits of a selected node: a classifier's name, stereotype, and members, a
- *  name alone, or nothing. */
-export type NodeForm = "classifier" | "name" | "none";
+/** What the sidebar edits of a selected node: a classifier's name, stereotype, and members; a
+ *  name alone; a state's name and its behaviours, internal transitions, and deferred triggers; a
+ *  submachine state's name and the state machine it refers to; the lines of a comment; or
+ *  nothing. */
+export type NodeForm = "classifier" | "name" | "behaviours" | "name-and-machine" | "lines" | "none";
 
 /** What the sidebar edits of a selected edge: a relationship's kind and label, a dependency's
- *  «import» or «use», or a transition's event. */
-export type EdgeForm = "relationship" | "import-or-use" | "event";
+ *  «import» or «use», a transition's trigger, guard, and effect, or nothing. */
+export type EdgeForm = "relationship" | "import-or-use" | "trigger-guard-effect" | "none";
 
 /** What makes a diagram of the example what it is, in one place: its identifier and its name in
  *  the choice of diagram, how it is built, what its count names, the kinds of node the palette
@@ -75,9 +102,13 @@ export interface DiagramDescriptor {
   nouns: readonly [string, string];
   nodes: readonly { kind: NodeKind; name: string; form: NodeForm }[];
   connected: RelationshipKind;
+  /** The kind a connection adds from a node of a kind that adds another than `connected`. */
+  connectedFrom?: Partial<Record<NodeKind, RelationshipKind>>;
   /** The sides of an edge the user connected, none where it keeps those it was connected by. */
   docking?: (edge: AddedEdge) => EdgePatch;
   edgeForm: EdgeForm;
+  /** The form of an edge of a kind the diagram edits otherwise than by `edgeForm`. */
+  edgeForms?: Partial<Record<RelationshipKind, EdgeForm>>;
   selected: { node: string; edge: string };
   legend: boolean;
   labels?: Partial<Record<RelationshipKind, readonly string[]>>;

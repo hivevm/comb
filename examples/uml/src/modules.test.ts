@@ -39,11 +39,14 @@ test("the lookup of an element of the page is written once", () => {
  *  the glossary, not read from the example. */
 const RELATIONSHIP_KINDS = [
   ...["association", "directed-association", "generalization", "realization", "dependency"],
-  ...["aggregation", "composition", "transition"],
+  ...["aggregation", "composition", "transition", "anchor"],
 ];
 const KINDS = [
   ...["class", "interface", "abstract-class", "package"],
-  ...["state", "initial", "final", "choice"],
+  ...["state", "composite", "submachine", "state-list", "final"],
+  ...["initial", "terminate", "choice", "junction", "fork", "join"],
+  ...["shallow-history", "deep-history", "entry-point", "exit-point"],
+  ...["entry-reference", "exit-reference", "send-signal", "receive-signal", "comment", "frame"],
   ...RELATIONSHIP_KINDS,
 ];
 

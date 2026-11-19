@@ -296,6 +296,7 @@ export function classDiagram(heightOf: Comb["heightOf"]): DiagramData {
     graph: { nodes: CLASSIFIERS.map(({ id }) => byId.get(id)!), edges },
     classifiers,
     states: new Map(),
+    transitions: new Map(),
     kinds: new Map(RELATIONSHIPS.map((each, i) => [edges[i]!.id, each.kind])),
   };
 }

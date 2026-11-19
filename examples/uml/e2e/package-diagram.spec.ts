@@ -3,7 +3,7 @@
 // label «import» or «use», which the legend names, and the class diagram kept while the package
 // diagram is shown.
 import { expect, test, type Page } from "@playwright/test";
-import { DRAWN, open, setViewport } from "./shared";
+import { DRAWN, open, placedNodes, setViewport } from "./shared";
 
 /** Comb's modules and crates, as the package diagram names them. */
 const PACKAGES = ["api", "bridge", "store", "interaction", "render", "engine-wasm", "engine"];
@@ -63,7 +63,7 @@ test("the package diagram shows only Comb's modules and crates, each a «package
     edges: graph.edges.map(({ id }) => id).sort(),
   });
   for (const name of PACKAGES) {
-    const node = graph.nodes.find(({ id }) => id === name)!;
+    const node = placedNodes(graph.nodes).find(({ id }) => id === name)!;
     await setViewport(page, { x: 100 - node.x, y: 100 - node.y, scale: 1 });
     const texts = await page.evaluate(
       (wanted) => window.uml.inspect().nodes.find(({ id }) => id === wanted)!.texts!,

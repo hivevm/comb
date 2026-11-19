@@ -9,6 +9,8 @@ body {
 body {
   display: grid;
   grid-template-columns: 1fr 280px;
+  /* One row as high as the window: the sidebar scrolls within it, never the page with the canvas. */
+  grid-template-rows: minmax(0, 1fr);
 }
 
 #canvas {
@@ -24,6 +26,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  overflow-y: auto;
 }
 
 #sidebar h1 {
