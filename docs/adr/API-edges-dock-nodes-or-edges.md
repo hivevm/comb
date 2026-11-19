@@ -74,10 +74,19 @@ side of the node.
 - **An end on an edge** lies at the point of that edge's path at its path parameter, and its
   control point lies on that path's normal there, on the side of the edge's other end, at the
   distance rule of the path between two nodes. It moves as that edge's path moves.
-- **An end on a container toward a node it holds** that docks on the outline lies where the line
-  from the container's centre through the centre of the node at the other end, continued past
-  it, crosses the container's outline. An end on a side docks at that side's connector, as on any
-  node.
+- **An end on a container toward a node it holds:**
+  - This rule covers an edge between a container and a node it holds, at any depth.
+  - Both ends of that edge dock on the outline.
+  - The container's end lies where the line from the container's centre through the held node's
+    centre, continued past it, crosses the container's outline.
+  - The held node's end lies where that line crosses the held node's outline on the side of the
+    container's end.
+  - Each control point lies on that line between the two ends, half the distance between them
+    from its own end.
+  - The path therefore runs straight and stays inside the container.
+  - Where the two centres coincide, the line runs to the right, along +x.
+  - An end on a side docks at that side's connector, as on any node, and the path between two
+    nodes holds; where the two centres coincide, its end on the outline looks to the right.
 - **The path between two nodes:**
   - With both ends on a side, the path is API-one-connector-per-side's. It starts at the connector
     of the source's
