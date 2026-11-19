@@ -35,7 +35,7 @@ test("the example's copy holds a dragged node's position, its new title, and its
       window.comb.updateNode(star, {
         content: [[{ kind: "text", role: "title", text: "North star" }]],
       });
-      window.comb.updateEdge(edgeId, { color: 0x3366cc, dash: [6, 4], label: null });
+      window.comb.updateEdge(edgeId, { color: 0x3366cc, dash: [6, 4], labels: null });
     },
     { northStar, edge },
   );
@@ -52,5 +52,5 @@ test("the example's copy holds a dragged node's position, its new title, and its
   );
   expect(copy.node).toMatchObject({ x: drawn.x, y: drawn.y, content: titled("North star") });
   expect(copy.edge).toMatchObject({ color: 0x3366cc, dash: [6, 4] });
-  expect(copy.edge?.label).toBeUndefined();
+  expect(copy.edge?.labels).toBeUndefined();
 });

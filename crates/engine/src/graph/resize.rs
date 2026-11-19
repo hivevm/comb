@@ -277,7 +277,7 @@ mod tests {
                     source: Dock::Outline,
                     target: Dock::Outline,
                 },
-                label: None,
+                labels: Vec::new(),
                 style: EdgeStyle::unstyled(),
             }],
             Nesting {

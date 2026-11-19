@@ -27,7 +27,7 @@ test("addEdge draws the edge with its colour, dash, and label, and tells edgeAdd
     target: "b",
     color: RED,
     dash: [8, 8],
-    label: { text: "+0.8", t: 0.5, offset: 0 },
+    labels: [{ id: "w", text: "+0.8", t: 0.5, offset: 0 }],
   };
   await page.evaluate((added) => window.comb.addEdge(added), edge);
   expect(await told(page)).toEqual([
@@ -53,6 +53,102 @@ test("addEdge draws the edge with its colour, dash, and label, and tells edgeAdd
   expect(errors).toEqual([]);
 });
 
+test("a label without a place arrives in edgeAdded and edgeUpdated at 0.5 and 0, and one without a background with none", async ({
+  page,
+}) => {
+  // Verifies: API-edges-dock-nodes-or-edges, API-edits-report-nested-changes
+  await open(page);
+  await loaded(page, PAIR);
+  const bare = { id: "m", text: "name" };
+  const edge: EdgeData = { id: "a-b", source: "a", target: "b", color: RED, labels: [bare] };
+  await page.evaluate((added) => window.comb.addEdge(added), edge);
+  const patch = { color: BLUE, labels: [{ ...bare, t: 0.25 }] };
+  await page.evaluate((changes) => window.comb.updateEdge("a-b", changes), patch);
+  const [added, updated] = await told<{ edge?: EdgeData; patch?: { labels: object[] } }>(page);
+  // No background filled in: the label follows its edge's colour (decided on 2026-11-19).
+  expect(added!.edge!.labels).toStrictEqual([{ ...bare, t: 0.5, offset: 0 }]);
+  // The patch's list replaces the edge's whole.
+  expect(updated!.patch!.labels).toStrictEqual([{ ...bare, t: 0.25, offset: 0 }]);
+});
+
+test("an edge of a colour of the wrong kind with a label without a background is refused as invalidColor", async ({
+  page,
+}) => {
+  // Verifies: API-edges-dock-nodes-or-edges, Q-7
+  await open(page);
+  await loaded(page, PAIR);
+  const refused = await page.evaluate(() => {
+    const labels = [{ id: "m", text: "name" }];
+    const kinds: unknown[] = [];
+    for (const call of [
+      () => window.comb.addEdge({ id: "a-b", source: "a", target: "b", color: 1.5, labels }),
+      () =>
+        window.comb.load({
+          nodes: [window.node("a"), window.node("b", 600)],
+          edges: [{ id: "a-b", source: "a", target: "b", color: -1, labels }],
+        }),
+    ]) {
+      try {
+        call();
+        kinds.push(null);
+      } catch (error) {
+        kinds.push((error as Error & { problem: { kind: string } }).problem.kind);
+      }
+    }
+    return kinds;
+  });
+  expect(refused).toEqual(["invalidColor", "invalidColor"]);
+});
+
+test("recolouring an edge recolours the pill of its label without a background", async ({
+  page,
+}) => {
+  // Verifies: API-edges-dock-nodes-or-edges, G-5
+  await open(page);
+  await loaded(page, PAIR);
+  // A label of one character at (410, 32): 8 above its point lies on its pill, 11 high either
+  // side, off its text and off the edge's stroke beneath.
+  const edge: EdgeData = {
+    id: "a-b",
+    source: "a",
+    target: "b",
+    color: RED,
+    labels: [{ id: "m", text: "." }],
+  };
+  await page.evaluate((added) => window.comb.addEdge(added), edge);
+  const pill = async () => {
+    await page.evaluate(async () => {
+      window.showLayers({ nodes: false, edgeLabels: true });
+      await window.comb.whenRendered();
+    });
+    const png = await page.locator("#canvas canvas").screenshot();
+    return page.evaluate(async (shot) => {
+      const bytes = Uint8Array.from(atob(shot), (char) => char.charCodeAt(0));
+      const image = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+      const ratio = image.width / document.querySelector("#canvas canvas")!.clientWidth;
+      const copy = document.createElement("canvas");
+      [copy.width, copy.height] = [image.width, image.height];
+      const context = copy.getContext("2d")!;
+      context.drawImage(image, 0, 0);
+      const at = window.screenPoint(405, 24);
+      const { data } = context.getImageData(
+        Math.floor(at.x * ratio),
+        Math.floor(at.y * ratio),
+        1,
+        1,
+      );
+      return (data[0]! << 16) | (data[1]! << 8) | data[2]!;
+    }, png.toString("base64"));
+  };
+  const near = (color: number, want: number) =>
+    [16, 8, 0].every(
+      (shift) => Math.abs(((color >> shift) & 0xff) - ((want >> shift) & 0xff)) < 40,
+    );
+  expect(near(await pill(), RED)).toBe(true);
+  await page.evaluate(() => window.comb.updateEdge("a-b", { color: 0x1d4ed8 }));
+  expect(near(await pill(), 0x1d4ed8)).toBe(true);
+});
+
 /** Node `a` at (0, 300), 220 × 64, and `b` beside it: a loop on `a`'s top leaves it at (55, 300),
  *  re-enters at (165, 300), and reaches up to (110, 135), its control points 220 out. */
 const LOOPED: GraphData = { nodes: [node("a", 0, 300), node("b", 600, 300)], edges: [] };
@@ -61,7 +157,7 @@ const LOOP: EdgeData = {
   source: "a",
   target: "a",
   color: RED,
-  label: { text: "edit", t: 0.5, offset: 0 },
+  labels: [{ id: "e", text: "edit", t: 0.5, offset: 0 }],
 };
 
 /** Whether the canvas draws `color` within a pixel of each of the world points `points`, read off
@@ -173,7 +269,8 @@ test("updateEdge recolours an edge, clears its dash, moves its label, and tells 
   await loaded(page, PAIR);
   const edge = { id: "a-b", source: "a", target: "b", color: RED, dash: [8, 8] as const };
   await page.evaluate((added) => window.comb.addEdge(added), edge);
-  const patch = { color: BLUE, dash: null, label: { text: "moved", t: 0.25, offset: 0 } };
+  const label = { id: "m", text: "moved", t: 0.25, offset: 0 };
+  const patch = { color: BLUE, dash: null, labels: [label] };
   await page.evaluate((changes) => window.comb.updateEdge("a-b", changes), patch);
   expect((await told(page)).slice(1)).toEqual([
     { kind: "edgeUpdated", by: "host", id: "a-b", patch },
@@ -191,8 +288,8 @@ test("updateEdge recolours an edge, clears its dash, moves its label, and tells 
   // Solid: nearly every pixel of the 341, where the dash of 8 and 8 drew about half.
   expect(stroke.drawn).toBeGreaterThan(300);
   expect((await strokeOf(page, RED)).drawn).toBe(0);
-  // A label cleared with null is drawn no more.
-  await page.evaluate(() => window.comb.updateEdge("a-b", { label: null }));
+  // Labels cleared with null are drawn no more.
+  await page.evaluate(() => window.comb.updateEdge("a-b", { labels: null }));
   const after = await page.evaluate(async () => {
     await window.comb.whenRendered();
     return window.inspect().edgeLabels.length;
@@ -261,8 +358,13 @@ const REFUSED: { name: string; call: [string, unknown[]]; problem: unknown }[] =
   },
   {
     name: "a patch of a label text of the wrong type",
-    call: ["updateEdge", ["a-b", { label: { text: 5, t: 0.5, offset: 0 } }]],
-    problem: { kind: "invalidLabelText", edge: "a-b" },
+    call: ["updateEdge", ["a-b", { labels: [{ id: "m", text: 5, t: 0.5, offset: 0 }] }]],
+    problem: { kind: "invalidLabelText", edge: "a-b", label: "m" },
+  },
+  {
+    name: "a patch that still sets label, which labels replaced",
+    call: ["updateEdge", ["a-b", { label: { text: "x", t: 0.5, offset: 0 } }]],
+    problem: { kind: "unknownEdgePatchField", edge: "a-b", field: "label" },
   },
   {
     name: "a patch that is no plain object",
@@ -336,7 +438,7 @@ test("a patch of one field keeps the label and the dash, and moves a label the e
     target: "b",
     color: RED,
     dash: [8, 8] as const,
-    label: { text: "kept", t: 0.5, offset: 0 },
+    labels: [{ id: "k", text: "kept", t: 0.5, offset: 0 }],
   };
   await page.evaluate((added) => window.comb.addEdge(added), edge);
   await page.evaluate(() => window.comb.updateEdge("a-b", { arrow: "none" }));
@@ -348,7 +450,7 @@ test("a patch of one field keeps the label and the dash, and moves a label the e
   expect(await labels()).toEqual([{ text: "kept", x: 410 }]);
   expect((await strokeOf(page, RED)).runs).toBeGreaterThan(10);
   await page.evaluate(() =>
-    window.comb.updateEdge("a-b", { label: { text: "kept", t: 0.25, offset: 0 } }),
+    window.comb.updateEdge("a-b", { labels: [{ id: "k", text: "kept", t: 0.25, offset: 0 }] }),
   );
   expect(await labels()).toEqual([{ text: "kept", x: 332.8125 }]);
   // A patch that sets nothing tells nothing.
@@ -404,16 +506,16 @@ test("a listener that writes into a delivered change reaches nothing Comb keeps"
   await loaded(page, PAIR);
   await page.evaluate(() => {
     window.comb.onChange((change) => {
-      if (change.kind === "edgeUpdated" && change.patch.label)
-        (change.patch.label as { text: string }).text = "written by a listener";
-      if (change.kind === "edgeAdded" && change.edge.label)
-        (change.edge.label as { text: string }).text = "written by a listener";
+      if (change.kind === "edgeUpdated" && change.patch.labels)
+        (change.patch.labels[0] as { text: string }).text = "written by a listener";
+      if (change.kind === "edgeAdded" && change.edge.labels)
+        (change.edge.labels[0] as { text: string }).text = "written by a listener";
     });
     window.comb.addEdge({
       id: "a-b",
       source: "a",
       target: "b",
-      label: { text: "one", t: 0.5, offset: 0 },
+      labels: [{ id: "m", text: "one", t: 0.5, offset: 0 }],
     });
   });
   const first = await page.evaluate(async () => {
@@ -421,7 +523,7 @@ test("a listener that writes into a delivered change reaches nothing Comb keeps"
     return window.inspect().edgeLabels.map(({ text }) => text);
   });
   await page.evaluate(() =>
-    window.comb.updateEdge("a-b", { label: { text: "two", t: 0.5, offset: 0 } }),
+    window.comb.updateEdge("a-b", { labels: [{ id: "m", text: "two", t: 0.5, offset: 0 }] }),
   );
   const second = await page.evaluate(async () => {
     await window.comb.whenRendered();

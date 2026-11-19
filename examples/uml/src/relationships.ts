@@ -1,10 +1,11 @@
-// The kinds of relationship of the class diagram and how each is drawn (G-12, G-11). Comb draws an
-// edge in one colour, solid or dashed, with an arrowhead at its target or none, and with one label;
-// it has no hollow triangle, no diamond, and no arrowhead at the source. So each kind is told by a
-// family of colour, its dash pattern, and its arrowhead, and by its label where those cannot tell
-// it; docs/CONVENTIONS.md records the mapping, and the sidebar's legend lists it. The state
-// diagram's transition is a kind of its own, drawn grey with an arrowhead. The label of an edge of
-// any kind is built here, by `labelOf`, and so is the label a change of kind leaves, by `patchOf`.
+// The kinds of relationship of the class diagram and how each is drawn (G-12, G-11). The example
+// draws an edge in one colour, solid or dashed, with a filled arrowhead at its target or none, and
+// with a list of one label, `kind`; Comb has no diamond and no arrowhead at the source. So each
+// kind is told by a family of colour, its dash pattern, and its arrowhead, and by its label where
+// those cannot tell it; docs/CONVENTIONS.md records the mapping, and the sidebar's legend lists it.
+// The state diagram's transition is a kind of its own, drawn grey with an arrowhead. The label of
+// an edge of any kind is built here, by `labelOf`, and so is the label a change of kind leaves, by
+// `patchOf`.
 import type { EdgeData, EdgeLabelData, EdgePatch } from "comb";
 
 /** The colour families, each dark enough that the white text Comb draws on a label in it has a
@@ -77,6 +78,10 @@ export const KINDS = (Object.keys(RELATIONSHIPS) as RelationshipKind[]).filter(
   (kind) => RELATIONSHIPS[kind].listed !== false,
 );
 
+/** The identifier of the one label an edge of the example carries
+ *  (API-edges-dock-nodes-or-edges). */
+export const LABEL = "kind";
+
 /** The label of an edge of `kind` that reads `text`, on a pill of the kind's colour, standing where
  *  `current`, the label the edge has, stands, or else where the kind places it. */
 export function labelOf(
@@ -85,19 +90,24 @@ export function labelOf(
   current?: EdgeLabelData,
 ): EdgeLabelData {
   const { color, place } = RELATIONSHIPS[kind];
-  return { t: 0.5, offset: 0, ...place, ...current, background: color, text };
+  return { id: LABEL, t: 0.5, offset: 0, ...place, ...current, background: color, text };
 }
 
-/** The fields of an edge of `kind` that draw it, its label where the kind has one. */
+/** The one label of `edge`, or none. */
+export const labelIn = (edge: Pick<EdgeData, "labels"> | undefined): EdgeLabelData | undefined =>
+  edge?.labels?.[0];
+
+/** The fields of an edge of `kind` that draw it, its labels a list of one where the kind has a
+ *  label. */
 export function styleOf(
   kind: RelationshipKind,
-): Pick<EdgeData, "color" | "dash" | "arrow" | "label"> {
+): Pick<EdgeData, "color" | "dash" | "arrow" | "labels"> {
   const { color, dash, arrow, label } = RELATIONSHIPS[kind];
   return {
     color,
     arrow,
     ...(dash ? { dash } : {}),
-    ...(label ? { label: labelOf(kind, label) } : {}),
+    ...(label ? { labels: [labelOf(kind, label)] } : {}),
   };
 }
 
@@ -110,7 +120,7 @@ export function patchOf(
   to: RelationshipKind,
   current?: EdgeLabelData,
 ): EdgePatch {
-  const { color, arrow, dash = null, label = null } = styleOf(to);
+  const { color, arrow, dash = null, labels = null } = styleOf(to);
   const typed = current !== undefined && current.text !== RELATIONSHIPS[kind].label;
-  return { color, arrow, dash, label: typed ? labelOf(to, current.text, current) : label };
+  return { color, arrow, dash, labels: typed ? [labelOf(to, current.text, current)] : labels };
 }

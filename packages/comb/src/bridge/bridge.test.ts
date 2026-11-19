@@ -129,11 +129,10 @@ const graph = (nodes: readonly PlainNode[], edges: readonly object[] = [], bound
   for (const e of edges as readonly unknown[]) {
     if (typeof e !== "object" || e === null) written.noObject();
     else {
-      const { id, source, target, label, color, dash, arrow, sourceSide, targetSide } = e as Record<
-        string,
-        unknown
-      >;
-      written.edge(id, source, target, label, color, dash, arrow, sourceSide, targetSide);
+      const fields = e as Record<string, unknown>;
+      const { id, source, target, label, labels, color, dash, arrow, lightning } = fields;
+      const sides = [fields.sourceSide, fields.targetSide] as const;
+      written.edge(id, source, target, label, labels, color, dash, arrow, lightning, ...sides);
     }
   }
   return { nodes: columns.columns(), edges: written.columns() } as GraphSnapshot;
@@ -277,11 +276,18 @@ const CORRUPTIONS: { field: string; value?: unknown; problem: object }[] = [
     ["source", 5, ID],
     ["target", null, ID],
     ["color", "red", "an integer from 0 to 0xFFFFFF"],
-    ["arrow", "start", '"end" or "none"'],
-    ["label.t", "1", NUMBER],
-    ["label.offset", false, NUMBER],
+    ["arrow", "start", '"end", "open", "hollow", or "none"'],
+    ["labels.0.id", 5, ID],
   ].flatMap(([field, value, expected]) => {
-    const problem = { kind: "invalidField", list: "edges", index: 0, id: "e", field, expected };
+    const named = (field as string).replace(/^labels\.(\d)/, "labels[$1]");
+    const problem = {
+      kind: "invalidField",
+      list: "edges",
+      index: 0,
+      id: "e",
+      field: named,
+      expected,
+    };
     if (field === "id") delete (problem as { id?: string }).id;
     return [
       { field: `edge.${field}`, value, problem },
@@ -289,23 +295,28 @@ const CORRUPTIONS: { field: string; value?: unknown; problem: object }[] = [
     ];
   }),
   ...[
-    ["label", 5, "an object, or none"],
-    ["dash", [6, 4, 2], "a list of two finite numbers, or none"],
-    ["dash", ["6", 4], "a list of two finite numbers, or none"],
-  ].map(([field, value, expected]) => ({
+    ["labels.0.t", "1", "labels[0].t", "a finite number, or none"],
+    ["labels.0.offset", false, "labels[0].offset", "a finite number, or none"],
+    ["labels.0", 5, "labels[0]", "an object"],
+    ["labels", 5, "labels", "a list of edge labels, or none"],
+    ["label", 5, "label", "nothing: an edge carries labels, a list of edge labels, in its stead"],
+    ["lightning", 1, "lightning", "true or false, or none"],
+    ["dash", [6, 4, 2], "dash", "a list of two finite numbers, or none"],
+    ["dash", ["6", 4], "dash", "a list of two finite numbers, or none"],
+  ].map(([field, value, named, expected]) => ({
     field: `edge.${field}`,
     value,
-    problem: { kind: "invalidField", list: "edges", index: 0, id: "e", field, expected },
+    problem: { kind: "invalidField", list: "edges", index: 0, id: "e", field: named, expected },
   })),
   ...[{ value: 5 }, {}].map((corruption) => ({
-    field: "edge.label.text",
+    field: "edge.labels.0.text",
     ...corruption,
-    problem: { kind: "invalidLabelText", edge: "e" },
+    problem: { kind: "invalidLabelText", edge: "e", label: "m" },
   })),
   {
-    field: "edge.label.background",
+    field: "edge.labels.0.background",
     value: "red",
-    problem: { kind: "invalidBackground", edge: "e" },
+    problem: { kind: "invalidBackground", edge: "e", label: "m" },
   },
 ];
 
@@ -317,15 +328,27 @@ function unfit(): GraphSnapshot {
 }
 
 /** Nodes `a` and `b` and an edge `e` between them with every field of its own, with `path`
- *  (`node.…` for `b`, `edge.…` for `e`) set to `value`, or left out where `value` is absent. */
+ *  (`node.…` for `b`, `edge.…` for `e`, `edge.labels.0.…` for its label `m`) set to `value`, or
+ *  left out where `value` is absent. */
 function corrupted(path: string, corruption: { value?: unknown }): GraphSnapshot {
   const title: Record<string, unknown> = { kind: "text", role: "title", text: "b", weight: 1 };
   const b: Record<string, unknown> = { ...node("b", 300, 0), content: [[title]] };
-  const label: Record<string, unknown> = { text: "x", t: 0.5, offset: 0, background: 0x123456 };
-  const e: Record<string, unknown> = { ...edge("e", "a", "b"), label, dash: [6, 4] };
-  const [item, ...field] = path.split(".");
-  const inner = item === "node" ? title : label;
-  const target = field.length > 1 ? inner : item === "node" ? b : e;
+  const label: Record<string, unknown> = {
+    id: "m",
+    text: "x",
+    t: 0.5,
+    offset: 0,
+    background: 0x123456,
+  };
+  const labels: unknown[] = [label];
+  const e: Record<string, unknown> = { ...edge("e", "a", "b"), labels, dash: [6, 4] };
+  const [item, ...steps] = path.split(".");
+  const field = steps[0] === "labels" && steps.length > 1 ? steps.slice(1) : steps;
+  const inner = item === "node" ? title : field.length > 1 ? label : steps.length > 1 ? labels : e;
+  const target = (field.length > 1 || steps.length > 1 ? inner : item === "node" ? b : e) as Record<
+    string,
+    unknown
+  >;
   const name = field[field.length - 1]!;
   if ("value" in corruption) target[name] = corruption.value;
   else delete target[name];
@@ -418,6 +441,7 @@ const limits = () => ({
   rows: bridge.rowLimit(),
   columns: bridge.columnLimit(),
   segments: bridge.segmentLimit(),
+  labels: bridge.labelLimit(),
 });
 
 /** The snapshot `api/snapshot.ts` builds of `nodes` and `edges`, and the graph the store keeps. */
@@ -993,10 +1017,10 @@ describe("bridge pieces of a string column", () => {
       [e.ids, e.idBounds, ids.slice(1)],
       [e.sources, e.sourceBounds, ids.slice(0, -1)],
       [e.targets, e.targetBounds, ids.slice(1)],
-      [e.labels, e.labelBounds, ids.slice(1).map(() => "")],
+      [e.labelTexts, e.labelTextBounds, []],
     ];
     for (const [pieces, bounds, values] of columns) expectPieces(pieces, bounds, values, bound);
-    expect([n.ids.length, e.sources.length, n.content.texts.length, e.labels.length]).toEqual([
+    expect([n.ids.length, e.sources.length, n.content.texts.length, e.labelTexts.length]).toEqual([
       7, 6, 0, 0,
     ]);
     // The engine maps every identifier exactly: each edge's ends resolve to the slots of the
@@ -1253,10 +1277,10 @@ describe("bridge columns of a load's edges", () => {
     const text = "\u{1D49C}".repeat(500);
     const labelled = edgeIds.map((id) => ({
       ...edge(id, ids[0]!, ids[1]!),
-      label: { text, t: 0.5, offset: 0 },
+      labels: [{ id: "m", text }],
     }));
     const withEdges = snapshotted(nodes, labelled);
-    expect(withEdges.kept.edges.map((e) => [e.id, e.label?.text])).toEqual(
+    expect(withEdges.kept.edges.map((e) => [e.id, e.labels?.[0]?.text])).toEqual(
       edgeIds.map((id) => [id, text]),
     );
     expect(bridge.loadGraph(withEdges.snapshot)).toBe(2);
@@ -1266,10 +1290,11 @@ describe("bridge columns of a load's edges", () => {
       kind: "duplicateEdge",
       edge: edgeIds[0],
     });
-    const long = { ...labelled[1]!, label: { ...labelled[1]!.label, text: text + "x" } };
+    const long = { ...labelled[1]!, labels: [{ id: "m", text: text + "x" }] };
     expect(outcome(() => bridge.loadGraph(snapshotted(nodes, [long]).snapshot))).toEqual({
       kind: "labelTextTooLong",
       edge: edgeIds[1],
+      label: "m",
       limit: 1000,
     });
   });
@@ -1297,9 +1322,9 @@ describe("bridge columns that do not fit", () => {
     // Verifies: API-bridge-takes-serde-and-columns
     const { nodes, edges } = graph(two(), [edge("e", "a", "b")]);
     const misfits = [
-      { ...edges, refused: { index: 0, field: 12 } },
+      { ...edges, refused: { index: 0, field: 16 } },
       { ...edges, refused: { index: 1, field: 1 } },
-      { ...edges, arrow: new Uint8Array([3]) },
+      { ...edges, arrow: new Uint8Array([5]) },
       { ...edges, targetSide: new Uint8Array([SideCode.Unnamed + 1]) },
       { ...edges, gap: new Float64Array(0) },
     ];
@@ -1327,7 +1352,7 @@ describe("bridge columns that do not fit", () => {
       index: 1,
       id: "e",
       field: "arrow",
-      expected: '"end" or "none"',
+      expected: '"end", "open", "hollow", or "none"',
     });
     const unnamed = graph(two(), [{ ...edge("e", "b", "a"), targetSide: "middle" as never }]);
     expect(unnamed.edges.refused).toBeUndefined();
@@ -1347,14 +1372,33 @@ describe("bridge columns that do not fit", () => {
 const RUST =
   /::|`|\b(?:f32|f64|u8|u32|u64|i32|i64|usize|isize|str|String|Vec|Option|JsValue|serde\w*|comb_\w+|GraphBatch|NodeInput|EdgeInput|LabelInput|Arrow|[A-Z][a-z]+[A-Z]\w*)\b/;
 
+describe("bridge columns of labels that do not fit", () => {
+  test("a label's place given against its field, a lightning byte past 1, or label boundaries that miss the labels are malformed", () => {
+    // Verifies: API-bridge-columns-carry-nesting, API-edges-dock-nodes-or-edges
+    const { nodes, edges } = graph(two(), [edge("e", "a", "b")]);
+    const misfits = [
+      { ...edges, refused: { index: 0, field: EdgeField.LabelT } },
+      { ...edges, refused: { index: 0, field: EdgeField.Color, label: 0 } },
+      { ...edges, lightning: new Uint8Array([2]) },
+      { ...edges, labelBounds: new Uint32Array([0, 1]) },
+    ];
+    for (const columns of misfits) {
+      expect(outcome(() => bridge.loadGraph({ nodes, edges: columns } as never))).toStrictEqual({
+        kind: "malformed",
+        message: "the columns of the edges do not fit together",
+      });
+    }
+  });
+});
+
 describe("bridge fields the engine does not keep", () => {
   test("a title, label text, or label background of the wrong kind comes back as a typed error", () => {
     // Verifies: ARCH-one-workspace-per-example, API-bridge-takes-serde-and-columns
-    const label = (fields: object) => ({ text: "x", t: 0.5, offset: 0, ...fields });
+    const labels = (fields: object) => [{ id: "m", text: "x", t: 0.5, offset: 0, ...fields }];
     const errors = [
       graph([{ ...node("a", 0, 0), content: titled(5 as unknown as string) }]),
-      graph(two(), [{ ...edge("e", "a", "b"), label: label({ text: null }) as never }]),
-      graph(two(), [{ ...edge("e", "a", "b"), label: label({ background: -5 }) }]),
+      graph(two(), [{ ...edge("e", "a", "b"), labels: labels({ text: null }) as never }]),
+      graph(two(), [{ ...edge("e", "a", "b"), labels: labels({ background: -5 }) }]),
     ].map((batch) => {
       try {
         bridge.loadGraph(batch);
@@ -1364,8 +1408,8 @@ describe("bridge fields the engine does not keep", () => {
     });
     expect(errors).toEqual([
       { kind: "invalidContentText", node: "a", row: 0, column: 0, field: "text" },
-      { kind: "invalidLabelText", edge: "e" },
-      { kind: "invalidBackground", edge: "e" },
+      { kind: "invalidLabelText", edge: "e", label: "m" },
+      { kind: "invalidBackground", edge: "e", label: "m" },
     ]);
   });
 
@@ -1434,12 +1478,13 @@ describe("bridge query", () => {
     bridge.loadGraph(
       graph(
         [node("a", 0, 0), node("b", 200, 0)],
-        [{ ...edge("e", "a", "b"), label: { text: "x", t: 0.5, offset: 12 } }],
+        [{ ...edge("e", "a", "b"), labels: [{ id: "m", text: "x", t: 0.5, offset: 12 }] }],
       ),
     );
-    // The edge runs level from (100, 32) to (200, 32); its label sits at (150, 20).
+    // The edge runs level from (100, 32) to (200, 32); its label sits at (150, 20), found as the
+    // edge's slot and its place in its list (API-bridge-columns-carry-nesting).
     const near = bridge.query({ minX: 140, minY: -100, maxX: 160, maxY: 0 }, "near", 4, 20);
-    expect([...near.labels]).toEqual([0]);
+    expect([...near.labels]).toEqual([0, 0]);
     // The point crosses relative to the query's origin (API-bridge-takes-serde-and-columns).
     expect(near.labelPoints[0]! + near.origin.x).toBeCloseTo(150, 4);
     expect(near.labelPoints[1]! + near.origin.y).toBeCloseTo(20, 4);
@@ -1591,7 +1636,7 @@ describe("bridge removals", () => {
     bridge.removeEdges(new Uint32Array([1]));
     let refused: unknown = "accepted";
     try {
-      bridge.moveLabel(1, 300, 0);
+      bridge.moveLabel(1, 0, 300, 0);
     } catch (error) {
       refused = error;
     }
@@ -1655,7 +1700,7 @@ describe("the numbers the shell computes", () => {
     for (const bad of [Number.NaN, Infinity, -Infinity]) {
       expect(refused(() => bridge.hit(bad, 0, 1, "near", true))).toEqual(point);
       expect(refused(() => bridge.hit(0, bad, 1, "near", true))).toEqual(point);
-      expect(refused(() => bridge.moveLabel(0, bad, 0))).toEqual(point);
+      expect(refused(() => bridge.moveLabel(0, 0, bad, 0))).toEqual(point);
       expect(refused(() => bridge.hit(0, 0, bad, "near", true))).toEqual(pixel);
       expect(refused(() => bridge.query(everywhere, "near", bad, 0))).toEqual(pixel);
       expect(refused(() => bridge.translate(new Uint32Array([0]), bad, 0))).toEqual({

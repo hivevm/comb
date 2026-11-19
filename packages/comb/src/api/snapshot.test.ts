@@ -12,6 +12,7 @@ const limits = {
   rows: 8,
   columns: 6,
   segments: 8,
+  labels: 8,
 };
 
 const cases: [name: string, value: string, read: string | false][] = [
@@ -29,10 +30,10 @@ for (const [name, value, read] of cases) {
     const title = { kind: "text", role: "title", text: read };
     expect(node.snapshot).toMatchObject({ id: read, content: [[title]] });
     const edge = edgeSnapshotOf(
-      { id: value, source: "a", target: "b", label: { text: value, t: 0.5, offset: 0 } },
+      { id: value, source: "a", target: "b", labels: [{ id: value, text: value }] },
       limits,
     );
-    expect(edge.snapshot).toMatchObject({ id: read, label: { text: read } });
+    expect(edge.snapshot).toMatchObject({ id: read, labels: [{ id: read, text: read }] });
   });
 }
 

@@ -135,8 +135,10 @@ test("each relationship is drawn as the conventions draw its kind, every kind am
     expect(edge.color, edge.id).toBe(want.color);
     expect(edge.dash, edge.id).toEqual(want.dashed ? [6, 4] : undefined);
     expect(edge.arrow, edge.id).toBe(want.arrow);
-    expect(edge.label?.text, edge.id).toBe(want.label);
-    if (edge.label) expect(edge.label).toMatchObject({ t: want.t, background: want.color });
+    // A list of one label, or none (API-edges-dock-nodes-or-edges).
+    const [label, ...more] = edge.labels ?? [];
+    expect([label?.text, more.length], edge.id).toEqual([want.label, 0]);
+    if (label) expect(label).toMatchObject({ t: want.t, background: want.color });
   }
   // Every edge is drawn.
   expect(shown.sort()).toEqual(edges.map(({ id }) => id).sort());
@@ -152,7 +154,7 @@ test("the labels of dependencies, aggregations, and compositions are drawn on th
     const graph = window.uml.exampleGraph();
     const drawn: [string, string][] = [];
     // Each labelled edge in turn, its label in the middle of the canvas at scale 1.
-    for (const edge of graph.edges.filter((each) => each.label)) {
+    for (const edge of graph.edges.filter((each) => each.labels?.length)) {
       const [source, target] = [edge.source, edge.target].map((id) =>
         graph.nodes.find((node) => node.id === id)!,
       );

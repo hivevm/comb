@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::geometry::{Dock, Side, WORLD_LIMIT};
+use crate::stroke::Arrowhead;
 
 /// Sides of an edge, mostly the default, now and then any pair of the four sides and the
 /// outline (API-edges-dock-side-or-outline).
@@ -67,14 +68,8 @@ pub(super) fn random_inputs(
             sides: random_sides(rng),
             source: rng.below(nodes),
             target: rng.below(nodes),
-            label: (rng.next() < 0.5).then(|| LabelPlacement {
-                t: rng.range(-0.2, 1.2),
-                offset: rng.range(-40.0, 40.0),
-            }),
-            style: EdgeStyle {
-                arrow: rng.next() < 0.5,
-                ..EdgeStyle::unstyled()
-            },
+            labels: random_labels(rng),
+            style: random_style(rng),
         })
         .collect();
     (positions, sizes, specs)
@@ -112,7 +107,8 @@ pub(super) struct Model {
     pub(super) specs: Vec<EdgeSpec>,
     pub(super) free_nodes: Vec<bool>,
     pub(super) free_edges: Vec<bool>,
-    pub(super) pills: Vec<Option<(f64, f64)>>,
+    /// The measured pill of each label of each edge, in the order of its list.
+    pub(super) pills: Vec<Vec<Option<(f64, f64)>>>,
     pub(super) shapes: Vec<crate::shape::NodeShape>,
 }
 
@@ -132,7 +128,7 @@ impl Model {
             sizes,
             free_nodes: vec![false; nodes],
             free_edges: vec![false; edges],
-            pills: vec![None; edges],
+            pills: specs.iter().map(|s| vec![None; s.labels.len()]).collect(),
             shapes: vec![crate::shape::NodeShape::Rectangle; nodes],
             specs,
         };
@@ -160,8 +156,8 @@ impl Model {
     }
 
     pub(super) fn path(&self, edge: u32) -> EdgePath {
-        let spec = self.specs[edge as usize];
-        path_of(&spec, &self.bounds(spec.source), &self.bounds(spec.target))
+        let spec = &self.specs[edge as usize];
+        path_of(spec, &self.bounds(spec.source), &self.bounds(spec.target))
     }
 
     /// The connector a press at `p` hits where a connector reaches `reach` world units, written
@@ -203,9 +199,25 @@ impl Model {
             .max_by_key(|&(n, _, _)| n)
     }
 
-    /// The point of the label of `edge`, where it holds one.
-    pub(super) fn label_point(&self, edge: u32) -> Option<Point> {
-        let label = self.specs[edge as usize].label?;
+    /// The label whose measured pill holds `p`, of the edge in the highest slot and the last of
+    /// its labels, by testing every label (REN-node-content-in-rows).
+    pub(super) fn label_at(&self, p: Point) -> Option<(u32, u32)> {
+        self.edges()
+            .flat_map(|e| (0..self.specs[e as usize].labels.len() as u32).map(move |i| (e, i)))
+            .filter(|&(e, i)| {
+                let (Some(at), Some((w, h))) =
+                    (self.label_point(e, i), self.pills[e as usize][i as usize])
+                else {
+                    return false;
+                };
+                (p.x - at.x).abs() <= w && (p.y - at.y).abs() <= h
+            })
+            .max()
+    }
+
+    /// The point of the label at `index` of `edge`, where it holds one.
+    pub(super) fn label_point(&self, edge: u32, index: u32) -> Option<Point> {
+        let label = self.specs[edge as usize].labels.get(index as usize)?;
         Some(self.path(edge).label_position(label.t, label.offset))
     }
 
@@ -233,7 +245,7 @@ impl Model {
         for (e, spec) in self.specs.iter().enumerate() {
             if slots.contains(&spec.source) || slots.contains(&spec.target) {
                 self.free_edges[e] = true;
-                self.pills[e] = None;
+                self.pills[e].fill(None);
             }
         }
     }
@@ -242,7 +254,7 @@ impl Model {
     pub(super) fn remove_edges(&mut self, slots: &[u32]) {
         for &slot in slots {
             self.free_edges[slot as usize] = true;
-            self.pills[slot as usize] = None;
+            self.pills[slot as usize].fill(None);
         }
     }
 }
@@ -256,28 +268,30 @@ fn brute_force(graph: &Graph, rect: &Rect, reach: f64) -> (Vec<u32>, Vec<u32>, V
     let edges = (0..graph.edge_slots.count())
         .filter(|&e| graph.holds_edge(e))
         .filter(|&e| {
-            let spec = graph.edges[e as usize];
-            path_of(
-                &spec,
+            let spec = &graph.edges[e as usize];
+            let path = path_of(
+                spec,
                 &graph.node_bounds(spec.source),
                 &graph.node_bounds(spec.target),
-            )
-            .bounds()
-            .meets(rect)
+            );
+            drawn_bounds(spec, &path).meets(rect)
         })
         .collect();
     let labels = (0..graph.edge_slots.count())
         .filter(|&e| graph.holds_edge(e))
-        .filter(|&e| {
-            let spec = graph.edges[e as usize];
-            spec.label.is_some_and(|label| {
-                let path = path_of(
-                    &spec,
-                    &graph.node_bounds(spec.source),
-                    &graph.node_bounds(spec.target),
-                );
-                label_rect.contains(path.label_position(label.t, label.offset))
-            })
+        .flat_map(|e| {
+            let spec = &graph.edges[e as usize];
+            let path = path_of(
+                spec,
+                &graph.node_bounds(spec.source),
+                &graph.node_bounds(spec.target),
+            );
+            (0_u32..)
+                .zip(&spec.labels)
+                .filter(move |(_, label)| {
+                    label_rect.contains(path.label_position(label.t, label.offset))
+                })
+                .flat_map(move |(index, _)| [e, index])
         })
         .collect();
     (nodes, edges, labels)
@@ -298,7 +312,7 @@ fn assert_queries_match(graph: &mut Graph, rng: &mut Lcg) {
         assert_eq!(out.nodes, nodes, "nodes in {rect:?}");
         assert_eq!(out.edges, edges, "edges in {rect:?}");
         assert_eq!(out.labels, labels, "labels in {rect:?}");
-        assert_eq!(out.label_points.len(), out.labels.len() * 2);
+        assert_eq!(out.label_points.len(), out.labels.len());
     }
 }
 
@@ -324,7 +338,7 @@ pub(super) fn paired(edges: u32) -> Graph {
             sides: Sides::default(),
             source: 2 * i,
             target: 2 * i + 1,
-            label: None,
+            labels: Vec::new(),
             style: EdgeStyle::unstyled(),
         })
         .collect();
@@ -358,7 +372,7 @@ fn an_edge_to_a_missing_slot_is_refused() {
         sides: Sides::default(),
         source: 0,
         target: 1,
-        label: None,
+        labels: Vec::new(),
         style: EdgeStyle::unstyled(),
     }];
     let result = Graph::new(vec![0.0, 0.0], vec![1.0, 1.0], edges);
@@ -455,6 +469,44 @@ fn assert_edges_match_scan(graph: &mut Graph, rng: &mut Lcg) {
     }
 }
 
+/// The bounds of `path` as the edge `spec` is drawn: a lightning bolt's turns, which lie 6 off
+/// the path at a third and two thirds of the way from 0.45 to 0.55, taken in
+/// (API-edges-dock-nodes-or-edges).
+pub(super) fn drawn_bounds(spec: &EdgeSpec, path: &EdgePath) -> Rect {
+    let mut bounds = path.bounds();
+    if spec.style.lightning {
+        for (t, offset) in [(0.45 + 0.1 / 3.0, 6.0), (0.55 - 0.1 / 3.0, -6.0)] {
+            bounds = bounds.union(&Rect::at(path.label_position(t, offset)));
+        }
+    }
+    bounds
+}
+
+/// Random edge labels: none for half the edges, one to three for the others
+/// (API-edges-dock-nodes-or-edges, *Edge labels*).
+pub(super) fn random_labels(rng: &mut Lcg) -> Vec<LabelPlacement> {
+    (0..rng.below(6).saturating_sub(2))
+        .map(|_| LabelPlacement {
+            t: rng.range(-0.2, 1.2),
+            offset: rng.range(-40.0, 40.0),
+        })
+        .collect()
+}
+
+/// A random style: each of the four arrowheads, and a lightning bolt now and then.
+pub(super) fn random_style(rng: &mut Lcg) -> EdgeStyle {
+    EdgeStyle {
+        arrow: [
+            Arrowhead::None,
+            Arrowhead::End,
+            Arrowhead::Open,
+            Arrowhead::Hollow,
+        ][rng.below(4) as usize],
+        lightning: rng.next() < 0.25,
+        ..EdgeStyle::unstyled()
+    }
+}
+
 /// A random edge between two nodes in `drawn`, now and then from a node to itself, now and
 /// then with a label.
 fn random_edge(rng: &mut Lcg, drawn: &Drawn) -> EdgeSpec {
@@ -464,14 +516,8 @@ fn random_edge(rng: &mut Lcg, drawn: &Drawn) -> EdgeSpec {
         sides: random_sides(rng),
         source,
         target: if rng.next() < 0.1 { source } else { pick(rng) },
-        label: (rng.next() < 0.5).then(|| LabelPlacement {
-            t: rng.range(-0.2, 1.2),
-            offset: rng.range(-40.0, 40.0),
-        }),
-        style: EdgeStyle {
-            arrow: rng.next() < 0.5,
-            ..EdgeStyle::unstyled()
-        },
+        labels: random_labels(rng),
+        style: random_style(rng),
     }
 }
 
@@ -520,16 +566,16 @@ fn queries_hits_and_lists_find_what_a_scan_finds_after_additions_removals_and_mo
                     } else {
                         let spec = random_edge(&mut rng, &drawn);
                         graph
-                            .update_edge(edge, spec.label, spec.style, spec.sides)
+                            .update_edge(edge, spec.labels, spec.style, spec.sides)
                             .unwrap();
                     }
                 }
             } else {
                 let spec = random_edge(&mut rng, &drawn);
                 let free = graph.edge_slots.free_list().last().copied();
-                let slot = graph.add_edge(spec).unwrap();
+                let slot = graph.add_edge(spec.clone()).unwrap();
                 assert_eq!(free.unwrap_or(graph.edge_slots.count() - 1), slot);
-                assert_eq!(graph.edge(slot), Some(spec));
+                assert_eq!(graph.edge(slot), Some(&spec));
             }
             assert_matches_scan(&mut graph, &drawn, &mut rng);
             assert_edges_match_scan(&mut graph, &mut rng);
@@ -829,7 +875,7 @@ impl NestedModel {
                 sides: Sides::default(),
                 source: rng.below(count),
                 target: rng.below(count),
-                label: None,
+                labels: Vec::new(),
                 style: EdgeStyle::unstyled(),
             })
             .collect();
@@ -1000,9 +1046,9 @@ impl NestedModel {
         (0..self.edges.len() as u32)
             .filter(|&e| self.edges[e as usize].is_some())
             .filter(|&e| {
-                let spec = graph.edges[e as usize];
-                let path = path_of(&spec, &bounds(spec.source), &bounds(spec.target));
-                path.bounds().meets(rect)
+                let spec = &graph.edges[e as usize];
+                let path = path_of(spec, &bounds(spec.source), &bounds(spec.target));
+                drawn_bounds(spec, &path).meets(rect)
             })
             .collect()
     }
@@ -1069,7 +1115,7 @@ fn container_of_two() -> Graph {
         sides: Sides::default(),
         source: 1,
         target: 2,
-        label: None,
+        labels: Vec::new(),
         style: EdgeStyle::unstyled(),
     };
     let sizes = vec![600.0, 300.0, 100.0, 50.0, 100.0, 50.0];
@@ -1115,7 +1161,7 @@ fn a_container_loaded_after_the_nodes_it_overlaps_is_hit_below_them_and_below_th
         sides: Sides::default(),
         source: 0,
         target: 1,
-        label: None,
+        labels: Vec::new(),
         style: EdgeStyle::unstyled(),
     };
     let mut graph = Graph::nested(positions, sizes, vec![edge], nesting).unwrap();
@@ -1227,7 +1273,7 @@ fn nested_three() -> Graph {
         sides: Sides::default(),
         source,
         target,
-        label: None,
+        labels: Vec::new(),
         style: EdgeStyle::unstyled(),
     };
     assert_eq!(graph.add_edge(edge(4, 1)), Ok(1));
@@ -1732,10 +1778,10 @@ impl Bordered {
                     sides: Sides::default(),
                     source: a,
                     target: b,
-                    label: None,
+                    labels: Vec::new(),
                     style: EdgeStyle::unstyled(),
                 };
-                edges.push((graph.add_edge(spec).unwrap(), spec));
+                edges.push((graph.add_edge(spec.clone()).unwrap(), spec));
             }
         }
         Self {
@@ -1794,12 +1840,13 @@ impl Bordered {
             }
         }
         // The edges at border nodes lie where their ends now are.
-        for &(edge, spec) in &self.edges {
+        for (edge, spec) in &self.edges {
+            let edge = *edge;
             let ends = [spec.source, spec.target].map(|s| {
                 let [x, y, w, h] = box_of(&self.graph, s);
                 Rect::new(x, y, x + w, y + h)
             });
-            let path = path_of(&spec, &ends[0], &ends[1]);
+            let path = path_of(spec, &ends[0], &ends[1]);
             assert_eq!(self.graph.paths[edge as usize], path);
         }
     }

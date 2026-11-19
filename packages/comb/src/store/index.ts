@@ -107,17 +107,32 @@ export type Side = "top" | "right" | "bottom" | "left";
  *  where the line towards the edge's other end crosses it (API-edges-dock-side-or-outline). */
 export type Dock = Side | "outline";
 
-/** An edge label: placed by its path parameter `t` and its label offset in pixels (G-6). */
+/** An edge label (API-edges-dock-nodes-or-edges, *Edge labels*): its identifier, unique within its
+ *  edge, its text, placed by its path parameter `t` and its label offset in pixels (G-6), 0.5 and
+ *  0 where it gives none, which Comb fills in as it takes the label, on a pill of `background`
+ *  (`0xRRGGBB`), or of the edge's colour as it is now where it gives none. */
 export interface EdgeLabelData {
+  id: string;
   text: string;
-  t: number;
-  offset: number;
+  t?: number;
+  offset?: number;
   background?: number;
 }
 
+/** An edge label as Comb keeps it and tells it in a change, its place filled in; a background
+ *  left out stays out, so that the label follows its edge's colour. */
+export type KeptLabel = Required<Omit<EdgeLabelData, "background">> &
+  Pick<EdgeLabelData, "background">;
+
+/** The arrowhead at an edge's target: a filled triangle, two open strokes, a hollow triangle
+ *  around a white fill, or none (API-edges-dock-nodes-or-edges, *Arrowheads*). */
+export type Arrowhead = "end" | "open" | "hollow" | "none";
+
 /** An edge from one node to another, each end at a side's connector or on the outline, drawn in
  *  `color` (`0xRRGGBB`), dashed by `dash` (dash and gap lengths in world units; solid without),
- *  and with an arrowhead at its target unless `arrow` is `"none"` (G-11). */
+ *  with the arrowhead `arrow` at its target, a filled triangle where it gives none (G-11), its
+ *  middle a zigzag where `lightning` is `true`, and carrying at most 8 `labels`
+ *  (API-edges-dock-nodes-or-edges). */
 export interface EdgeData {
   id: string;
   source: string;
@@ -130,8 +145,9 @@ export interface EdgeData {
   targetSide?: Dock;
   color?: number;
   dash?: readonly [number, number];
-  arrow?: "end" | "none";
-  label?: EdgeLabelData;
+  arrow?: Arrowhead;
+  lightning?: boolean;
+  labels?: readonly EdgeLabelData[];
 }
 
 export interface GraphData {
@@ -147,15 +163,19 @@ export interface Viewport {
   scale: number;
 }
 
-/** What `updateEdge` may change of an edge: its colour, dash pattern, arrowhead, label, or sides,
- *  a dash and a label cleared with `null`. */
+/** What `updateEdge` may change of an edge: its colour, dash pattern, arrowhead, lightning bolt,
+ *  labels, or sides, a dash and the labels cleared with `null`. `labels` replaces the whole list,
+ *  never merged by identifier: a label without a path parameter goes back to 0.5, one without an
+ *  offset to 0, and one without a background follows the edge's colour
+ *  (API-edges-dock-nodes-or-edges). */
 export interface EdgePatch {
   color?: number;
-  arrow?: "end" | "none";
+  arrow?: Arrowhead;
+  lightning?: boolean;
   sourceSide?: Dock;
   targetSide?: Dock;
   dash?: readonly [number, number] | null;
-  label?: EdgeLabelData | null;
+  labels?: readonly EdgeLabelData[] | null;
 }
 
 /** A node as the store keeps it: its identifier, its width, its node shape, which `api` fills
@@ -236,8 +256,12 @@ export function regionViewsOf(
 /** A graph as the store takes it once the bridge took it: of each node what the store keeps. */
 export interface KeptGraph {
   nodes: readonly NodeView[];
-  edges: EdgeData[];
+  edges: KeptEdge[];
 }
+
+/** An edge as Comb keeps it once the bridge took it, the places of its labels filled in
+ *  (API-edges-dock-nodes-or-edges). */
+export type KeptEdge = Omit<EdgeData, "labels"> & { readonly labels?: readonly KeptLabel[] };
 
 /** What `updateNode` may change of a node: its content, which it replaces whole
  *  (REN-node-content-in-rows), its height, a height below its content's raised to it, and whether
@@ -325,7 +349,12 @@ export type StoreChange =
     }
   | { readonly kind: "edgesRemoved"; readonly by: By; readonly edges: readonly string[] }
   | { readonly kind: "edgeAdded"; readonly by: By; readonly id: string }
-  | { readonly kind: "labelMoved"; readonly by: "user"; readonly edge: string }
+  | {
+      readonly kind: "labelMoved";
+      readonly by: "user";
+      readonly edge: string;
+      readonly label: string;
+    }
   | {
       readonly kind: "edgeUpdated";
       readonly by: "host";
@@ -382,9 +411,7 @@ export interface GraphView {
   /** The change the last action that changed the graph made, or none before the first. */
   readonly change: StoreChange | null;
   /** The edge in each slot, none at a free slot (ARCH-engine-edits-graph-in-place). */
-  readonly edges: readonly (
-    Readonly<Omit<EdgeData, "label"> & { readonly label?: Readonly<EdgeLabelData> }> | undefined
-  )[];
+  readonly edges: readonly (Readonly<KeptEdge> | undefined)[];
   readonly selection: Readonly<Selection>;
   /** The node whose connectors the pointer shows, or none (API-edges-dock-side-or-outline). */
   readonly hovered: number | null;
@@ -453,10 +480,10 @@ export interface GraphState extends GraphView {
   /** Forgets the edges in `edgeSlots`, which the engine removed, leaving their slots free. */
   removeEdges(edgeSlots: readonly number[], by: By): void;
   /** Keeps `edge`, which the engine took into `slot`, as `by` made it. */
-  addEdge(edge: EdgeData, slot: number, by: By): void;
-  /** Records that a drag, now released, left the label of the edge `id` at path parameter `t`
-   *  and label offset `offset`, where the engine placed it. */
-  labelMoved(id: string, t: number, offset: number): void;
+  addEdge(edge: KeptEdge, slot: number, by: By): void;
+  /** Records that a drag, now released, left the label at `index` of the edge `id` at path
+   *  parameter `t` and label offset `offset`, where the engine placed it. */
+  labelMoved(id: string, index: number, t: number, offset: number): void;
   /** Shows the connectors of the node in `slot`, or none. */
   hover(slot: number | null): void;
   /** Records the connection the user drags, or that it ended. */
@@ -474,9 +501,17 @@ function nodeUnits(node: Pick<NodeView, "id">): number {
   return node.id.length;
 }
 
-/** The UTF-16 code units of the identifiers of `edge`: its own, its source's, and its target's. */
-function edgeUnits(edge: Pick<EdgeData, "id" | "source" | "target">): number {
-  return edge.id.length + edge.source.length + edge.target.length;
+/** The UTF-16 code units of the identifiers of `edge`: its own, its source's, its target's, and
+ *  its labels'. */
+function edgeUnits(edge: Pick<EdgeView, "id" | "source" | "target" | "labels">): number {
+  return edge.id.length + edge.source.length + edge.target.length + labelUnits(edge.labels);
+}
+
+/** The UTF-16 code units of the identifiers of `labels` (API-edges-dock-nodes-or-edges). */
+export function labelUnits(labels: readonly { readonly id: string }[] | null | undefined): number {
+  let units = 0;
+  for (const label of labels ?? []) units += label.id.length;
+  return units;
 }
 
 /** `edges` without those in `slots`, the identifiers of those edges, the map without them, and
@@ -647,14 +682,14 @@ export function edgeNamed(
   return { slot, edge: view.edges[slot]! };
 }
 
-/** `edge` with `patch` merged: a field the patch sets replaces the edge's, and `null` clears a dash
- *  or a label. */
+/** `edge` with `patch` merged: a field the patch sets replaces the edge's, the labels whole, and
+ *  `null` clears a dash or the labels. */
 function patched(edge: EdgeView, patch: EdgePatch): EdgeView {
-  const { dash, label, ...rest } = { ...edge, ...patch };
+  const { dash, labels, ...rest } = { ...edge, ...patch };
   return {
     ...rest,
     ...(dash ? { dash } : {}),
-    ...(label ? { label } : {}),
+    ...(labels ? { labels: labels as readonly KeptLabel[] } : {}),
   };
 }
 
@@ -787,7 +822,7 @@ function withNode(
 }
 
 /** What `addEdge` changes of `state`: `edge` kept in `slot`, and its identifiers counted. */
-function withEdge(state: GraphView, edge: EdgeData, slot: number, by: By): Partial<GraphView> {
+function withEdge(state: GraphView, edge: KeptEdge, slot: number, by: By): Partial<GraphView> {
   const edges = state.edges.slice();
   edges[slot] = edge;
   return {
@@ -833,12 +868,15 @@ export function createGraphStore() {
       set((state) => withoutNodes(state, nodeSlots, edgeSlots, by)),
     removeEdges: (edgeSlots, by) => set((state) => withoutEdgesOf(state, edgeSlots, by)),
     addEdge: (edge, slot, by) => set((state) => withEdge(state, edge, slot, by)),
-    labelMoved: (id, t, offset) =>
+    labelMoved: (id, index, t, offset) =>
       set((state) => {
         const { slot, edge } = edgeNamed(state, id);
         const edges = state.edges.slice();
-        edges[slot] = { ...edge, label: { ...edge.label!, t, offset } };
-        return { edges, change: { kind: "labelMoved", by: "user", edge: id } };
+        const labels = edge.labels!.slice();
+        labels[index] = { ...labels[index]!, t, offset };
+        edges[slot] = { ...edge, labels };
+        const label = labels[index]!.id;
+        return { edges, change: { kind: "labelMoved", by: "user", edge: id, label } };
       }),
     hover: (hovered) => set((state) => (state.hovered === hovered ? state : { hovered })),
     connect: (connection) => set({ connection }),
@@ -846,8 +884,10 @@ export function createGraphStore() {
       set((state) => {
         const { slot, edge } = edgeNamed(state, id);
         const edges = state.edges.slice();
-        edges[slot] = patched(edge, patch);
-        return { edges, change: { kind: "edgeUpdated", by: "host", id, patch } };
+        const next = patched(edge, patch);
+        edges[slot] = next;
+        const idUnits = state.idUnits - edgeUnits(edge) + edgeUnits(next);
+        return { edges, idUnits, change: { kind: "edgeUpdated", by: "host", id, patch } };
       }),
   }));
 }

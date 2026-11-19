@@ -83,15 +83,15 @@ test("each dependency of the package diagram is dashed, has an arrowhead, and sa
   await open(page);
   await choose(page, "package");
   const { edges } = await page.evaluate(() => window.uml.exampleGraph());
-  expect(edges.map(({ source, target, label }) => [source, target, label?.text]).sort()).toEqual(
-    DEPENDENCIES.map((each) => [...each]).sort(),
-  );
+  expect(
+    edges.map(({ source, target, labels }) => [source, target, labels?.[0]?.text]).sort(),
+  ).toEqual(DEPENDENCIES.map((each) => [...each]).sort());
   const { color } = DRAWN.dependency!;
   for (const edge of edges) {
     expect(edge.dash, edge.id).toEqual([6, 4]);
     expect(edge.arrow, edge.id).toBe("end");
     expect(edge.color, edge.id).toBe(color);
-    expect(edge.label?.background, edge.id).toBe(color);
+    expect(edge.labels?.[0]?.background, edge.id).toBe(color);
   }
 });
 
@@ -132,7 +132,9 @@ for (const diagram of ["class", "package"] as const)
     const { labels, kinds } = await page.evaluate(() => ({
       labels: window.uml
         .exampleGraph()
-        .edges.flatMap(({ id, label }) => (label ? [[id, label.text] as const] : [])),
+        .edges.flatMap(({ id, labels: [label] = [] }) =>
+          label ? [[id, label.text] as const] : [],
+        ),
       kinds: window.uml.edgeKinds(),
     }));
     expect(labels.length).toBeGreaterThan(0);

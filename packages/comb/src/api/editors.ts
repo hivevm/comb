@@ -34,8 +34,10 @@ import type {
   NodeSizing,
   NodeView,
   Divided,
+  KeptEdge,
   KeptGraph,
 } from "../store";
+import { labelUnits } from "../store";
 import {
   edgePatchOf,
   edgeSnapshotOf,
@@ -439,12 +441,14 @@ function addEdge({ store, bridge, limits, loops }: Editing, edge: unknown, by: B
     idUnits: (plain, state) => state.idUnits + plain.idUnits,
     engine: ({ snapshot, ends: [from, to] }) => bridge.addEdge(snapshot, from, to, loops),
     // The bridge took the edge, so each field holds a value of its type.
-    record: (state, { snapshot }, slot) => state.addEdge(snapshot as unknown as EdgeData, slot, by),
+    record: (state, { snapshot }, slot) => state.addEdge(snapshot as unknown as KeptEdge, slot, by),
   });
 }
 
 /** `updateEdge`: an edge the graph does not hold refused, and the patch merged once the bridge
- *  has checked every field of it; a patch that sets nothing changes and tells nothing. */
+ *  has checked every field of it; a patch that sets nothing changes and tells nothing. Its labels
+ *  replace the edge's whole list, and their identifiers count against the budget of identifiers in
+ *  place of the old ones' (API-edges-dock-nodes-or-edges). */
 function updateEdge({ store, bridge, limits }: Editing, id: string, patch: unknown): void {
   edit(store, bridge, {
     read: () => edgePatchOf(patch, limits),
@@ -452,6 +456,13 @@ function updateEdge({ store, bridge, limits }: Editing, id: string, patch: unkno
       const slot = state.edgeSlots.get(id);
       if (slot === undefined) throw new GraphDataError({ kind: "unknownEdge", edge: id });
       return Object.keys(plain).length === 0 ? undefined : { slot, plain };
+    },
+    idUnits(plain, state) {
+      if (!Array.isArray(plain.labels) && plain.labels !== null) return state.idUnits;
+      const before = labelUnits(state.edges[state.edgeSlots.get(id)!]!.labels);
+      const ids = (plain.labels ?? []) as readonly { id?: unknown }[];
+      const after = ids.reduce((n, l) => n + (typeof l.id === "string" ? l.id.length : 0), 0);
+      return state.idUnits - before + after;
     },
     engine: ({ slot, plain }) => bridge.updateEdge(slot, id, plain),
     record: (state, { plain }) => state.updateEdge(id, plain as unknown as EdgePatch),

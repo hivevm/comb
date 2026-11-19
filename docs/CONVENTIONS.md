@@ -102,17 +102,17 @@ skimmed. The design revision drops what prevented nothing
   from an interface, files under a root, marks from the bridge) fails, naming the source, where it
   reads none or meets a shape it does not know, and its self-test plays that case; a check that
   reads nothing passes everything.
-- **The UML example tells a relationship by its kind's family of colour.** Comb draws an edge in
-  one colour, solid or dashed (`[6, 4]`), with an arrowhead at its target or none, and one label,
-  so the UML example draws each kind of relationship as `examples/uml/src/relationships.ts` lists
-  it: association grey `#6b7280` solid without arrowhead; directed association grey solid with
-  one; generalization blue `#1d4ed8` solid with one; realization blue dashed with one; dependency
-  grey dashed with one and the label «use»; aggregation and composition green `#15803d` solid
-  without one, labelled «aggregation» and «composition» at `t = 0.4`, nearer their source, which
-  is the whole. Each colour carries white label text at a contrast of at least 4.5. The label
-  names the kind wherever colour, dash, and arrowhead leave two kinds alike, since Comb has no
-  hollow triangle, no diamond, and no arrowhead at the source, and its font no glyph for one.
-  The package diagram draws each dependency as a dependency, its label «import» for a module's
+- **The UML example tells a relationship by its kind's family of colour.** The UML example draws
+  an edge in one colour, solid or dashed (`[6, 4]`), with a filled arrowhead (`"end"`) at its target
+  or none, and with a list of one label, `kind`, so it draws each kind of relationship as
+  `examples/uml/src/relationships.ts` lists it: association grey `#6b7280` solid without arrowhead;
+  directed association grey solid with one; generalization blue `#1d4ed8` solid with one;
+  realization blue dashed with one; dependency grey dashed with one and the label «use»; aggregation
+  and composition green `#15803d` solid without one, labelled «aggregation» and «composition» at
+  `t = 0.4`, nearer their source, which is the whole. Each colour carries white label text at a
+  contrast of at least 4.5. The label names the kind wherever colour, dash, and arrowhead leave two
+  kinds alike, since Comb has no diamond and no arrowhead at the source, and its font no glyph for
+  one. The package diagram draws each dependency as a dependency, its label «import» for a module's
   import of another and «use» for the bridge's load of the WebAssembly package and the bridge
   crate's use of the core; its legend names the dependency by both labels, since one naming «use»
   alone leaves the diagram's most common edge, «import», unexplained.

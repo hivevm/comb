@@ -66,7 +66,7 @@ function edgeOf([source, target, label]: (typeof DEPENDENCIES)[number]): EdgeDat
     target,
     ...(within ? {} : { sourceSide: "bottom", targetSide: "top" }),
     ...styleOf("dependency"),
-    label: labelOf("dependency", label),
+    labels: [labelOf("dependency", label)],
   };
 }
 

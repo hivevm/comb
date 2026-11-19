@@ -123,7 +123,7 @@ export interface SceneSnapshot {
   highlighted: string | null;
   edges: { id: string; source: { x: number; y: number }; target: { x: number; y: number } }[];
   /** Every edge label drawn, with the text its pill draws. */
-  edgeLabels: { edge: string; x: number; y: number; text: string }[];
+  edgeLabels: { edge: string; label: string; x: number; y: number; text: string }[];
   /** How many triangles the edges layer draws: the edge mesh's, or the fill's on Canvas 2D. */
   edgeTriangles: number;
   /** How many vertices and indices the edge mesh draws, how many its buffers hold before they
@@ -470,6 +470,7 @@ export class Scene {
       },
       edgeLabels: this.labels.children.map((label) => ({
         edge: label.label,
+        label: (label as LabelView).labelId,
         x: label.x + this.origin.x,
         y: label.y + this.origin.y,
         text: (label as LabelView).drawnText,

@@ -261,6 +261,12 @@ fn end_of(dock: Dock, node: &Rect, shape: NodeShape, other: Point) -> (Point, Po
     }
 }
 
+/// The path parameters between which a lightning bolt's zigzag replaces the path, and how wide
+/// the zigzag is across it, in world units (API-edges-dock-nodes-or-edges, *Lightning bolt*).
+pub(crate) const LIGHTNING_FROM: f64 = 0.45;
+pub(crate) const LIGHTNING_TO: f64 = 0.55;
+pub(crate) const LIGHTNING_WIDTH: f64 = 12.0;
+
 /// The four control points of an edge's cubic Bézier path.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct EdgePath {
@@ -388,25 +394,59 @@ impl EdgePath {
 
     /// The two halves of the path, split at `t = 0.5` (de Casteljau).
     pub(crate) fn split(&self) -> (Self, Self) {
-        let ab = self.source.lerp(self.control_source, 0.5);
-        let bc = self.control_source.lerp(self.control_target, 0.5);
-        let cd = self.control_target.lerp(self.target, 0.5);
-        let abc = ab.lerp(bc, 0.5);
-        let bcd = bc.lerp(cd, 0.5);
-        let mid = abc.lerp(bcd, 0.5);
+        self.split_at(0.5)
+    }
+
+    /// The part of the path between the path parameters `from` and `to`, each clamped to
+    /// 0.0..=1.0, as a cubic of its own (de Casteljau).
+    pub(crate) fn between_parameters(&self, from: f64, to: f64) -> Self {
+        let (from, to) = (from.clamp(0.0, 1.0), to.clamp(0.0, 1.0));
+        let after = self.split_at(from).1;
+        // The part after `from` runs on to the end; `to` lies at its own parameter in it.
+        let rest = 1.0 - from;
+        let within = if rest > 0.0 { (to - from) / rest } else { 0.0 };
+        after.split_at(within).0
+    }
+
+    /// The two parts of the path, split at path parameter `t` (de Casteljau).
+    fn split_at(&self, t: f64) -> (Self, Self) {
+        let ab = self.source.lerp(self.control_source, t);
+        let bc = self.control_source.lerp(self.control_target, t);
+        let cd = self.control_target.lerp(self.target, t);
+        let abc = ab.lerp(bc, t);
+        let bcd = bc.lerp(cd, t);
+        let at = abc.lerp(bcd, t);
         (
             Self {
                 source: self.source,
                 control_source: ab,
                 control_target: abc,
-                target: mid,
+                target: at,
             },
             Self {
-                source: mid,
+                source: at,
                 control_source: bcd,
                 control_target: cd,
                 target: self.target,
             },
+        )
+    }
+
+    /// The path drawn as a lightning bolt (API-edges-dock-nodes-or-edges, *Lightning bolt*): the
+    /// part before `LIGHTNING_FROM`, the two turns of the zigzag across the path, each half of
+    /// `LIGHTNING_WIDTH` off it on either side, at a third and two thirds of the way between
+    /// `LIGHTNING_FROM` and `LIGHTNING_TO`, and the part after `LIGHTNING_TO`. The zigzag runs from
+    /// the end of the first part through the turns to the start of the last.
+    pub(crate) fn lightning(&self) -> (Self, [Point; 2], Self) {
+        let third = (LIGHTNING_TO - LIGHTNING_FROM) / 3.0;
+        let half = LIGHTNING_WIDTH / 2.0;
+        (
+            self.between_parameters(0.0, LIGHTNING_FROM),
+            [
+                self.label_position(LIGHTNING_FROM + third, half),
+                self.label_position(LIGHTNING_TO - third, -half),
+            ],
+            self.between_parameters(LIGHTNING_TO, 1.0),
         )
     }
 
@@ -499,6 +539,40 @@ pub(crate) mod tests {
 
     fn straight() -> EdgePath {
         EdgePath::horizontal(Point::new(0.0, 0.0), Point::new(200.0, 0.0), 10.0)
+    }
+
+    #[test]
+    fn a_lightning_bolts_turns_lie_between_045_and_055_six_off_the_path_on_either_side() {
+        // Verifies: API-edges-dock-nodes-or-edges
+        // A curved path from (0, 0) to (400, 120) and the parts either side of its zigzag: the
+        // turns lie at their parameters, 6 off the path to its left and then its right, and the
+        // parts meet the path at 0.45 and 0.55, the first from the source, the last to the target.
+        let path = EdgePath::horizontal(Point::new(0.0, 0.0), Point::new(400.0, 120.0), 40.0);
+        let (before, [one, other], after) = path.lightning();
+        for ((turn, t), offset) in [one, other]
+            .into_iter()
+            .zip([0.45 + 0.1 / 3.0, 0.55 - 0.1 / 3.0])
+            .zip([6.0, -6.0])
+        {
+            let (found, off) = path.placement_at(turn);
+            assert!(
+                (found - t).abs() < 1e-6 && (0.45..=0.55).contains(&found),
+                "{found}"
+            );
+            assert!((off - offset).abs() < 1e-6, "{off}");
+        }
+        assert!(close(before.source, path.source) && close(after.target, path.target));
+        assert!(close(before.target, path.point_at(0.45)));
+        assert!(close(after.source, path.point_at(0.55)));
+        // Each part is the path between its parameters.
+        for i in 0..=10 {
+            let u = f64::from(i) / 10.0;
+            assert!(close(before.point_at(u), path.point_at(0.45 * u)), "{u}");
+            assert!(
+                close(after.point_at(u), path.point_at(0.55 + 0.45 * u)),
+                "{u}"
+            );
+        }
     }
 
     #[test]

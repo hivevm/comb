@@ -1,7 +1,7 @@
 //! The edges of the graph: the lists of the edges at each node, an addition into the free slot
-//! freed last or a new one, a change of an edge's label placement, style, and sides, a removal,
-//! and the path of each edge, its bounds, and the point of its label
-//! (ARCH-engine-edits-graph-in-place, API-edges-dock-side-or-outline).
+//! freed last or a new one, a change of an edge's label placements, style, and sides, a removal,
+//! and the path of each edge, its bounds, and the point of each of its labels
+//! (ARCH-engine-edits-graph-in-place, API-edges-dock-nodes-or-edges).
 
 use super::slots::put;
 use super::{AddEdgeError, EdgeSpec, Graph, LabelPlacement, SlotError};
@@ -30,8 +30,9 @@ impl Graph {
 
     /// The node slots at the ends of the edge in `slot`, each once.
     pub(super) fn ends(&self, slot: u32) -> impl Iterator<Item = u32> {
-        let edge = self.edges[slot as usize];
-        std::iter::once(edge.source).chain((edge.target != edge.source).then_some(edge.target))
+        let edge = &self.edges[slot as usize];
+        let (source, target) = (edge.source, edge.target);
+        std::iter::once(source).chain((target != source).then_some(target))
     }
 
     /// Builds the lists of edges at each node.
@@ -68,8 +69,8 @@ impl Graph {
         self.nodes_held(&[spec.source, spec.target])?;
         let slot = self.edge_slots.take()?;
         let i = slot as usize;
+        put(&mut self.pills, i, vec![None; spec.labels.len()]);
         put(&mut self.edges, i, spec);
-        put(&mut self.pills, i, None);
         for end in self.ends(slot).collect::<Vec<_>>() {
             self.incident[end as usize].push(slot);
         }
@@ -78,24 +79,26 @@ impl Graph {
         Ok(slot)
     }
 
-    /// The edge in `slot`, its ends, label placement, and style, where the slot holds one.
-    pub fn edge(&self, slot: u32) -> Option<EdgeSpec> {
-        self.holds_edge(slot).then(|| self.edges[slot as usize])
+    /// The edge in `slot`, its ends, label placements, and style, where the slot holds one.
+    pub fn edge(&self, slot: u32) -> Option<&EdgeSpec> {
+        self.holds_edge(slot).then(|| &self.edges[slot as usize])
     }
 
-    /// Gives the edge in `slot` the label placement `label`, the style `style`, and the sides
-    /// `sides`, and places it again in place (ARCH-engine-edits-graph-in-place,
-    /// API-edges-dock-side-or-outline). A slot that holds no edge refuses the change.
+    /// Gives the edge in `slot` the label placements `labels`, the whole list, its pills unmeasured
+    /// again, the style `style`, and the sides `sides`, and places it again in place
+    /// (ARCH-engine-edits-graph-in-place, API-edges-dock-nodes-or-edges). A slot that holds no
+    /// edge refuses the change.
     pub fn update_edge(
         &mut self,
         slot: u32,
-        label: Option<LabelPlacement>,
+        labels: Vec<LabelPlacement>,
         style: EdgeStyle,
         sides: Sides,
     ) -> Result<(), SlotError> {
         self.edges_held(&[slot])?;
+        self.pills[slot as usize] = vec![None; labels.len()];
         let spec = &mut self.edges[slot as usize];
-        spec.label = label;
+        spec.labels = labels;
         spec.style = style;
         spec.sides = sides;
         self.place_edge(slot);
@@ -124,7 +127,7 @@ impl Graph {
             if !self.edge_slots.free(slot) {
                 continue;
             }
-            self.pills[slot as usize] = None;
+            self.pills[slot as usize] = Vec::new();
             touched.extend(self.ends(slot).filter(|&end| self.holds_node(end)));
         }
         self.edge_grid.take(slots);
@@ -136,12 +139,13 @@ impl Graph {
         }
     }
 
-    /// The path, its bounds, and the label point of the edge in `slot` from the current positions:
-    /// a loop's where it leads its node back to itself (API-edges-dock-side-or-outline).
-    pub(super) fn placement(&self, slot: u32) -> (EdgePath, Rect, Option<Point>) {
+    /// The path, its bounds, a lightning bolt's turns among them, and the point of each label of
+    /// the edge in `slot` from the current positions: a loop's where it leads its node back to
+    /// itself (API-edges-dock-side-or-outline).
+    pub(super) fn placement(&self, slot: u32) -> (EdgePath, Rect, Vec<Point>) {
         #[cfg(test)]
         self.placements.set(self.placements.get() + 1);
-        let spec = self.edges[slot as usize];
+        let spec = &self.edges[slot as usize];
         let path = if spec.source == spec.target {
             EdgePath::looped(
                 &self.node_bounds(spec.source),
@@ -155,31 +159,48 @@ impl Graph {
                 spec.sides,
             )
         };
-        let label = spec
-            .label
-            .map(|label| path.label_position(label.t, label.offset));
-        (path, path.bounds(), label)
-    }
-
-    /// Computes the path, bounds, and label point of every edge, as a load does, once, before the
-    /// index is built from them: every later edit places the edges it changes itself.
-    pub(super) fn place_edges(&mut self) {
-        let placed: Vec<_> = (0..self.edge_slots.count())
-            .map(|e| self.placement(e))
+        let labels = spec
+            .labels
+            .iter()
+            .map(|label| path.label_position(label.t, label.offset))
             .collect();
-        self.paths = placed.iter().map(|&(path, _, _)| path).collect();
-        self.bounds = placed.iter().map(|&(_, bounds, _)| bounds).collect();
-        self.labels = placed.iter().map(|&(_, _, label)| label).collect();
+        // A lightning bolt's turns lie off the path, and the bounds take them in, so that the
+        // query, the index, and the hit test find the edge there (API-edges-dock-nodes-or-edges).
+        let mut bounds = path.bounds();
+        if spec.style.lightning {
+            let (_, turns, _) = path.lightning();
+            for turn in turns {
+                bounds = bounds.union(&Rect::at(turn));
+            }
+        }
+        (path, bounds, labels)
     }
 
-    /// Computes the path and label of the edge in `slot`, an edge taken into a new slot among
+    /// Computes the path, bounds, and label points of every edge, as a load does, once, before
+    /// the index is built from them: every later edit places the edges it changes itself.
+    pub(super) fn place_edges(&mut self) {
+        let count = self.edge_slots.count() as usize;
+        (self.paths, self.bounds, self.labels) = (
+            Vec::with_capacity(count),
+            Vec::with_capacity(count),
+            Vec::with_capacity(count),
+        );
+        for e in 0..self.edge_slots.count() {
+            let (path, bounds, labels) = self.placement(e);
+            self.paths.push(path);
+            self.bounds.push(bounds);
+            self.labels.push(labels);
+        }
+    }
+
+    /// Computes the path and labels of the edge in `slot`, an edge taken into a new slot among
     /// them, and puts it into the edge grid there.
     pub(super) fn place_edge(&mut self, slot: u32) {
-        let (path, bounds, label) = self.placement(slot);
+        let (path, bounds, labels) = self.placement(slot);
         let i = slot as usize;
         put(&mut self.paths, i, path);
         put(&mut self.bounds, i, bounds);
-        put(&mut self.labels, i, label);
+        put(&mut self.labels, i, labels);
         self.reindex_edge(slot);
     }
 
@@ -218,7 +239,7 @@ impl Graph {
 #[cfg(test)]
 mod tests {
     use super::super::TooManySlots;
-    use super::super::tests::{Lcg, paired, path_of, random_graph};
+    use super::super::tests::{Lcg, drawn_bounds, paired, path_of, random_graph};
     use super::*;
 
     #[test]
@@ -234,10 +255,10 @@ mod tests {
             sides,
             source: 0,
             target: 0,
-            label: Some(LabelPlacement {
+            labels: vec![LabelPlacement {
                 t: 0.5,
                 offset: 0.0,
-            }),
+            }],
             style: EdgeStyle::unstyled(),
         };
         let on = |dock: Dock| Sides {
@@ -253,7 +274,7 @@ mod tests {
                     sides: Sides::default(),
                     source: 0,
                     target: 1,
-                    label: None,
+                    labels: Vec::new(),
                     style: EdgeStyle::unstyled(),
                 },
             ],
@@ -272,7 +293,7 @@ mod tests {
                 let path = EdgePath::looped(&node, shape, dock);
                 assert_eq!(graph.paths[slot], path, "{context}: edge {slot}");
                 assert_eq!(graph.bounds[slot], path.bounds(), "{context}: edge {slot}");
-                assert_eq!(graph.labels[slot], Some(path.point_at(0.5)), "{context}");
+                assert_eq!(graph.labels[slot], [path.point_at(0.5)], "{context}");
             }
         };
         check(&graph, NodeShape::Rectangle, "loaded and added");
@@ -292,13 +313,13 @@ mod tests {
             graph.translate(&moved, dx as f32, dy as f32).unwrap();
         }
         for e in 0..graph.edge_slots.count() {
-            let spec = graph.edges[e as usize];
+            let spec = &graph.edges[e as usize];
             let fresh = path_of(
-                &spec,
+                spec,
                 &graph.node_bounds(spec.source),
                 &graph.node_bounds(spec.target),
-            )
-            .bounds();
+            );
+            let fresh = drawn_bounds(spec, &fresh);
             assert_eq!(graph.bounds[e as usize], fresh, "edge {e}");
         }
     }
@@ -309,7 +330,7 @@ mod tests {
             sides: Sides::default(),
             source: 0,
             target: 1,
-            label: None,
+            labels: Vec::new(),
             style: EdgeStyle::unstyled(),
         }];
         let graph = Graph::new(
@@ -333,7 +354,7 @@ mod tests {
             sides: Sides::default(),
             source,
             target,
-            label: None,
+            labels: Vec::new(),
             style: EdgeStyle::unstyled(),
         };
         let edges = graph.edge_slots.count();
@@ -347,7 +368,7 @@ mod tests {
         );
         assert_eq!(graph.edge_slots.count(), edges);
         assert_eq!(
-            graph.update_edge(3, None, EdgeStyle::unstyled(), Sides::default()),
+            graph.update_edge(3, Vec::new(), EdgeStyle::unstyled(), Sides::default()),
             Err(SlotError::NoEdge { slot: 3 })
         );
         assert_eq!(graph.edge(3), None);
@@ -363,7 +384,7 @@ mod tests {
             sides: Sides::default(),
             source: 0,
             target: 1,
-            label: None,
+            labels: Vec::new(),
             style: EdgeStyle::unstyled(),
         };
         let mut graph = paired(4);

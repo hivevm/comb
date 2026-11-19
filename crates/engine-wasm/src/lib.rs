@@ -44,9 +44,9 @@ pub use graph_data::{
 use kept::{ContentStore, Drawn};
 
 use graph_data::{
-    COLUMN_LIMIT, ContentData, EdgeColumns, EdgeRefusal, ID_LIMIT, NodeColumns, ROW_LIMIT,
-    RegionColumns, SEGMENT_LIMIT, TEXT_LIMIT, add_edge_to, add_node_to, edge_refused_of, height_of,
-    load_of, malformed, numbered, patch_of, refused_of, slot, unshaped, update_edge_in,
+    COLUMN_LIMIT, ContentData, EdgeColumns, EdgeRefusal, ID_LIMIT, LABEL_LIMIT, NodeColumns,
+    ROW_LIMIT, RegionColumns, SEGMENT_LIMIT, TEXT_LIMIT, add_edge_to, add_node_to, edge_refused_of,
+    height_of, load_of, malformed, numbered, patch_of, refused_of, slot, unshaped, update_edge_in,
 };
 
 /// A number the shell computed that an export cannot take: the shell's own mistake, never one of
@@ -387,6 +387,13 @@ pub fn band_thickness() -> f64 {
     comb_engine::graph::BAND
 }
 
+/// The most edge labels of one edge, `MAX_LABELS`: the shell hands over no more than one beyond
+/// it (API-edges-dock-nodes-or-edges, *Edge labels*).
+#[wasm_bindgen(js_name = labelLimit)]
+pub fn label_limit() -> u32 {
+    LABEL_LIMIT
+}
+
 /// The most rows of a node's content, `MAX_ROWS`: the shell hands over no more than one beyond
 /// it.
 #[wasm_bindgen(js_name = rowLimit)]
@@ -420,8 +427,10 @@ pub enum Hit {
         slot: u32,
         side: Side,
     },
+    /// The edge label at `label`, its place in the list of labels of the edge in `slot`.
     Label {
         slot: u32,
+        label: u32,
     },
     Node {
         slot: u32,
@@ -730,10 +739,12 @@ impl Engine {
         source_bounds: &[u32],
         targets: Vec<String>,
         target_bounds: &[u32],
-        has_label: &[u8],
-        labels: Vec<String>,
         label_bounds: &[u32],
-        label_texts: &[u8],
+        label_ids: Vec<String>,
+        label_id_bounds: &[u32],
+        label_texts: Vec<String>,
+        label_text_bounds: &[u32],
+        label_texts_valid: &[u8],
         label_t: &[f64],
         label_offset: &[f64],
         has_background: &[u8],
@@ -743,10 +754,12 @@ impl Engine {
         dash: &[f64],
         gap: &[f64],
         arrow: &[u8],
+        lightning: &[u8],
         source_side: &[u8],
         target_side: &[u8],
         edge_refused_at: Option<u32>,
         edge_refused_field: Option<u32>,
+        edge_refused_label: Option<u32>,
     ) -> Result<u32, GraphDataProblem> {
         trap::spring();
         let refused = refused_of(refused_at, refused_field, refused_row, refused_column)?;
@@ -757,10 +770,12 @@ impl Engine {
             source_bounds,
             targets: &targets,
             target_bounds,
-            has_label,
-            labels: &labels,
             label_bounds,
-            label_texts,
+            label_ids: &label_ids,
+            label_id_bounds,
+            label_texts: &label_texts,
+            label_text_bounds,
+            label_texts_valid,
             label_t,
             label_offset,
             has_background,
@@ -770,9 +785,10 @@ impl Engine {
             dash,
             gap,
             arrow,
+            lightning,
             source_side,
             target_side,
-            refused: edge_refused_of(edge_refused_at, edge_refused_field)?,
+            refused: edge_refused_of(edge_refused_at, edge_refused_field, edge_refused_label)?,
         };
         // The content's columns, which the engine keeps as they crossed, owned without a copy.
         let content = ContentData {
@@ -989,39 +1005,50 @@ impl Engine {
         update_edge_in(&mut self.graph, slot, id, patch)
     }
 
-    /// Records the half width and half height of the pill of the label of the edge in `slot`, in
-    /// world units, as the shell draws it; a label it has not measured is not hit
-    /// (REN-node-content-in-rows).
+    /// Records the half width and half height of the pill of the label at `label` of the list of
+    /// labels of the edge in `slot`, in world units, as the shell draws it; a label it has not
+    /// measured is not hit (REN-node-content-in-rows). A slot that holds no edge with a label
+    /// there refuses it.
     #[wasm_bindgen(js_name = setLabelSize)]
     pub fn set_label_size(
         &mut self,
         slot: u32,
+        label: u32,
         half_width: f64,
         half_height: f64,
     ) -> Result<(), SlotError> {
         trap::spring();
-        Ok(self.graph.set_label_size(slot, half_width, half_height)?)
+        Ok(self
+            .graph
+            .set_label_size(slot, label, half_width, half_height)?)
     }
 
-    /// The world point of the label of the edge in `slot`, `x, y`, or nothing where it holds no
-    /// edge with a label.
+    /// The world point of the label at `label` of the edge in `slot`, `x, y`, or nothing where it
+    /// holds no edge with a label there.
     #[wasm_bindgen(js_name = labelPoint)]
-    pub fn label_point(&mut self, slot: u32) -> Vec<f64> {
+    pub fn label_point(&mut self, slot: u32, label: u32) -> Vec<f64> {
         trap::spring();
         self.graph
-            .label_point(slot)
+            .label_point(slot, label)
             .map_or_else(Vec::new, |p| vec![p.x, p.y])
     }
 
-    /// Places the label of the edge in `slot` at the world point `(x, y)`, at the path parameter
-    /// nearest it and its distance along the normal there, and returns the two, `t, offset`
-    /// (G-6). A slot that holds no edge with a label refuses it with a `SlotError`, and a point
-    /// that is not finite with a `NumberError`, before anything moves.
+    /// Places the label at `label` of the edge in `slot` at the world point `(x, y)`, at the path
+    /// parameter nearest it and its distance along the normal there, and returns the two, `t,
+    /// offset` (G-6); the edge's other labels stay. A slot that holds no edge with a label there
+    /// refuses it with a `SlotError`, and a point that is not finite with a `NumberError`, before
+    /// anything moves.
     #[wasm_bindgen(js_name = moveLabel)]
-    pub fn move_label(&mut self, slot: u32, x: f64, y: f64) -> Result<Vec<f64>, CallRefusal> {
+    pub fn move_label(
+        &mut self,
+        slot: u32,
+        label: u32,
+        x: f64,
+        y: f64,
+    ) -> Result<Vec<f64>, CallRefusal> {
         trap::spring();
         let point = checked_point(x, y)?;
-        let placed = self.graph.move_label(slot, point)?;
+        let placed = self.graph.move_label(slot, label, point)?;
         Ok(vec![placed.t, placed.offset])
     }
 
@@ -1397,7 +1424,7 @@ impl Engine {
                 slot,
                 side: side.into(),
             },
-            Some(Target::Label(slot)) => Hit::Label { slot },
+            Some(Target::Label(slot, label)) => Hit::Label { slot, label },
             Some(Target::Node(slot)) => Hit::Node {
                 slot,
                 element: self.element_at(slot, point, level),
@@ -3511,28 +3538,29 @@ mod tests {
         // Verifies: API-shell-mistake-refused-as-shells
         let mut engine = Engine::new();
         let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 100.0)], &[("e", "a", "b")]);
-        data.edges[0].label = Some(LabelInput {
+        data.edges[0].labels = Some(vec![Field(Some(LabelInput {
+            id: "m".to_owned().into(),
             text_length: Some(1),
-            t: 0.5.into(),
-            offset: 0.0.into(),
+            t: Some(0.5).into(),
+            offset: Some(0.0).into(),
             background: None,
-        })
+        }))])
         .into();
         engine.graph = graph_of(&data).unwrap();
-        let before = engine.label_point(0);
+        let before = engine.label_point(0, 0);
         let refusal = || CallRefusal::Number(NumberError::NonFinitePoint);
         for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             for (x, y) in [(bad, 60.0), (200.0, bad)] {
-                let moved = engine.move_label(0, x, y);
+                let moved = engine.move_label(0, 0, x, y);
                 assert_eq!(moved, Err(refusal()), "({x}, {y})");
-                assert_eq!(engine.label_point(0), before, "the label at ({x}, {y})");
+                assert_eq!(engine.label_point(0, 0), before, "the label at ({x}, {y})");
                 // Refused before anything is hit, so the native test needs no JavaScript value.
                 let hit = engine.hit(x, y, 1.0, DetailLevel::Near, true, None);
                 assert_eq!(hit.err(), Some(refusal()), "hit at ({x}, {y})");
             }
         }
-        assert!(engine.move_label(0, 150.0, 80.0).is_ok());
-        assert_ne!(engine.label_point(0), before);
+        assert!(engine.move_label(0, 0, 150.0, 80.0).is_ok());
+        assert_ne!(engine.label_point(0, 0), before);
     }
 
     #[test]

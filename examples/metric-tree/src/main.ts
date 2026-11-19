@@ -378,7 +378,7 @@ function showEdge(edge: EdgeData): void {
   edgeColor.value = `#${color.toString(16).padStart(6, "0")}`;
   edgeDash.value = edge.dash ? "dashed" : "solid";
   edgeArrow.checked = edge.arrow !== "none";
-  edgeLabel.value = edge.label?.text ?? "";
+  edgeLabel.value = edge.labels?.[0]?.text ?? "";
 }
 
 /** Changes the selected edge by `patch` through `updateEdge`; the example's graph follows from
@@ -390,12 +390,13 @@ function changeEdge(patch: EdgePatch): void {
 const nodeOf = (id: string) => graph.nodes.find((candidate) => candidate.id === id);
 const edgeOf = (id: string) => graph.edges.find((candidate) => candidate.id === id);
 
-/** `edge` with `patch` merged, as Comb merges it: `null` clears a dash or a label. */
+/** `edge` with `patch` merged, as Comb merges it: `null` clears a dash or the labels, which a
+ *  patch replaces whole. */
 function patched(edge: EdgeData, patch: EdgePatch): void {
-  const { dash, label, ...rest } = patch;
+  const { dash, labels, ...rest } = patch;
   Object.assign(edge, rest);
   if (dash !== undefined) edge.dash = dash ?? undefined;
-  if (label !== undefined) edge.label = label ?? undefined;
+  if (labels !== undefined) edge.labels = labels ?? undefined;
 }
 
 /** Drops from the copy the nodes and edges a removal names. */
@@ -466,9 +467,12 @@ const MIRROR: { [K in GraphChange["kind"]]: (change: Extract<GraphChange, { kind
       if (edge) patched(edge, patch);
     },
     edgesRemoved: ({ edges }) => removed([], edges),
-    labelMoved: ({ edge: id, t, offset }) => {
+    labelMoved: ({ edge: id, label: moved, t, offset }) => {
       const edge = edgeOf(id);
-      if (edge?.label) edge.label = { ...edge.label, t, offset };
+      if (edge?.labels)
+        edge.labels = edge.labels.map((label) =>
+          label.id === moved ? { ...label, t, offset } : label,
+        );
     },
   };
 
@@ -478,12 +482,13 @@ function mirror(change: GraphChange): void {
   counted();
 }
 
-/** The label the sidebar's text gives the selected edge: its own moved to the new text, a new one
- *  in the middle of the edge, or none for no text. */
-function labelFor(text: string): EdgeData["label"] | null {
+/** The labels the sidebar's text gives the selected edge: a list of one, its own label moved to
+ *  the new text, or a new one in the middle of the edge; or none for no text. */
+function labelsFor(text: string): EdgeData["labels"] | null {
   if (text === "") return null;
   const color = selectedEdge?.color ?? EDGE_GREY;
-  return { t: 0.5, offset: 0, background: color, ...selectedEdge?.label, text };
+  const own = selectedEdge?.labels?.[0];
+  return [{ id: "correlation", t: 0.5, offset: 0, background: color, ...own, text }];
 }
 
 /** The types the palette offers. */
@@ -567,7 +572,7 @@ edgeDash.addEventListener("change", () =>
 edgeArrow.addEventListener("change", () =>
   changeEdge({ arrow: edgeArrow.checked ? "end" : "none" }),
 );
-edgeLabel.addEventListener("input", () => changeEdge({ label: labelFor(edgeLabel.value) }));
+edgeLabel.addEventListener("input", () => changeEdge({ labels: labelsFor(edgeLabel.value) }));
 copiesFromQuery();
 window.comb = comb;
 window.exampleGraph = () => structuredClone(graph);

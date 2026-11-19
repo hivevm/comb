@@ -9,7 +9,7 @@
 import { EngineLostError, GraphDataError, type Selection } from "comb";
 import type { Diagram, Refusal } from "./diagram";
 import { element } from "./element";
-import { KINDS, labelOf, RELATIONSHIPS, type RelationshipKind } from "./relationships";
+import { KINDS, labelIn, labelOf, RELATIONSHIPS, type RelationshipKind } from "./relationships";
 import type { NodeForm } from "./shared";
 
 /** A field of the sidebar's forms whose edit Comb may refuse. */
@@ -137,7 +137,7 @@ export class Sidebar {
     this.dependencyField.hidden = form !== "import-or-use";
     this.eventField.hidden = form !== "event";
     this.edgeHeading.textContent = `Selected ${selected.edge}`;
-    const text = this.diagram.edge(this.edge!)?.label?.text;
+    const text = labelIn(this.diagram.edge(this.edge!))?.text;
     // The kind select offers the kinds a relationship's form changes between, and is set only
     // where that form shows.
     if (form === "relationship") this.kind.value = kind;
@@ -203,7 +203,7 @@ export class Sidebar {
   private changeKind(): void {
     if (this.edge === null) return;
     this.diagram.rekind(this.edge, this.kind.value as RelationshipKind);
-    this.label.value = this.diagram.edge(this.edge)?.label?.text ?? "";
+    this.label.value = labelIn(this.diagram.edge(this.edge))?.text ?? "";
     this.clear([this.label]);
   }
 
@@ -213,7 +213,7 @@ export class Sidebar {
   private relabel(text: string): Refusal | undefined {
     if (this.edge === null) return undefined;
     const kind = this.diagram.kinds.get(this.edge)!;
-    const current = this.diagram.edge(this.edge)?.label;
+    const current = labelIn(this.diagram.edge(this.edge));
     return this.diagram.updateLabel(this.edge, text === "" ? null : labelOf(kind, text, current));
   }
 }

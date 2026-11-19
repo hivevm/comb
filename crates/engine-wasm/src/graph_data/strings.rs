@@ -307,7 +307,7 @@ mod tests {
         };
         let edges = |labels: &[&str]| {
             let mut columns = d_and(|e| label_in(e).text_length = Some(3));
-            columns.labels = pieces(labels);
+            columns.label_texts = pieces(labels);
             columns
         };
         let no_edges = OwnedEdgeColumns::of([]);

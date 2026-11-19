@@ -21,6 +21,7 @@ const limits = {
   rows: 8,
   columns: 6,
   segments: 8,
+  labels: 8,
 };
 
 /** A small deterministic generator, so that a failure repeats. */

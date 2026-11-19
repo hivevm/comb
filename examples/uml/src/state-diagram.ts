@@ -94,7 +94,7 @@ function edgeOf([source, target, label]: (typeof TRANSITIONS)[number]): EdgeData
     sourceSide: side,
     targetSide: side,
     ...styleOf("transition"),
-    ...(label === null ? {} : { label: labelOf("transition", label) }),
+    ...(label === null ? {} : { labels: [labelOf("transition", label)] }),
   };
 }
 

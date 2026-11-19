@@ -280,10 +280,19 @@ function edgesOf(copy: number): EdgeData[] {
       color,
       // Edges without a correlation, from bets to epics to input metrics, are dashed.
       dash: correlation === undefined ? ([6, 4] as const) : undefined,
-      label:
+      // A list of one label, the correlation, in the middle (API-edges-dock-nodes-or-edges).
+      labels:
         correlation === undefined
           ? undefined
-          : { text: correlation.toFixed(3), t: 0.5, offset: 0, background: color },
+          : [
+              {
+                id: "correlation",
+                text: correlation.toFixed(3),
+                t: 0.5,
+                offset: 0,
+                background: color,
+              },
+            ],
     };
   });
 }

@@ -588,17 +588,46 @@ fn one_of(good: Vec<Value>, bad: Vec<Value>, loose: bool) -> BoxedStrategy<Value
     }
 }
 
-fn edge(loose: bool, j: usize, nodes: usize) -> impl Strategy<Value = Value> {
-    let placed = object(vec![
+/// The identifier of a label: one of forty, so that a list now and then holds one twice, now and
+/// then one of 256 or 257 UTF-16 code units.
+fn label_id() -> BoxedStrategy<Value> {
+    let id = (0..40_usize).prop_map(|k| Value::Text(format!("l{k}")));
+    let long =
+        prop::sample::select(vec![256_usize, 257]).prop_map(|n| Value::Text(long_id("l", n)));
+    prop_oneof![40 => id, 1 => long].boxed()
+}
+
+/// A list of edge labels (API-edges-dock-nodes-or-edges): mostly none to three, now and then up
+/// to ten, past the limit of eight; identifiers now and then shared within the list, and the
+/// place left out; loose, a label that is no object, or labels that are no list.
+fn labels(loose: bool) -> BoxedStrategy<Value> {
+    let optional = |name: &'static str| {
+        let given = field(name, num(), loose);
+        prop_oneof![4 => given, 1 => Just(None).boxed()].boxed()
+    };
+    let label = object(vec![
+        field("id", label_id(), loose),
         field("text", text(loose), loose),
-        field("t", num(), loose),
-        field("offset", num(), loose),
+        optional("t"),
+        optional("offset"),
         field("background", background(loose), loose),
     ]);
-    let label = prop_oneof![
-        one_of(vec![Value::Null], vec![Value::Object(Vec::new())], loose),
-        placed,
-    ];
+    let item = if loose {
+        prop_oneof![20 => label, 1 => num()].boxed()
+    } else {
+        label.boxed()
+    };
+    let list = prop_oneof![
+        10 => prop::collection::vec(item.clone(), 0..4),
+        1 => prop::collection::vec(item, 0..11),
+    ]
+    .prop_map(Value::List);
+    one_of(vec![Value::Null], vec![Value::Number(1.0)], loose)
+        .prop_union(list.boxed())
+        .boxed()
+}
+
+fn edge(loose: bool, j: usize, nodes: usize) -> impl Strategy<Value = Value> {
     let length = || prop_oneof![10 => 0.5..20.0f64, 1 => number()];
     let pair = (length(), length())
         .prop_map(|(d, g)| Value::List(vec![d, g].into_iter().map(Value::Number).collect()));
@@ -609,7 +638,20 @@ fn edge(loose: bool, j: usize, nodes: usize) -> impl Strategy<Value = Value> {
         1 => if loose { other.boxed() } else { Just(Value::Null).boxed() },
     ];
     let text = |arrow: &str| Value::Text(arrow.to_owned());
-    let arrow = one_of(vec![text("end"), text("none")], vec![text("start")], loose);
+    let arrows = ["end", "none", "open", "hollow"].map(text).to_vec();
+    let arrow = one_of(arrows, vec![text("start")], loose);
+    let lightning = one_of(
+        vec![Value::Null, Value::Bool(false), Value::Bool(true)],
+        vec![Value::Number(1.0)],
+        loose,
+    );
+    // `label`, which `labels` replaced, now and then still carried (API-edges-dock-nodes-or-edges).
+    let stale = if loose {
+        prop_oneof![20 => Just(None), 1 => Just(Some(("label".to_owned(), Value::Number(0.0))))]
+            .boxed()
+    } else {
+        Just(None).boxed()
+    };
     let sides = ["top", "right", "bottom", "left", "outline"]
         .map(text)
         .to_vec();
@@ -624,10 +666,12 @@ fn edge(loose: bool, j: usize, nodes: usize) -> impl Strategy<Value = Value> {
         field("id", nth("e", j), loose),
         field("source", end(nodes), loose),
         field("target", end(nodes), loose),
-        field("label", label, loose),
+        stale,
+        field("labels", labels(loose), loose),
         field("color", color(loose), loose),
         field("dash", dash, loose),
         field("arrow", arrow, loose),
+        field("lightning", lightning, loose),
         field("sourceSide", side(), loose),
         field("targetSide", side(), loose),
     ])
@@ -950,17 +994,26 @@ fn accepts(batch: &GraphBatch) -> Option<bool> {
         Some([x, y, width].into_iter().all(finite32) && width as f32 >= 0.0 && within && height_ok)
     };
     let edge_ok = |e: &EdgeInput| {
-        let label_ok = match e.label.0? {
-            None => true,
-            Some(l) => {
-                let (t, offset) = (l.t.0?, l.offset.0?);
-                t.is_finite()
-                    && offset.is_finite()
-                    && offset.abs() <= world
-                    && l.text_length.is_some_and(|l| l <= 1_000)
-                    && l.background.is_none_or(rgb)
-            }
-        };
+        if e.label {
+            return None;
+        }
+        let labels = e.labels.0.as_ref()?.as_deref().unwrap_or(&[]);
+        let mut label_ids = Vec::new();
+        let mut label_ok = labels.len() <= 8;
+        for label in labels {
+            let l = label.0.as_ref()?;
+            let id = l.id.0.clone()?;
+            let (t, offset) = (l.t.0?.unwrap_or(0.5), l.offset.0?.unwrap_or(0.0));
+            label_ok &= short(&id)
+                && t.is_finite()
+                && offset.is_finite()
+                && offset.abs() <= world
+                && l.text_length.is_some_and(|l| l <= 1_000)
+                && l.background.is_none_or(rgb);
+            label_ids.push(id);
+        }
+        label_ok &= unique(&label_ids);
+        e.lightning.0?;
         let dash_ok = e.dash.0?.is_none_or(|super::Pair([d, g])| {
             finite32(d) && finite32(g) && d as f32 > 0.0 && g as f32 >= 0.0
         });
@@ -1089,14 +1142,14 @@ type Named = (GraphList, u32, Option<String>, String);
 /// its identifier and its numbers; of an edge, its identifiers, colour, and arrow, and its label
 /// and dash where they are given, and a given label's placement. A title, a label text, and a
 /// background are refused by kinds of their own.
-fn mistyped(list: GraphList, item: &Fields) -> Vec<&'static str> {
+fn mistyped(list: GraphList, item: &Fields) -> Vec<String> {
     let text = |name| matches!(get(item, name), Some(Value::Text(_)));
     let number = |fields, name| matches!(get(fields, name), Some(Value::Number(_)));
     let absent = |value: Option<&Value>| matches!(value, None | Some(Value::Null));
     let mut wrong = Vec::new();
-    let mut check = |name, ok: bool| {
+    let mut check = |name: &str, ok: bool| {
         if !ok {
-            wrong.push(name);
+            wrong.push(name.to_owned());
         }
     };
     match list {
@@ -1119,27 +1172,58 @@ fn mistyped(list: GraphList, item: &Fields) -> Vec<&'static str> {
             for name in ["id", "source", "target"] {
                 check(name, text(name));
             }
-            let label = get(item, "label");
-            match label.and_then(fields_of) {
-                Some(placed) => {
-                    check("label.t", number(placed, "t"));
-                    check("label.offset", number(placed, "offset"));
-                }
-                None => check("label", absent(label)),
+            check("label", absent(get(item, "label")));
+            for name in mistyped_labels(item) {
+                check(&name, false);
             }
             check("color", number(item, "color"));
             let dash = get(item, "dash");
             let number = |n: &Value| matches!(n, Value::Number(_));
             let pair = matches!(dash, Some(Value::List(v)) if v.len() == 2 && v.iter().all(number));
             check("dash", absent(dash) || pair);
+            let arrows = ["end", "none", "open", "hollow"];
             let arrow =
-                matches!(get(item, "arrow"), Some(Value::Text(a)) if a == "end" || a == "none");
+                matches!(get(item, "arrow"), Some(Value::Text(a)) if arrows.contains(&a.as_str()));
             check("arrow", arrow);
+            let lightning = get(item, "lightning");
+            check(
+                "lightning",
+                absent(lightning) || matches!(lightning, Some(Value::Bool(_))),
+            );
             for name in ["sourceSide", "targetSide"] {
                 let sides = ["top", "right", "bottom", "left", "outline"];
                 let side =
                     matches!(get(item, name), Some(Value::Text(s)) if sides.contains(&s.as_str()));
                 check(name, side);
+            }
+        }
+    }
+    wrong
+}
+
+/// The fields of the labels of the edge `item` that are missing or hold a value of another type,
+/// by name: the list, then of each of the first nine labels, which the bridge reads, the label as
+/// an object, its identifier, and its place where it gives one (API-edges-dock-nodes-or-edges).
+fn mistyped_labels(item: &Fields) -> Vec<String> {
+    let absent = |value: Option<&Value>| matches!(value, None | Some(Value::Null));
+    let labels = match get(item, "labels") {
+        Some(Value::List(labels)) => labels,
+        labels if absent(labels) => return Vec::new(),
+        _ => return vec!["labels".to_owned()],
+    };
+    let mut wrong = Vec::new();
+    for (i, label) in labels.iter().take(9).enumerate() {
+        let Some(placed) = fields_of(label) else {
+            wrong.push(format!("labels[{i}]"));
+            continue;
+        };
+        if !matches!(get(placed, "id"), Some(Value::Text(_))) {
+            wrong.push(format!("labels[{i}].id"));
+        }
+        for name in ["t", "offset"] {
+            let value = get(placed, name);
+            if !(absent(value) || matches!(value, Some(Value::Number(_)))) {
+                wrong.push(format!("labels[{i}].{name}"));
             }
         }
     }
@@ -1164,7 +1248,7 @@ fn named_fields(value: &Value) -> Vec<Named> {
             };
             for field in mistyped(list, fields) {
                 let id = if field == "id" { None } else { id.clone() };
-                named.push((list, index as u32, id, field.to_owned()));
+                named.push((list, index as u32, id, field));
             }
         }
     }
@@ -1790,28 +1874,32 @@ fn base_edge() -> Vec<(String, Value)> {
         ("arrow".to_owned(), Value::Text("end".to_owned())),
         ("sourceSide".to_owned(), Value::Text("bottom".to_owned())),
         ("targetSide".to_owned(), Value::Text("top".to_owned())),
-        // A dash and a label too, so that a patch that names neither is seen to keep them.
+        // A dash, labels, and a lightning bolt too, so that a patch that names none of them is
+        // seen to keep them.
         (
             "dash".to_owned(),
             Value::List(vec![Value::Number(8.0), Value::Number(4.0)]),
         ),
         (
-            "label".to_owned(),
-            Value::Object(vec![
+            "labels".to_owned(),
+            Value::List(vec![Value::Object(vec![
+                ("id".to_owned(), Value::Text("m".to_owned())),
                 ("text".to_owned(), Value::Text("x".to_owned())),
                 ("t".to_owned(), Value::Number(0.3)),
                 ("offset".to_owned(), Value::Number(5.0)),
-            ]),
+            ])]),
         ),
+        ("lightning".to_owned(), Value::Bool(true)),
     ]
 }
 
 /// The fields a patch of `updateEdge` may set.
-const PATCHED: [&str; 6] = [
+const PATCHED: [&str; 7] = [
     "color",
     "dash",
     "arrow",
-    "label",
+    "labels",
+    "lightning",
     "sourceSide",
     "targetSide",
 ];
@@ -1819,10 +1907,11 @@ const PATCHED: [&str; 6] = [
 /// A patch of `updateEdge`: some of the fields of an edge, of any value, and now and then a field
 /// of another name among them.
 fn edge_patch() -> impl Strategy<Value = Vec<(String, Value)>> {
-    let other = prop::sample::select(vec!["id", "source", "width", "", "colour"]);
+    // `label`, which `labels` replaced, among the other names (API-edges-dock-nodes-or-edges).
+    let other = prop::sample::select(vec!["id", "source", "width", "", "colour", "label"]);
     (
         edge(true, 0, 2),
-        0..16_u32,
+        0..128_u32,
         prop::option::of((0..5_usize, other)),
     )
         .prop_map(|(edge, keep, other)| {
@@ -1961,7 +2050,7 @@ proptest! {
     ) {
         // Verifies: ARCH-one-workspace-per-example, API-edits-reported-as-typed-changes, Q-7
         let mut graph = loaded(bound, two_nodes(vec![Value::Object(base_edge())])).unwrap();
-        let before = graph.edge(0);
+        let before = graph.edge(0).cloned();
         let other = patch
             .iter()
             .find(|(name, _)| !PATCHED.contains(&name.as_str()))
@@ -1979,7 +2068,7 @@ proptest! {
                 edge: "e0".to_owned(),
                 field,
             })));
-            prop_assert_eq!(graph.edge(0), before);
+            prop_assert_eq!(graph.edge(0).cloned(), before);
             return Ok(());
         }
         // Held to the oracle on its own too, as an added edge is.
@@ -1988,7 +2077,7 @@ proptest! {
             (Ok(()), Ok(expected)) => prop_assert_eq!(graph.edge(0), expected.edge(0)),
             (Err(error), Err(expected)) => {
                 prop_assert_eq!(error, EdgeRefusal::Data(expected));
-                prop_assert_eq!(graph.edge(0), before);
+                prop_assert_eq!(graph.edge(0).cloned(), before);
             }
             (updated, as_load) => prop_assert!(false, "updated {:?}, loaded {:?}", updated, as_load.map(|_| ())),
         }

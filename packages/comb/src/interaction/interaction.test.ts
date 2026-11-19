@@ -4,7 +4,13 @@ import { attachInteraction, type Connect, type ContainerMove, type MoveInto } fr
 import { editorsOf } from "../api/editors";
 import type { Bridge } from "../bridge";
 import { ConnectionLine } from "../render/connectors";
-import { createGraphStore, type GraphData, type GraphStore, type NodeContent } from "../store";
+import {
+  createGraphStore,
+  type GraphData,
+  type GraphStore,
+  type KeptGraph,
+  type NodeContent,
+} from "../store";
 
 /** One row of one title, `title`. */
 const titled = (title: string): NodeContent => [[{ kind: "text", role: "title", text: title }]];
@@ -14,7 +20,7 @@ const titled = (title: string): NodeContent => [[{ kind: "text", role: "title", 
 function load(store: GraphStore, graph: GraphData): void {
   const ids = [...graph.nodes, ...graph.edges].map((item) => item.id);
   const ends = graph.edges.flatMap((edge) => [edge.source, edge.target]);
-  store.getState().load(graph, [...ids, ...ends].join("").length);
+  store.getState().load(graph as KeptGraph, [...ids, ...ends].join("").length);
 }
 
 type Handler = (event: { global: { x: number; y: number } }) => void;
@@ -411,7 +417,7 @@ describe("interaction on an edge", () => {
 describe("the hit test", () => {
   const hits = [
     ["a connector", { kind: "connector", slot: 0, side: "right" }],
-    ["a label", { kind: "label", slot: 0 }],
+    ["a label", { kind: "label", slot: 0, label: 0 }],
     ["a node", { kind: "node", slot: 0 }],
     ["an edge", { kind: "edge", slot: 0 }],
     ["nothing", { kind: "none" }],
@@ -733,6 +739,7 @@ function dropping(canMoveInto?: (move: ContainerMove) => unknown, under: number 
     rows: 1,
     columns: 1,
     segments: 1,
+    labels: 8,
   };
   const asked: unknown[] = [];
   const veto = canMoveInto && ((move: ContainerMove) => (asked.push(move), canMoveInto(move)));

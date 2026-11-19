@@ -31,6 +31,13 @@ pub(super) fn optional_number<'de, D: Deserializer<'de>>(
     Ok(Option::<f64>::deserialize(deserializer).unwrap_or(Some(f64::NAN)))
 }
 
+/// Whether a field the bridge reads only to refuse it holds a value: false for null or undefined,
+/// which serde gives a field it does not find too, and true for any other value, read no further.
+pub(super) fn present<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
+    Ok(Option::<serde::de::IgnoredAny>::deserialize(deserializer)
+        .map_or(true, |value| value.is_some()))
+}
+
 /// A field as the host application handed it over: its value, or none where the field is missing
 /// or holds a value of another type, which the bridge refuses by name, not as malformed data: a
 /// field of a node or an edge naming the node or edge and the field (`invalidField`), a field of
@@ -45,6 +52,13 @@ impl<T> Field<Option<T>> {
     /// A field left out, as serde gives a field it does not find.
     pub(super) const fn absent() -> Self {
         Self(Some(None))
+    }
+}
+
+impl<T> Field<T> {
+    /// The field with its value borrowed, refused where the field is.
+    pub(super) const fn as_ref(&self) -> Field<&T> {
+        Field(self.0.as_ref())
     }
 }
 

@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { createGraphStore, type GraphData, type GraphState, type NodeContent } from ".";
+import {
+  createGraphStore,
+  type GraphData,
+  type GraphState,
+  type KeptGraph,
+  type NodeContent,
+} from ".";
 
 /** One row of one title, `title`. */
 const titled = (title: string): NodeContent => [[{ kind: "text", role: "title", text: title }]];
@@ -18,7 +24,7 @@ const units = "a".length + "b".length + "a-b".length + "a".length + "b".length;
 describe("graph store", () => {
   test("a load assigns slots in node order and keeps no coordinates", () => {
     const store = createGraphStore();
-    store.getState().load(graph, units);
+    store.getState().load(graph as KeptGraph, units);
     const state = store.getState();
     expect([...state.slots]).toEqual([
       ["a", 0],
@@ -29,7 +35,7 @@ describe("graph store", () => {
 
   test("moving positions bumps the counter and leaves the graph untouched", () => {
     const store = createGraphStore();
-    store.getState().load(graph, units);
+    store.getState().load(graph as KeptGraph, units);
     const { nodes, edges, positionsVersion } = store.getState();
     store.getState().positionsMoved();
     store.getState().positionsMoved();
@@ -41,7 +47,7 @@ describe("graph store", () => {
 
   test("an attribute change replaces only the changed node", () => {
     const store = createGraphStore();
-    store.getState().load(graph, units);
+    store.getState().load(graph as KeptGraph, units);
     const before = store.getState().nodes;
     store.getState().updateNode("b", true);
     const after = store.getState().nodes;
@@ -62,7 +68,7 @@ describe("graph store", () => {
     // Verifies: ARCH-engine-edits-graph-in-place, API-edits-reported-as-typed-changes
     // Verifies: ARCH-graph-in-zustand-store
     const store = createGraphStore();
-    store.getState().load(graph, units);
+    store.getState().load(graph as KeptGraph, units);
     const { nodes, positionsVersion, idUnits } = store.getState();
     expect(idUnits).toBe("a".length + "b".length + "a-b".length + 2);
     expect(store.getState().change).toEqual({ kind: "loaded", by: "host" });
@@ -86,7 +92,7 @@ describe("graph store removals", () => {
   test("a removal leaves holes at the free slots, forgets the identifiers, and clears the selection", () => {
     // Verifies: ARCH-engine-edits-graph-in-place, API-edits-reported-as-typed-changes
     const store = createGraphStore();
-    store.getState().load(graph, units);
+    store.getState().load(graph as KeptGraph, units);
     store.getState().select({ kind: "node", id: "a" });
     const { idUnits } = store.getState();
     store.getState().removeNodes([0], [0], "host");
@@ -108,7 +114,7 @@ describe("graph store removals", () => {
   test("a removal of edges keeps the nodes and a selection of a node", () => {
     // Verifies: ARCH-engine-edits-graph-in-place, API-edits-reported-as-typed-changes
     const store = createGraphStore();
-    store.getState().load(graph, units);
+    store.getState().load(graph as KeptGraph, units);
     store.getState().select({ kind: "node", id: "b" });
     const { nodes } = store.getState();
     store.getState().removeEdges([0], "host");
@@ -122,7 +128,7 @@ describe("graph store removals", () => {
   test("a removal of a node clears a selection of an edge it took along", () => {
     // Verifies: ARCH-engine-edits-graph-in-place
     const store = createGraphStore();
-    store.getState().load(graph, units);
+    store.getState().load(graph as KeptGraph, units);
     store.getState().select({ kind: "edge", id: "a-b" });
     store.getState().removeNodes([1], [0], "host");
     expect(store.getState().selection).toBeNull();
@@ -131,24 +137,30 @@ describe("graph store removals", () => {
 
 describe("graph store edge edits", () => {
   test("an added edge takes its slot and counts its identifiers; a patch merges, null clears", () => {
-    // Verifies: ARCH-engine-edits-graph-in-place, API-edits-reported-as-typed-changes
+    // Verifies: ARCH-engine-edits-graph-in-place, API-edits-reported-as-typed-changes,
+    // API-edges-dock-nodes-or-edges
     const store = createGraphStore();
-    store.getState().load(graph, units);
+    store.getState().load(graph as KeptGraph, units);
     const { idUnits } = store.getState();
     const edge = { id: "b-a", source: "b", target: "a", color: 1, arrow: "end" as const };
-    store
-      .getState()
-      .addEdge({ ...edge, dash: [4, 4], label: { text: "x", t: 0.5, offset: 0 } }, 1, "host");
+    const label = (id: string) => ({ id, text: "x", t: 0.5, offset: 0, background: 1 });
+    store.getState().addEdge({ ...edge, dash: [4, 4], labels: [label("m")] }, 1, "host");
     expect(store.getState().edgeSlots.get("b-a")).toBe(1);
-    expect(store.getState().idUnits).toBe(idUnits + 5);
+    // Its identifier, its ends', and its label's.
+    expect(store.getState().idUnits).toBe(idUnits + 5 + 1);
     expect(store.getState().change).toEqual({ kind: "edgeAdded", by: "host", id: "b-a" });
-    store.getState().updateEdge("b-a", { color: 2, dash: null, label: null });
+    // A patch's labels replace the list whole, their identifiers counted in place of the old.
+    store.getState().updateEdge("b-a", { labels: [label("no"), label("p")] });
+    expect(store.getState().idUnits).toBe(idUnits + 5 + 3);
+    expect(store.getState().edges[1]!.labels).toEqual([label("no"), label("p")]);
+    store.getState().updateEdge("b-a", { color: 2, dash: null, labels: null });
     expect(store.getState().edges[1]).toEqual({ ...edge, color: 2 });
+    expect(store.getState().idUnits).toBe(idUnits + 5);
     expect(store.getState().change).toEqual({
       kind: "edgeUpdated",
       by: "host",
       id: "b-a",
-      patch: { color: 2, dash: null, label: null },
+      patch: { color: 2, dash: null, labels: null },
     });
   });
 });
@@ -157,7 +169,7 @@ describe("graph store counts", () => {
   test("a load keeps the code units its snapshot counted, and counts none itself", () => {
     // Verifies: API-edits-reported-as-typed-changes
     const store = createGraphStore();
-    store.getState().load(graph, 99);
+    store.getState().load(graph as KeptGraph, 99);
     expect(store.getState().idUnits).toBe(99);
   });
 });

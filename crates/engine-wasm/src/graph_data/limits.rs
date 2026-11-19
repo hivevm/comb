@@ -11,12 +11,19 @@ pub const MAX_TEXT: usize = TEXT_LIMIT as usize;
 /// The most nodes, and the most edges, of one graph.
 pub const MAX_ITEMS: u32 = 1_000_000;
 
-/// The most UTF-16 code units of an identifier: a node's or an edge's, or an edge's source or
-/// target.
+/// The most edge labels of one edge (API-edges-dock-nodes-or-edges, *Edge labels*).
+pub const MAX_LABELS: usize = LABEL_LIMIT as usize;
+
+/// `MAX_LABELS` as the `u32` a refusal and `labelLimit` name.
+pub(crate) const LABEL_LIMIT: u32 = 8;
+
+/// The most UTF-16 code units of an identifier: a node's or an edge's, an edge's source or
+/// target, or an edge label's.
 pub const MAX_ID: usize = ID_LIMIT as usize;
 
-/// The most UTF-16 code units of all identifiers of one load together, sources and targets
-/// among them, so that the identifiers of a graph within its other limits cost a bounded copy.
+/// The most UTF-16 code units of all identifiers of one load together, sources, targets, and the
+/// identifiers of edge labels among them (API-edges-dock-nodes-or-edges), so that the identifiers
+/// of a graph within its other limits cost a bounded copy.
 pub const MAX_ID_UNITS: u32 = 64_000_000;
 
 /// `MAX_TEXT` as the `u32` a refusal and `textLimit` name, declared in the narrower type so that

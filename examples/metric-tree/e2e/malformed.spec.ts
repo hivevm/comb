@@ -8,7 +8,10 @@ const edge = (id: string, source: string, target: string) => ({ id, source, targ
 const labelled = (label: unknown): GraphData => ({
   nodes: [node("a"), node("b", 300)],
   edges: [
-    { ...edge("e", "a", "b"), label: { text: "e", t: 0.5, offset: 0, ...(label as object) } },
+    {
+      ...edge("e", "a", "b"),
+      labels: [{ id: "m", text: "e", t: 0.5, offset: 0, ...(label as object) }],
+    },
   ],
 });
 /** A value of the wrong type, as a host application without types might hand it over. */
@@ -76,12 +79,12 @@ const MALFORMED: { name: string; graph: GraphData; problem: unknown }[] = [
   {
     name: "a label text that is not a string",
     graph: labelled({ text: { toString: "e" } }),
-    problem: { kind: "invalidLabelText", edge: "e" },
+    problem: { kind: "invalidLabelText", edge: "e", label: "m" },
   },
   ...[-5, 0x1000000, 1e20, 0.5, Number.NaN, 5n, {}, "red"].map((background) => ({
     name: `a label background of ${typeof background === "object" || typeof background === "string" ? JSON.stringify(background) : typeof background === "bigint" ? `${background}n` : String(background)}`,
     graph: labelled({ background }),
-    problem: { kind: "invalidBackground", edge: "e" },
+    problem: { kind: "invalidBackground", edge: "e", label: "m" },
   })),
   {
     name: "a node identifier of 257 characters",
@@ -111,7 +114,7 @@ const MALFORMED: { name: string; graph: GraphData; problem: unknown }[] = [
   {
     name: "a label text of 1,001 UTF-16 code units",
     graph: labelled({ text: "\u{1F600}".repeat(500) + "x" }),
-    problem: { kind: "labelTextTooLong", edge: "e", limit: 1000 },
+    problem: { kind: "labelTextTooLong", edge: "e", label: "m", limit: 1000 },
   },
   ...[
     ["graph data that is not an object", null],
@@ -131,6 +134,11 @@ const SIZE = "a finite number of 0 or more";
 const COLOR = "an integer from 0 to 0xFFFFFF";
 const DASH = "a list of two finite numbers, or none";
 const ID = "a well-formed string of at most 256 code units";
+const ARROW = '"end", "open", "hollow", or "none"';
+const LABELS = "a list of edge labels, or none";
+const NUMBER_OR_NONE = "a finite number, or none";
+const NO_LABEL = "nothing: an edge carries labels, a list of edge labels, in its stead";
+const FLAG = "true or false, or none";
 const SIDE = '"top", "right", "bottom", "left", or "outline"';
 const ROWS = "a list of rows";
 /** A text element of node `b`'s content where it lies, as a problem of its text names it. */
@@ -141,7 +149,7 @@ function changed(item: "b" | "e", change: (fields: Record<string, unknown>) => v
   const b: Record<string, unknown> = { ...node("b", 300) };
   const e: Record<string, unknown> = {
     ...edge("e", "a", "b"),
-    label: { text: "e", t: 0.5, offset: 0 },
+    labels: [{ id: "m", text: "e", t: 0.5, offset: 0 }],
   };
   change(item === "b" ? b : e);
   return wrong<GraphData>({ nodes: [node("a"), b], edges: [e] });
@@ -169,14 +177,17 @@ const FIELDS: { name: string; graph: GraphData; problem: unknown }[] = [
       ["an edge source that is an object", (e) => (e.source = { id: "a" }), "source", ID],
       ["a missing edge target", (e) => delete e.target, "target", ID],
       ["a colour that is a string", (e) => (e.color = "red"), "color", COLOR],
-      ["an arrow at the start", (e) => (e.arrow = "start"), "arrow", '"end" or "none"'],
-      ["a label that is a string", (e) => (e.label = "e"), "label", "an object, or none"],
+      ["an arrow at the start", (e) => (e.arrow = "start"), "arrow", ARROW],
+      ["labels that are a string", (e) => (e.labels = "e"), "labels", LABELS],
       [
-        "a label without its offset",
-        (e) => delete (e.label as Record<string, unknown>).offset,
-        "label.offset",
-        NUMBER,
+        "a label whose offset is a string",
+        (e) => ((e.labels as Record<string, unknown>[])[0]!.offset = "1"),
+        "labels[0].offset",
+        NUMBER_OR_NONE,
       ],
+      // `label`, which `labels` replaced (API-edges-dock-nodes-or-edges).
+      ["a label of the one-label kind", (e) => (e.label = { text: "e" }), "label", NO_LABEL],
+      ["a lightning bolt that is a number", (e) => (e.lightning = 1), "lightning", FLAG],
       ["a dash of three numbers", (e) => (e.dash = [6, 4, 2]), "dash", DASH],
     ] as [string, (e: Record<string, unknown>) => void, string, string][]
   ).map(([name, change, field, expected]) => ({
@@ -307,14 +318,18 @@ const EDGE_REFUSALS: { kind: string; problem: unknown }[] = [
       ["loneSurrogateSource", "source", ID],
       ["objectSource", "source", ID],
       ["nullTarget", "target", ID],
-      ["booleanLabel", "label", "an object, or none"],
-      ["stringLabelT", "label.t", NUMBER],
-      ["missingLabelOffset", "label.offset", NUMBER],
+      ["staleLabel", "label", NO_LABEL],
+      ["booleanLabels", "labels", LABELS],
+      ["numberLabel", "labels[0]", "an object"],
+      ["missingLabelId", "labels[0].id", ID],
+      ["stringLabelT", "labels[0].t", NUMBER_OR_NONE],
+      ["stringLabelOffset", "labels[0].offset", NUMBER_OR_NONE],
+      ["numberLightning", "lightning", FLAG],
       ["stringColor", "color", COLOR],
       ["dashOfThree", "dash", DASH],
       ["dashOfStrings", "dash", DASH],
-      ["arrowAtStart", "arrow", '"end" or "none"'],
-      ["numberArrow", "arrow", '"end" or "none"'],
+      ["arrowAtStart", "arrow", ARROW],
+      ["numberArrow", "arrow", ARROW],
       ["middleSourceSide", "sourceSide", SIDE],
       ["numberTargetSide", "targetSide", SIDE],
       ["loneSurrogateTargetSide", "targetSide", SIDE],
@@ -338,21 +353,31 @@ const EDGE_REFUSALS: { kind: string; problem: unknown }[] = [
     kind: "longTarget",
     problem: { kind: "idTooLong", list: "edges", index: 1, field: "target", limit: 256 },
   },
-  { kind: "missingLabelText", problem: { kind: "invalidLabelText", edge: "e" } },
-  { kind: "loneSurrogateLabelText", problem: { kind: "invalidLabelText", edge: "e" } },
-  { kind: "longLabelText", problem: { kind: "labelTextTooLong", edge: "e", limit: 1000 } },
-  { kind: "stringBackground", problem: { kind: "invalidBackground", edge: "e" } },
-  { kind: "backgroundBeyondRgb", problem: { kind: "invalidBackground", edge: "e" } },
+  { kind: "missingLabelText", problem: { kind: "invalidLabelText", edge: "e", label: "m" } },
+  { kind: "loneSurrogateLabelText", problem: { kind: "invalidLabelText", edge: "e", label: "m" } },
+  {
+    kind: "longLabelText",
+    problem: { kind: "labelTextTooLong", edge: "e", label: "m", limit: 1000 },
+  },
+  { kind: "stringBackground", problem: { kind: "invalidBackground", edge: "e", label: "m" } },
+  { kind: "backgroundBeyondRgb", problem: { kind: "invalidBackground", edge: "e", label: "m" } },
+  // Two labels of one identifier, and nine labels (API-edges-dock-nodes-or-edges).
+  { kind: "duplicateLabel", problem: { kind: "duplicateLabel", edge: "e", label: "m" } },
+  { kind: "nineLabels", problem: { kind: "tooManyLabels", edge: "e", limit: 8 } },
+  {
+    kind: "longLabelId",
+    problem: { kind: "idTooLong", list: "edges", index: 1, field: "labels", limit: 256 },
+  },
   { kind: "colorBeyondRgb", problem: { kind: "invalidColor", edge: "e" } },
   { kind: "negativeGap", problem: { kind: "invalidDash", edge: "e" } },
-  { kind: "nonFiniteLabel", problem: { kind: "nonFiniteLabel", edge: "e" } },
+  { kind: "nonFiniteLabel", problem: { kind: "nonFiniteLabel", edge: "e", label: "m" } },
   {
     kind: "labelBeyondWorld",
     problem: {
       kind: "beyondWorld",
       list: "edges",
       id: "e",
-      field: "label.offset",
+      field: "labels[0].offset",
       limit: 2 ** 120,
     },
   },
@@ -362,8 +387,15 @@ const EDGE_REFUSALS: { kind: string; problem: unknown }[] = [
  *  or as it is for a kind none names, in the page, and returns the problem `load` throws, or
  *  none. */
 function edgeRefusal(kind: string) {
-  const label: Record<string, unknown> = { text: "e", t: 0.5, offset: 0, background: 0x123456 };
-  const e: Record<string, unknown> = { id: "e", source: "b", target: "a", label, dash: [6, 4] };
+  const label: Record<string, unknown> = {
+    id: "m",
+    text: "e",
+    t: 0.5,
+    offset: 0,
+    background: 0x123456,
+  };
+  const labels: unknown[] = [label];
+  const e: Record<string, unknown> = { id: "e", source: "b", target: "a", labels, dash: [6, 4] };
   const changes: Record<string, () => unknown> = {
     missingId: () => delete e.id,
     numberId: () => (e.id = 5),
@@ -371,9 +403,17 @@ function edgeRefusal(kind: string) {
     loneSurrogateSource: () => (e.source = "\uDC00b"),
     objectSource: () => (e.source = { id: "b" }),
     nullTarget: () => (e.target = null),
-    booleanLabel: () => (e.label = true),
+    staleLabel: () => (e.label = { text: "e", t: 0.5, offset: 0 }),
+    booleanLabels: () => (e.labels = true),
+    numberLabel: () => (labels[0] = 5),
+    missingLabelId: () => delete label.id,
     stringLabelT: () => (label.t = "1"),
-    missingLabelOffset: () => delete label.offset,
+    stringLabelOffset: () => (label.offset = "1"),
+    numberLightning: () => (e.lightning = 1),
+    duplicateLabel: () => labels.push({ id: "n", text: "n" }, { id: "m", text: "again" }),
+    nineLabels: () =>
+      labels.push(...Array.from({ length: 8 }, (_, i) => ({ id: `l${i}`, text: "l" }))),
+    longLabelId: () => (label.id = "m".repeat(257)),
     stringColor: () => (e.color = "red"),
     dashOfThree: () => (e.dash = [6, 4, 2]),
     dashOfStrings: () => (e.dash = ["6", 4]),
@@ -597,7 +637,8 @@ function installGenerator(): void {
       y: mostly(() => random() * 300 - 100, odd),
       width: mostly(() => random() * 220, odd),
     }));
-    const label = () => ({
+    const label = (k: number) => ({
+      id: mostly(() => pick([`l${k}`, "l0"]), odd),
       text: mostly(() => pick(["", "ok", "x".repeat(40)]), odd),
       t: mostly(() => random(), odd),
       offset: mostly(() => random() * 40 - 20, odd),
@@ -609,8 +650,9 @@ function installGenerator(): void {
       target: mostly(() => pick(ids), ["z", ...odd]),
       color: mostly(() => pick([undefined, 0, 0x22a55b, 0xffffff]), odd),
       dash: mostly(() => pick([undefined, [6, 4]]), odd),
-      arrow: mostly(() => pick([undefined, "end", "none"]), odd),
-      label: mostly(label, [undefined, null]),
+      arrow: mostly(() => pick([undefined, "end", "none", "open", "hollow"]), odd),
+      lightning: mostly(() => pick([undefined, false, true]), odd),
+      labels: mostly(() => [0, 1, 2].slice(0, Math.floor(random() * 4)).map(label), [null, ...odd]),
     }));
     const patch = mostly(
       () => ({ content: mostly(() => title("Renamed"), odd) }),
@@ -698,7 +740,7 @@ test("load reads the host's graph data once and keeps what the bridge checked", 
   const read: Read = await page.evaluate(async () => {
     // A background that is a colour on the first read and one PixiJS cannot convert after it.
     let reads = 0;
-    const label = { text: "e", t: 0.5, offset: 0 };
+    const label = { id: "m", text: "e", t: 0.5, offset: 0 };
     Object.defineProperty(label, "background", {
       enumerable: true,
       get: () => (reads++ === 0 ? 0x123456 : -5),
@@ -708,7 +750,7 @@ test("load reads the host's graph data once and keeps what the bridge checked", 
     try {
       window.comb.load({
         nodes: [nodeAt("a", 0), nodeAt("b", 300)],
-        edges: [{ id: "e", source: "a", target: "b", label }],
+        edges: [{ id: "e", source: "a", target: "b", labels: [label] }],
       });
     } catch (error) {
       refused = (error as Error & { problem: unknown }).problem;
@@ -959,8 +1001,8 @@ type Hostile = Window & { hostileValue: (kind: (typeof HOSTILE)[number]) => unkn
 async function hostile([kind, place]: [(typeof HOSTILE)[number], (typeof PLACES)[number]]) {
   const value = (window as unknown as Hostile).hostileValue(kind) as never;
   const nodeAt = (id: string) => window.node(id);
-  const label = { text: "e", t: 0.5, offset: 0 };
-  const anEdge = { id: "e", source: "a", target: "b", label };
+  const label = { id: "m", text: "e", t: 0.5, offset: 0 };
+  const anEdge = { id: "e", source: "a", target: "b", labels: [label] };
   const calls = {
     title: () =>
       window.comb.load({
@@ -972,12 +1014,12 @@ async function hostile([kind, place]: [(typeof HOSTILE)[number], (typeof PLACES)
     text: () =>
       window.comb.load({
         nodes: [nodeAt("a"), nodeAt("b")],
-        edges: [{ ...anEdge, label: { ...label, text: value } }],
+        edges: [{ ...anEdge, labels: [{ ...label, text: value }] }],
       }),
     background: () =>
       window.comb.load({
         nodes: [nodeAt("a"), nodeAt("b")],
-        edges: [{ ...anEdge, label: { ...label, background: value } }],
+        edges: [{ ...anEdge, labels: [{ ...label, background: value }] }],
       }),
     nodes: () => window.comb.load({ nodes: value, edges: [] }),
     graph: () => window.comb.load(value),
@@ -1269,7 +1311,7 @@ async function atTheTextLimit(edges: boolean) {
           id: `e${i}`,
           source: "a",
           target: "b",
-          label: { text, t: 0.5, offset: 0 },
+          labels: [{ id: "m", text, t: 0.5, offset: 0 }],
         })),
       }
     : {
@@ -1321,7 +1363,7 @@ type Kinds = Window & { kindCalls: Record<string, () => void> };
 function installKinds() {
   const nodeAt = (id: string) => window.node(id);
   const [two, anEdge] = [[nodeAt("a"), nodeAt("b")], { id: "e", source: "a", target: "b" }];
-  const [label, long] = [{ text: "e", t: 0.5, offset: 0 }, "x".repeat(256)];
+  const [label, long] = [{ id: "m", text: "e", t: 0.5, offset: 0 }, "x".repeat(256)];
   const load = (graph: unknown) => () => window.comb.load(graph as GraphData);
   const nodes = (fields: object) => load({ nodes: [{ ...nodeAt("a"), ...fields }], edges: [] });
   const edges = (fields: object) => load({ nodes: two, edges: [{ ...anEdge, ...fields }] });
@@ -1354,19 +1396,18 @@ function installKinds() {
     duplicateNode: load({ nodes: [nodeAt("a"), nodeAt("a")], edges: [] }),
     duplicateEdge: load({ nodes: two, edges: [anEdge, anEdge] }),
     missingNode: edges({ target: "z" }),
-    nonFiniteLabel: edges({ label: { ...label, t: Number.NaN } }),
-    invalidLabelText: edges({ label: { ...label, text: 5 } }),
-    labelTextTooLong: edges({ label: { ...label, text: "x".repeat(1001) } }),
-    invalidBackground: edges({ label: { ...label, background: -5 } }),
+    nonFiniteLabel: edges({ labels: [{ ...label, t: Number.NaN }] }),
+    invalidLabelText: edges({ labels: [{ ...label, text: 5 }] }),
+    labelTextTooLong: edges({ labels: [{ ...label, text: "x".repeat(1001) }] }),
+    invalidBackground: edges({ labels: [{ ...label, background: -5 }] }),
+    duplicateLabel: edges({ labels: [label, label] }),
+    tooManyLabels: edges({ labels: Array(9).fill(label) }),
     invalidColor: edges({ color: -1 }),
     invalidDash: edges({ dash: [0, 4] }),
     tooMany: load({ nodes: new Array(1_000_001), edges: [] }),
     idTooLong: nodes({ id: long + "x" }),
     // 250,001 identifiers of 256 code units hold more than 64,000,000 together.
-    idBudgetExceeded: load({
-      nodes: Array.from({ length: 250_001 }, () => nodeAt(long)),
-      edges: [],
-    }),
+    idBudgetExceeded: load({ nodes: Array(250_001).fill(nodeAt(long)), edges: [] }),
     unknownNode: () => window.comb.updateNode("z", { content: [] }),
     unknownEdge: () => window.comb.removeEdges(["z"]),
     selfEdge: () => window.comb.addEdge({ id: "e", source: "a", target: "a" }),
@@ -1410,5 +1451,5 @@ test("load and the methods that edit the graph throw every kind of GraphDataProb
   const thrown = await page.evaluate(everyKind);
   expect(errors).toEqual([]);
   expect(thrown).toEqual(Object.fromEntries(Object.keys(thrown).map((kind) => [kind, kind])));
-  expect(Object.keys(thrown).length).toBe(38);
+  expect(Object.keys(thrown).length).toBe(40);
 });

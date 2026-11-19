@@ -49,7 +49,7 @@ async function drawWatched(hostile: string[]) {
       id: `e${i}`,
       source: `n${i}`,
       target: `n${(i + 1) % hostile.length}`,
-      label: { text, t: 0.5, offset: 0 },
+      labels: [{ id: "m", text, t: 0.5, offset: 0 }],
     })),
   });
   comb.fitView();

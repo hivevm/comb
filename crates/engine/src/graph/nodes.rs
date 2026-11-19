@@ -453,7 +453,7 @@ mod tests {
                 sides: OUTLINE,
                 source,
                 target,
-                label: None,
+                labels: Vec::new(),
                 style: EdgeStyle::unstyled(),
             });
         }
@@ -525,7 +525,7 @@ mod tests {
                 sides: OUTLINE,
                 source: 0,
                 target: 1,
-                label: None,
+                labels: Vec::new(),
                 style: EdgeStyle::unstyled(),
             }],
         )
@@ -580,7 +580,7 @@ mod tests {
                     sides: OUTLINE,
                     source,
                     target,
-                    label: None,
+                    labels: Vec::new(),
                     style: EdgeStyle::unstyled(),
                 })
                 .collect();
@@ -592,7 +592,7 @@ mod tests {
                 shapes.push(shape);
             }
             for edge in 0..graph.edges_in_use() {
-                let spec = graph.edges[edge as usize];
+                let spec = &graph.edges[edge as usize];
                 let (a, b) = (
                     centre_of(&graph, spec.source),
                     centre_of(&graph, spec.target),
@@ -634,14 +634,14 @@ mod tests {
                     sides: Sides::default(),
                     source: 0,
                     target: 1,
-                    label: None,
+                    labels: Vec::new(),
                     style: EdgeStyle::unstyled(),
                 },
                 EdgeSpec {
                     sides: Sides::default(),
                     source: 1,
                     target: 2,
-                    label: None,
+                    labels: Vec::new(),
                     style: EdgeStyle::unstyled(),
                 },
             ],
@@ -675,7 +675,7 @@ mod tests {
                 sides: Sides::default(),
                 source: 0,
                 target: 1,
-                label: None,
+                labels: Vec::new(),
                 style: EdgeStyle::unstyled(),
             }],
         )
@@ -715,7 +715,7 @@ mod tests {
                 sides: Sides::default(),
                 source,
                 target,
-                label: None,
+                labels: Vec::new(),
                 style: EdgeStyle::unstyled(),
             })
             .collect();

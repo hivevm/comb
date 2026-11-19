@@ -28,8 +28,10 @@ pub enum GraphDataProblem {
     #[serde(rename_all = "camelCase")]
     Malformed { message: String },
     /// A field of the item at `index` of `list`, the node or edge `id` where its identifier was
-    /// read, is missing or holds a value of another type; `field` names it, a label's as
-    /// `label.t`, and `expected` says in words what it holds.
+    /// read, is missing or holds a value of another type; `field` names it, a field of a label by
+    /// the label's place in the edge's list, as `labels[1].t`, and `expected` says in words what it
+    /// holds. An edge that still carries `label`, which `labels` replaced, is refused naming
+    /// `label`, its `expected` naming `labels` in its stead (API-edges-dock-nodes-or-edges).
     #[serde(rename_all = "camelCase")]
     InvalidField {
         list: GraphList,
@@ -46,7 +48,7 @@ pub enum GraphDataProblem {
     /// A node's coordinate or the far side of its extent, or an edge label's offset, lies more
     /// than `limit` world units from the origin, past which what the engine derives from it could
     /// turn infinite; `field` names it, the far side of a node by its `width` or `height`, a
-    /// label's offset as `label.offset`.
+    /// label's offset by its place in the edge's list, as `labels[1].offset`.
     #[serde(rename_all = "camelCase")]
     BeyondWorld {
         list: GraphList,
@@ -188,18 +190,32 @@ pub enum GraphDataProblem {
     /// (ARCH-border-nodes-ride-sides, *Attachment*).
     #[serde(rename_all = "camelCase")]
     InvalidAttachment { node: String, field: String },
-    /// An edge label's path parameter or label offset is NaN or infinite.
+    /// The path parameter or label offset of the edge label `label` of the edge `edge` is NaN or
+    /// infinite.
     #[serde(rename_all = "camelCase")]
-    NonFiniteLabel { edge: String },
-    /// An edge label's text is not a string.
+    NonFiniteLabel { edge: String, label: String },
+    /// The text of the edge label `label` of the edge `edge` is not a string.
     #[serde(rename_all = "camelCase")]
-    InvalidLabelText { edge: String },
-    /// An edge label's text is longer than `limit` UTF-16 code units.
+    InvalidLabelText { edge: String, label: String },
+    /// The text of the edge label `label` of the edge `edge` is longer than `limit` UTF-16 code
+    /// units.
     #[serde(rename_all = "camelCase")]
-    LabelTextTooLong { edge: String, limit: u32 },
-    /// An edge label's background is not an integer from `0` to `0xFFFFFF`.
+    LabelTextTooLong {
+        edge: String,
+        label: String,
+        limit: u32,
+    },
+    /// The background of the edge label `label` of the edge `edge` is not an integer from `0` to
+    /// `0xFFFFFF`.
     #[serde(rename_all = "camelCase")]
-    InvalidBackground { edge: String },
+    InvalidBackground { edge: String, label: String },
+    /// Two edge labels of the edge `edge` share the identifier `label`
+    /// (API-edges-dock-nodes-or-edges, *Edge labels*).
+    #[serde(rename_all = "camelCase")]
+    DuplicateLabel { edge: String, label: String },
+    /// The edge `edge` carries more than `limit` edge labels.
+    #[serde(rename_all = "camelCase")]
+    TooManyLabels { edge: String, limit: u32 },
     /// An edge's colour is not an integer from `0` to `0xFFFFFF`.
     #[serde(rename_all = "camelCase")]
     InvalidColor { edge: String },
@@ -232,8 +248,8 @@ pub enum GraphDataProblem {
     /// accepts one (API-edges-dock-side-or-outline).
     #[serde(rename_all = "camelCase")]
     SelfEdge { edge: String },
-    /// A patch of `updateEdge` holds a field other than `color`, `dash`, `arrow`, `label`,
-    /// `sourceSide`, and `targetSide`.
+    /// A patch of `updateEdge` holds a field other than `color`, `dash`, `arrow`, `labels`,
+    /// `lightning`, `sourceSide`, and `targetSide`, `label` among them.
     #[serde(rename_all = "camelCase")]
     UnknownEdgePatchField { edge: String, field: String },
 }
@@ -284,9 +300,16 @@ pub(crate) fn slot(index: usize) -> Result<u32, GraphDataProblem> {
 pub(super) const A_NUMBER: &str = "a finite number";
 pub(super) const A_SIZE: &str = "a finite number of 0 or more";
 pub(super) const A_COLOR: &str = "an integer from 0 to 0xFFFFFF";
-pub(super) const A_LABEL: &str = "an object, or none";
+pub(super) const A_LABELS: &str = "a list of edge labels, or none";
+pub(super) const A_LABEL: &str = "an object";
+/// What an edge that still carries `label` is told: its labels are a list now
+/// (API-edges-dock-nodes-or-edges).
+pub(super) const NO_LABEL: &str = "nothing: an edge carries labels, a list of edge labels, in its \
+                                    stead";
+/// What a label's path parameter and offset expect: they are optional.
+pub(super) const A_NUMBER_OR_NONE: &str = "a finite number, or none";
 pub(super) const A_DASH: &str = "a list of two finite numbers, or none";
-pub(super) const AN_ARROW: &str = "\"end\" or \"none\"";
+pub(super) const AN_ARROW: &str = "\"end\", \"open\", \"hollow\", or \"none\"";
 pub(super) const A_SHAPE: &str = "\"rectangle\", \"rounded-rectangle\", \"ellipse\", \"circle\", \
                                    \"ringed-circle\", \"diamond\", \"bar\", \"pentagon\", \
                                    \"notched-rectangle\", \"note\", \"frame\", \

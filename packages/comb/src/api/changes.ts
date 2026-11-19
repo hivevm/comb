@@ -10,6 +10,7 @@ import {
   type By,
   type EdgeData,
   type EdgeLabelData,
+  type KeptLabel,
   type EdgePatch,
   type GraphState,
   type GraphStore,
@@ -22,11 +23,11 @@ import {
 } from "../store";
 
 /** The attributes `updateEdge` changes on an edge, as `edgeUpdated` reports them merged: its
- *  colour, arrowhead, dash pattern or none, and label or none
- *  (API-edits-reported-as-typed-changes). */
+ *  colour, arrowhead, lightning bolt, dash pattern or none, and labels, their places filled in,
+ *  or none (API-edits-reported-as-typed-changes, API-edges-dock-nodes-or-edges). */
 type EdgeChangePatch = {
-  readonly [K in keyof EdgePatch]: K extends "label"
-    ? Readonly<EdgeLabelData> | null
+  readonly [K in keyof EdgePatch]: K extends "labels"
+    ? readonly Readonly<KeptLabel>[] | null
     : EdgePatch[K];
 };
 
@@ -102,12 +103,16 @@ export type GraphChange =
       readonly nodes: readonly string[];
       readonly edges: readonly string[];
     }
-  /** The edge `edge` was added, as Comb keeps it, its defaults filled. */
+  /** The edge `edge` was added, as Comb keeps it, its defaults filled, its labels' places among
+   *  them. */
   | {
       readonly kind: "edgeAdded";
       readonly by: By;
       readonly edge: Readonly<
-        EdgeData & Required<Pick<EdgeData, "color" | "arrow" | "sourceSide" | "targetSide">>
+        Omit<EdgeData, "labels"> &
+          Required<Pick<EdgeData, "color" | "arrow" | "sourceSide" | "targetSide">> & {
+            readonly labels?: readonly Readonly<KeptLabel>[];
+          }
       >;
     }
   /** `updateEdge` changed the edge `id` by `patch`, as Comb merged it. */
@@ -123,11 +128,13 @@ export type GraphChange =
       readonly by: By;
       readonly edges: readonly string[];
     }
-  /** A drag left the label of the edge `edge` at path parameter `t` and label offset `offset`. */
+  /** A drag left the label `label` of the edge `edge` at path parameter `t` and label offset
+   *  `offset`; the edge's other labels stayed (API-edges-dock-nodes-or-edges). */
   | {
       readonly kind: "labelMoved";
       readonly by: "user";
       readonly edge: string;
+      readonly label: string;
       readonly t: number;
       readonly offset: number;
     };
@@ -140,7 +147,7 @@ function edgeDeliveryOf(
 ): GraphChange {
   if (change.kind === "edgeUpdated") {
     // Copies all down, so that no listener reaches into what the store keeps.
-    const { dash, label, ...patch } = change.patch;
+    const { dash, labels, ...patch } = change.patch;
     return {
       kind: change.kind,
       by: change.by,
@@ -148,11 +155,11 @@ function edgeDeliveryOf(
       patch: {
         ...patch,
         ...(dash === undefined ? {} : { dash: dash && ([dash[0], dash[1]] as const) }),
-        ...(label === undefined ? {} : { label: label && { ...label } }),
+        ...(labels === undefined ? {} : { labels: labels && copiedLabels(labels) }),
       },
     };
   }
-  const { dash, label, ...edge } = edgeNamed(state, change.id).edge;
+  const { dash, labels, ...edge } = edgeNamed(state, change.id).edge;
   return {
     kind: change.kind,
     by: change.by,
@@ -163,9 +170,15 @@ function edgeDeliveryOf(
       sourceSide: edge.sourceSide!,
       targetSide: edge.targetSide!,
       ...(dash ? { dash: [dash[0], dash[1]] as const } : {}),
-      ...(label ? { label: { ...label } } : {}),
+      ...(labels ? { labels: copiedLabels(labels) } : {}),
     },
   };
+}
+
+/** A copy of `labels` the store keeps, their places filled in, so that no listener reaches into
+ *  it. */
+function copiedLabels(labels: readonly EdgeLabelData[]): readonly KeptLabel[] {
+  return labels.map((label) => ({ ...(label as KeptLabel) }));
 }
 
 /** The height the node in `slot` has, as the engine keeps it. */
@@ -395,8 +408,10 @@ function deliveryOf(change: StoreChange, state: GraphState, bridge: Bridge): Gra
         moved: movedOf(state, bridge, change.moved),
       };
     case "labelMoved": {
-      const { t, offset } = edgeNamed(state, change.edge).edge.label!;
-      return { kind: change.kind, by: change.by, edge: change.edge, t, offset };
+      const labels = edgeNamed(state, change.edge).edge.labels!;
+      const { t, offset } = labels.find(({ id }) => id === change.label)!;
+      const { kind, by, edge, label } = change;
+      return { kind, by, edge, label, t, offset };
     }
   }
 }

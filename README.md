@@ -169,7 +169,7 @@ comb.load({
       source: "a",
       target: "b",
       color: 0x22a55b,
-      label: { text: "0.998", t: 0.5, offset: 0 },
+      labels: [{ id: "correlation", text: "0.998" }],
     },
   ],
 });
@@ -269,21 +269,29 @@ throws a `RangeError` on a coordinate that is not finite. `removeNodes(ids)` rem
 everything they hold, and every edge at any of them, and `removeEdges(ids)` those edges, without
 a load. `addEdge(edge)` adds an
 edge between two nodes the graph holds, and `updateEdge(id, patch)` changes an edge's `color`,
-`dash`, `arrow`, `label`, `sourceSide`, or `targetSide`, `null` clearing a dash or a label. An
-edge leaves its source by `sourceSide` and enters its target by `targetSide`, each `top`, `right`,
-`bottom`, `left`, or `outline`, by default `right` and `left`, and `top` for both of a loop, an
-edge from a node back to itself, which is drawn on that side of its node. `onChange` tells every
-change of the graph, a `GraphChange` that `comb` exports, typed by its `kind` and by `by`, `"user"`
-or `"host"`: `loaded` after `load`, `nodeAdded` with the node as Comb took it after `addNode`,
-its `height` raised to its content's, `nodeUpdated` with the merged patch after `updateNode`,
-`nodesRemoved` with the nodes and the edges that went with them after `removeNodes`, `edgesRemoved`
-with the edges after `removeEdges`,
-`edgeAdded` with the edge as Comb keeps it, its colour and arrowhead filled, after `addEdge`,
-`edgeUpdated` with the patch as merged after `updateEdge`, nothing for a removal that names none,
-and `nodeMoved` with where the node lies, `x` and `y` relative to `container`, the identifier of
-the container it lies in or `null` on the canvas, once, when the user releases a node dragged, not
-per frame and not for a press that moved nothing; a host that compares a `nodeMoved` whole sees
-`container` on each, `null` for a node on the canvas. Each arrives before
+`dash`, `arrow`, `lightning`, `labels`, `sourceSide`, or `targetSide`, `null` clearing a dash or
+the labels. `arrow` is `"end"`, a filled triangle and the default, `"open"`, two strokes meeting at
+the target, `"hollow"`, a triangle's outline around a white fill, or `"none"`; `lightning: true`
+draws the middle of the edge as a zigzag. An edge carries at most 8 `labels`, each with an `id`
+unique within its edge, its `text`, its path parameter `t` and label offset `offset`, 0.5 and 0
+where it gives none, which Comb fills in as it takes the label, and its `background`; a label
+without one is drawn in the edge's colour, and follows it when the edge is recoloured. A patch's
+`labels` replace the whole list, never merged by `id`, so a label without `t` goes back to the
+middle. An edge that still carries `label`, the one label of before, is refused, by `load` and
+`addEdge` as `invalidField` and by `updateEdge` as `unknownEdgePatchField`. An edge leaves its
+source by `sourceSide` and enters its target by `targetSide`, each `top`, `right`, `bottom`, `left`,
+or `outline`, by default `right` and `left`, and `top` for both of a loop, an edge from a node back
+to itself, which is drawn on that side of its node. `onChange` tells every change of the graph, a
+`GraphChange` that `comb` exports, typed by its `kind` and by `by`, `"user"` or `"host"`: `loaded`
+after `load`, `nodeAdded` with the node as Comb took it after `addNode`, its `height` raised to its
+content's, `nodeUpdated` with the merged patch after `updateNode`, `nodesRemoved` with the nodes and
+the edges that went with them after `removeNodes`, `edgesRemoved` with the edges after
+`removeEdges`, `edgeAdded` with the edge as Comb keeps it, its colour, arrowhead, and its labels'
+places filled, after `addEdge`, `edgeUpdated` with the patch as merged after `updateEdge`, nothing
+for a removal that names none, and `nodeMoved` with where the node lies, `x` and `y` relative to
+`container`, the identifier of the container it lies in or `null` on the canvas, once, when the user
+releases a node dragged, not per frame and not for a press that moved nothing; a host that compares
+a `nodeMoved` whole sees `container` on each, `null` for a node on the canvas. Each arrives before
 the call or input event that made it returns, and before `onSelectionChange` reports a selection the
 change cleared; `onChange` returns the function that removes the listener. A change a listener makes
 reaches every listener after the change being delivered, so that each hears the changes in the order
@@ -390,7 +398,8 @@ Comb tells a change to `onChange` ends its gesture with nothing done, whatever i
 example names each edge after its ends. At the near level a press inside an edge label's pill
 selects its edge and drags the label, which stays where it is dropped: the engine places it at the
 nearest path parameter and the distance along the normal there, and the release is told as
-`labelMoved` with that `t` and `offset`. A node dropped over a container other than its own, or
+`labelMoved` with the edge, the `label` it moved, the edge's other labels where they were, and that
+`t` and `offset`. A node dropped over a container other than its own, or
 outside every container while it lies in one, asks `CombOptions.canMoveInto({ node, container })`,
 `container` the topmost container under the pointer or `null` for the canvas; on `true` the node
 moves there, keeping its place on the canvas, and is told as `nodeMoved` with that container, and

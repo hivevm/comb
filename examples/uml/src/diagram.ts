@@ -13,7 +13,7 @@ import type {
   NodeContent,
   RegionData,
 } from "comb";
-import { patchOf, styleOf, type RelationshipKind } from "./relationships";
+import { labelIn, patchOf, styleOf, type RelationshipKind } from "./relationships";
 import { allows } from "./rules";
 import {
   contentOf,
@@ -116,7 +116,7 @@ export class Diagram {
     // The sidebar shows the form of an edge only where the edge has a kind.
     const from = this.kinds.get(id)!;
     try {
-      this.comb.updateEdge(id, patchOf(from, kind, this.edge(id)?.label));
+      this.comb.updateEdge(id, patchOf(from, kind, labelIn(this.edge(id))));
     } catch (error) {
       // A lost engine, or an edge Comb no longer holds: the edge keeps its kind.
       console.warn("uml: the change of kind was not taken", error);
@@ -125,10 +125,11 @@ export class Diagram {
     this.kinds.set(id, kind);
   }
 
-  /** Gives edge `id` the label `label`, or none for `null`; Comb's refusal where it refused it. */
+  /** Gives edge `id` the label `label`, a list of one, or none for `null`; Comb's refusal where it
+   *  refused it. */
   updateLabel(id: string, label: EdgeLabelData | null): Refusal | undefined {
     try {
-      this.comb.updateEdge(id, { label });
+      this.comb.updateEdge(id, { labels: label && [label] });
     } catch (error) {
       // A label past Comb's limits: the edge keeps its label.
       console.warn("uml: the label was not taken", error);
@@ -166,12 +167,13 @@ export class Diagram {
   }
 }
 
-/** `edge` with `patch` merged, as Comb merges it: `null` clears a dash or a label. */
+/** `edge` with `patch` merged, as Comb merges it: `null` clears a dash or the labels, which a
+ *  patch replaces whole. */
 function patched(edge: EdgeData, patch: EdgePatch): void {
-  const { dash, label, ...rest } = patch;
+  const { dash, labels, ...rest } = patch;
   Object.assign(edge, rest);
   if (dash !== undefined) edge.dash = dash ?? undefined;
-  if (label !== undefined) edge.label = label ?? undefined;
+  if (labels !== undefined) edge.labels = labels ?? undefined;
 }
 
 /** Gives `regions`, at every depth, the sizes `sizes` names by identifier, as Comb told them. */
@@ -220,8 +222,11 @@ const MIRROR: {
     if (edge) patched(edge, patch);
   },
   edgesRemoved: (diagram, { edges }) => diagram.removed([], edges),
-  labelMoved: (diagram, { edge: id, t, offset }) => {
+  labelMoved: (diagram, { edge: id, label: moved, t, offset }) => {
     const edge = diagram.edge(id);
-    if (edge?.label) edge.label = { ...edge.label, t, offset };
+    if (edge?.labels)
+      edge.labels = edge.labels.map((label) =>
+        label.id === moved ? { ...label, t, offset } : label,
+      );
   },
 };

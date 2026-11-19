@@ -259,6 +259,7 @@ function limitsOf(bridge: Bridge): Limits {
     rows: bridge.rowLimit(),
     columns: bridge.columnLimit(),
     segments: bridge.segmentLimit(),
+    labels: bridge.labelLimit(),
   };
 }
 

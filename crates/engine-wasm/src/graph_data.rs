@@ -54,8 +54,8 @@ pub use input::{
     Arrow, ContentElement, Dock, EdgeInput, LabelInput, NodeContent, NodeInput, NodeShape, Outline,
     Pair, Segment, Side, TextRole, Trend, TrendDirection,
 };
-pub(crate) use limits::{ID_LIMIT, TEXT_LIMIT, check_graph_size, check_id_budget};
-pub use limits::{MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_TEXT};
+pub(crate) use limits::{ID_LIMIT, LABEL_LIMIT, TEXT_LIMIT, check_graph_size, check_id_budget};
+pub use limits::{MAX_ID, MAX_ID_UNITS, MAX_ITEMS, MAX_LABELS, MAX_TEXT};
 #[cfg(test)]
 pub(crate) use load::graph_of;
 pub(crate) use load::{Loaded, add_node_to, height_of, load_of};

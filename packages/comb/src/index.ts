@@ -22,6 +22,7 @@ export type {
   RegionSize,
 } from "./api";
 export type {
+  Arrowhead,
   ContentElement,
   Divide,
   Dock,

@@ -23,7 +23,8 @@ const HANDLE_REACH: f64 = 6.0;
 const CONNECTOR_REACH: f64 = 8.0;
 
 /// What a press hits (REN-node-content-in-rows): a connector by its node's slot and side, a label
-/// by its edge's slot, a node, or an edge, by its slot.
+/// by its edge's slot and its place in that edge's list of labels, a node, or an edge, by its
+/// slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
     /// The connector of a side of the node in a slot (API-edges-dock-side-or-outline).
@@ -31,8 +32,9 @@ pub enum Target {
     /// The line after the region in a slot, between it and the next region
     /// (REN-node-content-and-hits, *Line between regions*).
     Line(u32),
-    /// The label of the edge in a slot (REN-node-content-in-rows).
-    Label(u32),
+    /// The label at a place of the list of labels of the edge in a slot
+    /// (REN-node-content-in-rows, API-edges-dock-nodes-or-edges).
+    Label(u32, u32),
     Node(u32),
     Edge(u32),
 }
@@ -44,7 +46,8 @@ impl Graph {
     /// `connectors` asks for them, at the near and middle level, a connector within
     /// `CONNECTOR_REACH` screen pixels, and inside its node's outline within a quarter of the
     /// node's extent as well (`connector_at`), of the node of the highest rank; else at the near
-    /// level a label whose measured pill holds it, of the highest edge slot; else a node that is
+    /// level a label whose measured pill holds it, of the highest edge slot and of its labels the
+    /// last, drawn on top; else a node that is
     /// no container whose outline holds it, the one of the highest rank; else an edge within
     /// `EDGE_REACH` screen pixels of its path as the stroke of `level` flattens it, the one in the
     /// highest slot; else a container whose outline holds it, the last in the order of containers;
@@ -71,9 +74,9 @@ impl Graph {
             return Some(Target::Connector(slot, side));
         }
         if level == Level::Near
-            && let Some(slot) = self.label_at(point)
+            && let Some((slot, index)) = self.label_at(point)
         {
-            return Some(Target::Label(slot));
+            return Some(Target::Label(slot, index));
         }
         // A node that is no container lies above the edges, a container below them
         // (ARCH-engine-edits-nested-graph).
@@ -90,7 +93,13 @@ impl Graph {
         let found = candidates.iter().copied().find(|&slot| {
             let i = slot as usize;
             self.bounds[i].grown(reach).contains(point)
-                && near_path(&self.paths[i], tolerance, point, reach, &mut self.points)
+                && near_path(
+                    (&self.paths[i], self.edges[i].style.lightning),
+                    tolerance,
+                    point,
+                    reach,
+                    &mut self.points,
+                )
         });
         self.scratch = candidates;
         // A press on a region is one on the node it divides (ARCH-regions-are-container-slots,
@@ -127,28 +136,28 @@ impl Graph {
             .map(|(handle, _)| handle)
     }
 
-    /// The label whose measured pill holds `point`, of the edge in the highest slot
+    /// The label whose measured pill holds `point`, of the edge in the highest slot, and of its
+    /// labels the last in its list, as its edge slot and its place there
     /// (REN-node-content-in-rows).
-    fn label_at(&mut self, point: Point) -> Option<u32> {
+    fn label_at(&mut self, point: Point) -> Option<(u32, u32)> {
         if self.widest_pill <= 0.0 {
             return None;
         }
         self.edge_grid
             .candidates(&Rect::at(point).grown(self.widest_pill), &mut self.scratch);
-        self.scratch
-            .iter()
-            .copied()
-            .filter(|&slot| {
-                let i = slot as usize;
-                match (self.labels[i], self.pills[i]) {
-                    (Some(at), Some((half_width, half_height))) => {
-                        (point.x - at.x).abs() <= half_width
-                            && (point.y - at.y).abs() <= half_height
-                    }
-                    _ => false,
+        let mut found = None;
+        for &slot in &self.scratch {
+            let i = slot as usize;
+            for (index, (at, pill)) in (0_u32..).zip(self.labels[i].iter().zip(&self.pills[i])) {
+                let Some((half_width, half_height)) = *pill else {
+                    continue;
+                };
+                if (point.x - at.x).abs() <= half_width && (point.y - at.y).abs() <= half_height {
+                    found = found.max(Some((slot, index)));
                 }
-            })
-            .max()
+            }
+        }
+        found
     }
 
     /// The connector within `reach` of `point`: of the nodes with one there, the one drawn on top,
@@ -245,7 +254,7 @@ mod tests {
             sides: crate::geometry::Sides::default(),
             source: 0,
             target: 1,
-            label: None,
+            labels: Vec::new(),
             style: crate::stroke::EdgeStyle::unstyled(),
         }];
         let positions = vec![1e36, 0.0, 1e36, 1e35];
@@ -456,6 +465,25 @@ mod tests {
         (lower.min(upper), upper)
     }
 
+    /// `distance_to_curve` of the edge `e` of `model` as it is drawn: a lightning bolt's middle
+    /// is its zigzag, whose segments' distance is exact (API-edges-dock-nodes-or-edges).
+    fn distance_to_drawn(model: &Model, e: u32, p: Point) -> (f64, f64) {
+        let path = model.path(e);
+        if !model.specs[e as usize].style.lightning {
+            return distance_to_curve(&path, p);
+        }
+        let (before, [a, b], after) = path.lightning();
+        let zigzag = [before.target, a, b, after.source]
+            .windows(2)
+            .map(|s| crate::stroke::distance_to_segment(p, s[0], s[1]))
+            .fold(f64::INFINITY, f64::min);
+        let (one, other) = (distance_to_curve(&before, p), distance_to_curve(&after, p));
+        (
+            one.0.min(other.0).min(zigzag),
+            one.1.min(other.1).min(zigzag),
+        )
+    }
+
     #[test]
     fn a_hit_finds_a_node_before_an_edge_and_an_edge_only_near_its_flattened_path() {
         // Verifies: REN-node-content-in-rows
@@ -488,7 +516,7 @@ mod tests {
                 // plus the tolerance surely not; between, either is right.
                 let (reach, tolerance) = (EDGE_REACH * pixel, Stroke::at(level, pixel).tolerance);
                 let d: Vec<(f64, f64)> = (0..model.specs.len() as u32)
-                    .map(|e| distance_to_curve(&model.path(e), p))
+                    .map(|e| distance_to_drawn(&model, e, p))
                     .collect();
                 // Surely hit by its upper bound, surely too far by its lower one.
                 let sure = model
@@ -507,7 +535,7 @@ mod tests {
                     Some(
                         Target::Node(_)
                         | Target::Connector(..)
-                        | Target::Label(_)
+                        | Target::Label(_, _)
                         | Target::Line(_),
                     ) => {
                         panic!("{hit:?} where a scan finds none")
@@ -817,21 +845,15 @@ mod tests {
         if let Some((n, side, _)) = connector.filter(|_| connectors && level != Level::Far) {
             return Scan::Exactly(Target::Connector(n, side));
         }
-        let label = model.edges().filter(|&e| {
-            let (Some(at), Some((w, h))) = (model.label_point(e), model.pills[e as usize]) else {
-                return false;
-            };
-            (p.x - at.x).abs() <= w && (p.y - at.y).abs() <= h
-        });
-        if let Some(e) = label.max().filter(|_| level == Level::Near) {
-            return Scan::Exactly(Target::Label(e));
+        if let Some((e, i)) = model.label_at(p).filter(|_| level == Level::Near) {
+            return Scan::Exactly(Target::Label(e, i));
         }
         if let Some(n) = model.nodes().filter(|&n| model.bounds(n).contains(p)).max() {
             return Scan::Exactly(Target::Node(n));
         }
         let (reach, tolerance) = (EDGE_REACH * pixel, Stroke::at(level, pixel).tolerance);
         let bounds: Vec<(f64, f64)> = (0..model.specs.len() as u32)
-            .map(|e| distance_to_curve(&model.path(e), p))
+            .map(|e| distance_to_drawn(model, e, p))
             .collect();
         let sure = model
             .edges()
@@ -840,16 +862,21 @@ mod tests {
         Scan::Edge { sure, bounds }
     }
 
-    /// A random graph and its model with a node and an edge removed, two labels of three measured,
-    /// and a few nodes moved after. Every fifth edge's label sits where the edge leaves its source,
-    /// on the connector there, so that a press there finds a connector and a label both.
+    /// A random graph and its model with a node and an edge removed, the labels of two edges of
+    /// three measured, and a few nodes moved after. Every fifth edge's first label sits where the
+    /// edge leaves its source, on the connector there, so that a press there finds a connector and
+    /// a label both.
     fn scanned_graph(rng: &mut Lcg) -> (Model, Graph) {
         let (positions, sizes, mut specs) = random_inputs(rng, 30, 40);
         for spec in specs.iter_mut().step_by(5) {
-            spec.label = Some(LabelPlacement {
+            let first = LabelPlacement {
                 t: 0.0,
                 offset: 0.0,
-            });
+            };
+            match spec.labels.first_mut() {
+                Some(label) => *label = first,
+                None => spec.labels.push(first),
+            }
         }
         let (mut model, mut graph) = Model::of(positions, sizes, specs);
         graph.remove_nodes(&[4]).unwrap();
@@ -858,9 +885,11 @@ mod tests {
         graph.remove_edges(&[gone]).unwrap();
         model.remove_edges(&[gone]);
         for e in model.edges().filter(|e| e % 3 != 0).collect::<Vec<_>>() {
-            let size = (15.0 + f64::from(e % 4) * 10.0, 10.0);
-            graph.set_label_size(e, size.0, size.1).unwrap();
-            model.pills[e as usize] = Some(size);
+            for i in 0..model.specs[e as usize].labels.len() as u32 {
+                let size = (15.0 + f64::from((e + i) % 4) * 10.0, 10.0);
+                graph.set_label_size(e, i, size.0, size.1).unwrap();
+                model.pills[e as usize][i as usize] = Some(size);
+            }
         }
         for _ in 0..6 {
             let moved: Vec<u32> = model.nodes().filter(|_| rng.next() < 0.2).collect();
@@ -884,8 +913,13 @@ mod tests {
             4 => {
                 let on: Vec<u32> = model
                     .edges()
-                    .filter(|&e| model.pills[e as usize].is_some())
-                    .filter(|&e| model.specs[e as usize].label.is_some_and(|l| l.t == 0.0))
+                    .filter(|&e| model.pills[e as usize].first().is_some_and(Option::is_some))
+                    .filter(|&e| {
+                        model.specs[e as usize]
+                            .labels
+                            .first()
+                            .is_some_and(|l| l.t == 0.0)
+                    })
                     .collect();
                 match on.is_empty() {
                     true => anywhere(rng),
@@ -901,7 +935,7 @@ mod tests {
                 let c = side.connector(&model.bounds(rng.below(nodes)));
                 around(c, (12.0 * pixel, 12.0 * pixel), rng)
             }
-            1 => match model.label_point(rng.below(edges)) {
+            1 => match model.label_point(rng.below(edges), rng.below(3)) {
                 Some(at) => around(at, (50.0, 12.0), rng),
                 None => anywhere(rng),
             },
@@ -924,7 +958,7 @@ mod tests {
     ) -> Option<usize> {
         let kind = |target: Target| match target {
             Target::Connector(..) | Target::Line(_) => 0,
-            Target::Label(_) => 1,
+            Target::Label(_, _) => 1,
             Target::Node(_) => 2,
             Target::Edge(_) => 3,
         };
@@ -975,7 +1009,7 @@ mod tests {
                     )
                     && matches!(
                         scan(&model, p, pixel, level, false),
-                        Scan::Exactly(Target::Label(_))
+                        Scan::Exactly(Target::Label(_, _))
                     )
                 {
                     both += 1;
@@ -1005,15 +1039,17 @@ mod tests {
         let (mut model, mut graph) = Model::random(&mut rng, 30, 60);
         let measured: Vec<u32> = (0..60).filter(|e| e % 3 != 0).collect();
         for &edge in &measured {
-            let size = (20.0 + f64::from(edge % 5) * 10.0, 11.0);
-            graph.set_label_size(edge, size.0, size.1).unwrap();
-            model.pills[edge as usize] = Some(size);
+            for i in 0..model.specs[edge as usize].labels.len() as u32 {
+                let size = (20.0 + f64::from((edge + i) % 5) * 10.0, 11.0);
+                graph.set_label_size(edge, i, size.0, size.1).unwrap();
+                model.pills[edge as usize][i as usize] = Some(size);
+            }
         }
         for _ in 0..2_000 {
             let p = Point::new(rng.range(-2500.0, 2500.0), rng.range(-2500.0, 2500.0));
             let p = if rng.next() < 0.7 {
                 let edge = rng.below(model.specs.len());
-                match model.label_point(edge) {
+                match model.label_point(edge, rng.below(3)) {
                     Some(at) => {
                         Point::new(at.x + rng.range(-70.0, 70.0), at.y + rng.range(-15.0, 15.0))
                     }
@@ -1022,26 +1058,20 @@ mod tests {
             } else {
                 p
             };
-            let scan = measured.iter().copied().rev().find(|&e| {
-                let (Some(at), Some((w, h))) = (model.label_point(e), model.pills[e as usize])
-                else {
-                    return false;
-                };
-                (p.x - at.x).abs() <= w && (p.y - at.y).abs() <= h
-            });
+            let scan = model.label_at(p);
             let near = graph.hit_at(p, 1.0, Level::Near, false);
             match scan {
-                Some(e) => assert_eq!(near, Some(Target::Label(e)), "at {p:?}"),
-                None => assert!(!matches!(near, Some(Target::Label(_))), "at {p:?}"),
+                Some((e, i)) => assert_eq!(near, Some(Target::Label(e, i)), "at {p:?}"),
+                None => assert!(!matches!(near, Some(Target::Label(_, _))), "at {p:?}"),
             }
             assert!(!matches!(
                 graph.hit_at(p, 1.0, Level::Middle, false),
-                Some(Target::Label(_))
+                Some(Target::Label(_, _))
             ));
         }
         // An edge removed takes its label's measure along; a new edge in its slot is unmeasured.
         let edge = measured[0];
         graph.remove_edges(&[edge]).unwrap();
-        assert_eq!(graph.pills[edge as usize], None);
+        assert!(graph.pills[edge as usize].is_empty());
     }
 }

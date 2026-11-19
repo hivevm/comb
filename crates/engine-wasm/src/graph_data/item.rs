@@ -13,7 +13,7 @@ use super::problem::{
 use super::snapshot::GraphBatch;
 use super::{
     Arrow, ContentData, ContentInput, EdgeField, EdgeInput, Field, GraphDataProblem, GraphList,
-    LabelInput, NodeInput, Outline, Pair, Unflat,
+    LabelInput, MAX_LABELS, NodeInput, Outline, Pair, Unflat,
 };
 
 /// A node with every field but its content read.
@@ -47,8 +47,10 @@ pub(super) struct Border {
     pub(super) beside: Option<&'static str>,
 }
 
-/// An edge label with every field read.
-pub(super) struct Label {
+/// An edge label with every field read, its path parameter and offset filled in where it named
+/// none (API-edges-dock-nodes-or-edges, *Edge labels*).
+pub(super) struct Label<'a> {
+    pub(super) id: &'a str,
     pub(super) text_length: Option<usize>,
     pub(super) t: f64,
     pub(super) offset: f64,
@@ -60,10 +62,11 @@ pub(super) struct Edge<'a> {
     pub(super) id: &'a str,
     pub(super) source: &'a str,
     pub(super) target: &'a str,
-    pub(super) label: Option<Label>,
+    pub(super) labels: Vec<Label<'a>>,
     pub(super) color: f64,
     pub(super) dash: Option<[f64; 2]>,
     pub(super) arrow: Arrow,
+    pub(super) lightning: bool,
     pub(super) sides: Sides,
 }
 
@@ -114,6 +117,18 @@ impl<'a> Item<'a> {
     pub(super) fn edge<T>(&self, field: EdgeField, value: Field<T>) -> Result<T, GraphDataProblem> {
         let (name, expected) = field.named();
         self.read(name, value, expected)
+    }
+
+    /// `edge` of a field of the label at `label` of the edge's list, named after the label's
+    /// place, as `labels[1].t` (API-edges-dock-nodes-or-edges).
+    pub(super) fn label_field<T>(
+        &self,
+        field: EdgeField,
+        label: usize,
+        value: Field<T>,
+    ) -> Result<T, GraphDataProblem> {
+        let (name, expected) = field.named();
+        self.read(&format!("labels[{label}]{name}"), value, expected)
     }
 
     /// The refusal of a shape of content at `row` and, below a row, `column` of the item, which
@@ -235,17 +250,23 @@ pub(super) fn edge_of(index: usize, edge: &EdgeInput) -> Result<Edge<'_>, GraphD
     item.id = Some(id);
     let source = item.id("source", &edge.source)?;
     let target = item.id("target", &edge.target)?;
-    let label = label_of(&item, edge.label)?;
+    if edge.label {
+        item.edge(EdgeField::Label, Field::<()>(None))?;
+    }
+    let labels = labels_of(&item, &edge.labels)?;
     Ok(Edge {
         id,
         source,
         target,
-        label,
+        labels,
         color: item.edge(EdgeField::Color, edge.color)?,
         dash: item
             .edge(EdgeField::Dash, edge.dash)?
             .map(|Pair(pair)| pair),
         arrow: item.edge(EdgeField::Arrow, edge.arrow)?,
+        lightning: item
+            .edge(EdgeField::Lightning, edge.lightning)?
+            .unwrap_or(false),
         sides: Sides {
             source: item.edge(EdgeField::SourceSide, edge.source_side)?.into(),
             target: item.edge(EdgeField::TargetSide, edge.target_side)?.into(),
@@ -253,22 +274,38 @@ pub(super) fn edge_of(index: usize, edge: &EdgeInput) -> Result<Edge<'_>, GraphD
     })
 }
 
-/// The label `field` of the edge `item`, or none, with every field read, as a load, `addEdge`, and
-/// a patch of `updateEdge` read it, or the refusal that names its first missing or mistyped field.
-pub(super) fn label_of(
+/// The path parameter and label offset a label takes where it names none: today's one label's
+/// (API-edges-dock-nodes-or-edges, *Edge labels*).
+pub(super) const DEFAULT_T: f64 = 0.5;
+pub(super) const DEFAULT_OFFSET: f64 = 0.0;
+
+/// The labels `field` of the edge `item`, none where it is left out, each with every field read,
+/// as `addEdge` and a patch of `updateEdge` read them, or the refusal that names the first missing
+/// or mistyped field: the list, then each label in its order, as an object, its identifier, its
+/// `t`, and its `offset`.
+pub(super) fn labels_of<'a>(
     item: &Item,
-    field: Field<Option<LabelInput>>,
-) -> Result<Option<Label>, GraphDataProblem> {
-    item.edge(EdgeField::Label, field)?
-        .map(|input| {
-            Ok(Label {
-                text_length: input.text_length,
-                t: item.edge(EdgeField::LabelT, input.t)?,
-                offset: item.edge(EdgeField::LabelOffset, input.offset)?,
-                background: input.background,
-            })
-        })
-        .transpose()
+    field: &'a Field<Option<Vec<Field<LabelInput>>>>,
+) -> Result<Vec<Label<'a>>, GraphDataProblem> {
+    let Some(labels) = item.edge(EdgeField::Labels, field.as_ref())?.as_ref() else {
+        return Ok(Vec::new());
+    };
+    // One past the limit is read, and refused by its rule; the rest is not, as from the snapshot.
+    let mut read = Vec::with_capacity(labels.len().min(MAX_LABELS + 1));
+    for (i, label) in labels.iter().take(MAX_LABELS + 1).enumerate() {
+        let input = item.label_field(EdgeField::LabelItem, i, label.as_ref())?;
+        let id = item.label_field(EdgeField::LabelId, i, input.id.as_ref())?;
+        let t = item.label_field(EdgeField::LabelT, i, input.t)?;
+        let offset = item.label_field(EdgeField::LabelOffset, i, input.offset)?;
+        read.push(Label {
+            id: id.as_str(),
+            text_length: input.text_length,
+            t: t.unwrap_or(DEFAULT_T),
+            offset: offset.unwrap_or(DEFAULT_OFFSET),
+            background: input.background,
+        });
+    }
+    Ok(read)
 }
 
 /// Reads every field of every edge of the tests' batch, or names the first that is missing or

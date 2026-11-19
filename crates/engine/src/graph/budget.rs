@@ -6,10 +6,12 @@
 //! rectangle where it leaves the rectangle grown by the stroke's width.
 // Verifies: Q-7, Q-4, REN-virtualized-scene-graph, API-edges-dock-side-or-outline
 
-use super::tests::{Lcg, random_sides};
+use super::tests::{Lcg, random_sides, random_style};
 use super::{EdgeSpec, Graph, Level, Visible};
-use crate::geometry::{EdgePath, Point, Rect, Sides};
-use crate::stroke::{Detail, EdgeStyle, Mesh, Stroke, crossing, distance_to_segment, flattened};
+use crate::geometry::{Dock, EdgePath, Point, Rect, Sides};
+use crate::stroke::{
+    Arrowhead, Detail, EdgeStyle, Mesh, Stroke, crossing, distance_to_segment, flattened,
+};
 
 /// How many random queries one run makes.
 const CASES: u64 = 400;
@@ -34,11 +36,11 @@ fn random_graph(rng: &mut Lcg, nodes: usize, edges: usize, spread: f64) -> Graph
             sides: random_sides(rng),
             source: rng.below(nodes),
             target: rng.below(nodes),
-            label: None,
+            labels: Vec::new(),
             style: EdgeStyle {
                 color: i as u32 + 1,
                 dash: (rng.next() < 0.3).then(|| (rng.range(1.0, 20.0) as f32, 4.0)),
-                arrow: rng.next() < 0.7,
+                ..random_style(rng)
             },
         })
         .collect();
@@ -55,22 +57,53 @@ fn farthest(rng: &mut Lcg) -> Graph {
             sides: random_sides(rng),
             source: rng.below(3),
             target: rng.below(3),
-            label: None,
+            labels: Vec::new(),
             style: EdgeStyle {
                 color: i + 1,
                 dash: None,
-                arrow: rng.next() < 0.5,
+                ..random_style(rng)
             },
         })
         .collect();
     Graph::new(positions, [220.0, 64.0].repeat(3), specs).unwrap()
 }
 
-/// Long edges between nodes far apart, edges from (0, 0) to (-1e8, 3e7), or many edges between a
-/// few nodes.
+/// Edges between two to four nodes at one place, both ends on the outline, so that each path is
+/// a point and its full mesh its arrowhead alone, of every arrowhead: the floors that
+/// `any_budget` takes to be four vertices an edge (REN-virtualized-nested-scene).
+fn coincident(rng: &mut Lcg) -> Graph {
+    let nodes = 2 + rng.below(3) as usize;
+    let at = [rng.range(-1e4, 1e4) as f32, rng.range(-1e4, 1e4) as f32];
+    let edges = 1 + rng.below(300);
+    let outline = Sides {
+        source: Dock::Outline,
+        target: Dock::Outline,
+    };
+    let specs = (0..edges)
+        .map(|i| EdgeSpec {
+            sides: outline,
+            source: rng.below(nodes),
+            target: rng.below(nodes),
+            labels: Vec::new(),
+            style: EdgeStyle {
+                color: i + 1,
+                dash: None,
+                ..random_style(rng)
+            },
+        })
+        .collect();
+    let sizes = [220.0, 64.0].repeat(nodes);
+    Graph::new(at.repeat(nodes), sizes, specs).unwrap()
+}
+
+/// Long edges between nodes far apart, edges from (0, 0) to (-1e8, 3e7), many edges between a
+/// few nodes, or edges whose full mesh is their arrowhead alone.
 fn any_graph(rng: &mut Lcg) -> Graph {
     let shape = rng.next();
-    if shape < 0.25 {
+    if shape < 0.1 {
+        return coincident(rng);
+    }
+    if shape < 0.3 {
         return farthest(rng);
     }
     if shape < 0.6 {
@@ -100,11 +133,13 @@ fn any_rect(rng: &mut Lcg, graph: &Graph, scale: f64) -> Rect {
     Rect::new(x - w / 2.0, y - h / 2.0, x + w / 2.0, y + h / 2.0)
 }
 
-/// A budget at least the floors of `found` edges: the full mesh's `full` vertices exactly, one
-/// fewer, anywhere between the floors and it, or more.
+/// A budget at least the floors of `found` edges, four vertices each
+/// (REN-virtualized-nested-scene): those floors exactly, the full mesh's `full` vertices exactly,
+/// one fewer, anywhere between the floors and it, or more.
 fn any_budget(rng: &mut Lcg, found: usize, full: usize) -> u32 {
     let floors = 4 * found;
-    let budget = match rng.below(4) {
+    let budget = match rng.below(5) {
+        4 => floors,
         0 => full,
         1 => full.saturating_sub(1),
         2 => rng.range(floors as f64, full as f64) as usize,
@@ -113,17 +148,23 @@ fn any_budget(rng: &mut Lcg, found: usize, full: usize) -> u32 {
     u32::try_from(budget.max(floors)).unwrap()
 }
 
-/// The vertices of `mesh` in runs of one colour, which are its edges in the order it meshed them:
-/// per run its colour and the range of its vertices.
+/// The edges of `mesh` in the order it meshed them, each from its first vertex index in
+/// `edge_starts` to the next one's: per edge the colour of its first vertex and the range of its
+/// vertices, which it adds after the edge before. Read from the indices, not from runs of one
+/// colour, so that a hollow arrowhead's white fill, or an edge of the colour of the one before it,
+/// counts in its own edge (API-edges-dock-nodes-or-edges).
 fn runs(mesh: &Mesh) -> Vec<(u32, std::ops::Range<usize>)> {
-    let mut runs: Vec<(u32, std::ops::Range<usize>)> = Vec::new();
-    for (i, &color) in mesh.colors.iter().enumerate() {
-        match runs.last_mut() {
-            Some((last, range)) if *last == color => range.end = i + 1,
-            _ => runs.push((color, i..i + 1)),
-        }
-    }
-    runs
+    let starts = mesh.edge_starts.iter().map(|&start| start as usize);
+    let ends = starts.clone().skip(1).chain([mesh.indices.len()]);
+    starts
+        .zip(ends)
+        .map(|(start, end)| {
+            let indices = &mesh.indices[start..end];
+            let first = indices.iter().min().map_or(0, |&i| i as usize);
+            let last = indices.iter().max().map_or(0, |&i| i as usize + 1);
+            (mesh.colors.get(first).copied().unwrap_or(0), first..last)
+        })
+        .collect()
 }
 
 /// The colour of edge slot `slot` in the mesh, as `random_graph` gave it: `slot + 1` as the bytes
@@ -227,14 +268,28 @@ fn assert_within(out: &Visible, budget: u32, context: &str) {
 }
 
 /// Asserts that the complete mesh of `full` draws its edges within a quarter pixel inside `rect`,
-/// measured on the polyline it strokes, before its vertices are rounded to `f32`. The stroke of an
-/// edge with an arrowhead stops at its base, off the path where it bends there, which the
-/// arrowhead's own tests decide; the flattening is the same for all edges. Returns how many of
-/// the edges measured are loops.
+/// measured on the polyline it strokes, before its vertices are rounded to `f32`; a lightning
+/// bolt's parts before and after its zigzag are measured, and the zigzag's turns are points of the
+/// polyline (API-edges-dock-nodes-or-edges). The stroke of an edge with an arrowhead stops at its
+/// base, off the path where it bends there, which the arrowhead's own tests decide; the flattening
+/// is the same for all edges. Asserts too that the query found every lightning bolt with a turn in
+/// `rect`, which lies off its path. Returns how many of the edges measured are loops.
 fn assert_accurate(graph: &Graph, full: &Visible, rect: &Rect, level: Level, scale: f64) -> u32 {
     let stroke = Stroke::at(level, 1.0 / scale);
-    let plain =
-        |&(&slot, _): &(&u32, _)| level == Level::Far || !graph.edges[slot as usize].style.arrow;
+    for slot in 0..graph.edges_in_use() {
+        let (spec, path) = (&graph.edges[slot as usize], graph.paths[slot as usize]);
+        let (_, turns, _) = path.lightning();
+        if spec.style.lightning && turns.iter().any(|&turn| rect.contains(turn)) {
+            assert!(
+                full.edges.contains(&slot),
+                "{rect:?}: bolt {slot} not found"
+            );
+        }
+    }
+    let plain = |&(&slot, _): &(&u32, _)| {
+        let style = graph.edges[slot as usize].style;
+        level == Level::Far || style.arrow == Arrowhead::None
+    };
     let measured = full
         .edges
         .iter()
@@ -243,17 +298,26 @@ fn assert_accurate(graph: &Graph, full: &Visible, rect: &Rect, level: Level, sca
         .take(MEASURED);
     let mut loops = 0;
     for (&slot, (_, range)) in measured {
-        let spec = graph.edges[slot as usize];
+        let spec = &graph.edges[slot as usize];
         loops += u32::from(spec.source == spec.target);
         let path = graph.paths[slot as usize];
-        let points = flattened(&path, &stroke, rect);
+        let lightning = spec.style.lightning;
+        let points = flattened((&path, lightning), &stroke, rect);
         assert_stroke_of(full, range, &points, stroke.width);
         assert_within_reach(&points, rect, stroke.width, &format!("edge {slot}"));
-        let worst = worst_inside(&path, &points, rect, scale);
-        assert!(
-            worst <= 0.25,
-            "{rect:?} at {scale}: edge {slot} strays {worst} px"
-        );
+        let parts = if lightning {
+            let (before, _, after) = path.lightning();
+            vec![before, after]
+        } else {
+            vec![path]
+        };
+        for part in parts {
+            let worst = worst_inside(&part, &points, rect, scale);
+            assert!(
+                worst <= 0.25,
+                "{rect:?} at {scale}: edge {slot} strays {worst} px"
+            );
+        }
     }
     loops
 }
@@ -311,17 +375,18 @@ fn every_query_keeps_its_mesh_within_the_budget_and_draws_every_edge_it_finds() 
 
 /// The graph of the reproduction: `a` at (0, 0) and `b` at (-1e7, 3e6), and `edges` edges from `a`
 /// to `b`, with arrowheads or without.
-fn far_apart(edges: u32, arrow: bool) -> Graph {
+fn far_apart(edges: u32, arrow: Arrowhead) -> Graph {
     let specs = (0..edges)
         .map(|i| EdgeSpec {
             sides: Sides::default(),
             source: 0,
             target: 1,
-            label: None,
+            labels: Vec::new(),
             style: EdgeStyle {
                 color: i + 1,
                 dash: None,
                 arrow,
+                lightning: false,
             },
         })
         .collect();
@@ -338,7 +403,7 @@ fn viewport_at(scale: f64) -> Rect {
 #[test]
 fn twenty_thousand_edges_between_two_nodes_far_apart_mesh_in_full_zoomed_in() {
     // Verifies: Q-7, REN-virtualized-scene-graph
-    let mut graph = far_apart(20_000, true);
+    let mut graph = far_apart(20_000, Arrowhead::End);
     let rect = viewport_at(4.0);
     let mut out = Visible::default();
     graph.query(&rect, Level::Near, 0.25, 0.0, &mut out);
@@ -348,7 +413,7 @@ fn twenty_thousand_edges_between_two_nodes_far_apart_mesh_in_full_zoomed_in() {
     let vertices = out.mesh.distances.len();
     assert!(vertices <= 20_000 * 100, "{vertices}");
     let path = graph.paths[0];
-    let points = flattened(&path, &Stroke::at(Level::Near, 0.25), &rect);
+    let points = flattened((&path, false), &Stroke::at(Level::Near, 0.25), &rect);
     let worst = worst_inside(&path, &points, &rect, 4.0);
     assert!(worst <= 0.25, "strays {worst} px inside");
 }

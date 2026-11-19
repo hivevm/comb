@@ -17,6 +17,7 @@ import init, {
   EdgeField,
   idBudget,
   idLimit,
+  labelLimit,
   rowLimit,
   segmentLimit,
   textLimit,
@@ -197,13 +198,13 @@ export interface Placed {
 
 /** What a viewport query found: the containers in the order they are drawn and the other node
  *  slots by rank (ARCH-engine-edits-nested-graph), the edge slots it found in
- *  ascending order and the first of each one's vertex indices in the mesh, the edge slot and point
- *  of each found edge label, the mesh of the found edges and its detail, where the found nodes'
- *  content lies, and the positions and sizes buffers, all read after the same call. The label
- *  points and the mesh's positions are relative to `origin`, a world point near the query's
- *  rectangle, so that `f32` rounds them by their distance from it
- *  (API-bridge-takes-serde-and-columns); the positions buffer
- *  is not. */
+ *  ascending order and the first of each one's vertex indices in the mesh, each found edge label
+ *  as its edge's slot and its place in that edge's list of labels, a pair per label in `labels`,
+ *  and its point (API-bridge-columns-carry-nesting), the mesh of the found edges and its detail,
+ *  where the found nodes' content lies, and the positions and sizes buffers, all read after the
+ *  same call. The label points and the mesh's positions are relative to `origin`, a world point
+ *  near the query's rectangle, so that `f32` rounds them by their distance from it
+ *  (API-bridge-takes-serde-and-columns); the positions buffer is not. */
 export interface Visible {
   positions: Float32Array;
   sizes: Float32Array;
@@ -338,6 +339,8 @@ export interface Bridge {
   setFont(role: TextRole, font: FontMetrics): void;
   /** The most UTF-16 code units of a text of content or a label text the bridge accepts. */
   textLimit(): number;
+  /** The most edge labels of one edge the bridge accepts (API-edges-dock-nodes-or-edges). */
+  labelLimit(): number;
   /** The most rows of a node's content the bridge accepts. */
   rowLimit(): number;
   /** The most columns of a row the bridge accepts. */
@@ -368,19 +371,18 @@ export interface Bridge {
    *  the nodes, each followed by what it holds, depth first, each once, and the edges at any of
    *  them in ascending order (ARCH-engine-edits-nested-graph). Throws a `SlotError`. */
   removalOf(slots: Uint32Array): Removal;
-  /** Records the half width and half height of the pill of the label of the edge in `slot`, in
-   *  world units, as the labels layer draws it; a label not measured is not hit
-   *  (REN-node-content-in-rows).
-   *  Throws a `SlotError`. */
-  setLabelSize(slot: number, halfWidth: number, halfHeight: number): void;
-  /** The world point of the label of the edge in `slot`, or none where it holds no edge with a
-   *  label. */
-  labelPoint(slot: number): { x: number; y: number } | undefined;
-  /** Places the label of the edge in `slot` at the world point `(x, y)`: at the path parameter
-   *  nearest it and its distance along the normal there, which it returns (G-6). Throws a
-   *  `SlotError`, and a `NumberError` `nonFinitePoint` for a point that is not finite, before
-   *  anything moves (API-shell-mistake-refused-as-shells). */
-  moveLabel(slot: number, x: number, y: number): { t: number; offset: number };
+  /** Records the half width and half height of the pill of the label at `label` of the list of
+   *  labels of the edge in `slot`, in world units, as the labels layer draws it; a label not
+   *  measured is not hit (REN-node-content-in-rows). Throws a `SlotError`. */
+  setLabelSize(slot: number, label: number, halfWidth: number, halfHeight: number): void;
+  /** The world point of the label at `label` of the edge in `slot`, or none where it holds no edge
+   *  with a label there. */
+  labelPoint(slot: number, label: number): { x: number; y: number } | undefined;
+  /** Places the label at `label` of the edge in `slot` at the world point `(x, y)`: at the path
+   *  parameter nearest it and its distance along the normal there, which it returns (G-6); the
+   *  edge's other labels stay. Throws a `SlotError`, and a `NumberError` `nonFinitePoint` for a
+   *  point that is not finite, before anything moves (API-shell-mistake-refused-as-shells). */
+  moveLabel(slot: number, label: number, x: number, y: number): { t: number; offset: number };
   /** The slots of the edges at the nodes in `slots`, in ascending order, as a removal of them
    *  would take along, named before anything is removed (ARCH-engine-edits-graph-in-place). Throws
    *  a `SlotError`. */
@@ -716,10 +718,12 @@ function load(engine: Engine, { nodes, edges }: GraphSnapshot): number {
     e.sourceBounds,
     e.targets,
     e.targetBounds,
-    e.hasLabel,
-    e.labels,
     e.labelBounds,
+    e.labelIds,
+    e.labelIdBounds,
     e.labelTexts,
+    e.labelTextBounds,
+    e.labelTextsValid,
     e.labelT,
     e.labelOffset,
     e.hasBackground,
@@ -729,6 +733,7 @@ function load(engine: Engine, { nodes, edges }: GraphSnapshot): number {
     e.dash,
     e.gap,
     e.arrow,
+    e.lightning,
     e.sourceSide,
     e.targetSide,
   ] as const;
@@ -741,6 +746,7 @@ function load(engine: Engine, { nodes, edges }: GraphSnapshot): number {
     ...edgeColumnValues,
     e.refused?.index,
     e.refused?.field,
+    e.refused?.label,
   );
 }
 
@@ -893,6 +899,7 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
     addEdge: (edge, source, target, loops) => engine.addEdge(edge, source, target, loops),
     updateEdge: (slot, id, patch) => engine.updateEdge(slot, id, patch),
     textLimit,
+    labelLimit,
     rowLimit,
     segmentLimit,
     columnLimit,
@@ -906,13 +913,13 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
     removalOf: (slots) => removedOf(engine.removalOf(slots)),
     removeEdges: (slots) => engine.removeEdges(slots),
     edgesAt: (slots) => engine.edgesAt(slots),
-    setLabelSize: (slot, halfWidth, halfHeight) => engine.setLabelSize(slot, halfWidth, halfHeight),
-    labelPoint(slot) {
-      const [x, y] = engine.labelPoint(slot);
+    setLabelSize: (slot, label, x, y) => engine.setLabelSize(slot, label, x, y),
+    labelPoint(slot, label) {
+      const [x, y] = engine.labelPoint(slot, label);
       return x === undefined || y === undefined ? undefined : { x, y };
     },
-    moveLabel(slot, x, y) {
-      const [t, offset] = engine.moveLabel(slot, x, y);
+    moveLabel(slot, label, x, y) {
+      const [t, offset] = engine.moveLabel(slot, label, x, y);
       return { t: t!, offset: offset! };
     },
     translate: (slots, dx, dy) => engine.translate(slots, dx, dy),

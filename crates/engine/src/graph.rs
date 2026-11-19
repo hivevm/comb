@@ -49,16 +49,18 @@ pub use regions::{Axis, BAND, LEAST_REGION, LineError};
 pub use resize::{Handle, LEAST_SIDE, resized};
 use slots::Slots;
 
-/// An edge between two node slots, with the path parameter and label offset of its edge label
-/// and the style it is drawn with.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// An edge between two node slots, with the path parameter and label offset of each of its edge
+/// labels, in the order of its list, and the style it is drawn with.
+#[derive(Clone, Debug, PartialEq)]
 pub struct EdgeSpec {
     pub source: u32,
     pub target: u32,
     /// Where it leaves its source and enters its target: at a side's connector or on the outline
     /// (API-edges-dock-side-or-outline).
     pub sides: Sides,
-    pub label: Option<LabelPlacement>,
+    /// Where each of its edge labels sits, in the order of its list of labels
+    /// (API-edges-dock-nodes-or-edges, *Edge labels*).
+    pub labels: Vec<LabelPlacement>,
     pub style: EdgeStyle,
 }
 
@@ -213,10 +215,12 @@ pub struct Graph {
     paths: Vec<EdgePath>,
     /// The bounds of each path, computed when the path is.
     bounds: Vec<Rect>,
-    labels: Vec<Option<Point>>,
+    /// The point of each edge label of each edge slot, in the order of the edge's list.
+    labels: Vec<Vec<Point>>,
     /// Half the width and half the height of each edge label's pill in world units, as the shell
-    /// measured it; a label it has not measured is not hit (REN-node-content-in-rows).
-    pills: Vec<Option<(f64, f64)>>,
+    /// measured it, per edge slot in the order of its list; a label it has not measured is not hit
+    /// (REN-node-content-in-rows).
+    pills: Vec<Vec<Option<(f64, f64)>>>,
     /// The largest half extent of any pill measured, by which a hit looks for labels around it.
     widest_pill: f64,
     /// The edge slots at each node slot, one list per node slot (ARCH-engine-edits-graph-in-place).
@@ -283,11 +287,12 @@ impl Graph {
         let node_slots = slot(positions.len() / 2)?;
         let edge_slots = slot(edges.len())?;
         if let Some(edge) = (0..edge_slots).find(|&e| {
-            let spec = edges[e as usize];
+            let spec = &edges[e as usize];
             spec.source >= node_slots || spec.target >= node_slots
         }) {
             return Err(GraphError::EdgeEndOutOfRange { edge });
         }
+        let pills = edges.iter().map(|e| vec![None; e.labels.len()]).collect();
         let mut graph = Self {
             positions,
             sizes,
@@ -296,7 +301,7 @@ impl Graph {
             edge_slots: Slots::loaded(edge_slots),
             ranks: (0..node_slots).collect(),
             next_rank: u64::from(node_slots),
-            pills: vec![None; edge_slots as usize],
+            pills,
             ..Self::default()
         };
         graph.link();

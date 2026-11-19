@@ -140,10 +140,12 @@ pub(crate) fn batch(nodes: &[(&str, f64, f64)], edges: &[(&str, &str, &str)]) ->
                 id: id.to_owned().into(),
                 source: source.to_owned().into(),
                 target: target.to_owned().into(),
-                label: None.into(),
+                label: false,
+                labels: None.into(),
                 color: f64::from(0x9a_a1ad).into(),
                 dash: None.into(),
                 arrow: Arrow::End.into(),
+                lightning: None.into(),
                 source_side: Dock::Right.into(),
                 target_side: Dock::Left.into(),
             })
@@ -250,13 +252,7 @@ pub(super) fn load_edges(edges: &OwnedEdgeColumns) -> Result<Graph, GraphDataPro
 pub(super) fn labelled(id: &str) -> EdgeCells {
     let mut data = batch(&[], &[(id, "a", "b")]);
     let edge = &mut data.edges[0];
-    edge.label = Some(LabelInput {
-        text_length: Some(1),
-        t: 0.5.into(),
-        offset: 0.0.into(),
-        background: Some(f64::from(0x12_3456)),
-    })
-    .into();
+    edge.labels = Some(vec![label_named("m")]).into();
     edge.dash = Some(Pair([6.0, 4.0])).into();
     EdgeCells::from(&*edge)
 }
@@ -269,9 +265,28 @@ pub(super) fn d_and(change: impl FnOnce(&mut EdgeCells)) -> OwnedEdgeColumns {
     OwnedEdgeColumns::of([Some(&labelled("d")), Some(&e)])
 }
 
-/// The label of `edge`, which `labelled` gave it.
+/// A label `id` of one code unit of text at the middle of its edge, with a background.
+pub(super) fn label_named(id: &str) -> Field<LabelInput> {
+    Field(Some(LabelInput {
+        id: id.to_owned().into(),
+        text_length: Some(1),
+        t: Some(0.5).into(),
+        offset: Some(0.0).into(),
+        background: Some(f64::from(0x12_3456)),
+    }))
+}
+
+/// The labels of `edge`, which `labelled` gave one.
+pub(super) fn labels_in(edge: &mut EdgeCells) -> &mut Vec<Field<LabelInput>> {
+    let Field(Some(Some(labels))) = &mut edge.labels else {
+        unreachable!("a labelled edge")
+    };
+    labels
+}
+
+/// The first label of `edge`, which `labelled` gave it.
 pub(super) fn label_in(edge: &mut EdgeCells) -> &mut LabelInput {
-    let Field(Some(Some(label))) = &mut edge.label else {
+    let Some(Field(Some(label))) = labels_in(edge).first_mut() else {
         unreachable!("a labelled edge")
     };
     label
@@ -351,10 +366,12 @@ pub(crate) fn load_into(
         &e.source_bounds,
         e.targets.clone(),
         &e.target_bounds,
-        &e.has_label,
-        e.labels.clone(),
         &e.label_bounds,
-        &e.label_texts,
+        e.label_ids.clone(),
+        &e.label_id_bounds,
+        e.label_texts.clone(),
+        &e.label_text_bounds,
+        &e.label_texts_valid,
         &e.label_t,
         &e.label_offset,
         &e.has_background,
@@ -364,9 +381,11 @@ pub(crate) fn load_into(
         &e.dash,
         &e.gap,
         &e.arrow,
+        &e.lightning,
         &e.source_side,
         &e.target_side,
-        e.refused.map(|(at, _)| at),
-        e.refused.map(|(_, field)| field.into()),
+        e.refused.map(|(at, _, _)| at),
+        e.refused.map(|(_, field, _)| field.into()),
+        e.refused.and_then(|(_, _, label)| label),
     )
 }

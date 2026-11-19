@@ -31,6 +31,7 @@ function editing(around: (bridge: Bridge) => Bridge = (bridge) => bridge) {
     rows: bridge.rowLimit(),
     columns: bridge.columnLimit(),
     segments: bridge.segmentLimit(),
+    labels: bridge.labelLimit(),
   };
   const editors = editorsOf(store, bridge, limits, {}, false);
   editors.host.load({

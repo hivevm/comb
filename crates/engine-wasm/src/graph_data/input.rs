@@ -9,7 +9,7 @@ use serde::de::{self, IgnoredAny, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use tsify::Tsify;
 
-use super::field::{optional_number, text_length};
+use super::field::{optional_number, present, text_length};
 use super::regions::{Divide, RegionInput};
 use super::{ContentInput, Field};
 
@@ -267,29 +267,38 @@ impl Serialize for NodeContent {
     }
 }
 
-/// An edge label: its text, where it sits by path parameter `t` and label offset in pixels
-/// (G-6), and the colour of its background as `0xRRGGBB`, the edge's own without one.
+/// An edge label: its identifier, unique within its edge, its text, where it sits by path
+/// parameter `t` and label offset in pixels (G-6), 0.5 and 0 where it names none, and the colour
+/// of its background as `0xRRGGBB`, the edge's own without one (API-edges-dock-nodes-or-edges,
+/// *Edge labels*).
 // The tests read each `Field` of it through `Refusable` in `snapshot`, which names them all.
-#[derive(Tsify, Deserialize, Clone, Copy)]
+#[derive(Tsify, Deserialize, Clone)]
 pub struct LabelInput {
+    #[tsify(type = "string")]
+    pub id: Field<String>,
     #[tsify(type = "string")]
     #[serde(rename = "text", default, deserialize_with = "text_length")]
     pub text_length: Option<usize>,
-    #[tsify(type = "number")]
-    pub t: Field<f64>,
-    #[tsify(type = "number")]
-    pub offset: Field<f64>,
+    #[tsify(type = "number", optional)]
+    #[serde(default = "Field::absent")]
+    pub t: Field<Option<f64>>,
+    #[tsify(type = "number", optional)]
+    #[serde(default = "Field::absent")]
+    pub offset: Field<Option<f64>>,
     #[tsify(optional)]
     #[serde(default, deserialize_with = "optional_number")]
     pub background: Option<f64>,
 }
 
-/// Whether an arrowhead marks the end of an edge.
+/// The arrowhead that marks the end of an edge: a filled triangle, two open strokes, a hollow
+/// triangle, or none (API-edges-dock-nodes-or-edges, *Arrowheads*).
 #[derive(Tsify, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum Arrow {
     End,
     None,
+    Open,
+    Hollow,
 }
 
 /// A side of a node, at whose middle its connector sits (API-edges-dock-side-or-outline).
@@ -353,9 +362,11 @@ impl From<Dock> for graph_side::Dock {
     }
 }
 
-/// An edge between two nodes, named by their identifiers, with the style it is drawn with: its
-/// colour as `0xRRGGBB`, its dash pattern as dash and gap lengths in world units (none for a
-/// solid line), and whether an arrowhead marks its end (G-11).
+/// An edge between two nodes, named by their identifiers, with its edge labels and the style it is
+/// drawn with: its colour as `0xRRGGBB`, its dash pattern as dash and gap lengths in world units
+/// (none for a solid line), the arrowhead that marks its end (G-11), and whether its middle is a
+/// lightning bolt (API-edges-dock-nodes-or-edges). `label`, the one label an edge carried before
+/// `labels`, is read only to be refused.
 // The tests read each `Field` of it through `Refusable` in `snapshot`, which names them all.
 #[derive(Tsify, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -366,14 +377,22 @@ pub struct EdgeInput {
     pub source: Field<String>,
     #[tsify(type = "string")]
     pub target: Field<String>,
-    #[tsify(type = "LabelInput", optional)]
-    pub label: Field<Option<LabelInput>>,
+    /// Whether the edge still carries `label`, which `labels` replaced: never typed, and refused.
+    #[tsify(type = "never", optional)]
+    #[serde(default, deserialize_with = "present")]
+    pub label: bool,
+    #[tsify(type = "LabelInput[]", optional)]
+    #[serde(default = "Field::absent")]
+    pub labels: Field<Option<Vec<Field<LabelInput>>>>,
     #[tsify(type = "number")]
     pub color: Field<f64>,
     #[tsify(type = "[number, number]", optional)]
     pub dash: Field<Option<Pair>>,
     #[tsify(type = "Arrow")]
     pub arrow: Field<Arrow>,
+    #[tsify(type = "boolean", optional)]
+    #[serde(default = "Field::absent")]
+    pub lightning: Field<Option<bool>>,
     /// The side of its source it leaves by, or its outline; `api` fills in `right`
     /// (API-edges-dock-side-or-outline).
     #[tsify(type = "Dock")]

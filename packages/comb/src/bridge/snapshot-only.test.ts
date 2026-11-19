@@ -21,7 +21,8 @@ type Same<A, B> =
 // content columns of `text`, `action`, `badge`, `progress`, and `metric` and the separators of rows
 // among them and no title
 // column. A refused field crosses as the code of its `NodeField` or `EdgeField`, a plain number,
-// and a shape of content with its row and column.
+// a shape of content with its row and column, and a field of an edge label with the label's place
+// (API-edges-dock-nodes-or-edges).
 const columns: Same<
   Parameters<Engine["loadGraph"]>,
   [
@@ -85,10 +86,12 @@ const columns: Same<
     sourceBounds: Uint32Array | number[],
     targets: string[],
     targetBounds: Uint32Array | number[],
-    hasLabel: Uint8Array | number[],
-    labels: string[],
     labelBounds: Uint32Array | number[],
-    labelTexts: Uint8Array | number[],
+    labelIds: string[],
+    labelIdBounds: Uint32Array | number[],
+    labelTexts: string[],
+    labelTextBounds: Uint32Array | number[],
+    labelTextsValid: Uint8Array | number[],
     labelT: Float64Array | number[],
     labelOffset: Float64Array | number[],
     hasBackground: Uint8Array | number[],
@@ -98,10 +101,12 @@ const columns: Same<
     dash: Float64Array | number[],
     gap: Float64Array | number[],
     arrow: Uint8Array | number[],
+    lightning: Uint8Array | number[],
     sourceSide: Uint8Array | number[],
     targetSide: Uint8Array | number[],
     edgeRefusedAt?: number | null,
     edgeRefusedField?: number | null,
+    edgeRefusedLabel?: number | null,
   ]
 > = true;
 

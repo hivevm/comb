@@ -60,6 +60,8 @@ export interface Limits {
   rows: number;
   columns: number;
   segments: number;
+  /** The most edge labels of one edge (API-edges-dock-nodes-or-edges). */
+  labels: number;
 }
 
 /** What a field expects: a number, a text, an identifier, or a node's content, each of its type
@@ -76,6 +78,8 @@ interface Reader {
   content(value: unknown): unknown;
   /** The most code units of a text. */
   textLimit: number;
+  /** The most labels of one edge. */
+  labelLimit: number;
   /** The code units of the identifiers read so far. */
   idUnits: number;
   /** The code units of the texts of content of a load read so far, and the identifier of the
@@ -113,6 +117,7 @@ function readerOf(limits: Limits): Reader {
       typeof value === "string" ? cut(value, limits.id) : absent(value) ? value : false,
     content: (value) => plainContentOf(reader, value, limits),
     textLimit: limits.text,
+    labelLimit: limits.labels,
     idUnits: 0,
     contentUnits: 0,
     contentPast: undefined,
@@ -669,19 +674,38 @@ function columnSink(
   };
 }
 
-/** A label: absent where null or undefined, `false` where no object. */
+/** The path parameter and label offset of a label that gives none: today's one label's
+ *  (API-edges-dock-nodes-or-edges, *Edge labels*). */
+export const LABEL_T = 0.5;
+export const LABEL_OFFSET = 0;
+
+/** The labels of an edge (API-edges-dock-nodes-or-edges): absent where null or undefined, `false`
+ *  where no list, else each read by `labelOf`, at most one past the bridge's limit, so that a list
+ *  of any length costs at most that much to check. */
+function labelsOf(read: Reader, labels: unknown) {
+  if (labels === undefined || labels === null) return undefined;
+  if (!Array.isArray(labels)) return false;
+  const count = Math.min(labels.length, read.labelLimit + 1);
+  const list: unknown[] = [];
+  for (let i = 0; i < count; i++) list.push(labelOf(read, labels[i]));
+  return list;
+}
+
+/** A label, its identifier counted against the budget of identifiers, its path parameter and
+ *  offset filled where it gives none; `false` where it is no object. A background it gives none of
+ *  is left out, so that the label follows its edge's colour as the labels layer draws it. */
 function labelOf(read: Reader, label: unknown) {
-  if (label === undefined || label === null) return undefined;
   const fields = objectOf(label);
   if (!fields) return false;
-  const { text, t, offset, background } = fields;
+  const { id, text, t, offset, background } = fields;
   const placed = {
+    id: read.id(id),
     text: read.text(text),
-    t: read.number(t),
-    offset: read.number(offset),
+    t: read.number(t) ?? LABEL_T,
+    offset: read.number(offset) ?? LABEL_OFFSET,
     background: read.number(background),
   };
-  // No key for a background left out, so that the edge as Comb keeps it holds none.
+  // No key for a background left out, so that the label as Comb keeps it holds none.
   if (placed.background === undefined) delete (placed as { background?: unknown }).background;
   return placed;
 }
@@ -694,6 +718,12 @@ function outlineOf(read: Reader, outline: unknown) {
   return Array.isArray(outline) ? dashOf(read, outline) : false;
 }
 
+/** A flag as given where it is `true` or `false`, else 0, a number, which the bridge refuses by its
+ *  type as `false` would not be. */
+function flagOf(value: unknown) {
+  return typeof value === "boolean" ? value : 0;
+}
+
 /** A dash pattern: absent where null or undefined, `false` where no list of two. */
 function dashOf(read: Reader, dash: unknown) {
   if (dash === undefined || dash === null) return undefined;
@@ -703,9 +733,11 @@ function dashOf(read: Reader, dash: unknown) {
 
 /** An edge read once, its defaults filled: the right side to the left, and the top for both of a
  *  loop the host names no side of, so that it is drawn above its node
- *  (API-edges-dock-side-or-outline). */
+ *  (API-edges-dock-side-or-outline); and its labels' (API-edges-dock-nodes-or-edges). `label`,
+ *  which `labels` replaced, is kept as `false` where it is given, which the bridge refuses. */
 function edgeOf(read: Reader, edge: Fields) {
-  const { id, source, target, label, color, dash, arrow, sourceSide, targetSide } = edge;
+  const { id, source, target, label, labels, color, dash, arrow, lightning } = edge;
+  const { sourceSide, targetSide } = edge;
   const [readId, from, to] = [read.id(id), read.id(source), read.id(target)];
   const loop = typeof from === "string" && from === to;
   const snapshot: {
@@ -716,8 +748,10 @@ function edgeOf(read: Reader, edge: Fields) {
     arrow: unknown;
     sourceSide: unknown;
     targetSide: unknown;
-    label?: ReturnType<typeof labelOf>;
+    label?: false;
+    labels?: ReturnType<typeof labelsOf>;
     dash?: ReturnType<typeof dashOf>;
+    lightning?: unknown;
   } = {
     id: readId,
     source: from,
@@ -727,12 +761,26 @@ function edgeOf(read: Reader, edge: Fields) {
     sourceSide: read.text(sourceSide) ?? (loop ? "top" : "right"),
     targetSide: read.text(targetSide) ?? (loop ? "top" : "left"),
   };
-  // No key for a label or a dash left out: each set where present, since spreading an object of
-  // one key per edge costs a large load milliseconds.
-  const placed = labelOf(read, label);
-  if (placed !== undefined) snapshot.label = placed;
+  return withOptional(read, snapshot, { label, labels, dash, lightning });
+}
+
+/** `snapshot` with the fields an edge may leave out read, each set where present, since spreading
+ *  an object of one key per edge costs a large load milliseconds: `label`, which `labels`
+ *  replaced, as `false`, its labels, its dash, and its lightning bolt. */
+function withOptional<
+  S extends { color: number; label?: false; labels?: unknown; dash?: unknown; lightning?: unknown },
+>(
+  read: Reader,
+  snapshot: S,
+  { label, labels, dash, lightning }: Record<"label" | "labels" | "dash" | "lightning", unknown>,
+): S {
+  const given = (value: unknown) => value !== undefined && value !== null;
+  if (given(label)) snapshot.label = false;
+  const placed = labelsOf(read, labels);
+  if (placed !== undefined) snapshot.labels = placed;
   const pattern = dashOf(read, dash);
   if (pattern !== undefined) snapshot.dash = pattern;
+  if (given(lightning)) snapshot.lightning = flagOf(lightning);
   return snapshot;
 }
 
@@ -772,8 +820,9 @@ export function snapshotOf(lists: Lists, limits: Limits) {
         return false;
       }
       const e = edgeOf(read, item);
-      const { id, source, target, label, color, dash, arrow, sourceSide, targetSide } = e;
-      edgeWriter.edge(id, source, target, label, color, dash, arrow, sourceSide, targetSide);
+      const { id, source, target, label, labels, color, dash, arrow, lightning } = e;
+      const sides = [e.sourceSide, e.targetSide] as const;
+      edgeWriter.edge(id, source, target, label, labels, color, dash, arrow, lightning, ...sides);
       return e;
     },
     done,
@@ -805,14 +854,15 @@ export function edgeSnapshotOf(edge: unknown, limits: Limits) {
 }
 
 /** The fields a patch of `updateEdge` may set, each read as a load reads it; `null` clears a dash
- *  or a label. */
+ *  or the labels. */
 const EDGE_PATCH: Record<string, (read: Reader, value: unknown) => unknown> = {
   color: (read, value) => read.number(value),
   arrow: (read, value) => read.text(value),
+  lightning: (_, value) => (value === null ? value : flagOf(value)),
   sourceSide: (read, value) => read.text(value),
   targetSide: (read, value) => read.text(value),
   dash: (read, value) => (value === null ? null : dashOf(read, value)),
-  label: (read, value) => (value === null ? null : labelOf(read, value)),
+  labels: (read, value) => (value === null ? null : labelsOf(read, value)),
 };
 
 /** The patch of `updateEdge` as plain data, read as `patchOf` reads one of `updateNode`: the own

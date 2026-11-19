@@ -15,9 +15,10 @@ use serde::{Deserialize, Deserializer};
 use tsify::Tsify;
 
 use super::checks::{
-    color_of, dash_of, edge_ids_of, given_height, label_placement, outline_of, spec_of,
+    arrowhead_of, color_of, dash_of, edge_ids_of, given_height, label_ids_of, label_placements,
+    outline_of, spec_of,
 };
-use super::item::{Item, content_of, edge_of, label_of};
+use super::item::{Item, content_of, edge_of, labels_of};
 use super::load::checked_content;
 use super::problem::{A_BORDER_SIDE, A_FLAG, A_HEIGHT, A_NUMBER, AN_OUTLINE};
 use super::regions::{Divide, RegionInput};
@@ -76,7 +77,11 @@ pub(crate) fn add_edge_to(
     check_graph_size(0.0, f64::from(graph.edges_in_use()) + 1.0)?;
     let edge = edge_of(0, edge)?;
     let lengths = [edge.id, edge.source, edge.target].map(utf16_length);
-    edge_ids_of(0, lengths)?;
+    edge_ids_of(
+        0,
+        lengths,
+        edge.labels.iter().map(|label| utf16_length(label.id)),
+    )?;
     if edge.source == edge.target && !loops {
         return Err(GraphDataProblem::SelfEdge {
             edge: edge.id.to_owned(),
@@ -88,19 +93,22 @@ pub(crate) fn add_edge_to(
 }
 
 /// The fields a patch of `updateEdge` may hold, each as the host application handed it over:
-/// `None` where the patch does not name it, and `dash` and `label` `Some(Field(Some(None)))`
+/// `None` where the patch does not name it, and `dash` and `labels` `Some(Field(Some(None)))`
 /// where it clears them with `null`. Read from a plain object alone, as `NodePatch` is; the first
-/// other field is kept by name, and the fields after it are passed over unread.
+/// other field, `label` among them, is kept by name, and the fields after it are passed over
+/// unread. `labels` replaces the edge's whole list (API-edges-dock-nodes-or-edges).
 #[derive(Tsify, Default)]
 #[tsify(
     type = "{ color?: number; dash?: [number, number] | null; arrow?: Arrow; \
-                 label?: LabelInput | null; sourceSide?: Dock; targetSide?: Dock }"
+                 labels?: LabelInput[] | null; lightning?: boolean; sourceSide?: Dock; \
+                 targetSide?: Dock }"
 )]
 pub struct EdgePatch {
     color: Option<Field<f64>>,
     dash: Option<Field<Option<Pair>>>,
     arrow: Option<Field<Arrow>>,
-    label: Option<Field<Option<LabelInput>>>,
+    labels: Option<Field<Option<Vec<Field<LabelInput>>>>>,
+    lightning: Option<Field<Option<bool>>>,
     source_side: Option<Field<Dock>>,
     target_side: Option<Field<Dock>>,
     other: Option<String>,
@@ -128,7 +136,8 @@ impl<'de> Visitor<'de> for EdgePatchVisitor {
                 "color" => patch.color = Some(map.next_value()?),
                 "dash" => patch.dash = Some(map.next_value()?),
                 "arrow" => patch.arrow = Some(map.next_value()?),
-                "label" => patch.label = Some(map.next_value()?),
+                "labels" => patch.labels = Some(map.next_value()?),
+                "lightning" => patch.lightning = Some(map.next_value()?),
                 "sourceSide" => patch.source_side = Some(map.next_value()?),
                 "targetSide" => patch.target_side = Some(map.next_value()?),
                 _ => {
@@ -144,9 +153,9 @@ impl<'de> Visitor<'de> for EdgePatchVisitor {
 }
 
 /// Checks a patch of the edge `id` in `slot` as a load checks those fields, and gives the edge the
-/// patched label placement and style; the store merges the rest, which the engine does not keep.
-/// The first offending field refuses the patch, and nothing changes; a slot that holds no edge is
-/// the shell's mistake.
+/// patched label placements, the whole list, and style; the store merges the rest, which the engine
+/// does not keep. The first offending field refuses the patch, and nothing changes; a slot that
+/// holds no edge is the shell's mistake.
 pub(crate) fn update_edge_in(
     graph: &mut Graph,
     slot: u32,
@@ -164,9 +173,10 @@ pub(crate) fn update_edge_in(
     // Every field's type first, then their values, in the order a load reads and checks them.
     let mut item = Item::new(GraphList::Edges, 0);
     item.id = Some(id);
-    let label = patch
-        .label
-        .map(|label| label_of(&item, label))
+    let labels = patch
+        .labels
+        .as_ref()
+        .map(|labels| labels_of(&item, labels))
         .transpose()?;
     let color = patch
         .color
@@ -180,6 +190,10 @@ pub(crate) fn update_edge_in(
         .arrow
         .map(|arrow| item.edge(EdgeField::Arrow, arrow))
         .transpose()?;
+    let lightning = patch
+        .lightning
+        .map(|lightning| item.edge(EdgeField::Lightning, lightning))
+        .transpose()?;
     let source_side = patch
         .source_side
         .map(|side| item.edge(EdgeField::SourceSide, side))
@@ -188,9 +202,12 @@ pub(crate) fn update_edge_in(
         .target_side
         .map(|side| item.edge(EdgeField::TargetSide, side))
         .transpose()?;
-    let label = match label {
-        None => current.label,
-        Some(label) => label.map(|l| label_placement(id, &l)).transpose()?,
+    let labels = match labels {
+        None => current.labels.clone(),
+        Some(labels) => {
+            label_ids_of(0, labels.iter().map(|label| utf16_length(label.id)))?;
+            label_placements(id, &labels)?
+        }
     };
     let mut style = current.style;
     if let Some(color) = color {
@@ -200,13 +217,16 @@ pub(crate) fn update_edge_in(
         style.dash = dash.map(|Pair(dash)| dash_of(id, dash)).transpose()?;
     }
     if let Some(arrow) = arrow {
-        style.arrow = arrow == Arrow::End;
+        style.arrow = arrowhead_of(arrow);
+    }
+    if let Some(lightning) = lightning {
+        style.lightning = lightning.unwrap_or(false);
     }
     let sides = Sides {
         source: source_side.map_or(current.sides.source, Into::into),
         target: target_side.map_or(current.sides.target, Into::into),
     };
-    Ok(graph.update_edge(slot, label, style, sides)?)
+    Ok(graph.update_edge(slot, labels, style, sides)?)
 }
 
 /// The attributes `updateNode` changes on a node, by name: its content, which it replaces whole
@@ -424,6 +444,124 @@ mod tests {
     use super::super::{KindCode, MAX_TEXT, RECTANGLE, RoleCode};
     use super::*;
     use comb_engine::graph::TooManySlots;
+
+    #[test]
+    fn a_stale_label_twice_an_identifier_and_nine_labels_are_refused_in_a_load_addedge_and_a_patch()
+    {
+        // Verifies: API-edges-dock-nodes-or-edges, Q-7
+        use super::super::graph_of;
+        use super::super::tests::{batch, label_named, load_edges};
+        use super::super::{EdgeCells, OwnedEdgeColumns};
+        let edge = |change: &dyn Fn(&mut EdgeInput)| {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[("e", "a", "b")]);
+            change(&mut data.edges[0]);
+            data
+        };
+        let labels =
+            |ids: &[&str]| Field(Some(Some(ids.iter().map(|id| label_named(id)).collect())));
+        let field = |field: &str, expected: &str| GraphDataProblem::InvalidField {
+            list: GraphList::Edges,
+            index: 0,
+            id: Some("e".into()),
+            field: field.into(),
+            expected: expected.into(),
+        };
+        let nine: Vec<String> = (0..9).map(|i| format!("l{i}")).collect();
+        let nine: Vec<&str> = nine.iter().map(String::as_str).collect();
+        type Change<'a> = &'a dyn Fn(&mut EdgeInput);
+        type Problem<'a> = &'a dyn Fn() -> GraphDataProblem;
+        let cases: [(Change, Problem); 3] = [
+            (&|e| e.label = true, &|| {
+                field("label", super::super::problem::NO_LABEL)
+            }),
+            (&|e| e.labels = labels(&["m", "n", "m"]), &|| {
+                GraphDataProblem::DuplicateLabel {
+                    edge: "e".into(),
+                    label: "m".into(),
+                }
+            }),
+            (&|e| e.labels = labels(&nine), &|| {
+                GraphDataProblem::TooManyLabels {
+                    edge: "e".into(),
+                    limit: 8,
+                }
+            }),
+        ];
+        for (change, problem) in cases {
+            let data = edge(change);
+            // A load, through the columns the snapshot builds, and through the batch.
+            let columns = OwnedEdgeColumns::of([Some(&EdgeCells::from(&data.edges[0]))]);
+            assert_eq!(load_edges(&columns).err(), Some(problem()));
+            assert_eq!(graph_of(&data).err(), Some(problem()));
+            // `addEdge`, which leaves the graph as it was.
+            let mut graph = graph_of(&edge(&|_| {})).unwrap();
+            let added = add_edge_to(&mut graph, &data.edges[0], 0, 1, false);
+            assert_eq!(added, Err(EdgeRefusal::Data(problem())));
+            assert_eq!(graph.edges_in_use(), 1);
+        }
+    }
+
+    #[test]
+    fn eight_labels_are_taken_none_is_no_labels_and_a_label_without_a_place_sits_at_the_middle() {
+        // Verifies: API-edges-dock-nodes-or-edges
+        use super::super::graph_of;
+        use super::super::tests::{batch, label_named, load_edges};
+        use super::super::{EdgeCells, OwnedEdgeColumns};
+        let edge = |change: &dyn Fn(&mut EdgeInput)| {
+            let mut data = batch(&[("a", 0.0, 0.0), ("b", 300.0, 0.0)], &[("e", "a", "b")]);
+            change(&mut data.edges[0]);
+            data
+        };
+        let labels =
+            |ids: &[&str]| Field(Some(Some(ids.iter().map(|id| label_named(id)).collect())));
+        let eight = ["l0", "l1", "l2", "l3", "l4", "l5", "l6", "l7"];
+        // Eight labels are taken, and an empty list is no labels.
+        assert_eq!(
+            graph_of(&edge(&|e| e.labels = labels(&eight)))
+                .unwrap()
+                .edge(0)
+                .unwrap()
+                .labels
+                .len(),
+            8
+        );
+        let empty = graph_of(&edge(&|e| e.labels = labels(&[]))).unwrap();
+        assert!(empty.edge(0).unwrap().labels.is_empty());
+        // A label without a path parameter or an offset sits at 0.5 and 0.
+        let unplaced = edge(&|e| {
+            let mut label = label_named("m");
+            let placed = label.0.as_mut().unwrap();
+            (placed.t, placed.offset) = (Field::absent(), Field::absent());
+            e.labels = Field(Some(Some(vec![label])));
+        });
+        let placed = graph_of(&unplaced).unwrap().edge(0).unwrap().labels[0];
+        assert_eq!((placed.t, placed.offset), (0.5, 0.0));
+        let columns = OwnedEdgeColumns::of([Some(&EdgeCells::from(&unplaced.edges[0]))]);
+        let placed = load_edges(&columns).unwrap().edge(0).unwrap().labels[0];
+        assert_eq!((placed.t, placed.offset), (0.5, 0.0));
+        // A patch replaces the whole list, a label without a place back at 0.5, and refuses
+        // `label` as a field it does not know.
+        let mut graph = graph_of(&edge(&|e| e.labels = labels(&["m", "n"]))).unwrap();
+        let patch = EdgePatch {
+            labels: Some(unplaced.edges[0].labels.clone()),
+            ..EdgePatch::default()
+        };
+        update_edge_in(&mut graph, 0, "e", patch).unwrap();
+        let kept = &graph.edge(0).unwrap().labels;
+        assert_eq!(kept.len(), 1);
+        assert_eq!((kept[0].t, kept[0].offset), (0.5, 0.0));
+        let stale = EdgePatch {
+            other: Some("label".into()),
+            ..EdgePatch::default()
+        };
+        assert_eq!(
+            update_edge_in(&mut graph, 0, "e", stale),
+            Err(EdgeRefusal::Data(GraphDataProblem::UnknownEdgePatchField {
+                edge: "e".into(),
+                field: "label".into()
+            }))
+        );
+    }
 
     #[test]
     fn a_patch_with_another_field_or_a_title_not_text_names_its_node() {

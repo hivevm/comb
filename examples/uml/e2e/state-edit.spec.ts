@@ -151,7 +151,7 @@ test("a connection of two states adds a transition docked on the outline, whose 
     color: 0x6b7280,
     arrow: "end",
   });
-  expect(added.label).toBeUndefined();
+  expect(added.labels).toBeUndefined();
   // Drawn from where the line between the two centres leaves created's bottom, not from its
   // right connector.
   const ends = await page.evaluate(async (id) => {
@@ -177,7 +177,7 @@ test("a connection of two states adds a transition docked on the outline, whose 
   }, added.id);
   expect(label?.text).toBe("redraw");
   const edge = (await state(page)).graph.edges.find(({ id }) => id === added.id)!;
-  expect(edge.label).toMatchObject({ text: "redraw", background: 0x6b7280 });
+  expect(edge.labels).toMatchObject([{ id: "kind", text: "redraw", background: 0x6b7280 }]);
 });
 
 test("a selected transition leaves the hidden kind select on a kind it offers", async ({

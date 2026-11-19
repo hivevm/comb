@@ -8,8 +8,8 @@ use super::field::{Refusable, items};
 use super::node_columns::Refused;
 use super::{
     Arrow, ArrowCode, ContentData, ContentInput, Dock, EdgeColumns, EdgeField, EdgeInput, Field,
-    GraphDataProblem, LabelInput, NodeColumns, NodeField, NodeInput, NodeShapeCode, OutlineCode,
-    Pair, SideCode, Unflat, numbered, utf16_length,
+    GraphDataProblem, LabelInput, MAX_LABELS, NodeColumns, NodeField, NodeInput, NodeShapeCode,
+    OutlineCode, Pair, SideCode, Unflat, numbered, utf16_length,
 };
 
 /// The nodes and edges of one load as the tests write them, each in slot order: the nodes as the
@@ -52,20 +52,7 @@ impl Refusable for NodeInput {
 /// An edge of which a field, or a field of its label, is missing or of another type.
 impl Refusable for EdgeInput {
     fn refused(&self) -> bool {
-        let label = self.label.0.flatten();
-        [
-            self.id.0.is_none(),
-            self.source.0.is_none(),
-            self.target.0.is_none(),
-            self.label.0.is_none(),
-            label.is_some_and(|label| label.t.0.is_none() || label.offset.0.is_none()),
-            self.color.0.is_none(),
-            self.dash.0.is_none(),
-            self.arrow.0.is_none(),
-            self.source_side.0.is_none(),
-            self.target_side.0.is_none(),
-        ]
-        .contains(&true)
+        EdgeCells::from(self).refused().is_some() || self.arrow.0.is_none()
     }
 }
 
@@ -568,45 +555,83 @@ impl OwnedColumns {
 /// arrowhead and sides, which are any string, so that one naming no value crosses as its code, as
 /// from the snapshot.
 #[cfg(test)]
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct EdgeCells {
     pub id: Field<String>,
     pub source: Field<String>,
     pub target: Field<String>,
-    pub label: Field<Option<LabelInput>>,
+    /// Whether the edge still carries `label`, which `labels` replaced.
+    #[serde(default, deserialize_with = "super::field::present")]
+    pub label: bool,
+    #[serde(default = "Field::absent")]
+    pub labels: Field<Option<Vec<Field<LabelInput>>>>,
     pub color: Field<f64>,
     pub dash: Field<Option<Pair>>,
     pub arrow: Field<String>,
+    #[serde(default = "Field::absent")]
+    pub lightning: Field<Option<bool>>,
     pub source_side: Field<String>,
     pub target_side: Field<String>,
 }
 
 #[cfg(test)]
 impl EdgeCells {
+    /// The labels the snapshot reads of the edge, at most one beyond `MAX_LABELS`, each `None`
+    /// where it is no object; none where the edge's labels are absent or no list.
+    fn labels(&self) -> impl Iterator<Item = Option<&LabelInput>> {
+        let labels = self.labels.0.as_ref().and_then(Option::as_ref);
+        labels
+            .into_iter()
+            .flatten()
+            .take(MAX_LABELS + 1)
+            .map(|label| label.0.as_ref())
+    }
+
     /// The first field of the edge missing or of another type, in the order an edge is read, as
-    /// the snapshot names it; a string that names no arrowhead or side is none.
-    fn refused(&self) -> Option<EdgeField> {
-        let label = self.label.0.flatten();
-        [
+    /// the snapshot names it, a label's field with the label's place; a string that names no
+    /// arrowhead or side is none.
+    fn refused(&self) -> Option<(EdgeField, Option<u32>)> {
+        let first = [
             (EdgeField::Id, self.id.0.is_none()),
             (EdgeField::Source, self.source.0.is_none()),
             (EdgeField::Target, self.target.0.is_none()),
-            (EdgeField::Label, self.label.0.is_none()),
-            (EdgeField::LabelT, label.is_some_and(|l| l.t.0.is_none())),
-            (
-                EdgeField::LabelOffset,
-                label.is_some_and(|l| l.offset.0.is_none()),
-            ),
-            (EdgeField::Color, self.color.0.is_none()),
-            (EdgeField::Dash, self.dash.0.is_none()),
-            (EdgeField::Arrow, self.arrow.0.is_none()),
-            (EdgeField::SourceSide, self.source_side.0.is_none()),
-            (EdgeField::TargetSide, self.target_side.0.is_none()),
+            (EdgeField::Label, self.label),
+            (EdgeField::Labels, self.labels.0.is_none()),
         ]
         .into_iter()
         .find(|&(_, refused)| refused)
-        .map(|(field, _)| field)
+        .map(|(field, _)| (field, None));
+        let label = || {
+            (0_u32..).zip(self.labels()).find_map(|(i, label)| {
+                let field = match label {
+                    None => Some(EdgeField::LabelItem),
+                    Some(label) => [
+                        (EdgeField::LabelId, label.id.0.is_none()),
+                        (EdgeField::LabelT, label.t.0.is_none()),
+                        (EdgeField::LabelOffset, label.offset.0.is_none()),
+                    ]
+                    .into_iter()
+                    .find(|&(_, refused)| refused)
+                    .map(|(field, _)| field),
+                };
+                field.map(|field| (field, Some(i)))
+            })
+        };
+        let rest = || {
+            [
+                (EdgeField::Color, self.color.0.is_none()),
+                (EdgeField::Dash, self.dash.0.is_none()),
+                (EdgeField::Arrow, self.arrow.0.is_none()),
+                (EdgeField::Lightning, self.lightning.0.is_none()),
+                (EdgeField::SourceSide, self.source_side.0.is_none()),
+                (EdgeField::TargetSide, self.target_side.0.is_none()),
+            ]
+            .into_iter()
+            .find(|&(_, refused)| refused)
+            .map(|(field, _)| (field, None))
+        };
+        first.or_else(label).or_else(rest)
     }
 }
 
@@ -628,12 +653,16 @@ impl From<&EdgeInput> for EdgeCells {
             source: edge.source.clone(),
             target: edge.target.clone(),
             label: edge.label,
+            labels: edge.labels.clone(),
             color: edge.color,
             dash: edge.dash,
             arrow: named(edge.arrow.0.map(|arrow| match arrow {
                 Arrow::End => "end",
                 Arrow::None => "none",
+                Arrow::Open => "open",
+                Arrow::Hollow => "hollow",
             })),
+            lightning: edge.lightning,
             source_side: side(edge.source_side),
             target_side: side(edge.target_side),
         }
@@ -650,10 +679,12 @@ pub(crate) struct OwnedEdgeColumns {
     pub(super) source_bounds: Vec<u32>,
     pub(super) targets: Vec<String>,
     pub(super) target_bounds: Vec<u32>,
-    pub(super) has_label: Vec<u8>,
-    pub(super) labels: Vec<String>,
     pub(super) label_bounds: Vec<u32>,
-    pub(super) label_texts: Vec<u8>,
+    pub(super) label_ids: Vec<String>,
+    pub(super) label_id_bounds: Vec<u32>,
+    pub(super) label_texts: Vec<String>,
+    pub(super) label_text_bounds: Vec<u32>,
+    pub(super) label_texts_valid: Vec<u8>,
     pub(super) label_t: Vec<f64>,
     pub(super) label_offset: Vec<f64>,
     pub(super) has_background: Vec<u8>,
@@ -663,18 +694,19 @@ pub(crate) struct OwnedEdgeColumns {
     pub(super) dash: Vec<f64>,
     pub(super) gap: Vec<f64>,
     pub(super) arrow: Vec<u8>,
+    pub(super) lightning: Vec<u8>,
     pub(super) source_side: Vec<u8>,
     pub(super) target_side: Vec<u8>,
-    pub(super) refused: Option<(u32, EdgeField)>,
+    pub(super) refused: Option<(u32, EdgeField, Option<u32>)>,
 }
 
 #[cfg(test)]
 impl OwnedEdgeColumns {
     /// The columns of `edges` as the snapshot builds them, `None` for an item that is no object:
     /// a field missing or of another type empty, NaN, or absent, and the first such one named; a
-    /// label text of the length a label holds; an arrowhead or a side by its code, one whose
-    /// string names none `Unnamed`; each string column in pieces of at most 2^28 UTF-16 code
-    /// units.
+    /// label's path parameter and offset 0.5 and 0 where it names none; a label text of the length
+    /// a label holds; an arrowhead or a side by its code, one whose string names none `Unnamed`;
+    /// each string column in pieces of at most 2^28 UTF-16 code units.
     pub(crate) fn of<'e>(edges: impl IntoIterator<Item = Option<&'e EdgeCells>>) -> Self {
         Self::in_pieces(SNAPSHOT_PIECE, edges)
     }
@@ -690,12 +722,14 @@ impl OwnedEdgeColumns {
             source_bounds: vec![0],
             target_bounds: vec![0],
             label_bounds: vec![0],
+            label_id_bounds: vec![0],
+            label_text_bounds: vec![0],
             ..Self::default()
         };
         for (index, edge) in edges.into_iter().enumerate() {
-            let refused = edge.map_or(Some(EdgeField::Item), EdgeCells::refused);
-            if let Some(field) = refused {
-                columns.refused.get_or_insert((index as u32, field));
+            let refused = edge.map_or(Some((EdgeField::Item, None)), EdgeCells::refused);
+            if let Some((field, label)) = refused {
+                columns.refused.get_or_insert((index as u32, field, label));
             }
             columns.push(edge.unwrap_or(&EdgeCells::default()));
         }
@@ -703,18 +737,17 @@ impl OwnedEdgeColumns {
             &mut columns.ids,
             &mut columns.sources,
             &mut columns.targets,
-            &mut columns.labels,
+            &mut columns.label_ids,
+            &mut columns.label_texts,
         ] {
             *column = pieces_of(column, bound);
         }
         columns
     }
 
-    /// Writes `edge` into the columns, each string column a value per edge until `in_pieces` cuts
-    /// it.
+    /// Writes `edge` into the columns, each string column a value per edge or label until
+    /// `in_pieces` cuts it.
     fn push(&mut self, edge: &EdgeCells) {
-        let label = edge.label.0.flatten();
-        let text_length = label.and_then(|label| label.text_length);
         let text = |field: &Field<String>| field.0.clone().unwrap_or_default();
         for (column, bounds, value) in [
             (&mut self.ids, &mut self.id_bounds, text(&edge.id)),
@@ -728,23 +761,27 @@ impl OwnedEdgeColumns {
                 &mut self.target_bounds,
                 text(&edge.target),
             ),
-            (
-                &mut self.labels,
-                &mut self.label_bounds,
-                "x".repeat(text_length.unwrap_or(0)),
-            ),
         ] {
             push_value(column, bounds, value);
         }
-        self.label_texts.push(u8::from(text_length.is_some()));
-        self.has_label.push(u8::from(label.is_some()));
-        self.label_t
-            .push(label.and_then(|l| l.t.0).unwrap_or(f64::NAN));
-        self.label_offset
-            .push(label.and_then(|l| l.offset.0).unwrap_or(f64::NAN));
-        let background = label.and_then(|label| label.background);
-        self.has_background.push(u8::from(background.is_some()));
-        self.background.push(background.unwrap_or(0.0));
+        for label in edge.labels() {
+            let id = label.map(|label| text(&label.id)).unwrap_or_default();
+            push_value(&mut self.label_ids, &mut self.label_id_bounds, id);
+            let text_length = label.and_then(|label| label.text_length);
+            let shown = "x".repeat(text_length.unwrap_or(0));
+            push_value(&mut self.label_texts, &mut self.label_text_bounds, shown);
+            self.label_texts_valid.push(u8::from(text_length.is_some()));
+            let number = |field: Option<Field<Option<f64>>>, absent: f64| match field {
+                Some(Field(Some(value))) => value.unwrap_or(absent),
+                _ => f64::NAN,
+            };
+            self.label_t.push(number(label.map(|l| l.t), 0.5));
+            self.label_offset.push(number(label.map(|l| l.offset), 0.0));
+            let background = label.and_then(|label| label.background);
+            self.has_background.push(u8::from(background.is_some()));
+            self.background.push(background.unwrap_or(0.0));
+        }
+        self.label_bounds.push(numbered(self.label_t.len()));
         self.color.push(edge.color.0.unwrap_or(f64::NAN));
         let dash = edge.dash.0.flatten();
         self.has_dash.push(u8::from(dash.is_some()));
@@ -758,9 +795,13 @@ impl OwnedEdgeColumns {
             .map_or(ArrowCode::End, |arrow| match arrow {
                 "end" => ArrowCode::End,
                 "none" => ArrowCode::None,
+                "open" => ArrowCode::Open,
+                "hollow" => ArrowCode::Hollow,
                 _ => ArrowCode::Unnamed,
             });
         self.arrow.push(arrow as u8);
+        self.lightning
+            .push(u8::from(edge.lightning.0.flatten().unwrap_or(false)));
         let side = |side: &Field<String>, absent: SideCode| {
             side.0.as_deref().map_or(absent, |side| match side {
                 "top" => SideCode::Top,
@@ -785,10 +826,12 @@ impl OwnedEdgeColumns {
             source_bounds: &self.source_bounds,
             targets: &self.targets,
             target_bounds: &self.target_bounds,
-            has_label: &self.has_label,
-            labels: &self.labels,
             label_bounds: &self.label_bounds,
+            label_ids: &self.label_ids,
+            label_id_bounds: &self.label_id_bounds,
             label_texts: &self.label_texts,
+            label_text_bounds: &self.label_text_bounds,
+            label_texts_valid: &self.label_texts_valid,
             label_t: &self.label_t,
             label_offset: &self.label_offset,
             has_background: &self.has_background,
@@ -798,6 +841,7 @@ impl OwnedEdgeColumns {
             dash: &self.dash,
             gap: &self.gap,
             arrow: &self.arrow,
+            lightning: &self.lightning,
             source_side: &self.source_side,
             target_side: &self.target_side,
             refused: self.refused,
@@ -907,32 +951,38 @@ mod tests {
     }
 
     /// An edge read as `addEdge` reads one, of the label `label`.
-    fn edge(label: Value) -> [(&'static str, Value); 9] {
+    fn edge(labels: Value) -> [(&'static str, Value); 10] {
         let text = |value: &str| Value::Text(value.to_owned());
         [
             ("id", text("e")),
             ("source", text("a")),
             ("target", text("b")),
-            ("label", label),
+            ("labels", labels),
             ("color", Value::Number(0.0)),
             (
                 "dash",
                 Value::List(vec![Value::Number(4.0), Value::Number(2.0)]),
             ),
             ("arrow", text("end")),
+            ("lightning", Value::Bool(true)),
             ("sourceSide", text("right")),
             ("targetSide", text("left")),
         ]
     }
 
-    /// A label of a text, a place, and a background.
-    fn label() -> [(&'static str, Value); 4] {
+    fn label() -> [(&'static str, Value); 5] {
         [
+            ("id", Value::Text("m".to_owned())),
             ("text", Value::Text("l".to_owned())),
             ("t", Value::Number(0.5)),
             ("offset", Value::Number(0.0)),
             ("background", Value::Number(0.0)),
         ]
+    }
+
+    /// The list of labels of one label of `fields`.
+    fn one(fields: &[(&str, Value)]) -> Value {
+        Value::List(vec![object(fields)])
     }
 
     // A field added to an input fails to compile in the tests below until they and `Refusable`
@@ -1017,50 +1067,79 @@ mod tests {
             source: _,
             target: _,
             label: _,
+            labels: _,
             color: _,
             dash: _,
             arrow: _,
+            lightning: _,
             source_side: _,
             target_side: _,
         } = EdgeInput::default();
-        // The label and the dash may be left out: none is no refused value.
+        // The labels, the dash, and the lightning bolt may be left out: none is no refused value.
         let required = [
             ("id", true),
             ("source", true),
             ("target", true),
-            ("label", false),
+            ("labels", false),
             ("color", true),
             ("dash", false),
             ("arrow", true),
             ("sourceSide", true),
             ("targetSide", true),
         ];
-        assert_refusable::<EdgeInput>(&edge(object(&label())), &required);
+        let fields = edge(one(&label()));
+        assert_refusable::<EdgeInput>(&fields, &required);
+        // A lightning bolt of another type than `true` or `false`, which `wrong` gives.
+        let mut numbered = fields.to_vec();
+        numbered[8].1 = Value::Number(1.0);
+        assert!(
+            read::<EdgeInput>(&numbered).refused(),
+            "lightning of another type"
+        );
+        assert!(!read::<EdgeInput>(&without(&fields, "lightning")).refused());
+        // `label`, which `labels` replaced, of any value but none (API-edges-dock-nodes-or-edges).
+        for stale in [object(&label()), Value::Bool(false), Value::Number(0.0)] {
+            let mut carried = fields.to_vec();
+            carried.push(("label", stale));
+            assert!(read::<EdgeInput>(&carried).refused(), "label");
+        }
+        let mut none = fields.to_vec();
+        none.push(("label", Value::Null));
+        assert!(!read::<EdgeInput>(&none).refused(), "label of null");
     }
 
     #[test]
-    fn the_place_of_an_edges_label_is_refusable_and_its_text_and_background_are_not() {
-        let read_with = |label: &[(&str, Value)]| read::<EdgeInput>(&edge(object(label)));
+    fn a_label_its_identifier_and_its_place_are_refusable_and_its_text_and_background_are_not() {
+        let read_with = |label: &[(&str, Value)]| read::<EdgeInput>(&edge(one(label)));
         let LabelInput {
+            id: _,
             text_length: _,
             t: _,
             offset: _,
             background: _,
-        } = read_with(&label()).label.0.flatten().expect("a label");
-        // A label's text and background are checked by its rules, not refused by their type.
+        } = read_with(&label()).labels.0.flatten().expect("labels")[0]
+            .0
+            .clone()
+            .expect("a label");
+        // A label's text and background are checked by its rules, not refused by their type; its
+        // place may be left out, and takes 0.5 and 0 (API-edges-dock-nodes-or-edges).
         let fields = [
-            ("t", true),
-            ("offset", true),
+            ("id", true),
+            ("t", false),
+            ("offset", false),
             ("text", false),
             ("background", false),
         ];
-        for (name, refused) in fields {
+        for (name, required) in fields {
             let typed = read_with(&wrong(&label(), name)).refused();
-            assert_eq!(typed, refused, "label.{name} of another type");
-            if refused {
-                let left_out = read_with(&without(&label(), name)).refused();
-                assert!(left_out, "label.{name} left out");
-            }
+            let refusable = ["id", "t", "offset"].contains(&name);
+            assert_eq!(typed, refusable, "labels[0].{name} of another type");
+            let left_out = read_with(&without(&label(), name)).refused();
+            assert_eq!(left_out, required, "labels[0].{name} left out");
         }
+        // A label that is no object, and labels that are no list.
+        let no_object = read::<EdgeInput>(&edge(Value::List(vec![Value::Number(1.0)])));
+        assert!(no_object.refused());
+        assert!(read::<EdgeInput>(&edge(Value::Number(1.0))).refused());
     }
 }

@@ -1,15 +1,18 @@
-//! The edges of a load as columns (API-bridge-takes-serde-and-columns): the fields an edge reads in
+//! The edges of a load as columns (API-bridge-columns-carry-nesting): the fields an edge reads in
 //! their order, the codes of its arrowhead and sides, whether the columns fit together, the first
-//! value refused by its type, and the edges read off them.
+//! value refused by its type, and the edges read off them, each with its list of edge labels
+//! (API-edges-dock-nodes-or-edges).
 
 use comb_engine::geometry::{Dock, Side, Sides};
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use super::item::{Edge, Item, Label};
-use super::problem::{A_COLOR, A_DASH, A_LABEL, A_NUMBER, A_SIDE, AN_ARROW, AN_ID};
+use super::problem::{
+    A_COLOR, A_DASH, A_FLAG, A_LABEL, A_LABELS, A_NUMBER_OR_NONE, A_SIDE, AN_ARROW, AN_ID, NO_LABEL,
+};
 use super::{
     Arrow, Field, GraphDataProblem, GraphList, bounds_fit, lengths, malformed, refused_by,
-    unshaped, value_at, values,
+    runs_fit, unshaped, value_at, values,
 };
 
 /// Columns of the edges that do not fit together, which the shell never hands over.
@@ -18,19 +21,28 @@ pub(super) fn unfit_edges() -> GraphDataProblem {
 }
 
 /// The first value of the edges the shell found refused by its type, as `loadGraph` takes it:
-/// the index of its edge and the code of its `EdgeField`, both or neither, and a code no field
-/// has refused as malformed.
+/// the index of its edge, the code of its `EdgeField`, and, for a field of a label, the label's
+/// place in the edge's list, or none of them; a code no field has, or a place given or left out
+/// against the field, is refused as malformed.
 pub(crate) fn edge_refused_of(
     at: Option<u32>,
     field: Option<u32>,
-) -> Result<Option<(u32, EdgeField)>, GraphDataProblem> {
-    refused_by(at, field, &EdgeField::ALL, unfit_edges)
+    label: Option<u32>,
+) -> Result<Option<(u32, EdgeField, Option<u32>)>, GraphDataProblem> {
+    let refused = refused_by(at, field, &EdgeField::ALL, unfit_edges)?;
+    match refused {
+        Some((at, field)) if field.of_a_label() == label.is_some() => Ok(Some((at, field, label))),
+        None if label.is_none() => Ok(None),
+        _ => Err(unfit_edges()),
+    }
 }
 
 /// A field of an edge that a load's first pass refuses by its type
-/// (API-bridge-takes-serde-and-columns), in the order an edge's fields are read, as the shell names
-/// the first such value it reads: `Item` for an edge that is no object, refused as malformed. It
-/// crosses as its code, a plain number, as `NodeField` does.
+/// (API-bridge-columns-carry-nesting), in the order an edge's fields are read, as the shell names
+/// the first such value it reads: `Item` for an edge that is no object, refused as malformed;
+/// `Label` for an edge that still carries `label`, which `labels` replaced; `LabelItem` for a label
+/// that is no object, and `LabelId`, `LabelT`, and `LabelOffset`, each named by the label's place
+/// in the list. It crosses as its code, a plain number, as `NodeField` does.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EdgeField {
@@ -39,47 +51,68 @@ pub enum EdgeField {
     Source,
     Target,
     Label,
+    Labels,
+    LabelItem,
+    LabelId,
     LabelT,
     LabelOffset,
     Color,
     Dash,
     Arrow,
+    Lightning,
     SourceSide,
     TargetSide,
 }
 
 impl EdgeField {
-    pub(super) const ALL: [Self; 12] = [
+    pub(super) const ALL: [Self; 16] = [
         Self::Item,
         Self::Id,
         Self::Source,
         Self::Target,
         Self::Label,
+        Self::Labels,
+        Self::LabelItem,
+        Self::LabelId,
         Self::LabelT,
         Self::LabelOffset,
         Self::Color,
         Self::Dash,
         Self::Arrow,
+        Self::Lightning,
         Self::SourceSide,
         Self::TargetSide,
     ];
 
-    /// The field's name as a refusal names it, and what it expects.
+    /// The field's name as a refusal names it, a label's field after the label's place, and what
+    /// it expects.
     pub(super) fn named(self) -> (&'static str, &'static str) {
         match self {
             Self::Item => ("", ""),
             Self::Id => ("id", AN_ID),
             Self::Source => ("source", AN_ID),
             Self::Target => ("target", AN_ID),
-            Self::Label => ("label", A_LABEL),
-            Self::LabelT => ("label.t", A_NUMBER),
-            Self::LabelOffset => ("label.offset", A_NUMBER),
+            Self::Label => ("label", NO_LABEL),
+            Self::Labels => ("labels", A_LABELS),
+            Self::LabelItem => ("", A_LABEL),
+            Self::LabelId => (".id", AN_ID),
+            Self::LabelT => (".t", A_NUMBER_OR_NONE),
+            Self::LabelOffset => (".offset", A_NUMBER_OR_NONE),
             Self::Color => ("color", A_COLOR),
             Self::Dash => ("dash", A_DASH),
             Self::Arrow => ("arrow", AN_ARROW),
+            Self::Lightning => ("lightning", A_FLAG),
             Self::SourceSide => ("sourceSide", A_SIDE),
             Self::TargetSide => ("targetSide", A_SIDE),
         }
+    }
+
+    /// Whether the field is one of a label, named by the label's place in the edge's list.
+    pub(super) const fn of_a_label(self) -> bool {
+        matches!(
+            self,
+            Self::LabelItem | Self::LabelId | Self::LabelT | Self::LabelOffset
+        )
     }
 
     /// The one of `self` and `other` an edge reads first.
@@ -98,13 +131,15 @@ impl From<EdgeField> for u32 {
     }
 }
 
-/// The code of an edge's arrowhead in its column (API-bridge-takes-serde-and-columns): `Unnamed`
-/// for a string that names neither, which the first pass refuses at its place.
+/// The code of an edge's arrowhead in its column (API-bridge-columns-carry-nesting): `Unnamed`
+/// for a string that names none, which the first pass refuses at its place.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArrowCode {
     End,
     None,
+    Open,
+    Hollow,
     Unnamed,
 }
 
@@ -124,10 +159,15 @@ pub enum SideCode {
 
 /// The arrowhead of `code`, or none for `Unnamed` and for a code no arrowhead has.
 fn arrow_of(code: u8) -> Option<Arrow> {
-    [(ArrowCode::End, Arrow::End), (ArrowCode::None, Arrow::None)]
-        .into_iter()
-        .find(|&(of, _)| of as u8 == code)
-        .map(|(_, arrow)| arrow)
+    [
+        (ArrowCode::End, Arrow::End),
+        (ArrowCode::None, Arrow::None),
+        (ArrowCode::Open, Arrow::Open),
+        (ArrowCode::Hollow, Arrow::Hollow),
+    ]
+    .into_iter()
+    .find(|&(of, _)| of as u8 == code)
+    .map(|(_, arrow)| arrow)
 }
 
 /// Where the end of `code` docks, or none for `Unnamed` and for a code no side has.
@@ -144,17 +184,21 @@ fn side_of(code: u8) -> Option<Dock> {
     .map(|(_, dock)| dock)
 }
 
-/// The edges of one load as columns (API-bridge-takes-serde-and-columns), each in slot order. The
-/// identifiers, sources, targets, and label texts are each the values concatenated and cut into
-/// pieces, each ending where a value ends, with their boundaries in UTF-16 code units across all
-/// pieces, one more than there are edges, a refused or absent value empty;
-/// `label_texts` holds per edge whether its label's text is a text, 1 or 0. `has_label`,
-/// `has_background`, and `has_dash` hold per edge whether it has one, 1 or 0; where it has none,
-/// the columns of its values hold anything. The numbers are as the host application handed them,
-/// a background of another type NaN; the arrowhead and the sides as their codes. `refused` is
-/// the first value the shell read that the first pass refuses by its type, its edge's index and
-/// its field, or none; an arrowhead or a side whose string names none is no such value, and the
-/// first pass finds its code.
+/// The edges of one load as columns (API-bridge-columns-carry-nesting), each in slot order. The
+/// identifiers, sources, and targets are each the values concatenated and cut into pieces, each
+/// ending where a value ends, with their boundaries in UTF-16 code units across all pieces, one
+/// more than there are edges, a refused value empty. `label_bounds` holds the boundaries of each
+/// edge's labels among all labels, one more than there are edges; the labels' columns hold all
+/// labels, edge by edge, each edge's in the order of its list: their identifiers and texts as
+/// string columns, `label_texts_valid` per label whether its text is a text, 1 or 0, and their
+/// path parameters and offsets, each 0.5 and 0 where the label names none, and `has_background`
+/// whether it has a background, 1 or 0. `has_dash` and `lightning` hold per edge whether it has
+/// one, 1 or 0; where a value is absent, the columns of its values hold anything. The numbers are
+/// as the host application handed them, a background of another type NaN; the arrowhead and the
+/// sides as their codes. `refused` is the first value the shell read that the first pass refuses
+/// by its type, its edge's index, its field, and for a field of a label the label's place, or
+/// none; an arrowhead or a side whose string names none is no such value, and the first pass finds
+/// its code.
 pub struct EdgeColumns<'a> {
     pub ids: &'a [String],
     pub id_bounds: &'a [u32],
@@ -162,10 +206,12 @@ pub struct EdgeColumns<'a> {
     pub source_bounds: &'a [u32],
     pub targets: &'a [String],
     pub target_bounds: &'a [u32],
-    pub has_label: &'a [u8],
-    pub labels: &'a [String],
     pub label_bounds: &'a [u32],
-    pub label_texts: &'a [u8],
+    pub label_ids: &'a [String],
+    pub label_id_bounds: &'a [u32],
+    pub label_texts: &'a [String],
+    pub label_text_bounds: &'a [u32],
+    pub label_texts_valid: &'a [u8],
     pub label_t: &'a [f64],
     pub label_offset: &'a [f64],
     pub has_background: &'a [u8],
@@ -175,9 +221,10 @@ pub struct EdgeColumns<'a> {
     pub dash: &'a [f64],
     pub gap: &'a [f64],
     pub arrow: &'a [u8],
+    pub lightning: &'a [u8],
     pub source_side: &'a [u8],
     pub target_side: &'a [u8],
-    pub refused: Option<(u32, EdgeField)>,
+    pub refused: Option<(u32, EdgeField, Option<u32>)>,
 }
 
 impl EdgeColumns<'_> {
@@ -185,37 +232,41 @@ impl EdgeColumns<'_> {
     /// code is one no arrowhead or side has.
     pub(super) fn count(&self) -> Result<usize, GraphDataProblem> {
         let count = self.color.len();
-        let numbers = [
-            self.label_t,
-            self.label_offset,
-            self.background,
-            self.dash,
-            self.gap,
-        ];
+        let labels = self.label_t.len();
+        let numbers = [self.dash, self.gap];
+        let label_numbers = [self.label_offset, self.background];
         // The presence and validity bytes, 1 or 0, then the codes.
         let bytes = [
-            self.has_label,
-            self.label_texts,
-            self.has_background,
             self.has_dash,
+            self.lightning,
             self.arrow,
             self.source_side,
             self.target_side,
         ];
+        let label_bytes = [self.label_texts_valid, self.has_background];
         let strings = [
             (self.ids, self.id_bounds),
             (self.sources, self.source_bounds),
             (self.targets, self.target_bounds),
-            (self.labels, self.label_bounds),
         ];
+        let label_strings = [
+            (self.label_ids, self.label_id_bounds),
+            (self.label_texts, self.label_text_bounds),
+        ];
+        let flags = |column: &&[u8]| column.iter().all(|&flag| flag <= 1);
         let fit = numbers.iter().all(|column| column.len() == count)
             && bytes.iter().all(|column| column.len() == count)
-            && bytes[..4]
-                .iter()
-                .all(|column| column.iter().all(|&flag| flag <= 1))
+            && runs_fit(self.label_bounds, count, labels)
+            && label_numbers.iter().all(|column| column.len() == labels)
+            && label_bytes.iter().all(|column| column.len() == labels)
+            && bytes[..2].iter().all(flags)
+            && label_bytes.iter().all(flags)
             && strings
                 .iter()
                 .all(|&(pieces, bounds)| bounds_fit(bounds, count, pieces))
+            && label_strings
+                .iter()
+                .all(|&(pieces, bounds)| bounds_fit(bounds, labels, pieces))
             && self
                 .arrow
                 .iter()
@@ -223,9 +274,13 @@ impl EdgeColumns<'_> {
             && [self.source_side, self.target_side]
                 .iter()
                 .all(|column| column.iter().all(|&code| code <= SideCode::Unnamed as u8))
-            && self
-                .refused
-                .is_none_or(|(index, _)| (index as usize) < count);
+            && self.refused.is_none_or(|(index, _, label)| {
+                (index as usize) < count
+                    && label.is_none_or(|label| {
+                        let i = index as usize;
+                        label < self.label_bounds[i + 1] - self.label_bounds[i]
+                    })
+            });
         if fit { Ok(count) } else { Err(unfit_edges()) }
     }
 
@@ -256,63 +311,89 @@ impl EdgeColumns<'_> {
     /// of the edges and of their fields, named as an edge of the batch names it, its identifier
     /// where it was read.
     pub(super) fn first_refused(&self, count: usize) -> Result<(), GraphDataProblem> {
-        let last = self.refused.map_or(count, |(index, _)| index as usize + 1);
+        let last = self
+            .refused
+            .map_or(count, |(index, _, _)| index as usize + 1);
         for index in 0..last {
-            let named = self
-                .refused
-                .filter(|&(at, _)| at as usize == index)
-                .map(|(_, field)| field);
-            let first = match (named, self.unnamed(index)) {
-                (Some(named), Some(unnamed)) => Some(named.min_by_order(unnamed)),
-                (named, unnamed) => named.or(unnamed),
+            let named = self.refused.filter(|&(at, _, _)| at as usize == index);
+            let unnamed = self.unnamed(index);
+            let first = match (named, unnamed) {
+                (Some((_, field, label)), Some(unnamed)) => {
+                    Some(if unnamed.min_by_order(field) == field {
+                        (field, label)
+                    } else {
+                        (unnamed, None)
+                    })
+                }
+                (Some((_, field, label)), None) => Some((field, label)),
+                (None, unnamed) => unnamed.map(|field| (field, None)),
             };
-            if let Some(field) = first {
-                return self.refuse(index, field);
+            if let Some((field, label)) = first {
+                return self.refuse(index, field, label);
             }
         }
         Ok(())
     }
 
-    /// The refusal of `field` of the edge at `index` by its type.
-    fn refuse(&self, index: usize, field: EdgeField) -> Result<(), GraphDataProblem> {
+    /// The refusal of `field` of the edge at `index` by its type, of the label at `label` for a
+    /// field of a label.
+    fn refuse(
+        &self,
+        index: usize,
+        field: EdgeField,
+        label: Option<u32>,
+    ) -> Result<(), GraphDataProblem> {
         if field == EdgeField::Item {
             return Err(unshaped("an edge is no object"));
         }
         let id = (field != EdgeField::Id).then(|| value_at(self.ids, self.id_bounds, index));
         let mut item = Item::new(GraphList::Edges, index);
         item.id = id.as_deref();
-        item.edge(field, Field::<()>(None))
+        match label {
+            Some(label) => item.label_field(field, label as usize, Field::<()>(None)),
+            None => item.edge(field, Field::<()>(None)),
+        }
     }
 
-    /// The UTF-16 code units of the identifier, the source, and the target of each edge, read
-    /// off their boundaries.
-    pub(super) fn id_lengths(&self) -> impl Iterator<Item = [usize; 3]> + '_ {
+    /// The UTF-16 code units of the identifier, the source, and the target of each edge, and of
+    /// the identifier of each of its labels, read off their boundaries.
+    pub(super) fn id_lengths(
+        &self,
+    ) -> impl Iterator<Item = ([usize; 3], impl Iterator<Item = usize> + '_)> + '_ {
         lengths(self.id_bounds)
             .zip(lengths(self.source_bounds))
             .zip(lengths(self.target_bounds))
-            .map(|((id, source), target)| [id, source, target])
+            .zip(self.label_bounds.windows(2))
+            .map(|(((id, source), target), labels)| {
+                let ids = &self.label_id_bounds[labels[0] as usize..=labels[1] as usize];
+                ([id, source, target], lengths(ids))
+            })
     }
 
-    /// The edges with every field read, their identifiers, sources, and targets mapped onto the
-    /// strings Rust holds.
+    /// The edges with every field read, their identifiers, sources, and targets, and their
+    /// labels' identifiers, mapped onto the strings Rust holds.
     pub(super) fn edges(&self) -> Result<Vec<Edge<'_>>, GraphDataProblem> {
         let ids = values(self.ids, self.id_bounds)?;
         let sources = values(self.sources, self.source_bounds)?;
         let targets = values(self.targets, self.target_bounds)?;
-        let texts = lengths(self.label_bounds).zip(self.label_texts);
+        let label_ids = values(self.label_ids, self.label_id_bounds)?;
+        let texts: Vec<usize> = lengths(self.label_text_bounds).collect();
         let present = |column: &[u8], i: usize| column[i] == 1;
+        let label = |k: usize| Label {
+            id: label_ids[k],
+            text_length: present(self.label_texts_valid, k).then_some(texts[k]),
+            t: self.label_t[k],
+            offset: self.label_offset[k],
+            background: present(self.has_background, k).then(|| self.background[k]),
+        };
         ids.into_iter()
             .zip(sources)
             .zip(targets)
-            .zip(texts)
             .enumerate()
-            .map(|(i, (((id, source), target), (length, &text)))| {
-                let label = present(self.has_label, i).then(|| Label {
-                    text_length: (text == 1).then_some(length),
-                    t: self.label_t[i],
-                    offset: self.label_offset[i],
-                    background: present(self.has_background, i).then(|| self.background[i]),
-                });
+            .map(|(i, ((id, source), target))| {
+                let labels = (self.label_bounds[i] as usize..self.label_bounds[i + 1] as usize)
+                    .map(label)
+                    .collect();
                 let (Some(arrow), Some(source_side), Some(target_side)) = (
                     arrow_of(self.arrow[i]),
                     side_of(self.source_side[i]),
@@ -325,10 +406,11 @@ impl EdgeColumns<'_> {
                     id,
                     source,
                     target,
-                    label,
+                    labels,
                     color: self.color[i],
                     dash: present(self.has_dash, i).then(|| [self.dash[i], self.gap[i]]),
                     arrow,
+                    lightning: present(self.lightning, i),
                     sides: Sides {
                         source: source_side,
                         target: target_side,
@@ -343,7 +425,7 @@ impl EdgeColumns<'_> {
 // `graph_data::tests`). Verifies: API-bridge-takes-serde-and-columns
 #[cfg(test)]
 mod tests {
-    use super::super::tests::{d_and, label_in, labelled, load_edges};
+    use super::super::tests::{d_and, label_in, label_named, labelled, labels_in, load_edges};
     use super::super::{EdgeCells, OwnedEdgeColumns};
     use super::*;
 
@@ -367,16 +449,16 @@ mod tests {
             (|e| e.id = Field(None), "id", AN_ID),
             (|e| e.source = Field(None), "source", AN_ID),
             (|e| e.target = Field(None), "target", AN_ID),
-            (|e| e.label = Field(None), "label", A_LABEL),
-            (|e| label_in(e).t = Field(None), "label.t", A_NUMBER),
+            (|e| e.labels = Field(None), "labels", A_LABELS),
             (
-                |e| label_in(e).offset = Field(None),
-                "label.offset",
-                A_NUMBER,
+                |e| label_in(e).t = Field(None),
+                "labels[0].t",
+                A_NUMBER_OR_NONE,
             ),
             (|e| e.color = Field(None), "color", A_COLOR),
             (|e| e.dash = Field(None), "dash", A_DASH),
             (|e| e.arrow = Field(None), "arrow", AN_ARROW),
+            (|e| e.lightning = Field(None), "lightning", A_FLAG),
             (|e| e.source_side = Field(None), "sourceSide", A_SIDE),
             (|e| e.target_side = Field(None), "targetSide", A_SIDE),
         ];
@@ -429,6 +511,57 @@ mod tests {
     }
 
     #[test]
+    fn a_stale_label_and_each_label_refused_by_its_type_cross_named_by_its_place() {
+        // Verifies: API-edges-dock-nodes-or-edges, API-bridge-columns-carry-nesting
+        let field = |field: &str, expected: &str| GraphDataProblem::InvalidField {
+            list: GraphList::Edges,
+            index: 1,
+            id: Some("e".into()),
+            field: field.into(),
+            expected: expected.into(),
+        };
+        type Change = fn(&mut EdgeCells);
+        let cases: [(Change, &str, &str); 7] = [
+            // An edge that still carries `label`, which `labels` replaced, before its labels.
+            (
+                |e| (e.label, e.labels) = (true, Field(None)),
+                "label",
+                NO_LABEL,
+            ),
+            (|e| e.labels = Field(None), "labels", A_LABELS),
+            (|e| labels_in(e).push(Field(None)), "labels[1]", A_LABEL),
+            (|e| label_in(e).id = Field(None), "labels[0].id", AN_ID),
+            (
+                |e| label_in(e).t = Field(None),
+                "labels[0].t",
+                A_NUMBER_OR_NONE,
+            ),
+            (
+                |e| label_in(e).offset = Field(None),
+                "labels[0].offset",
+                A_NUMBER_OR_NONE,
+            ),
+            // The second label's field, named by its place, before the edge's colour.
+            (
+                |e| {
+                    let mut second = label_named("n");
+                    second.0.as_mut().unwrap().t = Field(None);
+                    labels_in(e).push(second);
+                    e.color = Field(None);
+                },
+                "labels[1].t",
+                A_NUMBER_OR_NONE,
+            ),
+        ];
+        for (change, name, expected) in cases {
+            assert_eq!(
+                load_edges(&d_and(change)).err(),
+                Some(field(name, expected))
+            );
+        }
+    }
+
+    #[test]
     fn each_of_the_four_sides_and_the_outline_crosses_as_where_the_end_docks() {
         // Verifies: API-edges-dock-side-or-outline
         let text = |value: &str| Field(Some(value.to_owned()));
@@ -460,22 +593,34 @@ mod tests {
     #[test]
     fn edge_columns_that_do_not_fit_together_are_refused_as_malformed() {
         // Verifies: API-bridge-takes-serde-and-columns
-        let changes: [fn(&mut OwnedEdgeColumns); 14] = [
+        let changes: [fn(&mut OwnedEdgeColumns); 23] = [
             |c| _ = c.color.pop(),
             // A presence or validity byte is 1 or 0.
-            |c| c.has_label[1] = 2,
-            |c| c.label_texts[0] = 2,
+            |c| c.label_texts_valid[0] = 2,
             |c| c.has_background[1] = u8::MAX,
             |c| c.has_dash[0] = 2,
+            |c| c.lightning[1] = 2,
+            |c| _ = c.lightning.pop(),
+            // The boundaries of each edge's labels start at 0, never fall, and end at the labels'
+            // count, by which each column of the labels is as long.
+            |c| c.label_bounds = vec![0, 1],
+            |c| c.label_bounds = vec![1, 1, 2],
+            |c| c.label_bounds = vec![0, 2, 1],
+            |c| c.label_bounds = vec![0, 1, 3],
+            |c| _ = c.label_t.pop(),
+            |c| _ = c.has_background.pop(),
+            |c| c.label_ids.push("x".to_owned()),
             |c| _ = c.gap.pop(),
             |c| _ = c.has_dash.pop(),
             |c| _ = c.target_side.pop(),
             |c| _ = c.source_bounds.pop(),
             |c| c.target_bounds = vec![0, 2, 1],
-            |c| c.labels.push("x".to_owned()),
+            |c| c.label_texts.push("x".to_owned()),
             |c| c.arrow[0] = ArrowCode::Unnamed as u8 + 1,
             |c| c.source_side[1] = SideCode::Unnamed as u8 + 1,
-            |c| c.refused = Some((2, EdgeField::Id)),
+            |c| c.refused = Some((2, EdgeField::Id, None)),
+            // A label refused past its edge's labels.
+            |c| c.refused = Some((1, EdgeField::LabelT, Some(1))),
         ];
         for change in changes {
             let mut columns = d_and(|_| {});
@@ -490,17 +635,28 @@ mod tests {
             load_edges(&columns).err(),
             Some(malformed("an identifier ends inside a character"))
         );
-        assert_eq!(edge_refused_of(Some(0), None), Err(unfit_edges()));
-        assert_eq!(edge_refused_of(None, None), Ok(None));
-        // Every field by its code, and a code no field has refused as malformed.
+        assert_eq!(edge_refused_of(Some(0), None, None), Err(unfit_edges()));
+        assert_eq!(edge_refused_of(None, None, None), Ok(None));
+        assert_eq!(edge_refused_of(None, None, Some(0)), Err(unfit_edges()));
+        // Every field by its code, a field of a label with its place and no other without one,
+        // and a code no field has refused as malformed.
         for field in EdgeField::ALL {
+            let label = field.of_a_label().then_some(2);
             assert_eq!(
-                edge_refused_of(Some(1), Some(field as u32)),
-                Ok(Some((1, field)))
+                edge_refused_of(Some(1), Some(field as u32), label),
+                Ok(Some((1, field, label)))
+            );
+            let other = if field.of_a_label() { None } else { Some(2) };
+            assert_eq!(
+                edge_refused_of(Some(1), Some(field as u32), other),
+                Err(unfit_edges())
             );
         }
-        for code in [12, 255, u32::MAX] {
-            assert_eq!(edge_refused_of(Some(0), Some(code)), Err(unfit_edges()));
+        for code in [16, 255, u32::MAX] {
+            assert_eq!(
+                edge_refused_of(Some(0), Some(code), None),
+                Err(unfit_edges())
+            );
         }
     }
 
@@ -527,7 +683,10 @@ mod tests {
         e.color = f64::from(0x12_3456).into();
         assert_eq!(
             load_edges(&OwnedEdgeColumns::of([Some(&d), Some(&e)])).err(),
-            Some(GraphDataProblem::InvalidLabelText { edge: "d".into() })
+            Some(GraphDataProblem::InvalidLabelText {
+                edge: "d".into(),
+                label: "m".into()
+            })
         );
     }
 }

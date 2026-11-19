@@ -12,7 +12,8 @@ to invent.
 List each synonym under _Avoid:_ as one to three words, without prose around them. A synonym
 inside a longer term of this glossary, such as "shape" in **Node shape**, is no synonym there.
 
-- **Arrowhead** — the triangle that marks where an edge ends, its tip at the target connector.
+- **Arrowhead** — the mark where an edge ends, its tip at the target's end: a filled triangle, two
+  open strokes, or a triangle's outline around a white fill.
 - **Border node** — a node attached to the outline of another node, which moves with it and
   stays on its outline, such as a pin or an entry point in UML.
 - **Bridge** — the boundary across which TypeScript and the engine exchange data.
@@ -57,7 +58,8 @@ inside a longer term of this glossary, such as "shape" in **Node shape**, is no 
   _Avoid:_ link, wire.
 - **Edge mesh** — the triangles of all edges in the viewport and its culling margin, which the
   engine computes and the canvas draws in one call.
-- **Edge label** — text attached to an edge, placed by a path parameter and a label offset.
+- **Edge label** — text attached to an edge, placed by a path parameter and a label offset. An edge
+  carries a list of them, each named by an identifier unique within its edge.
 - **Engine** — the Rust code compiled to WebAssembly that computes geometry and runs graph
   algorithms.
   _Avoid:_ core, backend.
@@ -73,6 +75,8 @@ inside a longer term of this glossary, such as "shape" in **Node shape**, is no 
 - **Level of detail** — how much of the graph the canvas draws at the current zoom: near draws
   nodes with their whole content and edge labels, middle nodes with their titles, far nodes as
   plain boxes and edges as thin lines, without text.
+- **Lightning bolt** — the zigzag across an edge's path that an edge may draw in its path's
+  middle.
 - **Loop** — an edge from a node back to itself.
   _Avoid:_ self-edge in prose, self-loop, reflexive edge.
 - **Mesh budget** — the most vertices the edge mesh of one query may hold.
