@@ -1,4 +1,4 @@
-//! The hit test (REN-node-content-in-rows): what a press at a point hits, a connector before an
+//! The hit test (REN-node-content-and-hits): what a press at a point hits, a connector before an
 //! edge label, a node that is no container, an edge, and a container
 //! (ARCH-engine-edits-nested-graph).
 
@@ -11,7 +11,7 @@ use crate::stroke::{Stroke, near_path};
 const SIDES: [Side; 4] = [Side::Top, Side::Right, Side::Bottom, Side::Left];
 
 /// How near a press has to come to an edge's path to hit it, in screen pixels
-/// (REN-node-content-in-rows).
+/// (REN-node-content-and-hits).
 const EDGE_REACH: f64 = 4.0;
 
 /// How near a press has to come to a resize handle's middle to hit it, on each axis, in screen
@@ -19,21 +19,21 @@ const EDGE_REACH: f64 = 4.0;
 const HANDLE_REACH: f64 = 6.0;
 
 /// How near a press has to come to a connector to hit it, in screen pixels
-/// (REN-node-content-in-rows).
+/// (REN-node-content-and-hits).
 const CONNECTOR_REACH: f64 = 8.0;
 
-/// What a press hits (REN-node-content-in-rows): a connector by its node's slot and side, a label
+/// What a press hits (REN-node-content-and-hits): a connector by its node's slot and side, a label
 /// by its edge's slot and its place in that edge's list of labels, a node, or an edge, by its
 /// slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
-    /// The connector of a side of the node in a slot (API-edges-dock-side-or-outline).
+    /// The connector of a side of the node in a slot (API-edges-dock-nodes-or-edges).
     Connector(u32, Side),
     /// The line after the region in a slot, between it and the next region
     /// (REN-node-content-and-hits, *Line between regions*).
     Line(u32),
     /// The label at a place of the list of labels of the edge in a slot
-    /// (REN-node-content-in-rows, API-edges-dock-nodes-or-edges).
+    /// (REN-node-content-and-hits, API-edges-dock-nodes-or-edges).
     Label(u32, u32),
     Node(u32),
     Edge(u32),
@@ -51,7 +51,7 @@ impl Graph {
     /// no container whose outline holds it, the one of the highest rank; else an edge within
     /// `EDGE_REACH` screen pixels of its path as the stroke of `level` flattens it, the one in the
     /// highest slot; else a container whose outline holds it, the last in the order of containers;
-    /// else nothing (REN-node-content-in-rows, ARCH-engine-edits-nested-graph). A region hit is
+    /// else nothing (REN-node-content-and-hits, ARCH-engine-edits-nested-graph). A region hit is
     /// named as the node it divides.
     /// A pixel beyond any zoom hits as the largest a query strokes for.
     pub fn hit_at(
@@ -138,7 +138,7 @@ impl Graph {
 
     /// The label whose measured pill holds `point`, of the edge in the highest slot, and of its
     /// labels the last in its list, as its edge slot and its place there
-    /// (REN-node-content-in-rows).
+    /// (REN-node-content-and-hits).
     fn label_at(&mut self, point: Point) -> Option<(u32, u32)> {
         if self.widest_pill <= 0.0 {
             return None;
@@ -165,7 +165,7 @@ impl Graph {
     /// quarter of the node's extent across its side, its height for the top and the bottom, its
     /// width for the right and the left, so that the middle half of a node is the node's however
     /// thin it is on screen; beside the outline, within its rectangle too, the whole reach
-    /// (REN-node-content-in-rows, REN-closed-set-of-node-shapes).
+    /// (REN-node-content-and-hits, REN-node-shapes-cover-uml).
     fn connector_at(&mut self, point: Point, reach: f64) -> Option<(u32, Side)> {
         self.node_grid
             .candidates(&Rect::at(point).grown(reach), &mut self.scratch);
@@ -211,7 +211,7 @@ impl Graph {
 
     /// The node at `point`: of the nodes whose outline holds it, the one drawn on top, a node
     /// that is no container before every container, the others by rank and containers by their
-    /// order (ARCH-engine-edits-nested-graph, REN-closed-set-of-node-shapes).
+    /// order (ARCH-engine-edits-nested-graph, REN-node-shapes-cover-uml).
     pub(super) fn node_at(&mut self, point: Point) -> Option<u32> {
         self.node_grid
             .candidates(&Rect::at(point), &mut self.scratch);
@@ -339,7 +339,7 @@ mod tests {
 
     #[test]
     fn a_node_is_hit_within_its_node_shape_and_a_press_beside_its_outline_finds_what_lies_below() {
-        // Verifies: REN-closed-set-of-node-shapes
+        // Verifies: REN-node-shapes-cover-uml
         // A rectangle below and a diamond above it, both at the origin, 100 × 60, and a node away
         // from the origin given a node shape, at the middle level, where no connector is hit.
         let positions = vec![0.0, 0.0, 0.0, 0.0, 1e6, 1e6];
@@ -487,7 +487,7 @@ mod tests {
 
     #[test]
     fn a_hit_finds_a_node_before_an_edge_and_an_edge_only_near_its_flattened_path() {
-        // Verifies: REN-node-content-in-rows
+        // Verifies: REN-node-content-and-hits
         for seed in 1..=4 {
             let mut rng = Lcg(seed);
             let (mut model, mut graph) = Model::random(&mut rng, 30, 40);
@@ -548,7 +548,7 @@ mod tests {
 
     #[test]
     fn a_hit_finds_a_connector_before_a_node_as_a_scan_finds_and_none_at_the_far_level() {
-        // Verifies: REN-node-content-in-rows, API-edges-dock-side-or-outline
+        // Verifies: REN-node-content-and-hits, API-edges-dock-nodes-or-edges
         for seed in 1..=6 {
             let mut rng = Lcg(seed);
             let (mut model, mut graph) = Model::random(&mut rng, 40, 20);
@@ -613,7 +613,7 @@ mod tests {
 
     #[test]
     fn a_press_in_the_middle_half_of_a_thin_node_hits_the_node_at_the_near_and_middle_level() {
-        // Verifies: REN-node-content-in-rows, G-5
+        // Verifies: REN-node-content-and-hits, G-5
         let (mut graph, nodes) = thin_nodes();
         for (slot, bounds) in nodes {
             let (width, height) = (bounds.max_x - bounds.min_x, bounds.max_y - bounds.min_y);
@@ -641,7 +641,7 @@ mod tests {
 
     #[test]
     fn each_connector_of_a_thin_node_is_hit_at_its_point_and_within_its_reach_outside_it() {
-        // Verifies: REN-node-content-in-rows, G-3
+        // Verifies: REN-node-content-and-hits, G-3
         let (mut graph, nodes) = thin_nodes();
         let outward = |side: Side| match side {
             Side::Top => (0.0, -1.0),
@@ -689,7 +689,7 @@ mod tests {
 
     #[test]
     fn a_small_shaped_node_pressed_beside_its_outline_within_its_rectangle_hits_its_connector() {
-        // Verifies: REN-node-content-in-rows, REN-closed-set-of-node-shapes
+        // Verifies: REN-node-content-and-hits, REN-node-shapes-cover-uml
         // Verifies: REN-node-shapes-cover-uml
         // Nodes under 32 screen pixels whose outline leaves corners of their rectangle, alone, so
         // that a press beside the outline finds nothing below: there a connector reaches its 8
@@ -769,7 +769,7 @@ mod tests {
     #[test]
     fn a_node_at_least_32_screen_pixels_high_and_wide_hits_as_it_did_before_the_reach_was_clipped()
     {
-        // Verifies: REN-node-content-in-rows
+        // Verifies: REN-node-content-and-hits
         for seed in 1..=4 {
             let mut rng = Lcg(200 + seed);
             for pixel in [0.25, 1.0, 4.0] {
@@ -829,7 +829,7 @@ mod tests {
         }
     }
 
-    /// What a scan of every kind finds at `p`, in the order of REN-node-content-in-rows, from the
+    /// What a scan of every kind finds at `p`, in the order of REN-node-content-and-hits, from the
     /// model alone: a connector where they are asked for, at the near and middle level; a measured
     /// label at the near level; a node; and an edge, which the flattening's tolerance blurs, given
     /// as the edge surely hit and the distance bounds of each, with what lies below the edges
@@ -999,7 +999,7 @@ mod tests {
 
     #[test]
     fn a_hit_finds_what_a_scan_of_every_kind_finds_in_the_order_connector_label_node_edge() {
-        // Verifies: REN-node-content-in-rows
+        // Verifies: REN-node-content-and-hits
         // How often the scan found each kind, connector, label, node, and edge, so that none goes
         // untested.
         let mut found = [0; 4];
@@ -1045,7 +1045,7 @@ mod tests {
 
     #[test]
     fn a_hit_at_the_near_level_finds_a_measured_label_inside_its_pill_before_a_node() {
-        // Verifies: REN-node-content-in-rows
+        // Verifies: REN-node-content-and-hits
         let mut rng = Lcg(9);
         let (mut model, mut graph) = Model::random(&mut rng, 30, 60);
         let measured: Vec<u32> = (0..60).filter(|e| e % 3 != 0).collect();

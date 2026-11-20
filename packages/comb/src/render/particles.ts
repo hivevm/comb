@@ -1,4 +1,4 @@
-// The nodes at the far level of detail (REN-virtualized-scene-graph): one particle per node in
+// The nodes at the far level of detail (REN-virtualized-nested-scene): one particle per node in
 // view, a plain box in one ParticleContainer, without text, so that a view of the whole graph binds
 // no display object per node. Every property is static: a sync uploads them once, and the frames
 // between syncs upload nothing.
@@ -29,7 +29,7 @@ export class NodeParticles extends ParticleContainer {
   private heights = new Float32Array(1024);
   private nodes: GraphView["nodes"] = [];
   /** The nodes whose particles a drag left undrawn since the last sync
-   *  (REN-moving-layer-redraws-changes). */
+   *  (REN-moving-layer-moves-content). */
   private hidden: ReadonlySet<number> = NONE_HIDDEN;
   /** The node the last sync tinted as selected, if it drew it. */
   highlighted: string | null = null;
@@ -48,7 +48,7 @@ export class NodeParticles extends ParticleContainer {
   }
 
   /** Places a particle at each of `slots`, sized as its node in `sizes`, its height the one its
-   *  content lays out to (REN-node-content-in-rows), and tinted where it is selected, and none
+   *  content lays out to (REN-node-content-and-hits), and tinted where it is selected, and none
    *  elsewhere. */
   sync(state: GraphView, slots: Uint32Array, positions: Float32Array, sizes: Float32Array): void {
     const particles = this.particleChildren;
@@ -83,7 +83,7 @@ export class NodeParticles extends ParticleContainer {
 
   /** Leaves the particles of the nodes in `hidden` undrawn, which a drag draws in its moving
    *  layer: every property is static, so this uploads them all, once a drag
-   *  (REN-moving-layer-redraws-changes). */
+   *  (REN-moving-layer-moves-content). */
   hide(hidden: ReadonlySet<number>): void {
     this.hidden = hidden;
     const count = this.particleChildren.length;

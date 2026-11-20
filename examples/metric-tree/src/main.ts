@@ -147,7 +147,7 @@ const fallback = query.get("fallback") === "canvas";
 const comb = await createComb(element("canvas"), {
   engine: form ? await engineAs(form) : fetch(engineUrl),
   allowCanvasFallback: fallback,
-  // `?loops=allow` allows loops, edges from a node back to itself (API-edges-dock-side-or-outline),
+  // `?loops=allow` allows loops, edges from a node back to itself (API-edges-dock-nodes-or-edges),
   // as the shaped graph does, whose nodes have loops (PERF-benchmark-measures-named-graph).
   allowLoops: query.get("loops") === "allow" || graphName === "shaped",
   canDelete: (deletion) => (window.canDelete ? window.canDelete(deletion) : true) as boolean,
@@ -204,7 +204,7 @@ function polygon(context: CanvasRenderingContext2D, xy: readonly number[]): void
 }
 
 /** Registers the icon of each type of node, drawn by the example itself on a canvas, so that no
- *  image is requested (REN-node-content-in-rows). */
+ *  image is requested (REN-node-content-and-hits). */
 function registerIcons(): void {
   for (const [type, draw] of Object.entries(ICONS) as [NodeType, (typeof ICONS)[NodeType]][]) {
     const canvas = document.createElement("canvas");
@@ -421,7 +421,7 @@ function sized(
 }
 
 /** How the example's copy of the graph takes each kind of change, as a host application that
- *  persists keeps its own from `onChange` alone (API-edits-reported-as-typed-changes); the type
+ *  persists keeps its own from `onChange` alone (API-edits-report-nested-changes); the type
  *  checker fails it where a
  *  kind is left out. */
 const MIRROR: { [K in GraphChange["kind"]]: (change: Extract<GraphChange, { kind: K }>) => void } =
@@ -497,7 +497,7 @@ let dropped = 0;
 
 /** Adds a node of the palette's `kind`, a type of node, centred by the height Comb gives its
  *  content on the world point under the drop at (`clientX`, `clientY`) of the page (G-1,
- *  API-host-asks-content-height). */
+ *  REN-node-content-and-hits). */
 function drop(kind: string, clientX: number, clientY: number): void {
   const type = PALETTE.find((each) => each === kind);
   if (!type) return;

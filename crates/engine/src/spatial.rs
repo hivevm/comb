@@ -1,5 +1,5 @@
 //! A uniform grid over the bounds of items, for the spatial queries of culling (G-7,
-//! REN-virtualized-scene-graph).
+//! REN-virtualized-nested-scene).
 //!
 //! The grid covers the extent it is made for; bounds beyond it fall into its border cells, so a
 //! query stays exact however far an item moves, and the grid counts the items that left its
@@ -166,7 +166,7 @@ impl Grid {
 
     /// Puts `item` into the cells its `bounds` meet, out of those it was in, growing the grid's
     /// records of items to hold it where it lies beyond them, as a slot appended after the highest
-    /// does (ARCH-engine-edits-graph-in-place).
+    /// does (ARCH-engine-edits-nested-graph).
     pub fn set(&mut self, item: u32, bounds: &Rect) {
         let i = item as usize;
         if i >= self.places.len() {

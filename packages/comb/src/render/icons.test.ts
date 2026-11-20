@@ -9,7 +9,7 @@ const image = (width: number, height: number) => ({ width, height }) as unknown 
 
 describe("the registered icons", () => {
   test("a name registered again holds the new texture and destroys the old one at its release", () => {
-    // Verifies: REN-node-content-in-rows
+    // Verifies: REN-node-content-and-hits
     const icons = new Icons();
     expect(icons.get("bet")).toBeUndefined();
     const first = image(16, 16);
@@ -39,7 +39,7 @@ describe("the registered icons", () => {
 
 describe("an image in an icon's square", () => {
   test("is fitted with its aspect kept and centred", () => {
-    // Verifies: REN-node-content-in-rows
+    // Verifies: REN-node-content-and-hits
     const square = { x: 12, y: 10, width: 16, height: 16 };
     expect(fitted(square, 64, 64)).toEqual(square);
     expect(fitted(square, 32, 16)).toEqual({ x: 12, y: 14, width: 16, height: 8 });

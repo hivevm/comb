@@ -1,10 +1,10 @@
-//! The property test of the mesh budget (REN-virtualized-scene-graph): graphs of long edges, and of
-//! many edges between few nodes, queried at random rectangles, scales, and levels with the budget
-//! lowered, keep their mesh within the budget, draw every edge they find, report the mesh complete
-//! exactly when every edge is meshed in full, draw each edge within a quarter pixel inside the
-//! rectangle, edges from (0, 0) to (-1e8, 3e7) among them, and split each segment that meets the
-//! rectangle where it leaves the rectangle grown by the stroke's width.
-// Verifies: Q-7, Q-4, REN-virtualized-scene-graph, API-edges-dock-side-or-outline
+//! The property test of the mesh budget (REN-virtualized-nested-scene): graphs of long edges, and
+//! of many edges between few nodes, queried at random rectangles, scales, and levels with the
+//! budget lowered, keep their mesh within the budget, draw every edge they find, report the mesh
+//! complete exactly when every edge is meshed in full, draw each edge within a quarter pixel inside
+//! the rectangle, edges from (0, 0) to (-1e8, 3e7) among them, and split each segment that meets
+//! the rectangle where it leaves the rectangle grown by the stroke's width.
+// Verifies: Q-7, Q-4, REN-virtualized-nested-scene, API-edges-dock-nodes-or-edges
 
 use super::tests::{Lcg, random_sides, random_style};
 use super::{EdgeSpec, Graph, Level, Visible};
@@ -217,7 +217,7 @@ fn worst_inside(path: &EdgePath, points: &[Point], rect: &Rect, scale: f64) -> f
 /// Asserts that the vertices `range` of the mesh of `out`, an edge without an arrowhead, are the
 /// stroke of `points` `width` wide: the middle of each pair of vertices, its origin added back, is
 /// a point, within what `f32` holds of its distance from the origin
-/// (API-bridge-takes-serde-and-columns).
+/// (API-bridge-columns-carry-nesting).
 fn assert_stroke_of(out: &Visible, range: std::ops::Range<usize>, points: &[Point], width: f64) {
     assert_eq!(range.len(), 2 * points.len());
     let mesh = &out.mesh;
@@ -239,7 +239,7 @@ fn assert_stroke_of(out: &Visible, range: std::ops::Range<usize>, points: &[Poin
 
 /// Asserts that no segment of `points` that meets `rect` has an end beyond `rect` grown by
 /// `width`, the stroke's: where one would, the segment is split there, so that each rounds by its
-/// distance from the query's origin (REN-virtualized-scene-graph).
+/// distance from the query's origin (REN-virtualized-nested-scene).
 fn assert_within_reach(points: &[Point], rect: &Rect, width: f64, context: &str) {
     let area = rect.grown(width);
     let slack = |p: Point| 1e-9 * (1.0 + p.x.abs().max(p.y.abs()));
@@ -370,7 +370,7 @@ fn every_query_keeps_its_mesh_within_the_budget_and_draws_every_edge_it_finds() 
         loops += check(&mut graph, &mut rng, case);
     }
     // Loops among the edges measured, which the graphs of few nodes draw often
-    // (API-edges-dock-side-or-outline).
+    // (API-edges-dock-nodes-or-edges).
     assert!(loops >= 200, "{loops} loops measured");
 }
 
@@ -403,7 +403,7 @@ fn viewport_at(scale: f64) -> Rect {
 
 #[test]
 fn twenty_thousand_edges_between_two_nodes_far_apart_mesh_in_full_zoomed_in() {
-    // Verifies: Q-7, REN-virtualized-scene-graph
+    // Verifies: Q-7, REN-virtualized-nested-scene
     let mut graph = far_apart(20_000, Arrowhead::End);
     let rect = viewport_at(4.0);
     let mut out = Visible::default();

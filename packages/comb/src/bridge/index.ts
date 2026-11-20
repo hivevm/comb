@@ -3,7 +3,7 @@
 // Structured data crosses as generated types through serde-wasm-bindgen, but for a load's nodes and
 // edges, which cross as columns of strings in pieces or one typed array each; node positions and
 // the results of a viewport query are read through views on the engine's buffers, created anew on
-// every read because growing memory detaches older views (API-bridge-takes-serde-and-columns).
+// every read because growing memory detaches older views (API-bridge-columns-carry-nesting).
 import init, {
   checkGraphSize,
   checkContentBudget,
@@ -139,8 +139,8 @@ export interface EdgeMesh {
   indices: Uint32Array;
 }
 
-/** The detail of a query's edge mesh (REN-virtualized-scene-graph): complete, or coarsened where an
- *  edge was drawn
+/** The detail of a query's edge mesh (REN-virtualized-nested-scene): complete, or coarsened where
+ *  an edge was drawn
  *  as its chord, or left out, for the mesh budget or for memory. */
 export type Detail = "complete" | "coarsened";
 
@@ -150,7 +150,7 @@ const DETAILS: Record<MeshDetail, Detail> = {
 };
 
 /** Where the elements of the content of the nodes a query found lie and what they draw
- *  (REN-node-content-in-rows), at the near and the middle level: per found node, in their order,
+ *  (REN-node-content-and-hits), at the near and the middle level: per found node, in their order,
  *  the boundaries of its elements in the other columns, one more than there are found nodes; per
  *  element, its node's elements in the order of its rows and theirs, its rectangle
  *  `x, y, width, height` relative to its node's top-left corner, its kind's code, the role whose
@@ -205,7 +205,7 @@ export interface Placed {
  *  where the found nodes' content lies, and the positions and sizes buffers, all read after the
  *  same call. The label points and the mesh's positions are relative to `origin`, a world point
  *  near the query's rectangle, so that `f32` rounds them by their distance from it
- *  (API-bridge-takes-serde-and-columns); the positions buffer is not. */
+ *  (API-bridge-columns-carry-nesting); the positions buffer is not. */
 export interface Visible {
   positions: Float32Array;
   sizes: Float32Array;
@@ -224,7 +224,7 @@ export interface Visible {
 
 /** What `meshAt` meshed for the moving layer: the slots of the edges at the nodes a drag moves
  *  and of those an edit at the far level added, each once, in ascending order, their mesh
- *  relative to the last query's origin, and its detail (REN-moving-layer-redraws-changes). Fresh
+ *  relative to the last query's origin, and its detail (REN-moving-layer-moves-content). Fresh
  *  views; do not keep them
  *  across calls. */
 export interface Moving {
@@ -233,7 +233,7 @@ export interface Moving {
   detail: Detail;
 }
 
-/** The level of detail a query serves (REN-virtualized-scene-graph): near with edge labels, middle
+/** The level of detail a query serves (REN-virtualized-nested-scene): near with edge labels, middle
  *  without, far
  *  with edges as plain lines one pixel wide. */
 export type Level = "near" | "middle" | "far";
@@ -253,7 +253,7 @@ export interface DrawnEdges {
 
 /** The metrics of a font the shell draws the texts of a role with, in world units: the advance
  *  of the glyph of each code point of `codes` in `advances`, of every other character
- *  `fallback`, and the height of a line (REN-node-content-in-rows). */
+ *  `fallback`, and the height of a line (REN-node-content-and-hits). */
 export interface FontMetrics {
   codes: Uint32Array;
   advances: Float64Array;
@@ -299,12 +299,12 @@ export interface Bridge {
   slide(slot: number, x: number, y: number): { side: Side; offset: number };
   /** The height, in world units, the content of `node` lays out to at its width, checked as
    *  `addNode` checks a node and added to nothing; `api` names it `""` and puts it at the origin
-   *  (API-host-asks-content-height). Throws a `GraphDataProblem`. */
+   *  (REN-node-content-and-hits). Throws a `GraphDataProblem`. */
   heightOf(node: NodeSnapshot): number;
   /** Checks `edge` as a load checks an edge, refuses one from a node to itself unless `loops`
-   *  allows loops (API-edges-dock-side-or-outline), and adds it between the node slots `source` and
+   *  allows loops (API-edges-dock-nodes-or-edges), and adds it between the node slots `source` and
    *  `target`, which `api` resolved; returns the slot the engine chose for it
-   *  (ARCH-engine-edits-graph-in-place). Throws a `GraphDataProblem`, and a `SlotError` where a
+   *  (ARCH-engine-edits-nested-graph). Throws a `GraphDataProblem`, and a `SlotError` where a
    *  slot of an end holds no node, the graph as it
    *  was. */
   addEdge(edge: EdgeSnapshot, source: number, target: number, loops: boolean): number;
@@ -313,7 +313,7 @@ export interface Bridge {
    *  `slot` holds no edge, the graph as it was. */
   updateEdge(slot: number, id: string, patch: PlainEdgePatch): void;
   /** Checks the patch of the node `id` in `slot` as a load checks a node's content and gives the
-   *  node its new content and the height it lays out to (REN-node-content-in-rows); a patch of
+   *  node its new content and the height it lays out to (REN-node-content-and-hits); a patch of
    *  regions divides it anew, `kept` naming per region of the patch, depth first, the slot of the
    *  region of its identifier the node has, or `NO_SLOT`, and returns what went with the regions
    *  it had, those regions among it (ARCH-regions-are-container-slots). Throws a
@@ -334,7 +334,7 @@ export interface Bridge {
   /** The thickness of the band of a named region, the engine's. */
   bandThickness(): number;
   /** Hands over the metrics of the font the texts of `role` are drawn with, for every layout
-   *  from then on (REN-node-content-in-rows). Throws a `NumberError` `invalidFont` for metrics the
+   *  from then on (REN-node-content-and-hits). Throws a `NumberError` `invalidFont` for metrics the
    *  engine cannot
    *  take. */
   setFont(role: TextRole, font: FontMetrics): void;
@@ -375,7 +375,7 @@ export interface Bridge {
   removalOf(slots: Uint32Array): Removal;
   /** Records the half width and half height of the pill of the label at `label` of the list of
    *  labels of the edge in `slot`, in world units, as the labels layer draws it; a label not
-   *  measured is not hit (REN-node-content-in-rows). Throws a `SlotError`. */
+   *  measured is not hit (REN-node-content-and-hits). Throws a `SlotError`. */
   setLabelSize(slot: number, label: number, halfWidth: number, halfHeight: number): void;
   /** The world point of the label at `label` of the edge in `slot`, or none where it holds no edge
    *  with a label there. */
@@ -386,7 +386,7 @@ export interface Bridge {
    *  point that is not finite, before anything moves (API-shell-mistake-refused-as-shells). */
   moveLabel(slot: number, label: number, x: number, y: number): { t: number; offset: number };
   /** The slots of the edges at the nodes in `slots`, in ascending order, as a removal of them
-   *  would take along, named before anything is removed (ARCH-engine-edits-graph-in-place). Throws
+   *  would take along, named before anything is removed (ARCH-engine-edits-nested-graph). Throws
    *  a `SlotError`. */
   edgesAt(slots: Uint32Array): Uint32Array;
   /** The slots of the edges in `slots`, in the order first named, and of every other edge that
@@ -421,7 +421,7 @@ export interface Bridge {
   /** A fresh view on the positions buffer, `x, y` per slot. Do not keep it across calls. */
   positions(): Float32Array;
   /** The content of the node in `slot`, built when asked, since the shell keeps none
-   *  (REN-node-content-in-rows).
+   *  (REN-node-content-and-hits).
    *  Throws a `SlotError` where `slot` holds no node. */
   content(slot: number): NodeContent;
   /** The inner rectangle of the node in `slot` that its content is laid out in, relative to its
@@ -429,7 +429,7 @@ export interface Bridge {
    *  inspection. Throws a `SlotError` where `slot` holds no node. */
   innerOf(slot: number): { x: number; y: number; width: number; height: number };
   /** Fresh views on the positions buffer and on the sizes buffer, `width, height` per slot, the
-   *  height each node's content lays out to (REN-node-content-in-rows), both read after the same
+   *  height each node's content lays out to (REN-node-content-and-hits), both read after the same
    *  call. Do not
    *  keep them across calls. */
   nodeBuffers(): { positions: Float32Array; sizes: Float32Array };
@@ -444,14 +444,14 @@ export interface Bridge {
    *  not, each once, and their mesh, stroked as `query` strokes the edges it finds in `rect` at
    *  `level` where a screen pixel is `pixel` world units, relative to the last query's origin:
    *  what a drag redraws of the nodes it moves and an edit at the far level of what it added,
-   *  each frame (REN-moving-layer-redraws-changes). Fresh views; do not keep them across calls.
+   *  each frame (REN-moving-layer-moves-content). Fresh views; do not keep them across calls.
    *  Throws a `SlotError` where a slot of `slots` holds no node or of `also` no edge, and a
    *  `NumberError`
    *  `invalidPixel` as `query` does. */
   meshAt(slots: Uint32Array, also: Uint32Array, rect: Rect, level: Level, pixel: number): Moving;
   /** The edges the last query found and those the last `meshAt` meshed, each once, with their
    *  ends as they lie now, which after a move and before the next query are already moved: for
-   *  inspection, not for drawing (REN-moving-layer-redraws-changes). Fresh views; do not keep them
+   *  inspection, not for drawing (REN-moving-layer-moves-content). Fresh views; do not keep them
    *  across calls. */
   drawnEdges(): DrawnEdges;
   /** Resizes the node in `slot`, whose box was `from`, `x, y, width, height`, at the press, by a
@@ -466,7 +466,7 @@ export interface Bridge {
    *  for them, at the near and middle level, a connector
    *  within 8 screen pixels, of the node drawn on top; else the node drawn on top there, else the
    *  edge drawn on top within 4 screen pixels of its path as the stroke flattens it, else nothing
-   *  (REN-node-content-in-rows). Throws a `NumberError`, `invalidPixel` for a pixel that is not a
+   *  (REN-node-content-and-hits). Throws a `NumberError`, `invalidPixel` for a pixel that is not a
    *  finite number
    *  above zero and `nonFinitePoint` for a point that is not finite
    *  (API-shell-mistake-refused-as-shells). */
@@ -515,7 +515,7 @@ export function bridgeCalls(name: keyof Bridge): number {
 
 /** `bridge` with the engine's memory grown by a page before each of its calls, so that a view
  *  kept across a call is detached and reads empty in tests, not only when memory happens to grow
- *  (API-bridge-takes-serde-and-columns), and each call counted by its name. The message of its
+ *  (API-bridge-columns-carry-nesting), and each call counted by its name. The message of its
  *  error carries
  *  `DETACHING_MARK`. */
 function detaching(bridge: Bridge, memory: WebAssembly.Memory): Bridge {
@@ -549,7 +549,7 @@ const lostListeners = new Set<(error: EngineLostError) => void>();
 /** Whether `error`, thrown from a call of the engine, is a trap: WebAssembly's own, or the glue's
  *  refusal of an object a trapped call left borrowed, which only a trap no guard saw leaves. Errors
  *  the bridge returns as values are plain objects, never traps
- *  (API-bridge-takes-serde-and-columns). */
+ *  (API-bridge-columns-carry-nesting). */
 function isTrap(error: unknown): boolean {
   return (
     error instanceof WebAssembly.RuntimeError ||
@@ -816,7 +816,7 @@ function queried(
 }
 
 /** Fresh views on `memory`, one per read, since growing memory detaches older ones
- *  (API-bridge-takes-serde-and-columns). */
+ *  (API-bridge-columns-carry-nesting). */
 function viewsOn(memory: WebAssembly.Memory) {
   return {
     u32: (ptr: number, len: number) => new Uint32Array(memory.buffer, ptr, len),
@@ -826,7 +826,7 @@ function viewsOn(memory: WebAssembly.Memory) {
 }
 
 /** The buffers of the edge mesh `of` of `engine` through `views`: the last query's, or the
- *  moving layer's of a drag and of edits, which `meshAt` wrote (REN-moving-layer-redraws-changes).
+ *  moving layer's of a drag and of edits, which `meshAt` wrote (REN-moving-layer-moves-content).
  */
 function meshOf(engine: Engine, views: ReturnType<typeof viewsOn>, of: MeshOf): EdgeMesh {
   const { u32, f32 } = views;
@@ -898,7 +898,7 @@ function borderCalls(engine: Engine): Pick<Bridge, "borderOf" | "slide"> {
 }
 
 /** The calls that build a node's content and its inner rectangle when asked
- *  (REN-node-content-in-rows, REN-node-shapes-cover-uml). */
+ *  (REN-node-content-and-hits, REN-node-shapes-cover-uml). */
 function contentCalls(engine: Engine): Pick<Bridge, "content" | "innerOf"> {
   return {
     content: (slot) => engine.content(slot),
@@ -970,7 +970,7 @@ function engineBridge(memory: WebAssembly.Memory): Bridge {
 
 /** The edges at the node slots `slots` and of the edge slots `also`, and their mesh, as `meshAt`
  *  of `engine` writes them, read through fresh views on `memory`
- *  (REN-moving-layer-redraws-changes). */
+ *  (REN-moving-layer-moves-content). */
 function moving(
   engine: Engine,
   memory: WebAssembly.Memory,

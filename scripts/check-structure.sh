@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 #
 # Structural test of the shape of the code (ARCH-one-workspace-per-example), of how the scene draws
-# (REN-virtualized-scene-graph,
+# (REN-virtualized-nested-scene,
 # REN-webgl2-or-canvas-fallback), and of one boundary between the shell's modules, a rule of the
 # check's own that
 # docs/ARCHITECTURE.md describes.
-# Verifies: REN-virtualized-scene-graph, REN-webgl2-or-canvas-fallback, ARCH-one-workspace-per-example
+# Verifies: REN-virtualized-nested-scene, REN-webgl2-or-canvas-fallback, ARCH-one-workspace-per-example
 #
 # ARCH-one-workspace-per-example builds Comb as a functional core of pure Rust and a TypeScript
 # shell whose only door to
-# the engine is its bridge; REN-virtualized-scene-graph draws every text as BitmapText and the edges
+# the engine is its bridge; REN-virtualized-nested-scene draws every text as BitmapText and the edges
 # as one mesh. This
 # check reads the tree and fails on what would break that shape:
 #
@@ -228,7 +228,7 @@ while IFS= read -r file; do
 done < <(sources packages/comb/src/render)
 
 if ((${#problems[@]})); then
-  echo "Structure check FAILED (ARCH-one-workspace-per-example, REN-virtualized-scene-graph, REN-webgl2-or-canvas-fallback):" >&2
+  echo "Structure check FAILED (ARCH-one-workspace-per-example, REN-virtualized-nested-scene, REN-webgl2-or-canvas-fallback):" >&2
   printf '  - %s\n' "${problems[@]}" >&2
   exit 1
 fi

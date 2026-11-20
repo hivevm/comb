@@ -63,8 +63,8 @@ pub(crate) fn check_graph_size(nodes: f64, edges: f64) -> Result<(), GraphDataPr
     Ok(())
 }
 
-// The malformed-data tests of graph data verify API-bridge-takes-serde-and-columns (see
-// `graph_data::tests`). Verifies: API-bridge-takes-serde-and-columns
+// The malformed-data tests of graph data verify API-bridge-columns-carry-nesting (see
+// `graph_data::tests`). Verifies: API-bridge-columns-carry-nesting
 #[cfg(test)]
 mod tests {
     use super::*;

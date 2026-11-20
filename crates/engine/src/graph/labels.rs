@@ -1,5 +1,5 @@
 //! The labels of the edges: the size of each label's pill as the shell measured it, the point of
-//! a label, and the placement of a dragged one (REN-node-content-in-rows, G-6). An edge carries a
+//! a label, and the placement of a dragged one (REN-node-content-and-hits, G-6). An edge carries a
 //! list of labels, and each is named by its edge's slot and its place in that list
 //! (API-edges-dock-nodes-or-edges, *Edge labels*).
 
@@ -257,7 +257,7 @@ mod tests {
 
     #[test]
     fn a_label_measured_with_a_size_that_is_not_finite_and_positive_is_not_hit() {
-        // Verifies: REN-node-content-in-rows
+        // Verifies: REN-node-content-and-hits
         let mut rng = Lcg(11);
         let (model, mut graph) = Model::random(&mut rng, 10, 10);
         let edge = (0..10)

@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 import { open } from "./shared";
 
 test("the edges show their colours, dashes, and arrowheads", async ({ page }) => {
-  // Verifies: G-11, REN-virtualized-scene-graph
+  // Verifies: G-11, REN-virtualized-nested-scene
   await open(page);
   expect((await page.evaluate(() => window.inspect())).edgeTriangles).toBeGreaterThan(0);
   // The reference image, approved by eye, holds the edges alone, without the text of nodes and

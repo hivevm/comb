@@ -1,7 +1,7 @@
 // The edits of the graph: every method of `Comb` that changes it, and the user's connection and
 // deletion, each run through `edit`, which holds their order (Q-7,
-// API-edits-reported-as-typed-changes, ARCH-one-workspace-per-example); and `heightOf`, which reads
-// and checks as `addNode` does and changes nothing (API-host-asks-content-height). Refuse once the
+// API-edits-report-nested-changes, ARCH-one-workspace-per-example); and `heightOf`, which reads
+// and checks as `addNode` does and changes nothing (REN-node-content-and-hits). Refuse once the
 // engine is lost; read the host's input once, whole, into plain data; refuse what the store's map
 // shows, as it stands after the read, since a getter of the input is the host's code and may have
 // changed the graph through `Comb`; check the code units of identifiers the graph would hold; have
@@ -9,7 +9,7 @@
 // record the change, by whom it names. The user's edits come after the host application's veto,
 // asked here for each, the connection, the deletion, and the move into a container, and a veto
 // during whose call the store records a change, which Comb tells to `onChange`, ends its gesture
-// with nothing done (API-edits-reported-as-typed-changes, API-edits-report-nested-changes).
+// with nothing done (API-edits-report-nested-changes, API-edits-report-nested-changes).
 import {
   NO_SLOT,
   refuseIfLost,
@@ -153,7 +153,7 @@ function edit<P, R, T>(store: GraphStore, bridge: Bridge, step: Edit<P, R, T>): 
 }
 
 /** What one Comb's edits need: its store, its bridge, the bridge's limits, and whether the host
- *  application allows loops (API-edges-dock-side-or-outline). */
+ *  application allows loops (API-edges-dock-nodes-or-edges). */
 interface Editing {
   readonly store: GraphStore;
   readonly bridge: Bridge;
@@ -200,7 +200,7 @@ function widened(kept: KeptGraph, bridge: Bridge): KeptGraph {
 
 /** `heightOf`: the content, width, and node shape read once as the node `addNode` reads, named
  *  `""` and at the origin, and checked by the bridge as `addNode` checks it; the graph is not
- *  asked and nothing changes (API-host-asks-content-height, REN-closed-set-of-node-shapes). */
+ *  asked and nothing changes (REN-node-content-and-hits, REN-node-shapes-cover-uml). */
 function heightOf(
   { bridge, limits }: Editing,
   content: unknown,
@@ -215,7 +215,7 @@ function heightOf(
 }
 
 /** `updateNode`: a node the graph does not hold refused, and the patch merged once the bridge
- *  has checked it and the engine laid the node's new content out (REN-node-content-in-rows). */
+ *  has checked it and the engine laid the node's new content out (REN-node-content-and-hits). */
 function updateNode({ store, bridge, limits }: Editing, id: string, patch: unknown): void {
   edit(store, bridge, {
     read: () => patchOf(patch, limits),
@@ -451,8 +451,8 @@ function endsOf(snapshot: unknown, state: GraphState, limits: Limits): [number, 
 }
 
 /** `addEdge`, and the user's connection, as `by` makes it: the edge added between the slots of
- *  its ends (ARCH-engine-edits-graph-in-place), a loop only where the host application allows loops
- *  (API-edges-dock-side-or-outline). */
+ *  its ends (ARCH-engine-edits-nested-graph), a loop only where the host application allows loops
+ *  (API-edges-dock-nodes-or-edges). */
 function addEdge({ store, bridge, limits, loops }: Editing, edge: unknown, by: By): void {
   edit(store, bridge, {
     read: () => edgeSnapshotOf(edge, limits),
@@ -550,7 +550,7 @@ function removeEdges({ store, bridge, limits }: Editing, ids: unknown, by: By): 
 }
 
 /** The host application's vetoes of the user's connection, deletion, and move into a container
- *  (API-edits-reported-as-typed-changes, API-edits-report-nested-changes). */
+ *  (API-edits-report-nested-changes, API-edits-report-nested-changes). */
 export interface Vetoes {
   readonly canConnect?: ((proposal: Proposal) => unknown) | undefined;
   readonly canDelete?: ((deletion: Deletion) => unknown) | undefined;
@@ -559,7 +559,7 @@ export interface Vetoes {
 
 /** What the veto `ask` answers, or `undefined` where the store recorded a change of the graph
  *  during its call, a change Comb tells to `onChange`: its answer was given about a graph that is
- *  gone, so the gesture ends with nothing done, and no error (API-edits-reported-as-typed-changes).
+ *  gone, so the gesture ends with nothing done, and no error (API-edits-report-nested-changes).
  *  An error it throws is
  *  thrown on. */
 function answerOf(store: GraphStore, ask: () => unknown): unknown {
@@ -589,7 +589,7 @@ function moveIntoOf({ store, bridge }: Editing, canMoveInto: Vetoes["canMoveInto
  *  the graph, and `user`, the user's connection, deletion, and move into a container after the
  *  host's `vetoes`, which
  *  interaction is handed; `connect` none without `canConnect`, since Comb has no name to give the
- *  edge. Each adds a loop only where `loops` allows loops (API-edges-dock-side-or-outline). */
+ *  edge. Each adds a loop only where `loops` allows loops (API-edges-dock-nodes-or-edges). */
 export function editorsOf(
   store: GraphStore,
   bridge: Bridge,

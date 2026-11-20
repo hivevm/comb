@@ -1,9 +1,9 @@
-// The three levels of detail, chosen by zoom (REN-virtualized-scene-graph).
+// The three levels of detail, chosen by zoom (REN-virtualized-nested-scene).
 import { expect, test } from "@playwright/test";
 import { canvasSize, open, sceneNumbers, screenCentre, setViewport } from "./shared";
 
 test("zooming through each threshold switches the level of detail", async ({ page }) => {
-  // Verifies: REN-virtualized-scene-graph
+  // Verifies: REN-virtualized-nested-scene
   await open(page);
   const { width, height } = await canvasSize(page);
   const { near: nearFrom, far: middleFrom } = await sceneNumbers(page);

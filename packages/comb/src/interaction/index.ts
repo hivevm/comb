@@ -3,8 +3,8 @@
 // its own that says how it moves, how it ends, and whether a change of the graph takes its subject;
 // the wheel zooms, and hover shows what a press would do. The engine answers what lies under the
 // pointer from its spatial index, at every level of detail, also where the scene draws nodes as
-// particles (REN-node-content-in-rows, REN-virtualized-scene-graph). Once the engine is lost, input
-// changes nothing, and no trap escapes a handler (API-trapped-engine-is-lost).
+// particles (REN-node-content-and-hits, REN-virtualized-nested-scene). Once the engine is lost,
+// input changes nothing, and no trap escapes a handler (API-trapped-engine-is-lost).
 import type { Application, FederatedPointerEvent } from "pixi.js";
 import type { Bridge, Hit } from "../bridge";
 import type { GraphStore } from "../store";
@@ -56,7 +56,7 @@ function cursorOf(hit: Hit): string {
 }
 
 /** Begins what a press at the screen point `(x, y)` does where the context's `hitAt` says it hits
- *  (REN-node-content-in-rows): on a resize handle of the selected node, a resize of it; on a line
+ *  (REN-node-content-and-hits): on a resize handle of the selected node, a resize of it; on a line
  *  between regions, a drag of it (ARCH-regions-are-container-slots); on a
  *  connector, where the host lets the user connect, a connection;
  *  on an edge label, a drag of it, its edge selected; on a node, a drag of it that waits for the
@@ -127,7 +127,7 @@ export function canvasPointAt(
 export interface Interaction {
   /** What a press at the screen point `(x, y)` of the canvas hits now, from the store's viewport,
    *  connectors only where the host lets the user connect: the one hit test the press, the hover,
-   *  and the testing entry ask (REN-node-content-in-rows). */
+   *  and the testing entry ask (REN-node-content-and-hits). */
   hitAt(x: number, y: number): Hit;
   /** The world point the connection the user drags is dragged to, while the store holds one: kept
    *  here, not in the store, and its moves signalled by the store's `pointerVersion`
@@ -158,7 +158,7 @@ function attachRelease(
 
 /** What input hands to `api`: a connection, none where the host does not let the user connect,
  *  a click on an element of a node's content, and a node dropped into another container; and
- *  whether the host allows loops (API-edges-dock-side-or-outline). */
+ *  whether the host allows loops (API-edges-dock-nodes-or-edges). */
 export interface Handlers {
   readonly connect: Connect | undefined;
   readonly click: (click: ContentClick) => void;
@@ -168,7 +168,7 @@ export interface Handlers {
 
 /** Wires pointer and wheel input on the canvas; a click on an element of a node's content is told
  *  to `click`, a connection proposed to `connect`, where the host lets the user connect, one
- *  back to its source where `loops` allows loops (API-edges-dock-side-or-outline), and a node
+ *  back to its source where `loops` allows loops (API-edges-dock-nodes-or-edges), and a node
  *  dropped into another container handed to `moveInto` (API-edits-report-nested-changes). */
 export function attachInteraction(
   app: Application,

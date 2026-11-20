@@ -1,4 +1,4 @@
-// A node drawn and hit in its node shape (G-13, REN-closed-set-of-node-shapes): the host
+// A node drawn and hit in its node shape (G-13, REN-node-shapes-cover-uml): the host
 // application sets it from the closed set, the canvas draws its outline and lays its content out in
 // its inner rectangle, `heightOf` answers for its height, and a press beside its outline selects
 // nothing.
@@ -176,7 +176,7 @@ async function selected(page: Page, x: number, y: number): Promise<string | null
 test("each node shape is drawn at the near level in its outline, its content in its inner rectangle, as high as heightOf gives", async ({
   page,
 }) => {
-  // Verifies: G-13, REN-closed-set-of-node-shapes, API-host-asks-content-height
+  // Verifies: G-13, REN-node-shapes-cover-uml, REN-node-content-and-hits
   await open(page);
   await loaded(page, shaped, { x: 20, y: 20, scale: 1 });
   const { level, nodes } = await drawnShapes(page);
@@ -216,7 +216,7 @@ test("each node shape is drawn at the near level in its outline, its content in 
 test("each node shape is drawn at the middle level in its outline, with its title", async ({
   page,
 }) => {
-  // Verifies: G-13, REN-closed-set-of-node-shapes
+  // Verifies: G-13, REN-node-shapes-cover-uml
   await open(page);
   await loaded(page, shaped, { x: 20, y: 20, scale: 0.4 });
   const { level, nodes } = await drawnShapes(page);
@@ -274,7 +274,7 @@ test("a pentagon, a notched rectangle, a note, and a frame are drawn in their ou
 test("a crossed circle, a cross, an actor, and an hourglass are drawn at the near and the middle level as high as heightOf gives, an actor's and an hourglass's drawing above their content", async ({
   page,
 }) => {
-  // Verifies: G-18, REN-node-shapes-cover-uml, API-host-asks-content-height
+  // Verifies: G-18, REN-node-shapes-cover-uml, REN-node-content-and-hits
   await open(page);
   for (const scale of [1, 0.4]) {
     await loaded(page, SYMBOLS, { x: 40, y: 40, scale });
@@ -541,7 +541,7 @@ test("on the Canvas 2D fallback a crossed circle, a cross, and an hourglass are 
 test("a press beside the outline of each node shape that leaves its rectangle's corner selects nothing, and one within selects it", async ({
   page,
 }) => {
-  // Verifies: G-13, REN-closed-set-of-node-shapes, G-5
+  // Verifies: G-13, REN-node-shapes-cover-uml, G-5
   await open(page);
   await loaded(page, shaped, { x: 20, y: 20, scale: 1 });
   const { nodes } = await drawnShapes(page);
@@ -562,7 +562,7 @@ test("a press beside the outline of each node shape that leaves its rectangle's 
 test("a rounded rectangle is hit just inside the corner arc it is drawn with, and not just outside it", async ({
   page,
 }) => {
-  // Verifies: G-13, REN-closed-set-of-node-shapes
+  // Verifies: G-13, REN-node-shapes-cover-uml
   await open(page);
   await loaded(page, shaped, { x: 20, y: 20, scale: 1 });
   const { level, nodes } = await drawnShapes(page);
@@ -657,7 +657,7 @@ async function darkAt(page: Page, points: [number, number][]): Promise<boolean[]
 test("each node shape is drawn at the far level as a particle of the far level's colour, as every node is", async ({
   page,
 }) => {
-  // Verifies: REN-closed-set-of-node-shapes, REN-node-shapes-cover-uml, REN-virtualized-scene-graph
+  // Verifies: REN-node-shapes-cover-uml, REN-virtualized-nested-scene
   await open(page);
   await loaded(page, EVERY, { x: 20, y: 20, scale: 0.2 });
   const { level, nodes } = await page.evaluate(async (graph) => {
@@ -704,7 +704,7 @@ test("each node shape is drawn at the far level as a particle of the far level's
 test("a node whose node shape names none is refused naming the node and the field, and a graph without node shapes draws rectangles", async ({
   page,
 }) => {
-  // Verifies: REN-closed-set-of-node-shapes, Q-7
+  // Verifies: REN-node-shapes-cover-uml, Q-7
   await open(page);
   const problem = await page.evaluate(() => {
     const graph = {

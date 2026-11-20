@@ -122,7 +122,7 @@ function canConnect({ source, target }: Proposal): string | false {
 }
 
 // Loops are allowed for the state diagram's transitions from a state back to itself; the rules
-// refuse every other loop in the veto (API-edges-dock-side-or-outline).
+// refuse every other loop in the veto (API-edges-dock-nodes-or-edges).
 const comb = await createComb(element("canvas"), {
   engine: fetch(engineUrl),
   allowLoops: true,
@@ -370,7 +370,7 @@ function holdsAlone({ name, regions = [] }: RegionData): string {
 
 /** Adds the nodes the palette drops of `kind`, a classifier or a state, centred by the height
  *  Comb gives its content and node shape on the world point under the drop at (`clientX`,
- *  `clientY`) of the page, or a point on the border nearest it (G-1, API-host-asks-content-height);
+ *  `clientY`) of the page, or a point on the border nearest it (G-1, REN-node-content-and-hits);
  *  or, for the partition, the partitions it leaves a frame. The classifier or the state is the
  *  diagram's once Comb took its nodes, and never where Comb refuses them. Where the example
  *  refuses the drop, the sidebar says why. */

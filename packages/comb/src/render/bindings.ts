@@ -1,5 +1,5 @@
-// The pool of a layer's views (REN-virtualized-scene-graph): a render binds pooled views to exactly
-// the slots the engine found, in the order it found them, and returns the others for reuse.
+// The pool of a layer's views (REN-virtualized-nested-scene): a render binds pooled views to
+// exactly the slots the engine found, in the order it found them, and returns the others for reuse.
 import type { Container } from "pixi.js";
 
 /** A display object a layer binds to one slot at a time. */
@@ -15,9 +15,9 @@ const BULK_RELEASE = 64;
 
 /** The views of one layer bound to slots: a render binds the slots it found, in the order they
  *  are drawn, bottom to top, which is the order the engine returns them in, by rank for nodes and
- *  by slot for edge labels (REN-virtualized-scene-graph); the views of the others go back to a pool
- *  for reuse. A view draws in that order, as without pooling, so that overlapping nodes stack and
- *  take the pointer
+ *  by slot for edge labels (REN-virtualized-nested-scene); the views of the others go back to a
+ *  pool for reuse. A view draws in that order, as without pooling, so that overlapping nodes stack
+ *  and take the pointer
  *  the same way however the user panned. */
 export class Bindings<V extends Pooled> {
   private readonly bound = new Map<number, V>();

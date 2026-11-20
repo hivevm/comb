@@ -1,5 +1,5 @@
-//! The buffers of what a query draws of node content (REN-node-content-in-rows,
-//! API-bridge-takes-serde-and-columns): per element placed its kind, role, colour, and drawn text,
+//! The buffers of what a query draws of node content (REN-node-content-and-hits,
+//! API-bridge-columns-carry-nesting): per element placed its kind, role, colour, and drawn text,
 //! the pieces of a progress bar, and the parts and arrow of a metric, which the shell reads through
 //! views on them.
 
@@ -10,7 +10,7 @@ use crate::graph_data::{
     ContentData, KindCode, RoleCode, direction_of, numbered, rgb_of, utf16_length,
 };
 
-/// The texts of the elements a query placed, as the shell draws them (REN-node-content-in-rows):
+/// The texts of the elements a query placed, as the shell draws them (REN-node-content-and-hits):
 /// per element its kind's code, the code of the role whose font draws it, its colour as `0xRRGGBB`,
 /// a badge's pill's, 0 for an element of no colour, and what is drawn of its text, the text or as
 /// much of it as fits followed by an ellipsis, those strings one after another in `texts`, with

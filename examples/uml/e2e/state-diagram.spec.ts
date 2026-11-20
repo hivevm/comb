@@ -6,7 +6,7 @@
 // border with their names beside them (ARCH-border-nodes-ride-sides), transitions with an open
 // arrowhead labelled by trigger, guard, and effect, a send and a receive signal symbol on a
 // transition, and comments anchored on a state and on a transition (API-edges-dock-nodes-or-edges);
-// every transition docked on the outline (API-edges-dock-side-or-outline), and a loop on Ready.
+// every transition docked on the outline (API-edges-dock-nodes-or-edges), and a loop on Ready.
 import { expect, test, type Page } from "@playwright/test";
 import type { NodeData } from "comb";
 import { open } from "./shared";
@@ -320,7 +320,7 @@ test("the class and the package diagram are kept while the state diagram is show
 });
 
 /** How far `point` lies from the outline of a node of `shape` at `node`, in world units, written
- *  here from REN-closed-set-of-node-shapes's node shapes rather than read from the engine: along
+ *  here from REN-node-shapes-cover-uml's node shapes rather than read from the engine: along
  *  the line from the node's centre for an ellipse, a circle, and a diamond, from the border for a
  *  rectangle, and
  *  from the arc of a rounded rectangle's corner, rounded by 10. */
@@ -396,7 +396,7 @@ async function nodeEnds(page: Page) {
 test("every transition of the state diagram docks on the outline of its states, on the line between their centres", async ({
   page,
 }) => {
-  // Verifies: G-12, G-13, API-edges-dock-side-or-outline, Q-4
+  // Verifies: G-12, G-13, API-edges-dock-nodes-or-edges, Q-4
   await page.goto("/");
   await open(page);
   await chooseStates(page);
@@ -441,7 +441,7 @@ test("every transition of the state diagram docks on the outline of its states, 
 test("a loop on ready, labelled edit / apply the change, leaves and re-enters its left side, its label at the loop's outermost point", async ({
   page,
 }) => {
-  // Verifies: G-12, G-13, API-edges-dock-side-or-outline
+  // Verifies: G-12, G-13, API-edges-dock-nodes-or-edges
   await page.goto("/");
   await open(page);
   await chooseStates(page);

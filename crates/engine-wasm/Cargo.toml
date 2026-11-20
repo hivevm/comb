@@ -1,4 +1,4 @@
-# The bridge (ARCH-one-workspace-per-example, API-bridge-takes-serde-and-columns): every
+# The bridge (ARCH-one-workspace-per-example, API-bridge-columns-carry-nesting): every
 # #[wasm_bindgen] export, no geometry of its own.
 [package]
 name = "comb-engine-wasm"
@@ -15,7 +15,7 @@ comb-engine = { path = "../engine" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde-wasm-bindgen = "0.6.5"
 # The `js` feature converts through serde-wasm-bindgen; the default `json` feature would pass JSON
-# strings, which the specification forbids (API-bridge-takes-serde-and-columns).
+# strings, which the specification forbids (API-bridge-columns-carry-nesting).
 tsify = { version = "0.5.8", default-features = false, features = ["js"] }
 wasm-bindgen = "0.2.129"
 

@@ -1,4 +1,4 @@
-// The user connects two nodes (G-3, API-edges-dock-side-or-outline): a press on a connector begins
+// The user connects two nodes (G-3, API-edges-dock-nodes-or-edges): a press on a connector begins
 // a connection, which follows the pointer and marks the connectors of the node under it compatible
 // where the source does not reach that node yet, the source's own where loops are allowed but for
 // the one it starts from; released over a compatible connector, it proposes the edge to the host
@@ -22,11 +22,11 @@ export interface Proposal {
 
 /** Proposes the user's connection to the host application's veto, and adds the edge it allows;
  *  an error it throws is thrown on once the gesture has ended
- *  (API-edits-reported-as-typed-changes). */
+ *  (API-edits-report-nested-changes). */
 export type Connect = (proposal: Proposal) => void;
 
 /** Whether an edge from the node in slot `source` to the node in slot `target` exists, in that
- *  direction, by any sides, a loop where the two are one (API-edges-dock-side-or-outline). */
+ *  direction, by any sides, a loop where the two are one (API-edges-dock-nodes-or-edges). */
 function reaches(store: GraphStore, bridge: Bridge, source: number, target: number): boolean {
   const { nodes, edges } = store.getState();
   const [from, to] = [nodes[source]?.id, nodes[target]?.id];
@@ -38,7 +38,7 @@ function reaches(store: GraphStore, bridge: Bridge, source: number, target: numb
 
 /** The connection from the connector `side` of the node in slot `source` with the pointer over
  *  what `hit` says: the source itself compatible only where `loops` allows loops, and the
- *  connector it starts from never its target (API-edges-dock-side-or-outline). */
+ *  connector it starts from never its target (API-edges-dock-nodes-or-edges). */
 function connectionOver(
   store: GraphStore,
   bridge: Bridge,

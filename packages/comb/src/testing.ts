@@ -47,7 +47,7 @@ export function isDrawn(comb: Comb, what: { node: string } | { edge: string }): 
 /** What a press at the screen point `(x, y)`, relative to the canvas of `comb`, hits now: a
  *  connector where `comb` lets the user connect, a label, a node, an edge, or nothing. It asks the
  *  hit test a press asks, from the viewport a press reads, which is the drawn one once
- *  `whenRendered` resolves (REN-node-content-in-rows); nothing where that viewport puts the point
+ *  `whenRendered` resolves (REN-node-content-and-hits); nothing where that viewport puts the point
  *  beyond any
  *  finite world point. */
 export function hitKind(comb: Comb, x: number, y: number): Hit["kind"] {
@@ -206,7 +206,7 @@ export function work(comb: Comb): Work {
 /** The screen point, relative to the canvas, of every vertex the edge mesh of `comb` draws, `x, y`
  *  each, as its shader computes it: in `f32`, from the positions PixiJS uploads and the two
  *  transforms it hands the shader as `f32` uniforms, the world's and the mesh's within the world
- *  (API-bridge-takes-serde-and-columns). The shader multiplies the projection into clip space
+ *  (API-bridge-columns-carry-nesting). The shader multiplies the projection into clip space
  *  first, a scale and a shift by the canvas's size, which rounds by about 2^-24 of the canvas's
  *  size more; it is left out, since that cannot move a vertex by a quarter pixel. WebGL only: the
  *  Canvas 2D fallback has no
@@ -296,7 +296,7 @@ export function sceneNumbers(): {
 }
 
 /** Whether the bridge runs in test mode, in which every view kept across an engine call reads
- *  empty (API-bridge-takes-serde-and-columns): what the browser tests assert before they trust that
+ *  empty (API-bridge-columns-carry-nesting): what the browser tests assert before they trust that
  *  a stale view fails. */
 export function testMode(): boolean {
   return TEST_MODE;

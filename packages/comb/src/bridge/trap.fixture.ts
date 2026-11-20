@@ -16,7 +16,7 @@ const url = new URL("../../wasm/test-mode/engine_bg.wasm", import.meta.url);
 const bridge = createBridgeSync(await Bun.file(url).arrayBuffer());
 // Plain data of its own in place of a snapshot of `api/snapshot.ts`
 // (ARCH-one-workspace-per-example), its node and its edges, none, written into columns
-// (API-bridge-takes-serde-and-columns).
+// (API-bridge-columns-carry-nesting).
 const columns = nodeColumns(1, PIECE_BOUND);
 columns.node("a", 0, 0, 100, "rectangle", null, null);
 columns.element("text", "title", 1, undefined, "a", undefined, true);

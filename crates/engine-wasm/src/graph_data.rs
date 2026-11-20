@@ -1,5 +1,5 @@
 //! The reading and checking of graph data, the one place that validates it
-//! (ARCH-one-workspace-per-example, API-bridge-takes-serde-and-columns). The exports in the crate
+//! (ARCH-one-workspace-per-example, API-bridge-columns-carry-nesting). The exports in the crate
 //! root hand graph data here and pass on what it returns: a load's columns become the engine's
 //! graph, the node of `addNode` and the edge of `addEdge` join it, and a patch of `updateNode` or
 //! `updateEdge` becomes what the graph and the store take.

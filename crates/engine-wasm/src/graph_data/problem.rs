@@ -62,7 +62,7 @@ pub enum GraphDataProblem {
     /// The content of the node at `index`, `id` where its identifier was read, holds a shape the
     /// bridge cannot read at row `row`: a row that is no list, or, where `column` is given, an
     /// element that is no object; `expected` says in words what it should be
-    /// (API-bridge-takes-serde-and-columns).
+    /// (API-bridge-columns-carry-nesting).
     #[serde(rename_all = "camelCase")]
     InvalidContentShape {
         index: u32,
@@ -255,7 +255,7 @@ pub enum GraphDataProblem {
     #[serde(rename_all = "camelCase")]
     UnknownEdge { edge: String },
     /// `addEdge` hands over an edge from a node to itself where loops are not allowed; a load
-    /// accepts one (API-edges-dock-side-or-outline).
+    /// accepts one (API-edges-dock-nodes-or-edges).
     #[serde(rename_all = "camelCase")]
     SelfEdge { edge: String },
     /// A patch of `updateEdge` holds a field other than `color`, `dash`, `arrow`, `labels`,
@@ -369,8 +369,8 @@ pub(super) const NOT_IN_ITSELF: &str = "a container that is neither the node nor
 /// What an identifier, a source, or a target expects, by `MAX_ID`.
 pub(super) const AN_ID: &str = "a well-formed string of at most 256 code units";
 
-// The malformed-data tests of graph data verify API-bridge-takes-serde-and-columns (see
-// `graph_data::tests`). Verifies: API-bridge-takes-serde-and-columns
+// The malformed-data tests of graph data verify API-bridge-columns-carry-nesting (see
+// `graph_data::tests`). Verifies: API-bridge-columns-carry-nesting
 #[cfg(test)]
 mod tests {
     use super::super::MAX_ID;

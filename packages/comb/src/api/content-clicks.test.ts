@@ -1,6 +1,6 @@
-// The listeners of `onContentClick` (REN-node-content-in-rows): each registration is told, the
+// The listeners of `onContentClick` (REN-node-content-and-hits): each registration is told, the
 // function returned removes it, and one that throws keeps none of the others from being told.
-// Verifies: REN-node-content-in-rows
+// Verifies: REN-node-content-and-hits
 import { describe, expect, test } from "bun:test";
 import { contentClicksOf } from "./changes";
 

@@ -1,6 +1,6 @@
 //! The nodes of the graph: an addition into the free slot freed last or a new one, with the next
 //! rank, so that it is drawn and hit above every other node; a removal, which takes the edges at
-//! the nodes along; and a move, which takes them along too (ARCH-engine-edits-graph-in-place).
+//! the nodes along; and a move, which takes them along too (ARCH-engine-edits-nested-graph).
 
 use std::collections::HashSet;
 
@@ -36,7 +36,7 @@ impl Graph {
     }
 
     /// Refuses `slots` where one holds no node, beyond the slots or free, naming the first: the
-    /// one check of the node slots a call names (ARCH-engine-edits-graph-in-place).
+    /// one check of the node slots a call names (ARCH-engine-edits-nested-graph).
     pub(super) fn nodes_held(&self, slots: &[u32]) -> Result<(), SlotError> {
         match slots.iter().find(|&&s| !self.holds_node(s)) {
             Some(&slot) => Err(SlotError::NoNode { slot }),
@@ -60,7 +60,7 @@ impl Graph {
     /// in `container`, or onto the canvas for `CANVAS`, a container itself where `is_container`,
     /// and returns its slot: the free slot freed last, or a new one after the highest. It takes
     /// the next rank, so that it is drawn and hit above every other node of its kind, and goes into
-    /// the index in place, which the rule of ARCH-engine-edits-graph-in-place then builds again
+    /// the index in place, which the rule of ARCH-engine-edits-nested-graph then builds again
     /// where it asks for it. A container that holds no container refuses the node, and the graph
     /// stays as it was (ARCH-engine-edits-nested-graph).
     pub fn add_node_in(
@@ -167,7 +167,7 @@ impl Graph {
         }
         self.node_grid.take(&nodes);
         // A removal builds nothing: the index is built again after growth and moves
-        // (ARCH-engine-edits-graph-in-place).
+        // (ARCH-engine-edits-nested-graph).
         self.free_edges_at(&edges);
         Ok((nodes, edges))
     }
@@ -297,7 +297,7 @@ impl Graph {
     }
 
     /// Gives the node in `slot` the height `height`, which its content lays out to
-    /// (REN-node-content-in-rows), and re-places its edges and its place in the index. A slot that
+    /// (REN-node-content-and-hits), and re-places its edges and its place in the index. A slot that
     /// holds no node refuses the call, which then changes nothing.
     pub fn resize_node(&mut self, slot: u32, height: f32) -> Result<(), SlotError> {
         self.nodes_held(&[slot])?;
@@ -328,7 +328,7 @@ impl Graph {
     }
 
     /// The node shape of the node in `slot`, a rectangle where none was given
-    /// (REN-closed-set-of-node-shapes).
+    /// (REN-node-shapes-cover-uml).
     pub fn shape(&self, slot: u32) -> NodeShape {
         self.shapes.get(slot as usize).copied().unwrap_or_default()
     }
@@ -355,7 +355,7 @@ impl Graph {
     }
 
     /// Gives the node in `slot` the node shape `shape`, and places its edges again, whose ends
-    /// on its outline move with it (API-edges-dock-side-or-outline). Its bounds stay its rectangle;
+    /// on its outline move with it (API-edges-dock-nodes-or-edges). Its bounds stay its rectangle;
     /// its height is the caller's, through `resize_node`. A slot that holds no node refuses the
     /// call, which then changes nothing.
     pub fn set_shape(&mut self, slot: u32, shape: NodeShape) -> Result<(), SlotError> {
@@ -377,7 +377,7 @@ impl Graph {
 }
 
 /// Moves the nodes in `slots`, slots that hold a node, by `(dx, dy)` within `positions`, `x, y`
-/// per node slot (API-bridge-takes-serde-and-columns), each as far as keeps it, of the size `sizes`
+/// per node slot (API-bridge-columns-carry-nesting), each as far as keeps it, of the size `sizes`
 /// holds for it, within `limit` of the origin on each axis, as `f32` rounds it. Nothing is written
 /// unless the delta is finite, so a refused move leaves the buffer as it was.
 fn translate_positions(
@@ -435,7 +435,7 @@ mod tests {
 
     #[test]
     fn five_ends_on_the_outline_of_one_node_follow_it_as_it_is_dragged_and_never_meet() {
-        // Verifies: API-edges-dock-side-or-outline, G-2
+        // Verifies: API-edges-dock-nodes-or-edges, G-2
         // A hub and five nodes around it, every 72°, the edges in both directions, every end on
         // the outline; the hub an ellipse, the others a circle, a diamond, a rounded rectangle, a
         // rectangle, and a ringed circle.
@@ -518,7 +518,7 @@ mod tests {
 
     #[test]
     fn a_new_node_shape_moves_the_ends_on_its_outline_onto_it() {
-        // Verifies: API-edges-dock-side-or-outline
+        // Verifies: API-edges-dock-nodes-or-edges
         let mut graph = Graph::new(
             vec![0.0, 0.0, 300.0, 200.0],
             vec![100.0, 60.0, 100.0, 60.0],
@@ -545,7 +545,7 @@ mod tests {
 
     #[test]
     fn every_end_on_the_outline_lies_on_it_within_q4_far_from_the_origin_too() {
-        // Verifies: REN-closed-set-of-node-shapes, API-edges-dock-side-or-outline, Q-4
+        // Verifies: REN-node-shapes-cover-uml, API-edges-dock-nodes-or-edges, Q-4
         // Random nodes of random node shapes, near the origin and as far out as 2^40, and random
         // edges between them docked on the outline: every end lies on its node's outline, on
         // the line towards the other centre, within the precision `f64` keeps at that distance.
@@ -667,7 +667,7 @@ mod tests {
 
     #[test]
     fn a_resized_node_takes_its_edges_and_its_place_in_the_index_along() {
-        // Verifies: REN-node-content-in-rows
+        // Verifies: REN-node-content-and-hits
         // Node 1, 100 × 50 at (300, 0), grows to 150 high: the edge from node 0 enters it at the
         // middle of its left side, now 75 down, and a query below its old bottom finds it.
         let mut graph = Graph::new(
@@ -707,7 +707,7 @@ mod tests {
 
     #[test]
     fn a_node_of_200_000_edges_is_removed_and_its_edges_leave_every_list_in_linear_time() {
-        // Verifies: ARCH-engine-edits-graph-in-place
+        // Verifies: ARCH-engine-edits-nested-graph
         // A hub in slot 0 with an edge to and from each of 100,000 others.
         let count = 100_001u32;
         let positions = (0..count).flat_map(|i| [i as f32, 0.0]).collect();
@@ -736,7 +736,7 @@ mod tests {
 
     #[test]
     fn a_node_added_takes_the_slot_after_the_highest_and_its_place() {
-        // Verifies: ARCH-engine-edits-graph-in-place
+        // Verifies: ARCH-engine-edits-nested-graph
         let mut graph = row(3);
         assert_eq!(graph.add_node(500.0, 0.0, 5.0, 5.0), Ok(3));
         assert_eq!(graph.add_node(510.0, 0.0, 5.0, 5.0), Ok(4));
@@ -749,7 +749,7 @@ mod tests {
 
     #[test]
     fn an_addition_takes_the_slot_freed_last_before_a_new_one() {
-        // Verifies: ARCH-engine-edits-graph-in-place
+        // Verifies: ARCH-engine-edits-nested-graph
         // The slot named last is freed last, and taken first.
         let mut graph = row(4);
         graph.remove_nodes(&[2, 0]).unwrap();
@@ -763,7 +763,7 @@ mod tests {
 
     #[test]
     fn a_graph_that_never_loaded_takes_a_node_and_finds_it() {
-        // Verifies: ARCH-engine-edits-graph-in-place
+        // Verifies: ARCH-engine-edits-nested-graph
         let mut graph = Graph::default();
         assert_eq!(graph.add_node(10.0, 20.0, 50.0, 50.0), Ok(0));
         assert_eq!(graph.node_at(Point::new(30.0, 40.0)), Some(0));
@@ -772,7 +772,7 @@ mod tests {
 
     #[test]
     fn a_node_added_into_a_lower_slot_is_drawn_and_hit_above_the_nodes_it_overlaps() {
-        // Verifies: ARCH-engine-edits-graph-in-place
+        // Verifies: ARCH-engine-edits-nested-graph
         // Nodes 0 to 3 overlap at (0, 0); slot 1 is free, so the addition takes it.
         let positions = vec![0.0; 8];
         let mut graph = Graph::new(positions, vec![50.0; 8], Vec::new()).unwrap();
@@ -788,7 +788,7 @@ mod tests {
 
     #[test]
     fn a_load_ranks_nodes_by_slot() {
-        // Verifies: ARCH-engine-edits-graph-in-place
+        // Verifies: ARCH-engine-edits-nested-graph
         let mut graph = Graph::new(vec![0.0; 6], vec![50.0; 6], Vec::new()).unwrap();
         let mut out = Visible::default();
         graph.query(
@@ -806,7 +806,7 @@ mod tests {
 
     #[test]
     fn ranks_are_numbered_again_from_0_in_their_order_before_they_pass_u32_max() {
-        // Verifies: ARCH-engine-edits-graph-in-place
+        // Verifies: ARCH-engine-edits-nested-graph
         let mut graph = Graph::new(vec![0.0; 8], vec![50.0; 8], Vec::new()).unwrap();
         graph.ranks = vec![u32::MAX - 1, 7, u32::MAX, 3];
         graph.remove_nodes(&[1]).unwrap();

@@ -1,4 +1,4 @@
-//! Node content as the host application's type describes it (REN-node-content-in-rows): what
+//! Node content as the host application's type describes it (REN-node-content-and-hits): what
 //! inspection and the changes Comb tells report, built from the content the engine keeps when
 //! asked.
 

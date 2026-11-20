@@ -1,5 +1,5 @@
 //! The slots of one kind, nodes or edges, the graph keeps one each of
-//! (ARCH-engine-edits-graph-in-place): how many there are, which of them are free, and the list of
+//! (ARCH-engine-edits-nested-graph): how many there are, which of them are free, and the list of
 //! the free ones, the one freed last taken first.
 
 use super::{TooManySlots, slot};
@@ -104,7 +104,7 @@ mod tests {
 
     #[test]
     fn a_slot_freed_is_taken_again_last_freed_first_before_a_new_one() {
-        // Verifies: ARCH-engine-edits-graph-in-place
+        // Verifies: ARCH-engine-edits-nested-graph
         let mut slots = Slots::loaded(3);
         assert!(slots.free(2));
         assert!(slots.free(0));

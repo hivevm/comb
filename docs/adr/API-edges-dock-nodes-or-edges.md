@@ -1,6 +1,6 @@
 # API-edges-dock-nodes-or-edges: Every node has one connector in the middle of each side, an edge's end docks on a side or on the outline of any node, at any depth, or on another edge, and an edge carries a list of edge labels
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-17
 - **Deciders:** Markus Brigl
 - **Applies to:** the edge paths of `crates/engine/src/geometry.rs`, the point where a loop's end meets a node shape's outline in `crates/engine/src/shape.rs`, the edge records of `crates/engine/src/graph.rs`, the edge fields of `crates/engine-wasm/` and of `EdgeData` in `packages/comb/src/store/`, `CombOptions`, `addEdge`, and `updateEdge` in `packages/comb/src/api/`, the connect gesture of `packages/comb/src/interaction/`, and the connectors layer and the edge labels of `packages/comb/src/render/`

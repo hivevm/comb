@@ -536,7 +536,7 @@ describe("the parts of the reference", () => {
 
 describe("the edit gesture", () => {
   test("a baseline without it reports the run's edits unjudged, and judges the others", () => {
-    // Verifies: DEV-bun-vite-wasm-pack, ARCH-engine-edits-graph-in-place
+    // Verifies: DEV-bun-vite-wasm-pack, ARCH-engine-edits-nested-graph
     const verdict = compare({ ...run(200, 100), edit: { p95: 900 } }, run(200, 100));
     expect(verdict).toMatchObject({ kind: "compared", regressions: [] });
     expect((verdict as { lines: string[] }).lines).toContain("edit p95 (ms): 900.0, no baseline");
@@ -547,7 +547,7 @@ describe("the edit gesture", () => {
   });
 
   test("a baseline with it judges the run's edits as the other gestures", () => {
-    // Verifies: DEV-bun-vite-wasm-pack, ARCH-engine-edits-graph-in-place
+    // Verifies: DEV-bun-vite-wasm-pack, ARCH-engine-edits-nested-graph
     const verdict = compare(
       { ...run(200, 100), edit: { p95: 200 } },
       { ...run(200, 100), edit: { p95: 100 } },
@@ -592,7 +592,7 @@ const CONTENT = {
 
 describe("the gestures at each level of detail", () => {
   test("are named by gesture and level, after those at the view the example opens with", () => {
-    // Verifies: DEV-bun-vite-wasm-pack, REN-virtualized-scene-graph
+    // Verifies: DEV-bun-vite-wasm-pack, REN-virtualized-nested-scene
     const each = (level: string) =>
       ["drag", "pan", "zoom", "edit"].map((gesture) => `${gesture} ${level}`);
     expect(gestures(everyLevel(run(200, 100), 100)).map(([name]) => name)).toEqual([

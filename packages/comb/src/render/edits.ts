@@ -1,4 +1,4 @@
-// The edits since a query the scene keeps at the far level (REN-moving-layer-redraws-changes): the
+// The edits since a query the scene keeps at the far level (REN-moving-layer-moves-content): the
 // slots in which the store's nodes and edges differ from the arrays the query drew, compared slot
 // by slot, so that several edits within a frame count as the slots they changed.
 import type { GraphView } from "../store";

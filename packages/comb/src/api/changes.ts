@@ -1,8 +1,8 @@
 // How a change the store records reaches the host application: `GraphChange`, what `onChange`
 // delivers, read from the store and the engine's buffer as copies no listener can reach into
-// (API-edits-reported-as-typed-changes), and the listeners of `onChange` and `onSelectionChange`
+// (API-edits-report-nested-changes), and the listeners of `onChange` and `onSelectionChange`
 // told from one subscription; and the listeners of `onContentClick`, told of each click on an
-// element (REN-node-content-in-rows).
+// element (REN-node-content-and-hits).
 import { positionAt, type Bridge } from "../bridge";
 import type { ContentClick } from "../interaction";
 import {
@@ -46,7 +46,7 @@ type AddedEdge = Readonly<
 
 /** The attributes `updateEdge` changes on an edge, as `edgeUpdated` reports them merged: its
  *  colour, arrowhead, lightning bolt, dash pattern or none, and labels, their places filled in,
- *  or none (API-edits-reported-as-typed-changes, API-edges-dock-nodes-or-edges). */
+ *  or none (API-edits-report-nested-changes, API-edges-dock-nodes-or-edges). */
 type EdgeChangePatch = {
   readonly [K in keyof EdgePatch]: K extends "labels"
     ? readonly Readonly<KeptLabel>[] | null
@@ -57,7 +57,7 @@ type EdgeChangePatch = {
 export type RegionSize = { readonly id: string; readonly size: number };
 
 /** One change of the graph, by its `kind` and by who made it, `"user"` or `"host"`, as
- *  `onChange` delivers it (API-edits-reported-as-typed-changes). */
+ *  `onChange` delivers it (API-edits-report-nested-changes). */
 export type GraphChange =
   /** `load` replaced the graph. */
   | { readonly kind: "loaded"; readonly by: "host" }

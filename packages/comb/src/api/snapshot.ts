@@ -2,7 +2,7 @@
 // read once, in JavaScript, into plain data whose every field is a primitive of the type the field
 // expects, so that the bridge checks it and the store keeps it, and no value of the host
 // application, nor any of its code, reaches the engine; a load's nodes and edges are handed over as
-// columns besides (API-bridge-takes-serde-and-columns). A value of another type is replaced by
+// columns besides (API-bridge-columns-carry-nesting). A value of another type is replaced by
 // `false`, which the bridge refuses naming the node or edge and the field; a text of content, a
 // label text, and the arrow are handed over no longer than one code unit beyond the bridge's limit
 // for texts, an identifier no longer than one beyond its limit for identifiers, and a node's
@@ -185,7 +185,7 @@ interface ContentSink {
 /** Reads `content`, a node's content, once by `read` and hands it to `sink`: at most one row
  *  beyond `limits.rows`, each at most one element beyond `limits.columns`, and a progress bar at
  *  most one segment beyond `limits.segments`, so that content of any size costs at most that much
- *  to check. The one walk of content both crossings of API-bridge-takes-serde-and-columns read it
+ *  to check. The one walk of content both crossings of API-bridge-columns-carry-nesting read it
  *  by: a load hands the
  *  sink that writes its columns, `addNode` and `updateNode` the one that builds plain data. */
 function walkContent(read: Reader, content: unknown, sink: ContentSink, limits: Limits): void {
@@ -494,7 +494,7 @@ function regionInputs(regions: readonly RegionRead[]) {
   }));
 }
 
-/** The node shape of a node, `rectangle` where it is left out (REN-closed-set-of-node-shapes). */
+/** The node shape of a node, `rectangle` where it is left out (REN-node-shapes-cover-uml). */
 const NODE_SHAPE = "rectangle";
 
 /** The outline `api` fills in where the host application leaves it out
@@ -562,7 +562,7 @@ function nodeOf(read: Reader, node: Fields) {
 /** Writes the node `node` into `columns`, read once by `read`, its content walked straight into
  *  its columns, and returns what the store keeps of it: its identifier, its width, its node shape,
  *  and its container, its mark, its height, whether it is resizable, and its division where it
- *  has them, no copy of its content (REN-node-content-in-rows, API-edits-report-nested-changes);
+ *  has them, no copy of its content (REN-node-content-and-hits, API-edits-report-nested-changes);
  *  and the views of its regions, which take the slots after the nodes. */
 function written(
   read: Reader,

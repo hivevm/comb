@@ -2,7 +2,7 @@
 // elements, each in its node shape where it was dropped, a point on the border nearest the drop;
 // the sidebar's name, behaviours, state machine, and lines of a node, and trigger, guard, and
 // effect of a transition; a connection that adds a transition docked on the outline
-// (API-edges-dock-side-or-outline) where the table of refusals allows it and says why where it
+// (API-edges-dock-nodes-or-edges) where the table of refusals allows it and says why where it
 // refuses it, a drag back onto a state that adds a loop, Delete, and the edits each of the three
 // diagrams keeps; and of all three, that a drop is the example's only once Comb took its node.
 import { expect, test, type Page } from "@playwright/test";

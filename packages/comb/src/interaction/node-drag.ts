@@ -7,7 +7,7 @@
 // records once, where it moved it, where the release left it (API-edits-report-nested-changes).
 // A press released on the canvas within the slop is a click: where the release point lies on an
 // element of the content of the node pressed, it tells the host application which
-// (REN-node-content-in-rows). A border node is dragged along its node's outline instead, to the
+// (REN-node-content-and-hits). A border node is dragged along its node's outline instead, to the
 // point of it nearest the pointer, asks no veto, and records its move only where its side or its
 // offset changed (ARCH-border-nodes-ride-sides, *Drag*).
 import { positionAt, type BorderPlace, type Hit } from "../bridge";

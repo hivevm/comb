@@ -1,6 +1,6 @@
 # REN-node-content-and-hits: Node content is a closed set of elements in rows, laid out by the engine, in a node as high as its content or the height its data gives, and one hit test finds handles, region lines, connectors, labels, nodes, and edges
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-17
 - **Deciders:** Markus Brigl
 - **Applies to:** the node-content types of `crates/engine` and `crates/engine-wasm`, their generated TypeScript definitions in `packages/comb`, the layout functions of the engine, the drawing of node content in `packages/comb/src/render/`, the report of a click on a content element in `packages/comb/src/api/`, the hit test of `crates/engine/src/graph.rs` and its export in `crates/engine-wasm/`, the label extents the render layer of `packages/comb/src/render/` hands the engine, the press and hover of `packages/comb/src/interaction/`, and `Comb.heightOf` in `packages/comb/src/api/` with its export in `crates/engine-wasm/`

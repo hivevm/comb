@@ -1,5 +1,5 @@
 // A click on an element of a node's content reaches the host application
-// (REN-node-content-in-rows): the engine answers which element lies under the pointer, a press
+// (REN-node-content-and-hits): the engine answers which element lies under the pointer, a press
 // released within the slop reports it with `onContentClick` and selects the node, and a press that
 // drags moves the node and reports none.
 import { expect, test, type Page } from "@playwright/test";
@@ -46,7 +46,7 @@ async function selection(page: Page): Promise<unknown> {
 test("a click on an action reports the node, its row, column, kind, and identifier, and selects the node", async ({
   page,
 }) => {
-  // Verifies: REN-node-content-in-rows
+  // Verifies: REN-node-content-and-hits
   await openClicks(page);
   // The action is drawn as a text in the body's font, where the engine placed it.
   const texts = await page.evaluate(async () => {
@@ -72,7 +72,7 @@ test("a click on an action reports the node, its row, column, kind, and identifi
 });
 
 test("a click on the title reports kind text and no action identifier", async ({ page }) => {
-  // Verifies: REN-node-content-in-rows
+  // Verifies: REN-node-content-and-hits
   await openClicks(page);
   await clickWorld(page, ...TITLE);
   expect(await clicks(page)).toEqual([{ node: "b", row: 0, column: 0, kind: "text" }]);
@@ -82,7 +82,7 @@ test("a click on the title reports kind text and no action identifier", async ({
 test("a click on a badge reports kind badge, and a click beside its pill in its column none", async ({
   page,
 }) => {
-  // Verifies: REN-node-content-in-rows
+  // Verifies: REN-node-content-and-hits
   // A title, then a badge "Done" in a column of 196: its pill from (12, 28), 22 high, as wide as
   // its text and 8 either side, far short of the column.
   await open(page);
@@ -113,7 +113,7 @@ test("a click on a badge reports kind badge, and a click beside its pill in its 
 test("a click on a progress bar reports kind progress, across its line above and below the bar too", async ({
   page,
 }) => {
-  // Verifies: REN-node-content-in-rows
+  // Verifies: REN-node-content-and-hits
   // A title, then a progress bar in a column of 196: its cell from (12, 28), 196 × 16, its bar 8
   // high from 32.
   await open(page);
@@ -140,7 +140,7 @@ test("a click on a progress bar reports kind progress, across its line above and
 test("a click on a metric reports kind metric, across its two lines, and below them none", async ({
   page,
 }) => {
-  // Verifies: REN-node-content-in-rows
+  // Verifies: REN-node-content-and-hits
   // A title, then a metric in a column of 196: its cell from (12, 28), 196 × 30, the caption's
   // line of 14 and the value's of 16 below it.
   await open(page);
@@ -175,7 +175,7 @@ test("a click on a metric reports kind metric, across its two lines, and below t
 test("a click on an icon reports kind icon, on its square, and beside it in its column none", async ({
   page,
 }) => {
-  // Verifies: REN-node-content-in-rows
+  // Verifies: REN-node-content-and-hits
   // An icon beside a title weighted 1 and 9, columns of 18.8 from 12 and 169.2 from 38.8: the
   // icon's square from (12, 10), 16 × 16, the body's line, at its column's left.
   await open(page);
@@ -209,7 +209,7 @@ test("a click on an icon reports kind icon, on its square, and beside it in its 
 test("a press on an element that moves past 4 pixels drags the node and reports no click; within them it clicks", async ({
   page,
 }) => {
-  // Verifies: REN-node-content-in-rows, API-edits-reported-as-typed-changes
+  // Verifies: REN-node-content-and-hits, API-edits-report-nested-changes
   await openClicks(page);
   const from = await pagePoint(page, ...ACTION);
   // Within the slop: released 3 pixels from the press, a click, and the node stays.
@@ -234,7 +234,7 @@ test("a press on an element that moves past 4 pixels drags the node and reports 
 test("a click on the node's padding or between its elements selects the node and reports no click", async ({
   page,
 }) => {
-  // Verifies: REN-node-content-in-rows
+  // Verifies: REN-node-content-and-hits
   await openClicks(page);
   // The left padding, the gap between the body and the action, and below the last row.
   for (const [x, y] of [
@@ -251,7 +251,7 @@ test("a click on the node's padding or between its elements selects the node and
 test("an element is clicked only where it is drawn: at the middle level the title, at the far level none", async ({
   page,
 }) => {
-  // Verifies: REN-node-content-in-rows, REN-virtualized-scene-graph
+  // Verifies: REN-node-content-and-hits, REN-virtualized-nested-scene
   await openClicks(page);
   await setViewport(page, { x: 100, y: 100, scale: 0.5 });
   expect(await page.evaluate(() => window.inspect().level)).toBe("middle");
@@ -268,7 +268,7 @@ test("an element is clicked only where it is drawn: at the middle level the titl
 test("a host that replaces the content when it hears of the selection hears of the element under the release", async ({
   page,
 }) => {
-  // Verifies: REN-node-content-in-rows
+  // Verifies: REN-node-content-and-hits
   await openClicks(page);
   // Once `b` is selected, its second row holds two body texts, the action's place the second's.
   await page.evaluate(() => {

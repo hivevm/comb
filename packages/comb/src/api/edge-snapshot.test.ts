@@ -16,7 +16,7 @@ const limits = {
 };
 
 test("an edge read once fills its defaults and keeps no key for a field left out", () => {
-  // Verifies: ARCH-one-workspace-per-example, API-edges-dock-side-or-outline,
+  // Verifies: ARCH-one-workspace-per-example, API-edges-dock-nodes-or-edges,
   // API-edges-dock-nodes-or-edges
   const { snapshot } = edgeSnapshotOf(
     { id: "e", source: "a", target: "b", labels: [{ id: "m", text: "x", t: 0.25, offset: 3 }] },
@@ -52,7 +52,7 @@ test("a label read once without a place sits at 0.5 and 0, and without a backgro
 });
 
 test("a loop read once without sides fills in the top for both, and keeps the sides it names", () => {
-  // Verifies: API-edges-dock-side-or-outline
+  // Verifies: API-edges-dock-nodes-or-edges
   const loop = edgeSnapshotOf({ id: "e", source: "a", target: "a" }, limits).snapshot;
   expect(loop).toMatchObject({ sourceSide: "top", targetSide: "top" });
   const named = edgeSnapshotOf(

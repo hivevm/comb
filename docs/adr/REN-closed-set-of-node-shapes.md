@@ -1,6 +1,6 @@
 # REN-closed-set-of-node-shapes: A node is drawn and hit in a node shape from a closed set the engine owns
 
-- **Status:** 🟢 accepted
+- **Status:** ⚪ superseded by [REN-node-shapes-cover-uml](REN-node-shapes-cover-uml.md)
 - **Date:** 2026-11-06
 - **Deciders:** Markus Brigl
 - **Applies to:** the node fields of `crates/engine-wasm/` and of `NodeData` in `packages/comb/src/store/`, the node-shape geometry of `crates/engine`, the layout of content and `heightOf` in `crates/engine/src/content.rs` and `packages/comb/src/api/`, the hit test of `crates/engine/src/graph.rs`, and the drawing of nodes in `packages/comb/src/render/`

@@ -27,7 +27,7 @@ async function nearNode(page: Page, id: string) {
  *  status badge, an epic with its progress bar and status badge, an input metric with values over
  *  three periods and coloured trends, the north-star metric, and a KPI, each with the icon of its
  *  type beside its title and "Details". Its height is the engine's padding of 10 above and below
- *  and the shell's rows (REN-node-content-in-rows): a title's of 18; a hypothesis's or a progress
+ *  and the shell's rows (REN-node-content-and-hits): a title's of 18; a hypothesis's or a progress
  *  bar's of 16 and
  *  a badge's of 22; or a row of metrics of 30 and a caption beside "Details" of 16. */
 const TYPES = {
@@ -161,7 +161,7 @@ test("picking the largest copies option shows at least 50,000 nodes and edges", 
     edges: report.edges,
     texts: 0,
   });
-  // Verifies: REN-virtualized-scene-graph, REN-virtualized-nested-scene,
+  // Verifies: REN-virtualized-nested-scene,
   // Verifies: REN-moving-layer-moves-content
   // The world, the edges layer and its mesh, the particle container, the moving layer's edges and
   // their mesh and its particle container, the empty layers of node views, labels, and

@@ -1,8 +1,8 @@
-// The icons a host application registers (REN-node-content-in-rows): an image it has loaded itself,
-// never a URL Comb would fetch (Q-6), under a name an icon element of content gives, copied at
-// registration into a canvas Comb owns, so that what the host application later does to its image
-// changes no icon, and an image whose pixels the page may not read is refused here and not in a
-// frame.
+// The icons a host application registers (REN-node-content-and-hits): an image it has loaded
+// itself, never a URL Comb would fetch (Q-6), under a name an icon element of content gives, copied
+// at registration into a canvas Comb owns, so that what the host application later does to its
+// image changes no icon, and an image whose pixels the page may not read is refused here and not in
+// a frame.
 
 /** Why Comb refused an icon handed to `registerIcon`: its name is no string or holds a lone
  *  surrogate (`invalidName`), or is longer than a text of content may be (`nameTooLong`); its

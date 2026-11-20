@@ -13,7 +13,7 @@ type Same<A, B> =
 
 // The engine's `loadGraph` takes a load's nodes and edges as columns, strings in pieces and typed
 // arrays its glue copies whole, or plain arrays of numbers, which the glue of wasm-bindgen 0.2.130
-// takes as well, and no `GraphBatch` and no `EdgeList` (API-bridge-takes-serde-and-columns): its
+// takes as well, and no `GraphBatch` and no `EdgeList` (API-bridge-columns-carry-nesting): its
 // generated parameters, pinned, the column of node shapes, the columns of nesting
 // (API-bridge-columns-carry-nesting), the height a node's data gives with its byte of presence,
 // whether it is resizable, the division of each node and the columns of the regions, the columns of
@@ -147,7 +147,7 @@ test("the bridge refuses graph data and patches that are no snapshot at compile 
 });
 
 test("the engine takes a load's nodes and edges as columns, pinned at compile time", () => {
-  // Verifies: API-bridge-takes-serde-and-columns
+  // Verifies: API-bridge-columns-carry-nesting
   // The type of a title column among them would make `columns` false, which no `true` is
   // assignable to.
   expect(columns).toBe(true);

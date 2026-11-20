@@ -5,7 +5,7 @@
 // out at most eight rows of a node, so a classifier with more members than fit shows the first and
 // then "…", UML's own mark of members left out; its data keeps every member. The nodes lie in
 // rows laid out by hand, each as high as `heightOf` gives its content
-// (API-host-asks-content-height). Three nodes are not of the public interface: the render layer's
+// (REN-node-content-and-hits). Three nodes are not of the public interface: the render layer's
 // edges layer and the two classes that realize it (REN-webgl2-or-canvas-fallback), the one
 // realization in Comb. Each classifier names its kind, class or interface; a «type» is a class.
 // `comb-source.test.ts` holds the operations and attributes of `Comb` to the interface.

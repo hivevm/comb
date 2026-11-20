@@ -17,7 +17,7 @@ const GREEN = 0x22a55b;
 const RED = 0xe0453a;
 export const NODE_WIDTH = 220;
 /** The height Comb lays a node of one title out to, the least height of a node
- *  (REN-node-content-in-rows). */
+ *  (REN-node-content-and-hits). */
 export const NODE_HEIGHT = 64;
 const COLUMN = 300;
 const ROW = 110;
@@ -298,7 +298,7 @@ function edgesOf(copy: number): EdgeData[] {
 }
 
 /** The node shapes the nodes of the shaped graph take in turn: the content node shapes, then the
- *  filled ones, which hold no content (REN-closed-set-of-node-shapes). */
+ *  filled ones, which hold no content (REN-node-shapes-cover-uml). */
 const SHAPES: readonly NodeShape[] = [
   "rectangle",
   "rounded-rectangle",
