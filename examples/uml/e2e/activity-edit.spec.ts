@@ -4,7 +4,9 @@
 // between partitions the example's veto allows, and one out of the frame it refuses
 // (API-edits-report-nested-changes); the connections the table of refusals refuses, saying why,
 // and others that add a control or an object flow; a pin dragged around its action; a flow's guard
-// and weight the sidebar edits; and the names of the frame's partitions.
+// and weight the sidebar edits; the names of the frame's partitions; and a press on a resize
+// handle, on a line between two partitions, and on a flow over a partition
+// (REN-node-content-and-hits).
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphChange, NodeData } from "comb";
 import { clickWorld, drawnNode, open, pagePoint, setViewport } from "./shared";
@@ -584,4 +586,114 @@ test("a connection from an action to an input pin adds an exception handler, a l
   expect(added.map((edge) => [kinds[edge.id], edge.arrow, edge.lightning, edge.labels])).toEqual([
     ["exception-handler", "open", true, undefined],
   ]);
+});
+
+/** Keeps the selection Comb last reported, for `pressState`. */
+async function recordSelection(page: Page): Promise<void> {
+  await page.evaluate(() =>
+    window.uml.comb.onSelectionChange((selection) => Object.assign(window, { selection })),
+  );
+}
+
+/** The selection last reported, the resize handles the canvas draws, and how often the scene
+ *  queried. */
+async function pressState(page: Page) {
+  return page.evaluate(async () => {
+    await window.uml.comb.whenRendered();
+    const { handles, queries } = window.uml.inspect();
+    return {
+      selection: (window as unknown as { selection?: unknown }).selection,
+      handles: handles.map(({ node, handle }) => `${node}:${handle}`),
+      queries,
+    };
+  });
+}
+
+/** Presses the world point `from`, moves the pointer to `to` in four steps, and releases it: the
+ *  width and the height of node `id` drawn after each step, and how often the scene queried before
+ *  the press, before the release, and after it. */
+async function dragCounted(page: Page, id: string, from: [number, number], to: [number, number]) {
+  const [start, end] = [await pagePoint(page, ...from), await pagePoint(page, ...to)];
+  const before = (await pressState(page)).queries;
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  const sizes: number[][] = [];
+  for (let i = 1; i <= 4; i++) {
+    const [x, y] = [start.x + ((end.x - start.x) * i) / 4, start.y + ((end.y - start.y) * i) / 4];
+    await page.mouse.move(x, y);
+    const box = (await drawnNode(page, id))!;
+    sizes.push([box.width, box.height]);
+  }
+  const during = (await pressState(page)).queries;
+  await page.mouse.up();
+  return { sizes, before, during, after: (await pressState(page)).queries };
+}
+
+test("a press on the handle of a node above others or of the frame resizes it, one on the line between two partitions moves it, neither querying before the release, and one on a flow over a partition selects the flow", async ({
+  page,
+}) => {
+  // Verifies: REN-node-content-and-hits, REN-moving-layer-moves-content, G-15, G-16
+  await page.goto("/");
+  await open(page);
+  await chooseActivity(page);
+  await recordSelection(page);
+  // The whole diagram at the middle level, each box read once: the frame at (0, 0), 1760 × 1520,
+  // its partitions of 520, 600, and 640 below its band, and in the engine's partition the expansion
+  // region, whose expansion node lies on its top side where its top handle stands.
+  await overview(page);
+  expect(await page.evaluate(() => window.uml.inspect().level)).toBe("middle");
+  const measure = (await drawnNode(page, "measure"))!;
+  const rows = (await drawnNode(page, "rows"))!;
+  const top: [number, number] = [measure.x + measure.width / 2, measure.y];
+  expect(rows.x + rows.width / 2).toBe(top[0]);
+  // Selected by a press inside it, where it holds nothing.
+  await clickWorld(page, measure.x + 20, measure.y + measure.height - 20);
+  const selected = await pressState(page);
+  expect(selected.selection).toEqual({ kind: "node", id: "measure" });
+  expect(selected.handles).toContain("measure:top");
+  // Its top handle, over the expansion node and the engine's partition, resizes it.
+  const resize = await dragCounted(page, "measure", top, [top[0], top[1] - 40]);
+  expect(await drawnNode(page, "measure")).toEqual({
+    ...measure,
+    y: measure.y - 40,
+    height: measure.height + 40,
+  });
+  // The line between the host application's partition and the shell's, pressed beside nothing,
+  // moves both partitions, to the left, where the host application's nodes leave room.
+  const [host, shell] = [(await drawnNode(page, "host"))!, (await drawnNode(page, "shell"))!];
+  const line: [number, number] = [host.x + host.width, host.y + host.height / 2];
+  const moved = await dragCounted(page, "host", line, [line[0] - 40, line[1]]);
+  expect(await drawnNode(page, "host")).toEqual({ ...host, width: host.width - 40 });
+  expect(await drawnNode(page, "shell")).toEqual({
+    ...shell,
+    x: shell.x - 40,
+    width: shell.width + 40,
+  });
+  // The frame, selected by a press in a partition beside nothing, resized at its right handle,
+  // widens the engine's partition alone.
+  const [frame, engine] = [(await drawnNode(page, "load"))!, (await drawnNode(page, "engine"))!];
+  await clickWorld(page, host.x + 20, host.y + host.height - 20);
+  expect((await pressState(page)).selection).toEqual({ kind: "node", id: "load" });
+  const right: [number, number] = [frame.x + frame.width, frame.y + frame.height / 2];
+  const widened = await dragCounted(page, "engine", right, [right[0] + 40, right[1]]);
+  expect(await drawnNode(page, "engine")).toEqual({ ...engine, width: engine.width + 40 });
+  expect((await drawnNode(page, "shell"))?.width).toBe(shell.width + 40);
+  // Each drawn anew in each frame of its drag, none queried before its release, and each once at
+  // it.
+  for (const counted of [resize, moved, widened]) {
+    const drawnSizes = new Set(counted.sizes.map((size) => size.join()));
+    expect(drawnSizes.size).toBe(4);
+    expect(counted.during).toBe(counted.before);
+    expect(counted.after).toBe(counted.before + 1);
+  }
+  // A press on the middle of the flow from the fork to the expansion region, over the shell's
+  // partition, selects the flow, which lies above the partitions.
+  const ends = await page.evaluate(() =>
+    window.uml.inspect().edges.find(({ id }) => id === "fork-measure")!,
+  );
+  const middle = [(ends.source.x + ends.target.x) / 2, (ends.source.y + ends.target.y) / 2];
+  expect(middle[0]).toBeGreaterThan(shell.x);
+  expect(middle[0]).toBeLessThan(shell.x + shell.width);
+  await clickWorld(page, middle[0]!, middle[1]!);
+  expect((await pressState(page)).selection).toEqual({ kind: "edge", id: "fork-measure" });
 });

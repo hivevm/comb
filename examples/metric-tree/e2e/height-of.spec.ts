@@ -84,3 +84,16 @@ test("heightOf refuses what addNode refuses of content and width, naming the nod
     expect(asked).toEqual(added);
   }
 });
+
+test("content without rows is as high as the width asked, however small or large", async ({
+  page,
+}) => {
+  // Verifies: REN-node-content-and-hits
+  await open(page);
+  const widths = [1, 8, 64, 120, 333.5, 2000];
+  const heights = await page.evaluate(
+    (asked) => asked.map((width) => window.comb.heightOf([], width)),
+    widths,
+  );
+  expect(heights).toEqual(widths);
+});

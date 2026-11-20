@@ -338,6 +338,45 @@ mod tests {
     }
 
     #[test]
+    fn an_action_moved_into_a_container_above_a_later_node_keeps_each_pin_directly_after_it() {
+        // Verifies: ARCH-engine-edits-nested-graph
+        // The action, 0, its pin on the right, 1, the node above both, 2, and a second pin, 3,
+        // on the action's bottom at 180, added after that node; both pins reach into it.
+        let mut graph = action_with_pin();
+        let second = graph.add_node(0.0, 0.0, 10.0, 10.0).unwrap();
+        assert_eq!(graph.attach(second, 0, Side::Bottom, 180.0), Ok(180.0));
+        let pins = [
+            (1, Point::new(197.0, 40.0)),
+            (second, Point::new(180.0, 97.0)),
+        ];
+        // Each pin directly after the action, though the second was added after the node above.
+        assert_eq!(found(&mut graph).1, vec![0, 1, second, 2]);
+        for (_, at) in pins {
+            assert_eq!(
+                graph.hit_at(at, 1.0, Level::Near, false),
+                Some(Target::Node(2))
+            );
+        }
+        let container = graph
+            .add_node_in(CANVAS, true, [-500.0, -500.0, 2000.0, 2000.0])
+            .unwrap();
+        graph.move_into(0, container).unwrap();
+        // The action takes the next rank and lies above the node, its pins directly after it.
+        assert_eq!(found(&mut graph), (vec![container], vec![2, 0, 1, second]));
+        for (pin, at) in pins {
+            assert_eq!(
+                graph.hit_at(at, 1.0, Level::Near, false),
+                Some(Target::Node(pin))
+            );
+        }
+        let beside = Point::new(170.0, 50.0);
+        assert_eq!(
+            graph.hit_at(beside, 1.0, Level::Near, false),
+            Some(Target::Node(0))
+        );
+    }
+
+    #[test]
     fn a_border_node_is_removed_alone_or_with_its_node_and_its_slot_taken_again_is_none() {
         // Verifies: ARCH-border-nodes-ride-sides
         let mut graph = action_with_pin();

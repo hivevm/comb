@@ -2275,7 +2275,7 @@ mod tests {
 
     #[test]
     fn a_freed_slot_is_refused_by_every_export_that_takes_slots_as_a_slot_beyond_the_graph() {
-        // Verifies: ARCH-engine-edits-graph-in-place
+        // Verifies: ARCH-engine-edits-graph-in-place, ARCH-engine-edits-nested-graph
         let data = batch(
             &[("a", 0.0, 0.0), ("b", 300.0, 0.0), ("c", 600.0, 0.0)],
             &[("a-b", "a", "b"), ("b-c", "b", "c")],
@@ -2313,6 +2313,158 @@ mod tests {
         }
         assert_eq!(engine.graph.positions()[..4], [0.0, 0.0, 300.0, 0.0]);
         assert_eq!(engine.remove_edges(&[0]), Ok(vec![0]));
+    }
+
+    /// The engine of nodes a, b, and c, edge a-b, and freed slots of each kind that held what an
+    /// export reads, with the batch it was loaded from: node 2, c, which held content and was
+    /// resizable, with its border node 3 and its edges 1 and 2, the second of a measured label,
+    /// and node 4, divided into regions 5 and 6.
+    fn freed() -> (Engine, GraphBatch) {
+        use comb_engine::geometry::{Side as BoxSide, Sides};
+        use comb_engine::graph::{EdgeSpec, End, LabelPlacement};
+        use comb_engine::stroke::{Arrowhead, EdgeStyle};
+        let data = batch(
+            &[("a", 0.0, 0.0), ("b", 300.0, 0.0), ("c", 600.0, 0.0)],
+            &[("a-b", "a", "b"), ("b-c", "b", "c")],
+        );
+        let mut engine = Engine::new();
+        engine.graph = graph_of(&data).unwrap();
+        let graph = &mut engine.graph;
+        let label = LabelPlacement {
+            t: 0.5,
+            offset: 0.0,
+        };
+        let style = EdgeStyle {
+            color: 0,
+            dash: None,
+            arrow: Arrowhead::None,
+            lightning: false,
+        };
+        let labelled = EdgeSpec {
+            sides: Sides::default(),
+            source: End::Node(1),
+            target: End::Node(2),
+            labels: vec![label],
+            style,
+        };
+        assert_eq!(graph.add_edge(labelled), Ok(2));
+        assert_eq!(graph.set_label_size(2, 0, 20.0, 10.0), Ok(()));
+        assert_eq!(graph.add_node(0.0, 0.0, 10.0, 10.0), Ok(3));
+        assert_eq!(graph.attach(3, 2, BoxSide::Right, 10.0), Ok(10.0));
+        graph.set_sizing(2, None, true).unwrap();
+        assert_eq!(graph.add_node(0.0, 400.0, 300.0, 200.0), Ok(4));
+        graph.divide(4, Some(Axis::Across), 0.0).unwrap();
+        for _ in 0..2 {
+            let region = graph.add_node_in(4, true, [0.0, 0.0, 100.0, 0.0]).unwrap();
+            graph.mark_region(region, false, None).unwrap();
+        }
+        graph.arrange(4);
+        assert_eq!(
+            engine.remove_nodes(&[2, 4]),
+            Ok(vec![5, 2, 4, 5, 6, 3, 1, 2])
+        );
+        (engine, data)
+    }
+
+    /// The rectangle of a mesh the moving layer makes, at the near level.
+    const MESHED: MeshAt = MeshAt {
+        rect: Rect {
+            min_x: -1000.0,
+            min_y: -1000.0,
+            max_x: 1000.0,
+            max_y: 1000.0,
+        },
+        level: Level::Near,
+        pixel: 1.0,
+        origin: Point { x: 0.0, y: 0.0 },
+    };
+
+    #[test]
+    fn a_freed_node_slot_is_refused_or_answered_for_by_every_other_export_as_one_beyond_the_graph()
+    {
+        // Verifies: ARCH-engine-edits-nested-graph
+        // The exports the first test leaves out, each called past the reading of its generated
+        // values where it takes one, on each freed node slot and on slot 99 beyond the graph.
+        use graph_data::tests::titled;
+        let (mut engine, data) = freed();
+        let no_node = |slot| CallRefusal::Slot(SlotError::NoNode { slot });
+        let patch = NodePatch(vec![("content".to_owned(), titled("t").into())]);
+        for slot in [2, 3, 4, 5, 99] {
+            assert_eq!(engine.content(slot).err(), Some(no_node(slot)));
+            assert_eq!(engine.inner_of(slot), Err(no_node(slot)));
+            let from = [0.0, 0.0, 300.0, 200.0];
+            let resized = engine.resize(slot, Handle::Right, &from, [10.0, 0.0]);
+            assert_eq!(resized, Err(no_node(slot)));
+            assert_eq!(engine.slide(slot, 600.0, 0.0), Err(no_node(slot)));
+            let updated = engine.update_with(slot, "c", &patch, &[]);
+            assert_eq!(updated, Err(no_node(slot)));
+            let moved = engine.move_line(slot, 50.0);
+            assert_eq!(moved, Err(LineRefusal::NoNode { slot }));
+            assert_eq!(engine.regions_of(slot), Vec::<u32>::new());
+            assert_eq!(engine.border_of(slot), Vec::<f64>::new());
+            assert_eq!(engine.edges_at(&[0, slot]), Err(SlotError::NoNode { slot }));
+            let (edges, mesh) = (&mut engine.moving_edges, &mut engine.moving);
+            let meshed = engine.graph.mesh_at(&[0, slot], &[], &MESHED, edges, mesh);
+            assert_eq!(meshed, Err(GraphSlotError::NoNode { slot }));
+            let added = add_edge_to(&mut engine.graph, &data.edges[0], 0, slot, false);
+            let refused = EdgeRefusal::Slot(GraphSlotError::NoNode { slot });
+            assert_eq!(added, Err(refused));
+            // No resize handle of a freed node, and a press where it lay finds what lies there.
+            let corner = Point::new(600.0, 0.0);
+            assert_eq!(engine.graph.handle_at(corner, 1.0, Level::Near, slot), None);
+            let pressed = engine.hit_below(Point::new(605.0, 30.0), 1.0, DetailLevel::Near, false);
+            assert_eq!(pressed, Hit::None);
+        }
+    }
+
+    #[test]
+    fn a_node_into_or_onto_a_freed_node_is_refused_as_into_or_onto_one_beyond_the_graph() {
+        // Verifies: ARCH-engine-edits-nested-graph
+        type Nest = fn(u32) -> (Option<u32>, Option<u32>);
+        let (mut engine, data) = freed();
+        // A border node of c, which went.
+        let mut pin = batch(&[("p", 0.0, 0.0)], &[]).nodes.remove(0);
+        pin.x = None.into();
+        pin.y = None.into();
+        pin.attached_to = Some("c".to_owned()).into();
+        pin.side = Some(Side::Right).into();
+        pin.offset = Some(10.0).into();
+        let nests: [(&NodeInput, u32, Nest); 2] = [
+            (&data.nodes[0], 4, |s| (Some(s), None)),
+            (&pin, 2, |s| (None, Some(s))),
+        ];
+        for (node, freed, nest) in nests {
+            let beyond = engine.add(node, nest(99)).unwrap_err();
+            assert_eq!(engine.add(node, nest(freed)), Err(beyond));
+        }
+        // A move into a freed container, as into one beyond the graph.
+        for slot in [4, 99] {
+            let refused = MoveIntoRefusal::Container(ContainerError::NoContainer { slot });
+            assert_eq!(engine.move_into(0, Some(slot)), Err(refused));
+        }
+        assert_eq!(engine.graph.nodes_in_use(), 2);
+    }
+
+    #[test]
+    fn a_freed_edge_slot_is_refused_or_answered_for_by_every_other_export_as_one_beyond_the_graph()
+    {
+        // Verifies: ARCH-engine-edits-nested-graph
+        let (mut engine, _) = freed();
+        for slot in [1, 2, 99] {
+            let no_edge = || SlotError::NoEdge { slot };
+            assert_eq!(engine.edge_removal_of(&[0, slot]), Err(no_edge()));
+            assert_eq!(engine.set_label_size(slot, 0, 20.0, 10.0), Err(no_edge()));
+            assert_eq!(engine.label_point(slot, 0), Vec::<f64>::new());
+            let moved = engine.move_label(slot, 0, 450.0, 30.0);
+            assert_eq!(moved, Err(CallRefusal::Slot(no_edge())));
+            let updated = update_edge_in(&mut engine.graph, slot, "b-c", EdgePatch::default());
+            let refused = EdgeRefusal::Slot(GraphSlotError::NoEdge { slot });
+            assert_eq!(updated, Err(refused));
+            let (edges, mesh) = (&mut engine.moving_edges, &mut engine.moving);
+            let meshed = engine.graph.mesh_at(&[0], &[slot], &MESHED, edges, mesh);
+            assert_eq!(meshed, Err(GraphSlotError::NoEdge { slot }));
+        }
+        assert_eq!(engine.graph.positions()[..4], [0.0, 0.0, 300.0, 0.0]);
     }
 
     #[test]
