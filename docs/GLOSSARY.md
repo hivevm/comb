@@ -82,8 +82,9 @@ inside a longer term of this glossary, such as "shape" in **Node shape**, is no 
   _Avoid:_ self-edge in prose, self-loop, reflexive edge.
 - **Mesh budget** — the most vertices the edge mesh of one query may hold.
 - **Moving layer** — what a drag, or an edit at the far level, draws above the edges and the
-  particles while the scene keeps its query: the edges at the dragged nodes and the added edges,
-  and at the far level the dragged and the added nodes' particles.
+  particles while the scene keeps its query: the edges at the dragged nodes, the edges that end on
+  them, and the added edges, and at the far level the dragged and the added nodes' particles, a
+  container's above the particles of containers.
 - **Node** — an item on the canvas, drawn in its node shape, that stands for one element of the
   host application's graph. A vertex is a point of the edge mesh, never a node.
   _Avoid:_ graph vertex, block.
@@ -93,9 +94,10 @@ inside a longer term of this glossary, such as "shape" in **Node shape**, is no 
   hourglass.
   It is a property of a node, not a diagram element of its own.
   _Avoid:_ shape alone, figure, symbol.
-- **Node kind** — what a node of the UML example is, a class, an interface, an abstract class, a
-  package, a state, an initial state, a final state, or a choice, set when the node is created and
-  kept with its classifier or its state; the rules of connection ask it. The example's record of a
+- **Node kind** — what a node of the UML example is: a classifier kind (a class, an interface, an
+  abstract class, or a package), a notation element of the state diagram, an activity node, or a
+  node of the use case diagram (an actor, a use case, a subject, or a comment), set when the node is
+  created and kept with its record; the rules of connection ask it. The example's record of a
   classifier also carries a package of the package diagram, its members none, though UML does not
   count a package as a classifier.
 - **Node content** — the host application's description of what a node shows, as a list of
