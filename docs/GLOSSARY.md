@@ -116,7 +116,11 @@ inside a longer term of this glossary, such as "shape" in **Node shape**, is no 
 - **Query origin** — the world point near a query's rectangle relative to which the query hands
   over its vertex positions and label points, and at whose screen point the shell draws the world.
 - **Region** — one of the parts a node is divided into, side by side or one above the other, each a
-  container of its own, such as an activity partition or an orthogonal region in UML.
+  container of its own, such as an activity partition or an orthogonal region in UML. A node so
+  divided is a *divided node*; it divides `"across"`, its regions side by side, or `"down"`, one
+  above the other. The *line between regions* is the line between two neighbouring regions, which
+  the user drags to share their size anew. A named region draws its name in its *name band*, a
+  strip along its start.
 - **Resize handle** — a mark on a side or corner of a selected node that the user drags to resize
   the node.
 - **Runner kind** — the CPU model a benchmark run records of the machine it ran on; runs are
@@ -134,6 +138,8 @@ inside a longer term of this glossary, such as "shape" in **Node shape**, is no 
   which never changes the node kind.
 - **Selection** — the one diagram element the user has picked on the canvas, which the sidebar
   edits and a delete removes.
+- **Separator** — a row of node content that holds no element and is drawn as a line across the
+  node, such as the line between a UML class's attributes and its operations.
 - **Shaped graph** — the graph the benchmark measures beside the metric tree, named `shaped`: the
   metric tree's nodes and edges in the same columns and order, the nodes in the node shapes in turn,
   each centred on its row and column, the rows spaced for the tallest node so that no two nodes
@@ -152,9 +158,10 @@ inside a longer term of this glossary, such as "shape" in **Node shape**, is no 
   which slots a rectangle meets.
 - **Trap** — WebAssembly aborting a call of the engine, as when its memory runs out; after a trap
   the engine is lost for the page, and Comb refuses every later call that needs it.
-- **Veto** — a callback of the host application that Comb asks before it makes a connection or a
-  deletion of the user's, and that allows a deletion only by returning `true`, a connection only by
-  returning the new edge's identifier.
+- **Veto** — a callback of the host application that Comb asks before it makes a connection, a
+  deletion, or a move into a container of the user's (`canConnect`, `canDelete`, `canMoveInto`); it
+  allows a deletion or a move only by returning `true`, a connection only by returning the new
+  edge's identifier.
 - **Viewport** — the part of the world that the canvas currently shows, given by pan and zoom.
 - **World limit** — how far from the world's origin the graph may lie, 2^120 world units on each
   axis: every node, its far side included, and every label offset; graph data beyond it is

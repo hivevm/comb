@@ -61,52 +61,56 @@ identifiers of one load that hold more than 64,000,000 code units together, a no
 `hourglass`, and an outline other than `"solid"`, `"none"`, and a dash pattern an edge's rule allows
 (`invalidField`), content in a filled node shape, a circle, a ringed circle, a bar, a crossed
 circle, or a cross (`contentInFilledShape`), and an edge side other than `top`, `right`, `bottom`,
-`left`, and `outline`. `api` refuses, against the store's map from identifiers to slots
+`left`, and `outline`, a border node attached to itself or to another border node, one with
+`isContainer`, regions that are not empty, or `resizable`, and one with `x`, `y`, or `container`
+beside `attachedTo` (`invalidAttachment`), and an end on an edge that ends on an edge, on itself, or
+in a cycle (`invalidEdgeEnd`). `api` refuses, against the store's map from identifiers to slots
 (ARCH-one-workspace-per-example), an identifier `updateNode` or `removeNodes` names that the graph
 does not hold (`unknownNode`), one `updateEdge` or `removeEdges` names (`unknownEdge`), one
 `addNode`, `addEdge`, or a user's connection adds that it holds already (`duplicateNode`,
-`duplicateEdge`), and an end of an added edge it does not hold (`missingNode`). The bridge crate
-checks the node `addNode` and the edge `addEdge` hand over as a load checks one, refuses an edge
-from a node to itself (`selfEdge`) unless `CombOptions.allowLoops` allows loops, which a load
-accepts either way (API-edges-dock-side-or-outline), and an addition past the 1,000,000 nodes or
-edges a load may hold, and `api` has it check the code units of identifiers the store counts with
-the new ones. The engine keeps the count of the code units of the strings of content its nodes hold,
-set by a load and moved by every addition, patch, and removal of a node, and refuses an addition or
-a patch whose strings would pass the budget a load is held to (`contentBudgetExceeded`), before
-anything changes. It refuses a patch of `updateNode` that holds a field other than `content`,
-`height`, or `resizable`, a patch of `updateEdge` that holds a field other than a colour, dash,
-arrowhead, lightning bolt, labels, or side, `label` among them (`unknownEdgePatchField`), and a
-field it would refuse in a load. Label texts and label backgrounds are checked there but not kept by
-the engine; the content of a node it keeps, to lay it out. `api` reads the host's graph data once,
-in JavaScript, into a snapshot (`api/snapshot.ts`) of plain data whose every field is a primitive of
-the type it expects, any other value replaced by `false`, and whose texts and identifiers are cut
-one code unit beyond the bridge's limits, so that no value of the host application and none of its
-code reaches the engine, and a text of any length costs no more than that to check. The bridge's
-`loadGraph`, `addNode`, `updateNode`, `addEdge`, and `updateEdge` take only the types
-`GraphSnapshot`, `NodeSnapshot`, `PlainPatch`, `EdgeSnapshot`, and `PlainEdgePatch` that the
-snapshot's functions return, so that the type checker refuses the host's graph data, node, edge, or
-patch handed to the bridge directly (`bridge/snapshot-only.test.ts`). The bridge checks the counts
-of nodes and edges before anything is copied, then the code units of the identifiers, counted while
-the snapshot is read and read no further once they exceed the budget, then the code units of the
-texts of content, counted and stopped at their budget alike (`checkContentBudget`, naming the node
-whose text passed it), then the snapshot, and the store keeps the snapshot's edges, whose sides
-`api` fills in where the host leaves them out, `right` to `left`, and `top` for both of a loop, and
-of each node its identifier, width, and node shape, which `api` fills in as `rectangle` where the
-host leaves it out; a node's content is the engine's alone, which the snapshot of a load writes
-straight into its columns, and which the engine's `content` builds when inspection or a change Comb
-tells asks for it. One walk reads a node's content, `walkContent`, and hands what it read to a sink:
-a load's writes its columns and counts its texts against the budget, that of `addNode`,
-`updateNode`, and `heightOf` builds the plain data serde reads. A load's nodes and edges cross as
-columns the snapshot writes while it reads them, through the bridge's `nodeColumns` and
-`edgeColumns`: each string field, the identifiers, sources, targets, label identifiers and texts,
-the texts of content, and its names, the actions' identifiers, as pieces of at most 2^28 UTF-16 code
-units, each ending where a value ends, with its boundaries in UTF-16 code units across all pieces,
-per label text, text, and name of content whether it is a string, the numbers as `Float64Array`, an
-arrowhead, the sides, a node shape, an element's kind, and a text's role as byte codes, the
-boundaries of each node's rows and each row's elements and of each edge's labels as `Uint32Array`,
-whether a label's background, a dash, and a lightning bolt are present as bytes, and the first value
-refused by its type as its position, a shape of content the snapshot cannot flatten with its row and
-column, a field of a label with the label's place in its edge's list
+`duplicateEdge`), and an end of an added edge it does not hold (`missingNode`), or an edge an added
+edge ends on that it does not hold (`missingEdge`). The bridge crate checks the node `addNode` and
+the edge `addEdge` hand over as a load checks one, refuses an edge from a node to itself
+(`selfEdge`) unless `CombOptions.allowLoops` allows loops, which a load accepts either way
+(API-edges-dock-side-or-outline), and an addition past the 1,000,000 nodes or edges a load may hold,
+and `api` has it check the code units of identifiers the store counts with the new ones. The engine
+keeps the count of the code units of the strings of content its nodes hold, set by a load and moved
+by every addition, patch, and removal of a node, and refuses an addition or a patch whose strings
+would pass the budget a load is held to (`contentBudgetExceeded`), before anything changes. It
+refuses a patch of `updateNode` that holds a field other than `content`, `height`, `resizable`,
+`divide`, `regions`, `side`, `offset`, or `outline`, a patch of `updateEdge` that holds a field
+other than a colour, dash, arrowhead, lightning bolt, labels, or side, `label` among them
+(`unknownEdgePatchField`), and a field it would refuse in a load. Label texts and label backgrounds
+are checked there but not kept by the engine; the content of a node it keeps, to lay it out. `api`
+reads the host's graph data once, in JavaScript, into a snapshot (`api/snapshot.ts`) of plain data
+whose every field is a primitive of the type it expects, any other value replaced by `false`, and
+whose texts and identifiers are cut one code unit beyond the bridge's limits, so that no value of
+the host application and none of its code reaches the engine, and a text of any length costs no more
+than that to check. The bridge's `loadGraph`, `addNode`, `updateNode`, `addEdge`, and `updateEdge`
+take only the types `GraphSnapshot`, `NodeSnapshot`, `PlainPatch`, `EdgeSnapshot`, and
+`PlainEdgePatch` that the snapshot's functions return, so that the type checker refuses the host's
+graph data, node, edge, or patch handed to the bridge directly (`bridge/snapshot-only.test.ts`). The
+bridge checks the counts of nodes and edges before anything is copied, then the code units of the
+identifiers, counted while the snapshot is read and read no further once they exceed the budget,
+then the code units of the texts of content, counted and stopped at their budget alike
+(`checkContentBudget`, naming the node whose text passed it), then the snapshot, and the store keeps
+the snapshot's edges, whose sides `api` fills in where the host leaves them out, `right` to `left`,
+and `top` for both of a loop, and of each node its identifier, width, and node shape, which `api`
+fills in as `rectangle` where the host leaves it out; a node's content is the engine's alone, which
+the snapshot of a load writes straight into its columns, and which the engine's `content` builds
+when inspection or a change Comb tells asks for it. One walk reads a node's content, `walkContent`,
+and hands what it read to a sink: a load's writes its columns and counts its texts against the
+budget, that of `addNode`, `updateNode`, and `heightOf` builds the plain data serde reads. A load's
+nodes and edges cross as columns the snapshot writes while it reads them, through the bridge's
+`nodeColumns` and `edgeColumns`: each string field, the identifiers, sources, targets, label
+identifiers and texts, the texts of content, and its names, the actions' identifiers, as pieces of
+at most 2^28 UTF-16 code units, each ending where a value ends, with its boundaries in UTF-16 code
+units across all pieces, per label text, text, and name of content whether it is a string, the
+numbers as `Float64Array`, an arrowhead, the sides, a node shape, an element's kind, and a text's
+role as byte codes, the boundaries of each node's rows and each row's elements and of each edge's
+labels as `Uint32Array`, whether a label's background, a dash, and a lightning bolt are present as
+bytes, and the first value refused by its type as its position, a shape of content the snapshot
+cannot flatten with its row and column, a field of a label with the label's place in its edge's list
 ([API-bridge-takes-serde-and-columns](adr/API-bridge-takes-serde-and-columns.md));
 serde-wasm-bindgen converts nothing of a load. A string with a lone surrogate, which the bridge
 would read as U+FFFD, `api` hands over as `false`, so that it is refused. `updateNode` and
@@ -299,7 +303,8 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   names the edges at given nodes without removing anything, `removalOf` names the nodes and the
   edges a removal of given nodes takes along, `edgeRemovalOf` the edges a removal of given edges
   takes along, the edges that end on them among them, `removeNodes` removes nodes, everything they
-  hold, and the edges at any of them and returns those nodes' and edges' slots, `removeEdges`
+  hold, their border nodes, the edges at any of them, and the edges that end on those edges, and
+  returns those nodes' and edges' slots, `removeEdges`
   removes edges and returns their slots, `translate` moves nodes, a container with what it holds,
   each as far as keeps it within the world's limit, what it holds at the sum of its world position
   and their positions relative to it, which the engine keeps, `place` puts a node at a world
