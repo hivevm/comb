@@ -161,10 +161,12 @@ export type AddedEdge = Extract<GraphChange, { kind: "edgeAdded" }>["edge"];
  *  name alone; a state's name and its behaviours, internal transitions, and deferred triggers; a
  *  submachine state's name and the state machine it refers to; the lines of a comment; an
  *  expansion region's mode; a use case's name and extension points; a pin's name, or a value
- *  pin's value, and whether it streams; the names of a conditional node's clauses; or nothing. */
+ *  pin's value, and whether it streams; the names of a conditional node's clauses; the frame's
+ *  name and the names of its partitions; or nothing. */
 export type NodeForm =
   | "classifier"
   | "name"
+  | "name-and-partitions"
   | "behaviours"
   | "name-and-machine"
   | "lines"
@@ -187,9 +189,21 @@ export type EdgeForm =
   | "multiplicities"
   | "none";
 
+/** What the palette's entry `partition` drops: no node, but a partition that divides the empty
+ *  partition it is dropped onto, or that the frame it is dropped onto takes beside its others. */
+export const PARTITION = "partition";
+
+/** A kind the descriptor of a diagram names: its name in the palette, and the form the sidebar
+ *  edits a node of it in; `palette: false` where the palette does not drop it, as the notation
+ *  diagram's frame, which the sidebar edits. The partition, which is no node, has no form. */
+export type PaletteEntry =
+  | { kind: NodeKind; name: string; form: NodeForm; palette?: false }
+  | { kind: typeof PARTITION; name: string };
+
 /** What makes a diagram of the example what it is, in one place: its identifier and its name in
  *  the choice of diagram, how it is built, what its count names, the kinds of node the palette
- *  drops, each with its name there and the form the sidebar edits it in, the kind a connection
+ *  drops or the sidebar edits, each with its name there and the form the sidebar edits it in, and
+ *  the partition where the palette drops one, the kind a connection
  *  adds and how it docks, the form the sidebar edits an edge in, what the sidebar's headings call
  *  a selected node and edge, whether the legend of the kinds of relationship tells its edges
  *  apart, and the labels the legend names for a kind whose edges carry others than its own. The
@@ -200,7 +214,7 @@ export interface DiagramDescriptor {
   name: string;
   build: (heightOf: Comb["heightOf"]) => DiagramData;
   nouns: readonly [string, string];
-  nodes: readonly { kind: NodeKind; name: string; form: NodeForm }[];
+  nodes: readonly PaletteEntry[];
   connected: RelationshipKind;
   /** The kind a connection adds between nodes of kinds that add another than `connected`, none
    *  where it adds `connected`. */

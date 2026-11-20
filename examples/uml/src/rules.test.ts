@@ -142,6 +142,36 @@ const REFUSED_ACTIVITY: ReadonlySet<string> = new Set(
     ),
 );
 
+/** The object flow or the control flow a connection between `source` and `target` adds, as the
+ *  conventions say: an object flow where an end is an object node. */
+const flowOf = (source: string, target: string) =>
+  [source, target].some((kind) => (OBJECT_NODES as readonly string[]).includes(kind))
+    ? "object-flow"
+    : "control-flow";
+
+/** The conventions' table of the kinds the flow's kind select adds besides: an interrupting edge
+ *  refused where the flow between its ends is, being that flow interrupting its region; an
+ *  exception handler refused but from an action, which it protects, to an input pin, which takes
+ *  the exception into its handler's body. */
+for (const source of ACTIVITY_KINDS)
+  for (const target of ACTIVITY_KINDS) {
+    const all = REFUSED_ACTIVITY as Set<string>;
+    if (all.has(`${flowOf(source, target)} ${source} ${target}`))
+      all.add(`interrupting-edge ${source} ${target}`);
+    if (!(ACTIONS as readonly string[]).includes(source) || target !== "input-pin")
+      all.add(`exception-handler ${source} ${target}`);
+  }
+
+test("the flow's kind select offers, of the control flow, the object flow, the interrupting edge, and the exception handler, those the table allows between its ends", () => {
+  const FLOW_KINDS = ["control-flow", "object-flow", "interrupting-edge", "exception-handler"];
+  const offered = (source: string, target: string) =>
+    FLOW_KINDS.filter((kind) => allows({ source, target, kind } as Parameters<typeof allows>[0]));
+  expect(offered("action", "send-signal-action")).toEqual(["control-flow", "interrupting-edge"]);
+  expect(offered("output-pin", "object-node")).toEqual(["object-flow", "interrupting-edge"]);
+  expect(offered("action", "input-pin")).toEqual(["exception-handler"]);
+  expect(offered("input-pin", "action")).toEqual([]);
+});
+
 test("an object flow at an action says objects pass through its pins, at an expansion region through its expansion nodes", () => {
   for (const target of ["action", "expansion-region"] as const)
     expect(refusal({ source: "object-node", target, kind: "object-flow" })).toBe(
@@ -284,7 +314,10 @@ test("the node kinds are a class, an interface, an abstract class, a package, an
 const DIAGRAMS = [
   [CLASSIFIER_KINDS, RELATIONSHIP_KINDS],
   [STATE_KINDS, ["transition", "anchor"]],
-  [ACTIVITY_KINDS, ["control-flow", "object-flow", "anchor"]],
+  [
+    ACTIVITY_KINDS,
+    ["control-flow", "object-flow", "interrupting-edge", "exception-handler", "anchor"],
+  ],
   [USE_CASE_KINDS, USE_CASE_RELATIONSHIPS],
 ] as const;
 
@@ -319,8 +352,9 @@ test("each refusal of the activity diagram says why in a sentence of its own, a 
   // A comment, the frame, an interruptible region, a parameter set, an output pin, an input pin, an
   // input and an output parameter node, into an initial node or a value pin, out of a final node,
   // a control flow at an object node, an object flow at an action or out of an initial node, an
-  // anchor from no comment, and one onto a comment.
-  expect(reasons.size).toBe(16);
+  // anchor from no comment, one onto a comment, and an exception handler from no action or onto no
+  // input pin.
+  expect(reasons.size).toBe(18);
   for (const reason of reasons) expect(reason).toMatch(/^[A-Z].*\.$/);
   for (const reason of reasons)
     if (reason.includes("UML 2.5.1")) expect(reason).toMatch(/\((\w+_\w+)(, \w+_\w+)*\)\.$/);

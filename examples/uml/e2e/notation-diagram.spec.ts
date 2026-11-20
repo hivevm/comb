@@ -8,10 +8,11 @@
 // `{stream}` beside it, and a parameter set, a dashed border node around two pins, which follow
 // their action as it moves (ARCH-border-nodes-ride-sides). Its palette drops each element in the
 // nested partition under the pointer or on an action's side, a parameter set there around two new
-// pins and refused elsewhere; its sidebar edits a value, `{stream}`, and the names of an action and
-// a clause.
+// pins and refused elsewhere, and a partition onto the frame or an empty partition, refused
+// elsewhere; its sidebar edits a value, `{stream}`, a comment's lines, the names of an action, a
+// call behavior action, and a clause, and the names of the frame's partitions.
 import { expect, test, type Page } from "@playwright/test";
-import type { NodeData } from "comb";
+import type { NodeData, RegionData } from "comb";
 import { clickWorld, open, pagePoint, setViewport } from "./shared";
 
 /** Each element of the notation diagram, by the identifier of its node or region: its node shape,
@@ -374,6 +375,11 @@ const PALETTE: [
   { shape: string; content: string[][]; dashed?: true; regions?: string[]; beside?: string },
 ][] = [
   ["Action", "action", { shape: "rounded-rectangle", content: [["NewAction"]] }],
+  [
+    "Call behavior action",
+    "call-behavior-action",
+    { shape: "rounded-rectangle", content: [["NewBehavior", "icon"]] },
+  ],
   ["Input pin", "input-pin", { shape: "rectangle", content: [], beside: "in" }],
   ["Output pin", "output-pin", { shape: "rectangle", content: [], beside: "out" }],
   ["Value pin", "value-pin", { shape: "rectangle", content: [], beside: "0" }],
@@ -406,7 +412,9 @@ const PALETTE: [
   ["Initial node", "initial-node", { shape: "circle", content: [] }],
   ["Activity final", "activity-final", { shape: "ringed-circle", content: [] }],
   ["Flow final", "flow-final", { shape: "crossed-circle", content: [] }],
+  ["Decision", "decision-node", { shape: "diamond", content: [] }],
   ["Merge", "merge-node", { shape: "diamond", content: [] }],
+  ["Comment", "activity-comment", { shape: "note", content: [["A comment"]] }],
 ];
 
 /** The texts of the content of `node`, a drawn node. */
@@ -420,7 +428,11 @@ test("the palette offers each element of the notation diagram", async ({ page })
   await page.goto("/");
   await open(page);
   await chooseNotation(page);
-  await expect(page.locator("#palette li:visible")).toHaveText(PALETTE.map(([name]) => name));
+  // A partition last, which divides a partition or adds one to the frame rather than adding a node.
+  await expect(page.locator("#palette li:visible")).toHaveText([
+    ...PALETTE.map(([name]) => name),
+    "Partition",
+  ]);
 });
 
 for (const [name, kind, added] of PALETTE.filter(([, , each]) => each.beside !== undefined))
@@ -698,4 +710,198 @@ test("an element dropped on the band of Comb's partition, which holds partitions
   await dropAtWorld(page, "initial-node", comb!.x + comb!.width / 2, comb!.y + 12);
   expect(await page.evaluate(() => window.uml.exampleGraph())).toEqual(before);
   await expect(page.locator("#connection-refusal")).toHaveText(HOLDS_ALONE);
+});
+
+/** The names the bands of regions `ids` show, the view as it stands. */
+async function bandsOf(page: Page, ids: readonly string[]) {
+  return page.evaluate(async (wanted) => {
+    await window.uml.comb.whenRendered();
+    const nodes = window.uml.inspect().nodes;
+    return wanted.map((id) => nodes.find((node) => node.id === id)?.region?.band?.name);
+  }, ids);
+}
+
+/** Why the example refuses a partition dropped neither on the frame nor on a partition, and one
+ *  dropped onto the partition of the user, which holds elements, written here from
+ *  docs/CONVENTIONS.md. */
+const NO_PARTITION =
+  "A partition divides an empty partition or adds one to the frame; drop it there.";
+const HOLDS_ELEMENTS = "User holds elements; only an empty partition is divided.";
+
+test("a partition dropped onto the frame adds one more partition, onto an empty partition divides it into two nested ones, and elsewhere is refused and the sidebar says why", async ({
+  page,
+}) => {
+  // Verifies: G-20, G-1, ARCH-regions-are-container-slots
+  await page.goto("/");
+  await open(page);
+  await chooseNotation(page);
+  const { drag, user, comb, host } = await boxesOf(page, ["drag", "user", "comb", "host"]);
+  const refusal = page.locator("#connection-refusal");
+  const before = await page.evaluate(() => window.uml.exampleGraph());
+  // On the canvas right of the frame, onto the user's partition, and onto Comb's band, above the
+  // partitions it holds: nothing changes, and the sidebar says why.
+  const refused: [number, number, string][] = [
+    [drag!.x + drag!.width + 300, drag!.y + 300, NO_PARTITION],
+    [user!.x + user!.width / 2, user!.y + 600, HOLDS_ELEMENTS],
+    [comb!.x + comb!.width / 2, comb!.y + 12, HOLDS_ALONE],
+  ];
+  for (const [x, y, why] of refused) {
+    await dropAtWorld(page, "partition", x, y);
+    expect(await page.evaluate(() => window.uml.exampleGraph()), why).toEqual(before);
+    await expect(refusal).toHaveText(why);
+  }
+  // Onto the frame's heading, above its partitions: a fourth partition, right of the host
+  // application's, which keeps its width; the sidebar's reason goes.
+  await dropAtWorld(page, "partition", drag!.x + drag!.width / 2, drag!.y + 10);
+  await expect(refusal).toBeHidden();
+  const regionsOf = async () =>
+    (await page.evaluate(() => window.uml.exampleGraph())).nodes.find(({ id }) => id === "drag")!
+      .regions!;
+  expect((await regionsOf()).map(({ id, name }) => [id, name])).toEqual([
+    ["user", "User"],
+    ["comb", "Comb"],
+    ["host", "Host application"],
+    ["partition-1", "Partition 4"],
+  ]);
+  const added = await boxesOf(page, ["host", "partition-1"]);
+  expect(added.host!.width).toBeCloseTo(host!.width, 3);
+  expect(added["partition-1"]!.x).toBeCloseTo(added.host!.x + added.host!.width, 3);
+  expect(await bandsOf(page, ["partition-1"])).toEqual(["Partition 4"]);
+  // Onto that partition, which holds nothing: two nested partitions side by side across it, an
+  // equal share each, below its band.
+  const empty = added["partition-1"]!;
+  await dropAtWorld(page, "partition", empty.x + empty.width / 2, empty.y + empty.height / 2);
+  const divided = (await regionsOf()).at(-1)!;
+  expect(divided.divide).toBe("across");
+  expect(divided.regions?.map(({ id, name }) => [id, name])).toEqual([
+    ["partition-2-1", "Partition 1"],
+    ["partition-2-2", "Partition 2"],
+  ]);
+  const nested = await boxesOf(page, ["partition-1", "partition-2-1", "partition-2-2"]);
+  const [outer, first, second] = ["partition-1", "partition-2-1", "partition-2-2"].map(
+    (id) => nested[id]!,
+  );
+  for (const box of [first!, second!]) {
+    expect(within(box, outer!)).toBe(true);
+    expect(box.width).toBeCloseTo(outer!.width / 2, 3);
+    expect(box.y).toBeGreaterThan(outer!.y);
+  }
+  expect(second!.x).toBeCloseTo(first!.x + first!.width, 3);
+  expect(await bandsOf(page, ["partition-1", "partition-2-1", "partition-2-2"])).toEqual([
+    "Partition 4",
+    "Partition 1",
+    "Partition 2",
+  ]);
+});
+
+/** Why the sidebar refuses the partitions of the frame "Drag a node" when they are not one name
+ *  per partition, written here from the human's decision of 2026-11-19. */
+const PARTITIONS_REFUSED =
+  "Not taken: name each of the 5 partitions, one per line; the diagram keeps what it had.";
+
+test("the sidebar renames the frame's partitions, the nested ones among them, which their bands show, and refuses another count of names, or one left empty, and says why", async ({
+  page,
+}) => {
+  // Verifies: G-20, G-5, ARCH-regions-are-container-slots
+  await page.goto("/");
+  await open(page);
+  await chooseNotation(page);
+  // Inside the frame's tab: Comb selects no region on its own, but the node it divides.
+  await select(page, "drag", 20);
+  await expect(page.locator("#name")).toHaveValue("Drag a node");
+  const partitions = page.locator("#partitions");
+  await expect(partitions).toHaveValue("User\nComb\n  Shell\n  Engine\nHost application");
+  const ids = ["user", "comb", "shell", "engine", "host"];
+  /** The names of the frame's partitions, as the example's copy and the canvas's bands hold them,
+   *  depth first. */
+  const names = async () => {
+    const flat = (regions: readonly RegionData[]): RegionData[] =>
+      regions.flatMap((region) => [region, ...flat(region.regions ?? [])]);
+    const { nodes } = await page.evaluate(() => window.uml.exampleGraph());
+    const copy = flat(nodes.find(({ id }) => id === "drag")!.regions!).map(({ name }) => name);
+    // The whole frame in view, so that every band is drawn.
+    await setViewport(page, { x: 20, y: 20, scale: 0.4 });
+    return { copy, bands: await bandsOf(page, ids) };
+  };
+  const kept = await names();
+  for (const text of ["Users\nComb", "Users\nComb\n\nEngine\nHost"]) {
+    await partitions.fill(text);
+    await expect(partitions).toHaveAttribute("aria-invalid", "true");
+    await expect(page.locator("#partitions-refusal")).toHaveText(PARTITIONS_REFUSED);
+    expect({ text, names: await names() }).toEqual({ text, names: kept });
+  }
+  await partitions.fill("Users\nComb\nShell\nEngine core\nHost");
+  await expect(partitions).not.toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#partitions-refusal")).toHaveText("");
+  // The names taken stand as the user typed them, not refilled indented.
+  await expect(partitions).toHaveValue("Users\nComb\nShell\nEngine core\nHost");
+  const renamed = ["Users", "Comb", "Shell", "Engine core", "Host"];
+  expect(await names()).toEqual({ copy: renamed, bands: renamed });
+});
+
+test("the sidebar renames the call behavior action and edits the comment's lines, which they show, and offers nothing for the decision", async ({
+  page,
+}) => {
+  // Verifies: G-20, G-5
+  await page.goto("/");
+  await open(page);
+  await chooseNotation(page);
+  await select(page, "can-move", 10);
+  await expect(page.locator("#name")).toHaveValue("canMoveInto");
+  await page.locator("#name").fill("canMoveInto?");
+  expect(textsOf(await drawnAt(page, "can-move"))).toEqual([["canMoveInto?", "icon"]]);
+  await select(page, "veto-note", 10);
+  await expect(page.locator("#lines")).toHaveValue("A refused move tells\nno change.");
+  await page.locator("#lines").fill("A refused move\ntells no change.");
+  expect(textsOf(await drawnAt(page, "veto-note"))).toEqual([
+    ["A refused move"],
+    ["tells no change."],
+  ]);
+  // A decision shows no text, so the sidebar offers no field for it.
+  await select(page, "veto", 16);
+  await expect(page.locator("#node-form")).toBeHidden();
+  await expect(page.locator("#empty")).toBeVisible();
+});
+
+test("the frame's partitions, shown while it stays selected, follow a partition dropped onto it", async ({
+  page,
+}) => {
+  // Verifies: G-20, G-5, ARCH-regions-are-container-slots
+  await page.goto("/");
+  await open(page);
+  await chooseNotation(page);
+  await select(page, "drag", 20);
+  const { drag } = await boxesOf(page, ["drag"]);
+  await dropAtWorld(page, "partition", drag!.x + drag!.width / 2, drag!.y + 10);
+  const partitions = page.locator("#partitions");
+  await expect(partitions).toHaveValue(
+    "User\nComb\n  Shell\n  Engine\nHost application\nPartition 4",
+  );
+  await partitions.fill("User\nComb\nShell\nEngine\nHost application\nLater");
+  await expect(partitions).not.toHaveAttribute("aria-invalid", "true");
+  await setViewport(page, { x: 20, y: 20, scale: 0.4 });
+  expect(await bandsOf(page, ["partition-1"])).toEqual(["Later"]);
+});
+
+test("an edit of the frame's form Comb takes clears every mark of the form, the name's and the partitions' alike", async ({
+  page,
+}) => {
+  // Verifies: G-20, G-5
+  await page.goto("/");
+  await open(page);
+  await chooseNotation(page);
+  await select(page, "drag", 20);
+  const [name, partitions] = [page.locator("#name"), page.locator("#partitions")];
+  // The partitions refused, then the name taken: both marks go.
+  await partitions.fill("User");
+  await expect(partitions).toHaveAttribute("aria-invalid", "true");
+  await name.fill("Drag the node");
+  await expect(partitions).not.toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#partitions-refusal")).toHaveText("");
+  // The name refused, past Comb's limit of a text, then the partitions taken: both marks go.
+  await name.fill("x".repeat(1001));
+  await expect(name).toHaveAttribute("aria-invalid", "true");
+  await partitions.fill("User\nComb\nShell\nEngine\nHost");
+  await expect(name).not.toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#name-refusal")).toHaveText("");
 });

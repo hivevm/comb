@@ -191,7 +191,7 @@ export class Diagram {
 
   /** The node region `id` divides at any depth, and the regions from that node's down to `id`;
    *  none where no node has such a region. */
-  private dividing(id: string): { node: NodeData; path: RegionData[] } | undefined {
+  dividing(id: string): { node: NodeData; path: RegionData[] } | undefined {
     const pathTo = (regions: readonly RegionData[]): RegionData[] | undefined => {
       for (const region of regions) {
         if (region.id === id) return [region];
@@ -216,11 +216,9 @@ export class Diagram {
       x <= box.x + box.width &&
       y >= box.y &&
       y <= box.y + box.height;
-    const regionsIn = (regions: readonly RegionData[]): string[] =>
-      regions.flatMap((region) => [region.id, ...regionsIn(region.regions ?? [])]);
     const candidates = this.graph.nodes.flatMap((node) => [
       node.id,
-      ...regionsIn(node.regions ?? []),
+      ...depthFirst(node.regions ?? []).map((region) => region.id),
     ]);
     let deepest: { id: string; depth: number } | undefined;
     for (const id of candidates) {
@@ -307,17 +305,28 @@ export class Diagram {
     return undefined;
   }
 
-  /** Names the clauses of the conditional node `id`, its regions, one by one as `names` says, each
-   *  keeping its size and what it holds; refused, and why, where `names` names another count of
-   *  clauses or leaves one empty, as the human decided on 2026-11-19; Comb's refusal where it
+  /** Names the regions of node `id` one by one as `names` says, depth first, each keeping its
+   *  size and what it holds: a conditional node's clauses, or the frame's partitions, the nested
+   *  ones among them, as `noun` calls them; refused, and why, where `names` names another count of
+   *  regions or leaves one empty, as the human decided on 2026-11-19; Comb's refusal where it
    *  refused the names. */
-  nameClauses(id: string, names: readonly string[]): Refusal | undefined {
-    const clauses = this.node(id)?.regions ?? [];
-    if (names.length !== clauses.length || names.includes(""))
-      return { error: new Error(`name each of the ${clauses.length} clauses, one per line`) };
-    return this.patchNode(id, {
-      regions: clauses.map((clause, i) => ({ ...clause, name: names[i]! })),
-    });
+  nameRegions(
+    id: string,
+    names: readonly string[],
+    noun: "clauses" | "partitions",
+  ): Refusal | undefined {
+    const regions = this.node(id)?.regions ?? [];
+    const count = depthFirst(regions).length;
+    if (names.length !== count || names.includes(""))
+      return { error: new Error(`name each of the ${count} ${noun}, one per line`) };
+    let next = 0;
+    const named = (list: readonly RegionData[]): RegionData[] =>
+      list.map((region) => ({
+        ...region,
+        name: names[next++]!,
+        ...(region.regions ? { regions: named(region.regions) } : {}),
+      }));
+    return this.patchNode(id, { regions: named(regions) });
   }
 
   /** Replaces the content of the use case diagram's node `id` with what `next` shows, and its node
@@ -404,9 +413,9 @@ export class Diagram {
     return this.updateLabel(id, text === null ? null : labelOf(kind, text, current));
   }
 
-  /** Gives node `id` what `patch` sets, its content or the names of its regions; Comb's refusal
-   *  where it refused it. */
-  private patchNode(id: string, patch: NodePatch): Refusal | undefined {
+  /** Gives node `id` what `patch` sets, its content, or its regions and their names; Comb's
+   *  refusal where it refused it. */
+  patchNode(id: string, patch: NodePatch): Refusal | undefined {
     try {
       this.comb.updateNode(id, patch);
     } catch (error) {
@@ -564,6 +573,11 @@ function patched(edge: EdgeData, patch: EdgePatch): void {
   Object.assign(edge, rest);
   if (dash !== undefined) edge.dash = dash ?? undefined;
   if (labels !== undefined) edge.labels = labels ?? undefined;
+}
+
+/** `regions` and the regions within them, at every depth, each before those it holds. */
+export function depthFirst(regions: readonly RegionData[]): RegionData[] {
+  return regions.flatMap((region) => [region, ...depthFirst(region.regions ?? [])]);
 }
 
 /** Gives `regions`, at every depth, the sizes `sizes` names by identifier, as Comb told them. */

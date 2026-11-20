@@ -4,8 +4,9 @@
 // comment's lines; or the name alone of a package, a state list, a point, a signal, the state
 // machine, an action, an object node, a pin, a parameter, a connector, or the activity; an
 // expansion region's mode; a use case's name and extension points; a pin's name, or a value pin's
-// value, and whether it streams; the names of a conditional node's clauses, one per line, since
-// Comb selects no region on its own (ARCH-regions-are-container-slots); the selected relationship's
+// value, and whether it streams; the names of a conditional node's clauses, or the frame's name
+// and the names of its partitions, nested ones among them, one per line, since Comb selects no
+// region on its own (ARCH-regions-are-container-slots); the selected relationship's
 // kind and label, or its kind alone among those the rules allow between its ends, the selected
 // dependency's «import» or «use», the selected transition's trigger, guard, and effect, the
 // selected flow's guard and weight, or the selected association's multiplicities. A pseudostate,
@@ -13,9 +14,9 @@
 // edge shows, and what its heading calls it, the descriptor of the diagram shown says. Each edit
 // shows on the canvas at once. An edit Comb refuses leaves its text in the field, which is marked
 // invalid and says why under it, and the node or the edge keeps what Comb kept; the next edit of
-// the form Comb takes clears every mark of the form, since an edit sends every field of it. Where
-// the rules refuse a connection, the sidebar says why.
-import { EngineLostError, GraphDataError, type Selection } from "comb";
+// the form Comb takes clears every mark of the form. Where the rules refuse a connection or a
+// drop, the sidebar says why.
+import { EngineLostError, GraphDataError, type RegionData, type Selection } from "comb";
 import type { Diagram, Refusal } from "./diagram";
 import { element } from "./element";
 import {
@@ -67,6 +68,14 @@ function reasonOf({ error }: Refusal): string {
   return `Not taken: ${error instanceof Error ? error.message : String(error)}; ${kept}`;
 }
 
+/** The names of `regions`, one per line, depth first, a region within a region indented by two
+ *  spaces more than the one it lies in. */
+const regionLines = (regions: readonly RegionData[], depth = 0): string[] =>
+  regions.flatMap((region) => [
+    "  ".repeat(depth) + (region.name ?? ""),
+    ...regionLines(region.regions ?? [], depth + 1),
+  ]);
+
 /** The lines of a textarea, each trimmed, the empty ones left out. */
 const linesOf = (text: string) =>
   text
@@ -94,6 +103,7 @@ const NODE_PARTS = [
 const SHOWN: Record<Exclude<NodeForm, "none">, readonly string[]> = {
   classifier: ["name", "stereotype", "attributes", "operations"],
   name: ["name"],
+  "name-and-partitions": ["name", "partitions"],
   behaviours: ["name", "entry", "do-activity", "exit", "internal", "deferred"],
   "name-and-machine": ["name", "machine"],
   lines: ["lines"],
@@ -137,6 +147,13 @@ export class Sidebar {
   private readonly label = element<HTMLInputElement>("label");
   private readonly dependency = element<HTMLSelectElement>("dependency");
   private readonly clauses = element<HTMLTextAreaElement>("clauses");
+  private readonly partitions = element<HTMLTextAreaElement>("partitions");
+  /** The fields that name the regions of the selected node, one name per line, each with what it
+   *  calls them. */
+  private readonly regionNames = [
+    [this.clauses, "clauses"],
+    [this.partitions, "partitions"],
+  ] as const;
   /** The field of each part of a state or an activity node, with the part it edits and how. */
   private readonly nodeParts = NODE_PARTS.map(([id, key, type]) => ({
     field: element<Field>(id),
@@ -160,21 +177,26 @@ export class Sidebar {
   private readonly edgeHeading = element("edge-heading");
   /** The wrapper of each field of the node form, by the field's identifier. */
   private readonly nodeWrappers = [
-    ...["name", "stereotype", "attributes", "operations", "clauses"],
+    ...["name", "stereotype", "attributes", "operations", "clauses", "partitions"],
     ...NODE_PARTS.map(([id]) => id),
   ].map((id) => [id, element(`${id}-field`)] as const);
   private readonly kindField = element("kind-field");
   private readonly labelField = element("label-field");
   private readonly dependencyField = element("dependency-field");
   private readonly transitionFields = TRANSITION_PARTS.map((key) => element(`${key}-field`));
-  /** The fields of each form, whose marks a refill or an edit Comb took clears. */
-  private readonly nodeFields: readonly Field[] = [
+  /** The fields of each form, whose marks a refill or an edit Comb took clears; of the node form,
+   *  those an edit of the node sends, and the names of its regions, which an edit of their own
+   *  sends, but whose taken edit clears the marks of every field of the form, as any other does. */
+  private readonly partFields: readonly Field[] = [
     this.name,
     this.stereotype,
     this.attributes,
     this.operations,
-    this.clauses,
     ...this.nodeParts.map(({ field }) => field),
+  ];
+  private readonly nodeFields: readonly Field[] = [
+    ...this.partFields,
+    ...this.regionNames.map(([field]) => field),
   ];
   private readonly edgeFields: readonly Field[] = [
     this.label,
@@ -188,8 +210,12 @@ export class Sidebar {
 
   constructor(private readonly diagram: Diagram) {
     this.kind.append(...KINDS.map((kind) => new Option(RELATIONSHIPS[kind].name, kind)));
-    for (const field of this.nodeFields)
+    for (const field of this.partFields)
       field.addEventListener("input", () => this.answer(field, this.nodeFields, this.editNode()));
+    for (const [field, noun] of this.regionNames)
+      field.addEventListener("input", () =>
+        this.answer(field, this.nodeFields, this.nameRegions(field, noun)),
+      );
     this.kind.addEventListener("change", () => this.changeKind());
     for (const [field, event] of [
       [this.label, "input"],
@@ -219,6 +245,23 @@ export class Sidebar {
     if (edgeForm !== "none") this.fillEdge(kind!, edgeForm);
   }
 
+  /** Fills the names of the regions of node `id` anew where it is the selected node and its
+   *  regions no longer have the names the fields hold, as after a partition dropped onto the
+   *  frame; an edit of the names, which Comb took as the fields hold them, refills nothing, so
+   *  that the user's typing stands. */
+  regionsChanged(id: string): void {
+    if (id !== this.node) return;
+    const names = (text: string) =>
+      text
+        .split("\n")
+        .map((line) => line.trim())
+        .join("\n");
+    const now = names(regionLines(this.diagram.node(id)?.regions ?? []).join("\n"));
+    if (this.regionNames.some(([field]) => names(field.value) === now)) return;
+    this.fillRegionNames();
+    for (const [field] of this.regionNames) this.clear([field]);
+  }
+
   /** Says why the example refused the user's last connection or drop, or clears what it said for
    *  `null`. */
   refused(reason: string | null): void {
@@ -243,7 +286,8 @@ export class Sidebar {
    *  node is selected, or its kind has nothing to edit. */
   private formOfNode(): NodeForm {
     const kind = this.node === null ? undefined : this.diagram.kindOf(this.node);
-    return this.diagram.descriptor.nodes.find((each) => each.kind === kind)?.form ?? "none";
+    const entry = this.diagram.descriptor.nodes.find((each) => each.kind === kind);
+    return entry && "form" in entry ? entry.form : "none";
   }
 
   /** Fills the node form of `form` from the selected node's classifier, or from its state or its
@@ -259,9 +303,14 @@ export class Sidebar {
     this.name.value = classifier?.name ?? parted?.name ?? "";
     this.fillMembers(classifier);
     this.fillParts(parted);
-    const regions = this.diagram.node(this.node!)?.regions ?? [];
-    this.clauses.value = regions.map((region) => region.name ?? "").join("\n");
+    this.fillRegionNames();
     this.clear(this.nodeFields);
+  }
+
+  /** Fills the fields of the names of the selected node's regions, one per line, depth first. */
+  private fillRegionNames(): void {
+    const regions = regionLines(this.diagram.node(this.node!)?.regions ?? []).join("\n");
+    for (const [field] of this.regionNames) field.value = regions;
   }
 
   /** Fills the field of each part of `node`, a state or an activity node, empty or unchecked for
@@ -284,7 +333,7 @@ export class Sidebar {
   }
 
   private fillEdge(kind: RelationshipKind, form: Exclude<EdgeForm, "none">): void {
-    this.kindField.hidden = form !== "relationship" && form !== "kind";
+    this.kindField.hidden = !["relationship", "kind", "guard-and-weight"].includes(form);
     this.labelField.hidden = form !== "relationship";
     for (const field of this.multiplicityFields) field.hidden = form !== "multiplicities";
     this.dependencyField.hidden = form !== "import-or-use";
@@ -396,12 +445,6 @@ export class Sidebar {
   private editNode(): Refusal | undefined {
     const form = this.formOfNode();
     if (form === "none") return undefined;
-    // A clause's name is no part of the node: it names a region, line by line.
-    if (form === "clauses")
-      return this.diagram.nameClauses(
-        this.node!,
-        this.clauses.value.split("\n").map((line) => line.trim()),
-      );
     const state = this.diagram.states.get(this.node!);
     if (state) return this.diagram.editState(state.id, this.editedOf(state, form));
     const activity = this.diagram.activities.get(this.node!);
@@ -419,6 +462,15 @@ export class Sidebar {
       attributes: linesOf(this.attributes.value),
       operations: linesOf(this.operations.value),
     });
+  }
+
+  /** Names the regions of the selected node, `noun`, as `field` holds them, one per line, depth
+   *  first: a region's name is no part of the node; Comb's refusal, or the diagram's, where the
+   *  names were not taken. */
+  private nameRegions(field: Field, noun: "clauses" | "partitions"): Refusal | undefined {
+    if (this.node === null) return undefined;
+    const names = field.value.split("\n").map((line) => line.trim());
+    return this.diagram.nameRegions(this.node, names, noun);
   }
 
   /** Changes the selected edge to the chosen kind; a label the user typed survives, one that

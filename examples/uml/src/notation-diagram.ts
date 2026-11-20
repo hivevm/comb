@@ -8,11 +8,12 @@
 // activity node; a value pin with its value beside it, a streaming pin with `{stream}` beside it,
 // and a parameter set around two pins (ARCH-border-nodes-ride-sides). The decision, the guards, the
 // call behavior action, and the comment that join them are of the load's notation too. Its palette
-// drops each of these elements, and its sidebar edits what each shows.
+// drops each of these elements and a partition, and its sidebar edits what each shows, the names of
+// the partitions on the frame.
 import type { Comb, EdgeData } from "comb";
 import { activityData, ACTIVITY_EDITS, at, type FlowSeed, type Seed } from "./activity";
 import { styleOf, type RelationshipKind } from "./relationships";
-import type { DiagramData, DiagramDescriptor } from "./shared";
+import { PARTITION, type DiagramData, type DiagramDescriptor } from "./shared";
 
 /** The frame of the drag, 1880 by 1640, its partitions 380, 1060, and 440 wide, Comb's divided
  *  into the shell's 540 and the engine's 520, and what lies in them, each centre relative to its
@@ -197,8 +198,10 @@ export function notationDiagram(heightOf: Comb["heightOf"]): DiagramData {
 }
 
 /** The notation diagram as the host application chooses it: the palette drops each of its
- *  elements beside the action and the pins, the sidebar edits an action's name, a pin's name or a
- *  value pin's value and whether it streams, and a conditional node's clauses, and the rest is as
+ *  elements beside the action and the pins, and a partition, which divides an empty partition or
+ *  adds one to the frame; the sidebar edits the name of an action or a call behavior action, a
+ *  pin's name or a value pin's value and whether it streams, a comment's lines, a conditional
+ *  node's clauses, and the frame's name and its partitions' names, and the rest is as
  *  `ACTIVITY_EDITS` says. */
 export const NOTATION_DIAGRAM: DiagramDescriptor = {
   id: "notation",
@@ -207,6 +210,7 @@ export const NOTATION_DIAGRAM: DiagramDescriptor = {
   nouns: ["elements", "edges"],
   nodes: [
     { kind: "action", name: "Action", form: "name" },
+    { kind: "call-behavior-action", name: "Call behavior action", form: "name" },
     { kind: "input-pin", name: "Input pin", form: "name-and-stream" },
     { kind: "output-pin", name: "Output pin", form: "name-and-stream" },
     { kind: "value-pin", name: "Value pin", form: "value-and-stream" },
@@ -217,7 +221,11 @@ export const NOTATION_DIAGRAM: DiagramDescriptor = {
     { kind: "initial-node", name: "Initial node", form: "none" },
     { kind: "activity-final", name: "Activity final", form: "none" },
     { kind: "flow-final", name: "Flow final", form: "none" },
+    { kind: "decision-node", name: "Decision", form: "none" },
     { kind: "merge-node", name: "Merge", form: "none" },
+    { kind: "activity-comment", name: "Comment", form: "lines" },
+    { kind: PARTITION, name: "Partition" },
+    { kind: "activity-frame", name: "Activity frame", form: "name-and-partitions", palette: false },
   ],
   ...ACTIVITY_EDITS,
 };

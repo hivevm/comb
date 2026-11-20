@@ -4,7 +4,7 @@
 // docs/CONVENTIONS.md, not read from the example.
 // Verifies: G-12
 import { expect, test } from "bun:test";
-import { labelOf, styleOf } from "./relationships";
+import { labelOf, patchOf, styleOf } from "./relationships";
 
 const [GREY, GREEN] = [0x6b7280, 0x15803d];
 
@@ -64,4 +64,17 @@ test("a kind's style carries its label where the kind has one, and none where it
   ]);
   expect(styleOf("transition")).toEqual({ color: GREY, arrow: "open" });
   expect(styleOf("anchor")).toEqual({ color: GREY, dash: [6, 4], arrow: "none" });
+});
+
+test("an edge that becomes an exception handler drops the label the user typed, and becomes a lightning bolt; one that becomes another flow keeps it", () => {
+  // Verifies: G-20
+  const typed = labelOf("control-flow", "[rows left]");
+  expect(patchOf("control-flow", "exception-handler", typed)).toMatchObject({
+    lightning: true,
+    labels: null,
+  });
+  expect(patchOf("control-flow", "interrupting-edge", typed)).toMatchObject({
+    lightning: true,
+    labels: [expect.objectContaining({ text: "[rows left]" })],
+  });
 });

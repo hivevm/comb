@@ -16,9 +16,12 @@ import { inspect, screenPoint, type SceneSnapshot } from "comb/testing";
 import {
   ACTIVITY_BORDERS,
   droppedParameterSet,
+  holdsElements,
   newActivityNode,
   NO_ACTION,
+  NO_PARTITION,
   nodesOf as activityNodesOf,
+  partitionedOf,
   RAKE,
 } from "./activity";
 import { ACTIVITY_DIAGRAM } from "./activity-diagram";
@@ -36,6 +39,7 @@ import {
   contentOf,
   newClassifier,
   NODE_WIDTH,
+  PARTITION,
   STATE_KINDS,
   USE_CASE_KINDS,
   type ActivityKind,
@@ -44,6 +48,7 @@ import {
   type DiagramData,
   type DiagramDescriptor,
   type NodeKind,
+  type PaletteEntry,
   type Place,
   type State,
   type UseCaseNode,
@@ -160,11 +165,8 @@ const palette = element("palette");
 const legend = element("legend");
 const legendKinds = element("legend-kinds");
 
-/** The palette's item of each kind of node a diagram's descriptor names, by the kind's name. */
-function paletteItemOf(
-  { id }: DiagramDescriptor,
-  { kind, name }: DiagramDescriptor["nodes"][number],
-) {
+/** The palette's item of each kind a diagram's descriptor names for it, by the kind's name. */
+function paletteItemOf({ id }: DiagramDescriptor, { kind, name }: PaletteEntry) {
   const item = document.createElement("li");
   Object.assign(item, { draggable: true, textContent: name });
   Object.assign(item.dataset, { kind, diagram: id });
@@ -173,7 +175,7 @@ function paletteItemOf(
 
 choice.append(...DIAGRAMS.map(({ id, name }) => new Option(name, id)));
 const paletteItems = DIAGRAMS.flatMap((each) =>
-  each.nodes.map((node) => paletteItemOf(each, node)),
+  each.nodes.filter((node) => !("palette" in node)).map((node) => paletteItemOf(each, node)),
 );
 element("palette-kinds").append(...paletteItems);
 
@@ -226,6 +228,9 @@ type Dropped =
 
 /** Why the example refuses a drop. */
 type Refused = { refusal: string };
+
+/** What a drop of the palette's partition changes: the partitions of the frame `frame`. */
+type Partitioned = { frame: string; regions: RegionData[] };
 
 /** What the palette drops of `kind` as node `id` with its centre at the world point (`x`, `y`):
  *  the nodes Comb adds, and the classifier, the state, the activity nodes, or the use case
@@ -336,6 +341,27 @@ function centreOf(x: number, y: number): Extract<Place, { x: number }> | Refused
   return { x: x - box.x, y: y - box.y, container: holder };
 }
 
+/** What the palette's partition dropped as `id` at the world point (`x`, `y`) changes, as the human
+ *  settled on 2026-11-19: on a frame's heading, above its partitions, the frame takes one more; on
+ *  an empty partition, it is divided into two; refused, and why, on a partition that holds elements
+ *  or partitions, or off every frame. */
+function partitionedAt(id: string, x: number, y: number): Partitioned | Refused {
+  const frameOf = (each: string) => diagram.dividing(each)?.node ?? diagram.node(each);
+  const onto = diagram.deepestAt(x, y, (each) => {
+    const frame = frameOf(each);
+    return frame !== undefined && diagram.kindOf(frame.id) === "activity-frame";
+  });
+  if (onto === undefined) return { refusal: NO_PARTITION };
+  const divided = diagram.dividedRegion(onto);
+  if (divided) return { refusal: holdsAlone(divided) };
+  const name = diagram.dividing(onto)?.path.at(-1)?.name ?? onto;
+  if (diagram.graph.nodes.some((node) => node.container === onto))
+    return { refusal: holdsElements(name) };
+  // A frame or a region of one, so a box and a frame.
+  const frame = frameOf(onto)!;
+  return { frame: frame.id, regions: partitionedOf(frame, onto, id, diagram.box(onto)!.width) };
+}
+
 /** Why the example refuses a drop into `region`, which holds its regions alone. */
 function holdsAlone({ name, regions = [] }: RegionData): string {
   const names = regions.map((each) => each.name ?? each.id);
@@ -344,17 +370,25 @@ function holdsAlone({ name, regions = [] }: RegionData): string {
 
 /** Adds the nodes the palette drops of `kind`, a classifier or a state, centred by the height
  *  Comb gives its content and node shape on the world point under the drop at (`clientX`,
- *  `clientY`) of the page, or a point on the border nearest it (G-1, API-host-asks-content-height).
- *  The classifier or the state is the diagram's once Comb took its nodes, and never where Comb
- *  refuses them. Where the example refuses the drop, the sidebar says why. */
+ *  `clientY`) of the page, or a point on the border nearest it (G-1, API-host-asks-content-height);
+ *  or, for the partition, the partitions it leaves a frame. The classifier or the state is the
+ *  diagram's once Comb took its nodes, and never where Comb refuses them. Where the example
+ *  refuses the drop, the sidebar says why. */
 function drop(kind: string, clientX: number, clientY: number): void {
   const number = (dropped.get(kind) ?? 0) + 1;
   const id = `${kind}-${number}`;
   const { x, y } = comb.worldPointAt(clientX, clientY);
-  const added = droppedOf(kind, id, x, y);
+  const added = kind === PARTITION ? partitionedAt(id, x, y) : droppedOf(kind, id, x, y);
   sidebar.refused(added && "refusal" in added ? added.refusal : null);
   if (!added || "refusal" in added) return;
   dropped.set(kind, number);
+  if ("frame" in added) diagram.patchNode(added.frame, { regions: added.regions });
+  else addDropped(id, added);
+}
+
+/** Adds the nodes of what the palette dropped as node `id`, `added`, and keeps it once Comb took
+ *  them. */
+function addDropped(id: string, added: Exclude<Dropped, Refused>): void {
   try {
     for (const node of added.nodes) comb.addNode(node);
   } catch (error) {
@@ -393,6 +427,7 @@ canvas.addEventListener("drop", (event) => {
 comb.onChange((change) => {
   diagram.mirror(change);
   counted();
+  if (change.kind === "nodeUpdated" && change.patch.regions) sidebar.regionsChanged(change.id);
 });
 comb.onSelectionChange((selection) => sidebar.show(selection));
 window.uml = {

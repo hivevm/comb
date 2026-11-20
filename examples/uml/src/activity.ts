@@ -37,7 +37,7 @@ import type {
   RegionData,
 } from "comb";
 import { labelOf, styleOf, type RelationshipKind } from "./relationships";
-import { flowBetween } from "./rules";
+import { allows, flowBetween } from "./rules";
 import {
   ELLIPSIS,
   namedBorderNodes,
@@ -470,6 +470,55 @@ export function droppedParameterSet(
   return { nodes, activities: [set, ...pins] };
 }
 
+/** Why the example refuses a partition the palette drops neither on the frame nor on a partition,
+ *  and one dropped onto the partition `name`, which holds elements. */
+export const NO_PARTITION =
+  "A partition divides an empty partition or adds one to the frame; drop it there.";
+export const holdsElements = (name: string) =>
+  `${name} holds elements; only an empty partition is divided.`;
+
+/** The partitions of the frame `frame` once the partition the palette drops as `id` lands on
+ *  `onto`, `width` wide, as the human settled on 2026-11-19: on the frame itself, a further
+ *  partition `id` after the others, named by its number, as wide as a partition of a frame the
+ *  palette drops, the last before it keeping the rest of the frame it took; on an empty
+ *  partition, at any depth, that partition divided across into "Partition 1" and "Partition 2",
+ *  `<id>-1` and `<id>-2`, an equal share each. */
+export function partitionedOf(
+  frame: NodeData,
+  onto: string,
+  id: string,
+  width: number,
+): RegionData[] {
+  const regions = frame.regions ?? [];
+  const partition = (own: string, name: string, size: number): RegionData => ({
+    id: own,
+    name,
+    size,
+    line: "solid",
+  });
+  if (onto === frame.id) {
+    const before = regions.slice(0, -1);
+    const rest = width - before.reduce((sum, { size }) => sum + size, 0);
+    const last = regions
+      .slice(-1)
+      .map((region) => ({ ...region, size: Math.max(region.size, rest) }));
+    const block = ACTIVITY_SHAPES["activity-frame"];
+    const share = block.width / block.regions!.length;
+    return [...before, ...last, partition(id, `Partition ${regions.length + 1}`, share)];
+  }
+  const divided = (list: readonly RegionData[]): RegionData[] =>
+    list.map((region) =>
+      region.id === onto
+        ? {
+            ...region,
+            divide: "across",
+            regions: [1, 2].map((n) => partition(`${id}-${n}`, `Partition ${n}`, width / 2)),
+          }
+        : { ...region, ...(region.regions ? { regions: divided(region.regions) } : {}) },
+    );
+  return divided(regions);
+}
+
 /** The label a flow shows: its guard in brackets and its weight in braces, each where it has one;
  *  none where it has neither. */
 export function flowLabelOf({ guard, weight }: Flow): string | null {
@@ -478,9 +527,12 @@ export function flowLabelOf({ guard, weight }: Flow): string | null {
 }
 
 /** The kind a connection adds between nodes of kinds `source` and `target`: from a comment its
- *  anchor, else the flow `flowBetween` gives. */
+ *  anchor; from an action to an input pin, where the rules allow one, an exception handler, as the
+ *  human decided on 2026-11-20; else the flow `flowBetween` gives. */
 export function connectedOf(source: NodeKind, target: NodeKind): RelationshipKind {
-  return source === "activity-comment" ? "anchor" : flowBetween(source, target);
+  if (source === "activity-comment") return "anchor";
+  if (allows({ source, target, kind: "exception-handler" })) return "exception-handler";
+  return flowBetween(source, target);
 }
 
 /** The example's veto of the user's move of a node into a container: a move into a partition or a
@@ -545,15 +597,19 @@ export function activityData(
 }
 
 /** How the example edits an activity diagram, whichever it shows: a connection adds a control or
- *  an object flow, or from a comment an anchor, docked on the outline at both ends; the sidebar
- *  edits a flow's guard and weight; the legend is hidden; and the user moves no node out of the
- *  frame. */
+ *  an object flow, from a comment an anchor, or from an action to an input pin an exception
+ *  handler, docked on the outline at both ends; the sidebar
+ *  edits a flow's guard and weight, and changes its kind among the control flow, the object flow,
+ *  the interrupting edge, and the exception handler, as the human decided on 2026-11-20, each
+ *  offered where the rules allow it between the flow's ends; the legend is hidden; and the user
+ *  moves no node out of the frame. */
 export const ACTIVITY_EDITS = {
   connected: "control-flow",
   connectedOf,
   docking: () => ({ sourceSide: "outline", targetSide: "outline" }),
   edgeForm: "guard-and-weight",
   edgeForms: { anchor: "none", "exception-handler": "none" },
+  kinds: ["control-flow", "object-flow", "interrupting-edge", "exception-handler"],
   selected: { node: "element", edge: "flow" },
   legend: false,
   canMoveInto,

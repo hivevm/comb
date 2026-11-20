@@ -177,11 +177,18 @@ skimmed. The design revision drops what prevented nothing
   share each: two partitions, two empty clauses, or the setup, test, and body. A parameter set the
   palette drops lands on the nearest side of the action under the pointer, added before two new
   input pins inside it; dropped on no action, it is refused, and the sidebar says "A parameter set
-  groups pins of an action; drop it on an action's side." The sidebar edits a value pin's value in
-  a field and a pin's `{stream}` by a checkbox, and a conditional node's clauses one name per line,
-  since Comb selects no region on its own (ARCH-regions-are-container-slots); it refuses another
-  count of lines, or an empty one, and says why. A drop on the band of a partition divided again
-  is refused, and the sidebar names the partitions to drop into.
+  groups pins of an action; drop it on an action's side." The notation diagram's palette also
+  drops a partition. Onto the frame's heading, above the partitions, the frame takes one more,
+  named "Partition" and its number, 600 wide, and the last partition before it keeps its width.
+  Onto an empty partition, it divides that partition across into "Partition 1" and "Partition 2",
+  an equal share each. Onto a partition that holds elements, the sidebar says, for the user's,
+  "User holds elements; only an empty partition is divided."; off every frame, "A partition
+  divides an empty partition or adds one to the frame; drop it there." The sidebar edits a value
+  pin's value in a field and a pin's `{stream}` by a checkbox. It edits a conditional node's
+  clauses, and the frame's partitions beside its name, one name per line, depth first, a nested
+  partition indented, since Comb selects no region on its own (ARCH-regions-are-container-slots);
+  it refuses another count of lines, or an empty one, and says why. A drop on the band of a
+  partition divided again is refused, and the sidebar names the partitions to drop into.
 - **The UML example draws a use case diagram in the building blocks settled for it.** Each kind
   takes the building block `USE_CASE_SHAPES` in `examples/uml/src/use-case-diagram.ts` names, as
   ticket 13 of uml-diagrams settled them with the human. An actor is an `actor`, its name the
@@ -222,7 +229,8 @@ skimmed. The design revision drops what prevented nothing
   guard on one out of an initial pseudostate or a fork, or into a join, by the same constraints.
 
   A connection between the activity diagram's kinds adds an object flow where an end is an object
-  node, a control flow otherwise, and from a comment its anchor. The table refuses, the first that
+  node, a control flow otherwise, from a comment its anchor, and from an action to an input pin an
+  exception handler, as the human decided on 2026-11-20. The table refuses, the first that
   holds saying why, as the OCL of UML 2.5.1's metamodel states the constraints:
   - a flow from or to a comment, which its anchor attaches;
   - a flow from or to the frame of the activity, or an interruptible region, which groups nodes;
@@ -239,7 +247,17 @@ skimmed. The design revision drops what prevented nothing
   - an object flow from or to an action, whose objects pass through its pins, or an expansion
     region, whose objects pass through its expansion nodes (`no_executable_nodes`);
   - an object flow out of an initial node (`control_edges`);
-  - an anchor that starts at no comment, or ends on a comment.
+  - an anchor that starts at no comment, or ends on a comment;
+  - an interrupting edge where the flow a connection adds between its ends is refused, for the same
+    reason, since it is that flow interrupting its region;
+  - an exception handler that starts at no action, the node it protects, or ends on no input pin,
+    the pin that takes the exception into its handler's body.
+
+  The sidebar's form of a flow changes its kind among the control flow, the object flow, the
+  interrupting edge, and the exception handler, offering those the table allows between the
+  flow's ends, as the human decided on 2026-11-20; the edge is then drawn as that kind, an
+  interrupting edge and an exception handler with `lightning`. An edge that becomes an exception
+  handler drops the label it had, since an exception handler carries none.
 
   An object node, a pin, a value pin, a data store, a central buffer, an expansion node, and an
   activity parameter node count as object nodes; the actions, the expansion region, and the

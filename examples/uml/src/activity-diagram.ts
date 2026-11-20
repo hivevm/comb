@@ -257,7 +257,8 @@ export function activityDiagram(heightOf: Comb["heightOf"]): DiagramData {
 }
 
 /** The activity diagram as the host application chooses it: the palette drops each kind of the
- *  load, each edited as its notation shows it, and the rest as `ACTIVITY_EDITS` says. */
+ *  load, each edited as its notation shows it, the frame by its name and its partitions' names, and
+ *  the rest as `ACTIVITY_EDITS` says. */
 export const ACTIVITY_DIAGRAM: DiagramDescriptor = {
   id: "activity",
   name: "Activity diagram",
@@ -282,7 +283,7 @@ export const ACTIVITY_DIAGRAM: DiagramDescriptor = {
     { kind: "expansion-node", name: "Expansion node", form: "none" },
     { kind: "connector", name: "Connector", form: "name" },
     { kind: "activity-comment", name: "Comment", form: "lines" },
-    { kind: "activity-frame", name: "Activity frame", form: "name" },
+    { kind: "activity-frame", name: "Activity frame", form: "name-and-partitions" },
     { kind: "input-parameter", name: "Input parameter node", form: "name" },
     { kind: "output-parameter", name: "Output parameter node", form: "name" },
   ],

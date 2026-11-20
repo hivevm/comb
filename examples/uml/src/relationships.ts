@@ -35,6 +35,8 @@ export interface RelationshipStyle {
   dash?: readonly [number, number];
   arrow: Arrowhead;
   lightning?: true;
+  /** The kind carries no label: an edge that becomes one drops the label it had. */
+  unlabelled?: true;
   label?: string;
   place?: { t: number; offset: number };
   listed?: false;
@@ -106,6 +108,7 @@ const STYLES = {
     color: GREY,
     arrow: "open",
     lightning: true,
+    unlabelled: true,
     listed: false,
   },
   // The use case diagram's kinds, which neither the legend nor the class diagram's kind select
@@ -181,18 +184,22 @@ export function styleOf(
   };
 }
 
-/** The patch that draws an edge of `kind` as `to`, clearing a dash the kind has none of. Its
- *  label, `current`, survives where the user typed it, drawn in the colour of `to` where it
- *  stands; one that reads the label of `kind` itself, or none, becomes the label of `to`, or none
- *  where `to` has none. */
+/** The patch that draws an edge of `kind` as `to`, clearing a dash or a lightning bolt the kind
+ *  has none of. Its label, `current`, survives where the user typed it, drawn in the colour of
+ *  `to` where it stands; one that reads the label of `kind` itself, or none, becomes the label of
+ *  `to`, or none where `to` has none; a kind without labels drops it. */
 export function patchOf(
   kind: RelationshipKind,
   to: RelationshipKind,
   current?: EdgeLabelData,
 ): EdgePatch {
-  const { color, arrow, dash = null, labels = null } = styleOf(to);
-  const typed = current !== undefined && current.text !== RELATIONSHIPS[kind].label;
-  return { color, arrow, dash, labels: typed ? [labelOf(to, current.text, current)] : labels };
+  const { color, arrow, dash = null, lightning = false, labels = null } = styleOf(to);
+  const typed =
+    current !== undefined &&
+    current.text !== RELATIONSHIPS[kind].label &&
+    !RELATIONSHIPS[to].unlabelled;
+  const label = typed ? [labelOf(to, current.text, current)] : labels;
+  return { color, arrow, dash, lightning, labels: label };
 }
 
 /** The identifiers of the labels of an association's multiplicities, at its source and its target

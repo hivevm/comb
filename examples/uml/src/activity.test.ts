@@ -4,7 +4,7 @@
 // here from those decisions and docs/CONVENTIONS.md, not read from the example.
 // Verifies: G-20
 import { expect, test } from "bun:test";
-import type { BorderNodeData, Comb, Divide, NodeShape } from "comb";
+import type { BorderNodeData, Comb, Divide, NodeData, NodeShape } from "comb";
 import {
   ACTIVITY_BORDERS,
   ACTIVITY_SHAPES,
@@ -13,6 +13,7 @@ import {
   droppedParameterSet,
   flowLabelOf,
   nodesOf,
+  partitionedOf,
 } from "./activity";
 import { styleOf } from "./relationships";
 
@@ -100,8 +101,12 @@ test("the example allows a move into a partition or a region, and refuses one on
   expect(canMoveInto({ node: "build", container: null })).toBe(false);
 });
 
-test("a connection adds an anchor from a comment, an object flow at an object node, else a control flow", () => {
+test("a connection adds an anchor from a comment, an exception handler from an action to an input pin, an object flow at an object node, else a control flow", () => {
   expect(connectedOf("activity-comment", "action")).toBe("anchor");
+  expect(connectedOf("action", "input-pin")).toBe("exception-handler");
+  expect(connectedOf("call-behavior-action", "input-pin")).toBe("exception-handler");
+  expect(connectedOf("action", "value-pin")).toBe("object-flow");
+  expect(connectedOf("input-pin", "input-pin")).toBe("object-flow");
   expect(connectedOf("activity-comment", "object-node")).toBe("anchor");
   expect(connectedOf("output-pin", "object-node")).toBe("object-flow");
   expect(connectedOf("decision-node", "input-pin")).toBe("object-flow");
@@ -203,4 +208,49 @@ test("a parameter set dropped on an action's side is a dashed border node there,
   );
   const set = near.nodes[0] as BorderNodeData;
   expect(set.offset - set.height! / 2).toBeGreaterThanOrEqual(0);
+});
+
+test("a partition dropped on the frame adds one after the others, the last before it keeping its rest; dropped on an empty partition, at any depth, divides it across into two halves", () => {
+  // Verifies: ARCH-regions-are-container-slots
+  const frame: NodeData = {
+    id: "act",
+    x: 0,
+    y: 0,
+    width: 1000,
+    content: [],
+    divide: "across",
+    regions: [
+      { id: "a", name: "A", size: 300, line: "solid" },
+      {
+        id: "b",
+        name: "B",
+        size: 400,
+        line: "solid",
+        divide: "across",
+        regions: [{ id: "c", size: 200, line: "solid" }],
+      },
+      { id: "d", name: "D", size: 100, line: "solid" },
+    ],
+  };
+  // The last partition took the rest of the frame, 300, and keeps it beside the new one.
+  const added = partitionedOf(frame, "act", "partition-1", 1000);
+  expect(added.map(({ id, name, size }) => [id, name, size])).toEqual([
+    ["a", "A", 300],
+    ["b", "B", 400],
+    ["d", "D", 300],
+    ["partition-1", "Partition 4", 600],
+  ]);
+  expect(added[1]).toEqual(frame.regions![1]!);
+  const divided = partitionedOf(frame, "c", "partition-2", 360);
+  expect(divided[1]!.regions![0]).toEqual({
+    id: "c",
+    size: 200,
+    line: "solid",
+    divide: "across",
+    regions: [
+      { id: "partition-2-1", name: "Partition 1", size: 180, line: "solid" },
+      { id: "partition-2-2", name: "Partition 2", size: 180, line: "solid" },
+    ],
+  });
+  expect([divided[0], divided[2]]).toEqual([frame.regions![0]!, frame.regions![2]!]);
 });

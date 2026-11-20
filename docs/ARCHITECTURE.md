@@ -657,7 +657,8 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   stand in one table (`ACTIVITY_SHAPES`) of `src/activity.ts`, the notation of an activity that it
   shares with the notation diagram; a connection adds an object flow where an end is an object node,
   a control flow otherwise, and from a comment its anchor; the sidebar edits a name, a comment's
-  lines, an expansion region's mode, and a flow's guard and weight; Delete removes a pin's name and
+  lines, an expansion region's mode, the names of the frame's partitions, and a flow's guard and
+  weight; Delete removes a pin's name and
   an expansion node's outer rectangles with their node; and its descriptor's veto of a move
   (`canMoveInto`), which the host application hands Comb, refuses a move out of the frame onto the
   canvas. Chosen, the notation diagram (`src/notation-diagram.ts`) shows, in the same notation, the
@@ -666,10 +667,13 @@ superseded ARCH-functional-core-imperative-shell with one workspace for each exa
   loop node and a conditional node divided down into regions, their setup, test, and body, or their
   clauses; a structured activity node; a value pin and a streaming pin with their value and
   `{stream}` beside them; and a parameter set, a dashed border node around two pins. Its palette
-  drops each of these elements and an action and pins, in the deepest container or region under the
-  pointer, a nested partition among them, a parameter set on an action's side around two new pins;
-  its sidebar edits an action's name, a pin's name, a value pin's value, a pin's `{stream}`, and a
-  conditional node's clauses. Chosen, the use case diagram
+  drops each of these elements and an action, a call behavior action, pins, a decision, and a
+  comment, in the deepest container or region under the pointer, a nested partition among them, a
+  parameter set on an action's side around two new pins; and a partition, which divides an empty
+  partition into two nested ones or adds one to the frame, a patch of the frame's regions. Its
+  sidebar edits the name of an action or a call behavior action, a pin's name, a value pin's value,
+  a pin's `{stream}`, a comment's lines, a conditional node's clauses, and the names of the frame's
+  partitions, the nested ones among them. Chosen, the use case diagram
   (`src/use-case-diagram.ts`) shows the developer, the user, and the host application as actors
   outside the subject Comb, a container that holds the use cases of G-1 to G-17 as ellipses, a use
   case's extension points below a separator; its associations carry a multiplicity at each end, its

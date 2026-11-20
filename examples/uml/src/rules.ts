@@ -210,6 +210,33 @@ const OBJECT_FLOW_RULES: typeof FLOW_RULES = [
   ],
 ];
 
+/** The first rule of the flow a connection between `source` and `target` adds that refuses it. */
+const flowRefusedBy = (source: ActivityKind, target: ActivityKind) =>
+  (flowBetween(source, target) === "object-flow" ? OBJECT_FLOW_RULES : CONTROL_FLOW_RULES).find(
+    ([holds]) => holds(source, target),
+  );
+
+/** The interrupting edges the activity diagram refuses: an interrupting edge is the flow a
+ *  connection adds between its ends, interrupting its region, so it is refused where that flow
+ *  is, for the same reason. */
+const INTERRUPTING_EDGE_RULES: typeof FLOW_RULES = [
+  ...new Set([...CONTROL_FLOW_RULES, ...OBJECT_FLOW_RULES]),
+].map(([, why]) => [(source, target) => flowRefusedBy(source, target)?.[1] === why, why]);
+
+/** The exception handlers the activity diagram refuses: every one but from an action, the
+ *  executable node it protects, to an input pin, which takes the exception into the action that
+ *  is its handler's body. */
+const EXCEPTION_HANDLER_RULES: typeof FLOW_RULES = [
+  [
+    (source) => !ACTIONS.includes(source),
+    "An exception handler starts at the action it protects; it protects no other node.",
+  ],
+  [
+    (_, target) => target !== "input-pin",
+    "An exception handler ends on the input pin that takes the exception into its handler's body.",
+  ],
+];
+
 /** The anchors the activity diagram refuses: an anchor attaches a comment to any element of the
  *  activity but another comment. */
 const ACTIVITY_ANCHOR_RULES: typeof FLOW_RULES = [
@@ -306,6 +333,8 @@ const REFUSED: ReadonlyMap<string, string> = new Map([
   ...refusalsOf(STATE_KINDS, "anchor", ANCHOR_RULES),
   ...refusalsOf(ACTIVITY_KINDS, "control-flow", CONTROL_FLOW_RULES),
   ...refusalsOf(ACTIVITY_KINDS, "object-flow", OBJECT_FLOW_RULES),
+  ...refusalsOf(ACTIVITY_KINDS, "interrupting-edge", INTERRUPTING_EDGE_RULES),
+  ...refusalsOf(ACTIVITY_KINDS, "exception-handler", EXCEPTION_HANDLER_RULES),
   ...refusalsOf(ACTIVITY_KINDS, "anchor", ACTIVITY_ANCHOR_RULES),
   ...refusalsOf(USE_CASE_KINDS, "association", ASSOCIATION_RULES),
   ...refusalsOf(

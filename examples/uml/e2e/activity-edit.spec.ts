@@ -3,8 +3,8 @@
 // node, or a parameter node on the border nearest the drop (ARCH-border-nodes-ride-sides); a move
 // between partitions the example's veto allows, and one out of the frame it refuses
 // (API-edits-report-nested-changes); the connections the table of refusals refuses, saying why,
-// and others that add a control or an object flow; a pin dragged around its action; and a flow's
-// guard and weight the sidebar edits.
+// and others that add a control or an object flow; a pin dragged around its action; a flow's guard
+// and weight the sidebar edits; and the names of the frame's partitions.
 import { expect, test, type Page } from "@playwright/test";
 import type { GraphChange, NodeData } from "comb";
 import { clickWorld, drawnNode, open, pagePoint, setViewport } from "./shared";
@@ -339,12 +339,19 @@ test("a connection the activity diagram's table of refusals holds is refused and
   });
 });
 
-test("a connection the activity diagram's table allows adds a control or an object flow", async ({
+test("a connection the activity diagram's table allows adds a control or an object flow, and clears the reason a refused one left", async ({
   page,
 }) => {
   // Verifies: G-20, G-3
   const allowed = CONNECTIONS.filter(([, , , , outcome]) => outcome.endsWith("-flow"));
-  await connectEach(page, allowed, async ([source, , target, , kind], _before, after) => {
+  // A refused connection first, so that the sidebar shows a reason the allowed ones must clear.
+  const first = CONNECTIONS.find(([, , , , outcome]) => !outcome.endsWith("-flow"))!;
+  await connectEach(page, [first, ...allowed], async (each, _before, after) => {
+    const [source, , target, , kind] = each;
+    if (each === first) {
+      await expect(page.locator("#connection-refusal")).toHaveText(kind);
+      return;
+    }
     const added = after.graph.edges.filter(
       (edge) => "source" in edge && edge.source === source && edge.target === target,
     );
@@ -474,4 +481,107 @@ test("Delete removes an expansion node with its outer rectangles, and keeps an o
   await expect.poll(ids).not.toContain("rows-before");
   expect(await ids()).not.toContain("rows");
   expect(await ids()).not.toContain("rows-after");
+});
+
+test("the sidebar renames the frame's partitions, which their bands show, beside the activity's name, and refuses another count of names, or one left empty", async ({
+  page,
+}) => {
+  // Verifies: G-20, G-5, ARCH-regions-are-container-slots
+  await page.goto("/");
+  await open(page);
+  await chooseActivity(page);
+  // Inside the frame's tab: Comb selects no region on its own, but the node it divides.
+  const frame = await boxOf(page, "load");
+  await setViewport(page, { x: 400 - frame.x, y: 300 - frame.y, scale: 1 });
+  await clickWorld(page, frame.x + 20, frame.y + 20);
+  await expect(page.locator("#name")).toHaveValue("Load");
+  const partitions = page.locator("#partitions");
+  await expect(partitions).toHaveValue("Host application\nShell\nEngine");
+  // Another count of names, or one left empty, is refused, and the sidebar says why.
+  for (const text of ["Host\nShell", "Host\n\nEngine"]) {
+    await partitions.fill(text);
+    await expect(partitions).toHaveAttribute("aria-invalid", "true");
+    await expect(page.locator("#partitions-refusal")).toHaveText(
+      "Not taken: name each of the 3 partitions, one per line; the diagram keeps what it had.",
+    );
+  }
+  await partitions.fill("Host\nShell\nEngine core");
+  await expect(partitions).not.toHaveAttribute("aria-invalid", "true");
+  const ids = ["host", "shell", "engine"];
+  await overview(page);
+  const named = await page.evaluate(async (wanted) => {
+    await window.uml.comb.whenRendered();
+    const nodes = window.uml.inspect().nodes;
+    const copy = window.uml.exampleGraph().nodes.find(({ id }) => id === "load")!.regions!;
+    return {
+      copy: copy.map(({ name }) => name),
+      bands: wanted.map((id) => nodes.find((node) => node.id === id)?.region?.band?.name),
+    };
+  }, ids);
+  const renamed = ["Host", "Shell", "Engine core"];
+  expect(named).toEqual({ copy: renamed, bands: renamed });
+});
+
+test("a flow connected between two actions becomes an interrupting edge by the sidebar's kind, drawn as a lightning bolt, and a control flow again", async ({
+  page,
+}) => {
+  // Verifies: G-20, G-3, G-5
+  await page.goto("/");
+  await open(page);
+  await chooseActivity(page);
+  const boxes = await boxesOf(page);
+  await connectWorld(
+    page,
+    connectorOf(boxes.bind!, "right"),
+    connectorOf(boxes["graph-error"]!, "left"),
+  );
+  const added = (await state(page)).graph.edges.find(
+    (edge) => edge.source === "bind" && edge.target === "graph-error",
+  )!;
+  const ends = await page.evaluate(async (id) => {
+    await window.uml.comb.whenRendered();
+    return window.uml.inspect().edges.find((edge) => edge.id === id)!;
+  }, added.id);
+  const along = (from: number, to: number) => from + (to - from) / 3;
+  await clickWorld(page, along(ends.source.x, ends.target.x), along(ends.source.y, ends.target.y));
+  await expect(page.locator("#edge-heading")).toHaveText("Selected flow");
+  // Between two actions the table allows a control flow and an interrupting edge alone.
+  const kind = page.locator("#kind");
+  await expect(kind.locator("option")).toHaveText(["Control flow", "Interrupting edge"]);
+  await expect(kind).toHaveValue("control-flow");
+  /** The kind and the style of the connected edge in the example's copy. */
+  const drawn = async () => {
+    const { graph, kinds } = await state(page);
+    const edge = graph.edges.find(({ id }) => id === added.id)!;
+    return { kind: kinds[added.id], arrow: edge.arrow, lightning: edge.lightning === true };
+  };
+  await kind.selectOption("interrupting-edge");
+  expect(await drawn()).toEqual({ kind: "interrupting-edge", arrow: "open", lightning: true });
+  // An interrupting edge is a flow, its guard and weight still edited.
+  await expect(page.locator("#guard")).toBeVisible();
+  await kind.selectOption("control-flow");
+  expect(await drawn()).toEqual({ kind: "control-flow", arrow: "open", lightning: false });
+});
+
+test("a connection from an action to an input pin adds an exception handler, a lightning bolt without a label", async ({
+  page,
+}) => {
+  // Verifies: G-20, G-3
+  await page.goto("/");
+  await open(page);
+  await chooseActivity(page);
+  const boxes = await boxesOf(page);
+  await connectWorld(
+    page,
+    connectorOf(boxes.bind!, "right"),
+    connectorOf(boxes["apply-graph"]!, "left"),
+  );
+  await expect(page.locator("#connection-refusal")).toBeHidden();
+  const { graph, kinds } = await state(page);
+  const added = graph.edges.filter(
+    (edge) => edge.source === "bind" && edge.target === "apply-graph",
+  );
+  expect(added.map((edge) => [kinds[edge.id], edge.arrow, edge.lightning, edge.labels])).toEqual([
+    ["exception-handler", "open", true, undefined],
+  ]);
 });
