@@ -3,8 +3,8 @@
 - **Status:** 🟡 proposed
 - **Date:** 2026-11-17
 - **Deciders:** Markus Brigl
-- **Applies to:** the node-content types of `crates/engine` and `crates/engine-wasm`, their generated TypeScript definitions in `packages/comb`, the layout functions of the engine, the drawing of node content in `packages/comb/src/render/`, the report of a click on a content element in `packages/comb/src/api/`, the hit test of `crates/engine/src/graph.rs` and its export in `crates/engine-wasm/`, the label extents the render layer of `packages/comb/src/render/` hands the engine, and the press and hover of `packages/comb/src/interaction/`
-- **Supersedes:** [REN-node-content-in-rows](REN-node-content-in-rows.md)
+- **Applies to:** the node-content types of `crates/engine` and `crates/engine-wasm`, their generated TypeScript definitions in `packages/comb`, the layout functions of the engine, the drawing of node content in `packages/comb/src/render/`, the report of a click on a content element in `packages/comb/src/api/`, the hit test of `crates/engine/src/graph.rs` and its export in `crates/engine-wasm/`, the label extents the render layer of `packages/comb/src/render/` hands the engine, the press and hover of `packages/comb/src/interaction/`, and `Comb.heightOf` in `packages/comb/src/api/` with its export in `crates/engine-wasm/`
+- **Supersedes:** [REN-node-content-in-rows](REN-node-content-in-rows.md), [API-host-asks-content-height](API-host-asks-content-height.md)
 
 ## Context
 
@@ -163,6 +163,26 @@ node.
   height, however small, so that a pin or an entry point can be a small open node shape. The engine
   states the padding, the gap between columns, and the least height; the shell states each role's
   line height.
+- **The height a host application asks:** `Comb.heightOf` takes content, a width, and an optional
+  node shape, and returns a height in world units. It is the height the engine gives a node of that
+  content, width, and node shape in the fonts Comb hands it. REN-node-shapes-cover-uml decides the
+  node shape and its default. It checks content as `addNode` checks it and refuses with the same
+  typed problems, changing nothing. This ADR carries the clauses of API-host-asks-content-height,
+  which it supersedes, and changes one:
+  - It needs no node in the graph, so that a host application asks before it adds or loads.
+  - Its problems name the node as the empty string, `node: ""`, where those of `addNode` name the
+    node's identifier. The width is checked as `addNode` checks a node's width, for a node at the
+    origin.
+  - It is the height the engine gives a node of that content and width, the same number.
+  - After `destroy`, and once the engine is lost, it refuses as every other method does
+    (API-trapped-engine-is-lost).
+  - Two contents whose rows hold elements of the same kinds, row by row and in the same order,
+    have one height. That holds in the same fonts and node shape, whatever the texts and the
+    width. A host application asks once per kind of content.
+  - Content without rows is the one exception. Its height follows the width, as *Layout* says of a
+    node without content and REN-node-shapes-cover-uml says per node shape. A host application
+    asks it per width. This replaces the clause of API-host-asks-content-height that no height
+    depends on the width.
 - **Levels of detail (REN-virtualized-nested-scene):** *near* draws every element; *middle* draws
   the box and the texts of role title, at the place near gives them, and no action, badge, progress
   bar, metric, or icon; *far* draws no element.
@@ -315,6 +335,11 @@ it is, that a name registered again draws the new image, and that `registerIcon`
 string, a URL, an image that has not loaded, and a name no icon can give, and requests nothing;
 `packages/comb/src/render/icons.test.ts` asserts that the replaced texture is destroyed. Each
 cites this ADR with `Verifies: REN-node-content-and-hits`, and the first also `Verifies: Q-4`.
+A browser test of the example adds a node of each type of the metric tree. It asserts that the drawn
+height equals `heightOf` of the node's content and width. It asserts that content of the same kinds
+has the same height with other texts and at another width. It asserts that content without rows is
+as high as it is wide. It asserts that malformed content, and a width `addNode` refuses, is refused
+with the problem `addNode` gives it, naming the node `""`.
 
 The tests of the hit test cite this ADR with `Verifies: REN-node-content-and-hits` too:
 

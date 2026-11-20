@@ -70,8 +70,8 @@ node shape from the engine's numbers.
 - **Content and node shape:**
   - The *content node shapes* are `rectangle`, `rounded-rectangle`, `ellipse`, and `diamond`.
     Each lays its content out in its inner rectangle:
-    - `rectangle`: today's node, its corners rounded by 6 as the shell draws them now (read in
-      `packages/comb/src/render/nodes.ts`); the node less today's padding.
+    - `rectangle`: today's node, its corners rounded by 6 (`RECTANGLE_RADIUS` in
+      `crates/engine/src/shape.rs`); the node less today's padding.
     - `rounded-rectangle`: the same, its corners rounded by 10. That radius lies within the
       padding of 10 above and below and 12 at the sides (`crates/engine/src/content.rs`), so
       content lays out as in a rectangle.

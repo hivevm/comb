@@ -268,15 +268,15 @@ Each test below cites this decision with `Verifies:` and its identifier.
   - without, they assert none.
 
   They also `Verifies: G-3`.
-- **Ends on edges, labels, lightning:** tests in `crates/engine/src/geometry.rs` assert that an end
-  on an edge lies on that edge's path at its path parameter within the precision of Q-4 and follows
-  it as its nodes move, that an end on a container toward a node it holds lies on the container's
-  outline beyond that node, and that a lightning bolt's turns lie between the path parameters
-  0.45 and 0.55. Tests in `crates/engine/src/stroke.rs` assert that an open and a hollow arrowhead
-  have their tips at the target's end within the precision of Q-4. The property test of the bridge
-  crate generates ends on edges, chains and cycles
-  among them, and lists of labels. A browser test of the UML example asserts that an extend's
-  condition stays anchored on the extend as its use cases move, and that an association draws a
-  multiplicity at each end; that removing an edge removes the edges that end on it and reports them;
-  and that dragging one of an edge's two labels moves that label alone and delivers `labelMoved`
-  naming it.
+- **Ends on edges, labels, lightning:** a test in `crates/engine/src/graph/edges.rs` asserts that an
+  end on an edge lies on that edge's path at its path parameter within the precision of Q-4 and
+  follows it as its nodes move. Tests in `crates/engine/src/geometry.rs` assert that an end on a
+  container toward a node it holds lies on the container's outline beyond that node, and that a
+  lightning bolt's turns lie between the path parameters 0.45 and 0.55. Tests in
+  `crates/engine/src/stroke.rs` assert that an open and a hollow arrowhead have their tips at the
+  target's end within the precision of Q-4. The property test of the bridge crate generates ends on
+  edges, chains and cycles among them, and lists of labels. Browser tests of the UML example assert
+  that an extend's condition stays anchored on the extend as its use cases move, and that an
+  association draws a multiplicity at each end. Browser tests in `examples/metric-tree/e2e/` assert
+  that removing an edge removes the edges that end on it and reports them, and that dragging one of
+  an edge's labels moves that label alone and delivers `labelMoved` naming it.

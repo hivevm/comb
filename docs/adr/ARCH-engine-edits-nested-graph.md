@@ -229,32 +229,32 @@ container's content with it; undo, which the host application owns
 
 Each test below cites this ADR with `Verifies: ARCH-engine-edits-nested-graph`.
 
-- **Edits against a scan:** a property test of `crates/engine/src/graph.rs` applies random
+- **Edits against a scan:** a property test of `crates/engine/src/graph/tests.rs` applies random
   sequences of additions, removals, and moves of nodes and edges to a graph and asserts after
   each step that a query and a hit test find exactly what a brute-force scan of the items in use
   finds, that no free slot is ever returned, and that the lists of edges at each node hold exactly
   the edges in use that end there. It also `Verifies: G-4`.
-- **No rebuild per edit:** a test of `crates/engine/src/graph.rs` counts how often the index is
+- **No rebuild per edit:** a test of `crates/engine/src/graph/tests.rs` counts how often the index is
   built and asserts that adding and removing a node and an edge within the extent at 50,000 nodes
   builds it no time; replacing an edit by a rebuild turns it red. A second asserts that growing a
   graph of 100 nodes to 1,000 by additions inside its extent builds it again at each doubling and
   no more often.
 - **Reuse:** a test asserts that the slot freed last is the slot the next addition of its kind
   takes, and that a slot past the highest is taken only when no slot is free.
-- **Draw order:** a test of `crates/engine/src/graph.rs` adds a node into a freed slot below
+- **Draw order:** a test of `crates/engine/src/graph/tests.rs` adds a node into a freed slot below
   others, overlapping them, and asserts that a query returns it last and the hit test finds it;
   a browser test asserts that inspection draws it above the nodes it overlaps. Taking the highest
   slot instead turns both red. A second adds a container last, over nodes and over an edge, and
   asserts that a query returns it among the containers and below every other node, and that the
   hit test finds the nodes inside it first.
-- **Containment:** a property test of `crates/engine/src/graph.rs` builds random trees of
+- **Containment:** a property test of `crates/engine/src/graph/tests.rs` builds random trees of
   containers, moves containers and moves nodes into and out of them, and asserts after each step
   that every node's world position is the sum along its chain, that a query and a hit test find
   what a scan of the world positions finds, and that a move into a node it contains is refused.
   A test asserts that removing a container removes everything it contains and every edge at it,
   that a container's box does not grow when a node it holds moves past its outline, and that a
   load or an edit putting a node in a node that is no container is refused.
-- **Border nodes in the order:** a test of `crates/engine/src/graph.rs` adds a node above an action
+- **Border nodes in the order:** a test of `crates/engine/src/graph/borders.rs` adds a node above an action
   with pins and moves the action into a container, and asserts that a query returns each pin
   directly after the action and the hit test finds a pin before the action.
 - **Free slots refused:** a test of `crates/engine-wasm/src/lib.rs` names a freed slot in each

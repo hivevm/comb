@@ -106,10 +106,11 @@ drag is reported, which the public interface decides; a selection of a region of
 
 Each test below cites this ADR with `Verifies: ARCH-regions-are-container-slots`.
 
-- A property test of `crates/engine/src/graph.rs` divides nodes into random trees of regions,
-  moves lines, resizes the divided nodes, and asserts after each step that the regions' boxes tile
-  what they divide with their name bands, that no line moved past the boxes of what a region holds,
-  and that a query and a hit test find the regions and their content where a scan finds them.
+- A property test of `crates/engine/src/graph/regions.rs` divides nodes into random trees of
+  regions, moves lines, resizes the divided nodes, and asserts after each step that the regions'
+  boxes tile what they divide with their name bands, that no line moved past the boxes of what a
+  region holds, and that a query and a hit test find the regions and their content where a scan
+  finds them.
 - A browser test of `examples/metric-tree/` divides a node into partitions, one of them divided
   again. It drags a line between two and asserts through inspection that the regions' boxes and
   the nodes in them are drawn where the engine reports them. It asserts that a node dropped into a

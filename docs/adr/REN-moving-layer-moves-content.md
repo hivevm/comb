@@ -194,8 +194,8 @@ Browser tests of the example, citing `Verifies: REN-moving-layer-moves-content`:
 - a drag of a container that holds nodes and an edge between them moves every node and edge it
   holds in each frame, at each level of detail, and keeps the container's particle below the edges;
 - a drag of an action with pins moves the pins and the edges at them in each frame, and a resize
-  of a partition and the drag of a line between two partitions query in no frame before the
-  release.
+  of the node the partitions divide and the drag of a line between two partitions query in no
+  frame before the release.
 
 `examples/metric-tree/e2e/remove.spec.ts` keeps deciding that `isDrawn` answers as `inspect()` does
 at the far level before and after a removal. A Rust test of the engine asserts that the mesh of

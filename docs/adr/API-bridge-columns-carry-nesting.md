@@ -724,7 +724,7 @@ Each test below cites this ADR with `Verifies: API-bridge-columns-carry-nesting`
   the median first frame of the runner's kind exceeds its baseline under `bench/baselines/` by more
   than the margin, cites this ADR and [DEV-bun-vite-wasm-pack](DEV-bun-vite-wasm-pack.md);
   on the AMD EPYC 7763 its
-  baseline holds 378.6 ms. It cites no Q-2, which is defined on the reference machine. A number of
+  baseline holds 458 ms. It cites no Q-2, which is defined on the reference machine. A number of
   the workflow decides the goal, not a test of the suite: the workflow runs weekly and on demand, so
   a load that grows slow again is found at its next run, not in the pull request.
 - **The columns of nesting:** the property test of the bridge crate generates the fields G-14 to

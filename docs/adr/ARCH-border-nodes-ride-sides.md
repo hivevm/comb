@@ -84,7 +84,7 @@ drag is reported, which the public interface decides; where on a border node an 
 
 Each test below cites this ADR with `Verifies: ARCH-border-nodes-ride-sides`.
 
-- A property test of `crates/engine/src/graph.rs` attaches border nodes at random sides and
+- A property test of `crates/engine/src/graph/borders.rs` attaches border nodes at random sides and
   offsets to nodes of every node shape, moves and resizes those nodes, drags the border nodes, and
   asserts after each step that each border node's centre lies on its node's outline within the
   accuracy of Q-4, on its side, and that removing a node removes its border nodes and their edges.
